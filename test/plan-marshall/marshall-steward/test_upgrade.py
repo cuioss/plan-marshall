@@ -53,7 +53,6 @@ _STAGE_ROW_KEYS = {'order', 'key', 'name', 'mutating', 'top_level_gate', 'nested
 # the consumer-only cache-freshness gate as Stage 1's FIRST sub-step; BOTH kinds
 # end Stage 1 with the cache-retention sweep. Stages 2 and 4 are kind-invariant.
 _EXPECTED_STAGE_2_SUB_STEPS = [
-    'migrate-review-steps',
     'reconcile-marshal-json',
     'review-held-defaults',
     'migrate-bot-lists',
@@ -80,6 +79,7 @@ def _run(
     argv: list[str],
     capsys: pytest.CaptureFixture[str],
     monkeypatch: pytest.MonkeyPatch,
+    bootstrap: bool = False,
 ) -> tuple[int, dict]:
     """Drive ``upgrade.main`` with constructed argv, returning ``(exit_code, parsed_toon)``.
 
@@ -89,7 +89,19 @@ def _run(
     argv is therefore installed on ``sys.argv`` and the exit code read off the
     ``SystemExit`` it raises. This is the ONLY seam in this module that reaches
     the CLI entry point, so every argv-driven case below goes through it.
+
+    ``bootstrap`` selects the executor-bootstrap footing for ``plan``
+    invocations. False (default) appends ``--bootstrap false`` so
+    planner-matrix tests never touch the live executor or plugin cache — the
+    bootstrap would otherwise compare (and, when stale, regenerate) the real
+    serving executor on whatever machine runs the suite. True leaves ``argv``
+    untouched for the bootstrap-wiring tests, which monkeypatch
+    ``upgrade.bootstrap_executor`` instead of reaching the live environment.
+    Non-``plan`` verbs never take the flag, so it is appended for ``plan``
+    only.
     """
+    if argv and argv[0] == 'plan' and not bootstrap:
+        argv = [*argv, '--bootstrap', 'false']
     monkeypatch.setattr(sys, 'argv', ['upgrade', *argv])
     with pytest.raises(SystemExit) as excinfo:
         upgrade.main()
@@ -218,38 +230,6 @@ def test_review_held_defaults_follows_reconcile_marshal_json(project_kind: str, 
     stage_2 = by_key['reconcile-config']
     assert stage_2.index('review-held-defaults') == stage_2.index('reconcile-marshal-json') + 1
     assert stage_2.count('review-held-defaults') == 1
-
-
-@pytest.mark.parametrize('project_kind', ['meta', 'consumer'])
-@pytest.mark.parametrize('integrate', [True, False])
-def test_migrate_review_steps_runs_first_before_the_defaults_merge(project_kind: str, integrate: bool):
-    """The review-step migration leads Stage 2, ahead of the defaults merge, for both kinds.
-
-    Run after ``reconcile-marshal-json``, the merge would meet the two new review
-    ids as absent and hold them at its ask-before-add gate; run first, it finds
-    them already configured.
-    """
-    by_key = {s['key']: s['sub_steps'] for s in upgrade.build_plan(integrate, project_kind)['stages']}
-
-    stage_2 = by_key['reconcile-config']
-    assert stage_2[0] == 'migrate-review-steps'
-    assert stage_2.count('migrate-review-steps') == 1
-    assert stage_2.index('migrate-review-steps') < stage_2.index('reconcile-marshal-json')
-
-
-def test_migrate_review_steps_is_a_registered_subcommand(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
-):
-    """The verb parses through the CLI entry point; a no-op config proves it without writing."""
-    import _config_core
-
-    monkeypatch.setattr(_config_core, 'MARSHAL_PATH', tmp_path / '.plan' / 'marshal.json')
-
-    exit_code, parsed = _run(['migrate-review-steps'], capsys, monkeypatch)
-
-    assert exit_code == 0
-    assert parsed['operation'] == 'migrate-review-steps'
-    assert parsed['state'] == 'noop'
 
 
 def test_build_plan_consumer_excludes_meta_only_sub_steps():
@@ -832,3 +812,487 @@ class TestValidateBotListsVerb:
         assert parsed['operation'] == 'validate-bot-lists'
         assert parsed['state'] == 'unknown_tokens'
         assert parsed['unknown_tokens'] == [_UNREGISTERED_TOKEN]
+
+
+# =============================================================================
+# Stage 2 order roster preservation — seeded roster survives the full order
+# =============================================================================
+#
+# The three verbs run in Stage 2 order (migrate-bot-lists, reconcile via the
+# sync-defaults back-fill, validate-bot-lists). These tests drive that order as
+# pure functions — migrate, then back-fill, then validate — so a roster seeded
+# at the top still validates clean at the bottom with no hand repair, and an
+# operator answer survives all three without being overwritten.
+
+
+def _merged_with_params(params: dict) -> dict:
+    """Wrap step ``params`` in the merged-config shape the back-fill reads."""
+    return {'plan': {'phase-6-finalize': {'steps': {upgrade._AUTOMATIC_REVIEW_STEP_ID: params}}}}
+
+
+def _params_of(merged: dict) -> dict:
+    """Read the automatic-review params back out of a merged config."""
+    return merged['plan']['phase-6-finalize']['steps'][upgrade._AUTOMATIC_REVIEW_STEP_ID]
+
+
+def test_stage2_order_seeded_roster_survives_merge_and_validates_clean():
+    """Legacy-only config seeds the standard roster, survives the merge, validates clean.
+
+    The full Stage 2 order in one test: migrate seeds
+    ``required_bots=cuioss-review-bot,coderabbit`` + ``optional_bots=sourcery``,
+    the sync-defaults back-fill must not clobber the seeded values, and validate
+    reports clean over the three seeded tokens with the live kind set.
+    """
+    import _cmd_sync_defaults
+
+    params: dict = {'enabled_bots': 'coderabbit,sourcery'}
+
+    report = upgrade.migrate_bot_lists(params)
+
+    assert report['state'] == 'migrated'
+    merged = _merged_with_params(params)
+    _cmd_sync_defaults._backfill_standard_roster(merged)
+    kept = _params_of(merged)
+
+    assert kept['required_bots'] == 'cuioss-review-bot,coderabbit'
+    assert kept['optional_bots'] == 'sourcery'
+    validation = upgrade.validate_bot_lists(kept)
+    assert validation['state'] == 'clean'
+    assert validation['unknown_tokens'] == []
+    assert validation['known_bot_kinds'] == bot_registry.bot_kinds()
+    assert validation['checked_count'] == 3
+
+
+def test_stage2_order_operator_answer_survives_merge_and_validates_clean():
+    """An operator answer survives migrate AND the merge, then validates clean.
+
+    The operator's explicit roster is never overwritten — not by the auto-map
+    (state 2 keeps it), not by the back-fill (a present value is an answer) —
+    and the surviving roster validates clean over its own population.
+    """
+    import _cmd_sync_defaults
+
+    kinds = _live_kinds()
+    params: dict = {
+        'enabled_bots': 'coderabbit,sourcery',
+        'required_bots': kinds[0],
+        'optional_bots': ','.join(kinds[1:]),
+        'bot_lists_provenance': 'answered',
+    }
+    configured = _configured_tokens(params)
+
+    report = upgrade.migrate_bot_lists(params)
+
+    assert report['state'] == 'operator_answer_kept'
+    merged = _merged_with_params(params)
+    _cmd_sync_defaults._backfill_standard_roster(merged)
+    kept = _params_of(merged)
+
+    assert kept['required_bots'] == kinds[0]
+    assert kept['optional_bots'] == ','.join(kinds[1:])
+    assert kept['bot_lists_provenance'] == 'answered'
+    validation = upgrade.validate_bot_lists(kept)
+    assert validation['state'] == 'clean'
+    assert validation['checked_count'] == len(configured)
+
+
+def test_sync_backfill_fills_absent_roster_and_never_clobbers_operator_answer():
+    """The merge back-fills an absent roster and never clobbers an answer.
+
+    Three cases in one pin: absent keys are filled with the standard roster, a
+    present operator roster is left untouched, and an answered provenance with
+    empty values is still an answer and stays untouched.
+    """
+    import _cmd_sync_defaults
+
+    absent = _merged_with_params({})
+    _cmd_sync_defaults._backfill_standard_roster(absent)
+    filled = _params_of(absent)
+    assert filled['required_bots'] == 'cuioss-review-bot,coderabbit'
+    assert filled['optional_bots'] == 'sourcery'
+
+    kinds = _live_kinds()
+    operator = _merged_with_params({'required_bots': kinds[0], 'optional_bots': kinds[1]})
+    _cmd_sync_defaults._backfill_standard_roster(operator)
+    kept = _params_of(operator)
+    assert kept['required_bots'] == kinds[0]
+    assert kept['optional_bots'] == kinds[1]
+
+    answered_empty = _merged_with_params({'required_bots': '', 'optional_bots': '', 'bot_lists_provenance': 'answered'})
+    _cmd_sync_defaults._backfill_standard_roster(answered_empty)
+    assert _params_of(answered_empty) == {
+        'required_bots': '',
+        'optional_bots': '',
+        'bot_lists_provenance': 'answered',
+    }
+
+
+# =============================================================================
+# D4 executor bootstrap — validate against the newest cache before the plan
+# =============================================================================
+#
+# ``upgrade.py plan`` bootstraps the serving executor (validate against the
+# newest plugin-cache version, regenerate from that cache when stale) before
+# emitting the stage plan, and reports a skill/planner version-split warning
+# instead of a silently stale run. These tests drive the bootstrap against
+# fixture cache roots and fixture executors — never the live environment — and
+# pin the ``plan`` wiring through a monkeypatched bootstrap.
+
+
+def _fixture_cache(root: Path, versions: list[str]) -> Path:
+    """Build a fixture plugin-cache root carrying ``versions`` of plan-marshall."""
+    cache = root / 'cache'
+    for version in versions:
+        (cache / 'plan-marshall' / version).mkdir(parents=True)
+    return cache
+
+
+def _fixture_executor(project_dir: Path, version: str) -> Path:
+    """Write a fixture serving executor stamped ``version`` under ``project_dir``."""
+    executor = project_dir / '.plan' / 'execute-script.py'
+    executor.parent.mkdir(parents=True, exist_ok=True)
+    executor.write_text(f"MARSHALL_VERSION = '{version}'\n", encoding='utf-8')
+    return executor
+
+
+def _fixture_meta_generator(clone_root: Path) -> Path:
+    """Plant a fixture marketplace-source generator stub under ``clone_root``.
+
+    Only its presence matters — regeneration itself is always faked in these
+    tests, so the stub is never executed.
+    """
+    generator = (
+        clone_root
+        / 'marketplace'
+        / 'bundles'
+        / 'plan-marshall'
+        / 'skills'
+        / 'tools-script-executor'
+        / 'scripts'
+        / 'generate_executor.py'
+    )
+    generator.parent.mkdir(parents=True, exist_ok=True)
+    generator.write_text('# fixture generator stub\n', encoding='utf-8')
+    return generator
+
+
+def _fixture_cache_generator(cache_root: Path, version: str) -> Path:
+    """Plant a fixture newest-cache generator stub for ``version``."""
+    generator = (
+        cache_root / 'plan-marshall' / version / 'skills' / 'tools-script-executor' / 'scripts' / 'generate_executor.py'
+    )
+    generator.parent.mkdir(parents=True, exist_ok=True)
+    generator.write_text('# fixture generator stub\n', encoding='utf-8')
+    return generator
+
+
+class _RegenerateFake:
+    """Injectable regeneration seam: records calls, optionally rewrites the stamp."""
+
+    def __init__(self, executor: Path, new_version: str, rc: int = 0):
+        self._executor = executor
+        self._new_version = new_version
+        self._rc = rc
+        self.calls: list[dict] = []
+
+    def __call__(self, generator: Path, anchor: Path, project_dir: Path) -> tuple[int, str, str]:
+        self.calls.append({'generator': generator, 'anchor': anchor, 'project_dir': project_dir})
+        if self._rc == 0:
+            self._executor.write_text(f"MARSHALL_VERSION = '{self._new_version}'\n", encoding='utf-8')
+            return 0, 'status: success', ''
+        return self._rc, '', 'fixture generation failure'
+
+
+def test_plan_carries_bootstrap_block_by_default(capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch):
+    """A bare ``plan`` runs the bootstrap and merges its report into the output.
+
+    The bootstrap itself is monkeypatched — this pins the WIRING (default-true
+    flag, merge order), not the bootstrap logic, which the fixture tests below
+    cover. The fake returning a fixed block proves the emitted ``bootstrap``
+    block IS the bootstrap's report, and the stages still emit beside it.
+    """
+    sentinel = {
+        'status': 'success',
+        'action': 'fresh',
+        'executor_version': '0.1.10',
+        'newest_cache_version': '0.1.10',
+        'executor_path': '/fixture/.plan/execute-script.py',
+        'cache_root': '/fixture/cache',
+        'generator': '',
+        'warning': '',
+        'detail': 'sentinel bootstrap',
+    }
+    seen: dict = {}
+    monkeypatch.setattr(
+        upgrade, 'bootstrap_executor', lambda project_kind='consumer': seen.update(kind=project_kind) or sentinel
+    )
+
+    exit_code, parsed = _run(['plan', '--project-kind', 'meta'], capsys, monkeypatch, bootstrap=True)
+
+    assert exit_code == 0
+    assert parsed['bootstrap'] == sentinel
+    assert seen == {'kind': 'meta'}
+    assert [stage['key'] for stage in parsed['stages']] == _EXPECTED_STAGE_KEYS
+
+
+def test_plan_bootstrap_false_skips_bootstrap(capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch):
+    """``--bootstrap false`` emits the plan with a ``skipped`` bootstrap block.
+
+    The bootstrap raising on any call proves the skip is real, not a silent
+    default that still ran. The block shape is stable either way, so a consumer
+    parses one contract.
+    """
+
+    def _boom(**kwargs):
+        raise AssertionError('bootstrap must not run with --bootstrap false')
+
+    monkeypatch.setattr(upgrade, 'bootstrap_executor', _boom)
+
+    exit_code, parsed = _run(['plan', '--bootstrap', 'false'], capsys, monkeypatch, bootstrap=True)
+
+    assert exit_code == 0
+    assert parsed['bootstrap']['action'] == 'skipped'
+    assert parsed['bootstrap']['warning'] == ''
+    assert [stage['key'] for stage in parsed['stages']] == _EXPECTED_STAGE_KEYS
+
+
+def test_plan_propagates_bootstrap_error(capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch):
+    """A bootstrap ``status: error`` fails closed with no stage plan emitted."""
+    monkeypatch.setattr(
+        upgrade,
+        'bootstrap_executor',
+        lambda project_kind='consumer': {'status': 'error', 'error': 'fixture bootstrap failure'},
+    )
+
+    exit_code, parsed = _run(['plan'], capsys, monkeypatch, bootstrap=True)
+
+    assert exit_code == 0
+    assert parsed['status'] == 'error'
+    assert 'stages' not in parsed
+
+
+def test_bootstrap_regenerates_stale_executor_from_newest_cache(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """A stale fixture executor is regenerated from the newest cache version.
+
+    The cache carries two versions (``0.1.9`` < ``0.1.10`` — the ordering the
+    companion test below pins as numeric, never lexical); the executor sits at
+    the older one. Regeneration is faked but OBSERVED: the fake rewrites the
+    fixture stamp, and the report names the generator, the anchor, and the
+    project dir it ran against.
+    """
+    cache = _fixture_cache(tmp_path, ['0.1.9', '0.1.10'])
+    clone = tmp_path / 'clone'
+    generator = _fixture_meta_generator(clone)
+    executor = _fixture_executor(clone, '0.1.9')
+    fake = _RegenerateFake(executor, '0.1.10')
+    monkeypatch.chdir(clone)
+
+    report = upgrade.bootstrap_executor(
+        project_kind='meta', cache_root=cache, executor_path=executor, _run_generate=fake
+    )
+
+    assert report['status'] == 'success'
+    assert report['action'] == 'regenerated'
+    assert report['executor_version'] == '0.1.10'
+    assert report['newest_cache_version'] == '0.1.10'
+    assert report['warning'] == ''
+    assert len(fake.calls) == 1
+    call = fake.calls[0]
+    assert call['generator'] == generator
+    assert call['anchor'] == clone
+    assert call['project_dir'] == clone
+
+
+def test_bootstrap_picks_the_numeric_newest_cache_version(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """``0.1.10`` beats ``0.1.9`` — the newest-cache choice is numeric, never lexical.
+
+    A lexical max would crown ``0.1.9`` (``'9' > '1'``) and the stale executor
+    at ``0.1.9`` would read ``fresh`` against it. The numeric choice reports
+    ``0.1.10`` and regenerates.
+    """
+    cache = _fixture_cache(tmp_path, ['0.1.9', '0.1.10'])
+    clone = tmp_path / 'clone'
+    _fixture_meta_generator(clone)
+    executor = _fixture_executor(clone, '0.1.9')
+    fake = _RegenerateFake(executor, '0.1.10')
+    monkeypatch.chdir(clone)
+
+    report = upgrade.bootstrap_executor(
+        project_kind='meta', cache_root=cache, executor_path=executor, _run_generate=fake
+    )
+
+    assert report['newest_cache_version'] == '0.1.10'
+    assert report['action'] == 'regenerated'
+
+
+def test_bootstrap_consumer_uses_the_newest_cache_generator(tmp_path: Path):
+    """On ``consumer`` the generator resolves under the newest cache version dir."""
+    cache = _fixture_cache(tmp_path, ['0.1.9', '0.1.10'])
+    generator = _fixture_cache_generator(cache, '0.1.10')
+    project = tmp_path / 'project'
+    executor = _fixture_executor(project, '0.1.9')
+    fake = _RegenerateFake(executor, '0.1.10')
+
+    report = upgrade.bootstrap_executor(
+        project_kind='consumer', cache_root=cache, executor_path=executor, _run_generate=fake
+    )
+
+    assert report['status'] == 'success'
+    assert report['action'] == 'regenerated'
+    assert len(fake.calls) == 1
+    call = fake.calls[0]
+    assert call['generator'] == generator
+    assert call['anchor'] == cache / 'plan-marshall' / '0.1.10'
+    assert call['project_dir'] == project
+
+
+def test_bootstrap_fresh_executor_regenerates_nothing(tmp_path: Path):
+    """An executor AT the newest cache version reports ``fresh`` and never regenerates."""
+    cache = _fixture_cache(tmp_path, ['0.1.10'])
+    project = tmp_path / 'project'
+    executor = _fixture_executor(project, '0.1.10')
+    fake = _RegenerateFake(executor, '0.1.10')
+
+    report = upgrade.bootstrap_executor(
+        project_kind='consumer', cache_root=cache, executor_path=executor, _run_generate=fake
+    )
+
+    assert report['status'] == 'success'
+    assert report['action'] == 'fresh'
+    assert report['warning'] == ''
+    assert fake.calls == []
+
+
+def test_bootstrap_no_cache_is_a_noop(tmp_path: Path):
+    """A missing cache root reports ``no_cache`` — the fresh-install boundary, never a failure."""
+    project = tmp_path / 'project'
+    executor = _fixture_executor(project, '0.1.10')
+    fake = _RegenerateFake(executor, '0.1.10')
+
+    report = upgrade.bootstrap_executor(
+        project_kind='consumer',
+        cache_root=tmp_path / 'no-such-cache',
+        executor_path=executor,
+        _run_generate=fake,
+    )
+
+    assert report['status'] == 'success'
+    assert report['action'] == 'no_cache'
+    assert report['warning'] == ''
+    assert fake.calls == []
+
+
+def test_bootstrap_ahead_executor_warns_split_without_regenerating(tmp_path: Path):
+    """A planner AHEAD of the newest cache warns the split and regenerates nothing.
+
+    The installed skill surface lags the planner, so the router docs may
+    describe stages the planner no longer emits. The warning names the split
+    and the remedy; nothing is regenerated because there is nothing newer to
+    regenerate from.
+    """
+    cache = _fixture_cache(tmp_path, ['0.1.10'])
+    project = tmp_path / 'project'
+    executor = _fixture_executor(project, '0.1.11')
+    fake = _RegenerateFake(executor, '0.1.11')
+
+    report = upgrade.bootstrap_executor(
+        project_kind='consumer', cache_root=cache, executor_path=executor, _run_generate=fake
+    )
+
+    assert report['status'] == 'success'
+    assert report['action'] == 'fresh'
+    assert 'version split' in report['warning']
+    assert '/plugin update plan-marshall' in report['warning']
+    assert fake.calls == []
+
+
+def test_bootstrap_missing_generator_is_unknown(tmp_path: Path):
+    """A stale executor with no resolvable generator reports ``unknown``, never a vacuous ``fresh``."""
+    cache = _fixture_cache(tmp_path, ['0.1.10'])
+    project = tmp_path / 'project'
+    executor = _fixture_executor(project, '0.1.9')
+    fake = _RegenerateFake(executor, '0.1.10')
+
+    report = upgrade.bootstrap_executor(
+        project_kind='consumer', cache_root=cache, executor_path=executor, _run_generate=fake
+    )
+
+    assert report['status'] == 'success'
+    assert report['action'] == 'unknown'
+    assert report['warning'] != ''
+    assert fake.calls == []
+
+
+def test_bootstrap_regenerate_failure_reports_split(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """A failed regeneration reports ``regenerate_failed`` with the split warning.
+
+    The plan is still emitted downstream (Stage 1's ``regenerate-executor``
+    remains the repair) — the failure is reported, never fatal and never
+    silent.
+    """
+    cache = _fixture_cache(tmp_path, ['0.1.10'])
+    clone = tmp_path / 'clone'
+    _fixture_meta_generator(clone)
+    executor = _fixture_executor(clone, '0.1.9')
+    fake = _RegenerateFake(executor, '0.1.10', rc=1)
+    monkeypatch.chdir(clone)
+
+    report = upgrade.bootstrap_executor(
+        project_kind='meta', cache_root=cache, executor_path=executor, _run_generate=fake
+    )
+
+    assert report['status'] == 'success'
+    assert report['action'] == 'regenerate_failed'
+    assert 'version split' in report['warning']
+    assert '/plugin update plan-marshall' in report['warning']
+
+
+def test_resolve_bootstrap_action_table():
+    """The pure decision table: equal, behind, unreadable, absent, split."""
+    assert upgrade.resolve_bootstrap_action('0.1.10', '0.1.10') == ('fresh', '')
+    assert upgrade.resolve_bootstrap_action('0.1.9', '0.1.10') == ('regenerate_required', '')
+    # An unreadable or non-numeric stamp regenerates rather than reading fresh.
+    assert upgrade.resolve_bootstrap_action(None, '0.1.10') == ('regenerate_required', '')
+    assert upgrade.resolve_bootstrap_action('bogus', '0.1.10') == ('regenerate_required', '')
+    assert upgrade.resolve_bootstrap_action('0.1.9', None) == ('no_cache', '')
+    action, warning = upgrade.resolve_bootstrap_action('0.1.11', '0.1.10')
+    assert action == 'fresh'
+    assert 'version split' in warning
+
+
+def test_bootstrap_generate_anchors_discovery_via_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """The regeneration subprocess pins discovery via ``PM_MARKETPLACE_ROOT``.
+
+    ``discover_scripts`` propagates the marketplace root to its scan subprocess
+    only through that env anchor — a bare flag degrades to the version-unaware
+    glob fallback. The captured subprocess invocation proves the anchor, the
+    generator argv, and the pinned cwd.
+    """
+    import subprocess
+
+    seen: dict = {}
+
+    def _fake_run(argv, cwd, capture_output, text, timeout, env):
+        seen['argv'] = argv
+        seen['cwd'] = cwd
+        seen['env_anchor'] = env.get('PM_MARKETPLACE_ROOT')
+
+        class _Result:
+            returncode = 0
+            stdout = 'status: success'
+            stderr = ''
+
+        return _Result()
+
+    monkeypatch.setattr(subprocess, 'run', _fake_run)
+    generator = tmp_path / 'generate_executor.py'
+    generator.write_text('# fixture\n', encoding='utf-8')
+    anchor = tmp_path / 'anchor'
+    project = tmp_path / 'project'
+
+    rc, _out, _err = upgrade._run_bootstrap_generate(generator, anchor, project)
+
+    assert rc == 0
+    assert seen['argv'] == ['python3', str(generator), 'generate']
+    assert seen['env_anchor'] == str(anchor)
+    assert seen['cwd'] == str(project)

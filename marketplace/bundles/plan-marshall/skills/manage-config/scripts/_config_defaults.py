@@ -849,6 +849,26 @@ _VERIFY_STEP_PREFIX = 'default:verify:'
 # rather than a generic "not a list" rejection.
 RETIRED_PER_DELIVERABLE_BUILD_ENUM = ('off', 'compile-only', 'compile+scoped-test', 'full')
 
+# Pinned retired unconsumed keys (``<phase>.<key>`` dotted form, without the
+# ``plan.`` prefix). Each entry names a ``plan.<phase>.<key>`` knob a prior
+# release seeded (or accepted) that no reader consumes anymore: the
+# ``sync-defaults`` reconcile retires it (removes the key from the live config
+# and reports the removal) so a stale knob can never linger as if it took
+# effect. The table is the single, explicit, pinned list: future retirements
+# add rows here, and the reconcile consumes this constant — never a restated
+# literal.
+# SHIM(A): retired unconsumed config knobs (removed from the live config and reported).
+# shim-owner: manage-config
+# shim-floor: the RETIRED_UNCONSUMED_KEYS table that retires phase-6-finalize.self_review / phase-6-finalize.simplify / phase-6-finalize.drop_review_on_scope_gate / phase-3-outline.qgate / phase-5-execute.per_task_budget_reserve_tokens
+# shim-remove-when: no live marshal.json carries a listed key (idempotent: a re-run reports no retirements)
+RETIRED_UNCONSUMED_KEYS: tuple[str, ...] = (
+    'phase-6-finalize.self_review',
+    'phase-6-finalize.simplify',
+    'phase-6-finalize.drop_review_on_scope_gate',
+    'phase-3-outline.qgate',
+    'phase-5-execute.per_task_budget_reserve_tokens',
+)
+
 
 def validate_per_deliverable_build(value: object) -> None:
     """Validate that ``per_deliverable_build`` is a list of canonical-verify IDs.

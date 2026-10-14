@@ -9,7 +9,7 @@ live ``.plan/marshal.json`` so existing projects (which never re-run ``init``)
 pick up new default rows without losing user-set overrides.
 """
 
-from _cmd_quality_phases import _resolve_finalize_step_lane
+from _cmd_quality_phases import _find_dead_step_ids, _resolve_finalize_step_lane
 from _config_core import (
     error_exit,
     is_initialized,
@@ -20,6 +20,8 @@ from _config_core import (
 from _config_defaults import (
     OPERATOR_REMOVED_STEPS_KEY,
     OPERATOR_STEP_MAP_LOCATIONS,
+    RETIRED_UNCONSUMED_KEYS,
+    VALID_LANE_OVERRIDE,
     get_default_config,
     stamp_provisioning_fields,
 )
@@ -32,6 +34,7 @@ from _manifest_lanes import _IMMUNE_TO_OFF_CLASSES, LANE_TIERS, _effective_lane_
 # (``functional_review``, ``code_review``) is absent from
 # :data:`_STEP_OWNED_CEREMONY_GATES`, so the migration never reads a legacy key for it.
 from _manifest_rules import _CEREMONY_GATE_OWNER_STEP
+from _manifest_validation import _is_external_step
 from command_forms import STEWARD_COMMAND
 
 # Retired step keys and their canonical replacements. Each entry maps a step id
@@ -279,6 +282,78 @@ def _migrate_run_at_all_to_lane(live: dict, migrated: list[str]) -> dict:
                 migrated.append(f'plan.phase-6-finalize.steps[{key}].{gate}={legacy} -> .lane={mapped}')
             else:
                 migrated.append(f'plan.phase-6-finalize.steps[{key}].{gate}={legacy} -> (auto: omitted)')
+    return live
+
+
+def _retire_unconsumed_keys(live: dict, retired: list[str]) -> dict:
+    """Retire the pinned unconsumed keys from the live config.
+
+    Walks :data:`RETIRED_UNCONSUMED_KEYS` (``<phase>.<key>`` dotted form, hosted
+    in :mod:`_config_defaults`) and removes each listed key from its
+    ``plan.<phase>`` block when present. Runs BEFORE the deep-merge so a
+    retired knob is gone before the merge back-fills — the merge then never
+    treats it as a user value to preserve. Idempotent: once the listed keys
+    are gone, a re-run reports no retirements. Mutates ``live`` in place and
+    returns it; each removal is recorded as a human-readable dotted-path
+    string in ``retired``.
+    """
+    plan = live.get('plan')
+    if not isinstance(plan, dict):
+        return live
+    for dotted in RETIRED_UNCONSUMED_KEYS:
+        phase_key, _, key = dotted.partition('.')
+        if not phase_key or not key:
+            continue
+        phase = plan.get(phase_key)
+        if not isinstance(phase, dict):
+            continue
+        if key in phase:
+            del phase[key]
+            retired.append(f'plan.{dotted} (retired unconsumed key, removed)')
+    return live
+
+
+def _repair_step_lanes(live: dict, lane_reports: list[str]) -> dict:
+    """Remove un-storable ``lane`` values from the operator step maps.
+
+    Walks the keyed-map step containers in :data:`_STEP_MAP_LOCATIONS` and, for
+    each step whose param object carries a ``lane`` key:
+
+    - ``lane: auto`` is REMOVED — ``auto`` is a prompt posture (the
+      ``lane_selection`` / gate-mode vocabulary), never a stored per-element
+      override, so a persisted ``auto`` could never resolve and would linger as
+      if it took effect.
+    - a ``lane`` outside :data:`VALID_LANE_OVERRIDE` is REMOVED and reported —
+      it is never carried through the reconcile; the subsequent materialization
+      pass re-fills the lane-less step with its resolvable effective lane (or
+      leaves an unresolvable step lane-less).
+
+    Runs BEFORE the deep-merge so the merge never preserves a bad lane as a
+    user value. Idempotent: once no step carries an un-storable lane, a re-run
+    reports nothing. Mutates ``live`` in place and returns it; each repair is
+    recorded as a human-readable dotted-path string in ``lane_reports``.
+    """
+    plan = live.get('plan')
+    if not isinstance(plan, dict):
+        return live
+    for phase_key, map_key in _STEP_MAP_LOCATIONS:
+        phase = plan.get(phase_key)
+        if not isinstance(phase, dict):
+            continue
+        steps_map = phase.get(map_key)
+        if not isinstance(steps_map, dict):
+            continue
+        prefix = f'plan.{phase_key}.{map_key}'
+        for step_id, params in steps_map.items():
+            if not isinstance(params, dict) or 'lane' not in params:
+                continue
+            lane = params['lane']
+            if lane == 'auto':
+                del params['lane']
+                lane_reports.append(f'{prefix}.{step_id}.lane=auto (removed: auto is not a stored lane)')
+            elif lane not in VALID_LANE_OVERRIDE:
+                del params['lane']
+                lane_reports.append(f'{prefix}.{step_id}.lane={lane} (reported: outside VALID_LANE_OVERRIDE, removed)')
     return live
 
 
@@ -538,6 +613,51 @@ def _backfill_standard_roster(merged: dict) -> None:
         params['optional_bots'] = _STANDARD_OPTIONAL_BOTS
 
 
+def _remove_dead_step_ids(live: dict, dead_reports: list[str]) -> dict:
+    """Remove configured phase-6 step ids with no resolvable order from the live map.
+
+    Runs the shared :func:`_cmd_quality_phases._find_dead_step_ids` resolver
+    over ``plan.phase-6-finalize.steps`` so a dead id is caught during the
+    reconcile, not at the next ``add-step`` ``missing_order`` failure. Each
+    dead id is dropped from the map (its nested params go with it) and
+    reported as a human-readable dotted-path string carrying its reason, so a
+    later ``add-step`` on the reconciled config no longer fails for that id.
+    A dead id is never added to the operator ``removed_steps`` list — the
+    removal is a dead-id cleanup, not an operator decision, so a later
+    back-fill of the same id reads as a routine addition.
+
+    External ``bundle:skill`` steps are exempt: their frontmatter lane is
+    unresolvable by design (no project-local source doc) and the lane
+    materializer leaves such pre-existing steps lane-less and unreported, so
+    the dead-id sweep must leave them untouched too. Removing them here would
+    contradict the lane-less contract pinned by
+    ``test_sync_defaults_leaves_unresolvable_frontmatter_step_lane_less``.
+
+    Runs BEFORE the deep-merge so the merge never treats a dead id as a kept
+    step to back-fill params into. Idempotent: once no dead id remains, a
+    re-run reports nothing. Mutates ``live`` in place and returns it.
+    """
+    plan = live.get('plan')
+    if not isinstance(plan, dict):
+        return live
+    phase6 = plan.get('phase-6-finalize')
+    if not isinstance(phase6, dict):
+        return live
+    steps_map = phase6.get('steps')
+    if not isinstance(steps_map, dict):
+        return live
+    for entry in _find_dead_step_ids(list(steps_map.keys()), 'phase-6-finalize'):
+        step_id = entry['step']
+        if _is_external_step(step_id):
+            continue
+        if step_id in steps_map:
+            del steps_map[step_id]
+        dead_reports.append(
+            f'plan.phase-6-finalize.steps.{step_id} (dead step id, no resolved order — removed: {entry["reason"]})'
+        )
+    return live
+
+
 def cmd_sync_defaults(args) -> dict:
     """Handle sync-defaults command.
 
@@ -562,6 +682,16 @@ def cmd_sync_defaults(args) -> dict:
     The three planning gates (``deep_lane`` / ``escalation`` / ``revalidation``)
     need no migration. This pass is idempotent too (a re-run reports no
     migration).
+
+    A retired-key pass (:func:`_retire_unconsumed_keys`) runs alongside the
+    migrations (also BEFORE the deep-merge): it removes each pinned
+    :data:`RETIRED_UNCONSUMED_KEYS` knob from its ``plan.<phase>`` block and
+    reports the removal, so a stale knob no reader consumes can never linger as
+    if it took effect. A lane-repair pass (:func:`_repair_step_lanes`) runs on
+    the same pre-merge footing: it removes a stored ``lane: auto`` (a prompt
+    posture, never a stored override) and removes-and-reports a ``lane``
+    outside :data:`VALID_LANE_OVERRIDE` (never carried — the materialization
+    pass re-fills the lane-less step). Both passes are idempotent too.
 
     A materialization pass (:func:`_materialize_finalize_lanes`) runs AFTER the
     deep-merge and BEFORE the provisioning re-stamp: it fills an explicit ``lane``
@@ -610,6 +740,15 @@ def cmd_sync_defaults(args) -> dict:
     migrated: list[str] = []
     _migrate_run_at_all_to_lane(live, migrated)
 
+    retired: list[str] = []
+    _retire_unconsumed_keys(live, retired)
+
+    lane_reports: list[str] = []
+    _repair_step_lanes(live, lane_reports)
+
+    dead_reports: list[str] = []
+    _remove_dead_step_ids(live, dead_reports)
+
     added: list[str] = []
     held_for_ask: list[str] = []
     re_added: list[str] = []
@@ -644,7 +783,7 @@ def cmd_sync_defaults(args) -> dict:
         after_system['config_seed_fingerprint'],
     )
 
-    if added or stamps_changed or renamed or migrated or materialized:
+    if added or stamps_changed or renamed or migrated or materialized or retired or lane_reports or dead_reports:
         save_config(merged)
 
     return success_exit(
@@ -661,5 +800,11 @@ def cmd_sync_defaults(args) -> dict:
             'migrated_count': len(migrated),
             'materialized': sorted(materialized),
             'materialized_count': len(materialized),
+            'retired': sorted(retired),
+            'retired_count': len(retired),
+            'lane_reports': sorted(lane_reports),
+            'lane_reports_count': len(lane_reports),
+            'dead_removed': sorted(dead_reports),
+            'dead_removed_count': len(dead_reports),
         }
     )

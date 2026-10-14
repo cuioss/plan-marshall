@@ -9,8 +9,13 @@ It emits the fixed four-stage post-change-reconciliation plan and, for each
 stage, the top-level-gate disposition and the ordered ``sub_steps`` the router
 must drive.
 
-The plan is a **pure function of ``(integrate, project_kind)``**: the script
-invokes no machinery, mutates no filesystem, and makes no git/CI calls. Only
+The stage plan itself is a **pure function of ``(integrate, project_kind)``**
+(emitted by :func:`build_plan`, which invokes no machinery, mutates no
+filesystem, and makes no git/CI calls). The ``plan`` verb wraps that pure core
+with the executor bootstrap (:func:`bootstrap_executor`): it validates the
+serving executor against the newest plugin-cache version and regenerates it
+from that cache when stale BEFORE emitting the stage plan, so the plan and
+every downstream stage resolve current-version scripts. Only
 ``project-kind`` resolution in ``auto`` mode performs a read-only filesystem
 presence check (``detect_project_kind``); the pure builder ``build_plan`` takes
 an explicit kind and stays directly testable. The LLM reference
@@ -46,7 +51,7 @@ Per-stage ``sub_steps`` (the meta/consumer matrix):
                                            cache-retention-sweep]
                                 consumer: [cache-freshness-check, regenerate-executor,
                                            cache-retention-sweep]
-    Stage 2 reconcile-config    both:     [migrate-review-steps, reconcile-marshal-json, review-held-defaults,
+    Stage 2 reconcile-config    both:     [reconcile-marshal-json, review-held-defaults,
                                            migrate-bot-lists, validate-bot-lists,
                                            migrate-architecture-descriptors]
     Stage 3 verify              meta:     [executor-preflight, content-drift-report]
@@ -86,12 +91,6 @@ Subcommands:
     plan               Emit the stage plan. ``--integrate {true|false}`` (default
                        ``false``) and ``--project-kind {auto|meta|consumer}``
                        (default ``auto``).
-    migrate-review-steps
-                       Replace the retired structural self-review finalize step
-                       by ``default:functional-review`` and ``default:code-review``,
-                       carrying its setting to both. Driven as the FIRST
-                       sub_step of Stage 2 (``reconcile-config``), before the
-                       defaults merge.
     migrate-bot-lists  One-shot legacy auto-map of the retired ``enabled_bots``
                        knob onto ``required_bots`` / ``optional_bots``. Driven as
                        the ``migrate-bot-lists`` sub_step of Stage 2
@@ -108,7 +107,7 @@ Usage:
     python3 upgrade.py plan
     python3 upgrade.py plan --integrate true
     python3 upgrade.py plan --project-kind consumer
-    python3 upgrade.py migrate-review-steps
+    python3 upgrade.py plan --bootstrap false
     python3 upgrade.py migrate-bot-lists
     python3 upgrade.py validate-bot-lists
 
@@ -116,9 +115,15 @@ Output (TOON):
     status: success
     integrate: false
     project_kind: meta
+    bootstrap: {status, action, executor_version, newest_cache_version, warning, ...}
     stages[4]{order,key,name,mutating,top_level_gate,nested_gates,sub_steps}:
     1,regenerate-targets,Regenerate targets,true,prompt,"[]","[\"regenerate-target-tree\", \"regenerate-executor\"]"
     ...
+
+The ``bootstrap`` block reports the executor bootstrap (``fresh`` |
+``regenerated`` | ``no_cache`` | ``regenerate_failed`` | ``unknown`` |
+``skipped`` with ``--bootstrap false``); a ``warning`` names a skill/planner
+version split and its remedy instead of a silently stale run.
 
 Exit 0 on success, 2 on argparse rejection.
 
@@ -134,7 +139,6 @@ reported as ``error_type: concurrent_modification`` at exit 0.
 from __future__ import annotations
 
 import argparse
-import json
 from pathlib import Path
 
 # Cross-skill imports resolve through the PYTHONPATH the executor injects. This
@@ -172,7 +176,6 @@ _STAGE_SPECS: list[dict] = [
         'mutating': True,
         'nested_gates': ['build-map-reseed'],
         'sub_steps': [
-            'migrate-review-steps',
             'reconcile-marshal-json',
             'review-held-defaults',
             'migrate-bot-lists',
@@ -595,247 +598,283 @@ def cmd_validate_bot_lists(_args: argparse.Namespace) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# migrate-review-steps — the retired structural self-review onto the two reviews
+# executor bootstrap — validate against the newest cache before the stage plan
 # ---------------------------------------------------------------------------
 #
-# The single structural self-review step was split into the functional review
-# and the code review, each switched by its own setting. A configured repository
-# still names the retired step in its finalize step map, so this migration
-# replaces it IN PLACE by the two successors and carries its setting to both.
+# ``upgrade.py plan`` is requested by the router BEFORE any stage runs, while
+# the executor serving the request may itself be stale: a stale executor
+# resolves every downstream stage to stale scripts. The bootstrap validates the
+# serving executor's embedded ``MARSHALL_VERSION`` against the newest
+# plugin-cache version and regenerates the executor from that cache when stale,
+# so the plan and every downstream stage resolve current-version scripts. The
+# newest-version scan and the version readers are reused from the
+# cache-freshness / registry helpers — the comparison and the version-dir
+# ordering are never re-implemented here.
 #
-# It runs before Stage 2's defaults merge, so the merge already sees the two new
-# ids as present instead of holding them at its ask-before-add gate. It is
-# idempotent and SELF-DISARMING: once the retired id is gone, a re-run is a
-# no-op success.
+# When the skill surface and the planner disagree on the version (the executor
+# is AHEAD of the newest cache, or regeneration failed and the executor is
+# still behind), the bootstrap reports a ``warning`` naming the split and its
+# remedy instead of letting the router run a silently stale plan: re-sync the
+# plugin cache, reload the plugin set, and re-request the stage plan.
+#
+# Regeneration runs the generator DIRECTLY, by its resolved script path — the
+# same sanctioned direct-path surface Stage 1's ``regenerate-executor``
+# sub-step uses (see ``references/upgrade-flow.md``), so a recovery run works
+# even when the serving executor is broken. The generator path is resolved per
+# kind exactly as that sub-step resolves it: meta uses the marketplace-source
+# generator under the clone; consumer uses the newest cache-version generator.
+# Discovery is anchored via the ``PM_MARKETPLACE_ROOT`` env var (never a bare
+# flag alone): ``discover_scripts`` propagates the marketplace root to its scan
+# subprocess only through that anchor, and an unanchored run silently degrades
+# to the version-unaware glob fallback.
 
-_FUNCTIONAL_REVIEW_STEP_ID = 'default:functional-review'
-_CODE_REVIEW_STEP_ID = 'default:code-review'
-#: The successors, in the order they replace the retired entry.
-_REVIEW_SUCCESSOR_STEP_IDS = (_FUNCTIONAL_REVIEW_STEP_ID, _CODE_REVIEW_STEP_ID)
-_LANE_KEY = 'lane'
-_LANE_OFF = 'off'
-# SHIM(A): the retired structural self-review step and its settings (replaced by the functional and the code review).
-# shim-owner: marshall-steward
-# shim-floor: the split of the pre-submission self-review into default:functional-review and default:code-review, each switched by its own lane
-# shim-remove-when: no live marshal.json names pre-submission-self-review in its finalize steps or removed_steps (idempotent)
-_LEGACY_REVIEW_STEP_IDS = ('default:pre-submission-self-review', 'pre-submission-self-review')
-_LEGACY_SELF_REVIEW_KEY = 'self_review'
-#: A legacy step-owned self_review run-at-all value onto a successor lane; ``auto``
-#: maps to no lane, which leaves the carried lane in force.
-_LEGACY_SELF_REVIEW_TO_LANE = {'never': 'off', 'always': 'minimal'}
-_LEGACY_SELF_REVIEW_AUTO = 'auto'
+_BOOTSTRAP_BUNDLE = 'plan-marshall'
+
+_BOOTSTRAP_REGENERATE_TIMEOUT_SECONDS = 120
+
+#: Remedy surfaced with every version-split warning: re-sync the installed
+#: plugin in place, reload the session plugin set so the refreshed cache is
+#: visible, then re-request the stage plan so the skill docs and the planner
+#: resolve one version.
+_VERSION_SPLIT_REMEDY = (
+    "Run '/plugin update plan-marshall' to update the installed plugin in place, "
+    'reload the session plugin set so the refreshed cache is visible to the running '
+    'session, then re-request the stage plan so the skill docs and the planner '
+    'resolve one version.'
+)
 
 
-def _bare_step_id(step_id: str) -> str:
-    return step_id[len('default:') :] if step_id.startswith('default:') else step_id
+def _default_bootstrap_executor_path() -> Path:
+    """The serving executor: ``.plan/execute-script.py`` under the cwd."""
+    return Path.cwd() / '.plan' / 'execute-script.py'
 
 
-def _carried_review_params(legacy: object) -> tuple[dict, list[str]]:
-    """Split the retired entry's params into what both successors inherit and what is dropped.
+def _default_bootstrap_cache_root() -> Path | None:
+    """The deployed plugin-cache root, or ``None`` when unresolvable."""
+    from marketplace_paths import get_plugin_cache_path
 
-    The entry's ``lane`` is carried when it is a supported lane override — a
-    member of ``VALID_LANE_OVERRIDE`` in ``manage-config``'s ``_config_defaults``,
-    the set a successor's stored lane is validated against. A legacy
-    ``self_review`` run-at-all value is the same setting in its retired spelling,
-    so ``never`` / ``always`` map to ``off`` / ``minimal``; ``auto`` adds no lane.
-    When the two disagree, the rule :func:`_merged_review_params` applies across
-    entries holds inside one entry too: ``off`` wins, otherwise the mapped
-    ``self_review`` value wins, and the losing setting is reported as dropped. A
-    ``lane`` outside the supported set — an unknown string, an empty one, or a
-    non-string — a ``self_review`` value other than ``never`` / ``always`` /
-    ``auto``, and every other param — ``drop_review_on_scope_gate`` among them —
-    have no successor and are reported as dropped, ``key=value``.
+    try:
+        return get_plugin_cache_path()
+    except Exception:
+        return None
+
+
+def _resolve_bootstrap_generator(project_kind: str, cache_root: Path | None, newest: str) -> tuple[Path | None, Path]:
+    """Resolve ``(generator_path, anchor)`` for the regeneration run.
+
+    The generator path follows the Stage 1 ``regenerate-executor`` resolution:
+    meta uses the marketplace-source generator under the clone; consumer uses
+    the newest cache-version generator. The anchor pins discovery via
+    ``PM_MARKETPLACE_ROOT``: the clone root on meta (it contains
+    ``marketplace/bundles``), the newest versioned bundle tree on consumer (no
+    ``marketplace/`` level there — the anchor still pins discovery to the
+    newest versioned tree instead of degrading to the glob fallback).
+    ``generator_path`` is ``None`` when the resolved generator file is absent.
     """
-    from _config_defaults import VALID_LANE_OVERRIDE
-
-    params = legacy if isinstance(legacy, dict) else {}
-    carried: dict = {}
-    dropped: list[str] = []
-    lane = params.get(_LANE_KEY)
-    if isinstance(lane, str) and lane in VALID_LANE_OVERRIDE:
-        carried[_LANE_KEY] = lane
-    elif _LANE_KEY in params:
-        dropped.append(f'{_LANE_KEY}={json.dumps(lane)}')
-    legacy_gate = params.get(_LEGACY_SELF_REVIEW_KEY)
-    mapped = _LEGACY_SELF_REVIEW_TO_LANE.get(legacy_gate) if isinstance(legacy_gate, str) else None
-    if mapped is None and _LEGACY_SELF_REVIEW_KEY in params and legacy_gate != _LEGACY_SELF_REVIEW_AUTO:
-        dropped.append(f'{_LEGACY_SELF_REVIEW_KEY}={json.dumps(legacy_gate)}')
-    if mapped is not None:
-        current = carried.get(_LANE_KEY)
-        if current is None or current == mapped:
-            carried[_LANE_KEY] = mapped
-        elif current == _LANE_OFF:
-            dropped.append(f'{_LEGACY_SELF_REVIEW_KEY}={json.dumps(legacy_gate)}')
-        else:
-            carried[_LANE_KEY] = mapped
-            dropped.append(f'{_LANE_KEY}={json.dumps(current)}')
-    dropped.extend(
-        f'{key}={json.dumps(value)}' for key, value in params.items() if key not in (_LANE_KEY, _LEGACY_SELF_REVIEW_KEY)
-    )
-    return carried, dropped
+    clone_root = Path.cwd()
+    if project_kind == 'meta':
+        generator = (
+            clone_root
+            / 'marketplace'
+            / 'bundles'
+            / _BOOTSTRAP_BUNDLE
+            / 'skills'
+            / 'tools-script-executor'
+            / 'scripts'
+            / 'generate_executor.py'
+        )
+        return (generator if generator.is_file() else None, clone_root)
+    anchor = cache_root / _BOOTSTRAP_BUNDLE / newest if cache_root is not None else clone_root
+    generator = anchor / 'skills' / 'tools-script-executor' / 'scripts' / 'generate_executor.py'
+    return (generator if generator.is_file() else None, anchor)
 
 
-def _merged_review_params(entries: list[object]) -> tuple[dict, list[str]]:
-    """Merge the carried and dropped params of every retired entry, in key order.
+def _run_bootstrap_generate(generator: Path, anchor: Path, project_dir: Path) -> tuple[int, str, str]:
+    """Regenerate the executor via the resolved generator. Never raises.
 
-    A config may name the retired step in both spellings; no entry's setting is
-    discarded silently. Each entry's params are derived by
-    :func:`_carried_review_params` and their dropped params united, each listed
-    once. When the entries carry different lanes, ``off`` wins — an operator who
-    switched the review off in either spelling keeps it off — and otherwise the
-    first entry's lane wins; every losing lane is reported in ``dropped_params``.
+    ``cwd`` is pinned to the project dir because the generator resolves its
+    OUTPUT location by walking up from cwd; ``PM_MARKETPLACE_ROOT`` pins bundle
+    DISCOVERY (see the section header). Returns
+    ``(returncode, stdout, stderr)``.
     """
-    carried: dict = {}
-    dropped: list[str] = []
+    import os
+    import subprocess
 
-    def _drop(item: str) -> None:
-        if item not in dropped:
-            dropped.append(item)
-
-    for entry in entries:
-        params, entry_dropped = _carried_review_params(entry)
-        for item in entry_dropped:
-            _drop(item)
-        lane = params.get(_LANE_KEY)
-        current = carried.get(_LANE_KEY)
-        if lane is None or lane == current:
-            continue
-        if current is None:
-            carried[_LANE_KEY] = lane
-            continue
-        winner, loser = (lane, current) if lane == _LANE_OFF else (current, lane)
-        carried[_LANE_KEY] = winner
-        _drop(f'{_LANE_KEY}={json.dumps(loser)}')
-    # A lane one entry lost may be the lane another entry carried to the win; the
-    # winning value is carried, so it is never also reported as dropped.
-    if _LANE_KEY in carried:
-        kept = f'{_LANE_KEY}={json.dumps(carried[_LANE_KEY])}'
-        dropped = [item for item in dropped if item != kept]
-    return carried, dropped
+    env = dict(os.environ)
+    env['PM_MARKETPLACE_ROOT'] = str(anchor)
+    try:
+        result = subprocess.run(
+            ['python3', str(generator), 'generate'],
+            cwd=str(project_dir),
+            capture_output=True,
+            text=True,
+            timeout=_BOOTSTRAP_REGENERATE_TIMEOUT_SECONDS,
+            env=env,
+        )
+    except FileNotFoundError:
+        return 127, '', 'python3 executable not found on PATH'
+    except subprocess.TimeoutExpired:
+        return 124, '', f'generate_executor generate timed out after {_BOOTSTRAP_REGENERATE_TIMEOUT_SECONDS}s'
+    return result.returncode, result.stdout, result.stderr
 
 
-def migrate_review_steps(section: dict) -> dict:
-    """Replace the retired self-review step by the functional and the code review.
+def resolve_bootstrap_action(executor_version: str | None, newest_cache_version: str | None) -> tuple[str, str]:
+    """Pure decision: ``(action, warning)`` from the two versions.
 
-    Pure function over the ``plan.phase-6-finalize`` section. It mutates
-    ``section`` in place and returns a report.
+    Actions: ``fresh`` (executor at or ahead of the cache — an AHEAD executor
+    still carries a split warning, since the installed skill surface lags the
+    planner), ``regenerate_required`` (executor behind, unreadable, or
+    unorderable — the generator's ordering maps an empty or non-numeric stamp
+    to the lowest version, so an unproven executor regenerates rather than
+    reading ``fresh``), ``no_cache`` (no newest cache version to compare
+    against — the fresh-install boundary, never a failure).
 
-    In the ``steps`` map, every key naming the retired step (its ``default:`` or
-    bare form) is removed, and the two successors are inserted at the position of
-    the first one, functional review first. Both inherit the params
-    :func:`_merged_review_params` derives from every retired entry — both
-    spellings, when both are present. A successor the operator already
-    configured is not inserted again: ITS ENTRY WINS, untouched, wherever it sits.
+    The split warning names the remedy; it is empty exactly when no warning is
+    owed. Comparing uses the generator's own version ordering, never a local
+    re-implementation.
+    """
+    from generate_executor import _version_tuple
 
-    In the operator ``removed_steps`` list, a retired id is replaced by both
-    successor ids, so a review the operator removed stays removed under its new
-    names.
+    if not newest_cache_version:
+        return 'no_cache', ''
+    if not executor_version:
+        return 'regenerate_required', ''
+    current = _version_tuple(executor_version)
+    newest = _version_tuple(newest_cache_version)
+    if current >= newest:
+        if current == newest:
+            return 'fresh', ''
+        return (
+            'fresh',
+            f'skill/planner version split: planner at {executor_version} is ahead of the newest '
+            f'installed skill surface at {newest_cache_version} — the router docs lag the '
+            f'planner. {_VERSION_SPLIT_REMEDY}',
+        )
+    return 'regenerate_required', ''
+
+
+def bootstrap_executor(
+    project_kind: str = 'consumer',
+    cache_root: Path | None = None,
+    executor_path: Path | None = None,
+    _run_generate=None,
+) -> dict:
+    """Validate the serving executor against the newest cache; regenerate when stale.
+
+    Resolves the newest plugin-cache version for the plan-marshall bundle and
+    the serving executor's embedded ``MARSHALL_VERSION``, decides via
+    :func:`resolve_bootstrap_action`, and regenerates the executor from the
+    newest cache (per-kind generator resolution, ``PM_MARKETPLACE_ROOT``
+    anchored) when the decision requires it. Read-only except for the stale
+    regeneration itself; a failed regeneration is REPORTED (``action:
+    regenerate_failed`` with a split warning), never fatal — the stage plan is
+    still emitted and Stage 1's ``regenerate-executor`` sub-step remains the
+    repair.
 
     Args:
-        section: The ``plan.phase-6-finalize`` section of marshal.json.
+        project_kind: ``'meta'`` or ``'consumer'`` — selects the generator
+            resolution (marketplace-source vs newest cache-version generator).
+        cache_root: Explicit plugin-cache root, or ``None`` to resolve the
+            deployed root (tests / alternate installs pass a fixture root).
+        executor_path: Explicit serving-executor path, or ``None`` for
+            ``.plan/execute-script.py`` under the cwd.
+        _run_generate: Injectable regeneration seam
+            ``(generator, anchor, project_dir) -> (rc, stdout, stderr)``.
+            Tests pass a fake; production uses :func:`_run_bootstrap_generate`.
 
     Returns:
-        A report dict: ``state`` (``migrated`` or ``noop``), and on ``migrated``
-        the ``replaced`` legacy keys, the ``added`` successors, the successors
-        ``kept`` as the operator configured them, and whether
-        ``removed_steps_rewritten``. The ``carried`` params and the
-        ``dropped_params`` are present only when a retired step entry was
-        replaced, not when only ``removed_steps`` named a retired id.
+        A report dict: ``status`` (``success``, or ``error`` only when the
+        report itself could not be produced), ``action`` (``fresh`` |
+        ``regenerated`` | ``no_cache`` | ``regenerate_failed`` | ``unknown``),
+        ``executor_version`` / ``newest_cache_version`` (``''`` when
+        unresolved), ``executor_path`` / ``cache_root`` / ``generator`` (the
+        resolved inputs), and ``warning`` (the split/remedy message, or ``''``).
     """
-    from _config_defaults import OPERATOR_REMOVED_STEPS_KEY
+    from cache_freshness import newest_cache_version
+    from plugin_registry import EXECUTOR_VERSION_FOUND, read_executor_version
 
-    steps = section.get('steps')
-    steps = steps if isinstance(steps, dict) else {}
-    legacy_keys = [key for key in steps if key in _LEGACY_REVIEW_STEP_IDS]
-    removed = section.get(OPERATOR_REMOVED_STEPS_KEY)
-    removed = removed if isinstance(removed, list) else []
-    removed_hits = [entry for entry in removed if entry in _LEGACY_REVIEW_STEP_IDS]
-    if not legacy_keys and not removed_hits:
-        return {'state': 'noop'}
+    if cache_root is None:
+        cache_root = _default_bootstrap_cache_root()
+    if executor_path is None:
+        executor_path = _default_bootstrap_executor_path()
 
-    report: dict = {'state': 'migrated', 'replaced': legacy_keys, 'added': [], 'kept': []}
-    if legacy_keys:
-        carried, dropped = _merged_review_params([steps[key] for key in legacy_keys])
-        present = {_bare_step_id(key) for key in steps}
-        rebuilt: dict = {}
-        for key, value in steps.items():
-            if key in _LEGACY_REVIEW_STEP_IDS:
-                if key == legacy_keys[0]:
-                    for successor in _REVIEW_SUCCESSOR_STEP_IDS:
-                        if _bare_step_id(successor) in present:
-                            continue
-                        rebuilt[successor] = dict(carried)
-                        report['added'].append(successor)
-                continue
-            rebuilt[key] = value
-        report['kept'] = [s for s in _REVIEW_SUCCESSOR_STEP_IDS if s not in report['added']]
-        # Only an inserted successor inherits anything; a kept one keeps its own params,
-        # so with no successor inserted the retired entry's carried settings are dropped.
-        report['carried'] = [f'{key}={value}' for key, value in carried.items()] if report['added'] else []
-        if not report['added']:
-            for item in (f'{key}={json.dumps(value)}' for key, value in carried.items()):
-                if item not in dropped:
-                    dropped.append(item)
-        report['dropped_params'] = dropped
-        section['steps'] = rebuilt
-
-    report['removed_steps_rewritten'] = bool(removed_hits)
-    if removed_hits:
-        rewritten: list[str] = []
-        for entry in removed:
-            replacements = list(_REVIEW_SUCCESSOR_STEP_IDS) if entry in _LEGACY_REVIEW_STEP_IDS else [entry]
-            rewritten.extend(item for item in replacements if item not in rewritten)
-        section[OPERATOR_REMOVED_STEPS_KEY] = rewritten
-    return report
-
-
-def cmd_migrate_review_steps(_args: argparse.Namespace) -> dict:
-    """Handle the ``migrate-review-steps`` subcommand against the live marshal.json.
-
-    Loads marshal.json, applies :func:`migrate_review_steps` to the
-    ``plan.phase-6-finalize`` section, and writes the config back only when the
-    migration changed something. An un-initialized project and a config without a
-    finalize section are no-op successes, and a concurrent writer is reported as
-    ``error_type: concurrent_modification`` at exit 0 — the same boundaries
-    :func:`cmd_migrate_bot_lists` treats that way.
-    """
-    from _config_core import (
-        ConcurrentConfigModificationError,
-        is_initialized,
-        load_config,
-        save_config,
-    )
-
-    if not is_initialized():
+    newest = newest_cache_version(cache_root) if cache_root is not None and cache_root.is_dir() else ''
+    if not newest:
         return {
             'status': 'success',
-            'operation': 'migrate-review-steps',
-            'state': 'noop',
-            'detail': 'no marshal.json — project not initialized, nothing to migrate',
+            'action': 'no_cache',
+            'executor_version': '',
+            'newest_cache_version': '',
+            'executor_path': str(executor_path),
+            'cache_root': str(cache_root) if cache_root is not None else '',
+            'generator': '',
+            'warning': '',
+            'detail': 'no plugin cache resolvable — nothing to regenerate from (fresh-install boundary)',
         }
 
-    config = load_config()
-    section = (config.get('plan') or {}).get('phase-6-finalize')
-    if not isinstance(section, dict):
-        return {
-            'status': 'success',
-            'operation': 'migrate-review-steps',
-            'state': 'noop',
-            'detail': 'no plan.phase-6-finalize section configured',
-        }
+    state, current = read_executor_version(executor_path)
+    executor_version = current if state == EXECUTOR_VERSION_FOUND else None
 
-    report = migrate_review_steps(section)
-    if report['state'] != 'noop':
-        try:
-            save_config(config)
-        except ConcurrentConfigModificationError as exc:
+    action, warning = resolve_bootstrap_action(executor_version, newest)
+    generator: Path | None = None
+    anchor = executor_path.parent.parent
+    if action == 'regenerate_required':
+        generator, anchor = _resolve_bootstrap_generator(project_kind, cache_root, newest)
+        if generator is None:
             return {
-                'status': 'error',
-                'operation': 'migrate-review-steps',
-                'error': str(exc),
-                'error_type': 'concurrent_modification',
+                'status': 'success',
+                'action': 'unknown',
+                'executor_version': executor_version or '',
+                'newest_cache_version': newest,
+                'executor_path': str(executor_path),
+                'cache_root': str(cache_root),
+                'generator': '',
+                'warning': (
+                    f'skill/planner version split: executor at {executor_version or "unknown"} is '
+                    f'behind the newest cache at {newest}, but no generator resolves for '
+                    f'{project_kind!r} — currency cannot be restored here. {_VERSION_SPLIT_REMEDY}'
+                ),
+                'detail': 'stale executor with no resolvable generator',
             }
-    return {'status': 'success', 'operation': 'migrate-review-steps', **report}
+        run_generate = _run_generate or _run_bootstrap_generate
+        project_dir = executor_path.parent.parent
+        rc, stdout, _stderr = run_generate(generator, anchor, project_dir)
+        if rc != 0:
+            return {
+                'status': 'success',
+                'action': 'regenerate_failed',
+                'executor_version': executor_version or '',
+                'newest_cache_version': newest,
+                'executor_path': str(executor_path),
+                'cache_root': str(cache_root),
+                'generator': str(generator),
+                'warning': (
+                    f'skill/planner version split: executor at {executor_version or "unknown"} is '
+                    f'behind the newest cache at {newest} and regeneration failed (rc={rc}): '
+                    f'{(stdout or "").strip()[:200] or "no output"} — {_VERSION_SPLIT_REMEDY}'
+                ),
+                'detail': 'regeneration attempted and failed; Stage 1 regenerate-executor remains the repair',
+            }
+        _state, reread = read_executor_version(executor_path)
+        executor_version = reread or executor_version
+        action = 'regenerated'
+
+    if action == 'regenerated' and executor_version and executor_version != newest:
+        warning = (
+            f'skill/planner version split: planner at {executor_version} does not match the '
+            f'newest cache at {newest} after regeneration. {_VERSION_SPLIT_REMEDY}'
+        )
+    return {
+        'status': 'success',
+        'action': action,
+        'executor_version': executor_version or '',
+        'newest_cache_version': newest,
+        'executor_path': str(executor_path),
+        'cache_root': str(cache_root),
+        'generator': str(generator) if generator is not None else '',
+        'warning': warning,
+        'detail': f'executor bootstrap {action}: planner at {executor_version or "unknown"}, newest cache at {newest}',
+    }
 
 
 def cmd_plan(args: argparse.Namespace) -> dict:
@@ -843,13 +882,36 @@ def cmd_plan(args: argparse.Namespace) -> dict:
 
     Resolves ``--project-kind auto`` via :func:`detect_project_kind` against the
     current working directory (keeping :func:`build_plan` pure and directly
-    testable), then delegates to the pure builder.
+    testable), runs the executor bootstrap (:func:`bootstrap_executor`) so a
+    stale executor is regenerated from the newest cache BEFORE the stage plan
+    is emitted, then delegates to the pure builder and merges the bootstrap
+    report. ``--bootstrap false`` skips the bootstrap (the hermetic seam the
+    planner-matrix tests use); production invocations leave it on. A bootstrap
+    ``status: error`` fails closed with no plan emitted.
     """
     integrate = args.integrate == 'true'
     project_kind = args.project_kind
     if project_kind == 'auto':
         project_kind = detect_project_kind(Path.cwd())
-    return build_plan(integrate, project_kind)
+    if getattr(args, 'bootstrap', 'true') == 'true':
+        bootstrap = bootstrap_executor(project_kind=project_kind)
+        if bootstrap.get('status') != 'success':
+            return bootstrap
+    else:
+        bootstrap = {
+            'status': 'success',
+            'action': 'skipped',
+            'executor_version': '',
+            'newest_cache_version': '',
+            'executor_path': '',
+            'cache_root': '',
+            'generator': '',
+            'warning': '',
+            'detail': 'executor bootstrap skipped via --bootstrap false',
+        }
+    plan = build_plan(integrate, project_kind)
+    plan['bootstrap'] = bootstrap
+    return plan
 
 
 @safe_main
@@ -883,14 +945,16 @@ def main() -> int:
             'marketplace/targets/generate.py + marketplace/bundles/ presence check.'
         ),
     )
-
-    subparsers.add_parser(
-        'migrate-review-steps',
+    plan_parser.add_argument(
+        '--bootstrap',
+        choices=['true', 'false'],
+        default='true',
         help=(
-            'Replace the retired structural self-review finalize step by the functional '
-            'and the code review, carrying its setting to both. Idempotent and self-disarming.'
+            'When true (default), validate the serving executor against the newest plugin-cache '
+            'version and regenerate it from that cache when stale BEFORE emitting the stage plan, '
+            'so the plan and every downstream stage resolve current-version scripts. When false, '
+            'skip the bootstrap and emit the plan directly.'
         ),
-        allow_abbrev=False,
     )
 
     subparsers.add_parser(
@@ -916,8 +980,6 @@ def main() -> int:
 
     if args.command == 'plan':
         result = cmd_plan(args)
-    elif args.command == 'migrate-review-steps':
-        result = cmd_migrate_review_steps(args)
     elif args.command == 'migrate-bot-lists':
         result = cmd_migrate_bot_lists(args)
     elif args.command == 'validate-bot-lists':

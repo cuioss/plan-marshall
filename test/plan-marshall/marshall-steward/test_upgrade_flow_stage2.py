@@ -101,19 +101,6 @@ def test_stage2_prose_names_every_sub_step_the_planner_emits():
     )
 
 
-def test_stage2_runs_migrate_review_steps_before_the_defaults_merge():
-    # The review-step migration leads Stage 2 in the prose as in the planner: it is
-    # invoked before `sync-defaults`, so the merge finds both new review ids present
-    # rather than holding them at its ask-before-add gate.
-    block = _stage2_block()
-
-    migrate = block.index('plan-marshall:marshall-steward:upgrade migrate-review-steps')
-    sync_defaults = _invocation_index(block, 'sync-defaults')
-
-    assert migrate < sync_defaults
-    assert _stage2_emitted_sub_steps()[0] == 'migrate-review-steps'
-
-
 def test_stage2_runs_migrate_bot_lists_after_the_reconcile_verbs():
     # Order within the emitted set: the migration follows the three reconcile
     # verbs and precedes the build-map drift gate, matching the emitted order.
@@ -186,3 +173,81 @@ def test_stage2_prose_states_removal_survives_sync():
     assert 'removal' in block
     assert 'atomic-once-present' in block
     assert 'crosses operator removal' in block
+
+
+# =============================================================================
+# D1 full-order roster pin — the emitted Stage 2 list carries the roster from
+# seeding (migrate-bot-lists) through validation (validate-bot-lists)
+# =============================================================================
+
+
+def test_stage2_full_order_pins_roster_from_seeding_through_validation():
+    """D1: the full five-item Stage 2 order pins the roster from seeding to validation."""
+    stage2 = next(spec for spec in upgrade._STAGE_SPECS if spec['key'] == 'reconcile-config')
+    sub_steps = stage2['sub_steps']
+    assert isinstance(sub_steps, list)
+    assert sub_steps == [
+        'reconcile-marshal-json',
+        'review-held-defaults',
+        'migrate-bot-lists',
+        'validate-bot-lists',
+        'migrate-architecture-descriptors',
+    ]
+    assert sub_steps.index('migrate-bot-lists') == sub_steps.index('review-held-defaults') + 1
+    assert sub_steps.index('validate-bot-lists') == sub_steps.index('migrate-bot-lists') + 1
+
+
+# =============================================================================
+# D4 Step 0 bootstrap — validate + regenerate from the newest cache, then plan
+# =============================================================================
+#
+# Step 0 bootstraps the serving executor (validate against the newest
+# plugin-cache version, regenerate when stale) before the stage plan is
+# requested, and surfaces a skill/planner version-split warning instead of a
+# silently stale run. These pins read the Step 0 prose, not the planner: the
+# planner tests above cover the mechanism, and these cover the router contract
+# the operator actually follows.
+
+
+def _step0_block() -> str:
+    """Return the text of the '## Step 0' section only."""
+    text = _UPGRADE_FLOW.read_text(encoding='utf-8')
+    start = text.index('## Step 0')
+    end = text.index('## ', start + len('## Step 0'))
+    return text[start:end]
+
+
+def test_step0_bootstraps_the_executor_before_requesting_the_plan():
+    """D4: Step 0 validates + regenerates from the newest cache, then plans."""
+    block = _step0_block()
+
+    assert 'newest' in block
+    assert 'regenerate' in block
+    assert 'bootstrap' in block
+    # the plan request follows the bootstrap in the same section
+    plan_call = block.index('marshall-steward:upgrade plan')
+    assert block.index('regenerate') < plan_call
+
+
+def test_step0_surfaces_the_version_split_warning_with_its_remedy():
+    """D4: a skill/planner split warns with the re-sync + reload + re-request remedy."""
+    block = _step0_block()
+
+    assert 'skill/planner version split' in block
+    assert '/plugin update plan-marshall' in block
+    assert 'reload' in block
+    assert 're-request' in block
+    assert 'stage plan' in block
+
+
+def test_step0_bootstrap_is_on_by_default():
+    """D4: the documented Step 0 call relies on the default-true bootstrap.
+
+    The prose states the bootstrap is on by default and names the deliberate
+    skip flag — so a reader neither re-implements the bootstrap around the
+    call nor skips it unknowingly.
+    """
+    block = _step0_block()
+
+    assert 'on by default' in block
+    assert '--bootstrap false' in block

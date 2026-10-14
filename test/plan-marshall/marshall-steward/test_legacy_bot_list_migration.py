@@ -141,7 +141,9 @@ class TestLegacySemanticsSurviveTheMigration:
 
         assert result['participation_complete'] is False
         # Visibility contract: unproven_bots spans required UNION optional.
-        assert result['unproven_bots'] == _expected_standard_required() + [b.strip() for b in _STANDARD_OPTIONAL_BOTS.split(',') if b.strip()]
+        assert result['unproven_bots'] == _expected_standard_required() + [
+            b.strip() for b in _STANDARD_OPTIONAL_BOTS.split(',') if b.strip()
+        ]
         # Gating contract: the required subset still blocks.
         assert set(_expected_standard_required()).issubset(set(result['unproven_bots']))
 

@@ -1931,5 +1931,52 @@ def test_set_steps_reconciles_operator_removal_intent(plan_context):
 
 
 # =============================================================================
+# Dead phase-6 step-id detection (shared resolver)
+# =============================================================================
+
+
+def test_find_dead_step_ids_empty_when_every_id_resolves(monkeypatch):
+    """No dead ids when every configured id carries an int order."""
+    monkeypatch.setattr(
+        _cmd_quality_phases,
+        '_discover_steps_for_phase',
+        lambda phase: [
+            {'name': 'default:push', 'order': 10},
+            {'name': 'default:create-pr', 'order': 20},
+        ],
+    )
+
+    assert _cmd_quality_phases._find_dead_step_ids(['default:push', 'default:create-pr'], 'phase-6-finalize') == []
+
+
+def test_find_dead_step_ids_reports_unknown_id_with_reason(monkeypatch):
+    """An id absent from discovery is dead and carries its reason."""
+    monkeypatch.setattr(
+        _cmd_quality_phases,
+        '_discover_steps_for_phase',
+        lambda phase: [{'name': 'default:push', 'order': 10}],
+    )
+
+    dead = _cmd_quality_phases._find_dead_step_ids(['default:push', 'default:stale-step'], 'phase-6-finalize')
+
+    assert [entry['step'] for entry in dead] == ['default:stale-step']
+    assert 'default:stale-step' in dead[0]['reason']
+    assert 'phase-6-finalize' in dead[0]['reason']
+
+
+def test_find_dead_step_ids_reports_non_int_order_as_dead(monkeypatch):
+    """A discovered entry without an int order is dead, not resolvable."""
+    monkeypatch.setattr(
+        _cmd_quality_phases,
+        '_discover_steps_for_phase',
+        lambda phase: [{'name': 'default:push', 'order': None}],
+    )
+
+    dead = _cmd_quality_phases._find_dead_step_ids(['default:push'], 'phase-6-finalize')
+
+    assert [entry['step'] for entry in dead] == ['default:push']
+
+
+# =============================================================================
 # Main
 # =============================================================================

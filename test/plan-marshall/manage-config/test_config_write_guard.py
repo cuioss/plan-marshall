@@ -97,7 +97,10 @@ def test_normalize_keys_clean_success_when_all_keys_canonical(marshal):
     ``system.retention.logs_days`` are both seeded defaults): since the nested
     diff reports below-top-level stray keys, a fixture with arbitrary nested
     keys would warn rather than read clean."""
-    marshal.write_text(json.dumps({'plan': {'effort': 'level-3'}, 'system': {'retention': {'logs_days': 1}}}, indent=2) + '\n', encoding='utf-8')
+    marshal.write_text(
+        json.dumps({'plan': {'effort': 'level-3'}, 'system': {'retention': {'logs_days': 1}}}, indent=2) + '\n',
+        encoding='utf-8',
+    )
 
     result = _config_core.normalize_keys()
 
@@ -112,7 +115,10 @@ def test_normalize_keys_is_byte_stable_on_already_canonical_file(marshal):
     # First pass canonicalizes (plan sorts before system) and settles the bytes.
     # The nested keys are seeded defaults (see the test above), so the settled
     # file is canonical at both levels — not merely top-level ordered.
-    marshal.write_text(json.dumps({'system': {'retention': {'logs_days': 1}}, 'plan': {'effort': 'level-3'}}, indent=2) + '\n', encoding='utf-8')
+    marshal.write_text(
+        json.dumps({'system': {'retention': {'logs_days': 1}}, 'plan': {'effort': 'level-3'}}, indent=2) + '\n',
+        encoding='utf-8',
+    )
     first = _config_core.normalize_keys()
     assert first['status'] == 'success'
     canonical_bytes = marshal.read_bytes()
