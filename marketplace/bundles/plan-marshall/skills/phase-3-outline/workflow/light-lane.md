@@ -266,7 +266,7 @@ The light lane is **not exempt** from the narrowing obligation either, and for t
 
    **Both sinks are consumed.** The decision log keeps the report with the plan. The return field is read by the orchestrator: `plan-marshall/workflow/planning.md` (light-lane branch, `status: success`) prints it to the operator verbatim as one line when the envelope return carries it, and prints nothing when it is absent.
 
-The verb owns the narrowing decision; this envelope invokes it, persists its result, and reports it. The rationale for the rule — why end-of-outline is the site, why a `narrowed: false` outcome is recorded rather than skipped, and the three-legged safety bound the verb applies — lives in [`../SKILL.md`](../SKILL.md) § Domain Narrowing. Do NOT restate it here.
+The verb owns the narrowing decision; this envelope invokes it, persists its result, and reports it. The rationale for the rule — why end-of-outline is the site, why a `narrowed: false` outcome is recorded rather than skipped, and the four-legged safety bound the verb applies — lives in [`../SKILL.md`](../SKILL.md) § Domain Narrowing. Do NOT restate it here.
 
 ### Step 6: Transition Phase
 

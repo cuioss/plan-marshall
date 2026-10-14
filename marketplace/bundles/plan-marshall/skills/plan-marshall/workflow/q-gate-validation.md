@@ -99,12 +99,13 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 > **HARD DEPENDENCY on FIX 3 (the Step 4 full-coverage guarantee)**: this skip is only safe because the full-coverage guarantee ensures that any *prior* full validation pass already ran AND recorded EVERY applicable validator against each deliverable. Therefore "deliverable D has zero pending findings after the prior full pass" reliably means "D passed everything" — not merely "D passed the validators that happened to run before a short-circuit". If FIX 3's guarantee is ever removed, this skip becomes unsound and MUST be removed with it.
 >
-> **Phase-keyed hashes**: every hash row in the artifact is keyed by phase. The
-> per-deliverable rows carry the phase they were recorded under, and the
-> aggregate row key is `__whole_outline__:{phase}` — never a bare
-> `__whole_outline__`. A `4-plan` first pass after a `3-outline` pass therefore
-> finds no stored row for its own phase and runs every `4-plan` validator; a
-> same-phase re-entry with unchanged content skips. `{phase}` is taken from the
+> **Phase-gated hashes**: the aggregate row key is `__whole_outline__:{phase}` — never a bare
+> `__whole_outline__`. The per-deliverable rows are unkeyed content fingerprints, so a
+> same-hash row may have been recorded by another phase — and another phase's validators
+> are never this phase's. Per-deliverable skips are therefore gated on this phase having
+> already completed a full pass (see the predicate below): a `4-plan` first pass after a
+> `3-outline` pass finds no stored aggregate row for its own phase and runs every `4-plan`
+> validator; a same-phase re-entry with unchanged content skips. `{phase}` is taken from the
 > dispatch context (`activation_context` / `validators` scope), never defaulted.
 
 This step lets a re-entry (the orchestrator's auto-loop re-dispatches q-gate-validation after a re-outline) SKIP the full validator battery for deliverables that are both **unchanged** and **clean**, so untouched deliverables are not re-validated wholesale. The skip is **deliverable-level**, NOT validator-level — there is no edit→invalidation dependency map; a deliverable is either fully re-validated or fully skipped.
@@ -127,7 +128,7 @@ python3 .plan/execute-script.py plan-marshall:manage-files:manage-files read \
   --plan-id {plan_id} --file work/deliverable-hashes.toon
 ```
 
-Parse the prior `hashes[]{deliverable,hash}` rows into a `stored_hash(D)` lookup; the reserved `deliverable` key `__whole_outline__:{phase}` carries the aggregate whole-outline fingerprint (`stored_whole_outline_hash`) for the current phase, consumed by the whole-outline short-circuit below rather than by a single deliverable. A row stored under another phase never satisfies this phase's lookup. When the file does not exist (first pass / `exists: false`), treat `stored_hash(D)` as empty for every deliverable and `stored_whole_outline_hash` as absent — nothing is skipped on the first pass.
+Parse the prior `hashes[]{deliverable,hash}` rows into a `stored_hash(D)` lookup; the reserved `deliverable` key `__whole_outline__:{phase}` carries the aggregate whole-outline fingerprint (`stored_whole_outline_hash`) for the current phase, consumed by the whole-outline short-circuit below rather than by a single deliverable. The per-deliverable rows carry no phase of their own, so the lookup is gated: when no stored `__whole_outline__:{phase}` row for the current phase exists, treat `stored_hash(D)` as empty for every deliverable — this phase has not yet completed a full pass, so no stored row can mean "D passed everything in this phase". A stored aggregate row from another phase never satisfies this phase's gate. When the file does not exist (first pass / `exists: false`), treat `stored_hash(D)` as empty for every deliverable and `stored_whole_outline_hash` as absent — nothing is skipped on the first pass.
 
 **Per-deliverable skip predicate** — for each deliverable D parsed from solution_outline.md (Step 3 §1.1), take `hash(D)` from the verb output above. Then query D's pending findings — pending = recorded but not yet resolved:
 
@@ -138,11 +139,12 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings qg
 
 Filter the returned rows to those whose finding targets deliverable D (by deliverable number / affected-file membership). Then apply the skip predicate exactly:
 
-> **SKIP full re-validation of D iff `hash(D) == stored_hash(D)` AND D has zero pending findings.** Otherwise (hash changed, OR D has ≥1 pending finding, OR D is new / has no stored hash) D is **fully re-validated** in Step 4.
+> **SKIP full re-validation of D iff `hash(D) == stored_hash(D)` AND D has zero pending findings AND a stored `__whole_outline__:{phase}` row for the current phase exists (this phase already completed a full pass).** Otherwise (hash changed, OR D has ≥1 pending finding, OR D is new / has no stored hash, OR this phase has no stored aggregate row yet) D is **fully re-validated** in Step 4.
 
 When D is skipped, log the decision and do NOT run any §2.x validator against D.
 A skipped deliverable reports as `not run (cached from phase {X})` — where `{X}`
-is the phase whose stored hash matched — never as a pass, and its validators are
+is the current phase, which the gate above guarantees recorded the matching row
+in its own full pass — never as a pass, and its validators are
 carried in the `not_run_validators` return field. A skip is a non-verdict, not a
 verdict:
 

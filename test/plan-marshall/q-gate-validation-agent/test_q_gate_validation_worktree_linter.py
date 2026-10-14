@@ -1071,6 +1071,22 @@ def test_hash_skip_is_keyed_by_phase(agent_text: str) -> None:
     )
 
 
+def test_per_deliverable_skip_gated_on_current_phase_full_pass(agent_text: str) -> None:
+    """Per-deliverable skips must be gated on this phase's own full pass.
+
+    The per-deliverable rows carry no phase of their own, so a same-hash row may
+    have been recorded by another phase — whose validators are never this
+    phase's. The predicate must therefore require a stored aggregate row for the
+    current phase (proof this phase already completed a full pass) before any
+    per-deliverable skip fires.
+    """
+    assert 'already completed a full pass' in agent_text, (
+        'Step 3.5 must gate per-deliverable skips on the current phase having '
+        'already completed a full pass, so a foreign-phase row can never skip '
+        'this phase validators.'
+    )
+
+
 def test_hash_skip_calls_the_deterministic_verb(agent_text: str) -> None:
     """Step 3.5 must call the deterministic deliverable-hashes verb.
 

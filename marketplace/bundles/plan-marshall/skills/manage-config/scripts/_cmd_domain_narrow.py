@@ -41,9 +41,10 @@ non-``system`` domain is droppable), the verb returns ``status: error`` with
 ``error: would_empty`` and writes nothing — even under ``--apply``. An empty domain
 set leaves the plan with no skill routing, so the refusal is fail-closed.
 
-The three outcomes stay mutually distinguishable in the return: narrowing ran and dropped
+The four outcomes stay mutually distinguishable in the return: narrowing ran and dropped
 domains (``narrowed: true``, non-empty ``dropped``); narrowing ran and found nothing
-droppable (``narrowed: false``, empty ``dropped``, ``status: success``); and narrowing
+droppable (``narrowed: false``, empty ``dropped``, ``status: success``); narrowing
+would retain no user domain (``status: error``, ``error: would_empty``); and narrowing
 could not evaluate (``status: error`` carrying the reason). A verb that could not look
 never renders as a verb that looked and found nothing.
 """
@@ -361,7 +362,7 @@ def cmd_domain_narrow(args) -> dict[str, Any]:
             # from ``user_domains``, so the always_on and file_globs legs could
             # never claim it. Recording an empty ``claimed_by`` here would publish
             # "no leg claimed it" — whose documented reading is "dropped for want
-            # of a claim" — for a domain two of the three legs never considered.
+            # of a claim" — for a domain the inclusion legs never considered.
             provenance.append({'domain': domain, 'claimed_by': [EXEMPT_SYSTEM]})
             retained.append(domain)
             continue

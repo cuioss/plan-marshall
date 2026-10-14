@@ -68,7 +68,7 @@ Narrow a plan's `references.domains` to the domains its declared footprint justi
 
 | Command | Parameters | Description |
 |---------|-----------|-------------|
-| `domain-narrow` | `--plan-id`, `--affected-files` (comma-separated declared footprint; **optional** out-of-band override — the footprint is read from `references.affected_files` by default) | Drop a domain only when all three legs of the safety bound agree it is droppable. The synthetic `system` domain is exempt from the bound rather than judged by it, and is retained unconditionally. Read-only, no LLM dispatch. |
+| `domain-narrow` | `--plan-id`, `--affected-files` (comma-separated declared footprint; **optional** out-of-band override — the footprint is read from `references.affected_files` by default), `--apply` (persist the retained set; without it the verb only reports) | Drop a domain only when all four legs of the safety bound agree it is droppable. The synthetic `system` domain is exempt from the bound rather than judged by it, and is retained unconditionally. When narrowing would retain no user domain it returns `would_empty` and writes nothing. No LLM dispatch. |
 
 ```bash
 manage-config domain-narrow \
@@ -81,7 +81,7 @@ The safety bound, the `always_on` structural exemption, the `system` exemption f
 
 The could-not-evaluate arm carries exactly `status: error`, an `error` reason code, and a `message` explaining it — none of the success fields above are present on it, so branch on `status` before reading `dropped[]`. That contract, and the complete set of reason codes the verb can return, are specified in the same `../SKILL.md` section.
 
-The footprint is read from `references.affected_files`, which keeps the paths a list end to end: a path containing a comma survives, and nothing is interpolated into a shell command line. `--affected-files` is the out-of-band override and carries both hazards, so pass it only when the footprint is not the plan's own. Narrowing refuses to run when neither source yields one — `footprint_unreadable` when the list is missing or malformed and no override was given, `footprint_empty` when it resolves to zero paths. The verb writes nothing — persisting the narrowed set is the caller's job.
+The footprint is read from `references.affected_files`, which keeps the paths a list end to end: a path containing a comma survives, and nothing is interpolated into a shell command line. `--affected-files` is the out-of-band override and carries both hazards, so pass it only when the footprint is not the plan's own. Narrowing refuses to run when neither source yields one — `footprint_unreadable` when the list is missing or malformed and no override was given, `footprint_empty` when it resolves to zero paths. Without `--apply` the verb writes nothing — persisting the narrowed set is the caller's job.
 
 ---
 
