@@ -32,7 +32,7 @@ _MANAGE_CONFIG = ('plan-marshall', 'manage-config')
 _SCRIPT = (*_MANAGE_CONFIG, 'manage-config.py')
 
 _sync_mod = load_script_module(
-    'plan-marshall', 'manage-config', '_cmd_sync_defaults.py', module_name='_cmd_sync_defaults'
+    'plan-marshall', 'manage-config', '_cmd_sync_defaults.py', module_name='_cmd_sync_defaults_for_sync_test'
 )
 _config_defaults_mod = load_script_module(
     'plan-marshall', 'manage-config', '_config_defaults.py', module_name='_config_defaults_for_sync_provisioning_test'
