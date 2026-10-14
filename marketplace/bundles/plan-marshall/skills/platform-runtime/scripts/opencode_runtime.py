@@ -86,6 +86,24 @@ def _bridge_rules_path(project_dir: Path) -> Path:
     return project_dir / '.opencode' / 'rules' / 'plan-marshall-target-rules.md'
 
 
+def _marshal_target_present(project_dir: Path, target: str) -> bool:
+    """True when marshal.json already carries the target (benign no-write).
+
+    A ``False`` seed on a file that already carries the target is the idle
+    re-setup path, not a failure. Every other ``False`` — corrupt content,
+    a non-dict document, an unwritable file — leaves the target unseeded.
+    """
+    try:
+        data = json.loads((project_dir / '.plan' / 'marshal.json').read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return False
+    return (
+        isinstance(data, dict)
+        and isinstance(data.get('runtime'), dict)
+        and data['runtime'].get('target') == target
+    )
+
+
 def _seed_marshal_runtime_target(project_dir: Path, target: str) -> bool:
     """Seed ``runtime.target`` into ``.plan/marshal.json``, preserving other keys.
 
@@ -386,6 +404,12 @@ class OpenCodeRuntime(Runtime):
 
         resolved = pathlib.Path(project_dir).resolve()
         marshal_written = _seed_marshal_runtime_target(resolved, target)
+        if not marshal_written and not _marshal_target_present(resolved, target):
+            return toon_error(
+                'project initial-setup',
+                'io_error',
+                'Failed to seed runtime.target into .plan/marshal.json: file is corrupt or unwritable',
+            )
         bridge_written = _write_rules_bridge(resolved)
         drift = standing_rules_drift_status(str(resolved))
 

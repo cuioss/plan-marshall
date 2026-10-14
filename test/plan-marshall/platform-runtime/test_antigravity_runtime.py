@@ -124,6 +124,22 @@ def test_project_initial_setup_preserves_existing_marshal(runtime: AntigravityRu
     assert data['runtime']['target'] == 'antigravity'
 
 
+def test_project_initial_setup_refuses_corrupt_marshal(runtime: AntigravityRuntime, tmp_path: Path):
+    """project_initial_setup answers io_error on a corrupt marshal.json.
+
+    A seed that cannot parse the file must not report success with
+    ``marshal_written: False`` — an unreadable seed base is unevaluable,
+    never a benign no-write.
+    """
+    plan_dir = tmp_path / '.plan'
+    plan_dir.mkdir(parents=True)
+    (plan_dir / 'marshal.json').write_text('{not json', encoding='utf-8')
+
+    result = _parse(runtime.project_initial_setup(str(tmp_path), 'antigravity'))
+    assert result['status'] == 'error'
+    assert result['error'] == 'io_error'
+
+
 def test_project_initial_setup_reports_bridge_drift(runtime: AntigravityRuntime, tmp_path: Path):
     """project_initial_setup reports the standing-rules bridge drift verdict."""
     from antigravity_runtime import standing_rules_drift_status
