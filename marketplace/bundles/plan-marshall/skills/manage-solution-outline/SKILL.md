@@ -232,7 +232,9 @@ heading scan): `hashes[]{deliverable,hash}` holds the SHA-256 of each
 deliverable's canonical block bytes, and `whole_outline_hash` fingerprints the
 full document. `--phase` (default `3-outline`) is provenance only — the caller
 (q-gate-validation Step 3.5) keys the stored aggregate row as
-`__whole_outline__:{phase}` itself.
+`__whole_outline__:{phase}` itself. An outline that exists but cannot be
+decoded as UTF-8 returns `status: error` with `document_unreadable` instead of
+raising.
 
 **Output** (TOON):
 

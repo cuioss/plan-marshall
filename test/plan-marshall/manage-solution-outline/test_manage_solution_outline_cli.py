@@ -348,3 +348,14 @@ def test_main_deliverable_hashes_document_not_found(plan_context, monkeypatch, c
     data = parse_toon(out)
     assert data['status'] == 'error'
     assert data['error'] == 'document_not_found'
+
+
+def test_main_deliverable_hashes_document_unreadable(plan_context, monkeypatch, capsys):
+    """``deliverable-hashes`` over undecodable bytes emits document_unreadable, not an exception."""
+    path = _seed_outline(plan_context, 'so-cli-badhashes')
+    path.write_bytes(b'\xff\xfe\x00not-utf8')
+    code, out = _run_main(monkeypatch, capsys, ['deliverable-hashes', '--plan-id', 'so-cli-badhashes'])
+    assert code == 0
+    data = parse_toon(out)
+    assert data['status'] == 'error'
+    assert data['error'] == 'document_unreadable'

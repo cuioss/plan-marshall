@@ -60,6 +60,9 @@ from input_validation import (
 
 SOLUTION_FILE = 'solution_outline.md'
 
+#: Error code when the solution outline exists but cannot be decoded as UTF-8.
+ERROR_DOCUMENT_UNREADABLE = 'document_unreadable'
+
 # Solution-level metadata: scope_estimate enum (see standards/solution-outline-standard.md)
 SCOPE_ESTIMATE_VALUES = ('none', 'surgical', 'single_module', 'multi_module', 'broad')
 
@@ -587,7 +590,9 @@ def cmd_deliverable_hashes(args: argparse.Namespace) -> dict[str, Any]:
     Returns per-deliverable SHA-256 hex digests plus the whole-outline SHA-256
     over the full document bytes. The caller (q-gate-validation Step 3.5) keys
     the whole-outline row by phase; the ``phase`` echo here is provenance, not
-    part of the digest.
+    part of the digest. An outline that exists but cannot be decoded as UTF-8
+    returns ``status: error`` with ``ERROR_DOCUMENT_UNREADABLE`` — a decode
+    failure is a could-not-evaluate outcome, never an exception past the caller.
     """
     require_valid_plan_id(args)
 
@@ -601,7 +606,15 @@ def cmd_deliverable_hashes(args: argparse.Namespace) -> dict[str, Any]:
         }
 
     raw = file_path.read_bytes()
-    content = raw.decode('utf-8')
+    try:
+        content = raw.decode('utf-8')
+    except UnicodeDecodeError:
+        return {
+            'status': 'error',
+            'error': ERROR_DOCUMENT_UNREADABLE,
+            'plan_id': args.plan_id,
+            'file': SOLUTION_FILE,
+        }
     sections = parse_document_sections(content)
     deliverables_section = sections.get('deliverables', '')
 
