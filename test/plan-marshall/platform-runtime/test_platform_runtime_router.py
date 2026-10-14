@@ -1307,11 +1307,7 @@ class TestSeamRoutingOutcomes:
         """Verify-first clause 1: an absent ``task`` tool takes the logged inline branch."""
         from opencode_runtime import OpenCodeRuntime
 
-        parsed = _parsed(
-            OpenCodeRuntime().subagent_dispatch(
-                'execution-context', None, {'task_tool_available': False}
-            )
-        )
+        parsed = _parsed(OpenCodeRuntime().subagent_dispatch('execution-context', None, {'task_tool_available': False}))
         assert parsed['status'] == 'no-op'
         assert 'inline' in parsed['reason']
         assert 'unknown' in parsed['alternative']

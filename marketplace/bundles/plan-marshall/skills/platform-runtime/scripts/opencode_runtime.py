@@ -160,6 +160,7 @@ def standing_rules_drift_status(project_dir: str) -> dict[str, Any]:
         return {'drift': True, 'needs_bridge': False, 'reason': 'stat_failed'}
     return {'drift': False, 'needs_bridge': False, 'reason': 'in_sync'}
 
+
 #: Grant action wrappers ``to_opencode_grant`` peels before the tool grammar.
 #: The wrapper action is carried into the returned triple, so a ``deny(...)``
 #: intent can never degrade to ``allow`` by reaching the bare-form default.
