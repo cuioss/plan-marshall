@@ -60,7 +60,10 @@ This gate sorts LAST in the settle band (`order: 10`, immediately before `defaul
 ## Pushed-head gate refusal
 
 The gate refuses a push whose head outruns the last gate stamp. Immediately
-before the per-bundle loop, resolve the current HEAD (`git rev-parse HEAD`)
+before the per-bundle loop, resolve the current worktree HEAD
+(`git -C {worktree_path} rev-parse HEAD` — worktree-scoped, never bare
+`git rev-parse HEAD`: after finalize returns to the main checkout a bare
+read reports the main checkout while the stamp belongs to the worktree)
 and compare it against the last gate stamp the ledger records for this
 worktree (the newest `kind=build` row whose `worktree_sha` the freshness
 crosscheck admitted, read through `manage-tasks pre-commit-verify-freshness`):
@@ -86,7 +89,8 @@ repository root (no bundle owns that scope), so a footprint touching
 regardless of what the scoped derivation would otherwise select. The
 population the scoped runs did not cover is stated in the run's log line.
 
-`head_at_completion` is captured at step start as well as at step end. When
+`head_at_completion` is captured at step start as well as at step end, both
+via `git -C {worktree_path} rev-parse HEAD`. When
 HEAD advances between the start capture and the pre-completion recording,
 the recorded SHA is re-compared before `mark-step-done` and the gate re-runs
 against the newer HEAD on mismatch rather than certifying a superseded tree.
