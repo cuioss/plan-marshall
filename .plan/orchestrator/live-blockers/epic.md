@@ -55,8 +55,8 @@ derive, for rows still live.
 
 - **PLAN-LB-39** (running; staged 2026-10-13) — sequenced after PLAN-LB-37 by operator decision (shares
   `functional-review.md` and two test directories). Its D6 builds on 37's functional review;
-  rebase onto 37's final landing. Also overlaps the running PLAN-LB-26 on
-  `phase-5-execute/SKILL.md`, `execution.md` and `triage.md` (PLAN-LB-27 is retired).
+  rebase onto 37's final landing. PLAN-LB-26 landed (#1769); rebase onto `501aeb313` — it
+  rewrote `execution.md`, `triage.md` and `phase-5-execute/SKILL.md`, which this plan also edits.
 
 - **PLAN-LB-31** (running) — its roster decision is in (inbox `-001`, 2026-10-14): the operator
   kept `cuioss-review-bot` required as is and CodeRabbit required; the measurement does not
@@ -69,21 +69,24 @@ derive, for rows still live.
   after `187f7314a`.
 
 - **PLAN-LB-42 to PLAN-LB-46** (staged 2026-10-14) — sequencing the gate cannot derive:
-  - PLAN-LB-42 shares `q-gate-validation.md` Step 6 (the same section) with the running
-    PLAN-LB-26 — emit after it lands, or rebase onto it.
+  - PLAN-LB-42 and PLAN-LB-44 waited on PLAN-LB-26, which landed (#1769, `501aeb313`); re-read
+    `q-gate-validation.md` and `verification-feedback.md` at that commit before outlining.
   - PLAN-LB-43 is free to emit now (no declared file shared with running work).
-  - PLAN-LB-44 waits for PLAN-LB-26 (`verification-feedback.md`, different sections; one re-read).
   - PLAN-LB-45 depends on PLAN-LB-39 landing (extends its D5 preflight call, `harness` field and
     landing key); its spec says to stop after D1–D3 if LB-39 has not landed.
   - PLAN-LB-46 shares only directories with PLAN-LB-31 / PLAN-LB-41; free unless its D5 needs a
     `cuioss-review-bot.md` field.
+
+- **PLAN-LB-47** (staged 2026-10-14, high priority) — fix-forward for PLAN-LB-26's regressions
+  (`landings/PLAN-LB-26.md` N1–N4). Shares `phase-5-execute/SKILL.md`, `execution.md` and
+  `triage.md` with the running PLAN-LB-39; the gate will ask. Emit it ahead of the other staged
+  WS-01 plans.
 
 - **Foreign checkout paths.** The specs carried into 28, 30 and 31 name sibling repositories
   as `/Users/oliver/git/...`. Each of those specs carries a clause to resolve the names under
   the checkout root of the machine the plan runs on.
 
 - **Operator decisions the specs leave open** (each is a verify-first clause in its spec):
-  - PLAN-LB-26 — sticky resolutions with an opt-in reopen of `fixed`, or always reopen `fixed`.
   - PLAN-LB-31 — running `gh`-based corpus scripts, posting `/review` on merged PRs, the
     roster decision itself, and whether to enrol after it.
 
@@ -178,6 +181,13 @@ derive, for rows still live.
     from the environment (`target_context.resolve_target`), only its source is not reported.
   - Split guard: PLAN-LB-45 and PLAN-LB-46 carry five deliverables each and proceed unsplit;
     PLAN-LB-46 D5 is the first to drop and splits out if it needs a `cuioss-review-bot` field.
+- 2026-10-14 — **PLAN-LB-26 reconciled as shipped (#1769) with an adversarial landing; PLAN-LB-47
+  staged** for its regressions. The landing claimed 11/11; verified 6 met, 4 partial, 1 unmet,
+  plus three high-severity regressions. Recorded as `shipped` because the PR merged; the gaps
+  ride PLAN-LB-47 rather than reopening a merged plan. Inbox candidate lessons `-001` and `-002`
+  (owed `architecture enrich` hints "the project treats triage / test-failure as a standing
+  consideration") discarded: content-free, and the five `taken_into_account` test failures behind
+  `-002` were legitimate (D11-owned pins, later green).
 
 ## Open Defects
 
@@ -217,7 +227,11 @@ derive, for rows still live.
     Recurred under **opencode** (PLAN-44): `total_tokens=0`, wall time covers 1-init only, no
     `client.toon`; the five finalize builds' logs are missing from the archived
     `build-results/`, so the gates on the pushed head cannot be shown (bears on `-016`).
-    — `lessons-routing-028.md` (148).
+    — `lessons-routing-028.md` (148). **Recurred on PLAN-LB-26 under OpenCode** (#1769):
+    `total_tokens=0` although `~/.local/share/opencode/opencode.db` `session_v2` holds the real
+    usage (main session 42.58M input / 165K output, $4.93; resumed 2.14M / 25.6K, $0.31; 77
+    sub-agent sessions). No OpenCode token source is implemented at all — see § Non-Claude-Code
+    Failures.
   - **Not a defect: `build-maven maven run` accepting any plugin goal** (operator ruling
     2026-10-12). The wrapper is a deliberate pass-through; a goal guard would cost a POM
     evaluation per call and refuse ordinary undeclared goals (`dependency:tree`,
@@ -250,7 +264,14 @@ derive, for rows still live.
   - **The pushed and merged head carries none of the plan's mandated gates** — the Antigravity
     instance, and two Claude Code recurrences where fix commits after the last full gate were
     pushed with only the composed manifest steps re-run. Graded high for Claude Code.
-    — `lessons-routing-016.md`.
+    — `lessons-routing-016.md`. **Recurred on PLAN-LB-26 under OpenCode** (#1769): functional
+    review, code review, pre-push gate, ci-verify and automatic-review are stamped
+    `head_at_completion=3db65fc05`; four commits followed and `74e6bfda` was merged. Cause: a
+    provider crash killed the session mid functional-review (round never closed), and the
+    resumed session went straight to push and branch-cleanup. Nothing forces a head-dependent
+    step to re-fire when the merge head differs from its `head_at_completion`, the merge barrier
+    does not check those steps' head binding, and an abandoned review round leaves no pending
+    marker. Owned by PLAN-LB-39 (running).
 - **A deliverable in a sibling repository has no lifecycle** (high; critical in its Antigravity
   instance): no plan-owned worktree, no finalize step pushes it or opens its PR, the footprint
   ignores it, and the foreign-PR gate assumes `feature/{plan_id}`
@@ -298,6 +319,8 @@ derive, for rows still live.
   high by the operator. Not owned by any staged plan. — `lessons-routing-022.md`. Ninth to
   eleventh plans: PLAN-13 (Q-Gate 447991), PLAN-18 (0feabd, accepted by the operator), PLAN-54
   (affb5d, assessments added after the gate asked). — `lessons-routing-028.md` (162, 174, 191).
+  Twelfth: PLAN-LB-26 (finding 037a63 pending across the 3-outline and 4-plan exits, waved
+  through in phase 5). Owned by PLAN-LB-42 (staged).
 - **The 4-plan Q-Gate skips its validators on the 3-outline hash and reports a pass over zero
   runs**; no verb computes the deliverable hashes, so passes improvise. Graded high by the
   operator. Not owned by any staged plan. — `lessons-routing-023.md`. Recurred on PLAN-18: both
@@ -335,6 +358,31 @@ derive, for rows still live.
   - **D13 partial**: neither review step's own tests read `review-rubric.md`. Low.
   - **The plugin-cache sync does not prune**: the installed cache still lists the retired
     `pm-plugin-development:ext-self-review-plan-marshall`. Low.
+- **From PLAN-LB-26's landing** (`landings/PLAN-LB-26.md`, 2026-10-14):
+  - **Regressions N1–N4 shipped in #1769** — owned by PLAN-LB-47 (staged): a red
+    orchestrator-tier build can skip triage; triage never records the owning fix task on a
+    Q-Gate finding; `module_testing` tasks never close under the per-task tier; a per-task leaf
+    can receive `running`.
+  - **The review barrier counts a current-head quota refusal as participation.** At `74e6bfda`
+    `fetch_findings` listed CodeRabbit in both `participated_bots` (inline comments on the older
+    head) and `refused_bots` (quota); `review_completeness check` resolved `participated`. Inline
+    comments carry `commit_id ""`, so their staleness is undetectable. Nearest owner PLAN-LB-46.
+  - **A compile run auto-closes quality-gate failures** ("auto-resolved by green build") because
+    both are typed `build-error` — `script-shared/scripts/build/_build_shared.py`. Unowned.
+  - **Metrics re-entry accounting is wrong**: a re-entered phase is reported as first-entry to
+    last-exit (5-execute 12h28m absorbing four finalize passes), finalize counts its last pass
+    only, and the quality report disagrees with the total (50,696 s vs 62,058 s). Unowned.
+  - **Landing facts**: `emit-landing` runs before `archive-plan`, so `archive-plan:pending` is
+    permanent; step facts carry no head binding; the residue mislabelled the optional sourcery as
+    required. Nearest owner PLAN-LB-45.
+  - **A plan session wrote the orchestrator ledger** (transition, anchor, view, raw commit in the
+    ledger worktree) when the operator's command reached it without the leading `/`. Nothing
+    stops a plan session from doing it. Unowned.
+  - **`build-server wait result` log lines repeat hundreds of times** with identical hash and
+    timestamp (work.log 426-599, 13813-14441). Low.
+  - **Tier-1 routing verbs accept only `--request-text`**, which forced a hand transcription of a
+    59 KB spec. Low.
+
 - **Medium and low items are not owned by any staged plan.** They are listed with evidence
   in `backlog.md` (sections 1.12 onward, 2.3 onward, 3.2 onward, 4.7 onward and 5). Promote an
   item into a plan spec when it starts to hurt; re-verify it at HEAD first.
@@ -469,6 +517,10 @@ derive, for rows still live.
   cost decision in this epic is measured with. — source: inbox messages
   `lb-23-verify-builds-013.md`, `plan-lb-29-harness-sync-010.md`,
   `lb-32-head-dependent-step-refire-005.md`.
+  - **Eighth landing: PLAN-LB-26 (OpenCode)** — phase-5 re-dispatches skipped `effort
+    resolve-target` (1 resolve against 29 dispatches), so no `[DISPATCH]` rows; the
+    retrospective's dispatch audit reported "0 dispatched" against 77 real sub-agent sessions
+    it cannot see. — source: `landings/PLAN-LB-26.md`.
   - **Seventh landing: PLAN-LB-38**, 16 of 16 rows keyless, 0 firings paired. — source: inbox
     message `plan-lb-38-review-gate-and-empty-scope-003.md`.
   - **Sixth landing: PLAN-LB-25**, every row keyless in every phase; finalize rows stop at
@@ -545,6 +597,29 @@ derive, for rows still live.
   `plan-lb-29-harness-sync-002.md`; the mapping was read at
   `script-shared/scripts/build/_test_scope_divergence.py` § `_module_for_path`, `4ed67e228`.
 
+## Non-Claude-Code Failures
+
+Failures that occur only, or only measurably, when a plan runs under a harness other than
+Claude Code (OpenCode, Antigravity). The Antigravity incidents of 2026-10-12 stay under Open
+Defects ("Antigravity: critical …"), owned by PLAN-LB-39.
+
+- **OpenCode: no token measurement exists at all, so every OpenCode landing reports
+  `total_tokens=0`.** Verified at `501aeb313`: `platform-runtime/scripts/opencode_runtime.py`
+  implements every token path as a deliberate no-op — `session_capture` (`:399-411`, "OpenCode
+  does not expose a platform-provided session id to the shell; tracked upstream at issue
+  #9292"), `metrics_capture` (`:1109`, no-op "on EVERY input", so even an explicit
+  `--total-tokens` is not stored), `metrics_normalized_tokens` (`:1153`, `transcript_not_found`).
+  The design premise — "OpenCode exposes no session transcript" — is wrong: OpenCode persists
+  every session, with per-session token and cost totals, in `~/.local/share/opencode/opencode.db`
+  (`session_v2`). PLAN-LB-26's analysis read it read-only: main session 42.58M input / 165K
+  output / 310M cache-read ($4.93), resumed session 2.14M / 25.6K ($0.31), 77 sub-agent sessions.
+  The missing piece is only the session id in the shell; the plan's worktree path and its time
+  window (or `OPENCODE_PID`, which `target_context` already reads) are candidate keys for finding
+  the session in the database — not verified. Two separate defects meet here: no source is read
+  (this entry), and an unmeasured total is written as `0` rather than `unknown` (the zero-token
+  Open Defect, PLAN-LB-39 D5). Not owned; PLAN-LB-45 (runtime-stamp) is the nearest plan. Seen
+  on PLAN-LB-26 and pm-mcp-core PLAN-44.
+
 ## Watches
 
 - **OpenCode runtime quality — PLAN-LB-39, PLAN-LB-31, PLAN-LB-26.** By operator decision,
@@ -560,6 +635,14 @@ derive, for rows still live.
   opencode `total_tokens=0` recurrence in Open Defects). Record an OpenCode grade per plan in
   its landing record. — trigger: each of the three landings; retire after all three are
   analyzed and graded.
+  - **PLAN-LB-26 graded C** (2026-10-14, `landings/PLAN-LB-26.md`). Mechanics strong: 77 real
+    sub-agent sessions, ~92% executor discipline, no `gh`, operator questions through the
+    OpenCode `question` tool. Failed the end-of-run integrity: claimed 11/11 against 6 met,
+    4 partial, 1 unmet; merged `74e6bfda` which no in-house gate had seen (gates stamped
+    `3db65fc05`) after a provider crash and a resume that skipped the head-dependent re-fires;
+    improvised the merge-override question and omitted CodeRabbit's quota refusal; reported
+    `total_tokens=0` against ~45M real input tokens; wrote the orchestrator ledger from the plan
+    session. Three regressions shipped (PLAN-LB-47). Remaining: PLAN-LB-31, PLAN-LB-39.
 
 > ↪ Relocated to `settled.md` § "Watches retired on 2026-10-14" — each trigger was met: the self-review was retired, the Antigravity zero-token watch became an Open Defect, the review-step migration went to PLAN-LB-40, and the three footprint-less plans were deleted and the gate read determinate.
 
