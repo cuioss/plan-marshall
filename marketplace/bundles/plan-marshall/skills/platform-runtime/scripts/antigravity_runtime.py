@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Any, cast
 
 import runtime_info
+from toon_parser import BlockScalar
 from runtime_base import (
     PERMISSION_FIX_OPERATIONS,
     Runtime,
@@ -973,6 +974,10 @@ class AntigravityRuntime(Runtime):
             for key, value in context.items():
                 prompt_body = prompt_body.replace(f'{{{key}}}', str(value))
 
+        # The prompt file is opaque multi-line text: it embeds example blocks
+        # (e.g. ``status: success | error ...``) that would parse as envelope keys
+        # at column zero. Mark it so it crosses the TOON boundary inert — the
+        # ``_chat_signal_reducer`` BlockScalar precedent.
         return toon_success(
             'subagent dispatch',
             {
@@ -981,7 +986,7 @@ class AntigravityRuntime(Runtime):
                 'invocation': {
                     'tool': 'invoke_subagent',
                     'description': f'Run {agent}',
-                    'prompt': prompt_body,
+                    'prompt': BlockScalar(prompt_body),
                     'subagent_type': agent,
                 },
             },
