@@ -612,14 +612,16 @@ def compose_request_project_gates(
 ) -> list[str]:
     """Compose request and project gates into the D4 gate stamp shape.
 
-    The D4 stamp shape is boundary-normalized (bare, no ``default:`` prefix),
-    de-duped, and ordered downstream by the compose frontmatter sort. This
-    helper performs the normalize-plus-de-dupe half: every incoming gate id is
-    normalized via :func:`canonicalize_step_key`, empty entries are dropped,
-    and the first-seen order is preserved across ``existing_steps`` then
-    ``request_gates`` then ``project_gates``. Frontmatter ordering is NOT
-    applied here; it is applied downstream by the compose
-    ``frontmatter_order_sort`` pass, which is the single ordering authority.
+    The D4 stamp shape is boundary-normalized (bare, no ``default:`` prefix)
+    and de-duped. This helper performs the normalize-plus-de-dupe half: every
+    incoming gate id is normalized via :func:`canonicalize_step_key`, empty
+    entries are dropped, and the first-seen order is preserved across
+    ``existing_steps`` then ``request_gates`` then ``project_gates``. That
+    first-seen order is FINAL for the phase-5 list: no downstream frontmatter
+    sort reorders it — canonical-verify entries keep their persisted list
+    order by contract (see the phase-5-execute ``canonical_verify`` standard),
+    and the compose ``frontmatter_order_sort`` pass governs phase-6 steps,
+    not phase-5 verification steps.
 
     Args:
         request_gates: Gate ids from the request surface.

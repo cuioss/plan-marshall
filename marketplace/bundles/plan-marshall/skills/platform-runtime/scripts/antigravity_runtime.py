@@ -115,12 +115,18 @@ def _write_rules_bridge(project_dir: Path) -> bool:
         if bridge.is_file() and STANDING_RULES_BRIDGE_MARKER in bridge.read_text(encoding='utf-8'):
             try:
                 baseline = project_dir / STANDING_RULES_BASELINE
-                if baseline.is_file() and baseline.stat().st_mtime > bridge.stat().st_mtime:
-                    pass
-                else:
-                    return False
+                baseline_newer = baseline.is_file() and baseline.stat().st_mtime > bridge.stat().st_mtime
             except OSError:
                 return False
+            if not baseline_newer:
+                # Bridge is current (baseline older, same age, or absent):
+                # nothing to re-affirm.
+                return False
+            # Baseline newer than the bridge: fall through to the rewrite
+            # below, which re-affirms the bridge and clears the
+            # baseline_newer drift verdict on re-setup. The bridge carries
+            # only the version marker plus a baseline pointer (no copied
+            # prose), so re-affirmation is a rewrite, not a content merge.
         bridge.parent.mkdir(parents=True, exist_ok=True)
         bridge.write_text(body, encoding='utf-8')
         return True

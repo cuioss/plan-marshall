@@ -61,7 +61,7 @@ Twenty-seven operations covering the full platform lifecycle:
 | `subagent dispatch` | Return platform-specific subagent invocation parameters |
 | `wait for` | Hold a bounded wait until a concrete, pollable observable (`--observable` names a kind from a closed set; `build-job` today) reaches a terminal state, and return a normalized `succeeded`/`failed`/`timed_out`/`killed`/`pending` outcome. The observable is never an opaque condition descriptor — a runtime subprocess cannot evaluate one. Bound exhaustion yields `outcome: pending` with `terminal: false`, never an implicit pass |
 | `health-check` | Verify platform integration |
-| `runtime-info` | Collect harness, model, effort, and build-version for the `client.toon` pre-flight artifact; best-effort with drop-not-estimate semantics on `claude` and `opencode` only |
+| `runtime-info` | Collect harness, model, effort, and build-version for the `client.toon` pre-flight artifact; best-effort with drop-not-estimate semantics on `claude`, `opencode`, and `antigravity` |
 
 See `standards/contract.md` for per-operation TOON schemas (success, error, no-op paths).
 

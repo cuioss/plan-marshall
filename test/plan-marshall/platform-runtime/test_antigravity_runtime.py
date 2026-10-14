@@ -619,6 +619,29 @@ def test_resestup_heals_drifted_bridge(runtime: AntigravityRuntime, monkeypatch:
     assert standing_rules_drift_status(str(tmp_path))['reason'] == 'in_sync'
 
 
+def test_resestup_clears_baseline_newer_drift(
+    runtime: AntigravityRuntime, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
+    """Re-setup re-affirms the bridge and clears a baseline_newer drift verdict."""
+    import os
+
+    from antigravity_runtime import _bridge_rules_path, standing_rules_drift_status
+
+    (tmp_path / 'CLAUDE.md').write_text('# baseline\n', encoding='utf-8')
+    monkeypatch.setenv('GEMINI_CONFIG_DIR', str(tmp_path / 'gemini-config'))
+    _parse(runtime.project_initial_setup(str(tmp_path), 'antigravity'))
+
+    past = 1_000_000_000
+    os.utime(_bridge_rules_path(tmp_path), (past, past))
+    os.utime(tmp_path / 'CLAUDE.md', (past + 60, past + 60))
+    assert standing_rules_drift_status(str(tmp_path))['reason'] == 'baseline_newer'
+
+    result = _parse(runtime.project_initial_setup(str(tmp_path), 'antigravity'))
+
+    assert result['bridge_written'] is True
+    assert standing_rules_drift_status(str(tmp_path))['reason'] == 'in_sync'
+
+
 def test_reconcile_standing_rules_bridge_heals_missing_bridge(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     """The steward reconcile heals a missing Antigravity bridge via setup."""
     from antigravity_runtime import _bridge_rules_path

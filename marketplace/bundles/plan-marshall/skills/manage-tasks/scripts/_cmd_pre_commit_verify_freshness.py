@@ -145,9 +145,8 @@ from _freshness_crosscheck import (
     REASON_REQUIRED_COVERAGE_UNKNOWN,
     RequiredCoverage,
     cross_check_candidates,
-    load_analysis_vocabulary,
+    freshness_inputs_for_composition,
     parse_row_scope,
-    required_coverage,
 )
 from _ledger_core import (
     KIND_BUILD,
@@ -347,6 +346,14 @@ def _resolve_required_coverage(plan_id: str) -> tuple[RequiredCoverage | None, s
     the reason the rest of this module defers its cross-skill imports: no hard
     top-level dependency on another skill's scripts dir.
 
+    The vocabulary load plus the pure derivation run through
+    :func:`_freshness_crosscheck.freshness_inputs_for_composition` — the shared
+    composition surface — so this gate and composition readers derive the
+    requirement from one helper rather than each inlining the same two calls.
+    The helper's plain-values ``required`` dict is reconstructed into a
+    :class:`RequiredCoverage` here because the cross-check below consumes the
+    frozen dataclass, not the serializable shape.
+
     ⛔ Narrow units are never an input here. ``resolve_test_scope`` is called
     WITHOUT its optional test-directory set, so the resolution carries two empty
     narrow lists, and only ``scoped_modules`` and ``divergence_possible`` are
@@ -368,9 +375,6 @@ def _resolve_required_coverage(plan_id: str) -> tuple[RequiredCoverage | None, s
     Returns:
         ``(required, reason)``. Exactly one side is informative.
     """
-    vocabulary, vocabulary_reason = load_analysis_vocabulary()
-    if vocabulary is None:
-        return None, vocabulary_reason
     try:
         from _test_scope_divergence import resolve_test_scope
         from _test_scope_targets import resolve_bundle_modules, resolve_registered_targets
@@ -414,12 +418,19 @@ def _resolve_required_coverage(plan_id: str) -> tuple[RequiredCoverage | None, s
         return None, REASON_REQUIRED_COVERAGE_UNKNOWN
 
     resolution = resolve_test_scope(footprint, globs, registered, bundle_modules=bundles)
+    inputs = freshness_inputs_for_composition(
+        footprint,
+        tuple(resolution.scoped_modules),
+        resolution.divergence_possible,
+    )
+    if inputs['required'] is None:
+        return None, inputs['reason']
+    req = inputs['required']
     return (
-        required_coverage(
-            footprint,
-            resolution.scoped_modules,
-            resolution.divergence_possible,
-            vocabulary,
+        RequiredCoverage(
+            analyses=frozenset(req['analyses']),
+            whole_tree=req['whole_tree'],
+            modules=frozenset(req['modules']),
         ),
         None,
     )

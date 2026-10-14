@@ -794,6 +794,25 @@ def test_subagent_dispatch_prompt_crosses_toon_boundary_inert(
     assert str(result['invocation']['prompt']) == prompt_file.read_text(encoding='utf-8')
 
 
+def test_subagent_dispatch_task_tool_unavailable_takes_inline_branch(runtime: OpenCodeRuntime) -> None:
+    """An explicit task_tool_available=False declines with the inline-branch no-op."""
+    result = _parse(runtime.subagent_dispatch('execution-context-level-3', None, {'task_tool_available': False}))
+
+    assert result['status'] == 'no-op'
+    assert result['operation'] == 'subagent dispatch'
+    assert result['reason']
+    assert result['alternative']
+
+
+def test_subagent_dispatch_task_tool_flag_defaults_to_available(runtime: OpenCodeRuntime) -> None:
+    """An absent flag (or absent context) fires the dispatch — available is the explicit default."""
+    assert _parse(runtime.subagent_dispatch('execution-context-level-3', None, None))['status'] == 'success'
+    assert (
+        _parse(runtime.subagent_dispatch('execution-context-level-3', None, {'plan_id': 'x'}))['status']
+        == 'success'
+    )
+
+
 # =============================================================================
 # 14. wait_for — declined no-op (OpenCode holds no wait channel)
 # =============================================================================
@@ -1049,6 +1068,26 @@ def test_resestup_heals_drifted_bridge(runtime: OpenCodeRuntime, tmp_path: pathl
     bridge.parent.mkdir(parents=True)
     bridge.write_text('stale foreign content\n', encoding='utf-8')
     assert standing_rules_drift_status(str(tmp_path))['reason'] == 'marker_mismatch'
+
+    result = _parse(runtime.project_initial_setup(str(tmp_path), 'opencode'))
+
+    assert result['bridge_written'] is True
+    assert standing_rules_drift_status(str(tmp_path))['reason'] == 'in_sync'
+
+
+def test_resestup_clears_baseline_newer_drift(runtime: OpenCodeRuntime, tmp_path: pathlib.Path) -> None:
+    """Re-setup re-affirms the bridge and clears a baseline_newer drift verdict."""
+    import os
+
+    from opencode_runtime import _bridge_rules_path, standing_rules_drift_status
+
+    (tmp_path / 'CLAUDE.md').write_text('# baseline\n', encoding='utf-8')
+    _parse(runtime.project_initial_setup(str(tmp_path), 'opencode'))
+
+    past = 1_000_000_000
+    os.utime(_bridge_rules_path(tmp_path), (past, past))
+    os.utime(tmp_path / 'CLAUDE.md', (past + 60, past + 60))
+    assert standing_rules_drift_status(str(tmp_path))['reason'] == 'baseline_newer'
 
     result = _parse(runtime.project_initial_setup(str(tmp_path), 'opencode'))
 

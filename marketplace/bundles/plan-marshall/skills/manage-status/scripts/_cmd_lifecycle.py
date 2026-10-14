@@ -474,6 +474,11 @@ def _recorded_change_shas() -> set[str] | None:
     ``None`` when the reader cannot be imported or the ledger cannot be read:
     an unreadable store is unevaluable, never an empty store.
 
+    An empty set is a MEASURED zero — the store was read and holds no
+    ``kind=change`` row — and the caller reports it as wholly-missing
+    markers. It is never ``None``: ``None`` means the store could not be
+    read at all, so the two must not be collapsed.
+
     Values are stored verbatim (full or abbreviated) — normalization happens
     at comparison time in :func:`_sha_is_recorded`, so rows written before
     the full-SHA writer contract still compare equal.

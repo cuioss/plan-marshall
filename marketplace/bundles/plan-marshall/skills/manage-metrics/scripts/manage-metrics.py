@@ -2515,9 +2515,7 @@ def cmd_generate(args: argparse.Namespace) -> dict:
     # sum beside its count stays checkable in the store.
     if unknown_token_phases:
         lines.append(
-            '> Tokens unknown — no measurement exists for these phases (their run '
-            'carried a `transcripts: none` capability, so no transcript was walked '
-            'and no usage envelope was reaped): '
+            '> Tokens unknown — no measurement was recorded for these phases: '
             f'{", ".join(unknown_token_phases)}. Their cells render `unknown`, never '
             '`0`, and the **Total** is itself `unknown` — a sum with a hole in it '
             'is not a sum. A measured zero still renders `0`; only never-measured '

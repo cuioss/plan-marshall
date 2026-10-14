@@ -854,10 +854,17 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metada
   --plan-id {plan_id} --set --field harness --value {harness}
 ```
 
-On `status: error` or `status: no-op` (no harness resolvable), skip the persist
-and emit a `[WARNING]` work-log entry noting the gap — an absent `harness`
-reads as "not stamped", never as a default harness. Continue to Step 8a.5
-either way. See `manage-status/SKILL.md` for the `harness` field contract and
+On `status: error` or `status: no-op` (no harness resolvable), or on `status: success`
+with an empty `harness` value, skip the persist and emit a `[WARNING]` work-log
+entry noting the gap — an absent `harness` reads as "not stamped", never as a
+default harness:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  work --plan-id {plan_id} --level WARNING --message "[WARNING] (plan-marshall:phase-1-init) harness not stamped at plan-init — downstream readers treat an absent harness as not stamped"
+```
+
+Continue to Step 8a.5 either way. See `manage-status/SKILL.md` for the `harness` field contract and
 `platform-runtime/standards/runtime-info.md` for the `transcripts` capability
 the same op reports.
 

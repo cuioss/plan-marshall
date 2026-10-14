@@ -480,13 +480,16 @@ def freshness_inputs_for_composition(
 ) -> dict[str, Any]:
     """Expose the freshness inputs the D7 gate composition consumes.
 
-    The pre-push gate composes the same coverage derivation the freshness gate
-    enforces, so both read one surface rather than re-deriving the requirement
-    twice. This helper publishes that surface: the live ``footprint``, the
+    This helper publishes the shared surface: the live ``footprint``, the
     resolver-derived ``scoped_modules`` and ``divergence_possible`` verdict,
     and the derived :class:`RequiredCoverage` (or the
     ``required_coverage_unknown`` reason token when the vocabulary cannot be
-    loaded and nothing could be derived).
+    loaded and nothing could be derived). The pre-commit-verify-freshness
+    gate's ``_resolve_required_coverage`` consumes this helper for its
+    vocabulary-plus-derivation tail and reconstructs the frozen
+    :class:`RequiredCoverage` from the plain-values dict, so the gate and
+    every other reader of this surface derive the requirement from one
+    helper rather than each inlining the same two calls.
 
     Args:
         footprint: The live plan footprint, repo-relative.

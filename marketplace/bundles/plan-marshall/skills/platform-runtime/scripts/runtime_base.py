@@ -1312,11 +1312,13 @@ class Runtime(ABC):
         branch — a ``no-op`` naming the inline fallback — never a faux success
         carrying invocation parameters the harness cannot honour.
 
-        Usage propagation: every implementor propagates usage as ``unknown``
-        when no dispatch happened — the inline branch and every ``no-op`` carry
-        ``usage: unknown`` rather than a measured zero, so an unmeasured run
-        stays distinguishable from a measured one (shared with the
-        manage-metrics unknown vocabulary).
+        Usage propagation: success payloads carry ``usage`` (``unknown`` — no
+        dispatch has happened yet at this seam, so there is nothing measured
+        to report). ``no-op`` payloads carry no ``usage`` key — they carry
+        ``reason``/``alternative`` per the shared ``toon_noop`` schema — and
+        the caller propagates usage as ``unknown`` on every path where no
+        dispatch happened, so an unmeasured run stays distinguishable from a
+        measured one (shared with the manage-metrics unknown vocabulary).
 
         The four implementors this contract migrates together are
         ``_claude_runtime_impl`` (``Task``), ``claude_runtime`` (``Task`` via

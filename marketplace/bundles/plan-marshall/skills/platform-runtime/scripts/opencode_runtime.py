@@ -133,12 +133,18 @@ def _write_rules_bridge(project_dir: Path) -> bool:
         if bridge.is_file() and STANDING_RULES_BRIDGE_MARKER in bridge.read_text(encoding='utf-8'):
             try:
                 baseline = project_dir / STANDING_RULES_BASELINE
-                if baseline.is_file() and baseline.stat().st_mtime > bridge.stat().st_mtime:
-                    pass
-                else:
-                    return False
+                baseline_newer = baseline.is_file() and baseline.stat().st_mtime > bridge.stat().st_mtime
             except OSError:
                 return False
+            if not baseline_newer:
+                # Bridge is current (baseline older, same age, or absent):
+                # nothing to re-affirm.
+                return False
+            # Baseline newer than the bridge: fall through to the rewrite
+            # below, which re-affirms the bridge and clears the
+            # baseline_newer drift verdict on re-setup. The bridge carries
+            # only the version marker plus a baseline pointer (no copied
+            # prose), so re-affirmation is a rewrite, not a content merge.
         bridge.parent.mkdir(parents=True, exist_ok=True)
         bridge.write_text(body, encoding='utf-8')
         return True
@@ -1334,13 +1340,20 @@ class OpenCodeRuntime(Runtime):
         Verify-first clause 1: the ``task``-tool dispatch fires only when the
         tool is available in this envelope. A caller that knows the tool is
         absent passes ``task_tool_available: False`` inside *context*; the
-        decline takes the explicit logged inline branch — a ``no-op`` carrying
-        ``usage: unknown`` — instead of a faux success the harness cannot
-        honour. The flag is consumed here and never merged into the prompt.
+        decline takes the explicit logged inline branch — a ``no-op`` naming
+        the inline fallback (the caller propagates ``usage`` as ``unknown``)
+        — instead of a faux success the harness cannot
+        honour. The flag defaults explicitly to available: an absent flag (or
+        an absent *context*) reads as ``True`` and the dispatch fires; only an
+        explicit ``False`` declines. The flag is consumed here and never merged
+        into the prompt.
         """
         import pathlib
 
-        if isinstance(context, dict) and context.get('task_tool_available') is False:
+        task_tool_available = (
+            True if not isinstance(context, dict) else context.get('task_tool_available', True)
+        )
+        if task_tool_available is False:
             return toon_noop(
                 'subagent dispatch',
                 "OpenCode 'task' tool is not available in this envelope — "
