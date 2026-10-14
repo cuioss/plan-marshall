@@ -250,6 +250,8 @@ Each line in `findings/qgate-{phase}.jsonl` is a JSON object:
 | `source` | string | `qgate` (automated verification) or `user_review` (user feedback) |
 | `iteration` | int | Verification cycle number (1 = first build attempt, 2 = after fixes) |
 | `content_discriminator` | string | 6-char stable hash over (`detail`, `file_path`, `rule`) folded into the dedup key (see [Deduplication](#deduplication-q-gate-only)) |
+| `history` | array | Prior resolution snapshots, appended only by the fixed-only `--reopen` opt-in — each entry carries the overridden `resolution`, `resolution_detail`, `resolution_timestamp` and `timestamp` |
+| `reobserved_count` | int | How many times an unchanged re-emission re-detected this record while its resolution was kept |
 
 Q-Gate findings do NOT have `promoted`/`promoted_to` fields — they are not promotable.
 
@@ -291,7 +293,8 @@ When adding a Q-Gate finding, the system dedups on the **`(title, content_discri
 |----------------|--------|-----------------|
 | No record matching BOTH title AND content_discriminator | Create new record | `success` |
 | Match (title AND discriminator) with `pending` resolution | No change | `deduplicated` |
-| Match (title AND discriminator) with non-pending resolution | Reset to `pending` | `reopened` |
+| Match (title AND discriminator) with non-pending resolution | Keep resolution, detail and timestamp exactly; record the re-observation as a counter | `kept` |
+| Match with `fixed` resolution AND the `--reopen` opt-in | Return to `pending`; move the prior resolution, detail and timestamp into `history` | `reopened` |
 
 A same-title finding whose `content_discriminator` differs (a different subject / file / rule) is a DISTINCT record — it never reopens the resolved one. Q-Gate dedup tests must use unique `plan_id`s per test (test-isolation constraint) so stale cross-test data cannot perturb the `(title, discriminator)` match.
 
