@@ -1496,7 +1496,7 @@ The reason codes below are the complete set the verb can return: every `status: 
 | `error` | Raised when |
 |---------|-------------|
 | `plan_dir_not_found` | The plan directory does not exist. |
-| `domains_unreadable` | `references.json` carries no readable `domains` list, so there is no set to narrow. |
+| `domains_unreadable` | `references.json` carries no readable `domains` list, so there is no set to narrow. Under `--apply` this code is also returned when the re-read `domains` set differs from the evaluated one — a concurrent `references.json` change landed mid-call — so the stale retained set is never written over it. |
 | `marshal_not_readable` | `marshal.json` could not be loaded, so no inclusion leg could be evaluated. |
 | `no_skill_domains_configured` | `marshal.json` configures no `skill_domains`, so no inclusion leg could be evaluated. |
 | `footprint_unreadable` | `references.json` carries no readable `affected_files` list and no `--affected-files` override was given, so the `file_globs` leg had no footprint to evaluate against. |
@@ -1504,7 +1504,7 @@ The reason codes below are the complete set the verb can return: every `status: 
 | `task_leg_unreadable` | A `TASK-*.json` could not be read, **or carries no usable domain** — it is not a JSON object, or its required `domain` field is absent, empty, or not a string — so the task leg of the safety bound could not be evaluated. Both shapes are an **error**, never evidence that no task claims the domain: skipping either would silently remove the domain that file claims from the leg, and the run would then report `status: success` with that domain dropped and an empty `claimed_by` — publishing "no leg claimed it" for a leg that never looked. |
 | `would_empty` | Narrowing would retain no user domain (every non-`system` domain is droppable), so no domain set is written — even under `--apply`. An empty domain set leaves the plan with no skill routing, so the refusal is fail-closed. |
 
-Read-only by default: it reads `marshal.json`, `references.json`, and the plan's task state, and writes nothing unless `--apply` is passed (no LLM dispatch). With `--apply` it persists the retained set to `references.json` and reports `applied: true`; on `would_empty` it writes nothing. Persisting the narrowed set without `--apply` remains the caller's job — phase-3-outline writes it back through `manage-references`.
+Read-only by default: it reads `marshal.json`, `references.json`, and the plan's task state, and writes nothing unless `--apply` is passed (no LLM dispatch). With `--apply` it persists the retained set to `references.json` and reports `applied: true`; on `would_empty` it writes nothing, and it writes nothing when the re-read `domains` set differs from the evaluated one (a concurrent change landed mid-call). Persisting the narrowed set without `--apply` remains the caller's job — phase-3-outline writes it back through `manage-references`.
 
 ### build-map seed
 

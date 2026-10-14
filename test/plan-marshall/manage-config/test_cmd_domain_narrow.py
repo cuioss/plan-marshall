@@ -728,6 +728,94 @@ Outline declares general-dev.
 - Done
 """
 
+#: A ``- domain: general-dev`` line in the ``## Solution Metadata`` section and
+#: nowhere inside a deliverable ``**Metadata:**`` block. Under whole-file
+#: scanning this retained general-dev through the deliverable leg; under
+#: block-scoped parsing it claims nothing.
+_OUTLINE_WITH_OUT_OF_BLOCK_DOMAIN = """# Solution: Domain Outside Metadata
+
+## Solution Metadata
+
+- scope_estimate: surgical
+- domain: general-dev
+
+## Summary
+
+Outline mentions general-dev outside any deliverable Metadata block.
+
+## Overview
+
+```
+[A] -> [B]
+```
+
+## Deliverables
+
+### 1. Touch the docs
+
+**Metadata:**
+- change_type: documentation
+- execution_mode: automated
+- module: docs
+- depends: none
+
+**Profiles:**
+- implementation
+
+**Affected files:**
+- `doc/user/guide.adoc` (write-replace)
+
+**Verification:**
+- Command: `true`
+- Criteria: done
+
+**Success Criteria:**
+- Done
+"""
+
+#: A deliverable Metadata block declaring a name no skill_domains entry
+#: configures. Retaining it would keep a domain no skill resolution can bind.
+_OUTLINE_WITH_UNCONFIGURED_DOMAIN = """# Solution: Outline Declares an Unconfigured Name
+
+## Solution Metadata
+
+- scope_estimate: surgical
+
+## Summary
+
+Outline declares quantum-realms, which nothing configures.
+
+## Overview
+
+```
+[A] -> [B]
+```
+
+## Deliverables
+
+### 1. Touch the docs
+
+**Metadata:**
+- change_type: documentation
+- execution_mode: automated
+- domain: quantum-realms
+- module: docs
+- depends: none
+
+**Profiles:**
+- implementation
+
+**Affected files:**
+- `doc/user/guide.adoc` (write-replace)
+
+**Verification:**
+- Command: `true`
+- Criteria: done
+
+**Success Criteria:**
+- Done
+"""
+
 
 def test_deliverable_declared_domain_is_retained_without_an_inclusion_leg(plan_context):
     """A deliverable-declared domain survives a footprint no other leg claims."""
@@ -762,6 +850,66 @@ def test_absent_outline_leaves_the_leg_empty(plan_context):
     assert set(result['dropped']) == {'documentation', 'general-dev'}
 
 
+def test_domain_line_outside_a_metadata_block_claims_nothing(plan_context):
+    """A ``- domain:`` line outside any ``**Metadata:**`` block is not a declaration.
+
+    The claim collector used to ``findall`` the whole outline, so a domain named
+    in the ``## Solution Metadata`` section or in prose retained a domain no
+    deliverable declared. Only lines inside a deliverable Metadata block count.
+    """
+    _seed_with_outline(
+        plan_context,
+        'dn-out-of-block',
+        _CONFIGURED_DOMAINS,
+        [_MD_FOOTPRINT],
+        _OUTLINE_WITH_OUT_OF_BLOCK_DOMAIN,
+    )
+
+    result = cmd_domain_narrow(_ns('dn-out-of-block', _MD_FOOTPRINT))
+
+    assert result['status'] == 'success'
+    assert 'general-dev' in result['dropped']
+    assert _claimed_by(result, 'general-dev') == []
+
+
+def test_unconfigured_deliverable_claim_retains_nothing(plan_context):
+    """A deliverable-declared name with no configured entry claims nothing.
+
+    Retaining it would keep a domain no skill resolution can bind, and it would
+    satisfy the would_empty guard on the strength of a name nothing routes to.
+    """
+    _seed_with_outline(
+        plan_context,
+        'dn-unconfigured-claim',
+        [*_CONFIGURED_DOMAINS, 'quantum-realms'],
+        [_PY_FOOTPRINT],
+        _OUTLINE_WITH_UNCONFIGURED_DOMAIN,
+    )
+
+    result = cmd_domain_narrow(_ns('dn-unconfigured-claim', _PY_FOOTPRINT))
+
+    assert result['status'] == 'success'
+    assert 'quantum-realms' in result['dropped']
+    assert _claimed_by(result, 'quantum-realms') == []
+    assert 'python' in result['retained']
+
+
+def test_unconfigured_claim_does_not_satisfy_would_empty(plan_context):
+    """An outline declaring only an unconfigured name still refuses empty."""
+    _seed_with_outline(
+        plan_context,
+        'dn-unconfigured-empty',
+        ['quantum-realms'],
+        [_PY_FOOTPRINT],
+        _OUTLINE_WITH_UNCONFIGURED_DOMAIN,
+    )
+
+    result = cmd_domain_narrow(_ns('dn-unconfigured-empty', _PY_FOOTPRINT))
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'would_empty'
+
+
 # =============================================================================
 # The would_empty guard — narrowing that would retain no user domain refuses.
 # =============================================================================
@@ -787,6 +935,22 @@ def test_system_only_retained_set_returns_would_empty(plan_context):
 
     assert result['status'] == 'error'
     assert result['error'] == 'would_empty'
+
+
+def test_would_empty_carries_exactly_status_error_and_message(plan_context):
+    """The would_empty arm carries exactly status, error and message.
+
+    Every sibling error return carries exactly those three keys; would_empty
+    used to add plan_id, so a caller branching on the arm's shape met a fourth
+    key on one code only.
+    """
+    _seed(plan_context, 'dn-would-empty-shape', ['documentation'])
+
+    result = cmd_domain_narrow(_ns('dn-would-empty-shape', _PY_FOOTPRINT))
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'would_empty'
+    assert set(result) == {'status', 'error', 'message'}
 
 
 def test_apply_persists_the_retained_set(plan_context):
@@ -835,3 +999,62 @@ def test_apply_writes_nothing_on_would_empty(plan_context):
     assert result['status'] == 'error'
     assert result['error'] == 'would_empty'
     assert (plan_dir / 'references.json').read_bytes() == before
+
+
+def _apply_ns(plan_id: str, affected_files: str) -> Namespace:
+    """Args for ``domain-narrow --apply``, built by the script's own parser."""
+    return parse_ns(
+        _BUNDLE,
+        _SKILL,
+        _SCRIPT_NAME,
+        'domain-narrow',
+        '--plan-id',
+        plan_id,
+        '--affected-files',
+        affected_files,
+        '--apply',
+    )
+
+
+def test_apply_refuses_when_references_changed_underneath(plan_context, monkeypatch):
+    """--apply writes nothing when references.json changed after evaluation.
+
+    The evaluation read and the --apply re-read are two looks at a live
+    document inside one synchronous call, so no outside writer can interleave
+    between them in-process: the stale evaluation is simulated by pinning
+    _read_domains while the file holds the concurrently committed set.
+    """
+    plan_dir = _seed(plan_context, 'dn-apply-stale', _CONFIGURED_DOMAINS)
+    monkeypatch.setattr(_mod, '_read_domains', lambda _plan_dir: list(_CONFIGURED_DOMAINS))
+    refs_path = plan_dir / 'references.json'
+    refs = json.loads(refs_path.read_text(encoding='utf-8'))
+    refs['domains'] = [*_CONFIGURED_DOMAINS, 'quantum-realms']
+    refs_path.write_text(json.dumps(refs), encoding='utf-8')
+    before = refs_path.read_bytes()
+
+    result = cmd_domain_narrow(_apply_ns('dn-apply-stale', _PY_FOOTPRINT))
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'domains_unreadable'
+    assert refs_path.read_bytes() == before
+
+
+def test_apply_tolerates_a_reordered_domains_list(plan_context, monkeypatch):
+    """A reordered-but-equal re-read is not a concurrent change: --apply proceeds.
+
+    The staleness comparison is set-wise — a pure reordering commits nothing
+    new, so it must not refuse a write whose evaluated evidence still holds.
+    """
+    plan_dir = _seed(plan_context, 'dn-apply-reorder', _CONFIGURED_DOMAINS)
+    monkeypatch.setattr(_mod, '_read_domains', lambda _plan_dir: list(_CONFIGURED_DOMAINS))
+    refs_path = plan_dir / 'references.json'
+    refs = json.loads(refs_path.read_text(encoding='utf-8'))
+    refs['domains'] = sorted(_CONFIGURED_DOMAINS, reverse=True)
+    refs_path.write_text(json.dumps(refs), encoding='utf-8')
+
+    result = cmd_domain_narrow(_apply_ns('dn-apply-reorder', _PY_FOOTPRINT))
+
+    assert result['status'] == 'success'
+    assert result['applied'] is True
+    persisted = json.loads(refs_path.read_text(encoding='utf-8'))['domains']
+    assert set(persisted) == set(result['retained'])

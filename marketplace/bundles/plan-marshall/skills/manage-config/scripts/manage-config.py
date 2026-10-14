@@ -955,7 +955,8 @@ def main() -> int:
         action='store_true',
         help='Persist the retained domain set to references.json. Without this flag the '
         'verb only reports. The would_empty guard refuses the write when no user domain '
-        'would be retained.',
+        'would be retained. The write is also refused when references.json changed '
+        'between evaluation and --apply.',
     )
 
     args = parse_args_with_toon_errors(parser)

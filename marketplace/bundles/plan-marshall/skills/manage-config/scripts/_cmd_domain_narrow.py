@@ -222,29 +222,80 @@ def _compose_report(current: list[str], retained: list[str], dropped: list[str])
     return f'{head}; nothing droppable'
 
 
-#: Matches a deliverable ``**Metadata:**`` ``- domain: NAME`` declaration line.
-_DELIVERABLE_DOMAIN_PATTERN = re.compile(r'^\s*-\s*domain:\s*([A-Za-z0-9_.-]+)\s*$', re.MULTILINE)
+#: Matches a ``- domain: NAME`` declaration line. Evaluated per line by
+#: ``_metadata_block_domains``, never against the whole outline at once — a
+#: whole-file ``findall`` also matched ``- domain:`` lines in prose, in the
+#: ``## Solution Metadata`` section, and in fenced code blocks, crediting the
+#: deliverable leg with declarations no deliverable ever made.
+_DELIVERABLE_DOMAIN_PATTERN = re.compile(r'^\s*-\s*domain:\s*([A-Za-z0-9_.-]+)\s*$')
+
+#: Opens a deliverable ``**Metadata:**`` block. Only ``- domain:`` lines that
+#: follow such a marker — up to the next non-list line — are declarations.
+_METADATA_MARKER_RE = re.compile(r'\*\*Metadata:\*\*')
+
+#: Matches any markdown list-item line. A line that is neither blank nor a list
+#: item closes the open ``**Metadata:**`` block.
+_METADATA_LIST_ITEM_RE = re.compile(r'^\s*-\s*\S')
 
 
-def _deliverable_declared_domains(plan_dir) -> set[str]:
-    """Return the domains the plan's solution outline deliverables declare.
+def _metadata_block_domains(content: str) -> set[str]:
+    """Return the ``- domain: NAME`` values declared inside ``**Metadata:**`` blocks.
+
+    The scan is block-scoped: a ``**Metadata:**`` marker opens a block, blank
+    lines are skipped, and the first non-blank non-list line (a heading, a bold
+    field like ``**Profiles:**``, prose) closes it. Blank lines do NOT close
+    the block — stopping at one would drop a declaration separated from its
+    marker by an empty line, and the leg would then claim nothing for a domain
+    the deliverable did declare, which is the fail-open direction. Reading past
+    them can only collect a ``- domain:`` line, and any such line past the
+    marker but before the next structural boundary still sits under the
+    deliverable's own Metadata header.
+    """
+    claimed: set[str] = set()
+    in_block = False
+    for line in content.splitlines():
+        if _METADATA_MARKER_RE.search(line):
+            in_block = True
+            continue
+        if not in_block:
+            continue
+        if not line.strip():
+            continue
+        if not _METADATA_LIST_ITEM_RE.match(line):
+            in_block = False
+            continue
+        match = _DELIVERABLE_DOMAIN_PATTERN.match(line)
+        if match:
+            claimed.add(match.group(1))
+    return claimed
+
+
+def _deliverable_declared_domains(plan_dir, user_domains) -> set[str]:
+    """Return the CONFIGURED domains the plan's solution outline deliverables declare.
 
     Parses ``solution_outline.md`` in ``plan_dir`` for ``- domain: NAME`` lines
-    inside deliverable ``**Metadata:**`` blocks. A domain declared by any
-    deliverable is load-bearing for work already planned and is never droppable —
-    the fourth leg of the safety bound.
+    inside deliverable ``**Metadata:**`` blocks (see ``_metadata_block_domains``
+    for the block scope). A configured domain declared by any deliverable is
+    load-bearing for work already planned and is never droppable — the fourth
+    leg of the safety bound.
+
+    Names with no configured ``user_domains`` entry are NOT returned, even when
+    a deliverable declares them: an unconfigured claim would otherwise retain a
+    domain no skill resolution can bind (and would satisfy the ``would_empty``
+    guard on the strength of a name nothing can route to), breaking later skill
+    resolution. The outline is the deliverable-declared source; task files
+    remain the task leg's source.
 
     An absent or unreadable outline yields the empty set (fail-open for the leg,
     fail-closed for the plan): with no declaration to consult, the leg claims
-    nothing rather than refusing the whole narrowing pass. The outline is the
-    deliverable-declared source; task files remain the task leg's source.
+    nothing rather than refusing the whole narrowing pass.
     """
     outline = plan_dir / 'solution_outline.md'
     try:
         content = outline.read_text(encoding='utf-8')
     except (OSError, ValueError):
         return set()
-    return set(_DELIVERABLE_DOMAIN_PATTERN.findall(content))
+    return _metadata_block_domains(content) & set(user_domains)
 
 
 def cmd_domain_narrow(args) -> dict[str, Any]:
@@ -338,7 +389,7 @@ def cmd_domain_narrow(args) -> dict[str, Any]:
 
     always_on_set = _always_on_domains(user_domains)
     glob_matched_set = _glob_matched_domains(user_domains, footprint)
-    deliverable_declared = _deliverable_declared_domains(plan_dir)
+    deliverable_declared = _deliverable_declared_domains(plan_dir, user_domains)
     try:
         task_claimed = _task_claimed_domains(plan_dir)
     except _TaskLegUnreadable as exc:
@@ -381,10 +432,13 @@ def cmd_domain_narrow(args) -> dict[str, Any]:
 
     retained_user = [d for d in retained if d != SYSTEM_DOMAIN]
     if not retained_user:
+        # The could-not-evaluate arm carries exactly status, error and message —
+        # no plan_id, none of the success fields. A caller that reads dropped[]
+        # without branching on status first finds no key rather than a list it
+        # would read as "looked, and nothing was droppable".
         return {
             'status': 'error',
             'error': 'would_empty',
-            'plan_id': plan_id,
             'message': (
                 'Narrowing would retain no user domain, so no domain set is written: '
                 f'{len(unique_current)} domain(s) evaluated, all droppable. '
@@ -407,6 +461,21 @@ def cmd_domain_narrow(args) -> dict[str, Any]:
                 if isinstance(refs, dict) and isinstance(refs.get('domains'), list)
                 else 'references.json carries no readable domains list, so --apply wrote nothing'
             )
+        if not apply_error:
+            # The re-read is a second look at a live document: another writer may
+            # have committed between the evaluation above and this write, and the
+            # write below overwrites ``domains`` with the retained set derived
+            # from the STALE read. Refuse when the re-read set differs from the
+            # evaluated one instead of clobbering the concurrent change. The
+            # comparison is set-wise — a pure reordering commits nothing new, so
+            # it must not refuse a write whose evaluated evidence still holds.
+            reread_set = {d for d in refs.get('domains') if isinstance(d, str) and d}
+            if reread_set != set(current):
+                apply_error = (
+                    'references.json domains changed between evaluation and --apply, '
+                    f'so --apply wrote nothing (evaluated {sorted(set(current))}, '
+                    f're-read {sorted(reread_set)})'
+                )
         if apply_error:
             return {
                 'status': 'error',
