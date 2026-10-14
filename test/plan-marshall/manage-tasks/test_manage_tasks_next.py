@@ -25,16 +25,21 @@ def _stamp_cost_fields(plan_id, task_number, **fields):
     """Write cost-sizing fields directly onto a stored task file.
 
     The three cost-sizing fields (cost_size, predicted_cost_tokens,
-    envelope_id) are stamped onto a task record by upstream phase-4-plan
-    producers (derive-cost-size / pack-envelopes), not by the add flow. To
-    exercise the ``next`` surfacing of these fields deterministically, this
-    helper reads the persisted task JSON, sets the supplied fields, and writes
-    it back — mirroring the on-disk shape the producers leave behind.
+    envelope_id) are stamped onto a task record at creation by `commit-add`
+    and refreshed by the upstream phase-4-plan producers (derive-cost-size /
+    pack-envelopes). To exercise the ``next`` surfacing of these fields
+    deterministically, this helper first clears all three fields to None
+    (removing the creation-stamped defaults) and then sets the supplied
+    fields, before writing it back — mirroring the on-disk shape the
+    producers leave behind for a partially-stamped record.
     """
     task_dir = _core.get_tasks_dir(plan_id)
     task_file = _core.find_task_file(task_dir, task_number)
     assert task_file is not None, f'task file for {plan_id}/{task_number} not found'
     task = _core.parse_task_file(task_file.read_text(encoding='utf-8'))
+    task['cost_size'] = None
+    task['predicted_cost_tokens'] = None
+    task['envelope_id'] = None
     task.update(fields)
     task_file.write_text(_core.format_task_file(task), encoding='utf-8')
 
@@ -200,20 +205,35 @@ def test_next_surfaces_all_cost_fields_when_stamped(plan_context):
     assert result['next']['envelope_id'] == 2
 
 
-def test_next_cost_fields_null_when_absent(plan_context):
-    """Next surfaces all three cost fields as None when not yet stamped."""
-    add_basic_task(plan_id='next-cost-none', title='Unsized', deliverable=1, steps=['src/main/java/File.java'])
+def test_next_cost_fields_stamped_at_creation(plan_context):
+    """Next surfaces cost fields stamped at creation — no nulls on a fresh add."""
+    add_basic_task(plan_id='next-cost-created', title='Sized', deliverable=1, steps=['src/main/java/File.java'])
 
-    result = cmd_next(_next_ns(plan_id='next-cost-none'))
+    result = cmd_next(_next_ns(plan_id='next-cost-created'))
 
     assert result['status'] == 'success'
-    # Keys are always present in the next payload, surfaced as null when unstamped.
-    assert 'cost_size' in result['next']
-    assert 'predicted_cost_tokens' in result['next']
-    assert 'envelope_id' in result['next']
-    assert result['next']['cost_size'] is None
-    assert result['next']['predicted_cost_tokens'] is None
-    assert result['next']['envelope_id'] is None
+    assert result['next']['cost_size'] in ('XS', 'S', 'M', 'L', 'XL', 'XXL')
+    assert isinstance(result['next']['predicted_cost_tokens'], int)
+    assert result['next']['predicted_cost_tokens'] >= 0
+    assert result['next']['envelope_id'] == 1
+
+
+def test_next_returns_fix_task_before_pending_deliverable_tasks(plan_context):
+    """Next orders a runnable fix task ahead of the pending deliverable tasks it blocks."""
+    add_basic_task(plan_id='next-fix-first', title='Deliverable work', deliverable=1, steps=['src/main/java/Work.java'])
+    add_basic_task(
+        plan_id='next-fix-first',
+        title='Fix finding',
+        deliverable=0,
+        steps=['src/main/java/Work.java'],
+        origin='fix',
+    )
+
+    result = cmd_next(_next_ns(plan_id='next-fix-first'))
+
+    assert result['status'] == 'success'
+    assert result['next']['task_number'] == 2
+    assert result['next']['origin'] == 'fix'
 
 
 def test_next_cost_fields_surfaced_independently(plan_context):

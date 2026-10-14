@@ -221,7 +221,7 @@ Every entry of `phase_5.verification_steps` carries a stamped `execution_tier` i
 This dispatched phase-5 leaf branches on the **live-resolved** tier for every whole-tree verification step it would run (Step 11b Final Quality Sweep and Step 11c Execute-Exit Verify Gate) and for each `default:verify:{canonical}` end-of-phase step:
 
 - **`tier == per_task`** — the step is in the leaf's **runnable slice**. Run the resolved executable inline (synchronously) per `standards/canonical_verify.md`, honouring the resolved `bash_timeout_seconds`. Read the result TOON.
-- **`tier == orchestrator`** — the step is **NOT in the leaf's runnable slice**. The leaf MUST NOT run it (inline OR backgrounded). Return an orchestrator-tier yield signal (`status: blocked`, `voluntary_checkpoint`) naming the step so the main-context orchestrator runs it through the [`await-long-running`](../plan-marshall/workflow/await-long-running.md) detach-and-notify seam (the only component permitted to background a build). For a `module-tests` step the yield is the last part of a fixed three-part order — resolve the scope, run the narrow units inline, then hand back only what is left: before returning the yield, the leaf resolves the test scope (the `resolve-test-scope` verb of the build skill the `module-tests` canonical resolves to), resolves each entry of the returned `narrow_units` against the returned `narrow_unit_module` through `architecture resolve --module {narrow_unit_module} --narrow-unit`, and runs inline every one whose `execution_tier` is `per_task`. The yield then hands back only the wider run — the `recommended_target` module-wide run when that field is non-null, or the whole-tree run — and names the narrow units that already ran green. The procedure is the `execute-task` implementation profile's Step 5 (b) — see [`../execute-task/SKILL.md`](../execute-task/SKILL.md).
+- **`tier == orchestrator`** — the step is **NOT in the leaf's runnable slice**. The leaf MUST NOT run it (inline OR backgrounded). Return an orchestrator-tier yield signal (`status: blocked`, `voluntary_checkpoint`) carrying the owed steps in `pending_verify_steps[]` (the `phase_5.verification_steps` step ids this return hands back) so the main-context orchestrator runs them through the [`await-long-running`](../plan-marshall/workflow/await-long-running.md) detach-and-notify seam (the only component permitted to background a build). For a `module-tests` step the yield is the last part of a fixed three-part order — resolve the scope, run the narrow units inline, then hand back only what is left: before returning the yield, the leaf resolves the test scope (the `resolve-test-scope` verb of the build skill the `module-tests` canonical resolves to), resolves each entry of the returned `narrow_units` against the returned `narrow_unit_module` through `architecture resolve --module {narrow_unit_module} --narrow-unit`, and runs inline every one whose `execution_tier` is `per_task`. The yield then hands back only the wider run — the `recommended_target` module-wide run when that field is non-null, or the whole-tree run — and names the narrow units that already ran green. The procedure is the `execute-task` implementation profile's Step 5 (b) — see [`../execute-task/SKILL.md`](../execute-task/SKILL.md).
 
 A step whose stamped tier is absent (a manifest composed before this field existed) reads as `per_task`. `per_task` is the **permissive default, not a safe floor** — it is the value that would put a long build inline, where the host platform auto-backgrounds it past the Bash ceiling and this leaf cannot reap it. That default is safe only because the leaf re-resolves live before running: the live resolve, not the stamp, is what keeps a long build off the leaf.
 
@@ -1037,12 +1037,12 @@ The infeasible task itself stays `infeasible`. It is terminal and is never reset
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
-  qgate add --plan-id {plan_id} --phase 5-execute \
+  qgate add --plan-id {plan_id} --phase 5-execute --reopen \
   --source qgate --type test-failure --severity {severity} \
   --title "{finding_message}" --detail "{file}:{line}"
 ```
 
-(One `qgate add` call per finding; the verification task's structured `findings[]` output drives this loop.)
+(One `qgate add` call per finding; the verification task's structured `findings[]` output drives this loop. `--reopen` re-arms a recurrence: a re-filed failure matching a record the previous triage resolved `fixed` returns to `pending` instead of being kept, so the orchestrator's repeated-failure short-circuit guard observes the recurrence in the pending set rather than dropping it through the no-pending branch.)
 
 **Readback gate (mandatory).** A `qgate add` that the primitive REJECTS still exits `0` — per the Operation-failure carve-out above, a zero exit is not evidence the record landed. Because §11d's `triage_required` return is a **by-reference referral** ("the findings are in the store, go read them"), the referral MUST NOT be emitted until the store is observed to hold them. After the `qgate add` loop, read the store back:
 
@@ -1051,11 +1051,11 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
   qgate list --plan-id {plan_id} --phase 5-execute --resolution pending
 ```
 
-Compare the returned pending count against the findings just persisted. **When the readback covers them, proceed to §11d.** When the readback is SHORT — one or more persisted findings are absent from the store — do NOT return `triage_required`; take the short-readback branch in §11d instead.
+Capture each `qgate add` call's returned `status` and test membership in `QGATE_PERSIST_OK` (`success`, `deduplicated`, `reopened`, `kept`), never `status == 'success'` — a rejected persist (`error`) still exits `0`. A persist with status `error` takes the short-readback branch immediately: the record is not in the store. Otherwise compare the returned pending count against the success-plus-reopened count only: a `deduplicated` persist is already pending under its existing hash and a `kept` persist stays under its recorded non-pending resolution by design (the unchanged re-emission keeps resolution, detail and timestamp), so neither adds a pending record and neither may trip the short-readback branch. **When the readback covers them, proceed to §11d.** When the readback is SHORT against that count — one or more `success`/`reopened` findings are absent from the store — do NOT return `triage_required`; take the short-readback branch in §11d instead. A shortfall against the raw persisted total that is fully explained by `kept`/`deduplicated` persists is not a short readback.
 
 **11d**: This per-task body is a **leaf** — it MUST NOT dispatch `verification-feedback` itself. After §11c has persisted each failing finding to the Q-Gate store **and the readback gate has confirmed the store holds them**, return a structured terminal payload to the main-context orchestrator and stop; the orchestrator owns the triage dispatch. See [`ref-workflow-architecture/standards/agents.md`](../ref-workflow-architecture/standards/agents.md) for the canonical leaf/dispatch-topology contract.
 
-**Short-readback branch.** When the readback gate reports fewer findings than were persisted, the by-reference referral would point the orchestrator at a store that lacks them — the finding would be silently lost. Return an error payload that carries the un-persisted findings **inline in the payload** instead:
+**Short-readback branch.** When the readback gate reports fewer findings than the success-plus-reopened count, or any persist returned status `error`, the by-reference referral would point the orchestrator at a store that lacks them — the finding would be silently lost. Return an error payload that carries the un-persisted findings **inline in the payload** instead:
 
 ```toon
 status: error
@@ -1064,6 +1064,7 @@ display_detail: "{task_number} finding_persist_failed: {K} finding(s) lost"
 plan_id: {plan_id}
 persisted_count: {N}
 readback_count: {M}
+pending_verify_steps[0]:
 unpersisted_findings[K]{type,severity,title,detail}:
   ...
 ```
@@ -1079,9 +1080,10 @@ triage_required: true
 producer: build-runner
 finding_type: test-failure
 plan_id: {plan_id}
+pending_verify_steps[0]:
 ```
 
-(`finding_type: lint-issue` for the Step 11b sweep path.) The findings are already in the per-plan store — the orchestrator's `verification-feedback` dispatch queries them by reference; the leaf does not embed the findings in its return.
+(`finding_type: lint-issue` for the Step 11b sweep path.) `pending_verify_steps` is empty on this return — it hands back triage, not a build. The findings are already in the per-plan store — the orchestrator's `verification-feedback` dispatch queries them by reference; the leaf does not embed the findings in its return.
 
 The orchestrator-side handling — resolving the `verification-feedback` target via `manage-config effort resolve-target --phase phase-5-execute --role verification-feedback`, emitting the `[DISPATCH]` log line, dispatching `verification-feedback` (`producer=build-runner`, `caller_phase: phase-5-execute`) as a top-level `Task:` in the main context, and consuming the triage return to drive the §11e branch — lives in [`../plan-marshall/workflow/execution.md`](../plan-marshall/workflow/execution.md) § "Verification-feedback triage (leaf returned triage_required)". The per-finding triage core (FIX / SUPPRESS / ACCEPT / AskUserQuestion, smart grouping, overflow, and the Scope-Deviation Escalation guard) is owned by [`../plan-marshall/workflow/triage.md`](../plan-marshall/workflow/triage.md); the dispatch is by-reference (the subagent queries the store as its first workflow step).
 
@@ -1129,7 +1131,7 @@ python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-e
 
    The top-level `--plan-id`, written before the verb, makes the returned `executable` carry the plan id, so the sweep is recorded under this plan — see [`standards/canonical_verify.md`](standards/canonical_verify.md) § Workflow step 1.
 
-2. **Branch on the tier the resolve in step 1 just returned.** That live `execution_tier` is the routing authority (see **Per-step `execution_tier`** above); the manifest's `verify:quality-gate` stamp is the advisory expectation, not the decision. When the live `tier == orchestrator`, the sweep is NOT in the leaf's runnable slice — do NOT run it; return the orchestrator-tier yield signal (`status: blocked`, `voluntary_checkpoint`) naming the sweep so the orchestrator runs it via `await-long-running`. Only when the live `tier == per_task` does the leaf execute the returned `executable` inline. On non-zero exit, persist the failures to the Q-Gate findings store (`manage-findings qgate add --type lint-issue …`) and **return the `triage_required` signal to the orchestrator** with `producer=build-runner` and `finding_type=lint-issue` — same leaf-returns-signal shape as Step 11d above, only the finding type changes. The leaf does NOT dispatch `verification-feedback` itself; the orchestrator owns the dispatch (see [`../plan-marshall/workflow/execution.md`](../plan-marshall/workflow/execution.md) § "Verification-feedback triage (leaf returned triage_required)") and drives the same fix-task / suppress / accept branch (Step 11e). After the orchestrator's triage resolves, the sweep is NOT re-run — Step 11b runs at most once per phase entry.
+2. **Branch on the tier the resolve in step 1 just returned.** That live `execution_tier` is the routing authority (see **Per-step `execution_tier`** above); the manifest's `verify:quality-gate` stamp is the advisory expectation, not the decision. When the live `tier == orchestrator`, the sweep is NOT in the leaf's runnable slice — do NOT run it; return the orchestrator-tier yield signal (`status: blocked`, `voluntary_checkpoint`) carrying the sweep in `pending_verify_steps[]` so the orchestrator runs it via `await-long-running`. Only when the live `tier == per_task` does the leaf execute the returned `executable` inline. On non-zero exit, persist the failures to the Q-Gate findings store (`manage-findings qgate add --type lint-issue …`) and **return the `triage_required` signal to the orchestrator** with `producer=build-runner` and `finding_type=lint-issue` — same leaf-returns-signal shape as Step 11d above, only the finding type changes. The leaf does NOT dispatch `verification-feedback` itself; the orchestrator owns the dispatch (see [`../plan-marshall/workflow/execution.md`](../plan-marshall/workflow/execution.md) § "Verification-feedback triage (leaf returned triage_required)") and drives the same fix-task / suppress / accept branch (Step 11e). After the orchestrator's triage resolves, the sweep is NOT re-run — Step 11b runs at most once per phase entry.
 
 3. Emit the bound report — `pass` requires BOTH artifacts observed in THIS entry, in this order; the emission branches on what was actually observed, never on a bare `{pass|fail}` interpolation:
 
@@ -1174,7 +1176,7 @@ This gate runs after Step 11b's quality sweep and before Step 12.
      --plan-id {plan_id} resolve --command verify --module {bundle} --audit-plan-id {plan_id}
    ```
 
-   Branch on the `execution_tier` this resolve just returned — the live tier is the routing authority (the manifest's `verify:module-tests` stamp, which backs the `verify` canonical, is the advisory expectation only). For `tier=per_task` run the build inline with `timeout: bash_timeout_seconds * 1000`; for `tier=orchestrator` the step is NOT in the leaf's runnable slice — return control to the orchestrator to run the long build via `await-long-running` (do NOT run it inline, do NOT background it). After each build call the leaf runs, inspect the result TOON — read `status` and the `errors[]` rows, not the harness exit code.
+   Branch on the `execution_tier` this resolve just returned — the live tier is the routing authority (the manifest's `verify:module-tests` stamp, which backs the `verify` canonical, is the advisory expectation only). For `tier=per_task` run the build inline with `timeout: bash_timeout_seconds * 1000`; for `tier=orchestrator` the step is NOT in the leaf's runnable slice — return control to the orchestrator carrying the owed bundle verifies in `pending_verify_steps[]` to run the long build via `await-long-running` (do NOT run it inline, do NOT background it). After each build call the leaf runs, inspect the result TOON — read `status` and the `errors[]` rows, not the harness exit code.
 
 3. **On non-zero exit** — route the failure through the **same leaf-returns-signal path** as Step 11b: persist each failing finding to the Q-Gate store (`manage-findings qgate add --type lint-issue …`) and return the `triage_required` signal to the orchestrator with `producer=build-runner` and `finding_type=lint-issue`. The leaf does NOT dispatch `verification-feedback` itself. The gate runs at most once per phase entry.
 
@@ -1387,6 +1389,8 @@ The continue-vs-yield clause is therefore a trivial countable check, evaluated i
 
 The packing already encodes the budget decision, so the two short-circuits above are now informational rather than the budget mechanism. The clause runs once after each task completes — between `manage-tasks finalize-step` of the closing step (which fires the canonical `[OUTCOME]`) and the next `manage-tasks next` call. There is no intermediate decision point.
 
+A fix task allocated after packing carries its assigned envelope explicitly (at-creation assignment — the live envelope when the fix blocks pending tasks in it, otherwise a new trailing envelope), so the equality check above treats it exactly like a packed task: a fix assigned to this envelope continues in-dispatch (and `next` already returns it ahead of the envelope's remaining deliverable tasks via the fix-task-first ordering), while a fix in a trailing envelope yields through the group-exhausted path below.
+
 **Group-exhausted yield path** — when the envelope-group read decides to yield because the next pending task's `envelope_id` differs from the assigned group (and the queue is NOT empty), the executor MUST distinguish this legitimate plan-time-packed yield from a forbidden checkpoint by doing BOTH:
 
 1. **Log a `budget_yield` decision** naming the assigned `envelope_id`, the just-completed task, and the next task's differing `envelope_id`:
@@ -1408,6 +1412,7 @@ The packing already encodes the budget decision, so the two short-circuits above
    budget_yield: true
    envelope_id: {my_envelope_id}
    next_envelope_id: {next_envelope_id}
+   pending_verify_steps[0]:
    ```
 
    The orchestrator classifies this return as `termination_cause: budget_yield` (see [`plan-marshall/workflow/execution.md`](../plan-marshall/workflow/execution.md) § "Termination-cause classification") — distinct from the `task_complete_returned_verbatim` failure mode — and re-dispatches the next envelope group.
@@ -1460,11 +1465,12 @@ display_detail: "<{tasks_completed} tasks complete, {tasks_remaining} remaining>
 plan_id: {plan_id}
 tasks_completed: {N}
 tasks_remaining: {N}
+pending_verify_steps[N]: {step ids from phase_5.verification_steps this return hands back — present on every branch, [0] when none}
 infeasibility_reason: {required when status=infeasible — why the declared deliverable cannot be built as scoped}
 prompt_options[N]{id,question,header,options,recommended}: {required when status=escalate_ask — the batched scope-deviation / smart_and_ask questions for the orchestrator to fire}
 ```
 
-`display_detail` shape on success: `"{tasks_completed} tasks complete, {tasks_remaining} remaining"` (e.g. `"7 tasks complete, 0 remaining"`). On `blocked`: `"{task_number} blocked: {short reason}"`. On `infeasible`: `"{task_number} infeasible: {short reason}"`. On `escalate_ask`: `"{task_number} escalate_ask: {N} deviation prompt(s)"`. On error: short error label from § Error Handling. All values are ≤80 chars, ASCII, no trailing period. The `infeasible` return carries `infeasibility_reason`; the orchestrator routes it to the Step 11 "For infeasible blocks" planning gate (drop / re-scope / abort via AskUserQuestion), NOT the `verification-feedback` code-fix loop. The `escalate_ask` return carries `prompt_options[]`; the orchestrator fires ONE batched `AskUserQuestion` (§ "Post-return `escalate_ask` batched deviation dispatch" in `execution.md`) and re-dispatches with the resolutions baked in, NOT the `verification-feedback` code-fix loop.
+`display_detail` shape on success: `"{tasks_completed} tasks complete, {tasks_remaining} remaining"` (e.g. `"7 tasks complete, 0 remaining"`). `pending_verify_steps` is carried on every branch — only the orchestrator-tier yield lists owed steps; every other branch carries it `[0]` (empty), so a leaf that owes the orchestrator a build never reports it in free text. On `blocked`: `"{task_number} blocked: {short reason}"`. On `infeasible`: `"{task_number} infeasible: {short reason}"`. On `escalate_ask`: `"{task_number} escalate_ask: {N} deviation prompt(s)"`. On error: short error label from § Error Handling. All values are ≤80 chars, ASCII, no trailing period. The `infeasible` return carries `infeasibility_reason`; the orchestrator routes it to the Step 11 "For infeasible blocks" planning gate (drop / re-scope / abort via AskUserQuestion), NOT the `verification-feedback` code-fix loop. The `escalate_ask` return carries `prompt_options[]`; the orchestrator fires ONE batched `AskUserQuestion` (§ "Post-return `escalate_ask` batched deviation dispatch" in `execution.md`) and re-dispatches with the resolutions baked in, NOT the `verification-feedback` code-fix loop.
 
 ---
 

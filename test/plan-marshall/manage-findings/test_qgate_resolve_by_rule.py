@@ -193,8 +193,8 @@ def test_a_state_finding_filed_after_the_resolution_stays_pending(plan_context):
     assert _pending_hashes(plan_id) == {later['hash_id']}
 
 
-def test_a_state_finding_refiled_identically_after_the_resolution_is_reopened(plan_context):
-    """An identical re-detection reopens the resolved record rather than vanishing."""
+def test_a_state_finding_refiled_identically_after_the_resolution_is_kept(plan_context):
+    """An identical re-detection keeps the recorded resolution rather than re-arming the gate."""
     plan_id = 'rule-resolve-refiled-after'
     state_hashes = _file_state_findings(plan_id)
     _resolve(plan_id)
@@ -210,9 +210,10 @@ def test_a_state_finding_refiled_identically_after_the_resolution_is_reopened(pl
         rule=_RULE,
     )
 
-    assert refiled['status'] == 'reopened'
+    assert refiled['status'] == 'kept'
     assert refiled['hash_id'] == state_hashes['verdict_refused']
-    assert _pending_hashes(plan_id) == {state_hashes['verdict_refused']}
+    assert refiled['resolution'] == 'taken_into_account'
+    assert _pending_hashes(plan_id) == set()
 
 
 def test_the_resolution_and_detail_are_written_to_each_matched_record(plan_context):

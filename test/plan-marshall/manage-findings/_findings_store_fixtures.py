@@ -73,25 +73,32 @@ resolve_qgate_findings_by_evidence = _findings_core.resolve_qgate_findings_by_ev
 
 
 def _observed_qgate_statuses(plan_id: str) -> dict[str, str]:
-    """Drive ``add_qgate_finding`` to produce each of its four real outcomes.
+    """Drive ``add_qgate_finding`` to produce each of its five real outcomes.
 
     Returns ``{outcome_name: observed_status}`` where every value came back from
     a real call — ``success`` (fresh append), ``deduplicated`` (identical pending
-    record), ``reopened`` (matching resolved record) and ``error`` (a finding type
-    outside ``FINDING_TYPES``, the live rejection mode).
+    record), ``kept`` (resolved record re-detected without the opt-in, so the
+    recorded resolution stands), ``reopened`` (fixed record re-detected WITH the
+    opt-in, so the gate re-arms) and ``error`` (a finding type outside
+    ``FINDING_TYPES``, the live rejection mode).
     """
     fresh = add_qgate_finding(plan_id, '5-execute', 'qgate', 'build-error', 'Partition probe', 'Detail')
     dedup = add_qgate_finding(plan_id, '5-execute', 'qgate', 'build-error', 'Partition probe', 'Detail')
 
-    resolved = add_qgate_finding(plan_id, '5-execute', 'qgate', 'build-error', 'Reopen probe', 'Detail')
-    resolve_qgate_finding(plan_id, '5-execute', resolved['hash_id'], 'fixed')
-    reopened = add_qgate_finding(plan_id, '5-execute', 'qgate', 'build-error', 'Reopen probe', 'Detail')
+    kept_seed = add_qgate_finding(plan_id, '5-execute', 'qgate', 'build-error', 'Kept probe', 'Detail')
+    resolve_qgate_finding(plan_id, '5-execute', kept_seed['hash_id'], 'fixed')
+    kept = add_qgate_finding(plan_id, '5-execute', 'qgate', 'build-error', 'Kept probe', 'Detail')
+
+    reopen_seed = add_qgate_finding(plan_id, '5-execute', 'qgate', 'build-error', 'Reopen probe', 'Detail')
+    resolve_qgate_finding(plan_id, '5-execute', reopen_seed['hash_id'], 'fixed')
+    reopened = add_qgate_finding(plan_id, '5-execute', 'qgate', 'build-error', 'Reopen probe', 'Detail', reopen=True)
 
     rejected = add_qgate_finding(plan_id, '5-execute', 'qgate', 'not-a-finding-type', 'Rejected probe', 'Detail')
 
     return {
         'fresh': fresh['status'],
         'dedup': dedup['status'],
+        'kept': kept['status'],
         'reopened': reopened['status'],
         'rejected': rejected['status'],
     }

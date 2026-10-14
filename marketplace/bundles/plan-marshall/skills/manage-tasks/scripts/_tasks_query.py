@@ -132,6 +132,7 @@ def cmd_read(args) -> dict:
             'description': task.get('description', ''),
             'steps': task.get('steps', []),
             'verification': task.get('verification', {}),
+            'envelope_id': task.get('envelope_id'),
         },
     }
 
@@ -181,24 +182,42 @@ def cmd_next(args) -> dict:
     next_task = None
     blocked_tasks = []
 
-    # First, look for in_progress tasks
+    # First, look for in_progress tasks. A verification-owed task (see
+    # _cmd_step.py, module-testing close rule) has every step terminal and no
+    # actionable step — its orchestrator-tier build has not reported yet, so
+    # selecting it would return a null next_step and read as queue drift.
+    # Skip owed tasks that have nothing actionable; an owed task that gained
+    # a pending step (via add-step) IS selectable again. An unmarked
+    # all-terminal in_progress task is still selected, preserving the
+    # pending-task drift signal for genuinely misclassified records.
     for _path, task in filtered_tasks:
         if task.get('status') == 'in_progress':
+            if task.get('verification_owed') is True and not any(
+                s.get('status') in ('pending', 'in_progress') for s in task.get('steps', [])
+            ):
+                continue
             next_task = task
             break
 
-    # If no in_progress, find first pending with satisfied deps
+    # If no in_progress, find pending tasks with satisfied deps. A runnable
+    # fix task (origin ``fix``) is returned ahead of the pending deliverable
+    # tasks whose verification it blocks: triage allocates the fix after
+    # packing, so number order alone would run it behind the deliverables it
+    # gates. Number order is preserved within each class.
     if not next_task:
+        runnable = []
         for _path, task in filtered_tasks:
             if task.get('status') == 'pending':
                 if deps_satisfied(task):
-                    next_task = task
-                    break
+                    runnable.append(task)
                 else:
                     waiting_for = [dep for dep in task.get('depends_on', []) if dep not in done_tasks]
                     blocked_tasks.append(
                         {'number': task['number'], 'title': task['title'], 'waiting_for': ', '.join(waiting_for)}
                     )
+        runnable.sort(key=lambda t: (0 if t.get('origin', 'plan') == 'fix' else 1, t['number']))
+        if runnable:
+            next_task = runnable[0]
 
     if not next_task:
         if blocked_tasks:

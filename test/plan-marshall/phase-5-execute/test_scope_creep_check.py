@@ -13,8 +13,8 @@ cases:
 
 plus the persist-outcome contract: the stub sits at the ``add_qgate_finding``
 seam (NOT over ``_emit_finding`` wholesale), so every test exercises the real
-``_emit_finding`` body and the stub can return each of the four real status
-values — ``success``, ``deduplicated``, ``reopened`` and ``error``. Stubbing
+``_emit_finding`` body and the stub can return each of the five real status
+values — ``success``, ``deduplicated``, ``kept``, ``reopened`` and ``error``. Stubbing
 ``_emit_finding`` itself is what hid the original defect: the function and its
 argv were never executed by any test.
 
@@ -86,7 +86,7 @@ class _PersistStub:
 
     Records the keyword arguments the production ``_emit_finding`` body builds
     and returns the configured primitive outcome, so a test can express any of
-    the four real status values without stubbing ``_emit_finding`` itself.
+    the five real status values without stubbing ``_emit_finding`` itself.
     """
 
     def __init__(self, status: str = 'success', message: str = ''):
@@ -349,12 +349,12 @@ def test_rejected_persist_fails_loud(plan_with_refs, monkeypatch, capsys):
     assert 'finding_emitted' not in payload
 
 
-@pytest.mark.parametrize('benign_status', ['success', 'deduplicated', 'reopened'])
+@pytest.mark.parametrize('benign_status', ['success', 'deduplicated', 'kept', 'reopened'])
 def test_in_store_outcomes_are_benign(plan_with_refs, monkeypatch, capsys, benign_status):
-    """All three in-store outcomes leave the run green — they never read as a rejection.
+    """All four in-store outcomes leave the run green — they never read as a rejection.
 
-    ``deduplicated`` and ``reopened`` mean the finding IS in the store, so they
-    must not collapse onto the ``error`` branch.
+    ``deduplicated``, ``kept`` and ``reopened`` mean the finding IS in the store, so
+    none of them may collapse onto the ``error`` branch.
     """
     _over_threshold(monkeypatch, plan_with_refs)
     stub = _PersistStub(status=benign_status)

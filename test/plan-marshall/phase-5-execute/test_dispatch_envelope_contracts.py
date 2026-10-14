@@ -17,6 +17,15 @@ One test per contract, each grounded in its lesson evidence:
   Step 7 computation rule): ``operations.md`` requires ``loop_back_target``
   on every ``loop_back`` return, omits it on ``success``, and matches the
   ``5-execute`` vs ``6-finalize`` computation rule verbatim in behaviour.
+* (d) At-creation envelope assignment contract: ``execution.md`` states the
+  one at-creation assignment mechanism for post-packing tasks and rules out
+  the null-envelope dispatch alternative, and the phase-5-execute envelope
+  contract states the group read treats the assigned envelope explicitly
+  with fix-task-first ordering.
+* (e) Single end-of-execute re-dispatch rule with hand-back field:
+  ``execution.md`` names the post-build re-entry as the sole exception to
+  the pre-dispatch queue peek, and both documents carry the shared
+  ``pending_verify_steps`` return-field name on every termination branch.
 """
 
 from __future__ import annotations
@@ -41,6 +50,10 @@ OPERATIONS_MD = (
     / 'standards'
     / 'operations.md'
 )
+EXECUTION_MD = (
+    REPO_ROOT / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills' / 'plan-marshall' / 'workflow' / 'execution.md'
+)
+PHASE_5_SKILL_MD = REPO_ROOT / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills' / 'phase-5-execute' / 'SKILL.md'
 
 PLAN_ID = 'dispatch-envelope-closure'
 
@@ -139,3 +152,47 @@ def test_loop_back_target_required_on_loop_back_and_omitted_on_success():
     assert has_computation, 'the 5-execute vs 6-finalize computation rule must be stated'
     assert has_five_execute and has_six_finalize, 'both granularity tiers must be named'
     assert has_forwarding, 'callers must forward the field verbatim to mark-step-done'
+
+
+def test_at_creation_assignment_and_fix_first_ordering_wording():
+    """Contract (d): at-creation assignment is the one mechanism; fix runs first."""
+    # Arrange — the orchestration and envelope contracts as shipped.
+    execution = EXECUTION_MD.read_text(encoding='utf-8')
+    phase_5 = PHASE_5_SKILL_MD.read_text(encoding='utf-8')
+
+    # Act — collect the contract sentences the deliverable requires.
+    has_mechanism = 'At-creation envelope assignment is the one mechanism' in execution
+    has_no_null_dispatch = 'null-envelope dispatch is not defined' in execution
+    has_fix_first_execution = 'fix-task-first' in execution
+    has_assigned_envelope = 'carries its assigned envelope explicitly' in phase_5
+    has_fix_first_phase_5 = 'fix-task-first ordering' in phase_5
+
+    # Assert — the mechanism, the ruled-out alternative, and the ordering
+    # agree across both documents.
+    assert has_mechanism, 'execution.md must state the one at-creation assignment mechanism'
+    assert has_no_null_dispatch, 'execution.md must rule out the null-envelope dispatch alternative'
+    assert has_fix_first_execution, 'execution.md must state the fix-task-first ordering'
+    assert has_assigned_envelope, 'phase-5-execute must treat the assigned envelope explicitly'
+    assert has_fix_first_phase_5, 'phase-5-execute must state the fix-task-first ordering'
+
+
+def test_single_redispatch_rule_with_handback_field():
+    """Contract (e): post-build re-entry wins; one hand-back field everywhere."""
+    # Arrange — the orchestration and envelope contracts as shipped.
+    execution = EXECUTION_MD.read_text(encoding='utf-8')
+    phase_5 = PHASE_5_SKILL_MD.read_text(encoding='utf-8')
+
+    # Act — collect the exception wording and the shared field name.
+    has_peek_exception = 'SOLE exception is the post-build re-entry' in execution
+    has_success_exception = 'post-build re-entry is the sole peek exception' in execution
+    has_field_definition = 'Build hand-back field' in execution
+    has_field_execution = 'pending_verify_steps' in execution
+    has_field_phase_5 = 'pending_verify_steps' in phase_5
+
+    # Assert — one rule wins in words, and the single return field is
+    # carried under the same name in both documents on every branch.
+    assert has_peek_exception, 'execution.md must name the post-build re-entry as the sole peek exception'
+    assert has_success_exception, 'the success row must re-dispatch without the peek as that exception'
+    assert has_field_definition, 'execution.md must define the build hand-back field'
+    assert has_field_execution, 'execution.md must carry the pending_verify_steps field name'
+    assert has_field_phase_5, 'phase-5-execute must carry the same pending_verify_steps field name'

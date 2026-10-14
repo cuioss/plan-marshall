@@ -36,6 +36,18 @@ from plan_logging import log_entry
 #: confident one.
 _ALREADY_OPENED_TASK_STATUSES = ('in_progress', 'done', 'failed')
 
+#: Profiles whose verification is owed to the orchestrator tier. A task in one
+#: of these profiles MUST NOT read `done` when its last step finalizes — its
+#: test run has not started yet (the orchestrator-tier build runs after the
+#: leaf yields), so closing it would leave a failure with no task to reopen.
+#: The task stays `in_progress` carrying `verification_owed: True` until the
+#: orchestrator-tier build reports; the orchestrator then closes it via
+#: `finalize-step --verification-complete` (see manage-tasks/SKILL.md
+#: § "Finalize-step profile branch"). An implementation task whose own wider
+#: run was handed back takes the same path when the leaf passes
+#: `--verification-owed` — the script never resolves tiers itself.
+_ORCHESTRATOR_OWED_VERIFICATION_PROFILES = ('module_testing',)
+
 
 def cmd_finalize_step(args) -> dict:
     """Handle 'finalize-step' subcommand.
@@ -110,9 +122,29 @@ def cmd_finalize_step(args) -> dict:
             break
 
     # Update task state
-    if all_terminal:
+    #
+    # Module-testing close rule: a task whose verification is owed to the
+    # orchestrator tier stays open until that build reports. When every step
+    # is terminal with no failure but the task is in an owed profile (or the
+    # leaf passed --verification-owed for a handed-back wider run), the task
+    # keeps `in_progress` with the `verification_owed` marker instead of
+    # flipping to `done` — unless this call carries --verification-complete,
+    # the orchestrator's close after the build reported green. The marker is
+    # what `next` skips on (an owed task has no actionable step) and what the
+    # orchestrator closes; a task that reached `done` keeps none.
+    verification_owed_call = getattr(args, 'verification_owed', False) is True
+    verification_complete_call = getattr(args, 'verification_complete', False) is True
+    owed_profile = task.get('profile') in _ORCHESTRATOR_OWED_VERIFICATION_PROFILES
+    owed_open = all_terminal and not has_failed and (owed_profile or verification_owed_call)
+    if owed_open and not verification_complete_call:
+        task['status'] = 'in_progress'
+        task['verification_owed'] = True
+        task['current_step'] = len(steps)
+    elif all_terminal:
         task['status'] = 'failed' if has_failed else 'done'
         task['current_step'] = len(steps)
+        if not has_failed:
+            task.pop('verification_owed', None)
     elif next_step_info:
         task['current_step'] = next_step_info['number']
 
@@ -128,7 +160,10 @@ def cmd_finalize_step(args) -> dict:
     # write, so a retry observes it; a hand-edited or predating record carries
     # no flag and is treated as never-emitted, which is the honest reading.
     outcome_already_emitted = task.get('outcome_emitted') is True
-    fire_outcome = all_terminal and not has_failed and not outcome_already_emitted
+    # An owed task that stays open has NOT completed — its [OUTCOME] and
+    # [ARTIFACT] lines fire on the --verification-complete close, never here.
+    owed_still_open = owed_open and not verification_complete_call
+    fire_outcome = all_terminal and not has_failed and not outcome_already_emitted and not owed_still_open
     if fire_outcome:
         task['outcome_emitted'] = True
 
@@ -139,6 +174,13 @@ def cmd_finalize_step(args) -> dict:
     if all_terminal and has_failed:
         log_entry(
             'work', args.plan_id, 'WARNING', f'[MANAGE-TASKS] TASK-{args.task_number:03d} failed (has failed steps)'
+        )
+    elif owed_still_open:
+        log_entry(
+            'work',
+            args.plan_id,
+            'INFO',
+            f'[MANAGE-TASKS] TASK-{args.task_number:03d} steps terminal — verification owed to orchestrator tier, staying open',
         )
     elif all_terminal:
         log_entry('work', args.plan_id, 'INFO', f'[MANAGE-TASKS] Completed TASK-{args.task_number:03d}')
@@ -201,8 +243,12 @@ def cmd_finalize_step(args) -> dict:
             'outcome': args.outcome,
         },
         'next_step': next_step_info,
-        'task_complete': all_terminal,
+        'task_complete': all_terminal and not owed_still_open,
         'task_status': task['status'],
+        # Echoed so the orchestrator can enumerate verification-owed tasks
+        # without re-reading the record: True while the close rule holds the
+        # task open for its orchestrator-tier build, False otherwise.
+        'verification_owed': task.get('verification_owed', False),
         'progress': f'{completed}/{total}',
         # Echoed so a caller can SEE what the script emitted rather than having
         # to read the work log back. A task that closed with an empty diff

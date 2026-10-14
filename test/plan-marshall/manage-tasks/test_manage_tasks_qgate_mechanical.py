@@ -18,6 +18,14 @@ from _manage_tasks_qgate_mechanical_fixtures import (
     cmd_qgate_mechanical,
 )
 
+from conftest import load_script_module
+
+_findings_core_counts = load_script_module(
+    'plan-marshall', 'manage-findings', '_findings_core.py', '_findings_core_qgate_counts', register=False
+)
+query_qgate_findings = _findings_core_counts.query_qgate_findings
+resolve_qgate_finding = _findings_core_counts.resolve_qgate_finding
+
 # =============================================================================
 # Acyclic check
 # =============================================================================
@@ -363,3 +371,70 @@ def test_qgate_mechanical_registered_in_manage_tasks_dispatch():
     assert manage_tasks.COMMANDS['qgate-mechanical-checks'] is cmd_qgate_mechanical or callable(
         manage_tasks.COMMANDS['qgate-mechanical-checks']
     )
+
+
+# =============================================================================
+# Re-observed counts (widened persist reporting)
+# =============================================================================
+
+
+def test_qgate_mechanical_rerun_reports_reobserved_counts(plan_context):
+    """An unchanged-plan re-run reports zero emitted with re-observed counts.
+
+    The first run files two coverage findings; one is resolved ``fixed`` and
+    the other ``accepted``. The re-run re-detects both byte-identically, so the
+    primitive keeps both recorded resolutions: ``findings_emitted`` reads zero
+    while ``reobserved_count`` reads two and ``still_detected_but_fixed_count``
+    reads one, both resolutions are intact, and nothing is pending.
+    """
+    plan_dir = plan_context.plan_dir_for('qgate-reobserved')
+    _write_outline(
+        plan_dir,
+        [
+            {'number': 1, 'title': 'Has tasks', 'affected_files': [_EXISTING_FILE]},
+            {'number': 2, 'title': 'No tasks', 'affected_files': ['src/C.java (read)']},
+            {'number': 3, 'title': 'No tasks either', 'affected_files': ['src/D.java (read)']},
+        ],
+    )
+    _write_task(
+        plan_dir / 'tasks',
+        1,
+        deliverable=1,
+        skills=['plan-marshall:manage-tasks'],
+        steps=[{'number': 1, 'target': _EXISTING_FILE, 'status': 'pending'}],
+    )
+
+    first = cmd_qgate_mechanical(_ns('qgate-reobserved', no_emit=False))
+    assert first['status'] == 'success'
+    assert first['findings_emitted'] == 2
+    assert first['reobserved_count'] == 0
+    assert first['still_detected_but_fixed_count'] == 0
+
+    records = query_qgate_findings('qgate-reobserved', '4-plan')['findings']
+    assert len(records) == 2
+    assert (
+        resolve_qgate_finding('qgate-reobserved', '4-plan', records[0]['hash_id'], 'fixed', 'Fixed by the operator')[
+            'status'
+        ]
+        == 'success'
+    )
+    assert (
+        resolve_qgate_finding('qgate-reobserved', '4-plan', records[1]['hash_id'], 'accepted', 'Accepted risk')[
+            'status'
+        ]
+        == 'success'
+    )
+
+    second = cmd_qgate_mechanical(_ns('qgate-reobserved', no_emit=False))
+    assert second['status'] == 'success'
+    assert second['findings_emitted'] == 0
+    assert second['reobserved_count'] == 2
+    assert second['still_detected_but_fixed_count'] == 1
+
+    after = query_qgate_findings('qgate-reobserved', '4-plan')['findings']
+    assert {record['hash_id']: record['resolution'] for record in after} == {
+        records[0]['hash_id']: 'fixed',
+        records[1]['hash_id']: 'accepted',
+    }
+    pending = query_qgate_findings('qgate-reobserved', '4-plan', resolution='pending')
+    assert pending['filtered_count'] == 0

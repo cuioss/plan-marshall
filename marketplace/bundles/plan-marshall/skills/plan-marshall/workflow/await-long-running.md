@@ -27,6 +27,8 @@ When the project is **unregistered or the daemon is down**, the routing seam fal
 
 Do NOT `run_in_background` or `sleep` the daemon `wait` — the daemon holds the long-poll server-side, and a reaped wait is recovered by re-issuing `wait`, not by backgrounding it. See [`build-server-client/SKILL.md`](../../build-server-client/SKILL.md) for the submit/wait/ping/preflight contract and the status-TOON guarantees.
 
+One runnable rule: the wrapper call for a daemon-routed build returns within a bound below the per-call ceiling with a terminal result or a live running status plus job id, and the orchestrator re-attaches with a bounded wait on that id; backgrounding (`run_in_background`) is named only for the non-daemon fallback, never for a daemon-routed build.
+
 ## Consumers
 
 | Consumer | What is detached | Completion signal |

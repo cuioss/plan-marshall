@@ -9,6 +9,8 @@ Its sections, in order:
 * Q-Gate Query Command
 """
 
+from argparse import Namespace
+
 from _manage_findings_fixtures import (
     SCRIPT_PATH,
     _qgate_add_ns,
@@ -21,6 +23,14 @@ from _manage_findings_fixtures import (
 
 from conftest import run_script
 
+
+def _qgate_add_optin_ns(*args, **kwargs):
+    """Same as the shared ``_qgate_add_ns`` builder with the opt-in reopen flag set."""
+    ns = _qgate_add_ns(*args, **kwargs)
+    ns.reopen = True
+    return ns
+
+
 # Plan ids this module's tests file findings against — seeded by the autouse
 # ``_materialize_declared_plan_dirs`` fixture in ``test/conftest.py``.
 PLAN_IDS = (
@@ -28,12 +38,16 @@ PLAN_IDS = (
     'qgate-add-opts',
     'qgate-dedup-diff',
     'qgate-dedup-pend',
-    'qgate-dedup-reopen',
+    'qgate-reopen-fixed',
+    'qgate-reopen-kept',
+    'qgate-reopen-nonfixed',
     'qgate-inv-phase',
     'qgate-inv-source',
     'qgate-query-empty',
     'qgate-query-res',
     'qgate-query-src',
+    'qgate-short-owned',
+    'qgate-short-new',
 )
 
 # =============================================================================
@@ -177,11 +191,11 @@ def test_qgate_add_dedup_pending(plan_context):
     assert query_result['total_count'] == 1
 
 
-def test_qgate_add_reopen_resolved(plan_context):
-    """Re-adding a resolved finding with the SAME content discriminator reopens it."""
+def test_qgate_add_fixed_plus_optin_reopens_with_history(plan_context):
+    """Fixed plus the opt-in reopens: the prior resolution is readable from history."""
     add_result = cmd_qgate_add(
         _qgate_add_ns(
-            plan_id='qgate-dedup-reopen',
+            plan_id='qgate-reopen-fixed',
             phase='3-outline',
             source='qgate',
             type='triage',
@@ -194,18 +208,19 @@ def test_qgate_add_reopen_resolved(plan_context):
 
     cmd_qgate_resolve(
         _qgate_resolve_ns(
-            plan_id='qgate-dedup-reopen',
+            plan_id='qgate-reopen-fixed',
             hash_id=hash_id,
-            resolution='taken_into_account',
+            resolution='fixed',
             phase='3-outline',
             detail='Addressed',
         )
     )
 
-    # Same title AND same detail → same discriminator → genuine re-detection → reopen.
+    # Same title AND same detail → same discriminator → genuine re-detection
+    # with the opt-in → reopen with the prior disposition retained in history.
     reopen_result = cmd_qgate_add(
-        _qgate_add_ns(
-            plan_id='qgate-dedup-reopen',
+        _qgate_add_optin_ns(
+            plan_id='qgate-reopen-fixed',
             phase='3-outline',
             source='qgate',
             type='triage',
@@ -215,15 +230,114 @@ def test_qgate_add_reopen_resolved(plan_context):
     )
     assert reopen_result['status'] == 'reopened'
     assert str(reopen_result['hash_id']) == hash_id
+    assert reopen_result['resolution'] == 'pending'
+    assert reopen_result['previous_resolution'] == 'fixed'
+
+    stored = cmd_qgate_query(
+        _qgate_query_ns(
+            plan_id='qgate-reopen-fixed',
+            phase='3-outline',
+        )
+    )
+    assert stored['findings'][0]['history'][0]['resolution'] == 'fixed'
 
     query_result = cmd_qgate_query(
         _qgate_query_ns(
-            plan_id='qgate-dedup-reopen',
+            plan_id='qgate-reopen-fixed',
             phase='3-outline',
             resolution='pending',
         )
     )
     assert query_result['filtered_count'] == 1
+
+
+def test_qgate_add_fixed_without_optin_kept(plan_context):
+    """Fixed without the opt-in is kept: the recorded resolution stands."""
+    add_result = cmd_qgate_add(
+        _qgate_add_ns(
+            plan_id='qgate-reopen-kept',
+            phase='3-outline',
+            source='qgate',
+            type='triage',
+            title='Missing coverage for utils.py',
+            detail='utils.parse() has no test',
+        )
+    )
+    assert add_result['status'] == 'success'
+    hash_id = str(add_result['hash_id'])
+
+    cmd_qgate_resolve(
+        _qgate_resolve_ns(
+            plan_id='qgate-reopen-kept',
+            hash_id=hash_id,
+            resolution='fixed',
+            phase='3-outline',
+            detail='Addressed',
+        )
+    )
+
+    kept_result = cmd_qgate_add(
+        _qgate_add_ns(
+            plan_id='qgate-reopen-kept',
+            phase='3-outline',
+            source='qgate',
+            type='triage',
+            title='Missing coverage for utils.py',
+            detail='utils.parse() has no test',
+        )
+    )
+    assert kept_result['status'] == 'kept'
+    assert str(kept_result['hash_id']) == hash_id
+    assert kept_result['resolution'] == 'fixed'
+
+    query_result = cmd_qgate_query(
+        _qgate_query_ns(
+            plan_id='qgate-reopen-kept',
+            phase='3-outline',
+            resolution='pending',
+        )
+    )
+    assert query_result['filtered_count'] == 0
+
+
+def test_qgate_add_nonfixed_with_optin_kept(plan_context):
+    """A non-fixed resolution re-detected WITH the opt-in is kept: only fixed reopens."""
+    add_result = cmd_qgate_add(
+        _qgate_add_ns(
+            plan_id='qgate-reopen-nonfixed',
+            phase='3-outline',
+            source='qgate',
+            type='triage',
+            title='Missing coverage for utils.py',
+            detail='utils.parse() has no test',
+        )
+    )
+    assert add_result['status'] == 'success'
+    hash_id = str(add_result['hash_id'])
+
+    cmd_qgate_resolve(
+        _qgate_resolve_ns(
+            plan_id='qgate-reopen-nonfixed',
+            hash_id=hash_id,
+            resolution='taken_into_account',
+            phase='3-outline',
+            detail='Addressed',
+        )
+    )
+
+    kept_result = cmd_qgate_add(
+        _qgate_add_optin_ns(
+            plan_id='qgate-reopen-nonfixed',
+            phase='3-outline',
+            source='qgate',
+            type='triage',
+            title='Missing coverage for utils.py',
+            detail='utils.parse() has no test',
+        )
+    )
+    assert kept_result['status'] == 'kept'
+    assert str(kept_result['hash_id']) == hash_id
+    assert kept_result['resolution'] == 'taken_into_account'
 
 
 def test_qgate_add_different_titles_not_deduped(plan_context):
@@ -356,3 +470,139 @@ def test_qgate_query_by_source(plan_context):
     )
     assert result['total_count'] == 2
     assert result['filtered_count'] == 1
+
+
+# =============================================================================
+# Test: Q-Gate short-circuit task reference (resolve fixed with task number)
+# =============================================================================
+
+
+def test_qgate_resolve_fixed_stores_structured_task_reference(plan_context):
+    """A repeated identical failure reopens owned: the pending record still names TASK-7."""
+    add_result = cmd_qgate_add(
+        _qgate_add_ns(
+            plan_id='qgate-short-owned',
+            phase='5-execute',
+            source='qgate',
+            type='test-failure',
+            title='FAILED test_login',
+            detail='AssertionError: expected 200',
+            file_path='test/auth.py',
+        )
+    )
+    assert add_result['status'] == 'success'
+    hash_id = str(add_result['hash_id'])
+
+    resolve_result = cmd_qgate_resolve(
+        Namespace(
+            plan_id='qgate-short-owned',
+            phase='5-execute',
+            hash_id=hash_id,
+            resolution='fixed',
+            detail='Will be addressed by TASK-7; see follow-up commit on this branch',
+            task_number=7,
+        )
+    )
+    assert resolve_result['status'] == 'success'
+    assert resolve_result['fix_task_number'] == 7
+
+    # A repeated identical failure WITH the opt-in reopens the owned record back
+    # to pending; without it the kept resolution would stand.
+    reopen_result = cmd_qgate_add(
+        _qgate_add_optin_ns(
+            plan_id='qgate-short-owned',
+            phase='5-execute',
+            source='qgate',
+            type='test-failure',
+            title='FAILED test_login',
+            detail='AssertionError: expected 200',
+            file_path='test/auth.py',
+        )
+    )
+    assert reopen_result['status'] == 'reopened'
+
+    # The short-circuit read-back: the pending record still names its owner,
+    # so the verdict is all-owned-by-TASK-7 and no second fix task is allocated.
+    pending = cmd_qgate_query(
+        _qgate_query_ns(
+            plan_id='qgate-short-owned',
+            phase='5-execute',
+            resolution='pending',
+        )
+    )
+    assert pending['filtered_count'] == 1
+    assert pending['findings'][0]['fix_task_number'] == 7
+
+
+def test_qgate_short_circuit_new_findings_when_one_differs(plan_context):
+    """A pending finding with no identical owned match is new: the dispatch proceeds."""
+    owned_add = cmd_qgate_add(
+        _qgate_add_ns(
+            plan_id='qgate-short-new',
+            phase='5-execute',
+            source='qgate',
+            type='test-failure',
+            title='FAILED test_login',
+            detail='AssertionError: expected 200',
+            file_path='test/auth.py',
+        )
+    )
+    cmd_qgate_resolve(
+        Namespace(
+            plan_id='qgate-short-new',
+            phase='5-execute',
+            hash_id=str(owned_add['hash_id']),
+            resolution='fixed',
+            detail='Will be addressed by TASK-7; see follow-up commit on this branch',
+            task_number=7,
+        )
+    )
+    cmd_qgate_add(
+        _qgate_add_ns(
+            plan_id='qgate-short-new',
+            phase='5-execute',
+            source='qgate',
+            type='test-failure',
+            title='FAILED test_logout',
+            detail='AssertionError: expected 200',
+            file_path='test/auth.py',
+        )
+    )
+
+    pending = cmd_qgate_query(
+        _qgate_query_ns(
+            plan_id='qgate-short-new',
+            phase='5-execute',
+            resolution='pending',
+        )
+    )
+    assert pending['filtered_count'] == 1
+    # The differing finding carries no structured owner: verdict new-findings.
+    assert pending['findings'][0].get('fix_task_number') is None
+
+
+def test_qgate_resolve_task_number_requires_fixed(plan_context):
+    """A task number with any other resolution is refused and writes nothing."""
+    add_result = cmd_qgate_add(
+        _qgate_add_ns(
+            plan_id='qgate-short-new',
+            phase='5-execute',
+            source='qgate',
+            type='test-failure',
+            title='FAILED test_checkout',
+            detail='Timeout after 30s',
+        )
+    )
+
+    bad = cmd_qgate_resolve(
+        Namespace(
+            plan_id='qgate-short-new',
+            phase='5-execute',
+            hash_id=str(add_result['hash_id']),
+            resolution='accepted',
+            detail='Accepted with task',
+            task_number=7,
+        )
+    )
+    assert bad['status'] == 'error'
+    assert bad['error'] == 'fix_task_number_requires_fixed'

@@ -42,6 +42,9 @@ PLAN_IDS = (
     'store-qgate-partition-ok',
     'store-qgate-partition-reject',
     'store-qgate-partition-exact',
+    'store-qgate-reopen-fixed',
+    'store-qgate-reopen-kept',
+    'store-qgate-reopen-nonfixed',
     'store-qgate-clear',
     'store-qgate-clear-empty',
     'store-qgate-dedup',
@@ -130,13 +133,15 @@ def test_qgate_dedup_pending(plan_context):
     assert r2['hash_id'] == r1['hash_id']
 
 
-def test_qgate_reopen_resolved(plan_context):
-    """Test Q-Gate reopens a resolved finding when the SAME defect is re-detected.
+def test_qgate_reemission_keeps_resolved(plan_context):
+    """An unchanged re-emission of a resolved finding keeps the recorded resolution.
 
-    Reopen fires only on a genuine re-detection — same title AND same content
-    discriminator (detail/file/rule) as the resolved record. A same-title but
-    different-content finding fails the discriminator match and is filed fresh
-    instead of reopening the unrelated resolved record.
+    A genuine re-detection — same title AND same content discriminator
+    (detail/file/rule) as the resolved record — leaves resolution, detail and
+    timestamp exactly as stored and records the re-observation without
+    re-arming the gate: the re-add answers ``kept`` and the pending count is
+    unchanged. A same-title but different-content finding fails the
+    discriminator match and is filed fresh instead.
     """
     r1 = add_qgate_finding(
         'store-qgate-reopen',
@@ -147,6 +152,7 @@ def test_qgate_reopen_resolved(plan_context):
         'Detail',
     )
     resolve_qgate_finding('store-qgate-reopen', '5-execute', r1['hash_id'], 'fixed')
+    before = query_qgate_findings('store-qgate-reopen', '5-execute')['findings'][0]
 
     r2 = add_qgate_finding(
         'store-qgate-reopen',
@@ -156,8 +162,17 @@ def test_qgate_reopen_resolved(plan_context):
         'Flaky test',
         'Detail',
     )
-    assert r2['status'] == 'reopened'
+    assert r2['status'] == 'kept'
+    assert r2['status'] in QGATE_PERSIST_OK
     assert r2['hash_id'] == r1['hash_id']
+    assert r2['resolution'] == 'fixed'
+
+    after = query_qgate_findings('store-qgate-reopen', '5-execute')['findings'][0]
+    assert after['resolution'] == 'fixed'
+    assert after['detail'] == before['detail']
+    assert after['timestamp'] == before['timestamp']
+    assert after['resolution_timestamp'] == before['resolution_timestamp']
+    assert query_qgate_findings('store-qgate-reopen', '5-execute', resolution='pending')['filtered_count'] == 0
 
 
 def test_rejected_qgate_finding_is_non_pending_in_unified_read(plan_context):
@@ -308,9 +323,10 @@ def test_resolve_evidenced_ignores_already_resolved_findings(plan_context):
     assert accepted['filtered_count'] == 1
 
 
-def test_resolve_evidenced_premature_resolution_is_self_correcting(plan_context):
-    """A resolution the fix did not actually earn is corrected by the next round:
-    re-detecting the same (title, discriminator) REOPENS the record to pending."""
+def test_resolve_evidenced_premature_resolution_stays_fixed(plan_context):
+    """A prematurely-evidenced resolution the fix did not earn is kept, not re-armed:
+    re-detecting the same (title, discriminator) keeps the recorded ``fixed``
+    resolution with the pending count unchanged."""
     pid = 'ev-resolve-reopen'
     add_qgate_finding(
         pid,
@@ -325,8 +341,8 @@ def test_resolve_evidenced_premature_resolution_is_self_correcting(plan_context)
     resolve_qgate_findings_by_evidence(pid, '6-finalize', ['src/c.py'])
     assert query_qgate_findings(pid, '6-finalize', resolution='fixed')['filtered_count'] == 1
 
-    # ...but the defect persisted, so the next round re-detects it → reopened.
-    reopened = add_qgate_finding(
+    # ...but the defect persisted, so the next round re-detects it → kept.
+    kept = add_qgate_finding(
         pid,
         '6-finalize',
         'qgate',
@@ -335,8 +351,10 @@ def test_resolve_evidenced_premature_resolution_is_self_correcting(plan_context)
         'Detail',
         file_path='src/c.py',
     )
-    assert reopened['status'] == 'reopened'
-    assert query_qgate_findings(pid, '6-finalize', resolution='pending')['filtered_count'] == 1
+    assert kept['status'] == 'kept'
+    assert kept['resolution'] == 'fixed'
+    assert query_qgate_findings(pid, '6-finalize', resolution='fixed')['filtered_count'] == 1
+    assert query_qgate_findings(pid, '6-finalize', resolution='pending')['filtered_count'] == 0
 
 
 def test_resolve_evidenced_invalid_phase_errors(plan_context):
@@ -430,12 +448,15 @@ def test_promote_finding_success(plan_context):
 
 
 def test_qgate_persist_ok_admits_every_in_store_outcome(plan_context):
-    """The three outcomes that leave the record IN the store are all members."""
+    """The four outcomes that leave the record IN the store are all members."""
     observed = _observed_qgate_statuses('store-qgate-partition-ok')
 
     assert observed['fresh'] in QGATE_PERSIST_OK
     assert observed['dedup'] in QGATE_PERSIST_OK
+    assert observed['kept'] in QGATE_PERSIST_OK
+    assert observed['kept'] == 'kept'
     assert observed['reopened'] in QGATE_PERSIST_OK
+    assert observed['reopened'] == 'reopened'
 
 
 def test_qgate_persist_ok_excludes_the_rejection_outcome(plan_context):
@@ -449,13 +470,62 @@ def test_qgate_persist_ok_excludes_the_rejection_outcome(plan_context):
 
 
 def test_qgate_persist_ok_partitions_the_outcome_space_exactly(plan_context):
-    """The set is exactly the in-store outcomes — no more, no less.
+    """The set covers exactly the in-store outcomes, no more and no fewer.
 
     Derived both ways: every observed in-store outcome is a member, and the set
-    carries no member the primitive never produces, so an extra value silently
-    added to ``QGATE_PERSIST_OK`` (which would re-admit a rejection) fails here.
+    carries no member beyond them, so an extra value silently added to
+    ``QGATE_PERSIST_OK`` (which would re-admit a rejection) still fails here.
     """
     observed = _observed_qgate_statuses('store-qgate-partition-exact')
 
-    in_store = {observed['fresh'], observed['dedup'], observed['reopened']}
+    in_store = {observed['fresh'], observed['dedup'], observed['kept'], observed['reopened']}
     assert set(QGATE_PERSIST_OK) == in_store
+
+
+# =============================================================================
+# Test: opt-in reopen limited to fixed with history retention
+# =============================================================================
+
+
+def test_optin_reopen_fixed_returns_reopened_with_history(plan_context):
+    """Fixed plus the opt-in reopens: prior resolution readable from history."""
+    pid = 'store-qgate-reopen-fixed'
+    first = add_qgate_finding(pid, '5-execute', 'qgate', 'test-failure', 'Reopen me', 'Detail')
+    assert first['status'] == 'success'
+    resolve_qgate_finding(pid, '5-execute', first['hash_id'], 'fixed', 'Fixed it')
+
+    second = add_qgate_finding(pid, '5-execute', 'qgate', 'test-failure', 'Reopen me', 'Detail', reopen=True)
+    assert second['status'] == 'reopened'
+    assert second['hash_id'] == first['hash_id']
+    assert second['resolution'] == 'pending'
+    assert second['previous_resolution'] == 'fixed'
+
+    stored = query_qgate_findings(pid, '5-execute')['findings'][0]
+    assert stored['resolution'] == 'pending'
+    assert stored['history'][0]['resolution'] == 'fixed'
+    assert query_qgate_findings(pid, '5-execute', resolution='pending')['filtered_count'] == 1
+
+
+def test_optin_reopen_fixed_without_optin_kept(plan_context):
+    """Fixed without the opt-in is kept: the recorded resolution stands."""
+    pid = 'store-qgate-reopen-kept'
+    first = add_qgate_finding(pid, '5-execute', 'qgate', 'test-failure', 'Keep me', 'Detail')
+    resolve_qgate_finding(pid, '5-execute', first['hash_id'], 'fixed')
+
+    second = add_qgate_finding(pid, '5-execute', 'qgate', 'test-failure', 'Keep me', 'Detail')
+    assert second['status'] == 'kept'
+    assert second['hash_id'] == first['hash_id']
+    assert second['resolution'] == 'fixed'
+    assert query_qgate_findings(pid, '5-execute', resolution='pending')['filtered_count'] == 0
+
+
+def test_optin_reopen_nonfixed_with_optin_kept(plan_context):
+    """A non-fixed resolution re-detected with the opt-in is kept: only fixed reopens."""
+    pid = 'store-qgate-reopen-nonfixed'
+    first = add_qgate_finding(pid, '5-execute', 'qgate', 'test-failure', 'Live with it', 'Detail')
+    resolve_qgate_finding(pid, '5-execute', first['hash_id'], 'accepted')
+
+    second = add_qgate_finding(pid, '5-execute', 'qgate', 'test-failure', 'Live with it', 'Detail', reopen=True)
+    assert second['status'] == 'kept'
+    assert second['hash_id'] == first['hash_id']
+    assert second['resolution'] == 'accepted'

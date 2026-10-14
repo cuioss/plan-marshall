@@ -65,7 +65,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   decision --plan-id {plan_id} --level INFO --message "(plan-marshall:{phase_skill}:qgate) Finding {hash_id} [{source}]: {resolution} — {detail}"
 ```
 
-Resolution values: `taken_into_account`, `fixed`, `deduplicated`, `reopened`.
+Resolution values: `pending`, `fixed`, `suppressed`, `accepted`, `taken_into_account`, `rejected`.
 
 **If no pending findings:** Continue to the next step.
 

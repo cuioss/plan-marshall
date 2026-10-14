@@ -105,6 +105,22 @@ def test_batch_add_appends_after_existing_tasks(plan_context):
     ]
 
 
+def test_batch_add_accepts_fix_origin_with_zero_deliverable(plan_context):
+    """deliverable=0 is accepted on the batch path for the fix origin triage writes."""
+    entries = [
+        _entry(
+            title='Fix missing null-guard on external input',
+            deliverable=0,
+            origin='fix',
+            steps=['src/A.java'],
+        )
+    ]
+    result = cmd_batch_add(_ns('batch-fix-zero-del', tasks_json=json.dumps(entries)))
+
+    assert result['status'] == 'success'
+    assert result['tasks_created'] == 1
+
+
 def test_batch_add_supports_depends_on_array(plan_context):
     """depends_on accepts a JSON array of TASK-N strings."""
     entries = [

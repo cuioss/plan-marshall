@@ -67,19 +67,19 @@ Script: `plan-marshall:manage-tasks:manage-tasks`
 | `prepare-add` | `--plan-id [--slot]` | Allocate a scratch path under `<plan>/work/pending-tasks/` (Step 1 of add flow) |
 | `commit-add` | `--plan-id [--slot]` | Read the prepared TOON file, validate, create TASK-NNN.json, delete scratch (Step 3 of add flow) |
 | `batch-add` | `--plan-id (--tasks-file PATH \| --tasks-json JSON \| stdin)` | Atomically create N tasks from a JSON array. Preferred form is `--tasks-file PATH` pointing at a staged plan-relative file (e.g. `work/tasks-batch.json`); `--tasks-json` and stdin remain available for trivial payloads. The two flags are mutually exclusive. All-or-nothing semantics: if any entry fails validation, no `TASK-NNN.json` is written. |
-| `update` | `--plan-id --task-number [--title] [--description] [--depends-on] [--status] [--domain] [--profile] [--skills] [--deliverable] [--cost-size] [--predicted-cost-tokens] [--envelope-id]` | Update task metadata. The three cost-field flags are the sole write path for the T-shirt cost mechanism — they persist `cost_size` (`S`/`M`/`L`/`XL`), `predicted_cost_tokens` (non-negative int), and `envelope_id` (1-based positive int) onto the task record, mirroring the read shape surfaced by `next`. The `derive-cost-size` / `pack-envelopes` compute verbs stay pure; this verb is where their output lands on disk. |
+| `update` | `--plan-id --task-number [--title] [--description] [--depends-on] [--status] [--domain] [--profile] [--skills] [--deliverable] [--cost-size] [--predicted-cost-tokens] [--envelope-id]` | Update task metadata. The three cost-field flags are the refresh path for the T-shirt cost mechanism — they persist `cost_size` (`XS`/`S`/`M`/`L`/`XL`/`XXL`), `predicted_cost_tokens` (non-negative int), and `envelope_id` (1-based positive int) onto the task record, mirroring the read shape surfaced by `next` and `get`. The `derive-cost-size` / `pack-envelopes` compute verbs stay pure; this verb is where their output lands on disk. `commit-add` stamps the same three fields at creation. |
 | `remove` | `--plan-id --task-number` | Remove a task |
 | `list` | `--plan-id [--status] [--deliverable] [--ready] [--domain] [--profile]` | List all tasks; `--domain` / `--profile` filter the result set |
 | `read` | `--plan-id --task-number` | Read single task details |
 | `exists` | `--plan-id --task-number` | Boolean presence probe — returns `status: success exists: true\|false`, never errors on absence (use instead of `read` for existence checks) |
 | `next` | `--plan-id [--include-context] [--ignore-deps]` | Get next pending task/step |
 | `next-tasks` | `--plan-id` | Get all tasks ready for parallel execution |
-| `finalize-step` | `--plan-id --task-number --step --outcome [--reason] [--outcome-task-title] [--outcome-step-count] [--outcome-caller]` | Complete step with outcome (done/skipped/failed). When the call closes a task as `done`, the script emits one canonical `[OUTCOME] ({caller}) Completed TASK-NNN: {title} ({M} steps)` work-log line plus one `[ARTIFACT]` line per changed path — see "Script-Level [OUTCOME] + [ARTIFACT] Emission" below for both contracts, the overrides, and the `task_start_sha` baseline the artifact diff is taken against. |
+| `finalize-step` | `--plan-id --task-number --step --outcome [--reason] [--outcome-task-title] [--outcome-step-count] [--outcome-caller] [--verification-owed] [--verification-complete]` | Complete step with outcome (done/skipped/failed). When the call closes a task as `done`, the script emits one canonical `[OUTCOME] ({caller}) Completed TASK-NNN: {title} ({M} steps)` work-log line plus one `[ARTIFACT]` line per changed path — see "Script-Level [OUTCOME] + [ARTIFACT] Emission" below for both contracts, the overrides, and the `task_start_sha` baseline the artifact diff is taken against. A task whose verification is owed to the orchestrator tier stays open instead — see "Finalize-step profile branch" below. |
 | `add-step` | `--plan-id --task-number --target --intent [--after]` | Add step to task |
 | `update-step` | `--plan-id --task-number --step-number --intent --reason [--finding-id]` | Update step intent and reason (e.g., to record a triage finding reference) |
 | `remove-step` | `--plan-id --task-number --step` | Remove step from task |
 | `rename-path` | `--plan-id --old-path --new-path [--include-completed]` | Record path rename and rewrite step targets. By default only unfinished work is rewritten — a `done` task is skipped whole, and elsewhere only `pending` steps are touched — so a finished task's record stays a faithful account of the paths it edited. `--include-completed` lifts both guards, for the case that default cannot serve: an upstream rename landing mid-plan, where the path a completed step names no longer exists, so leaving it alone strands the task on a dead path that `declared_set_closure` then flags with no sanctioned way to correct it. Returns `rewritten_completed_count` and, per entry, BOTH the `step_status` and the `task_status` the record carried BEFORE the rewrite, so an edit to finished work is visible in the result rather than merely inferable from the flag. Both statuses are reported, and the count treats an entry as finished work when EITHER is finished, because either guard alone can be the one lifted — a done task whose step rows still read `pending` is finished work just as much as a done step is |
-| `qgate-mechanical-checks` | `--plan-id [--no-emit]` | Run the deterministic Q-Gate checks for phase-4-plan Step 8: coverage, skill-resolution, acyclic, files-exist, keyword-drift, structural-token-drift, plus the two CLOSURE checks — declared-set-closure and declared-scope-reconciliation. The first six ask whether each declared thing is well-formed and resolves; the closure pair asks whether the declared SET is complete, which none of the others can see. Pure regex + graph + filesystem; no LLM dispatch. Each failure becomes a Q-Gate finding under `--source qgate` so phase-4-plan's existing aggregate consumes it. Returns `total_failed`, per-check counts, a `population` block reporting what each population-publishing check actually scanned (with `population_complete`), and an `ambiguous` flag the caller uses to decide whether the LLM q-gate-validation dispatch still needs to fire — `ambiguous` flips on an unparseable outline OR an incomplete population, since a zero over an unscanned set is not a verdict. The block covers **three** checks, not only the two closure ones: `acyclic` publishes alongside them because it also loses records before it measures — a task number it cannot use is dropped from the graph, and two records claiming one number collapse to a single node — so its `duplicate_task_numbers` / `unusable_task_numbers` / `nodes_indexed` are what keep a "no cycle" from being a verdict over a shortened node set. Also returns `qgate_persist_failed` (bool) and `qgate_persist_failures` (list of `{title, message}`) — a persist the Q-Gate primitive rejected means the check failed but its finding never reached the store, so the caller MUST fail loudly on `qgate_persist_failed: true` rather than trusting `total_failed` alone. |
+| `qgate-mechanical-checks` | `--plan-id [--no-emit]` | Run the deterministic Q-Gate checks for phase-4-plan Step 8: coverage, skill-resolution, acyclic, files-exist, keyword-drift, structural-token-drift, plus the two CLOSURE checks — declared-set-closure and declared-scope-reconciliation. The first six ask whether each declared thing is well-formed and resolves; the closure pair asks whether the declared SET is complete, which none of the others can see. Pure regex + graph + filesystem; no LLM dispatch. Each failure becomes a Q-Gate finding under `--source qgate` so phase-4-plan's existing aggregate consumes it. Returns `total_failed`, per-check counts, a `population` block reporting what each population-publishing check actually scanned (with `population_complete`), and an `ambiguous` flag the caller uses to decide whether the LLM q-gate-validation dispatch still needs to fire — `ambiguous` flips on an unparseable outline OR an incomplete population, since a zero over an unscanned set is not a verdict. The block covers **three** checks, not only the two closure ones: `acyclic` publishes alongside them because it also loses records before it measures — a task number it cannot use is dropped from the graph, and two records claiming one number collapse to a single node — so its `duplicate_task_numbers` / `unusable_task_numbers` / `nodes_indexed` are what keep a "no cycle" from being a verdict over a shortened node set. Also returns `qgate_persist_failed` (bool) and `qgate_persist_failures` (list of `{title, message}`) — a persist the Q-Gate primitive rejected means the check failed but its finding never reached the store, so the caller MUST fail loudly on `qgate_persist_failed: true` rather than trusting `total_failed` alone. Alongside `findings_emitted` (newly appended records only) returns `reobserved_count` — how many persists re-detected an already-resolved finding and kept its recorded resolution (the primitive's `kept` outcome) — and `still_detected_but_fixed_count` — how many of those kept records carry the `fixed` resolution. An unchanged-plan re-run therefore reports `findings_emitted` zero with the re-observed counts stating what it re-saw, instead of a bare zero that reads as "nothing detected"; the kept resolutions are untouched. |
 | `loop-exit-guard` | `--plan-id` | Script-level enforcement of the phase-5-execute "unfinished > 0 → must continue" invariant. The predicate is the union of `pending` AND `in_progress` tasks. Emits `status: continue` (with `pending_count`, `pending_ids`, `in_progress_count`, `in_progress_ids`) when EITHER bucket is non-empty — the non-success status forces the orchestrator to re-dispatch the execution-context. Emits `status: success` (with all four count/id fields present and zero-valued) only when BOTH counts are zero. See "Loop-Exit Guard" below for the contract. |
 | `pre-commit-verify-freshness` | `--plan-id` | Script-level enforcement that the current working-tree state has been observed by a successful build before any pre-commit transition — but only where a build was necessary at all. Consults the command-free `build-decision` verdict first, then queries the unified change-ledger for a `kind=build` entry with `status == success` whose `worktree_sha` matches the recomputed working-tree currency hash, and finally cross-checks the matching rows on two dimensions — their notations against the build notations this project's architecture resolves, and the canonical + scope they recorded against the blast radius of the change. Emits `status: exempt` (verdict `not_necessary` — no build was owed, so the gate returns BEFORE the ledger scan with the verdict's own `reason` forwarded verbatim; nothing about the tree was examined), `status: fresh` (one or more matching successful build entries citable on BOTH dimensions and covering the change, alone or between them — `notation_cross_check` and `scope_cross_check` say whether each was audited or merely undetermined, and the record names every row the verdict rests on and every candidate's recorded scope), `status: stale` (no successful build matches the current working-tree sha, or every one that does names a build this project never runs, or the ones that do fall short of the change alone and combined — carrying a `reason` that names WHICH route: `worktree_mutated`, `build_error`, `build_timeout`, `build_killed`, `build_indeterminate`, `notation_unrelated`, `notation_absent`, `build_scope_narrow`, or `no_row_both_attributable_and_adequate`, since the routes need different remedies and a `killed` build must never be blind-retried), or `status: undecidable` (no positive proof — `no_registry` when the ledger is absent/empty, `head_unresolvable` when the working-tree sha cannot be computed). Fail-closed contract: exactly `exempt` and `fresh` permit transition, and they permit on different bases — read the member, never the absence of a refusal. See "Pre-Commit Verify Freshness" below for the contract. |
 
@@ -146,6 +146,44 @@ that flipped to `in_progress` and was abandoned mid-dispatch would leave
 the queue "empty by the pending bucket" while the task itself was still
 unfinished. Broadening the predicate to `pending OR in_progress` closes
 that residual seam.
+
+### Finalize-step profile branch (orchestrator-owed verification)
+
+`finalize-step` closes a task `done` as soon as its last step is terminal —
+with one profile branch. A task whose verification is owed to the
+orchestrator tier MUST NOT read `done` before its test run starts: the leaf
+cannot reap that build, so closing it would leave a verification failure
+with no task to reopen. The close rule branches on the orchestrator-owed
+verification profile list — `module_testing`, plus any implementation task
+whose wider run the leaf handed back (signalled per call with
+`--verification-owed`; the script never resolves tiers itself):
+
+- When every step is terminal with no failure AND the task is owed (owed
+  profile, or `--verification-owed` passed) AND the call does NOT carry
+  `--verification-complete`, the task keeps `in_progress` with the
+  `verification_owed: true` marker instead of flipping to `done`. No
+  `[OUTCOME]` / `[ARTIFACT]` lines fire — they belong to the real close.
+  The result reads `task_complete: false`, `task_status: in_progress`,
+  `verification_owed: true`.
+- A failed step closes `failed` as before — the failure path is unchanged,
+  and triage owns the task from there.
+- The orchestrator closes each owed task after its orchestrator-tier build
+  reports green via `finalize-step --step {last} --outcome done
+  --verification-complete`, which flips the task to `done`, clears the
+  marker, and fires the deferred `[OUTCOME]` / `[ARTIFACT]` emission. On a
+  red build the existing `verification-feedback` triage owns the task — it
+  stays `in_progress` and selectable, so the failure has a defined task.
+- Reopening an owed task for new work is `add-step` (a new actionable step
+  makes `next` select it again); a bare `update --status in_progress` on an
+  all-terminal owed task changes nothing actionable.
+
+`next` skips verification-owed tasks that have no pending or in_progress
+step — they are waiting on a build, not on the leaf — while an owed task
+that gained a step via `add-step` is selectable again. An UNMARKED
+all-terminal `in_progress` task is still selected (and reads as queue
+drift), so the misclassification signal is preserved. The owed state counts
+toward the `in_progress` bucket of `loop-exit-guard`, so the queue cannot
+read clean while verification is outstanding.
 
 ### Pre-Commit Verify Freshness (`pre-commit-verify-freshness`)
 
@@ -1195,6 +1233,8 @@ python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks commit-a
   --plan-id PLAN_ID [--slot SLOT]
 ```
 
+Every created task is assigned to an execution envelope at creation: it joins the current live envelope (the lowest envelope that still has `pending` / `in_progress` work — the envelope whose pending tasks the new task blocks), or opens a new trailing envelope one past the highest stamped id when no envelope is live, raising the manifest envelope count to cover it. The derived cost fields (`cost_size`, `predicted_cost_tokens`) are stamped alongside the `envelope_id` from the task's own signals, so a post-packing fix task reads back routable immediately. The returned `task` block carries all three fields plus an `envelope_assignment` block (`envelope_id`, `opens_trailing`, `manifest_updated`, `manifest_reason`).
+
 ### batch-add
 
 ```bash
@@ -1214,15 +1254,16 @@ python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks update \
   [--title TEXT] [--description TEXT] [--depends-on REFS ...] \
   [--status {pending|in_progress|done|blocked|infeasible}] \
   [--domain DOMAIN] [--profile PROFILE] [--skills CSV] [--deliverable N] \
-  [--cost-size {S|M|L|XL}] [--predicted-cost-tokens N] [--envelope-id N]
+  [--cost-size {XS|S|M|L|XL|XXL}] [--predicted-cost-tokens N] [--envelope-id N]
 ```
 
-The `--cost-size` / `--predicted-cost-tokens` / `--envelope-id` flags are the **only**
+The `--cost-size` / `--predicted-cost-tokens` / `--envelope-id` flags are the refresh
 write path for the cost-sizing fields. The pure compute verbs `derive-cost-size` and
 `pack-envelopes` never mutate task records (their unit tests assert purity); their
-output is persisted onto the task record by this `update` verb. The persisted values
-round-trip back out through `next` (`cost_size`, `predicted_cost_tokens`, `envelope_id`).
-Validation: `--cost-size` must be one of `S`/`M`/`L`/`XL`; `--predicted-cost-tokens` must be
+output is persisted onto the task record by this `update` verb. (`commit-add` stamps the
+same three fields at creation via the at-creation assignment rule.) The persisted values
+round-trip back out through `next` and `get` (`cost_size`, `predicted_cost_tokens`, `envelope_id`).
+Validation: `--cost-size` must be one of `XS`/`S`/`M`/`L`/`XL`/`XXL`; `--predicted-cost-tokens` must be
 non-negative; `--envelope-id` must be a positive (1-based) integer. Each flag is independent —
 supply only the field(s) being written. phase-4-plan Step 6 calls this verb to stamp the
 derived cost, and Step 7a calls it to stamp the packed `envelope_id`. The size vocabulary,
@@ -1256,6 +1297,8 @@ python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks read \
   --plan-id PLAN_ID --task-number N
 ```
 
+`get` is an accepted alias for `read` (same handler). The returned `task` block carries the `envelope_id` stamped at creation (as `next` already surfaces it), so a task created through `commit-add` on a packed plan reads a non-null `envelope_id` back from `get`.
+
 ### exists
 
 ```bash
@@ -1271,7 +1314,7 @@ python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks next \
   [--include-context] [--ignore-deps]
 ```
 
-The `next` block surfaces three plan-time cost-sizing fields when they are present on the resolved task record — `cost_size` (T-shirt label `S`/`M`/`L`/`XL`), `predicted_cost_tokens` (predicted token magnitude), and `envelope_id` (bin-packer group identifier). They appear as `null` on tasks created before sizing ran. These fields are an integration surface only; the size label vocabulary, signal weights, and size→token mapping are owned by the central rubric — see [`../phase-4-plan/standards/cost-sizing.md`](../phase-4-plan/standards/cost-sizing.md) and the Cost-Sizing Fields section of [`standards/task-contract.md`](standards/task-contract.md). The phase-5-execute budget-bounded task loop consumes `envelope_id` to run only its assigned envelope group.
+The `next` block surfaces three plan-time cost-sizing fields when they are present on the resolved task record — `cost_size` (T-shirt label `XS`/`S`/`M`/`L`/`XL`/`XXL`), `predicted_cost_tokens` (predicted token magnitude), and `envelope_id` (bin-packer group identifier). They appear as `null` only on tasks created by a path that does not assign them (notably `batch-add`, and tasks created before sizing ran). Among runnable pending tasks a fix task (`origin: fix`) is returned ahead of the pending deliverable tasks whose verification it blocks; number order is preserved within each class, and an `in_progress` task still preempts everything. These fields are an integration surface only; the size label vocabulary, signal weights, and size→token mapping are owned by the central rubric — see [`../phase-4-plan/standards/cost-sizing.md`](../phase-4-plan/standards/cost-sizing.md) and the Cost-Sizing Fields section of [`standards/task-contract.md`](standards/task-contract.md). The phase-5-execute budget-bounded task loop consumes `envelope_id` to run only its assigned envelope group.
 
 ### next-tasks
 

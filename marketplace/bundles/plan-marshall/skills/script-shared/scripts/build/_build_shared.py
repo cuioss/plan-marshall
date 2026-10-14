@@ -41,6 +41,7 @@ from _build_result import (
     ERROR_LOG_FILE_FAILED,
     STATUS_INDETERMINATE,
     STATUS_KILLED,
+    STATUS_RUNNING,
     DirectCommandResult,
     assert_truthful_status,
     error_result,
@@ -808,9 +809,26 @@ def cmd_run_common(
         print(formatter(indeterminate_output))
         return 0  # Status modeled in output, not exit code
 
+    # Handle a RUNNING hand-back — a daemon-routed build that outlived the
+    # wrapper's bounded wait. Not a verdict: the build is still working on the
+    # daemon, so the payload carries job_id + job_status for re-attach. It
+    # stores no findings, synthesises no errors[], and takes no ledger row —
+    # only a terminal route does that. Status modeled in output, not exit code.
+    if result['status'] == STATUS_RUNNING:
+        running_output: dict[str, Any] = {
+            'status': STATUS_RUNNING,
+            'exit_code': 0,
+            'duration_seconds': result['duration_seconds'],
+            'log_file': log_file,
+            'command': command_str,
+            'job_id': result.get('job_id', ''),
+            'job_status': STATUS_RUNNING,
+        }
+        print(formatter(running_output))
+        return 0  # Status modeled in output, not exit code
+
     # Handle timeout
-    if result['status'] == 'timeout':
-        # The bound travels as the producer reported it. A result that carries
+    if result['status'] == 'timeout':  # The bound travels as the producer reported it. A result that carries
         # none (a version-skewed daemon) emits no `timeout_used_seconds` at all
         # rather than a number this layer would have to invent.
         timeout_bound = _applied_bound_fields(result)

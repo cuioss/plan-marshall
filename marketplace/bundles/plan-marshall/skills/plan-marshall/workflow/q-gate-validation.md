@@ -818,9 +818,10 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 For each issue found (false positive, missing coverage, alignment issue), record it using `manage-findings` with the **`qgate add`** subcommand (NOT `add` alone):
 
-**Note**: The `qgate add` command deduplicates by title within each phase:
-- Same title + pending → `status: deduplicated` (no duplicate created)
-- Same title + resolved → `status: reopened` (finding reactivated)
+**Note**: The `qgate add` command deduplicates on the (`title`, content-discriminator) pair within each phase — never the title alone. The content discriminator is a stable hash over (`detail`, `file_path`, `rule`):
+- Same title AND same discriminator + pending → `status: deduplicated` (no duplicate created)
+- Same title AND same discriminator + resolved → `status: kept` (recorded resolution stands; the re-observation is counted, never re-armed)
+- Same title AND same discriminator + `fixed` resolution AND the `--reopen` opt-in → `status: reopened` (finding reactivated to `pending`, prior disposition moved into `history`)
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \

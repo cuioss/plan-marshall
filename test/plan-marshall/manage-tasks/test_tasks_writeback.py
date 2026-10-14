@@ -32,12 +32,33 @@ from conftest import run_script
 
 from _manage_tasks_fixtures import (
     SCRIPT_PATH,
+    _core,
     _next_ns,
     _update_ns,
     add_basic_task,
     cmd_next,
     cmd_update,
 )
+
+
+def _clear_cost_fields(plan_id, task_number):
+    """Clear creation-stamped cost fields to None for deterministic partial-write tests.
+
+    Since `commit-add` stamps cost_size / predicted_cost_tokens / envelope_id
+    at creation, a freshly added task carries non-None defaults. Partial-write
+    tests assert the unwritten fields surface as None, so they must clear the
+    stamped defaults first — mirroring `_stamp_cost_fields` clearing in
+    test_manage_tasks_next.py.
+    """
+    task_dir = _core.get_tasks_dir(plan_id)
+    task_file = _core.find_task_file(task_dir, task_number)
+    assert task_file is not None, f'task file for {plan_id}/{task_number} not found'
+    task = _core.parse_task_file(task_file.read_text(encoding='utf-8'))
+    task['cost_size'] = None
+    task['predicted_cost_tokens'] = None
+    task['envelope_id'] = None
+    task_file.write_text(_core.format_task_file(task), encoding='utf-8')
+
 
 # =============================================================================
 # Tier 2 — write-back round-trip (cmd_update -> cmd_next / cmd_read)
@@ -148,6 +169,7 @@ def test_update_accepts_each_valid_cost_size(plan_context, size):
 def test_update_cost_size_only_leaves_other_fields_absent(plan_context):
     """Writing only cost_size leaves predicted_cost_tokens / envelope_id null."""
     add_basic_task(plan_id='wb-part-size', title='Sized task', deliverable=1)
+    _clear_cost_fields('wb-part-size', 1)
 
     cmd_update(_update_ns(plan_id='wb-part-size', number=1, cost_size='S'))
 
@@ -160,6 +182,7 @@ def test_update_cost_size_only_leaves_other_fields_absent(plan_context):
 def test_update_tokens_only_leaves_other_fields_absent(plan_context):
     """Writing only predicted_cost_tokens leaves cost_size / envelope_id null."""
     add_basic_task(plan_id='wb-part-tok', title='Sized task', deliverable=1)
+    _clear_cost_fields('wb-part-tok', 1)
 
     cmd_update(_update_ns(plan_id='wb-part-tok', number=1, predicted_cost_tokens=25000))
 
@@ -172,6 +195,7 @@ def test_update_tokens_only_leaves_other_fields_absent(plan_context):
 def test_update_envelope_only_leaves_other_fields_absent(plan_context):
     """Writing only envelope_id leaves cost_size / predicted_cost_tokens null."""
     add_basic_task(plan_id='wb-part-env', title='Sized task', deliverable=1)
+    _clear_cost_fields('wb-part-env', 1)
 
     cmd_update(_update_ns(plan_id='wb-part-env', number=1, envelope_id=4))
 
@@ -184,6 +208,7 @@ def test_update_envelope_only_leaves_other_fields_absent(plan_context):
 def test_update_second_field_preserves_first(plan_context):
     """A later single-field write does not clobber an earlier-written field."""
     add_basic_task(plan_id='wb-accum', title='Sized task', deliverable=1)
+    _clear_cost_fields('wb-accum', 1)
 
     cmd_update(_update_ns(plan_id='wb-accum', number=1, cost_size='M'))
     cmd_update(_update_ns(plan_id='wb-accum', number=1, predicted_cost_tokens=60000))

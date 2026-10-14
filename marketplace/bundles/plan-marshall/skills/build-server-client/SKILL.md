@@ -29,6 +29,7 @@ or an unregistered project, behaves byte-identically to today.
 
 **Prohibited actions:**
 - Never `run_in_background` or `sleep` the `wait`. The wait is a foreground, server-side bounded long-poll — a harness-reaped wait costs ONE re-poll (re-issue `wait`), never the whole build. Backgrounding it re-introduces exactly the harness-kill loss the daemon exists to remove.
+- Never `run_in_background` a daemon-routed build. One runnable rule: the wrapper call for a daemon-routed build returns within a bound below the per-call ceiling with a terminal result or a live running status plus job id, and the orchestrator re-attaches with a bounded wait on that id; backgrounding (`run_in_background`) is named only for the non-daemon fallback, never for a daemon-routed build.
 - Do not start, register, unregister, or otherwise provision the daemon from this skill — that surface lives ONLY in `manage-build-server`. This skill never mutates the registry, the socket, the pidfile, or the daemon lifecycle.
 - Do not invent script arguments not listed in the **Canonical invocations** section below.
 - Do not trust a daemon response without the S3 identity check — the script performs the socket-owner uid check + version handshake; an impostor socket is treated as unreachable (fallback), never trusted.

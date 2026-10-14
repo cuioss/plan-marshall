@@ -75,6 +75,23 @@ def test_get_returns_verification_block(plan_context):
     assert result['task']['verification']['criteria'] == 'Tests pass'
 
 
+def test_get_returns_envelope_id_stamped_at_creation(plan_context):
+    """Read returns the envelope_id stamped at creation."""
+    toon = build_task_toon(
+        title='Sized task',
+        deliverable=1,
+        domain='java',
+        description='Task with at-creation envelope',
+        steps=['src/main/java/Sized.java'],
+    )
+    cmd_add(_add_ns(plan_id='get-envelope', content=toon.replace('\n', '\\n')))
+
+    result = cmd_read(_read_ns(plan_id='get-envelope', number=1))
+
+    assert result['status'] == 'success'
+    assert result['task']['envelope_id'] == 1
+
+
 # =============================================================================
 # Tests: exists
 # =============================================================================

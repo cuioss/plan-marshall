@@ -107,7 +107,7 @@ This surface **retires the direct-path workaround**: reading `.plan/local/worktr
 
 `add`, `qgate add` and `assessment add` all end at an append whose parent-directory creation would materialize the whole `plans/{plan_id}/artifacts/findings/` chain. Against a `plan_id` with no directory under the resolved root that manufactures a **phantom store** — after which a subsequent `list` reports `findings_store_state: present` for a plan that never existed, defeating the guarantee the read surfaces provide.
 
-All three therefore REFUSE, returning `status: error` / `error: findings_store_unresolved` / `findings_store_state: plan_absent` and creating nothing on disk. Because `qgate add`'s refusal is an `error`, it is already outside the `QGATE_PERSIST_OK` partition (`success` / `deduplicated` / `reopened`), so every caller that tests membership in that set treats a refused add as not-in-store with no change at the call site. A real plan whose directory exists but which has no `artifacts/findings/` yet still succeeds and still creates the file.
+All three therefore REFUSE, returning `status: error` / `error: findings_store_unresolved` / `findings_store_state: plan_absent` and creating nothing on disk. Because `qgate add`'s refusal is an `error`, it is already outside the `QGATE_PERSIST_OK` partition (`success` / `deduplicated` / `reopened` / `kept`), so every caller that tests membership in that set treats a refused add as not-in-store with no change at the call site. A real plan whose directory exists but which has no `artifacts/findings/` yet still succeeds and still creates the file.
 
 ### `ingest` refuses on the same guard
 
@@ -257,10 +257,13 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
 
 **Sources**: `qgate` (automated verification), `user_review` (user feedback)
 
-**Deduplication**: `qgate add` deduplicates by title within each phase (case-sensitive, exact match):
-- If a finding with the same title already exists and is `pending` → returns `status: deduplicated` (no new record)
-- If a finding with the same title exists but is resolved → returns `status: reopened` (reactivated to `pending`)
+**Deduplication**: `qgate add` deduplicates on the (`title`, content-discriminator) pair within each phase — never the title alone. The content discriminator is a stable hash over (`detail`, `file_path`, `rule`), so a bare title collision alone can never reopen an unrelated already-resolved finding:
+- If a finding matching both title AND discriminator already exists and is `pending` → returns `status: deduplicated` (no new record)
+- If a matching finding exists and is resolved → the recorded resolution is kept exactly (resolution, detail and timestamp untouched) and the re-observation is recorded as a counter → returns `status: kept`. This is the default: an unchanged re-emission never re-arms a gate the reviewer had cleared.
+- Only a matched record whose resolution is `fixed`, re-added with the `--reopen` opt-in, returns to `pending` → returns `status: reopened`, moving the prior resolution, detail and timestamp into the record's `history`.
 - Otherwise → creates new finding with `status: success`
+
+`QGATE_PERSIST_OK` is exactly `success` / `deduplicated` / `reopened` / `kept` — every status that leaves the record in the store. Callers test membership in that set, never `status == 'success'`.
 
 **Iteration**: The optional `--iteration N` parameter tracks which verification cycle produced the finding (e.g., iteration 1 = first build attempt, iteration 2 = after fixes). Useful for filtering findings from a specific cycle via `qgate list --iteration N`.
 
@@ -527,8 +530,10 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings qg
   --plan-id PLAN_ID --phase PHASE --source SOURCE --type TYPE \
   --title TEXT --detail TEXT \
   [--file-path PATH] [--component COMPONENT] [--severity SEVERITY] [--iteration N] \
-  [--rule RULE] [--raw-input FIELD=VALUE] [--raw-input-max-bytes N]
+  [--rule RULE] [--reopen] [--raw-input FIELD=VALUE] [--raw-input-max-bytes N]
 ```
+
+`--reopen` is the opt-in that re-arms the gate for a re-detected defect the store had recorded as `fixed`: only a matched record whose resolution is `fixed` reopens, and only with the flag. The prior resolution, detail and timestamp move into the record's `history`. A `fixed` match without the flag is kept; a non-`fixed` match with the flag is kept.
 
 ### qgate list
 
