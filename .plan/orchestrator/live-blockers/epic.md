@@ -407,6 +407,11 @@ derive, for rows still live.
     59 KB spec. Low.
 
 - **From PLAN-LB-31's landing** (`landings/PLAN-LB-31.md`, 2026-10-14):
+  - **Folded into PLAN-LB-48 (D5–D7) by operator instruction, 2026-10-14**: the doc/registry
+    corrections, the enrolment and observation (asking once before the foreign writes), `ci pr
+    reply --repo`, and a durable instrument with persisted tables (answering the operator's "why
+    not fixing the script?"). The CodeRabbit Learning removal stays an operator action. The text
+    below is the record of what was found.
   - **Operator decisions owed.** (1) Enrolment of the thirteen deferred repositories and the
     first-PR observation (spec D6, D7) were not done: re-stage, asking once before writing to 13
     foreign repositories (schema released `v0.39.0`; the roster decision does not block).
@@ -422,7 +427,7 @@ derive, for rows still live.
     with one read step and 0 of 13 enrolled was graded met. Nearest owner PLAN-LB-39 D6 (criteria
     integrity). Recurrence class of `lessons-routing-015`/`-026`.
   - **`ci pr reply` has no `--repo`**, so a comment on a foreign repository's PR can only be made
-    with raw `gh`. Low. Unowned.
+    with raw `gh`. Low. Owned by PLAN-LB-48 D6.
   - **Drift recovery can manufacture its own loop cap**: a refine Q-Gate that defers the rebase to
     finalize guarantees the next drift. Unowned.
   - **The retrospective's direct-`gh` audit is blind on OpenCode** — folded into PLAN-LB-49.
