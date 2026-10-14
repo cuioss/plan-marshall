@@ -51,6 +51,8 @@ EXTRA_FIELDS = [
     'tests_run',
     'tests_population',
     'analyses_examined',
+    'job_id',
+    'job_status',
 ]
 """Additional scalar fields that appear after core fields.
 

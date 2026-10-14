@@ -32,6 +32,7 @@ import json
 
 import _build_execute as build_execute
 import _build_execute_factory as factory
+import _build_format as _build_format_mod
 import _build_queue_slot as bqs
 import pytest
 from _build_cli import (
@@ -1129,3 +1130,135 @@ class TestGateBuildRowPopulation:
 
         assert rc == 0
         assert [row['outcome'] for row in rows] == [{'route': 'in_process', 'tests_run': 12}]
+
+
+# =============================================================================
+# Running hand-back — one runnable rule for orchestrator-tier long-build waits
+# =============================================================================
+# A daemon-routed build whose job outlives the wrapper's bounded wait hands back
+# a live ``running`` result carrying the daemon ``job_id`` instead of blocking
+# past the per-call ceiling. The orchestrator re-attaches with a bounded wait
+# on that id. These tests pin the hand-back on the constructed result AND on
+# both emission paths (JSON and TOON), plus the bounded route that produces it.
+
+
+class TestRunningHandBackFields:
+    """``_running_hand_back`` builds the live running result the rule names."""
+
+    def test_hand_back_carries_job_id_and_running_status(self, tmp_path):
+        started = factory.time.monotonic()
+        result = factory._running_hand_back('J1', 'pw verify', started)
+
+        assert result['status'] == 'running'
+        assert result['job_id'] == 'J1'
+        assert result['job_status'] == 'running'
+        assert result['command'] == 'pw verify'
+
+    def test_hand_back_carries_the_last_wait_log_file(self, tmp_path):
+        started = factory.time.monotonic()
+        waited = {'job_status': 'running', 'log_file': str(tmp_path / 'job.log')}
+
+        result = factory._running_hand_back('J9', 'pw verify', started, waited)
+
+        assert result['job_id'] == 'J9'
+        assert result['log_file'] == str(tmp_path / 'job.log')
+
+    def test_hand_back_without_a_wait_has_an_empty_log_file(self):
+        started = factory.time.monotonic()
+
+        result = factory._running_hand_back('J1', 'pw verify', started)
+
+        assert result['log_file'] == ''
+
+    def test_the_wait_bound_stays_foreground_safe(self):
+        """The bound sits below the per-call Bash ceiling by construction."""
+        assert 0 < factory._DAEMON_WAIT_BOUND_SECONDS <= 300
+
+
+class TestRunningHandBackProjections:
+    """The hand-back fields survive BOTH emission paths.
+
+    ``format_toon`` drops any scalar outside its ``EXTRA_FIELDS`` whitelist
+    silently while the JSON path carries everything, so a field projected on
+    one path but not the other is a parity defect. Both projections must name
+    the job to re-attach to.
+    """
+
+    def test_json_path_carries_job_id_and_job_status(self):
+        result = factory._running_hand_back('J1', 'pw verify', factory.time.monotonic())
+
+        payload = json.loads(_build_format_mod.format_json(result))
+
+        assert payload['status'] == 'running'
+        assert payload['job_id'] == 'J1'
+        assert payload['job_status'] == 'running'
+
+    def test_toon_path_carries_job_id_and_job_status(self):
+        result = factory._running_hand_back('J1', 'pw verify', factory.time.monotonic())
+
+        toon = _build_format_mod.format_toon(result)
+
+        assert 'job_id' in toon
+        assert 'J1' in toon
+        assert 'job_status' in toon
+        assert 'running' in toon
+
+
+class _RunningOnlyBuildServerClient:
+    """Preflight-ready client whose wait always reports the job still running."""
+
+    def __init__(self, job_id: str = 'J1'):
+        self._job_id = job_id
+        self.wait_calls: list[tuple[str, str, int]] = []
+
+    def run_preflight(self, _ns):
+        return {'preflight': 'ready'}
+
+    def run_submit(self, _ns):
+        return {'status': 'success', 'job_id': self._job_id}
+
+    def run_wait(self, ns):
+        self.wait_calls.append((ns.job_id, ns.plan_id, ns.bound))
+        return {'job_status': 'running', 'log_file': '', 'duration_seconds': 1}
+
+
+class TestDaemonRouteBoundedWait:
+    """A routed job that outlives the bound returns the hand-back, not a block."""
+
+    @pytest.mark.allow_daemon_routing
+    def test_running_job_returns_the_hand_back_with_job_id(self, monkeypatch, tmp_path):
+        monkeypatch.delenv(factory.MARSHALLD_JOB_ENV, raising=False)
+        monkeypatch.setattr(factory, '_DAEMON_WAIT_BOUND_SECONDS', 60)
+        client = _RunningOnlyBuildServerClient('J1')
+        monkeypatch.setattr(factory, '_load_build_server', lambda: client)
+        ticks = iter([1000.0, 1000.0, 1000.0 + 61.0, 1000.0 + 61.0])
+        monkeypatch.setattr(factory.time, 'monotonic', lambda: next(ticks))
+
+        routed, reason = factory._route_to_daemon(_make_config(), str(tmp_path), 'hand-back-plan')
+
+        assert routed is not None
+        assert reason == ''
+        assert routed['status'] == 'running'
+        assert routed['job_id'] == 'J1'
+        assert routed['job_status'] == 'running'
+        # One bounded wait ran; the wrapper returned instead of re-issuing waits.
+        assert len(client.wait_calls) == 1
+        assert client.wait_calls[0][0] == 'J1'
+
+    @pytest.mark.allow_daemon_routing
+    def test_expired_bound_hands_back_without_a_wait(self, monkeypatch, tmp_path):
+        """The bound already spent at loop entry still hands back the job id."""
+        monkeypatch.delenv(factory.MARSHALLD_JOB_ENV, raising=False)
+        monkeypatch.setattr(factory, '_DAEMON_WAIT_BOUND_SECONDS', 60)
+        client = _RunningOnlyBuildServerClient('J7')
+        monkeypatch.setattr(factory, '_load_build_server', lambda: client)
+        ticks = iter([1000.0, 1000.0 + 61.0, 1000.0 + 61.0])
+        monkeypatch.setattr(factory.time, 'monotonic', lambda: next(ticks))
+
+        routed, reason = factory._route_to_daemon(_make_config(), str(tmp_path), 'hand-back-plan')
+
+        assert routed is not None
+        assert reason == ''
+        assert routed['status'] == 'running'
+        assert routed['job_id'] == 'J7'
+        assert client.wait_calls == []

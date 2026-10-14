@@ -31,9 +31,11 @@ import pytest
 
 from _manage_tasks_fixtures import (
     _finalize_step_ns,
+    _next_ns,
     _update_ns,
     add_basic_task,
     cmd_finalize_step,
+    cmd_next,
     cmd_update,
 )
 
@@ -909,3 +911,149 @@ def test_outcome_and_completed_pair_exactly_on_fixture_logs(plan_context):
     assert pairing['paired'] == 1
     assert pairing['unpaired_completed'] == []
     assert pairing['unpaired_outcome'] == []
+
+
+# =============================================================================
+# Tests: module-testing close rule (orchestrator-owed verification)
+# =============================================================================
+#
+# A module-testing task whose test run is owed to the orchestrator tier MUST
+# NOT read `done` when its last step finalizes — the build has not started
+# yet, so closing it would leave a failure with no task to reopen. The task
+# stays `in_progress` carrying `verification_owed: True` until the
+# orchestrator-tier build reports; the orchestrator then closes it with
+# `--verification-complete`.
+
+
+def _owed_ns(plan_id, task=1, step=1, outcome='done', owed=False, complete=False):
+    """finalize-step Namespace carrying the close-rule flags.
+
+    `_finalize_step_ns` predates the flags, so plain calls keep the old
+    shape — the handler reads both through `getattr` defaults.
+    """
+    ns = _finalize_step_ns(plan_id=plan_id, task=task, step=step, outcome=outcome)
+    ns.verification_owed = owed
+    ns.verification_complete = complete
+    return ns
+
+
+def _add_module_testing_task(plan_context, plan_id, title='Owed Task'):
+    """Add a single-step task in the orchestrator-owed verification profile."""
+    add_basic_task(
+        plan_id=plan_id,
+        title=title,
+        deliverable=1,
+        steps=['src/main/java/A.java'],
+    )
+    updated = cmd_update(_update_ns(plan_id=plan_id, number=1, profile='module_testing'))
+    assert updated['status'] == 'success'
+    assert _persisted_task(plan_context, plan_id)['profile'] == 'module_testing'
+
+
+def test_module_testing_last_step_close_stays_open_for_owed_verification(plan_context):
+    """A module-testing task is not done before its test run starts."""
+    _add_module_testing_task(plan_context, 'owed-open')
+
+    result = cmd_finalize_step(_owed_ns(plan_id='owed-open', task=1, step=1))
+
+    assert result['status'] == 'success'
+    assert result['task_complete'] is False
+    assert result['task_status'] == 'in_progress'
+    assert result['verification_owed'] is True
+    persisted = _persisted_task(plan_context, 'owed-open')
+    assert persisted['status'] == 'in_progress'
+    assert persisted['verification_owed'] is True
+    assert persisted.get('outcome_emitted') is not True
+
+
+def test_verification_complete_closes_the_owed_task(plan_context):
+    """The orchestrator close after the green build flips the held-open task."""
+    _add_module_testing_task(plan_context, 'owed-close')
+    cmd_finalize_step(_owed_ns(plan_id='owed-close', task=1, step=1))
+
+    result = cmd_finalize_step(_owed_ns(plan_id='owed-close', task=1, step=1, complete=True))
+
+    assert result['status'] == 'success'
+    assert result['task_complete'] is True
+    assert result['task_status'] == 'done'
+    assert result['verification_owed'] is False
+    persisted = _persisted_task(plan_context, 'owed-close')
+    assert persisted['status'] == 'done'
+    assert 'verification_owed' not in persisted
+    assert persisted.get('outcome_emitted') is True
+
+
+def test_implementation_last_step_close_is_unchanged(plan_context):
+    """The control — the branch moves only the owed profile off the default path."""
+    add_basic_task(
+        plan_id='owed-control',
+        title='Plain Task',
+        deliverable=1,
+        steps=['src/main/java/A.java'],
+    )
+    cmd_update(_update_ns(plan_id='owed-control', number=1, profile='implementation'))
+
+    result = cmd_finalize_step(_owed_ns(plan_id='owed-control', task=1, step=1))
+
+    assert result['task_complete'] is True
+    assert result['task_status'] == 'done'
+    assert result['verification_owed'] is False
+
+
+def test_verification_owed_flag_holds_an_implementation_task_open(plan_context):
+    """A handed-back wider run holds the task open through the per-call flag."""
+    add_basic_task(
+        plan_id='owed-flag',
+        title='Handed Back Task',
+        deliverable=1,
+        steps=['src/main/java/A.java'],
+    )
+    cmd_update(_update_ns(plan_id='owed-flag', number=1, profile='implementation'))
+
+    held = cmd_finalize_step(_owed_ns(plan_id='owed-flag', task=1, step=1, owed=True))
+
+    assert held['task_complete'] is False
+    assert held['task_status'] == 'in_progress'
+    assert _persisted_task(plan_context, 'owed-flag')['verification_owed'] is True
+
+    closed = cmd_finalize_step(_owed_ns(plan_id='owed-flag', task=1, step=1, complete=True))
+
+    assert closed['task_complete'] is True
+    assert closed['task_status'] == 'done'
+
+
+def test_next_skips_an_owed_task_with_no_actionable_step(plan_context):
+    """The owed wait belongs to the orchestrator, not to the leaf loop."""
+    _add_module_testing_task(plan_context, 'owed-skip', title='Owed First')
+    add_basic_task(
+        plan_id='owed-skip',
+        title='Pending Second',
+        deliverable=1,
+        steps=['src/main/java/B.java'],
+    )
+    cmd_finalize_step(_owed_ns(plan_id='owed-skip', task=1, step=1))
+
+    result = cmd_next(_next_ns(plan_id='owed-skip'))
+
+    assert result['status'] == 'success'
+    assert result['next'] is not None
+    assert result['next']['task_number'] == 2
+
+
+def test_next_still_selects_an_unmarked_all_terminal_task(plan_context):
+    """The control — the skip is the marker, not the shape, so drift still reads."""
+    add_basic_task(
+        plan_id='owed-drift',
+        title='Misclassified Task',
+        deliverable=1,
+        steps=['src/main/java/A.java'],
+    )
+    record = _persisted_task(plan_context, 'owed-drift')
+    record['status'] = 'in_progress'
+    record['steps'][0]['status'] = 'done'
+    _write_persisted_task(plan_context, 'owed-drift', record)
+
+    result = cmd_next(_next_ns(plan_id='owed-drift'))
+
+    assert result['status'] == 'success'
+    assert result['next'] is None

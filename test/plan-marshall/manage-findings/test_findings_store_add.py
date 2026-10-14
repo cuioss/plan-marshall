@@ -38,6 +38,8 @@ PLAN_IDS = (
     'store-qgate-badphase',
     'store-qgate-badsrc',
     'store-qgate-checked-dedup',
+    'store-qgate-checked-kept',
+    'store-qgate-checked-nonfixed',
     'store-qgate-checked-rejected',
     'store-qgate-checked-reopen',
     'store-qgate-checked-success',
@@ -321,8 +323,9 @@ def test_add_qgate_finding_checked_deduplicated_yields_hash_id_no_failure(plan_c
 
 
 def test_add_qgate_finding_checked_reopened_yields_hash_id_no_failure(plan_context):
-    """A `reopened` persist outcome (same defect re-detected after resolution)
-    yields the reopened hash_id and no failure descriptor."""
+    """A `reopened` persist outcome (fixed record re-detected WITH the opt-in)
+    yields the reopened hash_id and no failure descriptor, with the prior
+    resolution readable from history."""
     pid = 'store-qgate-checked-reopen'
     first_hash, _ = add_qgate_finding_checked(
         pid,
@@ -341,10 +344,73 @@ def test_add_qgate_finding_checked_reopened_yields_hash_id_no_failure(plan_conte
         'build-error',
         'Reopen probe',
         'Detail',
+        reopen=True,
     )
 
     assert second_hash == first_hash
     assert second_failure is None
+    stored = query_qgate_findings(pid, '5-execute')
+    assert stored['findings'][0]['resolution'] == 'pending'
+    assert stored['findings'][0]['history'][0]['resolution'] == 'fixed'
+
+
+def test_add_qgate_finding_checked_fixed_without_optin_kept(plan_context):
+    """A fixed record re-detected WITHOUT the opt-in stays kept through the
+    checked-add path: hash_id, no failure, resolution intact."""
+    pid = 'store-qgate-checked-kept'
+    first_hash, _ = add_qgate_finding_checked(
+        pid,
+        '5-execute',
+        'qgate',
+        'build-error',
+        'Kept probe',
+        'Detail',
+    )
+    resolve_qgate_finding(pid, '5-execute', first_hash, 'fixed')
+
+    second_hash, second_failure = add_qgate_finding_checked(
+        pid,
+        '5-execute',
+        'qgate',
+        'build-error',
+        'Kept probe',
+        'Detail',
+    )
+
+    assert second_hash == first_hash
+    assert second_failure is None
+    stored = query_qgate_findings(pid, '5-execute')
+    assert stored['findings'][0]['resolution'] == 'fixed'
+
+
+def test_add_qgate_finding_checked_nonfixed_with_optin_kept(plan_context):
+    """A non-fixed record re-detected WITH the opt-in stays kept through the
+    checked-add path: only a fixed resolution earns a reopen."""
+    pid = 'store-qgate-checked-nonfixed'
+    first_hash, _ = add_qgate_finding_checked(
+        pid,
+        '5-execute',
+        'qgate',
+        'build-error',
+        'Nonfixed probe',
+        'Detail',
+    )
+    resolve_qgate_finding(pid, '5-execute', first_hash, 'accepted')
+
+    second_hash, second_failure = add_qgate_finding_checked(
+        pid,
+        '5-execute',
+        'qgate',
+        'build-error',
+        'Nonfixed probe',
+        'Detail',
+        reopen=True,
+    )
+
+    assert second_hash == first_hash
+    assert second_failure is None
+    stored = query_qgate_findings(pid, '5-execute')
+    assert stored['findings'][0]['resolution'] == 'accepted'
 
 
 def test_add_qgate_finding_checked_rejected_yields_failure_descriptor(plan_context):

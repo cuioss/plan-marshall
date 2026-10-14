@@ -138,7 +138,7 @@ class DirectCommandResult(TypedDict, total=False):
     """
 
     # Required fields
-    status: Literal['success', 'error', 'timeout', 'killed', 'indeterminate']
+    status: Literal['success', 'error', 'timeout', 'killed', 'indeterminate', 'running']
     exit_code: int
     duration_seconds: int
     log_file: str
@@ -153,6 +153,8 @@ class DirectCommandResult(TypedDict, total=False):
     message: str  # Operator-facing detail (on killed and indeterminate)
     routed_tests_run: int  # Daemon-routed green build: the INNER wrapper's count
     routed_errors: list  # Daemon-routed failing build: the INNER wrapper's errors[]
+    job_id: str  # Daemon-routed running hand-back: the daemon job to re-attach to
+    job_status: str  # Daemon-routed running hand-back: always 'running' on this shape
     # Written BACK by the renderer (cmd_run_common) once it has measured the
     # executed-test count, so the routing seam's ledger row can name the
     # population on the in-process route too. Absent means unmeasured, never zero.
@@ -189,7 +191,6 @@ read it as a red build, and none may read it as a timeout either.
 
 STATUS_INDETERMINATE = 'indeterminate'
 """The outcome could not be determined — it is NOT any of the four above.
-
 This is the value for a case no branch resolves: a producer reported something
 this layer cannot interpret (e.g. a daemon speaking a terminal status a
 version-skewed client does not know — the condition ``manage-build-server
@@ -204,6 +205,14 @@ ledger's name for the same condition. That is the intended route, not an
 oversight: a wrapper may report that it could not determine the outcome, but the
 boundary derives the verdict of record itself rather than accepting the claim.
 Do NOT "fix" this by adding ``indeterminate`` to the claimable set.
+"""
+
+STATUS_RUNNING = 'running'
+"""A daemon-routed build that outlived the wrapper's bounded wait.
+
+Not a verdict — the build is still working on the daemon. The result carries
+the daemon ``job_id`` so the orchestrator re-attaches with a bounded ``wait``;
+it is never backgrounded and never folded into ``error``.
 """
 
 # Error type identifiers
@@ -520,6 +529,38 @@ def indeterminate_result(
         'duration_seconds': duration_seconds,
         'log_file': log_file,
         'command': command,
+    }
+    result.update(extra)
+    return result
+
+
+def running_result(job_id: str, duration_seconds: int, log_file: str, command: str, **extra) -> dict:
+    """Build a daemon-routed running hand-back result dict.
+
+    Returned when the routed job outlives the wrapper's bounded wait: the build
+    is still working on the daemon, so the wrapper hands back ``job_id`` plus
+    ``job_status: running`` instead of blocking past the per-call ceiling. The
+    orchestrator re-attaches with a bounded ``wait`` on that id. Never
+    backgrounded, never an error.
+
+    Args:
+        job_id: The daemon-assigned job id to re-attach to.
+        duration_seconds: Wall-clock time observed before the hand-back.
+        log_file: Path to whatever output exists (may be empty while running).
+        command: Full command that was submitted.
+        **extra: Additional fields to include.
+
+    Returns:
+        Result dict with status="running", job_id, and job_status="running".
+    """
+    result: dict = {
+        'status': STATUS_RUNNING,
+        'exit_code': 0,
+        'duration_seconds': duration_seconds,
+        'log_file': log_file,
+        'command': command,
+        'job_id': job_id,
+        'job_status': STATUS_RUNNING,
     }
     result.update(extra)
     return result

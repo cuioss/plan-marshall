@@ -91,9 +91,7 @@ def _observed_qgate_statuses(plan_id: str) -> dict[str, str]:
 
     reopen_seed = add_qgate_finding(plan_id, '5-execute', 'qgate', 'build-error', 'Reopen probe', 'Detail')
     resolve_qgate_finding(plan_id, '5-execute', reopen_seed['hash_id'], 'fixed')
-    reopened = add_qgate_finding(
-        plan_id, '5-execute', 'qgate', 'build-error', 'Reopen probe', 'Detail', reopen=True
-    )
+    reopened = add_qgate_finding(plan_id, '5-execute', 'qgate', 'build-error', 'Reopen probe', 'Detail', reopen=True)
 
     rejected = add_qgate_finding(plan_id, '5-execute', 'qgate', 'not-a-finding-type', 'Rejected probe', 'Detail')
 

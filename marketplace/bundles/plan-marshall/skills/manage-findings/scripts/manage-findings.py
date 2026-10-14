@@ -269,6 +269,7 @@ def cmd_qgate_add(args: argparse.Namespace) -> dict:
         rule=args.rule,
         raw_input=raw_input,
         raw_input_max_bytes=getattr(args, 'raw_input_max_bytes', DEFAULT_RAW_INPUT_MAX_BYTES),
+        reopen=getattr(args, 'reopen', False),
     )
 
 
@@ -513,6 +514,17 @@ def main() -> int:
     q_add_parser.add_argument('--severity', choices=SEVERITIES, help='Severity level')
     q_add_parser.add_argument('--iteration', type=int, help='Phase iteration number')
     q_add_parser.add_argument('--rule', help='Rule ID (folded into the content-discriminator dedup key)')
+    q_add_parser.add_argument(
+        '--reopen',
+        action='store_true',
+        dest='reopen',
+        help=(
+            'Opt-in to reopen a matched record whose resolution is fixed: the prior '
+            'resolution, detail and timestamp move into history and the record returns '
+            'to pending. Without the opt-in a fixed match is kept; a non-fixed match '
+            'is kept even with it'
+        ),
+    )
     q_add_parser.add_argument(
         '--raw-input',
         action='append',

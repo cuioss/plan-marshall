@@ -45,7 +45,7 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
-from _findings_core import QGATE_PERSIST_OK, add_qgate_finding
+from _findings_core import FIXED_RESOLUTION, QGATE_PERSIST_OK, add_qgate_finding
 from _plan_parsing import (
     extract_deliverables,
     parse_document_sections,
@@ -108,11 +108,19 @@ def _emit_finding(
     persist_failures: list[dict[str, str]],
     file_path: str | None = None,
     emit: bool = True,
+    observed: list[dict[str, Any]] | None = None,
 ) -> int:
     """Emit one Q-Gate finding via the shared add_qgate_finding API.
 
     Returns 1 when a record is appended (status: success), 0 when the call
-    is a no-op (dedup, or --no-emit).
+    is a no-op (dedup, kept, reopened, or --no-emit).
+
+    When ``observed`` is given, every in-store persist appends its
+    ``{'status', 'resolution'}`` outcome — ``resolution`` is the recorded
+    resolution the primitive returned (present on a ``kept`` re-observation,
+    ``None`` otherwise) — so the caller can count re-observed resolved
+    findings without re-reading the store. A persist the primitive REJECTS
+    appends nothing here; it lands in ``persist_failures`` instead.
 
     A persist the primitive REJECTS (status outside ``QGATE_PERSIST_OK``) is not
     a no-op — the finding never reached the store. Such a rejection is appended
@@ -138,6 +146,8 @@ def _emit_finding(
     if status not in QGATE_PERSIST_OK:
         persist_failures.append({'title': title, 'message': str(result.get('message', ''))})
         return 0
+    if observed is not None:
+        observed.append({'status': status, 'resolution': result.get('resolution')})
     return 1 if status == 'success' else 0
 
 
@@ -221,6 +231,7 @@ def _check_coverage(
     deliverables: list[dict[str, Any]],
     persist_failures: list[dict[str, str]],
     emit: bool,
+    observed: list[dict[str, Any]] | None = None,
 ) -> tuple[int, int]:
     """Coverage: every deliverable has >= 1 task; tasks reference real deliverables.
 
@@ -249,6 +260,7 @@ def _check_coverage(
                 ),
                 persist_failures=persist_failures,
                 emit=emit,
+                observed=observed,
             )
 
     for t in tasks:
@@ -274,6 +286,7 @@ def _check_coverage(
                 ),
                 persist_failures=persist_failures,
                 emit=emit,
+                observed=observed,
             )
 
     return failed, emitted
@@ -284,6 +297,7 @@ def _check_skill_resolution(
     tasks: list[dict[str, Any]],
     persist_failures: list[dict[str, str]],
     emit: bool,
+    observed: list[dict[str, Any]] | None = None,
 ) -> tuple[int, int]:
     """Skill resolution: non-verification tasks have ``domain`` + ``bundle:skill`` shape.
 
@@ -309,6 +323,7 @@ def _check_skill_resolution(
                 ),
                 persist_failures=persist_failures,
                 emit=emit,
+                observed=observed,
             )
 
         for skill in t.get('skills', []) or []:
@@ -326,6 +341,7 @@ def _check_skill_resolution(
                     ),
                     persist_failures=persist_failures,
                     emit=emit,
+                    observed=observed,
                 )
 
     return failed, emitted
@@ -336,6 +352,7 @@ def _check_acyclic(
     tasks: list[dict[str, Any]],
     persist_failures: list[dict[str, str]],
     emit: bool,
+    observed: list[dict[str, Any]] | None = None,
 ) -> tuple[int, int, dict[str, Any]]:
     """Acyclic: depends_on across all tasks forms a DAG.
 
@@ -434,6 +451,7 @@ def _check_acyclic(
             ),
             persist_failures=persist_failures,
             emit=emit,
+            observed=observed,
         )
 
     return failed, emitted, population
@@ -445,6 +463,7 @@ def _check_files_exist(
     repo_root: Path,
     persist_failures: list[dict[str, str]],
     emit: bool,
+    observed: list[dict[str, Any]] | None = None,
 ) -> tuple[int, int]:
     """Files exist: intent-aware existence expectations per step.
 
@@ -501,6 +520,7 @@ def _check_files_exist(
                         persist_failures=persist_failures,
                         file_path=target,
                         emit=emit,
+                        observed=observed,
                     )
                 continue
 
@@ -533,6 +553,7 @@ def _check_files_exist(
                     persist_failures=persist_failures,
                     file_path=target,
                     emit=emit,
+                    observed=observed,
                 )
 
     return failed, emitted
@@ -595,6 +616,7 @@ def _check_keyword_drift(
     prose_by_number: dict[int, str],
     persist_failures: list[dict[str, str]],
     emit: bool,
+    observed: list[dict[str, Any]] | None = None,
 ) -> tuple[int, int]:
     """Keyword drift: planning-domain keywords appear in description but not in haystack."""
     failed = 0
@@ -644,6 +666,7 @@ def _check_keyword_drift(
                     detail=(f'{excerpt}; deliverable {d_num} outline does not mention {keyword!r}'),
                     persist_failures=persist_failures,
                     emit=emit,
+                    observed=observed,
                 )
 
     return failed, emitted
@@ -654,6 +677,7 @@ def _check_structural_token_drift(
     task_dir: Path,
     persist_failures: list[dict[str, str]],
     emit: bool,
+    observed: list[dict[str, Any]] | None = None,
 ) -> tuple[int, int]:
     """Structural token drift: TASK-NNN file numbering monotonic, no gaps."""
     failed = 0
@@ -685,6 +709,7 @@ def _check_structural_token_drift(
             ),
             persist_failures=persist_failures,
             emit=emit,
+            observed=observed,
         )
     if numbers[0] != 1:
         failed += 1
@@ -698,6 +723,7 @@ def _check_structural_token_drift(
             ),
             persist_failures=persist_failures,
             emit=emit,
+            observed=observed,
         )
 
     return failed, emitted
@@ -710,6 +736,14 @@ def cmd_qgate_mechanical(args) -> dict[str, Any]:
     aggregate so the caller can decide whether the LLM q-gate-validation
     dispatch still needs to fire (only when ``ambiguous=true`` or another
     judgement-side validator is in scope).
+
+    Alongside ``findings_emitted`` (newly appended records only) the result
+    carries ``reobserved_count`` — how many persists re-detected an
+    already-resolved finding and kept its recorded resolution — and
+    ``still_detected_but_fixed_count`` — how many of those carry the ``fixed``
+    resolution. An unchanged-plan re-run therefore reports ``findings_emitted``
+    zero with the re-observed counts stating what it re-saw, instead of a bare
+    zero that reads as "nothing detected".
     """
     plan_id: str = args.plan_id
     emit: bool = not getattr(args, 'no_emit', False)
@@ -741,30 +775,42 @@ def cmd_qgate_mechanical(args) -> dict[str, Any]:
     # finding never reached the store, so it is surfaced rather than folded
     # into the ``findings_emitted`` zero bucket.
     persist_failures: list[dict[str, str]] = []
+    # In-store persist outcomes collected across every check — one
+    # ``{'status', 'resolution'}`` record per persist that reached the store
+    # (see :func:`_emit_finding`). The re-observed counts below are derived
+    # from this list, so a run that re-detects resolved findings reports what
+    # it re-observed instead of a bare zero.
+    observed: list[dict[str, Any]] = []
 
-    coverage_failed, e = _check_coverage(plan_id, all_tasks, deliverables, persist_failures, emit=emit)
+    coverage_failed, e = _check_coverage(
+        plan_id, all_tasks, deliverables, persist_failures, emit=emit, observed=observed
+    )
     findings_emitted += e
     checks['coverage'] = {'failed': coverage_failed}
 
-    skill_failed, e = _check_skill_resolution(plan_id, all_tasks, persist_failures, emit=emit)
+    skill_failed, e = _check_skill_resolution(plan_id, all_tasks, persist_failures, emit=emit, observed=observed)
     findings_emitted += e
     checks['skill_resolution'] = {'failed': skill_failed}
 
-    acyclic_failed, e, acyclic_population = _check_acyclic(plan_id, all_tasks, persist_failures, emit=emit)
+    acyclic_failed, e, acyclic_population = _check_acyclic(
+        plan_id, all_tasks, persist_failures, emit=emit, observed=observed
+    )
     findings_emitted += e
     checks['acyclic'] = {'failed': acyclic_failed}
 
-    files_failed, e = _check_files_exist(plan_id, all_tasks, repo_root, persist_failures, emit=emit)
+    files_failed, e = _check_files_exist(plan_id, all_tasks, repo_root, persist_failures, emit=emit, observed=observed)
     findings_emitted += e
     checks['files_exist'] = {'failed': files_failed}
 
     keyword_failed, e = _check_keyword_drift(
-        plan_id, all_tasks, deliverables, prose_by_number, persist_failures, emit=emit
+        plan_id, all_tasks, deliverables, prose_by_number, persist_failures, emit=emit, observed=observed
     )
     findings_emitted += e
     checks['keyword_drift'] = {'failed': keyword_failed}
 
-    structural_failed, e = _check_structural_token_drift(plan_id, task_dir, persist_failures, emit=emit)
+    structural_failed, e = _check_structural_token_drift(
+        plan_id, task_dir, persist_failures, emit=emit, observed=observed
+    )
     findings_emitted += e
     checks['structural_token_drift'] = {'failed': structural_failed}
 
@@ -782,6 +828,7 @@ def cmd_qgate_mechanical(args) -> dict[str, Any]:
             persist_failures=persist_failures,
             file_path=gap['file_path'],
             emit=emit,
+            observed=observed,
         )
     checks['declared_set_closure'] = {'failed': len(closure_gaps)}
 
@@ -793,6 +840,7 @@ def cmd_qgate_mechanical(args) -> dict[str, Any]:
             persist_failures=persist_failures,
             file_path=gap['file_path'],
             emit=emit,
+            observed=observed,
         )
     checks['declared_scope_reconciliation'] = {'failed': len(scope_gaps)}
 
@@ -836,6 +884,19 @@ def cmd_qgate_mechanical(args) -> dict[str, Any]:
     )
     ambiguous = not parseable or not population_complete
 
+    # Re-observed counts: persists that re-detected an already-resolved finding
+    # (the primitive's ``kept`` outcome) carry the recorded resolution instead
+    # of appending a new record. ``reobserved_count`` is how many such
+    # re-observations this run made; ``still_detected_but_fixed_count`` is how
+    # many of those carry the ``fixed`` resolution — a fix that is recorded yet
+    # still detected. Both are zero on a first run (every persist is ``success``)
+    # and on a clean re-run with nothing to re-observe; neither touches the kept
+    # resolutions.
+    reobserved_count = sum(1 for outcome in observed if outcome.get('status') == 'kept')
+    still_detected_but_fixed_count = sum(
+        1 for outcome in observed if outcome.get('status') == 'kept' and outcome.get('resolution') == FIXED_RESOLUTION
+    )
+
     return {
         'status': 'success',
         'plan_id': plan_id,
@@ -846,6 +907,8 @@ def cmd_qgate_mechanical(args) -> dict[str, Any]:
         'population_complete': population_complete,
         'total_failed': total_failed,
         'findings_emitted': findings_emitted,
+        'reobserved_count': reobserved_count,
+        'still_detected_but_fixed_count': still_detected_but_fixed_count,
         'ambiguous': ambiguous,
         'emit': emit,
         'qgate_persist_failed': bool(persist_failures),

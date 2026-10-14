@@ -41,7 +41,9 @@ the measured shape with `finding_emitted: false` plus `finding_resolved_as` and
 has a different digest, so it is filed as a new finding. Every other outcome —
 no such record, a record resolved any other way, or a store read that did not
 succeed — goes to the primitive exactly as before: a pending record is
-deduplicated and a record resolved any other way is reopened.
+deduplicated and a record resolved any other way keeps its recorded resolution
+(the primitive's `kept` outcome), with the re-observation counted in
+`reobserved_count` rather than filed again.
 
 The baseline is the merge-base, recomputed on every run
 -------------------------------------------------------
@@ -72,6 +74,19 @@ finds no key rather than a zero it would read as a clean result, so the
 unmeasured state is structurally unable to render as a measured one. The measured
 paths are unchanged — a genuine zero still reports `status: success` with
 `residual_count: 0`.
+
+Re-observed counts on the measured shape
+----------------------------------------
+The measured `status: success` shape carries `reobserved_count` alongside
+`finding_emitted`: how many persists re-detected an already-resolved finding
+and kept its recorded resolution (the primitive's `kept` outcome) instead of
+appending a new record. `still_detected_but_fixed_count` is how many of those
+kept records carry the `fixed` resolution. Both are always present on the
+measured shape, even as zero — the run measured, and measured none — and both
+are omitted from the `could_not_look` and `error` shapes, where nothing was
+measured. A re-run against an unchanged residual therefore reports
+`finding_emitted: false` with the re-observed counts stating what it re-saw,
+instead of a bare `false` that reads as "nothing detected".
 
 Threshold sources (precedence):
     1. --threshold CLI flag (a non-negative integer; the parser rejects anything else)
@@ -104,7 +119,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from _findings_core import QGATE_PERSIST_OK, add_qgate_finding, query_qgate_findings
+from _findings_core import FIXED_RESOLUTION, QGATE_PERSIST_OK, add_qgate_finding, query_qgate_findings
 from constants import RESOLUTION_ACCEPTED, RESOLUTION_SUPPRESSED
 from file_ops import WorktreeResolutionError, get_plan_dir, resolve_plan_context
 from toon_parser import serialize_toon
@@ -123,8 +138,9 @@ _SETTLED_RESOLUTIONS = frozenset({RESOLUTION_ACCEPTED, RESOLUTION_SUPPRESSED})
 
 Only these two stop a re-file. A record resolved any other way (``fixed``,
 ``taken_into_account``, ``rejected``) claims the residual is gone or was never
-real, so measuring the same set again is a genuine re-detection and the persist
-primitive reopens it.
+real, so measuring the same set again is a genuine re-detection: the persist
+primitive keeps the recorded resolution and counts the re-observation in
+``reobserved_count`` instead of filing again.
 """
 
 STATUS_COULD_NOT_LOOK = 'could_not_look'
@@ -448,7 +464,9 @@ def _find_settled_finding(plan_id: str, residual: list[str]) -> dict[str, Any] |
     return None
 
 
-def _emit_finding(plan_id: str, residual: list[str], threshold: int) -> dict[str, str] | None:
+def _emit_finding(
+    plan_id: str, residual: list[str], threshold: int, observed: list[dict[str, Any]] | None = None
+) -> dict[str, str] | None:
     """File the scope-creep warning as a ``triage`` Q-Gate finding.
 
     The record carries ``rule: scope_creep_warning``; the type is ``triage``,
@@ -459,6 +477,12 @@ def _emit_finding(plan_id: str, residual: list[str], threshold: int) -> dict[str
 
     The caller skips this function when the same residual set is already
     resolved as ``accepted`` or ``suppressed`` (see :func:`_find_settled_finding`).
+
+    When ``observed`` is given, an in-store persist appends its
+    ``{'status', 'resolution'}`` outcome — ``resolution`` is the recorded
+    resolution the primitive returned (present on a ``kept`` re-observation,
+    ``None`` otherwise) — so the caller can report re-observed counts without
+    re-reading the store.
 
     Returns ``None`` when the finding reached the store, and a failure descriptor
     — ``{'title', 'detail', 'message'}`` — when the primitive REJECTED it, so
@@ -482,6 +506,8 @@ def _emit_finding(plan_id: str, residual: list[str], threshold: int) -> dict[str
             'detail': detail,
             'message': str(result.get('message', '')),
         }
+    if observed is not None:
+        observed.append({'status': result.get('status'), 'resolution': result.get('resolution')})
     return None
 
 
@@ -525,10 +551,15 @@ def cmd_check(args: argparse.Namespace) -> int:
     residual = sorted(set(changed) - declared)
     emitted = False
     settled: dict[str, Any] | None = None
+    # In-store persist outcomes for the re-observed counts below — one
+    # ``{'status', 'resolution'}`` record per persist that reached the store
+    # (see :func:`_emit_finding`). At most one persist happens per run, so each
+    # count is 0 or 1; the vocabulary matches the peer mechanical-checks caller.
+    observed: list[dict[str, Any]] = []
     if len(residual) > threshold:
         settled = _find_settled_finding(plan_id, residual)
     if len(residual) > threshold and settled is None:
-        failure = _emit_finding(plan_id, residual, threshold)
+        failure = _emit_finding(plan_id, residual, threshold, observed)
         if failure is not None:
             # A lost finding is never absorbed: reporting `status: success` with
             # `finding_emitted: false` here would be indistinguishable from "no
@@ -555,6 +586,19 @@ def cmd_check(args: argparse.Namespace) -> int:
         'residual_count': len(residual),
         **resolved.fields(),
         'finding_emitted': emitted,
+        # Re-observed counts: a persist that re-detected an already-resolved
+        # finding (the primitive's ``kept`` outcome) keeps the recorded
+        # resolution instead of appending a new record. ``reobserved_count`` is
+        # how many such re-observations this run made (0 or 1 — one persist at
+        # most); ``still_detected_but_fixed_count`` is whether that kept record
+        # carries the ``fixed`` resolution. Both are always present on the
+        # measured shape, even as zero — the run measured, and measured none.
+        'reobserved_count': sum(1 for outcome in observed if outcome.get('status') == 'kept'),
+        'still_detected_but_fixed_count': sum(
+            1
+            for outcome in observed
+            if outcome.get('status') == 'kept' and outcome.get('resolution') == FIXED_RESOLUTION
+        ),
     }
     if settled is not None:
         # The one case in which these two fields appear: this exact residual set

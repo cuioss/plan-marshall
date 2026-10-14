@@ -352,7 +352,7 @@ def cmd_commit_add(args) -> dict:
                 args.plan_id,
                 'WARNING',
                 f'[MANAGE-TASKS] TASK-{number:03d} opened trailing envelope {envelope_id} '
-                f"but the manifest envelope count was not raised ({manifest_bump['reason']})",
+                f'but the manifest envelope count was not raised ({manifest_bump["reason"]})',
             )
 
     task = {

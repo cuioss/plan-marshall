@@ -59,6 +59,7 @@ def _clear_cost_fields(plan_id, task_number):
     task['envelope_id'] = None
     task_file.write_text(_core.format_task_file(task), encoding='utf-8')
 
+
 # =============================================================================
 # Tier 2 — write-back round-trip (cmd_update -> cmd_next / cmd_read)
 # =============================================================================

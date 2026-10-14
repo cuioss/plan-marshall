@@ -37,6 +37,7 @@ import importlib.util  # noqa: E402
 import json  # noqa: E402
 import os  # noqa: E402
 import sys  # noqa: E402
+import time  # noqa: E402
 from argparse import Namespace  # noqa: E402
 from datetime import UTC, datetime  # noqa: E402
 from pathlib import Path  # noqa: E402
@@ -57,6 +58,7 @@ from _build_result import (  # noqa: E402
     error_result,
     indeterminate_result,
     killed_result,
+    running_result,
     success_result,
     timeout_result,
 )
@@ -809,6 +811,46 @@ def _result_for_log_verdict(
     )
 
 
+# One runnable rule for orchestrator-tier long-build waits: the wrapper call
+# for a daemon-routed build returns within _DAEMON_WAIT_BOUND_SECONDS (below
+# the per-call ceiling) with a terminal result or a live running hand-back
+# carrying the daemon job_id, and the orchestrator re-attaches with a bounded
+# wait on that id. Backgrounding (run_in_background) is named only for the
+# non-daemon fallback, never for a daemon-routed build.
+_DAEMON_WAIT_BOUND_SECONDS = 300
+"""Foreground-safe bound for one daemon-routed wrapper call.
+
+Mirrors the build-server-client wait default: the daemon holds each long-poll
+server-side, so one call stays safely below the per-call Bash ceiling while a
+job that outlives it returns the running hand-back instead of blocking.
+"""
+
+
+def _running_hand_back(
+    job_id: str, command_str: str, started_monotonic: float, waited: dict[str, Any] | None = None
+) -> DirectCommandResult:
+    """Build the running hand-back for a job that outlived the bound.
+
+    Carries ``job_id`` plus ``job_status: running`` on both the JSON and TOON
+    result paths (see ``_build_format.EXTRA_FIELDS``) so neither projection
+    drops them. ``log_file`` is whatever the last wait reported, else empty.
+
+    Args:
+        job_id: The daemon-assigned job id to re-attach to.
+        command_str: The command the daemon ran.
+        started_monotonic: ``time.monotonic()`` at route entry, for duration.
+        waited: The last wait payload, when one exists.
+
+    Returns:
+        The running hand-back result.
+    """
+    duration = int(time.monotonic() - started_monotonic)
+    log_file = ''
+    if waited is not None:
+        log_file = str(waited.get('log_file', '') or '')
+    return running_result(job_id, duration, log_file, command_str)  # type: ignore[return-value]
+
+
 def _route_to_daemon(
     config: ExecuteConfig,
     project_dir: str,
@@ -880,13 +922,24 @@ def _route_to_daemon(
         return None, str(submit.get('reason') or submit.get('status') or 'submit_failed')
 
     job_id = str(submit.get('job_id', ''))
-    # Bounded long-poll: re-issue wait on a live `running` return — NEVER sleep
-    # or background the wait (a reaped wait costs one re-poll, not the build).
+    # Bounded long-poll: one wrapper call stays within _DAEMON_WAIT_BOUND_SECONDS
+    # below the per-call ceiling. Each wait is server-side bounded; a live
+    # `running` return re-issues wait only while time remains, then returns the
+    # running hand-back with the job id for the orchestrator to re-attach to.
+    # NEVER sleep or background the wait (run_in_background is only for the
+    # non-daemon fallback): a reaped wait costs one re-poll, not the build.
+    started = time.monotonic()
     while True:
-        waited = client.run_wait(Namespace(job_id=job_id, plan_id=routing_plan_id, bound=None))
+        remaining = _DAEMON_WAIT_BOUND_SECONDS - (time.monotonic() - started)
+        if remaining <= 0:
+            return _running_hand_back(job_id, command_str, started), ''
+        bound = int(remaining) if remaining < _DAEMON_WAIT_BOUND_SECONDS else _DAEMON_WAIT_BOUND_SECONDS
+        waited = client.run_wait(Namespace(job_id=job_id, plan_id=routing_plan_id, bound=bound))
         if waited.get('status') == 'degraded':
             return None, str(waited.get('reason') or 'wait_degraded')
         if str(waited.get('job_status', '')) == 'running':
+            if (time.monotonic() - started) >= _DAEMON_WAIT_BOUND_SECONDS:
+                return _running_hand_back(job_id, command_str, started, waited), ''
             continue
         return _daemon_result_to_direct(waited, command_str, command_key), ''
 

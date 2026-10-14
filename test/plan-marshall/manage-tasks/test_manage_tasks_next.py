@@ -220,9 +220,7 @@ def test_next_cost_fields_stamped_at_creation(plan_context):
 
 def test_next_returns_fix_task_before_pending_deliverable_tasks(plan_context):
     """Next orders a runnable fix task ahead of the pending deliverable tasks it blocks."""
-    add_basic_task(
-        plan_id='next-fix-first', title='Deliverable work', deliverable=1, steps=['src/main/java/Work.java']
-    )
+    add_basic_task(plan_id='next-fix-first', title='Deliverable work', deliverable=1, steps=['src/main/java/Work.java'])
     add_basic_task(
         plan_id='next-fix-first',
         title='Fix finding',

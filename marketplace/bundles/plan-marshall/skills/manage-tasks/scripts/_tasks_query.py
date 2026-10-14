@@ -182,9 +182,20 @@ def cmd_next(args) -> dict:
     next_task = None
     blocked_tasks = []
 
-    # First, look for in_progress tasks
+    # First, look for in_progress tasks. A verification-owed task (see
+    # _cmd_step.py, module-testing close rule) has every step terminal and no
+    # actionable step — its orchestrator-tier build has not reported yet, so
+    # selecting it would return a null next_step and read as queue drift.
+    # Skip owed tasks that have nothing actionable; an owed task that gained
+    # a pending step (via add-step) IS selectable again. An unmarked
+    # all-terminal in_progress task is still selected, preserving the
+    # pending-task drift signal for genuinely misclassified records.
     for _path, task in filtered_tasks:
         if task.get('status') == 'in_progress':
+            if task.get('verification_owed') is True and not any(
+                s.get('status') in ('pending', 'in_progress') for s in task.get('steps', [])
+            ):
+                continue
             next_task = task
             break
 

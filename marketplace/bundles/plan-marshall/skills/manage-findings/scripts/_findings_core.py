@@ -80,16 +80,18 @@ SEVERITIES = FINDING_SEVERITIES
 RESOLUTIONS = VALID_RESOLUTIONS
 CERTAINTY_VALUES = VALID_CERTAINTIES
 
-# The published partition of ``add_qgate_finding``'s four-valued ``status`` into
+# The published partition of ``add_qgate_finding``'s five-valued ``status`` into
 # "the record is in the store" versus "the record was rejected".
 #
 # ``success`` (freshly appended), ``deduplicated`` (an identical pending record
-# already exists) and ``reopened`` (a matching resolved record was returned to
-# pending) all mean the finding IS in the store. The remaining value, ``error``,
-# means it is NOT — and callers MUST NOT fold it into the two benign no-op
-# outcomes. Every caller consults this set rather than re-deriving the partition
-# inline with ``status == 'success'``.
-QGATE_PERSIST_OK = frozenset({'success', 'deduplicated', 'reopened'})
+# already exists), ``reopened`` (a matching resolved record was returned to
+# pending) and ``kept`` (an unchanged re-emission of a resolved record left the
+# recorded resolution, detail and timestamp exactly as stored) all mean the
+# finding IS in the store. The remaining value, ``error``, means it is NOT —
+# and callers MUST NOT fold it into the benign no-op outcomes. Every caller
+# consults this set rather than re-deriving the partition inline with
+# ``status == 'success'``.
+QGATE_PERSIST_OK = frozenset({'success', 'deduplicated', 'reopened', 'kept'})
 
 # Valid kind discriminator values for pr-comment findings.
 PR_COMMENT_KINDS = ['inline', 'review_body', 'issue_comment']
@@ -1299,6 +1301,7 @@ def add_qgate_finding(
     rule: str | None = None,
     raw_input: dict[str, Any] | None = None,
     raw_input_max_bytes: int = DEFAULT_RAW_INPUT_MAX_BYTES,
+    reopen: bool = False,
 ) -> dict[str, Any]:
     """Add a Q-Gate finding for a specific phase.
 
@@ -1310,11 +1313,19 @@ def add_qgate_finding(
     byte cap.
 
     Returns a dict whose ``status`` is one of ``success``, ``deduplicated``,
-    ``reopened`` or ``error``. A ``status`` outside :data:`QGATE_PERSIST_OK` (i.e.
+    ``kept``, ``reopened`` or ``error``. A ``status`` outside :data:`QGATE_PERSIST_OK` (i.e.
     ``error``) means **the record is not in the store** and MUST NOT be conflated
-    with the two benign no-op outcomes ``deduplicated`` and ``reopened``, both of
+    with the benign no-op outcomes ``deduplicated`` and ``kept``, both of
     which do leave the finding present. Callers test membership in
     :data:`QGATE_PERSIST_OK`, never ``status == 'success'``.
+
+    ``reopen`` is the opt-in that re-arms the Q-Gate for a re-detected defect
+    the store had recorded as ``fixed``: only a matched record whose resolution
+    is ``fixed`` reopens, and only when the caller passes the opt-in. The prior
+    resolution, detail and timestamp move into the record's ``history`` instead
+    of being nulled, so the disposition the re-detection overrides stays
+    readable. A ``fixed`` record re-observed without the opt-in is kept, and a
+    non-``fixed`` resolution re-observed with the opt-in is kept.
 
     REFUSES against an absent plan directory, for the same reason
     :func:`add_finding` does: the terminal ``append_jsonl`` would mkdir the whole
@@ -1351,24 +1362,60 @@ def add_qgate_finding(
                 'phase': phase,
                 **store_state_fields(store),
             }
-        else:
-            # Same title AND same content — a genuine re-detection of the resolved
-            # finding — reopen. A same-title-different-content finding never lands
-            # here (it fails the discriminator match above) and is filed fresh.
-            reopen_updates: dict[str, Any] = {
-                'resolution': 'pending',
-                'resolution_detail': None,
-                'resolution_timestamp': None,
+        # Opt-in reopen: a re-detected defect the Q-Gate store had recorded as
+        # ``fixed`` re-arms the gate only when the filing step passes the opt-in.
+        # The prior resolution, detail and timestamp move into the record's
+        # ``history`` instead of being nulled, so the overridden disposition stays
+        # readable. A ``fixed`` record re-observed without the opt-in is kept, and
+        # any non-``fixed`` resolution re-observed with the opt-in is kept.
+        if reopen and existing.get('resolution') == FIXED_RESOLUTION:
+            prior = {
+                'resolution': existing.get('resolution'),
+                'resolution_detail': existing.get('resolution_detail'),
+                'resolution_timestamp': existing.get('resolution_timestamp'),
+                'timestamp': existing.get('timestamp'),
             }
-            if iteration is not None:
-                reopen_updates['iteration'] = iteration
-            update_jsonl(qgate_path, existing['hash_id'], reopen_updates)
+            history = list(existing.get('history') or [])
+            history.append(prior)
+            reobserved_count = int(existing.get('reobserved_count', 0) or 0) + 1
+            update_jsonl(
+                qgate_path,
+                existing['hash_id'],
+                {
+                    'resolution': 'pending',
+                    'resolution_detail': None,
+                    'resolution_timestamp': None,
+                    'history': history,
+                    'reobserved_count': reobserved_count,
+                },
+            )
             return {
                 'status': 'reopened',
                 'hash_id': existing['hash_id'],
                 'phase': phase,
+                'resolution': 'pending',
+                'previous_resolution': FIXED_RESOLUTION,
+                'history': history,
+                'reobserved_count': reobserved_count,
                 **store_state_fields(store),
             }
+        # Kept-resolution: the same title AND the same content is a genuine
+        # re-detection of the resolved finding, and the recorded resolution
+        # stands — resolution, detail and timestamp are kept exactly, so an
+        # unchanged re-emission never re-arms a gate the reviewer had cleared.
+        # The re-observation is recorded as a counter on the record; nothing
+        # else is touched. A same-title-different-content finding never lands
+        # here (it fails the discriminator match above) and is filed fresh.
+        reobserved_count = int(existing.get('reobserved_count', 0) or 0) + 1
+        update_jsonl(qgate_path, existing['hash_id'], {'reobserved_count': reobserved_count})
+        return {
+            'status': 'kept',
+            'hash_id': existing['hash_id'],
+            'phase': phase,
+            'resolution': existing['resolution'],
+            'reobserved_count': reobserved_count,
+            **store_state_fields(store),
+        }
 
     hash_id = generate_hash_id()
     record: dict[str, Any] = {
@@ -1568,7 +1615,7 @@ def resolve_qgate_findings_by_evidence(
     ``git diff --name-only {prior_anchor}..HEAD`` — the loop-back fix's own edits).
     A premature resolution — the fix touched the file but did not remove the defect
     — is self-correcting: the next review round re-surfaces the defect and
-    :func:`add_qgate_finding` REOPENS the resolved record back to ``pending``.
+    :func:`add_qgate_finding` keeps the resolved record's recorded resolution.
 
     Returns ``{status, plan_id, phase, resolved[], left_pending[]}`` where each
     list carries ``{hash_id, file_path}`` entries, so the caller can report exactly

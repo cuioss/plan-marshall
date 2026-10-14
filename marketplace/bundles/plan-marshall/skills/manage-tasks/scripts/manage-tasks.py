@@ -326,6 +326,23 @@ def build_parser() -> argparse.ArgumentParser:
             '(default: plan-marshall:phase-5-execute).'
         ),
     )
+    # Module-testing close rule (orchestrator-owed verification): the leaf
+    # passes --verification-owed when it handed the task's verification build
+    # back to the orchestrator tier, and the orchestrator passes
+    # --verification-complete to close the task after that build reported
+    # green. See _cmd_step.py (cmd_finalize_step) for the contract.
+    p_finalize.add_argument(
+        '--verification-owed',
+        dest='verification_owed',
+        action='store_true',
+        help='This call leaves verification owed to an orchestrator-tier build — hold the task open.',
+    )
+    p_finalize.add_argument(
+        '--verification-complete',
+        dest='verification_complete',
+        action='store_true',
+        help='The owed orchestrator-tier build reported green — close the held-open task.',
+    )
 
     # add-step
     p_add_step = subparsers.add_parser('add-step', help='Add a new step to a task', allow_abbrev=False)
