@@ -380,16 +380,12 @@ def test_gate_still_declares_head_dependent_true():
 
 def _manifest_core():
     """Load the manifest constants module under test."""
-    return load_script_module(
-        'plan-marshall', 'manage-execution-manifest', '_manifest_core.py', 'd7_manifest_core'
-    )
+    return load_script_module('plan-marshall', 'manage-execution-manifest', '_manifest_core.py', 'd7_manifest_core')
 
 
 def _freshness_crosscheck():
     """Load the freshness crosscheck module under test."""
-    return load_script_module(
-        'plan-marshall', 'manage-tasks', '_freshness_crosscheck.py', 'd7_freshness_crosscheck'
-    )
+    return load_script_module('plan-marshall', 'manage-tasks', '_freshness_crosscheck.py', 'd7_freshness_crosscheck')
 
 
 def test_gate_stamp_composition_normalizes_and_dedupes():
@@ -461,11 +457,7 @@ def test_compose_call_site_wires_request_project_gates_additively():
 
     from conftest import get_skill_dir
 
-    script = (
-        get_skill_dir('plan-marshall', 'manage-execution-manifest')
-        / 'scripts'
-        / 'manage-execution-manifest.py'
-    )
+    script = get_skill_dir('plan-marshall', 'manage-execution-manifest') / 'scripts' / 'manage-execution-manifest.py'
     text = Path(script).read_text(encoding='utf-8')
     assert 'compose_request_project_gates' in text
     assert 'request_gates' in text

@@ -2324,8 +2324,8 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
     # ``compose_request_project_gates`` — rather than a parallel surface, and
     # phase 5 enforces the stamped list verbatim. Absent both inputs the list is
     # unchanged; the composition is additive-only and never drops a step.
-    request_gates = marshal_phase_5_map.get('request_gates', [])
-    project_gates = marshal_phase_5_map.get('project_gates', [])
+    request_gates: object = marshal_phase_5_map.get('request_gates', []) if marshal_phase_5_map is not None else []
+    project_gates: object = marshal_phase_5_map.get('project_gates', []) if marshal_phase_5_map is not None else []
     if isinstance(request_gates, list) and isinstance(project_gates, list):
         composed_gates = compose_request_project_gates(
             [s for s in request_gates if isinstance(s, str)],
