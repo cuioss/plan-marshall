@@ -43,16 +43,16 @@ _CONFIG_SCRIPT = 'manage-config.py'
 _OUTLINE_SKILL = 'manage-solution-outline'
 _OUTLINE_SCRIPT = 'manage-solution-outline.py'
 
-_narrow_mod = load_script_module(_BUNDLE, _CONFIG_SKILL, '_cmd_domain_narrow.py', module_name='_cmd_domain_narrow_regression')
+_narrow_mod = load_script_module(
+    _BUNDLE, _CONFIG_SKILL, '_cmd_domain_narrow.py', module_name='_cmd_domain_narrow_regression'
+)
 cmd_domain_narrow = _narrow_mod.cmd_domain_narrow
 
 _outline_mod = load_script_module(
     _BUNDLE, _OUTLINE_SKILL, _OUTLINE_SCRIPT, module_name='manage_solution_outline_regression'
 )
 
-_QGATE_DOC = (
-    MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'plan-marshall' / 'workflow' / 'q-gate-validation.md'
-)
+_QGATE_DOC = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'plan-marshall' / 'workflow' / 'q-gate-validation.md'
 _PLANNING_OUTLINE_DOC = (
     MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'plan-marshall' / 'workflow' / 'planning-outline.md'
 )

@@ -731,9 +731,7 @@ Outline declares general-dev.
 
 def test_deliverable_declared_domain_is_retained_without_an_inclusion_leg(plan_context):
     """A deliverable-declared domain survives a footprint no other leg claims."""
-    _seed_with_outline(
-        plan_context, 'dn-deliverable', _CONFIGURED_DOMAINS, [_MD_FOOTPRINT], _OUTLINE_WITH_GENERAL_DEV
-    )
+    _seed_with_outline(plan_context, 'dn-deliverable', _CONFIGURED_DOMAINS, [_MD_FOOTPRINT], _OUTLINE_WITH_GENERAL_DEV)
 
     result = cmd_domain_narrow(_ns('dn-deliverable', _MD_FOOTPRINT))
 
@@ -795,7 +793,19 @@ def test_apply_persists_the_retained_set(plan_context):
     """--apply writes the retained domains back to references.json."""
     plan_dir = _seed(plan_context, 'dn-apply', _CONFIGURED_DOMAINS)
 
-    result = cmd_domain_narrow(parse_ns(_BUNDLE, _SKILL, _SCRIPT_NAME, 'domain-narrow', '--plan-id', 'dn-apply', '--affected-files', _PY_FOOTPRINT, '--apply'))
+    result = cmd_domain_narrow(
+        parse_ns(
+            _BUNDLE,
+            _SKILL,
+            _SCRIPT_NAME,
+            'domain-narrow',
+            '--plan-id',
+            'dn-apply',
+            '--affected-files',
+            _PY_FOOTPRINT,
+            '--apply',
+        )
+    )
 
     assert result['status'] == 'success'
     assert result['applied'] is True
@@ -808,7 +818,19 @@ def test_apply_writes_nothing_on_would_empty(plan_context):
     plan_dir = _seed(plan_context, 'dn-apply-empty', ['documentation'])
     before = (plan_dir / 'references.json').read_bytes()
 
-    result = cmd_domain_narrow(parse_ns(_BUNDLE, _SKILL, _SCRIPT_NAME, 'domain-narrow', '--plan-id', 'dn-apply-empty', '--affected-files', _PY_FOOTPRINT, '--apply'))
+    result = cmd_domain_narrow(
+        parse_ns(
+            _BUNDLE,
+            _SKILL,
+            _SCRIPT_NAME,
+            'domain-narrow',
+            '--plan-id',
+            'dn-apply-empty',
+            '--affected-files',
+            _PY_FOOTPRINT,
+            '--apply',
+        )
+    )
 
     assert result['status'] == 'error'
     assert result['error'] == 'would_empty'

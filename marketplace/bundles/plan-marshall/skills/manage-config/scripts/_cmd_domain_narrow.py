@@ -389,10 +389,6 @@ def cmd_domain_narrow(args) -> dict[str, Any]:
                 f'{len(unique_current)} domain(s) evaluated, all droppable. '
                 'Refusing to leave the plan with no skill routing.'
             ),
-            'retained': retained,
-            'dropped': dropped,
-            'provenance': provenance,
-            'report': _compose_report(unique_current, retained, dropped),
         }
 
     apply = bool(getattr(args, 'apply', False))

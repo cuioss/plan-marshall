@@ -1067,8 +1067,7 @@ def test_hash_skip_is_keyed_by_phase(agent_text: str) -> None:
     another phase never satisfies the current lookup.
     """
     assert '__whole_outline__:{phase}' in agent_text, (
-        'Step 3.5 must key the whole-outline aggregate row by phase '
-        '(`__whole_outline__:{phase}`), never by a bare key.'
+        'Step 3.5 must key the whole-outline aggregate row by phase (`__whole_outline__:{phase}`), never by a bare key.'
     )
 
 
@@ -1082,9 +1081,7 @@ def test_hash_skip_calls_the_deterministic_verb(agent_text: str) -> None:
     assert 'deliverable-hashes' in agent_text, (
         'Step 3.5 must call the deterministic deliverable-hashes verb for its hashes.'
     )
-    assert '_plan_parsing' in agent_text, (
-        'Step 3.5 must name _plan_parsing as the shared helper the verb reuses.'
-    )
+    assert '_plan_parsing' in agent_text, 'Step 3.5 must name _plan_parsing as the shared helper the verb reuses.'
 
 
 def test_cached_skips_report_as_not_run(agent_text: str) -> None:
@@ -1132,12 +1129,9 @@ def test_planning_outline_reads_the_phase_keyed_row() -> None:
     THIS phase; a bare-key or cross-phase read reintroduces the gating the phase
     suffix exists to prevent.
     """
-    planning_path = (
-        MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'plan-marshall' / 'workflow' / 'planning-outline.md'
-    )
+    planning_path = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'plan-marshall' / 'workflow' / 'planning-outline.md'
     assert planning_path.is_file(), f'planning-outline.md missing at {planning_path}.'
     text = planning_path.read_text(encoding='utf-8')
     assert '__whole_outline__:{phase}' in text, (
-        'planning-outline.md must read the phase-keyed aggregate row '
-        '(`__whole_outline__:{phase}`), never a bare key.'
+        'planning-outline.md must read the phase-keyed aggregate row (`__whole_outline__:{phase}`), never a bare key.'
     )
