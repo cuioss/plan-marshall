@@ -566,10 +566,7 @@ def _phase_end_marker_refusal(plan_id: str, status: dict[str, Any]) -> dict[str,
             'error': BRANCH_RANGE_UNRESOLVABLE_ERROR,
             'phase': '5-execute',
             'base_branch': base_branch,
-            'reason': (
-                'the worktree-branch commit range could not be established, '
-                'so recording cannot be proven'
-            ),
+            'reason': ('the worktree-branch commit range could not be established, so recording cannot be proven'),
             'message': (
                 'Cannot prove 5-execute deliverable commits were recorded: the '
                 f'worktree-branch commit range since diverging from {base_branch} '
