@@ -68,6 +68,16 @@ derive, for rows still live.
   PLAN-LB-31 (different sections); its D5 waits for a live code-review comment on a PR merged
   after `187f7314a`.
 
+- **PLAN-LB-42 to PLAN-LB-46** (staged 2026-10-14) — sequencing the gate cannot derive:
+  - PLAN-LB-42 shares `q-gate-validation.md` Step 6 (the same section) with the running
+    PLAN-LB-26 — emit after it lands, or rebase onto it.
+  - PLAN-LB-43 is free to emit now (no declared file shared with running work).
+  - PLAN-LB-44 waits for PLAN-LB-26 (`verification-feedback.md`, different sections; one re-read).
+  - PLAN-LB-45 depends on PLAN-LB-39 landing (extends its D5 preflight call, `harness` field and
+    landing key); its spec says to stop after D1–D3 if LB-39 has not landed.
+  - PLAN-LB-46 shares only directories with PLAN-LB-31 / PLAN-LB-41; free unless its D5 needs a
+    `cuioss-review-bot.md` field.
+
 - **Foreign checkout paths.** The specs carried into 28, 30 and 31 name sibling repositories
   as `/Users/oliver/git/...`. Each of those specs carries a clause to resolve the names under
   the checkout root of the machine the plan runs on.
@@ -149,6 +159,25 @@ derive, for rows still live.
   secret leak; a staging verb plus a rewrite of every commit site is not worth it before
   plan-marshall-mcp, where footprint-bound staging belongs in the design. Alternative
   considered: trim the plan to the allowlist plus the D3/D5 leftovers — not chosen.
+- 2026-10-14 — **Five plans staged from the unowned high/critical Open Defects** by operator
+  instruction ("stage the other plans as proposed", after a review that found only two staged
+  plans against seven unowned high items). Drafted by one read-only `execution-context-level-5`
+  leaf at `3133627e8`, every claim re-read there; adjudicated and written here.
+  - PLAN-LB-42 outline-qgate-integrity — `lessons-routing-022`, `-023`, `-010` (narrowing half).
+  - PLAN-LB-43 consumer-leaf-workflow-resolution — `lessons-routing-021`.
+  - PLAN-LB-44 red-ci-triage-route — `lessons-routing-019`.
+  - PLAN-LB-45 runtime-stamp — harness, model, effort and plan-marshall version recorded per plan
+    and required in the landing facts; operator request, extends PLAN-LB-39 D5.
+  - PLAN-LB-46 review-bot-signal-gaps — `lessons-routing-027`, the `-017` remainder, the size
+    refusal loop from PLAN-LB-37's landing.
+  - Not staged, by the same "worth it before the rewrite" test: the sibling-repository
+    deliverable lifecycle (`lessons-routing-018`) — structural, left to plan-marshall-mcp.
+  - Dropped at drafting as already fixed at HEAD: `set-list --values ""` exit 2 (the executor
+    forwards empty values); `re_review_on_loopback` read from the wrong source; a fix commit not
+    re-arming re-review on the trigger-B path. One premise corrected: the harness IS detected
+    from the environment (`target_context.resolve_target`), only its source is not reported.
+  - Split guard: PLAN-LB-45 and PLAN-LB-46 carry five deliverables each and proceed unsplit;
+    PLAN-LB-46 D5 is the first to drop and splits out if it needs a `cuioss-review-bot` field.
 
 ## Open Defects
 
