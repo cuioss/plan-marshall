@@ -344,16 +344,6 @@ def cmd_commit_add(args) -> dict:
         return output_error(str(e))
 
     manifest_bump: dict = {'updated': False, 'reason': 'no_trailing_envelope'}
-    if opens_trailing:
-        manifest_bump = _bump_manifest_envelope_count(args.plan_id, envelope_id)
-        if not manifest_bump['updated']:
-            log_entry(
-                'work',
-                args.plan_id,
-                'WARNING',
-                f'[MANAGE-TASKS] TASK-{number:03d} opened trailing envelope {envelope_id} '
-                f'but the manifest envelope count was not raised ({manifest_bump["reason"]})',
-            )
 
     task = {
         'number': number,
@@ -376,6 +366,20 @@ def cmd_commit_add(args) -> dict:
 
     content = format_task_file(task)
     atomic_write_file(filepath, content)
+
+    # Raise the manifest envelope count only after the task record is safely
+    # on disk: a format_task_file/atomic_write_file failure above must not
+    # leave a count for an envelope that holds no task.
+    if opens_trailing:
+        manifest_bump = _bump_manifest_envelope_count(args.plan_id, envelope_id)
+        if not manifest_bump['updated']:
+            log_entry(
+                'work',
+                args.plan_id,
+                'WARNING',
+                f'[MANAGE-TASKS] TASK-{number:03d} opened trailing envelope {envelope_id} '
+                f'but the manifest envelope count was not raised ({manifest_bump["reason"]})',
+            )
 
     # Consume the scratch file — success means it is no longer pending.
     try:
