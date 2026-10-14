@@ -75,6 +75,15 @@ sessions OpenCode records.
    *Done when:* a fixture database with N matching sub-agent sessions and an empty work log yields
    `harness_observed_dispatches: N` and the gap finding. At `501aeb313` the audit reports 0.
 
+   **Folded 2026-10-14 from PLAN-LB-31's landing:** the retrospective's direct-`gh`/`glab` audit
+   (`plan-retrospective/scripts/direct-gh-glab-usage.py`) is blind the same way — it reads the plan
+   logs only and found 4 mentions against 120 real `gh` shell calls (8 of them `gh pr comment`) in
+   PLAN-LB-31's OpenCode session tree. On the OpenCode target it also reads the plan's sessions'
+   `shell` tool calls from the database (through deliverable 1's reader) and reports the calls it
+   finds there, write-class calls separately. *Done when:* a fixture database with two `gh` shell
+   calls, one a `gh pr comment`, and an empty log yields both, the comment classed as a write. At
+   `501aeb313` the audit reports none.
+
 Split guard: four deliverables, one source (the database) read by three consumers. The enforcement
 half is PLAN-LB-48.
 
@@ -106,6 +115,8 @@ half is PLAN-LB-48.
 - OBSERVED: `test/plan-marshall/platform-runtime/test_opencode_runtime.py` (D2, D3)
 - OBSERVED: `test/plan-marshall/platform-runtime/test_opencode_degrade_paths.py` (D2, D3)
 - OBSERVED: `test/plan-marshall/plan-retrospective/test_check_dispatch_audit.py` (D4)
+- OBSERVED: `marketplace/bundles/plan-marshall/skills/plan-retrospective/scripts/direct-gh-glab-usage.py` (D4, folded)
+- OBSERVED: `test/plan-marshall/plan-retrospective/test_direct_gh_glab_usage.py` (D4, folded)
 - HYPOTHESIS: `test/plan-marshall/manage-metrics/test_manage_metrics_enrich.py` — end-to-end enrich fixture only (verify-at-outline) (D3)
 
 ## Dependencies and Sequencing

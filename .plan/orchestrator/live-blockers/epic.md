@@ -58,10 +58,10 @@ derive, for rows still live.
   rebase onto 37's final landing. PLAN-LB-26 landed (#1769); rebase onto `501aeb313` — it
   rewrote `execution.md`, `triage.md` and `phase-5-execute/SKILL.md`, which this plan also edits.
 
-- **PLAN-LB-31** (running) — its roster decision is in (inbox `-001`, 2026-10-14): the operator
-  kept `cuioss-review-bot` required as is and CodeRabbit required; the measurement does not
-  meet the reopen condition, so the plan proceeds to its enrolment deliverables (PLAN-LB-20 D4
-  and D5 in the carried numbering).
+- **PLAN-LB-31** (shipped #1771, 2026-10-14) — landed WITHOUT its enrolment deliverables (spec D6,
+  D7) on a false gate, counted done; see `landings/PLAN-LB-31.md`. Enrolment, the six-repository
+  observation, and the measurement corrections await an operator decision (Open Defects, "From
+  PLAN-LB-31's landing").
 
 - **PLAN-LB-40 and PLAN-LB-41** (staged 2026-10-14) — 40 shares no declared file with any
   running plan. 41 shares `automatic-review/standards/cuioss-review-bot.md` with the running
@@ -99,8 +99,6 @@ derive, for rows still live.
   the checkout root of the machine the plan runs on.
 
 - **Operator decisions the specs leave open** (each is a verify-first clause in its spec):
-  - PLAN-LB-31 — running `gh`-based corpus scripts, posting `/review` on merged PRs, the
-    roster decision itself, and whether to enrol after it.
 
 ## Decisions
 
@@ -408,6 +406,27 @@ derive, for rows still live.
   - **Tier-1 routing verbs accept only `--request-text`**, which forced a hand transcription of a
     59 KB spec. Low.
 
+- **From PLAN-LB-31's landing** (`landings/PLAN-LB-31.md`, 2026-10-14):
+  - **Operator decisions owed.** (1) Enrolment of the thirteen deferred repositories and the
+    first-PR observation (spec D6, D7) were not done: re-stage, asking once before writing to 13
+    foreign repositories (schema released `v0.39.0`; the roster decision does not block).
+    (2) The measurement: `doc/analysis/in-house-reviewer-efficacy.md` and the registry section of
+    `cuioss-review-bot.md` point at PR tables that do not exist, name an instrument that was
+    deleted, and overclaim the fixed-diff result (four rows were post-charter merged heads); the
+    operator's "why not fixing the script?" is unanswered. (3) A CodeRabbit repository Learning
+    built on the false triage reply must be removed in the CodeRabbit app.
+  - **A task's content for the PR description has no route into the PR body**; `create-pr` offers
+    no channel, and the functional review accepted temp files as evidence that the PR description
+    carries it. Unowned.
+  - **The functional review never checks "Done when" outcome counts**: a verification-profile task
+    with one read step and 0 of 13 enrolled was graded met. Nearest owner PLAN-LB-39 D6 (criteria
+    integrity). Recurrence class of `lessons-routing-015`/`-026`.
+  - **`ci pr reply` has no `--repo`**, so a comment on a foreign repository's PR can only be made
+    with raw `gh`. Low. Unowned.
+  - **Drift recovery can manufacture its own loop cap**: a refine Q-Gate that defers the rebase to
+    finalize guarantees the next drift. Unowned.
+  - **The retrospective's direct-`gh` audit is blind on OpenCode** — folded into PLAN-LB-49.
+
 - **Medium and low items are not owned by any staged plan.** They are listed with evidence
   in `backlog.md` (sections 1.12 onward, 2.3 onward, 3.2 onward, 4.7 onward and 5). Promote an
   item into a plan spec when it starts to hurt; re-verify it at HEAD first.
@@ -672,7 +691,8 @@ entries below are OpenCode 1 assumptions in plan-marshall that OpenCode 2 broke.
   `OPENCODE_PID`); the DB links sub-agents through `session_v2.parent_id`. PLAN-LB-26 corrected:
   main tree 75 sessions, 52.53M input, $7.16; resumed tree 4 sessions, 2.50M input, $0.37 (74 + 3
   sub-agents, not 77 under one session). Owned by PLAN-LB-49, which also makes the dispatch audit
-  count OpenCode sub-agent sessions.
+  count OpenCode sub-agent sessions. Recurred on PLAN-LB-31: `total_tokens=0` against 28.7M input /
+  $4.09 over 55 sessions; the root passed `record-dispatch-boundary --total-tokens 0` literally.
 
 ## Watches
 
@@ -697,6 +717,13 @@ entries below are OpenCode 1 assumptions in plan-marshall that OpenCode 2 broke.
     improvised the merge-override question and omitted CodeRabbit's quota refusal; reported
     `total_tokens=0` against ~45M real input tokens; wrote the orchestrator ledger from the plan
     session. Three regressions shipped (PLAN-LB-47). Remaining: PLAN-LB-31, PLAN-LB-39.
+  - **PLAN-LB-31 graded D** (2026-10-14, `landings/PLAN-LB-31.md`). 7 spec deliverables: 1 met,
+    4 partial, 2 unmet (enrolment and observation) counted done on a gate the ledger refutes. 120
+    direct `gh` calls including 8 `gh pr comment … /review`; the operator's counter-question "why
+    not fixing the script?" went unanswered and was logged as the operator resolution "no new
+    corpus runs"; the landing, the functional review and a CodeRabbit-triage reply all claim PR
+    tables that do not exist; tokens 0 against $4.09 real. Good: four genuine operator questions,
+    the drift-cap escalation, the merge path, the write-boundary. Remaining: PLAN-LB-39.
 
 > ↪ Relocated to `settled.md` § "Watches retired on 2026-10-14" — each trigger was met: the self-review was retired, the Antigravity zero-token watch became an Open Defect, the review-step migration went to PLAN-LB-40, and the three footprint-less plans were deleted and the gate read determinate.
 
