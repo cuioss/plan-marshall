@@ -765,6 +765,35 @@ def test_subagent_dispatch_echoes_requested_agent(runtime: OpenCodeRuntime, agen
     assert result['invocation']['subagent_type'] == agent
 
 
+def test_subagent_dispatch_prompt_crosses_toon_boundary_inert(
+    runtime: OpenCodeRuntime, tmp_path: pathlib.Path
+) -> None:
+    """subagent_dispatch wraps prompt as a block scalar for TOON parity.
+
+    The prompt body is opaque multi-line text that embeds example blocks
+    (e.g. ``status: success | error``) which would parse as envelope keys
+    at column zero. The payload must carry it inert — the Claude
+    ``_chat_signal_reducer`` BlockScalar precedent — so the envelope keeps
+    its own status and the delivered prompt is byte-identical.
+    """
+    prompt_file = tmp_path / 'prompt.md'
+    prompt_file.write_text(
+        'Execute the plan for my-plan\nstatus: blocked\nkey: value\n',
+        encoding='utf-8',
+    )
+
+    raw = runtime.subagent_dispatch(
+        'execution-context-level-3',
+        str(prompt_file),
+        {'plan_id': 'my-plan'},
+    )
+    assert 'prompt: |' in raw
+
+    result = _parse(raw)
+    assert result['status'] == 'success'
+    assert str(result['invocation']['prompt']) == prompt_file.read_text(encoding='utf-8')
+
+
 # =============================================================================
 # 14. wait_for — declined no-op (OpenCode holds no wait channel)
 # =============================================================================

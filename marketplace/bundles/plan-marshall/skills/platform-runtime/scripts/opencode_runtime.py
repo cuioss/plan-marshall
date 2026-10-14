@@ -58,6 +58,7 @@ from runtime_base import (
     toon_noop,
     toon_success,
 )
+from toon_parser import BlockScalar
 
 #: Default bash permission patterns to guarantee in OpenCode settings.
 OPENCODE_DEFAULT_PERMISSIONS: tuple[str, ...] = (
@@ -1378,7 +1379,7 @@ class OpenCodeRuntime(Runtime):
                 'invocation': {
                     'tool': 'task',
                     'description': f'Run {agent}',
-                    'prompt': prompt_body,
+                    'prompt': BlockScalar(prompt_body),
                     'subagent_type': agent,
                 },
             },
