@@ -118,6 +118,14 @@ Branch on the returned TOON:
 - **`unrequested_candidates` absent** (`footprint_source: unresolved`) — the realized footprint could not be derived, so the unrequested-change audit cannot run. Go to **Step 6 Branch C** with reason `footprint_unresolved`. An absent candidate list is never read as an empty one.
 - **`status: success`** — capture the whole TOON as `{attribution_toon}`, and `round_kind`, `deliverable_count` and `base_ref` from it.
 
+**Capture the round's start head.** Immediately after the scope resolves, capture the worktree HEAD the round will examine, so Step 6 can refuse to record a verdict about a tree that moved under the round (see § "Verdict-currency freeze — judge against outline approval" → "Head capture at step start with compare-and-rerun"):
+
+```bash
+git -C {worktree_path} rev-parse HEAD
+```
+
+Capture stdout as `{start_head}` and carry it through Steps 2–5. `{worktree_path}` is the dispatcher's Step 0 resolution, already in scope.
+
 Resolve the two file paths the round uses:
 
 ```bash
@@ -444,6 +452,16 @@ git -C {worktree_path} rev-parse HEAD
 ```
 
 Capture the full SHA as `{sha}`.
+
+**Compare against the round's start head before recording.** Compare `{sha}` with the `{start_head}` Step 1 captured: on equality the round examined the tree it records against, so continue to the branch table below with `{sha}`. On mismatch the tree moved under the round (a commit landed between scope resolution and recording) — discard the verdict and re-run the round from Step 1 against the new HEAD instead of recording a verdict about a tree never examined. Log the discard:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  work --plan-id {plan_id} --level WARNING \
+  --message "[WARNING] (plan-marshall:phase-6-finalize:functional-review) HEAD moved under the round ({start_head} -> {sha}) — discarding the verdict and re-running from Step 1"
+```
+
+A re-run re-resolves the scope (a delta round over the new paths, or a full round when the record cannot anchor one), re-dispatches the author and verifier, and returns here. Record nothing on the discarded pass — no `mark-step-done`, no finding resolution — so the re-run starts from the step's previous terminal record.
 
 Every branch with a non-empty `{override_heads}` forwards `--fact override_closed_heads={override_heads}`, so a retrospective can name every head that shipped past the round cap without a review. A branch with an empty list omits the fact.
 
