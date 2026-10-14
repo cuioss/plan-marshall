@@ -55,9 +55,8 @@ derive, for rows still live.
 
 - **PLAN-LB-39** (running; staged 2026-10-13) — sequenced after PLAN-LB-37 by operator decision (shares
   `functional-review.md` and two test directories). Its D6 builds on 37's functional review;
-  rebase onto 37's final landing. Also overlaps the staged PLAN-LB-26 and PLAN-LB-27 on
-  `phase-5-execute/SKILL.md`, `execution.md` and `triage.md` — the gate will ask when either is
-  emitted alongside it.
+  rebase onto 37's final landing. Also overlaps the running PLAN-LB-26 on
+  `phase-5-execute/SKILL.md`, `execution.md` and `triage.md` (PLAN-LB-27 is retired).
 
 - **PLAN-LB-31** (running) — its roster decision is in (inbox `-001`, 2026-10-14): the operator
   kept `cuioss-review-bot` required as is and CodeRabbit required; the measurement does not
@@ -75,7 +74,6 @@ derive, for rows still live.
 
 - **Operator decisions the specs leave open** (each is a verify-first clause in its spec):
   - PLAN-LB-26 — sticky resolutions with an opt-in reopen of `fixed`, or always reopen `fixed`.
-  - PLAN-LB-27 — how legitimate out-of-footprint edits by finalize steps get in.
   - PLAN-LB-31 — running `gh`-based corpus scripts, posting `/review` on merged PRs, the
     roster decision itself, and whether to enrol after it.
 
@@ -142,6 +140,15 @@ derive, for rows still live.
   to fix — the outline is archived with the plan; recorded here as an instance of outline drift
   after in-flight re-scoping. Alternative considered: fold `-011` into a staged plan — no
   staged plan touches the steward upgrade.
+- 2026-10-14 — **PLAN-LB-27 plan-footprint retired by operator decision** ("We are here
+  maintaining software that will be replaced soon … the scope creep was authorized by the
+  operator"). The scope-creep half is an advisory the operator routinely overrides; PLAN-LB-33
+  (#1745) already shipped its D1, D2 and D4, and the D3 (`_collect_declared_files` globs the plan
+  root, not `tasks/`) and D5 leftovers only sharpen that advisory. The staging-allowlist half
+  guards against one observed incident (#1700's 2038-file deletion, restored) and no observed
+  secret leak; a staging verb plus a rewrite of every commit site is not worth it before
+  plan-marshall-mcp, where footprint-bound staging belongs in the design. Alternative
+  considered: trim the plan to the allowlist plus the D3/D5 leftovers — not chosen.
 
 ## Open Defects
 
