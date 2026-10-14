@@ -140,6 +140,26 @@ def test_project_initial_setup_refuses_corrupt_marshal(runtime: AntigravityRunti
     assert result['error'] == 'io_error'
 
 
+def test_project_initial_setup_refuses_non_object_runtime(runtime: AntigravityRuntime, tmp_path: Path):
+    """project_initial_setup answers io_error on a present-but-non-object runtime.
+
+    A seed that finds the ``runtime`` key holding a non-dict value must refuse
+    before any write — repairing the value in place would destroy the corrupt
+    state the caller never got to see.
+    """
+    plan_dir = tmp_path / '.plan'
+    plan_dir.mkdir(parents=True)
+    marshal_file = plan_dir / 'marshal.json'
+    marshal_file.write_text(json.dumps({'runtime': 'antigravity'}), encoding='utf-8')
+
+    result = _parse(runtime.project_initial_setup(str(tmp_path), 'antigravity'))
+    assert result['status'] == 'error'
+    assert result['error'] == 'io_error'
+
+    data = json.loads(marshal_file.read_text(encoding='utf-8'))
+    assert data['runtime'] == 'antigravity'
+
+
 def test_project_initial_setup_reports_bridge_drift(runtime: AntigravityRuntime, tmp_path: Path):
     """project_initial_setup reports the standing-rules bridge drift verdict."""
     from antigravity_runtime import standing_rules_drift_status

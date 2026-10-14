@@ -93,7 +93,12 @@ def _seed_marshal_runtime_target(project_dir: Path, target: str) -> bool:
             if isinstance(runtime, dict) and runtime.get('target') == target:
                 return False
             if not isinstance(runtime, dict):
-                data['runtime'] = {'target': target}
+                if runtime is None:
+                    data['runtime'] = {'target': target}
+                else:
+                    # Present but malformed: refuse without writing (fail-closed).
+                    # The caller reports io_error; the corrupt value is never destroyed.
+                    return False
             else:
                 runtime['target'] = target
             marshal_file.write_text(json.dumps(data, indent=2) + '\n', encoding='utf-8')

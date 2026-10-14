@@ -136,6 +136,26 @@ def test_project_initial_setup_refuses_corrupt_marshal(runtime: OpenCodeRuntime,
     assert result['error'] == 'io_error'
 
 
+def test_project_initial_setup_refuses_non_object_runtime(runtime: OpenCodeRuntime, tmp_path: pathlib.Path) -> None:
+    """project_initial_setup answers io_error on a present-but-non-object runtime.
+
+    A seed that finds the ``runtime`` key holding a non-dict value must refuse
+    before any write — repairing the value in place would destroy the corrupt
+    state the caller never got to see.
+    """
+    plan_dir = tmp_path / '.plan'
+    plan_dir.mkdir()
+    marshal_file = plan_dir / 'marshal.json'
+    marshal_file.write_text(json.dumps({'runtime': 'opencode'}), encoding='utf-8')
+
+    result = _parse(runtime.project_initial_setup(str(tmp_path), 'opencode'))
+    assert result['status'] == 'error'
+    assert result['error'] == 'io_error'
+
+    data = json.loads(marshal_file.read_text(encoding='utf-8'))
+    assert data['runtime'] == 'opencode'
+
+
 def test_project_initial_setup_reports_bridge_drift(runtime: OpenCodeRuntime, tmp_path: pathlib.Path) -> None:
     """project_initial_setup reports the standing-rules bridge drift verdict."""
     from opencode_runtime import standing_rules_drift_status
