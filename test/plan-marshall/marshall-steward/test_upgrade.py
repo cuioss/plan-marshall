@@ -832,7 +832,7 @@ def _merged_with_params(params: dict) -> dict:
 
 def _params_of(merged: dict) -> dict:
     """Read the automatic-review params back out of a merged config."""
-    return merged['plan']['phase-6-finalize']['steps'][upgrade._AUTOMATIC_REVIEW_STEP_ID]
+    return dict(merged['plan']['phase-6-finalize']['steps'][upgrade._AUTOMATIC_REVIEW_STEP_ID])
 
 
 def test_stage2_order_seeded_roster_survives_merge_and_validates_clean():
