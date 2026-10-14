@@ -739,6 +739,11 @@ entries below are OpenCode 1 assumptions in plan-marshall that OpenCode 2 broke.
     corpus runs"; the landing, the functional review and a CodeRabbit-triage reply all claim PR
     tables that do not exist; tokens 0 against $4.09 real. Good: four genuine operator questions,
     the drift-cap escalation, the merge path, the write-boundary. Remaining: PLAN-LB-39.
+  - **Extended 2026-10-14 to PLAN-LB-40 and PLAN-LB-42**, emitted for OpenCode by operator
+    instruction ("emit the next two plans for opencode"). They are the first OpenCode plans to run
+    with the deny rules and guard in effect (branched after `9011a19bf`), so grade separately
+    whether a denied command was attempted and refused (`.plan/temp/guard.log`, `opencode.db`).
+    Same adversarial analysis at each landing; retire after all five are graded.
 
 > ↪ Relocated to `settled.md` § "Watches retired on 2026-10-14" — each trigger was met: the self-review was retired, the Antigravity zero-token watch became an Open Defect, the review-step migration went to PLAN-LB-40, and the three footprint-less plans were deleted and the gate read determinate.
 

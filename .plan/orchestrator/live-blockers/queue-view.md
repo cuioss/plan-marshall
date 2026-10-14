@@ -4,7 +4,7 @@
 
 ## START HERE
 
-**Resume anchor**: 2026-10-14 — PLAN-LB-26 (grade C) and PLAN-LB-31 (grade D) landed and analyzed; OpenCode 2 hotfix #1772 merged (9011a19bf). LB-31 follow-ups folded into PLAN-LB-48 (D5-D7). RUNNING under OpenCode: PLAN-LB-39 only (worktree predates the hotfix; operator accepted). 3 slots free (N=4). NEXT ACTION: next-emit — top candidates PLAN-LB-48 (emittable; 7 deliverables by operator instruction) and PLAN-LB-47 (regression fixes; needs the 7-file-overlap ruling vs LB-39); LB-49 and LB-45 wait for LB-39. At the LB-39 landing analyze ADVERSARIALLY (last OpenCode Watch plan). OPERATOR ACTIONS: clear persisted OpenCode 'always allow' approvals; regenerate the executor; re-run architecture discovery in the Maven consumers; decide on re-review of LB-26 TASK-28..31.
+**Resume anchor**: 2026-10-14 — EMITTED for OpenCode, awaiting operator-confirmed launch: PLAN-LB-40 steward-upgrade-integrity, PLAN-LB-42 outline-qgate-integrity (first OpenCode plans with the deny rules/guard in effect). RUNNING under OpenCode: PLAN-LB-39. Held back until LB-39 lands: PLAN-LB-48 (9 files shared), PLAN-LB-47 (7), PLAN-LB-49 and PLAN-LB-45 (depend on LB-39). NEXT ACTION: record the launched/running transitions when the operator confirms; at each OpenCode landing (LB-39, LB-40, LB-42) analyze ADVERSARIALLY and grade (OpenCode Watch). OPERATOR ACTIONS: clear persisted OpenCode 'always allow' approvals; regenerate the executor; re-run architecture discovery in the Maven consumers; decide on re-review of LB-26 TASK-28..31.
 **Phase**: orchestrating
 **Running**:
 - PLAN-LB-39 (WS-04) — plan=antigravity-execution-fidelity
