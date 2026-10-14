@@ -70,6 +70,42 @@ def _read_marshal_phase_step_map(phase_key: str) -> dict[str, dict] | None:
     return None
 
 
+def _read_marshal_phase_5_gates() -> tuple[list[str], list[str]]:
+    """Read the phase-5 request/project gate declarations from marshal.json.
+
+    The authoritative source is the enclosing ``plan.phase-5-execute`` object —
+    the ``request_gates`` / ``project_gates`` siblings of ``verification_steps`` —
+    NOT the id-keyed step map returned by :func:`_read_marshal_phase_step_map`
+    (that map holds ``{step_id: params}`` entries, so a ``.get('request_gates')``
+    on it always misses and compose stamps no gates).
+
+    Returns the ``(request_gates, project_gates)`` string lists, filtered to
+    ``str`` entries. Any missing file, malformed shape, or non-list declaration
+    degrades to the empty list for that side, preserving the additive-only
+    compose contract (absent inputs leave the verification list unchanged).
+    """
+    marshal_path = get_marshal_path()
+    if not marshal_path.exists():
+        return [], []
+    try:
+        data = read_json(marshal_path, default={})
+    except (OSError, ValueError):
+        return [], []
+    if not isinstance(data, dict):
+        return [], []
+    plan = data.get('plan')
+    if not isinstance(plan, dict):
+        return [], []
+    phase = plan.get('phase-5-execute')
+    if not isinstance(phase, dict):
+        return [], []
+    request_raw = phase.get('request_gates', [])
+    project_raw = phase.get('project_gates', [])
+    request_gates = [s for s in request_raw if isinstance(s, str)] if isinstance(request_raw, list) else []
+    project_gates = [s for s in project_raw if isinstance(s, str)] if isinstance(project_raw, list) else []
+    return request_gates, project_gates
+
+
 #: The plan-local per-step declaration channel. Mirrors the marshal.json
 #: ``plan.phase-6-finalize.steps`` shape exactly — an id-keyed map of nested param
 #: objects, same key forms (prefixes preserved, canonicalized on read) and the same
