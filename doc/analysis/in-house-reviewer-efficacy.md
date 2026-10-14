@@ -82,9 +82,10 @@ seed 20261013.
   the whole pass carries a populated security cell (an open-redirect finding
   the other reviewer corroborated in the same defect area). The security row
   is otherwise always the stock "no concerns" line.
-- **`/improve` produced nothing this window.** Every observed `/improve`
-  output reports no suggestions found or a generation failure; zero
-  suggestions were posted anywhere in the population. The one surface that
+- **`/improve` produced nothing this window.** Every successful `/improve`
+  generation reports no suggestions found; zero suggestions were posted
+  anywhere in the population. Observed generation failures are unsuccessful
+  measurements and are excluded from that claim. The one surface that
   produced suggestions in the last measurement produced none in this one.
 
 Per-claim populations, in words: the reporting-gap claim rests on every
@@ -140,7 +141,8 @@ found one.
 
 Consumer repositories: the answer implies a roster change in no consumer
 repository, so none is listed for editing — the enrolled repositories and the
-thirteen deferred ones keep their current rosters. Enrolment of the thirteen
-proceeds only past this decision and the released schema it is gated on. The
+thirteen deferred ones keep their current rosters. The rollout plan requires
+the decision and released schema before enrolment; this repository has no
+consumer-enrolment guard that enforces that condition. The
 dated line goes to the plan PR description; the inbox message tells PLAN-LB-20
 in one line whether to proceed with enrolment.
