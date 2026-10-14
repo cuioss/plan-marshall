@@ -1051,11 +1051,11 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
   qgate list --plan-id {plan_id} --phase 5-execute --resolution pending
 ```
 
-Compare the returned pending count against the findings just persisted. **When the readback covers them, proceed to §11d.** When the readback is SHORT — one or more persisted findings are absent from the store — do NOT return `triage_required`; take the short-readback branch in §11d instead.
+Capture each `qgate add` call's returned `status` and test membership in `QGATE_PERSIST_OK` (`success`, `deduplicated`, `reopened`, `kept`), never `status == 'success'` — a rejected persist (`error`) still exits `0`. A persist with status `error` takes the short-readback branch immediately: the record is not in the store. Otherwise compare the returned pending count against the success-plus-reopened count only: a `deduplicated` persist is already pending under its existing hash and a `kept` persist stays under its recorded non-pending resolution by design (the unchanged re-emission keeps resolution, detail and timestamp), so neither adds a pending record and neither may trip the short-readback branch. **When the readback covers them, proceed to §11d.** When the readback is SHORT against that count — one or more `success`/`reopened` findings are absent from the store — do NOT return `triage_required`; take the short-readback branch in §11d instead. A shortfall against the raw persisted total that is fully explained by `kept`/`deduplicated` persists is not a short readback.
 
 **11d**: This per-task body is a **leaf** — it MUST NOT dispatch `verification-feedback` itself. After §11c has persisted each failing finding to the Q-Gate store **and the readback gate has confirmed the store holds them**, return a structured terminal payload to the main-context orchestrator and stop; the orchestrator owns the triage dispatch. See [`ref-workflow-architecture/standards/agents.md`](../ref-workflow-architecture/standards/agents.md) for the canonical leaf/dispatch-topology contract.
 
-**Short-readback branch.** When the readback gate reports fewer findings than were persisted, the by-reference referral would point the orchestrator at a store that lacks them — the finding would be silently lost. Return an error payload that carries the un-persisted findings **inline in the payload** instead:
+**Short-readback branch.** When the readback gate reports fewer findings than the success-plus-reopened count, or any persist returned status `error`, the by-reference referral would point the orchestrator at a store that lacks them — the finding would be silently lost. Return an error payload that carries the un-persisted findings **inline in the payload** instead:
 
 ```toon
 status: error
