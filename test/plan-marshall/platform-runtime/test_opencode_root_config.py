@@ -33,6 +33,7 @@ def _repo_file(*parts: str) -> pathlib.Path:
 
 _CONFIG = json.loads(_repo_file('opencode.json').read_text(encoding='utf-8'))
 _AGENTS = sorted(_CONFIG['agents'])
+assert _AGENTS, 'opencode.json declares no agents, so the per-agent pins would run over nothing'
 
 
 def _matches(pattern: str, command: str) -> bool:
