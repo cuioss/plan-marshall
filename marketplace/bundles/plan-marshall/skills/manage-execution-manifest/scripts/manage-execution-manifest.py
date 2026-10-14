@@ -2338,6 +2338,19 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
                 '(plan-marshall:manage-execution-manifest:compose) [STATUS] request_project_gate_composition — '
                 f'composed request/project gates into phase_5.verification_steps: {composed_gates}',
             )
+        # Reconcile required gates with the early-termination decision. An
+        # early-terminated phase 5 persists an empty verification list and
+        # short-circuits execution, so a composed required gate would appear in
+        # the manifest without running. A non-empty composed list lifts the
+        # short-circuit so phase 5 enforces the stamped gates verbatim.
+        if body['phase_5'].get('early_terminate') is True and composed_gates:
+            body['phase_5']['early_terminate'] = False
+            _emit_decision_log(
+                plan_id,
+                '(plan-marshall:manage-execution-manifest:compose) early_terminate_lifted_for_required_gates — '
+                f'composed request/project gates {composed_gates} require phase 5 execution; '
+                'early_terminate set to False',
+            )
         body['phase_5']['verification_steps'] = composed_gates
 
     # Per-step execution_tier stamping. Runs AFTER the final phase-5 verification
