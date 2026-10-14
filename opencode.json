@@ -9,6 +9,11 @@
   "permissions": [
     {
       "action": "shell",
+      "resource": "*",
+      "effect": "allow"
+    },
+    {
+      "action": "shell",
       "resource": "gh *",
       "effect": "deny"
     },
@@ -176,16 +181,16 @@
       "action": "shell",
       "resource": "python3 marketplace/targets/sync.py *",
       "effect": "allow"
-    },
-    {
-      "action": "shell",
-      "resource": "*",
-      "effect": "allow"
     }
   ],
   "agents": {
     "build": {
       "permissions": [
+        {
+          "action": "shell",
+          "resource": "*",
+          "effect": "ask"
+        },
         {
           "action": "shell",
           "resource": "gh *",
@@ -335,11 +340,6 @@
           "action": "shell",
           "resource": "python3 marketplace/targets/sync.py *",
           "effect": "allow"
-        },
-        {
-          "action": "shell",
-          "resource": "*",
-          "effect": "ask"
         }
       ]
     },
@@ -347,6 +347,11 @@
       "permissions": [
         {
           "action": "shell",
+          "resource": "*",
+          "effect": "ask"
+        },
+        {
+          "action": "shell",
           "resource": "git push *",
           "effect": "deny"
         },
@@ -484,11 +489,6 @@
           "action": "shell",
           "resource": "git commit *",
           "effect": "allow"
-        },
-        {
-          "action": "shell",
-          "resource": "*",
-          "effect": "ask"
         }
       ]
     },
@@ -496,6 +496,11 @@
       "permissions": [
         {
           "action": "shell",
+          "resource": "*",
+          "effect": "ask"
+        },
+        {
+          "action": "shell",
           "resource": "git push *",
           "effect": "deny"
         },
@@ -633,11 +638,6 @@
           "action": "shell",
           "resource": "git commit *",
           "effect": "allow"
-        },
-        {
-          "action": "shell",
-          "resource": "*",
-          "effect": "ask"
         }
       ]
     },
@@ -645,6 +645,11 @@
       "permissions": [
         {
           "action": "shell",
+          "resource": "*",
+          "effect": "ask"
+        },
+        {
+          "action": "shell",
           "resource": "git push *",
           "effect": "deny"
         },
@@ -782,11 +787,6 @@
           "action": "shell",
           "resource": "git commit *",
           "effect": "allow"
-        },
-        {
-          "action": "shell",
-          "resource": "*",
-          "effect": "ask"
         }
       ]
     },
@@ -794,6 +794,11 @@
       "permissions": [
         {
           "action": "shell",
+          "resource": "*",
+          "effect": "ask"
+        },
+        {
+          "action": "shell",
           "resource": "git push *",
           "effect": "deny"
         },
@@ -931,11 +936,6 @@
           "action": "shell",
           "resource": "git commit *",
           "effect": "allow"
-        },
-        {
-          "action": "shell",
-          "resource": "*",
-          "effect": "ask"
         }
       ]
     },
@@ -943,6 +943,11 @@
       "permissions": [
         {
           "action": "shell",
+          "resource": "*",
+          "effect": "ask"
+        },
+        {
+          "action": "shell",
           "resource": "git push *",
           "effect": "deny"
         },
@@ -1080,11 +1085,6 @@
           "action": "shell",
           "resource": "git commit *",
           "effect": "allow"
-        },
-        {
-          "action": "shell",
-          "resource": "*",
-          "effect": "ask"
         }
       ]
     },
@@ -1092,6 +1092,11 @@
       "permissions": [
         {
           "action": "shell",
+          "resource": "*",
+          "effect": "ask"
+        },
+        {
+          "action": "shell",
           "resource": "git push *",
           "effect": "deny"
         },
@@ -1229,11 +1234,6 @@
           "action": "shell",
           "resource": "git commit *",
           "effect": "allow"
-        },
-        {
-          "action": "shell",
-          "resource": "*",
-          "effect": "ask"
         }
       ]
     },
@@ -1241,6 +1241,11 @@
       "permissions": [
         {
           "action": "shell",
+          "resource": "*",
+          "effect": "ask"
+        },
+        {
+          "action": "shell",
           "resource": "git push *",
           "effect": "deny"
         },
@@ -1378,11 +1383,6 @@
           "action": "shell",
           "resource": "git commit *",
           "effect": "allow"
-        },
-        {
-          "action": "shell",
-          "resource": "*",
-          "effect": "ask"
         }
       ]
     },
@@ -1390,6 +1390,11 @@
       "permissions": [
         {
           "action": "shell",
+          "resource": "*",
+          "effect": "ask"
+        },
+        {
+          "action": "shell",
           "resource": "git push *",
           "effect": "deny"
         },
@@ -1527,11 +1532,6 @@
           "action": "shell",
           "resource": "git commit *",
           "effect": "allow"
-        },
-        {
-          "action": "shell",
-          "resource": "*",
-          "effect": "ask"
         }
       ]
     },
@@ -1539,6 +1539,11 @@
       "permissions": [
         {
           "action": "shell",
+          "resource": "*",
+          "effect": "ask"
+        },
+        {
+          "action": "shell",
           "resource": "git push *",
           "effect": "deny"
         },
@@ -1676,11 +1681,6 @@
           "action": "shell",
           "resource": "git diff *",
           "effect": "allow"
-        },
-        {
-          "action": "shell",
-          "resource": "*",
-          "effect": "ask"
         }
       ]
     },
@@ -1688,6 +1688,11 @@
       "permissions": [
         {
           "action": "shell",
+          "resource": "*",
+          "effect": "ask"
+        },
+        {
+          "action": "shell",
           "resource": "git push *",
           "effect": "deny"
         },
@@ -1825,11 +1830,6 @@
           "action": "shell",
           "resource": "git diff *",
           "effect": "allow"
-        },
-        {
-          "action": "shell",
-          "resource": "*",
-          "effect": "ask"
         }
       ]
     },
@@ -1837,6 +1837,11 @@
       "permissions": [
         {
           "action": "shell",
+          "resource": "*",
+          "effect": "ask"
+        },
+        {
+          "action": "shell",
           "resource": "git push *",
           "effect": "deny"
         },
@@ -1974,11 +1979,6 @@
           "action": "shell",
           "resource": "git diff *",
           "effect": "allow"
-        },
-        {
-          "action": "shell",
-          "resource": "*",
-          "effect": "ask"
         }
       ]
     },
@@ -1986,6 +1986,11 @@
       "permissions": [
         {
           "action": "shell",
+          "resource": "*",
+          "effect": "ask"
+        },
+        {
+          "action": "shell",
           "resource": "git push *",
           "effect": "deny"
         },
@@ -2123,11 +2128,6 @@
           "action": "shell",
           "resource": "git diff *",
           "effect": "allow"
-        },
-        {
-          "action": "shell",
-          "resource": "*",
-          "effect": "ask"
         }
       ]
     },
@@ -2135,6 +2135,11 @@
       "permissions": [
         {
           "action": "shell",
+          "resource": "*",
+          "effect": "ask"
+        },
+        {
+          "action": "shell",
           "resource": "git push *",
           "effect": "deny"
         },
@@ -2272,11 +2277,6 @@
           "action": "shell",
           "resource": "git diff *",
           "effect": "allow"
-        },
-        {
-          "action": "shell",
-          "resource": "*",
-          "effect": "ask"
         }
       ]
     },
@@ -2284,6 +2284,11 @@
       "permissions": [
         {
           "action": "shell",
+          "resource": "*",
+          "effect": "ask"
+        },
+        {
+          "action": "shell",
           "resource": "git push *",
           "effect": "deny"
         },
@@ -2421,11 +2426,6 @@
           "action": "shell",
           "resource": "git diff *",
           "effect": "allow"
-        },
-        {
-          "action": "shell",
-          "resource": "*",
-          "effect": "ask"
         }
       ]
     },
@@ -2433,6 +2433,11 @@
       "permissions": [
         {
           "action": "shell",
+          "resource": "*",
+          "effect": "ask"
+        },
+        {
+          "action": "shell",
           "resource": "git push *",
           "effect": "deny"
         },
@@ -2570,11 +2575,6 @@
           "action": "shell",
           "resource": "git diff *",
           "effect": "allow"
-        },
-        {
-          "action": "shell",
-          "resource": "*",
-          "effect": "ask"
         }
       ]
     },
@@ -2582,6 +2582,11 @@
       "permissions": [
         {
           "action": "shell",
+          "resource": "*",
+          "effect": "ask"
+        },
+        {
+          "action": "shell",
           "resource": "git push *",
           "effect": "deny"
         },
@@ -2719,11 +2724,6 @@
           "action": "shell",
           "resource": "git diff *",
           "effect": "allow"
-        },
-        {
-          "action": "shell",
-          "resource": "*",
-          "effect": "ask"
         }
       ]
     }
