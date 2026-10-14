@@ -118,8 +118,8 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 > the form `{phase}:{N}` (e.g. `4-plan:3`), and the aggregate row key is
 > `__whole_outline__:{phase}` — never a bare key. A row recorded by another
 > phase can never satisfy this phase's lookup: the lookup matches the exact
-> `{current_phase}:{D}` key, so a later phase pass over rows an earlier phase
-> wrote finds no stored hash for any deliverable and fully validates. Writes
+> `{current_phase}:{D}` key, so a later phase pass over rows recorded under
+> another phase finds no stored hash for any deliverable and fully validates. Writes
 > MERGE: the write-back replaces this phase's rows and preserves every other
 > phase's rows verbatim. (Rows whose key carries no phase prefix never match a
 > lookup; they are preserved verbatim on merge.)
