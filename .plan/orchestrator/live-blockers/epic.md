@@ -69,6 +69,9 @@ derive, for rows still live.
   after `187f7314a`.
 
 - **PLAN-LB-42 to PLAN-LB-46** (staged 2026-10-14) — sequencing the gate cannot derive:
+  - PLAN-LB-45's D3 example and HYPOTHESIS name `OPENCODE_PID`; OpenCode 2.0.28 does not set it
+    (it sets `OPENCODE=1` and `OPENCODE_SESSION_ID`). Re-ground at outline; once PLAN-LB-49
+    lands, the OpenCode `model` can be read from `opencode.db` instead of self-reported.
   - PLAN-LB-42 and PLAN-LB-44 waited on PLAN-LB-26, which landed (#1769, `501aeb313`); re-read
     `q-gate-validation.md` and `verification-feedback.md` at that commit before outlining.
   - PLAN-LB-43 is free to emit now (no declared file shared with running work).
@@ -81,6 +84,11 @@ derive, for rows still live.
   (`landings/PLAN-LB-26.md` N1–N4). Shares `phase-5-execute/SKILL.md`, `execution.md` and
   `triage.md` with the running PLAN-LB-39; the gate will ask. Emit it ahead of the other staged
   WS-01 plans.
+
+- **PLAN-LB-48 and PLAN-LB-49** (staged 2026-10-14) — LB-48 first (live safety harm; shares
+  `opencode_runtime.py` and `test_opencode_runtime.py` with LB-49). LB-49 also waits for
+  PLAN-LB-39 (D5 `unknown` rule). LB-48 D4 reshapes the `subagent dispatch` seam LB-39 D1
+  consumes — re-read LB-39's state at outline.
 
 - **Foreign checkout paths.** The specs carried into 28, 30 and 31 name sibling repositories
   as `/Users/oliver/git/...`. Each of those specs carries a clause to resolve the names under
@@ -188,6 +196,19 @@ derive, for rows still live.
   (owed `architecture enrich` hints "the project treats triage / test-failure as a standing
   consideration") discarded: content-free, and the five `taken_into_account` test failures behind
   `-002` were legitimate (D11-owned pins, later green).
+- 2026-10-14 — **OpenCode fixes staged as two plans** by operator instruction ("create a plan for
+  fixing the known opencode issues"; "we switched to Opencode 2"). Drafted by a read-only level-5
+  leaf against `501aeb313`, the installed 2.0.28 binary and `opencode.db`; split because the work
+  is eight deliverables in two places: PLAN-LB-48 opencode-2-compat (what a session may do —
+  live harm) and PLAN-LB-49 opencode-measurement (tokens, dispatch evidence). Of the six known
+  issues: token source and dispatch audit → LB-49; `opencode.json` → LB-48 (re-diagnosed);
+  backlog §4.3 "installs ship skills without `workflow/`" **already fixed** by `35b5589b5`
+  (installed tree has `workflow/`); finalize build logs missing / wall time 1-init only — not
+  OpenCode-specific (LB-31 under OpenCode archived them; LB-26's gap follows its provider crash),
+  not staged; the missing-`/` ledger write — the operator typed it without `/`, and `/plan-marshall`
+  is not a registered OpenCode command anyway (it is `plan-marshall-plan-marshall`); the ledger
+  write is an all-harness Write-Boundary gap, already an Open Defect. Zero-vs-`unknown` stays
+  PLAN-LB-39 D5; the harness/model stamp stays PLAN-LB-45.
 
 ## Open Defects
 
@@ -439,7 +460,10 @@ derive, for rows still live.
 
 > ↪ Relocated to `settled.md` § "Open Defects closed by PLAN-LB-33 and PLAN-LB-38" — closed by #1745 and #1752; the entries themselves said to remove them at the next cleanup, and their two open follow-ups stay as their own Open Defects.
 
-- **The root `opencode.json` is in a shape nothing in this repository reads.** PLAN-LB-29's
+- **Superseded 2026-10-14 — see § Non-Claude-Code Failures "OpenCode 2: no deny rule applies".**
+  The new keys are OpenCode 2's own schema; the live defect is rule order and the guard's tool
+  name. Owned by PLAN-LB-48. Original entry kept below as the record.
+  **The root `opencode.json` is in a shape nothing in this repository reads.** PLAN-LB-29's
   merge commit rewrote it: `permission.bash`, a map of command pattern to
   `allow`/`ask`/`deny`, became a `permissions` array of `{action, resource, effect}`
   objects, `agent` became `agents`, `skills.paths` became a bare list, and the file grew
@@ -603,6 +627,23 @@ Failures that occur only, or only measurably, when a plan runs under a harness o
 Claude Code (OpenCode, Antigravity). The Antigravity incidents of 2026-10-12 stay under Open
 Defects ("Antigravity: critical …"), owned by PLAN-LB-39.
 
+OpenCode on this machine is **2.x** (2.0.25 from 2026-10-08, 2.0.28 from 2026-10-13). Several
+entries below are OpenCode 1 assumptions in plan-marshall that OpenCode 2 broke.
+
+- **OpenCode 2: no deny rule applies and the guard plugin blocks nothing — CRITICAL, live.**
+  OpenCode 2 evaluates permission rules last-match-wins (`findLast`, no match = `ask`). The root
+  `opencode.json` (OpenCode 2 schema since `35b5589b5`) puts each catch-all LAST — top level
+  `{shell,"*",allow}`, every agent `{shell,"*",ask}` — so every deny before it is overridden;
+  `opencode debug agents` resolves `gh`, `rm`, `git stash` to `ask`. The guard plugin returns early
+  for any tool not named `bash` (`.opencode/plugin/guard.js:264`), and OpenCode 2's shell tool is
+  `shell`, so R1/R2/R4 never fire. Evidence in `opencode.db`: 120 completed `gh` calls since
+  2026-10-13, among them a `gh pr comment … --body /review` from a PLAN-LB-31 sub-agent; `rm` from
+  a PLAN-LB-39 sub-agent; `rm -rf …/worktrees` from a build agent. Persisted "always allow"
+  approvals (`python3 *`, `grep *`, `ls *`, …) sit in `opencode.db` `permission` too. Orchestrator
+  re-checked `guard.js:264`, the rule order and the `gh pr comment` calls. Owned by PLAN-LB-48,
+  which also moves `opencode_runtime.py` / `permission_fix.py` to the `permissions` list and the
+  dispatch seam / skill directive to OpenCode 2's `subagent` / `{id}`.
+
 - **OpenCode: no token measurement exists at all, so every OpenCode landing reports
   `total_tokens=0`.** Verified at `501aeb313`: `platform-runtime/scripts/opencode_runtime.py`
   implements every token path as a deliberate no-op — `session_capture` (`:399-411`, "OpenCode
@@ -617,8 +658,12 @@ Defects ("Antigravity: critical …"), owned by PLAN-LB-39.
   window (or `OPENCODE_PID`, which `target_context` already reads) are candidate keys for finding
   the session in the database — not verified. Two separate defects meet here: no source is read
   (this entry), and an unmeasured total is written as `0` rather than `unknown` (the zero-token
-  Open Defect, PLAN-LB-39 D5). Not owned; PLAN-LB-45 (runtime-stamp) is the nearest plan. Seen
-  on PLAN-LB-26 and pm-mcp-core PLAN-44.
+  Open Defect, PLAN-LB-39 D5). Seen on PLAN-LB-26 and pm-mcp-core PLAN-44. **Resolved premise
+  (2026-10-14):** OpenCode 2.0.28 sets `OPENCODE_SESSION_ID` in every shell subprocess (and no
+  `OPENCODE_PID`); the DB links sub-agents through `session_v2.parent_id`. PLAN-LB-26 corrected:
+  main tree 75 sessions, 52.53M input, $7.16; resumed tree 4 sessions, 2.50M input, $0.37 (74 + 3
+  sub-agents, not 77 under one session). Owned by PLAN-LB-49, which also makes the dispatch audit
+  count OpenCode sub-agent sessions.
 
 ## Watches
 
