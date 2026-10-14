@@ -453,7 +453,7 @@ git -C {worktree_path} rev-parse HEAD
 
 Capture the full SHA as `{sha}`.
 
-**Compare against the round's start head before recording.** Compare `{sha}` with the `{start_head}` Step 1 captured: on equality the round examined the tree it records against, so continue to the branch table below with `{sha}`. On mismatch the tree moved under the round (a commit landed between scope resolution and recording) — discard the verdict and re-run the round from Step 1 against the new HEAD instead of recording a verdict about a tree never examined. Log the discard:
+**Compare against the round's start head before recording.** Compare `{sha}` with the `{start_head}` Step 1 captured: on equality the round examined the tree it records against, so continue to the branch table below with `{sha}`. On mismatch the tree moved under the round (a commit landed between scope resolution and recording) — discard the verdict and re-run the round from Step 1 against the new HEAD instead of recording a verdict about a tree never examined. Log the discard. The `--message` below interpolates the two SHAs, so it is single-quoted per [§ Shell-safe free text](#shell-safe-free-text-in-command-templates) (SHAs are hex, but the rule is structural, not per-value):
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
@@ -461,7 +461,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   --message '[WARNING] (plan-marshall:phase-6-finalize:functional-review) HEAD moved under the round ({start_head} -> {sha}) — discarding the verdict and re-running from Step 1'
 ```
 
-A re-run re-resolves the scope (a delta round over the new paths, or a full round when the record cannot anchor one), re-dispatches the author and verifier, and returns here. Record nothing on the discarded pass — no `mark-step-done`, no finding resolution — so the re-run starts from the step's previous terminal record. The `--message` below interpolates the two SHAs, so it is single-quoted per [§ Shell-safe free text](#shell-safe-free-text-in-command-templates) (SHAs are hex, but the rule is structural, not per-value).
+A re-run re-resolves the scope (a delta round over the new paths, or a full round when the record cannot anchor one), re-dispatches the author and verifier, and returns here. Record nothing on the discarded pass — no `mark-step-done`, no finding resolution — so the re-run starts from the step's previous terminal record.
 
 Every branch with a non-empty `{override_heads}` forwards `--fact override_closed_heads={override_heads}`, so a retrospective can name every head that shipped past the round cap without a review. A branch with an empty list omits the fact.
 
