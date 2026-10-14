@@ -665,6 +665,19 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config build-
 This nested gate prompts even when `integrate=true` suppressed the Stage 2
 top-level gate.
 
+### Sub-step `reconcile-standing-rules-bridge`
+
+Run after the `build-map` drift gate, still inside Stage 2. Re-run the active
+target's standing-rules bridge writer so a steward upgrade heals a drifted or
+missing bridge on every harness: Claude is a no-op success (its `CLAUDE.md`
+baseline is authoritative and carries no bridge file), while Antigravity and
+OpenCode re-seed `runtime.target` into `.plan/marshal.json` and rewrite the
+workspace rules-bridge file when its version marker no longer matches the
+baseline. The reconcile is idempotent — a current bridge is left untouched —
+and its verdict (reconciled vs already current) is reported alongside the
+Stage 2 outcome. See `configure_harness.py` `_reconcile_standing_rules_bridge`
+for the implementation; this prose names the stage, not the code.
+
 ## Stage 3: verify (read-only)
 
 Honor the Stage 3 top-level gate, then run exactly the Stage 3 `sub_steps` the

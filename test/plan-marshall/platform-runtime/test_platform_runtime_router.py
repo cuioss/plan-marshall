@@ -440,6 +440,7 @@ class TestReadMarshal:
 _RESOLVE_TARGET_CASES = [
     ({'runtime': {'target': 'claude'}}, 'claude'),
     ({'runtime': {'target': 'opencode'}}, 'opencode'),
+    ({'runtime': {'target': 'antigravity'}}, 'antigravity'),
     ({}, None),
     ({'runtime': 'claude'}, None),
     ({'runtime': {}}, None),
@@ -450,6 +451,7 @@ _RESOLVE_TARGET_CASES = [
 _RESOLVE_TARGET_IDS = [
     'claude',
     'opencode',
+    'antigravity',
     'no-runtime-key',
     'runtime-is-not-an-object',
     'no-target-key',
@@ -490,6 +492,14 @@ class TestMakeRuntime:
         runtime = _make_runtime('opencode')
         assert runtime is not None
         assert isinstance(runtime, OpenCodeRuntime)
+
+    def test_antigravity_target_returns_antigravity_runtime(self):
+        """_make_runtime('antigravity') returns an AntigravityRuntime instance."""
+        from antigravity_runtime import AntigravityRuntime
+
+        runtime = _make_runtime('antigravity')
+        assert runtime is not None
+        assert isinstance(runtime, AntigravityRuntime)
 
     @pytest.mark.parametrize(
         'target',
@@ -1258,3 +1268,59 @@ def test_worktree_status_probe_reads_no_persisted_worktree_path(tmp_path, in_tmp
         'the probe followed status.metadata.worktree_path — it must resolve by '
         'layout convention only, or it belongs behind the single resolver'
     )
+
+
+# =============================================================================
+# D1 seam routing — per-harness dispatch outcomes and unknown usage
+# =============================================================================
+
+
+class TestSeamRoutingOutcomes:
+    """Every registered runtime answers ``subagent dispatch`` with a harness-native tool."""
+
+    _EXPECTED_TOOL = {
+        'claude': 'Task',
+        'opencode': 'task',
+        'antigravity': 'invoke_subagent',
+    }
+
+    @pytest.mark.parametrize('target', sorted(_EXPECTED_TOOL), ids=sorted(_EXPECTED_TOOL))
+    def test_each_target_names_its_native_tool(self, target: str) -> None:
+        """The invocation tool is harness-native per target, never a shared default."""
+        runtime = _make_runtime(target)
+        assert runtime is not None
+        parsed = _parsed(runtime.subagent_dispatch('execution-context', None, None))
+        assert parsed['status'] == 'success'
+        assert parsed['invocation']['tool'] == self._EXPECTED_TOOL[target]
+        assert parsed['invocation']['subagent_type'] == 'execution-context'
+
+    @pytest.mark.parametrize('target', sorted(_EXPECTED_TOOL), ids=sorted(_EXPECTED_TOOL))
+    def test_dispatch_params_carry_unknown_usage(self, target: str) -> None:
+        """No dispatch has happened at this seam, so usage is unknown, never zero."""
+        runtime = _make_runtime(target)
+        assert runtime is not None
+        parsed = _parsed(runtime.subagent_dispatch('execution-context', None, None))
+        assert parsed['status'] == 'success'
+        assert parsed['usage'] == 'unknown'
+
+    def test_opencode_inline_branch_on_unavailable_tool(self) -> None:
+        """Verify-first clause 1: an absent ``task`` tool takes the logged inline branch."""
+        from opencode_runtime import OpenCodeRuntime
+
+        parsed = _parsed(OpenCodeRuntime().subagent_dispatch('execution-context', None, {'task_tool_available': False}))
+        assert parsed['status'] == 'no-op'
+        assert 'inline' in parsed['reason']
+        assert 'unknown' in parsed['alternative']
+
+    def test_opencode_gating_flag_never_reaches_the_prompt(self) -> None:
+        """The ``task_tool_available`` gate flag is consumed, never merged into the prompt."""
+        from opencode_runtime import OpenCodeRuntime
+
+        parsed = _parsed(
+            OpenCodeRuntime().subagent_dispatch(
+                'execution-context', None, {'task_tool_available': True, 'plan_id': 'p1'}
+            )
+        )
+        assert parsed['status'] == 'success'
+        assert 'task_tool_available' not in parsed['invocation']['prompt']
+        assert parsed['invocation']['subagent_type'] == 'execution-context'

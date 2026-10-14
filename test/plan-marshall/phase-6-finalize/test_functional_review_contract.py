@@ -423,3 +423,66 @@ def test_the_halt_scan_matches_what_it_targets():
     assert scan.unhalted_advisory_templates(f'{advisory}\n\nThen record.\n\n{record}')
     assert not scan.unhalted_advisory_templates(f'{advisory}\n\n{halt}\n\n{record}')
     assert not scan.unhalted_advisory_templates(advisory), 'an advisory with no record after it records nothing'
+
+
+# ---------------------------------------------------------------------------
+# Verdict-currency freeze and compare contract
+# ---------------------------------------------------------------------------
+
+_FREEZE_HEADING = '## Verdict-currency freeze — judge against outline approval'
+
+
+def test_freeze_section_names_outline_approval():
+    """The freeze section pins the criteria to the outline as approved."""
+    body = _body()
+    assert _FREEZE_HEADING in body, 'the freeze section must be present'
+    section = _section(_FREEZE_HEADING)
+    assert 'outline approval' in section.lower()
+    assert '3-outline' in section
+
+
+def test_freeze_flags_rewrites_as_blocking():
+    """Criteria rewrites after approval are blocking findings."""
+    section = _section(_FREEZE_HEADING)
+    assert 'blocking' in section
+    assert 'rewrite' in section.lower()
+
+
+def test_infeasible_verdicts_name_the_work_order_sentence():
+    """An infeasible verdict cites the frozen sentence that blocks it."""
+    section = _section(_FREEZE_HEADING)
+    assert 'infeasible' in section.lower()
+    assert 'work-order sentence' in section
+
+
+def test_weakened_tests_are_blocking():
+    """Weakened recorded tests are blocking findings."""
+    section = _section(_FREEZE_HEADING)
+    assert 'weakened' in section.lower()
+    assert 'blocking' in section
+
+
+def test_head_compare_and_rerun_on_mismatch():
+    """The start head is compared before recording; mismatch re-runs."""
+    section = _section(_FREEZE_HEADING)
+    assert 'compare' in section.lower()
+    assert 're-run' in section or 'rerun' in section.lower()
+
+
+def test_freeze_section_adds_no_fenced_command_block():
+    """The freeze section states the rule in prose; it adds no new command template."""
+    section = _section(_FREEZE_HEADING)
+    assert '```bash' not in section, 'a fenced command block widens the scanned template surface'
+
+
+def test_freeze_section_names_no_extension_point():
+    """The freeze section cites the currency standard without naming an extension point."""
+    section = _section(_FREEZE_HEADING)
+    assert 'ext-point' not in section.lower()
+
+
+def test_freeze_section_has_no_language_token():
+    """The freeze rule is language-neutral, so it names no language or build system."""
+    section = _section(_FREEZE_HEADING).lower()
+    named = [token for token in _LANGUAGE_TOKENS if re.search(rf'\b{token}\b', section)]
+    assert not named, f'the freeze section names a language or build system: {named}'

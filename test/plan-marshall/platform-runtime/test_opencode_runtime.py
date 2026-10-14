@@ -83,35 +83,102 @@ def test_project_initial_setup_creates_plan_dir(runtime: OpenCodeRuntime, tmp_pa
     assert result['status'] == 'success'
     assert result['operation'] == 'project initial-setup'
     assert result['target'] == 'opencode'
-    assert result['marshal_written'] is False
+    assert result['marshal_written'] is True
     assert result['hook_installed'] is False
     assert (tmp_path / '.plan').is_dir()
     assert (tmp_path / '.plan' / 'temp').is_dir()
     assert (tmp_path / 'opencode.json').is_file()
+    data = json.loads((tmp_path / '.plan' / 'marshal.json').read_text(encoding='utf-8'))
+    assert data['runtime']['target'] == 'opencode'
 
 
-def test_project_initial_setup_leaves_marshal_json_unwritten(runtime: OpenCodeRuntime, tmp_path: pathlib.Path) -> None:
-    """project_initial_setup leaves marshal.json unwritten; runtime.target is retired."""
+def test_project_initial_setup_seeds_marshal_json(runtime: OpenCodeRuntime, tmp_path: pathlib.Path) -> None:
+    """project_initial_setup seeds marshal.json with runtime.target."""
     result = _parse(runtime.project_initial_setup(str(tmp_path), 'opencode'))
-    assert result['marshal_written'] is False
-    assert not (tmp_path / '.plan' / 'marshal.json').exists()
+    assert result['marshal_written'] is True
+    marshal_file = tmp_path / '.plan' / 'marshal.json'
+    assert marshal_file.is_file()
+    data = json.loads(marshal_file.read_text(encoding='utf-8'))
+    assert data['runtime']['target'] == 'opencode'
 
 
 def test_project_initial_setup_leaves_existing_marshal_untouched(
     runtime: OpenCodeRuntime, tmp_path: pathlib.Path
 ) -> None:
-    """project_initial_setup leaves an existing marshal.json untouched."""
+    """project_initial_setup seeds runtime.target while preserving existing keys."""
     plan_dir = tmp_path / '.plan'
     plan_dir.mkdir()
     marshal_path = plan_dir / 'marshal.json'
-    initial = json.dumps({'existing_key': 'existing_value'})
-    marshal_path.write_text(initial, encoding='utf-8')
+    marshal_path.write_text(json.dumps({'existing_key': 'existing_value'}), encoding='utf-8')
 
     result = _parse(runtime.project_initial_setup(str(tmp_path), 'opencode'))
 
     assert result['status'] == 'success'
-    assert result['marshal_written'] is False
-    assert marshal_path.read_text(encoding='utf-8') == initial
+    assert result['marshal_written'] is True
+    data = json.loads(marshal_path.read_text(encoding='utf-8'))
+    assert data['existing_key'] == 'existing_value'
+    assert data['runtime']['target'] == 'opencode'
+
+
+def test_project_initial_setup_refuses_corrupt_marshal(runtime: OpenCodeRuntime, tmp_path: pathlib.Path) -> None:
+    """project_initial_setup answers io_error on a corrupt marshal.json.
+
+    A seed that cannot parse the file must not report success with
+    ``marshal_written: False`` — an unreadable seed base is unevaluable,
+    never a benign no-write.
+    """
+    plan_dir = tmp_path / '.plan'
+    plan_dir.mkdir()
+    (plan_dir / 'marshal.json').write_text('{not json', encoding='utf-8')
+
+    result = _parse(runtime.project_initial_setup(str(tmp_path), 'opencode'))
+    assert result['status'] == 'error'
+    assert result['error'] == 'io_error'
+
+
+def test_project_initial_setup_refuses_non_object_runtime(runtime: OpenCodeRuntime, tmp_path: pathlib.Path) -> None:
+    """project_initial_setup answers io_error on a present-but-non-object runtime.
+
+    A seed that finds the ``runtime`` key holding a non-dict value must refuse
+    before any write — repairing the value in place would destroy the corrupt
+    state the caller never got to see.
+    """
+    plan_dir = tmp_path / '.plan'
+    plan_dir.mkdir()
+    marshal_file = plan_dir / 'marshal.json'
+    marshal_file.write_text(json.dumps({'runtime': 'opencode'}), encoding='utf-8')
+
+    result = _parse(runtime.project_initial_setup(str(tmp_path), 'opencode'))
+    assert result['status'] == 'error'
+    assert result['error'] == 'io_error'
+
+    data = json.loads(marshal_file.read_text(encoding='utf-8'))
+    assert data['runtime'] == 'opencode'
+
+
+def test_project_initial_setup_reports_bridge_drift(runtime: OpenCodeRuntime, tmp_path: pathlib.Path) -> None:
+    """project_initial_setup reports the standing-rules bridge drift verdict."""
+    from opencode_runtime import standing_rules_drift_status
+
+    result = _parse(runtime.project_initial_setup(str(tmp_path), 'opencode'))
+    assert 'bridge_drift' in result
+    assert 'bridge_reason' in result
+    status = standing_rules_drift_status(str(tmp_path))
+    assert status['drift'] is False
+
+
+def test_standing_rules_drift_detects_marker_mismatch(runtime: OpenCodeRuntime, tmp_path: pathlib.Path) -> None:
+    """A bridge file without the version marker reports drift."""
+    from opencode_runtime import standing_rules_drift_status
+
+    (tmp_path / 'CLAUDE.md').write_text('# baseline\n', encoding='utf-8')
+    bridge = tmp_path / '.opencode' / 'rules' / 'plan-marshall-target-rules.md'
+    bridge.parent.mkdir(parents=True)
+    bridge.write_text('stale foreign content\n', encoding='utf-8')
+
+    status = standing_rules_drift_status(str(tmp_path))
+    assert status['drift'] is True
+    assert status['reason'] == 'marker_mismatch'
 
 
 def test_project_initial_setup_hook_skip_reason_present(runtime: OpenCodeRuntime, tmp_path: pathlib.Path) -> None:
@@ -734,6 +801,118 @@ def test_subagent_dispatch_echoes_requested_agent(runtime: OpenCodeRuntime, agen
     assert result['invocation']['subagent_type'] == agent
 
 
+def test_subagent_dispatch_prompt_crosses_toon_boundary_inert(runtime: OpenCodeRuntime, tmp_path: pathlib.Path) -> None:
+    """subagent_dispatch wraps prompt as a block scalar for TOON parity.
+
+    The prompt body is opaque multi-line text that embeds example blocks
+    (e.g. ``status: success | error``) which would parse as envelope keys
+    at column zero. The payload must carry it inert — the Claude
+    ``_chat_signal_reducer`` BlockScalar precedent — so the envelope keeps
+    its own status and the delivered prompt is byte-identical.
+    """
+    prompt_file = tmp_path / 'prompt.md'
+    prompt_file.write_text(
+        'Execute the plan for my-plan\nstatus: blocked\nkey: value\n',
+        encoding='utf-8',
+    )
+
+    raw = runtime.subagent_dispatch(
+        'execution-context-level-3',
+        str(prompt_file),
+        {'plan_id': 'my-plan'},
+    )
+    assert 'prompt: |' in raw
+
+    result = _parse(raw)
+    assert result['status'] == 'success'
+    assert str(result['invocation']['prompt']) == prompt_file.read_text(encoding='utf-8')
+
+
+def test_subagent_dispatch_task_tool_unavailable_takes_inline_branch(runtime: OpenCodeRuntime) -> None:
+    """An explicit task_tool_available=False declines with the inline-branch no-op."""
+    result = _parse(runtime.subagent_dispatch('execution-context-level-3', None, {'task_tool_available': False}))
+
+    assert result['status'] == 'no-op'
+    assert result['operation'] == 'subagent dispatch'
+    assert result['reason']
+    assert result['alternative']
+
+
+def test_subagent_dispatch_task_tool_flag_defaults_to_available(runtime: OpenCodeRuntime) -> None:
+    """An absent flag (or absent context) fires the dispatch — available is the explicit default."""
+    assert _parse(runtime.subagent_dispatch('execution-context-level-3', None, None))['status'] == 'success'
+    assert _parse(runtime.subagent_dispatch('execution-context-level-3', None, {'plan_id': 'x'}))['status'] == 'success'
+
+
+def test_subagent_dispatch_neutral_flag_unavailable_takes_inline_branch(runtime: OpenCodeRuntime) -> None:
+    """An explicit spawning_tool_available=False declines with the inline-branch no-op."""
+    result = _parse(runtime.subagent_dispatch('execution-context-level-3', None, {'spawning_tool_available': False}))
+
+    assert result['status'] == 'no-op'
+    assert result['operation'] == 'subagent dispatch'
+    assert 'inline' in result['reason']
+    assert 'unknown' in result['alternative']
+
+
+def test_subagent_dispatch_attestation_flags_stripped_from_prompt(
+    runtime: OpenCodeRuntime, tmp_path: pathlib.Path
+) -> None:
+    """Both attestation flags are consumed at the seam, never merged into the prompt."""
+    prompt_file = tmp_path / 'prompt.md'
+    prompt_file.write_text('Run now', encoding='utf-8')
+
+    result = _parse(
+        runtime.subagent_dispatch(
+            'execution-context-level-3',
+            str(prompt_file),
+            {'task_tool_available': True, 'spawning_tool_available': True},
+        )
+    )
+    assert result['status'] == 'success'
+    assert 'task_tool_available' not in result['invocation']['prompt']
+    assert 'spawning_tool_available' not in result['invocation']['prompt']
+
+
+def test_subagent_dispatch_unmapped_agent_tool_takes_inline_branch(
+    runtime: OpenCodeRuntime, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An agent requiring a tool OpenCode has no equivalent for declines instead of succeeding."""
+    agent_file = tmp_path / 'bad-agent.md'
+    agent_file.write_text(
+        '---\nname: bad-agent\ndescription: uses bad tool\ntools: [Read, SendMessage]\n---\nBody.',
+        encoding='utf-8',
+    )
+    monkeypatch.setattr('runtime_base._find_agent_file', lambda _name, _extra=(): agent_file)
+
+    result = _parse(runtime.subagent_dispatch('bad-agent', None, None))
+    assert result['status'] == 'no-op'
+    assert result['operation'] == 'subagent dispatch'
+    assert 'SendMessage' in result['reason']
+    assert 'inline' in result['alternative']
+
+
+def test_subagent_dispatch_mapped_agent_tools_succeed(
+    runtime: OpenCodeRuntime, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An agent whose frontmatter tools all map onto OpenCode dispatches successfully."""
+    agent_file = tmp_path / 'good-agent.md'
+    agent_file.write_text(
+        '---\nname: good-agent\ndescription: uses mapped tools\ntools: [Read, Bash]\n---\nBody.',
+        encoding='utf-8',
+    )
+    monkeypatch.setattr('runtime_base._find_agent_file', lambda _name, _extra=(): agent_file)
+
+    result = _parse(runtime.subagent_dispatch('good-agent', None, None))
+    assert result['status'] == 'success'
+    assert result['invocation']['tool'] == 'task'
+
+
+def test_subagent_dispatch_unresolvable_agent_file_proceeds(runtime: OpenCodeRuntime) -> None:
+    """A generated level variant with no in-tree agent file is not refused on mapping grounds."""
+    result = _parse(runtime.subagent_dispatch('execution-context-level-3', None, None))
+    assert result['status'] == 'success'
+
+
 # =============================================================================
 # 14. wait_for — declined no-op (OpenCode holds no wait channel)
 # =============================================================================
@@ -880,3 +1059,148 @@ def test_health_check_all_healthy_false_when_display_or_hook(runtime: OpenCodeRu
 
     result2 = _parse(runtime.health_check('hook'))
     assert result2['all_healthy'] is False
+
+
+# =============================================================================
+# Standing-rules bridge: seeding, rule copy, and drift detection (D3)
+# =============================================================================
+
+
+def test_standing_rules_drift_baseline_missing_without_bridge(tmp_path: pathlib.Path) -> None:
+    """No baseline and no bridge reports baseline_missing with a needed bridge."""
+    from opencode_runtime import standing_rules_drift_status
+
+    status = standing_rules_drift_status(str(tmp_path))
+
+    assert status == {'drift': False, 'needs_bridge': True, 'reason': 'baseline_missing'}
+
+
+def test_standing_rules_drift_baseline_missing_with_bridge(tmp_path: pathlib.Path) -> None:
+    """No baseline but a bridge file reports baseline_missing with no needed bridge."""
+    from opencode_runtime import _bridge_rules_path, standing_rules_drift_status
+
+    bridge = _bridge_rules_path(tmp_path)
+    bridge.parent.mkdir(parents=True)
+    bridge.write_text('bridge-version: 1\n', encoding='utf-8')
+
+    status = standing_rules_drift_status(str(tmp_path))
+
+    assert status == {'drift': False, 'needs_bridge': False, 'reason': 'baseline_missing'}
+
+
+def test_standing_rules_drift_bridge_missing(tmp_path: pathlib.Path) -> None:
+    """A baseline without a bridge reports bridge_missing with a needed bridge."""
+    from opencode_runtime import standing_rules_drift_status
+
+    (tmp_path / 'CLAUDE.md').write_text('# baseline\n', encoding='utf-8')
+
+    status = standing_rules_drift_status(str(tmp_path))
+
+    assert status == {'drift': False, 'needs_bridge': True, 'reason': 'bridge_missing'}
+
+
+def test_standing_rules_drift_in_sync_after_setup(runtime: OpenCodeRuntime, tmp_path: pathlib.Path) -> None:
+    """A setup bridge newer than its baseline reports in_sync."""
+    from opencode_runtime import standing_rules_drift_status
+
+    (tmp_path / 'CLAUDE.md').write_text('# baseline\n', encoding='utf-8')
+
+    result = _parse(runtime.project_initial_setup(str(tmp_path), 'opencode'))
+    assert result['bridge_written'] is True
+
+    assert standing_rules_drift_status(str(tmp_path)) == {
+        'drift': False,
+        'needs_bridge': False,
+        'reason': 'in_sync',
+    }
+
+
+def test_standing_rules_drift_baseline_newer(runtime: OpenCodeRuntime, tmp_path: pathlib.Path) -> None:
+    """A baseline modified after the bridge was written reports baseline_newer drift."""
+    import os
+
+    from opencode_runtime import _bridge_rules_path, standing_rules_drift_status
+
+    (tmp_path / 'CLAUDE.md').write_text('# baseline\n', encoding='utf-8')
+    _parse(runtime.project_initial_setup(str(tmp_path), 'opencode'))
+
+    past = 1_000_000_000
+    os.utime(_bridge_rules_path(tmp_path), (past, past))
+    os.utime(tmp_path / 'CLAUDE.md', (past + 60, past + 60))
+
+    assert standing_rules_drift_status(str(tmp_path)) == {
+        'drift': True,
+        'needs_bridge': False,
+        'reason': 'baseline_newer',
+    }
+
+
+def test_project_initial_setup_resestup_is_idempotent(runtime: OpenCodeRuntime, tmp_path: pathlib.Path) -> None:
+    """A second setup writes neither marshal.json nor the bridge again."""
+    first = _parse(runtime.project_initial_setup(str(tmp_path), 'opencode'))
+    assert first['marshal_written'] is True
+    assert first['bridge_written'] is True
+
+    second = _parse(runtime.project_initial_setup(str(tmp_path), 'opencode'))
+
+    assert second['marshal_written'] is False
+    assert second['bridge_written'] is False
+
+
+def test_bridge_file_carries_version_marker(runtime: OpenCodeRuntime, tmp_path: pathlib.Path) -> None:
+    """The bridge file embeds the version marker drift detection reads."""
+    from opencode_runtime import STANDING_RULES_BRIDGE_MARKER, _bridge_rules_path
+
+    _parse(runtime.project_initial_setup(str(tmp_path), 'opencode'))
+
+    body = _bridge_rules_path(tmp_path).read_text(encoding='utf-8')
+
+    assert STANDING_RULES_BRIDGE_MARKER in body
+    assert 'CLAUDE.md' in body
+
+
+def test_resestup_heals_drifted_bridge(runtime: OpenCodeRuntime, tmp_path: pathlib.Path) -> None:
+    """Re-setup rewrites a drifted bridge and clears the drift verdict."""
+    from opencode_runtime import _bridge_rules_path, standing_rules_drift_status
+
+    (tmp_path / 'CLAUDE.md').write_text('# baseline\n', encoding='utf-8')
+    bridge = _bridge_rules_path(tmp_path)
+    bridge.parent.mkdir(parents=True)
+    bridge.write_text('stale foreign content\n', encoding='utf-8')
+    assert standing_rules_drift_status(str(tmp_path))['reason'] == 'marker_mismatch'
+
+    result = _parse(runtime.project_initial_setup(str(tmp_path), 'opencode'))
+
+    assert result['bridge_written'] is True
+    assert standing_rules_drift_status(str(tmp_path))['reason'] == 'in_sync'
+
+
+def test_resestup_clears_baseline_newer_drift(runtime: OpenCodeRuntime, tmp_path: pathlib.Path) -> None:
+    """Re-setup re-affirms the bridge and clears a baseline_newer drift verdict."""
+    import os
+
+    from opencode_runtime import _bridge_rules_path, standing_rules_drift_status
+
+    (tmp_path / 'CLAUDE.md').write_text('# baseline\n', encoding='utf-8')
+    _parse(runtime.project_initial_setup(str(tmp_path), 'opencode'))
+
+    past = 1_000_000_000
+    os.utime(_bridge_rules_path(tmp_path), (past, past))
+    os.utime(tmp_path / 'CLAUDE.md', (past + 60, past + 60))
+    assert standing_rules_drift_status(str(tmp_path))['reason'] == 'baseline_newer'
+
+    result = _parse(runtime.project_initial_setup(str(tmp_path), 'opencode'))
+
+    assert result['bridge_written'] is True
+    assert standing_rules_drift_status(str(tmp_path))['reason'] == 'in_sync'
+
+
+def test_reconcile_standing_rules_bridge_heals_missing_bridge(tmp_path: pathlib.Path) -> None:
+    """The steward reconcile heals a missing OpenCode bridge via setup."""
+    from configure_harness import _reconcile_standing_rules_bridge
+    from opencode_runtime import _bridge_rules_path
+
+    (tmp_path / 'CLAUDE.md').write_text('# baseline\n', encoding='utf-8')
+
+    assert _reconcile_standing_rules_bridge('opencode', tmp_path) is True
+    assert _bridge_rules_path(tmp_path).is_file()

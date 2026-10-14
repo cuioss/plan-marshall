@@ -154,6 +154,60 @@ _DISPATCH_CONTEXT_LOAD_COLUMNS = (
 UNMEASURED_COLUMN_TOKEN = 'unmeasured'
 
 # ---------------------------------------------------------------------------
+# The phase-level unknown token
+# ---------------------------------------------------------------------------
+#
+# The per-dispatch columns above carry ``unmeasured`` when the caller forwarded
+# no figure. Phase-level token figures need the same stated-absence at their
+# own grain: a phase that ran on a ``transcripts: none`` harness (see
+# ``platform-runtime/standards/runtime-info.md``) carries no measured token
+# figure at all — no transcript was walked, no ``<usage>`` envelope was reaped,
+# and no inline fold applied. Such a phase reports ``total_tokens: unknown``.
+#
+# ``unknown`` is the stated form of absence for a field the row shape cannot
+# drop, exactly as ``unmeasured`` is for the positional dispatch-boundary row.
+# A measured zero stays ``0``; only never-measured reads as ``unknown``. Never
+# substitute ``0`` for ``unknown``, never sum an ``unknown`` figure into a
+# total, and never read ``unknown`` as a number — see
+# ``manage-metrics/standards/data-format.md`` § "Unknown token figures
+# (`unknown`)".
+UNKNOWN_TOKEN = 'unknown'
+
+#: Store key listing the phases whose Tokens cell rendered `unknown`.
+TOTALS_TOKENS_UNKNOWN_PHASES_FIELD = 'totals_tokens_unknown_phases'
+
+
+def _is_unknown(value: object) -> bool:
+    """Return True when *value* is the phase-level unknown token."""
+    return value == UNKNOWN_TOKEN
+
+
+def _stamp_unknown_totals(phases_state: dict) -> list[str]:
+    """Stamp ``total_tokens: unknown`` on every row lacking a measured figure.
+
+    Rows carrying a numeric ``total_tokens`` are left byte-identical. Every
+    other row — absent figure, or a stale sentinel — is stamped ``unknown``,
+    so an unmeasured phase states its absence rather than rendering ``-``.
+    A later close or enrich that measures the phase overwrites the stamp
+    (explicit-wins), and ``cmd_generate`` re-derives it each run, so the stamp
+    never shadows a measurement.
+
+    Returns:
+        The phase names stamped on this call, in canonical order.
+    """
+    stamped: list[str] = []
+    for phase_name in PHASE_NAMES:
+        row = phases_state.get(phase_name)
+        if not isinstance(row, dict):
+            continue
+        if isinstance(_coerce_numeric(row.get('total_tokens')), (int, float)):
+            continue
+        row['total_tokens'] = UNKNOWN_TOKEN
+        stamped.append(phase_name)
+    return stamped
+
+
+# ---------------------------------------------------------------------------
 # Cumulative-vs-last-close row scope discriminator
 # ---------------------------------------------------------------------------
 #
@@ -1343,6 +1397,7 @@ def write_metrics(plan_id: str, data: dict, *, preserve_totals: bool = False) ->
             _TOTALS_DENOMINATOR_FIELD,
             _TOTALS_SPANS_POPULATIONS_FIELD,
             _TOTALS_SAMPLED_AT_FIELD,
+            TOTALS_TOKENS_UNKNOWN_PHASES_FIELD,
         ):
             data.pop(field, None)
 
@@ -1548,7 +1603,10 @@ def _reconcile_accumulator_into_phase(phase_data: dict, accumulator: dict[str, i
         return
 
     acc_tokens = accumulator.get('total_tokens')
-    if acc_tokens and 'total_tokens' not in phase_data:
+    # An `unknown` stamp is stated absence, not a measurement: a durable
+    # accumulator value measured since replaces it, exactly as it backfills an
+    # absent field. A numeric row value still wins (explicit-wins).
+    if acc_tokens and not isinstance(_coerce_numeric(phase_data.get('total_tokens')), (int, float)):
         phase_data['total_tokens'] = acc_tokens
 
     acc_tool_uses = accumulator.get('tool_uses')
@@ -1987,6 +2045,26 @@ def cmd_generate(args: argparse.Namespace) -> dict:
         # follows above.
         phase['inline_main_context_tokens'] = 0 if phase.get('total_tokens_population') else UNMEASURED_COLUMN_TOKEN
 
+    # Phase-level unknown figures, completed on EVERY row — as a measurement or
+    # an explicit not-measured marker, but never as absence.
+    #
+    # The mirror of the inline completion above at the phase-figure grain: a row
+    # carrying a numeric `total_tokens` keeps it (a real measurement, from a
+    # close, the accumulator, or enrich's inline fold — never overwritten).
+    # Anything else — absent, or a sentinel this loop wrote on an earlier
+    # generate — is RE-DERIVED from the current row rather than preserved, so a
+    # close or enrich that has since measured the phase is never shadowed by a
+    # stale `unknown`. A row no close, accumulator, or enrich ever measured
+    # states its absence as `unknown`, never `0` and never absent: the figure
+    # the row shape cannot drop carries the stated form of absence instead.
+    for phase_name in PHASE_NAMES:
+        if phase_name not in phases:
+            continue
+        phase = phases[phase_name]
+        if isinstance(_coerce_numeric(phase.get('total_tokens')), (int, float)):
+            continue
+        phase['total_tokens'] = UNKNOWN_TOKEN
+
     # The store write is deliberately NOT here. Every figure the Total row renders
     # is derived below and must reach the store, so the single write — and the
     # denominators that must be stamped last before it — happen once the aggregate
@@ -2116,6 +2194,9 @@ def cmd_generate(args: argparse.Namespace) -> dict:
     # won and by how much, instead of asserting an unqualified "same-population
     # max" the comparison may not have earned.
     reconciled_phases: list[tuple[str, str, int, int | None]] = []
+    # Phases whose Tokens cell renders `unknown` — no measurement exists, so no
+    # figure feeds the Total and the Total itself renders `unknown`.
+    unknown_token_phases: list[str] = []
     # Phases whose token record is NOT a plain dispatched measurement, collected
     # so the population annotation under the table can name them. `inline` rows
     # render a main-context-window figure in the dispatched column (the enrich
@@ -2171,7 +2252,14 @@ def cmd_generate(args: argparse.Namespace) -> dict:
         raw_tokens = _numeric(phase.get('total_tokens'))
         winner = _reconcile_dispatched_measures(phase)
         cell_source: str | None = None
-        if winner is not None:
+        if _is_unknown(phase.get('total_tokens')) and winner is None:
+            # Stated absence, not a number and not a dash: the phase ran
+            # unmeasured, so the cell says `unknown` and feeds nothing to the
+            # Total. A winning dispatched measure would still render (it is a
+            # measurement); only a measureless unknown takes this branch.
+            tokens_str = UNKNOWN_TOKEN
+            unknown_token_phases.append(phase_name)
+        elif winner is not None:
             winning_field, winning_value = winner
             if winning_field != 'total_tokens':
                 reconciled_phases.append(
@@ -2236,6 +2324,11 @@ def cmd_generate(args: argparse.Namespace) -> dict:
                     cell_source = TOKENS_SOURCE_UNCLOSED_BOUNDARY
                     unclosed_boundary_phases.append((phase_name, floor))
 
+        if phase_name in unknown_token_phases and cell_source:
+            # A dispatch-boundary floor measured spend after all: the cell now
+            # shows the measured floor, so the phase is not unmeasured.
+            unknown_token_phases.remove(phase_name)
+
         # Persist the cell's provenance so a consumer reads it off the row rather
         # than re-running the comparison or parsing the rendered annotation.
         if cell_source:
@@ -2253,8 +2346,10 @@ def cmd_generate(args: argparse.Namespace) -> dict:
         # contributes nothing to the Total — naming it under "Marked `(inline)`"
         # would assert a marker the reader cannot find, and would make the Total
         # look cross-population when no inline figure fed it.
+        # `unknown` cells take no population marker: there is no measured
+        # population to declare, and a suffix would assert one.
         population = _token_population(phase)
-        if tokens_str != '-':
+        if tokens_str != '-' and tokens_str != UNKNOWN_TOKEN:
             tokens_str += _POPULATION_CELL_SUFFIX.get(population, '')
             if population == POPULATION_INLINE:
                 inline_population_phases.append(phase_name)
@@ -2302,6 +2397,12 @@ def cmd_generate(args: argparse.Namespace) -> dict:
         field = _TOTALS_FIELDS[column]
         data[field] = sum(int(v) for v in values)
         data[f'{field}{_POPULATION_COUNT_SUFFIX}'] = len(values)
+    # Phases without any measurement keep the Tokens Total honest: a sum with a
+    # hole in it is not a sum. The persisted numeric sum above still covers the
+    # measured rows (with its count), and this companion names the rows it does
+    # not cover — so the Total renders `unknown` while the measured subset stays
+    # checkable. Empty string when every rendered row measured.
+    data[TOTALS_TOKENS_UNKNOWN_PHASES_FIELD] = ','.join(unknown_token_phases)
     # The Total is a cell in the same column and inherits the same declared
     # default, so it takes the same marking discipline as every other cell: when
     # an `(inline)` row fed the sum, the Total spans populations and says so.
@@ -2348,8 +2449,16 @@ def cmd_generate(args: argparse.Namespace) -> dict:
     total_worked_str = _total_str('worked', str, is_duration=True)
     total_wall_str = _total_str('wall', str, is_duration=True)
     total_idle_str = _total_str('idle', str, is_duration=True)
-    total_tokens_str = _total_str('tokens', lambda n: f'{n:,}')
-    if spans_populations and total_tokens_str != '-':
+    # A Total with a hole in it is not a sum: any unmeasured phase row makes
+    # the Tokens Total itself `unknown`, naming the measured subset's count
+    # nowhere — the persisted sum beside its count stays checkable in the
+    # store, but the rendered figure refuses to quote it as the whole.
+    unknown_tokens_csv = str(data.get(TOTALS_TOKENS_UNKNOWN_PHASES_FIELD) or '')
+    if unknown_tokens_csv:
+        total_tokens_str = UNKNOWN_TOKEN
+    else:
+        total_tokens_str = _total_str('tokens', lambda n: f'{n:,}')
+    if spans_populations and total_tokens_str not in ('-', UNKNOWN_TOKEN):
         total_tokens_str += _TOTAL_CROSS_POPULATION_SUFFIX
     total_tool_uses_str = _total_str('tool_uses', str)
     total_billing_str = _total_str('billing', lambda n: f'{n:,}')
@@ -2397,6 +2506,20 @@ def cmd_generate(args: argparse.Namespace) -> dict:
             'three count the same leaves; a partial or over-covering measure is '
             'ineligible): '
             f'{details}'
+        )
+        lines.append('')
+
+    # Unknown annotation: an `unknown` cell is stated absence, and the Total it
+    # feeds is itself `unknown`. The annotation names the phases so a reader
+    # sees which rows the Total does not cover — and that the measured subset's
+    # sum beside its count stays checkable in the store.
+    if unknown_token_phases:
+        lines.append(
+            '> Tokens unknown — no measurement was recorded for these phases: '
+            f'{", ".join(unknown_token_phases)}. Their cells render `unknown`, never '
+            '`0`, and the **Total** is itself `unknown` — a sum with a hole in it '
+            'is not a sum. A measured zero still renders `0`; only never-measured '
+            'reads as `unknown`.'
         )
         lines.append('')
 
@@ -2548,7 +2671,12 @@ def cmd_generate(args: argparse.Namespace) -> dict:
         population = _token_population(phase)
 
         tokens = phase.get('total_tokens')
-        if tokens:
+        if _is_unknown(tokens):
+            lines.append(
+                '- **Total tokens**: unknown (no measurement — this phase ran '
+                'unmeasured, so there is no figure to quote and no population to declare)'
+            )
+        elif tokens:
             lines.append(f'- **Total tokens**: {int(tokens):,} ({_POPULATION_BULLET_NOTE[population]})')
 
         boundary_total = phase.get('dispatch_boundary_total')
@@ -2774,6 +2902,18 @@ def cmd_generate(args: argparse.Namespace) -> dict:
         totals_echo[count_field] = data[count_field]
     totals_echo[_TOTALS_SPANS_POPULATIONS_FIELD] = data[_TOTALS_SPANS_POPULATIONS_FIELD]
     totals_echo[_TOTALS_SAMPLED_AT_FIELD] = data[_TOTALS_SAMPLED_AT_FIELD]
+    # The rendered Tokens Total refuses to quote a sum with a hole in it: any
+    # unmeasured phase row makes the total `unknown`. The echo carries the same
+    # verdict plus the phase list, so a caller reading the return cannot quote
+    # the numeric subset sum as the whole either.
+    unknown_tokens_csv = str(data.get(TOTALS_TOKENS_UNKNOWN_PHASES_FIELD) or '')
+    totals_echo[TOTALS_TOKENS_UNKNOWN_PHASES_FIELD] = unknown_tokens_csv
+    if unknown_tokens_csv:
+        total_tokens_out: object = UNKNOWN_TOKEN
+        total_tokens_formatted = UNKNOWN_TOKEN
+    else:
+        total_tokens_out = total_tokens
+        total_tokens_formatted = format_tokens_short(total_tokens)
 
     return {
         'status': 'success',
@@ -2789,12 +2929,12 @@ def cmd_generate(args: argparse.Namespace) -> dict:
         'total_worked_seconds': round(total_worked, 1),
         'total_wall_seconds': round(total_wall, 1),
         'total_idle_seconds': round(total_idle, 1),
-        'total_tokens': total_tokens,
+        'total_tokens': total_tokens_out,
         'total_billing_weighted': total_billing_weighted,
         'total_worked_formatted': format_duration(total_worked),
         'total_wall_formatted': format_duration(total_wall),
         'total_idle_formatted': format_duration(total_idle),
-        'total_tokens_formatted': format_tokens_short(total_tokens),
+        'total_tokens_formatted': total_tokens_formatted,
     }
 
 
@@ -3912,6 +4052,10 @@ def cmd_enrich(args: argparse.Namespace) -> dict:
             data['enrichment_gap_reason'] = ENRICH_SKIP_REASON_NO_SESSION_TRANSCRIPT_LESS
             data['enrichment_gap_population'] = ENRICH_SKIP_POPULATION_UNENRICHED
             data['updated'] = now_utc_iso()
+            # No transcript was walked, so no phase carries a measurement from
+            # this run: stamp `unknown` on every row lacking a measured figure
+            # rather than leaving the absence to render as `-`.
+            _stamp_unknown_totals(data.setdefault('phases', {}))
             write_metrics(plan_id, data)
             return {
                 'status': 'success',
@@ -3943,7 +4087,12 @@ def cmd_enrich(args: argparse.Namespace) -> dict:
 
     if per_phase is None:
         # no-op (no transcript on this target) or the op could not run — degrade
-        # gracefully: nothing to enrich.
+        # gracefully: nothing to enrich. Rows without a measured figure state
+        # their absence as `unknown` rather than rendering `-`.
+        data = read_metrics_raw(plan_id)
+        data['updated'] = now_utc_iso()
+        _stamp_unknown_totals(data.setdefault('phases', {}))
+        write_metrics(plan_id, data)
         return {
             'status': 'success',
             'plan_id': plan_id,
@@ -4041,7 +4190,16 @@ def cmd_enrich(args: argparse.Namespace) -> dict:
         # never select this branch.
         inline_main_context = _inline_main_context_sum(phase_row)
         already_inline = phase_row.get('total_tokens_population') == POPULATION_INLINE
-        if already_inline or not phase_row.get('total_tokens'):
+        # An `unknown` stamp is stated absence, not a measurement: it selects
+        # the inline-only signature exactly as a missing value does, so a
+        # measurement taken since overwrites the stamp rather than reading it
+        # as a dispatched total and mis-stamping the row `mixed`. A measured
+        # zero stays a measurement (explicit-wins) and keeps the other branch.
+        # See `_stamp_unknown_totals` (a later close or enrich that measures
+        # the phase overwrites the stamp) and the `_reconcile_accumulator_into_phase`
+        # precedent, which backfills `unknown`-stamped rows the same way.
+        has_measured_total = isinstance(_coerce_numeric(phase_row.get('total_tokens')), (int, float))
+        if already_inline or not has_measured_total:
             # Inline-only signature: no dispatched total exists to preserve.
             if inline_main_context:
                 phase_row['total_tokens'] = inline_main_context

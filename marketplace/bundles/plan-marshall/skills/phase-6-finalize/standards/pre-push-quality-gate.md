@@ -57,6 +57,44 @@ The module-tests gate consults the callable scope-resolution seam — the `resol
 
 This gate sorts LAST in the settle band (`order: 10`, immediately before `default:push` at `order: 11`), after every code-mutating settle step (`finalize-step-simplify`, `finalize-step-security-audit`) and after the derived-state refresh (`architecture-refresh`). That position IS the single-pass HEAD anchor: the `head_at_completion` this step persists on its Branch A `mark-step-done` call names the exact tree the push barrier ships, because no settle step ordered after it can advance HEAD again. Every `mutates_source: true` step ordered below it commits before the ledger row its own build calls write, so those commits are covered by this run and produce no re-stale — the intra-pass re-arm loop (an early gate certifying one SHA while a later simplify advanced HEAD past it) is structurally impossible rather than merely unlikely. The `default:push` freshness precondition (`pre-commit-verify-freshness`) verifies the anchor before shipping: it permits on `kind=build` ledger rows carrying the current worktree SHA, and for the settled tree those are the rows this gate's own just-completed builds wrote — one row per build call, credited together as a union rather than requiring any single row to cover the change. The rule that decides when several rows cover a change is owned by `marketplace/bundles/plan-marshall/skills/manage-tasks/SKILL.md` § "Pre-Commit Verify Freshness"; it is not restated here.
 
+## Pushed-head gate refusal
+
+The gate refuses a push whose head outruns the last gate stamp. Immediately
+before the per-bundle loop, resolve the current worktree HEAD
+(`git -C {worktree_path} rev-parse HEAD` — worktree-scoped, never bare
+`git rev-parse HEAD`: after finalize returns to the main checkout a bare
+read reports the main checkout while the stamp belongs to the worktree)
+and compare it against the last gate stamp the ledger records for this
+worktree (the newest `kind=build` row whose `worktree_sha` the freshness
+crosscheck admitted, read through `manage-tasks pre-commit-verify-freshness`):
+
+- **Head matches the stamp** — proceed into the arms below.
+- **Head outruns the stamp** — STOP the step and refuse the push. The tree
+  advanced past the last certified state, so no arm below may certify the new
+  head on the old stamp's evidence. Re-run the gate against the new HEAD
+  instead; a push on drifted evidence is never permitted.
+
+For coverage-mandating plans, a fresh exit under
+`required_coverage_unknown` is likewise refused. When the freshness
+crosscheck reports `scope_reason: required_coverage_unknown` — the required
+coverage could not be derived, so nothing is known about what the change
+needs — the gate MUST NOT exit fresh. An underivable requirement is the
+absence of evidence, never evidence of coverage; a fresh verdict on it would
+be the confident-empty signal this gate exists to refuse.
+
+Root-level test guards run unconditionally whenever the plan adds or edits
+test files. A scoped `module-tests` run never covers `test/*.py` at the
+repository root (no bundle owns that scope), so a footprint touching
+`test/*.py` always escalates the module-tests arm to the whole-tree branch
+regardless of what the scoped derivation would otherwise select. The
+population the scoped runs did not cover is stated in the run's log line.
+
+`head_at_completion` is captured at step start as well as at step end, both
+via `git -C {worktree_path} rev-parse HEAD`. When
+HEAD advances between the start capture and the pre-completion recording,
+the recorded SHA is re-compared before `mark-step-done` and the gate re-runs
+against the newer HEAD on mismatch rather than certifying a superseded tree.
+
 ## Coverage parity with CI, freshness, and honest coverage
 
 This gate is a proxy for whatever the project's CI runs as its full `verify`, and is only useful while

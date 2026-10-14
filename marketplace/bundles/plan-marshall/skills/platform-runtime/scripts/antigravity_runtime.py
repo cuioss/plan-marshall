@@ -25,12 +25,14 @@ import runtime_info
 from runtime_base import (
     PERMISSION_FIX_OPERATIONS,
     Runtime,
+    _unmapped_agent_tools,
     ensure_steps_without_skill_grants,
     extract_project_steps,
     toon_error,
     toon_noop,
     toon_success,
 )
+from toon_parser import BlockScalar
 
 #: Default executor commands to guarantee in the Antigravity allow list.
 ANTIGRAVITY_DEFAULT_PERMISSIONS: tuple[str, ...] = (
@@ -40,6 +42,145 @@ ANTIGRAVITY_DEFAULT_PERMISSIONS: tuple[str, ...] = (
 )
 
 DEFAULT_ANTIGRAVITY_COMMANDS = ANTIGRAVITY_DEFAULT_PERMISSIONS
+
+#: Version of the standing-rules bridge format written by project setup.
+#: Bumped only when the bridge file layout changes; drift detection compares
+#: the marker embedded in the bridge file against this constant.
+STANDING_RULES_BRIDGE_VERSION = 1
+
+#: Baseline source the bridge copies from. CLAUDE.md is the drift-detection
+#: baseline — the bridge is current only while it matches this source.
+STANDING_RULES_BASELINE = 'CLAUDE.md'
+
+#: Marker embedded in every bridge file so drift detection can tell a current
+#: bridge from a stale or foreign one without parsing rule prose.
+STANDING_RULES_BRIDGE_MARKER = f'bridge-version: {STANDING_RULES_BRIDGE_VERSION}'
+
+
+def _bridge_rules_path(project_dir: Path) -> Path:
+    """Return the Antigravity workspace rules-bridge file path."""
+    return project_dir / '.agents' / 'rules' / 'plan-marshall-target-rules.md'
+
+
+def _marshal_target_present(project_dir: Path, target: str) -> bool:
+    """True when marshal.json already carries the target (benign no-write).
+
+    A ``False`` seed on a file that already carries the target is the idle
+    re-setup path, not a failure. Every other ``False`` — corrupt content,
+    a non-dict document, an unwritable file — leaves the target unseeded.
+    """
+    try:
+        data = json.loads((project_dir / '.plan' / 'marshal.json').read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return False
+    return isinstance(data, dict) and isinstance(data.get('runtime'), dict) and data['runtime'].get('target') == target
+
+
+def _seed_marshal_runtime_target(project_dir: Path, target: str) -> bool:
+    """Seed ``runtime.target`` into ``.plan/marshal.json``, preserving other keys.
+
+    Returns True when the file was written, False when it already carried the
+    target or could not be written. Never raises — setup treats a seeding
+    failure as an unwritten bridge, not as a setup failure.
+    """
+    marshal_file = project_dir / '.plan' / 'marshal.json'
+    try:
+        if marshal_file.is_file():
+            data = json.loads(marshal_file.read_text(encoding='utf-8'))
+            if not isinstance(data, dict):
+                return False
+            runtime = data.get('runtime')
+            if isinstance(runtime, dict) and runtime.get('target') == target:
+                return False
+            if not isinstance(runtime, dict):
+                if runtime is None:
+                    data['runtime'] = {'target': target}
+                else:
+                    # Present but malformed: refuse without writing (fail-closed).
+                    # The caller reports io_error; the corrupt value is never destroyed.
+                    return False
+            else:
+                runtime['target'] = target
+            marshal_file.write_text(json.dumps(data, indent=2) + '\n', encoding='utf-8')
+            return True
+        marshal_file.parent.mkdir(parents=True, exist_ok=True)
+        payload = {
+            'runtime': {'target': target},
+            'standing_rules_bridge': {
+                'version': STANDING_RULES_BRIDGE_VERSION,
+                'source': STANDING_RULES_BASELINE,
+            },
+        }
+        marshal_file.write_text(json.dumps(payload, indent=2) + '\n', encoding='utf-8')
+        return True
+    except (OSError, ValueError):
+        return False
+
+
+def _write_rules_bridge(project_dir: Path) -> bool:
+    """Copy the bridged standing-rules header into the harness grant surface.
+
+    The bridge carries the version marker plus a pointer at the CLAUDE.md
+    baseline rather than a full rule copy — the marker is what drift detection
+    reads, so a full prose duplicate would only create a second source of
+    truth. Returns True when the file was written.
+    """
+    bridge = _bridge_rules_path(project_dir)
+    body = (
+        f'# Plan Marshall target rules (Antigravity bridge {STANDING_RULES_BRIDGE_MARKER})\n\n'
+        f'Standing rules bridged from {STANDING_RULES_BASELINE} at project setup. '
+        'This file is a bridge, not a fork: the baseline stays authoritative, '
+        'and re-setup flags drift when this marker no longer matches the source.\n'
+    )
+    try:
+        if bridge.is_file() and STANDING_RULES_BRIDGE_MARKER in bridge.read_text(encoding='utf-8'):
+            try:
+                baseline = project_dir / STANDING_RULES_BASELINE
+                baseline_newer = baseline.is_file() and baseline.stat().st_mtime > bridge.stat().st_mtime
+            except OSError:
+                return False
+            if not baseline_newer:
+                # Bridge is current (baseline older, same age, or absent):
+                # nothing to re-affirm.
+                return False
+            # Baseline newer than the bridge: fall through to the rewrite
+            # below, which re-affirms the bridge and clears the
+            # baseline_newer drift verdict on re-setup. The bridge carries
+            # only the version marker plus a baseline pointer (no copied
+            # prose), so re-affirmation is a rewrite, not a content merge.
+        bridge.parent.mkdir(parents=True, exist_ok=True)
+        bridge.write_text(body, encoding='utf-8')
+        return True
+    except OSError:
+        return False
+
+
+def standing_rules_drift_status(project_dir: str) -> dict[str, Any]:
+    """Detect drift of the Antigravity standing-rules bridge against its baseline.
+
+    Returns a small dict with ``drift`` (bool), ``needs_bridge`` (True when no
+    bridge file exists yet), and ``reason`` naming the verdict. A missing
+    baseline never reports drift — there is nothing to compare against.
+    """
+    proj = Path(project_dir).resolve()
+    baseline = proj / STANDING_RULES_BASELINE
+    bridge = _bridge_rules_path(proj)
+    if not baseline.is_file():
+        return {'drift': False, 'needs_bridge': not bridge.is_file(), 'reason': 'baseline_missing'}
+    if not bridge.is_file():
+        return {'drift': False, 'needs_bridge': True, 'reason': 'bridge_missing'}
+    try:
+        text = bridge.read_text(encoding='utf-8')
+    except OSError:
+        return {'drift': True, 'needs_bridge': False, 'reason': 'bridge_unreadable'}
+    if STANDING_RULES_BRIDGE_MARKER not in text:
+        return {'drift': True, 'needs_bridge': False, 'reason': 'marker_mismatch'}
+    try:
+        if baseline.stat().st_mtime > bridge.stat().st_mtime:
+            return {'drift': True, 'needs_bridge': False, 'reason': 'baseline_newer'}
+    except OSError:
+        return {'drift': True, 'needs_bridge': False, 'reason': 'stat_failed'}
+    return {'drift': False, 'needs_bridge': False, 'reason': 'in_sync'}
 
 
 def _gemini_config_dir() -> Path:
@@ -155,7 +296,9 @@ class AntigravityRuntime(Runtime):
         """One-time project setup for Google Antigravity.
 
         Creates ``.plan/``, seeds ``marshal.json`` with ``runtime.target``,
-        and initializes project settings in Antigravity's project registry.
+        bridges the standing rules into the harness grant surface, and
+        initializes project settings in Antigravity's project registry.
+        Re-setup reports bridge drift against the CLAUDE.md baseline.
         """
         proj = Path(project_dir).resolve()
         plan_dir = proj / '.plan'
@@ -176,12 +319,25 @@ class AntigravityRuntime(Runtime):
         settings = self.permission_load_settings(settings_path)
         self.permission_ensure_defaults(settings, settings_path, dry_run=False)
 
+        marshal_written = _seed_marshal_runtime_target(proj, target)
+        if not marshal_written and not _marshal_target_present(proj, target):
+            return toon_error(
+                'project initial-setup',
+                'io_error',
+                'Failed to seed runtime.target into .plan/marshal.json: file is corrupt or unwritable',
+            )
+        bridge_written = _write_rules_bridge(proj)
+        drift = standing_rules_drift_status(str(proj))
+
         return toon_success(
             'project initial-setup',
             {
                 'target': target,
                 'project_dir': str(proj),
-                'marshal_written': False,
+                'marshal_written': marshal_written,
+                'bridge_written': bridge_written,
+                'bridge_drift': drift['drift'],
+                'bridge_reason': drift['reason'],
                 'settings_path': settings_path,
                 'hook_installed': False,
                 'hook_skip_reason': 'Antigravity runs without PreToolUse lifecycle hooks',
@@ -815,12 +971,55 @@ class AntigravityRuntime(Runtime):
         prompt_file: str | None = None,
         context: dict[str, Any] | None = None,
     ) -> str:
-        """Dispatch subagent using Antigravity's invoke_subagent tool."""
+        """Dispatch subagent using Antigravity's invoke_subagent tool.
+
+        Keeps the ``invoke_subagent`` mapping and conforms usage propagation
+        to the Runtime ABC unknown rule: no dispatch has happened yet at this
+        seam — the payload carries invocation parameters, not a run — so
+        ``usage`` reports ``unknown`` rather than a measured zero.
+
+        Verify-first clause 1: the dispatch fires only when the
+        ``invoke_subagent`` tool is available in this envelope. A caller that
+        knows the tool is absent passes ``spawning_tool_available: False``
+        inside *context*; the explicit ``False`` declines — the decline takes
+        the explicit logged inline branch (a ``no-op`` naming the inline
+        fallback) instead of a faux success the harness cannot honour. The
+        flag defaults explicitly to available: an absent flag (or an absent
+        *context*) reads as ``True``. The flag is consumed here and never
+        merged into the prompt.
+
+        Verify-first clause 2: the requested agent's frontmatter tools must
+        map onto the Antigravity tool set
+        (``targets/antigravity/mapping.json``). An agent requiring a tool
+        Antigravity has no equivalent for declines with the same
+        inline-branch ``no-op``. When the agent file or the mapping is
+        unreadable the check is vacuous and the dispatch proceeds — an
+        unmeasured source is never read as a refusal.
+        """
+        spawning_tool_available = (
+            True if not isinstance(context, dict) else context.get('spawning_tool_available', True)
+        )
+        if spawning_tool_available is False:
+            return toon_noop(
+                'subagent dispatch',
+                "Antigravity 'invoke_subagent' tool is not available in this envelope — "
+                'take the explicit logged inline branch instead of dispatching',
+                'Inline the agent logic in-turn and propagate usage as unknown',
+            )
+
         if prompt_file is not None and not Path(prompt_file).exists():
             return toon_error(
                 'subagent dispatch',
                 'prompt_not_found',
                 f'prompt file not found: {prompt_file}',
+            )
+
+        unmapped = _unmapped_agent_tools(agent, 'antigravity')
+        if unmapped:
+            return toon_noop(
+                'subagent dispatch',
+                f'Agent {agent!r} requires unmapped tools: {", ".join(unmapped)}',
+                'Remove unsupported tools from agent frontmatter or inline the agent logic',
             )
 
         prompt_body = f'Run {agent}'
@@ -836,16 +1035,23 @@ class AntigravityRuntime(Runtime):
 
         if context:
             for key, value in context.items():
+                if key == 'spawning_tool_available':
+                    continue
                 prompt_body = prompt_body.replace(f'{{{key}}}', str(value))
 
+        # The prompt file is opaque multi-line text: it embeds example blocks
+        # (e.g. ``status: success | error ...``) that would parse as envelope keys
+        # at column zero. Mark it so it crosses the TOON boundary inert — the
+        # ``_chat_signal_reducer`` BlockScalar precedent.
         return toon_success(
             'subagent dispatch',
             {
                 'platform': 'antigravity',
+                'usage': 'unknown',
                 'invocation': {
                     'tool': 'invoke_subagent',
                     'description': f'Run {agent}',
-                    'prompt': prompt_body,
+                    'prompt': BlockScalar(prompt_body),
                     'subagent_type': agent,
                 },
             },

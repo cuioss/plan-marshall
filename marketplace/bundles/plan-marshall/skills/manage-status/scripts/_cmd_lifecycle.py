@@ -5,6 +5,7 @@ Lifecycle command handlers for manage-status: create, transition, archive, delet
 """
 
 import argparse
+import json
 import os
 import shutil
 import subprocess
@@ -52,6 +53,17 @@ from file_ops import get_plan_dir
 # out of this set silently degrades the boundary guard from fail-closed to fail-open —
 # ``verify_blocks_transition`` would return False for it, so the transition would
 # proceed and the CLI wrapper would exit 0 on a refusal the guard actually raised.
+#
+# ``phase_end_markers_missing`` and ``execute_commits_unrecorded`` are a second PAIR
+# over a different question — whether the 5-execute deliverable commits reached the
+# change-ledger (both recorded by :func:`_phase_end_marker_refusal`). The split is
+# load-bearing for the same reason: ``missing`` means the marker store could not be
+# read at all (nothing enumerated, so no commit list is published), while
+# ``unrecorded`` means both sides were read and named branch commits carry no
+# ``kind=change`` row (enumerated in ``unrecorded_commits``). Reporting one code for
+# both would send the reader to the wrong remedy — repairing ledger readability vs
+# running the Step 10a settlement bookkeeping — and dropping either from this set
+# fails the guard open for it.
 VERIFY_REFUSAL_ERRORS = frozenset(
     {
         'worktree_unresolved',
@@ -60,8 +72,33 @@ VERIFY_REFUSAL_ERRORS = frozenset(
         'worktree_dirty_at_boundary',
         'worktree_unreadable_at_boundary',
         'main_capture_read_the_worktree',
+        'phase_end_markers_missing',
+        'execute_commits_unrecorded',
+        'branch_range_unresolvable',
     }
 )
+
+#: Refusal code when the 5-execute end-marker store (the change-ledger's
+#: ``kind=change`` rows) could not be read while branch commits exist. Fail-closed:
+#: an unreadable store cannot prove every deliverable commit was recorded.
+#: The payload carries NO ``unrecorded_commits`` key — nothing was enumerated from
+#: the store side, so an empty list there would be a measured-zero claim about rows
+#: nobody read, byte-identical to full coverage.
+PHASE_END_MARKERS_MISSING_ERROR = 'phase_end_markers_missing'
+
+#: Refusal code when the marker store WAS read and named worktree-branch commits
+#: carry no ``kind=change`` row. The payload enumerates them in
+#: ``unrecorded_commits`` alongside ``recorded_count`` / ``branch_commit_count``.
+EXECUTE_COMMITS_UNRECORDED_ERROR = 'execute_commits_unrecorded'
+
+#: Refusal code when the worktree-branch commit range itself could not be
+#: established (no base ref resolves, ``git merge-base`` / ``git rev-list``
+#: failed). Fail-closed: an unestablished range cannot prove every deliverable
+#: commit was recorded, so entry without the comparison is the silent skip.
+#: The payload carries NO ``unrecorded_commits`` key — nothing was enumerated
+#: from the git side, so an empty list there would be a measured-zero claim
+#: about a range nobody computed, byte-identical to full coverage.
+BRANCH_RANGE_UNRESOLVABLE_ERROR = 'branch_range_unresolvable'
 
 # Phases whose COMPLETION arms the finalize blocking-findings state assertion
 # (:func:`_finalize_findings_refusal`).
@@ -362,6 +399,258 @@ def _clean_tree_refusal(plan_id: str, status: dict[str, Any]) -> dict[str, Any] 
             'commit is owned by phase-5-execute Step 10a — run the boundary '
             'settlement commit, then retry the transition.'
         ),
+    }
+
+
+def _branch_commit_shas(worktree_path: str, base_branch: str) -> list[str] | None:
+    """Return the worktree-branch commits since the branch diverged from base.
+
+    Resolves the divergence point as ``git merge-base HEAD {ref}`` trying
+    the local ``{base_branch}`` first and ``origin/{base_branch}`` second, then
+    lists ``git rev-list {merge_base}..HEAD`` (oldest first). Returns ``None``
+    when the range cannot be established (no base ref, git failure) — the
+    caller treats that as a fail-closed refusal (``branch_range_unresolvable``),
+    never as unevaluable pass-through: an unestablished range is not evidence
+    of recorded work.
+    """
+    merge_base: str | None = None
+    # Local base first: it reflects the landed tree including any rebase the
+    # run performed, while origin/{base} may be stale (no fetch since) and
+    # would then push the divergence point older than the true fork — pulling
+    # already-landed main commits into the range and refusing a fully-recorded
+    # transition. The remote ref stays the fallback for a missing local base.
+    for ref in (base_branch, f'origin/{base_branch}'):
+        proc = subprocess.run(
+            ['git', '-C', worktree_path, 'merge-base', 'HEAD', ref],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if proc.returncode == 0 and proc.stdout.strip():
+            merge_base = proc.stdout.strip().splitlines()[0].strip()
+            break
+    if merge_base is None:
+        return None
+    proc = subprocess.run(
+        ['git', '-C', worktree_path, 'rev-list', '--reverse', f'{merge_base}..HEAD'],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if proc.returncode != 0:
+        return None
+    return [line.strip() for line in proc.stdout.splitlines() if line.strip()]
+
+
+def _sha_is_recorded(branch_sha: str, recorded: set[str]) -> bool:
+    """Return True when a branch SHA has a matching ledger row.
+
+    ``git rev-list`` always yields full 40-character SHAs while a
+    ``kind=change`` row may carry an abbreviated SHA written by an older
+    Step 10a settlement (``git rev-parse --short`` or a short
+    ``--pretty`` form). Exact set membership then reports the commit as
+    unrecorded and the 5-execute boundary refuses with
+    ``execute_commits_unrecorded`` for work that was recorded. A ledger
+    value matches when it equals the branch SHA or when one is a prefix
+    of the other — the abbreviated form is always a leading prefix of
+    the full form. Prefixes shorter than 7 characters never match: git
+    itself refuses to abbreviate below that floor, so a shorter match
+    would be a collision, not evidence of recording.
+    """
+    normalized_branch = branch_sha.strip()
+    if normalized_branch in recorded:
+        return True
+    for candidate in recorded:
+        normalized_candidate = candidate.strip()
+        if len(normalized_branch) < 7 or len(normalized_candidate) < 7:
+            continue
+        if normalized_branch.startswith(normalized_candidate):
+            return True
+        if normalized_candidate.startswith(normalized_branch):
+            return True
+    return False
+
+
+def _recorded_change_shas() -> set[str] | None:
+    """Return every ``commit_sha`` carried by a ``kind=change`` ledger row.
+
+    Reads through ``_ledger_core.read_entries`` — never a re-implemented JSONL
+    read — so there is one byte-identical reader, not parallel copies. Returns
+    ``None`` when the reader cannot be imported or the ledger cannot be read:
+    an unreadable store is unevaluable, never an empty store.
+
+    An empty set is a MEASURED zero — the store was read and holds no
+    ``kind=change`` row — and the caller reports it as wholly-missing
+    markers. It is never ``None``: ``None`` means the store could not be
+    read at all, so the two must not be collapsed.
+
+    Values are stored verbatim (full or abbreviated) — normalization happens
+    at comparison time in :func:`_sha_is_recorded`, so rows written before
+    the full-SHA writer contract still compare equal.
+    """
+    try:
+        from _ledger_core import read_entries
+    except ImportError:
+        return None
+    try:
+        entries = read_entries()
+    except Exception:
+        return None
+    if not isinstance(entries, list):
+        return None
+    return {
+        str(entry['commit_sha']).strip()
+        for entry in entries
+        if isinstance(entry, dict) and entry.get('kind') == 'change' and entry.get('commit_sha')
+    }
+
+
+def _phase_end_marker_refusal(plan_id: str, status: dict[str, Any]) -> dict[str, Any] | None:
+    """End-marker post-condition for the 5-execute boundary.
+
+    Every per-deliverable commit belongs to the phase-5-execute envelope's
+    Step 10a chain-tail, which appends one ``kind=change`` ledger row per
+    commit. A worktree-branch commit with no such row is unrecorded execute
+    work reaching the finalize boundary — the silent skip this guard refuses.
+    Returns ``None`` when the transition may proceed.
+
+    Three structurally different outcomes refuse or pass with their OWN shape:
+
+    - ``phase_end_markers_missing`` — branch commits exist but the marker store
+      could not be read. Fail-closed: an unreadable store cannot prove full
+      recording. No ``unrecorded_commits`` key is published, because nothing
+      was enumerated from the store side.
+    - ``branch_range_unresolvable`` — the worktree-branch commit range itself
+      could not be established (no base ref resolves, ``git merge-base`` /
+      ``git rev-list`` failed). Fail-closed: without the range there is no
+      comparison to run, so entry without it is the silent skip. No
+      ``unrecorded_commits`` key is published, because nothing was enumerated
+      from the git side.
+    - ``execute_commits_unrecorded`` — both sides were read and named branch
+      commits carry no row, enumerated in ``unrecorded_commits``. When the
+      store holds zero rows at all the markers are wholly missing (the Step 10a
+      bookkeeping never ran); when it holds some the recording is partial.
+      ``recorded_count`` names which of the two the reader is looking at.
+    - ``None`` (pass) — no worktree in play, no persisted path, an empty
+      range, or full coverage. Each pass-through is a distinct unevaluable
+      state, never a clean verdict over an examined store. An unreadable
+      ``references.json`` is NOT in this set: without a divergence base no
+      range is enumerable, so it refuses under
+      ``branch_range_unresolvable`` above. An unestablishable commit range
+      is likewise excluded: it refuses under
+      ``branch_range_unresolvable`` above.
+
+    All three refusal codes are members of :data:`VERIFY_REFUSAL_ERRORS`, so all
+    block the transition and both drive the CLI exit-1 wrapper.
+    """
+    metadata = normalize_metadata(status)
+    if not metadata.get('use_worktree'):
+        return None
+    worktree_path = metadata.get('worktree_path')
+    if not worktree_path:
+        # Resolvability is asserted by the strict-verify guard that runs
+        # before this gate (``worktree_unresolved``); an empty path here
+        # means the verify guard already owns the refusal path.
+        return None
+
+    try:
+        references = json.loads((get_plan_dir(plan_id) / 'references.json').read_text(encoding='utf-8'))
+        base_branch = references.get('base_branch') or 'main'
+    except Exception:
+        # Unreadable or malformed references: the divergence base cannot be
+        # established, so no range is enumerable. Fail closed under
+        # ``branch_range_unresolvable`` — passing through would let unrecorded
+        # execute work reach finalize on a range nobody computed.
+        return {
+            'status': 'error',
+            'plan_id': plan_id,
+            'error': BRANCH_RANGE_UNRESOLVABLE_ERROR,
+            'phase': '5-execute',
+            'reason': ('references.json could not be read, so the divergence base cannot be established'),
+            'message': (
+                'Cannot prove 5-execute deliverable commits were recorded: '
+                'references.json could not be read, so the worktree-branch '
+                'commit range cannot be established. Repair the plan record, '
+                'then retry the transition.'
+            ),
+        }
+    if not isinstance(base_branch, str) or not base_branch.strip():
+        return {
+            'status': 'error',
+            'plan_id': plan_id,
+            'error': BRANCH_RANGE_UNRESOLVABLE_ERROR,
+            'phase': '5-execute',
+            'reason': ('references.json carries no usable base_branch, so the divergence base cannot be established'),
+            'message': (
+                'Cannot prove 5-execute deliverable commits were recorded: '
+                'references.json carries no usable base_branch, so the '
+                'worktree-branch commit range cannot be established. Repair '
+                'the plan record, then retry the transition.'
+            ),
+        }
+    base_branch = base_branch.strip()
+
+    branch_shas = _branch_commit_shas(worktree_path, base_branch)
+    if branch_shas is None:
+        return {
+            'status': 'error',
+            'plan_id': plan_id,
+            'error': BRANCH_RANGE_UNRESOLVABLE_ERROR,
+            'phase': '5-execute',
+            'base_branch': base_branch,
+            'reason': ('the worktree-branch commit range could not be established, so recording cannot be proven'),
+            'message': (
+                'Cannot prove 5-execute deliverable commits were recorded: the '
+                f'worktree-branch commit range since diverging from {base_branch} '
+                'could not be established (no base ref resolves, git merge-base / '
+                'rev-list failed). Repair the base ref and worktree git state, '
+                'then retry the transition.'
+            ),
+        }
+    if not branch_shas:
+        return None
+
+    recorded = _recorded_change_shas()
+    if recorded is None:
+        return {
+            'status': 'error',
+            'plan_id': plan_id,
+            'error': PHASE_END_MARKERS_MISSING_ERROR,
+            'phase': '5-execute',
+            'reason': 'the change-ledger marker store could not be read, so recording cannot be proven',
+            'message': (
+                'Cannot prove 5-execute deliverable commits were recorded: the change-ledger '
+                'marker store could not be read. Repair ledger readability, then retry the transition.'
+            ),
+        }
+
+    unrecorded = [sha for sha in branch_shas if not _sha_is_recorded(sha, recorded)]
+    if not unrecorded:
+        return None
+    if not recorded:
+        error = PHASE_END_MARKERS_MISSING_ERROR
+        message = (
+            f'Worktree branch holds {len(branch_shas)} commit(s) since diverging from {base_branch} '
+            'and the change-ledger holds zero kind=change rows: no 5-execute deliverable commit was '
+            'recorded. Run the phase-5-execute Step 10a settlement bookkeeping, then retry the transition.'
+        )
+    else:
+        error = EXECUTE_COMMITS_UNRECORDED_ERROR
+        message = (
+            f'{len(unrecorded)} of {len(branch_shas)} worktree-branch commit(s) since diverging from '
+            f'{base_branch} carry no kind=change ledger row. Run the phase-5-execute Step 10a '
+            'settlement bookkeeping for the unrecorded commits, then retry the transition.'
+        )
+    return {
+        'status': 'error',
+        'plan_id': plan_id,
+        'error': error,
+        'phase': '5-execute',
+        'unrecorded_commits': unrecorded,
+        'unrecorded_count': len(unrecorded),
+        'branch_commit_count': len(branch_shas),
+        'recorded_count': len(recorded),
+        'message': message,
     }
 
 
@@ -913,6 +1202,16 @@ def cmd_transition(args: argparse.Namespace) -> dict[str, Any] | None:
         clean_tree_refusal = _clean_tree_refusal(args.plan_id, status)
         if clean_tree_refusal is not None:
             return clean_tree_refusal
+
+        # End-marker post-condition (5-execute only): after the tree is proven
+        # clean, every worktree-branch commit must carry a kind=change ledger
+        # row — committed-but-unrecorded deliverable work is the silent skip
+        # the clean-tree guard cannot see (it only reads uncommitted state).
+        # On refusal, skip write_status like every other boundary refusal.
+        if args.completed == '5-execute':
+            end_marker_refusal = _phase_end_marker_refusal(args.plan_id, status)
+            if end_marker_refusal is not None:
+                return end_marker_refusal
 
     # Mark completed phase as done
     phases[completed_idx]['status'] = PHASE_STATUS_DONE

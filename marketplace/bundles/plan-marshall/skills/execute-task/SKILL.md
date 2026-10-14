@@ -27,7 +27,7 @@ Skill: plan-marshall:persona-plan-marshall-agent
 
 **Prohibited actions:**
 - Never target file paths outside the active git worktree. The authoritative source for the worktree root is `manage-status get-worktree-path --plan-id {plan_id}` (resolved internally from the **Input Contract** below); every Edit/Write/Read tool call during task execution MUST resolve against the returned path.
-- Never run git as a `cd {worktree_path} && git ...` compound. All git commands during task execution MUST use the `git -C {resolved_worktree_path} <subcommand>` form, where `{resolved_worktree_path}` is the value returned by `manage-status get-worktree-path --plan-id {plan_id}`.
+- Never run git as a `cd {worktree_path} && git ...` compound (Forbidden anti-pattern — quoted to forbid it). All git commands during task execution MUST use the `git -C {resolved_worktree_path} <subcommand>` form, where `{resolved_worktree_path}` is the value returned by `manage-status get-worktree-path --plan-id {plan_id}`.
 - Never combine Bash commands with `&&`, `;`, `&`, or newlines in a single Bash tool call. Each Bash tool call MUST contain exactly ONE command. The compound form trips the host platform's permission UI and produces silent swallowing of intermediate exit codes — both are load-bearing failure modes during task execution.
 - Never run polling loops (`for`/`while`/`until` loops, `$()` substitution, subshells, heredocs with `#` lines) inside a Bash tool call. Poll conditions belong in a background-completion watch, or are eliminated by running commands synchronously with an explicit timeout. Polling loops trip the host platform's security heuristics and are a structural signal that the verification step is wrong.
 - Never use background-wait patterns (`command &`, then `wait` or `sleep` loops) to track a running step. Run verification commands synchronously via Bash with `timeout` set high enough; use `run_in_background: true` only when the task description explicitly requires a background process AND the step does not need to read the result.
@@ -69,6 +69,10 @@ Every invocation of this skill MUST provide the following inputs:
 Callers (the `phase-5-execute` envelope, itself dispatched as `execution-context-{level}` under the `phase-5-execute` role key, which then LOADS this skill in-context once per task — "dispatching this skill" here means in-context `Skill:` loading within that single envelope, never a per-task `Task:` subagent dispatch) MUST forward `plan_id` verbatim — no absolute-path forwarding is required. This skill runs as a leaf and issues no `Task:` subagent dispatches of its own; the path-free worktree binding is inherited via the pinned cwd (ADR-002), not echoed into any further dispatch.
 
 All profiles share the steps below. Profile-specific steps are documented in each profile section.
+
+### Step: Seam-Dispatch Branch (all profiles)
+
+Before any profile work, resolve the harness-native subagent seam live via `platform_runtime subagent dispatch --agent execution-context --context {"plan_id": "{plan_id}"}`. On `status: success`, the task runs dispatched through the returned `invocation.tool` (Claude `Task`, OpenCode `task` where available, Antigravity `invoke_subagent`); on `status: no-op`, the task runs inline in this envelope and the returned `reason` is logged at INFO — the inline branch is explicit and logged, never silent. Before running any verification command that could exceed the leaf ceiling, re-resolve it live via `architecture resolve` and hand back without starting the run when the live tier is `orchestrator` (stamped values are advisory only); usage propagates as `unknown` on every path where no dispatch happened.
 
 ### Step: Resolve Stale Targets
 

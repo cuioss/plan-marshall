@@ -152,6 +152,15 @@ The top-level `--plan-id` goes **before** the verb: it makes the returned `execu
 
 Never hard-code build commands (`./pw`, `./mvnw`, `mvn`, `npm`, `gradle`). The architecture API is the single source of truth.
 
+An unresolved architecture result means stop: when `architecture resolve`
+returns anything but a runnable `executable` — `status: error`, an unknown
+command or module, an unresolvable plugin prefix — fail closed before any
+build runs. Do not guess a command, substitute a neighbouring module's
+command, or proceed without a build. Report the unresolved result and halt
+the task. End-of-phase verification sweeps are the one exception: an
+unresolvable canonical there takes the documented unresolved-canonical skip,
+never a guessed build — see the phase-5-execute `canonical_verify` standard.
+
 **Focused mid-execute build cadence**: per-deliverable builds during phase-5-execute MUST be **focused**, not whole-tree. After each deliverable's chain tail, resolve the changed module via `architecture which-module --path P`, then run a module-scoped `compile` + `module-tests {module}` — never a whole-tree `verify` / all-`module-tests` / `quality-gate` repeated after every deliverable. The steps that run are the `phase-5-execute.per_deliverable_build` config list — a LIST of module-scoped `default:verify:{canonical}` step IDs (default `[default:verify:compile, default:verify:module-tests]`) reusing the canonical-verify step — and whether any build runs at all is settled by the `build-decision` verdict over the `build.map` globs and the live footprint — never inferred from a deliverable's file-role bucket. The whole-tree quality sweep runs **once** at end-of-phase / finalize, never repeated mid-execute. The canonical per-deliverable build step body and the classifier rules live in [phase-5-execute Step 10 (per-deliverable build step)](../../phase-5-execute/SKILL.md) — this guidance cross-references it rather than restating the step body.
 
 ## Bash Safety Rules
@@ -218,10 +227,10 @@ Use the tool's native cwd flag instead:
 | ruff | `ruff check <path>` (positional) |
 
 ```text
-# BAD — every one of these violates one-command-per-call (cd && X shape)
-Bash(command="cd /path/to/worktree && git log --oneline -5")
-Bash(command="cd /path/to/worktree && uv run ruff check src/")
-Bash(command="cd /path/to/worktree && pytest test/")
+# BAD Anti-pattern — Do NOT use any of these; every one violates one-command-per-call (cd && X shape, Forbidden)
+Bash(command="cd /path/to/worktree && git log --oneline -5")  # Forbidden anti-pattern — Do NOT use
+Bash(command="cd /path/to/worktree && uv run ruff check src/")  # Forbidden anti-pattern — Do NOT use
+Bash(command="cd /path/to/worktree && pytest test/")  # Forbidden anti-pattern — Do NOT use
 Bash(command="cd /path/to/repo && mvn verify")
 Bash(command="cd /path/to/project && npm test")
 

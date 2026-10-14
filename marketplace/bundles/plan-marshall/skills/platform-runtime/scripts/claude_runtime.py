@@ -51,10 +51,14 @@ from manage_terminal_title import _compose_body, compose, title_token_state  # n
 from marketplace_paths import resolve_home  # noqa: E402
 from runtime_base import (  # noqa: E402,F401
     Runtime,
+    _parse_agent_frontmatter,
     extract_project_steps,
     toon_error,
     toon_noop,
     toon_success,
+)
+from runtime_base import (  # noqa: E402
+    _find_agent_file as _find_agent_file_in_tree,
 )
 from toon_parser import parse_toon  # noqa: E402
 
@@ -2934,92 +2938,17 @@ def _extract_project_steps(marshal_config: dict[str, Any]) -> list[dict[str, str
 # ---------------------------------------------------------------------------
 # Subagent dispatch helper
 # ---------------------------------------------------------------------------
+#
+# Agent-file location and frontmatter parsing live in ``runtime_base`` — the
+# single home every target's verify-first clause (2) shares. The wrapper below
+# prepends the Claude deployed-bundle cache root so a deployed layout resolves
+# before the source tree; ``_claude_runtime_impl`` and the
+# ``claude_runtime._find_agent_file`` test patches keep resolving here.
 
 
 def _find_agent_file(agent_name: str) -> Path | None:
-    """Locate an agent markdown under the marketplace tree."""
-    # Look under the plugin cache and source tree in sequence.
-    search_roots: list[Path] = []
-    cache_base = _claude_bundle_cache_root()
-    if cache_base.exists():
-        search_roots.append(cache_base)
-    # Script-relative walk to find marketplace.
-    for ancestor in Path(__file__).resolve().parents:
-        candidate = ancestor / 'marketplace' / 'bundles'
-        if candidate.is_dir():
-            search_roots.append(candidate)
-            break
-        candidate2 = ancestor / 'bundles'
-        if candidate2.is_dir():
-            search_roots.append(candidate2)
-            break
-
-    for root in search_roots:
-        for match in root.glob(f'*/agents/{agent_name}.md'):
-            if match.is_file():
-                return match
-    return None
-
-
-def _parse_agent_frontmatter(agent_path: Path) -> dict[str, Any]:
-    """Extract YAML-like frontmatter from an agent markdown file.
-
-    Returns a dict with at minimum 'name', 'description', and 'tools' keys.
-    Tools are returned as a list of strings.
-    """
-    result: dict[str, Any] = {'name': '', 'description': '', 'tools': []}
-    try:
-        content = agent_path.read_text(encoding='utf-8')
-    except OSError:
-        return result
-
-    if not content.startswith('---'):
-        return result
-
-    end = content.find('---', 3)
-    if end == -1:
-        return result
-
-    frontmatter = content[3:end].strip()
-    for line in frontmatter.splitlines():
-        stripped = line.strip()
-        if not stripped or ':' not in stripped:
-            continue
-        key, _, value = stripped.partition(':')
-        key = key.strip()
-        value = value.strip()
-        if key == 'tools':
-            # May be inline: tools: [Read, Write] or listed below as - items.
-            if value.startswith('['):
-                try:
-                    parsed = json.loads(value)
-                    result['tools'] = [str(t) for t in parsed]
-                except (json.JSONDecodeError, ValueError):
-                    # Try stripping brackets and splitting by comma.
-                    inner = value.strip('[]')
-                    result['tools'] = [t.strip().strip('"\'') for t in inner.split(',') if t.strip()]
-            elif value:
-                result['tools'] = [value]
-        elif key in ('name', 'description'):
-            result[key] = value
-
-    # Handle tools as a YAML list (- item per line) if not yet found inline.
-    if not result['tools']:
-        in_tools = False
-        for line in frontmatter.splitlines():
-            stripped = line.strip()
-            if stripped.startswith('tools:'):
-                in_tools = True
-                inline = stripped[6:].strip()
-                if inline:
-                    in_tools = False
-            elif in_tools:
-                if stripped.startswith('- '):
-                    result['tools'].append(stripped[2:].strip())
-                else:
-                    in_tools = False
-
-    return result
+    """Locate an agent markdown under the plugin cache and source tree in sequence."""
+    return _find_agent_file_in_tree(agent_name, (_claude_bundle_cache_root(),))
 
 
 def _short_description_from_agent(description: str) -> str:

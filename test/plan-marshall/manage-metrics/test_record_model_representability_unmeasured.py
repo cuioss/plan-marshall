@@ -190,3 +190,58 @@ def test_verdict_is_published_under_the_end_time_predicate_key(plan_context):
     assert 'partial: false' not in scenario['metrics_toon']
     assert 'unrecorded_phases:' not in scenario['metrics_toon']
     assert 'Partial: unrecorded phases' not in scenario['metrics_md']
+
+
+# =============================================================================
+# Phase-level unknown: unmeasured phase figures state their absence
+# =============================================================================
+
+from conftest import load_script_module as _load_script_module  # noqa: E402
+
+_manage_metrics = _load_script_module(
+    'plan-marshall', 'manage-metrics', 'manage-metrics.py', 'manage_metrics_unknown', register=False
+)
+
+
+def test_unknown_literal_is_the_documented_word():
+    """The phase-level token is the literal ``unknown`` — never ``0``, never absent."""
+    assert _manage_metrics.UNKNOWN_TOKEN == 'unknown'
+
+
+def test_stamp_leaves_measured_figures_byte_identical():
+    """Rows carrying a numeric figure are untouched by the unknown stamp."""
+    phases = {
+        '1-init': {'total_tokens': 5000},
+        '2-refine': {'total_tokens': 0},
+    }
+    assert _manage_metrics._stamp_unknown_totals(phases) == []
+    assert phases == {'1-init': {'total_tokens': 5000}, '2-refine': {'total_tokens': 0}}
+
+
+def test_stamp_marks_absent_figures_unknown():
+    """Rows with no figure state their absence rather than rendering ``-``."""
+    phases = {'5-execute': {'start_time': '2026-01-01T00:00:00Z'}}
+    assert _manage_metrics._stamp_unknown_totals(phases) == ['5-execute']
+    assert phases['5-execute']['total_tokens'] == 'unknown'
+
+
+def test_stamp_marks_only_unmeasured_rows():
+    """A mixed state stamps exactly the rows without a measurement."""
+    phases = {
+        '1-init': {'total_tokens': 100},
+        '5-execute': {},
+        '6-finalize': {'total_tokens': 'unknown'},
+    }
+    stamped = _manage_metrics._stamp_unknown_totals(phases)
+    assert stamped == ['5-execute', '6-finalize']
+    assert phases['1-init'] == {'total_tokens': 100}
+    assert phases['5-execute']['total_tokens'] == 'unknown'
+    assert phases['6-finalize']['total_tokens'] == 'unknown'
+
+
+def test_is_unknown_names_only_the_literal():
+    """The predicate admits the literal and nothing else — not ``0``, not absent."""
+    assert _manage_metrics._is_unknown('unknown') is True
+    assert _manage_metrics._is_unknown(0) is False
+    assert _manage_metrics._is_unknown(None) is False
+    assert _manage_metrics._is_unknown('unmeasured') is False

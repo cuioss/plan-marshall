@@ -9,6 +9,7 @@ from datetime import UTC, datetime, timedelta
 
 from _manage_metrics_fixtures import (
     ns_generate,
+    ns_record_dispatch_boundary,
     ns_start_phase,
 )
 from _manage_metrics_record_dispatch_boundary_fixtures import (
@@ -223,4 +224,55 @@ def test_subsequent_invocations_append_rows_in_order_with_monotonic_timestamps(p
 
     # Timestamps strictly non-decreasing across appended rows
     timestamps = [row.split(',', 1)[0] for row in rows]
-    assert timestamps == sorted(timestamps), f'Timestamps not monotonic across appended rows: {timestamps}'
+    assert timestamps == sorted(timestamps), f'Timestamps not monotonic across rows: {timestamps}'
+
+
+# =============================================================================
+# Two-grain vocabulary: per-dispatch columns carry `unmeasured`, never `unknown`
+# =============================================================================
+#
+# The dispatch-boundary row and the phase figure state the same absence at
+# different grains: an omitted per-dispatch flag writes the literal
+# `unmeasured` into its column, while a phase figure with no measurement
+# reports `unknown`. The writer must never emit the other grain's token — an
+# `unknown` cell in a dispatch-boundary row would be unreadable as unmeasured
+# by the three-state reader, and a per-dispatch `unmeasured` must never leak
+# into a phase figure.
+
+
+def test_omitted_context_flags_write_unmeasured_not_unknown(plan_context):
+    """A dispatch that forwarded no context load writes four `unmeasured` cells."""
+    plan_dir = plan_context.plan_dir_for('disp-grain')
+    _seed_status_json(plan_dir)
+    result = cmd_record_dispatch_boundary(_ns('disp-grain', total_tokens=100))
+
+    assert result['unmeasured_context_load_columns'] == (
+        'input_tokens,output_tokens,cache_read_input_tokens,cache_creation_input_tokens'
+    )
+
+    rows = _data_rows(_boundary_path(plan_dir).read_text(encoding='utf-8'))
+    assert len(rows) == 1
+    assert rows[0].endswith(',unmeasured,unmeasured,unmeasured,unmeasured,')
+    assert 'unknown' not in rows[0]
+
+
+def test_measured_zero_context_flags_stay_zero_not_unknown(plan_context):
+    """A measured zero is still `0` on the row — the control for the test above."""
+    plan_dir = plan_context.plan_dir_for('disp-grain-zero')
+    _seed_status_json(plan_dir)
+    result = cmd_record_dispatch_boundary(
+        ns_record_dispatch_boundary(
+            'disp-grain-zero',
+            '5-execute',
+            'voluntary_checkpoint',
+            total_tokens=100,
+            input_tokens=0,
+            output_tokens=0,
+            cache_read_input_tokens=0,
+            cache_creation_input_tokens=0,
+        )
+    )
+
+    assert result['unmeasured_context_load_columns'] == ''
+    rows = _data_rows(_boundary_path(plan_dir).read_text(encoding='utf-8'))
+    assert rows[0].endswith(',0,0,0,0,')

@@ -33,6 +33,10 @@ Domain-triage extensions (`{bundle}:ext-triage-{domain}`) are loaded on demand i
 
 The FIX body below interpolates finding-derived text — titles, details, paths — into shell arguments. The shell-quoting rule those templates follow is stated once in [`functional-review.md`](../../phase-6-finalize/workflow/functional-review.md) § "Shell-safe free text in command templates" and is not restated here: every `--detail` carrying finding text is written as ONE single-quoted shell argument, each embedded single quote is escaped as `'\''` before substitution, and interpolated text is never put in double quotes. Each FIX template that interpolates text names that section.
 
+## Done-When consumption — open criteria as a finalize triage source
+
+Open Done-When criteria are a finalize triage source alongside the findings store. Before Step 1, read the plan's Done-When record — the request's Done-When statements via `manage-plan-documents request read` and the outline's success criteria via `manage-solution-outline read` — and treat each criterion still open (not met, not superseded by an operator decision) as one triage item. Each open criterion is decided in the Step 3b batched shape (FIX when the fix is one edit at the cited location, otherwise a fix task per Step 3c Shape 1; SUPPRESS / ACCEPT / AskUserQuestion otherwise) and recorded through the same `manage-findings resolve` call the group uses, so the Step 7 loop-back signalling counts it exactly as it counts a store finding.
+
 ## Step 1: List the findings store
 
 ```bash
@@ -110,7 +114,7 @@ For each finding in the group:
      ```bash
      python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging decision \
        --plan-id {plan_id} --level INFO \
-       --message "(plan-marshall:triage:reconciliation-guard) Declined {finding_type} {finding.hash_id} — contradicts standing decision: {cited decision.log rationale}"
+       --message '(plan-marshall:triage:reconciliation-guard) Declined {finding_type} {finding.hash_id} — contradicts standing decision: {cited decision.log rationale}'
      ```
 
    - Resolve the finding as `taken_into_account` (not a FIX) via the resolve call already documented in Step 3c:
@@ -118,7 +122,7 @@ For each finding in the group:
      ```bash
      python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings resolve \
        --plan-id {plan_id} --hash-id {finding.hash_id} --resolution taken_into_account \
-       --detail "Declined — contradicts standing decision.log decision: {cited rationale}"
+       --detail 'Declined — contradicts standing decision.log decision: {cited rationale}'
      ```
 
    A finding declined here is fully resolved and does NOT enter the batched decision below.
@@ -155,7 +159,7 @@ For each finding whose batched outcome is FIX or an edit-applying SUPPRESS, in S
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging decision \
      --plan-id {plan_id} --level INFO \
-     --message "(plan-marshall:triage:self-consistency) Deferred {finding.hash_id} — same sink class as an already-declined sibling this run; escalating rather than auto-applying a contradictory edit"
+     --message '(plan-marshall:triage:self-consistency) Deferred {finding.hash_id} — same sink class as an already-declined sibling this run; escalating rather than auto-applying a contradictory edit'
    ```
 
    The finding does NOT enter the edit path below; its outcome is determined by the user's answer.
@@ -182,7 +186,7 @@ The action body:
   ```bash
   python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings resolve \
     --plan-id {plan_id} --hash-id {finding.hash_id} --resolution taken_into_account \
-    --detail "Cited passage no longer present in worktree — resolved without fix task to avoid a no-op finalize loop"
+    --detail 'Cited passage no longer present in worktree — resolved without fix task to avoid a no-op finalize loop'
   ```
 
   When the cited passage IS still present (or the finding cites no specific passage), proceed with the shape that applies.
@@ -212,7 +216,7 @@ The action body:
   ```bash
   python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings resolve \
     --plan-id {plan_id} --hash-id {finding.hash_id} --resolution fixed --task-number {N} \
-    --detail "Will be addressed by TASK-{N}; see follow-up commit on this branch"
+    --detail 'Will be addressed by TASK-{N}; see follow-up commit on this branch'
   ```
 
   Then STOP for this finding. In a finalize run the reply waits for the stamped commit.
@@ -234,7 +238,7 @@ The action body:
   ```bash
   python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings resolve \
     --plan-id {plan_id} --hash-id {finding.hash_id} --resolution suppressed \
-    --detail "{rationale citing loaded rule}"
+    --detail '{rationale citing loaded rule}'
   ```
 
   **`sonar-issue` FALSE-POSITIVE / WON'T-FIX routing (in-code suppression is the default).** When `finding_type=sonar-issue` and the batched decision dispositions a finding as FALSE-POSITIVE or WON'T-FIX, route it through this SUPPRESS body **by default** rather than the server-side dismissal: apply the in-code annotation per the loaded `suppression.md` (`@SuppressWarnings("java:S{rule}")` / `// NOSONAR` / the domain's equivalent at `{finding.file_path}:{finding.line}`) and resolve the finding `suppressed` with the resolve call above. In-code suppression keeps the disposition git-versioned and reviewable on the PR diff, so it is the standing default.
@@ -251,7 +255,7 @@ The action body:
       ```bash
       python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings resolve \
         --plan-id {plan_id} --hash-id {finding.hash_id} --resolution suppressed \
-        --detail "{rationale}"
+        --detail '{rationale}'
       ```
 
     - **`do_transition == false`** (default) → do NOT silently transition and do NOT silently drop the finding. Defer it to Step 4 via the AskUserQuestion deferral path (Step 3d), so the operator decides between leaving the issue open, enabling server-side transition, or accepting it. Push `{hash_id, rationale}` onto the deferred-questions list and continue.
@@ -263,7 +267,7 @@ The action body:
   ```bash
   python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings resolve \
     --plan-id {plan_id} --hash-id {finding.hash_id} --resolution accepted \
-    --detail "{rationale}"
+    --detail '{rationale}'
   ```
 
 - **AskUserQuestion** — defer to Step 4 below. AskUserQuestion outcomes within a batched decision do not block the rest of the group's actions; they are collected and surfaced at end-of-group.
@@ -295,7 +299,7 @@ After acting:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings resolve \
   --plan-id {plan_id} --hash-id {finding.hash_id} --resolution {fixed|suppressed|accepted|taken_into_account} \
-  --detail "{user's stated rationale}"
+  --detail '{user'\''s stated rationale}'
 ```
 
 For **Split into a fix task** the resolve call is the Shape 1 call from Step 3c, which also passes `--task-number {N}`.
@@ -317,9 +321,9 @@ Triage runs under the dispatcher's 900 s per-agent wrapper. When the budget is n
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings add \
      --plan-id {plan_id} --type {finding_type}-overflow \
-     --title "Triage budget exhausted: {N} {finding_type} finding(s) deferred" \
+     --title 'Triage budget exhausted: {N} {finding_type} finding(s) deferred' \
      --severity warning \
-     --detail "{comma-separated hash_ids}"
+     --detail '{comma-separated hash_ids}'
    ```
 
 3. Return `outcome: loop_back` with a display detail naming the deferred count. The phase-6-finalize dispatcher's `loop_back` semantics re-fire the calling manifest step on next entry; the next dispatch's Step 1 query sees only still-pending findings.
@@ -329,7 +333,7 @@ Triage runs under the dispatcher's 900 s per-agent wrapper. When the budget is n
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings resolve \
      --plan-id {plan_id} --hash-id {overflow_hash_id} --resolution fixed \
-     --detail "All deferred {finding_type} findings resolved across iterations {start}..{end}"
+     --detail 'All deferred {finding_type} findings resolved across iterations {start}..{end}'
    ```
 
 An overflow `loop_back` spends one of the requesting source's own rounds. Whether that round is admitted is decided by the admission gate in [`phase-6-finalize/SKILL.md`](../../phase-6-finalize/SKILL.md) Step 3 item 7b, not here.

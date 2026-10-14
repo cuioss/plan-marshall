@@ -60,7 +60,7 @@ import build
 import extension_discovery
 import pytest
 
-from conftest import get_skill_dir
+from conftest import get_skill_dir, load_script_module
 
 _PHASE6_STANDARDS: Path = get_skill_dir('plan-marshall', 'phase-6-finalize') / 'standards'
 _GATE_DOC = _PHASE6_STANDARDS / 'pre-push-quality-gate.md'
@@ -394,3 +394,44 @@ def test_gate_is_a_re_stale_trigger_member_by_the_full_conjunction():
         f'the gate is order {fields["order"]}, which must sit below the settle-band '
         f'bound {bound} for the re-stale enrolment to hold'
     )
+
+
+def _gate_text() -> str:
+    """Read the gate document body under test."""
+    return _GATE_DOC.read_text(encoding='utf-8')
+
+
+def test_gate_refuses_push_when_head_outruns_last_gate_stamp():
+    """The gate refuses a push whose head outruns the last gate stamp."""
+    text = _gate_text()
+    assert '## Pushed-head gate refusal' in text
+    assert 'outruns the last gate stamp' in text
+    assert 'refuse the push' in text
+
+
+def test_gate_refuses_fresh_exit_under_required_coverage_unknown():
+    """A coverage-mandating plan never exits fresh when coverage is underivable."""
+    text = _gate_text()
+    assert 'required_coverage_unknown' in text
+    assert 'MUST NOT exit fresh' in text
+
+
+def test_gate_runs_root_level_guards_for_test_file_footprints():
+    """Plans adding or editing test files run the root-level guards unconditionally."""
+    text = _gate_text()
+    assert 'test/*.py' in text
+    assert 'whole-tree branch' in text
+
+
+def test_gate_captures_head_at_completion_at_step_start():
+    """The start-captured head is re-compared before recording, re-running on mismatch."""
+    text = _gate_text()
+    assert 'head_at_completion' in text
+    assert 're-runs' in text or 're-run' in text
+
+
+def test_gate_refusal_stops_the_step_on_drift():
+    """Head-versus-stamp drift takes the STOP disposition, never a degraded pass."""
+    text = _gate_text()
+    assert 'STOP the step and refuse the push' in text
+    assert 'never permitted' in text

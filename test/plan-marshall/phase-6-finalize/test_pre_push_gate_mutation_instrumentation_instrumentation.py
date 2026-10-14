@@ -60,7 +60,7 @@ import build
 import extension_discovery
 import pytest
 
-from conftest import get_skill_dir
+from conftest import get_skill_dir, load_script_module
 
 _PHASE6_STANDARDS: Path = get_skill_dir('plan-marshall', 'phase-6-finalize') / 'standards'
 _GATE_DOC = _PHASE6_STANDARDS / 'pre-push-quality-gate.md'
@@ -376,3 +376,90 @@ def test_executor_bootstrap_target_is_the_git_ignored_executor_path(monkeypatch,
 def test_gate_still_declares_head_dependent_true():
     """The flip leaves ``head_dependent`` untouched — the two facts are independent."""
     assert _gate_fields('head_dependent').get('head_dependent') is True
+
+
+def _manifest_core():
+    """Load the manifest constants module under test."""
+    return load_script_module('plan-marshall', 'manage-execution-manifest', '_manifest_core.py', 'd7_manifest_core')
+
+
+def _freshness_crosscheck():
+    """Load the freshness crosscheck module under test."""
+    return load_script_module('plan-marshall', 'manage-tasks', '_freshness_crosscheck.py', 'd7_freshness_crosscheck')
+
+
+def test_gate_stamp_composition_normalizes_and_dedupes():
+    """Request/project gates compose into the bare D4 stamp shape, de-duped."""
+    core = _manifest_core()
+    composed = core.compose_request_project_gates(
+        ['default:verify:quality-gate', 'verify:module-tests'],
+        ['verify:module-tests', 'project:verify-step-lint'],
+        ['verify:quality-gate'],
+    )
+    assert composed == ['verify:quality-gate', 'verify:module-tests', 'project:verify-step-lint']
+
+
+def test_gate_stamp_composition_is_additive_only():
+    """Composition with no request/project gates leaves the list unchanged."""
+    core = _manifest_core()
+    existing = ['verify:quality-gate']
+    assert core.compose_request_project_gates([], [], existing) == existing
+
+
+def test_freshness_inputs_surface_reports_required_or_unknown_reason():
+    """The composition input surface reports the derived requirement or its reason."""
+    crosscheck = _freshness_crosscheck()
+    assert hasattr(crosscheck, 'freshness_inputs_for_composition')
+    assert crosscheck.REASON_REQUIRED_COVERAGE_UNKNOWN == 'required_coverage_unknown'
+    inputs = crosscheck.freshness_inputs_for_composition(['a.py'], ('plan-marshall',), False)
+    assert inputs['footprint'] == ['a.py']
+    assert inputs['scoped_modules'] == ['plan-marshall']
+    assert inputs['divergence_possible'] is False
+    assert (inputs['required'] is not None) != (inputs['reason'] is not None)
+
+
+def test_gate_stamp_composition_skips_non_string_and_blank_entries():
+    """Non-string and blank gate entries never reach the composed list."""
+    core = _manifest_core()
+    composed = core.compose_request_project_gates(
+        ['  ', 'verify:coverage'],
+        ['default:verify:coverage'],
+        [],
+    )
+    assert composed == ['verify:coverage']
+
+
+def test_gate_stamp_composition_normalizes_prefixed_duplicates():
+    """A default-prefixed gate and its bare form compose to one entry."""
+    core = _manifest_core()
+    composed = core.compose_request_project_gates(
+        ['default:verify:quality-gate'],
+        ['verify:quality-gate'],
+        [],
+    )
+    assert composed == ['verify:quality-gate']
+
+
+def test_freshness_inputs_surface_reports_empty_footprint_requirement():
+    """An empty footprint requires no analyses and names no modules."""
+    crosscheck = _freshness_crosscheck()
+    inputs = crosscheck.freshness_inputs_for_composition([], (), False)
+    assert inputs['reason'] is None
+    assert inputs['required'] is not None
+    assert inputs['required']['analyses'] == []
+    assert inputs['required']['whole_tree'] is False
+    assert inputs['required']['modules'] == []
+
+
+def test_compose_call_site_wires_request_project_gates_additively():
+    """The compose body routes request/project gates through the stamp helper."""
+    from pathlib import Path
+
+    from conftest import get_skill_dir
+
+    script = get_skill_dir('plan-marshall', 'manage-execution-manifest') / 'scripts' / 'manage-execution-manifest.py'
+    text = Path(script).read_text(encoding='utf-8')
+    assert 'compose_request_project_gates' in text
+    assert 'request_gates' in text
+    assert 'project_gates' in text
+    assert 'additive-only' in text

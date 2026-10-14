@@ -97,7 +97,7 @@ hook_skip_reason: OpenCode does not support a SessionStart hook equivalent (issu
 status: error
 operation: project initial-setup
 error: unknown_target
-message: "Target 'foobar' is not in the registry; valid targets are: claude, opencode"
+message: "Target 'foobar' is not in the registry; valid targets are: antigravity, claude, opencode"
 ```
 
 The seed is a read-modify-write, so it also returns `error: io_error` on three corrupt-input edges, identically on both targets: the directory tree cannot be created; `marshal.json` exists but is unreadable or unparseable; or it parses yet carries a shape the seed cannot mutate — a top-level non-object, or a `runtime` key present with a non-object value. The parse edge and the shape edge are separate, because a successful parse proves the bytes were valid JSON and not that they were an object. Every corrupt edge refuses **before any write**: the operation never falls back to an empty document, since that fallback would destroy exactly the configuration the read exists to preserve.
@@ -1035,6 +1035,13 @@ alternative: "run metrics capture on the Claude target, or wire a shared metrics
 
 OpenCode declines with a `no-op` on **every** input, manual count included. It reaches no persistence boundary — the token-cursor write and the `manage-metrics end-phase` call live in the Claude runtime — so a `success` carrying a manual count would be a report of work that did not happen: a measurement the caller could not distinguish from a stored one, silently lost. `Runtime.metrics_capture` requires an explicit count to be persisted before `success`, or declined with `no-op`; OpenCode chooses the honest decline. The recommended remediation is to relocate the (target-neutral) metrics persistence boundary to a shared home both runtimes reach; until then OpenCode declines rather than lying about a write it cannot perform.
 
+**Unknown vocabulary.** A phase that ran on a `transcripts: none` harness carries no
+measured token figure at all, so downstream `manage-metrics` rows report
+`total_tokens: unknown` — the literal `unknown`, never `0`. A measured zero
+stays `0`; only never-measured reads as `unknown`. The `transcripts`
+capability on the run's `runtime-info` record (`full` vs `none`) is what tells
+a reader which of the two a figure is.
+
 ---
 
 ### `metrics normalized-tokens`
@@ -1074,6 +1081,16 @@ Each observed tool call is classified by its tool name into one of five buckets;
 **Partition invariant.** The three sub-sources sum EXACTLY to `exploration_result_bytes`. They re-cut bytes already counted there and add none. They carry the `_bytes` suffix rather than `_result_bytes` deliberately: they are a byte-only sub-split of ONE bucket and are **not** members of the `{bucket}_{measure}` exploration-counter family, so a consumer deriving that family's key set must not pick them up. There is no matching `_tool_calls` sub-split.
 
 **Absent is not zero.** A target that emits a per-phase bucket at all MUST populate the full counter key set — exploration-share counters, cache-read attribution, and exploration sub-sources alike — so a `0` there is a *measured* zero. A phase recording no `cache_read` still carries all five attributed keys and the residual at a measured zero, and a phase that ran no exploration call still carries all three sub-source keys at a measured zero. A target that declines the primitive — OpenCode, which exposes no transcript — emits no bucket, and its counters are *absent*. Consumers MUST preserve the distinction and MUST NOT substitute `0` for a target that never measured; a zero-initialized bucket on a declining target would make "did not explore" indistinguishable from "was never measured". This is the declinable-primitive posture of ADR-011 and the explicit-unknown rule of ADR-009.
+
+**Unknown outcome vocabulary.** The no-op above is a transcript-availability
+statement, not a token figure: a `transcripts: none` run reports its phase
+token total as the literal `unknown` (see
+`manage-metrics/standards/data-format.md` § unknown vocabulary), and its
+`runtime-info` record carries `transcripts: none` as the capability flag that
+explains why. `unknown` propagates through `enrich`, `generate`, and `record`
+without ever collapsing into a measured zero — a reader that sees `unknown`
+knows no measurement happened, while a reader that sees `0` knows a
+measurement happened and found nothing.
 
 **Success**:
 ```toon
@@ -1194,11 +1211,43 @@ Return the platform-specific invocation parameters for spawning a focused subage
 
 Every target echoes the requested `--agent` back as `invocation.subagent_type`; no target substitutes an agent of its own choosing, so a caller's selection always reaches the invocation.
 
+The admitted registry is `antigravity, claude, opencode` — derived live from `platform_runtime._REGISTRY` via `describe_targets`, never a hard-coded literal.
+
+Per-harness dispatch outcomes:
+
+- **Claude** — `Task` tool with the agent frontmatter description; unmapped frontmatter tools decline as `no-op`.
+- **OpenCode** — `task` tool, conditional on verify-first clause 1 (tool available in the envelope) and clause 2 (the requested agent's frontmatter tools map onto the OpenCode tool set via `targets/opencode/mapping.json`). A caller passing `task_tool_available: False` (legacy) or the target-neutral `spawning_tool_available: False` in `--context` takes the explicit logged inline branch (`no-op` carrying the inline fallback) instead of a faux success; an agent requiring an unmapped tool takes the same inline branch. Both flags are consumed at this seam and never merged into the prompt.
+- **Antigravity** — `invoke_subagent` tool, keeping that mapping on every path, conditional on the same two verify-first clauses: `spawning_tool_available: False` in `--context` takes the explicit logged inline branch, and an agent requiring a tool outside `targets/antigravity/mapping.json` takes the same inline branch. When the agent file or the mapping is unreadable the clause-2 check is vacuous and the dispatch proceeds.
+
+Transcripts vocabulary: no dispatch has happened at this seam — the payload carries invocation parameters, not a run — so every success carries `usage: unknown` rather than a measured zero, and every inline-branch `no-op` propagates usage as unknown the same way. `unknown` here shares the manage-metrics unknown vocabulary: absent measurement is stated, never zero-filled.
+
+**Success (Antigravity)**:
+```toon
+status: success
+operation: subagent dispatch
+platform: antigravity
+usage: unknown
+invocation:
+  tool: invoke_subagent
+  description: Run execution-context-level-3
+  prompt: ...agent body with context merged...
+  subagent_type: execution-context-level-3
+```
+
+**No-op (OpenCode inline branch — tool unavailable)**:
+```toon
+status: no-op
+operation: subagent dispatch
+reason: OpenCode 'task' tool is not available in this envelope — take the explicit logged inline branch instead of dispatching
+alternative: Inline the agent logic in-turn and propagate usage as unknown
+```
+
 **Success (Claude)**:
 ```toon
 status: success
 operation: subagent dispatch
 platform: claude
+usage: unknown
 invocation:
   tool: Task
   description: Run phase-3-outline outline
@@ -1211,6 +1260,7 @@ invocation:
 status: success
 operation: subagent dispatch
 platform: opencode
+usage: unknown
 invocation:
   tool: task
   description: Run execution-context-level-3
@@ -1425,7 +1475,7 @@ build_version: "0.1"
 status: error
 operation: runtime-info
 error: unknown_target
-message: "runtime.target 'antigravity' is not in the registry; valid targets are: claude, opencode"
+message: "runtime.target 'antigravity' is not in the registry; valid targets are: antigravity, claude, opencode"
 ```
 
 **Declining.** A target that cannot collect runtime information returns a

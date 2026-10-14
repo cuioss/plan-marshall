@@ -1,6 +1,6 @@
 ---
 name: platform-runtime
-description: Platform abstraction layer routing operations to Claude Code or OpenCode implementations
+description: Platform abstraction layer routing operations to Claude Code, OpenCode, or Antigravity implementations
 user-invocable: false
 mode: script-executor
 ---
@@ -61,13 +61,13 @@ Twenty-seven operations covering the full platform lifecycle:
 | `subagent dispatch` | Return platform-specific subagent invocation parameters |
 | `wait for` | Hold a bounded wait until a concrete, pollable observable (`--observable` names a kind from a closed set; `build-job` today) reaches a terminal state, and return a normalized `succeeded`/`failed`/`timed_out`/`killed`/`pending` outcome. The observable is never an opaque condition descriptor — a runtime subprocess cannot evaluate one. Bound exhaustion yields `outcome: pending` with `terminal: false`, never an implicit pass |
 | `health-check` | Verify platform integration |
-| `runtime-info` | Collect harness, model, effort, and build-version for the `client.toon` pre-flight artifact; best-effort with drop-not-estimate semantics on `claude` and `opencode` only |
+| `runtime-info` | Collect harness, model, effort, and build-version for the `client.toon` pre-flight artifact; best-effort with drop-not-estimate semantics on `claude`, `opencode`, and `antigravity` |
 
 See `standards/contract.md` for per-operation TOON schemas (success, error, no-op paths).
 
 The `health-check --checks display` surface inspects each terminal-title render entry plus a dedicated `PreToolUse:enforcement` `present` / `divergence` / `MISSING` label for the orthogonal enforcement hook, so a partial or absent enforcement install is diagnosable and repairable independently of the terminal-title wiring. A dual-homed one is diagnosable but **not** repairable: `divergence` (the entry is installed in BOTH `.claude/settings.json` and `.claude/settings.local.json`) is report-only, never makes the check unhealthy, and nothing in the runtime repairs, migrates, or de-duplicates it — the report is the whole remedy. See `standards/contract.md` § `health-check` for the value domain.
 
-The `runtime-info` operation serves the `client.toon` pre-flight artifact with best-effort drop-not-estimate semantics on `claude` and `opencode` only. See `standards/runtime-info.md` for the schema and extension-point contract.
+The `runtime-info` operation serves the `client.toon` pre-flight artifact with best-effort drop-not-estimate semantics on `claude`, `opencode`, and `antigravity`. See `standards/runtime-info.md` for the schema and extension-point contract.
 
 ## OpenCode Permissions (two-tier deny/ask)
 
@@ -107,6 +107,7 @@ block, with one audit line per blocked invocation in
 marshal.json                                Scripts
 runtime.target: claude  ──────────────────► claude_runtime.py
 runtime.target: opencode ─────────────────► opencode_runtime.py
+runtime.target: antigravity ──────────────► antigravity_runtime.py
 ```
 
 Router (`platform_runtime.py`) reads `runtime.target`, looks up target class in registry, and dispatches. Registry is extensible — adding a new target adds a class and a registry entry.
@@ -173,7 +174,7 @@ All scripts comply with:
 
 ## Boundary
 
-Platform-runtime operations satisfy: "Would this differ between Claude Code and OpenCode?"
+Platform-runtime operations satisfy: "Would this differ between Claude Code, OpenCode, and Antigravity?"
 
 | In scope | Belongs elsewhere |
 |----------|-------------------|

@@ -833,6 +833,41 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 If `value` is present and non-empty, no log entry is required — continue to Step 8a.5. This check only surfaces the gap; it never aborts the phase and never renumbers existing steps.
 
+### Step 8a.6: Stamp Harness
+
+Stamp the harness this plan runs on into `status.metadata.harness` via the
+orchestrator preflight hook, so every downstream reader — metrics, landing
+payload, retrospective — knows which harness produced the run without
+re-resolving it. The stamp is best-effort and never blocks init.
+
+Resolve the live harness through the platform-runtime `runtime-info` op, which
+reports the harness identifier alongside its `transcripts` capability flag:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:platform-runtime:platform_runtime runtime-info
+```
+
+Parse `harness` from the returned TOON and persist it:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \
+  --plan-id {plan_id} --set --field harness --value {harness}
+```
+
+On `status: error` or `status: no-op` (no harness resolvable), or on `status: success`
+with an empty `harness` value, skip the persist and emit a `[WARNING]` work-log
+entry noting the gap — an absent `harness` reads as "not stamped", never as a
+default harness:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  work --plan-id {plan_id} --level WARNING --message "[WARNING] (plan-marshall:phase-1-init) harness not stamped at plan-init — downstream readers treat an absent harness as not stamped"
+```
+
+Continue to Step 8a.5 either way. See `manage-status/SKILL.md` for the `harness` field contract and
+`platform-runtime/standards/runtime-info.md` for the `transcripts` capability
+the same op reports.
+
 ### Step 8a.5: Pre-Route Classification
 
 Classify `change_type` and `scope_estimate` from the request narrative BEFORE the Step 8b planning-lane route, so the router reads real signals instead of `None`. Both classifiers are deterministic, heuristic-first, and run with **zero codebase discovery** (no `architecture` calls) — the same cheap-read contract the router itself honours.

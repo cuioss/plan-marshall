@@ -443,6 +443,30 @@ additively comparable** — never sum them into a phase figure. A consumer that
 needs to know what `total_tokens` measures reads `total_tokens_population`; it
 must not infer a population from the field's name, which states a total.
 
+### Unknown token figures (`unknown`)
+
+A phase that ran on a `transcripts: none` harness (see
+`platform-runtime/standards/runtime-info.md`) carries no measured token figure
+at all: no transcript was walked, no `<usage>` envelope was reaped, and no
+inline fold applied. Such a phase reports its token figures as the literal
+`unknown` — never `0`, never absent:
+
+- `total_tokens: unknown` on every phase row with no measurement, propagated
+  through `enrich`, `generate`, and `record` without ever collapsing into a
+  measured zero. A measured zero stays `0`; only never-measured reads as
+  `unknown`. Absent is not zero, and `unknown` is not zero either — it is the
+  stated form of absence for a field the row shape cannot drop.
+- `transcripts: none` is the capability flag that explains WHY the figure is
+  `unknown`: the run's `runtime-info` record carries it, and the landing
+  payload repeats it beside the figure so a reader never has to guess whether
+  `unknown` means "not measured" (it always does).
+- The dispatch-boundary `unmeasured` token (§ Per-Dispatch Context-Load
+  Attribution) and the phase-level `unknown` are the same rule at two grains:
+  per-dispatch columns carry `unmeasured`, phase figures carry `unknown`. A
+  consumer MUST NOT substitute `0` for either, and MUST NOT sum an `unknown`
+  figure into a total — a Total fed by an `unknown` row is itself `unknown`,
+  never a number with a hole in it.
+
 ### Worked, Reported (Wall), and Idle Time
 
 `generate` derives three time quantities per phase from already-persisted fields — no new pause/resume or user-gate API is introduced:

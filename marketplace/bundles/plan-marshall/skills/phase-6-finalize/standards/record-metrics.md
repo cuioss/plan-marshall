@@ -16,6 +16,7 @@ records_facts:
   - total_tokens
   - total_wall_seconds
   - any_phase_missing_end_time
+  - harness
 implements: plan-marshall:extension-api/standards/ext-point-finalize-step
 ---
 
@@ -56,7 +57,7 @@ python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics enri
   --plan-id {plan_id} --session-id {session_id}
 ```
 
-Omit `--session-id` when the transcript-gated resolver dispatched finalize without one (transcript-less target, absent identity). `enrich` then takes the enrich-skip branch: it skips enrichment, stamps the population-carrying gap flag, and succeeds unenriched — the final report carries no transcript-sourced session tokens and the gap flag marks the total as unenriched, never measured. On a transcript-capable target `--session-id` stays required and an absent identity keeps the missing-identity error.
+Omit `--session-id` when the transcript-gated resolver dispatched finalize without one (transcript-less target, absent identity). `enrich` then takes the enrich-skip branch: it skips enrichment, stamps the population-carrying gap flag, stamps `total_tokens: unknown` on every row lacking a measured figure, and succeeds unenriched — the final report carries no transcript-sourced session tokens and the gap flag marks the total as unenriched, never measured. On a transcript-capable target `--session-id` stays required and an absent identity keeps the missing-identity error.
 
 An **inline** 6-finalize step (one that runs in the orchestrator's own context rather than a dispatched subagent) produces no `<usage>` envelope and no accumulator contribution — there is no per-step `<usage>` source to read. Its cost is nonetheless captured by `enrich`'s phase-window attribution: `enrich` sums the parent-window `message.usage` (input/output/cache_read/cache_creation) into the `6-finalize` row. `enrich` records that inline contribution as a distinct `inline_main_context_tokens` field on ANY phase whose window carries a non-zero `input + output + cache_creation` sum — `cache_read` is excluded to match the dispatched-`<usage>` total definition, so a phase whose window carries cache reads alone gets no figure from `enrich` and is completed by `generate` as a measured `0` — and stamps `total_tokens_population` on the row to name which population `total_tokens` measures there. On the mixed signature (this phase's usual shape: dispatched steps AND inline finalize steps both ran) the dispatched `total_tokens` is left byte-identical (explicit-wins) and the row reads `mixed`. On a phase that dispatched nothing at all, the same inline sum is ALSO folded into `total_tokens` and the row reads `inline`. See `manage-metrics/standards/data-format.md` § "Inline Main-Context Attribution" for the three signatures, the field schema, and the consumer rule (`inline_main_context_tokens` and a dispatched `total_tokens` are different populations and are never summed). Inline step cost is therefore attributed via this phase-window path, NOT via a per-step `<usage>` (which does not exist for an inline step).
 
@@ -74,9 +75,10 @@ python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics gene
 Capture the following fields from the returned TOON for the parent skill's output contract:
 
 - `total_wall_seconds` — raw integer/float wall-clock seconds, kept for the output contract's machine-readable column.
-- `total_tokens` — raw integer count, kept for the output contract's machine-readable column.
+- `total_tokens` — raw integer count, or the literal `unknown` when any phase row ran unmeasured (see `manage-metrics/standards/data-format.md` § "Unknown token figures (`unknown`)"). Kept for the output contract's machine-readable column — never substituted with `0`.
 - `total_wall_formatted` — human-readable wall-clock string produced by `format_duration` (e.g. `1h46m`, `9m32s`).
-- `total_tokens_formatted` — abbreviated string produced by `format_tokens_short` (e.g. `599K`, `1.2M`).
+- `total_tokens_formatted` — abbreviated string produced by `format_tokens_short` (e.g. `599K`, `1.2M`), or `unknown` alongside an unknown `total_tokens`.
+- `totals_tokens_unknown_phases` — comma-joined phases whose Tokens cell rendered `unknown` (empty when every row measured). Names the rows the total does not cover.
 - `any_phase_missing_end_time` — bool; `true` when at least one canonical phase's row carries no `end_time` boundary marker. Drives the gap-surfacing `[WARN]` step below and the matching field in the output contract.
 - `phases_missing_end_time` — list of canonical phases whose row carries no `end_time` (empty when `any_phase_missing_end_time` is `false`). Named in the `[WARN]` log line and surfaced in the output contract.
 - `file` — relative path to `metrics.md`.
@@ -119,9 +121,11 @@ This step populates the following fields in the parent skill's `metrics` output 
 | Field | Source |
 |-------|--------|
 | `metrics.total_wall_seconds` | `total_wall_seconds` from generate output (raw wall-clock seconds) |
-| `metrics.total_tokens` | `total_tokens` from generate output (raw count) |
+| `metrics.total_tokens` | `total_tokens` from generate output (raw count, or `unknown` when any phase ran unmeasured — never `0` for unmeasured) |
 | `metrics.total_wall_formatted` | `total_wall_formatted` from generate output (e.g. `1h46m`) |
-| `metrics.total_tokens_formatted` | `total_tokens_formatted` from generate output (e.g. `599K`) |
+| `metrics.total_tokens_formatted` | `total_tokens_formatted` from generate output (e.g. `599K`, or `unknown`) |
+| `metrics.total_tokens_unknown_phases` | `totals_tokens_unknown_phases` from generate output (phases the total does not cover; empty when every row measured) |
+| `metrics.harness` | `status.metadata.harness` (stamped at phase-1-init Step 8a.6; `unknown` when the stamp is absent) |
 | `metrics.any_phase_missing_end_time` | `any_phase_missing_end_time` from generate output (bool; `true` when a canonical phase's row carries no `end_time` boundary marker) |
 | `metrics.phases_missing_end_time` | `phases_missing_end_time` from generate output (canonical phases whose row carries no `end_time`; empty when the bool is `false`) |
 | `metrics.metrics_file` | `.plan/local/archived-plans/{date}-{plan_id}/metrics.md` (post-archive resolved path; the live pre-archive copy is `.plan/local/plans/{plan_id}/metrics.md`) |
@@ -135,15 +139,25 @@ Before returning control to the finalize pipeline, record that this step ran on 
 Pass a `--display-detail` value alongside `--outcome done` so the output-template renderer can surface the core metrics without re-reading `metrics.md`:
 
 ```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \
+  --plan-id {plan_id} --get --field harness
+```
+
+Parse `harness` from the returned TOON; an absent field or a `status: error`
+reads as `unknown` — the stamp was never written, which the landing asserts
+rather than filling in. Then record the step:
+
+```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
   --plan-id {plan_id} --phase 6-finalize --step record-metrics --outcome done \
   --display-detail "{total_wall_formatted} / {total_tokens_formatted} tokens" \
   --fact total_tokens={total_tokens} \
   --fact total_wall_seconds={total_wall_seconds} \
-  --fact any_phase_missing_end_time={any_phase_missing_end_time}
+  --fact any_phase_missing_end_time={any_phase_missing_end_time} \
+  --fact harness={harness}
 ```
 
-**Structured facts (`records_facts`)**: the three `--fact` flags persist the run's token total, wall-clock, and end-time-gap flag as typed per-step facts (the raw integer/bool values captured from `generate`, not the `_formatted` display variants). This is a ROUTING fix, not new modelling: the values are already computed for the `display_detail` and the output contract above — wiring them as facts lets the `default:emit-landing` terminal step (`order: 1000`) carry the token totals into the epic landing as machine-readable data rather than re-parsing a prose row. The consumer question each key earns: `total_tokens` — *"what did this run cost?"* (the token-total-disagreement finding the landing must make drainable); `total_wall_seconds` — *"how long did it take?"*; `any_phase_missing_end_time` — *"is the token total a floor because a phase boundary was dropped?"*. All three keys are recorded at this single `--outcome done` call site, satisfying the `records_facts` both-direction contract.
+**Structured facts (`records_facts`)**: the four `--fact` flags persist the run's token total, wall-clock, end-time-gap flag, and harness as typed per-step facts (the raw values captured from `generate` and the harness read, not the `_formatted` display variants). This is a ROUTING fix, not new modelling: the values are already computed for the `display_detail` and the output contract above — wiring them as facts lets the `default:emit-landing` terminal step (`order: 1000`) carry the token totals and the harness into the epic landing as machine-readable data rather than re-parsing a prose row. The consumer question each key earns: `total_tokens` — *"what did this run cost?"* (the token-total-disagreement finding the landing must make drainable; `unknown` when unmeasured, never `0`); `total_wall_seconds` — *"how long did it take?"*; `any_phase_missing_end_time` — *"is the token total a floor because a phase boundary was dropped?"*; `harness` — *"which harness produced this run?"* (with the `transcripts` capability explaining its figures). All four keys are recorded at this single `--outcome done` call site, satisfying the `records_facts` both-direction contract.
 
 The `{total_wall_formatted}` and `{total_tokens_formatted}` placeholders are populated from the fields captured in `## Generate Final Metrics Report` above. Use the formatted variants — never the raw `{total_wall_seconds}s / {total_tokens} tokens` template, which produces the unformatted `6381s / 599089 tokens` row that the central formatter exists to replace.
 

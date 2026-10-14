@@ -25,6 +25,12 @@ itself repaired. Reporting one code for both sent the reader to the wrong remedy
 The companion implementation lives in ``_cmd_lifecycle.py``
 (``_clean_tree_refusal``, wired into ``cmd_transition``'s blocking-boundary
 branch after the strict-verify guard).
+
+D2 extension: the same boundary additionally pins the 5-execute end-marker
+post-condition (``_phase_end_marker_refusal``, after the clean-tree guard) —
+committed-but-unrecorded deliverable commits refuse with
+``execute_commits_unrecorded`` (enumerated) or ``phase_end_markers_missing``
+(wholly missing or unreadable store, no list), and full coverage passes.
 """
 
 import json
@@ -200,6 +206,11 @@ def test_clean_worktree_passes_transition(plan_context, _stubbed_invariants, _st
     """A clean tree at the guarded boundary transitions normally."""
     plan_id = 'boundary-clean-passes'
     status_path = _seed_boundary_plan(plan_context, plan_id, {'use_worktree': True, 'worktree_path': str(git_worktree)})
+    # The end-marker gate needs a divergence base to establish its (here empty)
+    # range — without references.json it refuses fail-closed.
+    (plan_context.plan_dir_for(plan_id) / 'references.json').write_text(
+        json.dumps({'base_branch': 'main'}), encoding='utf-8'
+    )
 
     result = cmd_transition(Namespace(plan_id=plan_id, completed='5-execute'))
 
@@ -217,6 +228,11 @@ def test_plan_state_under_gitignored_dot_plan_stays_clean(
     the boundary — the porcelain read must not see it."""
     plan_id = 'boundary-plan-state-ignored'
     _seed_boundary_plan(plan_context, plan_id, {'use_worktree': True, 'worktree_path': str(git_worktree)})
+    # The end-marker gate needs a divergence base to establish its (here empty)
+    # range — without references.json it refuses fail-closed.
+    (plan_context.plan_dir_for(plan_id) / 'references.json').write_text(
+        json.dumps({'base_branch': 'main'}), encoding='utf-8'
+    )
     plan_state = git_worktree / '.plan' / 'local' / 'plans' / plan_id
     plan_state.mkdir(parents=True)
     (plan_state / 'status.json').write_text('{}')
@@ -338,3 +354,274 @@ def test_unreadable_tree_refuses_with_its_own_code_and_publishes_no_dirty_files(
         'CLI wrapper exits 0 while the in-process guard refuses, which is the fail-open '
         'degradation a code split must not introduce.'
     )
+
+
+# =============================================================================
+# D2 — 5-execute end-marker post-condition: committed-but-unrecorded work
+# =============================================================================
+#
+# The clean-tree guard above only reads UNCOMMITTED state. A deliverable commit
+# with no ``kind=change`` ledger row (a skipped Step 10a settlement) is the
+# silent skip it cannot see — ``_phase_end_marker_refusal`` closes it. Pins:
+#
+# (a) ALL end-marker codes are members of ``VERIFY_REFUSAL_ERRORS``;
+# (b) both refusal shapes satisfy ``verify_blocks_transition`` (CLI exit-1 lockstep);
+# (c) a partially recorded branch refuses at the transition with
+#     ``execute_commits_unrecorded``, enumerates the gap, and writes nothing;
+# (d) full coverage passes the transition;
+# (e) zero recorded rows refuse as ``phase_end_markers_missing`` (wholly missing);
+# (f) an unreadable marker store refuses as ``phase_end_markers_missing`` with
+#     NO ``unrecorded_commits`` key at all (the matched pair of (c)).
+
+
+def test_both_end_marker_codes_are_members_of_verify_refusal_errors():
+    """ALL end-marker codes are in VERIFY_REFUSAL_ERRORS — the single source of
+    truth that cmd_transition and the CLI exit-code wrapper consume."""
+    for code in ('phase_end_markers_missing', 'execute_commits_unrecorded', 'branch_range_unresolvable'):
+        assert code in _lifecycle.VERIFY_REFUSAL_ERRORS, (
+            f'{code} must be a VERIFY_REFUSAL_ERRORS member, or the end-marker guard fails open for it.'
+        )
+
+
+def test_end_marker_refusals_block_transition_for_cli_wrapper():
+    """All end-marker refusal shapes satisfy ``verify_blocks_transition``."""
+    for error in ('phase_end_markers_missing', 'execute_commits_unrecorded', 'branch_range_unresolvable'):
+        assert _lifecycle.verify_blocks_transition({'status': 'error', 'error': error}) is True, (
+            f'{error} must block via verify_blocks_transition — otherwise the CLI wrapper '
+            'exits 0 while the in-process guard refuses.'
+        )
+
+
+def _seed_end_marker_plan(plan_context, plan_id: str, git_worktree) -> None:
+    """Seed a 5-execute boundary plan with worktree metadata and a base_branch record."""
+    _seed_boundary_plan(plan_context, plan_id, {'use_worktree': True, 'worktree_path': str(git_worktree)})
+    refs_path = plan_context.plan_dir_for(plan_id) / 'references.json'
+    refs_path.write_text(json.dumps({'base_branch': 'main', 'branch': f'feature/{plan_id}'}), encoding='utf-8')
+
+
+def test_unrecorded_commits_refuse_transition_and_name_the_gap(
+    plan_context, _stubbed_invariants, _stub_metadata, git_worktree, monkeypatch
+):
+    """A branch commit with no kind=change row refuses with execute_commits_unrecorded."""
+    plan_id = 'end-marker-unrecorded-refuses'
+    _seed_end_marker_plan(plan_context, plan_id, git_worktree)
+    recorded_sha = 'a' * 40
+    missing_sha = 'b' * 40
+    monkeypatch.setattr(_lifecycle, '_branch_commit_shas', lambda _p, _b: [recorded_sha, missing_sha])
+    monkeypatch.setattr(_lifecycle, '_recorded_change_shas', lambda: {recorded_sha})
+    status_path = plan_context.plan_dir_for(plan_id) / 'status.json'
+    before = json.loads(status_path.read_text(encoding='utf-8'))
+
+    result = cmd_transition(Namespace(plan_id=plan_id, completed='5-execute'))
+
+    assert result is not None
+    assert result['status'] == 'error'
+    assert result['error'] == 'execute_commits_unrecorded', (
+        f'Expected the end-marker refusal at the guarded boundary, got {result!r}.'
+    )
+    assert result['unrecorded_commits'] == [missing_sha], (
+        f'Refusal must enumerate the unrecorded commits, got {result!r}.'
+    )
+    assert result['recorded_count'] == 1
+    assert result['branch_commit_count'] == 2
+    assert 'mailbox' not in result, 'a refused transition carries no mailbox block'
+    after = json.loads(status_path.read_text(encoding='utf-8'))
+    assert after['current_phase'] == before['current_phase'] == '5-execute', (
+        'cmd_transition wrote status despite the end-marker refusal — the guard must short-circuit before write_status.'
+    )
+
+
+def test_fully_recorded_markers_pass_transition(
+    plan_context, _stubbed_invariants, _stub_metadata, git_worktree, monkeypatch
+):
+    """Full ledger coverage of the branch range transitions normally."""
+    plan_id = 'end-marker-recorded-passes'
+    _seed_end_marker_plan(plan_context, plan_id, git_worktree)
+    monkeypatch.setattr(_lifecycle, '_branch_commit_shas', lambda _p, _b: ['a' * 40])
+    monkeypatch.setattr(_lifecycle, '_recorded_change_shas', lambda: {'a' * 40})
+
+    result = cmd_transition(Namespace(plan_id=plan_id, completed='5-execute'))
+
+    assert result is not None
+    assert result['status'] == 'success', f'Fully recorded markers must pass the boundary guard, got {result!r}.'
+    assert result['next_phase'] == '6-finalize'
+
+
+def test_abbreviated_ledger_shas_compare_equal_to_full_branch_shas(
+    plan_context, _stubbed_invariants, _stub_metadata, git_worktree, monkeypatch
+):
+    """An abbreviated ledger SHA still proves its full branch commit was recorded."""
+    plan_id = 'end-marker-abbreviated-passes'
+    _seed_end_marker_plan(plan_context, plan_id, git_worktree)
+    full_sha = 'abcdef1234567890abcdef1234567890abcdef12'
+    monkeypatch.setattr(_lifecycle, '_branch_commit_shas', lambda _p, _b: [full_sha])
+    monkeypatch.setattr(_lifecycle, '_recorded_change_shas', lambda: {full_sha[:7]})
+
+    result = cmd_transition(Namespace(plan_id=plan_id, completed='5-execute'))
+
+    assert result is not None
+    assert result['status'] == 'success', (
+        f'An abbreviated ledger SHA must compare equal to its full branch SHA, got {result!r}.'
+    )
+    assert result['next_phase'] == '6-finalize'
+
+
+def test_short_prefix_below_git_floor_does_not_match(plan_context, monkeypatch):
+    """A ledger prefix shorter than git's 7-char floor never counts as recorded."""
+    plan_id = 'end-marker-short-prefix'
+    cmd_create(
+        Namespace(
+            plan_id=plan_id,
+            title='End Marker Test',
+            phases='1-init,2-refine,3-outline,4-plan,5-execute,6-finalize',
+            force=False,
+        )
+    )
+    plan_dir = plan_context.plan_dir_for(plan_id)
+    (plan_dir / 'references.json').write_text(json.dumps({'base_branch': 'main'}), encoding='utf-8')
+    full_sha = 'abcdef1234567890abcdef1234567890abcdef12'
+    monkeypatch.setattr(_lifecycle, '_branch_commit_shas', lambda _p, _b: [full_sha])
+    monkeypatch.setattr(_lifecycle, '_recorded_change_shas', lambda: {'abc'})
+
+    refusal = _lifecycle._phase_end_marker_refusal(
+        plan_id, {'metadata': {'use_worktree': True, 'worktree_path': '/tmp/any-worktree'}}
+    )
+
+    assert refusal is not None
+    assert refusal['error'] == 'execute_commits_unrecorded', (
+        f'A sub-floor prefix must not satisfy the end-marker guard, got {refusal!r}.'
+    )
+
+
+def test_zero_recorded_rows_refuse_as_markers_missing(plan_context, monkeypatch):
+    """Zero kind=change rows with branch commits present is WHOLLY missing, not partial."""
+    plan_id = 'end-marker-zero-rows'
+    cmd_create(
+        Namespace(
+            plan_id=plan_id,
+            title='End Marker Test',
+            phases='1-init,2-refine,3-outline,4-plan,5-execute,6-finalize',
+            force=False,
+        )
+    )
+    plan_dir = plan_context.plan_dir_for(plan_id)
+    (plan_dir / 'references.json').write_text(json.dumps({'base_branch': 'main'}), encoding='utf-8')
+    monkeypatch.setattr(_lifecycle, '_branch_commit_shas', lambda _p, _b: ['a' * 40, 'b' * 40])
+    monkeypatch.setattr(_lifecycle, '_recorded_change_shas', lambda: set())
+
+    refusal = _lifecycle._phase_end_marker_refusal(
+        plan_id, {'metadata': {'use_worktree': True, 'worktree_path': '/tmp/any-worktree'}}
+    )
+
+    assert refusal is not None
+    assert refusal['error'] == 'phase_end_markers_missing', (
+        f'A store holding zero rows must report missing, not partial coverage; got {refusal!r}.'
+    )
+    assert refusal['unrecorded_commits'] == ['a' * 40, 'b' * 40]
+    assert refusal['recorded_count'] == 0
+    assert _lifecycle.verify_blocks_transition(refusal) is True
+
+
+def test_unreadable_store_refuses_missing_without_a_commit_list(plan_context, monkeypatch):
+    """An unreadable marker store refuses fail-closed and publishes NO commit list.
+
+    The store side was never enumerated, so a list — even of the git-side shas —
+    would assert non-recording nobody verified. The omission mirrors the
+    unreadable-tree guard publishing no ``dirty_files`` key.
+    """
+    plan_id = 'end-marker-store-unreadable'
+    cmd_create(
+        Namespace(
+            plan_id=plan_id,
+            title='End Marker Test',
+            phases='1-init,2-refine,3-outline,4-plan,5-execute,6-finalize',
+            force=False,
+        )
+    )
+    plan_dir = plan_context.plan_dir_for(plan_id)
+    (plan_dir / 'references.json').write_text(json.dumps({'base_branch': 'main'}), encoding='utf-8')
+    monkeypatch.setattr(_lifecycle, '_branch_commit_shas', lambda _p, _b: ['a' * 40])
+    monkeypatch.setattr(_lifecycle, '_recorded_change_shas', lambda: None)
+
+    refusal = _lifecycle._phase_end_marker_refusal(
+        plan_id, {'metadata': {'use_worktree': True, 'worktree_path': '/tmp/any-worktree'}}
+    )
+
+    assert refusal is not None
+    assert refusal['error'] == 'phase_end_markers_missing', (
+        f'An unreadable store must report missing, not unrecorded; got {refusal!r}.'
+    )
+    assert 'unrecorded_commits' not in refusal, (
+        f'A store that was never read must publish no commit list at all; got {refusal!r}.'
+    )
+    assert _lifecycle.verify_blocks_transition(refusal) is True
+
+
+# =============================================================================
+# D2 — guard ordering and refusal-shape completeness (TASK-4).
+#
+# The end-marker gate runs AFTER the clean-tree guard in cmd_transition's
+# blocking-boundary branch, and the unreadable-store refusal carries a
+# machine-readable ``reason``. These pins hold both properties: the ordering
+# decides which remedy the reader reaches for when both gates would fire, and
+# the reason names what the refusal DID establish where the commit list says
+# what it does NOT claim.
+# =============================================================================
+
+
+def test_clean_tree_guard_fires_before_end_marker_guard(
+    plan_context, _stubbed_invariants, _stub_metadata, git_worktree, monkeypatch
+):
+    """A dirty tree with unrecorded commits refuses as dirty, not unrecorded.
+
+    The clean-tree guard runs first in cmd_transition's blocking-boundary
+    branch: when both gates would fire, the reader is sent to the settlement
+    commit for the uncommitted state, not to the ledger bookkeeping. The
+    reversed order would name the wrong remedy while uncommitted edits are
+    still on disk.
+    """
+    plan_id = 'ordering-dirty-before-markers'
+    _seed_end_marker_plan(plan_context, plan_id, git_worktree)
+    (git_worktree / 'src.py').write_text('x = 2\n')
+    monkeypatch.setattr(_lifecycle, '_branch_commit_shas', lambda _p, _b: ['b' * 40])
+    monkeypatch.setattr(_lifecycle, '_recorded_change_shas', lambda: set())
+
+    result = cmd_transition(Namespace(plan_id=plan_id, completed='5-execute'))
+
+    assert result is not None
+    assert result['status'] == 'error'
+    assert result['error'] == 'worktree_dirty_at_boundary', (
+        f'The clean-tree guard must fire before the end-marker gate, got {result!r}.'
+    )
+
+
+def test_unreadable_store_refusal_carries_reason(plan_context, monkeypatch):
+    """The unreadable-store refusal names WHY nothing was enumerated.
+
+    Companions the no-commit-list pin above: the omission says what the
+    refusal does NOT claim, and ``reason`` plus ``message`` say what it DID
+    establish — the store side could not be read. A refusal carrying neither
+    would be indistinguishable from a bare code.
+    """
+    plan_id = 'end-marker-store-reason'
+    cmd_create(
+        Namespace(
+            plan_id=plan_id,
+            title='End Marker Test',
+            phases='1-init,2-refine,3-outline,4-plan,5-execute,6-finalize',
+            force=False,
+        )
+    )
+    plan_dir = plan_context.plan_dir_for(plan_id)
+    (plan_dir / 'references.json').write_text(json.dumps({'base_branch': 'main'}), encoding='utf-8')
+    monkeypatch.setattr(_lifecycle, '_branch_commit_shas', lambda _p, _b: ['a' * 40])
+    monkeypatch.setattr(_lifecycle, '_recorded_change_shas', lambda: None)
+
+    refusal = _lifecycle._phase_end_marker_refusal(
+        plan_id, {'metadata': {'use_worktree': True, 'worktree_path': '/tmp/any-worktree'}}
+    )
+
+    assert refusal is not None
+    assert refusal['error'] == 'phase_end_markers_missing'
+    assert refusal['reason'], 'the refusal must name why the store side went unread'
+    assert refusal['message'], 'the refusal must carry a human-readable message'

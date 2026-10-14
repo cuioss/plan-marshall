@@ -39,6 +39,10 @@ mode: knowledge
    - UI artifacts, markdown reports, and diagrams belong in `<appDataDir>/brain/<conversation-id>/`.
    - Keep artifacts isolated from repository source code and `.plan/` state.
 
+6. **Standing-Rules Bridge & Drift**:
+   - The standing rules are bridged at project setup from the `CLAUDE.md` baseline into the workspace rules file; the baseline stays authoritative and this bridge is never edited by hand.
+   - Re-setup detects drift: a missing version marker or a baseline newer than the bridge reports drift, and the steward upgrade path reconciles the bridge back to current.
+
 ## Available Standards
 
 **File**: `standards/antigravity-rules.md`

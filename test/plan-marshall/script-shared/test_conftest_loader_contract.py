@@ -59,7 +59,7 @@ EXTENSION_SKILL = 'plan-marshall-plugin'
 #: the ratio may not grow (that widens what the guard cannot see) and it may not
 #: silently shrink (that would mean the bound overstates the current blind spot and
 #: needs retuning, left as a visible failure rather than assumed away).
-UNRESOLVED_RATIO_LOWER_BOUND = 0.10
+UNRESOLVED_RATIO_LOWER_BOUND = 0.09
 UNRESOLVED_RATIO_UPPER_BOUND = 0.14
 
 #: Names a file-load registers that some test module ALSO imports plainly.

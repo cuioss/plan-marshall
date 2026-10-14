@@ -41,7 +41,7 @@ from runtime_base import (
     toon_noop,
     toon_success,
 )
-from toon_parser import serialize_toon
+from toon_parser import BlockScalar, serialize_toon
 
 
 def _persisted(settings_path: Any, settings: dict[str, Any]) -> bool:
@@ -1910,14 +1910,19 @@ class ClaudeRuntime(Runtime):
 
         task_description = claude_runtime._short_description_from_agent(agent_description)
 
+        # The agent markdown is opaque multi-line text: it embeds example blocks
+        # (e.g. ``status: success | error ...``) that would parse as envelope keys
+        # at column zero. Mark it so it crosses the TOON boundary inert — the
+        # ``_chat_signal_reducer`` BlockScalar precedent.
         return toon_success(
             'subagent dispatch',
             {
                 'platform': 'claude',
+                'usage': 'unknown',
                 'invocation': {
                     'tool': 'Task',
                     'description': task_description,
-                    'prompt': prompt_body,
+                    'prompt': BlockScalar(prompt_body),
                     'subagent_type': agent,
                 },
             },

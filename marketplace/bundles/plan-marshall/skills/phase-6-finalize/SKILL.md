@@ -337,6 +337,40 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-6-finalize:qgate) Finding {hash_id} [qgate]: fixed — {resolution_detail}"
 ```
 
+#### Fail-closed finalize entry on unrecorded execute commits
+
+The `5-execute → 6-finalize` transition refuses committed-but-unrecorded
+deliverable work (`manage-status` § "5-execute end-marker post-condition":
+`phase_end_markers_missing` / `execute_commits_unrecorded` /
+`branch_range_unresolvable`), but finalize
+must not trust that gate alone — a transition recorded before the guard
+existed, or a loop-back fix commit landed without its Step 10a settlement
+row, reaches this entry holding the same silent skip. Before entering Step 3,
+re-derive the identical condition (worktree-branch commits since the
+divergence base vs `kind=change` ledger rows, via
+`manage-change-ledger query --kind change`): when named branch commits carry
+no row, **fail closed** — do NOT enter the dispatch loop. Either loop back to
+`5-execute` (allocate the settlement bookkeeping as fix tasks and drive them
+through the standard execute pipeline, then re-enter here) or refuse entry
+with the unrecorded commit list. An unreadable marker store fails closed the
+same way: entry without proven recording is the skip, not the gate. An
+unestablishable commit range fails closed under `branch_range_unresolvable`:
+when neither `origin/{base_branch}` nor the local base ref resolves (or `git
+merge-base` / `git rev-list` fails), there is no comparison to run, so entry
+without the range is refused rather than passed through.
+
+#### Re-fire row pairing
+
+Every finalize re-fire pairs its rows: a re-fired step's terminal
+`mark-step-done` record never stands without its `record-step`
+execution-log row (item 5e) and its `record-dispatch-boundary` row
+(item 5c). The item-1 re-entry check detects a missing terminal record via
+`assert-step-recorded --require-terminal` before dispatching, and items
+5c/5e fire on every step return — dispatched or inline, `done` or
+`loop_back` — so a terminal mark with no execution-log row is a contract
+bug, not a degraded run. See items 5c/5e for the authoritative row shapes;
+this paragraph states only the pairing invariant they jointly uphold.
+
 ### Step 2: Read Manifest and Cross-Phase Configuration
 
 The phase-6-finalize step list is read from the **per-plan execution manifest** (`execution.toon`), not from `marshal.json`. The manifest is composed at outline time by `plan-marshall:manage-execution-manifest:compose` and is the single source of truth for which Phase 6 steps fire for this plan. This skill reads the manifest verbatim and dispatches — it carries NO per-step skip logic of its own.

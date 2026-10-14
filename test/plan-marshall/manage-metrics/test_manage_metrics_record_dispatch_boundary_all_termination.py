@@ -332,3 +332,63 @@ def test_returned_with_findings_subprocess_accepted_by_argparse(plan_context):
     )
     assert result.returncode == 0, f'returned_with_findings MUST be accepted by argparse: {result.stderr}'
     assert _boundary_path(plan_dir, '6-finalize').exists()
+
+
+# =============================================================================
+# Phase-level unknown through generate: unmeasured rows state their absence
+# =============================================================================
+
+from _manage_metrics_fixtures import (  # noqa: E402
+    ns_end_phase,
+    ns_generate,
+    ns_start_phase,
+)
+
+from conftest import load_script_module as _load_script_module  # noqa: E402
+
+_generate_metrics = _load_script_module(
+    'plan-marshall', 'manage-metrics', 'manage-metrics.py', 'manage_metrics_unknown_gen', register=False
+)
+
+
+def test_generate_stamps_unknown_on_an_unmeasured_row(plan_context):
+    """A closed-but-never-measured phase row reports `unknown`, never `0`.
+
+    The row below closed with no token flags and no accumulator: nothing ever
+    measured it, so `generate` completes its figure as the stated absence
+    rather than a measured zero or a silent omission.
+    """
+    plan_id = 'disp-unknown-gen'
+    plan_dir = plan_context.plan_dir_for(plan_id)
+    _seed_status_json(plan_dir)
+    _generate_metrics.cmd_start_phase(ns_start_phase(plan_id, '1-init'))
+    _generate_metrics.cmd_end_phase(ns_end_phase(plan_id, '1-init'))
+
+    result = _generate_metrics.cmd_generate(ns_generate(plan_id))
+
+    assert result['status'] == 'success'
+    assert result['total_tokens'] == 'unknown'
+    assert result['total_tokens_formatted'] == 'unknown'
+    assert result['totals_tokens_unknown_phases'] == '1-init'
+
+
+def test_generate_keeps_measured_rows_numeric_beside_unknown(plan_context):
+    """Measured rows keep their figures while an unmeasured row reads `unknown`.
+
+    The persisted numeric subset sum stays checkable in the store, but the
+    rendered Total refuses to quote a sum with a hole in it.
+    """
+    plan_id = 'disp-unknown-mixed'
+    plan_dir = plan_context.plan_dir_for(plan_id)
+    _seed_status_json(plan_dir)
+    _generate_metrics.cmd_start_phase(ns_start_phase(plan_id, '1-init'))
+    _generate_metrics.cmd_end_phase(ns_end_phase(plan_id, '1-init', total_tokens=5000))
+    _generate_metrics.cmd_start_phase(ns_start_phase(plan_id, '5-execute'))
+    _generate_metrics.cmd_end_phase(ns_end_phase(plan_id, '5-execute'))
+
+    result = _generate_metrics.cmd_generate(ns_generate(plan_id))
+
+    assert result['status'] == 'success'
+    assert result['total_tokens'] == 'unknown'
+    assert result['totals_tokens_unknown_phases'] == '5-execute'
+    assert result['totals_tokens'] == 5000
