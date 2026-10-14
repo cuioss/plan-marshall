@@ -1321,7 +1321,10 @@ def add_qgate_finding(
 
     ``reopen`` is the opt-in that re-arms the Q-Gate for a re-detected defect
     the store had recorded as ``fixed``: only a matched record whose resolution
-    is ``fixed`` reopens, and only when the caller passes the opt-in. The prior
+    is ``fixed`` reopens, and only when the caller passes the opt-in. A reopen stores the
+    caller's ``iteration`` on the record when one is supplied, so the re-armed
+    finding carries the re-detection iteration rather than the iteration the
+    prior disposition was recorded under. The prior
     resolution, detail and timestamp move into the record's ``history`` instead
     of being nulled, so the disposition the re-detection overrides stays
     readable. A ``fixed`` record re-observed without the opt-in is kept, and a
@@ -1378,18 +1381,21 @@ def add_qgate_finding(
             history = list(existing.get('history') or [])
             history.append(prior)
             reobserved_count = int(existing.get('reobserved_count', 0) or 0) + 1
+            reopen_updates: dict[str, Any] = {
+                'resolution': 'pending',
+                'resolution_detail': None,
+                'resolution_timestamp': None,
+                'history': history,
+                'reobserved_count': reobserved_count,
+            }
+            if iteration is not None:
+                reopen_updates['iteration'] = iteration
             update_jsonl(
                 qgate_path,
                 existing['hash_id'],
-                {
-                    'resolution': 'pending',
-                    'resolution_detail': None,
-                    'resolution_timestamp': None,
-                    'history': history,
-                    'reobserved_count': reobserved_count,
-                },
+                reopen_updates,
             )
-            return {
+            reopened: dict[str, Any] = {
                 'status': 'reopened',
                 'hash_id': existing['hash_id'],
                 'phase': phase,
@@ -1399,6 +1405,9 @@ def add_qgate_finding(
                 'reobserved_count': reobserved_count,
                 **store_state_fields(store),
             }
+            if iteration is not None:
+                reopened['iteration'] = iteration
+            return reopened
         # Kept-resolution: the same title AND the same content is a genuine
         # re-detection of the resolved finding, and the recorded resolution
         # stands — resolution, detail and timestamp are kept exactly, so an

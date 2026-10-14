@@ -306,8 +306,9 @@ guard in `manage-tasks finalize-step`.
 
 2. For each pending finding, look for a fixed record with the identical failure identity — the same `(title, detail, file_path, rule)` tuple, mirroring the store's dedup key — that carries the structured task reference `fix_task_number` (never parsed out of the free-text `resolution_detail`). For each matched reference, read the owning task (`manage-tasks get --plan-id {plan_id} --task-number {N}`): the pending finding is owned when the owning task is still not done.
 3. Branch on the verdict:
-   - **All owned (`all-owned-by-TASK-N`)** — every pending finding is owned by a still-open fix task. SKIP the `verification-feedback` dispatch entirely: no second fix task is allocated for a failure a pending fix task already owns. Re-dispatch phase-5-execute instead, so the owning fix task is scheduled and runs. Log the decision naming the owning task.
-   - **New findings (`new-findings`)** — at least one pending finding differs (no identical owned match). Proceed to the handling procedure below and dispatch triage normally.
+   - **All owned (`all-owned-by-TASK-N`)** (requires a non-empty pending set) — every pending finding is owned by a still-open fix task. SKIP the `verification-feedback` dispatch entirely: no second fix task is allocated for a failure a pending fix task already owns. Re-dispatch phase-5-execute instead, so the owning fix task is scheduled and runs. Log the decision naming the owning task and the spent iteration. An empty pending set never takes this branch: vacuous truth is not ownership, so a zero pending count resumes the normal post-return classification without re-dispatching phase-5-execute, and every skip on a non-empty owned set increments `verify_iteration` on the blocked verification task so the Step 11 iteration cap bounds skipped rounds exactly as dispatched rounds.
+   - **Empty pending set (`no-pending`)** (a zero pending count owns nothing: vacuous truth is not ownership, so resume the normal post-return classification without re-dispatching phase-5-execute).
+    - **New findings (`new-findings`)** — at least one pending finding differs (no identical owned match). Proceed to the handling procedure below and dispatch triage normally.
 
 **Handling procedure** (runs in the orchestrator's main context):
 
