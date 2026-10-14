@@ -2,8 +2,9 @@
 # ruff: noqa: E402
 """End-to-end regression tests for PR-Agent's contentless Guide, producer + aggregator.
 
-On a clean PR, PR-Agent posts exactly one persistent ``## PR Reviewer Guide 🔍``
-``issue_comment``. Before the fix that comment survived the producer pre-filter and
+On a clean PR, PR-Agent's security pass posts one persistent ``## PR Reviewer Guide 🔍``
+``issue_comment`` (the code-review pass's second Guide is covered in
+``test_pr_agent_contentless_code_review_guide.py``). Before the fix that comment survived the producer pre-filter and
 was filed as a pending hand-triage ``pr-comment`` finding, and the review
 retrospective then mapped the ``accepted`` disposition it always closes with into
 the ``false_positive`` bucket while dividing ``pct_resolved_as_fixed`` by

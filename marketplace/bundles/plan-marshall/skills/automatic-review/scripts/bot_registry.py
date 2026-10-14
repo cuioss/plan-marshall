@@ -11,7 +11,7 @@ need (the bot-kind set, the login->bot_kind map, each bot's re-review trigger
 comment, its escalated trigger comment, its trigger semantics, its completion
 check-run name, its skip-label-honoring flag, its ignore patterns, its
 acknowledgment patterns, its refusal patterns, its no-unreviewed-commit patterns,
-its contentless-review markers, its actionable-content markers, its
+its contentless-review markers and headings, its actionable-content markers, its
 participation-evidence publish shapes and the content marker each of those
 shapes must carry to count, its severity map, its rate-limit class, and its
 rate-limit ETA patterns) instead of hard-coding three bots across several code
@@ -54,8 +54,10 @@ Data-block shape (one per ``standards/{bot_kind}.md``)::
     refusal_size_cap_patterns:        # regexes extracting the CAP the size refusal states
       - "review limit of ([0-9][0-9,]*(?: [A-Za-z]+){0,2})"
     contentless_review_markers:
-      - "## Review Guide"
       - "**Nothing to report**"
+    contentless_review_headings:      # ANY ONE of these must also be present
+      - "## Review Guide"
+      - "## Code Review Guide"
     actionable_content_markers:
       - "<details>"
     rate_limit_eta_patterns:
@@ -70,7 +72,8 @@ scalars, lists (``ignore_patterns``, ``acknowledgment_patterns``,
 ``review_body_summary_patterns``,
 ``refusal_patterns``, ``refusal_size_patterns``, ``no_unreviewed_commit_patterns``,
 ``refusal_size_cap_patterns``, ``contentless_review_markers``,
-``actionable_content_markers``, ``participation_evidence``,
+``contentless_review_headings``, ``actionable_content_markers``,
+``participation_evidence``,
 ``rate_limit_eta_patterns``), and two nested maps
 (``participation_evidence_markers``, ``severity_map``) — parsed by a small
 deterministic reader below. Load order is the sorted
@@ -644,9 +647,31 @@ class BotRegistry:
         An empty list is the FAIL-CLOSED default: the content-aware layer never
         fires for a bot that declares no clean shape, so a bot that has not opted
         in behaves exactly as it did before the layer existed. Consumed together
-        with :meth:`actionable_content_markers`, whose entries veto the drop.
+        with :meth:`actionable_content_markers`, whose entries veto the drop, and
+        with :meth:`contentless_review_headings`, which names WHICH of the bot's
+        review comments the clean shape may sit under.
         """
         value = self._by_kind.get(bot_kind, {}).get('contentless_review_markers', [])
+        return list(value) if isinstance(value, list) else []
+
+    def contentless_review_headings(self, bot_kind: str) -> list[str]:
+        """Return the review-comment headings a contentless body may carry (``[]`` if absent).
+
+        The ALTERNATION companion to :meth:`contentless_review_markers`. A bot that
+        publishes the same clean shape under more than one persistent review comment
+        — PR-Agent's security ``## PR Reviewer Guide`` and its code-review
+        ``## PR Code Review Guide`` — cannot list both headings in the conjunction,
+        because no single body carries both. Each entry here is one such heading,
+        and the producer's test requires ANY ONE of them to be present, on top of
+        every :meth:`contentless_review_markers` entry.
+
+        An empty list adds no heading condition, so a bot that has not declared the
+        field is judged by its conjunction alone — exactly as before the field
+        existed. The field never widens the drop on its own: with an empty
+        :meth:`contentless_review_markers` the layer stays off whatever this list
+        declares.
+        """
+        value = self._by_kind.get(bot_kind, {}).get('contentless_review_headings', [])
         return list(value) if isinstance(value, list) else []
 
     def review_body_summary_patterns(self, bot_kind: str) -> list[str]:
@@ -941,6 +966,11 @@ def has_structural_size_cap(bot_kind: str) -> bool:
 def contentless_review_markers(bot_kind: str) -> list[str]:
     """The literals a contentless ``bot_kind`` review carries (``[]`` = fail-closed)."""
     return REGISTRY.contentless_review_markers(bot_kind)
+
+
+def contentless_review_headings(bot_kind: str) -> list[str]:
+    """The headings, any ONE of which a contentless ``bot_kind`` review carries (``[]`` = no condition)."""
+    return REGISTRY.contentless_review_headings(bot_kind)
 
 
 def actionable_content_markers(bot_kind: str) -> list[str]:
