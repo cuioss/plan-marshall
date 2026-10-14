@@ -52,6 +52,7 @@ from marketplace_paths import resolve_home
 from runtime_base import (
     PERMISSION_FIX_OPERATIONS,
     Runtime,
+    _unmapped_agent_tools,
     ensure_steps_without_skill_grants,
     extract_project_steps,
     toon_error,
@@ -1339,19 +1340,30 @@ class OpenCodeRuntime(Runtime):
 
         Verify-first clause 1: the ``task``-tool dispatch fires only when the
         tool is available in this envelope. A caller that knows the tool is
-        absent passes ``task_tool_available: False`` inside *context*; the
-        decline takes the explicit logged inline branch — a ``no-op`` naming
-        the inline fallback (the caller propagates ``usage`` as ``unknown``)
-        — instead of a faux success the harness cannot
-        honour. The flag defaults explicitly to available: an absent flag (or
-        an absent *context*) reads as ``True`` and the dispatch fires; only an
-        explicit ``False`` declines. The flag is consumed here and never merged
-        into the prompt.
+        absent passes ``task_tool_available: False`` (legacy) or the
+        target-neutral ``spawning_tool_available: False`` inside *context*;
+        either explicit ``False`` declines — the decline takes the explicit
+        logged inline branch — a ``no-op`` naming the inline fallback (the
+        caller propagates ``usage`` as ``unknown``) — instead of a faux
+        success the harness cannot honour. The flags default explicitly to
+        available: an absent flag (or an absent *context*) reads as ``True``
+        and the dispatch fires; only an explicit ``False`` declines. Both
+        flags are consumed here and never merged into the prompt.
+
+        Verify-first clause 2: the requested agent's frontmatter tools must
+        map onto the OpenCode tool set (``targets/opencode/mapping.json``).
+        An agent requiring a tool OpenCode has no equivalent for declines
+        with the same inline-branch ``no-op``. When the agent file or the
+        mapping is unreadable the check is vacuous and the dispatch proceeds
+        — an unmeasured source is never read as a refusal.
         """
         import pathlib
 
         task_tool_available = True if not isinstance(context, dict) else context.get('task_tool_available', True)
-        if task_tool_available is False:
+        spawning_tool_available = (
+            True if not isinstance(context, dict) else context.get('spawning_tool_available', True)
+        )
+        if task_tool_available is False or spawning_tool_available is False:
             return toon_noop(
                 'subagent dispatch',
                 "OpenCode 'task' tool is not available in this envelope — "
@@ -1366,6 +1378,14 @@ class OpenCodeRuntime(Runtime):
                 f'prompt file not found: {prompt_file}',
             )
 
+        unmapped = _unmapped_agent_tools(agent, 'opencode')
+        if unmapped:
+            return toon_noop(
+                'subagent dispatch',
+                f'Agent {agent!r} requires unmapped tools: {", ".join(unmapped)}',
+                'Remove unsupported tools from agent frontmatter or inline the agent logic',
+            )
+
         prompt_body = f'Run {agent}'
         if prompt_file is not None:
             try:
@@ -1378,7 +1398,7 @@ class OpenCodeRuntime(Runtime):
                 )
 
         if context:
-            context = {k: v for k, v in context.items() if k != 'task_tool_available'}
+            context = {k: v for k, v in context.items() if k not in ('task_tool_available', 'spawning_tool_available')}
             for key, value in context.items():
                 prompt_body = prompt_body.replace(f'{{{key}}}', str(value))
 

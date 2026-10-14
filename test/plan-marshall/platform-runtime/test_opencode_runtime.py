@@ -808,6 +808,75 @@ def test_subagent_dispatch_task_tool_flag_defaults_to_available(runtime: OpenCod
     assert _parse(runtime.subagent_dispatch('execution-context-level-3', None, {'plan_id': 'x'}))['status'] == 'success'
 
 
+def test_subagent_dispatch_neutral_flag_unavailable_takes_inline_branch(runtime: OpenCodeRuntime) -> None:
+    """An explicit spawning_tool_available=False declines with the inline-branch no-op."""
+    result = _parse(runtime.subagent_dispatch('execution-context-level-3', None, {'spawning_tool_available': False}))
+
+    assert result['status'] == 'no-op'
+    assert result['operation'] == 'subagent dispatch'
+    assert 'inline' in result['reason']
+    assert 'unknown' in result['alternative']
+
+
+def test_subagent_dispatch_attestation_flags_stripped_from_prompt(
+    runtime: OpenCodeRuntime, tmp_path: pathlib.Path
+) -> None:
+    """Both attestation flags are consumed at the seam, never merged into the prompt."""
+    prompt_file = tmp_path / 'prompt.md'
+    prompt_file.write_text('Run now', encoding='utf-8')
+
+    result = _parse(
+        runtime.subagent_dispatch(
+            'execution-context-level-3',
+            str(prompt_file),
+            {'task_tool_available': True, 'spawning_tool_available': True},
+        )
+    )
+    assert result['status'] == 'success'
+    assert 'task_tool_available' not in result['invocation']['prompt']
+    assert 'spawning_tool_available' not in result['invocation']['prompt']
+
+
+def test_subagent_dispatch_unmapped_agent_tool_takes_inline_branch(
+    runtime: OpenCodeRuntime, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An agent requiring a tool OpenCode has no equivalent for declines instead of succeeding."""
+    agent_file = tmp_path / 'bad-agent.md'
+    agent_file.write_text(
+        '---\nname: bad-agent\ndescription: uses bad tool\ntools: [Read, SendMessage]\n---\nBody.',
+        encoding='utf-8',
+    )
+    monkeypatch.setattr('runtime_base._find_agent_file', lambda _name, _extra=(): agent_file)
+
+    result = _parse(runtime.subagent_dispatch('bad-agent', None, None))
+    assert result['status'] == 'no-op'
+    assert result['operation'] == 'subagent dispatch'
+    assert 'SendMessage' in result['reason']
+    assert 'inline' in result['alternative']
+
+
+def test_subagent_dispatch_mapped_agent_tools_succeed(
+    runtime: OpenCodeRuntime, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An agent whose frontmatter tools all map onto OpenCode dispatches successfully."""
+    agent_file = tmp_path / 'good-agent.md'
+    agent_file.write_text(
+        '---\nname: good-agent\ndescription: uses mapped tools\ntools: [Read, Bash]\n---\nBody.',
+        encoding='utf-8',
+    )
+    monkeypatch.setattr('runtime_base._find_agent_file', lambda _name, _extra=(): agent_file)
+
+    result = _parse(runtime.subagent_dispatch('good-agent', None, None))
+    assert result['status'] == 'success'
+    assert result['invocation']['tool'] == 'task'
+
+
+def test_subagent_dispatch_unresolvable_agent_file_proceeds(runtime: OpenCodeRuntime) -> None:
+    """A generated level variant with no in-tree agent file is not refused on mapping grounds."""
+    result = _parse(runtime.subagent_dispatch('execution-context-level-3', None, None))
+    assert result['status'] == 'success'
+
+
 # =============================================================================
 # 14. wait_for — declined no-op (OpenCode holds no wait channel)
 # =============================================================================

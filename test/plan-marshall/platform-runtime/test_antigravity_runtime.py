@@ -388,6 +388,72 @@ def test_subagent_dispatch_multiline_prompt_parses(runtime: AntigravityRuntime, 
     assert 'status: success | error | loop_back | blocked' in result['invocation']['prompt']
 
 
+def test_subagent_dispatch_spawning_tool_unavailable_takes_inline_branch(runtime: AntigravityRuntime):
+    """An explicit spawning_tool_available=False declines with the inline-branch no-op."""
+    result = _parse(
+        runtime.subagent_dispatch('execution-context-level-3', None, {'spawning_tool_available': False})
+    )
+    assert result['status'] == 'no-op'
+    assert result['operation'] == 'subagent dispatch'
+    assert 'invoke_subagent' in result['reason']
+    assert 'inline' in result['reason']
+    assert 'unknown' in result['alternative']
+
+
+def test_subagent_dispatch_spawning_tool_flag_defaults_to_available(runtime: AntigravityRuntime):
+    """An absent flag (or absent context) fires the dispatch — available is the explicit default."""
+    assert _parse(runtime.subagent_dispatch('execution-context-level-3', None, None))['status'] == 'success'
+    assert _parse(runtime.subagent_dispatch('execution-context-level-3', None, {'plan_id': 'x'}))['status'] == 'success'
+
+
+def test_subagent_dispatch_attestation_flag_stripped_from_prompt(runtime: AntigravityRuntime, tmp_path: Path):
+    """The attestation flag is consumed at the seam, never merged into the prompt."""
+    prompt_file = tmp_path / 'prompt.md'
+    prompt_file.write_text('Run now', encoding='utf-8')
+
+    result = _parse(
+        runtime.subagent_dispatch(
+            'execution-context-level-3',
+            str(prompt_file),
+            {'spawning_tool_available': True},
+        )
+    )
+    assert result['status'] == 'success'
+    assert 'spawning_tool_available' not in result['invocation']['prompt']
+
+
+def test_subagent_dispatch_unmapped_agent_tool_takes_inline_branch(
+    runtime: AntigravityRuntime, tmp_path: Path, monkeypatch
+):
+    """An agent requiring a tool Antigravity has no equivalent for declines instead of succeeding."""
+    agent_file = tmp_path / 'bad-agent.md'
+    agent_file.write_text(
+        '---\nname: bad-agent\ndescription: uses bad tool\ntools: [Read, SendMessage]\n---\nBody.',
+        encoding='utf-8',
+    )
+    monkeypatch.setattr('runtime_base._find_agent_file', lambda _name, _extra=(): agent_file)
+
+    result = _parse(runtime.subagent_dispatch('bad-agent', None, None))
+    assert result['status'] == 'no-op'
+    assert result['operation'] == 'subagent dispatch'
+    assert 'SendMessage' in result['reason']
+    assert 'inline' in result['alternative']
+
+
+def test_subagent_dispatch_mapped_agent_tools_succeed(runtime: AntigravityRuntime, tmp_path: Path, monkeypatch):
+    """An agent whose frontmatter tools all map onto Antigravity dispatches successfully."""
+    agent_file = tmp_path / 'good-agent.md'
+    agent_file.write_text(
+        '---\nname: good-agent\ndescription: uses mapped tools\ntools: [Read, Bash]\n---\nBody.',
+        encoding='utf-8',
+    )
+    monkeypatch.setattr('runtime_base._find_agent_file', lambda _name, _extra=(): agent_file)
+
+    result = _parse(runtime.subagent_dispatch('good-agent', None, None))
+    assert result['status'] == 'success'
+    assert result['invocation']['tool'] == 'invoke_subagent'
+
+
 def test_metrics_capture(runtime: AntigravityRuntime):
     """metrics_capture captures total_tokens if supplied, else no-op."""
     res_tokens = _parse(runtime.metrics_capture('my-plan', 'phase-1-init', total_tokens=1500))

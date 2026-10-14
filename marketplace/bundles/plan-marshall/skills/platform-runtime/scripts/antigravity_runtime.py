@@ -25,6 +25,7 @@ import runtime_info
 from runtime_base import (
     PERMISSION_FIX_OPERATIONS,
     Runtime,
+    _unmapped_agent_tools,
     ensure_steps_without_skill_grants,
     extract_project_steps,
     toon_error,
@@ -951,12 +952,49 @@ class AntigravityRuntime(Runtime):
         to the Runtime ABC unknown rule: no dispatch has happened yet at this
         seam — the payload carries invocation parameters, not a run — so
         ``usage`` reports ``unknown`` rather than a measured zero.
+
+        Verify-first clause 1: the dispatch fires only when the
+        ``invoke_subagent`` tool is available in this envelope. A caller that
+        knows the tool is absent passes ``spawning_tool_available: False``
+        inside *context*; the explicit ``False`` declines — the decline takes
+        the explicit logged inline branch (a ``no-op`` naming the inline
+        fallback) instead of a faux success the harness cannot honour. The
+        flag defaults explicitly to available: an absent flag (or an absent
+        *context*) reads as ``True``. The flag is consumed here and never
+        merged into the prompt.
+
+        Verify-first clause 2: the requested agent's frontmatter tools must
+        map onto the Antigravity tool set
+        (``targets/antigravity/mapping.json``). An agent requiring a tool
+        Antigravity has no equivalent for declines with the same
+        inline-branch ``no-op``. When the agent file or the mapping is
+        unreadable the check is vacuous and the dispatch proceeds — an
+        unmeasured source is never read as a refusal.
         """
+        spawning_tool_available = (
+            True if not isinstance(context, dict) else context.get('spawning_tool_available', True)
+        )
+        if spawning_tool_available is False:
+            return toon_noop(
+                'subagent dispatch',
+                "Antigravity 'invoke_subagent' tool is not available in this envelope — "
+                'take the explicit logged inline branch instead of dispatching',
+                'Inline the agent logic in-turn and propagate usage as unknown',
+            )
+
         if prompt_file is not None and not Path(prompt_file).exists():
             return toon_error(
                 'subagent dispatch',
                 'prompt_not_found',
                 f'prompt file not found: {prompt_file}',
+            )
+
+        unmapped = _unmapped_agent_tools(agent, 'antigravity')
+        if unmapped:
+            return toon_noop(
+                'subagent dispatch',
+                f'Agent {agent!r} requires unmapped tools: {", ".join(unmapped)}',
+                'Remove unsupported tools from agent frontmatter or inline the agent logic',
             )
 
         prompt_body = f'Run {agent}'
@@ -972,6 +1010,8 @@ class AntigravityRuntime(Runtime):
 
         if context:
             for key, value in context.items():
+                if key == 'spawning_tool_available':
+                    continue
                 prompt_body = prompt_body.replace(f'{{{key}}}', str(value))
 
         # The prompt file is opaque multi-line text: it embeds example blocks

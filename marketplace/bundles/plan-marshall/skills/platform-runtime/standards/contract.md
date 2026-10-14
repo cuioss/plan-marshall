@@ -1216,8 +1216,8 @@ The admitted registry is `antigravity, claude, opencode` — derived live from `
 Per-harness dispatch outcomes:
 
 - **Claude** — `Task` tool with the agent frontmatter description; unmapped frontmatter tools decline as `no-op`.
-- **OpenCode** — `task` tool, conditional on verify-first clause 1 (tool available in the envelope). A caller passing `task_tool_available: False` in `--context` takes the explicit logged inline branch (`no-op` carrying the inline fallback) instead of a faux success.
-- **Antigravity** — `invoke_subagent` tool, keeping that mapping on every path.
+- **OpenCode** — `task` tool, conditional on verify-first clause 1 (tool available in the envelope) and clause 2 (the requested agent's frontmatter tools map onto the OpenCode tool set via `targets/opencode/mapping.json`). A caller passing `task_tool_available: False` (legacy) or the target-neutral `spawning_tool_available: False` in `--context` takes the explicit logged inline branch (`no-op` carrying the inline fallback) instead of a faux success; an agent requiring an unmapped tool takes the same inline branch. Both flags are consumed at this seam and never merged into the prompt.
+- **Antigravity** — `invoke_subagent` tool, keeping that mapping on every path, conditional on the same two verify-first clauses: `spawning_tool_available: False` in `--context` takes the explicit logged inline branch, and an agent requiring a tool outside `targets/antigravity/mapping.json` takes the same inline branch. When the agent file or the mapping is unreadable the clause-2 check is vacuous and the dispatch proceeds.
 
 Transcripts vocabulary: no dispatch has happened at this seam — the payload carries invocation parameters, not a run — so every success carries `usage: unknown` rather than a measured zero, and every inline-branch `no-op` propagates usage as unknown the same way. `unknown` here shares the manage-metrics unknown vocabulary: absent measurement is stated, never zero-filled.
 

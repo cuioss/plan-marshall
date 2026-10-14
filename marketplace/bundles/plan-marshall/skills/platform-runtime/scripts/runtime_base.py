@@ -12,8 +12,10 @@ ad-hoc parsing or serialization in this module.
 
 from __future__ import annotations
 
+import json
 from abc import ABC, abstractmethod
 from collections.abc import Collection, Iterable, Sequence
+from pathlib import Path
 from typing import Any
 
 from toon_parser import serialize_toon
@@ -344,8 +346,151 @@ def marshal_shape_error(operation: str, marshal_path: Any, marshal_data: Any) ->
 
 
 # =============================================================================
-# Abstract Base Class
+# Subagent-dispatch verify-first helpers
 # =============================================================================
+
+
+def _find_agent_file(agent_name: str, extra_roots: Sequence[Path] = ()) -> Path | None:
+    """Locate an agent markdown under the marketplace tree.
+
+    Searches *extra_roots* first (a target prepends its deployed-bundle cache
+    root so a deployed layout resolves before the source tree), then the
+    script-relative marketplace walk. Only existing roots are searched.
+    """
+    search_roots: list[Path] = [root for root in extra_roots if root.exists()]
+    # Script-relative walk to find marketplace.
+    for ancestor in Path(__file__).resolve().parents:
+        candidate = ancestor / 'marketplace' / 'bundles'
+        if candidate.is_dir():
+            search_roots.append(candidate)
+            break
+        candidate2 = ancestor / 'bundles'
+        if candidate2.is_dir():
+            search_roots.append(candidate2)
+            break
+
+    for root in search_roots:
+        for match in root.glob(f'*/agents/{agent_name}.md'):
+            if match.is_file():
+                return match
+    return None
+
+
+def _parse_agent_frontmatter(agent_path: Path) -> dict[str, Any]:
+    """Extract YAML-like frontmatter from an agent markdown file.
+
+    Returns a dict with at minimum 'name', 'description', and 'tools' keys.
+    Tools are returned as a list of strings.
+    """
+    result: dict[str, Any] = {'name': '', 'description': '', 'tools': []}
+    try:
+        content = agent_path.read_text(encoding='utf-8')
+    except OSError:
+        return result
+
+    if not content.startswith('---'):
+        return result
+
+    end = content.find('---', 3)
+    if end == -1:
+        return result
+
+    frontmatter = content[3:end].strip()
+    for line in frontmatter.splitlines():
+        stripped = line.strip()
+        if not stripped or ':' not in stripped:
+            continue
+        key, _, value = stripped.partition(':')
+        key = key.strip()
+        value = value.strip()
+        if key == 'tools':
+            # May be inline: tools: [Read, Write], tools: Read, Write, or a
+            # single tool name — or listed below as - items.
+            if value.startswith('['):
+                try:
+                    parsed = json.loads(value)
+                    result['tools'] = [str(t) for t in parsed]
+                except (json.JSONDecodeError, ValueError):
+                    # Try stripping brackets and splitting by comma.
+                    inner = value.strip('[]')
+                    result['tools'] = [t.strip().strip('"\'') for t in inner.split(',') if t.strip()]
+            elif value:
+                result['tools'] = [t.strip() for t in value.split(',') if t.strip()]
+        elif key in ('name', 'description'):
+            result[key] = value
+
+    # Handle tools as a YAML list (- item per line) if not yet found inline.
+    if not result['tools']:
+        in_tools = False
+        for line in frontmatter.splitlines():
+            stripped = line.strip()
+            if stripped.startswith('tools:'):
+                in_tools = True
+                inline = stripped[6:].strip()
+                if inline:
+                    in_tools = False
+            elif in_tools:
+                if stripped.startswith('- '):
+                    result['tools'].append(stripped[2:].strip())
+                else:
+                    in_tools = False
+
+    return result
+
+
+def _load_target_tool_permissions(target: str) -> dict[str, Any] | None:
+    """Read the ``tool_permissions`` map from a target's ``mapping.json``.
+
+    The map is the single source of truth the multi-target emitter uses to
+    render permission grants: a Claude-name key with a target-tool value is
+    satisfiable on the target, an explicit ``null`` value marks a tool the
+    target has no equivalent for. Returns ``None`` when the mapping cannot
+    be read — an unmeasured source, never an empty map, so callers fail open
+    (the check is vacuous) rather than read "no tools map" off a file that
+    was never opened.
+    """
+    mapping_file: Path | None = None
+    for ancestor in Path(__file__).resolve().parents:
+        candidate = ancestor / 'marketplace' / 'targets' / target / 'mapping.json'
+        if candidate.is_file():
+            mapping_file = candidate
+            break
+        candidate2 = ancestor / 'targets' / target / 'mapping.json'
+        if candidate2.is_file():
+            mapping_file = candidate2
+            break
+    if mapping_file is None:
+        return None
+    try:
+        data = json.loads(mapping_file.read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    permissions = data.get('tool_permissions')
+    return permissions if isinstance(permissions, dict) else None
+
+
+def _unmapped_agent_tools(agent_name: str, target: str) -> list[str] | None:
+    """Return the agent's frontmatter tools the target cannot satisfy.
+
+    Resolves the agent markdown and checks each declared tool against the
+    target's ``tool_permissions`` map. Returns ``None`` when the check could
+    not be performed — the agent file is unresolvable (a generated level
+    variant lives outside the source tree) or the mapping is unreadable —
+    so callers treat it as vacuous rather than as a measured empty or as a
+    refusal. An empty list is the measured "every declared tool maps".
+    """
+    agent_path = _find_agent_file(agent_name)
+    if agent_path is None:
+        return None
+    permissions = _load_target_tool_permissions(target)
+    if permissions is None:
+        return None
+    tools = _parse_agent_frontmatter(agent_path).get('tools', [])
+    if not isinstance(tools, list):
+        return None
+    return [str(tool) for tool in tools if tool not in permissions or permissions.get(tool) is None]
 
 
 class Runtime(ABC):
@@ -1310,7 +1455,11 @@ class Runtime(ABC):
         this envelope and (2) the requested agent's frontmatter tools map onto
         this target. A clause that fails takes the explicit logged inline
         branch — a ``no-op`` naming the inline fallback — never a faux success
-        carrying invocation parameters the harness cannot honour.
+        carrying invocation parameters the harness cannot honour. Clause (1)
+        is caller-attested: the envelope-side caller passes
+        ``spawning_tool_available: False`` inside *context* when the spawning
+        tool is absent, and the implementor declines; the flag is consumed at
+        this seam and never merged into the prompt.
 
         Usage propagation: success payloads carry ``usage`` (``unknown`` — no
         dispatch has happened yet at this seam, so there is nothing measured

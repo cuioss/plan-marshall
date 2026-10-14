@@ -32,7 +32,7 @@ from determine_mode import (
 from file_ops import atomic_write_file, safe_main
 from input_validation import parse_args_with_toon_errors
 from target_context import SOURCE_EXPLICIT, resolve_target
-from toon_parser import serialize_toon
+from toon_parser import parse_toon, serialize_toon
 
 
 def _reconcile_standing_rules_bridge(harness: str, project_dir: Path) -> bool:
@@ -52,7 +52,14 @@ def _reconcile_standing_rules_bridge(harness: str, project_dir: Path) -> bool:
         rt = _make_runtime(harness)
         writer = getattr(rt, 'project_initial_setup', None)
         if callable(writer):
-            writer(str(proj), harness)
+            result = writer(str(proj), harness)
+            if result is not None:
+                try:
+                    payload = parse_toon(result) if isinstance(result, str) else result
+                    if isinstance(payload, dict) and payload.get('status') != 'success':
+                        return False
+                except Exception:
+                    return False
     except Exception:
         # A failed setup must not report a healed bridge: the file checks
         # below read pre-existing state, so without this return a stale
@@ -77,6 +84,7 @@ def dispatch_platform_runtime_setup(harness: str, project_dir: Path) -> bool:
     """
     proj = project_dir.resolve()
     rules_emitted = False
+    setup_ok = True
 
     try:
         from platform_runtime import _make_runtime
@@ -84,13 +92,24 @@ def dispatch_platform_runtime_setup(harness: str, project_dir: Path) -> bool:
         rt = _make_runtime(harness)
         if rt is not None:
             if hasattr(rt, 'project_initial_setup'):
-                rt.project_initial_setup(str(proj), harness)
+                setup_result = rt.project_initial_setup(str(proj), harness)
+                if setup_result is not None:
+                    try:
+                        setup_payload = (
+                            parse_toon(setup_result)
+                            if isinstance(setup_result, str)
+                            else setup_result
+                        )
+                        if isinstance(setup_payload, dict) and setup_payload.get('status') != 'success':
+                            setup_ok = False
+                    except Exception:
+                        setup_ok = False
             if hasattr(rt, 'project_install_hook') and proj == Path.cwd().resolve():
                 rt.project_install_hook(harness)
             if hasattr(rt, 'opencode_enforcement_apply'):
                 rt.opencode_enforcement_apply(str(proj))
     except Exception:
-        pass
+        setup_ok = False
 
     if harness == 'antigravity':
         rules_emitted = (proj / '.agents' / 'rules' / 'plan-marshall-target-rules.md').is_file() or (
@@ -107,6 +126,9 @@ def dispatch_platform_runtime_setup(harness: str, project_dir: Path) -> bool:
 
     reconciled = _reconcile_standing_rules_bridge(harness, proj)
     rules_emitted = bool(rules_emitted or reconciled)
+
+    if not setup_ok:
+        return False
 
     return rules_emitted
 
