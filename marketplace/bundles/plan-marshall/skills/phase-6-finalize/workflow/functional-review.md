@@ -461,7 +461,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   --message '[WARNING] (plan-marshall:phase-6-finalize:functional-review) HEAD moved under the round ({start_head} -> {sha}) — discarding the verdict and re-running from Step 1'
 ```
 
-A re-run re-resolves the scope (a delta round over the new paths, or a full round when the record cannot anchor one), re-dispatches the author and verifier, and returns here. Record nothing on the discarded pass — no `mark-step-done`, no finding resolution — so the re-run starts from the step's previous terminal record.
+A re-run re-resolves the scope (a delta round over the new paths, or a full round when the record cannot anchor one), re-dispatches the author and verifier, and returns here. Record nothing on the discarded pass — no `mark-step-done`, no finding resolution — so the re-run starts from the step's previous terminal record. The `--message` below interpolates the two SHAs, so it is single-quoted per [§ Shell-safe free text](#shell-safe-free-text-in-command-templates) (SHAs are hex, but the rule is structural, not per-value).
 
 Every branch with a non-empty `{override_heads}` forwards `--fact override_closed_heads={override_heads}`, so a retrospective can name every head that shipped past the round cap without a review. A branch with an empty list omits the fact.
 
