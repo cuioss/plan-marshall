@@ -121,8 +121,8 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 > `{current_phase}:{D}` key, so a later phase pass over rows an earlier phase
 > wrote finds no stored hash for any deliverable and fully validates. Writes
 > MERGE: the write-back replaces this phase's rows and preserves every other
-> phase's rows verbatim. (Rows whose key carries no phase prefix predate this
-> convention — they are preserved verbatim on merge and never match a lookup.)
+> phase's rows verbatim. (Rows whose key carries no phase prefix never match a
+> lookup; they are preserved verbatim on merge.)
 > `{phase}` is taken from the dispatch context (`activation_context` /
 > `validators` scope), never defaulted.
 
