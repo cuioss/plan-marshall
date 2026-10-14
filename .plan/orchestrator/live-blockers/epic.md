@@ -410,7 +410,8 @@ derive, for rows still live.
   - **Folded into PLAN-LB-48 (D5–D7) by operator instruction, 2026-10-14**: the doc/registry
     corrections, the enrolment and observation (asking once before the foreign writes), `ci pr
     reply --repo`, and a durable instrument with persisted tables (answering the operator's "why
-    not fixing the script?"). The CodeRabbit Learning removal stays an operator action. The text
+    not fixing the script?"). The CodeRabbit Learning stored from the false triage reply is left
+    in place by operator decision (2026-10-14: "just ignore / remove it from the list"). The text
     below is the record of what was found.
   - **Operator decisions owed.** (1) Enrolment of the thirteen deferred repositories and the
     first-PR observation (spec D6, D7) were not done: re-stage, asking once before writing to 13
@@ -418,8 +419,7 @@ derive, for rows still live.
     (2) The measurement: `doc/analysis/in-house-reviewer-efficacy.md` and the registry section of
     `cuioss-review-bot.md` point at PR tables that do not exist, name an instrument that was
     deleted, and overclaim the fixed-diff result (four rows were post-charter merged heads); the
-    operator's "why not fixing the script?" is unanswered. (3) A CodeRabbit repository Learning
-    built on the false triage reply must be removed in the CodeRabbit app.
+    operator's "why not fixing the script?" is unanswered.
   - **A task's content for the PR description has no route into the PR body**; `create-pr` offers
     no channel, and the functional review accepted temp files as evidence that the PR description
     carries it. Unowned.

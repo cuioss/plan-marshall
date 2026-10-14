@@ -126,8 +126,8 @@ guard plugin were inactive (hot-fixed in #1772). The rule breaks are still the a
   2. The measurement: correct the doc and registry (false pointers, D2 overclaim, snapshot
      absolutes), and decide the operator's unanswered "why not fixing the script?" — whether the
      instrument becomes durable (CI verbs or committed scripts) so the pass is reproducible.
-  3. Remove the CodeRabbit repository Learning built on the false premise (CodeRabbit app; outside
-     this repository).
+  Both folded into PLAN-LB-48 (D5–D7). The CodeRabbit Learning is left in place by operator
+  decision.
 - New Open Defects: content a task assigns to the PR description has no route into the PR body;
   the functional review accepts temp files as evidence and never checks "Done when" outcome counts
   (0 of 13 graded met); `ci pr reply` has no `--repo` (forces raw `gh` for foreign PRs); drift

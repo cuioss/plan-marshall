@@ -167,7 +167,6 @@ deliverable groups. The measurement half of the OpenCode work is PLAN-LB-49.
 - OBSERVED (deliverable 6): `ci pr reply` declares no `--repo` option, so PLAN-LB-31 posted its eight `/review` comments with raw `gh pr comment --repo …`.
 - HYPOTHESIS (deliverable 7): the instrument belongs under `marketplace/bundles/plan-marshall/skills/automatic-review/scripts/` (it measures that skill's reviewers) or `.claude/skills/` (meta-project only) — confirm with the operator at outline; PLAN-LB-31's spec said "ask where it should live" (verify-at-outline).
 - HYPOTHESIS (deliverable 7): the corpus reads the instrument needs (PR list with labels, review comments, check runs per head, workflow runs) are all reachable through existing `ci` verbs — confirm against `tools-integration-ci` `--help`; a missing read becomes a small `ci` verb, never a raw `gh` call (verify-at-outline).
-- Operator action, not code (report in the PR): remove the CodeRabbit repository Learning stored from PLAN-LB-31's false triage reply ("Do not infer that evidence is missing because it is absent from the source report").
 - Verify-first clause: decide whether the emitter supports OpenCode 1 at all after this change. Recommended: OpenCode 2 only, with deliverable 4's check reporting a 1.x install; keep a dual shape only if a machine still runs 1.x.
 - Verify-first clause (deliverable 2): PLAN-LB-39 (running) D1 wires phase 5 through `subagent dispatch`. If LB-39 has already changed it, keep LB-39's shape and drop that half.
 
