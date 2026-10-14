@@ -458,7 +458,7 @@ Capture the full SHA as `{sha}`.
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level WARNING \
-  --message "[WARNING] (plan-marshall:phase-6-finalize:functional-review) HEAD moved under the round ({start_head} -> {sha}) — discarding the verdict and re-running from Step 1"
+  --message '[WARNING] (plan-marshall:phase-6-finalize:functional-review) HEAD moved under the round ({start_head} -> {sha}) — discarding the verdict and re-running from Step 1'
 ```
 
 A re-run re-resolves the scope (a delta round over the new paths, or a full round when the record cannot anchor one), re-dispatches the author and verifier, and returns here. Record nothing on the discarded pass — no `mark-step-done`, no finding resolution — so the re-run starts from the step's previous terminal record.
