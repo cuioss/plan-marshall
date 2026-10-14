@@ -426,6 +426,12 @@ derive, for rows still live.
   - **Drift recovery can manufacture its own loop cap**: a refine Q-Gate that defers the rebase to
     finalize guarantees the next drift. Unowned.
   - **The retrospective's direct-`gh` audit is blind on OpenCode** — folded into PLAN-LB-49.
+  - **The in-house review job is skipped or fails on a large share of PRs**: per the efficacy doc,
+    skipped on more than a hundred candidate PRs and failed on twenty, against about two hundred
+    posted reviews, across eight repositories (skip-label and Dependabot PRs already excluded).
+    Required-bot coverage is silently absent there. The doc records it only as a yield caveat.
+    Nearest owner PLAN-LB-46 (D5, a bot with nothing to review), but skips are broader than path
+    filters — needs its cause established first. Unverified beyond the doc's own claim.
 
 - **Medium and low items are not owned by any staged plan.** They are listed with evidence
   in `backlog.md` (sections 1.12 onward, 2.3 onward, 3.2 onward, 4.7 onward and 5). Promote an
