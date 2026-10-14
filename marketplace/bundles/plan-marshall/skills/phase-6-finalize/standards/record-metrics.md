@@ -78,7 +78,7 @@ Capture the following fields from the returned TOON for the parent skill's outpu
 - `total_tokens` — raw integer count, or the literal `unknown` when any phase row ran unmeasured (see `manage-metrics/standards/data-format.md` § "Unknown token figures (`unknown`)"). Kept for the output contract's machine-readable column — never substituted with `0`.
 - `total_wall_formatted` — human-readable wall-clock string produced by `format_duration` (e.g. `1h46m`, `9m32s`).
 - `total_tokens_formatted` — abbreviated string produced by `format_tokens_short` (e.g. `599K`, `1.2M`), or `unknown` alongside an unknown `total_tokens`.
-- `total_tokens_unknown_phases` — comma-joined phases whose Tokens cell rendered `unknown` (empty when every row measured). Names the rows the total does not cover.
+- `totals_tokens_unknown_phases` — comma-joined phases whose Tokens cell rendered `unknown` (empty when every row measured). Names the rows the total does not cover.
 - `any_phase_missing_end_time` — bool; `true` when at least one canonical phase's row carries no `end_time` boundary marker. Drives the gap-surfacing `[WARN]` step below and the matching field in the output contract.
 - `phases_missing_end_time` — list of canonical phases whose row carries no `end_time` (empty when `any_phase_missing_end_time` is `false`). Named in the `[WARN]` log line and surfaced in the output contract.
 - `file` — relative path to `metrics.md`.
@@ -124,7 +124,7 @@ This step populates the following fields in the parent skill's `metrics` output 
 | `metrics.total_tokens` | `total_tokens` from generate output (raw count, or `unknown` when any phase ran unmeasured — never `0` for unmeasured) |
 | `metrics.total_wall_formatted` | `total_wall_formatted` from generate output (e.g. `1h46m`) |
 | `metrics.total_tokens_formatted` | `total_tokens_formatted` from generate output (e.g. `599K`, or `unknown`) |
-| `metrics.total_tokens_unknown_phases` | `total_tokens_unknown_phases` from generate output (phases the total does not cover; empty when every row measured) |
+| `metrics.total_tokens_unknown_phases` | `totals_tokens_unknown_phases` from generate output (phases the total does not cover; empty when every row measured) |
 | `metrics.harness` | `status.metadata.harness` (stamped at phase-1-init Step 8a.6; `unknown` when the stamp is absent) |
 | `metrics.any_phase_missing_end_time` | `any_phase_missing_end_time` from generate output (bool; `true` when a canonical phase's row carries no `end_time` boundary marker) |
 | `metrics.phases_missing_end_time` | `phases_missing_end_time` from generate output (canonical phases whose row carries no `end_time`; empty when the bool is `false`) |
