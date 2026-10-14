@@ -261,7 +261,8 @@ export default Plugin.define({
         return
       }
 
-      if (tool !== "bash") return
+      // OpenCode 2 names its shell tool `shell`; OpenCode 1 named it `bash`.
+      if (tool !== "shell" && tool !== "bash") return
 
       if (hasChainingConstructor(command)) {
         audit(auditLine("R1", tool, sessionID, callID, command))
