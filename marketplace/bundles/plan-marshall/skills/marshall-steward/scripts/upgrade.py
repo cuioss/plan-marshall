@@ -342,6 +342,18 @@ def _has_operator_answer(params: dict) -> bool:
     return False
 
 
+def _named_discarded_bots(legacy: object) -> list[str]:
+    """Return the individual bot names carried by a raw ``enabled_bots`` value.
+
+    Accepts the raw value as read off the step's param object (``object`` — its
+    static type there is ``Any | None``) and coerces it to text before splitting.
+    The migration reports each discarded bot BY NAME rather than echoing the raw
+    CSV string, so a dropped bot — including one the registry does not know — is
+    visible to the operator (and to :func:`validate_bot_lists`) by name.
+    """
+    return [name.strip() for name in str(legacy).split(',') if name.strip()]
+
+
 def migrate_bot_lists(params: dict) -> dict:
     """Auto-map a retired ``enabled_bots`` value onto the two-list model.
 
@@ -355,8 +367,8 @@ def migrate_bot_lists(params: dict) -> dict:
        ``optional_bots: sourcery``), remove ``enabled_bots``, and record
        provenance ``migrated``. Seeding the standard roster (not the legacy
        value verbatim) is what leaves a legacy-only config valid without hand
-       repair: the legacy value is reported as ``discarded_legacy`` so no name
-       disappears silently, and any unknown name is reported by
+       repair: the discarded bots are named individually in ``discarded_legacy``
+       so no name disappears silently, and any unknown name is reported by
        ``validate_bot_lists`` rather than copied.
     2. **legacy present, operator answered** — the operator has already
        answered, so THEIR ANSWER WINS: the new keys are left untouched and
@@ -378,7 +390,8 @@ def migrate_bot_lists(params: dict) -> dict:
     Returns:
         A report dict: ``state`` (one of ``migrated`` / ``operator_answer_kept`` /
         ``noop``), plus ``required_bots`` / ``optional_bots`` (the resulting
-        values) and, when a legacy value was discarded, ``discarded_legacy``.
+        values) and, when a legacy value was discarded, ``discarded_legacy``
+        (the list of dropped bot names — never the raw ``enabled_bots`` string).
     """
     legacy = params.get(_LEGACY_BOT_LIST_KEY)
     has_legacy = legacy is not None
@@ -401,10 +414,10 @@ def migrate_bot_lists(params: dict) -> dict:
             'state': 'operator_answer_kept',
             'required_bots': params.get(_REQUIRED_BOTS_KEY, ''),
             'optional_bots': params.get(_OPTIONAL_BOTS_KEY, ''),
-            'discarded_legacy': legacy,
+            'discarded_legacy': _named_discarded_bots(legacy),
         }
 
-    # State (1) — seed the standard roster; report the legacy value explicitly.
+    # State (1) — seed the standard roster; name each dropped bot explicitly.
     params[_REQUIRED_BOTS_KEY] = _STANDARD_REQUIRED_BOTS
     params[_OPTIONAL_BOTS_KEY] = _STANDARD_OPTIONAL_BOTS
     params[_PROVENANCE_KEY] = 'migrated'
@@ -413,7 +426,7 @@ def migrate_bot_lists(params: dict) -> dict:
         'state': 'migrated',
         'required_bots': _STANDARD_REQUIRED_BOTS,
         'optional_bots': _STANDARD_OPTIONAL_BOTS,
-        'discarded_legacy': legacy,
+        'discarded_legacy': _named_discarded_bots(legacy),
     }
 
 

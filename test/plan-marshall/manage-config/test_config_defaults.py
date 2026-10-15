@@ -3847,9 +3847,7 @@ def test_nested_diff_dynamic_prefixes_sources_every_step_map_from_the_constants(
 
     assert declared, 'the declaring constant must enumerate at least one step map'
     for phase, map_key in declared:
-        assert f'plan.{phase}.{map_key}' in prefixes, (
-            f'the declared step map plan.{phase}.{map_key} must be recognised'
-        )
+        assert f'plan.{phase}.{map_key}' in prefixes, f'the declared step map plan.{phase}.{map_key} must be recognised'
         assert f'plan.{phase}.{removed_key}' in prefixes, (
             f'the removal-intent sibling plan.{phase}.{removed_key} must be recognised'
         )

@@ -26,6 +26,7 @@ import argparse
 import json
 import sys
 from pathlib import Path
+from typing import cast
 
 # ``upgrade`` pulls in ``file_ops`` and the ``script-shared`` library at module
 # scope, and ``bot_registry`` supplies the live reviewer-kind set the bot-list
@@ -36,6 +37,8 @@ import bot_registry
 import pytest
 import upgrade
 from toon_parser import parse_toon
+
+from conftest import load_script_module, parse_ns
 
 _EXPECTED_STAGE_KEYS = ['regenerate-targets', 'reconcile-config', 'verify', 'land']
 _EXPECTED_STAGE_ORDERS = [1, 2, 3, 4]
@@ -403,8 +406,8 @@ def test_migrate_bot_lists_seeds_required_from_legacy_verbatim():
     """State 1 — legacy alone seeds the standard roster (not verbatim).
 
     The legacy-only config lands valid without hand repair: required carries
-    ``cuioss-review-bot,coderabbit``, optional carries ``sourcery``, the legacy
-    value is reported as ``discarded_legacy`` so no name disappears silently,
+    ``cuioss-review-bot,coderabbit``, optional carries ``sourcery``, each dropped
+    legacy bot is named in ``discarded_legacy`` so no name disappears silently,
     and provenance records ``migrated``. Unknown legacy names are reported by
     ``validate_bot_lists`` rather than copied. (Function name is historical: it
     predates the standard-roster contract and is kept so the five migrated
@@ -417,7 +420,7 @@ def test_migrate_bot_lists_seeds_required_from_legacy_verbatim():
     assert report['state'] == 'migrated'
     assert report['required_bots'] == 'cuioss-review-bot,coderabbit'
     assert report['optional_bots'] == 'sourcery'
-    assert report['discarded_legacy'] == 'coderabbit,sourcery'
+    assert report['discarded_legacy'] == ['coderabbit', 'sourcery']
     assert params['required_bots'] == 'cuioss-review-bot,coderabbit'
     assert params['optional_bots'] == 'sourcery'
     assert params['bot_lists_provenance'] == 'migrated'
@@ -444,8 +447,8 @@ def test_migrate_bot_lists_operator_answer_wins_over_legacy():
     """State 2 — an already-answered new key wins; only the stale legacy is dropped.
 
     The operator's explicit answer is never overwritten by the auto-map, and the
-    provenance is not downgraded from ``answered`` to ``migrated``. The discarded
-    legacy value is reported so the operator can see what was dropped.
+    provenance is not downgraded from ``answered`` to ``migrated``. Each
+    discarded bot is reported by name so the operator can see what was dropped.
     """
     params = {
         'enabled_bots': 'coderabbit,sourcery',
@@ -457,7 +460,7 @@ def test_migrate_bot_lists_operator_answer_wins_over_legacy():
     report = upgrade.migrate_bot_lists(params)
 
     assert report['state'] == 'operator_answer_kept'
-    assert report['discarded_legacy'] == 'coderabbit,sourcery'
+    assert report['discarded_legacy'] == ['coderabbit', 'sourcery']
     assert params['required_bots'] == 'cuioss-review-bot'
     assert params['optional_bots'] == 'sourcery'
     assert params['bot_lists_provenance'] == 'answered'
@@ -494,7 +497,7 @@ def test_migrate_bot_lists_is_self_disarming_on_second_run():
     second = upgrade.migrate_bot_lists(params)
 
     assert first['state'] == 'migrated'
-    assert first['discarded_legacy'] == 'coderabbit,sourcery'
+    assert first['discarded_legacy'] == ['coderabbit', 'sourcery']
     assert second['state'] == 'noop'
     assert params == after_first
     assert second['required_bots'] == 'cuioss-review-bot,coderabbit'
@@ -943,6 +946,74 @@ def test_sync_backfill_fills_absent_roster_and_never_clobbers_operator_answer():
         'optional_bots': '',
         'bot_lists_provenance': 'answered',
     }
+
+
+# =============================================================================
+# Cleaned-dead-step order — the reconcile clears the dead id, then add-step works
+# =============================================================================
+#
+# A configured phase-6 step id with no resolvable order blocks the step-map
+# writers: `_resolve_step_orders` iterates EVERY configured id and fails
+# `missing_order` on the first one it cannot order. The upgrade's Stage-2
+# reconcile runs the shared dead-id resolver first, so a dead id is gone before
+# the operator's next `add-step`. These tests drive that real order on a live
+# marshal.json — reconcile, then `plan phase-6-finalize add-step` — so the ORDER
+# is pinned rather than only the end state.
+
+
+def _manage_config_add_step(step: str) -> dict:
+    """Drive the real ``plan phase-6-finalize add-step`` handler on the staged config.
+
+    ``_cmd_system_plan`` is loaded under a test-local name (never imported
+    plainly — a sibling suite file-loads it, and a plain import here would put
+    two copies in play, reachable by different routes and differing by
+    collection order).
+    """
+    sys_plan = load_script_module(
+        'plan-marshall',
+        'manage-config',
+        '_cmd_system_plan.py',
+        module_name='_cmd_system_plan_for_cleaned_step_test',
+    )
+    return cast(
+        dict,
+        sys_plan.cmd_plan(argparse.Namespace(sub_noun='phase-6-finalize', verb='add-step', step=step, position=None)),
+    )
+
+
+def test_add_step_succeeds_on_a_config_the_upgrade_cleaned_of_a_dead_step(plan_context):
+    """Prove the cleaned-dead-step order through the real command sequence.
+
+    The dead id blocks ``add-step`` first (the matched negative control), the
+    upgrade's Stage-2 reconcile clears it, and only then does ``add-step``
+    succeed — the order the fix exists to guarantee.
+    """
+    import _cmd_sync_defaults
+
+    marshal = plan_context.fixture_dir / 'marshal.json'
+    marshal.write_text(
+        json.dumps({'plan': {'phase-6-finalize': {'steps': {'default:push': {}, 'default:stale-step': {}}}}}),
+        encoding='utf-8',
+    )
+
+    # Negative control: the dead id blocks order resolution, so add-step fails.
+    blocked = _manage_config_add_step('default:create-pr')
+    assert blocked['status'] == 'error'
+    assert blocked['error'] == 'missing_order'
+
+    # The upgrade's Stage-2 reconcile clears the dead id, leaving the live one.
+    synced = _cmd_sync_defaults.cmd_sync_defaults(
+        parse_ns('plan-marshall', 'manage-config', 'manage-config.py', 'sync-defaults', register=False)
+    )
+    assert synced['status'] == 'success'
+    steps = json.loads(marshal.read_text(encoding='utf-8'))['plan']['phase-6-finalize']['steps']
+    assert 'default:stale-step' not in steps
+    assert 'default:push' in steps
+
+    # ... and add-step now succeeds on the cleaned config.
+    result = _manage_config_add_step('default:create-pr')
+    assert result['status'] == 'success'
+    assert 'default:create-pr' in json.loads(marshal.read_text(encoding='utf-8'))['plan']['phase-6-finalize']['steps']
 
 
 # =============================================================================

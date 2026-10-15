@@ -442,7 +442,7 @@ python3 .plan/execute-script.py plan-marshall:marshall-steward:upgrade migrate-b
 
 It seeds the **standard roster** (`required_bots: cuioss-review-bot,coderabbit`,
 `optional_bots: sourcery`), removes `enabled_bots`, and records provenance `migrated`. It does NOT
-copy the legacy value verbatim: the discarded legacy value is reported as `discarded_legacy` so no
+copy the legacy value verbatim: each discarded bot is named in the `discarded_legacy` list so no
 name disappears silently, and any unknown name is surfaced by `validate-bot-lists` rather than
 copied. (Its sibling Stage-2 sub-step `reconcile-marshal-json` seeds the same standard roster through
 `sync-defaults --backfill-bot-roster` when the block was never answered — both lists otherwise have
