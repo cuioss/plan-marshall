@@ -367,10 +367,11 @@ def test_cli_dispatch_configure_harness(plan_env, monkeypatch: pytest.MonkeyPatc
 
 def test_bridge_reemit_command_names_project_initial_setup(plan_env):
     """Damaged stub surfaces the re-emit command, never silent."""
-    cmd = ch.bridge_reemit_command('opencode')
+    cmd = ch.bridge_reemit_command('opencode', Path('.plan'), Path('.'))
     assert 'platform-runtime' in cmd
     assert 'project initial-setup' in cmd
     assert 'opencode' in cmd
+    assert '--project-dir' in cmd
 
 
 def test_reconcile_damaged_stub_returns_false(plan_env):

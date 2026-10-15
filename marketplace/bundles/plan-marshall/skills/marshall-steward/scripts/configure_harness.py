@@ -50,14 +50,18 @@ from opencode_runtime import _bridge_rules_path as _opencode_bridge_path
 #: so the condition is never silent. Re-running project initial-setup re-emits
 #: the bridge-owned file only.
 BRIDGE_REEMIT_COMMAND_TEMPLATE = (
-    'python3 .plan/execute-script.py plan-marshall:platform-runtime:platform_runtime'
-    ' project initial-setup --target {harness}'
+    'python3 {plan_dir}/execute-script.py plan-marshall:platform-runtime:platform_runtime'
+    ' project initial-setup --project-dir {project_dir} --target {harness}'
 )
 
 
-def bridge_reemit_command(harness: str) -> str:
+def bridge_reemit_command(harness: str, plan_dir: Path, project_dir: Path) -> str:
     """Return the re-emit command for a damaged or missing bridge stub."""
-    return BRIDGE_REEMIT_COMMAND_TEMPLATE.format(harness=harness)
+    return BRIDGE_REEMIT_COMMAND_TEMPLATE.format(
+        harness=harness,
+        plan_dir=plan_dir,
+        project_dir=project_dir,
+    )
 
 
 def _reconcile_standing_rules_bridge(harness: str, project_dir: Path) -> bool:
@@ -93,7 +97,7 @@ def _reconcile_standing_rules_bridge(harness: str, project_dir: Path) -> bool:
             text = bridge.read_text(encoding='utf-8')
         except OSError:
             return False
-        if marker not in text:
+        if marker not in text.splitlines():
             return False
         return True
     return False
@@ -229,7 +233,7 @@ def configure_harness(
         'bridge_verdict': bridge_verdict,
     }
     if bridge_verdict in ('damaged', 'missing'):
-        result['bridge_reemit_command'] = bridge_reemit_command(harness)
+        result['bridge_reemit_command'] = bridge_reemit_command(harness, plan_dir, proj)
     return result
 
 
