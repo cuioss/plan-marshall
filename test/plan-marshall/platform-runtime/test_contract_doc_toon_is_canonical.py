@@ -161,14 +161,11 @@ def test_runtime_info_unknown_target_example_names_no_registered_target() -> Non
     """The error example quotes a target outside the registry, never a real one."""
     blocks = _section_blocks('### `runtime-info`', 'operation: runtime-info', 'error: unknown_target')
 
-    assert len(blocks) == 1, (
-        f'expected the one runtime-info unknown-target example, found {len(blocks)}'
-    )
+    assert len(blocks) == 1, f'expected the one runtime-info unknown-target example, found {len(blocks)}'
     match = re.search(r"runtime\.target '([^']+)'", blocks[0])
     assert match is not None, 'the error message names no quoted runtime.target value'
     assert match.group(1) not in _REGISTERED_TARGETS, (
-        f"{match.group(1)!r} is a registered target — "
-        'the example contradicts its own unknown_target error'
+        f'{match.group(1)!r} is a registered target — the example contradicts its own unknown_target error'
     )
     assert 'valid targets are: antigravity, claude, opencode' in blocks[0]
 
