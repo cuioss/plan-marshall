@@ -9,7 +9,12 @@ live ``.plan/marshal.json`` so existing projects (which never re-run ``init``)
 pick up new default rows without losing user-set overrides.
 """
 
-from _cmd_quality_phases import _find_dead_step_ids, _resolve_finalize_step_lane
+from _cmd_quality_phases import (
+    _find_dead_step_ids,
+    _read_removed_steps,
+    _resolve_finalize_step_lane,
+    _write_removed_steps,
+)
 from _config_core import (
     error_exit,
     is_initialized,
@@ -626,29 +631,30 @@ def _backfill_standard_roster(merged: dict) -> bool:
     return changed
 
 
-def _remove_dead_step_ids(live: dict, dead_reports: list[str]) -> dict:
-    """Remove configured phase-6 step ids with no resolvable order from the live map.
+def _remove_dead_step_ids(live: dict, dead_reports: list[str], kept_reports: list[str]) -> dict:
+    """Remove genuinely-dead phase-6 step ids, failing closed on unresolved discovery.
 
     Runs the shared :func:`_cmd_quality_phases._find_dead_step_ids` resolver
     over ``plan.phase-6-finalize.steps`` so a dead id is caught during the
     reconcile, not at the next ``add-step`` ``missing_order`` failure. Each
-    dead id is dropped from the map (its nested params go with it) and
-    reported as a human-readable dotted-path string carrying its reason, so a
-    later ``add-step`` on the reconciled config no longer fails for that id.
-    A dead id is never added to the operator ``removed_steps`` list — the
-    removal is a dead-id cleanup, not an operator decision, so a later
-    back-fill of the same id reads as a routine addition.
+    entry the resolver returns carries an ``outcome`` the removal branches on:
 
-    External ``bundle:skill`` steps are exempt: their frontmatter lane is
-    unresolvable by design (no project-local source doc) and the lane
-    materializer leaves such pre-existing steps lane-less and unreported, so
-    the dead-id sweep must leave them untouched too. Removing them here would
-    contradict the lane-less contract pinned by
-    ``test_sync_defaults_leaves_unresolvable_frontmatter_step_lane_less``.
+    - ``'unknown'`` — discovery did NOT resolve (a scan surface was unreadable),
+      so an empty discovery result is no evidence of death. NOTHING is deleted
+      for that id; the configured entry is left exactly as it is.
+    - ``'dead'`` on an EXTERNAL step (``project:`` / ``bundle:skill``) — the id
+      is unresolvable by design (no project-local source doc declares the
+      ext-point) and the lane materializer leaves such a step untouched, so it is
+      KEPT and reported in ``kept_reports``, never deleted.
+    - ``'dead'`` on a built-in step — genuinely dead: it is dropped from the map
+      (its nested params go with it), its id is recorded in the phase's
+      ``removed_steps`` list so a later back-fill crossing it reads as an
+      operator-decision crossing rather than a routine addition, and it is
+      reported in ``dead_reports``.
 
     Runs BEFORE the deep-merge so the merge never treats a dead id as a kept
-    step to back-fill params into. Idempotent: once no dead id remains, a
-    re-run reports nothing. Mutates ``live`` in place and returns it.
+    step to back-fill params into. Idempotent: once no dead id remains, a re-run
+    reports nothing. Mutates ``live`` in place and returns it.
     """
     plan = live.get('plan')
     if not isinstance(plan, dict):
@@ -659,15 +665,29 @@ def _remove_dead_step_ids(live: dict, dead_reports: list[str]) -> dict:
     steps_map = phase6.get('steps')
     if not isinstance(steps_map, dict):
         return live
+
+    removed_ids: list[str] = []
     for entry in _find_dead_step_ids(list(steps_map.keys()), 'phase-6-finalize'):
         step_id = entry['step']
+        # Fail-closed: an unresolved discovery deletes nothing.
+        if entry.get('outcome') == 'unknown':
+            continue
+        # Unresolvable-by-design external steps are reported, never deleted.
         if _is_external_step(step_id):
+            kept_reports.append(
+                f'plan.phase-6-finalize.steps.{step_id} '
+                f'(kept: external step, no project-local source declares the ext-point — {entry["reason"]})'
+            )
             continue
         if step_id in steps_map:
             del steps_map[step_id]
+        removed_ids.append(step_id)
         dead_reports.append(
             f'plan.phase-6-finalize.steps.{step_id} (dead step id, no resolved order — removed: {entry["reason"]})'
         )
+
+    if removed_ids:
+        _write_removed_steps(phase6, [*_read_removed_steps(phase6), *removed_ids])
     return live
 
 
@@ -725,6 +745,14 @@ def cmd_sync_defaults(args) -> dict:
     back-fills other missing default keys while leaving the user's seeded
     ``build.map`` untouched.
 
+    Dead-step removal (:func:`_remove_dead_step_ids`) runs alongside the
+    pre-merge passes: it prunes a genuinely dead ``plan.phase-6-finalize.steps``
+    id (one discovery resolved and cannot order), records that id in the phase's
+    ``removed_steps`` list, and reports it under ``dead_removed`` — but FAILS
+    CLOSED when discovery did not resolve (nothing is deleted), and never deletes
+    an external ``project:`` / ``bundle:skill`` step (reported under
+    ``dead_kept`` instead).
+
     Operator step-map atomicity (D1): a present
     ``plan.phase-5-execute.verification_steps`` / ``plan.phase-6-finalize.steps``
     map is never expanded with missing step ids — each missing id is held for
@@ -760,7 +788,8 @@ def cmd_sync_defaults(args) -> dict:
     _repair_step_lanes(live, lane_reports)
 
     dead_reports: list[str] = []
-    _remove_dead_step_ids(live, dead_reports)
+    dead_kept: list[str] = []
+    _remove_dead_step_ids(live, dead_reports, dead_kept)
 
     added: list[str] = []
     held_for_ask: list[str] = []
@@ -829,5 +858,7 @@ def cmd_sync_defaults(args) -> dict:
             'lane_reports_count': len(lane_reports),
             'dead_removed': sorted(dead_reports),
             'dead_removed_count': len(dead_reports),
+            'dead_kept': sorted(dead_kept),
+            'dead_kept_count': len(dead_kept),
         }
     )

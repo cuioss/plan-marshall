@@ -1779,6 +1779,98 @@ def test_sync_defaults_dead_step_removal_is_idempotent(plan_context, monkeypatch
     assert second['dead_removed_count'] == 0
 
 
+def test_sync_defaults_unresolved_discovery_deletes_no_step(plan_context, monkeypatch):
+    """An unresolved (empty) discovery deletes NOTHING — the fail-closed contract.
+
+    Models the bug shape: a discovery surface that returns ``[]`` because it
+    could not run (its directory was absent), reported as ``unknown`` for every
+    configured id. The reconcile must keep every step and report no removal.
+    """
+    _write_marshal(
+        plan_context.fixture_dir,
+        {'plan': {'phase-6-finalize': {'steps': {'default:push': {}, 'default:stale-step': {}}}}},
+    )
+    monkeypatch.setattr(
+        _sync_mod,
+        '_find_dead_step_ids',
+        lambda steps, phase: [
+            {'step': step, 'reason': f'discovery did not resolve in {phase}', 'outcome': 'unknown'} for step in steps
+        ],
+    )
+
+    result = cmd_sync_defaults(_sync_ns())
+
+    assert result['status'] == 'success'
+    config = _read_marshal(plan_context.fixture_dir)
+    steps = config['plan']['phase-6-finalize']['steps']
+    assert 'default:push' in steps
+    assert 'default:stale-step' in steps
+    assert result['dead_removed'] == []
+    assert result['dead_removed_count'] == 0
+    # nothing was recorded as removed either
+    assert 'default:stale-step' not in config['plan']['phase-6-finalize'].get('removed_steps', [])
+
+
+def test_sync_defaults_dead_default_id_is_removed_and_recorded_in_removed_steps(plan_context, monkeypatch):
+    """A genuinely dead ``default:`` id is removed, recorded in ``removed_steps``, and reported."""
+    _write_marshal(
+        plan_context.fixture_dir,
+        {'plan': {'phase-6-finalize': {'steps': {'default:push': {}, 'default:stale-step': {}}}}},
+    )
+    monkeypatch.setattr(
+        _sync_mod,
+        '_find_dead_step_ids',
+        lambda steps, phase: [
+            {'step': step, 'reason': f"Step '{step}' has no resolved order in {phase}.", 'outcome': 'dead'}
+            for step in steps
+            if step == 'default:stale-step'
+        ],
+    )
+
+    result = cmd_sync_defaults(_sync_ns())
+
+    assert result['status'] == 'success'
+    config = _read_marshal(plan_context.fixture_dir)
+    steps = config['plan']['phase-6-finalize']['steps']
+    assert 'default:stale-step' not in steps
+    assert 'default:push' in steps
+    # recorded in the phase's removed_steps list so a later back-fill reads as a crossing ...
+    assert 'default:stale-step' in config['plan']['phase-6-finalize'].get('removed_steps', [])
+    # ... and reported
+    assert result['dead_removed_count'] == 1
+    assert any('default:stale-step' in entry for entry in result['dead_removed'])
+
+
+def test_sync_defaults_project_step_without_implements_is_reported_and_kept(plan_context, monkeypatch):
+    """A ``project:`` step discovery cannot order (its SKILL.md lacks ``implements:``) is kept and reported."""
+    unresolvable = 'project:finalize-step-custom'
+    _write_marshal(
+        plan_context.fixture_dir,
+        {'plan': {'phase-6-finalize': {'steps': {unresolvable: {}}}}},
+    )
+    monkeypatch.setattr(
+        _sync_mod,
+        '_find_dead_step_ids',
+        lambda steps, phase: [
+            {'step': step, 'reason': f"Step '{step}' has no resolved order in {phase}.", 'outcome': 'dead'}
+            for step in steps
+            if step == unresolvable
+        ],
+    )
+
+    result = cmd_sync_defaults(_sync_ns())
+
+    assert result['status'] == 'success'
+    config = _read_marshal(plan_context.fixture_dir)
+    steps = config['plan']['phase-6-finalize']['steps']
+    # kept (never deleted) ...
+    assert unresolvable in steps
+    # ... never reported as removed ...
+    assert not any(unresolvable in entry for entry in result['dead_removed'])
+    # ... and reported as kept on the dedicated surface instead
+    assert any(unresolvable in entry for entry in result['dead_kept'])
+
+
 # =============================================================================
 # Roster-only backfill persistence
 # =============================================================================

@@ -8,8 +8,8 @@ phase-6-finalize.
 All phases read/write from config['plan'][phase_section].
 """
 
-from _cmd_skill_domains import _discover_all_verify_steps
-from _cmd_skill_resolution import _discover_all_finalize_steps
+from _cmd_skill_domains import _discover_all_verify_steps_with_status
+from _cmd_skill_resolution import _discover_all_finalize_steps_with_status
 from _config_core import (
     MarshalNotInitializedError,
     _coerce_value,
@@ -117,17 +117,43 @@ def _is_canonical_verify_step(step: str) -> bool:
     return step.startswith(_CANONICAL_VERIFY_PREFIXES)
 
 
-def _discover_steps_for_phase(phase_section: str) -> list[dict]:
-    """Return the list of discovered step dicts for an order-aware phase.
+class PhaseStepDiscovery(list):
+    """Discovered phase step records carrying a discovery-resolution discriminator.
 
-    Each dict carries `name` and `order` (int or None). Raises nothing — empty
-    list signals no discovered steps for the phase.
+    A ``list`` subclass so the existing consumers that iterate the discovery
+    result (:func:`_resolve_step_orders`, :func:`_find_dead_step_ids`) keep
+    working unchanged, while ``status`` carries whether discovery actually ran:
+
+    - ``'resolved'`` — the scan resolved; an empty result means "ran and found
+      nothing", so a configured id absent from it is genuinely dead.
+    - ``'unresolved'`` — at least one scan surface could not be read; an empty
+      result means "could not run", so a configured id's liveness is ``unknown``
+      and MUST NOT be treated as dead.
+    """
+
+    __slots__ = ('status',)
+
+    def __init__(self, records, status: str):
+        super().__init__(records)
+        self.status = status
+
+
+def _discover_steps_for_phase(phase_section: str) -> PhaseStepDiscovery:
+    """Return the discovered step records for an order-aware phase.
+
+    Each record carries `name` and `order` (int or None). The result is a
+    :class:`PhaseStepDiscovery` — a list of records that also carries the
+    discovery-resolution ``status`` so the caller can distinguish an empty result
+    that means "ran and found nothing" from one that means "could not run". An
+    order-aware phase with no discovery surface returns an empty, resolved result.
     """
     if phase_section == 'phase-5-execute':
-        return _discover_all_verify_steps()
+        records, status = _discover_all_verify_steps_with_status()
+        return PhaseStepDiscovery(records, status)
     if phase_section == 'phase-6-finalize':
-        return _discover_all_finalize_steps()
-    return []
+        records, status = _discover_all_finalize_steps_with_status()
+        return PhaseStepDiscovery(records, status)
+    return PhaseStepDiscovery([], 'resolved')
 
 
 def _resolve_step_orders(steps: list[str], phase_section: str) -> tuple[list[tuple[str, float]], dict | None]:
@@ -210,29 +236,56 @@ def _resolve_step_orders(steps: list[str], phase_section: str) -> tuple[list[tup
 
 
 def _find_dead_step_ids(steps: list[str], phase_section: str) -> list[dict]:
-    """Return the subset of ``steps`` with no resolvable order in ``phase_section``.
+    """Return the ``steps`` whose liveness the discovery outcome establishes.
 
     Shared resolver consumed by the step-order CLI surface here and by the
     ``sync-defaults`` reconcile pass in :mod:`_cmd_sync_defaults`: both call
     this instead of waiting for :func:`_resolve_step_orders` to surface the
-    first dead id as an ``add-step`` ``missing_order`` failure. A step is dead
-    when its authoritative order source yields no ``int`` order — absent from
-    discovery or carrying a non-int order. Canonical-verify steps follow the
-    same rule: they are alive only when the shared ``canonical_verify.md``
-    backing doc resolves to an ``int`` order.
+    first dead id as an ``add-step`` ``missing_order`` failure.
+
+    Each returned entry carries an ``outcome``:
+
+    - ``'dead'`` — discovery RESOLVED and the step's authoritative order source
+      yields no ``int`` order (absent from discovery or carrying a non-int
+      order). Canonical-verify steps follow the same rule: alive only when the
+      shared ``canonical_verify.md`` backing doc resolves to an ``int`` order.
+    - ``'unknown'`` — discovery did NOT resolve (a scan surface could not be
+      read, so an empty result proves nothing about liveness). Every configured
+      id is reported ``unknown``; a delete-nothing consumer must leave them all
+      in place.
+
+    The fail-closed obligation is the caller's: a consumer that prunes the map
+    (:func:`_cmd_sync_defaults._remove_dead_step_ids`) deletes only ``'dead'``
+    entries and never an ``'unknown'`` one.
 
     Args:
         steps: Configured step ids to check, in any order.
         phase_section: Phase key (e.g., ``'phase-6-finalize'``).
 
     Returns:
-        A list of ``{'step': id, 'reason': str}`` dicts in input order, one
-        per dead id. Empty when every id resolves.
+        A list of ``{'step': id, 'reason': str, 'outcome': 'dead' | 'unknown'}``
+        dicts in input order — one per dead id when discovery resolved, one per
+        configured id when it did not. Empty when every id resolves.
     """
-    discovered = {s['name']: s.get('order') for s in _discover_steps_for_phase(phase_section)}
+    discovered = _discover_steps_for_phase(phase_section)
+    # A plain-list discovery result (e.g. a bare test double) carries no
+    # discriminator; treat it as resolved — the pre-discriminator behaviour.
+    if getattr(discovered, 'status', 'resolved') == 'unresolved':
+        return [
+            {
+                'step': step,
+                'reason': (
+                    f"Cannot tell whether '{step}' has a resolved order in {phase_section}: "
+                    'discovery did not resolve (a scan surface was unreadable).'
+                ),
+                'outcome': 'unknown',
+            }
+            for step in steps
+        ]
+    orders = {s['name']: s.get('order') for s in discovered}
     dead: list[dict] = []
     for step in steps:
-        if not isinstance(discovered.get(step), int):
+        if not isinstance(orders.get(step), int):
             dead.append(
                 {
                     'step': step,
@@ -240,6 +293,7 @@ def _find_dead_step_ids(steps: list[str], phase_section: str) -> list[dict]:
                         f"Step '{step}' has no resolved order in {phase_section}. "
                         'Declare an `order` field in its authoritative source.'
                     ),
+                    'outcome': 'dead',
                 }
             )
     return dead

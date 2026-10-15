@@ -482,11 +482,11 @@ def load_profiles_from_bundle(bundle_name: str, domain_key: str | None = None) -
     return {'profiles': {}}
 
 
-def _discover_all_verify_steps() -> list[dict]:
-    """Discover all verify steps from built-in and project sources.
+def _discover_all_verify_steps_with_status() -> tuple[list[dict], str]:
+    """Discover all verify steps AND report whether discovery resolved.
 
     Sources (in order):
-    1. Built-in steps discovered via ``extension_discovery.find_implementors``
+    1. Built-in steps discovered via ``extension_discovery.find_implementors_with_status``
        on the ``ext-point-build-verify-step`` interface — each implementor's
        ``canonicals`` list is expanded into ``default:verify:{canonical}`` step
        IDs in list order, carrying the implementor's ``order`` and ``description``.
@@ -496,13 +496,20 @@ def _discover_all_verify_steps() -> list[dict]:
     authoritative file/return dict does not declare one. Sorting and collision
     handling are the caller's responsibility (marshall-steward).
 
+    The second element is the discovery-resolvability discriminator
+    (``'resolved'`` | ``'unresolved'``, propagated verbatim from the query's
+    ``status``) so a consumer can tell a scan that ran and legitimately found
+    nothing from one that could not run at all — the fail-closed reconcile reads
+    it before deleting any configured step id.
+
     Returns:
-        List of step dicts with name, description, type, source, order.
+        ``(steps, status)``.
     """
     # Lazy import — executor sets PYTHONPATH for cross-skill imports.
     from _config_defaults import _VERIFY_STEP_PREFIX, BUILD_VERIFY_STEP_EXT_POINT
-    from extension_discovery import find_implementors
+    from extension_discovery import find_implementors_with_status
 
+    outcome = find_implementors_with_status(BUILD_VERIFY_STEP_EXT_POINT)
     all_steps: list[dict] = []
 
     # Source 1: Built-in steps — discovered via the single find_implementors query
@@ -512,7 +519,7 @@ def _discover_all_verify_steps() -> list[dict]:
     # implementor's ``order`` positions the parameterized doc; the per-step
     # ``description`` is sourced from the implementor record.
     built_in = sorted(
-        (rec for rec in find_implementors(BUILD_VERIFY_STEP_EXT_POINT) if rec.get('source') == 'built-in'),
+        (rec for rec in outcome['implementors'] if rec.get('source') == 'built-in'),
         key=lambda rec: (rec.get('order', 0), rec.get('name', '')),
     )
     for rec in built_in:
@@ -555,7 +562,16 @@ def _discover_all_verify_steps() -> list[dict]:
             }
         )
 
-    return all_steps
+    return all_steps, outcome['status']
+
+
+def _discover_all_verify_steps() -> list[dict]:
+    """Discover all verify steps (the step records only).
+
+    The list-only view of :func:`_discover_all_verify_steps_with_status` for
+    consumers that do not need the resolvability discriminator.
+    """
+    return _discover_all_verify_steps_with_status()[0]
 
 
 def cmd_list_verify_steps(args) -> dict:

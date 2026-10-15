@@ -359,26 +359,36 @@ _SOURCE_TO_TYPE = {
 }
 
 
-def _discover_all_finalize_steps() -> list[dict]:
-    """Discover all finalize steps via the reusable extension-discovery query.
+def _discover_all_finalize_steps_with_status() -> tuple[list[dict], str]:
+    """Discover all finalize steps AND report whether discovery resolved.
 
     Built-in (``default:*``), bundle-optional (e.g. ``plan-marshall:plan-retrospective``),
     and project (``project:finalize-step-*``) finalize steps ALL flow from the
-    single ``extension_discovery.find_implementors`` query — membership is declared
-    on each step doc via ``implements: ...ext-point-finalize-step`` and discovered
-    by the query; there is no parallel per-source glob. The contract lives in the
-    central standard (``ext-point-finalize-step.md``).
+    single ``extension_discovery.find_implementors_with_status`` query — membership
+    is declared on each step doc via ``implements: ...ext-point-finalize-step`` and
+    discovered by the query; there is no parallel per-source glob. The contract
+    lives in the central standard (``ext-point-finalize-step.md``).
 
     Each result dict carries `name` / `description` / `type` / `source` / `order`,
     preserving the historical `list-finalize-steps` output columns. The `type`
     column is derived from the query's `source` via :data:`_SOURCE_TO_TYPE`.
     Sorting and collision handling beyond the query's own (`order`, `name`) sort
     are the caller's responsibility (marshall-steward).
+
+    The second element is the discovery-resolvability discriminator
+    (``'resolved'`` | ``'unresolved'``, propagated verbatim from the query's
+    ``status``) so a consumer can tell a scan that ran and legitimately found
+    nothing from one that could not run at all — the fail-closed reconcile reads
+    it before deleting any configured step id.
+
+    Returns:
+        ``(steps, status)``.
     """
     from _config_defaults import FINALIZE_STEP_EXT_POINT
-    from extension_discovery import find_implementors
+    from extension_discovery import find_implementors_with_status
 
-    return [
+    outcome = find_implementors_with_status(FINALIZE_STEP_EXT_POINT)
+    steps = [
         {
             'name': rec['name'],
             'description': rec.get('description', ''),
@@ -386,8 +396,18 @@ def _discover_all_finalize_steps() -> list[dict]:
             'source': rec.get('source', ''),
             'order': rec.get('order', 0),
         }
-        for rec in find_implementors(FINALIZE_STEP_EXT_POINT)
+        for rec in outcome['implementors']
     ]
+    return steps, outcome['status']
+
+
+def _discover_all_finalize_steps() -> list[dict]:
+    """Discover all finalize steps (the step records only).
+
+    The list-only view of :func:`_discover_all_finalize_steps_with_status` for
+    consumers that do not need the resolvability discriminator.
+    """
+    return _discover_all_finalize_steps_with_status()[0]
 
 
 def cmd_list_finalize_steps(args) -> dict:

@@ -1426,6 +1426,82 @@ def find_implementors(ext_point: str) -> list[dict[str, Any]]:
     return records
 
 
+def _implementor_scan_surfaces_resolve() -> list[bool]:
+    """Report, per scan surface :func:`find_implementors` consults, whether it resolved.
+
+    One bool per surface, in the order the surfaces are scanned: the
+    phase-6-finalize step-doc root, the phase-5-execute verify-step standards
+    root, the bundle ``skills`` roots (source tree + plugin cache roots), and
+    the project-local skill root(s). ``False`` means that surface's root could
+    not be located, so the scan ran over nothing — an empty result is then
+    "discovery could not run", NOT "discovery ran and found nothing".
+
+    Production consumers read this through :func:`find_implementors_with_status`;
+    it is the discriminator the fail-closed reconcile consumes.
+    """
+    from configurable_contract import _phase_6_skill_dir
+    from file_ops import _resolve_plan_root
+
+    surfaces: list[bool] = []
+    try:
+        surfaces.append(_phase_6_skill_dir().is_dir())
+    except Exception:
+        surfaces.append(False)
+    try:
+        surfaces.append((resolve_skills_root(Path(__file__)) / 'phase-5-execute' / 'standards').is_dir())
+    except Exception:
+        surfaces.append(False)
+    roots: list[Path] = []
+    try:
+        bundles_path = get_marketplace_bundles_path()
+        if bundles_path.is_dir():
+            roots.append(bundles_path)
+    except Exception:
+        pass
+    for cache_root in get_bundle_cache_roots():
+        try:
+            cache_path = Path(cache_root).expanduser()
+        except Exception:
+            continue
+        if cache_path.is_dir():
+            roots.append(cache_path)
+    surfaces.append(bool(roots))
+    try:
+        surfaces.append(_resolve_plan_root() is not None)
+    except Exception:
+        surfaces.append(False)
+    return surfaces
+
+
+def find_implementors_with_status(ext_point: str) -> dict[str, Any]:
+    """Enumerate implementors AND report whether discovery actually ran.
+
+    The status-bearing counterpart of :func:`find_implementors`: the same
+    enumeration, plus a resolvability discriminator. A reconcile that deletes
+    configured steps from an empty result MUST treat an unresolved scan as
+    ``unknown`` (delete nothing) rather than as a genuinely empty implementor
+    set — the two are indistinguishable from the bare list.
+
+    ``status`` is ``'resolved'`` when the query produced at least one implementor
+    (discovery demonstrably ran) or when every scan surface resolved (a scan that
+    legitimately found nothing), and ``'unresolved'`` only when the query produced
+    nothing AND at least one scan surface could not be read.
+
+    Args:
+        ext_point: The canonical ext-point value, as for :func:`find_implementors`.
+
+    Returns:
+        ``{'status': 'resolved' | 'unresolved', 'implementors': [...]}`` where
+        ``implementors`` is exactly :func:`find_implementors`'s list.
+    """
+    # Resolve the records through the module-level ``find_implementors`` so a
+    # test double on this module's attribute is honoured (the same seam the
+    # discovery consumers import through); the surface probe is separate.
+    implementors = find_implementors(ext_point)
+    resolved = bool(implementors) or all(_implementor_scan_surfaces_resolve())
+    return {'status': 'resolved' if resolved else 'unresolved', 'implementors': implementors}
+
+
 # =============================================================================
 # CLI Interface
 # =============================================================================
