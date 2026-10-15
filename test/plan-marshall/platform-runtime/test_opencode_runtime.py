@@ -1352,9 +1352,7 @@ def test_reporter_bare_command_equivalence_no_false_contradiction(
     assert result['contradictions'] == []
 
 
-def test_reporter_bare_command_equivalence_keeps_ls_pair(
-    runtime: OpenCodeRuntime, tmp_path: pathlib.Path
-) -> None:
+def test_reporter_bare_command_equivalence_keeps_ls_pair(runtime: OpenCodeRuntime, tmp_path: pathlib.Path) -> None:
     """Bare-command equivalence keeps ls vs ls * green."""
     _write_deny_config(tmp_path, ['ls *'])
     db_path = tmp_path / 'opencode.db'
