@@ -1,10 +1,10 @@
 /**
- * plan-marshall guard plugin — tool.execute.before enforcement of R1-R4.
+ * plan-marshall guard plugin — tool.execute.before enforcement of R1-R5.
  *
  * V2 plugin (`Plugin.define` with `ctx.tool.hook("execute.before")`). The
  * opencode host loads every module under `{plugin,plugins}/*.{ts,js}` in the
  * project config directory. This plugin registers a
- * `ctx.tool.hook("execute.before")` hook that inspects each tool invocation against the four
+ * `ctx.tool.hook("execute.before")` hook that inspects each tool invocation against the five
  * plan-marshall hard-rule bypass classes and THROWS to block the execution,
  * appending one audit line to `.plan/temp/guard.log` per blocked invocation.
  *
@@ -15,7 +15,7 @@
  *
  * DECISION TABLE (authoritative — mirrored in the D4 runtime matrix):
  *
-  *   Guarded tools: bash (R1, R2, R4), edit/write/patch/apply_patch (R3).
+  *   Guarded tools: bash (R1, R2, R4, R5), edit/write/patch/apply_patch (R3).
   *   Every other tool passes through untouched.
  *
  *   R1 — shell-chaining constructors (bash): the command, with single-quoted
@@ -47,7 +47,13 @@
  *     - first token is `python`/`python3` and the basename of the second
  *       token is `build.py` (`python3 ./build.py` included);
  *     - `python(3) -m {pytest mypy ruff}`; a bare {pytest mypy ruff}.
- *   The executor permit `python3 .plan/execute-script.py <verb> ...` is exempt.
+ *   The executor permit stays exempt under R4 and R5. R5 refuses direct interpreter calls.
+  *
+  *   R5 — direct interpreter calls bypassing the executor (bash): block when
+  *   the first token is python or python3 and the invocation is -c, a script
+  *   path (any second token not starting with -), or -m with any module —
+  *   the allow set is executor-only, so every -m form refuses. The executor
+  *   permit stays exempt.
  */
 import { appendFileSync, mkdirSync } from "node:fs"
 import path from "node:path"
@@ -105,6 +111,13 @@ const BARE_BUILD_TOOLS = new Set(["mvn", "mvnw", "gradle", "gradlew", "make", "c
 const JS_RUNNERS = new Set(["npm", "npx", "bun", "pnpm", "yarn"])
 const JS_RUNNER_BUILD_VERBS = new Set(["test", "run", "build"])
 const PYTHON_DIRECT_RUNNERS = new Set(["pytest", "mypy", "ruff"])
+
+// ---- R5: direct interpreter calls bypassing the executor (declared sets, mirrored) ----
+// The allow set is executor-only: every -m form refuses, so no allowed-module
+// set exists to declare. The two sets below are the whole R5 population the
+// contract test parses: the interpreter names and the always-refuse flags.
+const PYTHON_INTERPRETERS = new Set(["python", "python3"])
+const R5_ALWAYS_REFUSE_FLAGS = new Set(["-c", "-m"])
 
 // Shell wrappers (`command`, `env`, `sudo`) and leading `NAME=value`
 // assignments are transparent to the shell: `command rm -f file` still runs
@@ -187,6 +200,18 @@ function tokenAt(command, index) {
 
 function isExecutorPermit(command) {
   return /^python3\s+\.plan\/execute-script\.py\b/.test(commandTokens(command).join(" "))
+}
+
+function isInterpreterBypass(secondRaw) {
+  if (!secondRaw || typeof secondRaw !== "string") return false
+  let t = secondRaw.trim()
+  if (t.length >= 2 && ((t.startsWith('"') && t.endsWith('"')) || (t.startsWith("'") && t.endsWith("'")))) {
+    t = t.slice(1, -1).trim()
+  }
+  if (!t) return false
+  if (R5_ALWAYS_REFUSE_FLAGS.has(t)) return true
+  if (t.startsWith("-")) return false
+  return true
 }
 
 function targetsExecutor(args) {
@@ -307,13 +332,19 @@ export default Plugin.define({
         )
       }
 
-      if (token === "python3" || token === "python") {
+      if (PYTHON_INTERPRETERS.has(token)) {
         const second = basenameOf(tokenAt(command, 1))
         const third = normalizeToken(tokenAt(command, 2))
         if (second === "build.py" || (tokenAt(command, 1) === "-m" && PYTHON_DIRECT_RUNNERS.has(third))) {
           audit(auditLine("R4", tool, sessionID, callID, command))
           throw new Error(
             "[plan-marshall-guard] R4: hard-coded build command bypassing python3 .plan/execute-script.py is forbidden",
+          )
+        }
+        if (isInterpreterBypass(tokenAt(command, 1))) {
+          audit(auditLine("R5", tool, sessionID, callID, command))
+          throw new Error(
+            "[plan-marshall-guard] R5: direct python interpreter calls (python -c, script paths, python -m) bypassing the executor are forbidden; route builds and checks via python3 .plan/execute-script.py and .plan state via manage-* verbs or the Read/Edit/Write tools",
           )
         }
         return

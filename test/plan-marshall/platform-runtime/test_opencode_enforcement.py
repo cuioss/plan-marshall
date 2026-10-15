@@ -126,6 +126,8 @@ _GUARD_SET_NAMES = (
     'JS_RUNNER_BUILD_VERBS',
     'PYTHON_DIRECT_RUNNERS',
     'SHELL_WRAPPERS',
+    'PYTHON_INTERPRETERS',
+    'R5_ALWAYS_REFUSE_FLAGS',
 )
 
 
@@ -179,6 +181,8 @@ _GUARD_EXPECTED: dict[str, frozenset[str]] = {
     'JS_RUNNER_BUILD_VERBS': frozenset({'test', 'run', 'build'}),
     'PYTHON_DIRECT_RUNNERS': frozenset({'pytest', 'mypy', 'ruff'}),
     'SHELL_WRAPPERS': frozenset({'command', 'env', 'sudo'}),
+    'PYTHON_INTERPRETERS': frozenset({'python', 'python3'}),
+    'R5_ALWAYS_REFUSE_FLAGS': frozenset({'-c', '-m'}),
 }
 
 _GUARD_SETS = _parse_guard_sets(_guard_plugin_path())
@@ -298,3 +302,43 @@ def test_guard_r4_exempts_executor_permit() -> None:
     permit_at = source.index('isExecutorPermit(command)) return')
     bare_at = source.index('BARE_BUILD_TOOLS.has')
     assert r1_at < permit_at < bare_at, 'hook order must be R1 gate, then executor permit, then R4 branches'
+
+
+def test_guard_r5_refuses_c_flag() -> None:
+    """R5 refuses python -c: the always-refuse flag set names it and the branch audits rule R5."""
+    assert '-c' in _GUARD_SETS['R5_ALWAYS_REFUSE_FLAGS']
+    source = _guard_plugin_source()
+    assert 'isInterpreterBypass' in source
+    assert 'auditLine("R5"' in source
+    assert 'R5_ALWAYS_REFUSE_FLAGS.has' in source
+
+
+def test_guard_r5_refuses_script_paths() -> None:
+    """R5 refuses script-path invocations: a non-flag second token is a bypass."""
+    source = _guard_plugin_source()
+    assert 'isInterpreterBypass(tokenAt(command, 1))' in source
+    assert 'script paths' in source or 'script' in source
+
+
+def test_guard_r5_refuses_m_flag_for_any_module() -> None:
+    """R5 refuses python -m for any module: the allow set is executor-only."""
+    assert '-m' in _GUARD_SETS['R5_ALWAYS_REFUSE_FLAGS']
+    source = _guard_plugin_source()
+    assert 'PYTHON_INTERPRETERS.has(token)' in source
+
+
+def test_guard_r5_exempts_executor_permit() -> None:
+    """The executor permit passes R5: the permit check precedes the R5 branch."""
+    command = 'python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks list --plan-id x'
+    assert command.startswith(_GUARD_EXECUTOR_PERMIT_PREFIX)
+    source = _guard_plugin_source()
+    permit_at = source.index('isExecutorPermit(command)) return')
+    r5_at = source.index('isInterpreterBypass(tokenAt(command, 1))')
+    assert permit_at < r5_at, 'the executor permit must return before the R5 branch'
+
+
+def test_guard_r5_refusal_names_remedy() -> None:
+    """The R5 refusal names the remedy: executor for builds, manage tools for state."""
+    source = _guard_plugin_source()
+    assert 'python3 .plan/execute-script.py' in source
+    assert 'manage-*' in source

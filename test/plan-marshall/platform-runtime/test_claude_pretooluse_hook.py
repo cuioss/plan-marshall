@@ -163,8 +163,8 @@ def test_r1_denies_the_while_spelling_of_the_loop_family() -> None:
 
 def test_r1_not_fired_on_plain_command() -> None:
     # A single command with no shell construct does not trip R1 (and is not a
-    # file-op or hard-coded build, so no rule fires).
-    assert hook.evaluate(_signal2_payload('Bash', _bash('python3 script.py'))) is None
+    # file-op, hard-coded build, or interpreter call, so no rule fires).
+    assert hook.evaluate(_signal2_payload('Bash', _bash('echo hello'))) is None
 
 
 # -----------------------------------------------------------------------------
@@ -305,7 +305,7 @@ def test_r1_malformed_quoting_falls_back_to_detection() -> None:
 
 def test_r1_malformed_quoting_without_a_metacharacter_still_passes() -> None:
     """The fallback is a re-scan, not a blanket denial of malformed quoting."""
-    payload = _signal2_payload('Bash', _bash('python3 x.py "unterminated'))
+    payload = _signal2_payload('Bash', _bash('echo x "unterminated'))
     assert hook.evaluate(payload) is None
 
 
@@ -422,7 +422,7 @@ def test_r1_allows_escaped_newline_line_continuation() -> None:
     negative is ``test_r1_denies_newline`` — a BARE unquoted newline is a real
     command separator and still denies.
     """
-    command = 'python3 x.py \\\n  --flag value'
+    command = 'echo x.py \\\n  --flag value'
     assert hook.evaluate(_signal2_payload('Bash', _bash(command))) is None
 
 
@@ -725,6 +725,57 @@ def test_r4_not_fired_on_resolved_build() -> None:
     # trips no rule.
     cmd = 'python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run'
     assert hook.evaluate(_signal2_payload('Bash', _bash(cmd))) is None
+
+
+# =============================================================================
+# R5 — direct interpreter call
+# =============================================================================
+
+
+#: Direct interpreter invocations R5 refuses. The ``-c`` and ``-m`` rows name
+#: the always-refuse flags; the script rows name the path forms from the
+#: deliverable contract (worktree-relative and absolute).
+_R5_DENIED_COMMANDS = [
+    'python3 -c "print(1)"',
+    'python3 .plan/temp/x.py',
+    'python3 /tmp/x.py',
+    'python3 -m py_compile f.py',
+    'python script.py',
+]
+
+_R5_DENIED_IDS = [
+    'c-flag-inline-script',
+    'worktree-relative-script-path',
+    'absolute-script-path',
+    'm-flag-any-module',
+    'bare-python-script-path',
+]
+
+
+@pytest.mark.parametrize('command', _R5_DENIED_COMMANDS, ids=_R5_DENIED_IDS)
+def test_r5_denies_direct_interpreter_calls(command: str) -> None:
+    """Each direct interpreter form denies with the R5 remedy reason."""
+    payload = _signal2_payload('Bash', _bash(command))
+
+    assert hook.evaluate(payload) == hook._R5_REASON, command
+
+
+def test_r5_not_fired_on_executor_permit() -> None:
+    # The sole allow is the executor invocation itself.
+    cmd = 'python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks list --plan-id x'
+    assert hook.evaluate(_signal2_payload('Bash', _bash(cmd))) is None
+
+
+def test_r5_not_fired_on_flag_only_invocation() -> None:
+    # A bare flag probe such as --version is not an interpreter bypass.
+    assert hook.evaluate(_signal2_payload('Bash', _bash('python3 --version'))) is None
+    assert hook.evaluate(_signal2_payload('Bash', _bash('python3'))) is None
+
+
+def test_r5_reason_names_the_remedy() -> None:
+    """The redirect must name the executor and the manage tools, not just refuse."""
+    assert 'python3 .plan/execute-script.py' in hook._R5_REASON
+    assert 'manage-*' in hook._R5_REASON
 
 
 # =============================================================================

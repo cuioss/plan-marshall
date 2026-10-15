@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Conditional PreToolUse enforcement leaf for Claude Code.
 
-Registered (opt-in) as a matcher-less ``hooks.PreToolUse`` entry. It blocks four
+Registered (opt-in) as a matcher-less ``hooks.PreToolUse`` entry. It blocks five
 mechanically-checkable hard-rule violation families, but ONLY when the call
 originates inside a plan-marshall plan context. Outside that context — and on
 every error path — it emits nothing and exits 0, so a hook bug can never block
@@ -10,7 +10,7 @@ the user (fail OPEN).
 
 ALL payload parsing, field access, and the context-gate predicate are delegated
 to the shared ``pretooluse_gate`` module — this leaf adds NO field-name knowledge
-of its own. The only logic it owns is the R1-R4 rule matchers and the
+of its own. The only logic it owns is the R1-R5 rule matchers and the
 ``permissionDecision: deny`` envelope layered on top:
 
 - **R1 shell-construct compound** — a Bash command containing an UNQUOTED and
@@ -27,6 +27,10 @@ of its own. The only logic it owns is the R1-R4 rule matchers and the
   ``.plan/execute-script.py``.
 - **R4 hard-coded build** — a Bash command invoking ``./pw`` or a bare ``mvn`` /
   ``npm`` / ``gradle``.
+- **R5 direct interpreter call** — a Bash command invoking ``python`` /
+  ``python3`` as ``-c``, a script path, or ``-m`` with any module, except the
+  ``python3 .plan/execute-script.py`` executor permit. The allow set is
+  executor-only, so every ``-m`` form refuses.
 
 Control flow:
 
@@ -177,6 +181,12 @@ _R3_REASON = (
 _R4_REASON = (
     'plan-marshall: never hard-code build commands (./pw, mvn, npm, gradle) — '
     'resolve via plan-marshall:manage-architecture:architecture resolve.'
+)
+_R5_REASON = (
+    'plan-marshall: direct python interpreter calls (python -c, script paths, '
+    'python -m) bypass the executor — route builds and checks via '
+    'python3 .plan/execute-script.py and .plan state via manage-* verbs or '
+    'the Read/Edit/Write tools.'
 )
 
 
@@ -438,12 +448,56 @@ def _match_r4_hardcoded_build(tool_name: str | None, tool_input: dict[str, Any])
     return None
 
 
+def _is_executor_permit(command: str) -> bool:
+    """Return True when *command* is the exempt executor invocation."""
+    try:
+        tokens = shlex.split(command)
+    except ValueError:
+        tokens = command.split()
+    if len(tokens) < 2:
+        return False
+    if tokens[0] != 'python3':
+        return False
+    return tokens[1] == '.plan/execute-script.py'
+
+
+def _second_token(command: str) -> str:
+    """Return the second shell-lexical token of *command*, or empty."""
+    try:
+        tokens = shlex.split(command)
+    except ValueError:
+        tokens = command.split()
+    if len(tokens) < 2:
+        return ''
+    return tokens[1]
+
+
+def _match_r5_interpreter_call(tool_name: str | None, tool_input: dict[str, Any]) -> str | None:
+    """R5 — direct python interpreter call bypassing the executor."""
+    command = _bash_command(tool_name, tool_input)
+    if command is None:
+        return None
+    if _is_executor_permit(command):
+        return None
+    if _program_name(command) not in ('python', 'python3'):
+        return None
+    second = _second_token(command)
+    if not second:
+        return None
+    if second in ('-c', '-m'):
+        return _R5_REASON
+    if second.startswith('-'):
+        return None
+    return _R5_REASON
+
+
 #: Ordered rule chain — the first matcher returning a reason wins.
 _RULES: tuple[Callable[[str | None, dict[str, Any]], str | None], ...] = (
     _match_r1_shell_construct,
     _match_r2_file_ops,
     _match_r3_generated_executor,
     _match_r4_hardcoded_build,
+    _match_r5_interpreter_call,
 )
 
 
@@ -452,7 +506,7 @@ def evaluate(payload: dict[str, Any]) -> str | None:
 
     Applies the shared context gate first (``Signal1 OR Signal2``); when the gate
     is not satisfied, returns ``None`` (fail OPEN — no enforcement). When the gate
-    is satisfied, runs the R1-R4 matchers in order against the shared gate's
+    is satisfied, runs the R1-R5 matchers in order against the shared gate's
     ``tool_name`` / ``tool_input`` accessors and returns the first matching rule's
     redirect reason, or ``None`` when no rule fires.
 
