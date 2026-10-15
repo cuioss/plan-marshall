@@ -600,6 +600,33 @@ def _source_gate_finding_texts(plan_dir: Path | None) -> tuple[list[str], int]:
     return texts, len(texts)
 
 
+def _run_git_nul_verbatim(args: list[str]) -> tuple[int, str, str]:
+    """Run ``git <args>`` preserving NUL-separated path spellings verbatim.
+
+    Mirrors :func:`git_provider.run_git` except stdout is NOT stripped:
+    ``run_git`` applies ``stdout.strip()``, which removes a leading space
+    from the first path and a trailing space from the last one — mutating
+    space-padded filenames before the ``split('\\0')`` below. Stderr stays
+    stripped (it carries only diagnostics). Decode matches
+    ``script-shared._plan_state_exemption._observe_z`` (``surrogateescape``)
+    so non-UTF-8 path bytes survive round-trip.
+    """
+    try:
+        completed = subprocess.run(
+            ['git', *args],
+            capture_output=True,
+            encoding='utf-8',
+            errors='surrogateescape',
+            timeout=_DEFAULT_TIMEOUT_SECONDS,
+            check=False,
+        )
+    except FileNotFoundError:
+        return 127, '', 'git executable not found on PATH'
+    except subprocess.TimeoutExpired:
+        return 124, '', f'git timed out after {_DEFAULT_TIMEOUT_SECONDS} seconds'
+    return completed.returncode, completed.stdout, completed.stderr.strip()
+
+
 def _source_gate_changed_paths(worktree: Path, explicit: str | None) -> tuple[list[str] | None, dict | None]:
     """Resolve the changed-path list from ``--changed-paths`` or from git.
 
@@ -615,14 +642,14 @@ def _source_gate_changed_paths(worktree: Path, explicit: str | None) -> tuple[li
     """
     if explicit is not None:
         return [path for path in (part.strip() for part in explicit.split(',')) if path], None
-    rc, out, err = run_git(['-C', str(worktree), 'diff', '--name-only', '-z', 'HEAD'])
+    rc, out, err = _run_git_nul_verbatim(['-C', str(worktree), 'diff', '--name-only', '-z', 'HEAD'])
     if rc != 0:
         return None, make_error(
             f'git diff failed: {err or f"exit {rc}"}',
             code=ErrorCode.FETCH_FAILURE,
         )
     tracked = [part for part in out.split('\0') if part]
-    rc, out, err = run_git(['-C', str(worktree), 'ls-files', '--others', '--exclude-standard', '-z'])
+    rc, out, err = _run_git_nul_verbatim(['-C', str(worktree), 'ls-files', '--others', '--exclude-standard', '-z'])
     if rc != 0:
         return None, make_error(
             f'git ls-files failed: {err or f"exit {rc}"}',
