@@ -73,7 +73,28 @@ not count as evidence for any Done-when here.
    commit refuses; a transition run from another cwd reads the right ledger; a branch rebased onto
    a newer `origin/main` with stale local `main` passes; `set-phase` refuses like `transition`.
 
-Split guard: three deliverables.
+4. **The rest of PLAN-LB-39's D6 and D7: weakened tests, infeasibility, open Done-whens, coverage.**
+   - **Weakened tests:** the functional review (or code review) reports every pre-existing test
+     whose assertions the branch removed, relaxed or filtered, and every fixture changed in the same
+     commit as the rule it exercises, as a finding the plan must justify — the pm-mcp-core PLAN-41 /
+     PLAN-44 cases (an assertion filtered, a fixture changed to avoid a rule, a test-catalog entry
+     reshaped to stay green).
+   - **Infeasibility:** a criterion graded infeasible names the spec or request sentence it refers
+     to, and still holds after the paired task (re-checked, not carried over); a verify-first
+     "drop a refuted gap" may not delete a specified check without the operator decision of D1.
+   - **Done-when as triage source:** finalize triage reads open Done-when criteria from D1's
+     snapshot as a standing source, so the finalize loop cannot exit on an empty bot queue while a
+     Done-when is unmet (`triage.md:36` states this in prose only; `_finalize_findings_refusal` is
+     unchanged).
+   - **Coverage:** execute does not exit as fresh while required coverage is unknown
+     (`required_coverage_unknown`) — prose only at `c8adaf178`.
+
+   *Done when:* tests: a branch deleting an assertion from an existing test yields a finding; an
+   infeasibility verdict with no sentence reference is refused; finalize with an empty bot queue and
+   one unmet Done-when does not exit; an execute exit with `required_coverage_unknown` is not fresh.
+   Each fails at `c8adaf178`.
+
+Split guard: four deliverables, one theme (what the run is graded against, and on which head).
 
 ## Claim Labels
 
@@ -84,6 +105,7 @@ Split guard: three deliverables.
 - OBSERVED: `_manifest_rules.py:73` reads `plan.phase-5-execute.request_gates` / `project_gates` from marshal.json; nothing writes them (delegated agent).
 - OBSERVED: `_cmd_lifecycle.py:508` `_phase_end_marker_refusal`, `:547` pass-through when `use_worktree` is false, `:422` local `main` preferred (delegated agent).
 - HYPOTHESIS: PLAN-LB-32 (shipped) already carries part of the head-binding at the barrier — read `merge_barrier` before adding (verify-at-outline).
+- OBSERVED: PLAN-LB-37's functional review catches neither a rewritten criterion nor a weakened test; a test identifier counts as evidence (`review-rubric.md:66`) — epic Open Defects, checked at PLAN-LB-37's landing.
 - Verify-first clause: PLAN-LB-47 (staged) touches `execution.md`/`triage.md`; PLAN-LB-42 (running) touches the outline Q-Gate — read both before outlining D1.
 
 ## Expected Surface
@@ -97,7 +119,10 @@ Split guard: three deliverables.
 - OBSERVED: `marketplace/bundles/plan-marshall/skills/manage-execution-manifest/scripts/_manifest_rules.py` (D2)
 - OBSERVED: `marketplace/bundles/plan-marshall/skills/manage-status/scripts/_cmd_lifecycle.py` (D3)
 - OBSERVED: `test/plan-marshall/manage-status/test_transition_boundary_guards.py` (D3)
-- HYPOTHESIS: `test/plan-marshall/phase-6-finalize/` — verdict and barrier tests (verify-at-outline) (D1, D2)
+- HYPOTHESIS: `test/plan-marshall/phase-6-finalize/` — verdict and barrier tests (verify-at-outline) (D1, D2, D4)
+- OBSERVED: `marketplace/bundles/plan-marshall/skills/plan-marshall/workflow/triage.md` (D4)
+- HYPOTHESIS: `marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/review-rubric.md` — weakened-test finding (verify-at-outline) (D4)
+- HYPOTHESIS: `marketplace/bundles/plan-marshall/skills/manage-tasks/scripts/_freshness_crosscheck.py` — coverage freshness (verify-at-outline) (D4)
 
 ## Dependencies and Sequencing
 

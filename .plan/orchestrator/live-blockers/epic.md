@@ -57,9 +57,13 @@ derive, for rows still live.
   counted 7/7, five regressions; see `landings/PLAN-LB-39.md`. Fix-forward PLAN-LB-50; unshipped
   deliverables re-staged as PLAN-LB-51 (Antigravity) and PLAN-LB-52 (harness-agnostic, as scripts).
 
-- **PLAN-LB-50 to PLAN-LB-52** (staged 2026-10-15) — PLAN-LB-50 first, high priority (a project
+- **PLAN-LB-50 to PLAN-LB-53** (staged 2026-10-15) — PLAN-LB-50 first, high priority (a project
   setup erases the installed target rules; `runtime.target` back in the shared `marshal.json`).
   PLAN-LB-51 after PLAN-LB-50 (bridge file path). PLAN-LB-52 preferably after PLAN-LB-47.
+  PLAN-LB-53 (halt improvisation, unasked conflict, phase-time misattribution — LB-31 and LB-39)
+  preferably after PLAN-LB-52. Same day, by operator instruction, the remaining PLAN-LB-39 gaps
+  were folded: PLAN-LB-51 D2 covers OpenCode, PLAN-LB-52 gained D4, PLAN-LB-47 D5 widened to the
+  PR body, squash message and trailers.
   PLAN-LB-50 shares `opencode_runtime.py` with PLAN-LB-48 and `manage-metrics.py` with
   PLAN-LB-49; the gate will ask.
 

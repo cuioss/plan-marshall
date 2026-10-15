@@ -50,9 +50,13 @@ Done-when text; an outline that rewrites a Done-when must say so and why.
      for prefix …` means the project does not use that plugin — stop, never retry it fully
      qualified. Rule (b) is absent everywhere at `c8adaf178`.
 
-   *Done when:* a fresh Antigravity setup over a fixture with only `CLAUDE.md` yields a bridge that
-   contains a sentinel line from that `CLAUDE.md`; editing `CLAUDE.md` makes setup report drift; a
-   doc test finds rule (b)'s text in the persona and the Antigravity target rules.
+   - OpenCode has the same stub (`opencode_runtime.py:143`, `_write_rules_bridge`); it gets the same
+     content bridge and drift detection, and the OpenCode target rules carry rules (a) and (b) too.
+
+   *Done when:* for EACH of Antigravity and OpenCode, a fresh setup over a fixture with only
+   `CLAUDE.md` yields a bridge that contains a sentinel line from that `CLAUDE.md`, and editing
+   `CLAUDE.md` makes setup report drift; a doc test finds rule (b)'s text in the persona and in both
+   targets' rules. Each fails at `c8adaf178`.
 
 3. **The quality gate reaches each task's `verification.commands`.** When the execution manifest
    stamps the gate per task, phase 4 synthesizes it into every applicable task's
@@ -71,7 +75,7 @@ Split guard: three deliverables.
 - OBSERVED: `antigravity_runtime.py:120-150` `_write_rules_bridge` body is a heading plus one sentence; drift compares `CLAUDE.md` mtime to the bridge mtime (orchestrator-read).
 - OBSERVED: a content search for "No plugin found" in `marketplace/` returns 0 at `c8adaf178` (delegated agent); rule (a) is at `persona-plan-marshall-agent/standards/agent-behavior-rules.md:193`.
 - OBSERVED: the stamp goes to `phase_5.verification_steps`; no fixture for per-task synthesis (delegated agent).
-- HYPOTHESIS: the `platform-runtime subagent dispatch` seam carries no resolved level and never passes `spawning_tool_available`, so the inline no-op branches (`antigravity_runtime.py:999`, `opencode_runtime.py:1388`) are unreachable — confirm before wiring D1 (verify-at-outline).
+- HYPOTHESIS: the `platform-runtime subagent dispatch` seam carries no resolved level and never passes `spawning_tool_available`, so the inline no-op branches (`antigravity_runtime.py:999`, `opencode_runtime.py:1388`) are unreachable — confirm before wiring D1 (verify-at-outline). If confirmed, D1 includes making the seam carry the resolved level and reach the inline branch; a fixture pins both.
 - Verify-first clause: read PLAN-LB-50's landing first (bridge file path) and PLAN-LB-48's D2 state (OpenCode mapping) before outlining.
 - Out of scope: OpenCode tool names (PLAN-LB-48), harness detection under OpenCode 2 (PLAN-LB-48 D4), the harness/model stamp (PLAN-LB-45), the harness-agnostic criteria and gate integrity (PLAN-LB-52).
 
@@ -86,14 +90,17 @@ Split guard: three deliverables.
 - OBSERVED: `marketplace/bundles/plan-marshall/skills/phase-4-plan/SKILL.md` (D3)
 - HYPOTHESIS: `marketplace/bundles/plan-marshall/skills/manage-tasks/scripts/` — task synthesis (verify-at-outline) (D3)
 - HYPOTHESIS: `test/marketplace/targets/antigravity/` — generated-text fixture (verify-at-outline) (D1)
+- OBSERVED: `marketplace/bundles/plan-marshall/skills/platform-runtime/scripts/opencode_runtime.py` — `_write_rules_bridge` (D2)
+- OBSERVED: `marketplace/bundles/plan-marshall-opencode/skills/target-rules/standards/opencode-rules.md` (D2)
 - OBSERVED: `test/plan-marshall/platform-runtime/test_antigravity_runtime.py` (D1, D2)
+- OBSERVED: `test/plan-marshall/platform-runtime/test_opencode_runtime.py` (D2)
 - HYPOTHESIS: `test/plan-marshall/phase-4-plan/` — per-task gate fixture (verify-at-outline) (D3)
 
 ## Dependencies and Sequencing
 
 - Depends on: PLAN-LB-50 (bridge file path, D2). Read PLAN-LB-48's state for the OpenCode side.
-- Overlaps with: PLAN-LB-50 on `antigravity_runtime.py`; PLAN-LB-48 on the targets tree (other
-  target).
+- Overlaps with: PLAN-LB-50 on `antigravity_runtime.py` and `opencode_runtime.py`; PLAN-LB-48 on
+  `opencode_runtime.py`, `test_opencode_runtime.py` and the targets tree (different functions).
 
 ## Hand-Off Command
 

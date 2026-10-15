@@ -147,6 +147,10 @@ ran unblocked and is still the agent's.
 - [x] staged PLAN-LB-50 (regressions 1–5), PLAN-LB-51 (Antigravity half: spec D1, D3, D4) and
       PLAN-LB-52 (harness-agnostic half as scripts: spec D2, D6, D7); PLAN-LB-49 gains lessons
       `-002`/`-005`
+- [x] coverage gaps closed 2026-10-15 by operator instruction: OpenCode bridge → PLAN-LB-51 D2;
+      D6 rest (weakened tests, infeasibility, Done-when triage) and D7 coverage freshness →
+      PLAN-LB-52 D4; Intent duplication, squash message, trailers → PLAN-LB-47 D5; halt
+      improvisation, unasked conflict, phase-time misattribution → PLAN-LB-53 (new)
 - [x] inbox `-001`..`-006` archived; resume anchor updated; `queue-view.md` regenerated
 
 ## Follow-Ups
