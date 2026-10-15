@@ -1171,8 +1171,16 @@ class TestRunningHandBackFields:
         assert result['log_file'] == ''
 
     def test_the_wait_bound_stays_foreground_safe(self):
-        """The bound sits below the per-call Bash ceiling by construction."""
-        assert 0 < factory._DAEMON_WAIT_BOUND_SECONDS <= 300
+        """The bound sits at the per-call Bash ceiling by construction.
+
+        Single running hand-back contract on every tier: the per_task wrapper
+        bound is at least the per-call ceiling (600 s on the Claude target via
+        the harness bash-timeout-ceiling seam), so a per_task routed build
+        outliving the old 300 s bound hands back the same live running status
+        plus job id a longer tier would, and the leaf hands it back through
+        pending_verify_steps rather than backgrounding it.
+        """
+        assert factory._DAEMON_WAIT_BOUND_SECONDS == 600
 
 
 class TestRunningHandBackProjections:
@@ -1262,3 +1270,32 @@ class TestDaemonRouteBoundedWait:
         assert routed['status'] == 'running'
         assert routed['job_id'] == 'J7'
         assert client.wait_calls == []
+
+
+class TestPerTaskRoutedBuildOutliving300s:
+    """A per_task routed build outliving 300 s hands back running plus job id.
+
+    Pins the single running hand-back contract on the per_task tier: with the
+    wrapper bound at the per-call ceiling (600 s), a job still running past
+    the old 300 s bound delivers the documented leaf handling — a live
+    ``running`` status plus daemon ``job_id`` carried in ``pending_verify_steps``
+    by the leaf — or a terminal status, never a block past the ceiling.
+    Fails at 501aeb313 where the bound was 300 and the leaf had no rule.
+    """
+
+    @pytest.mark.allow_daemon_routing
+    def test_build_outliving_300s_hands_back_running_with_job_id(self, monkeypatch, tmp_path):
+        monkeypatch.delenv(factory.MARSHALLD_JOB_ENV, raising=False)
+        monkeypatch.setattr(factory, '_DAEMON_WAIT_BOUND_SECONDS', 600)
+        client = _RunningOnlyBuildServerClient('J300')
+        monkeypatch.setattr(factory, '_load_build_server', lambda: client)
+        ticks = iter([1000.0, 1000.0, 1000.0 + 601.0, 1000.0 + 601.0])
+        monkeypatch.setattr(factory.time, 'monotonic', lambda: next(ticks))
+
+        routed, reason = factory._route_to_daemon(_make_config(), str(tmp_path), 'per-task-plan')
+
+        assert routed is not None
+        assert reason == ''
+        assert routed['status'] == 'running'
+        assert routed['job_id'] == 'J300'
+        assert routed['job_status'] == 'running'
