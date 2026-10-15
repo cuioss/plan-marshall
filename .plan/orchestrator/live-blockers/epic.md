@@ -828,6 +828,11 @@ entries below are OpenCode 1 assumptions in plan-marshall that OpenCode 2 broke.
   OpenCode config, so the root model is the whole run's model. PLAN-LB-40, -47, -50 and -56 finish
   on Muse and join the baseline as each lands (eight Muse plans in all); the next emitted plan is
   the first DeepSeek run.
+  - **First DeepSeek run: PLAN-LB-60** (started 2026-10-15 16:34, root
+    `ses_ebf95b304ffeduimJZ6Cr5frL1`). `opencode.db` records the model as
+    `{"id":"deepseek-v4.1-flash","providerID":"opencode-go","variant":"high"}` — the same provider
+    as Muse, with an explicit `high` variant where Muse ran `default`. Check at its landing that the
+    sub-agents carry the same model and variant.
   - **Muse baseline** (adversarial landings, spec deliverables met / partial / unmet vs claimed):
 
     | Plan | Spec met/partial/unmet | Claimed | Regressions | Sessions | Cost | Grade |
