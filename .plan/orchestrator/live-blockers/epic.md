@@ -795,6 +795,15 @@ entries below are OpenCode 1 assumptions in plan-marshall that OpenCode 2 broke.
       root; 8 of 16 commits written inline by the root; about 4.5 h of finalize booked to execute.
 
     Remaining: PLAN-LB-40.
+  - **Extended 2026-10-15 to PLAN-LB-56** (operator instruction, "do the grading"), emitted for
+    OpenCode. Same adversarial analysis and per-plan grade. Additionally grade whether the run
+    kept to its own subject:
+    - Did it attempt the routes it is closing (`python3 -c`, ad-hoc or `/tmp` scripts,
+      inline source commits in finalize)?
+    - Did each spec deliverable stay a separate outline deliverable with its Done-when intact?
+    - Does each Done-when test fail at `8442a5e33`, evidenced by a run against that tree?
+
+    Retire the Watch once PLAN-LB-40 and PLAN-LB-56 are graded.
   - **Extended 2026-10-14 to PLAN-LB-40 and PLAN-LB-42**, emitted for OpenCode by operator
     instruction ("emit the next two plans for opencode"). They are the first OpenCode plans to run
     with the deny rules and guard in effect (branched after `9011a19bf`), so grade separately
