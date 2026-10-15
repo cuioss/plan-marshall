@@ -89,45 +89,75 @@ def test_normalize_keys_names_unrecognized_top_level_key(marshal):
     assert result['unrecognized_keys'] == ['zzz_consumer_block']
 
 
-def test_normalize_keys_clean_success_when_all_keys_canonical(marshal):
-    """A config carrying only canonical top-level keys reports ``success`` with an
-    empty ``unrecognized_keys`` — the clean signal is distinguishable from the warning.
+def test_normalize_keys_names_arbitrary_nested_keys(marshal):
+    """Arbitrary nested keys are reported — the guard's unknown-key behaviour.
 
-    The nested keys are canonical too (``plan.effort``,
-    ``system.retention.logs_days`` are both seeded defaults): since the nested
-    diff reports below-top-level stray keys, a fixture with arbitrary nested
-    keys would warn rather than read clean."""
+    A config whose TOP-LEVEL keys are all canonical still names each
+    below-top-level key absent from the defaults: ``unrecognized_keys`` (the
+    top-level bucket) stays empty while ``unrecognized_nested_keys`` lists the
+    invented keys. The fixtures use arbitrary nested keys deliberately, so this
+    path is exercised rather than side-stepped."""
     marshal.write_text(
-        json.dumps({'plan': {'effort': 'level-3'}, 'system': {'retention': {'logs_days': 1}}}, indent=2) + '\n',
+        json.dumps({'plan': {'a': 1}, 'system': {'b': 2}}, indent=2) + '\n',
         encoding='utf-8',
     )
 
     result = _config_core.normalize_keys()
 
-    assert result['status'] == 'success'
-    assert result['unrecognized_keys'] == []
     assert result['action'] == 'normalized'
+    assert result['status'] == 'warning'
+    assert result['unrecognized_keys'] == []
+    assert result['unrecognized_nested_keys'] == ['plan.a', 'system.b']
 
 
 def test_normalize_keys_is_byte_stable_on_already_canonical_file(marshal):
-    """An already-canonical file comes back byte-identical on a second pass — this
-    fix is a canonicalizer, not a reformatter (D10b)."""
+    """An already-canonically-ordered file comes back byte-identical on a second pass —
+    this fix is a canonicalizer, not a reformatter (D10b).
+
+    The nested keys are arbitrary (reported, not seeded defaults): the point of this
+    test is top-level order stability, and the arbitrary keys keep the unknown-key
+    reporting on the exercised path rather than side-stepping it."""
     # First pass canonicalizes (plan sorts before system) and settles the bytes.
-    # The nested keys are seeded defaults (see the test above), so the settled
-    # file is canonical at both levels — not merely top-level ordered.
     marshal.write_text(
-        json.dumps({'system': {'retention': {'logs_days': 1}}, 'plan': {'effort': 'level-3'}}, indent=2) + '\n',
+        json.dumps({'system': {'b': 2}, 'plan': {'a': 1}}, indent=2) + '\n',
         encoding='utf-8',
     )
     first = _config_core.normalize_keys()
-    assert first['status'] == 'success'
+    assert first['unrecognized_keys'] == []
     canonical_bytes = marshal.read_bytes()
 
     second = _config_core.normalize_keys()
 
-    assert second['status'] == 'success'
     assert second['unrecognized_keys'] == []
     assert marshal.read_bytes() == canonical_bytes
+
+
+# ============================================================================
+# normalize_keys — the product's own below-top-level keys are recognized (D3)
+# ============================================================================
+
+
+def test_normalize_keys_is_clean_with_operator_removed_steps(marshal):
+    """A config carrying the product-written ``removed_steps`` key is warning-free.
+
+    ``remove-step`` writes ``plan.<phase>.removed_steps`` for both step-map phases.
+    Both are recognised through the dynamic-prefix set derived from the declaring
+    constants, so a config the product itself wrote reports no stray nested key —
+    the regression this deliverable closes (`removed_steps` warned at ``f5d661d87``).
+    """
+    config = {
+        'plan': {
+            'phase-5-execute': {'removed_steps': ['default:verify:coverage']},
+            'phase-6-finalize': {'removed_steps': ['default:archive-plan']},
+        },
+    }
+    marshal.write_text(json.dumps(config, indent=2) + '\n', encoding='utf-8')
+
+    result = _config_core.normalize_keys()
+
+    assert result['status'] == 'success'
+    assert result['unrecognized_keys'] == []
+    assert result['unrecognized_nested_keys'] == []
 
 
 # ============================================================================

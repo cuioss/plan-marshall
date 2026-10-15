@@ -14,6 +14,10 @@ from pathlib import Path
 from typing import Any
 
 # Direct imports - PYTHONPATH set by executor
+from _config_defaults import (
+    OPERATOR_REMOVED_STEPS_KEY,
+    OPERATOR_STEP_MAP_LOCATIONS,
+)
 from command_forms import STEWARD_COMMAND
 from file_ops import (
     get_base_dir,
@@ -924,12 +928,24 @@ def unrecognized_top_level_keys(config: dict) -> list[str]:
 # seed, so its absence from the defaults is expected rather than stray.
 # Each entry is a dotted prefix; the subtree rooted at it (and the prefix
 # itself, when it is a dynamic entry) is skipped.
+#
+# The operator-curated step-map prefixes and their per-phase removal-intent
+# siblings are DERIVED from the declaring constants in :mod:`_config_defaults`
+# (single source) rather than restated as a second literal list. Both are written
+# below the top level by the product — ``add-step`` keys the step maps,
+# ``remove-step`` writes ``plan.<phase>.removed_steps`` — and both are absent from
+# the defaults by design, so ``normalize-keys`` must treat them as
+# dynamic-identifier subtrees rather than stray keys. A second literal here would
+# silently stop recognising a map or a phase the constants gain.
 _NESTED_DIFF_DYNAMIC_PREFIXES: tuple[str, ...] = (
     'extension_defaults',
     'skill_domains',
     'build.map',
-    'plan.phase-5-execute.verification_steps',
-    'plan.phase-6-finalize.steps',
+    *(
+        f'plan.{phase}.{suffix}'
+        for phase, map_key in OPERATOR_STEP_MAP_LOCATIONS
+        for suffix in (map_key, OPERATOR_REMOVED_STEPS_KEY)
+    ),
     'plan.phase-5-execute.effort',
     'plan.phase-6-finalize.effort',
     'orchestrator.effort',
@@ -974,11 +990,11 @@ def unrecognized_nested_keys(config: dict) -> list[str]:
     skipped for the same reason. Lists are
     never descended into.
 
-    The reference is :func:`get_default_config` (imported lazily so this module
-    never takes an import-time dependency on the defaults module): a key the
-    seed does not carry at the same path is one no reader was seeded to
-    consume. A retired knob the reconcile already removed therefore never
-    appears here — this verb reports what the reconcile has not yet retired.
+    The reference is :func:`get_default_config` (imported lazily so the seed is
+    built on demand rather than at this module's load time): a key the seed does
+    not carry at the same path is one no reader was seeded to consume. A retired
+    knob the reconcile already removed therefore never appears here — this verb
+    reports what the reconcile has not yet retired.
     """
     from _config_defaults import get_default_config
 
