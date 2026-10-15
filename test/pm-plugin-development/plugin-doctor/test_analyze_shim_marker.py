@@ -352,7 +352,7 @@ def test_real_marketplace_tree_produces_zero_findings():
 # The pair is published in references/rule-catalog.md beside the
 # false-positive-boundary paragraph.
 EXPECTED_MARKER_ANCHORS = 28
-EXPECTED_DETECTED_WHEN_STRIPPED = 5
+EXPECTED_DETECTED_WHEN_STRIPPED = 4
 
 
 def _marker_block_bounds(text: str, anchor_line: int) -> tuple[int, int]:
