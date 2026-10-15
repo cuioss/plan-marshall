@@ -5,6 +5,7 @@ Git workflow operations - format commits, analyze diffs, manage worktrees.
 
 Usage:
     git-workflow.py format-commit --type <type> --subject <subject> [options]
+    git-workflow.py source-commit-gate (--plan-id <plan-id> | --project-dir <path>) [--phase <phase>] [--changed-paths <csv>]
     git-workflow.py analyze-diff (--plan-id <plan-id> | --project-dir <path>) [--cached]
     git-workflow.py detect-artifacts [--root <dir>]
     git-workflow.py force-push-with-lease (--plan-id <plan-id> | --project-dir <path> --branch <branch>)
@@ -21,6 +22,7 @@ Usage:
 
 Subcommands:
     format-commit             Format commit message following conventional commits
+    source-commit-gate        Refuse a finalize-phase source-tree commit without sanction
     analyze-diff              Capture and analyze the worktree diff to suggest a commit message
     detect-artifacts          Scan for committable artifacts (build outputs, temp files)
     force-push-with-lease     Force-push feature branch with lease guard (post-rebase)
@@ -327,8 +329,297 @@ def cmd_format_commit(args):
 
 
 # ============================================================================
-# ANALYZE-DIFF SUBCOMMAND
+# SOURCE-COMMIT GATE SUBCOMMAND
 # ============================================================================
+
+#: Phase the source-commit gate guards. Outside this phase every commit is
+#: allowed — the gate is a finalize-only refusal, not a general commit policy.
+_SOURCE_COMMIT_GATE_PHASE = '6-finalize'
+
+#: Task origins that count as loop-back fix work. ``plan`` is the default for
+#: deliverable work and never qualifies; every other value of the task-contract
+#: origin set names triage-created fix work (see
+#: ``manage-tasks/standards/task-contract.md`` § "Origin Field").
+_SOURCE_COMMIT_GATE_FIX_ORIGINS = frozenset({'fix', 'sonar', 'pr', 'lint', 'security', 'documentation', 'holistic'})
+
+#: Finding-text markers for the rubric §6 inline-correction allowance. A record
+#: cites the allowance only when it names the rubric AND one allowance marker —
+#: either half alone (a rubric citation for another section, or a bare
+#: "6-finalize" with no rubric citation) does not qualify.
+_SOURCE_COMMIT_GATE_RUBRIC_MARKERS = ('review-rubric', 'review_rubric')
+_SOURCE_COMMIT_GATE_ALLOWANCE_MARKERS = (
+    'inline-correction',
+    'inline correction',
+    '6-finalize',
+    'section 6',
+    'section-6',
+    'section_6',
+)
+
+#: Statuses that count as an OPEN task. Terminal states (``done``,
+#: ``infeasible``) and ``blocked`` never sanction a commit.
+_SOURCE_COMMIT_GATE_OPEN_STATUSES = frozenset({'pending', 'in_progress'})
+
+
+def _normalize_commit_path(path: str) -> str:
+    """Normalize a commit path for plan-state comparison.
+
+    Strips whitespace, drops a leading ``./`` (and any number of them), and
+    converts OS-native separators to ``/`` so the first-segment comparison in
+    :func:`is_plan_only_path` sees one spelling on every platform.
+    """
+    text = (path or '').strip().replace(os.sep, '/')
+    while text.startswith('./'):
+        text = text[2:]
+    return text.lstrip('/')
+
+
+def is_plan_only_path(path: str) -> bool:
+    """Whether ``path`` lives inside the plan-state directory.
+
+    Keyed on the first path segment, mirroring :func:`_is_plan_state` — a
+    ``.plan`` prefix anywhere else (``src/.plan_notes.md``) is a source path.
+    """
+    normalized = _normalize_commit_path(path)
+    return normalized.split('/', 1)[0] == _PLAN_DIR_NAME if normalized else False
+
+
+def is_source_commit(changed_paths: list[str]) -> bool:
+    """Whether the change touches the source tree.
+
+    True when at least one changed path lives outside ``.plan/``. An empty
+    change set is not a source commit — there is nothing to refuse.
+    """
+    return any(not is_plan_only_path(path) for path in (changed_paths or []))
+
+
+def has_open_fix_task(tasks: list[dict]) -> bool:
+    """Whether any task is an open loop-back fix task.
+
+    A task qualifies only when its status is open (``pending``/``in_progress``)
+    AND its origin names triage-created fix work. Plan-origin tasks never
+    qualify however urgent they are — an unfinished deliverable is not a
+    sanction to commit around it. A missing origin defaults to ``plan`` (the
+    task-contract default), so it likewise never qualifies.
+    """
+    for task in tasks or []:
+        if not isinstance(task, dict):
+            continue
+        if str(task.get('status') or '') not in _SOURCE_COMMIT_GATE_OPEN_STATUSES:
+            continue
+        if str(task.get('origin') or 'plan') in _SOURCE_COMMIT_GATE_FIX_ORIGINS:
+            return True
+    return False
+
+
+def _finding_texts(finding: object) -> str:
+    """Flatten a finding record to one searchable string."""
+    if isinstance(finding, str):
+        return finding
+    if isinstance(finding, dict):
+        parts = [finding.get(key) for key in ('title', 'detail', 'resolution_detail', 'message', 'rule')]
+        return '\n'.join(str(part) for part in parts if part)
+    return str(finding)
+
+
+def has_section6_record(findings: list) -> bool:
+    """Whether any finding record cites the rubric §6 inline-correction allowance.
+
+    The record must name the review rubric AND an inline-correction marker in
+    the same record (matched case-insensitively over the title, detail,
+    resolution detail and message fields). The gate reads the record — it
+    never writes one.
+    """
+    for finding in findings or []:
+        text = _finding_texts(finding).lower()
+        if any(marker in text for marker in _SOURCE_COMMIT_GATE_RUBRIC_MARKERS) and any(
+            marker in text for marker in _SOURCE_COMMIT_GATE_ALLOWANCE_MARKERS
+        ):
+            return True
+    return False
+
+
+def evaluate_source_commit_gate(
+    phase: str | None,
+    changed_paths: list[str] | None,
+    tasks: list[dict] | None,
+    findings: list | None,
+) -> dict:
+    """Evaluate the finalize-phase source-commit gate (pure predicate).
+
+    Allow iff the commit is outside the guarded phase, touches only plan
+    state, or carries either sanction signal (open loop-back fix task OR
+    rubric §6 inline-correction record). Otherwise refuse, naming the
+    loop-back route. Never touches the filesystem — the CLI wrapper resolves
+    the four inputs and calls this.
+    """
+    paths = list(changed_paths or [])
+    source_paths = [path for path in paths if not is_plan_only_path(path)]
+    if (phase or '') != _SOURCE_COMMIT_GATE_PHASE:
+        return {
+            'status': 'success',
+            'phase': phase,
+            'allowed': True,
+            'reason': 'not_finalize',
+            'changed_paths': paths,
+            'source_paths': source_paths,
+            'message': f'Source-commit gate does not apply outside {_SOURCE_COMMIT_GATE_PHASE}',
+        }
+    if not source_paths:
+        return {
+            'status': 'success',
+            'phase': phase,
+            'allowed': True,
+            'reason': 'plan_only',
+            'changed_paths': paths,
+            'source_paths': source_paths,
+            'message': 'Plan-state-only commit — no source tree touched',
+        }
+    if has_open_fix_task(tasks or []):
+        return {
+            'status': 'success',
+            'phase': phase,
+            'allowed': True,
+            'reason': 'open_fix_task',
+            'changed_paths': paths,
+            'source_paths': source_paths,
+            'message': 'Source-tree commit sanctioned by an open loop-back fix task',
+        }
+    if has_section6_record(findings or []):
+        return {
+            'status': 'success',
+            'phase': phase,
+            'allowed': True,
+            'reason': 'section6_record',
+            'changed_paths': paths,
+            'source_paths': source_paths,
+            'message': 'Source-tree commit sanctioned by a review-rubric section-6 inline-correction record',
+        }
+    return {
+        'status': 'success',
+        'phase': phase,
+        'allowed': False,
+        'reason': 'no_sanction',
+        'changed_paths': paths,
+        'source_paths': source_paths,
+        'message': (
+            'Source-tree commit refused in 6-finalize: no open loop-back fix task and no '
+            'review-rubric section-6 inline-correction record. Route the fix through a '
+            'loop-back to 5-execute (open a fix task) or record the section-6 inline '
+            'correction, then retry.'
+        ),
+    }
+
+
+def _source_gate_plan_dir(worktree: Path, plan_id: str | None) -> Path | None:
+    """Resolve the plan directory holding this plan's tasks and findings."""
+    if plan_id is None:
+        return None
+    candidate = worktree / _PLAN_DIR_NAME / 'local' / 'plans' / plan_id
+    return candidate if candidate.is_dir() else None
+
+
+def _source_gate_tasks(plan_dir: Path | None) -> tuple[list[dict], int]:
+    """Load task records for the gate; unreadable tasks read as no signal."""
+    if plan_dir is None:
+        return [], 0
+    tasks_dir = plan_dir / 'tasks'
+    if not tasks_dir.is_dir():
+        return [], 0
+    tasks: list[dict] = []
+    try:
+        files = sorted(tasks_dir.glob('TASK-*.json'))
+    except OSError:
+        return [], 0
+    for path in files:
+        try:
+            tasks.append(json.loads(path.read_text(encoding='utf-8')))
+        except (OSError, ValueError):
+            continue
+    return tasks, len(tasks)
+
+
+def _source_gate_finding_texts(plan_dir: Path | None) -> tuple[list[str], int]:
+    """Load finding-record texts for the gate; unreadable stores read as no signal."""
+    if plan_dir is None:
+        return [], 0
+    findings_dir = plan_dir / 'artifacts' / 'findings'
+    if not findings_dir.is_dir():
+        return [], 0
+    texts: list[str] = []
+    try:
+        files = sorted(findings_dir.rglob('*.jsonl')) + sorted(findings_dir.rglob('*.json'))
+    except OSError:
+        return [], 0
+    for path in files:
+        try:
+            texts.append(path.read_text(encoding='utf-8', errors='replace'))
+        except OSError:
+            continue
+    return texts, len(texts)
+
+
+def _source_gate_changed_paths(worktree: Path, explicit: str | None) -> tuple[list[str] | None, dict | None]:
+    """Resolve the changed-path list from ``--changed-paths`` or from git."""
+    if explicit is not None:
+        return [path for path in (part.strip() for part in explicit.split(',')) if path], None
+    rc, out, err = run_git(['-C', str(worktree), 'diff', '--name-only', 'HEAD'])
+    if rc != 0:
+        return None, make_error(
+            f'git diff failed: {err or f"exit {rc}"}',
+            code=ErrorCode.FETCH_FAILURE,
+        )
+    return [line for line in (part.strip() for part in out.splitlines()) if line], None
+
+
+def cmd_source_commit_gate(args):
+    """Handle source-commit-gate subcommand.
+
+    Refuses a source-tree commit in ``6-finalize`` when neither sanction
+    signal is present (open loop-back fix task, rubric §6 inline-correction
+    record) and allows it when either is. Outside ``6-finalize`` — or for a
+    plan-state-only change — every commit is allowed. Reads both signals from
+    the plan directory; writes nothing, not even a finding.
+
+    An unresolvable signal reads as absent (fail closed): unreadable tasks or
+    findings never sanction a source commit.
+    """
+    phase = getattr(args, 'phase', None) or _SOURCE_COMMIT_GATE_PHASE
+    plan_id = getattr(args, 'plan_id', None)
+    project_dir = getattr(args, 'project_dir', None)
+
+    if project_dir is not None:
+        worktree = Path(project_dir)
+        if not worktree.is_dir():
+            return make_error(
+                f'Worktree path not found: {project_dir}',
+                code=ErrorCode.NOT_FOUND,
+            )
+    else:
+        worktree, err = _resolve_analyze_diff_path(args)
+        if err is not None and getattr(args, 'changed_paths', None) is None:
+            return err
+        if worktree is None:
+            return make_error(
+                'one of --plan-id or --project-dir is required',
+                code=ErrorCode.INVALID_INPUT,
+            )
+
+    changed, git_err = _source_gate_changed_paths(worktree, getattr(args, 'changed_paths', None))
+    if git_err is not None:
+        return git_err
+    assert changed is not None  # narrowing
+
+    plan_dir = _source_gate_plan_dir(worktree, plan_id)
+    tasks, tasks_scanned = _source_gate_tasks(plan_dir)
+    finding_texts, findings_scanned = _source_gate_finding_texts(plan_dir)
+
+    verdict = evaluate_source_commit_gate(phase, changed, tasks, finding_texts)
+    verdict['plan_id'] = plan_id
+    verdict['tasks_scanned'] = tasks_scanned
+    verdict['findings_scanned'] = findings_scanned
+    verdict['signals_resolved'] = plan_dir is not None
+    return verdict
 
 
 def analyze_diff(diff_content: str) -> dict:
@@ -2762,6 +3053,7 @@ def main():
         epilog="""
 Examples:
   git-workflow.py format-commit --type feat --scope auth --subject "add login"
+  git-workflow.py source-commit-gate --plan-id EXAMPLE-PLAN [--phase 6-finalize] [--changed-paths src/a.py,.plan/x]
   git-workflow.py analyze-diff --plan-id EXAMPLE-PLAN [--cached]
   git-workflow.py analyze-diff --project-dir /path/to/worktree [--cached]
   git-workflow.py detect-artifacts --root /path/to/repo
@@ -2793,6 +3085,32 @@ Examples:
                     {'flags': ['--body'], 'help': 'Commit body'},
                     {'flags': ['--breaking'], 'help': 'Breaking change description'},
                     {'flags': ['--footer'], 'help': 'Additional footer'},
+                ],
+            },
+            {
+                'name': 'source-commit-gate',
+                'help': 'Refuse a finalize-phase source-tree commit without sanction',
+                'handler': cmd_source_commit_gate,
+                'args': [
+                    {
+                        'flags': ['--plan-id'],
+                        'dest': 'plan_id',
+                        'help': 'Plan identifier — resolves working tree path and reads task/finding signals',
+                    },
+                    {
+                        'flags': ['--project-dir'],
+                        'dest': 'project_dir',
+                        'help': 'Explicit working tree path (escape hatch when plan-id is unavailable)',
+                    },
+                    {
+                        'flags': ['--phase'],
+                        'help': 'Phase the commit is made in (default: 6-finalize — fail closed)',
+                    },
+                    {
+                        'flags': ['--changed-paths'],
+                        'dest': 'changed_paths',
+                        'help': 'Comma-separated changed paths (default: derived from git diff --name-only HEAD)',
+                    },
                 ],
             },
             {
