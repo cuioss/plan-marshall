@@ -1455,6 +1455,7 @@ best-effort drop semantics, and the extension-point contract.
 status: success
 operation: runtime-info
 harness: claude
+transcripts: full
 model_name: claude-sonnet-4-5
 model_type: chat
 model_version: 2026-09-01
@@ -1467,6 +1468,7 @@ build_version: "0.1"
 status: success
 operation: runtime-info
 harness: claude
+transcripts: full
 build_version: "0.1"
 ```
 
@@ -1475,7 +1477,7 @@ build_version: "0.1"
 status: error
 operation: runtime-info
 error: unknown_target
-message: "runtime.target 'antigravity' is not in the registry; valid targets are: antigravity, claude, opencode"
+message: "runtime.target 'unknown-platform' is not in the registry; valid targets are: antigravity, claude, opencode"
 ```
 
 **Declining.** A target that cannot collect runtime information returns a

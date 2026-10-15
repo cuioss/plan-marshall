@@ -33,6 +33,7 @@ transcription-invented SYNTAX can no longer land.
 """
 
 import pathlib
+import re
 
 import pytest
 
@@ -103,3 +104,79 @@ def test_documented_toon_block_is_what_the_serializer_emits(doc_name: str, linen
         f'{doc_name}:{lineno} is not in the shape serialize_toon emits — '
         f'it documents a payload the runtime cannot produce'
     )
+
+
+# =============================================================================
+# Corrected runtime-info examples (harness-stamp deliverable)
+# =============================================================================
+#
+# The round-trip test above holds every block to the serializer SHAPE, but a
+# shape check cannot catch a dropped field or a self-contradictory example:
+# both still round-trip. These pins assert the corrected CONTENT — the
+# `transcripts` capability flag both success examples must carry, and an
+# unknown-target name outside the registered set.
+
+_CONTRACT_DOC = _STANDARDS / 'contract.md'
+
+_REGISTERED_TARGETS = frozenset({'antigravity', 'claude', 'opencode'})
+
+
+def _section_span(marker: str) -> tuple[int, int]:
+    """Return the 1-based (start, end) line span of one `### ` section."""
+    lines = _CONTRACT_DOC.read_text(encoding='utf-8').splitlines()
+    start = next(i for i, line in enumerate(lines, 1) if line.strip() == marker)
+    end = next(
+        (i for i, line in enumerate(lines, 1) if i > start and line.startswith('### ')),
+        len(lines) + 1,
+    )
+    return start, end
+
+
+def _section_blocks(marker: str, *needles: str) -> list[str]:
+    """Every toon block in one section whose body contains all of `needles`."""
+    start, end = _section_span(marker)
+    return [
+        body
+        for lineno, body in _toon_blocks(_CONTRACT_DOC)
+        if start <= lineno < end and all(needle in body for needle in needles)
+    ]
+
+
+def test_runtime_info_success_examples_carry_transcripts() -> None:
+    """Both success examples carry the `transcripts` capability flag."""
+    blocks = _section_blocks('### `runtime-info`', 'operation: runtime-info', 'status: success')
+
+    assert len(blocks) == 2, (
+        f'expected the two runtime-info success examples, found {len(blocks)} — '
+        'the section changed shape and this pin no longer covers it'
+    )
+    for body in blocks:
+        assert 'transcripts: full' in body, (
+            'a runtime-info success example dropped the transcripts flag — '
+            'the client.toon pre-flight artifact cannot tell a measured run from an unmeasured one'
+        )
+
+
+def test_runtime_info_unknown_target_example_names_no_registered_target() -> None:
+    """The error example quotes a target outside the registry, never a real one."""
+    blocks = _section_blocks('### `runtime-info`', 'operation: runtime-info', 'error: unknown_target')
+
+    assert len(blocks) == 1, (
+        f'expected the one runtime-info unknown-target example, found {len(blocks)}'
+    )
+    match = re.search(r"runtime\.target '([^']+)'", blocks[0])
+    assert match is not None, 'the error message names no quoted runtime.target value'
+    assert match.group(1) not in _REGISTERED_TARGETS, (
+        f"{match.group(1)!r} is a registered target — "
+        'the example contradicts its own unknown_target error'
+    )
+    assert 'valid targets are: antigravity, claude, opencode' in blocks[0]
+
+
+def test_health_check_permissions_detail_names_the_resolved_file() -> None:
+    """The permissions detail names the file it resolved, never a hardcoded literal."""
+    text = _CONTRACT_DOC.read_text(encoding='utf-8')
+
+    assert '_claude_project_settings_read_path()' in text
+    assert 'never a hardcoded literal' in text
+    assert 'settings.json present;' in text
