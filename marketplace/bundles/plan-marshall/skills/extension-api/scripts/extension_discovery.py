@@ -1482,10 +1482,13 @@ def find_implementors_with_status(ext_point: str) -> dict[str, Any]:
     ``unknown`` (delete nothing) rather than as a genuinely empty implementor
     set — the two are indistinguishable from the bare list.
 
-    ``status`` is ``'resolved'`` when the query produced at least one implementor
-    (discovery demonstrably ran) or when every scan surface resolved (a scan that
-    legitimately found nothing), and ``'unresolved'`` only when the query produced
-    nothing AND at least one scan surface could not be read.
+    ``status`` is ``'resolved'`` only when EVERY scan surface resolved — a scan
+    that ran to completion, whether it found implementors or legitimately found
+    nothing. It is ``'unresolved'`` as soon as at least one scan surface could not
+    be read, because that surface's implementors cannot be enumerated: a query that
+    found some implementors on a partial scan is still ``'unresolved'``, so a
+    fail-closed reconcile treats the un-scanned surface as a blind spot rather than
+    reading its absent steps as genuinely dead.
 
     Args:
         ext_point: The canonical ext-point value, as for :func:`find_implementors`.
@@ -1498,7 +1501,7 @@ def find_implementors_with_status(ext_point: str) -> dict[str, Any]:
     # test double on this module's attribute is honoured (the same seam the
     # discovery consumers import through); the surface probe is separate.
     implementors = find_implementors(ext_point)
-    resolved = bool(implementors) or all(_implementor_scan_surfaces_resolve())
+    resolved = all(_implementor_scan_surfaces_resolve())
     return {'status': 'resolved' if resolved else 'unresolved', 'implementors': implementors}
 
 
