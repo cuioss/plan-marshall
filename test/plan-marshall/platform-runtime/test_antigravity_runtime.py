@@ -94,67 +94,66 @@ def test_layout_bundle_cache_root(runtime: AntigravityRuntime):
 # =============================================================================
 
 
-def test_project_initial_setup(runtime: AntigravityRuntime, tmp_path: Path):
-    """project_initial_setup creates .plan/, seeds marshal.json, and bridges rules."""
+def test_project_initial_setup_does_not_write_marshal_json(runtime: AntigravityRuntime, tmp_path: Path):
+    """project_initial_setup leaves .plan/marshal.json unwritten; runtime.target is retired."""
     result = _parse(runtime.project_initial_setup(str(tmp_path), 'antigravity'))
     assert result['status'] == 'success'
     assert result['target'] == 'antigravity'
-    assert result['marshal_written'] is True
+    assert result['marshal_written'] is False
 
     assert (tmp_path / '.plan' / 'temp').is_dir()
+    assert not (tmp_path / '.plan' / 'marshal.json').exists()
+
+
+def test_project_initial_setup_writes_no_runtime_owned_keys(runtime: AntigravityRuntime, tmp_path: Path):
+    """Shared marshal carries no runtime.target and no standing_rules_bridge after setup."""
+    result = _parse(runtime.project_initial_setup(str(tmp_path), 'antigravity'))
+    assert result['marshal_written'] is False
     marshal_file = tmp_path / '.plan' / 'marshal.json'
-    assert marshal_file.is_file()
-    data = json.loads(marshal_file.read_text(encoding='utf-8'))
-    assert data['runtime']['target'] == 'antigravity'
+    assert not marshal_file.exists()
 
 
-def test_project_initial_setup_preserves_existing_marshal(runtime: AntigravityRuntime, tmp_path: Path):
-    """project_initial_setup seeds runtime.target while preserving existing keys."""
+def test_project_initial_setup_leaves_pre_existing_marshal_intact(runtime: AntigravityRuntime, tmp_path: Path):
+    """An existing marshal.json is left untouched and gains no runtime-owned keys."""
     plan_dir = tmp_path / '.plan'
     plan_dir.mkdir(parents=True)
     marshal_file = plan_dir / 'marshal.json'
-    marshal_file.write_text(json.dumps({'custom_key': 'custom_value'}), encoding='utf-8')
+    initial = json.dumps({'custom_key': 'custom_value'})
+    marshal_file.write_text(initial, encoding='utf-8')
 
     result = _parse(runtime.project_initial_setup(str(tmp_path), 'antigravity'))
     assert result['status'] == 'success'
-    assert result['marshal_written'] is True
+    assert result['marshal_written'] is False
+    assert marshal_file.read_text(encoding='utf-8') == initial
 
     data = json.loads(marshal_file.read_text(encoding='utf-8'))
     assert data['custom_key'] == 'custom_value'
-    assert data['runtime']['target'] == 'antigravity'
+    assert 'runtime' not in data
+    assert 'standing_rules_bridge' not in data
 
 
-def test_project_initial_setup_refuses_corrupt_marshal(runtime: AntigravityRuntime, tmp_path: Path):
-    """project_initial_setup answers io_error on a corrupt marshal.json.
-
-    A seed that cannot parse the file must not report success with
-    ``marshal_written: False`` — an unreadable seed base is unevaluable,
-    never a benign no-write.
-    """
+def test_project_initial_setup_ignores_corrupt_marshal(runtime: AntigravityRuntime, tmp_path: Path):
+    """A corrupt marshal.json is left alone — setup writes nothing, so there is nothing to refuse."""
     plan_dir = tmp_path / '.plan'
     plan_dir.mkdir(parents=True)
     (plan_dir / 'marshal.json').write_text('{not json', encoding='utf-8')
 
     result = _parse(runtime.project_initial_setup(str(tmp_path), 'antigravity'))
-    assert result['status'] == 'error'
-    assert result['error'] == 'io_error'
+    assert result['status'] == 'success'
+    assert result['marshal_written'] is False
+    assert (plan_dir / 'marshal.json').read_text(encoding='utf-8') == '{not json'
 
 
-def test_project_initial_setup_refuses_non_object_runtime(runtime: AntigravityRuntime, tmp_path: Path):
-    """project_initial_setup answers io_error on a present-but-non-object runtime.
-
-    A seed that finds the ``runtime`` key holding a non-dict value must refuse
-    before any write — repairing the value in place would destroy the corrupt
-    state the caller never got to see.
-    """
+def test_project_initial_setup_ignores_non_object_runtime(runtime: AntigravityRuntime, tmp_path: Path):
+    """A present-but-non-object runtime is left alone — no seeding path remains to repair it."""
     plan_dir = tmp_path / '.plan'
     plan_dir.mkdir(parents=True)
     marshal_file = plan_dir / 'marshal.json'
     marshal_file.write_text(json.dumps({'runtime': 'antigravity'}), encoding='utf-8')
 
     result = _parse(runtime.project_initial_setup(str(tmp_path), 'antigravity'))
-    assert result['status'] == 'error'
-    assert result['error'] == 'io_error'
+    assert result['status'] == 'success'
+    assert result['marshal_written'] is False
 
     data = json.loads(marshal_file.read_text(encoding='utf-8'))
     assert data['runtime'] == 'antigravity'
