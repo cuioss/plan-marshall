@@ -72,7 +72,8 @@ derive, for rows still live.
      `would_empty`).
 
   Then the rest: PLAN-LB-51 (Antigravity only now), PLAN-LB-45, PLAN-LB-43, PLAN-LB-44,
-  PLAN-LB-41, PLAN-LB-46, PLAN-LB-57 (new: enrolment and instrument, moved out of PLAN-LB-48).
+  PLAN-LB-58, PLAN-LB-59 (both staged 2026-10-15 from the lessons ingest), PLAN-LB-41, PLAN-LB-46,
+  PLAN-LB-57 (new: enrolment and instrument, moved out of PLAN-LB-48).
   Running and untouched: PLAN-LB-40, PLAN-LB-47, PLAN-LB-50. Every restructured spec states that
   its deliverables and Done-whens must not be merged in the outline — the failure every OpenCode
   run has shown.
@@ -500,27 +501,30 @@ derive, for rows still live.
 - **From the lessons ingest of 2026-10-15** (`lessons-routing-029`..`-043`; pm-mcp-core
   `-203`..`-286`, API-Sheriff #466). Re-checked read-only at `d17ac5bef`; the operator's gradings at
   that ingest stand over the re-check's.
-  - **High, unowned:**
+  - **High — staged 2026-10-15 by operator instruction:** PLAN-LB-58 verification-truth (Sonar
+    staleness D1, link check D2, Maven gate population D3) and PLAN-LB-59 skill-and-adr-resolution
+    (module-aware skills D1, ADR scan D2); both queue after the OpenCode plans.
     - **Sonar confirms a stale analysis** (`-037`, pm-mcp-core `-253`): `count_status` is decided by
       CE readiness alone (`workflow-integration-sonar/scripts/sonar.py` L26-33); no script compares
       the analysis revision with the PR head, so a clean stale analysis reads as a confirmed 0.
-      Fail-open.
+      Fail-open. → PLAN-LB-58 D1.
     - **Task skill resolution attaches framework skills the module forbids** (`-039`, operator-graded
       high): `manage_personas.py` `_resolve_profile_domain_skills` merges `defaults` AND `optionals`
       (L150) with no module context, so every Java task gets `java-quarkus`, `java-cdi`,
       `junit-weld-testing`; the module-level demotion in `pm-dev-java/.../extension.py` L178-185 is
-      bypassed.
+      bypassed. → PLAN-LB-59 D1.
     - **The Markdown link check passes on zero links** (`-037`, operator graded pm-mcp-core `-247`
       high): `pm-documents` `_cmd_verify_links.py` file mode accepts a `.md` and parses it with
       AsciiDoc regexes (L70-106, L185-186) — `total_links: 0, status: success`; directory mode
       already refuses. The verification-scope half of `-247` was caught by the Q-Gate as designed.
+      → PLAN-LB-58 D2.
     - **Pre-push gate has no per-module population on Maven** (`-031`, operator graded `-267` high):
       `derive_gate_bundles.py` is marketplace-shaped (L127-139) and only `build-pyproject` exposes
       `resolve-test-scope`, so module-tests runs DEGRADED on every Maven plan. Disclosed, not silent:
-      rule 4 reports the unresolved paths and the whole-tree arms run.
+      rule 4 reports the unresolved paths and the whole-tree arms run. → PLAN-LB-58 D3.
     - **Per-package ADR numbers collide** (`-036`, operator graded `-252` high): `manage-adr.py`
       `ADR_DIR = Path('doc/adr')` (L29) with non-recursive globs (L129, L139, L163); `doc/adr/{package}/`
-      is invisible to numbering and the scan.
+      is invisible to numbering and the scan. → PLAN-LB-59 D2.
   - **Graded high by the ingest, medium on re-check** (no false pass, caught by an existing gate, or
     one plan shape):
     - Sourcery's "used its review budget" notice is not a registered refusal (`-030`; `sourcery.md`
