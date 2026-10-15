@@ -1379,8 +1379,9 @@ def test_reporter_unreadable_db_is_not_checkable(runtime: OpenCodeRuntime, tmp_p
 
 def test_project_initial_setup_docstring_names_platform_runtime_cli() -> None:
     """The steward-path docstring names the platform_runtime CLI verbatim surface."""
-    assert 'platform_runtime.py' in OpenCodeRuntime.project_initial_setup.__doc__
-    assert 'verbatim' in OpenCodeRuntime.project_initial_setup.__doc__
+    doc = OpenCodeRuntime.project_initial_setup.__doc__ or ''
+    assert 'platform_runtime.py' in doc
+    assert 'verbatim' in doc
 
 
 def test_steward_setup_prints_persisted_warnings(
