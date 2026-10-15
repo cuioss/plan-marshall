@@ -372,6 +372,9 @@ derive, for rows still live.
   retrospective footprint reports every sibling path as declared-but-unrealised, so M6 fails by
   construction; relative sibling paths break under `use_worktree`; a sibling deliverable has no
   module name in the architecture. — `lessons-routing-028.md` (168, 175, 176, 181).
+  Recurred 2026-10-13..15 on pm-mcp-core (-203, -213, -240, -265, -285; `lessons-routing-029`);
+  live at `d17ac5bef` (no cross-repo field in the deliverable template, no per-path cross-repo
+  footprint bucket; PLAN-LB-27 retired). Still unowned by the earlier "structural" ruling.
 - **A required review bot goes stale after a fix commit** (remainder after #1742 and #1752):
   a commit pushed after the last review by any path (inline finalize fix, merge-queue flow
   without a local rebase) does not re-arm the re-review; a leaf read `re_review_on_loopback`
@@ -394,6 +397,8 @@ derive, for rows still live.
   dispatch is refused `unknown_producer`. Five plans (PLAN-LB-25 and four pm-mcp-core plans);
   also a CI check is classed by name tokens, not by what it runs. Lesson `2026-10-11-16-001`.
   Owned by PLAN-LB-44 (staged; the label "not owned" was stale, corrected 2026-10-15).
+  Recurred on API-Sheriff #466 (`lessons-routing-043`, which names the landed PLAN-LB-24); accept-set
+  unchanged at `d17ac5bef` (`verification-feedback.md` L30, L63-72).
   — `lessons-routing-019.md`, `lb-25-phase-and-merge-gates-001`.
   Recurrences: PLAN-13 (`ci-verify-policy` refused `unknown_producer`, re-dispatched as
   `finalize-feedback`); lesson `2026-10-11-07-001` (plan-06) — a SonarCloud gate failure inside
@@ -425,7 +430,10 @@ derive, for rows still live.
   (affb5d, assessments added after the gate asked). — `lessons-routing-028.md` (162, 174, 191).
   Twelfth: PLAN-LB-26 (finding 037a63 pending across the 3-outline and 4-plan exits, waved
   through in phase 5). **Partly fixed by PLAN-LB-42 (#1773):** an empty store now reports "not
-  run" instead of failing. Residue owned by PLAN-LB-54 D2: the outline skill is missing from the
+  run" instead of failing. Six more recurrences (pm-mcp-core -212..-274, `lessons-routing-032`) all
+  predate #1773. Residue at `d17ac5bef`: the only component-analysis implementor is
+  `pm-plugin-development:ext-outline-workflow`, so a Java or generic deep-lane plan never establishes
+  coverage — it is reported "not run", no longer a false failure. Residue owned by PLAN-LB-54 D2: the outline skill is missing from the
   return, and the hash cache is switched off for an empty store.
 - **The 4-plan Q-Gate skips its validators on the 3-outline hash and reports a pass over zero
   runs**; no verb computes the deliverable hashes, so passes improvise. Graded high by the
@@ -437,7 +445,8 @@ derive, for rows still live.
   - a cached skip reads "not run";
   - the verb exists but persists nothing, and no test executes the skip rule.
 
-  Residue owned by PLAN-LB-54 D1.
+  Residue owned by PLAN-LB-54 D1. Recurred on pm-mcp-core (-225, -283; `lessons-routing-033`),
+  both before #1773; "no hash verb" is stale at `d17ac5bef`, the hand-written artifact is not.
 - **A local-only run can still schedule push-related steps.** With
   `phase-5-execute.commit_and_push` false the commit-push filter drops `pre-push-quality-gate`,
   `functional-review` and `code-review`, and the ceremony selection adds them back for a
@@ -487,6 +496,48 @@ derive, for rows still live.
     manufacturing its own loop cap, the OpenCode-blind direct-`gh` audit, the in-house review job
     skipping PRs (cause unverified), `ci pr reply --repo` as a standalone item (it rides PLAN-LB-57
     D1).
+
+- **From the lessons ingest of 2026-10-15** (`lessons-routing-029`..`-043`; pm-mcp-core
+  `-203`..`-286`, API-Sheriff #466). Re-checked read-only at `d17ac5bef`; the operator's gradings at
+  that ingest stand over the re-check's.
+  - **High, unowned:**
+    - **Sonar confirms a stale analysis** (`-037`, pm-mcp-core `-253`): `count_status` is decided by
+      CE readiness alone (`workflow-integration-sonar/scripts/sonar.py` L26-33); no script compares
+      the analysis revision with the PR head, so a clean stale analysis reads as a confirmed 0.
+      Fail-open.
+    - **Task skill resolution attaches framework skills the module forbids** (`-039`, operator-graded
+      high): `manage_personas.py` `_resolve_profile_domain_skills` merges `defaults` AND `optionals`
+      (L150) with no module context, so every Java task gets `java-quarkus`, `java-cdi`,
+      `junit-weld-testing`; the module-level demotion in `pm-dev-java/.../extension.py` L178-185 is
+      bypassed.
+    - **The Markdown link check passes on zero links** (`-037`, operator graded pm-mcp-core `-247`
+      high): `pm-documents` `_cmd_verify_links.py` file mode accepts a `.md` and parses it with
+      AsciiDoc regexes (L70-106, L185-186) — `total_links: 0, status: success`; directory mode
+      already refuses. The verification-scope half of `-247` was caught by the Q-Gate as designed.
+    - **Pre-push gate has no per-module population on Maven** (`-031`, operator graded `-267` high):
+      `derive_gate_bundles.py` is marketplace-shaped (L127-139) and only `build-pyproject` exposes
+      `resolve-test-scope`, so module-tests runs DEGRADED on every Maven plan. Disclosed, not silent:
+      rule 4 reports the unresolved paths and the whole-tree arms run.
+    - **Per-package ADR numbers collide** (`-036`, operator graded `-252` high): `manage-adr.py`
+      `ADR_DIR = Path('doc/adr')` (L29) with non-recursive globs (L129, L139, L163); `doc/adr/{package}/`
+      is invisible to numbering and the scan.
+  - **Graded high by the ingest, medium on re-check** (no false pass, caught by an existing gate, or
+    one plan shape):
+    - Sourcery's "used its review budget" notice is not a registered refusal (`-030`; `sourcery.md`
+      L46 registers "used your own review budget of", case-sensitive substring at `_github_pr.py`
+      L308). Data-only fix; Sourcery is optional.
+    - Staged premises are not re-checked against sibling landings when no file overlaps (`-035`;
+      `finalize-step-sync-baseline.md` L107-128).
+    - Leaf phase skills self-transition before the orchestrator's Q-Gate (`-038`;
+      `phase-3-outline/SKILL.md` L694-700 vs `planning-outline.md` L217, L264-267); the gate still
+      runs. Nearest PLAN-LB-55 D2.
+    - Outline assessments miss files and outlive a refuted design (`-040`); § 2.2 catches each, at
+      the cost of rounds.
+    - No declared task deferral for diagnose-then-fix plans (`-041`).
+  - **Fixed or low:** triage fix tasks under `deliverable: 0` (`-034`) fixed by #1769
+    (`_tasks_core.py` L89-94, L892), error-text residue in PLAN-LB-47 D4; `worktree-remove` from a
+    stale cwd (`-042`) — the in-worktree case refuses `cwd_inside_removal_target`, the observed
+    failure was a redundant second call; low.
 
 - **Medium and low items are not owned by any staged plan.** They are listed with evidence
   in `backlog.md` (sections 1.12 onward, 2.3 onward, 3.2 onward, 4.7 onward and 5). Promote an
