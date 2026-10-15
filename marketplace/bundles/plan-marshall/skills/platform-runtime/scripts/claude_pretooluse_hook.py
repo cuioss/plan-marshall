@@ -503,7 +503,12 @@ def _r5_stripped_tokens(command: str) -> list[str]:
                 if option.startswith('-') and len(option) > 1:
                     base = option.split('=')[0]
                     index += 1
-                    if '=' not in option and base in _R5_WRAPPER_OPTS_WITH_VALUE and index < total and not tokens[index].startswith('-'):
+                    if (
+                        '=' not in option
+                        and base in _R5_WRAPPER_OPTS_WITH_VALUE
+                        and index < total
+                        and not tokens[index].startswith('-')
+                    ):
                         index += 1
                     continue
                 break
