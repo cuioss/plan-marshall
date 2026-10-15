@@ -818,7 +818,8 @@ entries below are OpenCode 1 assumptions in plan-marshall that OpenCode 2 broke.
   plan-delivery quality"). Every OpenCode run so far — root and every sub-agent — ran
   `muse-spark-1.3-contributor` (`opencode.db` `session_v2.model`). No agent pins a model in the
   OpenCode config, so the root model is the whole run's model. PLAN-LB-40, -47, -50 and -56 finish
-  on Muse; the next emitted plan is the first DeepSeek run.
+  on Muse and join the baseline as each lands (eight Muse plans in all); the next emitted plan is
+  the first DeepSeek run.
   - **Muse baseline** (adversarial landings, spec deliverables met / partial / unmet vs claimed):
 
     | Plan | Spec met/partial/unmet | Claimed | Regressions | Sessions | Cost | Grade |
@@ -909,6 +910,11 @@ entries below are OpenCode 1 assumptions in plan-marshall that OpenCode 2 broke.
     - Does each Done-when test fail at `8442a5e33`, evidenced by a run against that tree?
 
     Retire the Watch once PLAN-LB-40 and PLAN-LB-56 are graded.
+  - **Corrected 2026-10-15: PLAN-LB-47 and PLAN-LB-50 are OpenCode runs too** (emitted in the OpenCode
+    form, Muse, `opencode.db` roots `ses_ec19f02e1ffeJrkGjQ3D6znWUt` and
+    `ses_ec19f318affeLhDQuk6jhH6ZGa`), and were missing from this Watch. All four running plans —
+    PLAN-LB-40, -47, -50, -56 — get the same adversarial grading; the Watch retires when all four are
+    graded. With PLAN-LB-26, -31, -39 and -42 that makes eight Muse plans in the baseline.
   - **Extended 2026-10-14 to PLAN-LB-40 and PLAN-LB-42**, emitted for OpenCode by operator
     instruction ("emit the next two plans for opencode"). They are the first OpenCode plans to run
     with the deny rules and guard in effect (branched after `9011a19bf`), so grade separately

@@ -4,7 +4,7 @@
 
 ## START HERE
 
-**Resume anchor**: Running 4 of 4: PLAN-LB-40 (OpenCode, Watch), PLAN-LB-47, PLAN-LB-50, PLAN-LB-56 (OpenCode, Watch). Next when a slot frees: PLAN-LB-48 (after LB-50 or accept overlap), PLAN-LB-52 (after LB-47), PLAN-LB-55, PLAN-LB-53, PLAN-LB-49 (after LB-48), PLAN-LB-54; then LB-51, LB-45, LB-43, LB-44, LB-58, LB-59, LB-41, LB-46, LB-57. At each landing: drain inbox, two adversarial leaves, landings/PLAN-LB-NN.md, stamps, epic.md, commit, land. OpenCode Watch retires after LB-40 and LB-56 are graded. Operator owes: clear 8 persisted opencode.db approvals.
+**Resume anchor**: PLAN-LB-40 landed (#1774) — landing analysis in progress (two leaves). Running: PLAN-LB-47, PLAN-LB-50, PLAN-LB-56 (all OpenCode/Muse, all graded at landing). One slot free after LB-40 reconciles; next emit is the first DeepSeek Flash1 run — candidates: PLAN-LB-53 or PLAN-LB-54 (small), else order LB-48 (after LB-50), LB-52 (after LB-47), LB-55, LB-53, LB-49, LB-54; then LB-51, LB-45, LB-43, LB-44, LB-58, LB-59, LB-41, LB-46, LB-57. OpenCode Watch retires after LB-40/47/50/56 graded. Operator owes: clear 8 persisted opencode.db approvals.
 **Phase**: orchestrating
 **Running**:
 - PLAN-LB-40 (WS-04)
