@@ -108,9 +108,13 @@ Split guard: five deliverables on one chain — collector, start path, landing. 
 
 ## Dependencies and Sequencing
 
-- Depends on: PLAN-LB-39 (running) — D5 adds the preflight call, the `harness` metadata field and the optional `harness=` landing key that deliverables 4 and 5 extend.
+- Depends on: PLAN-LB-50 (running). PLAN-LB-39 shipped (#1768) without a reachable preflight call
+  (its Step 8a.6 is unreachable and writes no `client.toon`, `landings/PLAN-LB-39.md`); PLAN-LB-50
+  D5 makes that call real. Deliverables 4 and 5 build on PLAN-LB-50's landing, not on PLAN-LB-39 —
+  re-read both at outline. OpenCode detection (`OPENCODE_SESSION_ID`, no `OPENCODE_PID`) is
+  PLAN-LB-48 D4; deliverable 3's example must use the OpenCode 2 signal.
 - Overlaps with:
-  - PLAN-LB-39 on `phase-1-init/SKILL.md`, `landing-payload-spec.md`, `emit-landing.md` and the `test/plan-marshall/platform-runtime/` directory. Possibly also `platform-runtime/standards/contract.md` and the runtime classes.
+  - PLAN-LB-50 (running) on `phase-1-init/SKILL.md`, `landing-payload-spec.md`, `emit-landing.md` and the `test/plan-marshall/platform-runtime/` directory. Possibly also `platform-runtime/standards/contract.md` and the runtime classes.
   - None of the other four candidates in this batch shares a file. `consumer-leaf-workflow-resolution` reads platform-runtime `layout bundle-cache-root` but does not edit `platform_runtime.py`.
 - Adjacent to:
   - `manage-metrics` and the `total_tokens=0` producer (PLAN-LB-39 D5) — not touched here.

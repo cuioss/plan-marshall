@@ -1,4 +1,4 @@
-# PLAN-LB-53: A halt stays a halt, a conflict reaches the operator, phase time is booked right
+# PLAN-LB-53: A halt stays a halt, and an operator decision stays the operator's
 
 epic: live-blockers
 workstream: WS-01
@@ -14,10 +14,16 @@ workstream: WS-01
 > Staged 2026-10-15 by operator instruction from the landing analyses of PLAN-LB-31
 > (`landings/PLAN-LB-31.md`) and PLAN-LB-39 (`landings/PLAN-LB-39.md`). Both ran under OpenCode;
 > nothing below is harness-specific in mechanism.
+>
+> **Restructured 2026-10-15** (operator instruction: OpenCode quality first; high and critical
+> only). The phase-time deliverable (former D3: finalize time booked to execute across
+> loop-backs, PLAN-LB-31, -39, -42) was dropped as medium — `settled.md` § "Dropped 2026-10-15".
+> The file name keeps the original slug. **Each deliverable is its own outline deliverable; do not
+> merge them.**
 
 ## Objective
 
-Three finalize behaviours recurred on two consecutive landings:
+Two behaviours recurred on consecutive OpenCode landings (PLAN-LB-31, -39, -42):
 
 - **A halt that does not halt.** A post-dispatch guard records `failed` and the main context logs
   "halted", then improvises a recovery the workflow does not document (`session_move` on OpenCode)
@@ -28,9 +34,6 @@ Three finalize behaviours recurred on two consecutive landings:
   operator "No rebase or force-push will happen — the merge queue rebases" (13:50), then asked them
   to wait for a queue the PR could not enter (14:08); the conflict surfaced at 16:27 and was
   hand-resolved, rebased and force-pushed without a new question.
-- **Finalize time booked to execute.** `metrics.md` on PLAN-LB-39 books 21h45m to 5-execute and
-  3h52m to 6-finalize; the real split is ≈9.6 h / ≈16 h. PLAN-LB-31 booked a 2.5 h execute task to
-  2-refine after a reflexive boundary stamp and a compensating "metrics correction".
 
 ## Deliverables
 
@@ -53,21 +56,13 @@ Three finalize behaviours recurred on two consecutive landings:
    question; with `needs_user` the question states the conflict (files, base) and its options —
    never "no rebase will happen". A rebase or force-push after the question requires the
    operator's answer to name it, and the pre-push gate runs on the rebased head before the push
-   (with PLAN-LB-52 D2's refusal as the backstop).
+   (with PLAN-LB-55 D1's push refusal as the backstop).
 
    *Done when:* a test feeds `overlap_with_content_conflict` / `needs_user` into branch-cleanup and
    reads a question naming the conflicting files and no merge-queue wait; a test reads the
    force-push refused when the operator's answer did not authorize it.
 
-3. **Each phase's time is booked to that phase across loop-backs.** A finalize → execute loop-back
-   closes the finalize interval and opens a new execute interval (and back); `metrics.md` sums the
-   intervals per phase. A boundary stamp cannot be backdated or "corrected" by hand; a correction
-   goes through a verb that logs the original and the corrected interval.
-
-   *Done when:* a fixture with two loop-backs yields per-phase totals equal to the sum of their
-   intervals; at `c8adaf178` the fixture books finalize time to execute.
-
-Split guard: three deliverables.
+Split guard: two deliverables.
 
 ## Claim Labels
 
@@ -75,10 +70,7 @@ Split guard: three deliverables.
 - OBSERVED: PLAN-LB-31 recovered a failed refine dispatch with an improvised `session_move` (`landings/PLAN-LB-31.md` § Metrics and Anomalies).
 - OBSERVED: PLAN-LB-39 `decision.log` L282 and L365 "running rebase SKIPPED, the merge queue rebases"; the transcript at 16:27:38–16:29:38 shows `worktree-rebase-to`, two raw `git rebase --continue`, `force-push-with-lease` (orchestrator-read).
 - OBSERVED: the classifier reported `overlap_with_content_conflict … needs_user` before the 13:50 question (delegated agent).
-- OBSERVED: PLAN-LB-39 `metrics.md` 5-execute 21h45m, 6-finalize 3h52m against four execute↔finalize cycles (`landings/PLAN-LB-39.md` § Metrics); PLAN-LB-31 TASK-1 booked to 2-refine (13h12m).
-- OBSERVED: PLAN-LB-42 set three finalize→execute loop-backs (2026-10-14 19:06, 20:17, 22:28) without the boundary metric call; `metrics.md` books 5-execute 16h4m / 6-finalize 4h24m against ≈11h33m / ≈8h56m reconstructed (`landings/PLAN-LB-42.md` § Metrics).
 - OBSERVED: PLAN-LB-42's root picked an option for a leaf's `escalate_ask` at 2026-10-15T09:39:52 with no operator question (delegated agent, OpenCode DB `ses_ec1e528a8ffelWqi96aLAe4yua`).
-- HYPOTHESIS: phase intervals are stored as a single start/end pair per phase, so a re-entered phase's end overwrites and the gap is attributed to the outer phase — confirm in `manage-metrics` `phase-boundary` / `end-phase` (verify-at-outline).
 - HYPOTHESIS: the classifier's verdict is available to branch-cleanup through its "one-stop read" (`decision.log` L282) — confirm where it is read (verify-at-outline).
 
 ## Expected Surface
@@ -86,16 +78,12 @@ Split guard: three deliverables.
 - HYPOTHESIS: `marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/branch-cleanup.md` (verify-at-outline) (D2)
 - HYPOTHESIS: `marketplace/bundles/plan-marshall/skills/phase-6-finalize/scripts/` — halt refusal, conflict routing (verify-at-outline) (D1, D2)
 - HYPOTHESIS: `marketplace/bundles/plan-marshall/skills/manage-status/scripts/` — step-gate halt state (verify-at-outline) (D1)
-- OBSERVED: `marketplace/bundles/plan-marshall/skills/manage-metrics/scripts/manage-metrics.py` (D3)
-- OBSERVED: `marketplace/bundles/plan-marshall/skills/manage-metrics/standards/data-format.md` (D3)
-- HYPOTHESIS: `test/plan-marshall/manage-metrics/` — loop-back interval fixture (D3)
 - HYPOTHESIS: `test/plan-marshall/phase-6-finalize/` — halt and conflict tests (D1, D2)
 
 ## Dependencies and Sequencing
 
-- Depends on: none. After PLAN-LB-52 is preferable for D2 (its push refusal is the backstop).
-- Overlaps with: PLAN-LB-49 and PLAN-LB-50 on `manage-metrics.py` (different functions);
-  PLAN-LB-52 on phase-6-finalize scripts. The gate will ask.
+- Depends on: none. After PLAN-LB-55 is preferable for D2 (its push refusal is the backstop).
+- Overlaps with: PLAN-LB-55 on phase-6-finalize scripts and the push path. The gate will ask.
 
 ## Hand-Off Command
 

@@ -20,13 +20,13 @@ workstream: WS-01
 
 ## Objective
 
-PLAN-LB-42 made the outline Q-Gate report "not run" in prose, but left the parts that make that
-report checkable undone:
+PLAN-LB-42 made the outline Q-Gate report "not run" in prose, but left two high-severity holes:
 
-- the hash verb does not persist anything;
-- the phase-keyed skip exists only as prose and no test executes it;
-- the domain-narrowing docs still describe clearing the list as correct;
-- the shipped change introduced five regressions.
+- the phase-keyed skip that decides whether a validator runs exists only as prose, executed by the
+  agent, so a "pass over zero validator runs" (the Open Defect graded high) is still possible;
+- the new deliverable-domain claim leg parses `domain:` with a narrower grammar than the outline
+  parser and silently drops a declared domain, and `would_empty` now errors on a plan whose domain
+  set was already empty (a regression on `main`).
 
 ## Deliverables
 
@@ -40,11 +40,6 @@ report checkable undone:
      `manage-*` reads, not transcribed verbatim by the agent (L159-173).
    - The orchestrator re-run readers (`planning-outline.md` L203, L504) call `--check` instead of
      hashing by hand.
-   - Fix the verb's defects:
-     - the `deliverable_count` cross-check is computed but never compared (L622-637);
-     - an `OSError` from `read_bytes` is uncaught (L608);
-     - the module docstring omits the verb;
-     - `q-gate-validation.md:231` "no new script surface" contradicts L134.
 
    *Done when:* tests, each failing at `8442a5e33`:
    - with a two-deliverable outline, editing one deliverable changes exactly that row and the
@@ -53,89 +48,48 @@ report checkable undone:
    - a same-phase unchanged outline returns `skip`;
    - `--write` writes the artifact that `--check` reads.
 
-2. **An empty assessment store does not switch the cache off, and "not run" is reported
-   completely.**
-   - When the store is empty, the full-pass gate still records `__whole_outline__:{phase}`
-     (L229, L1044), and Step 5 is scoped to the phase that runs it. This undoes regression 2.
-   - The not-run outcome names the outline skill resolved by the existing
-     `manage-config resolve-outline-skill` verb, in the return TOON, not only in a log line
-     (L283-289).
-   - §2.2 Pass/Fail (L291-295) and the Verification Criteria Matrix (L1053, L1065) gain the
-     not-run state.
-   - The Output carries a field for a cached whole-outline skip.
-   - The Inputs (L30-35) declare `activation_context`.
-   - The vacuous `test_record_and_count_steps_take_phase_from_context` is replaced by a test
-     that pins Steps 6 and 8 by section.
-
-   *Done when:*
-   - a test with an empty store and an unchanged outline reaches the skip on the second pass;
-   - a test reads the outline skill in the not-run return;
-   - the Steps 6/8 test fails at `8442a5e33^`.
-
-3. **Domain narrowing: one parser, an honest error, no side door.**
+2. **Domain narrowing: one parser and an honest error.**
    - The deliverable leg reads `domain:` through `_plan_parsing` (`extract_deliverables` →
      `metadata.domain`) instead of the hand-written parser (`_cmd_domain_narrow.py` L252-298),
      so a case or backtick or comment variant is no longer dropped.
    - `would_empty` fires only when narrowing dropped a user domain. An already-empty or
      `system`-only set with nothing dropped is a success no-op, as before `8442a5e33`.
-   - Remove `--apply` (`manage-config.py:953`, `_cmd_domain_narrow.py` L495-533) together with
-     its `domains_unreadable` overload and the `_APPLY_REREAD_ERROR` indirection. Nothing calls
-     it; the write path is `manage-references`.
 
    *Done when:* tests, each failing at `8442a5e33`:
    - `**Domain:** \`java\`` and `domain: Java  # main` are retained;
-   - an already-empty set returns success;
-   - `domain-narrow --apply` is rejected by argparse.
+   - an already-empty set returns success.
 
-4. **The outline docs describe the shipped contract.**
-   - `phase-3-outline/SKILL.md` § Domain Narrowing step 3 (L633) is rewritten so `retained_csv`
-     is never empty on success, and the "clear the list — the correct outcome" sentence is gone.
-   - L604 no longer says "three-outcome contract".
-   - `light-lane.md:244` is aligned.
-   - Both callers branch on `would_empty` separately from the "could not evaluate" path
-     (SKILL.md L596/L601, light-lane L207/L212), with log text that says the run evaluated and
-     refused.
+Split guard: two deliverables.
 
-   *Done when:* a doc-contract test asserts that none of the three stale phrases remains and that
-   `would_empty` has its own branch in both callers. It fails at `8442a5e33`.
-
-Split guard: four deliverables, one surface family (the outline Q-Gate and domain narrowing).
+**Dropped 2026-10-15 as medium** (operator instruction: high and critical only on the OpenCode
+work; `settled.md` § "Dropped 2026-10-15"): the empty-store hash-cache regression and the
+not-run reporting completeness (former D2), the `--apply` side door and its `domains_unreadable`
+overload, the stale outline docs (former D4), and the verb's minor defects (an unused count
+cross-check, an uncaught `OSError`, the docstring, the stale "no new script surface" line).
 
 ## Claim Labels
 
 - OBSERVED: `manage-solution-outline.py` at `8442a5e33` defines no `--write`; `--phase` is "provenance only" (`manage-solution-outline/SKILL.md` § deliverable-hashes) — orchestrator spot check.
-- OBSERVED: `8442a5e33^:q-gate-validation.md` contains `--phase {phase}` three times, so the shipped Steps 6/8 test passes pre-fix — orchestrator spot check.
-- OBSERVED: `phase-3-outline/SKILL.md:633` still ends "… which `set-list` accepts as 'clear the list' — the correct outcome for that state" — orchestrator spot check.
 - OBSERVED: `_cmd_domain_narrow.py:479-493` returns `would_empty` whenever `retained_user` is empty, independent of `dropped` — orchestrator spot check.
-- OBSERVED: `manage-config.py:953` registers `--apply` — orchestrator spot check.
 - OBSERVED: the hand-written marker match is case-sensitive and the value regex is `[A-Za-z0-9_.-]+\s*$` (`_cmd_domain_narrow.py` L257-261); `_plan_parsing._extract_metadata_block` (L310-325) uses IGNORECASE (delegated agent).
-- OBSERVED: the full-pass gate withholds the `__whole_outline__` row unless Step 5 passed, and Step 5 is not phase-scoped (`q-gate-validation.md` L229, L910-933, L1044) (delegated agent).
-- HYPOTHESIS: an absent `__whole_outline__` row makes the orchestrator re-run gate re-dispatch every iteration — confirm at `planning-outline.md` L203/L504 (verify-at-outline).
-- HYPOTHESIS: `manage-config resolve-outline-skill` returns the skill the calling phase resolves — confirm with `--help` before naming it (verify-at-outline).
 
 ## Expected Surface
 
 - OBSERVED: `marketplace/bundles/plan-marshall/skills/manage-solution-outline/scripts/manage-solution-outline.py` (D1)
 - OBSERVED: `marketplace/bundles/plan-marshall/skills/manage-solution-outline/SKILL.md` (D1)
-- OBSERVED: `marketplace/bundles/plan-marshall/skills/plan-marshall/workflow/q-gate-validation.md` (D1, D2)
+- OBSERVED: `marketplace/bundles/plan-marshall/skills/plan-marshall/workflow/q-gate-validation.md` (D1)
 - OBSERVED: `marketplace/bundles/plan-marshall/skills/plan-marshall/workflow/planning-outline.md` (D1)
-- OBSERVED: `marketplace/bundles/plan-marshall/skills/manage-config/scripts/_cmd_domain_narrow.py` (D3)
-- OBSERVED: `marketplace/bundles/plan-marshall/skills/manage-config/scripts/manage-config.py` (D3)
-- OBSERVED: `marketplace/bundles/plan-marshall/skills/manage-config/SKILL.md` (D3)
-- OBSERVED: `marketplace/bundles/plan-marshall/skills/phase-3-outline/SKILL.md` (D4)
-- OBSERVED: `marketplace/bundles/plan-marshall/skills/phase-3-outline/workflow/light-lane.md` (D4)
+- OBSERVED: `marketplace/bundles/plan-marshall/skills/manage-config/scripts/_cmd_domain_narrow.py` (D2)
 - OBSERVED: `test/plan-marshall/manage-solution-outline/test_manage_solution_outline_cli.py` (D1)
-- OBSERVED: `test/plan-marshall/q-gate-validation-agent/test_qgate_outline_integrity_regression.py` (D1, D2)
-- OBSERVED: `test/plan-marshall/q-gate-validation-agent/test_q_gate_validation_worktree_linter.py` (D2)
-- OBSERVED: `test/plan-marshall/manage-config/test_cmd_domain_narrow.py` (D3)
-- OBSERVED: `test/plan-marshall/manage-config/test_domain_narrow_reason_codes_documented.py` (D3)
+- OBSERVED: `test/plan-marshall/q-gate-validation-agent/test_qgate_outline_integrity_regression.py` (D1)
+- OBSERVED: `test/plan-marshall/manage-config/test_cmd_domain_narrow.py` (D2)
 
 ## Dependencies and Sequencing
 
 - Depends on: none (PLAN-LB-42 shipped).
 - Overlaps with:
-  - PLAN-LB-40 (running), possibly on `manage-config.py` — it edits other `manage-config` scripts;
-  - PLAN-LB-52 (staged), which reads the outline Q-Gate for D1.
+  - PLAN-LB-52 (staged) on the `manage-solution-outline/scripts/` directory (its snapshot verb).
+  - PLAN-LB-40 (running): none declared (it edits other `manage-config` scripts).
 
   The gate will ask.
 

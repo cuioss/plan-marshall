@@ -50,13 +50,14 @@ Done-when text; an outline that rewrites a Done-when must say so and why.
      for prefix …` means the project does not use that plugin — stop, never retry it fully
      qualified. Rule (b) is absent everywhere at `c8adaf178`.
 
-   - OpenCode has the same stub (`opencode_runtime.py:143`, `_write_rules_bridge`); it gets the same
-     content bridge and drift detection, and the OpenCode target rules carry rules (a) and (b) too.
+   - The OpenCode half of this deliverable (same stub at `opencode_runtime.py:143`) moved to
+     PLAN-LB-48 D5 on 2026-10-15. Whichever plan lands second reuses the other's persona text for
+     rule (b) and its bridge helper, if one was extracted.
 
-   *Done when:* for EACH of Antigravity and OpenCode, a fresh setup over a fixture with only
-   `CLAUDE.md` yields a bridge that contains a sentinel line from that `CLAUDE.md`, and editing
-   `CLAUDE.md` makes setup report drift; a doc test finds rule (b)'s text in the persona and in both
-   targets' rules. Each fails at `c8adaf178`.
+   *Done when:* a fresh Antigravity setup over a fixture with only `CLAUDE.md` yields a bridge that
+   contains a sentinel line from that `CLAUDE.md`, and editing `CLAUDE.md` makes setup report drift;
+   a doc test finds rule (b)'s text in the persona and in the Antigravity target rules. Each fails at
+   `c8adaf178`.
 
 3. **The quality gate reaches each task's `verification.commands`.** When the execution manifest
    stamps the gate per task, phase 4 synthesizes it into every applicable task's
@@ -90,17 +91,16 @@ Split guard: three deliverables.
 - OBSERVED: `marketplace/bundles/plan-marshall/skills/phase-4-plan/SKILL.md` (D3)
 - HYPOTHESIS: `marketplace/bundles/plan-marshall/skills/manage-tasks/scripts/` — task synthesis (verify-at-outline) (D3)
 - HYPOTHESIS: `test/marketplace/targets/antigravity/` — generated-text fixture (verify-at-outline) (D1)
-- OBSERVED: `marketplace/bundles/plan-marshall/skills/platform-runtime/scripts/opencode_runtime.py` — `_write_rules_bridge` (D2)
-- OBSERVED: `marketplace/bundles/plan-marshall-opencode/skills/target-rules/standards/opencode-rules.md` (D2)
 - OBSERVED: `test/plan-marshall/platform-runtime/test_antigravity_runtime.py` (D1, D2)
-- OBSERVED: `test/plan-marshall/platform-runtime/test_opencode_runtime.py` (D2)
 - HYPOTHESIS: `test/plan-marshall/phase-4-plan/` — per-task gate fixture (verify-at-outline) (D3)
 
 ## Dependencies and Sequencing
 
 - Depends on: PLAN-LB-50 (bridge file path, D2). Read PLAN-LB-48's state for the OpenCode side.
-- Overlaps with: PLAN-LB-50 on `antigravity_runtime.py` and `opencode_runtime.py`; PLAN-LB-48 on
-  `opencode_runtime.py`, `test_opencode_runtime.py` and the targets tree (different functions).
+- Overlaps with: PLAN-LB-50 on `antigravity_runtime.py`; PLAN-LB-48 on the persona's rule (b)
+  and the targets tree (different targets).
+- Priority: after the OpenCode plans (operator instruction, 2026-10-15: OpenCode first until its
+  quality improves).
 
 ## Hand-Off Command
 

@@ -975,3 +975,99 @@ Relocated verbatim from `epic.md` by `cleanup`; each origin keeps a pointer nami
   - PLAN-LB-29 — whether the sync may write Claude Code's plugin registry.
   - PLAN-LB-30 — what to do if the organisation workflow release is not available; the two
     `project.yml` schema decisions; cutting the organisation release.
+
+## Dropped 2026-10-15
+
+By operator instruction ("Drop (archive) low and medium findings on opencode runs. Focus on high
+and critical"), with the severity rule recorded in `epic.md` § Decisions (2026-10-15). Dropped,
+not fixed: an item that recurs at higher severity is re-staged from here after a re-check at HEAD.
+
+### Deliverables removed from staged specs
+
+- **PLAN-LB-48 former D5** — efficacy-doc and registry corrections
+  (`doc/analysis/in-house-reviewer-efficacy.md` pointers to PR-description content that does not
+  exist; `cuioss-review-bot.md` "moved nothing" claim and post-charter rows #1722, #1742, #1745,
+  #1750). Medium: documentation truthfulness, no runtime effect.
+- **PLAN-LB-49 former D4** — dispatch audit counting OpenCode sub-agent sessions; direct-`gh`
+  audit reading `opencode.db` (the guard now refuses raw `gh`; PLAN-LB-42 made 0 calls); finalize
+  dispatch-boundary rows and seam-written `[DISPATCH]` lines (PLAN-LB-39 lessons `-002`/`-005`).
+  Medium: retrospective reporting.
+- **PLAN-LB-52 parts** — request-named gate composition (`compose_request_project_gates`,
+  `_manifest_core.py:608`, a dead path); infeasibility verdicts naming their spec sentence;
+  `required_coverage_unknown` not fresh. Medium.
+- **PLAN-LB-53 former D3** — phase time booked per interval across loop-backs (PLAN-LB-31
+  2-refine 13h12m; PLAN-LB-39 5-execute 21h45m vs ≈9.6 h; PLAN-LB-42 ≈4.5 h of finalize booked
+  to execute). Medium: metrics accuracy.
+- **PLAN-LB-54 parts** — empty-store hash-cache regression and not-run reporting completeness
+  (former D2: `q-gate-validation.md` L229, L283-295, L910-933, L1044, L1053; the vacuous Steps 6/8
+  test); `domain-narrow --apply` and its `domains_unreadable` overload; stale outline docs
+  (`phase-3-outline/SKILL.md` L604, L633; `light-lane.md` L244; would_empty routed as "could not
+  evaluate"); the verb's minor defects. Medium/low: cost, unused surface, documentation.
+
+### Open Defect items removed from `epic.md`
+
+- **Compile run auto-closes quality-gate failures (PLAN-LB-26)** — re-checked at `8442a5e33`:
+  largely fixed by `_build_examined.py` `FINDING_TYPE_ANALYSES` (lint split from compile;
+  `test-failure` needs measured tests). Residue: a mypy-typed `build-error` from `quality-gate`
+  can be cleared by a `compile` run that does not run mypy. Medium.
+
+The PLAN-LB-26 and PLAN-LB-31 landing entries as they stood before the drop (owned items now point
+at PLAN-LB-47, -52, -55, -57):
+
+- **From PLAN-LB-26's landing** (`landings/PLAN-LB-26.md`, 2026-10-14):
+  - **Regressions N1–N4 shipped in #1769** — owned by PLAN-LB-47 (staged): a red
+    orchestrator-tier build can skip triage; triage never records the owning fix task on a
+    Q-Gate finding; `module_testing` tasks never close under the per-task tier; a per-task leaf
+    can receive `running`.
+  - **The review barrier counts a current-head quota refusal as participation.** At `74e6bfda`
+    `fetch_findings` listed CodeRabbit in both `participated_bots` (inline comments on the older
+    head) and `refused_bots` (quota); `review_completeness check` resolved `participated`. Inline
+    comments carry `commit_id ""`, so their staleness is undetectable. Nearest owner PLAN-LB-46.
+  - **A compile run auto-closes quality-gate failures** ("auto-resolved by green build") because
+    both are typed `build-error` — `script-shared/scripts/build/_build_shared.py`. Unowned.
+  - **Metrics re-entry accounting is wrong**: a re-entered phase is reported as first-entry to
+    last-exit (5-execute 12h28m absorbing four finalize passes), finalize counts its last pass
+    only, and the quality report disagrees with the total (50,696 s vs 62,058 s). Unowned.
+  - **Landing facts**: `emit-landing` runs before `archive-plan`, so `archive-plan:pending` is
+    permanent; step facts carry no head binding; the residue mislabelled the optional sourcery as
+    required. Nearest owner PLAN-LB-45.
+  - **A plan session wrote the orchestrator ledger** (transition, anchor, view, raw commit in the
+    ledger worktree) when the operator's command reached it without the leading `/`. Nothing
+    stops a plan session from doing it. Unowned.
+  - **`build-server wait result` log lines repeat hundreds of times** with identical hash and
+    timestamp (work.log 426-599, 13813-14441). Low.
+  - **Tier-1 routing verbs accept only `--request-text`**, which forced a hand transcription of a
+    59 KB spec. Low.
+
+- **From PLAN-LB-31's landing** (`landings/PLAN-LB-31.md`, 2026-10-14):
+  - **Folded into PLAN-LB-48 (D5–D7) by operator instruction, 2026-10-14**: the doc/registry
+    corrections, the enrolment and observation (asking once before the foreign writes), `ci pr
+    reply --repo`, and a durable instrument with persisted tables (answering the operator's "why
+    not fixing the script?"). The CodeRabbit Learning stored from the false triage reply is left
+    in place by operator decision (2026-10-14: "just ignore / remove it from the list"). The text
+    below is the record of what was found.
+  - **Operator decisions owed.** (1) Enrolment of the thirteen deferred repositories and the
+    first-PR observation (spec D6, D7) were not done: re-stage, asking once before writing to 13
+    foreign repositories (schema released `v0.39.0`; the roster decision does not block).
+    (2) The measurement: `doc/analysis/in-house-reviewer-efficacy.md` and the registry section of
+    `cuioss-review-bot.md` point at PR tables that do not exist, name an instrument that was
+    deleted, and overclaim the fixed-diff result (four rows were post-charter merged heads); the
+    operator's "why not fixing the script?" is unanswered.
+  - **A task's content for the PR description has no route into the PR body**; `create-pr` offers
+    no channel, and the functional review accepted temp files as evidence that the PR description
+    carries it. Unowned.
+  - **The functional review never checks "Done when" outcome counts**: a verification-profile task
+    with one read step and 0 of 13 enrolled was graded met. Nearest owner PLAN-LB-39 D6 (criteria
+    integrity). Recurrence class of `lessons-routing-015`/`-026`.
+  - **`ci pr reply` has no `--repo`**, so a comment on a foreign repository's PR can only be made
+    with raw `gh`. Low. Owned by PLAN-LB-48 D6.
+  - **Drift recovery can manufacture its own loop cap**: a refine Q-Gate that defers the rebase to
+    finalize guarantees the next drift. Unowned.
+  - **The retrospective's direct-`gh` audit is blind on OpenCode** — folded into PLAN-LB-49.
+  - **The in-house review job is skipped or fails on a large share of PRs**: per the efficacy doc,
+    skipped on more than a hundred candidate PRs and failed on twenty, against about two hundred
+    posted reviews, across eight repositories (skip-label and Dependabot PRs already excluded).
+    Required-bot coverage is silently absent there. The doc records it only as a yield caveat.
+    Nearest owner PLAN-LB-46 (D5, a bot with nothing to review), but skips are broader than path
+    filters — needs its cause established first. Unverified beyond the doc's own claim.
+

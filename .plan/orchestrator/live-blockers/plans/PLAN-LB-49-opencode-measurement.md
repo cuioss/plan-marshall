@@ -13,22 +13,22 @@ workstream: WS-04
 
 > Staged from § Non-Claude-Code Failures "OpenCode: no token measurement exists at all" and the
 > Open Defect recurrence "Eighth landing: PLAN-LB-26 (OpenCode)" (dispatch audit "0 dispatched"
-> against 77 sub-agent sessions). The zero-versus-`unknown` half is PLAN-LB-39 D5 and is not
-> repeated here.
+> against 77 sub-agent sessions). The zero-versus-`unknown` half is PLAN-LB-50 D5 (PLAN-LB-39 D5 shipped it
+> partly) and is not repeated here.
 
 ## Objective
 
-Every OpenCode landing reports `total_tokens=0`, and the retrospective's dispatch audit reports no
-dispatches. Both rest on a premise that is no longer true: that OpenCode gives the shell no session
-id and keeps no transcript. OpenCode 2 sets `OPENCODE_SESSION_ID` in every shell-tool subprocess
+Every OpenCode landing reports `total_tokens` as `0` or `unknown` (PLAN-LB-26, -31, -39, -42), so
+every OpenCode landing is incomplete and its cost is measured by hand from the database. This rests
+on a premise that is no longer true: that OpenCode gives the shell no session id and keeps no
+transcript. OpenCode 2 sets `OPENCODE_SESSION_ID` in every shell-tool subprocess
 and keeps each session in `~/.local/share/opencode/opencode.db` — session totals, sub-agent sessions
 linked to their parent, and token use per message. PLAN-LB-26's two root sessions and their 77
 sub-agent sessions hold 55.0M input tokens and $7.54.
 
 This plan adds one read-only reader for that database, captures the session id, serves the
 existing `metrics normalized-tokens` operation from the database (so `manage-metrics enrich` fills
-the phase rows without a change of its own), and lets the dispatch audit count the sub-agent
-sessions OpenCode records.
+the phase rows without a change of its own).
 
 ## Deliverables
 
@@ -66,36 +66,13 @@ sessions OpenCode records.
    `enrich` persist exact per-phase figures and `generate` report a non-zero total; a second
    captured root is included. At `501aeb313` the operation returns `transcript_not_found`.
 
-4. **The dispatch audit counts OpenCode's sub-agent sessions.**
-   - On the OpenCode target, `check-dispatch-audit.py` adds a harness-observed source counting the
-     sub-agent sessions of the plan's captured roots whose first prompt carries `plan_id: {plan_id}`,
-     reports `harness_observed_dispatches`, and raises a channel-completeness finding when there are
-     fewer `[DISPATCH]` lines than that count — instead of a bare "0 dispatched".
+Split guard: three deliverables, one source (the database). The enforcement half is PLAN-LB-48.
 
-   *Done when:* a fixture database with N matching sub-agent sessions and an empty work log yields
-   `harness_observed_dispatches: N` and the gap finding. At `501aeb313` the audit reports 0.
-
-   **Folded 2026-10-14 from PLAN-LB-31's landing:** the retrospective's direct-`gh`/`glab` audit
-   (`plan-retrospective/scripts/direct-gh-glab-usage.py`) is blind the same way — it reads the plan
-   logs only and found 4 mentions against 120 real `gh` shell calls (8 of them `gh pr comment`) in
-   PLAN-LB-31's OpenCode session tree. On the OpenCode target it also reads the plan's sessions'
-   `shell` tool calls from the database (through deliverable 1's reader) and reports the calls it
-   finds there, write-class calls separately. *Done when:* a fixture database with two `gh` shell
-   calls, one a `gh pr comment`, and an empty log yields both, the comment classed as a write. At
-   `501aeb313` the audit reports none.
-
-   **Folded 2026-10-15 from PLAN-LB-39's landing (inbox lessons `-002`, `-005`):** finalize step
-   dispatches never call `manage-metrics record-dispatch-boundary --phase 6-finalize`, so the
-   termination audit covers 4-plan and 5-execute only (PLAN-LB-39: 16 terminal finalize steps,
-   72 `[DISPATCH]` lines, no `metrics-dispatch-boundaries-6-finalize.toon`); and every counted
-   `[DISPATCH]` line is caller-written (`foreign_caller_line_total 72`), so 72/72 agreement
-   corroborates nothing. The finalize dispatcher records a boundary row per dispatched step, and
-   the `effort resolve-target` seam emits the `[DISPATCH]` line itself. *Done when:* a fixture
-   finalize run yields one 6-finalize boundary row per dispatched step, and a hand-written
-   `[DISPATCH]` line with no seam record is reported uncorroborated.
-
-Split guard: four deliverables, one source (the database) read by three consumers. The enforcement
-half is PLAN-LB-48.
+**Dropped 2026-10-15 (operator instruction: high and critical only on the OpenCode work):** the
+former deliverable 4 — the dispatch audit counting OpenCode sub-agent sessions, the direct-`gh`
+audit reading the database (the guard now refuses raw `gh`; PLAN-LB-42 made 0 calls), and the
+finalize dispatch-boundary rows (lessons `-002`/`-005` of PLAN-LB-39) — all medium. Recorded in
+`settled.md` § "Dropped 2026-10-15".
 
 ## Claim Labels
 
@@ -105,11 +82,11 @@ half is PLAN-LB-48.
 - OBSERVED: PLAN-LB-26 totals: main session `ses_ec99635dbffewFspW7ypqPPJCr` and its 74 sub-agent sessions 52.53M input, 0.79M output, 799.7M cache-read, $7.16; resumed session `ses_ec62f10b9ffe3HUmW2lsFp0m1n` and its 3 sub-agent sessions 2.50M input, 40.3K output, $0.37. Per-message sums match `session_v2` totals within an in-flight delta. Titles are not a key (the resumed session is titled "Implementing PLAN-LB-39 …").
 - OBSERVED: `opencode_runtime.py` is a no-op on every token and session path: `session_capture` (`:399-411`), `metrics_capture` (`:1109-1151`, declining an explicit count too), `metrics_normalized_tokens` (`:1153-1180`), `chat_extract_signal` (`:1182-1205`).
 - OBSERVED: the existing plumbing needs no change once the operation answers: `phase-6-finalize/SKILL.md` § "How to obtain session_id" takes the last entry of `status.metadata.session_ids`; `record-metrics.md` passes it to `manage-metrics enrich`; `cmd_enrich` (`manage-metrics.py:3899-3952`) forwards it to the runtime operation; the `no_session_id_transcript_less` skip (`:3845-3927`) fires only when no session id is passed.
-- OBSERVED: `check-dispatch-audit.py` reads only `logs/work.log` (`[DISPATCH]`) and `logs/decision.log` (`effort resolve-target`), at `:105-106` and `:1273-1274`. A dispatched OpenCode sub-agent's first prompt starts "You are a subagent spawned by another session.\nname: {name}\nplan_id: {plan_id}".
+- Context (dropped deliverable): `check-dispatch-audit.py` reads only `logs/work.log` (`[DISPATCH]`) and `logs/decision.log` (`effort resolve-target`), at `:105-106` and `:1273-1274`. A dispatched OpenCode sub-agent's first prompt starts "You are a subagent spawned by another session.\nname: {name}\nplan_id: {plan_id}".
 - HYPOTHESIS: `claude_runtime._manage_status_store_session` is target-independent and reusable — confirm at `platform-runtime/scripts/claude_runtime.py` (verify-at-outline).
 - Locating a plan's sessions after the fact (evidence for the outline): roots are `SELECT DISTINCT session_id FROM session_message WHERE type='location-switched' AND json_extract(data,'$.location.directory') = :abs_worktree` plus `session_v2.parent_id IS NULL AND directory = :abs_worktree`; sub-agents are `parent_id IN roots`. For PLAN-LB-26 this yields exactly the two roots and 77 sub-agent sessions. Totals over a tree: a recursive CTE over `parent_id` summing `tokens_*` and `cost`.
-- Verify-first clause (deliverable 3): how the operation sees every root session of the plan — (a) the `session_binding` reverse index after deliverable 2 binds each root; (b) all roots whose `location-switched` directory equals the given root's; (c) forwarding the whole `session_ids` list, which edits `manage-metrics.py` and `phase-6-finalize/SKILL.md` — choose only after PLAN-LB-39 D5 lands, and coordinate. Prefer (a); record the choice.
-- Verify-first clause: an absent database must follow PLAN-LB-39 D5's `unknown` rule. Rebase onto LB-39's landing before outlining deliverable 3.
+- Verify-first clause (deliverable 3): how the operation sees every root session of the plan — (a) the `session_binding` reverse index after deliverable 2 binds each root; (b) all roots whose `location-switched` directory equals the given root's; (c) forwarding the whole `session_ids` list, which edits `manage-metrics.py` and `phase-6-finalize/SKILL.md` — choose only after PLAN-LB-50 D5 lands, and coordinate. Prefer (a); record the choice.
+- Verify-first clause: an absent database must follow the `unknown` rule (PLAN-LB-50 D5). Rebase onto PLAN-LB-50's landing before outlining deliverable 3.
 
 ## Expected Surface
 
@@ -119,22 +96,17 @@ half is PLAN-LB-48.
 - HYPOTHESIS: `marketplace/bundles/plan-marshall/skills/platform-runtime/scripts/session_binding.py` — only if option (a) needs a reverse read (verify-at-outline) (D3)
 - HYPOTHESIS: `marketplace/bundles/plan-marshall/skills/platform-runtime/standards/contract.md` — OpenCode session and metrics rows (verify-at-outline) (D2, D3)
 - HYPOTHESIS: `marketplace/bundles/plan-marshall/skills/platform-runtime/standards/no-op-policy.md` — OpenCode no-op list (verify-at-outline) (D2, D3)
-- OBSERVED: `marketplace/bundles/plan-marshall/skills/plan-retrospective/scripts/check-dispatch-audit.py` (D4)
-- OBSERVED: `marketplace/bundles/plan-marshall/skills/plan-retrospective/standards/execution-context-dispatch-audit.md` (D4)
 - HYPOTHESIS: `test/plan-marshall/platform-runtime/test_opencode_sessions.py` — new (verify-at-outline) (D1)
 - OBSERVED: `test/plan-marshall/platform-runtime/test_opencode_runtime.py` (D2, D3)
 - OBSERVED: `test/plan-marshall/platform-runtime/test_opencode_degrade_paths.py` (D2, D3)
-- OBSERVED: `test/plan-marshall/plan-retrospective/test_check_dispatch_audit.py` (D4)
-- OBSERVED: `marketplace/bundles/plan-marshall/skills/plan-retrospective/scripts/direct-gh-glab-usage.py` (D4, folded)
-- OBSERVED: `test/plan-marshall/plan-retrospective/test_direct_gh_glab_usage.py` (D4, folded)
 - HYPOTHESIS: `test/plan-marshall/manage-metrics/test_manage_metrics_enrich.py` — end-to-end enrich fixture only (verify-at-outline) (D3)
 
 ## Dependencies and Sequencing
 
-- Depends on: PLAN-LB-39 (running) — D5 owns `unknown` versus `0` and the `transcripts:`
-  capability flag; PLAN-LB-48 — shares `opencode_runtime.py` and `test_opencode_runtime.py`, lands
-  first.
-- Overlaps with: PLAN-LB-39 on `platform-runtime/standards/contract.md` and the
+- Depends on: PLAN-LB-48 — shares `opencode_runtime.py` and `test_opencode_runtime.py`, lands
+  first. PLAN-LB-39 shipped (#1768); the `unknown`-versus-`0` rule it was to own is PLAN-LB-50 D5
+  (running) — read PLAN-LB-50's landing before outlining deliverable 3.
+- Overlaps with: PLAN-LB-50 on `manage-metrics.py` / `platform-runtime` docs and the
   `test/plan-marshall/platform-runtime/` directory (this plan does not edit `manage-metrics.py`
   unless option (c) is chosen); PLAN-LB-45 (staged) on its HYPOTHESIS `opencode_runtime.py` and the
   `test/plan-marshall/platform-runtime/` directory — PLAN-LB-45's model/effort/harness stamp can
