@@ -2,9 +2,9 @@
   "id": "PLAN-LB-39",
   "slug": "antigravity-execution-fidelity",
   "workstream": "WS-04",
-  "status": "running",
+  "status": "shipped",
   "plan_marshall_plan_id": "antigravity-execution-fidelity",
-  "pr": "",
-  "landing": "",
+  "pr": "1768",
+  "landing": "landings/PLAN-LB-39.md",
   "seq": 39
 }

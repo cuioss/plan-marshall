@@ -2,9 +2,9 @@
   "id": "PLAN-LB-31",
   "slug": "in-house-reviewer",
   "workstream": "WS-05",
-  "status": "running",
+  "status": "shipped",
   "plan_marshall_plan_id": "plan-lb-31-in-house-reviewer",
-  "pr": "",
-  "landing": "",
+  "pr": "1771",
+  "landing": "landings/PLAN-LB-31.md",
   "seq": 31
 }

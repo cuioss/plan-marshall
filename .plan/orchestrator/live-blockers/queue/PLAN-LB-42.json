@@ -1,0 +1,10 @@
+{
+  "id": "PLAN-LB-42",
+  "slug": "outline-qgate-integrity",
+  "workstream": "WS-01",
+  "status": "shipped",
+  "plan_marshall_plan_id": "plan-lb-42-outline-qgate-integrity",
+  "pr": "1773",
+  "landing": "landings/PLAN-LB-42.md",
+  "seq": 42
+}
