@@ -376,19 +376,24 @@ def _normalize_persisted_tool(tool: str) -> str:
     return lowered
 
 
-def _first_token(pattern: str) -> str:
-    """Return the first whitespace-separated token of *pattern*, stripped."""
+def _bare_command(pattern: str) -> str:
+    """Return *pattern* stripped of a trailing ' *' glob and surrounding quotes."""
     stripped = pattern.strip().strip('"').strip("'").strip()
-    if not stripped:
+    if stripped.endswith(' *'):
+        stripped = stripped[:-2].strip()
+    elif stripped == '*':
         return ''
-    return stripped.split()[0].rstrip('*').rstrip('/')
+    return stripped
 
 
 def _patterns_contradict(allow_pattern: str, deny_pattern: str) -> bool:
     """True when a persisted allow pattern contradicts a project deny pattern.
 
-    Exact equality, either-direction glob match, or first-token equality all
-    count: ``ls`` contradicts ``ls *``, and ``ls *`` contradicts ``ls``.
+    Exact equality, either-direction glob match, or bare-command equivalence
+    all count: ``ls`` contradicts ``ls *``, and ``ls *`` contradicts ``ls``.
+    Bare-command equivalence strips a trailing ' *' from both sides before
+    comparing, so ``allow git status *`` no longer contradicts
+    ``deny git push *``.
     """
     allow = allow_pattern.strip()
     deny = deny_pattern.strip()
@@ -398,7 +403,9 @@ def _patterns_contradict(allow_pattern: str, deny_pattern: str) -> bool:
         return True
     if fnmatch.fnmatchcase(allow, deny) or fnmatch.fnmatchcase(deny, allow):
         return True
-    return _first_token(allow) != '' and _first_token(allow) == _first_token(deny)
+    bare_allow = _bare_command(allow)
+    bare_deny = _bare_command(deny)
+    return bare_allow != '' and bare_allow == bare_deny
 
 
 def _read_project_deny_rules(project_dir: str) -> list[tuple[str, str]]:
@@ -466,12 +473,10 @@ def _list_persisted_allow_rows(conn: sqlite3.Connection) -> list[dict[str, Any]]
     without both a pattern-like and a decision-like column are skipped. A
     decision column named ``action`` is only honored alongside an explicit
     ``tool`` column, so a list-shape ``(action, resource)`` table is not
-    misread as ``(tool, decision)``.
+    misread as ``(tool, decision)``. The table-list query error propagates so
+    the caller maps an unreadable database to checkable False / db_unreadable.
     """
-    try:
-        tables = [row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")]
-    except sqlite3.Error:
-        return []
+    tables = [row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")]
     prioritized = sorted(tables, key=lambda name: 0 if name.lower() in ('permission', 'permissions') else 1)
     rows: list[dict[str, Any]] = []
     for table in prioritized:
@@ -549,6 +554,8 @@ class OpenCodeRuntime(Runtime):
         bridges the standing rules into the OpenCode settings surface, and
         reports bridge drift against the CLAUDE.md baseline on re-setup.
         No SessionStart hook is installed because OpenCode has no equivalent.
+        The ``platform_runtime.py`` project initial-setup CLI renders this
+        result verbatim as the steward-path operator surface.
         """
         import pathlib
 

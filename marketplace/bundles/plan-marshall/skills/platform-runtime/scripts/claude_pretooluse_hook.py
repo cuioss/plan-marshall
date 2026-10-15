@@ -503,7 +503,7 @@ def _r5_stripped_tokens(command: str) -> list[str]:
                 if option.startswith('-') and len(option) > 1:
                     base = option.split('=')[0]
                     index += 1
-                    if base in _R5_WRAPPER_OPTS_WITH_VALUE and index < total and not tokens[index].startswith('-'):
+                    if '=' not in option and base in _R5_WRAPPER_OPTS_WITH_VALUE and index < total and not tokens[index].startswith('-'):
                         index += 1
                     continue
                 break
@@ -557,6 +557,32 @@ def _strip_matched_quotes(token: str) -> str:
     return s
 
 
+#: Single-letter python flags that consume a value. Only ``c`` and ``m``
+#: execute code; ``W`` and ``X`` take values but do not. A short-flag cluster
+#: (``-uc``, ``-Wc``) is judged by its FIRST value-taking flag — ``-uc``
+#: refuses because that flag is ``c``, ``-Wc`` passes this helper because its
+#: first value-taking flag is ``W``. Used only by the R5 matcher.
+_R5_VALUE_TAKING_SINGLE = frozenset({'c', 'm', 'W', 'X'})
+
+
+def _is_c_m_cluster(text: str) -> bool:
+    """Whether *text* is a short-flag cluster executing via ``c`` or ``m``.
+
+    Covers the attached forms (``-cCODE``, ``-mMODULE``) and combined short
+    flags (``-uc``) the exact-token check misses: a single-dash token whose
+    first value-taking flag is ``c`` or ``m``. Long options (``--`` prefix),
+    the bare ``-`` and flag-only tails return False. Used only by R5.
+    """
+    if not text.startswith('-') or text.startswith('--'):
+        return False
+    if len(text) < 2:
+        return False
+    for ch in text[1:]:
+        if ch in _R5_VALUE_TAKING_SINGLE:
+            return ch in ('c', 'm')
+    return False
+
+
 def _match_r5_interpreter_call(tool_name: str | None, tool_input: dict[str, Any]) -> str | None:
     """R5 — direct python interpreter call bypassing the executor.
 
@@ -584,6 +610,8 @@ def _match_r5_interpreter_call(tool_name: str | None, tool_input: dict[str, Any]
         return None
     if second in ('-c', '-m'):
         return _R5_REASON
+    if _is_c_m_cluster(second):
+        return _R5_REASON
     if _has_flag_prefixed_bypass(stripped):
         return _R5_REASON
     if second.startswith('-'):
@@ -604,6 +632,8 @@ def _has_flag_prefixed_bypass(stripped: list[str]) -> bool:
         if not text:
             continue
         if text in ('-c', '-m', '-', '--'):
+            return True
+        if _is_c_m_cluster(text):
             return True
         if not text.startswith('-'):
             return True

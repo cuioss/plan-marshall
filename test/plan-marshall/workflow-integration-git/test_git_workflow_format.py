@@ -708,3 +708,34 @@ class TestSourceCommitGate:
         result = parse_toon(stdout)
         assert result['allowed'] is False
         assert result['reason'] == 'no_sanction'
+
+    def test_source_gate_uses_nul_separation(self):
+        """The git derivation passes -z on both calls and splits on NUL."""
+        import inspect
+
+        source = inspect.getsource(git_workflow._source_gate_changed_paths)
+        assert "'-z'" in source or '"-z"' in source
+        assert "split('\\0')" in source or 'split("\\0")' in source
+        assert 'splitlines()' not in source
+
+    def test_source_gate_preserves_space_padded_paths(self, tmp_path):
+        """Space-padded and non-ASCII paths survive the git derivation verbatim."""
+        subprocess.run(['git', 'init', str(tmp_path)], check=True, capture_output=True)
+        subprocess.run(
+            ['git', '-C', str(tmp_path), 'config', 'user.email', 'test@example.com'],
+            check=True,
+            capture_output=True,
+        )
+        subprocess.run(
+            ['git', '-C', str(tmp_path), 'config', 'user.name', 'Test'],
+            check=True,
+            capture_output=True,
+        )
+        _create_file(tmp_path, 'baseline.txt')
+        subprocess.run(['git', '-C', str(tmp_path), 'add', 'baseline.txt'], check=True, capture_output=True)
+        subprocess.run(['git', '-C', str(tmp_path), 'commit', '-m', 'baseline'], check=True, capture_output=True)
+        padded = tmp_path / ' leading-and-trailing '
+        padded.write_text('x', encoding='utf-8')
+        changed, err = git_workflow._source_gate_changed_paths(tmp_path, None)
+        assert err is None
+        assert ' leading-and-trailing ' in (changed or [])

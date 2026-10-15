@@ -997,3 +997,43 @@ _PATH_PREFIXED_BYPASS_IDS = [
 def test_a_path_prefixed_program_does_not_bypass_its_rule(command: str, expected_reason: str) -> None:
     """An absolute path in front of the program leaves the rule's verdict intact."""
     assert hook.evaluate(_signal2_payload('Bash', _bash(command))) == expected_reason
+
+
+# =============================================================================
+# R5 — bypass-cluster regression (TASK-10)
+# =============================================================================
+
+
+_R5_BYPASS_CLUSTER_DENIED = [
+    'sudo --chdir=/tmp python3 -c "print(1)"',
+    'python3 -cprint(1)',
+    'python3 -mjson.tool',
+    'python3 -uc "print(1)"',
+    'python3 -um json.tool',
+    'python3 .plan/execute-script.py.bak list',
+]
+
+_R5_BYPASS_CLUSTER_DENIED_IDS = [
+    'wrapper-inline-equals-keeps-interpreter-visible',
+    'attached-c-flag',
+    'attached-m-flag',
+    'combined-short-flags-with-c',
+    'combined-short-flags-with-m',
+    'executor-near-miss-suffix',
+]
+
+
+@pytest.mark.parametrize('command', _R5_BYPASS_CLUSTER_DENIED, ids=_R5_BYPASS_CLUSTER_DENIED_IDS)
+def test_r5_denies_bypass_cluster_forms(command: str) -> None:
+    """Each R5 bypass-cluster form denies with the R5 remedy reason."""
+    assert hook.evaluate(_signal2_payload('Bash', _bash(command))) == hook._R5_REASON, command
+
+
+def test_r5_value_taking_cluster_helper_first_value_taking_wins() -> None:
+    """The cluster helper refuses on first value-taking c/m, passes on W/X-first."""
+    assert hook._is_c_m_cluster('-cprint(1)') is True
+    assert hook._is_c_m_cluster('-mjson.tool') is True
+    assert hook._is_c_m_cluster('-uc') is True
+    assert hook._is_c_m_cluster('-Wignore') is False
+    assert hook._is_c_m_cluster('--version') is False
+    assert hook._is_c_m_cluster('-u') is False

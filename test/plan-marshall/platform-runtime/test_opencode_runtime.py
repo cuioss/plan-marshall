@@ -1336,3 +1336,67 @@ def test_plan_start_absent_db_reports_not_checkable(
     assert setup['status'] == 'success'
     assert setup['persisted_approval_checkable'] is False
     assert setup['persisted_approval_warnings'] == []
+
+
+def test_reporter_bare_command_equivalence_no_false_contradiction(
+    runtime: OpenCodeRuntime, tmp_path: pathlib.Path
+) -> None:
+    """Allow and deny sharing only a first token do not contradict."""
+    _write_deny_config(tmp_path, ['git push *'])
+    db_path = tmp_path / 'opencode.db'
+    _make_fixture_db(db_path, [('bash', 'git status *', 'allow')])
+
+    result = _parse(runtime.permission_report_persisted_contradictions(str(tmp_path), str(db_path)))
+
+    assert result['checkable'] is True
+    assert result['contradictions'] == []
+
+
+def test_reporter_bare_command_equivalence_keeps_ls_pair(
+    runtime: OpenCodeRuntime, tmp_path: pathlib.Path
+) -> None:
+    """Bare-command equivalence keeps ls vs ls * green."""
+    _write_deny_config(tmp_path, ['ls *'])
+    db_path = tmp_path / 'opencode.db'
+    _make_fixture_db(db_path, [('bash', 'ls', 'allow')])
+
+    result = _parse(runtime.permission_report_persisted_contradictions(str(tmp_path), str(db_path)))
+
+    assert result['checkable'] is True
+    assert len(result['contradictions']) == 1
+
+
+def test_reporter_unreadable_db_is_not_checkable(runtime: OpenCodeRuntime, tmp_path: pathlib.Path) -> None:
+    """Non-SQLite bytes at the db path report checkable False, never clean."""
+    _write_deny_config(tmp_path, ['ls *'])
+    db_path = tmp_path / 'opencode.db'
+    db_path.write_bytes(b'not a sqlite database\x00\x01\x02')
+
+    result = _parse(runtime.permission_report_persisted_contradictions(str(tmp_path), str(db_path)))
+
+    assert result['checkable'] is False
+    assert result['reason'] == 'db_unreadable'
+    assert result['contradictions'] == []
+
+
+def test_project_initial_setup_docstring_names_platform_runtime_cli() -> None:
+    """The steward-path docstring names the platform_runtime CLI verbatim surface."""
+    assert 'platform_runtime.py' in OpenCodeRuntime.project_initial_setup.__doc__
+    assert 'verbatim' in OpenCodeRuntime.project_initial_setup.__doc__
+
+
+def test_steward_setup_prints_persisted_warnings(
+    runtime: OpenCodeRuntime, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+) -> None:
+    """The steward dispatch prints persisted approval warnings to stderr."""
+    _write_deny_config(tmp_path, ['ls *'])
+    db_path = tmp_path / 'opencode.db'
+    _make_fixture_db(db_path, [('bash', 'ls', 'allow')])
+    monkeypatch.setenv('OPENCODE_DB_PATH', str(db_path))
+    from configure_harness import dispatch_platform_runtime_setup
+
+    monkeypatch.chdir(tmp_path)
+    assert dispatch_platform_runtime_setup('opencode', tmp_path) is True
+    captured = capsys.readouterr()
+    assert 'persisted approval warning' in captured.err
+    assert 'ls' in captured.err

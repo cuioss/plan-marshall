@@ -98,6 +98,11 @@ def dispatch_platform_runtime_setup(harness: str, project_dir: Path) -> bool:
                         setup_payload = parse_toon(setup_result) if isinstance(setup_result, str) else setup_result
                         if isinstance(setup_payload, dict) and setup_payload.get('status') != 'success':
                             setup_ok = False
+                        if isinstance(setup_payload, dict):
+                            for entry in setup_payload.get('persisted_approval_warnings') or []:
+                                warning = entry.get('warning') if isinstance(entry, dict) else None
+                                if warning:
+                                    print(f'persisted approval warning: {warning}', file=sys.stderr)
                     except Exception:
                         setup_ok = False
             if hasattr(rt, 'project_install_hook') and proj == Path.cwd().resolve():

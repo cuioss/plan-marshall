@@ -604,27 +604,31 @@ def _source_gate_changed_paths(worktree: Path, explicit: str | None) -> tuple[li
     """Resolve the changed-path list from ``--changed-paths`` or from git.
 
     The git derivation unions tracked modifications (``diff --name-only
-    HEAD``) with untracked-but-not-ignored files (``ls-files --others
-    --exclude-standard``): an untracked source file is a source path the
-    gate must see, never an invisible plan-only allow. A failed listing
-    fails closed — an unlistable tree never sanctions a source commit.
+    -z HEAD``) with untracked-but-not-ignored files (``ls-files --others
+    --exclude-standard -z``): an untracked source file is a source path the
+    gate must see, never an invisible plan-only allow. NUL separation keeps
+    quoted (``core.quotePath``) and space-padded paths verbatim — a per-line
+    strip would mutate them and a quoted spelling would fail
+    ``is_plan_only_path``. A failed listing fails closed — an unlistable
+    tree never sanctions a source commit. ``diff HEAD`` on a commit-less repo
+    still fails closed.
     """
     if explicit is not None:
         return [path for path in (part.strip() for part in explicit.split(',')) if path], None
-    rc, out, err = run_git(['-C', str(worktree), 'diff', '--name-only', 'HEAD'])
+    rc, out, err = run_git(['-C', str(worktree), 'diff', '--name-only', '-z', 'HEAD'])
     if rc != 0:
         return None, make_error(
             f'git diff failed: {err or f"exit {rc}"}',
             code=ErrorCode.FETCH_FAILURE,
         )
-    tracked = [line for line in (part.strip() for part in out.splitlines()) if line]
-    rc, out, err = run_git(['-C', str(worktree), 'ls-files', '--others', '--exclude-standard'])
+    tracked = [part for part in out.split('\0') if part]
+    rc, out, err = run_git(['-C', str(worktree), 'ls-files', '--others', '--exclude-standard', '-z'])
     if rc != 0:
         return None, make_error(
             f'git ls-files failed: {err or f"exit {rc}"}',
             code=ErrorCode.FETCH_FAILURE,
         )
-    untracked = [line for line in (part.strip() for part in out.splitlines()) if line]
+    untracked = [part for part in out.split('\0') if part]
     return tracked + [path for path in untracked if path not in tracked], None
 
 

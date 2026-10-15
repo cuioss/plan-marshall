@@ -150,7 +150,7 @@ function commandTokens(command) {
         if (o.startsWith("-") && o.length > 1) {
           const base = o.split("=")[0]
           i++
-          if (WRAPPER_OPTS_WITH_VALUE.has(base) && i < tokens.length && !tokens[i].startsWith("-")) {
+          if (!o.includes("=") && WRAPPER_OPTS_WITH_VALUE.has(base) && i < tokens.length && !tokens[i].startsWith("-")) {
             i++
           }
           continue
@@ -199,7 +199,25 @@ function tokenAt(command, index) {
 }
 
 function isExecutorPermit(command) {
-  return /^python3\s+\.plan\/execute-script\.py\b/.test(commandTokens(command).join(" "))
+  return /^python3\s+\.plan\/execute-script\.py(?:\s|$)/.test(commandTokens(command).join(" "))
+}
+
+const R5_VALUE_TAKING_SINGLE = new Set(["c", "m", "W", "X"])
+
+function isCMCluster(t) {
+  if (!t.startsWith("-") || t.startsWith("--")) return false
+  if (t.length < 2) return false
+  for (const ch of t.slice(1)) {
+    if (R5_VALUE_TAKING_SINGLE.has(ch)) return ch === "c" || ch === "m"
+  }
+  return false
+}
+
+function mModuleOf(secondRaw, thirdRaw) {
+  const s = typeof secondRaw === "string" ? secondRaw.trim() : ""
+  if (s === "-m") return typeof thirdRaw === "string" ? thirdRaw.trim() : ""
+  if (s.startsWith("-m") && s.length > 2 && !s.startsWith("--")) return s.slice(2).trim()
+  return ""
 }
 
 function isInterpreterBypass(secondRaw) {
@@ -210,6 +228,7 @@ function isInterpreterBypass(secondRaw) {
   }
   if (!t) return false
   if (R5_ALWAYS_REFUSE_FLAGS.has(t)) return true
+  if (isCMCluster(t)) return true
   if (t.startsWith("-")) return false
   return true
 }
@@ -230,6 +249,7 @@ function hasFlagPrefixedBypass(command) {
     }
     if (!t) continue
     if (t === "-c" || t === "-m" || t === "-" || t === "--") return true
+    if (isCMCluster(t)) return true
     if (!t.startsWith("-")) return true
   }
   return false
@@ -356,7 +376,8 @@ export default Plugin.define({
       if (PYTHON_INTERPRETERS.has(token)) {
         const second = basenameOf(tokenAt(command, 1))
         const third = normalizeToken(tokenAt(command, 2))
-        if (second === "build.py" || (tokenAt(command, 1) === "-m" && PYTHON_DIRECT_RUNNERS.has(third))) {
+        const mModule = normalizeToken(mModuleOf(tokenAt(command, 1), tokenAt(command, 2)))
+        if (second === "build.py" || (mModule && PYTHON_DIRECT_RUNNERS.has(mModule))) {
           audit(auditLine("R4", tool, sessionID, callID, command))
           throw new Error(
             "[plan-marshall-guard] R4: hard-coded build command bypassing python3 .plan/execute-script.py is forbidden",

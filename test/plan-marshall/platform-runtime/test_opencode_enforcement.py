@@ -349,3 +349,19 @@ def test_guard_r5_scans_past_option_flags() -> None:
     source = _guard_plugin_source()
     assert 'hasFlagPrefixedBypass(command)' in source
     assert 'isInterpreterBypass(tokenAt(command, 1)) || hasFlagPrefixedBypass(command)' in source
+
+
+def test_guard_r5_bypass_cluster_helpers_present() -> None:
+    """The R5 bypass-cluster helpers exist and the wrapper/executor pins hold."""
+    source = _guard_plugin_source()
+    assert 'isCMCluster' in source
+    assert 'mModuleOf' in source
+    assert 'R5_VALUE_TAKING_SINGLE' in source
+    assert '!o.includes("=")' in source
+    assert r'(?:\s|$)' in source
+
+
+def test_guard_r4_m_flag_prefix_check_present() -> None:
+    """The R4 python -m branch reads the module through the attached-form helper."""
+    source = _guard_plugin_source()
+    assert 'mModuleOf(tokenAt(command, 1), tokenAt(command, 2))' in source
