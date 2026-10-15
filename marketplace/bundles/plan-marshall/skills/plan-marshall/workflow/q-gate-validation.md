@@ -64,6 +64,20 @@ Parse the deliverables from the solution outline. Extract:
 
 #### 1.2 Read Assessments
 
+Establish the store population FIRST with the unfiltered query — a
+`--certainty CERTAIN_INCLUDE` query that returns empty cannot tell an empty
+store from a store whose records are all non-include, and only the unfiltered
+query establishes which one holds:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings assessment \
+  list --plan-id {plan_id}
+```
+
+Record the unfiltered output verbatim — it is the `assessment_snapshot`
+persisted in Step 3.5 and the exact-match comparand of the validator-input
+gate there. Then read the coverage set:
+
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings assessment \
   list --plan-id {plan_id} --certainty CERTAIN_INCLUDE
@@ -89,7 +103,7 @@ python3 .plan/execute-script.py plan-marshall:manage-plan-documents:manage-plan-
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  decision --plan-id {plan_id} --level INFO --message "(execution-context.q-gate-validation) Starting verification: {deliverable_count} deliverables, {assessment_count} assessments" \
+  decision --plan-id {plan_id} --level INFO --message "(execution-context.q-gate-validation) Starting verification: {deliverable_count} deliverables, {assessment_store_count} assessments ({certain_include_count} CERTAIN_INCLUDE)" \
   --audit-plan-id {plan_id}
 ```
 
@@ -98,8 +112,33 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 ### Step 3.5: Per-Deliverable Content-Hash Skip on Re-validation (FIX 4-lite)
 
 > **HARD DEPENDENCY on FIX 3 (the Step 4 full-coverage guarantee)**: this skip is only safe because the full-coverage guarantee ensures that any *prior* full validation pass already ran AND recorded EVERY applicable validator against each deliverable. Therefore "deliverable D has zero pending findings after the prior full pass" reliably means "D passed everything" — not merely "D passed the validators that happened to run before a short-circuit". If FIX 3's guarantee is ever removed, this skip becomes unsound and MUST be removed with it.
+>
+> **Phase-keyed hashes**: every hash row this step persists is keyed by
+> (`phase`, `deliverable`) — a per-deliverable row's `deliverable` key takes
+> the form `{phase}:{N}` (e.g. `4-plan:3`), and the aggregate row key is
+> `__whole_outline__:{phase}` — never a bare key. A row recorded by another
+> phase can never satisfy this phase's lookup: the lookup matches the exact
+> `{current_phase}:{D}` key, so a later phase pass over rows recorded under
+> another phase finds no stored hash for any deliverable and fully validates. Writes
+> MERGE: the write-back replaces this phase's rows and preserves every other
+> phase's rows verbatim. (Rows whose key carries no phase prefix never match a
+> lookup; they are preserved verbatim on merge.)
+> `{phase}` is taken from the dispatch context (`activation_context` /
+> `validators` scope), never defaulted.
 
 This step lets a re-entry (the orchestrator's auto-loop re-dispatches q-gate-validation after a re-outline) SKIP the full validator battery for deliverables that are both **unchanged** and **clean**, so untouched deliverables are not re-validated wholesale. The skip is **deliverable-level**, NOT validator-level — there is no edit→invalidation dependency map; a deliverable is either fully re-validated or fully skipped.
+
+**On entry — compute the current hashes via the deterministic verb** (which reuses
+`_plan_parsing` as its read-only shared helper — no hand-rolled heading scan here):
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-solution-outline \
+  deliverable-hashes --plan-id {plan_id} --phase {phase}
+```
+
+Parse the returned `hashes[]{deliverable,hash}` rows as `hash(D)` and
+`whole_outline_hash` as `hash(whole_outline)` for this phase. The verb output
+is phase-agnostic; the phase qualification lives in the artifact keys above.
 
 **On entry — read the prior content-hash artifact** (a small plan-scoped TOON file persisted by this same step on the previous pass; absent on the first pass):
 
@@ -108,9 +147,32 @@ python3 .plan/execute-script.py plan-marshall:manage-files:manage-files read \
   --plan-id {plan_id} --file work/deliverable-hashes.toon
 ```
 
-Parse the prior `hashes[]{deliverable,hash}` rows into a `stored_hash(D)` lookup; the reserved `deliverable` key `__whole_outline__` carries the aggregate whole-outline fingerprint (`stored_whole_outline_hash`), consumed by the whole-outline short-circuit below rather than by a single deliverable. When the file does not exist (first pass / `exists: false`), treat `stored_hash(D)` as empty for every deliverable and `stored_whole_outline_hash` as absent — nothing is skipped on the first pass.
+Parse the prior rows into a `stored_hash(D)` lookup that matches ONLY the
+exact `{current_phase}:{D}` key — a same-number row under another phase's
+prefix is another phase's record, never this phase's. The reserved aggregate
+key `__whole_outline__:{phase}` carries the whole-outline fingerprint
+(`stored_whole_outline_hash`) for the current phase, consumed by the
+whole-outline short-circuit below. When the file does not exist (first pass /
+`exists: false`), treat `stored_hash(D)` as empty for every deliverable and
+`stored_whole_outline_hash` as absent — nothing is skipped on the first pass.
 
-**Per-deliverable skip predicate** — for each deliverable D parsed from solution_outline.md (Step 3 §1.1), compute `hash(D)` over D's current deliverable text (the full markdown block from its `### {N}.` heading through the line before the next deliverable heading; SHA-256 of the UTF-8 bytes, hex digest). Then query D's pending findings — pending = recorded but not yet resolved:
+**On entry — compare the validator inputs.** The validators consume three
+mutable inputs — the outline (fingerprinted by `hash(whole_outline)` above),
+the assessment store, and the task plan — plus the request text, which is
+loop-invariant (refine owns it; the outline/plan loops never rewrite it, so it
+takes no snapshot — if a future loop ever rewrites the request, this gate must
+gain one). Compare the §1.2 unfiltered assessment output against the stored
+`assessment_snapshot` block, and the current task-plan listing (the full
+`manage-tasks list` output for the plan, followed by each task's full
+`manage-tasks read` output in ascending task-number order, joined with
+`\n--- TASK-{N} ---\n` separators — at call sites with no task files yet the
+listing records the empty set explicitly) against the stored
+`taskplan_snapshot` block. `validator_inputs_unchanged` holds iff BOTH match
+exactly. Any query failure, any absent snapshot section, or any mismatch reads
+as changed — fail closed: an input that could not be compared is not an input
+proved identical.
+
+**Per-deliverable skip predicate** — for each deliverable D parsed from solution_outline.md (Step 3 §1.1), take `hash(D)` from the verb output above. Then query D's pending findings — pending = recorded but not yet resolved:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings qgate list \
@@ -119,37 +181,60 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings qg
 
 Filter the returned rows to those whose finding targets deliverable D (by deliverable number / affected-file membership). Then apply the skip predicate exactly:
 
-> **SKIP full re-validation of D iff `hash(D) == stored_hash(D)` AND D has zero pending findings.** Otherwise (hash changed, OR D has ≥1 pending finding, OR D is new / has no stored hash) D is **fully re-validated** in Step 4.
+> **SKIP full re-validation of D iff `hash(D) == stored_hash(D)` AND D has zero pending findings AND a stored `__whole_outline__:{phase}` row for the current phase exists (this phase already completed a full pass against these exact inputs) AND `validator_inputs_unchanged` holds.** Otherwise (hash changed, OR D has ≥1 pending finding, OR D is new / has no stored row for this phase, OR this phase has no stored aggregate row yet, OR any validator input changed) D is **fully re-validated** in Step 4.
 
-When D is skipped, log the decision and do NOT run any §2.x validator against D:
+When D is skipped, log the decision and do NOT run any §2.x validator against D.
+A skipped deliverable reports as `not run (cached from phase {X})` — where `{X}`
+is the current phase, whose matching row the gate above guarantees this phase
+recorded in its own full pass — never as a pass, and the skipped deliverable
+numbers are carried in the `skipped_deliverables` return field. A skip is a non-verdict,
+not a verdict — and it is NOT a `not_run_validators` entry, which is reserved
+for checks that produced no verdict for lack of an input source (§2.2 / Step 5
+empty-store branches): a cached skip stands on this phase's prior full pass,
+while a not-run stands on nothing, and merging the two would let the full-pass
+gate below mistake a standing verdict for an absent one.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   decision --plan-id {plan_id} --level INFO \
-  --message "(execution-context.q-gate-validation:hash-skip) Skipped re-validation of deliverable {N}: content hash unchanged and zero pending findings" \
+  --message "(execution-context.q-gate-validation:hash-skip) Skipped re-validation of deliverable {N}: content hash unchanged and zero pending findings (not run, cached from phase {X})" \
   --audit-plan-id {plan_id}
 ```
 
-**Whole-outline aggregate hash gate (re-run gate)** — in addition to the per-deliverable rows, this same artifact carries one aggregate `__whole_outline__` row whose hash fingerprints the ENTIRE `solution_outline.md` (SHA-256 of the full document's UTF-8 bytes, hex digest). It is the coarse counterpart to the per-deliverable rows: where those decide which deliverables to skip, the aggregate decides whether ANY validator needs to run this pass at all.
+**Whole-outline aggregate hash gate (re-run gate)** — in addition to the per-deliverable rows, this same artifact carries one aggregate `__whole_outline__:{phase}` row per phase whose hash fingerprints the ENTIRE `solution_outline.md` (SHA-256 of the full document's UTF-8 bytes, hex digest — the verb's `whole_outline_hash`). It is the coarse counterpart to the per-deliverable rows: where those decide which deliverables to skip, the aggregate decides whether ANY validator needs to run this pass at all. The phase suffix is what keeps a `3-outline` fingerprint from gating a `4-plan` pass.
 
-> **WHOLE-OUTLINE SHORT-CIRCUIT (hash-only) — on a re-entry (stored `__whole_outline__` row present), if `hash(whole_outline) == stored_whole_outline_hash`, the entire validation is a complete no-op regardless of the prior pending count**: skip Step 4 wholesale, re-emit the PRIOR `qgate_pending_count` verbatim (zero OR non-zero), and return immediately. The count is re-emitted by running only Step 8's pending-findings query (not the Step 4 validator battery) — that tally is unchanged from the prior pass because the content is byte-identical AND no finding was resolved between passes, so re-running the deterministic validators would reproduce exactly the same findings. This short-circuit rests ONLY on determinism (identical input → identical findings); it does NOT depend on the FULL-COVERAGE GUARANTEE the way the per-deliverable skip predicate above does — that predicate's zero-pending requirement stays as written, because it asserts the strictly stronger claim "D passed everything" (which needs the guarantee that every applicable validator ran), whereas this aggregate gate asserts only "re-running reproduces the same result". Disposition of a non-zero re-emitted count — loop again or escalate — is the ORCHESTRATOR's responsibility (`planning-outline.md` Step 2b's unified post-loop exit gate for the outline loop, and the phase-4-plan Q-Gate prose for the plan loop); this step only decides whether the validators re-run. On the first pass (no stored aggregate row) OR when the aggregate hash changed, proceed into the per-deliverable skip predicate and Step 4 as normal.
+> **WHOLE-OUTLINE SHORT-CIRCUIT — on a re-entry (stored `__whole_outline__:{phase}` row for THIS phase present), if `hash(whole_outline) == stored_whole_outline_hash` AND `validator_inputs_unchanged` holds, the entire validation is a complete no-op regardless of the prior pending count**: skip Step 4 wholesale, re-emit the PRIOR `qgate_pending_count` verbatim (zero OR non-zero), report the pass as `not run (cached from phase {phase})`, and return immediately. The count is re-emitted by running only Step 8's pending-findings query (not the Step 4 validator battery) — that tally is unchanged from the prior pass because every validator input is byte-identical AND no finding was resolved between passes, so re-running the deterministic validators would reproduce exactly the same findings. This short-circuit rests ONLY on input identity — the outline hash plus the assessment and task-plan snapshot comparisons above — (identical input → identical findings); it does NOT depend on the FULL-COVERAGE GUARANTEE the way the per-deliverable skip predicate above does — that predicate's zero-pending requirement stays as written, because it asserts the strictly stronger claim "D passed everything" (which needs the guarantee that every applicable validator ran), whereas this aggregate gate asserts only "re-running reproduces the same result". Disposition of a non-zero re-emitted count — loop again or escalate — is the ORCHESTRATOR's responsibility (`planning-outline.md` Step 2b's unified post-loop exit gate for the outline loop, and the phase-4-plan Q-Gate prose for the plan loop); this step only decides whether the validators re-run. On the first pass (no stored aggregate row) OR when the aggregate hash changed OR when any validator input changed, proceed into the per-deliverable skip predicate and Step 4 as normal.
 
 This aggregate row is the artifact the orchestrator's whole-outline content-hash re-run gate (`planning-outline.md` Step 2b for the outline loop, and the phase-4-plan q-gate block for the plan loop) reads to decide whether to re-dispatch q-gate-validation at all: a re-outline that left `solution_outline.md` byte-identical never triggers a fresh sibling dispatch. The FIRST pass is never gated — it always runs (there is no stored aggregate row yet).
 
-**After the Step 4 pass — write the current hash set back to the artifact** (covers both validated and skipped deliverables PLUS the `__whole_outline__` aggregate row, so the next re-entry has a complete fingerprint set). Author the TOON body via the Write tool to a plan-id-scoped `.plan/temp/{plan_id}/` file (scoping the path to `{plan_id}` prevents collisions under concurrent plan execution), then persist it through `manage-files write` (never assemble multi-line content inside a shell argument):
+**After the Step 4 pass — merge the current hash set back into the artifact** (per-deliverable rows for both validated and skipped deliverables, the current `assessment_snapshot` and `taskplan_snapshot` blocks, and — full-pass gate below — the `__whole_outline__:{phase}` aggregate row for the current phase). Author the TOON body via the Write tool to a plan-id-scoped `.plan/temp/{plan_id}/` file (scoping the path to `{plan_id}` prevents collisions under concurrent plan execution), then persist it through `manage-files write` (never assemble multi-line content inside a shell argument):
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-files:manage-files write \
   --plan-id {plan_id} --file work/deliverable-hashes.toon --content-file {temp_hashes_file}
 ```
 
-The artifact uses existing `manage-files` read/write I/O only — **no validator-result cache subsystem and no new script surface are introduced**. The persisted fingerprint is per-deliverable content only; it carries no validator-result state.
+The merge replaces every row and block belonging to the current phase and preserves every other phase's rows verbatim — each phase's fingerprint set survives later phases' passes. Per-deliverable `deliverable` keys take the `{phase}:{N}` form; the aggregate key keeps its `__whole_outline__:{phase}` form. Artifact shape (TOON authored via the Write tool):
+
+```toon
+hashes[N]{deliverable,hash}:
+  4-plan:1,9f2c…
+  __whole_outline__:4-plan,ab12…
+assessment_snapshot: |
+  {verbatim Step 3 §1.2 unfiltered assessment list output}
+taskplan_snapshot: |
+  {verbatim task-plan listing: the full manage-tasks list output, then each task's full read output in ascending task-number order joined with --- TASK-{N} --- separators; the empty listing where no task files exist yet}
+```
+
+**Full-pass gate (aggregate row)**: the `__whole_outline__:{phase}` row is written ONLY when `not_run_validators` is empty — every applicable validator (the active phase's subset) ran or soundly skipped from this phase's prior full pass. When any validator reported not run (empty assessment store), the pass earned no full-pass record: write the per-deliverable rows and snapshots, OMIT the aggregate row, and log the omission. Both skip gates above require the aggregate row, so a partial pass enables no skip — a later pass cannot treat rows recorded without full coverage as a completed full pass.
+
+The artifact uses existing `manage-files` read/write I/O only — **no validator-result cache subsystem and no new script surface are introduced**. The persisted fingerprint is per-deliverable content plus validator-input snapshots; it carries no validator-result state.
 
 ---
 
 ### Step 4: Verify Deliverables
 
-> **FULL-COVERAGE GUARANTEE (anti-short-circuit) — MANDATORY**: You MUST execute AND record findings from EVERY applicable validator (§2.1 through §2.17, scoped to the active phase's validator subset) before returning — even when an error-level / blocking finding is already present. Do NOT stop at the first failing validator class. Encountering a blocking §2.17 finding does NOT permit skipping a later §2.12 under-coverage warning: run the remaining applicable validators and record their findings in the SAME pass. The goal is that a single validation pass surfaces ALL finding classes at once, collapsing what would otherwise be N sequential re-validation round-trips (one per finding class discovered) into 1. **This full-coverage guarantee is the precondition that FIX 4-lite (per-deliverable content-hash skip) relies on**: "zero pending findings for deliverable D after a full pass" is only a trustworthy "D passed everything" signal because this guarantee ensures every applicable validator actually ran and recorded against D.
+> **FULL-COVERAGE GUARANTEE (anti-short-circuit) — MANDATORY**: You MUST execute AND record findings from EVERY applicable validator (§2.1 through §2.17, scoped to the active phase's validator subset) whose required inputs are available before returning — even when an error-level / blocking finding is already present. A validator whose required input is unavailable (empty assessment store for §2.2 / Step 5) reports not run via `not_run_validators` and does not block the summary. Do NOT stop at the first failing validator class. Encountering a blocking §2.17 finding does NOT permit skipping a later §2.12 under-coverage warning: run the remaining applicable validators with available required input and record their findings in the SAME pass. The goal is that a single validation pass surfaces ALL finding classes at once, collapsing what would otherwise be N sequential re-validation round-trips (one per finding class discovered) into 1. **This full-coverage guarantee is the precondition that FIX 4-lite (per-deliverable content-hash skip) relies on**: "zero pending findings for deliverable D after a full pass" is only a trustworthy "D passed everything" signal because this guarantee ensures every applicable validator with available required input actually ran and recorded against D.
 
 For each deliverable in solution_outline.md that was NOT skipped by [Step 3.5](#step-35-per-deliverable-content-hash-skip-on-re-validation-fix-4-lite) (unchanged-and-clean deliverables are skipped wholesale on re-entry), run every applicable validator (do not short-circuit on the first failure):
 
@@ -170,10 +255,38 @@ Does the deliverable directly address a request requirement?
 Are all affected files in the deliverable backed by assessments?
 
 ```text
-FOR each file in deliverable.affected_files:
-  IF file NOT IN assessed_files (CERTAIN_INCLUDE):
-    FLAG: Missing assessment for file
+IF the assessment store is empty (the Step 3 §1.2 UNFILTERED query returned zero records):
+  Report not run — do NOT enter the per-file loop, do NOT flag any deliverable.
+  Append `assessment-coverage` to not_run_validators.
+ELSE:
+  FOR each file in deliverable.affected_files:
+    IF file NOT IN assessed_files (CERTAIN_INCLUDE):
+      FLAG: Missing assessment for file
 ```
+
+**Not-run branch (empty assessment store)**: when the UNFILTERED assessment store holds no
+records at all (the `assessment list` query without `--certainty` returns
+an empty set — not merely zero CERTAIN_INCLUDE matches for this deliverable's files), this
+check does NOT run and MUST NOT flag every deliverable. A CERTAIN_INCLUDE query that
+returns empty while the unfiltered store is non-empty is NOT not-run — the store holds
+records, just none that include: the check RUNS and flags every uncovered file as genuine
+missing coverage. Report the check as
+`not run`: log the not-run line naming the plan's resolved outline skill (so a
+plugin-domain plan whose component analysis failed to write stays visible) and
+append `assessment-coverage` to the `not_run_validators` return field. An empty store
+means coverage was never established — reporting per-file failures for it would
+assert findings about files nothing examined.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  decision --plan-id {plan_id} --level INFO \
+  --message "(execution-context.q-gate-validation:qgate) Assessment coverage check not run — assessment store empty (outline skill: {outline_skill})" \
+  --audit-plan-id {plan_id}
+```
+
+`{outline_skill}` is the plan's resolved outline skill (e.g.
+`plan-marshall:phase-3-outline`), resolved the same way the calling phase
+resolves it — never a hard-coded value.
 
 **Pass criteria**:
 - Every affected file has a CERTAIN_INCLUDE assessment
@@ -799,12 +912,27 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
 Compare assessed files (CERTAIN_INCLUDE) against deliverable affected files:
 
 ```text
-FOR each file IN assessed_files:
-  IF file NOT IN any deliverable.affected_files:
-    FLAG: Assessed file not covered in deliverables
+IF the assessment store is empty (the Step 3 §1.2 UNFILTERED query returned zero records):
+  Report not run — do NOT enter the loop.
+  Append `missing-coverage` to not_run_validators.
+ELSE:
+  FOR each file IN assessed_files:
+    IF file NOT IN any deliverable.affected_files:
+      FLAG: Assessed file not covered in deliverables
 ```
 
-**Log missing coverage**:
+**Not-run branch**: when Step 3 §1.2 returned an empty UNFILTERED assessment store, this
+step does not run either — it reports `not run` alongside §2.2 (same cause, and
+`missing-coverage` joins `assessment-coverage` in the same
+`not_run_validators` field). Emit the not-run line:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  decision --plan-id {plan_id} --level INFO --message "(execution-context.q-gate-validation:qgate) Missing coverage check not run — assessment store empty" \
+  --audit-plan-id {plan_id}
+```
+
+**Log missing coverage** (only when the store is non-empty):
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
@@ -816,6 +944,11 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 ### Step 6: Record Findings
 
+`{phase}` is taken from the dispatch context (`activation_context` — `3-outline`,
+`4-plan`, or `2-refine`) and is threaded through every `qgate add`/`qgate list`
+call below. Never default it: a finding recorded without its calling phase lands
+in the wrong phase bucket and the pending-count queries in Step 8 misread it.
+
 For each issue found (false positive, missing coverage, alignment issue), record it using `manage-findings` with the **`qgate add`** subcommand (NOT `add` alone):
 
 **Note**: The `qgate add` command deduplicates on the (`title`, content-discriminator) pair within each phase — never the title alone. The content discriminator is a stable hash over (`detail`, `file_path`, `rule`):
@@ -826,7 +959,7 @@ For each issue found (false positive, missing coverage, alignment issue), record
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
   qgate add --plan-id {plan_id} \
-  --phase 3-outline \
+  --phase {phase} \
   --source qgate \
   --type triage \
   --title "Q-Gate: {issue_title}" \
@@ -859,11 +992,12 @@ Branch on the returned `status`: `success` carries `added_count` / `unchanged_co
 
 ### Step 8: Count Pending Findings
 
-Query the pending findings count for the return output:
+Query the pending findings count for the return output — scoped to `{phase}` from
+the dispatch context, the same value Step 6 recorded under:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
-  qgate list --plan-id {plan_id} --phase 3-outline --resolution pending
+  qgate list --plan-id {plan_id} --phase {phase} --resolution pending
 ```
 
 Extract `filtered_count` from the output — this becomes `qgate_pending_count` in the return value.
@@ -901,11 +1035,13 @@ flagged: {count}
 missing_coverage: {count}
 findings_recorded: {count}
 qgate_pending_count: {count}
+not_run_validators[N]: {checks that produced no verdict for lack of an input source — `assessment-coverage` (§2.2 empty store), `missing-coverage` (Step 5 empty store) — empty when every applicable validator ran or soundly skipped from this phase's full pass; activation-condition skips (§2.8 and friends) are out of scope by design, never not-run entries}
+skipped_deliverables[N]: {deliverable numbers skipped as cached from this phase's full pass — empty when nothing was skipped}
 ```
 
 `display_detail` shape: `"{flagged}/{N} flagged, {qgate_pending_count} pending"` (e.g. `"2/7 flagged, 3 pending"`); ≤80 chars, ASCII, no trailing period.
 
-**OUTPUT RULE**: Do NOT output verbose text. All verification details are logged to decision.log and findings to artifacts/qgate-3-outline.jsonl. Only output the final TOON summary block. The summary block MUST reflect a FULL pass — every applicable validator (§2.1–§2.17, scoped to the active phase) must have run and recorded its findings before this block is emitted, even when blocking findings are already present (see the full-coverage guarantee in Step 4). `qgate_pending_count` is only trustworthy as a complete tally because of that guarantee; FIX 4-lite's per-deliverable skip depends on it.
+**OUTPUT RULE**: Do NOT output verbose text. All verification details are logged to decision.log and findings to artifacts/qgate-{phase}.jsonl. Only output the final TOON summary block. The summary block MUST reflect a FULL pass — every applicable validator (§2.1–§2.17, scoped to the active phase) with available required input must have run and recorded its findings before this block is emitted, even when blocking findings are already present (see the full-coverage guarantee in Step 4). A validator whose required input is unavailable reports not run via `not_run_validators` and does not block the summary. `qgate_pending_count` is only trustworthy as a complete tally because of that guarantee; FIX 4-lite's per-deliverable skip depends on it. `not_run_validators` non-empty withholds the Step 3.5 aggregate row (no full-pass record is earned); `skipped_deliverables` never does — a cached skip stands on this phase's prior full pass.
 
 ---
 
@@ -952,7 +1088,7 @@ context:
 
 ### MUST DO
 - Verify every deliverable individually
-- **Run AND record findings from EVERY applicable validator (§2.1–§2.17, scoped to the active phase's subset) before returning — never short-circuit on the first failing validator class. A single pass MUST surface all finding classes at once, collapsing N sequential round-trips into 1. This full-coverage guarantee is the precondition FIX 4-lite (per-deliverable content-hash skip) relies on.**
+- **Run AND record findings from EVERY applicable validator (§2.1–§2.17, scoped to the active phase's subset) with available required input before returning — never short-circuit on the first failing validator class. A validator whose required input is unavailable reports not run via `not_run_validators` and does not block the summary. A single pass MUST surface all finding classes at once, collapsing N sequential round-trips into 1. This full-coverage guarantee is the precondition FIX 4-lite (per-deliverable content-hash skip) relies on.**
 - Log each verification decision
 - Record findings for any issues
 - Persist the declared footprint through `sync-affected-files` (Step 7) — never by hand-composing a path list

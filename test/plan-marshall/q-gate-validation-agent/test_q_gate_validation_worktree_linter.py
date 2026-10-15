@@ -1027,3 +1027,127 @@ def test_test_file_lives_at_expected_path() -> None:
     assert str(here).endswith(str(expected_suffix)), (
         f'Test file moved from expected path. Got {here}, expected suffix {expected_suffix}.'
     )
+
+
+# -----------------------------------------------------------------------------
+# Outline-integrity doc contract — not_run reporting and the phase-keyed
+# whole-outline hash skip (plan-lb-42-outline-qgate-integrity, deliverable 1).
+#
+# These tests pin the STRUCTURE of the outline-phase Q-Gate integrity prose in
+# q-gate-validation.md (and its planning-outline.md reader) the same way the
+# worktree-linter tests above pin Section 2.15: the workflow is
+# markdown-defined, so the contract is structural, not executable.
+# -----------------------------------------------------------------------------
+
+
+def test_assessment_coverage_check_documents_the_not_run_branch(agent_text: str) -> None:
+    """Section 2.2 must document the empty-store not-run branch.
+
+    An empty assessment store means coverage was never established — flagging
+    every deliverable would assert findings about files nothing examined. The
+    section must therefore name the not-run outcome and the not_run_validators
+    return field carrying it.
+    """
+    section_match = re.search(r'^####\s+2\.2\s+Assessment Coverage Check', agent_text, re.MULTILINE)
+    assert section_match is not None, 'Section 2.2 (Assessment Coverage Check) is missing.'
+    step_match = re.search(r'^###\s+Step\s+5\b', agent_text[section_match.start() :], re.MULTILINE)
+    assert step_match is not None, 'Step 5 is missing after Section 2.2.'
+    section = agent_text[section_match.start() : section_match.start() + step_match.start()]
+    assert 'not run' in section, 'Section 2.2 must document the not-run branch for an empty assessment store.'
+    assert 'not_run_validators' in section, (
+        'Section 2.2 must name the not_run_validators return field carrying the not-run outcome.'
+    )
+
+
+def test_hash_skip_is_keyed_by_phase(agent_text: str) -> None:
+    """Step 3.5 must key the whole-outline aggregate row by phase.
+
+    A bare aggregate key lets a 3-outline fingerprint gate a 4-plan pass, so the
+    row key must carry the phase suffix and the prose must say a row stored under
+    another phase never satisfies the current lookup.
+    """
+    assert '__whole_outline__:{phase}' in agent_text, (
+        'Step 3.5 must key the whole-outline aggregate row by phase (`__whole_outline__:{phase}`), never by a bare key.'
+    )
+
+
+def test_per_deliverable_skip_gated_on_current_phase_full_pass(agent_text: str) -> None:
+    """Per-deliverable skips must be gated on this phase's own full pass.
+
+    The per-deliverable rows carry no phase of their own, so a same-hash row may
+    have been recorded by another phase — whose validators are never this
+    phase's. The predicate must therefore require a stored aggregate row for the
+    current phase (proof this phase already completed a full pass) before any
+    per-deliverable skip fires.
+    """
+    assert 'already completed a full pass' in agent_text, (
+        'Step 3.5 must gate per-deliverable skips on the current phase having '
+        'already completed a full pass, so a foreign-phase row can never skip '
+        'this phase validators.'
+    )
+
+
+def test_hash_skip_calls_the_deterministic_verb(agent_text: str) -> None:
+    """Step 3.5 must call the deterministic deliverable-hashes verb.
+
+    The verb reuses _plan_parsing as its read-only shared helper, so the hashed
+    population is the parser's own block split rather than a second heading scan
+    maintained by hand.
+    """
+    assert 'deliverable-hashes' in agent_text, (
+        'Step 3.5 must call the deterministic deliverable-hashes verb for its hashes.'
+    )
+    assert '_plan_parsing' in agent_text, 'Step 3.5 must name _plan_parsing as the shared helper the verb reuses.'
+
+
+def test_cached_skips_report_as_not_run(agent_text: str) -> None:
+    """Skipped deliverables must report as not run (cached from phase X).
+
+    A skip is a non-verdict: reporting it as a pass would let an unexamined
+    deliverable read as a verified one. The cached-from-phase rendering names
+    the phase whose stored hash matched.
+    """
+    assert 'cached from phase' in agent_text, (
+        'Step 3.5 must report cached skips as not run (cached from phase X), never as a pass.'
+    )
+
+
+def test_output_block_carries_not_run_validators(agent_text: str) -> None:
+    """The Output block must carry the not_run_validators field.
+
+    Without it the not-run outcome has no return channel and the orchestrator
+    cannot distinguish "every applicable validator ran" from "some reported not
+    run".
+    """
+    output_match = re.search(r'^##\s+Output', agent_text, re.MULTILINE)
+    assert output_match is not None, 'The Output block is missing.'
+    assert 'not_run_validators' in agent_text[output_match.start() :], (
+        'The Output block must carry the not_run_validators field.'
+    )
+
+
+def test_record_and_count_steps_take_phase_from_context(agent_text: str) -> None:
+    """Steps 6 and 8 must take {phase} from the dispatch context.
+
+    A finding recorded without its calling phase lands in the wrong phase bucket
+    and the pending-count query misreads it.
+    """
+    assert '--phase {phase}' in agent_text, (
+        'Steps 6 and 8 must thread {phase} from the dispatch context through '
+        'their qgate add/list calls, never a hard-coded phase.'
+    )
+
+
+def test_planning_outline_reads_the_phase_keyed_row() -> None:
+    """planning-outline.md must read the phase-suffixed aggregate row.
+
+    The whole-outline re-run gate compares current content against the row for
+    THIS phase; a bare-key or cross-phase read reintroduces the gating the phase
+    suffix exists to prevent.
+    """
+    planning_path = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'plan-marshall' / 'workflow' / 'planning-outline.md'
+    assert planning_path.is_file(), f'planning-outline.md missing at {planning_path}.'
+    text = planning_path.read_text(encoding='utf-8')
+    assert '__whole_outline__:{phase}' in text, (
+        'planning-outline.md must read the phase-keyed aggregate row (`__whole_outline__:{phase}`), never a bare key.'
+    )

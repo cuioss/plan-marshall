@@ -138,6 +138,22 @@ def test_the_declared_set_is_extracted_and_not_silently_empty():
     assert len(declared) == len(set(declared))
 
 
+def test_would_empty_is_a_declared_and_documented_code():
+    """The would_empty guard is a declared code and every mirror documents it.
+
+    The guard refuses to leave a plan with no user domain — a fail-closed
+    outcome callers must be able to name, so its code has to survive the
+    documentation sync rather than living only in the script.
+    """
+    assert 'would_empty' in _declared_codes()
+    table_codes = _codes_from_table(_read(_TABLE_DOC))
+    assert 'would_empty' in table_codes
+    for document in _SENTENCE_DOCS:
+        assert 'would_empty' in _codes_from_sentence(_read(document)), (
+            f'{document} enumerates the reason codes without would_empty.'
+        )
+
+
 @pytest.mark.parametrize('document', _discover_mirror_docs())
 def test_documented_reason_codes_equal_the_declared_set(document):
     """Each mirror enumerates exactly the codes the script can return — no more, no fewer."""

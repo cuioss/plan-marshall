@@ -23,6 +23,7 @@ Usage:
 """
 
 import argparse
+import hashlib
 from pathlib import Path
 from typing import Any, cast
 
@@ -47,6 +48,7 @@ from _plan_parsing import (
     is_foreign_path,
     normalize_declared_path,
     parse_document_sections,
+    split_deliverable_blocks,
 )
 from constants import VALID_STEP_INTENTS
 from file_ops import base_path, cwd_checkout_root, output_toon, safe_main
@@ -57,6 +59,9 @@ from input_validation import (
 )
 
 SOLUTION_FILE = 'solution_outline.md'
+
+#: Error code when the solution outline exists but cannot be decoded as UTF-8.
+ERROR_DOCUMENT_UNREADABLE = 'document_unreadable'
 
 # Solution-level metadata: scope_estimate enum (see standards/solution-outline-standard.md)
 SCOPE_ESTIMATE_VALUES = ('none', 'surgical', 'single_module', 'multi_module', 'broad')
@@ -559,6 +564,80 @@ def validate_deliverable_contract(deliverable: dict[str, Any]) -> tuple[list[str
         warnings.append(f'D{num}: Missing **Success Criteria:** section')
 
     return errors, warnings
+
+
+def _deliverable_block_text(number: int, title: str, content: str) -> bytes:
+    """Return the canonical bytes a deliverable hash covers.
+
+    The canonical form is the deliverable heading line ``### {number}. {title}``
+    followed by the block body (everything up to the next deliverable heading),
+    normalized to a single trailing newline. Both parts come from
+    :func:`_plan_parsing.split_deliverable_blocks`, so the hashed population is
+    the parser's own block split rather than a second heading scan.
+    """
+    canonical = f'### {number}. {title}\n{content.strip()}\n'
+    return canonical.encode('utf-8')
+
+
+def cmd_deliverable_hashes(args: argparse.Namespace) -> dict[str, Any]:
+    """Emit deterministic content hashes for the outline's deliverables.
+
+    Reuses :mod:`_plan_parsing` as the read-only shared helper: the deliverable
+    population comes from ``extract_deliverables`` (counts) and the hashed bytes
+    come from ``split_deliverable_blocks`` (per-block canonical text). No
+    heading regex lives here.
+
+    Returns per-deliverable SHA-256 hex digests plus the whole-outline SHA-256
+    over the full document bytes. The caller (q-gate-validation Step 3.5) keys
+    the whole-outline row by phase; the ``phase`` echo here is provenance, not
+    part of the digest. An outline that exists but cannot be decoded as UTF-8
+    returns ``status: error`` with ``ERROR_DOCUMENT_UNREADABLE`` — a decode
+    failure is a could-not-evaluate outcome, never an exception past the caller.
+    """
+    require_valid_plan_id(args)
+
+    file_path = get_solution_path(args.plan_id)
+    if not file_path.exists():
+        return {
+            'status': 'error',
+            'error': ERROR_DOCUMENT_NOT_FOUND,
+            'plan_id': args.plan_id,
+            'file': SOLUTION_FILE,
+        }
+
+    raw = file_path.read_bytes()
+    try:
+        content = raw.decode('utf-8')
+    except UnicodeDecodeError:
+        return {
+            'status': 'error',
+            'error': ERROR_DOCUMENT_UNREADABLE,
+            'plan_id': args.plan_id,
+            'file': SOLUTION_FILE,
+        }
+    sections = parse_document_sections(content)
+    deliverables_section = sections.get('deliverables', '')
+
+    blocks = split_deliverable_blocks(deliverables_section)
+    # Count cross-check through the second extractor: both enumerate the same
+    # heading population by construction (shared DELIVERABLE_HEADING_PATTERN).
+    deliverables = extract_deliverables(deliverables_section)
+
+    hashes: list[dict[str, str]] = []
+    for block in blocks:
+        digest = hashlib.sha256(
+            _deliverable_block_text(block['number'], block['title'], str(block.get('content') or ''))
+        ).hexdigest()
+        hashes.append({'deliverable': str(block['number']), 'hash': digest})
+
+    return {
+        'status': 'success',
+        'plan_id': args.plan_id,
+        'phase': getattr(args, 'phase', '3-outline'),
+        'deliverable_count': len(deliverables),
+        'hashes': hashes,
+        'whole_outline_hash': hashlib.sha256(raw).hexdigest(),
+    }
 
 
 # =============================================================================
@@ -1262,6 +1341,21 @@ def main() -> int:
     )
     _routing.add_plan_id_arg(context_parser)
     context_parser.set_defaults(func=cmd_get_module_context)
+
+    # deliverable-hashes
+    hashes_parser = subparsers.add_parser(
+        'deliverable-hashes',
+        help='Emit deterministic per-deliverable content hashes',
+        allow_abbrev=False,
+    )
+    add_plan_id_arg(hashes_parser)
+    hashes_parser.add_argument(
+        '--phase',
+        type=str,
+        default='3-outline',
+        help='Phase key the caller stores the whole-outline row under (provenance only)',
+    )
+    hashes_parser.set_defaults(func=cmd_deliverable_hashes)
 
     args = parse_args_with_toon_errors(parser)
 

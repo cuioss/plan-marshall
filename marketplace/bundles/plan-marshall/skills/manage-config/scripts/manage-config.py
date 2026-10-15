@@ -921,13 +921,18 @@ def main() -> int:
     # --- domain-narrow ---
     p_dn = subparsers.add_parser(
         'domain-narrow',
-        help="Narrow a plan's domain set to what its declared footprint justifies (read-only)",
+        help="Narrow a plan's domain set to what its declared footprint justifies (read-only unless --apply)",
         description=(
-            'Drop a domain from references.domains only when all three legs of the '
+            'Drop a domain from references.domains only when all four legs of the '
             'safety bound agree it is droppable: no already-resolved task depends on '
-            'it, the always_on leg does not claim it, and the file_globs leg does not '
-            'claim it against --affected-files. Narrowing is a strict subset operation '
-            'and never adds a domain. The verb writes nothing and dispatches no LLM.'
+            'it, the always_on leg does not claim it, the file_globs leg does not '
+            'claim it against --affected-files, and the deliverable leg does not claim '
+            'it via a deliverable-declared domain: field in solution_outline.md. '
+            'Narrowing is a strict subset operation '
+            'and never adds a domain. Without --apply the verb writes nothing; with '
+            '--apply it persists the retained set to references.json. When narrowing '
+            'would retain no user domain, the verb returns would_empty and writes '
+            'nothing. Dispatches no LLM.'
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         allow_abbrev=False,
@@ -943,6 +948,15 @@ def main() -> int:
         'that contains a comma (it splits into two) and puts repository-controlled text on a '
         'documented shell command line. Use this flag only for an out-of-band footprint. '
         'Narrowing still refuses to run without a footprint from either source.',
+    )
+    p_dn.add_argument(
+        '--apply',
+        dest='apply',
+        action='store_true',
+        help='Persist the retained domain set to references.json. Without this flag the '
+        'verb only reports. The would_empty guard refuses the write when no user domain '
+        'would be retained. The write is also refused when references.json changed '
+        'between evaluation and --apply.',
     )
 
     args = parse_args_with_toon_errors(parser)

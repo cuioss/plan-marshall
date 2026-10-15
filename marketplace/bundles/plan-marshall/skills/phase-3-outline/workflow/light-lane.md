@@ -202,9 +202,9 @@ The light lane is **not exempt** from the narrowing obligation either, and for t
      --plan-id {plan_id}
    ```
 
-   **Branch on `status` BEFORE parsing anything else.** The verb has three outcomes, not two, and on the third none of the success fields exist:
+   **Branch on `status` BEFORE parsing anything else.** The verb has two success shapes and a many-coded error arm, not two outcomes, and on error none of the success fields exist:
 
-   - **`status: error`** — the verb could not evaluate. The reason codes are `plan_dir_not_found`, `domains_unreadable`, `marshal_not_readable`, `no_skill_domains_configured`, `footprint_unreadable`, `footprint_empty`, and `task_leg_unreadable`; the canonical set with the condition each names is owned by [`manage-config` § Canonical invocations → `domain-narrow`](../../manage-config/SKILL.md), which is the source to re-check this list against. `retained`, `dropped`, `provenance`, `report`, and `narrowed` are ABSENT from the payload. STOP the narrowing step here: do NOT parse the success fields, do NOT run steps 3, 3b or 4, and do NOT write `domains` or `domains_provenance`. Surface the returned `error` and `message` instead, via a decision-log entry:
+   - **`status: error`** — the verb could not evaluate. The reason codes are `plan_dir_not_found`, `domains_unreadable`, `marshal_not_readable`, `no_skill_domains_configured`, `footprint_unreadable`, `footprint_empty`, `task_leg_unreadable`, `deliverable_leg_unreadable`, and `would_empty`; the canonical set with the condition each names is owned by [`manage-config` § Canonical invocations → `domain-narrow`](../../manage-config/SKILL.md), which is the source to re-check this list against. `retained`, `dropped`, `provenance`, `report`, and `narrowed` are ABSENT from the payload. STOP the narrowing step here: do NOT parse the success fields, do NOT run steps 3, 3b or 4, and do NOT write `domains` or `domains_provenance`. Surface the returned `error` and `message` instead, via a decision-log entry:
 
      ```bash
      python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
@@ -266,7 +266,7 @@ The light lane is **not exempt** from the narrowing obligation either, and for t
 
    **Both sinks are consumed.** The decision log keeps the report with the plan. The return field is read by the orchestrator: `plan-marshall/workflow/planning.md` (light-lane branch, `status: success`) prints it to the operator verbatim as one line when the envelope return carries it, and prints nothing when it is absent.
 
-The verb owns the narrowing decision; this envelope invokes it, persists its result, and reports it. The rationale for the rule — why end-of-outline is the site, why a `narrowed: false` outcome is recorded rather than skipped, and the three-legged safety bound the verb applies — lives in [`../SKILL.md`](../SKILL.md) § Domain Narrowing. Do NOT restate it here.
+The verb owns the narrowing decision; this envelope invokes it, persists its result, and reports it. The rationale for the rule — why end-of-outline is the site, why a `narrowed: false` outcome is recorded rather than skipped, and the four-legged safety bound the verb applies — lives in [`../SKILL.md`](../SKILL.md) § Domain Narrowing. Do NOT restate it here.
 
 ### Step 6: Transition Phase
 

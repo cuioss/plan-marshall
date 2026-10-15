@@ -220,6 +220,22 @@ python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-sol
 
 `--project-dir` (default `.`) and `--plan-id` are mutually exclusive routing flags.
 
+### deliverable-hashes
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-solution-outline deliverable-hashes \
+  --plan-id PLAN_ID [--phase PHASE]
+```
+
+Deterministic per-deliverable content hashes reusing `_plan_parsing` (no new
+heading scan): `hashes[]{deliverable,hash}` holds the SHA-256 of each
+deliverable's canonical block bytes, and `whole_outline_hash` fingerprints the
+full document. `--phase` (default `3-outline`) is provenance only — the caller
+(q-gate-validation Step 3.5) keys the stored aggregate row as
+`__whole_outline__:{phase}` itself. An outline that exists but cannot be
+decoded as UTF-8 returns `status: error` with `document_unreadable` instead of
+raising.
+
 **Output** (TOON):
 
 ```toon
@@ -288,6 +304,7 @@ See also [standards/solution-outline-standard.md](standards/solution-outline-sta
 | `get-deliverable` | `--plan-id --deliverable-number N` | Read a single deliverable by number (equivalent to `read --deliverable-number`) |
 | `get-field` | `--plan-id --field NAME` | Read a single solution-level metadata field. Currently supported: `scope_estimate`. Returns `field_not_found` when absent. |
 | `list-deliverables` | `--plan-id` | Extract deliverables list |
+| `deliverable-hashes` | `--plan-id [--phase]` | Deterministic per-deliverable + whole-outline hashes (q-gate Step 3.5 source) |
 | `exists` | `--plan-id` | Check if solution exists |
 
 **Related Skills**:

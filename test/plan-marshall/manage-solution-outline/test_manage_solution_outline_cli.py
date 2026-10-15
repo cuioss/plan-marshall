@@ -17,6 +17,7 @@ mutually-exclusive ``--plan-id``/``--project-dir`` rejection).
 
 from __future__ import annotations
 
+import re
 import sys
 
 import pytest
@@ -283,3 +284,78 @@ def test_get_module_context_accepts_the_no_plan_sentinel(plan_context, monkeypat
         f'the NO_PLAN sentinel was rejected by worktree resolution: {data!r}'
     )
     assert code in (0, 1), f'unexpected exit code {code} for the sentinel path: {data!r}'
+
+
+# =============================================================================
+# deliverable-hashes — deterministic per-deliverable content hashes
+# =============================================================================
+#
+# The verb reuses _plan_parsing as its read-only shared helper: the deliverable
+# population comes from the parser's own block split, so the hashed set cannot
+# drift from the listed set. q-gate-validation Step 3.5 calls it for its
+# phase-keyed whole-outline skip.
+
+
+def test_main_deliverable_hashes_routes(plan_context, monkeypatch, capsys):
+    """``deliverable-hashes`` routes and returns one hash per deliverable."""
+    _seed_outline(plan_context, 'so-cli-hashes')
+    code, out = _run_main(monkeypatch, capsys, ['deliverable-hashes', '--plan-id', 'so-cli-hashes'])
+    assert code == 0
+    data = parse_toon(out)
+    assert data['status'] == 'success'
+    assert data['deliverable_count'] == 1
+    assert len(data['hashes']) == 1
+    assert data['hashes'][0]['deliverable'] == '1'
+    assert re.fullmatch(r'[0-9a-f]{64}', data['hashes'][0]['hash']) is not None
+    assert re.fullmatch(r'[0-9a-f]{64}', data['whole_outline_hash']) is not None
+
+
+def test_main_deliverable_hashes_is_deterministic(plan_context, monkeypatch, capsys):
+    """Two runs over unchanged content return byte-identical digests."""
+    _seed_outline(plan_context, 'so-cli-hashes-determinism')
+    _, first = _run_main(monkeypatch, capsys, ['deliverable-hashes', '--plan-id', 'so-cli-hashes-determinism'])
+    _, second = _run_main(monkeypatch, capsys, ['deliverable-hashes', '--plan-id', 'so-cli-hashes-determinism'])
+    assert parse_toon(first)['hashes'] == parse_toon(second)['hashes']
+    assert parse_toon(first)['whole_outline_hash'] == parse_toon(second)['whole_outline_hash']
+
+
+def test_main_deliverable_hashes_changes_with_content(plan_context, monkeypatch, capsys):
+    """An edited deliverable block changes its digest — the skip predicate's signal."""
+    path = _seed_outline(plan_context, 'so-cli-hashes-change')
+    code, out = _run_main(monkeypatch, capsys, ['deliverable-hashes', '--plan-id', 'so-cli-hashes-change'])
+    assert code == 0
+    before = parse_toon(out)['hashes'][0]['hash']
+    path.write_text(path.read_text().replace('Implement the thing.', 'Implement the other thing.'))
+    code, out = _run_main(monkeypatch, capsys, ['deliverable-hashes', '--plan-id', 'so-cli-hashes-change'])
+    assert code == 0
+    assert parse_toon(out)['hashes'][0]['hash'] != before
+
+
+def test_main_deliverable_hashes_echoes_phase(plan_context, monkeypatch, capsys):
+    """``--phase`` is provenance only and is echoed back for the caller's row key."""
+    _seed_outline(plan_context, 'so-cli-hashes-phase')
+    code, out = _run_main(
+        monkeypatch, capsys, ['deliverable-hashes', '--plan-id', 'so-cli-hashes-phase', '--phase', '4-plan']
+    )
+    assert code == 0
+    assert parse_toon(out)['phase'] == '4-plan'
+
+
+def test_main_deliverable_hashes_document_not_found(plan_context, monkeypatch, capsys):
+    """``deliverable-hashes`` with no document on disk emits document_not_found."""
+    code, out = _run_main(monkeypatch, capsys, ['deliverable-hashes', '--plan-id', 'so-cli-nohashes'])
+    assert code == 0
+    data = parse_toon(out)
+    assert data['status'] == 'error'
+    assert data['error'] == 'document_not_found'
+
+
+def test_main_deliverable_hashes_document_unreadable(plan_context, monkeypatch, capsys):
+    """``deliverable-hashes`` over undecodable bytes emits document_unreadable, not an exception."""
+    path = _seed_outline(plan_context, 'so-cli-badhashes')
+    path.write_bytes(b'\xff\xfe\x00not-utf8')
+    code, out = _run_main(monkeypatch, capsys, ['deliverable-hashes', '--plan-id', 'so-cli-badhashes'])
+    assert code == 0
+    data = parse_toon(out)
+    assert data['status'] == 'error'
+    assert data['error'] == 'document_unreadable'
