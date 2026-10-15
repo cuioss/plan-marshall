@@ -448,28 +448,103 @@ def _match_r4_hardcoded_build(tool_name: str | None, tool_input: dict[str, Any])
     return None
 
 
-def _is_executor_permit(command: str) -> bool:
-    """Return True when *command* is the exempt executor invocation."""
+#: Shell wrappers (``command`` / ``env`` / ``sudo``) and leading ``NAME=value``
+#: assignments the R5 matcher strips before its program check. Mirrors the
+#: opencode guard's ``commandTokens`` stripping (``SHELL_WRAPPERS``,
+#: ``WRAPPER_OPTS_WITH_VALUE`` and the assignment pattern there) so a
+#: wrapper-prefixed interpreter call (``env python3 -c ...``) is judged the
+#: same on both harnesses. Used ONLY by the R5 matcher — R1, R2 and R4 keep
+#: their existing unstripped program checks.
+_R5_SHELL_WRAPPERS = frozenset({'command', 'env', 'sudo'})
+
+#: Wrapper options that consume a following value token (``sudo -u <user>``).
+_R5_WRAPPER_OPTS_WITH_VALUE = frozenset(
+    {
+        '-u',
+        '--user',
+        '-g',
+        '--group',
+        '-U',
+        '--other-user',
+        '-C',
+        '--chdir',
+        '--directory',
+    }
+)
+
+#: Leading ``NAME=value`` assignment, transparent to the shell.
+_R5_ASSIGNMENT_RE = re.compile(r'^[A-Za-z_][A-Za-z0-9_]*=')
+
+
+def _r5_stripped_tokens(command: str) -> list[str]:
+    """Return shell-lexical tokens of *command* minus R5-transparent prefixes.
+
+    Drops leading shell wrappers (each with its options, option values and
+    inline assignments) and leading ``NAME=value`` assignments, mirroring the
+    guard's ``commandTokens`` walk. Shell-lexical (``shlex``) like the other
+    R5 helpers, falling back to the whitespace split on malformed quoting
+    rather than returning early.
+    """
     try:
         tokens = shlex.split(command)
     except ValueError:
         tokens = command.split()
-    if len(tokens) < 2:
+    index = 0
+    total = len(tokens)
+    while index < total:
+        token = tokens[index]
+        if token in _R5_SHELL_WRAPPERS:
+            index += 1
+            while index < total:
+                option = tokens[index]
+                if _R5_ASSIGNMENT_RE.match(option):
+                    index += 1
+                    continue
+                if option.startswith('-') and len(option) > 1:
+                    base = option.split('=')[0]
+                    index += 1
+                    if (
+                        base in _R5_WRAPPER_OPTS_WITH_VALUE
+                        and index < total
+                        and not tokens[index].startswith('-')
+                    ):
+                        index += 1
+                    continue
+                break
+            continue
+        if _R5_ASSIGNMENT_RE.match(token):
+            index += 1
+            continue
+        break
+    return tokens[index:]
+
+
+def _is_executor_permit(command: str) -> bool:
+    """Return True when *command* is the exempt executor invocation.
+
+    Compared after R5 wrapper stripping, so a wrapper-prefixed executor call
+    (``env python3 .plan/execute-script.py ...``) stays exempt exactly as the
+    guard exempts it. Used only by the R5 matcher.
+    """
+    stripped = _r5_stripped_tokens(command)
+    if len(stripped) < 2:
         return False
-    if tokens[0] != 'python3':
+    if stripped[0] != 'python3':
         return False
-    return tokens[1] == '.plan/execute-script.py'
+    return stripped[1] == '.plan/execute-script.py'
 
 
 def _second_token(command: str) -> str:
-    """Return the second shell-lexical token of *command*, or empty."""
-    try:
-        tokens = shlex.split(command)
-    except ValueError:
-        tokens = command.split()
-    if len(tokens) < 2:
+    """Return the second shell-lexical token of *command*, or empty.
+
+    Compared after R5 wrapper stripping, so the token after the real program
+    is returned even when wrappers prefix the invocation. Used only by the
+    R5 matcher.
+    """
+    stripped = _r5_stripped_tokens(command)
+    if len(stripped) < 2:
         return ''
-    return tokens[1]
+    return stripped[1]
 
 
 def _strip_matched_quotes(token: str) -> str:
@@ -487,15 +562,25 @@ def _strip_matched_quotes(token: str) -> str:
 
 
 def _match_r5_interpreter_call(tool_name: str | None, tool_input: dict[str, Any]) -> str | None:
-    """R5 — direct python interpreter call bypassing the executor."""
+    """R5 — direct python interpreter call bypassing the executor.
+
+    The program check runs on the wrapper-stripped tokens (``command`` /
+    ``env`` / ``sudo`` prefixes and ``NAME=value`` assignments removed), so a
+    wrapper-prefixed interpreter call is judged the same as the bare form —
+    the same stripping the guard applies before its own first-token checks.
+    R1, R2 and R4 match against the unstripped command and are untouched.
+    """
     command = _bash_command(tool_name, tool_input)
     if command is None:
         return None
     if _is_executor_permit(command):
         return None
-    if _strip_matched_quotes(_program_name(command)) not in ('python', 'python3'):
+    stripped = _r5_stripped_tokens(command)
+    first = stripped[0].strip().lower() if stripped else ''
+    program = _strip_matched_quotes(first.rsplit('/', 1)[-1] if first else '')
+    if program not in ('python', 'python3'):
         return None
-    second = _second_token(command)
+    second = _strip_matched_quotes(_second_token(command).strip())
     if not second:
         return None
     if second in ('-c', '-m'):

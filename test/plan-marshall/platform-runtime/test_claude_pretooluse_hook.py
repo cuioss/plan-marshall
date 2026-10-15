@@ -784,6 +784,62 @@ def test_r5_denies_quote_wrapped_interpreter() -> None:
     assert hook.evaluate(_signal2_payload('Bash', _bash("'python3' /tmp/x.py"))) == hook._R5_REASON
 
 
+#: Wrapper-prefixed interpreter calls R5 must refuse — the guard strips these
+#: prefixes before its own first-token checks, so the Claude matcher strips
+#: them for its R5 program check. One row per prefix shape: bare wrappers,
+#: a leading assignment, a wrapper option with and without its value, and a
+#: stacked wrapper-plus-assignment combination.
+_R5_WRAPPER_DENIED_COMMANDS = [
+    'env python3 -c "print(1)"',
+    'command python3 /tmp/x.py',
+    'sudo python3 -m json.tool',
+    'FOO=bar python3 -c "print(1)"',
+    'env -i python3 script.py',
+    'sudo -u alice python3 -c "print(1)"',
+    'sudo FOO=bar python3 /tmp/x.py',
+]
+
+_R5_WRAPPER_DENIED_IDS = [
+    'env-wrapper-c-flag',
+    'command-wrapper-script-path',
+    'sudo-wrapper-m-flag',
+    'leading-assignment-c-flag',
+    'env-option-without-value',
+    'sudo-option-with-value',
+    'wrapper-plus-assignment',
+]
+
+
+@pytest.mark.parametrize('command', _R5_WRAPPER_DENIED_COMMANDS, ids=_R5_WRAPPER_DENIED_IDS)
+def test_r5_denies_wrapper_prefixed_interpreter_calls(command: str) -> None:
+    """A wrapper prefix does not hide the interpreter call from R5."""
+    payload = _signal2_payload('Bash', _bash(command))
+
+    assert hook.evaluate(payload) == hook._R5_REASON, command
+
+
+def test_r5_wrapper_prefixed_executor_permit_stays_exempt() -> None:
+    """The executor permit survives wrapper stripping — guard parity."""
+    cmd = 'env python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks list --plan-id x'
+    assert hook.evaluate(_signal2_payload('Bash', _bash(cmd))) is None
+
+
+def test_r5_wrapper_prefixed_benign_command_stays_allowed() -> None:
+    """A wrapper around a non-interpreter program trips no rule."""
+    assert hook.evaluate(_signal2_payload('Bash', _bash('env echo hello'))) is None
+
+
+def test_r1_r2_r4_matchers_do_not_strip_wrappers() -> None:
+    """R5-only parity: the other matchers still see the unstripped program.
+
+    ``sudo cat foo`` names ``sudo``, not ``cat``, to R2 — wrapper stripping
+    was mirrored for the R5 program check only, and this pins that boundary so
+    a future edit cannot silently widen it.
+    """
+    assert hook.evaluate(_signal2_payload('Bash', _bash('sudo cat foo'))) is None
+    assert hook.evaluate(_signal2_payload('Bash', _bash('cat foo'))) == hook._R2_REASON
+
+
 # =============================================================================
 # Deny envelope shape (subprocess, end-to-end)
 # =============================================================================

@@ -39,6 +39,7 @@ evaluate_source_commit_gate = git_workflow.evaluate_source_commit_gate
 get_tracked_files = git_workflow.get_tracked_files
 has_open_fix_task = git_workflow.has_open_fix_task
 has_section6_record = git_workflow.has_section6_record
+_source_gate_finding_texts = git_workflow._source_gate_finding_texts
 is_plan_only_path = git_workflow.is_plan_only_path
 is_source_commit = git_workflow.is_source_commit
 scan_artifacts = git_workflow.scan_artifacts
@@ -494,6 +495,107 @@ class TestSourceCommitGate:
         ]
 
         assert has_section6_record(findings) is False
+
+    def test_split_markers_across_records_do_not_sanction(self):
+        """Cross-record bleed: the rubric half in one record and the allowance
+        half in another must not combine into a sanction."""
+        findings = [
+            {
+                'title': 'Code review finding per review-rubric section 3',
+                'detail': 'Substantiated failure scenario with no sanction recorded',
+                'resolution_detail': '',
+            },
+            {
+                'title': 'Unrelated triage note',
+                'detail': 'Deferred inline-correction for a later pass',
+                'resolution_detail': '',
+            },
+        ]
+
+        assert has_section6_record(findings) is False
+        result = evaluate_source_commit_gate('6-finalize', ['src/a.py'], [], findings)
+
+        assert result['allowed'] is False
+        assert result['reason'] == 'no_sanction'
+
+    @staticmethod
+    def _findings_plan_dir(root: Path) -> Path:
+        """A minimal plan directory carrying a findings store under ``root``."""
+        plan_dir = root / '.plan' / 'local' / 'plans' / 'FIXTURE'
+        (plan_dir / 'artifacts' / 'findings').mkdir(parents=True)
+        return plan_dir
+
+    def test_loader_keeps_jsonl_lines_as_separate_records(self, tmp_path):
+        """File-level bleed pin: markers split across JSONL lines refuse."""
+        import json
+
+        plan_dir = self._findings_plan_dir(tmp_path)
+        (plan_dir / 'artifacts' / 'findings' / 'qgate-6-finalize.jsonl').write_text(
+            '\n'.join(
+                [
+                    json.dumps(
+                        {
+                            'title': 'Code review finding per review-rubric section 3',
+                            'detail': 'no sanction recorded',
+                        }
+                    ),
+                    json.dumps(
+                        {
+                            'title': 'Unrelated triage note',
+                            'detail': 'deferred inline-correction for a later pass',
+                        }
+                    ),
+                ]
+            )
+            + '\n',
+            encoding='utf-8',
+        )
+
+        texts, count = _source_gate_finding_texts(plan_dir)
+
+        assert count == 2
+        assert has_section6_record(texts) is False
+
+    def test_loader_single_jsonl_line_with_both_halves_sanctions(self, tmp_path):
+        """Positive control: both halves in one JSONL record still sanction."""
+        import json
+
+        plan_dir = self._findings_plan_dir(tmp_path)
+        (plan_dir / 'artifacts' / 'findings' / 'qgate-6-finalize.jsonl').write_text(
+            json.dumps(self._section6_finding()) + '\n',
+            encoding='utf-8',
+        )
+
+        texts, count = _source_gate_finding_texts(plan_dir)
+
+        assert count == 1
+        assert has_section6_record(texts) is True
+
+    def test_loader_splits_json_list_into_records(self, tmp_path):
+        """A JSON file holding a record list splits per record, not per file."""
+        import json
+
+        plan_dir = self._findings_plan_dir(tmp_path)
+        (plan_dir / 'artifacts' / 'findings' / 'notes.json').write_text(
+            json.dumps(
+                [
+                    {
+                        'title': 'Code review finding per review-rubric section 3',
+                        'detail': 'no sanction recorded',
+                    },
+                    {
+                        'title': 'Unrelated triage note',
+                        'detail': 'deferred inline-correction for a later pass',
+                    },
+                ]
+            ),
+            encoding='utf-8',
+        )
+
+        texts, count = _source_gate_finding_texts(plan_dir)
+
+        assert count == 2
+        assert has_section6_record(texts) is False
 
     def test_plan_state_prefix_only_matches_first_segment(self):
         """A .plan infix elsewhere in the path is still a source path."""

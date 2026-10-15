@@ -427,7 +427,10 @@ def has_section6_record(findings: list) -> bool:
 
     The record must name the review rubric AND an inline-correction marker in
     the same record (matched case-insensitively over the title, detail,
-    resolution detail and message fields). The gate reads the record — it
+    resolution detail and message fields). Each list entry is one record —
+    :func:`_source_gate_finding_texts` splits multi-record files before this
+    check, so a rubric citation in one record and an allowance marker in
+    another never combine into a sanction. The gate reads the record — it
     never writes one.
     """
     for finding in findings or []:
@@ -539,8 +542,45 @@ def _source_gate_tasks(plan_dir: Path | None) -> tuple[list[dict], int]:
     return tasks, len(tasks)
 
 
+def _split_finding_records(content: str, suffix: str) -> list[str]:
+    """Split one findings-file blob into per-record searchable texts.
+
+    Each findings-store file holds one record per JSONL line (``*.jsonl``) or
+    a single record / record list (``*.json``). Returning one text per record
+    keeps :func:`has_section6_record`'s both-halves check inside a single
+    record: markers from two different records in one file must never combine
+    into a sanction. A line or file that is not valid JSON degrades to its raw
+    text as its own single record — still one record, never a merged blob.
+    """
+    if suffix == '.jsonl':
+        records: list[str] = []
+        for line in content.splitlines():
+            if not line.strip():
+                continue
+            try:
+                parsed = json.loads(line)
+            except ValueError:
+                records.append(line)
+            else:
+                records.append(_finding_texts(parsed))
+        return records
+    try:
+        parsed = json.loads(content)
+    except ValueError:
+        return [content]
+    if isinstance(parsed, list):
+        return [_finding_texts(item) for item in parsed]
+    return [_finding_texts(parsed)]
+
+
 def _source_gate_finding_texts(plan_dir: Path | None) -> tuple[list[str], int]:
-    """Load finding-record texts for the gate; unreadable stores read as no signal."""
+    """Load finding-record texts for the gate; unreadable stores read as no signal.
+
+    Returns one text per finding record (not one blob per file), so the
+    section-6 both-halves check in :func:`has_section6_record` matches within
+    a single record. Unreadable files are skipped — an unreadable store reads
+    as no signal (fail closed), exactly as before.
+    """
     if plan_dir is None:
         return [], 0
     findings_dir = plan_dir / 'artifacts' / 'findings'
@@ -553,9 +593,10 @@ def _source_gate_finding_texts(plan_dir: Path | None) -> tuple[list[str], int]:
         return [], 0
     for path in files:
         try:
-            texts.append(path.read_text(encoding='utf-8', errors='replace'))
+            content = path.read_text(encoding='utf-8', errors='replace')
         except OSError:
             continue
+        texts.extend(_split_finding_records(content, path.suffix.lower()))
     return texts, len(texts)
 
 
