@@ -63,7 +63,25 @@ participation is current.
    a refusal state, not `participated`; a bot whose only evidence is inline comments with an empty
    `commit_id` and a current-head refusal does the same. Each fails at `8442a5e33`.
 
-Split guard: three deliverables, one theme (a verdict covers the head that ships).
+4. **An unreadable reviewer roster is an error, and the barrier never recommends demoting a
+   required bot.**
+   - When `automatic-review` cannot read its step params (`step-params get` → `execution.toon not
+     found`, e.g. run from the wrong cwd), it returns an error, never an empty
+     `--required-bots "" --optional-bots ""` roster. PLAN-LB-40's rounds 1 and 3 did that, so
+     `trigger-bot` never triggered the required cuioss-review-bot, and the merge barrier later
+     reported it stale and "untriggerable".
+   - A stale required bot (`participated_stale`) is re-triggered as `branch-cleanup.md:998`
+     prescribes before the barrier asks the operator. The barrier's question states whether a
+     trigger was attempted.
+   - The barrier's options are generated, not authored: they never include moving a required bot to
+     `optional_bots` (standing rule), and none is marked recommended unless the script marks it.
+
+   *Done when:* tests: `step-params get` failing makes automatic-review return an error, not an
+   empty roster; a `participated_stale` required bot gets a trigger before the barrier question; the
+   barrier's option set contains no "make required bot optional". The first two fail at `f5d661d87`.
+
+Split guard: four deliverables, one theme (a verdict covers the head that ships, and reports what
+the gates actually saw).
 
 ## Claim Labels
 
@@ -75,6 +93,7 @@ Split guard: three deliverables, one theme (a verdict covers the head that ships
 - OBSERVED: `classify_bot` docstring (`review_completeness.py:800-811`): "Proven participation is checked FIRST … it outranks the awaiting and refusal signals" — orchestrator-read at `8442a5e33`.
 - HYPOTHESIS: PLAN-LB-32 (shipped) already carries part of the head-binding at the barrier — read `merge_barrier` before adding (verify-at-outline).
 - HYPOTHESIS: the currency test for in-place re-reviewers (`participation_requires_update`) already handles CodeRabbit's edited summary review; deliverable 3 may then reduce to append-per-review bots and comment-only evidence — confirm in `bot-participation-contract.md` (verify-at-outline).
+- OBSERVED (D4): PLAN-LB-40's automatic-review leaves for rounds 1 and 3 passed `--required-bots "" --optional-bots ""` after `execution.toon not found`; the merge question at 2026-10-15T14:37:21 said the bot "has no trigger to re-review" and offered "Make cuioss optional (Recommended)" (`landings/PLAN-LB-40.md`, orchestrator spot check of the OpenCode transcript).
 - Verify-first clause: PLAN-LB-53 D2's conflict question relies on deliverable 1's push refusal as its backstop — this plan goes first.
 
 ## Expected Surface
@@ -87,7 +106,9 @@ Split guard: three deliverables, one theme (a verdict covers the head that ships
 - OBSERVED: `marketplace/bundles/plan-marshall/skills/automatic-review/scripts/review_completeness.py` (D3)
 - OBSERVED: `marketplace/bundles/plan-marshall/skills/workflow-integration-github/scripts/github_pr.py` (D3)
 - HYPOTHESIS: `marketplace/bundles/plan-marshall/skills/automatic-review/standards/bot-participation-contract.md` (verify-at-outline) (D3)
-- HYPOTHESIS: `test/plan-marshall/automatic-review/` — classification tests (verify-at-outline) (D3)
+- HYPOTHESIS: `test/plan-marshall/automatic-review/` — classification and roster-read tests (verify-at-outline) (D3, D4)
+- HYPOTHESIS: `marketplace/bundles/plan-marshall/skills/automatic-review/SKILL.md` — roster read failure (verify-at-outline) (D4)
+- OBSERVED: `marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/branch-cleanup.md` — stale-bot re-trigger before the barrier question (D4)
 - HYPOTHESIS: `test/plan-marshall/phase-6-finalize/` — push and barrier tests (verify-at-outline) (D1)
 
 ## Dependencies and Sequencing
