@@ -23,13 +23,7 @@ _findings_core = load_script_module('plan-marshall', 'manage-findings', '_findin
 QGATE_PERSIST_OK = _findings_core.QGATE_PERSIST_OK
 
 MANAGE_FINDINGS_MD = (
-    PROJECT_ROOT
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'manage-findings'
-    / 'SKILL.md'
+    PROJECT_ROOT / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills' / 'manage-findings' / 'SKILL.md'
 )
 EXECUTION_MD = (
     PROJECT_ROOT
@@ -65,7 +59,15 @@ def test_termination_table_carries_pending_verify_steps_in_every_row():
     """Contract (b): every termination-cause table row carries the hand-back field."""
     text = EXECUTION_MD.read_text(encoding='utf-8')
 
-    rows = [line for line in text.splitlines() if line.startswith('| `')]
+    lines = text.splitlines()
+    header = '| Cause | Detection rule | pending_verify_steps |'
+    start = lines.index(header) + 2  # skip the header row and its separator row
+    rows = []
+    for line in lines[start:]:
+        if not line.startswith('|'):
+            break
+        if line.startswith('| `'):
+            rows.append(line)
     assert len(rows) == 7, f'termination-cause table must carry 7 rows, found {len(rows)}'
     for row in rows:
         assert 'pending_verify_steps' in row, f'termination table row carries no hand-back field: {row[:80]}'
