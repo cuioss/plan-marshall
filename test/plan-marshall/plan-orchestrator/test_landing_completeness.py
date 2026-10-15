@@ -1478,11 +1478,8 @@ def _totals_contract_section() -> str:
     """The spec's single landing-totals contract section, bounded by headings."""
     text = _PAYLOAD_SPEC.read_text(encoding='utf-8')
     marker = '## Single landing-totals contract'
-    assert marker in text, (
-        f'{_PAYLOAD_SPEC.name} carries no "{marker}" section, '
-        'so this guard would read nothing.'
-    )
-    section = text[text.index(marker):]
+    assert marker in text, f'{_PAYLOAD_SPEC.name} carries no "{marker}" section, so this guard would read nothing.'
+    section = text[text.index(marker) :]
     end = section.find('\n## ', 1)
     return section[:end] if end != -1 else section
 

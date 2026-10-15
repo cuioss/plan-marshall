@@ -220,8 +220,9 @@ def test_generate_creates_metrics_md(plan_context):
     result = cmd_generate(ns_generate('metrics-gen-01'))
     assert result['status'] == 'success'
     assert result['phases_recorded'] == 2
-    # 2-refine ran unmeasured, so the Tokens Total refuses the hole: it reads
-    # `unknown`, never the 25,000 subset sum (unknown-token reporting).
+    # 2-refine ran unmeasured: the return still refuses to quote a sum with a
+    # hole (`unknown` plus the phase list), while the rendered Total quotes the
+    # measured subset with its count (measured-subset contract).
     assert result['total_tokens'] == 'unknown'
     assert result['totals_tokens_unknown_phases'] == '2-refine'
     # Pre-formatted display fields are populated alongside the raw values.
@@ -249,11 +250,11 @@ def test_generate_creates_metrics_md(plan_context):
     assert '2-refine' in md_content
     assert '25,000' in md_content
     assert '**Total**' in md_content
-    # The measured 1-init row still renders its figure, but the Total refuses
-    # the unmeasured 2-refine hole: its Tokens cell is `unknown`, and the
-    # annotation under the table names the phase it does not cover.
+    # The measured 1-init row still renders its figure, and the Total quotes
+    # the measured subset with its count; the annotation under the table names
+    # the unmeasured phase the Total does not cover.
     total_line = next(ln for ln in md_content.splitlines() if '**Total**' in ln)
-    assert '**unknown**' in total_line, total_line
+    assert '**25,000 (n=1/6)**' in total_line, total_line
     assert 'Tokens unknown' in md_content
     assert '2-refine' in md_content
 
