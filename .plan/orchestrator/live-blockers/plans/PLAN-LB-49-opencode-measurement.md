@@ -84,6 +84,16 @@ sessions OpenCode records.
    calls, one a `gh pr comment`, and an empty log yields both, the comment classed as a write. At
    `501aeb313` the audit reports none.
 
+   **Folded 2026-10-15 from PLAN-LB-39's landing (inbox lessons `-002`, `-005`):** finalize step
+   dispatches never call `manage-metrics record-dispatch-boundary --phase 6-finalize`, so the
+   termination audit covers 4-plan and 5-execute only (PLAN-LB-39: 16 terminal finalize steps,
+   72 `[DISPATCH]` lines, no `metrics-dispatch-boundaries-6-finalize.toon`); and every counted
+   `[DISPATCH]` line is caller-written (`foreign_caller_line_total 72`), so 72/72 agreement
+   corroborates nothing. The finalize dispatcher records a boundary row per dispatched step, and
+   the `effort resolve-target` seam emits the `[DISPATCH]` line itself. *Done when:* a fixture
+   finalize run yields one 6-finalize boundary row per dispatched step, and a hand-written
+   `[DISPATCH]` line with no seam record is reported uncorroborated.
+
 Split guard: four deliverables, one source (the database) read by three consumers. The enforcement
 half is PLAN-LB-48.
 

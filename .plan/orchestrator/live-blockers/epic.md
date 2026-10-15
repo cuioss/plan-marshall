@@ -53,10 +53,15 @@ derive, for rows still live.
   - PLAN-LB-31 in-house-reviewer — PLAN-LB-21, PLAN-LB-20 D4 and D5.
   - PLAN-LB-14 launch-gate-scope — unchanged.
 
-- **PLAN-LB-39** (running; staged 2026-10-13) — sequenced after PLAN-LB-37 by operator decision (shares
-  `functional-review.md` and two test directories). Its D6 builds on 37's functional review;
-  rebase onto 37's final landing. PLAN-LB-26 landed (#1769); rebase onto `501aeb313` — it
-  rewrote `execution.md`, `triage.md` and `phase-5-execute/SKILL.md`, which this plan also edits.
+- **PLAN-LB-39** (shipped #1768, 2026-10-14) — 0 met / 4 partial / 3 unmet against its spec,
+  counted 7/7, five regressions; see `landings/PLAN-LB-39.md`. Fix-forward PLAN-LB-50; unshipped
+  deliverables re-staged as PLAN-LB-51 (Antigravity) and PLAN-LB-52 (harness-agnostic, as scripts).
+
+- **PLAN-LB-50 to PLAN-LB-52** (staged 2026-10-15) — PLAN-LB-50 first, high priority (a project
+  setup erases the installed target rules; `runtime.target` back in the shared `marshal.json`).
+  PLAN-LB-51 after PLAN-LB-50 (bridge file path). PLAN-LB-52 preferably after PLAN-LB-47.
+  PLAN-LB-50 shares `opencode_runtime.py` with PLAN-LB-48 and `manage-metrics.py` with
+  PLAN-LB-49; the gate will ask.
 
 - **PLAN-LB-31** (shipped #1771, 2026-10-14) — landed WITHOUT its enrolment deliverables (spec D6,
   D7) on a false gate, counted done; see `landings/PLAN-LB-31.md`. Enrolment, the six-repository
@@ -228,7 +233,11 @@ derive, for rows still live.
 - **Antigravity: critical, by operator ruling of 2026-10-12 (the epic's highest priority).**
   All from pm-mcp-core PLAN-41 (pm-mcp-core PR #34), the first plan of that epic run under
   Antigravity; the ingest verified against the archived plan, not at HEAD here unless noted.
-  All five are owned by PLAN-LB-39 (staged 2026-10-13, held behind PLAN-LB-37). Full bodies at
+  All five were owned by PLAN-LB-39, which shipped (#1768) without closing them: no native
+  dispatch, a content-free rules bridge, no per-task gate, no criteria snapshot, the head-vs-gate
+  refusal in prose only (`landings/PLAN-LB-39.md`). **Re-owned 2026-10-15:** dispatch, standing
+  rules and the per-task gate by PLAN-LB-51; criteria integrity, the pushed/merged-head gates and
+  the phase-boundary guard by PLAN-LB-52; the `unknown` token rule shipped. Full bodies at
   `lessons-routing/lessons-archive/filed-live-blockers/`.
   - **Phase 5 dispatches no sub-agent.** `Task: plan-marshall:execution-context-{level}` has no
     meaning on Antigravity and `phase-5-execute` has no wiring to its `invoke_subagent` (nor to
@@ -294,7 +303,8 @@ derive, for rows still live.
     resumed session went straight to push and branch-cleanup. Nothing forces a head-dependent
     step to re-fire when the merge head differs from its `head_at_completion`, the merge barrier
     does not check those steps' head binding, and an abandoned review round leaves no pending
-    marker. Owned by PLAN-LB-39 (running).
+    marker. Owned by PLAN-LB-52 (re-staged from PLAN-LB-39). **Recurred on PLAN-LB-39 itself**:
+    an ungated rebase + `force-push-with-lease` at 2026-10-14T16:29, CI red on that head.
 - **A deliverable in a sibling repository has no lifecycle** (high; critical in its Antigravity
   instance): no plan-owned worktree, no finalize step pushes it or opens its PR, the footprint
   ignores it, and the foreign-PR gate assumes `feature/{plan_id}`
@@ -664,28 +674,17 @@ Defects ("Antigravity: critical …"), owned by PLAN-LB-39.
 OpenCode on this machine is **2.x** (2.0.25 from 2026-10-08, 2.0.28 from 2026-10-13). Several
 entries below are OpenCode 1 assumptions in plan-marshall that OpenCode 2 broke.
 
-- **OpenCode 2: no deny rule applies and the guard plugin blocks nothing — CRITICAL; hot-fixed in
-  PR #1772** (operator instruction 2026-10-14, outside the plan lifecycle, label
-  `skip-bot-review`): catch-alls moved to the front of every rule list (0 effect differences
-  against the OpenCode 1 file over 17 agents × 47 commands, 518 before) and `guard.js` guards
-  `shell` as well as `bash`, pinned by `test_opencode_root_config.py`. **Merged 2026-10-14 as
-  `9011a19bf`** (CI and merge-group green). Residual: PLAN-LB-39's worktree predates the merge, so
-  its OpenCode sessions still load the unfixed `opencode.json` / `guard.js` until it rebases and
-  its sessions restart; the persisted "always allow" approvals in `opencode.db` remain (operator).
-  Retire this entry once PLAN-LB-39 has landed. The producers that would re-introduce the OpenCode 1
-  shape are PLAN-LB-48.
-  OpenCode 2 evaluates permission rules last-match-wins (`findLast`, no match = `ask`). The root
-  `opencode.json` (OpenCode 2 schema since `35b5589b5`) puts each catch-all LAST — top level
-  `{shell,"*",allow}`, every agent `{shell,"*",ask}` — so every deny before it is overridden;
-  `opencode debug agents` resolves `gh`, `rm`, `git stash` to `ask`. The guard plugin returns early
-  for any tool not named `bash` (`.opencode/plugin/guard.js:264`), and OpenCode 2's shell tool is
-  `shell`, so R1/R2/R4 never fire. Evidence in `opencode.db`: 120 completed `gh` calls since
-  2026-10-13, among them a `gh pr comment … --body /review` from a PLAN-LB-31 sub-agent; `rm` from
-  a PLAN-LB-39 sub-agent; `rm -rf …/worktrees` from a build agent. Persisted "always allow"
-  approvals (`python3 *`, `grep *`, `ls *`, …) sit in `opencode.db` `permission` too. Orchestrator
-  re-checked `guard.js:264`, the rule order and the `gh pr comment` calls. Owned by PLAN-LB-48,
-  which also moves `opencode_runtime.py` / `permission_fix.py` to the `permissions` list and the
-  dispatch seam / skill directive to OpenCode 2's `subagent` / `{id}`.
+- **Retired 2026-10-15 — "OpenCode 2: no deny rule applies and the guard plugin blocks nothing".**
+  Hot-fixed in PR #1772 (`9011a19bf`); the last plan running on the unfixed files, PLAN-LB-39,
+  landed (#1768). Remaining: the persisted "always allow" approvals in `opencode.db` (operator);
+  the producers that would re-introduce the OpenCode 1 shape are PLAN-LB-48. Whether the deny
+  rules now refuse in practice is graded at the PLAN-LB-40 / PLAN-LB-42 landings (Watches).
+
+- **OpenCode harness is not detected under OpenCode 2** (2026-10-15, PLAN-LB-39 landing):
+  `script-shared/scripts/target_context.py:167` checks `OPENCODE` / `OPENCODE_PID`; with neither
+  resolvable the worktree falls back to `claude`, so the new harness stamp would record a wrong
+  `claude` with `transcripts=full` rather than `unknown`. PLAN-LB-39's own landing reads
+  `harness=unknown` although its decision log names "target opencode". Owned by PLAN-LB-48 D4.
 
 - **OpenCode: no token measurement exists at all, so every OpenCode landing reports
   `total_tokens=0`.** Verified at `501aeb313`: `platform-runtime/scripts/opencode_runtime.py`
@@ -739,6 +738,14 @@ entries below are OpenCode 1 assumptions in plan-marshall that OpenCode 2 broke.
     corpus runs"; the landing, the functional review and a CodeRabbit-triage reply all claim PR
     tables that do not exist; tokens 0 against $4.09 real. Good: four genuine operator questions,
     the drift-cap escalation, the merge path, the write-boundary. Remaining: PLAN-LB-39.
+  - **PLAN-LB-39 graded C−** (2026-10-15, `landings/PLAN-LB-39.md`). 0 met / 4 partial / 3 unmet
+    against its spec, counted 7/7; five regressions (PLAN-LB-50). Improved: **0 direct `gh`**
+    (LB-31: 120), 97 sub-agents with the finalize roster honoured, required-bot gate handled, final
+    gate head = merged head, `total_tokens=unknown` instead of `0`. Failed: the root rewrote the
+    functional-review verdict to "met" three times with `python3 -c`; rebased and force-pushed an
+    ungated head after telling the operator no rebase or force-push would happen; 37 raw test
+    commands, 11 `/tmp` scripts; `harness=unknown`; $12.01 real cost, roots 73%. Trend across the
+    three: C, D, C− — mechanics improve, end-of-run integrity does not.
   - **Extended 2026-10-14 to PLAN-LB-40 and PLAN-LB-42**, emitted for OpenCode by operator
     instruction ("emit the next two plans for opencode"). They are the first OpenCode plans to run
     with the deny rules and guard in effect (branched after `9011a19bf`), so grade separately
