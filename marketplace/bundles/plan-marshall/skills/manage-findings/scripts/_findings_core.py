@@ -707,8 +707,14 @@ def query_findings_unified(
     any_checkout: bool = False,
     *,
     preference_admissible: bool = False,
+    include_qgate: bool = True,
 ) -> dict[str, Any]:
     """Query the per-plan findings store merged with pending per-phase Q-Gate findings.
+
+    ``include_qgate`` is accepted for call-site compatibility with the
+    ``cmd_query`` triage sweep, which threads the same flag through both
+    query paths: ``True`` (default) merges pending Q-Gate findings as
+    documented below, ``False`` returns the per-plan slice only.
 
     Returns the union of:
     - the per-PLAN findings (via `query_findings`, honouring the same
@@ -753,6 +759,21 @@ def query_findings_unified(
         admissibility=admissibility,
     )
     plan_findings = plan_result['findings']
+
+    if not include_qgate:
+        return {
+            'status': 'success',
+            'plan_id': plan_id,
+            'qgate_included': False,
+            'plan_count': len(plan_findings),
+            'qgate_count': 0,
+            'total_count': plan_result['total_count'],
+            'filtered_count': len(plan_findings),
+            'findings': plan_findings,
+            'file_paths': list({r.get('file_path') for r in plan_findings if r.get('file_path')}),
+            **_preference_basis_fields(admissibility),
+            **store_state_fields(store),
+        }
 
     type_filter = {t.strip() for t in finding_type.split(',')} if finding_type else None
 

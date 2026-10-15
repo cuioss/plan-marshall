@@ -34,6 +34,14 @@ PARTIAL generation (only ``target/claude``, say) as a clean sweep over every
 target: the empty-population hole and the incomplete-population hole are the same
 failure, and each registered tree that is absent is named as unevaluated.
 
+**The session fixture establishes the precondition.** ``target/`` is
+gitignored build output, so a fresh clone or worktree carries none of it and
+the sweep would report every registered tree as unevaluated. The module-scoped
+``trees`` fixture therefore runs the generator once when any registered tree
+is absent, so the sweep evaluates the full registry instead of reporting it
+unevaluated. A generation that fails — or still leaves trees absent — keeps
+the unevaluated failure below; the absent case is still never a pass.
+
 **The boundary this module can and cannot draw.** A directory under the target
 root that carries no markdown is not a tree: the discovery filter excludes it, so
 a HALF-WRITTEN tree is indistinguishable from an absent one here — and is
@@ -42,6 +50,8 @@ reported as unevaluated for exactly that reason.
 
 from __future__ import annotations
 
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -50,6 +60,7 @@ from _foundational_skills import (
     extract_foundational_notations,
     resolve_notation,
 )
+from conftest import PROJECT_ROOT
 
 
 def discover_target_trees() -> dict[str, Path]:
@@ -99,8 +110,46 @@ def stale_named_skills(tree: Path) -> dict[str, list[str]]:
     return stale
 
 
+#: Bound on the one-shot precondition generation below: a generator that hangs
+#: must fail the module loud instead of stalling the suite past the harness
+#: ceiling.
+_GENERATE_TIMEOUT_SECONDS = 1200
+
+
+def _ensure_target_trees() -> None:
+    """Generate the registered target trees when the sweep would otherwise miss them.
+
+    The sweep's population is the registry, not whatever happens to exist — an
+    absent tree is unevaluated, never a pass. In a checkout where generation
+    never ran (``target/`` is gitignored build output, so fresh clones and
+    worktrees carry none of it), failing the suite for missing build output
+    would make the guard unrunnable exactly where it is needed. This helper
+    therefore establishes the precondition the two coverage tests assert: when
+    any registered tree is absent, it runs the generator once
+    (``pw generate --target all --output target``) so the sweep that follows
+    evaluates every registered tree. A generation failure fails loud with the
+    generator's output — still never a pass — and a generation that still
+    leaves trees absent falls through to the existing UNEVALUATED assertions.
+    """
+    if not unevaluated_targets(discover_target_trees()):
+        return
+    completed = subprocess.run(
+        [sys.executable, str(Path(PROJECT_ROOT) / 'pw'), 'generate', '--target', 'all', '--output', 'target'],
+        cwd=PROJECT_ROOT,
+        capture_output=True,
+        text=True,
+        timeout=_GENERATE_TIMEOUT_SECONDS,
+    )
+    if completed.returncode != 0:
+        pytest.fail(
+            'target-tree precondition generation failed '
+            f'(exit {completed.returncode}):\n{completed.stdout}\n{completed.stderr}'
+        )
+
+
 @pytest.fixture(scope='module')
 def trees() -> dict[str, Path]:
+    _ensure_target_trees()
     return discover_target_trees()
 
 
