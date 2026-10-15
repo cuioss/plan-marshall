@@ -4,7 +4,7 @@
 
 ## START HERE
 
-**Resume anchor**: Running 3 of 4: PLAN-LB-40 (OpenCode, last Watch landing), PLAN-LB-47, PLAN-LB-50. One slot free. OpenCode-first emit order (restructured 2026-10-15): PLAN-LB-56 session-boundary-enforcement, PLAN-LB-48 (after LB-50 or accept overlap), PLAN-LB-52 (after LB-47), PLAN-LB-55, PLAN-LB-53, PLAN-LB-49 (after LB-48), PLAN-LB-54; then LB-51, LB-45, LB-43, LB-44, LB-41, LB-46, LB-57. At each landing: drain inbox, two adversarial leaves, landings/PLAN-LB-NN.md, stamps, epic.md, commit. Retire OpenCode Watch after LB-40 is graded. Operator owes: clear 8 persisted opencode.db approvals.
+**Resume anchor**: Running 3 of 4: PLAN-LB-40 (OpenCode, last Watch landing), PLAN-LB-47, PLAN-LB-50. PLAN-LB-56 EMITTED (OpenCode) — transition staged->running when the operator says started. Then emit order: PLAN-LB-48 (after LB-50 or accept overlap), PLAN-LB-52 (after LB-47), PLAN-LB-55, PLAN-LB-53, PLAN-LB-49 (after LB-48), PLAN-LB-54; then LB-51, LB-45, LB-43, LB-44, LB-41, LB-46, LB-57. At each landing: drain inbox, two adversarial leaves, landings/PLAN-LB-NN.md, stamps, epic.md, commit. Retire OpenCode Watch after LB-40 is graded (extend to LB-56). Operator owes: clear 8 persisted opencode.db approvals.
 **Phase**: orchestrating
 **Running**:
 - PLAN-LB-40 (WS-04)
