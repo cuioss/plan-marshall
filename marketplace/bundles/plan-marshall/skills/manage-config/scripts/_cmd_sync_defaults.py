@@ -789,7 +789,17 @@ def cmd_sync_defaults(args) -> dict:
         after_system['config_seed_fingerprint'],
     )
 
-    if added or stamps_changed or renamed or migrated or materialized or retired or lane_reports or dead_reports or roster_changed:
+    if (
+        added
+        or stamps_changed
+        or renamed
+        or migrated
+        or materialized
+        or retired
+        or lane_reports
+        or dead_reports
+        or roster_changed
+    ):
         save_config(merged)
 
     return success_exit(
