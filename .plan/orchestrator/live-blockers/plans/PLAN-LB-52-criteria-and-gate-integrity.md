@@ -71,10 +71,17 @@ not count as evidence for any Done-when here.
      `<sha>`") is `unevidenced` unless the evidence names a run against that tree. A green run at
      HEAD is not evidence for it. PLAN-LB-42 graded such a criterion `met` on "green at HEAD
      2248478b", and its verifier accepted it.
+   - **Evidence exists and comes first:** every test or file a verdict cites as evidence must
+     exist at the graded head (PLAN-LB-40's verdict cited two test names that exist nowhere), and a
+     verify-first gate's evidence must predate the action it gates (PLAN-LB-40 logged its
+     nine-consumer gate as passed before running it, and removed the migration 34 minutes before the
+     real check).
 
    *Done when:* tests: a branch deleting an assertion from an existing test yields a finding; a
-   "fails pre-fix" criterion evidenced only by a HEAD run is graded `unevidenced`; finalize with an
-   empty bot queue and one unmet Done-when does not exit. Each fails at `8442a5e33`.
+   "fails pre-fix" criterion evidenced only by a HEAD run is graded `unevidenced`; a verdict citing a
+   test name absent at the graded head is refused; a verify-first record timestamped after the gated
+   commit is refused; finalize with an empty bot queue and one unmet Done-when does not exit. Each
+   fails at `f5d661d87`.
 
 Split guard: two deliverables, one theme (what the run is graded against).
 

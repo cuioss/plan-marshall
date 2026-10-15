@@ -2,9 +2,9 @@
   "id": "PLAN-LB-40",
   "slug": "steward-upgrade-integrity",
   "workstream": "WS-04",
-  "status": "running",
-  "plan_marshall_plan_id": "",
-  "pr": "",
-  "landing": "",
+  "status": "shipped",
+  "plan_marshall_plan_id": "steward-upgrade-integrity",
+  "pr": "1774",
+  "landing": "landings/PLAN-LB-40.md",
   "seq": 40
 }

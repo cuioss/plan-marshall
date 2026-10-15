@@ -79,6 +79,12 @@ derive, for rows still live.
   its deliverables and Done-whens must not be merged in the outline — the failure every OpenCode
   run has shown.
 
+- **PLAN-LB-40** (shipped #1774, 2026-10-15) — 2 met / 2 partial / 1 unmet, four regressions
+  (one can delete a consumer's configured finalize steps on a plain wizard run); see
+  `landings/PLAN-LB-40.md`. Fix-forward **PLAN-LB-60** (WS-04, high priority). Process gaps folded
+  into PLAN-LB-52 D2 (cited evidence must exist and predate) and PLAN-LB-55 D4 (unreadable roster is
+  an error; no demotion option at the barrier).
+
 - **PLAN-LB-42** (shipped #1773, 2026-10-15) — 0 met / 4 partial against its spec, counted 2/2
   after its outline merged the four deliverables into one; five regressions; see
   `landings/PLAN-LB-42.md`. Residue and regressions staged as **PLAN-LB-54** (WS-01, free of the
@@ -425,6 +431,8 @@ derive, for rows still live.
   the 8 persisted OpenCode "always allow" approvals of 2026-10-08 (still owed by the operator);
   read-side probes are governed by the permission map, not the guard (`guard.js:28-32`).
   PLAN-LB-56 adds R5 for interpreter calls and reports stale approvals.
+  PLAN-LB-40 (second guarded run): 92 `python3 -c`, 18 `git grep` (not in PLAN-LB-56's scope),
+  17 ad-hoc script runs, three harness-written-after-R4-refusal evasions.
 - **In a consumer repository a dispatched leaf cannot resolve its workflow document**:
   `agents/execution-context.md:111-112` maps a notation only to `marketplace/bundles/…`
   (`workflow_not_found` otherwise, line 119), so every consumer-repository dispatch improvises,
@@ -828,8 +836,9 @@ entries below are OpenCode 1 assumptions in plan-marshall that OpenCode 2 broke.
     | PLAN-LB-31 | 1 / 4 / 2 of 7 | 5/5 | — | 55 | $4.09 | D |
     | PLAN-LB-39 | 0 / 4 / 3 of 7 | 7/7 | 5 | 99 | $12.01 | C− |
     | PLAN-LB-42 | 0 / 4 / 0 of 4 | 2/2 | 5 | 69 | $5.79 | C |
+    | PLAN-LB-40 | 2 / 2 / 1 of 5 | 5/5 | 4 | 77 | $5.66 | D |
 
-    Pooled: 7 of 29 spec deliverables met (24%); every run claimed 100%. The over-claim is the
+    Pooled: 9 of 34 spec deliverables met (26%); every run claimed 100%. The over-claim is the
     constant; mechanics (gh, rebase, trailers) improved run over run as enforcement arrived.
   - **What is model-attributable and what is not.** Measure each DeepSeek landing on the same
     dimensions, split into:
@@ -910,6 +919,14 @@ entries below are OpenCode 1 assumptions in plan-marshall that OpenCode 2 broke.
     - Does each Done-when test fail at `8442a5e33`, evidenced by a run against that tree?
 
     Retire the Watch once PLAN-LB-40 and PLAN-LB-56 are graded.
+  - **PLAN-LB-40 graded D** (2026-10-15, `landings/PLAN-LB-40.md`). 2 met / 2 partial / 1 unmet
+    vs claimed 5/5; four regressions (PLAN-LB-60). Guard refused 15/15 covered attempts, but the run
+    routed around it: 92 `python3 -c` (one wrote the functional verdict via `/tmp`), 18 `git grep`,
+    17 ad-hoc script runs, three harness-after-refusal evasions. Faked the verify-first gate; the
+    verdict cited test names that do not exist; the CRITICAL merge override was obtained on a false
+    "bot untriggerable" premise with a "Make cuioss optional (Recommended)" option. Good: 0 `gh`, no
+    force-push, every push gated, 11/11 trailers, five deliverables kept. Remaining: PLAN-LB-47,
+    -50, -56.
   - **Corrected 2026-10-15: PLAN-LB-47 and PLAN-LB-50 are OpenCode runs too** (emitted in the OpenCode
     form, Muse, `opencode.db` roots `ses_ec19f02e1ffeJrkGjQ3D6znWUt` and
     `ses_ec19f318affeLhDQuk6jhH6ZGa`), and were missing from this Watch. All four running plans —
