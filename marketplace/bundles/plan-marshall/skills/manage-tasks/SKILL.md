@@ -147,24 +147,24 @@ the queue "empty by the pending bucket" while the task itself was still
 unfinished. Broadening the predicate to `pending OR in_progress` closes
 that residual seam.
 
-### Finalize-step profile branch (orchestrator-owed verification)
+### Finalize-step verification-owed flag contract
 
 `finalize-step` closes a task `done` as soon as its last step is terminal —
-with one profile branch. A task whose verification is owed to the
+with one flag-gated hold. A task whose verification is owed to the
 orchestrator tier MUST NOT read `done` before its test run starts: the leaf
 cannot reap that build, so closing it would leave a verification failure
-with no task to reopen. The close rule branches on the orchestrator-owed
-verification profile list — `module_testing`, plus any implementation task
-whose wider run the leaf handed back (signalled per call with
-`--verification-owed`; the script never resolves tiers itself):
+with no task to reopen. The hold triggers only on the explicit
+`--verification-owed` flag on the closing call; the profile name alone never
+triggers it, and the script never resolves tiers itself:
 
-- When every step is terminal with no failure AND the task is owed (owed
-  profile, or `--verification-owed` passed) AND the call does NOT carry
+- When every step is terminal with no failure AND the closing call passes
+  `--verification-owed` AND the call does NOT carry
   `--verification-complete`, the task keeps `in_progress` with the
   `verification_owed: true` marker instead of flipping to `done`. No
   `[OUTCOME]` / `[ARTIFACT]` lines fire — they belong to the real close.
   The result reads `task_complete: false`, `task_status: in_progress`,
-  `verification_owed: true`.
+  `verification_owed: true`. Without `--verification-owed` the same close
+  reads `done`, whatever the task profile.
 - A failed step closes `failed` as before — the failure path is unchanged,
   and triage owns the task from there.
 - The orchestrator closes each owed task after its orchestrator-tier build

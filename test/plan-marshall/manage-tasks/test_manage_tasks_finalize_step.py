@@ -914,15 +914,16 @@ def test_outcome_and_completed_pair_exactly_on_fixture_logs(plan_context):
 
 
 # =============================================================================
-# Tests: module-testing close rule (orchestrator-owed verification)
+# Tests: verification-owed flag hold (orchestrator-owed verification)
 # =============================================================================
 #
-# A module-testing task whose test run is owed to the orchestrator tier MUST
-# NOT read `done` when its last step finalizes — the build has not started
-# yet, so closing it would leave a failure with no task to reopen. The task
-# stays `in_progress` carrying `verification_owed: True` until the
-# orchestrator-tier build reports; the orchestrator then closes it with
-# `--verification-complete`.
+# A task whose test run is owed to the orchestrator tier MUST NOT read
+# `done` when its last step finalizes with `--verification-owed` — the build
+# has not started yet, so closing it would leave a failure with no task to
+# reopen. The task stays `in_progress` carrying `verification_owed: True`
+# until the orchestrator-tier build reports; the orchestrator then closes it
+# with `--verification-complete`. The profile name alone never triggers the
+# hold.
 
 
 def _owed_ns(plan_id, task=1, step=1, outcome='done', owed=False, complete=False):
@@ -950,17 +951,32 @@ def _add_module_testing_task(plan_context, plan_id, title='Owed Task'):
     assert _persisted_task(plan_context, plan_id)['profile'] == 'module_testing'
 
 
-def test_module_testing_last_step_close_stays_open_for_owed_verification(plan_context):
-    """A module-testing task is not done before its test run starts."""
+def test_module_testing_last_step_close_reads_done_without_flag(plan_context):
+    """A module-testing task closes without the flag — profile alone never holds."""
     _add_module_testing_task(plan_context, 'owed-open')
 
     result = cmd_finalize_step(_owed_ns(plan_id='owed-open', task=1, step=1))
 
     assert result['status'] == 'success'
+    assert result['task_complete'] is True
+    assert result['task_status'] == 'done'
+    assert result['verification_owed'] is False
+    persisted = _persisted_task(plan_context, 'owed-open')
+    assert persisted['status'] == 'done'
+    assert 'verification_owed' not in persisted
+
+
+def test_module_testing_last_step_close_with_flag_stays_open(plan_context):
+    """With --verification-owed the same close holds the task open."""
+    _add_module_testing_task(plan_context, 'owed-open-flag')
+
+    result = cmd_finalize_step(_owed_ns(plan_id='owed-open-flag', task=1, step=1, owed=True))
+
+    assert result['status'] == 'success'
     assert result['task_complete'] is False
     assert result['task_status'] == 'in_progress'
     assert result['verification_owed'] is True
-    persisted = _persisted_task(plan_context, 'owed-open')
+    persisted = _persisted_task(plan_context, 'owed-open-flag')
     assert persisted['status'] == 'in_progress'
     assert persisted['verification_owed'] is True
     assert persisted.get('outcome_emitted') is not True
@@ -969,7 +985,7 @@ def test_module_testing_last_step_close_stays_open_for_owed_verification(plan_co
 def test_verification_complete_closes_the_owed_task(plan_context):
     """The orchestrator close after the green build flips the held-open task."""
     _add_module_testing_task(plan_context, 'owed-close')
-    cmd_finalize_step(_owed_ns(plan_id='owed-close', task=1, step=1))
+    cmd_finalize_step(_owed_ns(plan_id='owed-close', task=1, step=1, owed=True))
 
     result = cmd_finalize_step(_owed_ns(plan_id='owed-close', task=1, step=1, complete=True))
 
@@ -1031,7 +1047,7 @@ def test_next_skips_an_owed_task_with_no_actionable_step(plan_context):
         deliverable=1,
         steps=['src/main/java/B.java'],
     )
-    cmd_finalize_step(_owed_ns(plan_id='owed-skip', task=1, step=1))
+    cmd_finalize_step(_owed_ns(plan_id='owed-skip', task=1, step=1, owed=True))
 
     result = cmd_next(_next_ns(plan_id='owed-skip'))
 
