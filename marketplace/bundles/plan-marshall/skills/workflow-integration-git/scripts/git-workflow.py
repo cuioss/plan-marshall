@@ -343,17 +343,16 @@ _SOURCE_COMMIT_GATE_PHASE = '6-finalize'
 _SOURCE_COMMIT_GATE_FIX_ORIGINS = frozenset({'fix', 'sonar', 'pr', 'lint', 'security', 'documentation', 'holistic'})
 
 #: Finding-text markers for the rubric §6 inline-correction allowance. A record
-#: cites the allowance only when it names the rubric AND one allowance marker —
-#: either half alone (a rubric citation for another section, or a bare
-#: "6-finalize" with no rubric citation) does not qualify.
+#: cites the allowance only when it names the rubric AND the inline-correction
+#: phrasing — either half alone (a rubric citation for another section, or a
+#: bare "6-finalize" phase mention with no inline-correction words) does not
+#: qualify. Bare phase/section markers are deliberately not allowance markers:
+#: they appear in unrelated records (loop-back targets, phase mentions) and
+#: would sanction any commit a rubric citation shares the file with.
 _SOURCE_COMMIT_GATE_RUBRIC_MARKERS = ('review-rubric', 'review_rubric')
 _SOURCE_COMMIT_GATE_ALLOWANCE_MARKERS = (
     'inline-correction',
     'inline correction',
-    '6-finalize',
-    'section 6',
-    'section-6',
-    'section_6',
 )
 
 #: Statuses that count as an OPEN task. Terminal states (``done``,

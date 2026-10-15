@@ -11,7 +11,7 @@ Covers deliverable 5's enforcement surface:
 * Carve-out operations pass (the executor permit resolves to ``allow``).
 * The D2 guard decision table (``.opencode/plugin/guard.js``,
   ``tool.execute.before``) is read from the plugin at test time as a
-  behavioral contract: the R1-R4 declared sets below are parsed out of
+  behavioral contract: the R1-R5 declared sets below are parsed out of
   guard.js and compared to the expected pins, so plugin drift fails the
   contract test instead of passing against a stale literal.
   Read-side probes (``ls``, ``cat``, ``head``, ``tail``, ``grep``,

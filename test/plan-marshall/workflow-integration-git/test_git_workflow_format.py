@@ -496,6 +496,23 @@ class TestSourceCommitGate:
 
         assert has_section6_record(findings) is False
 
+    def test_bare_phase_mention_does_not_sanction(self):
+        """A rubric citation plus a bare 6-finalize phase mention, without
+        inline-correction words, carries no allowance."""
+        findings = [
+            {
+                'title': 'Code review finding per review-rubric section 3',
+                'detail': 'Loop back to 6-finalize for re-review (section-6)',
+                'resolution_detail': '',
+            }
+        ]
+
+        assert has_section6_record(findings) is False
+        result = evaluate_source_commit_gate('6-finalize', ['src/a.py'], [], findings)
+
+        assert result['allowed'] is False
+        assert result['reason'] == 'no_sanction'
+
     def test_split_markers_across_records_do_not_sanction(self):
         """Cross-record bleed: the rubric half in one record and the allowance
         half in another must not combine into a sanction."""

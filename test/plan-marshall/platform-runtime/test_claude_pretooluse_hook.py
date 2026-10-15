@@ -5,7 +5,7 @@
 The leaf is a stdin->stdout hook script, so it is exercised both via subprocess (a
 fresh interpreter, exactly as Claude Code would invoke it — proving the whole
 fail-open + deny-envelope contract end to end) and via direct import of its pure
-``evaluate`` function (proving each R1-R4 matcher and the gate-delegation behaviour
+``evaluate`` function (proving each R1-R5 matcher and the gate-delegation behaviour
 without subprocess overhead).
 
 The shared ``pretooluse_gate`` module is imported directly (sibling-import
