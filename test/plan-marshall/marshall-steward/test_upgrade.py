@@ -1247,6 +1247,68 @@ def test_bootstrap_regenerate_failure_reports_split(tmp_path: Path, monkeypatch:
     assert '/plugin update plan-marshall' in report['warning']
 
 
+def test_bootstrap_regenerate_success_with_missing_stamp_warns(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """Generator success with a missing stamp reports ``regenerated`` with a warning, never the stale version.
+
+    The fake succeeds (rc=0) but leaves no stamp behind, so the reread is
+    ``unreadable``. The report must carry the reread fact — empty version plus
+    a non-empty warning — rather than retaining the stale pre-regeneration
+    version as if it had been re-observed.
+    """
+    cache = _fixture_cache(tmp_path, ['0.1.10'])
+    clone = tmp_path / 'clone'
+    _fixture_meta_generator(clone)
+    executor = _fixture_executor(clone, '0.1.9')
+    calls: list[dict] = []
+
+    def _vanishing_generate(generator: Path, anchor: Path, project_dir: Path) -> tuple[int, str, str]:
+        calls.append({'generator': generator, 'anchor': anchor, 'project_dir': project_dir})
+        executor.unlink()
+        return 0, 'status: success', ''
+
+    monkeypatch.chdir(clone)
+
+    report = upgrade.bootstrap_executor(
+        project_kind='meta', cache_root=cache, executor_path=executor, _run_generate=_vanishing_generate
+    )
+
+    assert report['status'] == 'success'
+    assert report['action'] == 'regenerated'
+    assert report['executor_version'] == ''
+    assert report['warning'] != ''
+    assert 'unreadable' in report['warning']
+    assert len(calls) == 1
+
+
+def test_bootstrap_regenerate_success_with_empty_stamp_warns(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """Generator success with an empty stamp reports ``regenerated`` with a warning, never silent.
+
+    The fake succeeds (rc=0) but writes an empty ``MARSHALL_VERSION``, so the
+    reread is ``empty``. An empty version with no warning would read as a clean
+    regeneration of nothing — the warning names the unconfirmed version.
+    """
+    cache = _fixture_cache(tmp_path, ['0.1.10'])
+    clone = tmp_path / 'clone'
+    _fixture_meta_generator(clone)
+    executor = _fixture_executor(clone, '0.1.9')
+
+    def _empty_generate(generator: Path, anchor: Path, project_dir: Path) -> tuple[int, str, str]:
+        executor.write_text("MARSHALL_VERSION = ''\n", encoding='utf-8')
+        return 0, 'status: success', ''
+
+    monkeypatch.chdir(clone)
+
+    report = upgrade.bootstrap_executor(
+        project_kind='meta', cache_root=cache, executor_path=executor, _run_generate=_empty_generate
+    )
+
+    assert report['status'] == 'success'
+    assert report['action'] == 'regenerated'
+    assert report['executor_version'] == ''
+    assert report['warning'] != ''
+    assert 'empty' in report['warning']
+
+
 def test_resolve_bootstrap_action_table():
     """The pure decision table: equal, behind, unreadable, absent, split."""
     assert upgrade.resolve_bootstrap_action('0.1.10', '0.1.10') == ('fresh', '')

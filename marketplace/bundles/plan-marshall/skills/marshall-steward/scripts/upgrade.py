@@ -866,8 +866,21 @@ def bootstrap_executor(
                 ),
                 'detail': 'regeneration attempted and failed; Stage 1 regenerate-executor remains the repair',
             }
-        _state, reread = read_executor_version(executor_path)
-        executor_version = reread or executor_version
+        reread_state, reread = read_executor_version(executor_path)
+        if reread_state == EXECUTOR_VERSION_FOUND:
+            executor_version = reread
+        else:
+            # The regeneration succeeded but the stamp cannot confirm it: the
+            # reread state (unreadable / not_found / empty) is the fact, and
+            # the stale pre-regeneration version must not survive as if it
+            # were re-observed. Report unknown with a warning instead of a
+            # silent regenerated-with-empty-version.
+            executor_version = ''
+            warning = (
+                f'executor regenerated from the newest cache at {newest} but its version '
+                f'stamp is {reread_state} — the regenerated version could not be confirmed. '
+                f'{_VERSION_SPLIT_REMEDY}'
+            )
         action = 'regenerated'
 
     if action == 'regenerated' and executor_version and executor_version != newest:
