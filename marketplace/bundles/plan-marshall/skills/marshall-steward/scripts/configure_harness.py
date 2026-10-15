@@ -35,6 +35,17 @@ from target_context import SOURCE_EXPLICIT, resolve_target
 from toon_parser import parse_toon
 from toon_parser import serialize_toon
 
+from antigravity_runtime import (
+    STANDING_RULES_BRIDGE_MARKER as _ANTIGRAVITY_BRIDGE_MARKER,
+)
+from antigravity_runtime import (
+    _bridge_rules_path as _antigravity_bridge_path,
+)
+from opencode_runtime import (
+    STANDING_RULES_BRIDGE_MARKER as _OPENCODE_BRIDGE_MARKER,
+)
+from opencode_runtime import _bridge_rules_path as _opencode_bridge_path
+
 #: Command surfaced when a bridge stub is damaged (marker mismatch) or missing,
 #: so the condition is never silent. Re-running project initial-setup re-emits
 #: the bridge-owned file only.
@@ -55,22 +66,26 @@ def _reconcile_standing_rules_bridge(harness: str, project_dir: Path) -> bool:
     Owned-file invariant: the bridge writes land only in the bridge-owned
     file (``.opencode/rules/plan-marshall-target-rules.md`` on OpenCode,
     ``.agents/rules/plan-marshall-target-rules.md`` on Antigravity) and
-    never in the installed target-rules file shipped by the bundles. This
+    never in the installed target-rules file shipped by the bundles. Bridge
+    paths and the version marker are derived from the runtime modules
+    (never retyped here), so an outdated stub fails the marker check. This
     reconcile performs no writes at all — it only observes. A damaged stub
     (bridge present without its version marker) is reported as not reconciled
     so the caller can surface :func:`bridge_reemit_command`; it is never
     silently healed and never propagated into the deployed harness. Claude
     carries no bridge file — its CLAUDE.md baseline is authoritative — so
-    the reconcile is a no-op success there. Returns True when a bridge file
-    exists afterwards.
+    the reconcile is a no-op success there. Returns True only when the bridge
+    is current.
     """
     proj = project_dir.resolve()
     if harness == 'claude':
         return (proj / 'CLAUDE.md').is_file()
     if harness == 'antigravity':
-        bridge = proj / '.agents' / 'rules' / 'plan-marshall-target-rules.md'
+        bridge = _antigravity_bridge_path(proj)
+        marker = _ANTIGRAVITY_BRIDGE_MARKER
     elif harness == 'opencode':
-        bridge = proj / '.opencode' / 'rules' / 'plan-marshall-target-rules.md'
+        bridge = _opencode_bridge_path(proj)
+        marker = _OPENCODE_BRIDGE_MARKER
     else:
         return (proj / 'AGENTS.md').is_file() or (proj / 'CLAUDE.md').is_file()
     if bridge.is_file():
@@ -78,24 +93,27 @@ def _reconcile_standing_rules_bridge(harness: str, project_dir: Path) -> bool:
             text = bridge.read_text(encoding='utf-8')
         except OSError:
             return False
-        if 'bridge-version:' not in text:
+        if marker not in text:
             return False
         return True
-    return (proj / 'AGENTS.md').is_file()
+    return False
 
 
-def dispatch_platform_runtime_setup(harness: str, project_dir: Path) -> bool:
+def dispatch_platform_runtime_setup(harness: str, project_dir: Path) -> str:
     """Observe rule emission without bridge-to-installed-target writes.
 
-    The bridge-to-installed-target write path is retired: this dispatch never
-    invokes the runtime setup writers, so it never modifies the installed
-    target-rules file. It only observes whether the bridge-owned file (or its
-    AGENTS.md/CLAUDE.md fallback) already exists via
-    :func:`_reconcile_standing_rules_bridge`. A damaged stub is surfaced by
-    the caller with :func:`bridge_reemit_command`, never silently healed here.
+    Runs the runtime setup writers first (session-boundary enforcement) and
+    surfaces their persisted-approval warnings on stderr. The
+    bridge-to-installed-target write path stays retired: setup writes land
+    only in the bridge-owned file, never in the installed target-rules file.
+    Bridge paths and the version marker are derived from the runtime modules
+    (never retyped here), and bare file existence never overrides a failed
+    reconcile. Returns the verdict `current`, `damaged` (bridge present
+    without its version marker or unreadable), or `missing` (no bridge file,
+    or setup itself failed). The caller surfaces :func:`bridge_reemit_command`
+    for the damaged or missing verdict, never silently healed here.
     """
     proj = project_dir.resolve()
-    rules_emitted = False
     setup_ok = True
 
     try:
@@ -124,23 +142,26 @@ def dispatch_platform_runtime_setup(harness: str, project_dir: Path) -> bool:
     except Exception:
         setup_ok = False
 
-    if harness == 'antigravity':
-        rules_emitted = (proj / '.agents' / 'rules' / 'plan-marshall-target-rules.md').is_file() or (
-            proj / 'AGENTS.md'
-        ).is_file()
-    elif harness == 'opencode':
-        rules_emitted = (proj / '.opencode' / 'rules' / 'plan-marshall-target-rules.md').is_file() or (
-            proj / 'AGENTS.md'
-        ).is_file()
-    elif harness == 'claude':
-        rules_emitted = (proj / 'CLAUDE.md').is_file()
-    else:
-        rules_emitted = (proj / 'AGENTS.md').is_file() or (proj / 'CLAUDE.md').is_file()
-
-    reconciled = _reconcile_standing_rules_bridge(harness, proj)
-    rules_emitted = bool(rules_emitted or reconciled)
-
-    return rules_emitted
+    if not setup_ok:
+        # Setup itself failed: emission is not established. Report missing so
+        # the caller surfaces the re-emit command; re-running setup converges.
+        return 'missing'
+    if harness == 'claude':
+        return 'current' if (proj / 'CLAUDE.md').is_file() else 'missing'
+    if harness in ('antigravity', 'opencode'):
+        bridge = (
+            _antigravity_bridge_path(proj)
+            if harness == 'antigravity'
+            else _opencode_bridge_path(proj)
+        )
+        reconciled = _reconcile_standing_rules_bridge(harness, proj)
+        if reconciled:
+            return 'current'
+        if bridge.is_file():
+            return 'damaged'
+        return 'missing'
+    exists = (proj / 'AGENTS.md').is_file() or (proj / 'CLAUDE.md').is_file()
+    return 'current' if exists else 'missing'
 
 
 def configure_harness(
@@ -177,7 +198,8 @@ def configure_harness(
 
     harness_paths_valid = check_harness_paths_valid(harness, proj)
 
-    rules_emitted = dispatch_platform_runtime_setup(harness, proj)
+    bridge_verdict = dispatch_platform_runtime_setup(harness, proj)
+    rules_emitted = bridge_verdict == 'current'
 
     current_sha = compute_current_harness_sha(plan_dir, harness)
 
@@ -201,14 +223,18 @@ def configure_harness(
 
     atomic_write_file(config_path, json.dumps(harness_payload, indent=2) + '\n')
 
-    return {
+    result: dict[str, Any] = {
         'status': 'success',
         'harness': harness,
         'target_source': target_source,
         'configured': True,
         'config_path': str(config_path),
         'dist_manifest_sha': current_sha,
+        'bridge_verdict': bridge_verdict,
     }
+    if bridge_verdict in ('damaged', 'missing'):
+        result['bridge_reemit_command'] = bridge_reemit_command(harness)
+    return result
 
 
 @safe_main

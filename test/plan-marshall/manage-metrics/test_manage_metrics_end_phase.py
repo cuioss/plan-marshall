@@ -220,16 +220,16 @@ def test_generate_creates_metrics_md(plan_context):
     result = cmd_generate(ns_generate('metrics-gen-01'))
     assert result['status'] == 'success'
     assert result['phases_recorded'] == 2
-    # 2-refine ran unmeasured: the return still refuses to quote a sum with a
-    # hole (`unknown` plus the phase list), while the rendered Total quotes the
-    # measured subset with its count (measured-subset contract).
-    assert result['total_tokens'] == 'unknown'
+    # 2-refine ran unmeasured: the return quotes the measured subset sum with
+    # its count (measured-subset contract) while still carrying the unknown
+    # phase list, and the rendered Total quotes the same subset.
+    assert result['total_tokens'] == 25000
     assert result['totals_tokens_unknown_phases'] == '2-refine'
     # Pre-formatted display fields are populated alongside the raw values.
     assert isinstance(result['total_worked_formatted'], str)
     assert isinstance(result['total_wall_formatted'], str)
     assert isinstance(result['total_idle_formatted'], str)
-    assert result['total_tokens_formatted'] == 'unknown'
+    assert result['total_tokens_formatted'] == '25K'
 
     # Verify metrics.md content
     md_path = plan_context.plan_dir_for('metrics-gen-01') / 'metrics.md'

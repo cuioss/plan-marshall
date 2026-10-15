@@ -388,7 +388,7 @@ def test_dispatch_does_not_heal_missing_bridge(plan_env):
     if bridge.is_file():
         bridge.unlink()
 
-    assert ch.dispatch_platform_runtime_setup('opencode', project_dir) is False
+    assert ch.dispatch_platform_runtime_setup('opencode', project_dir) == 'missing'
     assert not bridge.is_file()
 
 
@@ -405,3 +405,24 @@ def test_bridge_owns_own_file_only(plan_env):
 
     assert ch._reconcile_standing_rules_bridge('opencode', project_dir) is True
     assert installed.read_text(encoding='utf-8') == before
+
+
+def test_dispatch_damaged_stub_returns_damaged_verdict(plan_env):
+    """Bare file existence never overrides a failed reconcile."""
+    project_dir = plan_env['project_dir']
+    bridge = project_dir / '.opencode' / 'rules' / 'plan-marshall-target-rules.md'
+    bridge.parent.mkdir(parents=True, exist_ok=True)
+    bridge.write_text('# damaged stub without marker\n', encoding='utf-8')
+
+    assert ch.dispatch_platform_runtime_setup('opencode', project_dir) == 'damaged'
+
+
+def test_outdated_bridge_version_is_damaged(plan_env):
+    """A stub with an outdated version marker is damaged, never current."""
+    project_dir = plan_env['project_dir']
+    bridge = project_dir / '.opencode' / 'rules' / 'plan-marshall-target-rules.md'
+    bridge.parent.mkdir(parents=True, exist_ok=True)
+    bridge.write_text('# bridge\n\nbridge-version: 0\n', encoding='utf-8')
+
+    assert ch._reconcile_standing_rules_bridge('opencode', project_dir) is False
+    assert ch.dispatch_platform_runtime_setup('opencode', project_dir) == 'damaged'
