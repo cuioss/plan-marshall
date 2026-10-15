@@ -474,8 +474,8 @@ def test_residual_set_resolved_as_fixed_is_kept_with_reobserved_counts(plan_cont
     ``fixed`` claims the residual is gone, so unlike ``accepted``/``suppressed``
     the guard does not treat it as settled — it re-emits the identical finding
     and the primitive answers ``kept``: the record stays ``fixed``, nothing
-    turns pending, and the run reports the re-observation through the
-    re-observed counts rather than a new pending filing.
+    turns pending, and the run reports ``finding_emitted: false`` with the
+    re-observed counts stating what it re-saw instead of a new pending filing.
     """
     plan_id = 'qgate-contract-fixed-is-kept'
     _seed_plan(plan_context, plan_id)
@@ -487,7 +487,7 @@ def test_residual_set_resolved_as_fixed_is_kept_with_reobserved_counts(plan_cont
     assert rc == 0
     assert payload['status'] == 'success'
     assert payload['residual_count'] == len(_EXCESS_FILES)
-    assert payload['finding_emitted'] is True
+    assert payload['finding_emitted'] is False
     assert payload['reobserved_count'] == 1
     assert payload['still_detected_but_fixed_count'] == 1
     assert 'finding_resolved_as' not in payload

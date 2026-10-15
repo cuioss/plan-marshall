@@ -596,8 +596,7 @@ def cmd_check(args: argparse.Namespace) -> int:
         # and `finding_emitted` is false.
         emitted = True
         if any(
-            outcome.get('status') == 'kept' and outcome.get('resolution') == FIXED_RESOLUTION
-            for outcome in observed
+            outcome.get('status') == 'kept' and outcome.get('resolution') == FIXED_RESOLUTION for outcome in observed
         ):
             emitted = False
 

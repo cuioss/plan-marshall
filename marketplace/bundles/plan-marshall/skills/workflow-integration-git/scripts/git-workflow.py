@@ -280,6 +280,25 @@ def format_message(
     return '\n'.join(parts)
 
 
+def ensure_project_trailer(message: str, trailer: str) -> str:
+    """Append the project trailer to a plan commit message when it is missing.
+
+    The chosen shape for the trailer guarantee (see the Commit Changes
+    workflow): the plan commit path appends the trailer when the authored
+    message lacks it, rather than refusing a trailerless commit at a pre-push
+    gate. A missing trailer is an authoring omission the path repairs, not a
+    verdict the gate blocks on. Matching is trailing-line based: a message
+    whose last non-blank line is already the trailer is returned unchanged, so
+    a second append never produces a doubled trailer.
+    """
+    lines = message.rstrip('\n').split('\n')
+    while lines and not lines[-1].strip():
+        lines.pop()
+    if lines and lines[-1].strip() == trailer.strip():
+        return message
+    return message.rstrip('\n') + '\n\n' + trailer.strip() + '\n'
+
+
 # ============================================================================
 # FORMAT-COMMIT SUBCOMMAND
 # ============================================================================

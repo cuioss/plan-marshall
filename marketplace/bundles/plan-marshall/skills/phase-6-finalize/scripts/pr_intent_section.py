@@ -40,13 +40,16 @@ Behaviour, in order:
    Reading a failure as "no intent" would publish a PR that silently lacks a
    section the plan did state.
 3. **A read that ANSWERED with no outline, or both sections absent/empty =>
-   emit NOTHING.** The body file is left BYTE-IDENTICAL and the verb returns
-   ``omitted: true`` with an explicit reason. Never an empty heading, never a
-   placeholder heading: a ``## Intent`` with nothing under it tells a reviewer less
-   than no section at all, while implying the intent was considered and found
-   vacuous.
-4. **Outline present => render the draft**, enforce the budget, and append the
-   section to the body file.
+   remove the template-position section.** The template carries the
+   ``## Intent`` heading at its position, so leaving the body file
+   byte-identical would ship an empty heading. The renderer strips that
+   section so no heading remains: never an empty heading, never a
+   placeholder heading.
+4. **Outline present => render the draft** into the template-position
+   section: when the body already carries the ``## Intent`` heading the
+   rendered section replaces it in place, so the body keeps exactly one
+   Intent section and the renderer never appends a second one; only a body
+   with no heading gets the section appended. Then enforce the budget.
 5. **Budget: cut at a sentence, and REPORT the overflow.** See
    :data:`INTENT_BUDGET_CHARS`. A draft over budget is cut at a sentence or
    paragraph boundary: only the sentences (or whole paragraphs) that fit are rendered — none
@@ -97,6 +100,13 @@ INTENT_BUDGET_CHARS = 1500
 _OUTLINE_SECTIONS = ('summary', 'overview')
 
 _HEADING = '## Intent'
+
+#: Matches the template-position ``## Intent`` section: the heading line plus
+#: everything up to (but excluding) the next ``## `` heading or the end of the
+#: body. The template carries exactly one Intent section at its position and no
+#: instruction comment, so this pattern meets at most one match in a body the
+#: template produced.
+_INTENT_SECTION_RE = re.compile(r'^## Intent[ \t]*\n(?:(?!^## ).*\n?)*', re.MULTILINE)
 
 # The ``status: error`` codes with which the outline reader ANSWERS that something
 # is absent: the outline document, or the requested section of it. Every other
@@ -294,7 +304,7 @@ def render_section(draft: str, budget: int = INTENT_BUDGET_CHARS) -> IntentRende
 
 
 def cmd_render(args: argparse.Namespace) -> int:
-    """Append the rendered Intent section to the PR body file, or omit it entirely."""
+    """Render the Intent section into the template-position slot, or remove that slot entirely."""
     body_path = Path(args.body_path)
 
     try:
@@ -315,8 +325,25 @@ def cmd_render(args: argparse.Namespace) -> int:
         return 1
 
     if not outline_has_intent:
-        # Byte-identical body. No heading, no placeholder — see the module
-        # docstring for why an empty section is worse than none.
+        # No heading remains: the template carries the `## Intent` heading at
+        # its position, so leaving the body byte-identical would ship an empty
+        # section. Strip the template-position section instead.
+        try:
+            existing_body = body_path.read_text(encoding='utf-8')
+        except OSError as exc:
+            print(
+                serialize_toon(
+                    {
+                        'status': 'error',
+                        'operation': 'render',
+                        'error': 'body_unreadable',
+                        'detail': f'{args.body_path}: {exc}',
+                    }
+                )
+            )
+            return 1
+        stripped = _INTENT_SECTION_RE.sub('', existing_body)
+        body_path.write_text(stripped, encoding='utf-8')
         print(
             serialize_toon(
                 {
@@ -380,8 +407,15 @@ def cmd_render(args: argparse.Namespace) -> int:
         )
         return 1
 
-    separator = '' if existing.endswith('\n\n') else ('\n' if existing.endswith('\n') else '\n\n')
-    body_path.write_text(existing + separator + rendered.section + '\n', encoding='utf-8')
+    if _INTENT_SECTION_RE.search(existing):
+        # The template-position section exists: fill it in place so the body
+        # keeps exactly one Intent section. Appending here would ship a second
+        # one after the rest of the body.
+        updated = _INTENT_SECTION_RE.sub(rendered.section + '\n', existing, count=1)
+    else:
+        separator = '' if existing.endswith('\n\n') else ('\n' if existing.endswith('\n') else '\n\n')
+        updated = existing + separator + rendered.section + '\n'
+    body_path.write_text(updated, encoding='utf-8')
 
     print(
         serialize_toon(
