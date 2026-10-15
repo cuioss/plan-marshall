@@ -149,11 +149,7 @@ def dispatch_platform_runtime_setup(harness: str, project_dir: Path) -> str:
     if harness == 'claude':
         return 'current' if (proj / 'CLAUDE.md').is_file() else 'missing'
     if harness in ('antigravity', 'opencode'):
-        bridge = (
-            _antigravity_bridge_path(proj)
-            if harness == 'antigravity'
-            else _opencode_bridge_path(proj)
-        )
+        bridge = _antigravity_bridge_path(proj) if harness == 'antigravity' else _opencode_bridge_path(proj)
         reconciled = _reconcile_standing_rules_bridge(harness, proj)
         if reconciled:
             return 'current'

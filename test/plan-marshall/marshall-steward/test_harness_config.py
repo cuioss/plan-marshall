@@ -114,7 +114,10 @@ def test_configure_harness_writes_valid_schema_no_timestamps(plan_env):
 
     checks = data['checks']
     assert isinstance(checks, dict)
-    assert checks['rules_emitted'] is True
+    # Verdict contract: fresh fixture carries no bridge file, so the verdict
+    # is missing and rules_emitted is truthfully False with the re-emit
+    # command surfaced on the result.
+    assert checks['rules_emitted'] is False
     assert checks['harness_paths_valid'] is True
     assert checks['executor_ready'] is True
 
