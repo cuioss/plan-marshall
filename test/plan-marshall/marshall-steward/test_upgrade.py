@@ -1044,6 +1044,25 @@ def _fixture_executor(project_dir: Path, version: str) -> Path:
     return executor
 
 
+def _fixture_registry(root: Path, version: str) -> Path:
+    """Write a plugin registry pinning plan-marshall at ``version``.
+
+    The registry is the store ``bootstrap_executor`` reads for the loaded
+    marshall-steward skill version; the fixture pins one scope entry the way the
+    plugin manager writes it.
+    """
+    registry = root / 'installed_plugins.json'
+    entries = [
+        {
+            'scope': 'user',
+            'installPath': f'/fixture/plugins/cache/plan-marshall/{version}',
+            'version': version,
+        }
+    ]
+    registry.write_text(json.dumps({'plugins': {'plan-marshall@plan-marshall': entries}}), encoding='utf-8')
+    return registry
+
+
 def _fixture_meta_generator(clone_root: Path) -> Path:
     """Plant a fixture marketplace-source generator stub under ``clone_root``.
 
@@ -1476,6 +1495,93 @@ def test_resolve_bootstrap_action_table():
     action, warning = upgrade.resolve_bootstrap_action('0.1.11', '0.1.10')
     assert action == 'fresh'
     assert 'version split' in warning
+
+
+def test_resolve_bootstrap_action_warns_on_a_loaded_skill_vs_planner_split():
+    """The loaded-skill-vs-planner comparison warns independently of executor-vs-cache.
+
+    The acceptance case: a loaded skill at ``0.1.1900`` with a planner at
+    ``0.1.1916`` warns even though the executor stamp matches the cache
+    (``0.1.1916``) — the split the executor-stamp-vs-cache comparison cannot see,
+    because the stamp and the cache agree while the loaded skill surface lags.
+    """
+    action, warning = upgrade.resolve_bootstrap_action('0.1.1916', '0.1.1916', '0.1.1900', '0.1.1916')
+
+    assert action == 'fresh'
+    assert 'version split' in warning
+    assert '0.1.1900' in warning
+    assert '0.1.1916' in warning
+    assert '/plugin update plan-marshall' in warning
+
+
+def test_resolve_bootstrap_action_skill_planner_split_is_silent_without_both_versions():
+    """The loaded-skill-vs-planner comparison never fabricates a split.
+
+    Equal versions, a single known version, or an unorderable one all yield no
+    split warning: an unknown loaded version (or an unknown planner) is simply
+    not compared.
+    """
+    assert upgrade.resolve_bootstrap_action('0.1.10', '0.1.10') == ('fresh', '')
+    assert upgrade.resolve_bootstrap_action('0.1.10', '0.1.10', '0.1.10', '0.1.10') == ('fresh', '')
+    assert upgrade.resolve_bootstrap_action('0.1.10', '0.1.10', '', '0.1.11') == ('fresh', '')
+    assert upgrade.resolve_bootstrap_action('0.1.10', '0.1.10', '0.1.9', '') == ('fresh', '')
+    assert upgrade.resolve_bootstrap_action('0.1.10', '0.1.10', 'bogus', '0.1.10') == ('fresh', '')
+
+    # A skill surface AHEAD of the planner is a split too, reported the other way.
+    action, warning = upgrade.resolve_bootstrap_action('0.1.10', '0.1.10', '0.1.11', '0.1.10')
+    assert action == 'fresh'
+    assert 'version split' in warning
+
+
+def test_loaded_skill_version_reads_the_registry_pin(tmp_path: Path):
+    """The loaded skill version is read from the plugin registry's plan-marshall pin."""
+    registry = _fixture_registry(tmp_path, '0.1.1900')
+
+    assert upgrade._loaded_skill_version(registry) == '0.1.1900'
+
+
+def test_loaded_skill_version_is_unknown_without_a_readable_pin(tmp_path: Path):
+    """An absent registry or rows that disagree yield ``''`` — never a guessed version."""
+    assert upgrade._loaded_skill_version(tmp_path / 'absent.json') == ''
+
+    disagreeing = tmp_path / 'disagreeing.json'
+    entries = [
+        {'scope': 'user', 'installPath': '/fixture/0.1.1900', 'version': '0.1.1900'},
+        {'scope': 'project', 'installPath': '/fixture/0.1.1916', 'version': '0.1.1916'},
+    ]
+    disagreeing.write_text(json.dumps({'plugins': {'plan-marshall@plan-marshall': entries}}), encoding='utf-8')
+
+    assert upgrade._loaded_skill_version(disagreeing) == ''
+
+
+def test_bootstrap_wires_the_loaded_skill_and_planner_versions(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """``bootstrap_executor`` reads both versions and reports their split.
+
+    The registry names the loaded skill surface at ``0.1.1900`` while the running
+    planner is ``0.1.1916``; the executor stamp matches the cache (``0.1.1916``),
+    so the executor-stamp-vs-cache comparison is silent and the
+    loaded-skill-vs-planner comparison is the one that reports the split.
+    """
+    cache = _fixture_cache(tmp_path, ['0.1.1916'])
+    project = tmp_path / 'project'
+    executor = _fixture_executor(project, '0.1.1916')
+    registry = _fixture_registry(tmp_path, '0.1.1900')
+    fake = _RegenerateFake(executor, '0.1.1916')
+    monkeypatch.setattr(upgrade, '_planner_version', lambda: '0.1.1916')
+
+    report = upgrade.bootstrap_executor(
+        project_kind='consumer',
+        cache_root=cache,
+        executor_path=executor,
+        registry_path=registry,
+        _run_generate=fake,
+    )
+
+    assert report['status'] == 'success'
+    assert report['action'] == 'fresh'
+    assert 'version split' in report['warning']
+    assert '0.1.1900' in report['warning']
+    assert fake.calls == []
 
 
 def test_bootstrap_generate_anchors_discovery_via_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):

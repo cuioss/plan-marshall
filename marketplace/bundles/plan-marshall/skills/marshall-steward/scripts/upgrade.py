@@ -142,6 +142,7 @@ reported as ``error_type: concurrent_modification`` at exit 0.
 from __future__ import annotations
 
 import argparse
+import re
 from pathlib import Path
 
 # Cross-skill imports resolve through the PYTHONPATH the executor injects. This
@@ -745,8 +746,110 @@ def _run_bootstrap_generate(generator: Path, anchor: Path, project_dir: Path) ->
     return result.returncode, result.stdout, result.stderr
 
 
-def resolve_bootstrap_action(executor_version: str | None, newest_cache_version: str | None) -> tuple[str, str]:
-    """Pure decision: ``(action, warning)`` from the two versions.
+# A plugin-cache version directory name (``.../plan-marshall/0.1.1916/…``).
+_VERSION_DIR_RE = re.compile(r'^\d+\.\d+')
+
+
+def _version_dir_version(path: Path) -> str:
+    """The version-dir segment of ``path``'s ancestry, or ``''`` when it has none.
+
+    A script executed from a deployed plugin-cache version directory
+    (``.../plan-marshall/<version>/skills/…``) carries its skill-tree version in
+    the path; one executed from the marketplace source tree (a meta clone)
+    carries none, and ``''`` says so rather than guessing.
+    """
+    for ancestor in path.resolve().parents:
+        if _VERSION_DIR_RE.match(ancestor.name):
+            return ancestor.name
+    return ''
+
+
+def _planner_version() -> str:
+    """The version of the skill tree the running planner (this script) belongs to.
+
+    ``''`` when the planner runs from the marketplace source tree rather than a
+    deployed version directory — the meta-clone case, where there is no
+    skill/planner version pair to compare and the split is therefore not
+    asserted.
+    """
+    return _version_dir_version(Path(__file__))
+
+
+def _loaded_skill_version(registry_path: Path | None = None) -> str:
+    """The plan-marshall version the plugin manager has loaded, or ``''``.
+
+    The plugin registry (``installed_plugins.json``) is the plugin manager's
+    record of what it installed and loaded, so it is the one store that can name
+    a version the newest cache has already moved past. That is exactly the
+    condition the executor-stamp-vs-cache comparison cannot see: the executor
+    stamp and the cache agree (both regenerated) while the skill surface the
+    session loaded still lags the planner, so the router docs describe stages the
+    running planner no longer emits. Every skill of a bundle ships in lock-step,
+    so the plan-marshall bundle version IS the marshall-steward skill version.
+
+    Returns ``''`` when the registry is absent, unreadable, carries no
+    plan-marshall entry, or its rows disagree on the version: an unknown loaded
+    version is never compared, and never guessed.
+    """
+    from plugin_registry import REGISTRY_OK, default_registry_path, read_registry
+
+    path = registry_path if registry_path is not None else default_registry_path()
+    state, rows = read_registry(path)
+    if state != REGISTRY_OK:
+        return ''
+    versions = {
+        value
+        for row in rows
+        for value in (row.get('install_path_version'), row.get('version'))
+        if isinstance(value, str) and value
+    }
+    if len(versions) != 1:
+        return ''
+    return next(iter(versions))
+
+
+def _skill_planner_split_warning(loaded_skill_version: str | None, planner_version: str | None) -> str:
+    """Warn when the loaded skill surface and the planner disagree on the version.
+
+    Independent of the executor-stamp-vs-cache comparison: the two answer
+    different questions, and a split here is reported whether or not the executor
+    stamp and the newest cache agree. Empty exactly when either version is
+    unknown/unorderable or the two agree, so an unreadable store never fabricates
+    a split.
+    """
+    from generate_executor import _version_tuple
+
+    if not loaded_skill_version or not planner_version:
+        return ''
+    loaded = _version_tuple(loaded_skill_version)
+    planner = _version_tuple(planner_version)
+    if not loaded or not planner or loaded == planner:
+        return ''
+    if planner > loaded:
+        return (
+            f'skill/planner version split: the planner at {planner_version} is ahead of the loaded '
+            f'marshall-steward skill at {loaded_skill_version} — the router docs lag the planner. '
+            f'{_VERSION_SPLIT_REMEDY}'
+        )
+    return (
+        f'skill/planner version split: the loaded marshall-steward skill at {loaded_skill_version} is '
+        f'ahead of the planner at {planner_version} — the planner lags the installed skill surface. '
+        f'{_VERSION_SPLIT_REMEDY}'
+    )
+
+
+def _join_warnings(*warnings: str) -> str:
+    """Join the non-empty warnings with a single space, preserving order."""
+    return ' '.join(warning for warning in warnings if warning)
+
+
+def resolve_bootstrap_action(
+    executor_version: str | None,
+    newest_cache_version: str | None,
+    loaded_skill_version: str | None = None,
+    planner_version: str | None = None,
+) -> tuple[str, str]:
+    """Pure decision: ``(action, warning)`` from the versions.
 
     Actions: ``fresh`` (executor at or ahead of the cache — an AHEAD executor
     still carries a split warning, since the installed skill surface lags the
@@ -756,28 +859,37 @@ def resolve_bootstrap_action(executor_version: str | None, newest_cache_version:
     reading ``fresh``), ``no_cache`` (no newest cache version to compare
     against — the fresh-install boundary, never a failure).
 
-    The split warning names the remedy; it is empty exactly when no warning is
-    owed. Comparing uses the generator's own version ordering, never a local
-    re-implementation.
+    Two independent comparisons feed the warning, and neither replaces the
+    other. The executor-stamp-vs-cache comparison catches an executor ahead of
+    the cache; the loaded-skill-vs-planner comparison
+    (:func:`_skill_planner_split_warning`) catches a skill/planner split the
+    executor stamp cannot see, because the stamp and the cache can agree while
+    the loaded skill surface still lags the planner. The warning names the
+    remedy; it is empty exactly when no warning is owed. Comparing uses the
+    generator's own version ordering, never a local re-implementation.
     """
     from generate_executor import _version_tuple
 
+    split = _skill_planner_split_warning(loaded_skill_version, planner_version)
     if not newest_cache_version:
-        return 'no_cache', ''
+        return 'no_cache', split
     if not executor_version:
-        return 'regenerate_required', ''
+        return 'regenerate_required', split
     current = _version_tuple(executor_version)
     newest = _version_tuple(newest_cache_version)
     if current >= newest:
         if current == newest:
-            return 'fresh', ''
+            return 'fresh', split
         return (
             'fresh',
-            f'skill/planner version split: planner at {executor_version} is ahead of the newest '
-            f'installed skill surface at {newest_cache_version} — the router docs lag the '
-            f'planner. {_VERSION_SPLIT_REMEDY}',
+            _join_warnings(
+                f'skill/planner version split: planner at {executor_version} is ahead of the newest '
+                f'installed skill surface at {newest_cache_version} — the router docs lag the '
+                f'planner. {_VERSION_SPLIT_REMEDY}',
+                split,
+            ),
         )
-    return 'regenerate_required', ''
+    return 'regenerate_required', split
 
 
 def bootstrap_executor(
@@ -786,6 +898,7 @@ def bootstrap_executor(
     executor_path: Path | None = None,
     _run_generate=None,
     allow_regenerate: bool = True,
+    registry_path: Path | None = None,
 ) -> dict:
     """Validate the serving executor against the newest cache; regenerate when stale.
 
@@ -820,6 +933,10 @@ def bootstrap_executor(
             absent, unreadable or version-less executor is always restored from
             the newest cache regardless of this flag, because no plan can run
             against a broken tool and consent to restore one is meaningless.
+        registry_path: Explicit plugin-registry path, or ``None`` to resolve the
+            plugin manager's registry (tests pass a fixture registry). It is
+            read for the loaded marshall-steward skill version the skill/planner
+            split comparison consumes.
 
     Returns:
         A report dict: ``status`` (``success``, or ``error`` only when the
@@ -838,6 +955,13 @@ def bootstrap_executor(
     if executor_path is None:
         executor_path = _default_bootstrap_executor_path()
 
+    # Read the loaded-skill and planner versions BEFORE the cache check: the
+    # loaded-skill-vs-planner comparison is independent of the executor-stamp-vs-
+    # cache one, so it is surfaced on every branch, the fresh-install one
+    # included.
+    loaded_skill_version = _loaded_skill_version(registry_path)
+    planner_version = _planner_version()
+
     newest = newest_cache_version(cache_root) if cache_root is not None and cache_root.is_dir() else ''
     if not newest:
         return {
@@ -848,14 +972,14 @@ def bootstrap_executor(
             'executor_path': str(executor_path),
             'cache_root': str(cache_root) if cache_root is not None else '',
             'generator': '',
-            'warning': '',
+            'warning': _skill_planner_split_warning(loaded_skill_version, planner_version),
             'detail': 'no plugin cache resolvable — nothing to regenerate from (fresh-install boundary)',
         }
 
     state, current = read_executor_version(executor_path)
     executor_version = current if state == EXECUTOR_VERSION_FOUND else None
 
-    action, warning = resolve_bootstrap_action(executor_version, newest)
+    action, warning = resolve_bootstrap_action(executor_version, newest, loaded_skill_version, planner_version)
     generator: Path | None = None
     anchor = executor_path.parent.parent
 
