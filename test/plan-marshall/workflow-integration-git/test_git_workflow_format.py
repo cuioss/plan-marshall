@@ -574,3 +574,35 @@ class TestSourceCommitGate:
         assert result['allowed'] is True
         assert result['reason'] == 'open_fix_task'
         assert result['signals_resolved'] is True
+
+    def test_cli_untracked_source_file_is_refused(self, tmp_path):
+        """Git derivation unions untracked files: an untracked source file refuses."""
+        subprocess.run(['git', 'init', str(tmp_path)], check=True, capture_output=True)
+        subprocess.run(
+            ['git', '-C', str(tmp_path), 'config', 'user.email', 'test@example.com'],
+            check=True,
+            capture_output=True,
+        )
+        subprocess.run(
+            ['git', '-C', str(tmp_path), 'config', 'user.name', 'Test'],
+            check=True,
+            capture_output=True,
+        )
+        _create_file(tmp_path, 'baseline.txt')
+        subprocess.run(['git', '-C', str(tmp_path), 'add', 'baseline.txt'], check=True, capture_output=True)
+        subprocess.run(['git', '-C', str(tmp_path), 'commit', '-m', 'baseline'], check=True, capture_output=True)
+        _create_file(tmp_path, 'src/new.py')
+        stdout, stderr, returncode = run_git_script(
+            [
+                'source-commit-gate',
+                '--phase',
+                '6-finalize',
+                '--project-dir',
+                str(tmp_path),
+            ]
+        )
+
+        assert returncode == 0
+        result = parse_toon(stdout)
+        assert result['allowed'] is False
+        assert result['reason'] == 'no_sanction'

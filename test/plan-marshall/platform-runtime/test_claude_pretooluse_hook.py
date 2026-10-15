@@ -778,6 +778,12 @@ def test_r5_reason_names_the_remedy() -> None:
     assert 'manage-*' in hook._R5_REASON
 
 
+def test_r5_denies_quote_wrapped_interpreter() -> None:
+    """A quote-wrapped interpreter judges the same as the bare name (guard parity)."""
+    assert hook.evaluate(_signal2_payload('Bash', _bash('"python3" -c "print(1)"'))) == hook._R5_REASON
+    assert hook.evaluate(_signal2_payload('Bash', _bash("'python3' /tmp/x.py"))) == hook._R5_REASON
+
+
 # =============================================================================
 # Deny envelope shape (subprocess, end-to-end)
 # =============================================================================

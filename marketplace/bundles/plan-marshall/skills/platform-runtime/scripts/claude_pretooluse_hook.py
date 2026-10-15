@@ -472,6 +472,20 @@ def _second_token(command: str) -> str:
     return tokens[1]
 
 
+def _strip_matched_quotes(token: str) -> str:
+    """Strip one pair of matched surrounding quotes from *token*.
+
+    Mirrors the guard's ``normalizeToken`` quote handling so a quote-wrapped
+    interpreter (``"python3" -c ...``) is judged the same on both harnesses.
+    Used only by the R5 matcher — the shared ``_program_name`` keeps its
+    existing callers' behavior.
+    """
+    s = token.strip()
+    if len(s) >= 2 and ((s[0] == '"' and s[-1] == '"') or (s[0] == "'" and s[-1] == "'")):
+        return s[1:-1]
+    return s
+
+
 def _match_r5_interpreter_call(tool_name: str | None, tool_input: dict[str, Any]) -> str | None:
     """R5 — direct python interpreter call bypassing the executor."""
     command = _bash_command(tool_name, tool_input)
@@ -479,7 +493,7 @@ def _match_r5_interpreter_call(tool_name: str | None, tool_input: dict[str, Any]
         return None
     if _is_executor_permit(command):
         return None
-    if _program_name(command) not in ('python', 'python3'):
+    if _strip_matched_quotes(_program_name(command)) not in ('python', 'python3'):
         return None
     second = _second_token(command)
     if not second:

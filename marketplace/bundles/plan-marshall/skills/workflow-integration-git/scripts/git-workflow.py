@@ -560,7 +560,14 @@ def _source_gate_finding_texts(plan_dir: Path | None) -> tuple[list[str], int]:
 
 
 def _source_gate_changed_paths(worktree: Path, explicit: str | None) -> tuple[list[str] | None, dict | None]:
-    """Resolve the changed-path list from ``--changed-paths`` or from git."""
+    """Resolve the changed-path list from ``--changed-paths`` or from git.
+
+    The git derivation unions tracked modifications (``diff --name-only
+    HEAD``) with untracked-but-not-ignored files (``ls-files --others
+    --exclude-standard``): an untracked source file is a source path the
+    gate must see, never an invisible plan-only allow. A failed listing
+    fails closed — an unlistable tree never sanctions a source commit.
+    """
     if explicit is not None:
         return [path for path in (part.strip() for part in explicit.split(',')) if path], None
     rc, out, err = run_git(['-C', str(worktree), 'diff', '--name-only', 'HEAD'])
@@ -569,7 +576,15 @@ def _source_gate_changed_paths(worktree: Path, explicit: str | None) -> tuple[li
             f'git diff failed: {err or f"exit {rc}"}',
             code=ErrorCode.FETCH_FAILURE,
         )
-    return [line for line in (part.strip() for part in out.splitlines()) if line], None
+    tracked = [line for line in (part.strip() for part in out.splitlines()) if line]
+    rc, out, err = run_git(['-C', str(worktree), 'ls-files', '--others', '--exclude-standard'])
+    if rc != 0:
+        return None, make_error(
+            f'git ls-files failed: {err or f"exit {rc}"}',
+            code=ErrorCode.FETCH_FAILURE,
+        )
+    untracked = [line for line in (part.strip() for part in out.splitlines()) if line]
+    return tracked + [path for path in untracked if path not in tracked], None
 
 
 def cmd_source_commit_gate(args):
