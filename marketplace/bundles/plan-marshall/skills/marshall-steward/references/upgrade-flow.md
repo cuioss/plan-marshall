@@ -62,16 +62,38 @@ sub-steps on a consumer).
 
 ## Step 0: Bootstrap the executor, then obtain the stage plan
 
-Validate the serving executor against the newest plugin-cache version and
-regenerate it from that cache when stale BEFORE requesting the stage plan — a
-stale executor resolves every downstream stage to stale scripts. The `plan`
-verb performs this bootstrap itself (it is on by default; pass
-`--bootstrap false` only to skip it deliberately), so the normal call
-already bootstraps:
+Step 0 does **not** require a working `.plan/execute-script.py`.
+
+**Recovery first — a missing or broken executor.** When `.plan/execute-script.py`
+is absent, or invoking it fails with a `ModuleNotFoundError` (the executor still
+points at a pruned or partial cache), do NOT hand-repair it and do NOT stop.
+Restore it from the newest plugin-cache version by running the generator
+**directly, by its newest-cache script path** — the same direct-path surface
+Stage 1's `regenerate-executor` uses, which needs no working executor:
+
+```bash
+python3 {newest_cache}/plan-marshall/skills/tools-script-executor/scripts/generate_executor.py generate
+```
+
+`{newest_cache}` is the newest version directory under the deployed
+plan-marshall plugin cache. Once the executor is restored, continue with the
+normal call below — restoring it first is what makes every downstream stage
+resolve current-version scripts.
+
+**Normal — the executor resolves.** Validate the serving executor against the
+newest plugin-cache version and report its currency BEFORE requesting the stage
+plan — a stale executor resolves every downstream stage to stale scripts:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:marshall-steward:upgrade plan --integrate {integrate} --project-kind auto
 ```
+
+The `plan` verb **always validates** the serving executor; whether it may
+**rewrite** a merely-stale one is gated on `--bootstrap`, which defaults to
+`false`. A plain run therefore REPORTS a stale executor (`action:
+regenerate_required`, with a consent-prompting `warning`) and leaves it
+untouched — `integrate=false` never rewrites the executor unasked. Pass
+`--bootstrap true` to authorise the in-place regeneration.
 
 Pass the resolved `integrate` value (`true` when the invocation carried
 `integrate=true`, otherwise `false`) and `--project-kind auto` (the planner
@@ -83,17 +105,17 @@ See the [`../SKILL.md`](../SKILL.md) Canonical invocations (`upgrade — plan`) 
 the verb shape. Parse the returned top-level `project_kind`, the `bootstrap`
 block, and the `stages[4]{order,key,name,mutating,top_level_gate,nested_gates,sub_steps}` list.
 
-The `bootstrap` block reports `action` (`fresh` | `regenerated` | `no_cache` |
-`regenerate_failed` | `unknown`), the compared `executor_version` /
-`newest_cache_version`, and a `warning`. A non-empty `warning` names a
-skill/planner version split — the installed skill surface and the planner
-disagree on the version — and its remedy, instead of a silently stale run:
-re-sync the plugin cache (`/plugin update plan-marshall`), reload the session
-plugin set so the refreshed cache is visible (resolve the harness-appropriate
-directive through `platform_runtime session reload-directive`), then re-request
-the stage plan so the skill docs and the planner resolve one version. Surface
-the warning verbatim and follow the remedy before driving any stage: the plan
-just emitted was produced by a planner whose currency is unproven.
+The `bootstrap` block reports `action` (`fresh` | `regenerated` |
+`regenerate_required` | `no_cache` | `regenerate_failed` | `unknown`), the
+compared `executor_version` / `newest_cache_version`, and a `warning`. A
+non-empty `warning` names a skill/planner version split — the installed skill
+surface and the planner disagree on the version — and its remedy, instead of a
+silently stale run: re-sync the plugin cache (`/plugin update plan-marshall`),
+reload the session plugin set so the refreshed cache is visible (resolve the
+harness-appropriate directive through `platform_runtime session reload-directive`),
+then re-request the stage plan so the skill docs and the planner resolve one
+version. Surface the warning verbatim and follow the remedy before driving any
+stage: the plan just emitted was produced by a planner whose currency is unproven.
 
 Each stage's `top_level_gate` is the disposition this flow honors below: `prompt`
 (ask before running the stage) or `suppressed` (run without the top-level

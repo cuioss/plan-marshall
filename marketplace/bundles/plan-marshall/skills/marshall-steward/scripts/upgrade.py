@@ -107,7 +107,7 @@ Usage:
     python3 upgrade.py plan
     python3 upgrade.py plan --integrate true
     python3 upgrade.py plan --project-kind consumer
-    python3 upgrade.py plan --bootstrap false
+    python3 upgrade.py plan --bootstrap true   # consent to rewrite a stale executor
     python3 upgrade.py migrate-bot-lists
     python3 upgrade.py validate-bot-lists
 
@@ -121,8 +121,11 @@ Output (TOON):
     ...
 
 The ``bootstrap`` block reports the executor bootstrap (``fresh`` |
-``regenerated`` | ``no_cache`` | ``regenerate_failed`` | ``unknown`` |
-``skipped`` with ``--bootstrap false``); a ``warning`` names a skill/planner
+``regenerated`` | ``regenerate_required`` | ``no_cache`` |
+``regenerate_failed`` | ``unknown``). Rewriting a merely-stale executor is gated
+on ``--bootstrap true`` (default false — a stale executor reports
+``regenerate_required`` and is left untouched); a missing-or-broken executor is
+always restored from the newest cache. A ``warning`` names a skill/planner
 version split and its remedy instead of a silently stale run.
 
 Exit 0 on success, 2 on argparse rejection.
@@ -769,6 +772,7 @@ def bootstrap_executor(
     cache_root: Path | None = None,
     executor_path: Path | None = None,
     _run_generate=None,
+    allow_regenerate: bool = True,
 ) -> dict:
     """Validate the serving executor against the newest cache; regenerate when stale.
 
@@ -792,11 +796,23 @@ def bootstrap_executor(
         _run_generate: Injectable regeneration seam
             ``(generator, anchor, project_dir) -> (rc, stdout, stderr)``.
             Tests pass a fake; production uses :func:`_run_bootstrap_generate`.
+        allow_regenerate: Consent gate for REWRITING a merely-stale executor.
+            When ``False``, a stale-but-readable executor is validated and the
+            ``regenerate_required`` decision is REPORTED in the returned block —
+            never rewritten unasked. When ``True`` (the default for a direct
+            caller) the decision is acted on; ``cmd_plan`` threads the
+            ``--bootstrap`` flag here, whose default is ``false``, so the
+            ``plan`` verb reports a stale executor rather than rewriting it
+            unasked. The missing-or-broken executor RECOVERY is not gated: an
+            absent, unreadable or version-less executor is always restored from
+            the newest cache regardless of this flag, because no plan can run
+            against a broken tool and consent to restore one is meaningless.
 
     Returns:
         A report dict: ``status`` (``success``, or ``error`` only when the
         report itself could not be produced), ``action`` (``fresh`` |
-        ``regenerated`` | ``no_cache`` | ``regenerate_failed`` | ``unknown``),
+        ``regenerated`` | ``regenerate_required`` | ``no_cache`` |
+        ``regenerate_failed`` | ``unknown``),
         ``executor_version`` / ``newest_cache_version`` (``''`` when
         unresolved), ``executor_path`` / ``cache_root`` / ``generator`` (the
         resolved inputs), and ``warning`` (the split/remedy message, or ``''``).
@@ -829,6 +845,31 @@ def bootstrap_executor(
     action, warning = resolve_bootstrap_action(executor_version, newest)
     generator: Path | None = None
     anchor = executor_path.parent.parent
+
+    # A merely-stale executor is rewritten ONLY with consent (allow_regenerate).
+    # Without it the decision is reported and the executor is left untouched, so
+    # an unconsented reconcile never rewrites the executor out from under the
+    # running session. The missing-or-broken RECOVERY (executor_version is None —
+    # absent, unreadable, or carrying no version assignment) is not gated.
+    needs_recovery = executor_version is None
+    if action == 'regenerate_required' and not needs_recovery and not allow_regenerate:
+        return {
+            'status': 'success',
+            'action': 'regenerate_required',
+            'executor_version': executor_version or '',
+            'newest_cache_version': newest,
+            'executor_path': str(executor_path),
+            'cache_root': str(cache_root),
+            'generator': '',
+            'warning': (
+                f'executor at {executor_version or "unknown"} is behind the newest cache at '
+                f'{newest}; regeneration was not authorised (--bootstrap true is the consent '
+                f'gate), so the executor is reported and left untouched. Re-run with '
+                f'--bootstrap true to rewrite it. {_VERSION_SPLIT_REMEDY}'
+            ),
+            'detail': 'stale executor reported; regeneration gated on --bootstrap true',
+        }
+
     if action == 'regenerate_required':
         generator, anchor = _resolve_bootstrap_generator(project_kind, cache_root, newest)
         if generator is None:
@@ -906,33 +947,27 @@ def cmd_plan(args: argparse.Namespace) -> dict:
 
     Resolves ``--project-kind auto`` via :func:`detect_project_kind` against the
     current working directory (keeping :func:`build_plan` pure and directly
-    testable), runs the executor bootstrap (:func:`bootstrap_executor`) so a
-    stale executor is regenerated from the newest cache BEFORE the stage plan
-    is emitted, then delegates to the pure builder and merges the bootstrap
-    report. ``--bootstrap false`` skips the bootstrap (the hermetic seam the
-    planner-matrix tests use); production invocations leave it on. A bootstrap
+    testable), runs the executor bootstrap (:func:`bootstrap_executor`) BEFORE
+    the stage plan is emitted, then delegates to the pure builder and merges the
+    bootstrap report.
+
+    The bootstrap ALWAYS validates the serving executor against the newest cache
+    and reports the outcome; only whether it may REWRITE a merely-stale executor
+    is gated by ``--bootstrap`` (default false — a stale executor is reported,
+    never rewritten unasked). The missing-or-broken executor recovery is not
+    gated, because a plan cannot run against a broken tool. A bootstrap
     ``status: error`` fails closed with no plan emitted.
     """
     integrate = args.integrate == 'true'
     project_kind = args.project_kind
     if project_kind == 'auto':
         project_kind = detect_project_kind(Path.cwd())
-    if getattr(args, 'bootstrap', 'true') == 'true':
-        bootstrap = bootstrap_executor(project_kind=project_kind)
-        if bootstrap.get('status') != 'success':
-            return bootstrap
-    else:
-        bootstrap = {
-            'status': 'success',
-            'action': 'skipped',
-            'executor_version': '',
-            'newest_cache_version': '',
-            'executor_path': '',
-            'cache_root': '',
-            'generator': '',
-            'warning': '',
-            'detail': 'executor bootstrap skipped via --bootstrap false',
-        }
+    bootstrap = bootstrap_executor(
+        project_kind=project_kind,
+        allow_regenerate=getattr(args, 'bootstrap', 'false') == 'true',
+    )
+    if bootstrap.get('status') != 'success':
+        return bootstrap
     plan = build_plan(integrate, project_kind)
     plan['bootstrap'] = bootstrap
     return plan
@@ -972,12 +1007,14 @@ def main() -> int:
     plan_parser.add_argument(
         '--bootstrap',
         choices=['true', 'false'],
-        default='true',
+        default='false',
         help=(
-            'When true (default), validate the serving executor against the newest plugin-cache '
-            'version and regenerate it from that cache when stale BEFORE emitting the stage plan, '
-            'so the plan and every downstream stage resolve current-version scripts. When false, '
-            'skip the bootstrap and emit the plan directly.'
+            'Consent gate for REGENERATING the serving executor from the newest plugin-cache '
+            'version when it is merely stale. Default false: the bootstrap still VALIDATES and '
+            'REPORTS a stale executor in the ``bootstrap`` block, but does not rewrite it '
+            'unasked. Pass true to authorise the in-place regeneration. The missing-or-broken '
+            'executor recovery is not gated by this flag — a recovery run always restores the '
+            'executor from the newest cache (see references/upgrade-flow.md Step 0).'
         ),
     )
 

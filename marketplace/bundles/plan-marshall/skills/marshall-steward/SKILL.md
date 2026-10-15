@@ -68,7 +68,7 @@ configure · verify · maintain
 | determine_mode | `plan-marshall:marshall-steward:determine_mode` | Determine wizard vs menu mode; also exposes `check-harness` (active harness verification), `check-working-prefixes` (project.working_prefixes presence/drift), and `check-staleness` (health-menu executor/config staleness preflight) |
 | configure_harness | `plan-marshall:marshall-steward:configure_harness` | Deterministic script-only local harness configuration (`.plan/local/harness/{harness}.json`) |
 | gitignore_setup | `plan-marshall:marshall-steward:gitignore_setup` | Configure .gitignore for .plan/ |
-| upgrade | `plan-marshall:marshall-steward:upgrade` | Emit the four-stage `upgrade` verb plan (the stage plan is a pure function of `(integrate, project_kind)`; the verb bootstraps the serving executor against the newest plugin-cache version first, regenerating when stale, and reports a skill/planner version-split `warning` instead of a silently stale run); also exposes `migrate-bot-lists`, the idempotent one-shot auto-map of the retired `enabled_bots` knob onto `required_bots` / `optional_bots` driven as the Stage-2 `migrate-bot-lists` sub-step, and `validate-bot-lists`, the read-only report of configured reviewer tokens matching no registered bot kind driven as the Stage-2 `validate-bot-lists` sub-step. The plan's last Stage-2 sub-step, `migrate-architecture-descriptors`, has no subcommand here — it is driven through the `manage-architecture` verbs (see `references/upgrade-flow.md`) |
+| upgrade | `plan-marshall:marshall-steward:upgrade` | Emit the four-stage `upgrade` verb plan (the stage plan is a pure function of `(integrate, project_kind)`; the verb validates the serving executor against the newest plugin-cache version first, regenerating a merely-stale one only with `--bootstrap true` (a missing-or-broken executor is always restored), and reports a skill/planner version-split `warning` instead of a silently stale run); also exposes `migrate-bot-lists`, the idempotent one-shot auto-map of the retired `enabled_bots` knob onto `required_bots` / `optional_bots` driven as the Stage-2 `migrate-bot-lists` sub-step, and `validate-bot-lists`, the read-only report of configured reviewer tokens matching no registered bot kind driven as the Stage-2 `validate-bot-lists` sub-step. The plan's last Stage-2 sub-step, `migrate-architecture-descriptors`, has no subcommand here — it is driven through the `manage-architecture` verbs (see `references/upgrade-flow.md`) |
 | cache_freshness | `plan-marshall:marshall-steward:cache_freshness` | Fail-closed three-valued plugin-cache freshness verdict (`fresh\|stale\|unknown`) driving the consumer Stage-1 `cache-freshness-check` sub-step |
 | cache_retention | `plan-marshall:marshall-steward:cache_retention` | Union-keep plugin-cache retention sweep (dry run unless `--apply`) driving the Stage-1 `cache-retention-sweep` sub-step behind the `cache-retention-prune` nested gate |
 | bootstrap_plugin | _(direct Python call)_ | Detect plugin root, cache in `.plan/local/marshall-state.toon` |
@@ -1002,9 +1002,14 @@ python3 .plan/execute-script.py plan-marshall:marshall-steward:upgrade plan [--i
 ```
 
 Validates the serving executor against the newest plugin-cache version and
-regenerates it from that cache when stale BEFORE emitting the stage plan, so
-the plan and every downstream stage resolve current-version scripts
-(`--bootstrap false` skips the bootstrap). Emits the `bootstrap` block
+reports its currency BEFORE emitting the stage plan, so a stale executor is
+caught before it resolves every downstream stage to stale scripts. Whether it
+may REWRITE a merely-stale executor is gated on `--bootstrap`, which defaults
+to `false`: a plain run reports `action: regenerate_required` and leaves the
+executor untouched, so `integrate=false` never rewrites it unasked; pass
+`--bootstrap true` to authorise the in-place regeneration. A missing-or-broken
+executor is always restored from the newest cache (see `references/upgrade-flow.md`
+Step 0). Emits the `bootstrap` block
 (`action`, `executor_version`, `newest_cache_version`, `warning`) alongside
 the stage plan: a non-empty `warning` names a skill/planner version split and
 its remedy — re-sync the plugin cache, reload the plugin set, re-request the

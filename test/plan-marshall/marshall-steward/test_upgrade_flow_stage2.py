@@ -201,12 +201,13 @@ def test_stage2_full_order_pins_roster_from_seeding_through_validation():
 # D4 Step 0 bootstrap — validate + regenerate from the newest cache, then plan
 # =============================================================================
 #
-# Step 0 bootstraps the serving executor (validate against the newest
-# plugin-cache version, regenerate when stale) before the stage plan is
-# requested, and surfaces a skill/planner version-split warning instead of a
-# silently stale run. These pins read the Step 0 prose, not the planner: the
-# planner tests above cover the mechanism, and these cover the router contract
-# the operator actually follows.
+# Step 0 validates the serving executor against the newest plugin-cache version
+# before the stage plan is requested (reporting a stale executor unless
+# ``--bootstrap true`` consents to a rewrite, and recovering a missing-or-broken
+# one), and surfaces a skill/planner version-split warning instead of a silently
+# stale run. These pins read the Step 0 prose, not the planner: the planner tests
+# above cover the mechanism, and these cover the router contract the operator
+# actually follows.
 
 
 def _step0_block() -> str:
@@ -240,14 +241,26 @@ def test_step0_surfaces_the_version_split_warning_with_its_remedy():
     assert 'stage plan' in block
 
 
-def test_step0_bootstrap_is_on_by_default():
-    """D4: the documented Step 0 call relies on the default-true bootstrap.
+def test_step0_bootstrap_reports_a_stale_executor_and_gates_regeneration():
+    """D4: Step 0 reports a stale executor; rewriting it is opt-in (--bootstrap true).
 
-    The prose states the bootstrap is on by default and names the deliberate
-    skip flag — so a reader neither re-implements the bootstrap around the
-    call nor skips it unknowingly.
+    The prose states the bootstrap always validates, that a merely-stale executor
+    is reported as ``regenerate_required`` and left untouched, and that
+    ``--bootstrap true`` is the consent gate — so a reader neither re-implements
+    the bootstrap nor has it rewrite the executor unasked.
     """
     block = _step0_block()
 
-    assert 'on by default' in block
-    assert '--bootstrap false' in block
+    assert 'regenerate_required' in block
+    assert '--bootstrap true' in block
+    assert 'defaults to' in block
+
+
+def test_step0_documents_the_missing_or_broken_executor_recovery():
+    """D4: Step 0 does not require a working executor — the recovery is documented."""
+    block = _step0_block()
+
+    assert 'not** require a working' in block
+    assert 'ModuleNotFoundError' in block
+    assert 'newest' in block
+    assert 'generate_executor.py generate' in block

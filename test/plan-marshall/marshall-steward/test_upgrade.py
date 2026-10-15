@@ -75,6 +75,24 @@ _EXPECTED_SUB_STEPS = {
 }
 
 
+# Hermetic executor-bootstrap report for ``_run``. The real
+# ``bootstrap_executor`` reads the serving executor and the live plugin cache —
+# state the planner-matrix tests must never depend on. Wiring tests that need the
+# real seam monkeypatch ``upgrade.bootstrap_executor`` themselves and pass
+# ``bootstrap=True`` to ``_run``.
+_FRESH_BOOTSTRAP_STUB: dict = {
+    'status': 'success',
+    'action': 'fresh',
+    'executor_version': '',
+    'newest_cache_version': '',
+    'executor_path': '',
+    'cache_root': '',
+    'generator': '',
+    'warning': '',
+    'detail': 'hermetic test stub',
+}
+
+
 def _run(
     argv: list[str],
     capsys: pytest.CaptureFixture[str],
@@ -90,18 +108,18 @@ def _run(
     ``SystemExit`` it raises. This is the ONLY seam in this module that reaches
     the CLI entry point, so every argv-driven case below goes through it.
 
-    ``bootstrap`` selects the executor-bootstrap footing for ``plan``
-    invocations. False (default) appends ``--bootstrap false`` so
-    planner-matrix tests never touch the live executor or plugin cache — the
-    bootstrap would otherwise compare (and, when stale, regenerate) the real
-    serving executor on whatever machine runs the suite. True leaves ``argv``
-    untouched for the bootstrap-wiring tests, which monkeypatch
-    ``upgrade.bootstrap_executor`` instead of reaching the live environment.
-    Non-``plan`` verbs never take the flag, so it is appended for ``plan``
-    only.
+    Every ``plan`` invocation runs the executor bootstrap — the missing-or-broken
+    recovery is ungated, and a merely-stale executor is reported unless
+    ``--bootstrap true`` consents to a rewrite. By default ``_run`` replaces the
+    bootstrap with a hermetic ``fresh`` stub, so the planner-matrix tests never
+    read the live executor or plugin cache. Pass ``bootstrap=True`` to leave the
+    bootstrap seam to the caller: the bootstrap-wiring tests monkeypatch
+    ``upgrade.bootstrap_executor`` themselves and set ``--bootstrap`` in ``argv``
+    to exercise the ``allow_regenerate`` wiring. Non-``plan`` verbs never
+    bootstrap.
     """
     if argv and argv[0] == 'plan' and not bootstrap:
-        argv = [*argv, '--bootstrap', 'false']
+        monkeypatch.setattr(upgrade, 'bootstrap_executor', lambda **kwargs: dict(_FRESH_BOOTSTRAP_STUB))
     monkeypatch.setattr(sys, 'argv', ['upgrade', *argv])
     with pytest.raises(SystemExit) as excinfo:
         upgrade.main()
@@ -851,7 +869,7 @@ def test_stage2_order_seeded_roster_survives_merge_and_validates_clean():
 
     assert report['state'] == 'migrated'
     merged = _merged_with_params(params)
-    _cmd_sync_defaults._backfill_standard_roster(merged)
+    _cmd_sync_defaults._backfill_standard_roster(merged, enabled=True)
     kept = _params_of(merged)
 
     assert kept['required_bots'] == 'cuioss-review-bot,coderabbit'
@@ -885,7 +903,7 @@ def test_stage2_order_operator_answer_survives_merge_and_validates_clean():
 
     assert report['state'] == 'operator_answer_kept'
     merged = _merged_with_params(params)
-    _cmd_sync_defaults._backfill_standard_roster(merged)
+    _cmd_sync_defaults._backfill_standard_roster(merged, enabled=True)
     kept = _params_of(merged)
 
     assert kept['required_bots'] == kinds[0]
@@ -906,20 +924,20 @@ def test_sync_backfill_fills_absent_roster_and_never_clobbers_operator_answer():
     import _cmd_sync_defaults
 
     absent = _merged_with_params({})
-    _cmd_sync_defaults._backfill_standard_roster(absent)
+    _cmd_sync_defaults._backfill_standard_roster(absent, enabled=True)
     filled = _params_of(absent)
     assert filled['required_bots'] == 'cuioss-review-bot,coderabbit'
     assert filled['optional_bots'] == 'sourcery'
 
     kinds = _live_kinds()
     operator = _merged_with_params({'required_bots': kinds[0], 'optional_bots': kinds[1]})
-    _cmd_sync_defaults._backfill_standard_roster(operator)
+    _cmd_sync_defaults._backfill_standard_roster(operator, enabled=True)
     kept = _params_of(operator)
     assert kept['required_bots'] == kinds[0]
     assert kept['optional_bots'] == kinds[1]
 
     answered_empty = _merged_with_params({'required_bots': '', 'optional_bots': '', 'bot_lists_provenance': 'answered'})
-    _cmd_sync_defaults._backfill_standard_roster(answered_empty)
+    _cmd_sync_defaults._backfill_standard_roster(answered_empty, enabled=True)
     assert _params_of(answered_empty) == {
         'required_bots': '',
         'optional_bots': '',
@@ -1006,10 +1024,9 @@ class _RegenerateFake:
 def test_plan_carries_bootstrap_block_by_default(capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch):
     """A bare ``plan`` runs the bootstrap and merges its report into the output.
 
-    The bootstrap itself is monkeypatched — this pins the WIRING (default-true
-    flag, merge order), not the bootstrap logic, which the fixture tests below
-    cover. The fake returning a fixed block proves the emitted ``bootstrap``
-    block IS the bootstrap's report, and the stages still emit beside it.
+    The bootstrap itself is monkeypatched — this pins the WIRING (the consent
+    flag is threaded as ``allow_regenerate``; the report merges beside the
+    stages), not the bootstrap logic, which the fixture tests below cover.
     """
     sentinel = {
         'status': 'success',
@@ -1023,37 +1040,56 @@ def test_plan_carries_bootstrap_block_by_default(capsys: pytest.CaptureFixture[s
         'detail': 'sentinel bootstrap',
     }
     seen: dict = {}
-    monkeypatch.setattr(
-        upgrade, 'bootstrap_executor', lambda project_kind='consumer': seen.update(kind=project_kind) or sentinel
-    )
+    monkeypatch.setattr(upgrade, 'bootstrap_executor', lambda **kwargs: seen.update(kwargs) or sentinel)
 
-    exit_code, parsed = _run(['plan', '--project-kind', 'meta'], capsys, monkeypatch, bootstrap=True)
+    exit_code, parsed = _run(
+        ['plan', '--project-kind', 'meta', '--bootstrap', 'true'], capsys, monkeypatch, bootstrap=True
+    )
 
     assert exit_code == 0
     assert parsed['bootstrap'] == sentinel
-    assert seen == {'kind': 'meta'}
+    assert seen == {'project_kind': 'meta', 'allow_regenerate': True}
     assert [stage['key'] for stage in parsed['stages']] == _EXPECTED_STAGE_KEYS
 
 
-def test_plan_bootstrap_false_skips_bootstrap(capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch):
-    """``--bootstrap false`` emits the plan with a ``skipped`` bootstrap block.
+def test_plan_bootstrap_false_validates_without_regenerating(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+):
+    """``--bootstrap false`` (the default) validates and REPORTS, never rewrites.
 
-    The bootstrap raising on any call proves the skip is real, not a silent
-    default that still ran. The block shape is stable either way, so a consumer
-    parses one contract.
+    The bootstrap always runs — a missing executor must still be recovered — but
+    the consent flag reaches it as ``allow_regenerate=False``, so a merely-stale
+    executor is reported rather than rewritten unasked.
     """
+    seen: dict = {}
 
-    def _boom(**kwargs):
-        raise AssertionError('bootstrap must not run with --bootstrap false')
+    def _report(**kwargs):
+        seen.update(kwargs)
+        return dict(_FRESH_BOOTSTRAP_STUB)
 
-    monkeypatch.setattr(upgrade, 'bootstrap_executor', _boom)
+    monkeypatch.setattr(upgrade, 'bootstrap_executor', _report)
 
     exit_code, parsed = _run(['plan', '--bootstrap', 'false'], capsys, monkeypatch, bootstrap=True)
 
     assert exit_code == 0
-    assert parsed['bootstrap']['action'] == 'skipped'
-    assert parsed['bootstrap']['warning'] == ''
+    assert seen['allow_regenerate'] is False
     assert [stage['key'] for stage in parsed['stages']] == _EXPECTED_STAGE_KEYS
+
+
+def test_plan_default_does_not_authorise_regeneration(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+):
+    """A bare ``plan`` passes ``allow_regenerate=False`` — the ask-first default."""
+    seen: dict = {}
+
+    monkeypatch.setattr(
+        upgrade, 'bootstrap_executor', lambda **kwargs: seen.update(kwargs) or dict(_FRESH_BOOTSTRAP_STUB)
+    )
+
+    exit_code, _parsed = _run(['plan'], capsys, monkeypatch, bootstrap=True)
+
+    assert exit_code == 0
+    assert seen['allow_regenerate'] is False
 
 
 def test_plan_propagates_bootstrap_error(capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch):
@@ -1061,7 +1097,7 @@ def test_plan_propagates_bootstrap_error(capsys: pytest.CaptureFixture[str], mon
     monkeypatch.setattr(
         upgrade,
         'bootstrap_executor',
-        lambda project_kind='consumer': {'status': 'error', 'error': 'fixture bootstrap failure'},
+        lambda **kwargs: {'status': 'error', 'error': 'fixture bootstrap failure'},
     )
 
     exit_code, parsed = _run(['plan'], capsys, monkeypatch, bootstrap=True)
@@ -1203,6 +1239,55 @@ def test_bootstrap_ahead_executor_warns_split_without_regenerating(tmp_path: Pat
     assert report['action'] == 'fresh'
     assert 'version split' in report['warning']
     assert '/plugin update plan-marshall' in report['warning']
+    assert fake.calls == []
+
+
+def test_bootstrap_missing_executor_recovers_without_consent(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """A MISSING executor is restored even without consent — the recovery is ungated.
+
+    Nothing can run against an absent executor, so consent to restore one is
+    meaningless: the recovery path always regenerates from the newest cache,
+    whatever ``allow_regenerate`` says.
+    """
+    cache = _fixture_cache(tmp_path, ['0.1.10'])
+    clone = tmp_path / 'clone'
+    _fixture_meta_generator(clone)
+    (clone / '.plan').mkdir(parents=True, exist_ok=True)
+    executor = clone / '.plan' / 'execute-script.py'  # never written — absent
+    fake = _RegenerateFake(executor, '0.1.10')
+    monkeypatch.chdir(clone)
+
+    report = upgrade.bootstrap_executor(
+        project_kind='meta',
+        cache_root=cache,
+        executor_path=executor,
+        _run_generate=fake,
+        allow_regenerate=False,
+    )
+
+    assert report['status'] == 'success'
+    assert report['action'] == 'regenerated'
+    assert len(fake.calls) == 1
+
+
+def test_bootstrap_stale_executor_without_consent_is_reported_not_rewritten(tmp_path: Path):
+    """A merely-STALE executor without consent is reported, never rewritten unasked."""
+    cache = _fixture_cache(tmp_path, ['0.1.9', '0.1.10'])
+    project = tmp_path / 'project'
+    executor = _fixture_executor(project, '0.1.9')
+    fake = _RegenerateFake(executor, '0.1.10')
+
+    report = upgrade.bootstrap_executor(
+        project_kind='consumer',
+        cache_root=cache,
+        executor_path=executor,
+        _run_generate=fake,
+        allow_regenerate=False,
+    )
+
+    assert report['status'] == 'success'
+    assert report['action'] == 'regenerate_required'
+    assert 'bootstrap true' in report['warning']
     assert fake.calls == []
 
 
