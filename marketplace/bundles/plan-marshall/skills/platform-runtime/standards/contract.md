@@ -68,7 +68,7 @@ alternative: <what the caller can do instead>
 ### `project initial-setup`
 
 One-time project setup: create `.plan/`, bridge standing rules into the
-target surface, install platform hook. Shared `marshal.json` carries no
+target surface, install a platform hook where supported. Shared `marshal.json` carries no
 runtime-owned keys: the retired `runtime.target` seeding writes nothing
 there, so setup never creates or mutates it — routing stays config-driven
 via the registry.

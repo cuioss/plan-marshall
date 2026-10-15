@@ -21,6 +21,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import shlex
 import sys
 from pathlib import Path
 from typing import Any
@@ -59,9 +60,9 @@ BRIDGE_REEMIT_COMMAND_TEMPLATE = (
 def bridge_reemit_command(harness: str, plan_dir: Path, project_dir: Path) -> str:
     """Return the re-emit command for a damaged or missing bridge stub."""
     return BRIDGE_REEMIT_COMMAND_TEMPLATE.format(
-        harness=harness,
-        plan_dir=plan_dir,
-        project_dir=project_dir,
+        harness=shlex.quote(harness),
+        plan_dir=shlex.quote(str(plan_dir)),
+        project_dir=shlex.quote(str(project_dir)),
     )
 
 
