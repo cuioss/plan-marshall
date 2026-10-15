@@ -14,6 +14,7 @@ paths for metrics operations, and error paths for invalid arguments across all
 
 import json
 import pathlib
+import sqlite3
 
 import pytest
 
@@ -1204,3 +1205,134 @@ def test_reconcile_standing_rules_bridge_heals_missing_bridge(tmp_path: pathlib.
 
     assert _reconcile_standing_rules_bridge('opencode', tmp_path) is True
     assert _bridge_rules_path(tmp_path).is_file()
+
+
+# =============================================================================
+# Persisted-approval contradiction reporter (D3)
+# =============================================================================
+
+
+def _write_deny_config(project_dir: pathlib.Path, deny_resources: list[str]) -> pathlib.Path:
+    """Write a list-shape opencode.json denying each resource under shell."""
+    config = {
+        'permissions': [{'action': 'shell', 'resource': resource, 'effect': 'deny'} for resource in deny_resources],
+    }
+    config_path = project_dir / 'opencode.json'
+    config_path.write_text(json.dumps(config), encoding='utf-8')
+    return config_path
+
+
+def _make_fixture_db(db_path: pathlib.Path, rows: list[tuple[str, str, str]]) -> None:
+    """Create a fixture permission table with (tool, pattern, action) rows."""
+    conn = sqlite3.connect(str(db_path))
+    try:
+        conn.execute('CREATE TABLE permission (tool TEXT, pattern TEXT, action TEXT)')
+        conn.executemany('INSERT INTO permission (tool, pattern, action) VALUES (?, ?, ?)', rows)
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _allow_row_count(db_path: pathlib.Path) -> int:
+    """Count every row in the fixture permission table."""
+    conn = sqlite3.connect(str(db_path))
+    try:
+        return int(conn.execute('SELECT COUNT(*) FROM permission').fetchone()[0])
+    finally:
+        conn.close()
+
+
+def test_reporter_surfaces_contradicting_allow_as_warning(runtime: OpenCodeRuntime, tmp_path: pathlib.Path) -> None:
+    """A persisted allow row the project denies is reported, and nothing is removed."""
+    _write_deny_config(tmp_path, ['ls *'])
+    db_path = tmp_path / 'opencode.db'
+    _make_fixture_db(
+        db_path,
+        [
+            ('bash', 'ls', 'allow'),
+            ('bash', 'git status *', 'allow'),
+            ('bash', 'rm *', 'deny'),
+        ],
+    )
+    config_before = (tmp_path / 'opencode.json').read_text(encoding='utf-8')
+    count_before = _allow_row_count(db_path)
+
+    result = _parse(runtime.permission_report_persisted_contradictions(str(tmp_path), str(db_path)))
+
+    assert result['checkable'] is True
+    assert result['persisted_allow_count'] == 2
+    assert len(result['contradictions']) == 1
+    entry = result['contradictions'][0]
+    assert entry['pattern'] == 'ls'
+    assert entry['deny_pattern'] == 'ls *'
+    assert 'ls' in entry['warning']
+    assert 'DELETE FROM' in entry['removal_hint']
+
+    assert _allow_row_count(db_path) == count_before
+    assert (tmp_path / 'opencode.json').read_text(encoding='utf-8') == config_before
+
+
+def test_reporter_clean_db_surfaces_no_warning(runtime: OpenCodeRuntime, tmp_path: pathlib.Path) -> None:
+    """Persisted allows no deny rule refuses produce no warning, and nothing is removed."""
+    _write_deny_config(tmp_path, ['ls *'])
+    db_path = tmp_path / 'opencode.db'
+    _make_fixture_db(db_path, [('bash', 'git status *', 'allow')])
+    count_before = _allow_row_count(db_path)
+
+    result = _parse(runtime.permission_report_persisted_contradictions(str(tmp_path), str(db_path)))
+
+    assert result['checkable'] is True
+    assert result['contradictions'] == []
+    assert _allow_row_count(db_path) == count_before
+
+
+def test_reporter_absent_db_is_not_checkable_never_ok(runtime: OpenCodeRuntime, tmp_path: pathlib.Path) -> None:
+    """An absent database reports not-checkable, never a clean bill of health."""
+    _write_deny_config(tmp_path, ['ls *'])
+    missing = tmp_path / 'no-such.db'
+
+    result = _parse(runtime.permission_report_persisted_contradictions(str(tmp_path), str(missing)))
+
+    assert result['checkable'] is False
+    assert result['contradictions'] == []
+    assert result.get('ok') is None
+
+
+def test_reporter_opens_read_only_and_writes_nothing() -> None:
+    """The reporter body opens the database read-only and never saves settings."""
+    body = method_code(
+        'plan-marshall', 'platform-runtime', 'opencode_runtime.py', 'permission_report_persisted_contradictions'
+    )
+    assert 'mode=ro' in body
+    assert 'permission_save_settings' not in body
+
+
+def test_plan_start_surfaces_reporter_warning_verbatim(
+    runtime: OpenCodeRuntime, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Plan start embeds the reporter's contradiction entries verbatim."""
+    _write_deny_config(tmp_path, ['ls *'])
+    db_path = tmp_path / 'opencode.db'
+    _make_fixture_db(db_path, [('bash', 'ls', 'allow')])
+    monkeypatch.setenv('OPENCODE_DB_PATH', str(db_path))
+
+    setup = _parse(runtime.project_initial_setup(str(tmp_path), 'opencode'))
+    report = _parse(runtime.permission_report_persisted_contradictions(str(tmp_path), str(db_path)))
+
+    assert setup['persisted_approval_checkable'] is True
+    assert setup['persisted_approval_warnings'] == report['contradictions']
+    assert len(setup['persisted_approval_warnings']) == 1
+
+
+def test_plan_start_absent_db_reports_not_checkable(
+    runtime: OpenCodeRuntime, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Plan start with no database reports not-checkable instead of failing setup."""
+    _write_deny_config(tmp_path, ['ls *'])
+    monkeypatch.setenv('OPENCODE_DB_PATH', str(tmp_path / 'no-such.db'))
+
+    setup = _parse(runtime.project_initial_setup(str(tmp_path), 'opencode'))
+
+    assert setup['status'] == 'success'
+    assert setup['persisted_approval_checkable'] is False
+    assert setup['persisted_approval_warnings'] == []
