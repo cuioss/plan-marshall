@@ -698,11 +698,11 @@ def test_standing_rules_drift_baseline_newer(
 def test_project_initial_setup_resestup_is_idempotent(
     runtime: AntigravityRuntime, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ):
-    """A second setup writes neither marshal.json nor the bridge again."""
+    """The first setup writes the bridge but never marshal.json; a second setup writes neither again."""
     monkeypatch.setenv('GEMINI_CONFIG_DIR', str(tmp_path / 'gemini-config'))
 
     first = _parse(runtime.project_initial_setup(str(tmp_path), 'antigravity'))
-    assert first['marshal_written'] is True
+    assert first['marshal_written'] is False
     assert first['bridge_written'] is True
 
     second = _parse(runtime.project_initial_setup(str(tmp_path), 'antigravity'))
@@ -767,34 +767,40 @@ def test_resestup_clears_baseline_newer_drift(
 
 
 def test_reconcile_standing_rules_bridge_heals_missing_bridge(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
-    """The steward reconcile heals a missing Antigravity bridge via setup."""
+    """Observe-only reconcile reports a missing bridge without healing it."""
     from antigravity_runtime import _bridge_rules_path
     from configure_harness import _reconcile_standing_rules_bridge
 
     (tmp_path / 'CLAUDE.md').write_text('# baseline\n', encoding='utf-8')
     monkeypatch.setenv('GEMINI_CONFIG_DIR', str(tmp_path / 'gemini-config'))
 
-    assert _reconcile_standing_rules_bridge('antigravity', tmp_path) is True
-    assert _bridge_rules_path(tmp_path).is_file()
+    assert _reconcile_standing_rules_bridge('antigravity', tmp_path) is False
+    assert not _bridge_rules_path(tmp_path).is_file()
 
 
 def test_reconcile_standing_rules_bridge_reports_failed_setup(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
-    """A failed setup never reports a healed bridge, even over a stale file."""
+    """Observe-only reconcile never invokes setup — a failing setup stays uncalled."""
+    from antigravity_runtime import _bridge_rules_path
     from configure_harness import _reconcile_standing_rules_bridge
 
     (tmp_path / 'CLAUDE.md').write_text('# baseline\n', encoding='utf-8')
-    (tmp_path / 'AGENTS.md').write_text('# stale bridge\n', encoding='utf-8')
+    bridge = _bridge_rules_path(tmp_path)
+    bridge.parent.mkdir(parents=True, exist_ok=True)
+    bridge.write_text('# stale bridge without marker\n', encoding='utf-8')
+
+    calls: list = []
 
     class _FailingRuntime:
         def project_initial_setup(self, *_args: Any, **_kwargs: Any) -> None:
+            calls.append(True)
             raise OSError('setup failed')
 
     import platform_runtime
-    from configure_harness import _reconcile_standing_rules_bridge
 
     monkeypatch.setattr(platform_runtime, '_make_runtime', lambda _h: _FailingRuntime())
 
     assert _reconcile_standing_rules_bridge('antigravity', tmp_path) is False
+    assert calls == []
 
 
 def test_reconcile_standing_rules_bridge_claude_is_baseline_presence(tmp_path: Path):

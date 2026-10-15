@@ -1126,9 +1126,9 @@ def test_standing_rules_drift_baseline_newer(runtime: OpenCodeRuntime, tmp_path:
 
 
 def test_project_initial_setup_resestup_is_idempotent(runtime: OpenCodeRuntime, tmp_path: pathlib.Path) -> None:
-    """A second setup writes neither marshal.json nor the bridge again."""
+    """The first setup writes the bridge but never marshal.json; a second setup writes neither again."""
     first = _parse(runtime.project_initial_setup(str(tmp_path), 'opencode'))
-    assert first['marshal_written'] is True
+    assert first['marshal_written'] is False
     assert first['bridge_written'] is True
 
     second = _parse(runtime.project_initial_setup(str(tmp_path), 'opencode'))
@@ -1186,14 +1186,14 @@ def test_resestup_clears_baseline_newer_drift(runtime: OpenCodeRuntime, tmp_path
 
 
 def test_reconcile_standing_rules_bridge_heals_missing_bridge(tmp_path: pathlib.Path) -> None:
-    """The steward reconcile heals a missing OpenCode bridge via setup."""
+    """Observe-only reconcile reports a missing bridge without healing it."""
     from configure_harness import _reconcile_standing_rules_bridge
     from opencode_runtime import _bridge_rules_path
 
     (tmp_path / 'CLAUDE.md').write_text('# baseline\n', encoding='utf-8')
 
-    assert _reconcile_standing_rules_bridge('opencode', tmp_path) is True
-    assert _bridge_rules_path(tmp_path).is_file()
+    assert _reconcile_standing_rules_bridge('opencode', tmp_path) is False
+    assert not _bridge_rules_path(tmp_path).is_file()
 
 
 # =============================================================================
