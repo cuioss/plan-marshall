@@ -1872,39 +1872,104 @@ def test_sync_defaults_project_step_without_implements_is_reported_and_kept(plan
 
 
 # =============================================================================
-# Roster-only backfill persistence
+# Roster back-fill is OPT-IN (upgrade-only)
 # =============================================================================
 #
-# `_backfill_standard_roster` mutates the merged config after the deep merge.
-# The sync save predicate must include its changed signal, otherwise a
-# roster-only drift is applied in memory but never written back to disk.
+# `_backfill_standard_roster` mutates the merged config after the deep merge, but
+# ONLY when the caller opts in. A plain `sync-defaults` (the wizard's silent
+# materialize step, the re-run remediation pass) never seeds a roster the operator
+# has not answered — it may re-materialize the EMPTY configurable defaults through
+# the deep merge, but it must not write the standard roster. Only the
+# marshall-steward upgrade's Stage-2 reconcile passes `--backfill-bot-roster`. When
+# the opted-in back-fill runs it records `bot_lists_provenance: migrated`, so the
+# seeded value stays distinguishable from a never-asked placeholder and from an
+# operator answer.
+
+_ROSTER_STEP = 'plan-marshall:automatic-review'
 
 
-def test_sync_defaults_roster_only_backfill_persists(plan_context):
-    """A roster-only drift is filled AND written back to disk."""
-    _write_marshal(plan_context.fixture_dir, {})
-    first = cmd_sync_defaults(_sync_ns())
-    assert first['status'] == 'success'
-
-    config = _read_marshal(plan_context.fixture_dir)
-    steps = config['plan']['phase-6-finalize']['steps']
-    roster_step = 'plan-marshall:automatic-review'
-    assert roster_step in steps, 'the synced config must carry the roster step'
-    # Simulate roster-only drift: clear both roster keys on an otherwise synced file.
-    params = steps[roster_step]
-    assert isinstance(params, dict)
+def _clear_roster_keys(params: dict) -> None:
+    """Simulate a never-answered roster on an otherwise synced step block."""
     params.pop('required_bots', None)
     params.pop('optional_bots', None)
     params.pop('bot_lists_provenance', None)
+
+
+def test_sync_defaults_plain_run_leaves_never_answered_roster_empty(plan_context):
+    """A plain sync-defaults never seeds the standard roster an operator has not answered."""
+    _write_marshal(plan_context.fixture_dir, {})
+    assert cmd_sync_defaults(_sync_ns())['status'] == 'success'
+
+    config = _read_marshal(plan_context.fixture_dir)
+    steps = config['plan']['phase-6-finalize']['steps']
+    assert _ROSTER_STEP in steps, 'the synced config must carry the roster step'
+    _clear_roster_keys(steps[_ROSTER_STEP])
     _write_marshal(plan_context.fixture_dir, config)
 
-    result = cmd_sync_defaults(_sync_ns())
+    assert cmd_sync_defaults(_sync_ns())['status'] == 'success'
 
-    assert result['status'] == 'success'
-    persisted = _read_marshal(plan_context.fixture_dir)
-    roster = persisted['plan']['phase-6-finalize']['steps'][roster_step]
+    roster = _read_marshal(plan_context.fixture_dir)['plan']['phase-6-finalize']['steps'][_ROSTER_STEP]
+    # The deep merge may re-materialize the EMPTY configurable defaults, but the
+    # standard roster must NOT be seeded and no provenance may be recorded.
+    assert roster.get('required_bots', '') == ''
+    assert roster.get('optional_bots', '') == ''
+    assert 'bot_lists_provenance' not in roster
+
+
+def test_sync_defaults_backfill_bot_roster_flag_seeds_roster_and_records_migrated(plan_context):
+    """The opt-in path seeds the standard roster and records provenance `migrated`."""
+    _write_marshal(plan_context.fixture_dir, {})
+    assert cmd_sync_defaults(_sync_ns())['status'] == 'success'
+
+    config = _read_marshal(plan_context.fixture_dir)
+    steps = config['plan']['phase-6-finalize']['steps']
+    _clear_roster_keys(steps[_ROSTER_STEP])
+    _write_marshal(plan_context.fixture_dir, config)
+
+    opted_in = parse_ns(*_SCRIPT, 'sync-defaults', '--backfill-bot-roster', register=False)
+    assert cmd_sync_defaults(opted_in)['status'] == 'success'
+
+    roster = _read_marshal(plan_context.fixture_dir)['plan']['phase-6-finalize']['steps'][_ROSTER_STEP]
     assert roster.get('required_bots') == _sync_mod._STANDARD_REQUIRED_BOTS
     assert roster.get('optional_bots') == _sync_mod._STANDARD_OPTIONAL_BOTS
+    assert roster.get('bot_lists_provenance') == _sync_mod.BOT_LISTS_PROVENANCE_MIGRATED
+
+
+def test_backfill_standard_roster_gate_is_off_by_default():
+    """`_backfill_standard_roster` is a no-op unless the caller opts in."""
+    merged: dict = {
+        'plan': {'phase-6-finalize': {'steps': {_ROSTER_STEP: {}}}},
+    }
+
+    assert _sync_mod._backfill_standard_roster(merged, enabled=False) is False
+    params = merged['plan']['phase-6-finalize']['steps'][_ROSTER_STEP]
+    assert 'required_bots' not in params
+    assert 'optional_bots' not in params
+    assert 'bot_lists_provenance' not in params
+
+
+def test_backfill_standard_roster_records_migrated_provenance():
+    """An opted-in fill records provenance `migrated`, not an operator answer."""
+    merged: dict = {
+        'plan': {'phase-6-finalize': {'steps': {_ROSTER_STEP: {}}}},
+    }
+
+    assert _sync_mod._backfill_standard_roster(merged, enabled=True) is True
+    params = merged['plan']['phase-6-finalize']['steps'][_ROSTER_STEP]
+    assert params['required_bots'] == _sync_mod._STANDARD_REQUIRED_BOTS
+    assert params['optional_bots'] == _sync_mod._STANDARD_OPTIONAL_BOTS
+    assert params['bot_lists_provenance'] == _sync_mod.BOT_LISTS_PROVENANCE_MIGRATED
+
+
+def test_backfill_standard_roster_never_clobbers_an_operator_answer():
+    """An answered provenance is left untouched even when opted in."""
+    merged: dict = {
+        'plan': {'phase-6-finalize': {'steps': {_ROSTER_STEP: {'bot_lists_provenance': 'answered'}}}},
+    }
+
+    assert _sync_mod._backfill_standard_roster(merged, enabled=True) is False
+    params = merged['plan']['phase-6-finalize']['steps'][_ROSTER_STEP]
+    assert 'required_bots' not in params
 
 
 def test_backfill_standard_roster_reports_changed():
@@ -1919,9 +1984,9 @@ def test_backfill_standard_roster_reports_changed():
         },
     }
 
-    assert _sync_mod._backfill_standard_roster(merged) is True
+    assert _sync_mod._backfill_standard_roster(merged, enabled=True) is True
     # A second call observes the filled roster and reports no change.
-    assert _sync_mod._backfill_standard_roster(merged) is False
+    assert _sync_mod._backfill_standard_roster(merged, enabled=True) is False
 
 
 def test_backfill_standard_roster_skips_when_legacy_enabled_bots_present():
@@ -1938,7 +2003,7 @@ def test_backfill_standard_roster_skips_when_legacy_enabled_bots_present():
         },
     }
 
-    assert _sync_mod._backfill_standard_roster(merged) is False
+    assert _sync_mod._backfill_standard_roster(merged, enabled=True) is False
     params = merged['plan']['phase-6-finalize']['steps']['plan-marshall:automatic-review']
     assert 'required_bots' not in params
     assert 'optional_bots' not in params

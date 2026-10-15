@@ -817,10 +817,11 @@ def _seed_verify_steps() -> dict:
 
 
 # Operator-curated keyed step maps and the removal-intent key — the SINGLE
-# source both consumers derive from (``_cmd_sync_defaults`` for the merge
-# guard/report, ``_cmd_quality_phases`` for the remove-step record). A third
-# copy as a literal is a defect: if one copy changes, removal and sync
-# silently disagree about which maps are guarded.
+# source every consumer derives from (``_cmd_sync_defaults`` for the merge
+# guard/report, ``_cmd_quality_phases`` for the remove-step record,
+# ``_config_core`` for the nested-diff dynamic-prefix set). A second copy as a
+# literal is a defect: if one copy changes, removal, sync and the nested-key
+# diff silently disagree about which maps are guarded.
 OPERATOR_STEP_MAP_LOCATIONS: tuple[tuple[str, str], ...] = (
     ('phase-5-execute', 'verification_steps'),
     ('phase-6-finalize', 'steps'),
@@ -844,6 +845,17 @@ OPERATOR_REMOVED_STEPS_KEY = 'removed_steps'
 # the two writers seed different rosters with no sync between them.
 STANDARD_REQUIRED_BOTS = 'cuioss-review-bot,coderabbit'
 STANDARD_OPTIONAL_BOTS = 'sourcery'
+
+# The three-valued reviewer-roster provenance vocabulary (single source for both
+# writers — the ``migrate-bot-lists`` migration and the ``sync-defaults``
+# back-fill that records it). See ``standards/data-model.md`` § "Why both
+# defaults are EMPTY" for the contract: ``never_asked`` (the seeded default),
+# ``migrated`` (seeded by the upgrade, not by an operator answer), ``answered``
+# (the operator was asked and answered, including an explicit none).
+BOT_LISTS_PROVENANCE_KEY = 'bot_lists_provenance'
+BOT_LISTS_PROVENANCE_NEVER_ASKED = 'never_asked'
+BOT_LISTS_PROVENANCE_MIGRATED = 'migrated'
+BOT_LISTS_PROVENANCE_ANSWERED = 'answered'
 
 
 # Canonical-verify step prefix. A ``per_deliverable_build`` list entry MUST be a

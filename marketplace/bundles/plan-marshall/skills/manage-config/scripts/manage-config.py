@@ -413,10 +413,19 @@ def main() -> int:
     )
 
     # --- sync-defaults ---
-    subparsers.add_parser(
+    p_sync_defaults = subparsers.add_parser(
         'sync-defaults',
         help='Non-destructively merge keys present in defaults but absent from the live marshal.json',
         allow_abbrev=False,
+    )
+    p_sync_defaults.add_argument(
+        '--backfill-bot-roster',
+        action='store_true',
+        default=False,
+        help='Opt in to seeding the standard reviewer roster (required_bots / '
+        'optional_bots) into an automatic-review block the operator never answered, '
+        'recording bot_lists_provenance: migrated. Only the marshall-steward upgrade '
+        'passes this; a plain sync-defaults leaves a never-answered roster untouched.',
     )
 
     # --- effort ---

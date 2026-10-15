@@ -107,6 +107,38 @@ Running the migration *before* the deep-merge is load-bearing: with the canonica
 already present, the deep-merge does not re-add the default canonical alongside a
 surviving retired key, so a stale-key config never yields a double review step.
 
+**Opt-in reviewer-roster back-fill** (`--backfill-bot-roster`; runs AFTER the
+deep-merge):
+
+By default `sync-defaults` never writes the reviewer roster
+(`plan.phase-6-finalize.steps['plan-marshall:automatic-review'].required_bots` /
+`optional_bots`). A `required_bots` / `optional_bots` that is absent or empty is
+left exactly as it is, so a plain `sync-defaults` — the wizard's silent materialize
+step, the re-run remediation pass — never seeds a roster the operator has not
+answered:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config sync-defaults
+```
+
+Pass `--backfill-bot-roster` to opt in. Only the `marshall-steward` upgrade's
+Stage-2 `reconcile-marshal-json` sub-step passes it, because seeding a roster the
+operator never answered is an upgrade-time migration act, not a routine reconcile:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config sync-defaults --backfill-bot-roster
+```
+
+When opted in, the `plan-marshall:automatic-review` param block is filled with the
+standard roster only where it carries no operator answer (no non-empty
+`required_bots` / `optional_bots`, and no `bot_lists_provenance: answered`), and
+`bot_lists_provenance` is recorded as `migrated` so the seeded value stays
+distinguishable from both a never-asked placeholder and an operator answer. A
+present non-empty value, or any value with `bot_lists_provenance: answered`, is an
+operator answer and is never clobbered; a present retired `enabled_bots` key defers
+to the `migrate-bot-lists` sub-step. See [standards/data-model.md](standards/data-model.md)
+§ "Why both defaults are EMPTY" for the provenance contract.
+
 **Output** (TOON):
 
 ```toon

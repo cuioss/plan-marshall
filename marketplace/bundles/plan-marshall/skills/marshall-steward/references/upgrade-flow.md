@@ -361,8 +361,18 @@ Reconcile `marshal.json`. Run the three reconcile verbs in order —
 `sync-defaults` then `steps-sort` then, LAST, `normalize-keys`:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-config:manage-config sync-defaults
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config sync-defaults --backfill-bot-roster
 ```
+
+The upgrade passes **`--backfill-bot-roster`** because seeding the standard reviewer
+roster is an upgrade-time migration act. A plain `sync-defaults` run anywhere else —
+the wizard's silent materialize step, the re-run remediation pass — omits the flag
+and therefore never writes a `required_bots` / `optional_bots` the operator has not
+answered; only this Stage-2 call opts in, seeds the standard roster into a
+never-answered `plan-marshall:automatic-review` block, and records
+`bot_lists_provenance: migrated`. See the `manage-config` `sync-defaults` workflow
+for the flag contract and [`../../manage-config/standards/data-model.md`](../../manage-config/standards/data-model.md)
+for the provenance contract.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config steps-sort

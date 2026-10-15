@@ -23,6 +23,9 @@ from _config_core import (
     success_exit,
 )
 from _config_defaults import (
+    BOT_LISTS_PROVENANCE_ANSWERED,
+    BOT_LISTS_PROVENANCE_KEY,
+    BOT_LISTS_PROVENANCE_MIGRATED,
     OPERATOR_REMOVED_STEPS_KEY,
     OPERATOR_STEP_MAP_LOCATIONS,
     RETIRED_UNCONSUMED_KEYS,
@@ -583,19 +586,28 @@ def _materialize_finalize_lanes(live: dict, materialized: list[str], added: list
 _STANDARD_REQUIRED_BOTS = STANDARD_REQUIRED_BOTS
 _STANDARD_OPTIONAL_BOTS = STANDARD_OPTIONAL_BOTS
 _AUTOMATIC_REVIEW_STEP_ID = 'plan-marshall:automatic-review'
-_BOT_LISTS_PROVENANCE_KEY = 'bot_lists_provenance'
+_BOT_LISTS_PROVENANCE_KEY = BOT_LISTS_PROVENANCE_KEY
 _LEGACY_BOT_LIST_KEY = 'enabled_bots'
 
 
-def _backfill_standard_roster(merged: dict) -> bool:
+def _backfill_standard_roster(merged: dict, *, enabled: bool) -> bool:
     """Back-fill the standard roster into an absent automatic-review param block.
 
-    The deep merge never clobbers a present ``required_bots`` / ``optional_bots``
-    value: a present non-empty value, or any value with
-    ``bot_lists_provenance: answered``, is an operator answer and is left
+    The back-fill is OPT-IN (``enabled``): only the ``marshall-steward`` upgrade's
+    Stage 2 passes the opt-in, because seeding a roster the operator never answered
+    is an upgrade-time migration act, not something a plain ``sync-defaults`` — the
+    wizard's silent materialize step, the re-run remediation pass — may do. When
+    ``enabled`` is false the call is a no-op, so a never-answered
+    ``required_bots`` / ``optional_bots`` is left exactly as it is.
+
+    When enabled, the deep merge still never clobbers a present
+    ``required_bots`` / ``optional_bots`` value: a present non-empty value, or any
+    value with ``bot_lists_provenance: answered``, is an operator answer and is left
     untouched. Only a missing key, or an empty value without an answered
-    provenance, is filled with the standard roster. Held/re-added reporting
-    covers the roster step id like any other step id through the standard
+    provenance, is filled with the standard roster, and a fill records
+    ``bot_lists_provenance: migrated`` so the seeded value stays distinguishable
+    from a never-asked placeholder and from an operator answer. Held/re-added
+    reporting covers the roster step id like any other step id through the standard
     deep-merge accumulators — this helper only fills params inside a kept step.
     A present retired ``enabled_bots`` key defers to the ``migrate-bot-lists``
     sub-step (Stage 2 runs sync-defaults before the migration): filling here
@@ -603,6 +615,8 @@ def _backfill_standard_roster(merged: dict) -> bool:
     answer, reporting ``operator_answer_kept`` instead of ``migrated``.
     Mutates ``merged`` in place. Returns True when either roster key was filled.
     """
+    if not enabled:
+        return False
     plan = merged.get('plan')
     if not isinstance(plan, dict):
         return False
@@ -615,7 +629,7 @@ def _backfill_standard_roster(merged: dict) -> bool:
     params = steps_map.get(_AUTOMATIC_REVIEW_STEP_ID)
     if not isinstance(params, dict):
         return False
-    if params.get(_BOT_LISTS_PROVENANCE_KEY) == 'answered':
+    if params.get(_BOT_LISTS_PROVENANCE_KEY) == BOT_LISTS_PROVENANCE_ANSWERED:
         return False
     if _LEGACY_BOT_LIST_KEY in params:
         return False
@@ -628,6 +642,10 @@ def _backfill_standard_roster(merged: dict) -> bool:
     if not isinstance(optional, str) or not optional.strip():
         params['optional_bots'] = _STANDARD_OPTIONAL_BOTS
         changed = True
+    if changed:
+        # Record the upgrade-seeded provenance so a seeded value is never read as
+        # a never-asked placeholder (nor as an operator answer).
+        params[_BOT_LISTS_PROVENANCE_KEY] = BOT_LISTS_PROVENANCE_MIGRATED
     return changed
 
 
@@ -797,8 +815,10 @@ def cmd_sync_defaults(args) -> dict:
     merged = _deep_merge_missing(live, defaults, '', added, held_for_ask, re_added)
 
     # Preserve operator-set reviewer lists through the Stage 2 order: fill the
-    # standard roster only where the automatic-review block carries no answer.
-    roster_changed = _backfill_standard_roster(merged)
+    # standard roster only where the automatic-review block carries no answer —
+    # and only when the caller opted in (the marshall-steward upgrade's Stage 2).
+    # A plain sync-defaults passes no opt-in and writes nothing here.
+    roster_changed = _backfill_standard_roster(merged, enabled=getattr(args, 'backfill_bot_roster', False))
 
     # Materialize an explicit lane on every lane-less phase-6-finalize step. Runs
     # AFTER the deep-merge (consumes the populated ``added`` accumulator to
