@@ -890,7 +890,10 @@ def _build_task_record(parsed: dict[str, Any], raw_items: dict[str, list[_RawLis
         deliverable_raw = 0
     deliverable = validate_deliverable(deliverable_raw)
     if deliverable == 0 and origin_raw not in DELIVERABLE_ZERO_ORIGINS:
-        raise ValueError('Missing required field: deliverable')
+        raise ValueError(
+            'Missing required field: deliverable — deliverable 0 is allowed only for '
+            "'holistic' or 'fix' origins; every other origin must declare deliverable >= 1"
+        )
     if not domain_raw:
         raise ValueError('Missing required field: domain')
     if not steps:

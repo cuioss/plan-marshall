@@ -263,7 +263,7 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
 - Only a matched record whose resolution is `fixed`, re-added with the `--reopen` opt-in, returns to `pending` → returns `status: reopened`, moving the prior resolution, detail and timestamp into the record's `history`.
 - Otherwise → creates new finding with `status: success`
 
-`QGATE_PERSIST_OK` is exactly `success` / `deduplicated` / `reopened` / `kept` — every status that leaves the record in the store. Callers test membership in that set, never `status == 'success'`.
+`QGATE_PERSIST_OK` is exactly `success` / `deduplicated` / `reopened` / `kept` — every status that leaves the record in the store. Callers test membership in that set, never `status == 'success'`. In other words: `qgate add` reopens a resolved finding only with the `--reopen` opt-in, and the listed status values (`success`, `deduplicated`, `reopened`, `kept`) equal `QGATE_PERSIST_OK`.
 
 **Iteration**: The optional `--iteration N` parameter tracks which verification cycle produced the finding (e.g., iteration 1 = first build attempt, iteration 2 = after fixes). Useful for filtering findings from a specific cycle via `qgate list --iteration N`.
 
