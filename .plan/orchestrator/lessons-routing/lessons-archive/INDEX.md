@@ -288,3 +288,83 @@ one filed item is a recurrence of an already-verified Open Defect.
 | 199 | `qgate list` has no cross-phase form; callers invent `qgate query` (= 157) |
 | 200 | `compose` defaults `envelope_count` to 1 instead of deriving it from the packed tasks |
 | 201 | Disabled build server logs a WARNING per build (= 031, 046, 109) |
+
+## Sweep 2026-10-15 — 97 inbox messages (84 `pm-mcp-core-m2-m4-203`..`-286`, 13 late arrivals)
+
+Input was the epic's own inbox (corpus: 0). The 84 `pm-mcp-core-m2-m4` messages came from pm-mcp-core plans (opencode and Claude Code); the 13 late arrivals from `api-sheriff-kidicap-gateway-requirements` (API-Sheriff plan `32-early-answer-it-timeouts`, PR cuioss/API-Sheriff#466) landed mid-run and were graded in the same run. Operator rulings this run: all five `pm-mcp-core` borderlines graded **high** (224, 232 framework-skill over-attachment; 247 verification scope plus `.md` false-pass; 252 module ADR collisions; 267 pre-push DEGRADED on Maven); late-arrival 006 graded **medium**. Nothing re-checked in code — filed items rest on the sender's verification and the triage record; medium/low rest on the message text.
+
+### `filed-live-blockers/` (40 messages, 15 filings)
+
+| Filing | Level | Messages | Subject | Owner today |
+|---|---|---|---|---|
+| `lessons-routing-029` | high | pm 203, 213, 240, 265, 285 | Sibling-repo deliverable lifecycle (recurrence of `-018`) | `-018` |
+| `lessons-routing-030` | high | pm 204, 218, 231, 235, 245, 254 | Sourcery review-budget refusal not a registered refusal pattern | none |
+| `lessons-routing-031` | high | pm 205, 216, 229, 237, 250, 267 | Gate-bundle derivation zero on Maven; pre-push gate DEGRADED | none |
+| `lessons-routing-032` | high | pm 212, 226, 238, 248, 266, 274 | Deep-lane outline without the assessment pass (recurrence of `-022`) | `-022` |
+| `lessons-routing-033` | high | pm 225, 283 | Q-Gate deliverable-hash skip has no hash primitive (recurrence of `-023`) | `-023` |
+| `lessons-routing-034` | high | pm 230 | Triage fix-task shape under deliverable 0 rejected by commit-add (recurrence of `-020`) | PLAN-LB-26 |
+| `lessons-routing-035` | high | pm 234 | Staged-spec premise invalidated by a sibling landing | none |
+| `lessons-routing-036` | high | pm 242, 252 | Per-package ADR numbers collide; pre-merge gate misses them | none |
+| `lessons-routing-037` | high | pm 247, 253 | Verification scoped to the wrong files; Sonar confirms a stale analysis | none |
+| `lessons-routing-038` | high | pm 255 | Phase-4/5 subagents self-transition before the orchestrator Q-Gate | none |
+| `lessons-routing-039` | high | pm 224, 232 | Task skill resolution attaches framework skills the module forbids | none |
+| `lessons-routing-040` | high | as 001, 002, 003 | Outline assessments miss files, lack backing, outlive refuted designs | none |
+| `lessons-routing-041` | high | as 005 | Staged diagnose-then-fix plans have no declared task deferral | none |
+| `lessons-routing-042` | high | as 012 | `worktree-remove` from a stale-cwd shell fails after move-back | none |
+| `lessons-routing-043` | high (inherited) | as 011 | ci-verify triage recurrence, evidence for `-019`, no new item | PLAN-LB-24 |
+
+`pm` = `pm-mcp-core-m2-m4-NNN`; `as` = `api-sheriff-kidicap-gateway-requirements-NNN`.
+
+### `medium/` (45)
+
+| Messages | Subject |
+|---|---|
+| pm 206, 215 | Re-verify from a clean build after a rebase (stale `target/` fixtures) |
+| pm 207, 220 | Sibling-checkout search fallback and footprint false-fails on sibling/read-intent paths |
+| pm 208, 222 | Finalize dispatches emit no `DISPATCH` telemetry (ad-hoc and loop-back re-fires) |
+| pm 209, 211, 241 | Change-ledger rows: short-SHA duplicates; Maven runs write no build row (thrice) |
+| pm 210 | `review_completeness --participated-bots` rejects a bare bot name (caller UX) |
+| pm 214 | Quality-gate rewrites accepted blind, flagged by Sonar (project review discipline) |
+| pm 217 | Worktree-rebase drift probe errors without a marketplace root |
+| pm 219 | Unified triage pending count mismatches the findings store |
+| pm 221 | Subagent hand-backs counted as operator turns in `extract-signal` |
+| pm 223, 236, 280 | Outline/phase self-transitions before the Q-Gate (sequencing, re-open) |
+| pm 227 | Cross-module log-record change left untested by the module_testing split |
+| pm 233 | Additive-only `affected_files` sync cannot prune renamed paths |
+| pm 246, 264 | Outline sequencing and construction-site sweep gaps (Q-Gate caught) |
+| pm 249, 256 | Docs-only loop-back reruns full verify; pre-push docs assume marketplace shape |
+| pm 251 | Sonar prerequisite wording induces invented notation |
+| pm 257, 258, 262 | Skill/domain detection gaps (framework ban, Java-as-docs, project-local carry) |
+| pm 259 | Scope-creep check re-reports accepted gate/operator files |
+| pm 261 | Architecture inventory blind to `.pmwf` fixtures |
+| pm 263 | Review-driven correction opened a fail-open (pm-mcp-core discipline) |
+| pm 268, 271 | Sourcery pronoun-variant refusal plus declined-comment leak |
+| pm 269, 284 | Finalize dispatch boundaries and zero-usage rows (metrics only) |
+| pm 270 | Read-intent references graded `CERTAIN_INCLUDE` (false unrealised signal) |
+| pm 275 | Consumer sweep missed a cross-module log-text test |
+| pm 276 | Pre-commit rewrite of untouched files trips scope-creep (114 files) |
+| pm 279 | `change_type` heuristic overconfident on the word "verification" |
+| pm 286 | Whole-tree verify inside a leaf hits the timeout cap (scoping rule) |
+| as 004 | Doc deliverable named an insertion point by paraphrase; no such section |
+| as 006 | Deliverable risk-mitigation gate not carried into task text (operator: medium) |
+| as 007, 008 | Throwaway-branch deletion owner; exemplar-mirroring rationale import |
+| as 009 | Operator re-scope left a stale "unchanged" claim after loop-back |
+| as 010 | `ci checks logs` argparse rejections on unquoted free text |
+
+### `low/` (12)
+
+| Messages | Subject |
+|---|---|
+| pm 228 | Stale `target/test-classes` after rebase (local Maven hygiene) |
+| pm 239 | Pattern-uniqueness claim written without a content sweep |
+| pm 243, 244 | ADR backfill overclaim; triage loop-back budget sizing (same PR) |
+| pm 260 | Dispatch-boundary rows lack `step_id` (metrics observability only) |
+| pm 272, 273 | Invented `qgate query` verb; `architecture search` flag misuse |
+| pm 277 | Residual dual-path audit-log write (single-plan, review caught) |
+| pm 278 | Code-review verdict guidance on `failure_class "none"` |
+| pm 281, 282 | Build-wrapper timeout and build-before-commit freshness (single-repo tuning) |
+| as 013 | Build-server `timeout` under foreign machine load (environmental, re-submitted green) |
+
+### `stale/` (0)
+
+No message refuted at ground truth this run; nothing filed as stale.

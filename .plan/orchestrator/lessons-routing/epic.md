@@ -317,6 +317,21 @@ Per-message dispositions: `lessons-archive/INDEX.md` § Sweep 2026-10-13 (second
 
 No borderline grade, no operator ruling needed.
 
+### 2026-10-15 — sixth `ingest` run (inbox, 97 messages)
+
+Corpus at start: 0. Input: 84 messages (`pm-mcp-core-m2-m4-203`..`-286`) from pm-mcp-core plans, plus 13 late arrivals from `api-sheriff-kidicap-gateway-requirements` (API-Sheriff plan `32-early-answer-it-timeouts`, PR cuioss/API-Sheriff#466) that landed mid-run and were graded in the same run. Per-message dispositions: `lessons-archive/INDEX.md` § Sweep 2026-10-15.
+
+Operator rulings this run: all five `pm-mcp-core` borderlines graded **high** (224, 232 framework-skill over-attachment; 247 verification scope plus `.md` false-pass; 252 module ADR collisions; 267 pre-push DEGRADED on Maven); late-arrival 006 graded **medium**.
+
+| Disposition | Messages | Where |
+|---|---|---|
+| high, filed to `live-blockers` | 40 in 15 filings (`lessons-routing-029`..`-043`) | `live-blockers/inbox/`; bodies in `lessons-archive/filed-live-blockers/` |
+| medium, archived | 45 | `lessons-archive/medium/` |
+| low, archived | 12 | `lessons-archive/low/` |
+| stale | 0 | — |
+
+Recurrences carried: deep-lane no-assessments (`-022`, filing `-032`), Q-Gate hash skip (`-023`, `-033`), fix-task deliverable 0 (`-020`, `-034`), sibling-repo lifecycle (`-018`, `-029`), ci-verify triage (`-019`, `-043` evidence only).
+
 ## START HERE
 
 ### Annotations
