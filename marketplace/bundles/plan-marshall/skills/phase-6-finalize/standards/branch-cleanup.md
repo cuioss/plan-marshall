@@ -1612,6 +1612,28 @@ python3 .plan/execute-script.py plan-marshall:phase-6-finalize:pre_merge_gate me
     --strategy {pr_merge_strategy} --delete-branch {admin_flag}
 ```
 
+### Squash-message composition (explicit message, never the page body)
+
+The merge commit message is composed explicitly — never the PR page body. The
+page body carries review-bot summaries (e.g. a "Summary by CodeRabbit" section
+the bot appends after creation) and trailers beyond the project's own, so
+reusing it as the squash message would land bot prose and a second trailer on
+the base branch. The message is exactly three parts:
+
+1. The PR title line (`{pr_title}` as resolved in `create-pr` Step 3.5).
+2. The `## Summary` section body from the created PR body (the plan's own
+   summary, not any bot summary).
+3. Exactly the project trailer (`Co-Authored-By: plan-marshall <noreply@cuioss.de>`,
+   resolved through `manage-run-config commit-trailer get` — one trailer, never two).
+
+**Merge-queue path.** The platform merge queue may offer no per-enqueue message
+override. When the provider cannot set the merge-queue message, do NOT silently
+fall back to the page body: record the limitation in the PR (a comment naming
+that the queue message could not be set) and set the repository's
+merge-commit-message default through the CI abstraction (`ci repo` surface)
+instead, so the landed commit still carries the title-plus-Summary-plus-trailer
+shape.
+
 **Bash tool timeout**: pass the seam-resolved host cap (`harness bash-timeout-ceiling` — 600s on the Claude target); the routed `pr safe-merge` bounds its own readiness poll.
 
 Branch on `dispatched` first (§ "Gate result — branch on `dispatched` first" above). With `dispatched: true`, the payload is the `pr safe-merge` result, read as below.

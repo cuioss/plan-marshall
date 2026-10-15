@@ -36,17 +36,18 @@ from plan_logging import log_entry
 #: confident one.
 _ALREADY_OPENED_TASK_STATUSES = ('in_progress', 'done', 'failed')
 
-#: Profiles whose verification is owed to the orchestrator tier. A task in one
-#: of these profiles MUST NOT read `done` when its last step finalizes — its
-#: test run has not started yet (the orchestrator-tier build runs after the
-#: leaf yields), so closing it would leave a failure with no task to reopen.
-#: The task stays `in_progress` carrying `verification_owed: True` until the
-#: orchestrator-tier build reports; the orchestrator then closes it via
-#: `finalize-step --verification-complete` (see manage-tasks/SKILL.md
-#: § "Finalize-step profile branch"). An implementation task whose own wider
-#: run was handed back takes the same path when the leaf passes
-#: `--verification-owed` — the script never resolves tiers itself.
-_ORCHESTRATOR_OWED_VERIFICATION_PROFILES = ('module_testing',)
+#: Explicit flag that holds a task open for orchestrator-tier verification. A
+#: task whose last step finalizes MUST NOT read `done` when the caller passes
+#: `--verification-owed` — its test run has not started yet (the
+#: orchestrator-tier build runs after the leaf yields), so closing it would
+#: leave a failure with no task to reopen. The task stays `in_progress`
+#: carrying `verification_owed: True` until the orchestrator-tier build
+#: reports; the orchestrator then closes it via `finalize-step
+#: --verification-complete` (see manage-tasks/SKILL.md § "Finalize-step
+#: verification-owed flag contract"). The profile name alone never triggers
+#: the hold — the script never resolves tiers itself, it only honors the
+#: explicit flag the leaf passes.
+_VERIFICATION_OWED_FLAG_ONLY = True
 
 
 def cmd_finalize_step(args) -> dict:
@@ -123,19 +124,19 @@ def cmd_finalize_step(args) -> dict:
 
     # Update task state
     #
-    # Module-testing close rule: a task whose verification is owed to the
+    # Verification-owed hold: a task whose verification is owed to the
     # orchestrator tier stays open until that build reports. When every step
-    # is terminal with no failure but the task is in an owed profile (or the
-    # leaf passed --verification-owed for a handed-back wider run), the task
-    # keeps `in_progress` with the `verification_owed` marker instead of
-    # flipping to `done` — unless this call carries --verification-complete,
-    # the orchestrator's close after the build reported green. The marker is
-    # what `next` skips on (an owed task has no actionable step) and what the
-    # orchestrator closes; a task that reached `done` keeps none.
+    # is terminal with no failure and the leaf passed --verification-owed for
+    # a handed-back orchestrator-tier run, the task keeps `in_progress` with
+    # the `verification_owed` marker instead of flipping to `done` — unless
+    # this call carries --verification-complete, the orchestrator's close
+    # after the build reported green. The profile name alone never triggers
+    # the hold. The marker is what `next` skips on (an owed task has no
+    # actionable step) and what the orchestrator closes; a task that reached
+    # `done` keeps none.
     verification_owed_call = getattr(args, 'verification_owed', False) is True
     verification_complete_call = getattr(args, 'verification_complete', False) is True
-    owed_profile = task.get('profile') in _ORCHESTRATOR_OWED_VERIFICATION_PROFILES
-    owed_open = all_terminal and not has_failed and (owed_profile or verification_owed_call)
+    owed_open = all_terminal and not has_failed and verification_owed_call
     if owed_open and not verification_complete_call:
         task['status'] = 'in_progress'
         task['verification_owed'] = True

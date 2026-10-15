@@ -42,8 +42,12 @@ has a different digest, so it is filed as a new finding. Every other outcome —
 no such record, a record resolved any other way, or a store read that did not
 succeed — goes to the primitive exactly as before: a pending record is
 deduplicated and a record resolved any other way keeps its recorded resolution
-(the primitive's `kept` outcome), with the re-observation counted in
-`reobserved_count` rather than filed again.
+(the primitive's `kept` outcome). The re-observation is counted in
+`reobserved_count`. A `kept` re-observation whose recorded resolution is `fixed`
+reports `finding_emitted: false` — the record stays fixed with nothing pending,
+so there is no pending filing to report — while every other benign outcome
+still reports `finding_emitted: true`: the finding IS in the store under those
+outcomes.
 
 The baseline is the merge-base, recomputed on every run
 -------------------------------------------------------
@@ -84,9 +88,13 @@ appending a new record. `still_detected_but_fixed_count` is how many of those
 kept records carry the `fixed` resolution. Both are always present on the
 measured shape, even as zero — the run measured, and measured none — and both
 are omitted from the `could_not_look` and `error` shapes, where nothing was
-measured. A re-run against an unchanged residual therefore reports
-`finding_emitted: false` with the re-observed counts stating what it re-saw,
-instead of a bare `false` that reads as "nothing detected".
+measured. A re-run that re-observes a non-`fixed` record therefore reports
+`finding_emitted: true` with the re-observed counts stating what it re-saw,
+instead of a bare `false` that reads as "nothing detected". A re-run that
+re-observes a `fixed` record reports `finding_emitted: false` with
+`reobserved_count` 1 and `still_detected_but_fixed_count` 1: the record stays
+fixed with nothing pending, so the counts — not an emission flag — state what
+was re-seen.
 
 Threshold sources (precedence):
     1. --threshold CLI flag (a non-negative integer; the parser rejects anything else)
@@ -579,7 +587,18 @@ def cmd_check(args: argparse.Namespace) -> int:
                 )
             )
             return 1
+        # The persist reached the store: `success`, `deduplicated` and
+        # `reopened` mean a pending record is present, so `finding_emitted`
+        # is true. A `kept` re-observation keeps its recorded resolution: a
+        # non-`fixed` kept record stays actionable in the store, so it still
+        # reports true, while a `fixed` kept record stays fixed with nothing
+        # pending — the re-seeing is counted in the re-observed counts below
+        # and `finding_emitted` is false.
         emitted = True
+        if any(
+            outcome.get('status') == 'kept' and outcome.get('resolution') == FIXED_RESOLUTION for outcome in observed
+        ):
+            emitted = False
 
     emitted_payload: dict[str, object] = {
         'status': 'success',

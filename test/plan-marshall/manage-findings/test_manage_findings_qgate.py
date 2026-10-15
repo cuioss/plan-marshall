@@ -13,12 +13,17 @@ from argparse import Namespace
 
 from _manage_findings_fixtures import (
     SCRIPT_PATH,
+    _add_ns,
     _qgate_add_ns,
     _qgate_query_ns,
     _qgate_resolve_ns,
+    _query_ns,
+    cmd_add,
     cmd_qgate_add,
     cmd_qgate_query,
     cmd_qgate_resolve,
+    cmd_query,
+    query_findings_unified,
 )
 
 from conftest import run_script
@@ -48,6 +53,8 @@ PLAN_IDS = (
     'qgate-query-src',
     'qgate-short-owned',
     'qgate-short-new',
+    'qgate-d2-ownership',
+    'qgate-d2-builderror',
 )
 
 # =============================================================================
@@ -606,3 +613,100 @@ def test_qgate_resolve_task_number_requires_fixed(plan_context):
     )
     assert bad['status'] == 'error'
     assert bad['error'] == 'fix_task_number_requires_fixed'
+
+
+# =============================================================================
+# Test: D2 fix-task ownership surviving refile plus red-build routing
+# =============================================================================
+
+
+def test_d2_ownership_survives_qgate_reopen_refile(plan_context):
+    """Triage into TASK-N plus unchanged --reopen refile yields all-owned-by-TASK-N."""
+    add_result = cmd_qgate_add(
+        _qgate_add_ns(
+            plan_id='qgate-d2-ownership',
+            phase='5-execute',
+            source='qgate',
+            type='test-failure',
+            title='FAILED test_d2_login',
+            detail='AssertionError: expected 200',
+            file_path='test/d2_auth.py',
+        )
+    )
+    assert add_result['status'] == 'success'
+    hash_id = str(add_result['hash_id'])
+
+    resolve_result = cmd_qgate_resolve(
+        Namespace(
+            plan_id='qgate-d2-ownership',
+            phase='5-execute',
+            hash_id=hash_id,
+            resolution='fixed',
+            detail='Will be addressed by TASK-11; see follow-up commit on this branch',
+            task_number=11,
+        )
+    )
+    assert resolve_result['status'] == 'success'
+    assert resolve_result['fix_task_number'] == 11
+
+    reopen_result = cmd_qgate_add(
+        _qgate_add_optin_ns(
+            plan_id='qgate-d2-ownership',
+            phase='5-execute',
+            source='qgate',
+            type='test-failure',
+            title='FAILED test_d2_login',
+            detail='AssertionError: expected 200',
+            file_path='test/d2_auth.py',
+        )
+    )
+    assert reopen_result['status'] == 'reopened'
+
+    pending = cmd_qgate_query(
+        _qgate_query_ns(
+            plan_id='qgate-d2-ownership',
+            phase='5-execute',
+            resolution='pending',
+        )
+    )
+    assert pending['filtered_count'] == 1
+    assert pending['findings'][0]['fix_task_number'] == 11
+
+
+def test_d2_orchestrator_error_build_routes_to_triage(plan_context):
+    """Orchestrator-tier error build carrying findings returns new-findings, never no-pending."""
+    qgate_empty = cmd_qgate_query(
+        _qgate_query_ns(
+            plan_id='qgate-d2-builderror',
+            phase='5-execute',
+            resolution='pending',
+        )
+    )
+    assert qgate_empty['filtered_count'] == 0
+
+    stored = cmd_add(
+        _add_ns(
+            plan_id='qgate-d2-builderror',
+            type='build-error',
+            title='Build error in d2_module',
+            detail='tool: python; command: verify; category: build_failure',
+            file_path='src/d2_module.py',
+            severity='error',
+        )
+    )
+    assert stored['status'] == 'success'
+
+    plan_pending = cmd_query(
+        _query_ns(
+            plan_id='qgate-d2-builderror',
+            type='build-error,test-failure,lint-issue',
+            resolution='pending',
+        )
+    )
+    assert plan_pending['filtered_count'] >= 1
+
+    unified = query_findings_unified(
+        plan_id='qgate-d2-builderror',
+        include_qgate=True,
+    )
+    assert unified['filtered_count'] >= 1

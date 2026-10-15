@@ -54,6 +54,7 @@ EXECUTION_MD = (
     REPO_ROOT / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills' / 'plan-marshall' / 'workflow' / 'execution.md'
 )
 PHASE_5_SKILL_MD = REPO_ROOT / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills' / 'phase-5-execute' / 'SKILL.md'
+EXECUTE_TASK_MD = REPO_ROOT / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills' / 'execute-task' / 'SKILL.md'
 
 PLAN_ID = 'dispatch-envelope-closure'
 
@@ -196,3 +197,14 @@ def test_single_redispatch_rule_with_handback_field():
     assert has_field_definition, 'execution.md must define the build hand-back field'
     assert has_field_execution, 'execution.md must carry the pending_verify_steps field name'
     assert has_field_phase_5, 'phase-5-execute must carry the same pending_verify_steps field name'
+
+
+def test_leaf_passes_verification_owed_only_on_orchestrator_tier():
+    """Contract (f): the leaf holds the task open only on the orchestrator branch."""
+    phase_5 = PHASE_5_SKILL_MD.read_text(encoding='utf-8')
+    execute_task = EXECUTE_TASK_MD.read_text(encoding='utf-8')
+
+    for text, name in ((phase_5, 'phase-5-execute'), (execute_task, 'execute-task')):
+        assert '--verification-owed' in text, f'{name} must document the --verification-owed flag'
+        assert 'orchestrator' in text, f'{name} must key the flag on the orchestrator tier'
+        assert 'profile name alone never' in text, f'{name} must state the profile alone never holds'

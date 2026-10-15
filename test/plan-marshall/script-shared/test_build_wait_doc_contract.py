@@ -47,6 +47,15 @@ _ONE_RUNNABLE_RULE = (
     'only for the non-daemon fallback, never for a daemon-routed build.'
 )
 
+#: The single hand-back sentences the D3 fix adds on top of the runnable rule.
+#: Each is quoted verbatim from the owning document; the original
+#: execution.md versus agents.md contradiction (which component may
+#: background a build) carried none of them, so a tree at 501aeb313 fails
+#: here while the fixed tree passes.
+_SINGLE_HAND_BACK_AGENTS = 'Single running hand-back contract on every tier'
+_LEAF_CONTRACT_CANONICAL = 'Leaf contract for a `running` hand-back'
+_RUNNING_ROW_EXECUTION = 'Not a verdict — re-attach, never background.'
+
 #: Phrases that couple a passage to daemon-routed waiting. Strict on purpose:
 #: ``non-daemon fallback`` carries ``daemon`` as a substring but is the
 #: legitimate scope, so the bare word alone must never qualify a paragraph.
@@ -121,6 +130,24 @@ def test_published_population_matches_the_agreement() -> None:
     assert GUARD_POPULATION_LABEL.strip(), (
         'The published label is empty, so the report header would carry a bare '
         'number with nothing naming what was counted'
+    )
+
+
+def test_single_hand_back_contract_reconciles_execution_vs_agents() -> None:
+    execution = _read_doc('marketplace/bundles/plan-marshall/skills/plan-marshall/workflow/execution.md')
+    agents = _read_doc('marketplace/bundles/plan-marshall/skills/ref-workflow-architecture/standards/agents.md')
+    canonical = _read_doc('marketplace/bundles/plan-marshall/skills/phase-5-execute/standards/canonical_verify.md')
+
+    assert _SINGLE_HAND_BACK_AGENTS in agents, (
+        'agents.md no longer states the single running hand-back contract, '
+        'so the execution.md versus agents.md backgrounding contradiction '
+        'is unreconciled'
+    )
+    assert _LEAF_CONTRACT_CANONICAL in canonical, (
+        'canonical_verify.md no longer defines the leaf contract for a running hand-back on Steps 11 and 11b'
+    )
+    assert _RUNNING_ROW_EXECUTION in execution, (
+        'execution.md orchestrator-tier outcome table carries no running row with the re-attach procedure'
     )
 
 

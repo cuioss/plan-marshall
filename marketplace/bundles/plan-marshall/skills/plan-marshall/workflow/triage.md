@@ -211,13 +211,15 @@ The action body:
     --plan-id {plan_id}
   ```
 
-  Capture the returned task number as `{N}`, then resolve the finding, passing `{N}` as `--task-number` so the fix commit can later be stamped on every finding this task owns. The `resolution_detail` is the reviewer-ready text the RESPOND loop posts to the finding's PR thread — in a finalize run once the fix commit is stamped, otherwise in the pass that follows triage. It MUST name the fix task:
+  Capture the returned task number as `{N}`, then resolve the finding through the Q-Gate verb — NOT the plan-scoped `resolve` verb, which refuses Q-Gate findings with `finding_in_other_store` so the short-circuit guard never sees an owner — passing `{N}` as `--task-number` so the structured `fix_task_number` survives a `--reopen` refile (the reopened recurrence IS the pending record, carrying its `fix_task_number` forward). The `resolution_detail` is the reviewer-ready text the RESPOND loop posts to the finding's PR thread — in a finalize run once the fix commit is stamped, otherwise in the pass that follows triage. It MUST name the fix task:
 
   ```bash
-  python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings resolve \
-    --plan-id {plan_id} --hash-id {finding.hash_id} --resolution fixed --task-number {N} \
+  python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings qgate resolve \
+    --plan-id {plan_id} --hash-id {finding.hash_id} --resolution fixed --phase {qgate_phase} --task-number {N} \
     --detail 'Will be addressed by TASK-{N}; see follow-up commit on this branch'
   ```
+
+  `{qgate_phase}` is the Q-Gate phase the finding was filed under (`5-execute` for the `build-runner` test-failure / lint-issue / build-error producer; the calling producer's phase otherwise — read it from the `qgate list` record). `{finding.hash_id}` and the `TASK-{N}` text inside `--detail` are finding-derived text, so `--detail` is quoted per [§ Shell-safe free text in command templates](#shell-safe-free-text-in-command-templates).
 
   Then STOP for this finding. In a finalize run the reply waits for the stamped commit.
 

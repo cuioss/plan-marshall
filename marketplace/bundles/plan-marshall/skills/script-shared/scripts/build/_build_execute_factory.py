@@ -818,18 +818,25 @@ def _result_for_log_verdict(
     )
 
 
-# One runnable rule for orchestrator-tier long-build waits: the wrapper call
-# for a daemon-routed build returns within _DAEMON_WAIT_BOUND_SECONDS (below
-# the per-call ceiling) with a terminal result or a live running hand-back
+# Single running hand-back contract on every tier: the wrapper call
+# for a daemon-routed build returns within _DAEMON_WAIT_BOUND_SECONDS (at
+# most the per-call ceiling) with a terminal result or a live running hand-back
 # carrying the daemon job_id, and the orchestrator re-attaches with a bounded
 # wait on that id. Backgrounding (run_in_background) is named only for the
 # non-daemon fallback, never for a daemon-routed build.
-_DAEMON_WAIT_BOUND_SECONDS = 300
+#
+# The per_task wrapper bound is at least the per-call ceiling (the ceiling is
+# known to the wrapper through the harness bash-timeout-ceiling seam): a
+# per_task routed build outliving the bound hands back the same live running
+# status plus job id a longer tier would, and the leaf hands it back through
+# pending_verify_steps rather than backgrounding it.
+_DAEMON_WAIT_BOUND_SECONDS = 600
 """Foreground-safe bound for one daemon-routed wrapper call.
 
-Mirrors the build-server-client wait default: the daemon holds each long-poll
-server-side, so one call stays safely below the per-call Bash ceiling while a
-job that outlives it returns the running hand-back instead of blocking.
+Mirrors the build-server-client wait default raised to the per-call ceiling:
+the daemon holds each long-poll server-side, so one call stays within the
+per-call Bash ceiling while a job that outlives it returns the running
+hand-back instead of blocking.
 """
 
 

@@ -103,6 +103,14 @@ python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks finalize
   --plan-id {plan_id} --task-number {task_number} --step {N} --outcome done
 ```
 
+The leaf passes `--verification-owed` on the task-closing `finalize-step`
+call only on the orchestrator-tier branch — when the live
+`execution_tier` re-resolve routed the task verification to the
+orchestrator and the wider run was handed back. On a `per_task`
+verification it closes without the flag. The profile name alone never
+triggers the hold — see `manage-tasks/SKILL.md`
+§ "Finalize-step verification-owed flag contract".
+
 ### Step: Run Verification
 
 After all steps complete, run task verification using commands from `task.verification.commands`.
