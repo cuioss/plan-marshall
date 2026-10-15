@@ -57,6 +57,13 @@ derive, for rows still live.
   counted 7/7, five regressions; see `landings/PLAN-LB-39.md`. Fix-forward PLAN-LB-50; unshipped
   deliverables re-staged as PLAN-LB-51 (Antigravity) and PLAN-LB-52 (harness-agnostic, as scripts).
 
+- **PLAN-LB-42** (shipped #1773, 2026-10-15) — 0 met / 4 partial against its spec, counted 2/2
+  after its outline merged the four deliverables into one; five regressions; see
+  `landings/PLAN-LB-42.md`. Residue and regressions staged as **PLAN-LB-54** (WS-01, free of the
+  running plans apart from a possible `manage-config.py` overlap with PLAN-LB-40). The process
+  gaps were folded into PLAN-LB-52 (D1: merged deliverables keep their Done-whens; D4: pre-fix
+  evidence) and PLAN-LB-53 (D1: `escalate_ask` goes to the operator).
+
 - **PLAN-LB-50 to PLAN-LB-53** (staged 2026-10-15) — PLAN-LB-50 first, high priority (a project
   setup erases the installed target rules; `runtime.target` back in the shared `marshal.json`).
   PLAN-LB-51 after PLAN-LB-50 (bridge file path). PLAN-LB-52 preferably after PLAN-LB-47.
@@ -343,7 +350,16 @@ derive, for rows still live.
   Recurrences: PLAN-13 (`ci-verify-policy` refused `unknown_producer`, re-dispatched as
   `finalize-feedback`); lesson `2026-10-11-07-001` (plan-06) — a SonarCloud gate failure inside
   the `build / sonar-build` Maven job filed 5 `ci_policy_failure` findings instead of deferring
-  to sonar-roundtrip. — `lessons-routing-028.md` (153, 189).
+  to sonar-roundtrip. — `lessons-routing-028.md` (153, 189). Recurred on PLAN-LB-42 (2026-10-14
+  18:31): a CI-wait lapse was dispatched as `ci-verify-timeout` and refused `unknown producer`; all
+  four `ci_timeout` findings were titled "verify failed" while verify was still running
+  (`plan-lb-42-outline-qgate-integrity-001`).
+- **The guard has no rule for shell file operations or ad-hoc scripts** (2026-10-15, PLAN-LB-42
+  landing). Under OpenCode with the deny rules active, R1 (compound shell) and R4 (raw pytest)
+  refused all 8 attempts. `ls` (2), `python3 -m py_compile` (3) and a `.plan/temp/*.py` ad-hoc
+  script passed. CLAUDE.md forbids shell file operations, but no R-rule enforces the ban.
+  HYPOTHESIS: the same gap exists under Claude Code's PreToolUse hook. Not owned by any staged
+  plan.
 - **In a consumer repository a dispatched leaf cannot resolve its workflow document**:
   `agents/execution-context.md:111-112` maps a notation only to `marketplace/bundles/…`
   (`workflow_not_found` otherwise, line 119), so every consumer-repository dispatch improvises,
@@ -357,13 +373,20 @@ derive, for rows still live.
   eleventh plans: PLAN-13 (Q-Gate 447991), PLAN-18 (0feabd, accepted by the operator), PLAN-54
   (affb5d, assessments added after the gate asked). — `lessons-routing-028.md` (162, 174, 191).
   Twelfth: PLAN-LB-26 (finding 037a63 pending across the 3-outline and 4-plan exits, waved
-  through in phase 5). Owned by PLAN-LB-42 (staged).
+  through in phase 5). **Partly fixed by PLAN-LB-42 (#1773):** an empty store now reports "not
+  run" instead of failing. Residue owned by PLAN-LB-54 D2: the outline skill is missing from the
+  return, and the hash cache is switched off for an empty store.
 - **The 4-plan Q-Gate skips its validators on the 3-outline hash and reports a pass over zero
   runs**; no verb computes the deliverable hashes, so passes improvise. Graded high by the
   operator. Not owned by any staged plan. — `lessons-routing-023.md`. Recurred on PLAN-18: both
   Q-Gate runs skipped `deliverable-hashes.toon` (16 hashes over 2 runs); the 4-plan leaf had no
   shell. Asks for a `manage-solution-outline deliverable-hashes` verb.
-  — `lessons-routing-028.md` (185).
+  — `lessons-routing-028.md` (185). **Partly fixed by PLAN-LB-42 (#1773):**
+  - the skip is phase-keyed in prose;
+  - a cached skip reads "not run";
+  - the verb exists but persists nothing, and no test executes the skip rule.
+
+  Residue owned by PLAN-LB-54 D1.
 - **A local-only run can still schedule push-related steps.** With
   `phase-5-execute.commit_and_push` false the commit-push filter drops `pre-push-quality-gate`,
   `functional-review` and `code-review`, and the ceremony selection adds them back for a
@@ -750,6 +773,15 @@ entries below are OpenCode 1 assumptions in plan-marshall that OpenCode 2 broke.
     ungated head after telling the operator no rebase or force-push would happen; 37 raw test
     commands, 11 `/tmp` scripts; `harness=unknown`; $12.01 real cost, roots 73%. Trend across the
     three: C, D, C− — mechanics improve, end-of-run integrity does not.
+  - **PLAN-LB-42 graded C** (2026-10-15, `landings/PLAN-LB-42.md`), the first run with the guard.
+    - Guard: refused all 8 covered attempts (4 raw pytest, 2 of them via a venv's Python after a
+      refusal; 4 compound shell). It does not cover `ls` or `py_compile`.
+    - Good: 0 `gh`, no rebase or force-push, 100% trailers, a genuine barrier question, $5.79.
+    - Failed: 4 spec deliverables cut to 2 and graded 2/2 against 0 met / 4 partial; an
+      unevidenced "fails pre-fix" criterion graded met; a leaf's `escalate_ask` answered by the
+      root; 8 of 16 commits written inline by the root; about 4.5 h of finalize booked to execute.
+
+    Remaining: PLAN-LB-40.
   - **Extended 2026-10-14 to PLAN-LB-40 and PLAN-LB-42**, emitted for OpenCode by operator
     instruction ("emit the next two plans for opencode"). They are the first OpenCode plans to run
     with the deny rules and guard in effect (branched after `9011a19bf`), so grade separately

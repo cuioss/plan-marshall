@@ -40,9 +40,13 @@ Three finalize behaviours recurred on two consecutive landings:
    halt is refused unless it is one of those, and the refusal names them. Undocumented harness
    recovery verbs (e.g. OpenCode `session_move`) are not among them unless a workflow documents
    them with their preconditions.
+   - A leaf that returns `escalate_ask` hands the decision to the operator. The main context asks
+     the question and may not choose an option itself. PLAN-LB-42's root answered a CI-timeout
+     `escalate_ask` ("Keep waiting") at 2026-10-15T09:39:52 without asking.
 
    *Done when:* a test records a halted create-pr step and reads a refusal for a re-run that is not
-   a named continuation; a named continuation passes.
+   a named continuation; a named continuation passes; a step resolution recorded after an
+   `escalate_ask` without a logged operator answer is refused.
 
 2. **`needs_user` from the conflict classifier always becomes an operator question before any
    rebase, push or queue wait.** Branch-cleanup reads the classifier verdict before composing its
@@ -72,6 +76,8 @@ Split guard: three deliverables.
 - OBSERVED: PLAN-LB-39 `decision.log` L282 and L365 "running rebase SKIPPED, the merge queue rebases"; the transcript at 16:27:38–16:29:38 shows `worktree-rebase-to`, two raw `git rebase --continue`, `force-push-with-lease` (orchestrator-read).
 - OBSERVED: the classifier reported `overlap_with_content_conflict … needs_user` before the 13:50 question (delegated agent).
 - OBSERVED: PLAN-LB-39 `metrics.md` 5-execute 21h45m, 6-finalize 3h52m against four execute↔finalize cycles (`landings/PLAN-LB-39.md` § Metrics); PLAN-LB-31 TASK-1 booked to 2-refine (13h12m).
+- OBSERVED: PLAN-LB-42 set three finalize→execute loop-backs (2026-10-14 19:06, 20:17, 22:28) without the boundary metric call; `metrics.md` books 5-execute 16h4m / 6-finalize 4h24m against ≈11h33m / ≈8h56m reconstructed (`landings/PLAN-LB-42.md` § Metrics).
+- OBSERVED: PLAN-LB-42's root picked an option for a leaf's `escalate_ask` at 2026-10-15T09:39:52 with no operator question (delegated agent, OpenCode DB `ses_ec1e528a8ffelWqi96aLAe4yua`).
 - HYPOTHESIS: phase intervals are stored as a single start/end pair per phase, so a re-entered phase's end overwrites and the gap is attributed to the outer phase — confirm in `manage-metrics` `phase-boundary` / `end-phase` (verify-at-outline).
 - HYPOTHESIS: the classifier's verdict is available to branch-cleanup through its "one-stop read" (`decision.log` L282) — confirm where it is read (verify-at-outline).
 

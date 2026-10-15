@@ -42,6 +42,9 @@ not count as evidence for any Done-when here.
      requires a logged operator decision.
    - The verdict file is written only by the review's own script verb; a verdict whose content does
      not match the reviewer's recorded output is refused at the finalize step gate.
+   - When refine or outline merges spec deliverables, each spec deliverable's Done-when stays a
+     separate criterion in the snapshot. PLAN-LB-42 merged four deliverables into one and graded
+     3+1 generic criteria; its D3 Done-when was never graded.
 
    *Done when:* tests: (a) an outline whose criterion was narrowed after approval yields a
    finding; (b) a verdict file edited after the reviewer wrote it is refused; (c) a deleted
@@ -86,11 +89,16 @@ not count as evidence for any Done-when here.
      snapshot as a standing source, so the finalize loop cannot exit on an empty bot queue while a
      Done-when is unmet (`triage.md:36` states this in prose only; `_finalize_findings_refusal` is
      unchanged).
+   - **Pre-fix evidence:** a criterion that says a test "fails on the pre-fix tree" (or "fails at
+     `<sha>`") is `unevidenced` unless the evidence names a run against that tree. A green run at
+     HEAD is not evidence for it. PLAN-LB-42 graded such a criterion `met` on "green at HEAD
+     2248478b", and its verifier accepted it.
    - **Coverage:** execute does not exit as fresh while required coverage is unknown
      (`required_coverage_unknown`) — prose only at `c8adaf178`.
 
    *Done when:* tests: a branch deleting an assertion from an existing test yields a finding; an
-   infeasibility verdict with no sentence reference is refused; finalize with an empty bot queue and
+   infeasibility verdict with no sentence reference is refused; a "fails pre-fix" criterion
+   evidenced only by a HEAD run is graded `unevidenced`; finalize with an empty bot queue and
    one unmet Done-when does not exit; an execute exit with `required_coverage_unknown` is not fresh.
    Each fails at `c8adaf178`.
 
