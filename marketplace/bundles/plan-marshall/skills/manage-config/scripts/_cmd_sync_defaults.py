@@ -579,7 +579,7 @@ _AUTOMATIC_REVIEW_STEP_ID = 'plan-marshall:automatic-review'
 _BOT_LISTS_PROVENANCE_KEY = 'bot_lists_provenance'
 
 
-def _backfill_standard_roster(merged: dict) -> None:
+def _backfill_standard_roster(merged: dict) -> bool:
     """Back-fill the standard roster into an absent automatic-review param block.
 
     The deep merge never clobbers a present ``required_bots`` / ``optional_bots``
@@ -589,28 +589,32 @@ def _backfill_standard_roster(merged: dict) -> None:
     provenance, is filled with the standard roster. Held/re-added reporting
     covers the roster step id like any other step id through the standard
     deep-merge accumulators — this helper only fills params inside a kept step.
-    Mutates ``merged`` in place.
+    Mutates ``merged`` in place. Returns True when either roster key was filled.
     """
     plan = merged.get('plan')
     if not isinstance(plan, dict):
-        return
+        return False
     phase6 = plan.get('phase-6-finalize')
     if not isinstance(phase6, dict):
-        return
+        return False
     steps_map = phase6.get('steps')
     if not isinstance(steps_map, dict):
-        return
+        return False
     params = steps_map.get(_AUTOMATIC_REVIEW_STEP_ID)
     if not isinstance(params, dict):
-        return
+        return False
     if params.get(_BOT_LISTS_PROVENANCE_KEY) == 'answered':
-        return
+        return False
+    changed = False
     required = params.get('required_bots')
     if not isinstance(required, str) or not required.strip():
         params['required_bots'] = _STANDARD_REQUIRED_BOTS
+        changed = True
     optional = params.get('optional_bots')
     if not isinstance(optional, str) or not optional.strip():
         params['optional_bots'] = _STANDARD_OPTIONAL_BOTS
+        changed = True
+    return changed
 
 
 def _remove_dead_step_ids(live: dict, dead_reports: list[str]) -> dict:
@@ -756,7 +760,7 @@ def cmd_sync_defaults(args) -> dict:
 
     # Preserve operator-set reviewer lists through the Stage 2 order: fill the
     # standard roster only where the automatic-review block carries no answer.
-    _backfill_standard_roster(merged)
+    roster_changed = _backfill_standard_roster(merged)
 
     # Materialize an explicit lane on every lane-less phase-6-finalize step. Runs
     # AFTER the deep-merge (consumes the populated ``added`` accumulator to
@@ -783,7 +787,7 @@ def cmd_sync_defaults(args) -> dict:
         after_system['config_seed_fingerprint'],
     )
 
-    if added or stamps_changed or renamed or migrated or materialized or retired or lane_reports or dead_reports:
+    if added or stamps_changed or renamed or migrated or materialized or retired or lane_reports or dead_reports or roster_changed:
         save_config(merged)
 
     return success_exit(

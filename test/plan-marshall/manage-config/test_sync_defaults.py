@@ -1777,3 +1777,56 @@ def test_sync_defaults_dead_step_removal_is_idempotent(plan_context, monkeypatch
     assert second['status'] == 'success'
     assert second['dead_removed'] == []
     assert second['dead_removed_count'] == 0
+
+
+# =============================================================================
+# Roster-only backfill persistence
+# =============================================================================
+#
+# `_backfill_standard_roster` mutates the merged config after the deep merge.
+# The sync save predicate must include its changed signal, otherwise a
+# roster-only drift is applied in memory but never written back to disk.
+
+
+def test_sync_defaults_roster_only_backfill_persists(plan_context):
+    """A roster-only drift is filled AND written back to disk."""
+    _write_marshal(plan_context.fixture_dir, {})
+    first = cmd_sync_defaults(_sync_ns())
+    assert first['status'] == 'success'
+
+    config = _read_marshal(plan_context.fixture_dir)
+    steps = config['plan']['phase-6-finalize']['steps']
+    roster_step = 'plan-marshall:automatic-review'
+    assert roster_step in steps, 'the synced config must carry the roster step'
+    # Simulate roster-only drift: clear both roster keys on an otherwise synced file.
+    params = steps[roster_step]
+    assert isinstance(params, dict)
+    params.pop('required_bots', None)
+    params.pop('optional_bots', None)
+    params.pop('bot_lists_provenance', None)
+    _write_marshal(plan_context.fixture_dir, config)
+
+    result = cmd_sync_defaults(_sync_ns())
+
+    assert result['status'] == 'success'
+    persisted = _read_marshal(plan_context.fixture_dir)
+    roster = persisted['plan']['phase-6-finalize']['steps'][roster_step]
+    assert roster.get('required_bots') == _sync_mod._STANDARD_REQUIRED_BOTS
+    assert roster.get('optional_bots') == _sync_mod._STANDARD_OPTIONAL_BOTS
+
+
+def test_backfill_standard_roster_reports_changed():
+    """The helper returns True only when it fills a roster key."""
+    merged: dict = {
+        'plan': {
+            'phase-6-finalize': {
+                'steps': {
+                    'plan-marshall:automatic-review': {},
+                },
+            },
+        },
+    }
+
+    assert _sync_mod._backfill_standard_roster(merged) is True
+    # A second call observes the filled roster and reports no change.
+    assert _sync_mod._backfill_standard_roster(merged) is False
