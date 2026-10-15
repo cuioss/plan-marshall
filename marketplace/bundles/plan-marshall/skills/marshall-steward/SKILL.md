@@ -68,7 +68,7 @@ configure · verify · maintain
 | determine_mode | `plan-marshall:marshall-steward:determine_mode` | Determine wizard vs menu mode; also exposes `check-harness` (active harness verification), `check-working-prefixes` (project.working_prefixes presence/drift), and `check-staleness` (health-menu executor/config staleness preflight) |
 | configure_harness | `plan-marshall:marshall-steward:configure_harness` | Deterministic script-only local harness configuration (`.plan/local/harness/{harness}.json`) |
 | gitignore_setup | `plan-marshall:marshall-steward:gitignore_setup` | Configure .gitignore for .plan/ |
-| upgrade | `plan-marshall:marshall-steward:upgrade` | Emit the four-stage `upgrade` verb plan (pure function of `(integrate, project_kind)`); also exposes `migrate-review-steps`, the idempotent replacement of the retired `default:pre-submission-self-review` finalize step by `default:functional-review` and `default:code-review` (its `lane`, or a legacy `self_review` run-at-all value, carried to both) driven as the FIRST Stage-2 sub-step, before the defaults merge; `migrate-bot-lists`, the idempotent one-shot auto-map of the retired `enabled_bots` knob onto `required_bots` / `optional_bots` driven as the Stage-2 `migrate-bot-lists` sub-step, and `validate-bot-lists`, the read-only report of configured reviewer tokens matching no registered bot kind driven as the Stage-2 `validate-bot-lists` sub-step. The plan's last Stage-2 sub-step, `migrate-architecture-descriptors`, has no subcommand here — it is driven through the `manage-architecture` verbs (see `references/upgrade-flow.md`) |
+| upgrade | `plan-marshall:marshall-steward:upgrade` | Emit the four-stage `upgrade` verb plan (the stage plan is a pure function of `(integrate, project_kind)`; the verb bootstraps the serving executor against the newest plugin-cache version first, regenerating when stale, and reports a skill/planner version-split `warning` instead of a silently stale run); also exposes `migrate-bot-lists`, the idempotent one-shot auto-map of the retired `enabled_bots` knob onto `required_bots` / `optional_bots` driven as the Stage-2 `migrate-bot-lists` sub-step, and `validate-bot-lists`, the read-only report of configured reviewer tokens matching no registered bot kind driven as the Stage-2 `validate-bot-lists` sub-step. The plan's last Stage-2 sub-step, `migrate-architecture-descriptors`, has no subcommand here — it is driven through the `manage-architecture` verbs (see `references/upgrade-flow.md`) |
 | cache_freshness | `plan-marshall:marshall-steward:cache_freshness` | Fail-closed three-valued plugin-cache freshness verdict (`fresh\|stale\|unknown`) driving the consumer Stage-1 `cache-freshness-check` sub-step |
 | cache_retention | `plan-marshall:marshall-steward:cache_retention` | Union-keep plugin-cache retention sweep (dry run unless `--apply`) driving the Stage-1 `cache-retention-sweep` sub-step behind the `cache-retention-prune` nested gate |
 | bootstrap_plugin | _(direct Python call)_ | Detect plugin root, cache in `.plan/local/marshall-state.toon` |
@@ -280,7 +280,7 @@ Then execute the workflow described in that file. Each reference file is loaded 
 | `menu-commit-trailer.md` | Inspect and change the co-author identity assistant-authored commits are recorded under; machine-local, per-half fallback, unconfigured commits under `plan-marshall <noreply@cuioss.de>` | Linked from `menu-configuration.md` (Commit Trailer) |
 | `merge-queue-setup.md` | Idempotent probe→ask→configure provisioning of the platform merge queue (GitHub merge queue / GitLab merge train) via the `ci repo merge-queue` verbs | Linked from `wizard-flow.md` Step 13.5 and `menu-configuration.md` (Merge Queue) |
 | `landing-cycle.md` | End-of-run landing cycle: detect uncommitted plan-marshall artifact diff → offer to commit → push → `skip-bot-review`-labelled plan-less PR → merge-queue-aware merge → switch-to-main → pull; base-branch-conditional branch selection + bot skip-label honoring matrix | Linked from the "End-of-Run Landing Cycle" hook (menu-mode Quit path + `wizard-flow.md` end) |
-| `upgrade-flow.md` | Post-change `upgrade` verb: four-stage reconciliation driven by the project-kind-aware `upgrade.py plan` stage plan (the meta/consumer stage matrix — meta regenerates the target tree + executor and verifies with preflight + content-drift; consumer regenerates the executor only and verifies with preflight only; both reconcile config through `reconcile-marshal-json`, `migrate-bot-lists`, `validate-bot-lists` and `migrate-architecture-descriptors`), honoring each stage's per-stage gate dispositions and `sub_steps` | Main Menu option 6, or the `upgrade` early verb check |
+| `upgrade-flow.md` | Post-change `upgrade` verb: Step-0 executor bootstrap from the newest plugin cache, then four-stage reconciliation driven by the project-kind-aware `upgrade.py plan` stage plan (the meta/consumer stage matrix — meta regenerates the target tree + executor and verifies with preflight + content-drift; consumer regenerates the executor only and verifies with preflight only; both reconcile config through `reconcile-marshal-json`, `migrate-bot-lists`, `validate-bot-lists` and `migrate-architecture-descriptors`), honoring each stage's per-stage gate dispositions and `sub_steps` | Main Menu option 6, or the `upgrade` early verb check |
 | `error-handling.md` | Error types and recovery | On error conditions |
 
 ---
@@ -994,36 +994,17 @@ python3 .plan/execute-script.py plan-marshall:marshall-steward:gitignore_setup [
 ### upgrade — plan
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:marshall-steward:upgrade plan [--integrate {true|false}] [--project-kind {auto|meta|consumer}]
+python3 .plan/execute-script.py plan-marshall:marshall-steward:upgrade plan [--integrate {true|false}] [--project-kind {auto|meta|consumer}] [--bootstrap {true|false}]
 ```
 
-### upgrade — migrate-review-steps
-
-```bash
-python3 .plan/execute-script.py plan-marshall:marshall-steward:upgrade migrate-review-steps
-```
-
-Takes no arguments and operates on the live `marshal.json`. Driven as the FIRST
-sub-step of upgrade Stage 2, before the defaults merge. It replaces the retired
-`default:pre-submission-self-review` finalize step (or its bare form) in
-`plan.phase-6-finalize.steps` by `default:functional-review` followed by
-`default:code-review`, carrying the retired entry's `lane` to both when it is a
-supported lane override (a member of `VALID_LANE_OVERRIDE` in `manage-config`'s
-`_config_defaults.py`) and mapping a legacy `self_review` run-at-all value onto
-both lanes (`never` → `off`, `always` → `minimal`, `auto` → no lane); a `lane`
-outside that set — unknown, empty, or not a string — is carried to neither and
-is dropped, as is every other param, the retired `drop_review_on_scope_gate`
-among them. Within one entry and across
-both spellings alike, a `lane: off` wins over any other setting, and every
-losing setting is reported in `dropped_params`, as is a setting the migration
-cannot map. A successor the operator already configured wins — with both
-configured, the retired setting is reported as dropped — and a retired id in
-`removed_steps` is replaced by both new ids. Emits `state` (`migrated` | `noop`) and, on `migrated`, `replaced`,
-`added`, `kept` and `removed_steps_rewritten`; `carried` and
-`dropped_params` are emitted only when a retired step entry was replaced,
-not when only `removed_steps` named a retired id.
-Idempotent and self-disarming: a re-run after the retired id is gone is a no-op
-success.
+Validates the serving executor against the newest plugin-cache version and
+regenerates it from that cache when stale BEFORE emitting the stage plan, so
+the plan and every downstream stage resolve current-version scripts
+(`--bootstrap false` skips the bootstrap). Emits the `bootstrap` block
+(`action`, `executor_version`, `newest_cache_version`, `warning`) alongside
+the stage plan: a non-empty `warning` names a skill/planner version split and
+its remedy — re-sync the plugin cache, reload the plugin set, re-request the
+plan — and MUST be surfaced and followed before driving any stage.
 
 ### upgrade — migrate-bot-lists
 

@@ -24,6 +24,7 @@ from argparse import Namespace
 from functools import cache
 from typing import cast
 
+import _config_core
 import pytest
 
 from conftest import load_script_module, parse_ns
@@ -32,7 +33,7 @@ _MANAGE_CONFIG = ('plan-marshall', 'manage-config')
 _SCRIPT = (*_MANAGE_CONFIG, 'manage-config.py')
 
 _sync_mod = load_script_module(
-    'plan-marshall', 'manage-config', '_cmd_sync_defaults.py', module_name='_cmd_sync_defaults'
+    'plan-marshall', 'manage-config', '_cmd_sync_defaults.py', module_name='_cmd_sync_defaults_for_sync_test'
 )
 _config_defaults_mod = load_script_module(
     'plan-marshall', 'manage-config', '_config_defaults.py', module_name='_config_defaults_for_sync_provisioning_test'
@@ -1133,6 +1134,8 @@ def test_sync_defaults_leaves_unresolvable_frontmatter_step_lane_less(plan_conte
     assert 'lane' not in steps[unresolvable]
     # and is NOT reported in materialized
     assert not any(unresolvable in entry for entry in result['materialized'])
+    # and is NOT removed as a dead step id
+    assert not any(unresolvable in entry for entry in result['dead_removed'])
 
 
 # =============================================================================
@@ -1457,3 +1460,393 @@ def test_sync_defaults_re_added_entries_name_the_crossed_decision(plan_context):
     assert result['added'] == sorted(result['added'])
     assert result['held_for_ask'] == sorted(result['held_for_ask'])
     assert result['re_added'] == sorted(result['re_added'])
+
+
+# =============================================================================
+# Retired unconsumed keys + step-lane repair + nested-key reporting (D2)
+# =============================================================================
+#
+# sync-defaults retires the pinned unconsumed-key list hosted in
+# `_config_defaults.RETIRED_UNCONSUMED_KEYS` and repairs un-storable step lanes
+# (`lane: auto` removed; a lane outside VALID_LANE_OVERRIDE removed and
+# reported, never carried) BEFORE the deep-merge; `normalize-keys`
+# additionally reports below-top-level stray keys instead of only top-level
+# ones.
+
+# The pinned retired-key list, stated once here as the test-side oracle. The
+# entries are `<phase>.<key>` dotted paths (without the `plan.` prefix) into
+# the live config's `plan` block.
+_PINNED_RETIRED_KEYS = (
+    'phase-6-finalize.self_review',
+    'phase-6-finalize.simplify',
+    'phase-6-finalize.drop_review_on_scope_gate',
+    'phase-3-outline.qgate',
+    'phase-5-execute.per_task_budget_reserve_tokens',
+)
+
+
+def _marshal_with_all_pinned_retired_keys() -> dict:
+    """Return a config carrying every pinned retired key with a legacy value."""
+    return {
+        'plan': {
+            'phase-6-finalize': {
+                'self_review': 'always',
+                'simplify': 'never',
+                'drop_review_on_scope_gate': True,
+                'steps': {'default:push': {}},
+            },
+            'phase-3-outline': {'qgate': 'auto'},
+            'phase-5-execute': {
+                'per_task_budget_reserve_tokens': 1000,
+                'verification_steps': {'default:verify:quality-gate': {}},
+            },
+        },
+    }
+
+
+def test_retired_unconsumed_keys_list_is_pinned_and_hosted_in_defaults():
+    """The reconcile consumes the pinned list the defaults module hosts — never a restatement.
+
+    Both the defaults host and the reconcile's import carry exactly the five
+    pinned `<phase>.<key>` entries. The population below is derived from the
+    hosted constant, so a newly retired knob joins the retirement sweep with no
+    test edit — while a silently restated literal in the reconcile would carry a
+    different object the value comparison still catches.
+    """
+    assert tuple(_config_defaults_mod.RETIRED_UNCONSUMED_KEYS) == _PINNED_RETIRED_KEYS
+    assert tuple(_sync_mod.RETIRED_UNCONSUMED_KEYS) == _PINNED_RETIRED_KEYS
+
+
+def test_sync_defaults_retires_all_pinned_unconsumed_keys(plan_context):
+    """Every pinned retired key is removed from the live config and reported.
+
+    A fixture carrying all five legacy knobs syncs to a config holding none of
+    them; each removal is reported as an annotated dotted-path entry in
+    `retired` / `retired_count`. The retired population is read off the hosted
+    constant, so the sweep is checked against what the reconcile actually
+    consumes rather than a hardcoded headcount that could miss a new row.
+    """
+    _write_marshal(plan_context.fixture_dir, _marshal_with_all_pinned_retired_keys())
+
+    result = cmd_sync_defaults(_sync_ns())
+
+    assert result['status'] == 'success'
+    config = _read_marshal(plan_context.fixture_dir)
+    plan = config['plan']
+    assert 'self_review' not in plan['phase-6-finalize']
+    assert 'simplify' not in plan['phase-6-finalize']
+    assert 'drop_review_on_scope_gate' not in plan['phase-6-finalize']
+    assert 'qgate' not in plan['phase-3-outline']
+    assert 'per_task_budget_reserve_tokens' not in plan['phase-5-execute']
+    # every hosted entry was retired and reported — none silently kept
+    assert result['retired_count'] == len(_PINNED_RETIRED_KEYS)
+    assert result['retired_count'] > 0, 'the pinned list is empty, so this sweep checked nothing'
+    for dotted in _PINNED_RETIRED_KEYS:
+        assert f'plan.{dotted} (retired unconsumed key, removed)' in result['retired']
+    assert result['retired'] == sorted(result['retired'])
+    assert result['retired_count'] == len(result['retired'])
+
+
+def test_sync_defaults_retired_unconsumed_keys_are_idempotent(plan_context):
+    """A second sync after retiring the pinned keys reports no further retirements."""
+    _write_marshal(plan_context.fixture_dir, _marshal_with_all_pinned_retired_keys())
+
+    first = cmd_sync_defaults(_sync_ns())
+    assert first['status'] == 'success'
+    assert first['retired_count'] == len(_PINNED_RETIRED_KEYS)
+
+    second = cmd_sync_defaults(_sync_ns())
+
+    assert second['status'] == 'success'
+    assert second['retired'] == []
+    assert second['retired_count'] == 0
+
+
+def test_sync_defaults_reports_no_retirements_for_clean_config(plan_context):
+    """A config carrying no pinned key reports an empty retirement bucket.
+
+    Matched control for the retirement sweep above: on its own, an empty
+    `retired` list is also what a wholly broken retire pass would produce.
+    Together they say listed keys are removed and only listed keys are.
+    """
+    _write_marshal(plan_context.fixture_dir, {})
+
+    result = cmd_sync_defaults(_sync_ns())
+
+    assert result['status'] == 'success'
+    assert result['retired'] == []
+    assert result['retired_count'] == 0
+
+
+def test_sync_defaults_removes_stored_lane_auto(plan_context):
+    """A stored `lane: auto` is removed and reported — it is never a stored override.
+
+    `auto` is a prompt posture (the `lane_selection` / gate-mode vocabulary),
+    never a per-element stored value, so a persisted `auto` could never resolve.
+    The repair removes it before the merge; the materializer then fills the
+    lane-less step with its effective lane.
+    """
+    _write_marshal(
+        plan_context.fixture_dir,
+        {'plan': {'phase-6-finalize': {'steps': {'default:push': {'lane': 'auto'}}}}},
+    )
+
+    result = cmd_sync_defaults(_sync_ns())
+
+    assert result['status'] == 'success'
+    config = _read_marshal(plan_context.fixture_dir)
+    steps = config['plan']['phase-6-finalize']['steps']
+    # the un-storable value is gone; the step takes its effective lane instead
+    assert steps['default:push']['lane'] == 'minimal'
+    assert (
+        'plan.phase-6-finalize.steps.default:push.lane=auto (removed: auto is not a stored lane)'
+        in result['lane_reports']
+    )
+    assert result['lane_reports_count'] == len(result['lane_reports'])
+
+
+def test_sync_defaults_reports_non_member_lane_and_never_carries_it(plan_context):
+    """A lane outside VALID_LANE_OVERRIDE is removed, reported, and never carried.
+
+    The bogus value is dropped before the merge (so no downstream reader ever
+    observes it) and named in `lane_reports`; a neighbouring valid override is
+    preserved byte-identically and never reported.
+    """
+    _write_marshal(
+        plan_context.fixture_dir,
+        {
+            'plan': {
+                'phase-6-finalize': {
+                    'steps': {
+                        'default:push': {'lane': 'turbo'},
+                        'default:archive-plan': {'lane': 'off'},
+                    }
+                }
+            }
+        },
+    )
+
+    result = cmd_sync_defaults(_sync_ns())
+
+    assert result['status'] == 'success'
+    config = _read_marshal(plan_context.fixture_dir)
+    steps = config['plan']['phase-6-finalize']['steps']
+    # the non-member value is gone — the step is re-filled, never carried
+    assert steps['default:push']['lane'] == 'minimal'
+    assert any(
+        'plan.phase-6-finalize.steps.default:push.lane=turbo' in entry and 'VALID_LANE_OVERRIDE' in entry
+        for entry in result['lane_reports']
+    )
+    # the valid neighbour survives untouched and unreported
+    assert steps['default:archive-plan']['lane'] == 'off'
+    assert not any('default:archive-plan' in entry for entry in result['lane_reports'])
+
+
+def test_sync_defaults_lane_repair_is_idempotent(plan_context):
+    """A second sync after a lane repair reports no further lane repairs."""
+    _write_marshal(
+        plan_context.fixture_dir,
+        {'plan': {'phase-6-finalize': {'steps': {'default:push': {'lane': 'auto'}}}}},
+    )
+
+    first = cmd_sync_defaults(_sync_ns())
+    assert first['status'] == 'success'
+    assert first['lane_reports_count'] == 1
+
+    second = cmd_sync_defaults(_sync_ns())
+
+    assert second['status'] == 'success'
+    assert second['lane_reports'] == []
+    assert second['lane_reports_count'] == 0
+
+
+def test_normalize_keys_reports_below_top_level_stray_key(plan_context):
+    """`normalize-keys` names a below-top-level stray key and downgrades to warning.
+
+    A legacy `phase-3-outline.qgate` knob the reconcile would retire is still
+    REPORTED here when the reconcile has not run: the verb preserves it (a
+    hygiene verb never drops) and names its dotted path in
+    `unrecognized_nested_keys`.
+    """
+    _write_marshal(plan_context.fixture_dir, {'plan': {'phase-3-outline': {'qgate': 'auto'}}})
+
+    result = _config_core.normalize_keys()
+
+    assert result['status'] == 'warning'
+    assert result['unrecognized_nested_keys'] == ['plan.phase-3-outline.qgate']
+    # the stray key is reported, never dropped
+    config = _read_marshal(plan_context.fixture_dir)
+    assert config['plan']['phase-3-outline']['qgate'] == 'auto'
+
+
+def test_normalize_keys_is_clean_without_stray_nested_keys(plan_context):
+    """A config with no stray nested key reports an empty nested bucket.
+
+    Matched control for the stray-key report above: on its own, a populated
+    bucket is also what an over-eager diff would produce on every config.
+    Together they say stray keys are named and only stray keys are.
+    """
+    _write_marshal(plan_context.fixture_dir, {'plan': {'phase-3-outline': {'q_gate_validation': 'once'}}})
+
+    result = _config_core.normalize_keys()
+
+    assert result['status'] == 'success'
+    assert result['unrecognized_nested_keys'] == []
+    assert result['unrecognized_keys'] == []
+
+
+def test_normalize_keys_ignores_dynamic_step_ids(plan_context):
+    """Operator-chosen step ids are entries, not stray knobs — never reported.
+
+    A custom `bundle:skill` step id in the finalize steps map is absent from
+    the defaults by design; the nested diff skips dynamic-identifier subtrees,
+    so it stays silent instead of flagging every operator-added step.
+    """
+    _write_marshal(
+        plan_context.fixture_dir,
+        {'plan': {'phase-6-finalize': {'steps': {'custom-bundle:custom-step': {}}}}},
+    )
+
+    result = _config_core.normalize_keys()
+
+    assert result['unrecognized_nested_keys'] == []
+    nested = _config_core.unrecognized_nested_keys(_read_marshal(plan_context.fixture_dir))
+    assert nested == []
+
+
+# =============================================================================
+# Dead phase-6 step-id detection during reconcile
+# =============================================================================
+#
+# A configured phase-6 step id with no resolvable order (absent from discovery
+# or carrying a non-int order) is dead: the next `add-step` would fail with
+# `missing_order` for that id even though the new step is fine. The reconcile
+# runs the shared `_find_dead_step_ids` resolver over the live map and removes
+# each dead id with its reason, so a later `add-step` no longer fails for it.
+
+
+def test_sync_defaults_removes_dead_step_id_and_reports_reason(plan_context, monkeypatch):
+    """A dead phase-6 step id is removed during the reconcile and reported."""
+    _write_marshal(
+        plan_context.fixture_dir,
+        {'plan': {'phase-6-finalize': {'steps': {'default:push': {}, 'default:stale-step': {}}}}},
+    )
+    monkeypatch.setattr(
+        _sync_mod,
+        '_find_dead_step_ids',
+        lambda steps, phase: [
+            {'step': step, 'reason': f"Step '{step}' has no resolved order in {phase}."}
+            for step in steps
+            if step == 'default:stale-step'
+        ],
+    )
+
+    result = cmd_sync_defaults(_sync_ns())
+
+    assert result['status'] == 'success'
+    config = _read_marshal(plan_context.fixture_dir)
+    steps = config['plan']['phase-6-finalize']['steps']
+    assert 'default:stale-step' not in steps
+    assert 'default:push' in steps
+    assert result['dead_removed_count'] == 1
+    assert any('default:stale-step' in entry for entry in result['dead_removed'])
+
+
+def test_sync_defaults_dead_step_removal_is_idempotent(plan_context, monkeypatch):
+    """A second sync after dead-id removal reports no further dead ids."""
+    _write_marshal(
+        plan_context.fixture_dir,
+        {'plan': {'phase-6-finalize': {'steps': {'default:push': {}, 'default:stale-step': {}}}}},
+    )
+    monkeypatch.setattr(
+        _sync_mod,
+        '_find_dead_step_ids',
+        lambda steps, phase: [
+            {'step': step, 'reason': f"Step '{step}' has no resolved order in {phase}."}
+            for step in steps
+            if step == 'default:stale-step'
+        ],
+    )
+
+    first = cmd_sync_defaults(_sync_ns())
+    assert first['status'] == 'success'
+    assert first['dead_removed_count'] == 1
+
+    second = cmd_sync_defaults(_sync_ns())
+
+    assert second['status'] == 'success'
+    assert second['dead_removed'] == []
+    assert second['dead_removed_count'] == 0
+
+
+# =============================================================================
+# Roster-only backfill persistence
+# =============================================================================
+#
+# `_backfill_standard_roster` mutates the merged config after the deep merge.
+# The sync save predicate must include its changed signal, otherwise a
+# roster-only drift is applied in memory but never written back to disk.
+
+
+def test_sync_defaults_roster_only_backfill_persists(plan_context):
+    """A roster-only drift is filled AND written back to disk."""
+    _write_marshal(plan_context.fixture_dir, {})
+    first = cmd_sync_defaults(_sync_ns())
+    assert first['status'] == 'success'
+
+    config = _read_marshal(plan_context.fixture_dir)
+    steps = config['plan']['phase-6-finalize']['steps']
+    roster_step = 'plan-marshall:automatic-review'
+    assert roster_step in steps, 'the synced config must carry the roster step'
+    # Simulate roster-only drift: clear both roster keys on an otherwise synced file.
+    params = steps[roster_step]
+    assert isinstance(params, dict)
+    params.pop('required_bots', None)
+    params.pop('optional_bots', None)
+    params.pop('bot_lists_provenance', None)
+    _write_marshal(plan_context.fixture_dir, config)
+
+    result = cmd_sync_defaults(_sync_ns())
+
+    assert result['status'] == 'success'
+    persisted = _read_marshal(plan_context.fixture_dir)
+    roster = persisted['plan']['phase-6-finalize']['steps'][roster_step]
+    assert roster.get('required_bots') == _sync_mod._STANDARD_REQUIRED_BOTS
+    assert roster.get('optional_bots') == _sync_mod._STANDARD_OPTIONAL_BOTS
+
+
+def test_backfill_standard_roster_reports_changed():
+    """The helper returns True only when it fills a roster key."""
+    merged: dict = {
+        'plan': {
+            'phase-6-finalize': {
+                'steps': {
+                    'plan-marshall:automatic-review': {},
+                },
+            },
+        },
+    }
+
+    assert _sync_mod._backfill_standard_roster(merged) is True
+    # A second call observes the filled roster and reports no change.
+    assert _sync_mod._backfill_standard_roster(merged) is False
+
+
+def test_backfill_standard_roster_skips_when_legacy_enabled_bots_present():
+    """A present legacy key defers to the migrate-bot-lists sub-step."""
+    merged: dict = {
+        'plan': {
+            'phase-6-finalize': {
+                'steps': {
+                    'plan-marshall:automatic-review': {
+                        'enabled_bots': 'coderabbit',
+                    },
+                },
+            },
+        },
+    }
+
+    assert _sync_mod._backfill_standard_roster(merged) is False
+    params = merged['plan']['phase-6-finalize']['steps']['plan-marshall:automatic-review']
+    assert 'required_bots' not in params
+    assert 'optional_bots' not in params

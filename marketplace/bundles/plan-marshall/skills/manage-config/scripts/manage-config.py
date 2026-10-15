@@ -1017,7 +1017,8 @@ def main() -> int:
         elif args.noun == 'normalize-keys':
             try:
                 # normalize_keys() returns its own status: 'warning' (naming any
-                # unrecognized top-level key it could not order) or 'success'.
+                # unrecognized top-level key it could not order, or any stray
+                # below-top-level key) or 'success'.
                 result = normalize_keys()
             except ConcurrentConfigModificationError:
                 # Let the outer handler name it; the blanket clause below would

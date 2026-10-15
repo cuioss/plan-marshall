@@ -837,6 +837,15 @@ OPERATOR_STEP_MAP_LOCATIONS: tuple[tuple[str, str], ...] = (
 OPERATOR_REMOVED_STEPS_KEY = 'removed_steps'
 
 
+# The standard reviewer roster seeded by the Stage 2 bot-list preservation.
+# The SINGLE source both roster writers derive from (``upgrade`` for the
+# ``migrate-bot-lists`` seed, ``_cmd_sync_defaults`` for the post-merge
+# back-fill). A second copy as a literal is a defect: if one copy changes,
+# the two writers seed different rosters with no sync between them.
+STANDARD_REQUIRED_BOTS = 'cuioss-review-bot,coderabbit'
+STANDARD_OPTIONAL_BOTS = 'sourcery'
+
+
 # Canonical-verify step prefix. A ``per_deliverable_build`` list entry MUST be a
 # ``default:verify:{canonical}`` ID; the prefix-strict validator rejects any
 # other shape (including the retired ``per_deliverable_build`` enum strings).
@@ -848,6 +857,26 @@ _VERIFY_STEP_PREFIX = 'default:verify:'
 # so a config carrying an old enum value gets an actionable migration error
 # rather than a generic "not a list" rejection.
 RETIRED_PER_DELIVERABLE_BUILD_ENUM = ('off', 'compile-only', 'compile+scoped-test', 'full')
+
+# Pinned retired unconsumed keys (``<phase>.<key>`` dotted form, without the
+# ``plan.`` prefix). Each entry names a ``plan.<phase>.<key>`` knob a prior
+# release seeded (or accepted) that no reader consumes anymore: the
+# ``sync-defaults`` reconcile retires it (removes the key from the live config
+# and reports the removal) so a stale knob can never linger as if it took
+# effect. The table is the single, explicit, pinned list: future retirements
+# add rows here, and the reconcile consumes this constant — never a restated
+# literal.
+# SHIM(A): retired unconsumed config knobs (removed from the live config and reported).
+# shim-owner: manage-config
+# shim-floor: the RETIRED_UNCONSUMED_KEYS table that retires phase-6-finalize.self_review / phase-6-finalize.simplify / phase-6-finalize.drop_review_on_scope_gate / phase-3-outline.qgate / phase-5-execute.per_task_budget_reserve_tokens
+# shim-remove-when: no live marshal.json carries a listed key (idempotent: a re-run reports no retirements)
+RETIRED_UNCONSUMED_KEYS: tuple[str, ...] = (
+    'phase-6-finalize.self_review',
+    'phase-6-finalize.simplify',
+    'phase-6-finalize.drop_review_on_scope_gate',
+    'phase-3-outline.qgate',
+    'phase-5-execute.per_task_budget_reserve_tokens',
+)
 
 
 def validate_per_deliverable_build(value: object) -> None:

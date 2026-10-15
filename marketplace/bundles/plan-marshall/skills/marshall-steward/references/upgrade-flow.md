@@ -1,10 +1,11 @@
 # Upgrade Flow
 
 The `upgrade` verb runs the full post-change reconciliation in ONE flow after a
-change: regenerate the target tree and/or executor, reconcile `marshal.json` and
+change: bootstrap the executor from the newest plugin cache, regenerate the target tree and/or executor, reconcile `marshal.json` and
 migrate the architecture descriptors, verify, then run the existing landing cycle. The verb is pure orchestration glue
 over already-shipped machinery — it FIRST calls the deterministic planner
-`upgrade.py plan` to obtain the fixed four-stage plan with per-stage gate
+`upgrade.py plan`, which bootstraps the serving executor against the newest
+plugin-cache version (regenerating when stale) and then emits the fixed four-stage plan with per-stage gate
 dispositions AND per-stage `sub_steps`, then drives each stage's existing
 machinery honoring those dispositions.
 
@@ -48,7 +49,7 @@ sub-steps on a consumer).
                                 consumer: cache-freshness-check + regenerate-executor
                                           + cache-retention-sweep
                                 └─ nested gate: cache-retention-prune (still prompts)
-  Stage 2  reconcile-config     both:     migrate-review-steps + reconcile-marshal-json [mutating]
+  Stage 2  reconcile-config     both:     reconcile-marshal-json [mutating]
                                           + review-held-defaults + migrate-bot-lists
                                           + validate-bot-lists
                                           + migrate-architecture-descriptors
@@ -59,21 +60,41 @@ sub-steps on a consumer).
                                 └─ nested gates: land/leave + branch-reuse (still prompt)
 ```
 
-## Step 0: Obtain the stage plan
+## Step 0: Bootstrap the executor, then obtain the stage plan
 
-Call the deterministic planner FIRST, passing the resolved `integrate` value
-(`true` when the invocation carried `integrate=true`, otherwise `false`) and
-`--project-kind auto` (the planner detects `meta` vs `consumer` from the cwd via
-a read-only `marketplace/targets/generate.py` + `marketplace/bundles/` presence
-check; pass `meta` or `consumer` explicitly to override the detection):
+Validate the serving executor against the newest plugin-cache version and
+regenerate it from that cache when stale BEFORE requesting the stage plan — a
+stale executor resolves every downstream stage to stale scripts. The `plan`
+verb performs this bootstrap itself (it is on by default; pass
+`--bootstrap false` only to skip it deliberately), so the normal call
+already bootstraps:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:marshall-steward:upgrade plan --integrate {integrate} --project-kind auto
 ```
 
+Pass the resolved `integrate` value (`true` when the invocation carried
+`integrate=true`, otherwise `false`) and `--project-kind auto` (the planner
+detects `meta` vs `consumer` from the cwd via a read-only
+`marketplace/targets/generate.py` + `marketplace/bundles/` presence check; pass
+`meta` or `consumer` explicitly to override the detection).
+
 See the [`../SKILL.md`](../SKILL.md) Canonical invocations (`upgrade — plan`) for
-the verb shape. Parse the returned top-level `project_kind` and the
-`stages[4]{order,key,name,mutating,top_level_gate,nested_gates,sub_steps}` list.
+the verb shape. Parse the returned top-level `project_kind`, the `bootstrap`
+block, and the `stages[4]{order,key,name,mutating,top_level_gate,nested_gates,sub_steps}` list.
+
+The `bootstrap` block reports `action` (`fresh` | `regenerated` | `no_cache` |
+`regenerate_failed` | `unknown`), the compared `executor_version` /
+`newest_cache_version`, and a `warning`. A non-empty `warning` names a
+skill/planner version split — the installed skill surface and the planner
+disagree on the version — and its remedy, instead of a silently stale run:
+re-sync the plugin cache (`/plugin update plan-marshall`), reload the session
+plugin set so the refreshed cache is visible (resolve the harness-appropriate
+directive through `platform_runtime session reload-directive`), then re-request
+the stage plan so the skill docs and the planner resolve one version. Surface
+the warning verbatim and follow the remedy before driving any stage: the plan
+just emitted was produced by a planner whose currency is unproven.
+
 Each stage's `top_level_gate` is the disposition this flow honors below: `prompt`
 (ask before running the stage) or `suppressed` (run without the top-level
 prompt). Each stage's `sub_steps` is the exact ordered list of sub-steps to run
@@ -326,68 +347,13 @@ tree and both leave superseded version dirs behind. The sweep and its
 ## Stage 2: reconcile-config (mutating)
 
 Honor the Stage 2 top-level gate, then run exactly the Stage 2 `sub_steps` the
-plan emitted. That list is kind-invariant — `migrate-review-steps`, then
-`reconcile-marshal-json`, then `review-held-defaults`, then `migrate-bot-lists`,
-then `validate-bot-lists`, then `migrate-architecture-descriptors` — and all six
+plan emitted. That list is kind-invariant — `reconcile-marshal-json`, then
+`review-held-defaults`, then `migrate-bot-lists`, then `validate-bot-lists`,
+then `migrate-architecture-descriptors` — and all five
 sub-steps are expanded below, in that order. The
 prose enumerates the emitted set: a sub-step the planner emits but this section
 never names is one a reader completes the documented upgrade without ever
 running.
-
-### Sub-step `migrate-review-steps`
-
-Run FIRST, before `reconcile-marshal-json`:
-
-```bash
-python3 .plan/execute-script.py plan-marshall:marshall-steward:upgrade migrate-review-steps
-```
-
-The structural self-review finalize step was split into two reviews, each
-switched by its own setting: `default:functional-review` (its setting is
-`functional_review`) and `default:code-review` (its setting is `code_review`).
-This sub-step migrates a configured `marshal.json` onto them. In
-`plan.phase-6-finalize.steps`, an entry for the retired
-`default:pre-submission-self-review` (or its bare `pre-submission-self-review`
-form) is replaced in place by `default:functional-review` followed by
-`default:code-review`, and both inherit its setting:
-
-- its `lane` is carried to both new entries when it is a supported lane
-  override (`off`, `minimal`, `standard`, `full` or `ask` — the
-  `VALID_LANE_OVERRIDE` set in `manage-config`'s `_config_defaults.py`, which the
-  migration imports rather than restating);
-- a legacy step-owned `self_review` run-at-all value still on the entry is
-  mapped onto both new entries' `lane` — `never` → `off`, `always` → `minimal`,
-  `auto` → no lane; when it disagrees with the entry's own `lane`, `off` wins,
-  otherwise the mapped value wins, and the losing setting is reported in
-  `dropped_params`;
-- every other param — the retired `drop_review_on_scope_gate` among them — has no
-  successor, is dropped, and is reported in `dropped_params`;
-- when the map names the retired step in BOTH spellings, the settings of both
-  entries are merged: their dropped params are united, and when their lanes
-  differ `off` wins (a review switched off in either spelling stays off),
-  otherwise the first entry's lane wins — the losing lane is reported in
-  `dropped_params`.
-
-A new entry the operator already configured WINS: it is left untouched and
-reported in `kept`, and only the missing successor is inserted; when both
-successors are already configured, the retired entry's setting reaches neither
-and is reported in `dropped_params`. A `lane` outside the supported set — an
-unknown string, an empty one, or a non-string — is not carried to either new
-entry and is reported there too, as is a `self_review` value other than `never`,
-`always` or `auto`. In the
-`removed_steps` list, a retired id is replaced by both new ids, so a review the
-operator removed stays removed under its new names.
-
-The sub-step is idempotent and **self-disarming**: with no retired id present it
-is a no-op success, so re-running the upgrade flow is always safe. See the
-`marshall-steward` Canonical invocations (`upgrade migrate-review-steps`) for the
-verb shape.
-
-It runs before `reconcile-marshal-json` on purpose: the defaults merge then sees
-both new ids as present instead of holding them at its ask-before-add gate.
-Reaching Stage 3 without running this sub-step is the concrete loss it guards: a
-project still naming the retired step completes the upgrade with a finalize
-roster entry no step doc implements, and with neither review configured.
 
 ### Sub-step `reconcile-marshal-json`
 

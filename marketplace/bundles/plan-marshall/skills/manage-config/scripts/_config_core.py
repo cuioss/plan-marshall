@@ -918,6 +918,99 @@ def unrecognized_top_level_keys(config: dict) -> list[str]:
     return [key for key in config if key not in canonical]
 
 
+# Dotted-path subtrees whose keys are operator-chosen identifiers rather than
+# fixed-schema knobs. The nested-key diff below never descends into them: a key
+# there names an entry (a step id, a provider, a glob), not a knob the defaults
+# seed, so its absence from the defaults is expected rather than stray.
+# Each entry is a dotted prefix; the subtree rooted at it (and the prefix
+# itself, when it is a dynamic entry) is skipped.
+_NESTED_DIFF_DYNAMIC_PREFIXES: tuple[str, ...] = (
+    'extension_defaults',
+    'skill_domains',
+    'build.map',
+    'plan.phase-5-execute.verification_steps',
+    'plan.phase-6-finalize.steps',
+    'plan.phase-5-execute.effort',
+    'plan.phase-6-finalize.effort',
+    'orchestrator.effort',
+)
+
+
+def _is_dynamic_prefix(dotted: str) -> bool:
+    """Return True when ``dotted`` is rooted at a dynamic-identifier subtree."""
+    return any(dotted == prefix or dotted.startswith(prefix + '.') for prefix in _NESTED_DIFF_DYNAMIC_PREFIXES)
+
+
+# First-party runtime stamps the seed never carries. ``manage-config init`` /
+# ``sync-defaults`` stamp ``system.provisioned_version`` /
+# ``system.config_seed_fingerprint`` into the live file (see
+# ``stamp_provisioning`` in ``_config_defaults``), while
+# :func:`get_default_config` deliberately omits them — they are runtime
+# observations, not seedable defaults. The nested-key diff below skips them for
+# the same reason it skips dynamic-identifier subtrees: their absence from the
+# defaults is expected rather than stray. Without the skip, ``normalize_keys``
+# would report the product's own provisioning stamps as unrecognized — the same
+# defect class as the ``runtime`` / ``project_dir`` seed saga, a warning naming
+# keys the operator could not act on.
+_NESTED_DIFF_RUNTIME_STAMPS: tuple[str, ...] = (
+    'system.provisioned_version',
+    'system.config_seed_fingerprint',
+)
+
+
+def unrecognized_nested_keys(config: dict) -> list[str]:
+    """Return below-top-level keys present in ``config`` but absent from the defaults.
+
+    Each entry is a dotted path (e.g. ``plan.phase-3-outline.qgate``) naming the
+    SHALLOWEST unrecognized key: when a whole subtree is unknown only its root
+    is reported, not every descendant. Top-level keys are never reported here
+    (they belong to :func:`unrecognized_top_level_keys`), and neither are the
+    children of an unrecognized top-level key (their root already names them).
+    Dynamic-identifier subtrees (see :data:`_NESTED_DIFF_DYNAMIC_PREFIXES` —
+    step maps keyed by step id, provider/glob maps, effort surfaces) are skipped
+    entirely: absence from the defaults there is expected, not stray. First-party
+    runtime stamps (see :data:`_NESTED_DIFF_RUNTIME_STAMPS` —
+    ``system.provisioned_version`` / ``system.config_seed_fingerprint``) are
+    skipped for the same reason. Lists are
+    never descended into.
+
+    The reference is :func:`get_default_config` (imported lazily so this module
+    never takes an import-time dependency on the defaults module): a key the
+    seed does not carry at the same path is one no reader was seeded to
+    consume. A retired knob the reconcile already removed therefore never
+    appears here — this verb reports what the reconcile has not yet retired.
+    """
+    from _config_defaults import get_default_config
+
+    defaults = get_default_config()
+    found: list[str] = []
+
+    def walk(live_node: object, default_node: object, prefix: str) -> None:
+        if not isinstance(live_node, dict):
+            return
+        default_map = default_node if isinstance(default_node, dict) else {}
+        for key in live_node:
+            dotted = f'{prefix}.{key}' if prefix else str(key)
+            if not prefix:
+                # Top-level keys belong to unrecognized_top_level_keys; still,
+                # a RECOGNIZED top-level block is descended into below.
+                if key not in default_map:
+                    continue
+                walk(live_node[key], default_map.get(key), dotted)
+                continue
+            if _is_dynamic_prefix(dotted):
+                continue
+            if dotted in _NESTED_DIFF_RUNTIME_STAMPS:
+                continue
+            if key not in default_map:
+                found.append(dotted)
+                continue
+            walk(live_node[key], default_map.get(key), dotted)
+
+    walk(config, defaults, '')
+    return found
+
+
 def normalize_keys() -> dict:
     """Re-write marshal.json with the canonical top-level key order.
 
@@ -929,23 +1022,29 @@ def normalize_keys() -> dict:
     can place only the keys named in :data:`CANONICAL_TOP_LEVEL_KEY_ORDER`; any
     other top-level key is preserved but appended out of any canonical position.
     ``normalize_keys`` therefore names that appended set in ``unrecognized_keys``
-    and downgrades the status to ``warning`` when it is non-empty, so a caller can
+    and additionally names below-top-level stray keys in
+    ``unrecognized_nested_keys`` (see :func:`unrecognized_nested_keys`), and
+    downgrades the status to ``warning`` when either set is non-empty, so a caller can
     no longer read ``action: 'normalized'`` and conclude the file is canonical when
-    it is not. An unrecognized top-level key is a warning rather than an error:
+    it is not. An unrecognized key at any level is a warning rather than an error:
     ``order_config_keys`` deliberately preserves it (dropping it would be
     destructive), and this is a hygiene verb, not a schema gate.
 
     Returns:
         A result dict with ``status`` (``'warning'`` when unrecognized keys were
-        appended, else ``'success'``), ``action: 'normalized'``, and
-        ``unrecognized_keys`` (the appended set, possibly empty).
+        appended or stray nested keys were found, else ``'success'``),
+        ``action: 'normalized'``, ``unrecognized_keys`` (the appended top-level
+        set, possibly empty), and ``unrecognized_nested_keys`` (the stray
+        below-top-level dotted paths, possibly empty).
     """
     require_initialized()
     config = load_config()
     unrecognized = unrecognized_top_level_keys(config)
+    nested = unrecognized_nested_keys(config)
     save_config(config)
     return {
-        'status': 'warning' if unrecognized else 'success',
+        'status': 'warning' if (unrecognized or nested) else 'success',
         'action': 'normalized',
         'unrecognized_keys': unrecognized,
+        'unrecognized_nested_keys': nested,
     }

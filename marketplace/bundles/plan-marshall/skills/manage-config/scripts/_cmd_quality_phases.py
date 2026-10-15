@@ -209,6 +209,42 @@ def _resolve_step_orders(steps: list[str], phase_section: str) -> tuple[list[tup
     return resolved, None
 
 
+def _find_dead_step_ids(steps: list[str], phase_section: str) -> list[dict]:
+    """Return the subset of ``steps`` with no resolvable order in ``phase_section``.
+
+    Shared resolver consumed by the step-order CLI surface here and by the
+    ``sync-defaults`` reconcile pass in :mod:`_cmd_sync_defaults`: both call
+    this instead of waiting for :func:`_resolve_step_orders` to surface the
+    first dead id as an ``add-step`` ``missing_order`` failure. A step is dead
+    when its authoritative order source yields no ``int`` order — absent from
+    discovery or carrying a non-int order. Canonical-verify steps follow the
+    same rule: they are alive only when the shared ``canonical_verify.md``
+    backing doc resolves to an ``int`` order.
+
+    Args:
+        steps: Configured step ids to check, in any order.
+        phase_section: Phase key (e.g., ``'phase-6-finalize'``).
+
+    Returns:
+        A list of ``{'step': id, 'reason': str}`` dicts in input order, one
+        per dead id. Empty when every id resolves.
+    """
+    discovered = {s['name']: s.get('order') for s in _discover_steps_for_phase(phase_section)}
+    dead: list[dict] = []
+    for step in steps:
+        if not isinstance(discovered.get(step), int):
+            dead.append(
+                {
+                    'step': step,
+                    'reason': (
+                        f"Step '{step}' has no resolved order in {phase_section}. "
+                        'Declare an `order` field in its authoritative source.'
+                    ),
+                }
+            )
+    return dead
+
+
 def _steps_map(raw) -> dict:
     """Return the step structure as a fresh ordered id-keyed dict.
 
