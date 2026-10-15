@@ -579,6 +579,7 @@ _STANDARD_REQUIRED_BOTS = STANDARD_REQUIRED_BOTS
 _STANDARD_OPTIONAL_BOTS = STANDARD_OPTIONAL_BOTS
 _AUTOMATIC_REVIEW_STEP_ID = 'plan-marshall:automatic-review'
 _BOT_LISTS_PROVENANCE_KEY = 'bot_lists_provenance'
+_LEGACY_BOT_LIST_KEY = 'enabled_bots'
 
 
 def _backfill_standard_roster(merged: dict) -> bool:
@@ -591,6 +592,10 @@ def _backfill_standard_roster(merged: dict) -> bool:
     provenance, is filled with the standard roster. Held/re-added reporting
     covers the roster step id like any other step id through the standard
     deep-merge accumulators — this helper only fills params inside a kept step.
+    A present retired ``enabled_bots`` key defers to the ``migrate-bot-lists``
+    sub-step (Stage 2 runs sync-defaults before the migration): filling here
+    would seed nonempty roster values the migration then reads as an operator
+    answer, reporting ``operator_answer_kept`` instead of ``migrated``.
     Mutates ``merged`` in place. Returns True when either roster key was filled.
     """
     plan = merged.get('plan')
@@ -606,6 +611,8 @@ def _backfill_standard_roster(merged: dict) -> bool:
     if not isinstance(params, dict):
         return False
     if params.get(_BOT_LISTS_PROVENANCE_KEY) == 'answered':
+        return False
+    if _LEGACY_BOT_LIST_KEY in params:
         return False
     changed = False
     required = params.get('required_bots')

@@ -1830,3 +1830,23 @@ def test_backfill_standard_roster_reports_changed():
     assert _sync_mod._backfill_standard_roster(merged) is True
     # A second call observes the filled roster and reports no change.
     assert _sync_mod._backfill_standard_roster(merged) is False
+
+
+def test_backfill_standard_roster_skips_when_legacy_enabled_bots_present():
+    """A present legacy key defers to the migrate-bot-lists sub-step."""
+    merged: dict = {
+        'plan': {
+            'phase-6-finalize': {
+                'steps': {
+                    'plan-marshall:automatic-review': {
+                        'enabled_bots': 'coderabbit',
+                    },
+                },
+            },
+        },
+    }
+
+    assert _sync_mod._backfill_standard_roster(merged) is False
+    params = merged['plan']['phase-6-finalize']['steps']['plan-marshall:automatic-review']
+    assert 'required_bots' not in params
+    assert 'optional_bots' not in params
