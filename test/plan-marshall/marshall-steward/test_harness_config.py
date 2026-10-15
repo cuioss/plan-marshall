@@ -360,3 +360,48 @@ def test_cli_dispatch_configure_harness(plan_env, monkeypatch: pytest.MonkeyPatc
     assert 'status: success' in out
     assert 'harness: antigravity' in out
     assert 'configured: true' in out
+
+
+def test_bridge_reemit_command_names_project_initial_setup(plan_env):
+    """Damaged stub surfaces the re-emit command, never silent."""
+    cmd = ch.bridge_reemit_command('opencode')
+    assert 'platform-runtime' in cmd
+    assert 'project initial-setup' in cmd
+    assert 'opencode' in cmd
+
+
+def test_reconcile_damaged_stub_returns_false(plan_env):
+    """A bridge stub without its version marker is not reconciled."""
+    project_dir = plan_env['project_dir']
+    bridge = project_dir / '.opencode' / 'rules' / 'plan-marshall-target-rules.md'
+    bridge.parent.mkdir(parents=True, exist_ok=True)
+    bridge.write_text('# damaged stub without marker\n', encoding='utf-8')
+
+    assert ch._reconcile_standing_rules_bridge('opencode', project_dir) is False
+
+
+def test_dispatch_does_not_heal_missing_bridge(plan_env):
+    """Observe-only dispatch never writes a missing bridge into place."""
+    project_dir = plan_env['project_dir']
+    (project_dir / 'AGENTS.md').unlink(missing_ok=True)
+    bridge = project_dir / '.opencode' / 'rules' / 'plan-marshall-target-rules.md'
+    if bridge.is_file():
+        bridge.unlink()
+
+    assert ch.dispatch_platform_runtime_setup('opencode', project_dir) is False
+    assert not bridge.is_file()
+
+
+def test_bridge_owns_own_file_only(plan_env):
+    """A current bridge reconciles without touching the installed target file."""
+    project_dir = plan_env['project_dir']
+    installed = project_dir / 'installed-target-rules.md'
+    installed.write_text('# installed target rules\n', encoding='utf-8')
+    before = installed.read_text(encoding='utf-8')
+
+    bridge = project_dir / '.opencode' / 'rules' / 'plan-marshall-target-rules.md'
+    bridge.parent.mkdir(parents=True, exist_ok=True)
+    bridge.write_text('# bridge\n\nbridge-version: 1\n', encoding='utf-8')
+
+    assert ch._reconcile_standing_rules_bridge('opencode', project_dir) is True
+    assert installed.read_text(encoding='utf-8') == before

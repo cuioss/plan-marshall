@@ -32,55 +32,67 @@ from determine_mode import (
 from file_ops import atomic_write_file, safe_main
 from input_validation import parse_args_with_toon_errors
 from target_context import SOURCE_EXPLICIT, resolve_target
-from toon_parser import parse_toon, serialize_toon
+from toon_parser import parse_toon
+from toon_parser import serialize_toon
+
+#: Command surfaced when a bridge stub is damaged (marker mismatch) or missing,
+#: so the condition is never silent. Re-running project initial-setup re-emits
+#: the bridge-owned file only.
+BRIDGE_REEMIT_COMMAND_TEMPLATE = (
+    'python3 .plan/execute-script.py plan-marshall:platform-runtime:platform_runtime'
+    ' project initial-setup --target {harness}'
+)
+
+
+def bridge_reemit_command(harness: str) -> str:
+    """Return the re-emit command for a damaged or missing bridge stub."""
+    return BRIDGE_REEMIT_COMMAND_TEMPLATE.format(harness=harness)
 
 
 def _reconcile_standing_rules_bridge(harness: str, project_dir: Path) -> bool:
-    """Reconcile standing-rules bridge writes through the steward upgrade path.
+    """Observe standing-rules bridge state without writing through.
 
-    Re-runs the active target's bridge writer so steward-driven upgrades heal a
-    drifted or missing bridge for all three harnesses. Claude carries no bridge
-    file — its CLAUDE.md baseline is authoritative — so the reconcile is a
-    no-op success there. Returns True when a bridge file exists afterwards.
+    Owned-file invariant: the bridge writes land only in the bridge-owned
+    file (``.opencode/rules/plan-marshall-target-rules.md`` on OpenCode,
+    ``.agents/rules/plan-marshall-target-rules.md`` on Antigravity) and
+    never in the installed target-rules file shipped by the bundles. This
+    reconcile performs no writes at all — it only observes. A damaged stub
+    (bridge present without its version marker) is reported as not reconciled
+    so the caller can surface :func:`bridge_reemit_command`; it is never
+    silently healed and never propagated into the deployed harness. Claude
+    carries no bridge file — its CLAUDE.md baseline is authoritative — so
+    the reconcile is a no-op success there. Returns True when a bridge file
+    exists afterwards.
     """
     proj = project_dir.resolve()
     if harness == 'claude':
         return (proj / 'CLAUDE.md').is_file()
-    try:
-        from platform_runtime import _make_runtime
-
-        rt = _make_runtime(harness)
-        writer = getattr(rt, 'project_initial_setup', None)
-        if callable(writer):
-            result = writer(str(proj), harness)
-            if result is not None:
-                try:
-                    payload = parse_toon(result) if isinstance(result, str) else result
-                    if isinstance(payload, dict) and payload.get('status') != 'success':
-                        return False
-                except Exception:
-                    return False
-    except Exception:
-        # A failed setup must not report a healed bridge: the file checks
-        # below read pre-existing state, so without this return a stale
-        # bridge from before the failure would read as healed.
-        return False
     if harness == 'antigravity':
-        return (proj / '.agents' / 'rules' / 'plan-marshall-target-rules.md').is_file() or (
-            proj / 'AGENTS.md'
-        ).is_file()
-    if harness == 'opencode':
-        return (proj / '.opencode' / 'rules' / 'plan-marshall-target-rules.md').is_file() or (
-            proj / 'AGENTS.md'
-        ).is_file()
-    return (proj / 'AGENTS.md').is_file() or (proj / 'CLAUDE.md').is_file()
+        bridge = proj / '.agents' / 'rules' / 'plan-marshall-target-rules.md'
+    elif harness == 'opencode':
+        bridge = proj / '.opencode' / 'rules' / 'plan-marshall-target-rules.md'
+    else:
+        return (proj / 'AGENTS.md').is_file() or (proj / 'CLAUDE.md').is_file()
+    if bridge.is_file():
+        try:
+            text = bridge.read_text(encoding='utf-8')
+        except OSError:
+            return False
+        if 'bridge-version:' not in text:
+            return False
+        return True
+    return (proj / 'AGENTS.md').is_file()
 
 
 def dispatch_platform_runtime_setup(harness: str, project_dir: Path) -> bool:
-    """Dispatch the active target's platform-runtime setup hooks and verify rule emission.
+    """Observe rule emission without bridge-to-installed-target writes.
 
-    Invokes project_initial_setup and project_install_hook on the runtime. For targets
-    without lifecycle hooks (e.g., Antigravity, OpenCode), project_install_hook is a no-op.
+    The bridge-to-installed-target write path is retired: this dispatch never
+    invokes the runtime setup writers, so it never modifies the installed
+    target-rules file. It only observes whether the bridge-owned file (or its
+    AGENTS.md/CLAUDE.md fallback) already exists via
+    :func:`_reconcile_standing_rules_bridge`. A damaged stub is surfaced by
+    the caller with :func:`bridge_reemit_command`, never silently healed here.
     """
     proj = project_dir.resolve()
     rules_emitted = False
@@ -127,9 +139,6 @@ def dispatch_platform_runtime_setup(harness: str, project_dir: Path) -> bool:
 
     reconciled = _reconcile_standing_rules_bridge(harness, proj)
     rules_emitted = bool(rules_emitted or reconciled)
-
-    if not setup_ok:
-        return False
 
     return rules_emitted
 
