@@ -305,8 +305,19 @@ _LEGACY_BOT_LIST_KEY = 'enabled_bots'
 _REQUIRED_BOTS_KEY = 'required_bots'
 _OPTIONAL_BOTS_KEY = 'optional_bots'
 _PROVENANCE_KEY = 'bot_lists_provenance'
-_STANDARD_REQUIRED_BOTS = 'cuioss-review-bot,coderabbit'
-_STANDARD_OPTIONAL_BOTS = 'sourcery'
+# The standard reviewer roster, single-sourced from manage-config's
+# :mod:`_config_defaults` (the canonical host). The deferred import keeps this
+# module importable where the sibling skill scripts are not on ``sys.path``
+# (unit-test import topology); the fallback preserves the last-known literals
+# for that topology only. The private aliases preserve this module's
+# established names for existing readers.
+try:
+    from _config_defaults import STANDARD_OPTIONAL_BOTS, STANDARD_REQUIRED_BOTS
+except ImportError:
+    STANDARD_REQUIRED_BOTS = 'cuioss-review-bot,coderabbit'
+    STANDARD_OPTIONAL_BOTS = 'sourcery'
+_STANDARD_REQUIRED_BOTS = STANDARD_REQUIRED_BOTS
+_STANDARD_OPTIONAL_BOTS = STANDARD_OPTIONAL_BOTS
 
 
 def _has_operator_answer(params: dict) -> bool:

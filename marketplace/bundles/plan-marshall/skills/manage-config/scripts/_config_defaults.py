@@ -837,6 +837,15 @@ OPERATOR_STEP_MAP_LOCATIONS: tuple[tuple[str, str], ...] = (
 OPERATOR_REMOVED_STEPS_KEY = 'removed_steps'
 
 
+# The standard reviewer roster seeded by the Stage 2 bot-list preservation.
+# The SINGLE source both roster writers derive from (``upgrade`` for the
+# ``migrate-bot-lists`` seed, ``_cmd_sync_defaults`` for the post-merge
+# back-fill). A second copy as a literal is a defect: if one copy changes,
+# the two writers seed different rosters with no sync between them.
+STANDARD_REQUIRED_BOTS = 'cuioss-review-bot,coderabbit'
+STANDARD_OPTIONAL_BOTS = 'sourcery'
+
+
 # Canonical-verify step prefix. A ``per_deliverable_build`` list entry MUST be a
 # ``default:verify:{canonical}`` ID; the prefix-strict validator rejects any
 # other shape (including the retired ``per_deliverable_build`` enum strings).

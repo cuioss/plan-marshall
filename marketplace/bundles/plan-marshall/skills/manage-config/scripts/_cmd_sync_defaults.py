@@ -21,6 +21,8 @@ from _config_defaults import (
     OPERATOR_REMOVED_STEPS_KEY,
     OPERATOR_STEP_MAP_LOCATIONS,
     RETIRED_UNCONSUMED_KEYS,
+    STANDARD_OPTIONAL_BOTS,
+    STANDARD_REQUIRED_BOTS,
     VALID_LANE_OVERRIDE,
     get_default_config,
     stamp_provisioning_fields,
@@ -569,12 +571,12 @@ def _materialize_finalize_lanes(live: dict, materialized: list[str], added: list
     return live
 
 
-# The standard reviewer roster seeded by the Stage 2 bot-list preservation.
-# Mirrors ``upgrade._STANDARD_REQUIRED_BOTS`` / ``_STANDARD_OPTIONAL_BOTS`` without
-# importing the steward script: the merge must never clobber a present value and
-# back-fills this roster only into an absent automatic-review param block.
-_STANDARD_REQUIRED_BOTS = 'cuioss-review-bot,coderabbit'
-_STANDARD_OPTIONAL_BOTS = 'sourcery'
+# The standard reviewer roster seeded by the Stage 2 bot-list preservation,
+# single-sourced from :mod:`_config_defaults` (the canonical host). The
+# private aliases preserve the module's established names for existing
+# readers; the values themselves live in exactly one place.
+_STANDARD_REQUIRED_BOTS = STANDARD_REQUIRED_BOTS
+_STANDARD_OPTIONAL_BOTS = STANDARD_OPTIONAL_BOTS
 _AUTOMATIC_REVIEW_STEP_ID = 'plan-marshall:automatic-review'
 _BOT_LISTS_PROVENANCE_KEY = 'bot_lists_provenance'
 

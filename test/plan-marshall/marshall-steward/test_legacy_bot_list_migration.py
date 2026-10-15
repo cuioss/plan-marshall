@@ -337,3 +337,27 @@ class TestLiveConfigVerb:
         assert result['status'] == 'success'
         assert result['state'] == 'noop'
         assert 'marshal.json' in result['detail']
+
+
+def test_standard_roster_is_single_sourced_from_config_defaults():
+    """Both roster writers derive from ``_config_defaults`` — no unsynced duplicate.
+
+    The canonical values are pinned to their literals here (so the chain is
+    anchored even where a consumer fell back to its degraded-topology
+    literals), and each consumer's module-level name is asserted identical to
+    the canonical host.
+    """
+    import _config_defaults
+
+    assert _config_defaults.STANDARD_REQUIRED_BOTS == 'cuioss-review-bot,coderabbit'
+    assert _config_defaults.STANDARD_OPTIONAL_BOTS == 'sourcery'
+    assert upgrade._STANDARD_REQUIRED_BOTS == _config_defaults.STANDARD_REQUIRED_BOTS
+    assert upgrade._STANDARD_OPTIONAL_BOTS == _config_defaults.STANDARD_OPTIONAL_BOTS
+    sync_mod = load_script_module(
+        'plan-marshall',
+        'manage-config',
+        '_cmd_sync_defaults.py',
+        module_name='_cmd_sync_defaults_for_roster_source_test',
+    )
+    assert sync_mod._STANDARD_REQUIRED_BOTS == _config_defaults.STANDARD_REQUIRED_BOTS
+    assert sync_mod._STANDARD_OPTIONAL_BOTS == _config_defaults.STANDARD_OPTIONAL_BOTS
