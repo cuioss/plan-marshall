@@ -430,3 +430,17 @@ def test_outdated_bridge_version_is_damaged(plan_env):
 
     assert ch._reconcile_standing_rules_bridge('opencode', project_dir) is False
     assert ch.dispatch_platform_runtime_setup('opencode', project_dir) == 'damaged'
+
+
+def test_setup_written_heading_reconciles_current(plan_env):
+    """A setup-written bridge embeds its marker in the heading line."""
+    project_dir = plan_env['project_dir']
+    bridge = project_dir / '.opencode' / 'rules' / 'plan-marshall-target-rules.md'
+    bridge.parent.mkdir(parents=True, exist_ok=True)
+    bridge.write_text(
+        '# Plan Marshall target rules (OpenCode bridge bridge-version: 1)\n\nbody\n',
+        encoding='utf-8',
+    )
+
+    assert ch._reconcile_standing_rules_bridge('opencode', project_dir) is True
+    assert ch.dispatch_platform_runtime_setup('opencode', project_dir) == 'current'

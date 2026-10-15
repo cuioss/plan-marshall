@@ -67,7 +67,11 @@ alternative: <what the caller can do instead>
 
 ### `project initial-setup`
 
-One-time project setup: create `.plan/`, seed `marshal.json`, install platform hook.
+One-time project setup: create `.plan/`, bridge standing rules into the
+target surface, install platform hook. Shared `marshal.json` carries no
+runtime-owned keys: the retired `runtime.target` seeding writes nothing
+there, so setup never creates or mutates it — routing stays config-driven
+via the registry.
 
 **Arguments**: `--project-dir <path>` (default `.`), `--target <registered-target>` (default from `platform_runtime._DEFAULT_TARGET`)
 
@@ -77,7 +81,7 @@ status: success
 operation: project initial-setup
 target: claude
 project_dir: /path/to/project
-marshal_written: true
+marshal_written: false
 hook_installed: true
 ```
 
@@ -87,7 +91,7 @@ status: success
 operation: project initial-setup
 target: opencode
 project_dir: /path/to/project
-marshal_written: true
+marshal_written: false
 hook_installed: false
 hook_skip_reason: OpenCode does not support a SessionStart hook equivalent (issue #9292)
 ```
@@ -100,7 +104,7 @@ error: unknown_target
 message: "Target 'foobar' is not in the registry; valid targets are: antigravity, claude, opencode"
 ```
 
-The seed is a read-modify-write, so it also returns `error: io_error` on three corrupt-input edges, identically on both targets: the directory tree cannot be created; `marshal.json` exists but is unreadable or unparseable; or it parses yet carries a shape the seed cannot mutate — a top-level non-object, or a `runtime` key present with a non-object value. The parse edge and the shape edge are separate, because a successful parse proves the bytes were valid JSON and not that they were an object. Every corrupt edge refuses **before any write**: the operation never falls back to an empty document, since that fallback would destroy exactly the configuration the read exists to preserve.
+No seeding is performed, so there is no corrupt-`marshal.json` refusal on this operation: a `marshal.json` that exists but is unreadable, unparseable, or misshapen is left untouched and the operation still succeeds — setup neither reads it nor falls back to an empty document, since that fallback would destroy exactly the configuration the retired seed existed to preserve.
 
 **Declining.** A target that cannot create this plan state returns a `no-op` with a `reason` and an `alternative` rather than reporting a setup it did not perform.
 

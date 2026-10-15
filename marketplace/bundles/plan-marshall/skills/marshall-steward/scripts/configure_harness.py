@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -97,7 +98,10 @@ def _reconcile_standing_rules_bridge(harness: str, project_dir: Path) -> bool:
             text = bridge.read_text(encoding='utf-8')
         except OSError:
             return False
-        if marker not in text.splitlines():
+        # Boundary-aware marker match: the setup-written bridge embeds the
+        # marker inside its heading line, so an exact-line match never fires;
+        # a trailing-digit guard still rejects an outdated version marker.
+        if re.search(re.escape(marker) + r'(?!\d)', text) is None:
             return False
         return True
     return False
