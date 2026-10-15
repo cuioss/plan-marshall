@@ -95,7 +95,7 @@ the drain consumes. These keys are **required** — a landing missing any of the
 | `cleanup_owed` | Whether the run still owes branch cleanup that nothing re-entering will discharge (`true` / `false`), `n/a`, or `unknown` — the STEP'S claim. `n/a` is the answer when no `branch-cleanup` step ran, a real end state: a plan whose manifest carried no such step owes no cleanup it could record. `unknown` is a `cleanup_owed` fact that could not be read, and asserts only that nothing was observed. Neither collapses into the other. `true` is the only structured carrier of the owed cleanup on a PR the merge queue dequeued, whose `merge_state=closed` otherwise reads complete | `branch-cleanup`'s `cleanup_owed` fact |
 | `deliverables_total` | Total deliverable count from the solution outline | run |
 | `deliverables_done` | Completed deliverable count | run |
-| `total_tokens` | The run's token total (raw integer), or `unknown` when the run carried no measurement — a `transcripts: none` harness run whose token figures were never measured. `unknown` asserts only that nothing was observed and never collapses into `0`; it reads as a gap exactly as `merge_state=unknown` does (see the could-not-read class below) | `record-metrics` facts |
+| `total_tokens` | The measured-subset total (raw integer sum over the measured phases, with its measured-phase count), or `unknown` when zero phases measured — never `0`. A partly measured run carries the measured sum; only the nothing-measured run carries `unknown`. `unknown` asserts only that nothing was observed and never collapses into `0`; it reads as a gap exactly as `merge_state=unknown` does (see the could-not-read class below) | `record-metrics` facts |
 | `steps` | Comma-joined `{step}:{outcome}` for every finalize step in composed order. **A consumer splits each element on its LAST colon**, never its first: a namespaced step id contains a colon itself (`project:finalize-step-plugin-doctor:done`, `plan-marshall:plan-retrospective:done`), so a first-colon split yields the bare namespace as the step and the rest as the outcome. The split is APPLIED by the one consumer of this key, [`../workflow/analyze.md`](../workflow/analyze.md) § Step 4, which carries the worked example — this row states the rule, that step is its mechanism | `manage-status read` phase_steps |
 
 Optional keys a landing MAY carry (not required, so their absence is not incompleteness): `epic`,
@@ -145,6 +145,10 @@ nobody managed to read would drain as a settled "no PR exists".
 The block is **schema-versioned and fail-closed**: a block whose `schema` is not `landing-facts/1` is
 treated as INCOMPLETE, mirroring the envelope's `unknown_envelope_version` posture — a forward-compatible
 reader never best-effort-accepts an unrecognised payload version.
+
+## Single landing-totals contract
+
+The landing carries exactly one totals contract: the measured-subset total. A partly measured run carries the measured phases' token sum with its measured-phase count, so the landing still drains complete. Only the nothing-measured run carries `unknown` at `total_tokens` — never `0`. The measured sum beside its count stays checkable in the metrics store (`TOTALS_TOKENS_UNKNOWN_PHASES_FIELD` names the phases the sum does not cover), and the drain treats `unknown` as a gap at every key (see the could-not-read class above).
 
 ## Functional verdict facts
 

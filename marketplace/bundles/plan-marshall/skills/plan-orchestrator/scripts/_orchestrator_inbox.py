@@ -1351,6 +1351,10 @@ LANDING_ANSWERED_SENTINELS: frozenset[str] = frozenset({'n/a'})
 #: of splitting them. Gating this class the way the answered class is gated would
 #: reintroduce the defect the split closes: ``merge_state=unknown`` would drain as
 #: a settled merge fact while recording that the merge state could not be read.
+#: Under the single landing-totals contract (measured-subset total) this is what
+#: keeps the nothing-measured run honest: ``total_tokens=unknown`` means zero
+#: phases measured — never a partly measured sum — so the gap reads at the total
+#: exactly as it does at ``merge_state``.
 LANDING_COULD_NOT_READ_SENTINELS: frozenset[str] = frozenset({'unknown'})
 
 #: The allow-list gate for the ANSWERED class ALONE
@@ -1497,7 +1501,9 @@ def check_landing_completeness(payload_body: str) -> tuple[bool, list[str]]:
         why the fix was to SPLIT the vocabulary rather than to add ``merge_state``
         to the rejecting set: ``merge_state=n/a`` must stay an answer while
         ``merge_state=unknown`` must read as a gap, and one gated vocabulary
-        cannot express both.
+        cannot express both. Under the single measured-subset totals contract a
+        partly measured landing carries the measured sum (never ``unknown``), so
+        ``total_tokens=unknown`` here is the nothing-measured run alone.
 
     A check that PASSED on a prose-only landing would be the vacuous guard this one
     exists to replace; the no-block branch is what keeps it non-vacuous, and it is

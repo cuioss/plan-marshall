@@ -2397,11 +2397,11 @@ def cmd_generate(args: argparse.Namespace) -> dict:
         field = _TOTALS_FIELDS[column]
         data[field] = sum(int(v) for v in values)
         data[f'{field}{_POPULATION_COUNT_SUFFIX}'] = len(values)
-    # Phases without any measurement keep the Tokens Total honest: a sum with a
-    # hole in it is not a sum. The persisted numeric sum above still covers the
-    # measured rows (with its count), and this companion names the rows it does
-    # not cover — so the Total renders `unknown` while the measured subset stays
-    # checkable. Empty string when every rendered row measured.
+    # Single landing-totals contract (measured-subset total): the persisted
+    # numeric sum above covers the measured rows with its count, and this
+    # companion names the rows it does not cover. The render quotes the measured
+    # subset with its count while any row is measured; only the nothing-measured
+    # run renders `unknown`. Empty string when every rendered row measured.
     data[TOTALS_TOKENS_UNKNOWN_PHASES_FIELD] = ','.join(unknown_token_phases)
     # The Total is a cell in the same column and inherits the same declared
     # default, so it takes the same marking discipline as every other cell: when
@@ -2449,12 +2449,13 @@ def cmd_generate(args: argparse.Namespace) -> dict:
     total_worked_str = _total_str('worked', str, is_duration=True)
     total_wall_str = _total_str('wall', str, is_duration=True)
     total_idle_str = _total_str('idle', str, is_duration=True)
-    # A Total with a hole in it is not a sum: any unmeasured phase row makes
-    # the Tokens Total itself `unknown`, naming the measured subset's count
-    # nowhere — the persisted sum beside its count stays checkable in the
-    # store, but the rendered figure refuses to quote it as the whole.
+    # Single landing-totals contract (measured-subset total): a partly measured
+    # run renders the measured subset sum with its (n=k/N) count, so the landing
+    # still drains complete; only the nothing-measured run renders `unknown`,
+    # never `0` and never the empty-subset `-`. The persisted sum beside its
+    # count stays checkable in the store either way.
     unknown_tokens_csv = str(data.get(TOTALS_TOKENS_UNKNOWN_PHASES_FIELD) or '')
-    if unknown_tokens_csv:
+    if not tokens_values:
         total_tokens_str = UNKNOWN_TOKEN
     else:
         total_tokens_str = _total_str('tokens', lambda n: f'{n:,}')
