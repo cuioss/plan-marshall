@@ -593,7 +593,7 @@ This is the one point in the lifecycle where narrowing is both possible and safe
 
    **Branch on `status` BEFORE parsing anything else.** The verb has two success shapes and a many-coded error arm, not two outcomes, and on error none of the success fields exist:
 
-   - **`status: error`** — the verb could not evaluate. The reason codes are `plan_dir_not_found`, `domains_unreadable`, `marshal_not_readable`, `no_skill_domains_configured`, `footprint_unreadable`, `footprint_empty`, `task_leg_unreadable`, `deliverable_leg_unreadable`, and `would_empty`; the canonical set with the condition each names is owned by [`manage-config` § Canonical invocations → `domain-narrow`](../manage-config/SKILL.md), which is the source to re-check this list against. `retained`, `dropped`, `provenance`, `report`, and `narrowed` are ABSENT from the payload. STOP the narrowing step here: do NOT parse the success fields, do NOT run steps 3, 3b or 4, and do NOT write `domains` or `domains_provenance`. Surface the returned `error` and `message` instead, via a decision-log entry:
+   - **`status: error`** — the verb could not evaluate. The reason codes are defined by the canonical table in [`manage-config` § Canonical invocations → `domain-narrow`](../manage-config/SKILL.md) — consult that table for the meaning of the returned code. `retained`, `dropped`, `provenance`, `report`, and `narrowed` are ABSENT from the payload. STOP the narrowing step here: do NOT parse the success fields, do NOT run steps 3, 3b or 4, and do NOT write `domains` or `domains_provenance`. Surface the returned `error` and `message` instead, via a decision-log entry:
 
      ```bash
      python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
