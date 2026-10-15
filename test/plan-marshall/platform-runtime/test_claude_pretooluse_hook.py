@@ -784,6 +784,35 @@ def test_r5_denies_quote_wrapped_interpreter() -> None:
     assert hook.evaluate(_signal2_payload('Bash', _bash("'python3' /tmp/x.py"))) == hook._R5_REASON
 
 
+#: Interpreter-option-flag-prefixed bypasses R5 must refuse — an option flag
+#: in second position (-u, -W, -X, -B, -E, -I, --, bare -) does not hide the
+#: script path, -c or -m behind it. Flag-only tails and the bare interpreter
+#: stay allowed (see test_r5_not_fired_on_flag_only_invocation).
+_R5_OPTION_FLAG_DENIED_COMMANDS = [
+    'python3 -u /tmp/x.py',
+    'python3 -W ignore /tmp/x.py',
+    'python3 -u -c "evil()"',
+    'python3 -- /tmp/x.py',
+    'python3 -X dev script.py',
+]
+
+_R5_OPTION_FLAG_DENIED_IDS = [
+    'unbuffered-flag-prefixed-script-path',
+    'warning-flag-with-value-prefixed-script-path',
+    'stacked-option-flags-with-c-flag',
+    'separator-prefixed-script-path',
+    'x-flag-prefixed-script-path',
+]
+
+
+@pytest.mark.parametrize('command', _R5_OPTION_FLAG_DENIED_COMMANDS, ids=_R5_OPTION_FLAG_DENIED_IDS)
+def test_r5_denies_option_flag_prefixed_bypass(command: str) -> None:
+    """An interpreter option flag does not hide the bypass behind it."""
+    payload = _signal2_payload('Bash', _bash(command))
+
+    assert hook.evaluate(payload) == hook._R5_REASON, command
+
+
 #: Wrapper-prefixed interpreter calls R5 must refuse — the guard strips these
 #: prefixes before its own first-token checks, so the Claude matcher strips
 #: them for its R5 program check. One row per prefix shape: bare wrappers,

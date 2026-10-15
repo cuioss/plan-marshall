@@ -564,7 +564,10 @@ def _match_r5_interpreter_call(tool_name: str | None, tool_input: dict[str, Any]
     ``env`` / ``sudo`` prefixes and ``NAME=value`` assignments removed), so a
     wrapper-prefixed interpreter call is judged the same as the bare form —
     the same stripping the guard applies before its own first-token checks.
-    R1, R2 and R4 match against the unstripped command and are untouched.
+    An interpreter option in second position (``-u``, ``-W``, ``-X``,
+    ``-B``, ``-E``, ``-I``, ``--``, bare ``-``) does not hide what follows:
+    every later token is scanned with the same fail-closed rule. R1, R2
+    and R4 match against the unstripped command and are untouched.
     """
     command = _bash_command(tool_name, tool_input)
     if command is None:
@@ -581,9 +584,30 @@ def _match_r5_interpreter_call(tool_name: str | None, tool_input: dict[str, Any]
         return None
     if second in ('-c', '-m'):
         return _R5_REASON
+    if _has_flag_prefixed_bypass(stripped):
+        return _R5_REASON
     if second.startswith('-'):
         return None
     return _R5_REASON
+
+
+def _has_flag_prefixed_bypass(stripped: list[str]) -> bool:
+    """Whether a token past the interpreter flag hides a bypass.
+
+    Mirrors the guard's flag-prefix scan over the wrapper-stripped tokens:
+    any ``-c``, ``-m``, lone ``-``/``--``, or non-flag token past the
+    second position is a bypass. Flag-only tails and the bare interpreter
+    still pass. Used only by the R5 matcher.
+    """
+    for token in stripped[2:]:
+        text = _strip_matched_quotes(token.strip())
+        if not text:
+            continue
+        if text in ('-c', '-m', '-', '--'):
+            return True
+        if not text.startswith('-'):
+            return True
+    return False
 
 
 #: Ordered rule chain — the first matcher returning a reason wins.

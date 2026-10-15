@@ -214,6 +214,27 @@ function isInterpreterBypass(secondRaw) {
   return true
 }
 
+// ---- R5b: interpreter-option prefix (python3 -u script.py) ----
+// isInterpreterBypass inspects only the second token, so an interpreter
+// option flag in second position (-u, -W, -X, -B, -E, -I, --, bare -)
+// hides the script path, -c or -m behind it. Scan every later token with
+// the same fail-closed rule: any -c, -m, lone -/--, or non-flag token is a
+// bypass. Flag-only tails (python3 --version) and the bare interpreter
+// still pass; legitimate work goes through the executor permit.
+function hasFlagPrefixedBypass(command) {
+  const toks = commandTokens(command).slice(1)
+  for (let i = 1; i < toks.length; i++) {
+    let t = toks[i].trim()
+    if (t.length >= 2 && ((t.startsWith('"') && t.endsWith('"')) || (t.startsWith("'") && t.endsWith("'")))) {
+      t = t.slice(1, -1).trim()
+    }
+    if (!t) continue
+    if (t === "-c" || t === "-m" || t === "-" || t === "--") return true
+    if (!t.startsWith("-")) return true
+  }
+  return false
+}
+
 function targetsExecutor(args) {
   if (!args || typeof args !== "object") return false
   if (normalizedIsExecutorPath(typeof args.filePath === "string" ? args.filePath : "")) return true
@@ -341,7 +362,7 @@ export default Plugin.define({
             "[plan-marshall-guard] R4: hard-coded build command bypassing python3 .plan/execute-script.py is forbidden",
           )
         }
-        if (isInterpreterBypass(tokenAt(command, 1))) {
+        if (isInterpreterBypass(tokenAt(command, 1)) || hasFlagPrefixedBypass(command)) {
           audit(auditLine("R5", tool, sessionID, callID, command))
           throw new Error(
             "[plan-marshall-guard] R5: direct python interpreter calls (python -c, script paths, python -m) bypassing the executor are forbidden; route builds and checks via python3 .plan/execute-script.py and .plan state via manage-* verbs or the Read/Edit/Write tools",

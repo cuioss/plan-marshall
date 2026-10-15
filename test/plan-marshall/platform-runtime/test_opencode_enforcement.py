@@ -342,3 +342,10 @@ def test_guard_r5_refusal_names_remedy() -> None:
     source = _guard_plugin_source()
     assert 'python3 .plan/execute-script.py' in source
     assert 'manage-*' in source
+
+
+def test_guard_r5_scans_past_option_flags() -> None:
+    """The R5 branch pairs the second-token check with the flag-prefix scan."""
+    source = _guard_plugin_source()
+    assert 'hasFlagPrefixedBypass(command)' in source
+    assert 'isInterpreterBypass(tokenAt(command, 1)) || hasFlagPrefixedBypass(command)' in source
