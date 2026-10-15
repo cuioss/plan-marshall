@@ -4,7 +4,7 @@
 
 ## START HERE
 
-**Resume anchor**: === R32 (2026-10-13) FIFTH INGEST RUN (inbox). 13 messages (pm-mcp-core-m2-m4-190..202, PLAN-54 #48). 191 (deep-lane outline without assessments, recurrence of -022) added to the undrained live-blockers message lessons-routing-028 by inbox amend (revision 1); 8 medium and 4 low archived under lessons-archive/; inbox empty; no borderline grade. Record: epic.md Lesson Sweeps (fifth run) and lessons-archive/INDEX.md. Next: (1) land the ledger (/plan-orchestrator land); (2) the live-blockers orchestrator drains -026..-028; (3) ingest again when the inbox or corpus refills. Queue unchanged: PLAN-LR-01..05 parked, nothing emittable. === R31 (2026-10-13) fourth ingest run: 46 inbox messages; filed lessons-routing-026 (critical/high, opencode false completion), -027 (high, CodeRabbit summary dropped), -028 (recurrence evidence); landed via #1762. === R30 (2026-10-12): 143 messages, filed -011..-025, #1756. === R1-R29: see epic.md, settled.md and logs/decision.log.
+**Resume anchor**: === R33 (2026-10-15) SIXTH INGEST RUN (inbox). 97 messages (84 pm-mcp-core -203..-286, 13 api-sheriff late arrivals). 40 filed to live-blockers in 15 filings (-029..-043); 45 medium, 12 low archived; inbox empty; no stale. Operator: 5 pm-mcp-core borderlines high, late 006 medium. Record: epic.md Lesson Sweeps (sixth run) and lessons-archive/INDEX.md. Next: (1) land the ledger (/plan-orchestrator land); (2) live-blockers drains -029..-043; (3) ingest again when inbox or corpus refills. Queue unchanged: PLAN-LR-01..05 parked, nothing emittable.
 **Phase**: orchestrating
 **Parked**:
 - PLAN-LR-01 (WS-01)
