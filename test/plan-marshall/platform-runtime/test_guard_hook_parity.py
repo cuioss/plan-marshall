@@ -22,7 +22,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from _guard_node_harness import SUB_AGENT_AGENT, build_harness, shell_event
+from _guard_node_harness import SUB_AGENT_AGENT, GuardHarness, build_harness, shell_event
 
 from conftest import load_script_module
 
@@ -67,9 +67,9 @@ def _hook_payload(command: str, *, in_context: bool) -> dict:
     return payload
 
 
-def _guard_refused(harness, command: str, *, in_context: bool) -> bool:
+def _guard_refused(harness: GuardHarness, command: str, *, in_context: bool) -> bool:
     event = shell_event(command, agent=SUB_AGENT_AGENT) if in_context else shell_event(command)
-    return harness.run([event])[0].blocked
+    return bool(harness.run([event])[0].blocked)
 
 
 def test_parity_corpus_is_substantive() -> None:
