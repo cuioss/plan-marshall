@@ -845,9 +845,9 @@ def test_d1_qgate_task_fix_resolves_in_the_qgate_store(plan_context):
             phase='5-execute',
             source='qgate',
             type='test-failure',
-            title='FAILED test_the_wait_bound_stays_foreground_safe',
-            detail='AssertionError: the bound equals the per-call ceiling',
-            file_path='test/plan-marshall/script-shared/test_build_execute_factory.py',
+            title='FAILED test_d1_login',
+            detail='AssertionError: the resolved record carried no fix_task_number',
+            file_path='test/d1_auth.py',
         )
     )
     assert add_result['status'] == 'success'
@@ -899,8 +899,8 @@ def test_d4_reopen_restores_the_owning_task_and_clears_the_stamp(plan_context):
     identity = {
         'plan_id': plan_id,
         'finding_type': 'test-failure',
-        'title': 'Test failure in test_build_execute_factory.py:1183: FAILED test_the_bound_stays_foreground_safe',
-        'file_path': 'test/plan-marshall/script-shared/test_build_execute_factory.py',
+        'title': 'Test failure in d4_auth.py:1183: FAILED test_d4_login',
+        'file_path': 'test/d4_auth.py',
     }
 
     first = add_finding(**identity, detail='first detection', deduplicate=True)
