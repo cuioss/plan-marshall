@@ -57,6 +57,12 @@ derive, for rows still live.
   counted 7/7, five regressions; see `landings/PLAN-LB-39.md`. Fix-forward PLAN-LB-50; unshipped
   deliverables re-staged as PLAN-LB-51 (Antigravity) and PLAN-LB-52 (harness-agnostic, as scripts).
 
+- **Emit order from 2026-10-16 (runbook lane):** PLAN-LB-61 (now) → PLAN-LB-52, PLAN-LB-55 (each
+  shares one entry with PLAN-LB-56, non-blocking) → PLAN-LB-53 (after PLAN-LB-55) → PLAN-LB-48
+  (after PLAN-LB-50 and PLAN-LB-56 land; 2 and 4 shared files) → PLAN-LB-45 (after PLAN-LB-50 and
+  PLAN-LB-48) → PLAN-LB-49 (after PLAN-LB-48) → PLAN-LB-54 → PLAN-LB-51 (after PLAN-LB-50) →
+  PLAN-LB-43, -44, -58, -59, -41, -46, -57. This supersedes the order below.
+
 - **OpenCode plans restructured 2026-10-15 — OpenCode first, high and critical only** (operator
   instruction; see Decisions). Emit order once slots free (the gate still asks on overlaps):
   1. **PLAN-LB-56** session-boundary-enforcement — guard R5 (no interpreter side door), no inline
@@ -298,6 +304,28 @@ derive, for rows still live.
   model-sensitive failures seen so far. Recommendation logged, operator's call: emit a small,
   crisp plan first (PLAN-LB-53 or PLAN-LB-54, two deliverables each) so the first DeepSeek signal
   is not drowned by plan size.
+- 2026-10-16 — **Remaining plans run in the OpenCode runbook lane, not `/plan-marshall`**
+  (operator: "Soon we need to switch to the free models of opencode … they should not run
+  plan-marshall plan (take too many tokens by now) … fallback on our runbook approach"). The runbook
+  `.plan/local/opencode/RUNBOOK.md` was rewritten for this epic: 1,065 → 256 lines; the old
+  `oc-plans` version is kept as `RUNBOOK-oc-plans-archive.md`. Changes:
+  - Input is the staged spec itself (`.plan/orchestrator/live-blockers/plans/PLAN-LB-NN-*.md`,
+    git-tracked on `main`); the `oc-plans` authoring and move steps are gone.
+  - The hard rules are restated as one list, including the evasion routes graded on PLAN-LB-40/42
+    (`python3 -c`, ad-hoc scripts, `git grep`, `sleep`).
+  - Done-whens must be seen failing before the fix; the plan-marshall trailer replaces the
+    opencode identity.
+  - Both required reviewers are triggered explicitly (`/review`, `@coderabbitai review`), and the
+    operator's CodeRabbit policy is stated verbatim (90 min × 10, then close unmerged and reopen,
+    then ask). Only an operator-selected option is an authorization.
+  - The worktree is made through `git-workflow worktree-create` / `worktree-remove`, plus a
+    generated worktree executor (no `cp`, which the guard refuses).
+  - The landing goes to the epic inbox as `oc-lb-NN-{slug}`, with `harness` and `model` and the
+    report as its body.
+
+  Emit form from now on: `load .plan/local/opencode/RUNBOOK.md and follow strictly the instructions.
+  Plan: {spec path}`. Grading is unchanged: each landing gets the same adversarial analysis, with the
+  model read from `opencode.db`.
 
 ## Open Defects
 

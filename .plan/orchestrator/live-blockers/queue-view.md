@@ -4,7 +4,7 @@
 
 ## START HERE
 
-**Resume anchor**: Running 3 of 4: PLAN-LB-50 (Muse; must rebase onto b9cd36be1), PLAN-LB-56 (Muse), PLAN-LB-60 (DeepSeek). One slot free: PLAN-LB-61 lb-47-hotfix staged, disjoint from running — operator runs it on Gemini (confirm harness/command form at emit). Then: LB-48 (after LB-50), LB-52, LB-55, LB-53, LB-49, LB-54; then LB-51, LB-45, LB-43, LB-44, LB-58, LB-59, LB-41, LB-46, LB-57. OpenCode Watch retires after LB-50/56 graded; model Watch: DeepSeek (LB-60), Gemini (LB-61). Operator owes: clear 8 persisted opencode.db approvals.
+**Resume anchor**: Runbook lane (.plan/local/opencode/RUNBOOK.md) for all remaining plans. Running: PLAN-LB-50 (Muse), PLAN-LB-56 (Muse), PLAN-LB-60 (DeepSeek) — plan-marshall lane. Emit order: LB-61 (now, Gemini) -> LB-52, LB-55 -> LB-53 -> LB-48 (after LB-50+LB-56) -> LB-45 -> LB-49 -> LB-54 -> LB-51 (after LB-50) -> LB-43, LB-44, LB-58, LB-59, LB-41, LB-46, LB-57. Runbook landings arrive as sender oc-lb-NN-{slug}; stamp plan_marshall_plan_id with it. Grade every landing adversarially; model from opencode.db. Operator owes: clear 8 persisted opencode.db approvals.
 **Phase**: orchestrating
 **Running**:
 - PLAN-LB-50 (WS-04)
