@@ -818,6 +818,107 @@ Outline declares quantum-realms, which nothing configures.
 - Done
 """
 
+#: Java-only config for the metadata-variant probes below: no ``always_on`` and
+#: no ``file_globs`` leg, so the deliverable leg is the ONLY one that can retain
+#: ``java``. A variant the leg fails to read therefore surfaces as a refusal
+#: (nothing left to retain), never as retention by some unrelated leg.
+_JAVA_VARIANT_CONFIG = {
+    'skill_domains': {
+        'system': {'defaults': []},
+        'documentation': {'bundle': 'pm-documents'},
+        'java': {'bundle': 'pm-dev-java'},
+    }
+}
+
+#: The bold-label, backticked-value spelling of the completion spec's Done-when:
+#: ``- **Domain:** `java` ``. The hand-written field regex matched only a bare
+#: ``- domain:`` label and a ``[A-Za-z0-9_.-]+`` value, so this variant reached
+#: the leg as no declaration at all and dropped a domain the deliverable declared.
+_OUTLINE_WITH_BOLD_BACKTICK_DOMAIN = """# Solution: Bold Backtick Domain
+
+## Solution Metadata
+
+- scope_estimate: surgical
+
+## Summary
+
+The deliverable declares java with a bold field label and a backticked value.
+
+## Overview
+
+```
+[A] -> [B]
+```
+
+## Deliverables
+
+### 1. Touch the java code
+
+**Metadata:**
+- change_type: feature
+- execution_mode: automated
+- **Domain:** `java`
+- module: app
+- depends: none
+
+**Profiles:**
+- implementation
+
+**Affected files:**
+- `src/main/App.java` (write-replace)
+
+**Verification:**
+- Command: `true`
+- Criteria: done
+
+**Success Criteria:**
+- Done
+"""
+
+#: The case-and-comment spelling from the same Done-when: ``- domain: Java  # main``.
+#: The value must be matched case-insensitively and cut at the trailing comment —
+#: the same normalization the outline parser applies to every Metadata field value.
+_OUTLINE_WITH_CASE_COMMENT_DOMAIN = """# Solution: Case and Comment Domain
+
+## Solution Metadata
+
+- scope_estimate: surgical
+
+## Summary
+
+The deliverable declares Java in mixed case with a trailing comment.
+
+## Overview
+
+```
+[A] -> [B]
+```
+
+## Deliverables
+
+### 1. Touch the java code
+
+**Metadata:**
+- change_type: feature
+- execution_mode: automated
+- domain: Java  # main
+- module: app
+- depends: none
+
+**Profiles:**
+- implementation
+
+**Affected files:**
+- `src/main/App.java` (write-replace)
+
+**Verification:**
+- Command: `true`
+- Criteria: done
+
+**Success Criteria:**
+- Done
+"""
+
 
 def test_deliverable_declared_domain_is_retained_without_an_inclusion_leg(plan_context):
     """A deliverable-declared domain survives a footprint no other leg claims."""
@@ -943,6 +1044,60 @@ def test_unconfigured_claim_does_not_satisfy_would_empty(plan_context):
     assert result['error'] == 'would_empty'
 
 
+def test_bold_backticked_domain_field_is_retained(plan_context):
+    """``- **Domain:** `java` `` is a declaration, not a domain to drop.
+
+    The completion spec's Done-when names this exact spelling: the field label
+    is bold and the value backticked. Read through the outline parser the leg
+    sees the same field grammar as every other Metadata field; a leg that
+    cannot read it drops ``java`` and refuses the whole pass as ``would_empty``
+    (the configuration gives no other leg a way to retain it).
+    """
+    _seed_with_outline(
+        plan_context,
+        'dn-bold-backtick-domain',
+        ['documentation', 'java'],
+        [_MD_FOOTPRINT],
+        _OUTLINE_WITH_BOLD_BACKTICK_DOMAIN,
+        config=_JAVA_VARIANT_CONFIG,
+    )
+
+    result = cmd_domain_narrow(_ns('dn-bold-backtick-domain', _MD_FOOTPRINT))
+
+    assert result['status'] == 'success'
+    assert 'java' in result['retained']
+    assert _claimed_by(result, 'java') == ['deliverable']
+    # The sibling with no declaration and no other leg still goes: the leg is
+    # reading the outline, not blanket-retaining everything.
+    assert 'documentation' in result['dropped']
+
+
+def test_case_and_comment_domain_value_is_retained(plan_context):
+    """``- domain: Java  # main`` is matched case-insensitively, cut at the comment.
+
+    The hand-written value regex anchored the value to the end of the line and
+    admitted only ``[A-Za-z0-9_.-]``, so the mixed-case value carrying a trailing
+    comment reached the leg as no declaration. The outline parser's value is
+    normalized instead — comment removed, case folded — and matched against the
+    configured domains.
+    """
+    _seed_with_outline(
+        plan_context,
+        'dn-case-comment-domain',
+        ['documentation', 'java'],
+        [_MD_FOOTPRINT],
+        _OUTLINE_WITH_CASE_COMMENT_DOMAIN,
+        config=_JAVA_VARIANT_CONFIG,
+    )
+
+    result = cmd_domain_narrow(_ns('dn-case-comment-domain', _MD_FOOTPRINT))
+
+    assert result['status'] == 'success'
+    assert 'java' in result['retained']
+    assert _claimed_by(result, 'java') == ['deliverable']
+    assert 'documentation' in result['dropped']
+
+
 # =============================================================================
 # The would_empty guard — narrowing that would retain no user domain refuses.
 # =============================================================================
@@ -984,6 +1139,40 @@ def test_would_empty_carries_exactly_status_error_and_message(plan_context):
     assert result['status'] == 'error'
     assert result['error'] == 'would_empty'
     assert set(result) == {'status', 'error', 'message'}
+
+
+def test_already_empty_set_is_a_success_no_op(plan_context):
+    """An already-empty set has nothing to drop, so it is not a would_empty refusal.
+
+    The guard exists to prevent narrowing from EMPTYING the set; a set that is
+    already empty loses nothing. Refusing here regressed ``main``, where this
+    call succeeded, by turning a plan with no domains into an error.
+    """
+    _seed(plan_context, 'dn-empty-set', [], config=_JAVA_VARIANT_CONFIG)
+
+    result = cmd_domain_narrow(_ns('dn-empty-set', _MD_FOOTPRINT))
+
+    assert result['status'] == 'success'
+    assert result['retained'] == []
+    assert result['dropped'] == []
+    assert result['narrowed'] is False
+
+
+def test_system_only_set_is_a_success_no_op(plan_context):
+    """A system-only set drops nothing — success, with the exemption recorded.
+
+    ``system`` is retained by exemption, so the set loses nothing and the guard
+    has no dropped user domain to refuse over.
+    """
+    _seed(plan_context, 'dn-system-only-noop', ['system'], config=_JAVA_VARIANT_CONFIG)
+
+    result = cmd_domain_narrow(_ns('dn-system-only-noop', _MD_FOOTPRINT))
+
+    assert result['status'] == 'success'
+    assert result['retained'] == ['system']
+    assert result['dropped'] == []
+    assert result['narrowed'] is False
+    assert _claimed_by(result, 'system') == ['system_exempt']
 
 
 def test_apply_persists_the_retained_set(plan_context):

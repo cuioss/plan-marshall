@@ -224,17 +224,34 @@ python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-sol
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-solution-outline deliverable-hashes \
-  --plan-id PLAN_ID [--phase PHASE]
+  --plan-id PLAN_ID [--phase PHASE] [--write [--partial] | --check]
 ```
 
 Deterministic per-deliverable content hashes reusing `_plan_parsing` (no new
 heading scan): `hashes[]{deliverable,hash}` holds the SHA-256 of each
 deliverable's canonical block bytes, and `whole_outline_hash` fingerprints the
-full document. `--phase` (default `3-outline`) is provenance only — the caller
-(q-gate-validation Step 3.5) keys the stored aggregate row as
-`__whole_outline__:{phase}` itself. An outline that exists but cannot be
-decoded as UTF-8 returns `status: error` with `document_unreadable` instead of
-raising.
+full document. An outline that exists but cannot be decoded as UTF-8 returns
+`status: error` with `document_unreadable` instead of raising.
+
+`--write` merges the current fingerprints into the plan-scoped
+`work/deliverable-hashes.toon` artifact: rows keyed `{phase}:{N}` per
+deliverable plus the `__whole_outline__:{phase}` aggregate, and the phase's
+hashed validator-input snapshots. The merge replaces this phase's rows and
+snapshot entries, and preserves every other phase's verbatim. `--write
+--partial` records a pass that failed the full-pass gate (some validator
+reported not run): the rows and snapshots are recorded, the aggregate row is
+not — and the phase's aggregate row recorded by a previous full pass is
+removed, so no later check treats the partial pass as a completed full pass.
+
+`--check` reads the artifact back and returns this phase's skip decision:
+`deliverables[]{deliverable,decision,note}` with `skip` or `run` per
+deliverable — `skip` iff the stored `{phase}:{N}` hash matches, the phase's
+aggregate row exists, and the validator inputs are unchanged —
+`whole_outline_decision` (`skip` additionally requires the stored aggregate
+hash to match), and `validator_inputs_unchanged`. A skip note reads
+`not run (cached from phase {phase})`. An artifact that cannot be parsed
+returns `artifact_unreadable`: the verb never reads it as absent and never
+overwrites it. `--partial` requires `--write` (`invalid_arguments` otherwise).
 
 **Output** (TOON):
 
@@ -276,6 +293,8 @@ The fallback exists because a plan declaring `use_worktree=true` has no material
 | `unknown_field` | `get-field` requested an unsupported field name |
 | `deliverable_not_found` | Requested deliverable number doesn't exist (read with `--deliverable-number`) |
 | `section_not_found` | Requested section doesn't exist (read with `--section`) |
+| `artifact_unreadable` | `deliverable-hashes --write`/`--check`: `work/deliverable-hashes.toon` exists but cannot be read or parsed; the verb refuses rather than treating it as absent or overwriting it |
+| `invalid_arguments` | `deliverable-hashes` was called with `--partial` but without `--write` |
 
 See also [standards/solution-outline-standard.md](standards/solution-outline-standard.md) for deliverable validation criteria used during task planning.
 
@@ -304,7 +323,7 @@ See also [standards/solution-outline-standard.md](standards/solution-outline-sta
 | `get-deliverable` | `--plan-id --deliverable-number N` | Read a single deliverable by number (equivalent to `read --deliverable-number`) |
 | `get-field` | `--plan-id --field NAME` | Read a single solution-level metadata field. Currently supported: `scope_estimate`. Returns `field_not_found` when absent. |
 | `list-deliverables` | `--plan-id` | Extract deliverables list |
-| `deliverable-hashes` | `--plan-id [--phase]` | Deterministic per-deliverable + whole-outline hashes (q-gate Step 3.5 source) |
+| `deliverable-hashes` | `--plan-id [--phase] [--write [--partial] \| --check]` | Deterministic per-deliverable + whole-outline hashes; `--write` persists the phase-keyed artifact, `--check` returns per-row skip/run decisions (q-gate Step 3.5 source) |
 | `exists` | `--plan-id` | Check if solution exists |
 
 **Related Skills**:

@@ -25,7 +25,7 @@ from _resolve_project_dir_fixtures import (
     assert_sentinel_accepted,
     assert_worktree_face_routes_through_resolver,
 )
-from toon_parser import parse_toon
+from toon_parser import parse_toon, serialize_toon
 
 from conftest import load_script_module
 
@@ -80,6 +80,77 @@ Implement the thing.
 
 **Success Criteria:**
 - The thing works
+"""
+
+# Two-deliverable outline for the phase-keyed artifact tests: editing ONE
+# deliverable must leave the other deliverable's row and skip decision intact.
+TWO_DELIVERABLE_SOLUTION = """# Solution: Two Deliverables
+
+compatibility: breaking
+
+## Summary
+
+A two-deliverable outline for the phase-keyed hash skip.
+
+## Solution Metadata
+
+- scope_estimate: surgical
+
+## Overview
+
+```
+[A] -> [B]
+```
+
+## Deliverables
+
+### 1. Build the first thing
+
+Implement the first thing.
+
+**Metadata:**
+- change_type: feature
+- execution_mode: automated
+- domain: python
+- module: core
+- depends: none
+
+**Profiles:**
+- implementation
+
+**Affected files:**
+- `src/main/First.py` (write-new)
+
+**Verification:**
+- Command: `pytest`
+- Criteria: tests pass
+
+**Success Criteria:**
+- The first thing works
+
+### 2. Build the second thing
+
+Implement the second thing.
+
+**Metadata:**
+- change_type: feature
+- execution_mode: automated
+- domain: python
+- module: core
+- depends: none
+
+**Profiles:**
+- implementation
+
+**Affected files:**
+- `src/main/Second.py` (write-new)
+
+**Verification:**
+- Command: `pytest`
+- Criteria: tests pass
+
+**Success Criteria:**
+- The second thing works
 """
 
 
@@ -332,7 +403,7 @@ def test_main_deliverable_hashes_changes_with_content(plan_context, monkeypatch,
 
 
 def test_main_deliverable_hashes_echoes_phase(plan_context, monkeypatch, capsys):
-    """``--phase`` is provenance only and is echoed back for the caller's row key."""
+    """The default mode echoes ``--phase`` back to the caller."""
     _seed_outline(plan_context, 'so-cli-hashes-phase')
     code, out = _run_main(
         monkeypatch, capsys, ['deliverable-hashes', '--plan-id', 'so-cli-hashes-phase', '--phase', '4-plan']
@@ -359,3 +430,146 @@ def test_main_deliverable_hashes_document_unreadable(plan_context, monkeypatch, 
     data = parse_toon(out)
     assert data['status'] == 'error'
     assert data['error'] == 'document_unreadable'
+
+
+# =============================================================================
+# deliverable-hashes — the phase-keyed artifact: --write / --check
+# =============================================================================
+#
+# The verb owns work/deliverable-hashes.toon: --write persists the phase-keyed
+# rows (one per deliverable plus the __whole_outline__:{phase} aggregate), and
+# --check reads them back into per-row skip/run decisions applying the
+# same-phase rule. These tests encode the completion plan's Done-when clauses:
+# an edit changes exactly one row plus the aggregate; a 3-outline artifact
+# makes a 4-plan check run every row; a same-phase unchanged check skips (with
+# the cached-skip note); and --write writes the artifact --check reads.
+
+
+def test_main_deliverable_hashes_write_then_edit_changes_exactly_one_row_and_the_aggregate(
+    plan_context, monkeypatch, capsys
+):
+    """Editing one of two deliverables changes exactly that row and the aggregate."""
+    plan_id = 'so-cli-hashes-edit-one'
+    path = _seed_outline(plan_context, plan_id, TWO_DELIVERABLE_SOLUTION)
+
+    code, out = _run_main(
+        monkeypatch, capsys, ['deliverable-hashes', '--plan-id', plan_id, '--phase', '3-outline', '--write']
+    )
+    assert code == 0
+    assert parse_toon(out)['status'] == 'success'
+
+    _, before = _run_main(monkeypatch, capsys, ['deliverable-hashes', '--plan-id', plan_id])
+    path.write_text(path.read_text().replace('Implement the second thing.', 'Implement the edited second thing.'))
+    _, after = _run_main(monkeypatch, capsys, ['deliverable-hashes', '--plan-id', plan_id])
+
+    rows_before = {row['deliverable']: row['hash'] for row in parse_toon(before)['hashes']}
+    rows_after = {row['deliverable']: row['hash'] for row in parse_toon(after)['hashes']}
+    assert rows_before['1'] == rows_after['1']
+    assert rows_before['2'] != rows_after['2']
+    assert parse_toon(before)['whole_outline_hash'] != parse_toon(after)['whole_outline_hash']
+
+    code, out = _run_main(
+        monkeypatch, capsys, ['deliverable-hashes', '--plan-id', plan_id, '--phase', '3-outline', '--check']
+    )
+    assert code == 0
+    data = parse_toon(out)
+    assert {row['deliverable']: row['decision'] for row in data['deliverables']} == {'1': 'skip', '2': 'run'}
+    assert data['whole_outline_decision'] == 'run'
+
+
+def test_main_deliverable_hashes_check_cross_phase_returns_run_for_every_row(plan_context, monkeypatch, capsys):
+    """A 3-outline artifact makes a 4-plan check return run for every row.
+
+    Rows recorded under another phase's key never satisfy this phase's lookup,
+    so the first 4-plan pass over a 3-outline artifact fully re-validates.
+    """
+    plan_id = 'so-cli-hashes-cross-phase'
+    _seed_outline(plan_context, plan_id, TWO_DELIVERABLE_SOLUTION)
+
+    code, out = _run_main(
+        monkeypatch, capsys, ['deliverable-hashes', '--plan-id', plan_id, '--phase', '3-outline', '--write']
+    )
+    assert code == 0
+
+    code, out = _run_main(
+        monkeypatch, capsys, ['deliverable-hashes', '--plan-id', plan_id, '--phase', '4-plan', '--check']
+    )
+    assert code == 0
+    data = parse_toon(out)
+    assert data['artifact'] == 'present'
+    assert {row['decision'] for row in data['deliverables']} == {'run'}
+    assert data['whole_outline_decision'] == 'run'
+
+
+def test_main_deliverable_hashes_check_same_phase_unchanged_returns_skip(plan_context, monkeypatch, capsys):
+    """A same-phase check over an unchanged outline and inputs returns skip."""
+    plan_id = 'so-cli-hashes-same-phase'
+    _seed_outline(plan_context, plan_id, TWO_DELIVERABLE_SOLUTION)
+
+    code, out = _run_main(monkeypatch, capsys, ['deliverable-hashes', '--plan-id', plan_id, '--write'])
+    assert code == 0
+
+    code, out = _run_main(monkeypatch, capsys, ['deliverable-hashes', '--plan-id', plan_id, '--check'])
+    assert code == 0
+    data = parse_toon(out)
+    assert [row['decision'] for row in data['deliverables']] == ['skip', 'skip']
+    assert data['deliverables'][0]['note'] == 'not run (cached from phase 3-outline)'
+    assert data['whole_outline_decision'] == 'skip'
+    assert data['validator_inputs_unchanged'] is True
+
+
+def test_main_deliverable_hashes_write_persists_the_artifact_check_reads(plan_context, monkeypatch, capsys):
+    """``--write`` persists the artifact whose rows ``--check`` consumes."""
+    plan_id = 'so-cli-hashes-write-artifact'
+    _seed_outline(plan_context, plan_id, TWO_DELIVERABLE_SOLUTION)
+
+    code, out = _run_main(
+        monkeypatch, capsys, ['deliverable-hashes', '--plan-id', plan_id, '--phase', '3-outline', '--write']
+    )
+    assert code == 0
+
+    artifact_path = plan_context.plan_dir_for(plan_id) / 'work' / 'deliverable-hashes.toon'
+    assert artifact_path.exists()
+    artifact = parse_toon(artifact_path.read_text(encoding='utf-8'))
+    keys = [row['deliverable'] for row in artifact['hashes']]
+    assert set(keys) == {'3-outline:1', '3-outline:2', '__whole_outline__:3-outline'}
+
+    code, out = _run_main(
+        monkeypatch, capsys, ['deliverable-hashes', '--plan-id', plan_id, '--phase', '3-outline', '--check']
+    )
+    assert code == 0
+    assert {row['decision'] for row in parse_toon(out)['deliverables']} == {'skip'}
+
+
+def test_main_deliverable_hashes_hashless_aggregate_row_never_allows_a_skip(plan_context, monkeypatch, capsys):
+    """A present-but-hashless aggregate row is no completed-pass record.
+
+    The artifact reader does not validate row shape, so a row can survive with a
+    missing or empty ``hash``. Presence alone must not stand in for the phase's
+    full-pass marker: with the aggregate hash blanked, every per-deliverable
+    decision must read ``run`` (and the whole-outline gate ``run``), never a skip
+    a malformed record earned.
+    """
+    plan_id = 'so-cli-hashes-hashless-aggregate'
+    _seed_outline(plan_context, plan_id, TWO_DELIVERABLE_SOLUTION)
+
+    code, out = _run_main(monkeypatch, capsys, ['deliverable-hashes', '--plan-id', plan_id, '--write'])
+    assert code == 0
+    assert parse_toon(out)['status'] == 'success'
+
+    artifact_path = plan_context.plan_dir_for(plan_id) / 'work' / 'deliverable-hashes.toon'
+    artifact = parse_toon(artifact_path.read_text(encoding='utf-8'))
+    for row in artifact['hashes']:
+        if row['deliverable'] == '__whole_outline__:3-outline':
+            row['hash'] = ''
+    artifact_path.write_text(serialize_toon(artifact), encoding='utf-8')
+
+    code, out = _run_main(monkeypatch, capsys, ['deliverable-hashes', '--plan-id', plan_id, '--check'])
+    assert code == 0
+    data = parse_toon(out)
+    assert data['artifact'] == 'present'
+    # The inputs are unchanged, so the blanked aggregate is the ONLY reason the
+    # skip predicate may not fire — which keeps this test non-vacuous.
+    assert data['validator_inputs_unchanged'] is True
+    assert {row['decision'] for row in data['deliverables']} == {'run'}
+    assert data['whole_outline_decision'] == 'run'
