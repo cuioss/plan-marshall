@@ -83,6 +83,9 @@ documented workflows runnable. Three things make that split explicit:
 - **Audit line.** On a refusal the hook appends one line to
   `<cwd>/.plan/temp/guard.log`, in the same shape the OpenCode guard writes:
   `<ISO-8601 millis> | tool=<tool> | rule=<Rn> | session=<session_id> | call=? | <detail>`.
+  The `call` field is `?` on Claude, which exposes no tool-call id; the OpenCode
+  guard writes the real call id, so the two lines agree on every field Claude
+  provides.
 
 ### R1 — quoting and escape resolution
 

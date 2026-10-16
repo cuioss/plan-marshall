@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Conditional PreToolUse enforcement leaf for Claude Code.
 
-Registered (opt-in) as a matcher-less ``hooks.PreToolUse`` entry. It blocks five
+Registered (opt-in) as a matcher-less ``hooks.PreToolUse`` entry. It blocks six
 mechanically-checkable hard-rule violation families, but ONLY when the call
 originates inside a plan-marshall plan context. Outside that context — and on
 every error path — it emits nothing and exits 0, so a hook bug can never block
@@ -10,7 +10,7 @@ the user (fail OPEN).
 
 ALL payload parsing, field access, and the context-gate predicate are delegated
 to the shared ``pretooluse_gate`` module — this leaf adds NO field-name knowledge
-of its own. The only logic it owns is the R1-R5 rule matchers and the
+of its own. The only logic it owns is the R1-R6 rule matchers and the
 ``permissionDecision: deny`` envelope layered on top:
 
 - **R1 shell-construct compound** — a Bash command containing an UNQUOTED and
@@ -888,7 +888,8 @@ def evaluate(payload: dict[str, Any]) -> str | None:
 
     Applies the shared context gate first (``Signal1 OR Signal2``); when the gate
     is not satisfied, returns ``None`` (fail OPEN — no enforcement). When the gate
-    is satisfied, runs the R1-R5 matchers in order against the shared gate's
+    is satisfied, runs the R1-R5 matchers in order and then the R6 raw-finalize
+    commit rule against the shared gate's
     ``tool_name`` / ``tool_input`` accessors and returns the first matching rule's
     redirect reason, or ``None`` when no rule fires. A match also appends one
     ``guard.log`` audit line (best-effort — logging never changes the verdict).

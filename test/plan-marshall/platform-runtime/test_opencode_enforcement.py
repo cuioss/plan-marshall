@@ -393,3 +393,11 @@ def test_guard_node_r6_no_plan_state_does_not_fire(tmp_path_factory: pytest.Temp
     harness = build_harness(tmp_path_factory.mktemp('guard-r6-none'))
     blocked, _ = harness.blocks(shell_event('git commit -m "fix: x"', agent=SUB_AGENT_AGENT))
     assert not blocked
+
+
+def test_guard_node_r4_reads_an_attached_m_module(tmp_path_factory: pytest.TempPathFactory) -> None:
+    """The R4 python branch reads an attached ``-mpytest`` module (guard parity)."""
+    harness = build_harness(tmp_path_factory.mktemp('guard-r4-m'))
+    blocked, message = harness.blocks(shell_event('python3 -mpytest x', agent=SUB_AGENT_AGENT))
+    assert blocked, 'python3 -mpytest must be refused'
+    assert 'R4' in message, f'the refusal must be rule R4; message={message!r}'

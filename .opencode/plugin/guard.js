@@ -1,10 +1,10 @@
 /**
- * plan-marshall guard plugin — tool.execute.before enforcement of R1-R5.
+ * plan-marshall guard plugin — tool.execute.before enforcement of R1-R6.
  *
  * V2 plugin (`Plugin.define` with `ctx.tool.hook("execute.before")`). The
  * opencode host loads every module under `{plugin,plugins}/*.{ts,js}` in the
  * project config directory. This plugin registers a
- * `ctx.tool.hook("execute.before")` hook that inspects each tool invocation against the five
+ * `ctx.tool.hook("execute.before")` hook that inspects each tool invocation against the six
  * plan-marshall hard-rule bypass classes and THROWS to block the execution,
  * appending one audit line to `.plan/temp/guard.log` per blocked invocation.
  *
@@ -15,7 +15,7 @@
  *
  * DECISION TABLE (authoritative — mirrored in the D4 runtime matrix):
  *
- *   Guarded tools: bash (R1, R2, R4, R5), edit/write/patch/apply_patch (R3).
+ *   Guarded tools: bash (R1, R2, R4, R5, R6), edit/write/patch/apply_patch (R3).
  *   Every other tool passes through untouched.
  *
  *   R1 — shell-chaining constructors (bash): the command, with single-quoted
@@ -426,7 +426,22 @@ function loadAllowList(root) {
       "standards",
       "r5-allowlist.json",
     ),
-    path.join(configRoot, "opencode", "skills", "plan-marshall-platform-runtime", "standards", "r5-allowlist.json"),
+    path.join(
+      configRoot,
+      "opencode",
+      "skills",
+      "plan-marshall-platform-runtime",
+      "standards",
+      "r5-allowlist.json",
+    ),
+    path.join(
+      configRoot,
+      "opencode",
+      "skill",
+      "plan-marshall-platform-runtime",
+      "standards",
+      "r5-allowlist.json",
+    ),
   ]
   for (const candidate of candidates) {
     try {

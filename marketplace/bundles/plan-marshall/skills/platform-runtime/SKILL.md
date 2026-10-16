@@ -219,7 +219,7 @@ It is implemented by three sibling scripts:
 - `claude_pretooluse_capture.py` — the observe-only leaf that validates the
   shared gate's field names against real payloads before enforcement is armed.
 - `claude_pretooluse_hook.py` — the enforcement leaf that imports the shared
-  gate and adds only the four rule families plus the `permissionDecision: deny`
+  gate and adds only the six rule families plus the `permissionDecision: deny`
   envelope.
 
 The enforcement hook is installed on demand via the orthogonal
@@ -229,7 +229,7 @@ bundle), surfaces a dedicated `PreToolUse:enforcement`
 the `health-check --checks display` diagnostic, and is registered through the
 marshall-steward Configuration → Enforcement Hook menu (**Claude only**:
 [`../marshall-steward-claude-wizards/references/menu-enforcement-hook.md`](../marshall-steward-claude-wizards/references/menu-enforcement-hook.md)).
-The context gate, the four rule families with their redirect reasons, the
+The context gate, the six rule families with their redirect reasons, the
 fail-open / best-effort-no-raise contract, and the capture-validates-the-gate
 dependency chain are documented in
 [`standards/pretooluse-enforcement.md`](standards/pretooluse-enforcement.md) —
