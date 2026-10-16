@@ -74,9 +74,10 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings as
   list --plan-id {plan_id}
 ```
 
-Record the unfiltered output verbatim — it is the `assessment_snapshot`
-persisted in Step 3.5 and the exact-match comparand of the validator-input
-gate there. Then read the coverage set:
+Record the unfiltered output — it establishes the store population the
+coverage check below consumes, and Step 3.5's `deliverable-hashes` verb
+fingerprints the same store contents for its validator-input gate. Then read
+the coverage set:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings assessment \
@@ -128,51 +129,48 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 This step lets a re-entry (the orchestrator's auto-loop re-dispatches q-gate-validation after a re-outline) SKIP the full validator battery for deliverables that are both **unchanged** and **clean**, so untouched deliverables are not re-validated wholesale. The skip is **deliverable-level**, NOT validator-level — there is no edit→invalidation dependency map; a deliverable is either fully re-validated or fully skipped.
 
-**On entry — compute the current hashes via the deterministic verb** (which reuses
-`_plan_parsing` as its read-only shared helper — no hand-rolled heading scan here):
+**On entry — ask the deterministic verb for the skip decisions** (it reuses
+`_plan_parsing` for the block hashes and the `manage-*` reads for the
+validator-input snapshots; nothing here is hand-hashed):
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-solution-outline \
-  deliverable-hashes --plan-id {plan_id} --phase {phase}
+  deliverable-hashes --check --plan-id {plan_id} --phase {phase}
 ```
 
-Parse the returned `hashes[]{deliverable,hash}` rows as `hash(D)` and
-`whole_outline_hash` as `hash(whole_outline)` for this phase. The verb output
-is phase-agnostic; the phase qualification lives in the artifact keys above.
+Parse the returned `deliverables[]{deliverable,decision,note}` rows — one per
+current deliverable, `decision` either `skip` or `run` — plus
+`whole_outline_decision`, `whole_outline_note` and
+`validator_inputs_unchanged`. On the first pass the artifact is absent
+(`artifact: absent`), every decision is `run`, and nothing is skipped. An
+artifact that exists but cannot be parsed returns `status: error` with
+`artifact_unreadable` — surface it; never fall back to a hand-rolled
+comparison.
 
-**On entry — read the prior content-hash artifact** (a small plan-scoped TOON file persisted by this same step on the previous pass; absent on the first pass):
+The verb grants a per-deliverable `skip` exactly when the stored
+`{current_phase}:{D}` hash equals the deliverable's current hash, a stored
+`__whole_outline__:{phase}` row for this phase exists (this phase already
+completed a full pass at some point), and `validator_inputs_unchanged` holds;
+the whole-outline `skip` additionally requires the stored aggregate hash to
+equal the current whole-outline hash. The lookup matches the exact
+`{current_phase}:{D}` key, so a same-number row recorded under another phase's
+prefix never satisfies this phase's lookup — a later phase pass over rows
+recorded under another phase returns `run` for every row.
 
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-files:manage-files read \
-  --plan-id {plan_id} --file work/deliverable-hashes.toon
-```
-
-Parse the prior rows into a `stored_hash(D)` lookup that matches ONLY the
-exact `{current_phase}:{D}` key — a same-number row under another phase's
-prefix is another phase's record, never this phase's. The reserved aggregate
-key `__whole_outline__:{phase}` carries the whole-outline fingerprint
-(`stored_whole_outline_hash`) for the current phase, consumed by the
-whole-outline short-circuit below. When the file does not exist (first pass /
-`exists: false`), treat `stored_hash(D)` as empty for every deliverable and
-`stored_whole_outline_hash` as absent — nothing is skipped on the first pass.
-
-**On entry — compare the validator inputs.** The validators consume three
-mutable inputs — the outline (fingerprinted by `hash(whole_outline)` above),
+**On entry — the verb fingerprints the validator inputs.** The validators
+consume three mutable inputs — the outline (the `whole_outline_hash` above),
 the assessment store, and the task plan — plus the request text, which is
 loop-invariant (refine owns it; the outline/plan loops never rewrite it, so it
 takes no snapshot — if a future loop ever rewrites the request, this gate must
-gain one). Compare the §1.2 unfiltered assessment output against the stored
-`assessment_snapshot` block, and the current task-plan listing (the full
-`manage-tasks list` output for the plan, followed by each task's full
-`manage-tasks read` output in ascending task-number order, joined with
-`\n--- TASK-{N} ---\n` separators — at call sites with no task files yet the
-listing records the empty set explicitly) against the stored
-`taskplan_snapshot` block. `validator_inputs_unchanged` holds iff BOTH match
-exactly. Any query failure, any absent snapshot section, or any mismatch reads
-as changed — fail closed: an input that could not be compared is not an input
-proved identical.
+gain one). `--check` hashes the §1.2 unfiltered assessment store and the
+current task-plan population — the parsed task records in ascending
+task-number order, exactly the set the validators read through `manage-tasks`
+— and reports `validator_inputs_unchanged`: `true` iff both digests match
+this phase's stored snapshot entries exactly. Any query failure, any absent
+snapshot entry for this phase, or any mismatch reads as changed — fail closed:
+an input that could not be compared is not an input proved identical.
 
-**Per-deliverable skip predicate** — for each deliverable D parsed from solution_outline.md (Step 3 §1.1), take `hash(D)` from the verb output above. Then query D's pending findings — pending = recorded but not yet resolved:
+**Per-deliverable skip predicate** — for each deliverable D parsed from solution_outline.md (Step 3 §1.1), take D's `deliverables[]` row from the verb output above. Then query D's pending findings — pending = recorded but not yet resolved:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings qgate list \
@@ -181,12 +179,12 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings qg
 
 Filter the returned rows to those whose finding targets deliverable D (by deliverable number / affected-file membership). Then apply the skip predicate exactly:
 
-> **SKIP full re-validation of D iff `hash(D) == stored_hash(D)` AND D has zero pending findings AND a stored `__whole_outline__:{phase}` row for the current phase exists (this phase already completed a full pass against these exact inputs) AND `validator_inputs_unchanged` holds.** Otherwise (hash changed, OR D has ≥1 pending finding, OR D is new / has no stored row for this phase, OR this phase has no stored aggregate row yet, OR any validator input changed) D is **fully re-validated** in Step 4.
+> **SKIP full re-validation of D iff the verb's row for D carries `decision: skip` — stored `{phase}:{D}` hash equal, this phase's aggregate row present (this phase already completed a full pass against these exact inputs), and `validator_inputs_unchanged` — AND D has zero pending findings.** Otherwise (the row reads `run`: hash changed, OR D is new / has no stored row for this phase, OR this phase has no stored aggregate row yet, OR any validator input changed — OR D has ≥1 pending finding) D is **fully re-validated** in Step 4.
 
 When D is skipped, log the decision and do NOT run any §2.x validator against D.
 A skipped deliverable reports as `not run (cached from phase {X})` — where `{X}`
-is the current phase, whose matching row the gate above guarantees this phase
-recorded in its own full pass — never as a pass, and the skipped deliverable
+is the current phase, whose matching row the skip decision above guarantees this
+phase recorded in its own full pass — never as a pass, and the skipped deliverable
 numbers are carried in the `skipped_deliverables` return field. A skip is a non-verdict,
 not a verdict — and it is NOT a `not_run_validators` entry, which is reserved
 for checks that produced no verdict for lack of an input source (§2.2 / Step 5
@@ -201,34 +199,36 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   --audit-plan-id {plan_id}
 ```
 
-**Whole-outline aggregate hash gate (re-run gate)** — in addition to the per-deliverable rows, this same artifact carries one aggregate `__whole_outline__:{phase}` row per phase whose hash fingerprints the ENTIRE `solution_outline.md` (SHA-256 of the full document's UTF-8 bytes, hex digest — the verb's `whole_outline_hash`). It is the coarse counterpart to the per-deliverable rows: where those decide which deliverables to skip, the aggregate decides whether ANY validator needs to run this pass at all. The phase suffix is what keeps a `3-outline` fingerprint from gating a `4-plan` pass.
+**Whole-outline aggregate hash gate (re-run gate)** — in addition to the per-deliverable rows, this same artifact carries one aggregate `__whole_outline__:{phase}` row per phase whose hash fingerprints the ENTIRE `solution_outline.md` (SHA-256 of the full document's UTF-8 bytes, hex digest — the verb's `whole_outline_hash`). It is the coarse counterpart to the per-deliverable rows: where those decide which deliverables to skip, the aggregate decides whether ANY validator needs to run this pass at all. The phase suffix is what keeps a `3-outline` fingerprint from gating a `4-plan` pass. The verb's `--check` evaluates this gate for the caller as `whole_outline_decision: skip` — the stored aggregate row for THIS phase present, its hash equal to the current `whole_outline_hash`, and `validator_inputs_unchanged` holding.
 
-> **WHOLE-OUTLINE SHORT-CIRCUIT — on a re-entry (stored `__whole_outline__:{phase}` row for THIS phase present), if `hash(whole_outline) == stored_whole_outline_hash` AND `validator_inputs_unchanged` holds, the entire validation is a complete no-op regardless of the prior pending count**: skip Step 4 wholesale, re-emit the PRIOR `qgate_pending_count` verbatim (zero OR non-zero), report the pass as `not run (cached from phase {phase})`, and return immediately. The count is re-emitted by running only Step 8's pending-findings query (not the Step 4 validator battery) — that tally is unchanged from the prior pass because every validator input is byte-identical AND no finding was resolved between passes, so re-running the deterministic validators would reproduce exactly the same findings. This short-circuit rests ONLY on input identity — the outline hash plus the assessment and task-plan snapshot comparisons above — (identical input → identical findings); it does NOT depend on the FULL-COVERAGE GUARANTEE the way the per-deliverable skip predicate above does — that predicate's zero-pending requirement stays as written, because it asserts the strictly stronger claim "D passed everything" (which needs the guarantee that every applicable validator ran), whereas this aggregate gate asserts only "re-running reproduces the same result". Disposition of a non-zero re-emitted count — loop again or escalate — is the ORCHESTRATOR's responsibility (`planning-outline.md` Step 2b's unified post-loop exit gate for the outline loop, and the phase-4-plan Q-Gate prose for the plan loop); this step only decides whether the validators re-run. On the first pass (no stored aggregate row) OR when the aggregate hash changed OR when any validator input changed, proceed into the per-deliverable skip predicate and Step 4 as normal.
+> **WHOLE-OUTLINE SHORT-CIRCUIT — when the verb returns `whole_outline_decision: skip`, the entire validation is a complete no-op regardless of the prior pending count**: skip Step 4 wholesale, re-emit the PRIOR `qgate_pending_count` verbatim (zero OR non-zero), report the pass as `not run (cached from phase {phase})`, and return immediately. The count is re-emitted by running only Step 8's pending-findings query (not the Step 4 validator battery) — that tally is unchanged from the prior pass because every validator input is byte-identical AND no finding was resolved between passes, so re-running the deterministic validators would reproduce exactly the same findings. This short-circuit rests ONLY on input identity — the outline hash plus the assessment and task-plan snapshot comparisons above — (identical input → identical findings); it does NOT depend on the FULL-COVERAGE GUARANTEE the way the per-deliverable skip predicate above does — that predicate's zero-pending requirement stays as written, because it asserts the strictly stronger claim "D passed everything" (which needs the guarantee that every applicable validator ran), whereas this aggregate gate asserts only "re-running reproduces the same result". Disposition of a non-zero re-emitted count — loop again or escalate — is the ORCHESTRATOR's responsibility (`planning-outline.md` Step 2b's unified post-loop exit gate for the outline loop, and the phase-4-plan Q-Gate prose for the plan loop); this step only decides whether the validators re-run. On the first pass (no stored aggregate row) OR when the aggregate hash changed OR when any validator input changed, `--check` reads `run` and this step proceeds into the per-deliverable skip predicate and Step 4 as normal.
 
 This aggregate row is the artifact the orchestrator's whole-outline content-hash re-run gate (`planning-outline.md` Step 2b for the outline loop, and the phase-4-plan q-gate block for the plan loop) reads to decide whether to re-dispatch q-gate-validation at all: a re-outline that left `solution_outline.md` byte-identical never triggers a fresh sibling dispatch. The FIRST pass is never gated — it always runs (there is no stored aggregate row yet).
 
-**After the Step 4 pass — merge the current hash set back into the artifact** (per-deliverable rows for both validated and skipped deliverables, the current `assessment_snapshot` and `taskplan_snapshot` blocks, and — full-pass gate below — the `__whole_outline__:{phase}` aggregate row for the current phase). Author the TOON body via the Write tool to a plan-id-scoped `.plan/temp/{plan_id}/` file (scoping the path to `{plan_id}` prevents collisions under concurrent plan execution), then persist it through `manage-files write` (never assemble multi-line content inside a shell argument):
+**After the Step 4 pass — record the current hash set with the verb** (per-deliverable rows for both validated and skipped deliverables, this phase's hashed validator-input snapshots, and — full-pass gate below — the `__whole_outline__:{phase}` aggregate row for the current phase):
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-files:manage-files write \
-  --plan-id {plan_id} --file work/deliverable-hashes.toon --content-file {temp_hashes_file}
+python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-solution-outline \
+  deliverable-hashes --write --plan-id {plan_id} --phase {phase}
 ```
 
-The merge replaces every row and block belonging to the current phase and preserves every other phase's rows verbatim — each phase's fingerprint set survives later phases' passes. Per-deliverable `deliverable` keys take the `{phase}:{N}` form; the aggregate key keeps its `__whole_outline__:{phase}` form. Artifact shape (TOON authored via the Write tool):
+The verb re-fingerprints the outline and the validator inputs itself — no hand-authored TOON, no `manage-files` write — and merges the current fingerprints into the plan-scoped `work/deliverable-hashes.toon` artifact, replacing every row and snapshot entry belonging to the current phase and preserving every other phase's verbatim — each phase's fingerprint set survives later phases' passes. Per-deliverable `deliverable` keys take the `{phase}:{N}` form; the aggregate key keeps its `__whole_outline__:{phase}` form. Artifact shape (TOON, written by the verb; `:`-bearing values serialize quoted):
 
 ```toon
 hashes[N]{deliverable,hash}:
-  4-plan:1,9f2c…
-  __whole_outline__:4-plan,ab12…
-assessment_snapshot: |
-  {verbatim Step 3 §1.2 unfiltered assessment list output}
-taskplan_snapshot: |
-  {verbatim task-plan listing: the full manage-tasks list output, then each task's full read output in ascending task-number order joined with --- TASK-{N} --- separators; the empty listing where no task files exist yet}
+  "4-plan:1",9f2c…
+  "__whole_outline__:4-plan",ab12…
+assessment_snapshots[N]{phase,hash}:
+  4-plan,77ab…
+taskplan_snapshots[N]{phase,hash}:
+  4-plan,31cd…
 ```
 
-**Full-pass gate (aggregate row)**: the `__whole_outline__:{phase}` row is written ONLY when `not_run_validators` is empty — every applicable validator (the active phase's subset) ran or soundly skipped from this phase's prior full pass. When any validator reported not run (empty assessment store), the pass earned no full-pass record: write the per-deliverable rows and snapshots, OMIT the aggregate row, and log the omission. Both skip gates above require the aggregate row, so a partial pass enables no skip — a later pass cannot treat rows recorded without full coverage as a completed full pass.
+The two snapshot arrays hash the same inputs `--check` later compares: the unfiltered assessment store (§1.2) and the parsed task-record population in ascending task-number order. A snapshot that could not be hashed (query failure) is omitted for this phase — and `--check` reads an absent or unmatched entry as changed, so the omission cannot enable a skip.
 
-The artifact uses existing `manage-files` read/write I/O only — **no validator-result cache subsystem and no new script surface are introduced**. The persisted fingerprint is per-deliverable content plus validator-input snapshots; it carries no validator-result state.
+**Full-pass gate (aggregate row)**: `--write` records the `__whole_outline__:{phase}` aggregate row ONLY when `not_run_validators` is empty — every applicable validator (the active phase's subset) ran or soundly skipped from this phase's prior full pass. When any validator reported not run (empty assessment store), the pass earned no full-pass record: record it with `--write --partial` — the per-deliverable rows and snapshots are written, the aggregate row is not, and the phase's aggregate row recorded by a previous full pass is removed — and log the omission. Both skip gates above require the aggregate row, so a partial pass enables no skip — a later pass cannot treat rows recorded without full coverage as a completed full pass.
+
+The artifact is a fingerprint cache, not a validator-result cache: the persisted state is per-deliverable content hashes plus hashed validator-input snapshots, and its whole surface is the verb's `--write` / `--write --partial` / `--check` modes — **no validator-result cache subsystem is introduced**.
 
 ---
 

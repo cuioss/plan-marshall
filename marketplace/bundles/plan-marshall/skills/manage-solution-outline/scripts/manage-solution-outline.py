@@ -24,6 +24,7 @@ Usage:
 
 import argparse
 import hashlib
+import json
 from pathlib import Path
 from typing import Any, cast
 
@@ -37,6 +38,7 @@ from _architecture_core import (
     load_project_meta,
     migrate_key_packages,
 )
+from _findings_core import query_assessments
 from _plan_parsing import (
     DECLARATION_FIELDS,
     ERROR_DOCUMENT_NOT_FOUND,
@@ -50,13 +52,15 @@ from _plan_parsing import (
     parse_document_sections,
     split_deliverable_blocks,
 )
+from _tasks_core import get_all_tasks, get_tasks_dir
 from constants import VALID_STEP_INTENTS
-from file_ops import base_path, cwd_checkout_root, output_toon, safe_main
+from file_ops import atomic_write_file, base_path, cwd_checkout_root, output_toon, safe_main
 from input_validation import (
     add_plan_id_arg,
     parse_args_with_toon_errors,
     require_valid_plan_id,
 )
+from toon_parser import ToonParseError, parse_toon, serialize_toon
 
 SOLUTION_FILE = 'solution_outline.md'
 
@@ -579,29 +583,120 @@ def _deliverable_block_text(number: int, title: str, content: str) -> bytes:
     return canonical.encode('utf-8')
 
 
-def cmd_deliverable_hashes(args: argparse.Namespace) -> dict[str, Any]:
-    """Emit deterministic content hashes for the outline's deliverables.
+# =============================================================================
+# deliverable-hashes — phase-keyed artifact (work/deliverable-hashes.toon)
+# =============================================================================
 
-    Reuses :mod:`_plan_parsing` as the read-only shared helper: the deliverable
-    population comes from ``extract_deliverables`` (counts) and the hashed bytes
-    come from ``split_deliverable_blocks`` (per-block canonical text). No
-    heading regex lives here.
+#: Plan-scoped artifact persisting the phase-keyed hash rows and the
+#: validator-input snapshot entries, relative to the plan directory.
+HASH_ARTIFACT_FILE = 'work/deliverable-hashes.toon'
 
-    Returns per-deliverable SHA-256 hex digests plus the whole-outline SHA-256
-    over the full document bytes. The caller (q-gate-validation Step 3.5) keys
-    the whole-outline row by phase; the ``phase`` echo here is provenance, not
-    part of the digest. An outline that exists but cannot be decoded as UTF-8
-    returns ``status: error`` with ``ERROR_DOCUMENT_UNREADABLE`` — a decode
-    failure is a could-not-evaluate outcome, never an exception past the caller.
+#: Reserved ``deliverable`` key prefix for a phase's whole-outline aggregate row.
+WHOLE_OUTLINE_KEY_PREFIX = '__whole_outline__:'
+
+
+def _plan_dir(plan_id: str) -> Path:
+    """Get the plan directory that holds both the outline and the hash artifact."""
+    return cast(Path, base_path('plans', plan_id))
+
+
+def _snapshot_hash(payload: Any) -> str:
+    """Hash a snapshot payload canonically: sorted keys, non-ASCII kept literal.
+
+    Sorting makes the digest independent of dict construction order, so the same
+    store contents always hash identically across processes.
     """
-    require_valid_plan_id(args)
+    return hashlib.sha256(json.dumps(payload, sort_keys=True, ensure_ascii=False).encode('utf-8')).hexdigest()
 
-    file_path = get_solution_path(args.plan_id)
+
+def _assessment_snapshot_hash(plan_id: str) -> str | None:
+    """Fingerprint the unfiltered assessment store, or ``None`` when unreadable.
+
+    ``None`` is the fail-closed signal: on ``--write`` the phase's snapshot
+    entry is omitted, and on ``--check`` the phase reads as changed — an input
+    that could not be compared must never read as an input proved identical.
+    """
+    try:
+        result = query_assessments(plan_id)
+    except (OSError, ValueError):
+        return None
+    if result.get('status') != 'success':
+        return None
+    return _snapshot_hash(result.get('assessments', []))
+
+
+def _taskplan_snapshot_hash(plan_id: str) -> str | None:
+    """Fingerprint the current task plan, or ``None`` when unreadable.
+
+    The hashed population is the parsed task records in ascending task-number
+    order — exactly the set the validators read through ``manage-tasks`` — so a
+    task added, removed, or edited between passes changes the digest.
+    """
+    try:
+        tasks = [task for _, task in get_all_tasks(get_tasks_dir(plan_id))]
+    except (OSError, ValueError):
+        return None
+    return _snapshot_hash(tasks)
+
+
+def _stored_snapshot_hash(artifact: dict[str, Any] | None, key: str, phase: str) -> str | None:
+    """Return the stored snapshot hash for ``phase`` under ``key``, if any."""
+    if artifact is None:
+        return None
+    for entry in artifact.get(key, []):
+        if isinstance(entry, dict) and entry.get('phase') == phase:
+            value = entry.get('hash')
+            if value is not None:
+                return str(value)
+    return None
+
+
+def _read_hash_artifact(path: Path) -> tuple[dict[str, Any] | None, str | None]:
+    """Read the hash artifact as ``(artifact, error)``; absent reads ``(None, None)``.
+
+    Absence is a first pass, not a failure. An unreadable or unparseable
+    artifact is one: reading it as absent would silently discard every recorded
+    pass, and overwriting it would destroy rows nothing can reconstruct.
+    """
+    if not path.exists():
+        return None, None
+    try:
+        content = path.read_text(encoding='utf-8')
+    except (OSError, ValueError) as exc:
+        return None, f'{path} could not be read: {exc}'
+    try:
+        return parse_toon(content), None
+    except ToonParseError as exc:
+        return None, f'{path} is not parseable TOON: {exc}'
+
+
+def _artifact_error(plan_id: str, detail: str) -> dict[str, Any]:
+    """Build the refusal payload for an unreadable hash artifact."""
+    return {
+        'status': 'error',
+        'error': 'artifact_unreadable',
+        'plan_id': plan_id,
+        'file': HASH_ARTIFACT_FILE,
+        'message': f'{detail}; refusing to treat the stored rows as absent or to overwrite them',
+    }
+
+
+def _fingerprint_outline(plan_id: str) -> dict[str, Any]:
+    """Compute the current per-deliverable and whole-outline hashes.
+
+    Returns either the ``status: error`` payload for an absent or undecodable
+    outline, or a success payload carrying ``hashes``, ``whole_outline_hash``
+    and ``deliverable_count``. Shared by all modes of
+    :func:`cmd_deliverable_hashes`, so one call reads the outline once and the
+    default, ``--write`` and ``--check`` outputs can never disagree about what
+    was fingerprinted.
+    """
+    file_path = get_solution_path(plan_id)
     if not file_path.exists():
         return {
             'status': 'error',
             'error': ERROR_DOCUMENT_NOT_FOUND,
-            'plan_id': args.plan_id,
+            'plan_id': plan_id,
             'file': SOLUTION_FILE,
         }
 
@@ -612,7 +707,7 @@ def cmd_deliverable_hashes(args: argparse.Namespace) -> dict[str, Any]:
         return {
             'status': 'error',
             'error': ERROR_DOCUMENT_UNREADABLE,
-            'plan_id': args.plan_id,
+            'plan_id': plan_id,
             'file': SOLUTION_FILE,
         }
     sections = parse_document_sections(content)
@@ -632,11 +727,174 @@ def cmd_deliverable_hashes(args: argparse.Namespace) -> dict[str, Any]:
 
     return {
         'status': 'success',
-        'plan_id': args.plan_id,
-        'phase': getattr(args, 'phase', '3-outline'),
-        'deliverable_count': len(deliverables),
         'hashes': hashes,
         'whole_outline_hash': hashlib.sha256(raw).hexdigest(),
+        'deliverable_count': len(deliverables),
+    }
+
+
+def _write_hash_artifact(plan_id: str, phase: str, fingerprints: dict[str, Any], *, partial: bool) -> dict[str, Any]:
+    """Merge the current fingerprints into the phase-keyed artifact.
+
+    The merge replaces the current phase's rows and snapshot entries and
+    preserves every other phase's. A full pass records the
+    ``__whole_outline__:{phase}`` aggregate row; a ``partial`` pass records no
+    aggregate — and drops one a previous full pass recorded — so a later check
+    can never treat a partial pass as this phase's completed full pass.
+    """
+    artifact_path = _plan_dir(plan_id) / HASH_ARTIFACT_FILE
+    artifact, error = _read_hash_artifact(artifact_path)
+    if error:
+        return _artifact_error(plan_id, error)
+    stored = artifact or {}
+
+    phase_prefix = f'{phase}:'
+    aggregate_key = f'{WHOLE_OUTLINE_KEY_PREFIX}{phase}'
+
+    rows: list[dict[str, str]] = [
+        row
+        for row in stored.get('hashes', [])
+        if isinstance(row, dict)
+        and not str(row.get('deliverable', '')).startswith(phase_prefix)
+        and row.get('deliverable') != aggregate_key
+    ]
+    rows.extend({'deliverable': f'{phase}:{row["deliverable"]}', 'hash': row['hash']} for row in fingerprints['hashes'])
+    aggregate_written = False
+    if not partial:
+        rows.append({'deliverable': aggregate_key, 'hash': fingerprints['whole_outline_hash']})
+        aggregate_written = True
+
+    snapshots: dict[str, list[dict[str, str]]] = {}
+    for key, current in (
+        ('assessment_snapshots', _assessment_snapshot_hash(plan_id)),
+        ('taskplan_snapshots', _taskplan_snapshot_hash(plan_id)),
+    ):
+        entries = [entry for entry in stored.get(key, []) if isinstance(entry, dict) and entry.get('phase') != phase]
+        if current is not None:
+            entries.append({'phase': phase, 'hash': current})
+        snapshots[key] = entries
+
+    merged: dict[str, Any] = {
+        'hashes': rows,
+        'assessment_snapshots': snapshots['assessment_snapshots'],
+        'taskplan_snapshots': snapshots['taskplan_snapshots'],
+    }
+    atomic_write_file(artifact_path, serialize_toon(merged))
+    return {
+        'status': 'success',
+        'plan_id': plan_id,
+        'phase': phase,
+        'file': HASH_ARTIFACT_FILE,
+        'deliverable_count': fingerprints['deliverable_count'],
+        'aggregate_written': aggregate_written,
+    }
+
+
+def _check_hash_artifact(plan_id: str, phase: str, fingerprints: dict[str, Any]) -> dict[str, Any]:
+    """Read the artifact back into per-row and whole-outline skip/run decisions.
+
+    A per-deliverable ``skip`` requires all three of: the stored ``{phase}:{N}``
+    hash equals the current one, the phase's aggregate row exists (this phase
+    completed a full pass at some point — a partial pass records none), and the
+    validator inputs are unchanged. The whole-outline ``skip`` additionally
+    requires the stored aggregate hash to be equal. Anything else reads as
+    ``run``: the fail-open direction belongs to validation, which merely
+    re-runs, never to a skip.
+    """
+    artifact_path = _plan_dir(plan_id) / HASH_ARTIFACT_FILE
+    artifact, error = _read_hash_artifact(artifact_path)
+    if error:
+        return _artifact_error(plan_id, error)
+
+    stored: dict[str, str] = {}
+    if artifact is not None:
+        for row in artifact.get('hashes', []):
+            if isinstance(row, dict):
+                stored[str(row.get('deliverable', ''))] = str(row.get('hash', ''))
+
+    aggregate_key = f'{WHOLE_OUTLINE_KEY_PREFIX}{phase}'
+    aggregate_stored = stored.get(aggregate_key)
+    aggregate_present = aggregate_stored is not None
+
+    current_assessment = _assessment_snapshot_hash(plan_id)
+    current_taskplan = _taskplan_snapshot_hash(plan_id)
+    validator_inputs_unchanged = (
+        current_assessment is not None
+        and current_assessment == _stored_snapshot_hash(artifact, 'assessment_snapshots', phase)
+        and current_taskplan is not None
+        and current_taskplan == _stored_snapshot_hash(artifact, 'taskplan_snapshots', phase)
+    )
+
+    skip_note = f'not run (cached from phase {phase})'
+    deliverables: list[dict[str, str]] = []
+    for entry in fingerprints['hashes']:
+        number = entry['deliverable']
+        skip = stored.get(f'{phase}:{number}') == entry['hash'] and aggregate_present and validator_inputs_unchanged
+        deliverables.append(
+            {'deliverable': number, 'decision': 'skip' if skip else 'run', 'note': skip_note if skip else ''}
+        )
+
+    whole_skip = (
+        aggregate_present and aggregate_stored == fingerprints['whole_outline_hash'] and validator_inputs_unchanged
+    )
+    return {
+        'status': 'success',
+        'plan_id': plan_id,
+        'phase': phase,
+        'artifact': 'present' if artifact is not None else 'absent',
+        'deliverables': deliverables,
+        'whole_outline_decision': 'skip' if whole_skip else 'run',
+        'whole_outline_note': skip_note if whole_skip else '',
+        'validator_inputs_unchanged': validator_inputs_unchanged,
+    }
+
+
+def cmd_deliverable_hashes(args: argparse.Namespace) -> dict[str, Any]:
+    """Emit deterministic content hashes for the outline's deliverables.
+
+    Reuses :mod:`_plan_parsing` as the read-only shared helper: the deliverable
+    population comes from ``extract_deliverables`` (counts) and the hashed bytes
+    come from ``split_deliverable_blocks`` (per-block canonical text). No
+    heading regex lives here.
+
+    Default mode is the original read-only output: per-deliverable SHA-256 hex
+    digests plus the whole-outline SHA-256 over the full document bytes, with the
+    ``phase`` echo as provenance. ``--write`` merges the current fingerprints
+    into the plan-scoped ``work/deliverable-hashes.toon`` artifact — replacing
+    this phase's rows and snapshot entries, preserving every other phase's — and
+    ``--check`` reads that artifact back into per-deliverable and whole-outline
+    ``skip``/``run`` decisions for the caller's phase-keyed skip rule. An
+    outline that exists but cannot be decoded as UTF-8 returns ``status: error``
+    with ``ERROR_DOCUMENT_UNREADABLE`` — a decode failure is a could-not-evaluate
+    outcome, never an exception past the caller.
+    """
+    require_valid_plan_id(args)
+
+    phase = getattr(args, 'phase', '3-outline')
+    if getattr(args, 'partial', False) and not getattr(args, 'write', False):
+        return {
+            'status': 'error',
+            'error': 'invalid_arguments',
+            'plan_id': args.plan_id,
+            'message': '--partial requires --write: only a write records a partial pass',
+        }
+
+    fingerprints = _fingerprint_outline(args.plan_id)
+    if fingerprints['status'] == 'error':
+        return fingerprints
+
+    if getattr(args, 'write', False):
+        return _write_hash_artifact(args.plan_id, phase, fingerprints, partial=bool(getattr(args, 'partial', False)))
+    if getattr(args, 'check', False):
+        return _check_hash_artifact(args.plan_id, phase, fingerprints)
+
+    return {
+        'status': 'success',
+        'plan_id': args.plan_id,
+        'phase': phase,
+        'deliverable_count': fingerprints['deliverable_count'],
+        'hashes': fingerprints['hashes'],
+        'whole_outline_hash': fingerprints['whole_outline_hash'],
     }
 
 
@@ -1353,7 +1611,23 @@ def main() -> int:
         '--phase',
         type=str,
         default='3-outline',
-        help='Phase key the caller stores the whole-outline row under (provenance only)',
+        help='Phase key this pass is recorded under, and whose stored rows --check reads (default: 3-outline)',
+    )
+    hashes_mode = hashes_parser.add_mutually_exclusive_group()
+    hashes_mode.add_argument(
+        '--write',
+        action='store_true',
+        help='Merge the current hashes and snapshot fingerprints into work/deliverable-hashes.toon',
+    )
+    hashes_mode.add_argument(
+        '--check',
+        action='store_true',
+        help='Return per-deliverable and whole-outline skip/run decisions from the stored artifact',
+    )
+    hashes_parser.add_argument(
+        '--partial',
+        action='store_true',
+        help='With --write: record the pass without the aggregate row (the full-pass gate was not met)',
     )
     hashes_parser.set_defaults(func=cmd_deliverable_hashes)
 
