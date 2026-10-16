@@ -100,7 +100,7 @@ The script uses subcommands (`generate`, `verify`, `drift`, `paths`, `cleanup`),
 
 Verify syntax:
 ```bash
-python3 -m py_compile .plan/execute-script.py && echo "Executor syntax OK"
+python3 .plan/execute-script.py plan-marshall:tools-script-executor:generate_executor verify
 ```
 
 **Output (TOON)**:

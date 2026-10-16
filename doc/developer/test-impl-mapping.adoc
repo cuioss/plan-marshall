@@ -43,10 +43,6 @@ a|
 | `test/plan-marshall/platform-runtime/test_opencode_enforcement.py`
 | `.opencode/plugin/guard.js`
 | The OpenCode guard plugin has no test tree of its own module, so its R5 decision-table contract test lives under `test/plan-marshall/`, beside the runtime tests.
-
-| `test/plan-marshall/platform-runtime/test_claude_pretooluse_hook.py`
-| `.opencode/plugin/guard.js`
-| The OpenCode guard plugin has no test tree of its own module, so the Claude-hook R5 mirror pins covering its decision table live under `test/plan-marshall/`, beside the runtime tests.
 |===
 
 == Related

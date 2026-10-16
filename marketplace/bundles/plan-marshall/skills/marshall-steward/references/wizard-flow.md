@@ -193,7 +193,7 @@ The script auto-detects the plugin cache location and generates `.plan/execute-s
 
 **Verify syntax**:
 ```bash
-python3 -m py_compile .plan/execute-script.py
+python3 .plan/execute-script.py plan-marshall:tools-script-executor:generate_executor verify
 ```
 
 **Output**: "Executor ready with N script mappings"

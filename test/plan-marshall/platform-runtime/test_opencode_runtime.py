@@ -1366,6 +1366,62 @@ def test_reporter_unreadable_db_is_not_checkable(runtime: OpenCodeRuntime, tmp_p
     assert result['contradictions'] == []
 
 
+def test_reporter_global_deny_catches_persisted_allow(
+    runtime: OpenCodeRuntime, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """(a) A live-schema allow for ``ls`` against a GLOBAL deny is reported."""
+    global_dir = tmp_path / 'global-opencode'
+    global_dir.mkdir()
+    (global_dir / 'opencode.json').write_text(json.dumps({'permission': {'bash': {'ls *': 'deny'}}}), encoding='utf-8')
+    monkeypatch.setenv('OPENCODE_CONFIG_DIR', str(global_dir))
+    db_path = tmp_path / 'opencode.db'
+    _make_fixture_db(db_path, [('bash', 'ls', 'allow')])
+
+    result = _parse(runtime.permission_report_persisted_contradictions(str(tmp_path), str(db_path)))
+
+    assert result['checkable'] is True
+    assert len(result['contradictions']) == 1
+    assert result['contradictions'][0]['pattern'] == 'ls'
+    assert result['contradictions'][0]['deny_pattern'] == 'ls *'
+
+
+def test_reporter_agent_scoped_deny_is_honoured(
+    runtime: OpenCodeRuntime, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The reader also checks ``agents.*.permissions`` — an agent-scoped deny counts."""
+    global_dir = tmp_path / 'global-opencode'
+    global_dir.mkdir()
+    (global_dir / 'opencode.json').write_text(
+        json.dumps({'agent': {'build': {'permission': {'bash': {'ls *': 'deny'}}}}}),
+        encoding='utf-8',
+    )
+    monkeypatch.setenv('OPENCODE_CONFIG_DIR', str(global_dir))
+    db_path = tmp_path / 'opencode.db'
+    _make_fixture_db(db_path, [('bash', 'ls', 'allow')])
+
+    result = _parse(runtime.permission_report_persisted_contradictions(str(tmp_path), str(db_path)))
+
+    assert result['checkable'] is True
+    assert len(result['contradictions']) == 1
+
+
+def test_reporter_unrecognised_schema_is_checkable_false(runtime: OpenCodeRuntime, tmp_path: pathlib.Path) -> None:
+    """(b) A database whose schema has no permission table returns checkable False."""
+    db_path = tmp_path / 'opencode.db'
+    conn = sqlite3.connect(str(db_path))
+    try:
+        conn.execute('CREATE TABLE unrelated (a TEXT, b TEXT)')
+        conn.commit()
+    finally:
+        conn.close()
+
+    result = _parse(runtime.permission_report_persisted_contradictions(str(tmp_path), str(db_path)))
+
+    assert result['checkable'] is False
+    assert result['reason'] == 'schema_unrecognised'
+    assert result['contradictions'] == []
+
+
 def test_project_initial_setup_docstring_names_platform_runtime_cli() -> None:
     """The steward-path docstring names the platform_runtime CLI verbatim surface."""
     doc = OpenCodeRuntime.project_initial_setup.__doc__ or ''

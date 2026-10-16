@@ -1334,6 +1334,12 @@ FOR each step_id in manifest.phase_6.steps:
             - message: {step's returned commit_message, else "chore(finalize): apply {step_id} changes"}
             - push: false
             - create-pr: false
+            - step: {step_id}
+
+          The Commit Changes flow commits through the gate-bearing `git-workflow commit`
+          verb and relays `step: {step_id}` as its `--step`; that step identity is what
+          sanctions a phase-6 settle-band source commit. A raw `git commit` here would be
+          refused by the enforcement guard in `6-finalize` on both harnesses.
 
           **Re-stamp `head_at_completion` (mandatory for a head-dependent step)**: the instrumentation commit advances the feature-branch HEAD past the SHA the step recorded on its terminal `mark-step-done` call (the step captured `git rev-parse HEAD` BEFORE its edits were committed, because the dispatcher — not the step — owns the commit). For a `mutates_source: true` step that is ALSO head-dependent (resolve the step's own `head_dependent` fact — see § "Special case — HEAD-dependent steps"; do not consult an inline list), leaving the stale pre-commit SHA on the record makes the item-1 re-entry check observe `head_at_completion != live HEAD` and RE-FIRE the step on every resume — defeating the SKIP optimization. After the commit succeeds, resolve the new HEAD (`{new_commit_sha}`) and re-stamp the step's record so a converged-tree re-entry SKIPs correctly:
 
