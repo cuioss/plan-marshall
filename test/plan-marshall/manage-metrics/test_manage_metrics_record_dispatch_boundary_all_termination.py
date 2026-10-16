@@ -375,8 +375,8 @@ def test_generate_stamps_unknown_on_an_unmeasured_row(plan_context):
 def test_generate_keeps_measured_rows_numeric_beside_unknown(plan_context):
     """Measured rows keep their figures while an unmeasured row reads `unknown`.
 
-    The persisted numeric subset sum stays checkable in the store, but the
-    rendered Total refuses to quote a sum with a hole in it.
+    The return quotes the measured subset sum with its count while still
+    carrying the unknown phase list (measured-subset contract).
     """
     plan_id = 'disp-unknown-mixed'
     plan_dir = plan_context.plan_dir_for(plan_id)
@@ -389,6 +389,6 @@ def test_generate_keeps_measured_rows_numeric_beside_unknown(plan_context):
     result = _generate_metrics.cmd_generate(ns_generate(plan_id))
 
     assert result['status'] == 'success'
-    assert result['total_tokens'] == 'unknown'
+    assert result['total_tokens'] == 5000
     assert result['totals_tokens_unknown_phases'] == '5-execute'
     assert result['totals_tokens'] == 5000

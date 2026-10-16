@@ -78,80 +78,69 @@ def test_session_teardown_returns_honest_noop(runtime: OpenCodeRuntime) -> None:
 # =============================================================================
 
 
-def test_project_initial_setup_creates_plan_dir(runtime: OpenCodeRuntime, tmp_path: pathlib.Path) -> None:
-    """project_initial_setup creates .plan/ and .plan/temp/ under project_dir."""
+def test_project_initial_setup_does_not_write_marshal_json(runtime: OpenCodeRuntime, tmp_path: pathlib.Path) -> None:
+    """project_initial_setup leaves .plan/marshal.json unwritten; runtime.target is retired."""
     result = _parse(runtime.project_initial_setup(str(tmp_path), 'opencode'))
     assert result['status'] == 'success'
     assert result['operation'] == 'project initial-setup'
     assert result['target'] == 'opencode'
-    assert result['marshal_written'] is True
-    assert result['hook_installed'] is False
+    assert result['marshal_written'] is False
     assert (tmp_path / '.plan').is_dir()
     assert (tmp_path / '.plan' / 'temp').is_dir()
     assert (tmp_path / 'opencode.json').is_file()
-    data = json.loads((tmp_path / '.plan' / 'marshal.json').read_text(encoding='utf-8'))
-    assert data['runtime']['target'] == 'opencode'
+    assert not (tmp_path / '.plan' / 'marshal.json').exists()
 
 
-def test_project_initial_setup_seeds_marshal_json(runtime: OpenCodeRuntime, tmp_path: pathlib.Path) -> None:
-    """project_initial_setup seeds marshal.json with runtime.target."""
+def test_project_initial_setup_writes_no_runtime_owned_keys(runtime: OpenCodeRuntime, tmp_path: pathlib.Path) -> None:
+    """Shared marshal carries no runtime.target and no standing_rules_bridge after setup."""
     result = _parse(runtime.project_initial_setup(str(tmp_path), 'opencode'))
-    assert result['marshal_written'] is True
-    marshal_file = tmp_path / '.plan' / 'marshal.json'
-    assert marshal_file.is_file()
-    data = json.loads(marshal_file.read_text(encoding='utf-8'))
-    assert data['runtime']['target'] == 'opencode'
+    assert result['marshal_written'] is False
+    assert not (tmp_path / '.plan' / 'marshal.json').exists()
 
 
 def test_project_initial_setup_leaves_existing_marshal_untouched(
     runtime: OpenCodeRuntime, tmp_path: pathlib.Path
 ) -> None:
-    """project_initial_setup seeds runtime.target while preserving existing keys."""
+    """An existing marshal.json is left untouched and gains no runtime-owned keys."""
     plan_dir = tmp_path / '.plan'
     plan_dir.mkdir()
     marshal_path = plan_dir / 'marshal.json'
-    marshal_path.write_text(json.dumps({'existing_key': 'existing_value'}), encoding='utf-8')
+    initial = json.dumps({'existing_key': 'existing_value'})
+    marshal_path.write_text(initial, encoding='utf-8')
 
     result = _parse(runtime.project_initial_setup(str(tmp_path), 'opencode'))
 
     assert result['status'] == 'success'
-    assert result['marshal_written'] is True
+    assert result['marshal_written'] is False
+    assert marshal_path.read_text(encoding='utf-8') == initial
     data = json.loads(marshal_path.read_text(encoding='utf-8'))
     assert data['existing_key'] == 'existing_value'
-    assert data['runtime']['target'] == 'opencode'
+    assert 'runtime' not in data
+    assert 'standing_rules_bridge' not in data
 
 
-def test_project_initial_setup_refuses_corrupt_marshal(runtime: OpenCodeRuntime, tmp_path: pathlib.Path) -> None:
-    """project_initial_setup answers io_error on a corrupt marshal.json.
-
-    A seed that cannot parse the file must not report success with
-    ``marshal_written: False`` — an unreadable seed base is unevaluable,
-    never a benign no-write.
-    """
+def test_project_initial_setup_ignores_corrupt_marshal(runtime: OpenCodeRuntime, tmp_path: pathlib.Path) -> None:
+    """A corrupt marshal.json is left alone — setup writes nothing, so there is nothing to refuse."""
     plan_dir = tmp_path / '.plan'
     plan_dir.mkdir()
     (plan_dir / 'marshal.json').write_text('{not json', encoding='utf-8')
 
     result = _parse(runtime.project_initial_setup(str(tmp_path), 'opencode'))
-    assert result['status'] == 'error'
-    assert result['error'] == 'io_error'
+    assert result['status'] == 'success'
+    assert result['marshal_written'] is False
+    assert (plan_dir / 'marshal.json').read_text(encoding='utf-8') == '{not json'
 
 
-def test_project_initial_setup_refuses_non_object_runtime(runtime: OpenCodeRuntime, tmp_path: pathlib.Path) -> None:
-    """project_initial_setup answers io_error on a present-but-non-object runtime.
-
-    A seed that finds the ``runtime`` key holding a non-dict value must refuse
-    before any write — repairing the value in place would destroy the corrupt
-    state the caller never got to see.
-    """
+def test_project_initial_setup_ignores_non_object_runtime(runtime: OpenCodeRuntime, tmp_path: pathlib.Path) -> None:
+    """A present-but-non-object runtime is left alone — no seeding path remains to repair it."""
     plan_dir = tmp_path / '.plan'
     plan_dir.mkdir()
     marshal_file = plan_dir / 'marshal.json'
     marshal_file.write_text(json.dumps({'runtime': 'opencode'}), encoding='utf-8')
 
     result = _parse(runtime.project_initial_setup(str(tmp_path), 'opencode'))
-    assert result['status'] == 'error'
-    assert result['error'] == 'io_error'
+    assert result['status'] == 'success'
+    assert result['marshal_written'] is False
 
     data = json.loads(marshal_file.read_text(encoding='utf-8'))
     assert data['runtime'] == 'opencode'
@@ -1137,9 +1126,9 @@ def test_standing_rules_drift_baseline_newer(runtime: OpenCodeRuntime, tmp_path:
 
 
 def test_project_initial_setup_resestup_is_idempotent(runtime: OpenCodeRuntime, tmp_path: pathlib.Path) -> None:
-    """A second setup writes neither marshal.json nor the bridge again."""
+    """The first setup writes the bridge but never marshal.json; a second setup writes neither again."""
     first = _parse(runtime.project_initial_setup(str(tmp_path), 'opencode'))
-    assert first['marshal_written'] is True
+    assert first['marshal_written'] is False
     assert first['bridge_written'] is True
 
     second = _parse(runtime.project_initial_setup(str(tmp_path), 'opencode'))
@@ -1197,14 +1186,14 @@ def test_resestup_clears_baseline_newer_drift(runtime: OpenCodeRuntime, tmp_path
 
 
 def test_reconcile_standing_rules_bridge_heals_missing_bridge(tmp_path: pathlib.Path) -> None:
-    """The steward reconcile heals a missing OpenCode bridge via setup."""
+    """Observe-only reconcile reports a missing bridge without healing it."""
     from configure_harness import _reconcile_standing_rules_bridge
     from opencode_runtime import _bridge_rules_path
 
     (tmp_path / 'CLAUDE.md').write_text('# baseline\n', encoding='utf-8')
 
-    assert _reconcile_standing_rules_bridge('opencode', tmp_path) is True
-    assert _bridge_rules_path(tmp_path).is_file()
+    assert _reconcile_standing_rules_bridge('opencode', tmp_path) is False
+    assert not _bridge_rules_path(tmp_path).is_file()
 
 
 # =============================================================================
@@ -1395,7 +1384,7 @@ def test_steward_setup_prints_persisted_warnings(
     from configure_harness import dispatch_platform_runtime_setup
 
     monkeypatch.chdir(tmp_path)
-    assert dispatch_platform_runtime_setup('opencode', tmp_path) is True
+    assert dispatch_platform_runtime_setup('opencode', tmp_path) == 'current'
     captured = capsys.readouterr()
     assert 'persisted approval warning' in captured.err
     assert 'ls' in captured.err

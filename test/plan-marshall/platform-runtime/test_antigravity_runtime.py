@@ -94,67 +94,66 @@ def test_layout_bundle_cache_root(runtime: AntigravityRuntime):
 # =============================================================================
 
 
-def test_project_initial_setup(runtime: AntigravityRuntime, tmp_path: Path):
-    """project_initial_setup creates .plan/, seeds marshal.json, and bridges rules."""
+def test_project_initial_setup_does_not_write_marshal_json(runtime: AntigravityRuntime, tmp_path: Path):
+    """project_initial_setup leaves .plan/marshal.json unwritten; runtime.target is retired."""
     result = _parse(runtime.project_initial_setup(str(tmp_path), 'antigravity'))
     assert result['status'] == 'success'
     assert result['target'] == 'antigravity'
-    assert result['marshal_written'] is True
+    assert result['marshal_written'] is False
 
     assert (tmp_path / '.plan' / 'temp').is_dir()
+    assert not (tmp_path / '.plan' / 'marshal.json').exists()
+
+
+def test_project_initial_setup_writes_no_runtime_owned_keys(runtime: AntigravityRuntime, tmp_path: Path):
+    """Shared marshal carries no runtime.target and no standing_rules_bridge after setup."""
+    result = _parse(runtime.project_initial_setup(str(tmp_path), 'antigravity'))
+    assert result['marshal_written'] is False
     marshal_file = tmp_path / '.plan' / 'marshal.json'
-    assert marshal_file.is_file()
-    data = json.loads(marshal_file.read_text(encoding='utf-8'))
-    assert data['runtime']['target'] == 'antigravity'
+    assert not marshal_file.exists()
 
 
-def test_project_initial_setup_preserves_existing_marshal(runtime: AntigravityRuntime, tmp_path: Path):
-    """project_initial_setup seeds runtime.target while preserving existing keys."""
+def test_project_initial_setup_leaves_pre_existing_marshal_intact(runtime: AntigravityRuntime, tmp_path: Path):
+    """An existing marshal.json is left untouched and gains no runtime-owned keys."""
     plan_dir = tmp_path / '.plan'
     plan_dir.mkdir(parents=True)
     marshal_file = plan_dir / 'marshal.json'
-    marshal_file.write_text(json.dumps({'custom_key': 'custom_value'}), encoding='utf-8')
+    initial = json.dumps({'custom_key': 'custom_value'})
+    marshal_file.write_text(initial, encoding='utf-8')
 
     result = _parse(runtime.project_initial_setup(str(tmp_path), 'antigravity'))
     assert result['status'] == 'success'
-    assert result['marshal_written'] is True
+    assert result['marshal_written'] is False
+    assert marshal_file.read_text(encoding='utf-8') == initial
 
     data = json.loads(marshal_file.read_text(encoding='utf-8'))
     assert data['custom_key'] == 'custom_value'
-    assert data['runtime']['target'] == 'antigravity'
+    assert 'runtime' not in data
+    assert 'standing_rules_bridge' not in data
 
 
-def test_project_initial_setup_refuses_corrupt_marshal(runtime: AntigravityRuntime, tmp_path: Path):
-    """project_initial_setup answers io_error on a corrupt marshal.json.
-
-    A seed that cannot parse the file must not report success with
-    ``marshal_written: False`` — an unreadable seed base is unevaluable,
-    never a benign no-write.
-    """
+def test_project_initial_setup_ignores_corrupt_marshal(runtime: AntigravityRuntime, tmp_path: Path):
+    """A corrupt marshal.json is left alone — setup writes nothing, so there is nothing to refuse."""
     plan_dir = tmp_path / '.plan'
     plan_dir.mkdir(parents=True)
     (plan_dir / 'marshal.json').write_text('{not json', encoding='utf-8')
 
     result = _parse(runtime.project_initial_setup(str(tmp_path), 'antigravity'))
-    assert result['status'] == 'error'
-    assert result['error'] == 'io_error'
+    assert result['status'] == 'success'
+    assert result['marshal_written'] is False
+    assert (plan_dir / 'marshal.json').read_text(encoding='utf-8') == '{not json'
 
 
-def test_project_initial_setup_refuses_non_object_runtime(runtime: AntigravityRuntime, tmp_path: Path):
-    """project_initial_setup answers io_error on a present-but-non-object runtime.
-
-    A seed that finds the ``runtime`` key holding a non-dict value must refuse
-    before any write — repairing the value in place would destroy the corrupt
-    state the caller never got to see.
-    """
+def test_project_initial_setup_ignores_non_object_runtime(runtime: AntigravityRuntime, tmp_path: Path):
+    """A present-but-non-object runtime is left alone — no seeding path remains to repair it."""
     plan_dir = tmp_path / '.plan'
     plan_dir.mkdir(parents=True)
     marshal_file = plan_dir / 'marshal.json'
     marshal_file.write_text(json.dumps({'runtime': 'antigravity'}), encoding='utf-8')
 
     result = _parse(runtime.project_initial_setup(str(tmp_path), 'antigravity'))
-    assert result['status'] == 'error'
-    assert result['error'] == 'io_error'
+    assert result['status'] == 'success'
+    assert result['marshal_written'] is False
 
     data = json.loads(marshal_file.read_text(encoding='utf-8'))
     assert data['runtime'] == 'antigravity'
@@ -699,11 +698,11 @@ def test_standing_rules_drift_baseline_newer(
 def test_project_initial_setup_resestup_is_idempotent(
     runtime: AntigravityRuntime, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ):
-    """A second setup writes neither marshal.json nor the bridge again."""
+    """The first setup writes the bridge but never marshal.json; a second setup writes neither again."""
     monkeypatch.setenv('GEMINI_CONFIG_DIR', str(tmp_path / 'gemini-config'))
 
     first = _parse(runtime.project_initial_setup(str(tmp_path), 'antigravity'))
-    assert first['marshal_written'] is True
+    assert first['marshal_written'] is False
     assert first['bridge_written'] is True
 
     second = _parse(runtime.project_initial_setup(str(tmp_path), 'antigravity'))
@@ -768,34 +767,40 @@ def test_resestup_clears_baseline_newer_drift(
 
 
 def test_reconcile_standing_rules_bridge_heals_missing_bridge(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
-    """The steward reconcile heals a missing Antigravity bridge via setup."""
+    """Observe-only reconcile reports a missing bridge without healing it."""
     from antigravity_runtime import _bridge_rules_path
     from configure_harness import _reconcile_standing_rules_bridge
 
     (tmp_path / 'CLAUDE.md').write_text('# baseline\n', encoding='utf-8')
     monkeypatch.setenv('GEMINI_CONFIG_DIR', str(tmp_path / 'gemini-config'))
 
-    assert _reconcile_standing_rules_bridge('antigravity', tmp_path) is True
-    assert _bridge_rules_path(tmp_path).is_file()
+    assert _reconcile_standing_rules_bridge('antigravity', tmp_path) is False
+    assert not _bridge_rules_path(tmp_path).is_file()
 
 
 def test_reconcile_standing_rules_bridge_reports_failed_setup(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
-    """A failed setup never reports a healed bridge, even over a stale file."""
+    """Observe-only reconcile never invokes setup — a failing setup stays uncalled."""
+    from antigravity_runtime import _bridge_rules_path
     from configure_harness import _reconcile_standing_rules_bridge
 
     (tmp_path / 'CLAUDE.md').write_text('# baseline\n', encoding='utf-8')
-    (tmp_path / 'AGENTS.md').write_text('# stale bridge\n', encoding='utf-8')
+    bridge = _bridge_rules_path(tmp_path)
+    bridge.parent.mkdir(parents=True, exist_ok=True)
+    bridge.write_text('# stale bridge without marker\n', encoding='utf-8')
+
+    calls: list = []
 
     class _FailingRuntime:
         def project_initial_setup(self, *_args: Any, **_kwargs: Any) -> None:
+            calls.append(True)
             raise OSError('setup failed')
 
     import platform_runtime
-    from configure_harness import _reconcile_standing_rules_bridge
 
     monkeypatch.setattr(platform_runtime, '_make_runtime', lambda _h: _FailingRuntime())
 
     assert _reconcile_standing_rules_bridge('antigravity', tmp_path) is False
+    assert calls == []
 
 
 def test_reconcile_standing_rules_bridge_claude_is_baseline_presence(tmp_path: Path):

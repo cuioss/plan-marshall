@@ -1460,3 +1460,59 @@ class TestLandingCheckDeltaEndToEnd:
         assert 'status: success' in result.stdout
         assert 'surface_delta' in result.stdout
         assert 'expansion_detected' in result.stdout
+
+
+# =============================================================================
+# The single landing-totals contract (measured-subset total)
+# =============================================================================
+#
+# The landing carries exactly one totals contract: a partly measured run
+# carries the measured phases' token sum (so it still drains complete) and
+# only the nothing-measured run carries ``unknown`` at ``total_tokens`` —
+# never ``0``. The ``unknown`` there is the could-not-read gap at every key,
+# exactly as at ``merge_state`` — it never collapses into ``0``, and ``0``
+# never reads as ``unknown``.
+
+
+def _totals_contract_section() -> str:
+    """The spec's single landing-totals contract section, bounded by headings."""
+    text = _PAYLOAD_SPEC.read_text(encoding='utf-8')
+    marker = '## Single landing-totals contract'
+    assert marker in text, f'{_PAYLOAD_SPEC.name} carries no "{marker}" section, so this guard would read nothing.'
+    section = text[text.index(marker) :]
+    end = section.find('\n## ', 1)
+    return section[:end] if end != -1 else section
+
+
+class TestSingleLandingTotalsContract:
+    def test_spec_names_exactly_one_totals_contract(self):
+        """The spec carries one totals contract section, and it is the measured-subset one."""
+        text = _PAYLOAD_SPEC.read_text(encoding='utf-8')
+
+        assert text.count('## Single landing-totals contract') == 1
+
+        section = _totals_contract_section()
+        assert 'measured-subset total' in section
+        assert 'Only the nothing-measured run carries `unknown`' in section
+        assert 'never `0`' in section
+
+    def test_partly_measured_total_is_complete(self):
+        """A measured token sum drains complete — the partly measured run is not a gap."""
+        complete, missing = check_landing_completeness(_facts_landing(total_tokens='512000'))
+
+        assert complete is True
+        assert missing == []
+
+    def test_nothing_measured_renders_unknown_never_zero(self):
+        """Only the nothing-measured run carries ``unknown``, and it reads as a gap."""
+        complete, missing = check_landing_completeness(_facts_landing(total_tokens='unknown'))
+
+        assert complete is False
+        assert missing == ['total_tokens']
+
+    def test_zero_total_is_a_real_value_not_a_sentinel(self):
+        """``0`` never stands in for the nothing-measured case — it is a real count."""
+        complete, missing = check_landing_completeness(_facts_landing(total_tokens='0'))
+
+        assert complete is True
+        assert missing == []

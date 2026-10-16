@@ -114,6 +114,8 @@ def test_configure_harness_writes_valid_schema_no_timestamps(plan_env):
 
     checks = data['checks']
     assert isinstance(checks, dict)
+    # Verdict contract: a fresh fixture carries no bridge file, so setup
+    # provisions it and the verdict is current with rules_emitted True.
     assert checks['rules_emitted'] is True
     assert checks['harness_paths_valid'] is True
     assert checks['executor_ready'] is True
@@ -360,3 +362,84 @@ def test_cli_dispatch_configure_harness(plan_env, monkeypatch: pytest.MonkeyPatc
     assert 'status: success' in out
     assert 'harness: antigravity' in out
     assert 'configured: true' in out
+
+
+def test_bridge_reemit_command_names_project_initial_setup(plan_env):
+    """Damaged stub surfaces the re-emit command, never silent."""
+    cmd = ch.bridge_reemit_command('opencode', Path('.plan'), Path('.'))
+    assert 'platform-runtime' in cmd
+    assert 'project initial-setup' in cmd
+    assert 'opencode' in cmd
+    assert '--project-dir' in cmd
+
+
+def test_reconcile_damaged_stub_returns_false(plan_env):
+    """A bridge stub without its version marker is not reconciled."""
+    project_dir = plan_env['project_dir']
+    bridge = project_dir / '.opencode' / 'rules' / 'plan-marshall-target-rules.md'
+    bridge.parent.mkdir(parents=True, exist_ok=True)
+    bridge.write_text('# damaged stub without marker\n', encoding='utf-8')
+
+    assert ch._reconcile_standing_rules_bridge('opencode', project_dir) is False
+
+
+def test_dispatch_provisions_missing_bridge_via_setup(plan_env):
+    """A missing bridge is provisioned by setup, then reported current."""
+    project_dir = plan_env['project_dir']
+    (project_dir / 'AGENTS.md').unlink(missing_ok=True)
+    bridge = project_dir / '.opencode' / 'rules' / 'plan-marshall-target-rules.md'
+    if bridge.is_file():
+        bridge.unlink()
+
+    assert ch.dispatch_platform_runtime_setup('opencode', project_dir) == 'current'
+    assert bridge.is_file()
+
+
+def test_bridge_owns_own_file_only(plan_env):
+    """A current bridge reconciles without touching the installed target file."""
+    project_dir = plan_env['project_dir']
+    installed = project_dir / 'installed-target-rules.md'
+    installed.write_text('# installed target rules\n', encoding='utf-8')
+    before = installed.read_text(encoding='utf-8')
+
+    bridge = project_dir / '.opencode' / 'rules' / 'plan-marshall-target-rules.md'
+    bridge.parent.mkdir(parents=True, exist_ok=True)
+    bridge.write_text('# bridge\n\nbridge-version: 1\n', encoding='utf-8')
+
+    assert ch._reconcile_standing_rules_bridge('opencode', project_dir) is True
+    assert installed.read_text(encoding='utf-8') == before
+
+
+def test_dispatch_damaged_stub_returns_damaged_verdict(plan_env):
+    """Bare file existence never overrides a failed reconcile."""
+    project_dir = plan_env['project_dir']
+    bridge = project_dir / '.opencode' / 'rules' / 'plan-marshall-target-rules.md'
+    bridge.parent.mkdir(parents=True, exist_ok=True)
+    bridge.write_text('# damaged stub without marker\n', encoding='utf-8')
+
+    assert ch.dispatch_platform_runtime_setup('opencode', project_dir) == 'damaged'
+
+
+def test_outdated_bridge_version_is_damaged(plan_env):
+    """A stub with an outdated version marker is damaged, never current."""
+    project_dir = plan_env['project_dir']
+    bridge = project_dir / '.opencode' / 'rules' / 'plan-marshall-target-rules.md'
+    bridge.parent.mkdir(parents=True, exist_ok=True)
+    bridge.write_text('# bridge\n\nbridge-version: 0\n', encoding='utf-8')
+
+    assert ch._reconcile_standing_rules_bridge('opencode', project_dir) is False
+    assert ch.dispatch_platform_runtime_setup('opencode', project_dir) == 'damaged'
+
+
+def test_setup_written_heading_reconciles_current(plan_env):
+    """A setup-written bridge embeds its marker in the heading line."""
+    project_dir = plan_env['project_dir']
+    bridge = project_dir / '.opencode' / 'rules' / 'plan-marshall-target-rules.md'
+    bridge.parent.mkdir(parents=True, exist_ok=True)
+    bridge.write_text(
+        '# Plan Marshall target rules (OpenCode bridge bridge-version: 1)\n\nbody\n',
+        encoding='utf-8',
+    )
+
+    assert ch._reconcile_standing_rules_bridge('opencode', project_dir) is True
+    assert ch.dispatch_platform_runtime_setup('opencode', project_dir) == 'current'
