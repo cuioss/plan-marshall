@@ -114,10 +114,9 @@ def test_configure_harness_writes_valid_schema_no_timestamps(plan_env):
 
     checks = data['checks']
     assert isinstance(checks, dict)
-    # Verdict contract: fresh fixture carries no bridge file, so the verdict
-    # is missing and rules_emitted is truthfully False with the re-emit
-    # command surfaced on the result.
-    assert checks['rules_emitted'] is False
+    # Verdict contract: a fresh fixture carries no bridge file, so setup
+    # provisions it and the verdict is current with rules_emitted True.
+    assert checks['rules_emitted'] is True
     assert checks['harness_paths_valid'] is True
     assert checks['executor_ready'] is True
 
@@ -384,16 +383,16 @@ def test_reconcile_damaged_stub_returns_false(plan_env):
     assert ch._reconcile_standing_rules_bridge('opencode', project_dir) is False
 
 
-def test_dispatch_does_not_heal_missing_bridge(plan_env):
-    """Observe-only dispatch never writes a missing bridge into place."""
+def test_dispatch_provisions_missing_bridge_via_setup(plan_env):
+    """A missing bridge is provisioned by setup, then reported current."""
     project_dir = plan_env['project_dir']
     (project_dir / 'AGENTS.md').unlink(missing_ok=True)
     bridge = project_dir / '.opencode' / 'rules' / 'plan-marshall-target-rules.md'
     if bridge.is_file():
         bridge.unlink()
 
-    assert ch.dispatch_platform_runtime_setup('opencode', project_dir) == 'missing'
-    assert not bridge.is_file()
+    assert ch.dispatch_platform_runtime_setup('opencode', project_dir) == 'current'
+    assert bridge.is_file()
 
 
 def test_bridge_owns_own_file_only(plan_env):

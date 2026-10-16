@@ -1384,7 +1384,7 @@ def test_steward_setup_prints_persisted_warnings(
     from configure_harness import dispatch_platform_runtime_setup
 
     monkeypatch.chdir(tmp_path)
-    assert dispatch_platform_runtime_setup('opencode', tmp_path) is True
+    assert dispatch_platform_runtime_setup('opencode', tmp_path) == 'current'
     captured = capsys.readouterr()
     assert 'persisted approval warning' in captured.err
     assert 'ls' in captured.err

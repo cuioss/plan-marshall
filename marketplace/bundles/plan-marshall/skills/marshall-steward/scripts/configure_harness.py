@@ -26,6 +26,12 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from antigravity_runtime import (
+    STANDING_RULES_BRIDGE_MARKER as _ANTIGRAVITY_BRIDGE_MARKER,
+)
+from antigravity_runtime import (
+    _bridge_rules_path as _antigravity_bridge_path,
+)
 from determine_mode import (
     check_harness_paths_valid,
     compute_current_harness_sha,
@@ -33,20 +39,12 @@ from determine_mode import (
 )
 from file_ops import atomic_write_file, safe_main
 from input_validation import parse_args_with_toon_errors
-from target_context import SOURCE_EXPLICIT, resolve_target
-from toon_parser import parse_toon
-from toon_parser import serialize_toon
-
-from antigravity_runtime import (
-    STANDING_RULES_BRIDGE_MARKER as _ANTIGRAVITY_BRIDGE_MARKER,
-)
-from antigravity_runtime import (
-    _bridge_rules_path as _antigravity_bridge_path,
-)
 from opencode_runtime import (
     STANDING_RULES_BRIDGE_MARKER as _OPENCODE_BRIDGE_MARKER,
 )
 from opencode_runtime import _bridge_rules_path as _opencode_bridge_path
+from target_context import SOURCE_EXPLICIT, resolve_target
+from toon_parser import parse_toon, serialize_toon
 
 #: Command surfaced when a bridge stub is damaged (marker mismatch) or missing,
 #: so the condition is never silent. Re-running project initial-setup re-emits
@@ -119,11 +117,21 @@ def dispatch_platform_runtime_setup(harness: str, project_dir: Path) -> str:
     (never retyped here), and bare file existence never overrides a failed
     reconcile. Returns the verdict `current`, `damaged` (bridge present
     without its version marker or unreadable), or `missing` (no bridge file,
-    or setup itself failed). The caller surfaces :func:`bridge_reemit_command`
-    for the damaged or missing verdict, never silently healed here.
+    or setup itself failed). A present stub is judged before setup runs, so
+    the setup writers never overwrite damage the caller must report. The
+    caller surfaces :func:`bridge_reemit_command` for the damaged or missing
+    verdict, never silently healed here.
     """
     proj = project_dir.resolve()
     setup_ok = True
+
+    if harness in ('antigravity', 'opencode'):
+        bridge = _antigravity_bridge_path(proj) if harness == 'antigravity' else _opencode_bridge_path(proj)
+        if bridge.is_file() and not _reconcile_standing_rules_bridge(harness, proj):
+            # A present stub is judged as-is: invoking the setup writers below
+            # would overwrite it, silently healing damage the caller must
+            # report with the re-emit command instead.
+            return 'damaged'
 
     try:
         from platform_runtime import _make_runtime
