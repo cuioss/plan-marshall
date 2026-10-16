@@ -57,7 +57,9 @@ derive, for rows still live.
   counted 7/7, five regressions; see `landings/PLAN-LB-39.md`. Fix-forward PLAN-LB-50; unshipped
   deliverables re-staged as PLAN-LB-51 (Antigravity) and PLAN-LB-52 (harness-agnostic, as scripts).
 
-- **Emit order from 2026-10-16 (runbook lane):** PLAN-LB-61 (now) → PLAN-LB-52, PLAN-LB-55 (each
+- **Emit order from 2026-10-16 (runbook lane):** PLAN-LB-61 (running) → **PLAN-LB-62** (high; after
+  PLAN-LB-50, or accept its 3-entry overlap) → PLAN-LB-52, PLAN-LB-55 (each overlaps the running
+  PLAN-LB-61 on `pr_intent_section.py` and its test) (each
   shares one entry with PLAN-LB-56, non-blocking) → PLAN-LB-53 (after PLAN-LB-55) → PLAN-LB-48
   (after PLAN-LB-50 and PLAN-LB-56 land; 2 and 4 shared files) → PLAN-LB-45 (after PLAN-LB-50 and
   PLAN-LB-48) → PLAN-LB-49 (after PLAN-LB-48) → PLAN-LB-54 → PLAN-LB-51 (after PLAN-LB-50) →
@@ -85,10 +87,17 @@ derive, for rows still live.
   its deliverables and Done-whens must not be merged in the outline — the failure every OpenCode
   run has shown.
 
+- **PLAN-LB-56** (shipped #1781, 2026-10-16) — 0 met / 2 partial / 1 unmet; R5 refuses the
+  repository's own steward, executor-recovery and harness-sync invocations in every OpenCode
+  session (operator: run those from a plain terminal until fixed); see `landings/PLAN-LB-56.md`.
+  Fix-forward **PLAN-LB-62** (WS-04, high priority, runbook lane). Process gaps folded into
+  PLAN-LB-55 D4 (merge-question text must match `final_merge_without_asking`) and PLAN-LB-53 D1
+  (the selected option executed as worded).
+
 - **PLAN-LB-47** (shipped #1778, 2026-10-15) — merged without a CodeRabbit review on an
   agent-minted authorization; **kept by operator decision** (2026-10-16). 0 met / 5 partial, three
   regressions hitting every running plan's finalize and builds; see `landings/PLAN-LB-47.md`.
-  Hotfix **PLAN-LB-61** (WS-01, high priority, Gemini). PLAN-LB-50 must rebase onto `b9cd36be1`.
+  Hotfix **PLAN-LB-61** (WS-01, high priority, DeepSeek free, runbook lane). PLAN-LB-50 must rebase onto `b9cd36be1`.
   Process gaps folded into PLAN-LB-55 D4 (grant only from the operator's selected option, quota
   recovery before any barrier question, the operator's review policy encoded in `coderabbit.md`)
   and PLAN-LB-53 D1 (no unasked remedy after the operator reports a problem). PLAN-LB-47 D5's
@@ -467,7 +476,9 @@ derive, for rows still live.
   (2026-10-15). Correction: `ls`, `grep`, `head` and `python3` passed the global deny because of
   the 8 persisted OpenCode "always allow" approvals of 2026-10-08 (still owed by the operator);
   read-side probes are governed by the permission map, not the guard (`guard.js:28-32`).
-  PLAN-LB-56 adds R5 for interpreter calls and reports stale approvals.
+  PLAN-LB-56 adds R5 for interpreter calls and reports stale approvals. **Shipped partly (#1781):** R5 refuses `-c` / `-m` / script paths, but has
+  no plan-context gate on OpenCode, misses wrapper prefixes, and blocks documented workflows;
+  `git grep` and `ls` are still uncovered. Remainder owned by PLAN-LB-62.
   PLAN-LB-40 (second guarded run): 92 `python3 -c`, 18 `git grep` (not in PLAN-LB-56's scope),
   17 ad-hoc script runs, three harness-written-after-R4-refusal evasions.
 - **In a consumer repository a dispatched leaf cannot resolve its workflow document**:
@@ -870,10 +881,16 @@ entries below are OpenCode 1 assumptions in plan-marshall that OpenCode 2 broke.
   OpenCode config, so the root model is the whole run's model. PLAN-LB-40, -47, -50 and -56 finish
   on Muse and join the baseline as each lands (eight Muse plans in all); the next emitted plan is
   the first DeepSeek run.
-  - **Gemini run: PLAN-LB-61** (operator, 2026-10-16: "the plan will be run with the gemini model").
-    A third model; record its id and harness from the run at its landing and grade it on the same
-    dimensions. Its spec carries the review-policy and authorization rules verbatim, because the
-    run cannot see the operator's memory.
+  - **Correction (operator, 2026-10-16): no Gemini runs.** Every plan not run with Muse runs
+    DeepSeek. Recorded per run from `opencode.db`:
+    - PLAN-LB-60 — `deepseek-v4.1-flash`, provider `opencode-go`, variant `high` (plan-marshall
+      lane).
+    - PLAN-LB-61 — `deepseek-v4.1-flash-free`, provider `opencode` (free tier), variant `max`, root
+      `ses_ebc18e9baffeE9SllcYgkzZubr`, started 2026-10-16 08:49 — the first **runbook-lane** run.
+
+    Two variables change at once on PLAN-LB-61 (free tier/variant and lane), so its grade is
+    compared with PLAN-LB-60 for the model and with later runbook runs for the lane; it is not
+    attributed to either alone.
   - **First DeepSeek run: PLAN-LB-60** (started 2026-10-15 16:34, root
     `ses_ebf95b304ffeduimJZ6Cr5frL1`). `opencode.db` records the model as
     `{"id":"deepseek-v4.1-flash","providerID":"opencode-go","variant":"high"}` — the same provider
@@ -889,8 +906,9 @@ entries below are OpenCode 1 assumptions in plan-marshall that OpenCode 2 broke.
     | PLAN-LB-42 | 0 / 4 / 0 of 4 | 2/2 | 5 | 69 | $5.79 | C |
     | PLAN-LB-40 | 2 / 2 / 1 of 5 | 5/5 | 4 | 77 | $5.66 | D |
     | PLAN-LB-47 | 0 / 5 / 0 of 5 | 5/5 | 3 | 30 | $2.32 | F |
+    | PLAN-LB-56 | 0 / 2 / 1 of 3 | 3/3 | 1 (R5 breadth) | 65 | $4.85 | D |
 
-    Pooled: 9 of 39 spec deliverables met (23%); every run claimed 100%. The over-claim is the
+    Pooled: 9 of 42 spec deliverables met (21%); every run claimed 100%. The over-claim is the
     constant; mechanics (gh, rebase, trailers) improved run over run as enforcement arrived.
   - **What is model-attributable and what is not.** Measure each DeepSeek landing on the same
     dimensions, split into:
@@ -985,6 +1003,13 @@ entries below are OpenCode 1 assumptions in plan-marshall that OpenCode 2 broke.
     green" while red); never re-triggered CodeRabbit (raw `sleep` waits, empty-roster leaf as on
     PLAN-LB-40); re-ran a red check unasked; hid the bypass in the step record. Kept on `main` by
     operator decision. Remaining: PLAN-LB-50, -56.
+  - **PLAN-LB-56 graded D** (2026-10-16, `landings/PLAN-LB-56.md`). 0 met / 2 partial / 1 unmet
+    vs claimed 3/3. D2's finalize commit gate is dead code (no caller) yet graded met. R5 has no
+    plan-context gate on OpenCode and refuses the repository's own steward, executor-recovery and
+    harness-sync invocations (PLAN-LB-62). Good: every refusal respected, both required bots
+    reviewed the merged head, merged head gated. Failed: root 50% of cost and 11 of 14 commits,
+    12 of 14 without trailer, a `uv run` evasion attempt after R5, an operator selection executed
+    as something else, the empty-roster leaf a third time. Remaining: PLAN-LB-50.
   - **Corrected 2026-10-15: PLAN-LB-47 and PLAN-LB-50 are OpenCode runs too** (emitted in the OpenCode
     form, Muse, `opencode.db` roots `ses_ec19f02e1ffeJrkGjQ3D6znWUt` and
     `ses_ec19f318affeLhDQuk6jhH6ZGa`), and were missing from this Watch. All four running plans —
