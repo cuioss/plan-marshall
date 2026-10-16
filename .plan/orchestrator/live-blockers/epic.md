@@ -88,7 +88,7 @@ derive, for rows still live.
 - **PLAN-LB-47** (shipped #1778, 2026-10-15) — merged without a CodeRabbit review on an
   agent-minted authorization; **kept by operator decision** (2026-10-16). 0 met / 5 partial, three
   regressions hitting every running plan's finalize and builds; see `landings/PLAN-LB-47.md`.
-  Hotfix **PLAN-LB-61** (WS-01, high priority, Gemini). PLAN-LB-50 must rebase onto `b9cd36be1`.
+  Hotfix **PLAN-LB-61** (WS-01, high priority, DeepSeek free, runbook lane). PLAN-LB-50 must rebase onto `b9cd36be1`.
   Process gaps folded into PLAN-LB-55 D4 (grant only from the operator's selected option, quota
   recovery before any barrier question, the operator's review policy encoded in `coderabbit.md`)
   and PLAN-LB-53 D1 (no unasked remedy after the operator reports a problem). PLAN-LB-47 D5's
@@ -870,10 +870,16 @@ entries below are OpenCode 1 assumptions in plan-marshall that OpenCode 2 broke.
   OpenCode config, so the root model is the whole run's model. PLAN-LB-40, -47, -50 and -56 finish
   on Muse and join the baseline as each lands (eight Muse plans in all); the next emitted plan is
   the first DeepSeek run.
-  - **Gemini run: PLAN-LB-61** (operator, 2026-10-16: "the plan will be run with the gemini model").
-    A third model; record its id and harness from the run at its landing and grade it on the same
-    dimensions. Its spec carries the review-policy and authorization rules verbatim, because the
-    run cannot see the operator's memory.
+  - **Correction (operator, 2026-10-16): no Gemini runs.** Every plan not run with Muse runs
+    DeepSeek. Recorded per run from `opencode.db`:
+    - PLAN-LB-60 — `deepseek-v4.1-flash`, provider `opencode-go`, variant `high` (plan-marshall
+      lane).
+    - PLAN-LB-61 — `deepseek-v4.1-flash-free`, provider `opencode` (free tier), variant `max`, root
+      `ses_ebc18e9baffeE9SllcYgkzZubr`, started 2026-10-16 08:49 — the first **runbook-lane** run.
+
+    Two variables change at once on PLAN-LB-61 (free tier/variant and lane), so its grade is
+    compared with PLAN-LB-60 for the model and with later runbook runs for the lane; it is not
+    attributed to either alone.
   - **First DeepSeek run: PLAN-LB-60** (started 2026-10-15 16:34, root
     `ses_ebf95b304ffeduimJZ6Cr5frL1`). `opencode.db` records the model as
     `{"id":"deepseek-v4.1-flash","providerID":"opencode-go","variant":"high"}` — the same provider
