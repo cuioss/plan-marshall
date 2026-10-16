@@ -36,15 +36,17 @@ leg helpers are imported from :mod:`_cmd_domain_detect` so they keep exactly one
 Read-only by default: it reads ``marshal.json``, ``references.json``, and the plan's task state, and
 writes nothing unless ``--apply`` is passed. There is no LLM dispatch on this path.
 
-The ``would_empty`` guard: when narrowing would retain no user domain at all (every
-non-``system`` domain is droppable), the verb returns ``status: error`` with
-``error: would_empty`` and writes nothing — even under ``--apply``. An empty domain
-set leaves the plan with no skill routing, so the refusal is fail-closed.
+The ``would_empty`` guard: when the pass would DROP every user domain it evaluated —
+narrowing itself is what empties the set — the verb returns ``status: error`` with
+``error: would_empty`` and writes nothing, even under ``--apply``. An empty domain
+set leaves the plan with no skill routing, so the refusal is fail-closed. A set with
+nothing droppable (already empty, or ``system``-only) loses nothing and is a success
+no-op: the guard fires on the drop, never on the outcome shape alone.
 
 The four outcomes stay mutually distinguishable in the return: narrowing ran and dropped
 domains (``narrowed: true``, non-empty ``dropped``); narrowing ran and found nothing
 droppable (``narrowed: false``, empty ``dropped``, ``status: success``); narrowing
-would retain no user domain (``status: error``, ``error: would_empty``); and narrowing
+would drop every user domain (``status: error``, ``error: would_empty``); and narrowing
 could not evaluate (``status: error`` carrying the reason). A verb that could not look
 never renders as a verb that looked and found nothing.
 """
@@ -52,11 +54,11 @@ never renders as a verb that looked and found nothing.
 from __future__ import annotations
 
 import json
-import re
 from typing import Any
 
 from _cmd_domain_detect import _always_on_domains, _glob_matched_domains
 from _config_core import load_config
+from _plan_parsing import extract_deliverables, parse_document_sections
 from file_ops import get_plan_dir
 
 LEG_TASK = 'task'
@@ -249,69 +251,49 @@ def _compose_report(current: list[str], retained: list[str], dropped: list[str])
     return f'{head}; nothing droppable'
 
 
-#: Matches a ``- domain: NAME`` declaration line. Evaluated per line by
-#: ``_metadata_block_domains``, never against the whole outline at once — a
-#: whole-file ``findall`` also matched ``- domain:`` lines in prose, in the
-#: ``## Solution Metadata`` section, and in fenced code blocks, crediting the
-#: deliverable leg with declarations no deliverable ever made.
-_DELIVERABLE_DOMAIN_PATTERN = re.compile(r'^\s*-\s*domain:\s*([A-Za-z0-9_.-]+)\s*$')
-
-#: Opens a deliverable ``**Metadata:**`` block. Only ``- domain:`` lines that
-#: follow such a marker — up to the next non-list line — are declarations.
-_METADATA_MARKER_RE = re.compile(r'\*\*Metadata:\*\*')
-
-#: Matches any markdown list-item line. A line that is neither blank nor a list
-#: item closes the open ``**Metadata:**`` block.
-_METADATA_LIST_ITEM_RE = re.compile(r'^\s*-\s*\S')
+#: The deliverable ``**Metadata:**`` field naming the domain a deliverable needs.
+_DOMAIN_FIELD = 'domain'
 
 
-def _metadata_block_domains(content: str) -> set[str]:
-    """Return the ``- domain: NAME`` values declared inside ``**Metadata:**`` blocks.
+def _normalized_domain_value(raw: str) -> str:
+    """Normalize a declared ``domain:`` value to its bare domain name.
 
-    The scan is block-scoped: a ``**Metadata:**`` marker opens a block, blank
-    lines are skipped, and the first non-blank non-list line (a heading, a bold
-    field like ``**Profiles:**``, prose) closes it. Blank lines do NOT close
-    the block — stopping at one would drop a declaration separated from its
-    marker by an empty line, and the leg would then claim nothing for a domain
-    the deliverable did declare, which is the fail-open direction. Reading past
-    them can only collect a ``- domain:`` line, and any such line past the
-    marker but before the next structural boundary still sits under the
-    deliverable's own Metadata header.
+    The outline standard's renderings map onto one name: a trailing ``#``
+    comment is cut, surrounding whitespace is stripped, and a backticked value
+    keeps the name inside the ticks. Case is left as written — the caller
+    matches case-insensitively against the configured spellings.
     """
-    claimed: set[str] = set()
-    in_block = False
-    for line in content.splitlines():
-        if _METADATA_MARKER_RE.search(line):
-            in_block = True
-            continue
-        if not in_block:
-            continue
-        if not line.strip():
-            continue
-        if not _METADATA_LIST_ITEM_RE.match(line):
-            in_block = False
-            continue
-        match = _DELIVERABLE_DOMAIN_PATTERN.match(line)
-        if match:
-            claimed.add(match.group(1))
-    return claimed
+    value = raw.split('#', 1)[0].strip()
+    if len(value) >= 2 and value.startswith('`') and value.endswith('`'):
+        value = value[1:-1].strip()
+    return value
 
 
 def _deliverable_declared_domains(plan_dir, user_domains) -> set[str]:
     """Return the CONFIGURED domains the plan's solution outline deliverables declare.
 
-    Parses ``solution_outline.md`` in ``plan_dir`` for ``- domain: NAME`` lines
-    inside deliverable ``**Metadata:**`` blocks (see ``_metadata_block_domains``
-    for the block scope). A configured domain declared by any deliverable is
-    load-bearing for work already planned and is never droppable — the fourth
-    leg of the safety bound.
+    Reads ``solution_outline.md`` in ``plan_dir`` through the shared outline
+    parser — ``_plan_parsing.parse_document_sections`` + ``extract_deliverables``
+    → ``metadata.domain`` — the same grammar every other outline consumer
+    reads, so a variant the outline standard admits (a bold field label, a
+    backticked value, a trailing ``#`` comment, mixed case) is a declaration
+    here too. The field name is matched case-insensitively; the value is
+    normalized (see :func:`_normalized_domain_value`) and matched
+    case-insensitively against the configured ``user_domains``. A configured
+    domain declared by any deliverable is load-bearing for work already
+    planned and is never droppable — the fourth leg of the safety bound.
 
-    Names with no configured ``user_domains`` entry are NOT returned, even when
-    a deliverable declares them: an unconfigured claim would otherwise retain a
-    domain no skill resolution can bind (and would satisfy the ``would_empty``
-    guard on the strength of a name nothing can route to), breaking later skill
-    resolution. The outline is the deliverable-declared source; task files
-    remain the task leg's source.
+    Delegating to the shared parser keeps ONE grammar for deliverable
+    declarations: a second hand-rolled line scanner with a narrower grammar
+    would silently drop any declaration spelling outside it, which is the
+    fail-open direction for a safety-bound leg.
+
+    Names with no configured ``user_domains`` entry are NOT returned, even
+    when a deliverable declares them: an unconfigured claim would otherwise
+    retain a domain no skill resolution can bind (and would satisfy the
+    ``would_empty`` guard on the strength of a name nothing can route to),
+    breaking later skill resolution. The outline is the deliverable-declared
+    source; task files remain the task leg's source.
 
     An ABSENT outline (``FileNotFoundError``) yields the empty set, preserving
     absence support: with no document to consult, the leg claims nothing
@@ -330,7 +312,23 @@ def _deliverable_declared_domains(plan_dir, user_domains) -> set[str]:
         return set()
     except (OSError, ValueError) as exc:
         raise _DeliverableLegUnreadable(outline, exc) from exc
-    return _metadata_block_domains(content) & set(user_domains)
+
+    configured = {str(domain).casefold(): domain for domain in user_domains}
+    claimed: set[str] = set()
+    deliverables_section = parse_document_sections(content).get('deliverables', '')
+    for deliverable in extract_deliverables(deliverables_section):
+        metadata = deliverable.get('metadata')
+        if not isinstance(metadata, dict):
+            continue
+        raw = ''
+        for key, value in metadata.items():
+            if str(key).casefold() == _DOMAIN_FIELD:
+                raw = value if isinstance(value, str) else ''
+                break
+        match = configured.get(_normalized_domain_value(raw).casefold())
+        if match is not None:
+            claimed.add(match)
+    return claimed
 
 
 def cmd_domain_narrow(args) -> dict[str, Any]:
@@ -477,17 +475,21 @@ def cmd_domain_narrow(args) -> dict[str, Any]:
         (retained if claimed_by else dropped).append(domain)
 
     retained_user = [d for d in retained if d != SYSTEM_DOMAIN]
-    if not retained_user:
-        # The could-not-evaluate arm carries exactly status, error and message —
-        # no plan_id, none of the success fields. A caller that reads dropped[]
-        # without branching on status first finds no key rather than a list it
-        # would read as "looked, and nothing was droppable".
+    # The guard fires only when this pass would DROP a user domain: an
+    # already-empty or ``system``-only set drops nothing and falls through to
+    # the success no-op below, so narrowing never fabricates a refusal for a
+    # run that had nothing to drop.
+    if not retained_user and dropped:
+        # The error arm carries exactly status, error and message — no plan_id,
+        # none of the success fields. A caller that reads dropped[] without
+        # branching on status first finds no key rather than a list it would
+        # read as "looked, and nothing was droppable".
         return {
             'status': 'error',
             'error': 'would_empty',
             'message': (
-                'Narrowing would retain no user domain, so no domain set is written: '
-                f'{len(unique_current)} domain(s) evaluated, all droppable. '
+                'Narrowing would retain no user domain: every evaluated domain is '
+                f'droppable ({", ".join(dropped)}), so no domain set is written. '
                 'Refusing to leave the plan with no skill routing.'
             ),
         }

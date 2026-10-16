@@ -939,9 +939,10 @@ def main() -> int:
             'it via a deliverable-declared domain: field in solution_outline.md. '
             'Narrowing is a strict subset operation '
             'and never adds a domain. Without --apply the verb writes nothing; with '
-            '--apply it persists the retained set to references.json. When narrowing '
-            'would retain no user domain, the verb returns would_empty and writes '
-            'nothing. Dispatches no LLM.'
+            '--apply it persists the retained set to references.json. When the pass '
+            'would drop every user domain, the verb returns would_empty and writes '
+            'nothing; a set with nothing droppable (already empty, or system-only) '
+            'is a success no-op. Dispatches no LLM.'
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         allow_abbrev=False,
@@ -963,8 +964,8 @@ def main() -> int:
         dest='apply',
         action='store_true',
         help='Persist the retained domain set to references.json. Without this flag the '
-        'verb only reports. The would_empty guard refuses the write when no user domain '
-        'would be retained. The write is also refused when references.json changed '
+        'verb only reports. The would_empty guard refuses the write when the pass would '
+        'drop every user domain. The write is also refused when references.json changed '
         'between evaluation and --apply.',
     )
 

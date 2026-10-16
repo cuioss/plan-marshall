@@ -308,7 +308,13 @@ def extract_deliverables(deliverables_section: str) -> list[dict[str, Any]]:
 
 
 def _extract_metadata_block(content: str) -> dict[str, str]:
-    """Extract **Metadata:** block fields from deliverable content."""
+    """Extract **Metadata:** block fields from deliverable content.
+
+    The field label tolerates optional ``**`` emphasis — a ``- **Domain:** x``
+    rendering parses exactly like the canonical ``- domain: x`` — while the
+    value is kept raw (no comment or markup stripping), so every consumer
+    normalizes it for its own purpose.
+    """
     metadata: dict[str, str] = {}
 
     metadata_match = re.search(r'\*\*Metadata:\*\*\s*((?:- [^\n]+\n?)+)', content, re.IGNORECASE)
@@ -316,7 +322,7 @@ def _extract_metadata_block(content: str) -> dict[str, str]:
         return metadata
 
     metadata_text = metadata_match.group(1)
-    field_pattern = re.compile(r'-\s*(\w+):\s*(.+)')
+    field_pattern = re.compile(r'-\s*\*{0,2}(\w+)\*{0,2}:\*{0,2}\s*(.+)')
     for match in field_pattern.finditer(metadata_text):
         field_name = match.group(1).strip()
         field_value = match.group(2).strip()
