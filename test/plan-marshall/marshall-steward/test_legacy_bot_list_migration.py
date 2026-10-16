@@ -13,16 +13,17 @@ and into ``review_completeness``:
 
 1. **Standard roster seeds the migration.** State 1 seeds
    ``required_bots: cuioss-review-bot,coderabbit`` and
-   ``optional_bots: sourcery`` (not the legacy value verbatim), reports the
-   legacy value as ``discarded_legacy``, and records provenance ``migrated``.
-   Unknown legacy names are reported by ``validate_bot_lists`` rather than
-   copied.
+   ``optional_bots: sourcery`` (not the legacy value verbatim), names each
+   dropped legacy bot in ``discarded_legacy``, and records provenance
+   ``migrated``. Unknown legacy names are reported by ``validate_bot_lists``
+   rather than copied.
 2. **The migration is self-disarming.** A second run leaves the migrated values
    untouched, and a subsequent operator answer is never re-seeded over.
 
 State-1 required/optional expectations are the standard-roster literals;
 ``discarded_legacy`` expectations stay DERIVED from the fixture's own legacy
-value, so changing the fixture cannot leave a stale discard passing.
+value (split into names), so changing the fixture cannot leave a stale discard
+passing.
 """
 
 from __future__ import annotations
@@ -40,7 +41,7 @@ import pytest
 # plain import resolves without a bootstrap.
 import upgrade
 
-from conftest import load_script_module
+from conftest import load_script_module, parse_ns
 
 # ``register=False``: only the returned module is needed, and a sibling suite
 # imports ``review_completeness`` plainly. Registering under that name would put two
@@ -84,6 +85,17 @@ def _expected_required() -> list[str]:
     return [b.strip() for b in _LEGACY_BOTS.split(',') if b.strip()]
 
 
+def _expected_discarded() -> list[str]:
+    """The dropped bot names the migration reports on ``discarded_legacy``.
+
+    The migration names each dropped bot individually — never the raw legacy CSV
+    string — so the expectation is the fixture's own value split into names. For
+    this fixture the dropped set is exactly the bots the legacy list carried, so
+    the derivation is shared rather than restated.
+    """
+    return _expected_required()
+
+
 def _expected_standard_required() -> list[str]:
     """The standard-roster required bots state 1 seeds, derived from literals."""
     return [b.strip() for b in _STANDARD_REQUIRED_BOTS.split(',') if b.strip()]
@@ -101,8 +113,8 @@ class TestLegacySemanticsSurviveTheMigration:
         """State 1 seeds the standard roster, not the legacy value verbatim.
 
         The legacy-only config lands valid without hand repair: required carries
-        the standard roster, optional carries the standard optional bot, the
-        legacy value is reported as ``discarded_legacy`` so no name disappears
+        the standard roster, optional carries the standard optional bot, each
+        dropped legacy bot is named in ``discarded_legacy`` so no name disappears
         silently, and provenance records ``migrated``.
         """
         config = _legacy_project_config()
@@ -112,7 +124,7 @@ class TestLegacySemanticsSurviveTheMigration:
         assert report['state'] == 'migrated'
         assert report['required_bots'] == _STANDARD_REQUIRED_BOTS
         assert report['optional_bots'] == _STANDARD_OPTIONAL_BOTS
-        assert report['discarded_legacy'] == _LEGACY_BOTS
+        assert report['discarded_legacy'] == _expected_discarded()
         assert params['required_bots'] == _STANDARD_REQUIRED_BOTS
         assert params['optional_bots'] == _STANDARD_OPTIONAL_BOTS
         assert params['bot_lists_provenance'] == 'migrated'
@@ -135,7 +147,7 @@ class TestLegacySemanticsSurviveTheMigration:
         optional = [b.strip() for b in params['optional_bots'].split(',') if b.strip()]
         assert required == _expected_standard_required()
         assert optional == [b.strip() for b in _STANDARD_OPTIONAL_BOTS.split(',') if b.strip()]
-        assert report['discarded_legacy'] == _LEGACY_BOTS
+        assert report['discarded_legacy'] == _expected_discarded()
 
         result = rc.check_completeness(plan_id, required, optional_bots=optional)
 
@@ -257,7 +269,7 @@ class TestSelfDisarming:
         report = upgrade.migrate_bot_lists(params)
 
         assert report['state'] == 'operator_answer_kept'
-        assert report['discarded_legacy'] == _LEGACY_BOTS
+        assert report['discarded_legacy'] == _expected_discarded()
         assert params['required_bots'] == _expected_required()[0]
         assert params['bot_lists_provenance'] == 'answered'
         assert 'enabled_bots' not in params
@@ -297,7 +309,7 @@ class TestLiveConfigVerb:
 
         assert result['status'] == 'success'
         assert result['state'] == 'migrated'
-        assert result['discarded_legacy'] == _LEGACY_BOTS
+        assert result['discarded_legacy'] == _expected_discarded()
 
         persisted = _step_params(json.loads(legacy_project.read_text(encoding='utf-8')))
         assert persisted['required_bots'] == _STANDARD_REQUIRED_BOTS
@@ -337,6 +349,53 @@ class TestLiveConfigVerb:
         assert result['status'] == 'success'
         assert result['state'] == 'noop'
         assert 'marshal.json' in result['detail']
+
+    def test_sync_then_migrate_names_each_dropped_bot_on_the_bug_shape(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        """The real Stage-2 order on the bug shape names every dropped bot.
+
+        The bug shape: a legacy ``enabled_bots`` value beside the empty
+        ``required_bots`` / ``optional_bots`` keys a prior ``sync-defaults`` wrote
+        for the absent ones. A key-presence-only "operator answered" test reads
+        those empties as an answer and drops the legacy list WITHOUT migrating it
+        — the shape this order pins. Driving the real sequence the upgrade uses
+        (Stage-2 ``sync-defaults --backfill-bot-roster``, then ``migrate-bot-lists``)
+        proves the migration still runs, and reports each dropped bot BY NAME
+        rather than the raw CSV string.
+        """
+        import argparse
+
+        import _cmd_sync_defaults
+
+        config = _legacy_project_config()
+        params = _step_params(config)
+        # The bug shape: the empty two-list keys a prior sync-defaults wrote.
+        params['required_bots'] = ''
+        params['optional_bots'] = ''
+        marshal = self._stage_marshal_json(tmp_path, monkeypatch, config)
+
+        sync_ns = parse_ns(
+            'plan-marshall',
+            'manage-config',
+            'manage-config.py',
+            'sync-defaults',
+            '--backfill-bot-roster',
+            register=False,
+        )
+        synced = _cmd_sync_defaults.cmd_sync_defaults(sync_ns)
+        assert synced['status'] == 'success'
+        # ... and the legacy key SURVIVES the reconcile, awaiting the migration.
+        staged = _step_params(json.loads(marshal.read_text(encoding='utf-8')))
+        assert staged['enabled_bots'] == _LEGACY_BOTS
+
+        result = upgrade.cmd_migrate_bot_lists(argparse.Namespace())
+
+        assert result['status'] == 'success'
+        # The empty roster is NOT read as an operator answer ...
+        assert result['state'] == 'migrated'
+        # ... and every dropped bot is named, not echoed as the raw CSV string.
+        assert result['discarded_legacy'] == _expected_discarded()
 
 
 def test_standard_roster_is_single_sourced_from_config_defaults():

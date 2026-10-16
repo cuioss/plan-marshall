@@ -9,7 +9,12 @@ live ``.plan/marshal.json`` so existing projects (which never re-run ``init``)
 pick up new default rows without losing user-set overrides.
 """
 
-from _cmd_quality_phases import _find_dead_step_ids, _resolve_finalize_step_lane
+from _cmd_quality_phases import (
+    _find_dead_step_ids,
+    _read_removed_steps,
+    _resolve_finalize_step_lane,
+    _write_removed_steps,
+)
 from _config_core import (
     error_exit,
     is_initialized,
@@ -18,6 +23,9 @@ from _config_core import (
     success_exit,
 )
 from _config_defaults import (
+    BOT_LISTS_PROVENANCE_ANSWERED,
+    BOT_LISTS_PROVENANCE_KEY,
+    BOT_LISTS_PROVENANCE_MIGRATED,
     OPERATOR_REMOVED_STEPS_KEY,
     OPERATOR_STEP_MAP_LOCATIONS,
     RETIRED_UNCONSUMED_KEYS,
@@ -578,19 +586,28 @@ def _materialize_finalize_lanes(live: dict, materialized: list[str], added: list
 _STANDARD_REQUIRED_BOTS = STANDARD_REQUIRED_BOTS
 _STANDARD_OPTIONAL_BOTS = STANDARD_OPTIONAL_BOTS
 _AUTOMATIC_REVIEW_STEP_ID = 'plan-marshall:automatic-review'
-_BOT_LISTS_PROVENANCE_KEY = 'bot_lists_provenance'
+_BOT_LISTS_PROVENANCE_KEY = BOT_LISTS_PROVENANCE_KEY
 _LEGACY_BOT_LIST_KEY = 'enabled_bots'
 
 
-def _backfill_standard_roster(merged: dict) -> bool:
+def _backfill_standard_roster(merged: dict, *, enabled: bool) -> bool:
     """Back-fill the standard roster into an absent automatic-review param block.
 
-    The deep merge never clobbers a present ``required_bots`` / ``optional_bots``
-    value: a present non-empty value, or any value with
-    ``bot_lists_provenance: answered``, is an operator answer and is left
+    The back-fill is OPT-IN (``enabled``): only the ``marshall-steward`` upgrade's
+    Stage 2 passes the opt-in, because seeding a roster the operator never answered
+    is an upgrade-time migration act, not something a plain ``sync-defaults`` — the
+    wizard's silent materialize step, the re-run remediation pass — may do. When
+    ``enabled`` is false the call is a no-op, so a never-answered
+    ``required_bots`` / ``optional_bots`` is left exactly as it is.
+
+    When enabled, the deep merge still never clobbers a present
+    ``required_bots`` / ``optional_bots`` value: a present non-empty value, or any
+    value with ``bot_lists_provenance: answered``, is an operator answer and is left
     untouched. Only a missing key, or an empty value without an answered
-    provenance, is filled with the standard roster. Held/re-added reporting
-    covers the roster step id like any other step id through the standard
+    provenance, is filled with the standard roster, and a fill records
+    ``bot_lists_provenance: migrated`` so the seeded value stays distinguishable
+    from a never-asked placeholder and from an operator answer. Held/re-added
+    reporting covers the roster step id like any other step id through the standard
     deep-merge accumulators — this helper only fills params inside a kept step.
     A present retired ``enabled_bots`` key defers to the ``migrate-bot-lists``
     sub-step (Stage 2 runs sync-defaults before the migration): filling here
@@ -598,6 +615,8 @@ def _backfill_standard_roster(merged: dict) -> bool:
     answer, reporting ``operator_answer_kept`` instead of ``migrated``.
     Mutates ``merged`` in place. Returns True when either roster key was filled.
     """
+    if not enabled:
+        return False
     plan = merged.get('plan')
     if not isinstance(plan, dict):
         return False
@@ -610,7 +629,7 @@ def _backfill_standard_roster(merged: dict) -> bool:
     params = steps_map.get(_AUTOMATIC_REVIEW_STEP_ID)
     if not isinstance(params, dict):
         return False
-    if params.get(_BOT_LISTS_PROVENANCE_KEY) == 'answered':
+    if params.get(_BOT_LISTS_PROVENANCE_KEY) == BOT_LISTS_PROVENANCE_ANSWERED:
         return False
     if _LEGACY_BOT_LIST_KEY in params:
         return False
@@ -623,32 +642,37 @@ def _backfill_standard_roster(merged: dict) -> bool:
     if not isinstance(optional, str) or not optional.strip():
         params['optional_bots'] = _STANDARD_OPTIONAL_BOTS
         changed = True
+    if changed:
+        # Record the upgrade-seeded provenance so a seeded value is never read as
+        # a never-asked placeholder (nor as an operator answer).
+        params[_BOT_LISTS_PROVENANCE_KEY] = BOT_LISTS_PROVENANCE_MIGRATED
     return changed
 
 
-def _remove_dead_step_ids(live: dict, dead_reports: list[str]) -> dict:
-    """Remove configured phase-6 step ids with no resolvable order from the live map.
+def _remove_dead_step_ids(live: dict, dead_reports: list[str], kept_reports: list[str]) -> dict:
+    """Remove genuinely-dead phase-6 step ids, failing closed on unresolved discovery.
 
     Runs the shared :func:`_cmd_quality_phases._find_dead_step_ids` resolver
     over ``plan.phase-6-finalize.steps`` so a dead id is caught during the
     reconcile, not at the next ``add-step`` ``missing_order`` failure. Each
-    dead id is dropped from the map (its nested params go with it) and
-    reported as a human-readable dotted-path string carrying its reason, so a
-    later ``add-step`` on the reconciled config no longer fails for that id.
-    A dead id is never added to the operator ``removed_steps`` list — the
-    removal is a dead-id cleanup, not an operator decision, so a later
-    back-fill of the same id reads as a routine addition.
+    entry the resolver returns carries an ``outcome`` the removal branches on:
 
-    External ``bundle:skill`` steps are exempt: their frontmatter lane is
-    unresolvable by design (no project-local source doc) and the lane
-    materializer leaves such pre-existing steps lane-less and unreported, so
-    the dead-id sweep must leave them untouched too. Removing them here would
-    contradict the lane-less contract pinned by
-    ``test_sync_defaults_leaves_unresolvable_frontmatter_step_lane_less``.
+    - ``'unknown'`` — discovery did NOT resolve (a scan surface was unreadable),
+      so an empty discovery result is no evidence of death. NOTHING is deleted
+      for that id; the configured entry is left exactly as it is.
+    - ``'dead'`` on an EXTERNAL step (``project:`` / ``bundle:skill``) — the id
+      is unresolvable by design (no project-local source doc declares the
+      ext-point) and the lane materializer leaves such a step untouched, so it is
+      KEPT and reported in ``kept_reports``, never deleted.
+    - ``'dead'`` on a built-in step — genuinely dead: it is dropped from the map
+      (its nested params go with it), its id is recorded in the phase's
+      ``removed_steps`` list so a later back-fill crossing it reads as an
+      operator-decision crossing rather than a routine addition, and it is
+      reported in ``dead_reports``.
 
     Runs BEFORE the deep-merge so the merge never treats a dead id as a kept
-    step to back-fill params into. Idempotent: once no dead id remains, a
-    re-run reports nothing. Mutates ``live`` in place and returns it.
+    step to back-fill params into. Idempotent: once no dead id remains, a re-run
+    reports nothing. Mutates ``live`` in place and returns it.
     """
     plan = live.get('plan')
     if not isinstance(plan, dict):
@@ -659,15 +683,29 @@ def _remove_dead_step_ids(live: dict, dead_reports: list[str]) -> dict:
     steps_map = phase6.get('steps')
     if not isinstance(steps_map, dict):
         return live
+
+    removed_ids: list[str] = []
     for entry in _find_dead_step_ids(list(steps_map.keys()), 'phase-6-finalize'):
         step_id = entry['step']
+        # Fail-closed: an unresolved discovery deletes nothing.
+        if entry.get('outcome') == 'unknown':
+            continue
+        # Unresolvable-by-design external steps are reported, never deleted.
         if _is_external_step(step_id):
+            kept_reports.append(
+                f'plan.phase-6-finalize.steps.{step_id} '
+                f'(kept: external step, no project-local source declares the ext-point — {entry["reason"]})'
+            )
             continue
         if step_id in steps_map:
             del steps_map[step_id]
+        removed_ids.append(step_id)
         dead_reports.append(
             f'plan.phase-6-finalize.steps.{step_id} (dead step id, no resolved order — removed: {entry["reason"]})'
         )
+
+    if removed_ids:
+        _write_removed_steps(phase6, [*_read_removed_steps(phase6), *removed_ids])
     return live
 
 
@@ -725,6 +763,14 @@ def cmd_sync_defaults(args) -> dict:
     back-fills other missing default keys while leaving the user's seeded
     ``build.map`` untouched.
 
+    Dead-step removal (:func:`_remove_dead_step_ids`) runs alongside the
+    pre-merge passes: it prunes a genuinely dead ``plan.phase-6-finalize.steps``
+    id (one discovery resolved and cannot order), records that id in the phase's
+    ``removed_steps`` list, and reports it under ``dead_removed`` — but FAILS
+    CLOSED when discovery did not resolve (nothing is deleted), and never deletes
+    an external ``project:`` / ``bundle:skill`` step (reported under
+    ``dead_kept`` instead).
+
     Operator step-map atomicity (D1): a present
     ``plan.phase-5-execute.verification_steps`` / ``plan.phase-6-finalize.steps``
     map is never expanded with missing step ids — each missing id is held for
@@ -760,7 +806,8 @@ def cmd_sync_defaults(args) -> dict:
     _repair_step_lanes(live, lane_reports)
 
     dead_reports: list[str] = []
-    _remove_dead_step_ids(live, dead_reports)
+    dead_kept: list[str] = []
+    _remove_dead_step_ids(live, dead_reports, dead_kept)
 
     added: list[str] = []
     held_for_ask: list[str] = []
@@ -768,8 +815,10 @@ def cmd_sync_defaults(args) -> dict:
     merged = _deep_merge_missing(live, defaults, '', added, held_for_ask, re_added)
 
     # Preserve operator-set reviewer lists through the Stage 2 order: fill the
-    # standard roster only where the automatic-review block carries no answer.
-    roster_changed = _backfill_standard_roster(merged)
+    # standard roster only where the automatic-review block carries no answer —
+    # and only when the caller opted in (the marshall-steward upgrade's Stage 2).
+    # A plain sync-defaults passes no opt-in and writes nothing here.
+    roster_changed = _backfill_standard_roster(merged, enabled=getattr(args, 'backfill_bot_roster', False))
 
     # Materialize an explicit lane on every lane-less phase-6-finalize step. Runs
     # AFTER the deep-merge (consumes the populated ``added`` accumulator to
@@ -829,5 +878,7 @@ def cmd_sync_defaults(args) -> dict:
             'lane_reports_count': len(lane_reports),
             'dead_removed': sorted(dead_reports),
             'dead_removed_count': len(dead_reports),
+            'dead_kept': sorted(dead_kept),
+            'dead_kept_count': len(dead_kept),
         }
     )

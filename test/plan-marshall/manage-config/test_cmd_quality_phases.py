@@ -1977,6 +1977,84 @@ def test_find_dead_step_ids_reports_non_int_order_as_dead(monkeypatch):
     assert [entry['step'] for entry in dead] == ['default:push']
 
 
+def test_find_dead_step_ids_marks_dead_outcome_on_a_resolved_scan(monkeypatch):
+    """A resolved scan marks each orderless id with outcome 'dead' (delete-eligible)."""
+    monkeypatch.setattr(
+        _cmd_quality_phases,
+        '_discover_steps_for_phase',
+        lambda phase: _cmd_quality_phases.PhaseStepDiscovery([{'name': 'default:push', 'order': 10}], 'resolved'),
+    )
+
+    dead = _cmd_quality_phases._find_dead_step_ids(['default:push', 'default:stale-step'], 'phase-6-finalize')
+
+    assert [entry['step'] for entry in dead] == ['default:stale-step']
+    assert dead[0]['outcome'] == 'dead'
+
+
+def test_find_dead_step_ids_marks_unknown_outcome_when_discovery_unresolved(monkeypatch):
+    """An unresolved discovery marks EVERY configured id 'unknown' — never 'dead'.
+
+    This is the fail-closed core: a scan surface that returned ``[]`` because it
+    could not run (its directory was absent) must not read as "no implementor
+    exists". Every id comes back ``unknown`` so a delete-nothing consumer keeps
+    the whole map.
+    """
+    monkeypatch.setattr(
+        _cmd_quality_phases,
+        '_discover_steps_for_phase',
+        lambda phase: _cmd_quality_phases.PhaseStepDiscovery([], 'unresolved'),
+    )
+
+    result = _cmd_quality_phases._find_dead_step_ids(['default:push', 'default:stale-step'], 'phase-6-finalize')
+
+    assert [entry['step'] for entry in result] == ['default:push', 'default:stale-step']
+    assert all(entry['outcome'] == 'unknown' for entry in result)
+    assert all('did not resolve' in entry['reason'] for entry in result)
+
+
+def test_find_dead_step_ids_plain_list_result_is_treated_as_resolved(monkeypatch):
+    """A bare-list discovery result (no discriminator) keeps the pre-change behaviour."""
+    monkeypatch.setattr(
+        _cmd_quality_phases,
+        '_discover_steps_for_phase',
+        lambda phase: [{'name': 'default:push', 'order': 10}],
+    )
+
+    dead = _cmd_quality_phases._find_dead_step_ids(['default:stale-step'], 'phase-6-finalize')
+
+    assert [entry['step'] for entry in dead] == ['default:stale-step']
+    assert dead[0]['outcome'] == 'dead'
+
+
+def test_discover_steps_for_phase_reports_resolved_under_real_discovery():
+    """REAL discovery over the repo tree reports ``status == 'resolved'`` and yields records.
+
+    No monkeypatch of ``_discover_steps_for_phase``: the production chain
+    (``_discover_all_verify_steps_with_status`` → ``find_implementors_with_status``
+    → the real scan surfaces) drives the result.
+    """
+    discovery = _cmd_quality_phases._discover_steps_for_phase('phase-5-execute')
+
+    assert discovery.status == 'resolved'
+    assert any(step['name'] == 'default:verify:quality-gate' for step in discovery)
+
+
+def test_find_dead_step_ids_real_discovery_orders_live_id_and_flags_invented_one():
+    """REAL discovery distinguishes a live id from an invented one — no monkeypatch.
+
+    Drives the production discovery end to end against the real repo tree: the
+    live canonical resolves (its ``canonical_verify.md`` order), so it is NOT
+    reported; the invented id discovery cannot order is reported ``dead``.
+    """
+    dead = _cmd_quality_phases._find_dead_step_ids(
+        ['default:verify:quality-gate', 'default:verify:no-such-canonical'],
+        'phase-5-execute',
+    )
+
+    assert [entry['step'] for entry in dead] == ['default:verify:no-such-canonical']
+    assert dead[0]['outcome'] == 'dead'
+
+
 # =============================================================================
 # Main
 # =============================================================================

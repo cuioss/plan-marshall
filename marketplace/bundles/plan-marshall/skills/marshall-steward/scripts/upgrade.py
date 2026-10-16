@@ -107,7 +107,7 @@ Usage:
     python3 upgrade.py plan
     python3 upgrade.py plan --integrate true
     python3 upgrade.py plan --project-kind consumer
-    python3 upgrade.py plan --bootstrap false
+    python3 upgrade.py plan --bootstrap true   # consent to rewrite a stale executor
     python3 upgrade.py migrate-bot-lists
     python3 upgrade.py validate-bot-lists
 
@@ -121,8 +121,11 @@ Output (TOON):
     ...
 
 The ``bootstrap`` block reports the executor bootstrap (``fresh`` |
-``regenerated`` | ``no_cache`` | ``regenerate_failed`` | ``unknown`` |
-``skipped`` with ``--bootstrap false``); a ``warning`` names a skill/planner
+``regenerated`` | ``regenerate_required`` | ``no_cache`` |
+``regenerate_failed`` | ``unknown``). Rewriting a merely-stale executor is gated
+on ``--bootstrap true`` (default false — a stale executor reports
+``regenerate_required`` and is left untouched); a missing-or-broken executor is
+always restored from the newest cache. A ``warning`` names a skill/planner
 version split and its remedy instead of a silently stale run.
 
 Exit 0 on success, 2 on argparse rejection.
@@ -139,6 +142,7 @@ reported as ``error_type: concurrent_modification`` at exit 0.
 from __future__ import annotations
 
 import argparse
+import re
 from pathlib import Path
 
 # Cross-skill imports resolve through the PYTHONPATH the executor injects. This
@@ -339,6 +343,18 @@ def _has_operator_answer(params: dict) -> bool:
     return False
 
 
+def _named_discarded_bots(legacy: object) -> list[str]:
+    """Return the individual bot names carried by a raw ``enabled_bots`` value.
+
+    Accepts the raw value as read off the step's param object (``object`` — its
+    static type there is ``Any | None``) and coerces it to text before splitting.
+    The migration reports each discarded bot BY NAME rather than echoing the raw
+    CSV string, so a dropped bot — including one the registry does not know — is
+    visible to the operator (and to :func:`validate_bot_lists`) by name.
+    """
+    return [name.strip() for name in str(legacy).split(',') if name.strip()]
+
+
 def migrate_bot_lists(params: dict) -> dict:
     """Auto-map a retired ``enabled_bots`` value onto the two-list model.
 
@@ -352,8 +368,8 @@ def migrate_bot_lists(params: dict) -> dict:
        ``optional_bots: sourcery``), remove ``enabled_bots``, and record
        provenance ``migrated``. Seeding the standard roster (not the legacy
        value verbatim) is what leaves a legacy-only config valid without hand
-       repair: the legacy value is reported as ``discarded_legacy`` so no name
-       disappears silently, and any unknown name is reported by
+       repair: the discarded bots are named individually in ``discarded_legacy``
+       so no name disappears silently, and any unknown name is reported by
        ``validate_bot_lists`` rather than copied.
     2. **legacy present, operator answered** — the operator has already
        answered, so THEIR ANSWER WINS: the new keys are left untouched and
@@ -375,7 +391,8 @@ def migrate_bot_lists(params: dict) -> dict:
     Returns:
         A report dict: ``state`` (one of ``migrated`` / ``operator_answer_kept`` /
         ``noop``), plus ``required_bots`` / ``optional_bots`` (the resulting
-        values) and, when a legacy value was discarded, ``discarded_legacy``.
+        values) and, when a legacy value was discarded, ``discarded_legacy``
+        (the list of dropped bot names — never the raw ``enabled_bots`` string).
     """
     legacy = params.get(_LEGACY_BOT_LIST_KEY)
     has_legacy = legacy is not None
@@ -398,10 +415,10 @@ def migrate_bot_lists(params: dict) -> dict:
             'state': 'operator_answer_kept',
             'required_bots': params.get(_REQUIRED_BOTS_KEY, ''),
             'optional_bots': params.get(_OPTIONAL_BOTS_KEY, ''),
-            'discarded_legacy': legacy,
+            'discarded_legacy': _named_discarded_bots(legacy),
         }
 
-    # State (1) — seed the standard roster; report the legacy value explicitly.
+    # State (1) — seed the standard roster; name each dropped bot explicitly.
     params[_REQUIRED_BOTS_KEY] = _STANDARD_REQUIRED_BOTS
     params[_OPTIONAL_BOTS_KEY] = _STANDARD_OPTIONAL_BOTS
     params[_PROVENANCE_KEY] = 'migrated'
@@ -410,7 +427,7 @@ def migrate_bot_lists(params: dict) -> dict:
         'state': 'migrated',
         'required_bots': _STANDARD_REQUIRED_BOTS,
         'optional_bots': _STANDARD_OPTIONAL_BOTS,
-        'discarded_legacy': legacy,
+        'discarded_legacy': _named_discarded_bots(legacy),
     }
 
 
@@ -729,8 +746,110 @@ def _run_bootstrap_generate(generator: Path, anchor: Path, project_dir: Path) ->
     return result.returncode, result.stdout, result.stderr
 
 
-def resolve_bootstrap_action(executor_version: str | None, newest_cache_version: str | None) -> tuple[str, str]:
-    """Pure decision: ``(action, warning)`` from the two versions.
+# A plugin-cache version directory name (``.../plan-marshall/0.1.1916/…``).
+_VERSION_DIR_RE = re.compile(r'^\d+\.\d+')
+
+
+def _version_dir_version(path: Path) -> str:
+    """The version-dir segment of ``path``'s ancestry, or ``''`` when it has none.
+
+    A script executed from a deployed plugin-cache version directory
+    (``.../plan-marshall/<version>/skills/…``) carries its skill-tree version in
+    the path; one executed from the marketplace source tree (a meta clone)
+    carries none, and ``''`` says so rather than guessing.
+    """
+    for ancestor in path.resolve().parents:
+        if _VERSION_DIR_RE.match(ancestor.name):
+            return ancestor.name
+    return ''
+
+
+def _planner_version() -> str:
+    """The version of the skill tree the running planner (this script) belongs to.
+
+    ``''`` when the planner runs from the marketplace source tree rather than a
+    deployed version directory — the meta-clone case, where there is no
+    skill/planner version pair to compare and the split is therefore not
+    asserted.
+    """
+    return _version_dir_version(Path(__file__))
+
+
+def _loaded_skill_version(registry_path: Path | None = None) -> str:
+    """The plan-marshall version the plugin manager has loaded, or ``''``.
+
+    The plugin registry (``installed_plugins.json``) is the plugin manager's
+    record of what it installed and loaded, so it is the one store that can name
+    a version the newest cache has already moved past. That is exactly the
+    condition the executor-stamp-vs-cache comparison cannot see: the executor
+    stamp and the cache agree (both regenerated) while the skill surface the
+    session loaded still lags the planner, so the router docs describe stages the
+    running planner no longer emits. Every skill of a bundle ships in lock-step,
+    so the plan-marshall bundle version IS the marshall-steward skill version.
+
+    Returns ``''`` when the registry is absent, unreadable, carries no
+    plan-marshall entry, or its rows disagree on the version: an unknown loaded
+    version is never compared, and never guessed.
+    """
+    from plugin_registry import REGISTRY_OK, default_registry_path, read_registry
+
+    path = registry_path if registry_path is not None else default_registry_path()
+    state, rows = read_registry(path)
+    if state != REGISTRY_OK:
+        return ''
+    versions = {
+        value
+        for row in rows
+        for value in (row.get('install_path_version'), row.get('version'))
+        if isinstance(value, str) and value
+    }
+    if len(versions) != 1:
+        return ''
+    return next(iter(versions))
+
+
+def _skill_planner_split_warning(loaded_skill_version: str | None, planner_version: str | None) -> str:
+    """Warn when the loaded skill surface and the planner disagree on the version.
+
+    Independent of the executor-stamp-vs-cache comparison: the two answer
+    different questions, and a split here is reported whether or not the executor
+    stamp and the newest cache agree. Empty exactly when either version is
+    unknown/unorderable or the two agree, so an unreadable store never fabricates
+    a split.
+    """
+    from generate_executor import _version_tuple
+
+    if not loaded_skill_version or not planner_version:
+        return ''
+    loaded = _version_tuple(loaded_skill_version)
+    planner = _version_tuple(planner_version)
+    if not loaded or not planner or loaded == planner:
+        return ''
+    if planner > loaded:
+        return (
+            f'skill/planner version split: the planner at {planner_version} is ahead of the loaded '
+            f'marshall-steward skill at {loaded_skill_version} — the router docs lag the planner. '
+            f'{_VERSION_SPLIT_REMEDY}'
+        )
+    return (
+        f'skill/planner version split: the loaded marshall-steward skill at {loaded_skill_version} is '
+        f'ahead of the planner at {planner_version} — the planner lags the installed skill surface. '
+        f'{_VERSION_SPLIT_REMEDY}'
+    )
+
+
+def _join_warnings(*warnings: str) -> str:
+    """Join the non-empty warnings with a single space, preserving order."""
+    return ' '.join(warning for warning in warnings if warning)
+
+
+def resolve_bootstrap_action(
+    executor_version: str | None,
+    newest_cache_version: str | None,
+    loaded_skill_version: str | None = None,
+    planner_version: str | None = None,
+) -> tuple[str, str]:
+    """Pure decision: ``(action, warning)`` from the versions.
 
     Actions: ``fresh`` (executor at or ahead of the cache — an AHEAD executor
     still carries a split warning, since the installed skill surface lags the
@@ -740,28 +859,37 @@ def resolve_bootstrap_action(executor_version: str | None, newest_cache_version:
     reading ``fresh``), ``no_cache`` (no newest cache version to compare
     against — the fresh-install boundary, never a failure).
 
-    The split warning names the remedy; it is empty exactly when no warning is
-    owed. Comparing uses the generator's own version ordering, never a local
-    re-implementation.
+    Two independent comparisons feed the warning, and neither replaces the
+    other. The executor-stamp-vs-cache comparison catches an executor ahead of
+    the cache; the loaded-skill-vs-planner comparison
+    (:func:`_skill_planner_split_warning`) catches a skill/planner split the
+    executor stamp cannot see, because the stamp and the cache can agree while
+    the loaded skill surface still lags the planner. The warning names the
+    remedy; it is empty exactly when no warning is owed. Comparing uses the
+    generator's own version ordering, never a local re-implementation.
     """
     from generate_executor import _version_tuple
 
+    split = _skill_planner_split_warning(loaded_skill_version, planner_version)
     if not newest_cache_version:
-        return 'no_cache', ''
+        return 'no_cache', split
     if not executor_version:
-        return 'regenerate_required', ''
+        return 'regenerate_required', split
     current = _version_tuple(executor_version)
     newest = _version_tuple(newest_cache_version)
     if current >= newest:
         if current == newest:
-            return 'fresh', ''
+            return 'fresh', split
         return (
             'fresh',
-            f'skill/planner version split: planner at {executor_version} is ahead of the newest '
-            f'installed skill surface at {newest_cache_version} — the router docs lag the '
-            f'planner. {_VERSION_SPLIT_REMEDY}',
+            _join_warnings(
+                f'skill/planner version split: planner at {executor_version} is ahead of the newest '
+                f'installed skill surface at {newest_cache_version} — the router docs lag the '
+                f'planner. {_VERSION_SPLIT_REMEDY}',
+                split,
+            ),
         )
-    return 'regenerate_required', ''
+    return 'regenerate_required', split
 
 
 def bootstrap_executor(
@@ -769,6 +897,8 @@ def bootstrap_executor(
     cache_root: Path | None = None,
     executor_path: Path | None = None,
     _run_generate=None,
+    allow_regenerate: bool = True,
+    registry_path: Path | None = None,
 ) -> dict:
     """Validate the serving executor against the newest cache; regenerate when stale.
 
@@ -792,11 +922,27 @@ def bootstrap_executor(
         _run_generate: Injectable regeneration seam
             ``(generator, anchor, project_dir) -> (rc, stdout, stderr)``.
             Tests pass a fake; production uses :func:`_run_bootstrap_generate`.
+        allow_regenerate: Consent gate for REWRITING a merely-stale executor.
+            When ``False``, a stale-but-readable executor is validated and the
+            ``regenerate_required`` decision is REPORTED in the returned block —
+            never rewritten unasked. When ``True`` (the default for a direct
+            caller) the decision is acted on; ``cmd_plan`` threads the
+            ``--bootstrap`` flag here, whose default is ``false``, so the
+            ``plan`` verb reports a stale executor rather than rewriting it
+            unasked. The missing-or-broken executor RECOVERY is not gated: an
+            absent, unreadable or version-less executor is always restored from
+            the newest cache regardless of this flag, because no plan can run
+            against a broken tool and consent to restore one is meaningless.
+        registry_path: Explicit plugin-registry path, or ``None`` to resolve the
+            plugin manager's registry (tests pass a fixture registry). It is
+            read for the loaded marshall-steward skill version the skill/planner
+            split comparison consumes.
 
     Returns:
         A report dict: ``status`` (``success``, or ``error`` only when the
         report itself could not be produced), ``action`` (``fresh`` |
-        ``regenerated`` | ``no_cache`` | ``regenerate_failed`` | ``unknown``),
+        ``regenerated`` | ``regenerate_required`` | ``no_cache`` |
+        ``regenerate_failed`` | ``unknown``),
         ``executor_version`` / ``newest_cache_version`` (``''`` when
         unresolved), ``executor_path`` / ``cache_root`` / ``generator`` (the
         resolved inputs), and ``warning`` (the split/remedy message, or ``''``).
@@ -809,6 +955,13 @@ def bootstrap_executor(
     if executor_path is None:
         executor_path = _default_bootstrap_executor_path()
 
+    # Read the loaded-skill and planner versions BEFORE the cache check: the
+    # loaded-skill-vs-planner comparison is independent of the executor-stamp-vs-
+    # cache one, so it is surfaced on every branch, the fresh-install one
+    # included.
+    loaded_skill_version = _loaded_skill_version(registry_path)
+    planner_version = _planner_version()
+
     newest = newest_cache_version(cache_root) if cache_root is not None and cache_root.is_dir() else ''
     if not newest:
         return {
@@ -819,16 +972,41 @@ def bootstrap_executor(
             'executor_path': str(executor_path),
             'cache_root': str(cache_root) if cache_root is not None else '',
             'generator': '',
-            'warning': '',
+            'warning': _skill_planner_split_warning(loaded_skill_version, planner_version),
             'detail': 'no plugin cache resolvable — nothing to regenerate from (fresh-install boundary)',
         }
 
     state, current = read_executor_version(executor_path)
     executor_version = current if state == EXECUTOR_VERSION_FOUND else None
 
-    action, warning = resolve_bootstrap_action(executor_version, newest)
+    action, warning = resolve_bootstrap_action(executor_version, newest, loaded_skill_version, planner_version)
     generator: Path | None = None
     anchor = executor_path.parent.parent
+
+    # A merely-stale executor is rewritten ONLY with consent (allow_regenerate).
+    # Without it the decision is reported and the executor is left untouched, so
+    # an unconsented reconcile never rewrites the executor out from under the
+    # running session. The missing-or-broken RECOVERY (executor_version is None —
+    # absent, unreadable, or carrying no version assignment) is not gated.
+    needs_recovery = executor_version is None
+    if action == 'regenerate_required' and not needs_recovery and not allow_regenerate:
+        return {
+            'status': 'success',
+            'action': 'regenerate_required',
+            'executor_version': executor_version or '',
+            'newest_cache_version': newest,
+            'executor_path': str(executor_path),
+            'cache_root': str(cache_root),
+            'generator': '',
+            'warning': (
+                f'executor at {executor_version or "unknown"} is behind the newest cache at '
+                f'{newest}; regeneration was not authorised (--bootstrap true is the consent '
+                f'gate), so the executor is reported and left untouched. Re-run with '
+                f'--bootstrap true to rewrite it. {_VERSION_SPLIT_REMEDY}'
+            ),
+            'detail': 'stale executor reported; regeneration gated on --bootstrap true',
+        }
+
     if action == 'regenerate_required':
         generator, anchor = _resolve_bootstrap_generator(project_kind, cache_root, newest)
         if generator is None:
@@ -906,33 +1084,27 @@ def cmd_plan(args: argparse.Namespace) -> dict:
 
     Resolves ``--project-kind auto`` via :func:`detect_project_kind` against the
     current working directory (keeping :func:`build_plan` pure and directly
-    testable), runs the executor bootstrap (:func:`bootstrap_executor`) so a
-    stale executor is regenerated from the newest cache BEFORE the stage plan
-    is emitted, then delegates to the pure builder and merges the bootstrap
-    report. ``--bootstrap false`` skips the bootstrap (the hermetic seam the
-    planner-matrix tests use); production invocations leave it on. A bootstrap
+    testable), runs the executor bootstrap (:func:`bootstrap_executor`) BEFORE
+    the stage plan is emitted, then delegates to the pure builder and merges the
+    bootstrap report.
+
+    The bootstrap ALWAYS validates the serving executor against the newest cache
+    and reports the outcome; only whether it may REWRITE a merely-stale executor
+    is gated by ``--bootstrap`` (default false — a stale executor is reported,
+    never rewritten unasked). The missing-or-broken executor recovery is not
+    gated, because a plan cannot run against a broken tool. A bootstrap
     ``status: error`` fails closed with no plan emitted.
     """
     integrate = args.integrate == 'true'
     project_kind = args.project_kind
     if project_kind == 'auto':
         project_kind = detect_project_kind(Path.cwd())
-    if getattr(args, 'bootstrap', 'true') == 'true':
-        bootstrap = bootstrap_executor(project_kind=project_kind)
-        if bootstrap.get('status') != 'success':
-            return bootstrap
-    else:
-        bootstrap = {
-            'status': 'success',
-            'action': 'skipped',
-            'executor_version': '',
-            'newest_cache_version': '',
-            'executor_path': '',
-            'cache_root': '',
-            'generator': '',
-            'warning': '',
-            'detail': 'executor bootstrap skipped via --bootstrap false',
-        }
+    bootstrap = bootstrap_executor(
+        project_kind=project_kind,
+        allow_regenerate=getattr(args, 'bootstrap', 'false') == 'true',
+    )
+    if bootstrap.get('status') != 'success':
+        return bootstrap
     plan = build_plan(integrate, project_kind)
     plan['bootstrap'] = bootstrap
     return plan
@@ -972,12 +1144,14 @@ def main() -> int:
     plan_parser.add_argument(
         '--bootstrap',
         choices=['true', 'false'],
-        default='true',
+        default='false',
         help=(
-            'When true (default), validate the serving executor against the newest plugin-cache '
-            'version and regenerate it from that cache when stale BEFORE emitting the stage plan, '
-            'so the plan and every downstream stage resolve current-version scripts. When false, '
-            'skip the bootstrap and emit the plan directly.'
+            'Consent gate for REGENERATING the serving executor from the newest plugin-cache '
+            'version when it is merely stale. Default false: the bootstrap still VALIDATES and '
+            'REPORTS a stale executor in the ``bootstrap`` block, but does not rewrite it '
+            'unasked. Pass true to authorise the in-place regeneration. The missing-or-broken '
+            'executor recovery is not gated by this flag — a recovery run always restores the '
+            'executor from the newest cache (see references/upgrade-flow.md Step 0).'
         ),
     )
 

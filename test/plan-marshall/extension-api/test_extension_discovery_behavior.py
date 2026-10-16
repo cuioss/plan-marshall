@@ -12,6 +12,7 @@ stub extension modules (no dependency on the live marketplace tree) so error
 paths and skip branches are deterministic.
 """
 
+import os
 import re
 import types
 from pathlib import Path
@@ -829,3 +830,67 @@ def test_every_declared_field_has_a_reader():
         'Either wire a reader, name the agent-followed contract explicitly, or '
         'drop the row — a Required-column marking alone is not evidence of a reader.'
     )
+
+
+# =============================================================================
+# _implementor_scan_surfaces_resolve — bundle-root readability
+# =============================================================================
+#
+# The bundle ``skills`` roots surface is index 2 of the returned list (see the
+# function docstring): the marketplace bundles root plus every plugin cache root,
+# reduced to one bool. ``is_dir()`` is true for a directory that exists but
+# denies ``iterdir()``, and the scanner swallows that ``OSError`` and skips the
+# root — so a probe that stopped at ``is_dir()`` reported the surface resolved
+# while the scan ran over nothing, the fail-open state the discriminator exists
+# to prevent.
+
+_BUNDLE_ROOTS_SURFACE_INDEX = 2
+
+
+def test_readable_bundle_root_resolves_the_bundle_surface(tmp_path, monkeypatch):
+    """Positive control: a readable bundle root resolves the bundle-roots surface.
+
+    Without this direction a probe that had collapsed to always returning
+    ``False`` would satisfy the unreadable-root tests below.
+    """
+    bundles = tmp_path / 'bundles'
+    (bundles / 'a-bundle' / 'skills' / 'a-skill').mkdir(parents=True)
+    monkeypatch.setattr(_disc, 'get_marketplace_bundles_path', lambda: bundles)
+    monkeypatch.setattr(_disc, 'get_bundle_cache_roots', lambda: [])
+
+    assert _disc._implementor_scan_surfaces_resolve()[_BUNDLE_ROOTS_SURFACE_INDEX] is True
+
+
+@pytest.mark.skipif(
+    hasattr(os, 'geteuid') and os.geteuid() == 0,
+    reason='a root host bypasses the file mode, so iterdir() cannot be made to fail',
+)
+@pytest.mark.parametrize('unreadable_kind', ['bundles', 'cache'])
+def test_unreadable_root_leaves_the_bundle_surface_unresolved(tmp_path, monkeypatch, unreadable_kind):
+    """A bundle OR cache root that exists but denies ``iterdir()`` is unresolved.
+
+    Both root kinds are covered: an unreadable marketplace bundles root (the
+    "source tree exists but cannot be read" case) and an unreadable plugin cache
+    root (the deployed-cache counterpart). ``is_dir()`` alone would report the
+    surface resolved in both, while the scanner silently dropped the root's
+    implementors and ``find_implementors_with_status`` reported a complete scan.
+    """
+    denied = tmp_path / 'denied'
+    denied.mkdir()
+    if unreadable_kind == 'bundles':
+        bundles, cache_roots = denied, []
+    else:
+        # The bundles root is absent, so only the cache root is probed.
+        bundles, cache_roots = tmp_path / 'absent-bundles', [str(denied)]
+    monkeypatch.setattr(_disc, 'get_marketplace_bundles_path', lambda: bundles)
+    monkeypatch.setattr(_disc, 'get_bundle_cache_roots', lambda: list(cache_roots))
+
+    original_mode = denied.stat().st_mode
+    try:
+        os.chmod(denied, 0o000)
+        assert _disc._implementor_scan_surfaces_resolve()[_BUNDLE_ROOTS_SURFACE_INDEX] is False
+        status = _disc.find_implementors_with_status(_FINALIZE_STEP_EXT_POINT)
+    finally:
+        os.chmod(denied, original_mode)
+
+    assert status['status'] == 'unresolved'

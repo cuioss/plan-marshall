@@ -374,12 +374,21 @@ The empty default is load-bearing, not a placeholder. It keeps a **never-asked**
 from an **answered-empty** value. Collapsing the two would make "the operator has not been asked yet"
 indistinguishable from "the operator deliberately chose no required bots" — two states that warrant
 opposite handling (the first is re-asked, the second is not). `bot_lists_provenance` is what carries
-that distinction:
+that distinction.
+
+These lists have **one default: EMPTY**. The standard roster
+(`required_bots: cuioss-review-bot,coderabbit`, `optional_bots: sourcery`) is not a default but an
+**upgrade seed**, written only by the upgrade-time migrations below (`migrated` provenance). A plain
+`sync-defaults` never writes it — the roster back-fill is opt-in via
+`sync-defaults --backfill-bot-roster`, which only the `marshall-steward` upgrade's Stage-2
+`reconcile-marshal-json` sub-step passes (see [`../SKILL.md`](../SKILL.md) § "Workflow: Sync
+Defaults"). A `required_bots` / `optional_bots` the operator has not answered is therefore left
+exactly as it is.
 
 | Provenance | Meaning | Set by |
 |------------|---------|--------|
 | `never_asked` | The wizard has not put the question to the operator. The empty value is a placeholder, not an answer. | The seeded default. |
-| `migrated` | Seeded by the one-shot legacy auto-map from a retired `enabled_bots` list, not by an operator answer. | `marshall-steward:upgrade migrate-bot-lists` (Stage 2 `reconcile-config`). |
+| `migrated` | Seeded by an upgrade-time migration — the standard roster, not an operator answer. | The `marshall-steward` upgrade's Stage 2: the `reconcile-marshal-json` sub-step runs `sync-defaults --backfill-bot-roster`, and the `migrate-bot-lists` sub-step auto-maps a retired `enabled_bots` list. |
 | `answered` | The operator was asked and answered — **including an explicit answer of none**. An answered-empty value is a real answer and is never re-asked. | The `marshall-steward` wizard question. |
 
 An EMPTY `required_bots` with provenance `answered` is a fully valid configured state: the
