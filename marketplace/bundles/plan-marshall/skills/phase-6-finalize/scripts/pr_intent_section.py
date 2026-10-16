@@ -479,7 +479,10 @@ def build_parser() -> argparse.ArgumentParser:
     render_parser.add_argument(
         '--body-path',
         required=True,
-        help='PR body file the rendered section is filled into (left byte-identical when omitted)',
+        help=(
+            'PR body file the rendered section is filled into; when the outline carries no '
+            'intent, the template-position Intent section is stripped from it instead'
+        ),
     )
     render_parser.set_defaults(func=cmd_render)
     return parser

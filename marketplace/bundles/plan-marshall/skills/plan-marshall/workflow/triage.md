@@ -213,7 +213,7 @@ The action body:
 
   Capture the returned task number as `{N}`, then resolve the finding through the verb for the store the record lives in — the record's store decides which, and the triage list (`list --include-qgate`, which merges both stores) carries it: a Q-Gate record carries a `phase` field, while a plan-scoped record carries none. Sending a finding to the other store's verb is refused (`finding_in_other_store` for a Q-Gate hash on the plan-scoped verb; `Q-Gate finding not found` for a plan-scoped hash on `qgate resolve`) and leaves the short-circuit guard without an owner. The `resolution_detail` is the reviewer-ready text the RESPOND loop posts to the finding's PR thread — in a finalize run once the fix commit is stamped, otherwise in the pass that follows triage. It MUST name the fix task.
 
-  A **plan-scoped finding** (a PR comment, a Sonar issue, an auto-stored build finding) is resolved through the plan-scoped `resolve` verb, passing `{N}` as `--task-number` so the structured `fix_task_number` is recorded — and survives a `--reopen` refile (the reopened recurrence IS the pending record, carrying its `fix_task_number` forward):
+  A **plan-scoped finding** (a PR comment, a Sonar issue, an auto-stored build finding) is resolved through the plan-scoped `resolve` verb, passing `{N}` as `--task-number` so the structured `fix_task_number` is recorded — and survives the plan-scoped `deduplicate` reopen of a re-detected build failure (the reopened recurrence IS the pending record, carrying its `fix_task_number` forward):
 
   ```bash
   python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings resolve \
