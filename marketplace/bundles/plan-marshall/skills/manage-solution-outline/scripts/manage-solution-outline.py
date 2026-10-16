@@ -25,6 +25,7 @@ Usage:
 import argparse
 import hashlib
 import json
+import re
 from pathlib import Path
 from typing import Any, cast
 
@@ -594,6 +595,16 @@ HASH_ARTIFACT_FILE = 'work/deliverable-hashes.toon'
 #: Reserved ``deliverable`` key prefix for a phase's whole-outline aggregate row.
 WHOLE_OUTLINE_KEY_PREFIX = '__whole_outline__:'
 
+#: Shape of a trusted stored fingerprint: a full lowercase SHA-256 hex digest.
+#:
+#: The artifact reader does not validate row shape, so a row can be present with
+#: a missing, empty, or non-digest ``hash``. Such a row is a malformed record and
+#: must not satisfy the aggregate-row presence test: that test marks this phase's
+#: completed FULL pass for the per-deliverable skip, so trusting a hashless row
+#: would let a skip fire on a record that holds no fingerprint — the fail-open
+#: direction the skip predicate exists to prevent.
+_SHA256_HEX_PATTERN = re.compile(r'[0-9a-f]{64}')
+
 
 def _plan_dir(plan_id: str) -> Path:
     """Get the plan directory that holds both the outline and the hash artifact."""
@@ -794,8 +805,9 @@ def _check_hash_artifact(plan_id: str, phase: str, fingerprints: dict[str, Any])
     """Read the artifact back into per-row and whole-outline skip/run decisions.
 
     A per-deliverable ``skip`` requires all three of: the stored ``{phase}:{N}``
-    hash equals the current one, the phase's aggregate row exists (this phase
-    completed a full pass at some point — a partial pass records none), and the
+    hash equals the current one, the phase's aggregate row exists AND carries a
+    valid digest (this phase completed a full pass at some point — a partial pass
+    records none, and a malformed hashless row is no record at all), and the
     validator inputs are unchanged. The whole-outline ``skip`` additionally
     requires the stored aggregate hash to be equal. Anything else reads as
     ``run``: the fail-open direction belongs to validation, which merely
@@ -814,7 +826,7 @@ def _check_hash_artifact(plan_id: str, phase: str, fingerprints: dict[str, Any])
 
     aggregate_key = f'{WHOLE_OUTLINE_KEY_PREFIX}{phase}'
     aggregate_stored = stored.get(aggregate_key)
-    aggregate_present = aggregate_stored is not None
+    aggregate_present = aggregate_stored is not None and _SHA256_HEX_PATTERN.fullmatch(aggregate_stored) is not None
 
     current_assessment = _assessment_snapshot_hash(plan_id)
     current_taskplan = _taskplan_snapshot_hash(plan_id)

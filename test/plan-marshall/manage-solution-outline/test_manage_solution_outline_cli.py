@@ -25,7 +25,7 @@ from _resolve_project_dir_fixtures import (
     assert_sentinel_accepted,
     assert_worktree_face_routes_through_resolver,
 )
-from toon_parser import parse_toon
+from toon_parser import parse_toon, serialize_toon
 
 from conftest import load_script_module
 
@@ -539,3 +539,37 @@ def test_main_deliverable_hashes_write_persists_the_artifact_check_reads(plan_co
     )
     assert code == 0
     assert {row['decision'] for row in parse_toon(out)['deliverables']} == {'skip'}
+
+
+def test_main_deliverable_hashes_hashless_aggregate_row_never_allows_a_skip(plan_context, monkeypatch, capsys):
+    """A present-but-hashless aggregate row is no completed-pass record.
+
+    The artifact reader does not validate row shape, so a row can survive with a
+    missing or empty ``hash``. Presence alone must not stand in for the phase's
+    full-pass marker: with the aggregate hash blanked, every per-deliverable
+    decision must read ``run`` (and the whole-outline gate ``run``), never a skip
+    a malformed record earned.
+    """
+    plan_id = 'so-cli-hashes-hashless-aggregate'
+    _seed_outline(plan_context, plan_id, TWO_DELIVERABLE_SOLUTION)
+
+    code, out = _run_main(monkeypatch, capsys, ['deliverable-hashes', '--plan-id', plan_id, '--write'])
+    assert code == 0
+    assert parse_toon(out)['status'] == 'success'
+
+    artifact_path = plan_context.plan_dir_for(plan_id) / 'work' / 'deliverable-hashes.toon'
+    artifact = parse_toon(artifact_path.read_text(encoding='utf-8'))
+    for row in artifact['hashes']:
+        if row['deliverable'] == '__whole_outline__:3-outline':
+            row['hash'] = ''
+    artifact_path.write_text(serialize_toon(artifact), encoding='utf-8')
+
+    code, out = _run_main(monkeypatch, capsys, ['deliverable-hashes', '--plan-id', plan_id, '--check'])
+    assert code == 0
+    data = parse_toon(out)
+    assert data['artifact'] == 'present'
+    # The inputs are unchanged, so the blanked aggregate is the ONLY reason the
+    # skip predicate may not fire — which keeps this test non-vacuous.
+    assert data['validator_inputs_unchanged'] is True
+    assert {row['decision'] for row in data['deliverables']} == {'run'}
+    assert data['whole_outline_decision'] == 'run'
