@@ -6396,6 +6396,30 @@ def _write_client_toon_locked(artifact_path: Path, payload: str) -> None:
         os.close(fd)
 
 
+def _persisted_approval_report() -> dict[str, Any]:
+    """Best-effort persisted-approval contradiction report for plan start.
+
+    Reads the OpenCode ``opencode.db`` permission table (read-only) and diffs
+    its persisted allow rows against the project and global deny rules, through
+    the platform-runtime reader. Returns the reporter's ``{checkable,
+    contradictions, ...}`` mapping; any failure degrades to ``checkable: false``
+    with a reason, so a plan start is never blocked by the probe. This is what
+    puts the stale-approval report in the plan-start CALL RESULT rather than
+    only on stderr.
+    """
+    try:
+        from opencode_runtime import OpenCodeRuntime
+        from toon_parser import parse_toon
+
+        report = OpenCodeRuntime().permission_report_persisted_contradictions(os.getcwd())
+        parsed = parse_toon(report) if isinstance(report, str) else report
+        if isinstance(parsed, dict):
+            return parsed
+    except Exception as exc:
+        return {'checkable': False, 'reason': f'reporter_unavailable: {exc}', 'contradictions': []}
+    return {'checkable': False, 'reason': 'reporter_unavailable', 'contradictions': []}
+
+
 def cmd_preflight(args: argparse.Namespace) -> dict[str, Any]:
     """Invoke runtime-info and append to the per-plan client.toon artifact.
 
@@ -6489,6 +6513,7 @@ def cmd_preflight(args: argparse.Namespace) -> dict[str, Any]:
         'degraded': False,
         'artifact_written': True,
         'artifact': 'client.toon',
+        'persisted_approval': _persisted_approval_report(),
     }
 
 

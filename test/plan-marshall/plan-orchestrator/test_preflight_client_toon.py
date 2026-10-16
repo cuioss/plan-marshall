@@ -43,6 +43,24 @@ def test_preflight_writes_client_toon(tmp_path: Path, monkeypatch: pytest.Monkey
     assert 'harness:' in artifact.read_text(encoding='utf-8')
 
 
+def test_preflight_carries_persisted_approval_report(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """(c) The plan-start call carries the stale-approval report in its result."""
+    monkeypatch.setattr(_orch, 'get_store_dir', lambda store, plan_id: tmp_path / plan_id)
+    _runtime_info_fake(['status: success\noperation: runtime-info\nharness: opencode\n'], monkeypatch)
+    report = {
+        'checkable': True,
+        'persisted_allow_count': 1,
+        'contradictions': [{'pattern': 'ls', 'deny_pattern': 'ls *'}],
+    }
+    monkeypatch.setattr(_orch, '_persisted_approval_report', lambda: report)
+
+    result: dict[str, Any] = cmd_preflight(_ns('my-plan'))
+
+    assert result['status'] == 'success'
+    assert result['artifact_written'] is True
+    assert result['persisted_approval'] == report
+
+
 def test_preflight_failure_degrades_without_blocking(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """A collector failure degrades to success with no artifact."""
     monkeypatch.setattr(_orch, 'get_store_dir', lambda store, plan_id: tmp_path / plan_id)

@@ -190,6 +190,7 @@ from runtime_base import (  # noqa: E402
     Runtime,
     describe_targets,
     toon_error,
+    toon_success,
 )
 
 # --- single registration record ------------------------------------------------
@@ -583,6 +584,30 @@ def _dispatch(runtime: Runtime, operation: str, remaining: list[str]) -> str:
         ns = p.parse_args(remaining)
         checks = [c.strip() for c in ns.checks.split(',') if c.strip()]
         return runtime.permission_analyze(ns.scope, checks, ns.marshal)
+
+    # ------------------------------------------------------------------
+    # permission report-persisted-contradictions
+    # ------------------------------------------------------------------
+    if operation == 'permission report-persisted-contradictions':
+        p = argparse.ArgumentParser(
+            allow_abbrev=False, prog='platform_runtime permission report-persisted-contradictions'
+        )
+        p.add_argument('--project-dir', default='.')
+        p.add_argument('--db-path', default=None)
+        ns = p.parse_args(remaining)
+        reporter = getattr(runtime, 'permission_report_persisted_contradictions', None)
+        if reporter is None:
+            return toon_success(
+                operation,
+                {
+                    'checkable': False,
+                    'reason': 'unsupported_target',
+                    'persisted_allow_count': 0,
+                    'contradictions': [],
+                },
+            )
+        report = reporter(ns.project_dir, ns.db_path)
+        return report if isinstance(report, str) else str(report)
 
     # ------------------------------------------------------------------
     # permission fix
