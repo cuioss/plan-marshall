@@ -41,8 +41,10 @@ All methods return a serialized TOON string via the helpers in runtime_base.
 
 from __future__ import annotations
 
+import fnmatch
 import json
 import os
+import sqlite3
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
@@ -342,6 +344,177 @@ def _protect_path_deny_entries(protected_dir: str) -> dict[str, dict[str, str]]:
     return entries
 
 
+#: Operation name the persisted-approval reporter answers under.
+PERSISTED_CONTRADICTION_OPERATION = 'permission report-persisted-contradictions'
+
+#: Values in a persisted decision column that count as an allow row.
+_PERSISTED_ALLOW_VALUES = frozenset({'allow', 'always_allow', 'always-allow'})
+
+#: Candidate column names for the persisted-approval triple, lowest-case.
+_TOOL_COLUMNS = ('tool', 'category', 'scope')
+_PATTERN_COLUMNS = ('pattern', 'resource', 'command', 'rule')
+_DECISION_COLUMNS = ('effect', 'decision', 'status', 'approval')
+
+
+def _default_opencode_db_path() -> Path:
+    """Return the default persisted-approval database path.
+
+    Overridable by ``OPENCODE_DB_PATH`` for tests; otherwise the XDG data
+    home value ``~/.local/share/opencode/opencode.db``.
+    """
+    env = os.environ.get('OPENCODE_DB_PATH')
+    if env:
+        return Path(env).expanduser()
+    return Path.home() / '.local' / 'share' / 'opencode' / 'opencode.db'
+
+
+def _normalize_persisted_tool(tool: str) -> str:
+    """Normalize a tool name so ``shell`` and ``bash`` compare equal."""
+    lowered = tool.strip().lower()
+    if lowered == 'shell':
+        return 'bash'
+    return lowered
+
+
+def _bare_command(pattern: str) -> str:
+    """Return *pattern* stripped of a trailing ' *' glob and surrounding quotes."""
+    stripped = pattern.strip().strip('"').strip("'").strip()
+    if stripped.endswith(' *'):
+        stripped = stripped[:-2].strip()
+    elif stripped == '*':
+        return ''
+    return stripped
+
+
+def _patterns_contradict(allow_pattern: str, deny_pattern: str) -> bool:
+    """True when a persisted allow pattern contradicts a project deny pattern.
+
+    Exact equality, either-direction glob match, or bare-command equivalence
+    all count: ``ls`` contradicts ``ls *``, and ``ls *`` contradicts ``ls``.
+    Bare-command equivalence strips a trailing ' *' from both sides before
+    comparing, so ``allow git status *`` no longer contradicts
+    ``deny git push *``.
+    """
+    allow = allow_pattern.strip()
+    deny = deny_pattern.strip()
+    if not allow or not deny:
+        return False
+    if allow == deny:
+        return True
+    if fnmatch.fnmatchcase(allow, deny) or fnmatch.fnmatchcase(deny, allow):
+        return True
+    bare_allow = _bare_command(allow)
+    bare_deny = _bare_command(deny)
+    return bare_allow != '' and bare_allow == bare_deny
+
+
+def _read_project_deny_rules(project_dir: str) -> list[tuple[str, str]]:
+    """Read project deny rules as (tool, pattern) pairs, read-only.
+
+    Parses both the OpenCode 2 list shape (``permissions: [{action, resource,
+    effect}]``) and the permission-map shape (``permission: {bash: {pattern:
+    action}}``). Never creates or writes any settings file; an absent or
+    unreadable config yields no deny rules. The repository root
+    ``opencode.json`` is only ever read here, never written.
+    """
+    proj = Path(project_dir)
+    candidates = [proj / 'opencode.json', proj / '.opencode' / 'opencode.json']
+    config_path: Path | None = None
+    for candidate in candidates:
+        if candidate.is_file():
+            config_path = candidate
+            break
+    if config_path is None:
+        return []
+    try:
+        data = json.loads(config_path.read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return []
+    if not isinstance(data, dict):
+        return []
+    denies: list[tuple[str, str]] = []
+    permissions = data.get('permissions')
+    if isinstance(permissions, list):
+        for entry in permissions:
+            if not isinstance(entry, dict):
+                continue
+            if str(entry.get('effect', '')).lower() != 'deny':
+                continue
+            resource = entry.get('resource')
+            if not isinstance(resource, str) or not resource.strip():
+                continue
+            tool = entry.get('action', 'bash')
+            denies.append((str(tool), resource.strip()))
+    perm_map = data.get('permission')
+    if isinstance(perm_map, dict):
+        for tool, value in perm_map.items():
+            if isinstance(value, dict):
+                for pattern, action in value.items():
+                    if str(action).lower() == 'deny' and isinstance(pattern, str) and pattern.strip():
+                        denies.append((str(tool), pattern.strip()))
+            elif isinstance(value, str) and value.lower() == 'deny':
+                denies.append((str(tool), '*'))
+    return denies
+
+
+def _column_lookup(columns: list[str], candidates: tuple[str, ...]) -> str | None:
+    """Return the first present column (original spelling) matching *candidates*."""
+    lowered = {col.lower(): col for col in columns}
+    for candidate in candidates:
+        if candidate in lowered:
+            return lowered[candidate]
+    return None
+
+
+def _list_persisted_allow_rows(conn: sqlite3.Connection) -> list[dict[str, Any]]:
+    """List persisted allow rows from every permission-like table, read-only.
+
+    Only ``SELECT`` statements run here; this helper never writes. Tables
+    without both a pattern-like and a decision-like column are skipped. A
+    decision column named ``action`` is only honored alongside an explicit
+    ``tool`` column, so a list-shape ``(action, resource)`` table is not
+    misread as ``(tool, decision)``. The table-list query error propagates so
+    the caller maps an unreadable database to checkable False / db_unreadable.
+    """
+    tables = [row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")]
+    prioritized = sorted(tables, key=lambda name: 0 if name.lower() in ('permission', 'permissions') else 1)
+    rows: list[dict[str, Any]] = []
+    for table in prioritized:
+        try:
+            info = conn.execute(f'PRAGMA table_info("{table}")').fetchall()
+        except sqlite3.Error:
+            continue
+        columns = [str(col[1]) for col in info]
+        pattern_col = _column_lookup(columns, _PATTERN_COLUMNS)
+        decision_col = _column_lookup(columns, ('effect', 'decision', 'status', 'approval'))
+        tool_col = _column_lookup(columns, _TOOL_COLUMNS)
+        if decision_col is None and tool_col is not None:
+            maybe_action = _column_lookup(columns, ('action',))
+            if maybe_action is not None and maybe_action.lower() != tool_col.lower():
+                decision_col = maybe_action
+        if pattern_col is None or decision_col is None:
+            continue
+        select_cols = f'rowid, "{tool_col}"' if tool_col else 'rowid, NULL'
+        select_cols += f', "{pattern_col}", "{decision_col}"'
+        try:
+            for rowid, tool, pattern, decision in conn.execute(f'SELECT {select_cols} FROM "{table}"'):
+                if not isinstance(pattern, str) or not pattern.strip():
+                    continue
+                if str(decision).strip().lower() not in _PERSISTED_ALLOW_VALUES:
+                    continue
+                rows.append(
+                    {
+                        'table': table,
+                        'rowid': rowid,
+                        'tool': str(tool) if isinstance(tool, str) and tool.strip() else 'bash',
+                        'pattern': pattern.strip(),
+                    }
+                )
+        except sqlite3.Error:
+            continue
+    return rows
+
+
 class OpenCodeRuntime(Runtime):
     """OpenCode concrete implementation of the Runtime ABC.
 
@@ -381,6 +554,8 @@ class OpenCodeRuntime(Runtime):
         bridges the standing rules into the OpenCode settings surface, and
         reports bridge drift against the CLAUDE.md baseline on re-setup.
         No SessionStart hook is installed because OpenCode has no equivalent.
+        The ``platform_runtime.py`` project initial-setup CLI renders this
+        result verbatim as the steward-path operator surface.
         """
         import pathlib
 
@@ -414,6 +589,21 @@ class OpenCodeRuntime(Runtime):
         bridge_written = _write_rules_bridge(resolved)
         drift = standing_rules_drift_status(str(resolved))
 
+        persisted_checkable = False
+        persisted_warnings: list[dict[str, Any]] = []
+        try:
+            from toon_parser import parse_toon as _parse_report_toon
+
+            report = _parse_report_toon(self.permission_report_persisted_contradictions(str(resolved)))
+            if isinstance(report, dict):
+                persisted_checkable = bool(report.get('checkable', False))
+                warnings = report.get('contradictions', [])
+                if isinstance(warnings, list):
+                    persisted_warnings = [entry for entry in warnings if isinstance(entry, dict)]
+        except Exception:
+            persisted_checkable = False
+            persisted_warnings = []
+
         return toon_success(
             'project initial-setup',
             {
@@ -426,6 +616,8 @@ class OpenCodeRuntime(Runtime):
                 'settings_path': settings_path,
                 'hook_installed': False,
                 'hook_skip_reason': ('OpenCode does not support a SessionStart hook equivalent (issue #9292)'),
+                'persisted_approval_checkable': persisted_checkable,
+                'persisted_approval_warnings': persisted_warnings,
             },
         )
 
@@ -1079,6 +1271,104 @@ class OpenCodeRuntime(Runtime):
                 'scope': scope,
                 'changed': changed,
                 'dry_run': dry_run,
+            },
+        )
+
+    def permission_report_persisted_contradictions(
+        self,
+        project_dir: str,
+        db_path: str | None = None,
+    ) -> str:
+        """Report persisted allow rows contradicting project deny rules.
+
+        Read-only: opens ``opencode.db`` with sqlite3 read-only intent
+        (``mode=ro``), selects persisted allow rows, and diffs them against
+        the project deny rules read from ``project_dir``'s ``opencode.json``.
+        Each contradiction is returned as a warning entry carrying the
+        operator removal command; the verb performs no writes, removes none
+        of the persisted approvals, and never touches the root
+        ``opencode.json``. The plan-start flow surfaces the returned
+        warnings verbatim.
+        """
+        resolved_db = Path(db_path).expanduser() if db_path else _default_opencode_db_path()
+        if not resolved_db.is_file():
+            return toon_success(
+                PERSISTED_CONTRADICTION_OPERATION,
+                {
+                    'checkable': False,
+                    'reason': 'db_missing',
+                    'db_path': str(resolved_db),
+                    'persisted_allow_count': 0,
+                    'contradictions': [],
+                },
+            )
+        try:
+            conn = sqlite3.connect(f'file:{resolved_db}?mode=ro', uri=True)
+        except (sqlite3.Error, OSError, ValueError):
+            return toon_success(
+                PERSISTED_CONTRADICTION_OPERATION,
+                {
+                    'checkable': False,
+                    'reason': 'db_unreadable',
+                    'db_path': str(resolved_db),
+                    'persisted_allow_count': 0,
+                    'contradictions': [],
+                },
+            )
+        try:
+            allow_rows = _list_persisted_allow_rows(conn)
+        except sqlite3.Error:
+            return toon_success(
+                PERSISTED_CONTRADICTION_OPERATION,
+                {
+                    'checkable': False,
+                    'reason': 'db_unreadable',
+                    'db_path': str(resolved_db),
+                    'persisted_allow_count': 0,
+                    'contradictions': [],
+                },
+            )
+        finally:
+            try:
+                conn.close()
+            except sqlite3.Error:
+                pass
+        deny_rules = _read_project_deny_rules(project_dir)
+        contradictions: list[dict[str, Any]] = []
+        for row in allow_rows:
+            allow_tool = _normalize_persisted_tool(str(row.get('tool', 'bash')))
+            allow_pattern = str(row.get('pattern', ''))
+            for deny_tool_raw, deny_pattern in deny_rules:
+                if _normalize_persisted_tool(deny_tool_raw) != allow_tool:
+                    continue
+                if not _patterns_contradict(allow_pattern, deny_pattern):
+                    continue
+                table = str(row.get('table', 'permission'))
+                rowid = row.get('rowid')
+                contradictions.append(
+                    {
+                        'tool': allow_tool,
+                        'pattern': allow_pattern,
+                        'deny_pattern': deny_pattern,
+                        'warning': (
+                            f"Persisted approval '{allow_pattern}' ({allow_tool}) "
+                            f'contradicts project deny rule {deny_pattern!r}'
+                        ),
+                        'removal_hint': (
+                            f'sqlite3 "{resolved_db}" '
+                            f'\'DELETE FROM "{table}" WHERE rowid={rowid};\''
+                            '  -- operator action: this tool never writes the database'
+                        ),
+                    }
+                )
+                break
+        return toon_success(
+            PERSISTED_CONTRADICTION_OPERATION,
+            {
+                'checkable': True,
+                'db_path': str(resolved_db),
+                'persisted_allow_count': len(allow_rows),
+                'contradictions': contradictions,
             },
         )
 

@@ -11,7 +11,7 @@ Covers deliverable 5's enforcement surface:
 * Carve-out operations pass (the executor permit resolves to ``allow``).
 * The D2 guard decision table (``.opencode/plugin/guard.js``,
   ``tool.execute.before``) is read from the plugin at test time as a
-  behavioral contract: the R1-R4 declared sets below are parsed out of
+  behavioral contract: the R1-R5 declared sets below are parsed out of
   guard.js and compared to the expected pins, so plugin drift fails the
   contract test instead of passing against a stale literal.
   Read-side probes (``ls``, ``cat``, ``head``, ``tail``, ``grep``,
@@ -126,6 +126,8 @@ _GUARD_SET_NAMES = (
     'JS_RUNNER_BUILD_VERBS',
     'PYTHON_DIRECT_RUNNERS',
     'SHELL_WRAPPERS',
+    'PYTHON_INTERPRETERS',
+    'R5_ALWAYS_REFUSE_FLAGS',
 )
 
 
@@ -179,6 +181,8 @@ _GUARD_EXPECTED: dict[str, frozenset[str]] = {
     'JS_RUNNER_BUILD_VERBS': frozenset({'test', 'run', 'build'}),
     'PYTHON_DIRECT_RUNNERS': frozenset({'pytest', 'mypy', 'ruff'}),
     'SHELL_WRAPPERS': frozenset({'command', 'env', 'sudo'}),
+    'PYTHON_INTERPRETERS': frozenset({'python', 'python3'}),
+    'R5_ALWAYS_REFUSE_FLAGS': frozenset({'-c', '-m'}),
 }
 
 _GUARD_SETS = _parse_guard_sets(_guard_plugin_path())
@@ -298,3 +302,66 @@ def test_guard_r4_exempts_executor_permit() -> None:
     permit_at = source.index('isExecutorPermit(command)) return')
     bare_at = source.index('BARE_BUILD_TOOLS.has')
     assert r1_at < permit_at < bare_at, 'hook order must be R1 gate, then executor permit, then R4 branches'
+
+
+def test_guard_r5_refuses_c_flag() -> None:
+    """R5 refuses python -c: the always-refuse flag set names it and the branch audits rule R5."""
+    assert '-c' in _GUARD_SETS['R5_ALWAYS_REFUSE_FLAGS']
+    source = _guard_plugin_source()
+    assert 'isInterpreterBypass' in source
+    assert 'auditLine("R5"' in source
+    assert 'R5_ALWAYS_REFUSE_FLAGS.has' in source
+
+
+def test_guard_r5_refuses_script_paths() -> None:
+    """R5 refuses script-path invocations: a non-flag second token is a bypass."""
+    source = _guard_plugin_source()
+    assert 'isInterpreterBypass(tokenAt(command, 1))' in source
+    assert 'script paths' in source or 'script' in source
+
+
+def test_guard_r5_refuses_m_flag_for_any_module() -> None:
+    """R5 refuses python -m for any module: the allow set is executor-only."""
+    assert '-m' in _GUARD_SETS['R5_ALWAYS_REFUSE_FLAGS']
+    source = _guard_plugin_source()
+    assert 'PYTHON_INTERPRETERS.has(token)' in source
+
+
+def test_guard_r5_exempts_executor_permit() -> None:
+    """The executor permit passes R5: the permit check precedes the R5 branch."""
+    command = 'python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks list --plan-id x'
+    assert command.startswith(_GUARD_EXECUTOR_PERMIT_PREFIX)
+    source = _guard_plugin_source()
+    permit_at = source.index('isExecutorPermit(command)) return')
+    r5_at = source.index('isInterpreterBypass(tokenAt(command, 1))')
+    assert permit_at < r5_at, 'the executor permit must return before the R5 branch'
+
+
+def test_guard_r5_refusal_names_remedy() -> None:
+    """The R5 refusal names the remedy: executor for builds, manage tools for state."""
+    source = _guard_plugin_source()
+    assert 'python3 .plan/execute-script.py' in source
+    assert 'manage-*' in source
+
+
+def test_guard_r5_scans_past_option_flags() -> None:
+    """The R5 branch pairs the second-token check with the flag-prefix scan."""
+    source = _guard_plugin_source()
+    assert 'hasFlagPrefixedBypass(command)' in source
+    assert 'isInterpreterBypass(tokenAt(command, 1)) || hasFlagPrefixedBypass(command)' in source
+
+
+def test_guard_r5_bypass_cluster_helpers_present() -> None:
+    """The R5 bypass-cluster helpers exist and the wrapper/executor pins hold."""
+    source = _guard_plugin_source()
+    assert 'isCMCluster' in source
+    assert 'mModuleOf' in source
+    assert 'R5_VALUE_TAKING_SINGLE' in source
+    assert '!o.includes("=")' in source
+    assert r'(?:\s|$)' in source
+
+
+def test_guard_r4_m_flag_prefix_check_present() -> None:
+    """The R4 python -m branch reads the module through the attached-form helper."""
+    source = _guard_plugin_source()
+    assert 'mModuleOf(tokenAt(command, 1), tokenAt(command, 2))' in source

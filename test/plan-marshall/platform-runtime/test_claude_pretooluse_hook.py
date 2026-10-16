@@ -5,7 +5,7 @@
 The leaf is a stdin->stdout hook script, so it is exercised both via subprocess (a
 fresh interpreter, exactly as Claude Code would invoke it — proving the whole
 fail-open + deny-envelope contract end to end) and via direct import of its pure
-``evaluate`` function (proving each R1-R4 matcher and the gate-delegation behaviour
+``evaluate`` function (proving each R1-R5 matcher and the gate-delegation behaviour
 without subprocess overhead).
 
 The shared ``pretooluse_gate`` module is imported directly (sibling-import
@@ -163,8 +163,8 @@ def test_r1_denies_the_while_spelling_of_the_loop_family() -> None:
 
 def test_r1_not_fired_on_plain_command() -> None:
     # A single command with no shell construct does not trip R1 (and is not a
-    # file-op or hard-coded build, so no rule fires).
-    assert hook.evaluate(_signal2_payload('Bash', _bash('python3 script.py'))) is None
+    # file-op, hard-coded build, or interpreter call, so no rule fires).
+    assert hook.evaluate(_signal2_payload('Bash', _bash('echo hello'))) is None
 
 
 # -----------------------------------------------------------------------------
@@ -305,7 +305,7 @@ def test_r1_malformed_quoting_falls_back_to_detection() -> None:
 
 def test_r1_malformed_quoting_without_a_metacharacter_still_passes() -> None:
     """The fallback is a re-scan, not a blanket denial of malformed quoting."""
-    payload = _signal2_payload('Bash', _bash('python3 x.py "unterminated'))
+    payload = _signal2_payload('Bash', _bash('echo x "unterminated'))
     assert hook.evaluate(payload) is None
 
 
@@ -422,7 +422,7 @@ def test_r1_allows_escaped_newline_line_continuation() -> None:
     negative is ``test_r1_denies_newline`` — a BARE unquoted newline is a real
     command separator and still denies.
     """
-    command = 'python3 x.py \\\n  --flag value'
+    command = 'echo x.py \\\n  --flag value'
     assert hook.evaluate(_signal2_payload('Bash', _bash(command))) is None
 
 
@@ -728,6 +728,151 @@ def test_r4_not_fired_on_resolved_build() -> None:
 
 
 # =============================================================================
+# R5 — direct interpreter call
+# =============================================================================
+
+
+#: Direct interpreter invocations R5 refuses. The ``-c`` and ``-m`` rows name
+#: the always-refuse flags; the script rows name the path forms from the
+#: deliverable contract (worktree-relative and absolute).
+_R5_DENIED_COMMANDS = [
+    'python3 -c "print(1)"',
+    'python3 .plan/temp/x.py',
+    'python3 /tmp/x.py',
+    'python3 -m py_compile f.py',
+    'python script.py',
+]
+
+_R5_DENIED_IDS = [
+    'c-flag-inline-script',
+    'worktree-relative-script-path',
+    'absolute-script-path',
+    'm-flag-any-module',
+    'bare-python-script-path',
+]
+
+
+@pytest.mark.parametrize('command', _R5_DENIED_COMMANDS, ids=_R5_DENIED_IDS)
+def test_r5_denies_direct_interpreter_calls(command: str) -> None:
+    """Each direct interpreter form denies with the R5 remedy reason."""
+    payload = _signal2_payload('Bash', _bash(command))
+
+    assert hook.evaluate(payload) == hook._R5_REASON, command
+
+
+def test_r5_not_fired_on_executor_permit() -> None:
+    # The sole allow is the executor invocation itself.
+    cmd = 'python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks list --plan-id x'
+    assert hook.evaluate(_signal2_payload('Bash', _bash(cmd))) is None
+
+
+def test_r5_not_fired_on_flag_only_invocation() -> None:
+    # A bare flag probe such as --version is not an interpreter bypass.
+    assert hook.evaluate(_signal2_payload('Bash', _bash('python3 --version'))) is None
+    assert hook.evaluate(_signal2_payload('Bash', _bash('python3'))) is None
+
+
+def test_r5_reason_names_the_remedy() -> None:
+    """The redirect must name the executor and the manage tools, not just refuse."""
+    assert 'python3 .plan/execute-script.py' in hook._R5_REASON
+    assert 'manage-*' in hook._R5_REASON
+
+
+def test_r5_denies_quote_wrapped_interpreter() -> None:
+    """A quote-wrapped interpreter judges the same as the bare name (guard parity)."""
+    assert hook.evaluate(_signal2_payload('Bash', _bash('"python3" -c "print(1)"'))) == hook._R5_REASON
+    assert hook.evaluate(_signal2_payload('Bash', _bash("'python3' /tmp/x.py"))) == hook._R5_REASON
+
+
+#: Interpreter-option-flag-prefixed bypasses R5 must refuse — an option flag
+#: in second position (-u, -W, -X, -B, -E, -I, --, bare -) does not hide the
+#: script path, -c or -m behind it. Flag-only tails and the bare interpreter
+#: stay allowed (see test_r5_not_fired_on_flag_only_invocation).
+_R5_OPTION_FLAG_DENIED_COMMANDS = [
+    'python3 -u /tmp/x.py',
+    'python3 -W ignore /tmp/x.py',
+    'python3 -u -c "evil()"',
+    'python3 -- /tmp/x.py',
+    'python3 -X dev script.py',
+]
+
+_R5_OPTION_FLAG_DENIED_IDS = [
+    'unbuffered-flag-prefixed-script-path',
+    'warning-flag-with-value-prefixed-script-path',
+    'stacked-option-flags-with-c-flag',
+    'separator-prefixed-script-path',
+    'x-flag-prefixed-script-path',
+]
+
+
+@pytest.mark.parametrize('command', _R5_OPTION_FLAG_DENIED_COMMANDS, ids=_R5_OPTION_FLAG_DENIED_IDS)
+def test_r5_denies_option_flag_prefixed_bypass(command: str) -> None:
+    """An interpreter option flag does not hide the bypass behind it."""
+    payload = _signal2_payload('Bash', _bash(command))
+
+    assert hook.evaluate(payload) == hook._R5_REASON, command
+
+
+#: Wrapper-prefixed interpreter calls R5 must refuse — the guard strips these
+#: prefixes before its own first-token checks, so the Claude matcher strips
+#: them for its R5 program check. One row per prefix shape: bare wrappers,
+#: a leading assignment, a wrapper option with and without its value, and a
+#: stacked wrapper-plus-assignment combination.
+_R5_WRAPPER_DENIED_COMMANDS = [
+    'env python3 -c "print(1)"',
+    'command python3 /tmp/x.py',
+    'sudo python3 -m json.tool',
+    'FOO=bar python3 -c "print(1)"',
+    'env -i python3 script.py',
+    'sudo -u alice python3 -c "print(1)"',
+    'sudo FOO=bar python3 /tmp/x.py',
+]
+
+_R5_WRAPPER_DENIED_IDS = [
+    'env-wrapper-c-flag',
+    'command-wrapper-script-path',
+    'sudo-wrapper-m-flag',
+    'leading-assignment-c-flag',
+    'env-option-without-value',
+    'sudo-option-with-value',
+    'wrapper-plus-assignment',
+]
+
+
+@pytest.mark.parametrize('command', _R5_WRAPPER_DENIED_COMMANDS, ids=_R5_WRAPPER_DENIED_IDS)
+def test_r5_denies_wrapper_prefixed_interpreter_calls(command: str) -> None:
+    """A wrapper prefix does not hide the interpreter call from R5."""
+    payload = _signal2_payload('Bash', _bash(command))
+
+    if command.startswith('FOO='):
+        assert hook.evaluate(payload) in (hook._R1_REASON, hook._R5_REASON), command
+    else:
+        assert hook.evaluate(payload) == hook._R5_REASON, command
+
+
+def test_r5_wrapper_prefixed_executor_permit_stays_exempt() -> None:
+    """The executor permit survives wrapper stripping — guard parity."""
+    cmd = 'env python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks list --plan-id x'
+    assert hook.evaluate(_signal2_payload('Bash', _bash(cmd))) is None
+
+
+def test_r5_wrapper_prefixed_benign_command_stays_allowed() -> None:
+    """A wrapper around a non-interpreter program trips no rule."""
+    assert hook.evaluate(_signal2_payload('Bash', _bash('env echo hello'))) is None
+
+
+def test_r1_r2_r4_matchers_do_not_strip_wrappers() -> None:
+    """R5-only parity: the other matchers still see the unstripped program.
+
+    ``sudo cat foo`` names ``sudo``, not ``cat``, to R2 — wrapper stripping
+    was mirrored for the R5 program check only, and this pins that boundary so
+    a future edit cannot silently widen it.
+    """
+    assert hook.evaluate(_signal2_payload('Bash', _bash('sudo cat foo'))) is None
+    assert hook.evaluate(_signal2_payload('Bash', _bash('cat foo'))) == hook._R2_REASON
+
+
+# =============================================================================
 # Deny envelope shape (subprocess, end-to-end)
 # =============================================================================
 
@@ -852,3 +997,43 @@ _PATH_PREFIXED_BYPASS_IDS = [
 def test_a_path_prefixed_program_does_not_bypass_its_rule(command: str, expected_reason: str) -> None:
     """An absolute path in front of the program leaves the rule's verdict intact."""
     assert hook.evaluate(_signal2_payload('Bash', _bash(command))) == expected_reason
+
+
+# =============================================================================
+# R5 — bypass-cluster regression (TASK-10)
+# =============================================================================
+
+
+_R5_BYPASS_CLUSTER_DENIED = [
+    'sudo --chdir=/tmp python3 -c "print(1)"',
+    'python3 -cprint(1)',
+    'python3 -mjson.tool',
+    'python3 -uc "print(1)"',
+    'python3 -um json.tool',
+    'python3 .plan/execute-script.py.bak list',
+]
+
+_R5_BYPASS_CLUSTER_DENIED_IDS = [
+    'wrapper-inline-equals-keeps-interpreter-visible',
+    'attached-c-flag',
+    'attached-m-flag',
+    'combined-short-flags-with-c',
+    'combined-short-flags-with-m',
+    'executor-near-miss-suffix',
+]
+
+
+@pytest.mark.parametrize('command', _R5_BYPASS_CLUSTER_DENIED, ids=_R5_BYPASS_CLUSTER_DENIED_IDS)
+def test_r5_denies_bypass_cluster_forms(command: str) -> None:
+    """Each R5 bypass-cluster form denies with the R5 remedy reason."""
+    assert hook.evaluate(_signal2_payload('Bash', _bash(command))) == hook._R5_REASON, command
+
+
+def test_r5_value_taking_cluster_helper_first_value_taking_wins() -> None:
+    """The cluster helper refuses on first value-taking c/m, passes on W/X-first."""
+    assert hook._is_c_m_cluster('-cprint(1)') is True
+    assert hook._is_c_m_cluster('-mjson.tool') is True
+    assert hook._is_c_m_cluster('-uc') is True
+    assert hook._is_c_m_cluster('-Wignore') is False
+    assert hook._is_c_m_cluster('--version') is False
+    assert hook._is_c_m_cluster('-u') is False

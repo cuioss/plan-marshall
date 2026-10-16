@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Conditional PreToolUse enforcement leaf for Claude Code.
 
-Registered (opt-in) as a matcher-less ``hooks.PreToolUse`` entry. It blocks four
+Registered (opt-in) as a matcher-less ``hooks.PreToolUse`` entry. It blocks five
 mechanically-checkable hard-rule violation families, but ONLY when the call
 originates inside a plan-marshall plan context. Outside that context — and on
 every error path — it emits nothing and exits 0, so a hook bug can never block
@@ -10,7 +10,7 @@ the user (fail OPEN).
 
 ALL payload parsing, field access, and the context-gate predicate are delegated
 to the shared ``pretooluse_gate`` module — this leaf adds NO field-name knowledge
-of its own. The only logic it owns is the R1-R4 rule matchers and the
+of its own. The only logic it owns is the R1-R5 rule matchers and the
 ``permissionDecision: deny`` envelope layered on top:
 
 - **R1 shell-construct compound** — a Bash command containing an UNQUOTED and
@@ -27,6 +27,10 @@ of its own. The only logic it owns is the R1-R4 rule matchers and the
   ``.plan/execute-script.py``.
 - **R4 hard-coded build** — a Bash command invoking ``./pw`` or a bare ``mvn`` /
   ``npm`` / ``gradle``.
+- **R5 direct interpreter call** — a Bash command invoking ``python`` /
+  ``python3`` as ``-c``, a script path, or ``-m`` with any module, except the
+  ``python3 .plan/execute-script.py`` executor permit. The allow set is
+  executor-only, so every ``-m`` form refuses.
 
 Control flow:
 
@@ -177,6 +181,12 @@ _R3_REASON = (
 _R4_REASON = (
     'plan-marshall: never hard-code build commands (./pw, mvn, npm, gradle) — '
     'resolve via plan-marshall:manage-architecture:architecture resolve.'
+)
+_R5_REASON = (
+    'plan-marshall: direct python interpreter calls (python -c, script paths, '
+    'python -m) bypass the executor — route builds and checks via '
+    'python3 .plan/execute-script.py and .plan state via manage-* verbs or '
+    'the Read/Edit/Write tools.'
 )
 
 
@@ -438,12 +448,210 @@ def _match_r4_hardcoded_build(tool_name: str | None, tool_input: dict[str, Any])
     return None
 
 
+#: Shell wrappers (``command`` / ``env`` / ``sudo``) and leading ``NAME=value``
+#: assignments the R5 matcher strips before its program check. Mirrors the
+#: opencode guard's ``commandTokens`` stripping (``SHELL_WRAPPERS``,
+#: ``WRAPPER_OPTS_WITH_VALUE`` and the assignment pattern there) so a
+#: wrapper-prefixed interpreter call (``env python3 -c ...``) is judged the
+#: same on both harnesses. Used ONLY by the R5 matcher — R1, R2 and R4 keep
+#: their existing unstripped program checks.
+_R5_SHELL_WRAPPERS = frozenset({'command', 'env', 'sudo'})
+
+#: Wrapper options that consume a following value token (``sudo -u <user>``).
+_R5_WRAPPER_OPTS_WITH_VALUE = frozenset(
+    {
+        '-u',
+        '--user',
+        '-g',
+        '--group',
+        '-U',
+        '--other-user',
+        '-C',
+        '--chdir',
+        '--directory',
+    }
+)
+
+#: Leading ``NAME=value`` assignment, transparent to the shell.
+_R5_ASSIGNMENT_RE = re.compile(r'^[A-Za-z_][A-Za-z0-9_]*=')
+
+
+def _r5_stripped_tokens(command: str) -> list[str]:
+    """Return shell-lexical tokens of *command* minus R5-transparent prefixes.
+
+    Drops leading shell wrappers (each with its options, option values and
+    inline assignments) and leading ``NAME=value`` assignments, mirroring the
+    guard's ``commandTokens`` walk. Shell-lexical (``shlex``) like the other
+    R5 helpers, falling back to the whitespace split on malformed quoting
+    rather than returning early.
+    """
+    try:
+        tokens = shlex.split(command)
+    except ValueError:
+        tokens = command.split()
+    index = 0
+    total = len(tokens)
+    while index < total:
+        token = tokens[index]
+        if token in _R5_SHELL_WRAPPERS:
+            index += 1
+            while index < total:
+                option = tokens[index]
+                if _R5_ASSIGNMENT_RE.match(option):
+                    index += 1
+                    continue
+                if option.startswith('-') and len(option) > 1:
+                    base = option.split('=')[0]
+                    index += 1
+                    if (
+                        '=' not in option
+                        and base in _R5_WRAPPER_OPTS_WITH_VALUE
+                        and index < total
+                        and not tokens[index].startswith('-')
+                    ):
+                        index += 1
+                    continue
+                break
+            continue
+        if _R5_ASSIGNMENT_RE.match(token):
+            index += 1
+            continue
+        break
+    return tokens[index:]
+
+
+def _is_executor_permit(command: str) -> bool:
+    """Return True when *command* is the exempt executor invocation.
+
+    Compared after R5 wrapper stripping, so a wrapper-prefixed executor call
+    (``env python3 .plan/execute-script.py ...``) stays exempt exactly as the
+    guard exempts it. Used only by the R5 matcher.
+    """
+    stripped = _r5_stripped_tokens(command)
+    if len(stripped) < 2:
+        return False
+    if stripped[0] != 'python3':
+        return False
+    return stripped[1] == '.plan/execute-script.py'
+
+
+def _second_token(command: str) -> str:
+    """Return the second shell-lexical token of *command*, or empty.
+
+    Compared after R5 wrapper stripping, so the token after the real program
+    is returned even when wrappers prefix the invocation. Used only by the
+    R5 matcher.
+    """
+    stripped = _r5_stripped_tokens(command)
+    if len(stripped) < 2:
+        return ''
+    return stripped[1]
+
+
+def _strip_matched_quotes(token: str) -> str:
+    """Strip one pair of matched surrounding quotes from *token*.
+
+    Mirrors the guard's ``normalizeToken`` quote handling so a quote-wrapped
+    interpreter (``"python3" -c ...``) is judged the same on both harnesses.
+    Used only by the R5 matcher — the shared ``_program_name`` keeps its
+    existing callers' behavior.
+    """
+    s = token.strip()
+    if len(s) >= 2 and ((s[0] == '"' and s[-1] == '"') or (s[0] == "'" and s[-1] == "'")):
+        return s[1:-1]
+    return s
+
+
+#: Single-letter python flags that consume a value. Only ``c`` and ``m``
+#: execute code; ``W`` and ``X`` take values but do not. A short-flag cluster
+#: (``-uc``, ``-Wc``) is judged by its FIRST value-taking flag — ``-uc``
+#: refuses because that flag is ``c``, ``-Wc`` passes this helper because its
+#: first value-taking flag is ``W``. Used only by the R5 matcher.
+_R5_VALUE_TAKING_SINGLE = frozenset({'c', 'm', 'W', 'X'})
+
+
+def _is_c_m_cluster(text: str) -> bool:
+    """Whether *text* is a short-flag cluster executing via ``c`` or ``m``.
+
+    Covers the attached forms (``-cCODE``, ``-mMODULE``) and combined short
+    flags (``-uc``) the exact-token check misses: a single-dash token whose
+    first value-taking flag is ``c`` or ``m``. Long options (``--`` prefix),
+    the bare ``-`` and flag-only tails return False. Used only by R5.
+    """
+    if not text.startswith('-') or text.startswith('--'):
+        return False
+    if len(text) < 2:
+        return False
+    for ch in text[1:]:
+        if ch in _R5_VALUE_TAKING_SINGLE:
+            return ch in ('c', 'm')
+    return False
+
+
+def _match_r5_interpreter_call(tool_name: str | None, tool_input: dict[str, Any]) -> str | None:
+    """R5 — direct python interpreter call bypassing the executor.
+
+    The program check runs on the wrapper-stripped tokens (``command`` /
+    ``env`` / ``sudo`` prefixes and ``NAME=value`` assignments removed), so a
+    wrapper-prefixed interpreter call is judged the same as the bare form —
+    the same stripping the guard applies before its own first-token checks.
+    An interpreter option in second position (``-u``, ``-W``, ``-X``,
+    ``-B``, ``-E``, ``-I``, ``--``, bare ``-``) does not hide what follows:
+    every later token is scanned with the same fail-closed rule. R1, R2
+    and R4 match against the unstripped command and are untouched.
+    """
+    command = _bash_command(tool_name, tool_input)
+    if command is None:
+        return None
+    if _is_executor_permit(command):
+        return None
+    stripped = _r5_stripped_tokens(command)
+    first = stripped[0].strip().lower() if stripped else ''
+    program = _strip_matched_quotes(first.rsplit('/', 1)[-1] if first else '')
+    if program not in ('python', 'python3'):
+        return None
+    second = _strip_matched_quotes(_second_token(command).strip())
+    if not second:
+        return None
+    if second in ('-c', '-m'):
+        return _R5_REASON
+    if _is_c_m_cluster(second):
+        return _R5_REASON
+    if _has_flag_prefixed_bypass(stripped):
+        return _R5_REASON
+    if second.startswith('-'):
+        return None
+    return _R5_REASON
+
+
+def _has_flag_prefixed_bypass(stripped: list[str]) -> bool:
+    """Whether a token past the interpreter flag hides a bypass.
+
+    Mirrors the guard's flag-prefix scan over the wrapper-stripped tokens:
+    any ``-c``, ``-m``, lone ``-``/``--``, or non-flag token past the
+    second position is a bypass. Flag-only tails and the bare interpreter
+    still pass. Used only by the R5 matcher.
+    """
+    for token in stripped[2:]:
+        text = _strip_matched_quotes(token.strip())
+        if not text:
+            continue
+        if text in ('-c', '-m', '-', '--'):
+            return True
+        if _is_c_m_cluster(text):
+            return True
+        if not text.startswith('-'):
+            return True
+    return False
+
+
 #: Ordered rule chain — the first matcher returning a reason wins.
 _RULES: tuple[Callable[[str | None, dict[str, Any]], str | None], ...] = (
     _match_r1_shell_construct,
     _match_r2_file_ops,
     _match_r3_generated_executor,
     _match_r4_hardcoded_build,
+    _match_r5_interpreter_call,
 )
 
 
@@ -452,7 +660,7 @@ def evaluate(payload: dict[str, Any]) -> str | None:
 
     Applies the shared context gate first (``Signal1 OR Signal2``); when the gate
     is not satisfied, returns ``None`` (fail OPEN — no enforcement). When the gate
-    is satisfied, runs the R1-R4 matchers in order against the shared gate's
+    is satisfied, runs the R1-R5 matchers in order against the shared gate's
     ``tool_name`` / ``tool_input`` accessors and returns the first matching rule's
     redirect reason, or ``None`` when no rule fires.
 

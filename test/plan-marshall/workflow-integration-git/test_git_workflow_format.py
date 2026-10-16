@@ -35,7 +35,13 @@ assert VALID_TYPES, 'git_workflow.VALID_TYPES is empty'
 analyze_diff = git_workflow.analyze_diff
 cmd_detect_artifacts = git_workflow.cmd_detect_artifacts
 cmd_format_commit = git_workflow.cmd_format_commit
+evaluate_source_commit_gate = git_workflow.evaluate_source_commit_gate
 get_tracked_files = git_workflow.get_tracked_files
+has_open_fix_task = git_workflow.has_open_fix_task
+has_section6_record = git_workflow.has_section6_record
+_source_gate_finding_texts = git_workflow._source_gate_finding_texts
+is_plan_only_path = git_workflow.is_plan_only_path
+is_source_commit = git_workflow.is_source_commit
 scan_artifacts = git_workflow.scan_artifacts
 wrap_text = git_workflow.wrap_text
 
@@ -391,3 +397,362 @@ class TestWrapText:
         text = 'First paragraph.\nSecond paragraph.'
 
         assert wrap_text(text, 72) == text
+
+
+class TestSourceCommitGate:
+    """Test git_workflow.py source-commit-gate (PLAN-LB-56 deliverable 2).
+
+    Covers the three gate pins from the deliverable contract —
+    allow-with-open-fix-task, allow-with-section-6-record, deny-with-neither —
+    plus the plan-only and non-finalize allow paths and the CLI plumbing.
+    """
+
+    @staticmethod
+    def _fix_task(status='pending', origin='fix'):
+        """A minimal task record carrying the fields the gate reads."""
+        return {'number': 7, 'title': 'Fix: loop-back correction', 'status': status, 'origin': origin}
+
+    @staticmethod
+    def _section6_finding():
+        """A finding record citing the rubric section-6 inline-correction allowance."""
+        return {
+            'title': 'Functional review: inline correction per review-rubric',
+            'detail': 'Correction to the diff in hand approved for the 6-finalize target (section-6)',
+            'resolution_detail': '',
+        }
+
+    def test_non_finalize_phase_allows_source_commit(self):
+        """Outside 6-finalize every commit is allowed — the gate is finalize-only."""
+        result = evaluate_source_commit_gate('5-execute', ['src/a.py'], [], [])
+
+        assert result['status'] == 'success'
+        assert result['allowed'] is True
+        assert result['reason'] == 'not_finalize'
+
+    def test_plan_only_commit_passes_in_finalize(self):
+        """A .plan/-only commit passes with neither signal present."""
+        result = evaluate_source_commit_gate(
+            '6-finalize', ['.plan/local/plans/EXAMPLE/status.json', '.plan/temp/guard.log'], [], []
+        )
+
+        assert result['allowed'] is True
+        assert result['reason'] == 'plan_only'
+
+    def test_deny_with_neither_signal(self):
+        """A finalize-phase source commit with neither signal is refused."""
+        result = evaluate_source_commit_gate('6-finalize', ['src/a.py'], [], [])
+
+        assert result['allowed'] is False
+        assert result['reason'] == 'no_sanction'
+        assert 'loop-back' in result['message']
+
+    def test_plan_origin_task_does_not_sanction(self):
+        """An unfinished deliverable task is not a sanction to commit around it."""
+        tasks = [self._fix_task(origin='plan')]
+
+        assert has_open_fix_task(tasks) is False
+        result = evaluate_source_commit_gate('6-finalize', ['src/a.py'], tasks, [])
+
+        assert result['allowed'] is False
+
+    def test_allow_with_open_fix_task(self):
+        """An open loop-back fix task sanctions the source commit."""
+        tasks = [self._fix_task(status='pending', origin='fix')]
+
+        assert has_open_fix_task(tasks) is True
+        result = evaluate_source_commit_gate('6-finalize', ['src/a.py'], tasks, [])
+
+        assert result['allowed'] is True
+        assert result['reason'] == 'open_fix_task'
+
+    def test_closed_fix_task_does_not_sanction(self):
+        """A done fix task no longer sanctions — the sanction ends with the task."""
+        tasks = [self._fix_task(status='done', origin='fix')]
+
+        assert has_open_fix_task(tasks) is False
+        result = evaluate_source_commit_gate('6-finalize', ['src/a.py'], tasks, [])
+
+        assert result['allowed'] is False
+
+    def test_allow_with_section6_record(self):
+        """A finding record citing the section-6 allowance sanctions the commit."""
+        findings = [self._section6_finding()]
+
+        assert has_section6_record(findings) is True
+        result = evaluate_source_commit_gate('6-finalize', ['src/a.py'], [], findings)
+
+        assert result['allowed'] is True
+        assert result['reason'] == 'section6_record'
+
+    def test_rubric_citation_without_allowance_does_not_sanction(self):
+        """A rubric citation for another section carries no inline-correction allowance."""
+        findings = [
+            {
+                'title': 'Code review finding per review-rubric section 3',
+                'detail': 'Substantiated failure scenario with no sanction recorded',
+                'resolution_detail': '',
+            }
+        ]
+
+        assert has_section6_record(findings) is False
+
+    def test_bare_phase_mention_does_not_sanction(self):
+        """A rubric citation plus a bare 6-finalize phase mention, without
+        inline-correction words, carries no allowance."""
+        findings = [
+            {
+                'title': 'Code review finding per review-rubric section 3',
+                'detail': 'Loop back to 6-finalize for re-review (section-6)',
+                'resolution_detail': '',
+            }
+        ]
+
+        assert has_section6_record(findings) is False
+        result = evaluate_source_commit_gate('6-finalize', ['src/a.py'], [], findings)
+
+        assert result['allowed'] is False
+        assert result['reason'] == 'no_sanction'
+
+    def test_split_markers_across_records_do_not_sanction(self):
+        """Cross-record bleed: the rubric half in one record and the allowance
+        half in another must not combine into a sanction."""
+        findings = [
+            {
+                'title': 'Code review finding per review-rubric section 3',
+                'detail': 'Substantiated failure scenario with no sanction recorded',
+                'resolution_detail': '',
+            },
+            {
+                'title': 'Unrelated triage note',
+                'detail': 'Deferred inline-correction for a later pass',
+                'resolution_detail': '',
+            },
+        ]
+
+        assert has_section6_record(findings) is False
+        result = evaluate_source_commit_gate('6-finalize', ['src/a.py'], [], findings)
+
+        assert result['allowed'] is False
+        assert result['reason'] == 'no_sanction'
+
+    @staticmethod
+    def _findings_plan_dir(root: Path) -> Path:
+        """A minimal plan directory carrying a findings store under ``root``."""
+        plan_dir = root / '.plan' / 'local' / 'plans' / 'FIXTURE'
+        (plan_dir / 'artifacts' / 'findings').mkdir(parents=True)
+        return plan_dir
+
+    def test_loader_keeps_jsonl_lines_as_separate_records(self, tmp_path):
+        """File-level bleed pin: markers split across JSONL lines refuse."""
+        import json
+
+        plan_dir = self._findings_plan_dir(tmp_path)
+        (plan_dir / 'artifacts' / 'findings' / 'qgate-6-finalize.jsonl').write_text(
+            '\n'.join(
+                [
+                    json.dumps(
+                        {
+                            'title': 'Code review finding per review-rubric section 3',
+                            'detail': 'no sanction recorded',
+                        }
+                    ),
+                    json.dumps(
+                        {
+                            'title': 'Unrelated triage note',
+                            'detail': 'deferred inline-correction for a later pass',
+                        }
+                    ),
+                ]
+            )
+            + '\n',
+            encoding='utf-8',
+        )
+
+        texts, count = _source_gate_finding_texts(plan_dir)
+
+        assert count == 2
+        assert has_section6_record(texts) is False
+
+    def test_loader_single_jsonl_line_with_both_halves_sanctions(self, tmp_path):
+        """Positive control: both halves in one JSONL record still sanction."""
+        import json
+
+        plan_dir = self._findings_plan_dir(tmp_path)
+        (plan_dir / 'artifacts' / 'findings' / 'qgate-6-finalize.jsonl').write_text(
+            json.dumps(self._section6_finding()) + '\n',
+            encoding='utf-8',
+        )
+
+        texts, count = _source_gate_finding_texts(plan_dir)
+
+        assert count == 1
+        assert has_section6_record(texts) is True
+
+    def test_loader_splits_json_list_into_records(self, tmp_path):
+        """A JSON file holding a record list splits per record, not per file."""
+        import json
+
+        plan_dir = self._findings_plan_dir(tmp_path)
+        (plan_dir / 'artifacts' / 'findings' / 'notes.json').write_text(
+            json.dumps(
+                [
+                    {
+                        'title': 'Code review finding per review-rubric section 3',
+                        'detail': 'no sanction recorded',
+                    },
+                    {
+                        'title': 'Unrelated triage note',
+                        'detail': 'deferred inline-correction for a later pass',
+                    },
+                ]
+            ),
+            encoding='utf-8',
+        )
+
+        texts, count = _source_gate_finding_texts(plan_dir)
+
+        assert count == 2
+        assert has_section6_record(texts) is False
+
+    def test_plan_state_prefix_only_matches_first_segment(self):
+        """A .plan infix elsewhere in the path is still a source path."""
+        assert is_plan_only_path('.plan/a.json') is True
+        assert is_plan_only_path('./.plan/a.json') is True
+        assert is_plan_only_path('src/.plan_notes.md') is False
+        assert is_source_commit(['.plan/a.json']) is False
+        assert is_source_commit(['.plan/a.json', 'src/a.py']) is True
+        assert is_source_commit([]) is False
+
+    def test_cli_deny_with_neither(self, tmp_path):
+        """CLI plumbing: source change with no plan signals is refused, exit 0."""
+        stdout, stderr, returncode = run_git_script(
+            [
+                'source-commit-gate',
+                '--phase',
+                '6-finalize',
+                '--changed-paths',
+                'src/foo.py',
+                '--project-dir',
+                str(tmp_path),
+            ]
+        )
+
+        assert returncode == 0
+        result = parse_toon(stdout)
+        assert result['status'] == 'success'
+        assert result['allowed'] is False
+        assert result['reason'] == 'no_sanction'
+        assert result['signals_resolved'] is False
+
+    def test_cli_plan_only_passes(self, tmp_path):
+        """CLI plumbing: a plan-state-only change passes without signals."""
+        stdout, stderr, returncode = run_git_script(
+            [
+                'source-commit-gate',
+                '--phase',
+                '6-finalize',
+                '--changed-paths',
+                '.plan/a.json',
+                '--project-dir',
+                str(tmp_path),
+            ]
+        )
+
+        assert returncode == 0
+        result = parse_toon(stdout)
+        assert result['allowed'] is True
+        assert result['reason'] == 'plan_only'
+
+    def test_cli_allow_with_open_fix_task(self, tmp_path):
+        """CLI plumbing: the gate reads an open fix task from the plan directory."""
+        import json
+
+        plan_dir = tmp_path / '.plan' / 'local' / 'plans' / 'FIXTURE'
+        tasks_dir = plan_dir / 'tasks'
+        tasks_dir.mkdir(parents=True)
+        (tasks_dir / 'TASK-001.json').write_text(
+            json.dumps({'number': 1, 'title': 'Fix: loop-back', 'status': 'pending', 'origin': 'fix'}),
+            encoding='utf-8',
+        )
+        stdout, stderr, returncode = run_git_script(
+            [
+                'source-commit-gate',
+                '--plan-id',
+                'FIXTURE',
+                '--phase',
+                '6-finalize',
+                '--changed-paths',
+                'src/foo.py',
+                '--project-dir',
+                str(tmp_path),
+            ]
+        )
+
+        assert returncode == 0
+        result = parse_toon(stdout)
+        assert result['allowed'] is True
+        assert result['reason'] == 'open_fix_task'
+        assert result['signals_resolved'] is True
+
+    def test_cli_untracked_source_file_is_refused(self, tmp_path):
+        """Git derivation unions untracked files: an untracked source file refuses."""
+        subprocess.run(['git', 'init', str(tmp_path)], check=True, capture_output=True)
+        subprocess.run(
+            ['git', '-C', str(tmp_path), 'config', 'user.email', 'test@example.com'],
+            check=True,
+            capture_output=True,
+        )
+        subprocess.run(
+            ['git', '-C', str(tmp_path), 'config', 'user.name', 'Test'],
+            check=True,
+            capture_output=True,
+        )
+        _create_file(tmp_path, 'baseline.txt')
+        subprocess.run(['git', '-C', str(tmp_path), 'add', 'baseline.txt'], check=True, capture_output=True)
+        subprocess.run(['git', '-C', str(tmp_path), 'commit', '-m', 'baseline'], check=True, capture_output=True)
+        _create_file(tmp_path, 'src/new.py')
+        stdout, stderr, returncode = run_git_script(
+            [
+                'source-commit-gate',
+                '--phase',
+                '6-finalize',
+                '--project-dir',
+                str(tmp_path),
+            ]
+        )
+
+        assert returncode == 0
+        result = parse_toon(stdout)
+        assert result['allowed'] is False
+        assert result['reason'] == 'no_sanction'
+
+    def test_source_gate_uses_nul_separation(self):
+        """The git derivation passes -z on both calls and splits on NUL."""
+        import inspect
+
+        source = inspect.getsource(git_workflow._source_gate_changed_paths)
+        assert "'-z'" in source or '"-z"' in source
+        assert "split('\\0')" in source or 'split("\\0")' in source
+        assert 'splitlines()' not in source
+
+    def test_source_gate_preserves_space_padded_paths(self, tmp_path):
+        """Space-padded and non-ASCII paths survive the git derivation verbatim."""
+        subprocess.run(['git', 'init', str(tmp_path)], check=True, capture_output=True)
+        subprocess.run(
+            ['git', '-C', str(tmp_path), 'config', 'user.email', 'test@example.com'],
+            check=True,
+            capture_output=True,
+        )
+        subprocess.run(
+            ['git', '-C', str(tmp_path), 'config', 'user.name', 'Test'],
+            check=True,
+            capture_output=True,
+        )
+        _create_file(tmp_path, 'baseline.txt')
+        subprocess.run(['git', '-C', str(tmp_path), 'add', 'baseline.txt'], check=True, capture_output=True)
+        subprocess.run(['git', '-C', str(tmp_path), 'commit', '-m', 'baseline'], check=True, capture_output=True)
+        padded = tmp_path / ' leading-and-trailing '
+        padded.write_text('x', encoding='utf-8')
+        changed, err = git_workflow._source_gate_changed_paths(tmp_path, None)
+        assert err is None
+        assert ' leading-and-trailing ' in (changed or [])
