@@ -1171,16 +1171,20 @@ class TestRunningHandBackFields:
         assert result['log_file'] == ''
 
     def test_the_wait_bound_stays_foreground_safe(self):
-        """The bound sits at the per-call Bash ceiling by construction.
+        """The bound leaves setup headroom under the per-call Bash ceiling.
 
-        Single running hand-back contract on every tier: the per_task wrapper
-        bound is at least the per-call ceiling (600 s on the Claude target via
-        the harness bash-timeout-ceiling seam), so a per_task routed build
-        outliving the old 300 s bound hands back the same live running status
-        plus job id a longer tier would, and the leaf hands it back through
-        pending_verify_steps rather than backgrounding it.
+        One daemon-routed wrapper call runs preflight, submit and job start
+        before the bounded wait, so a bound equal to the per-call ceiling
+        (600 s on the Claude target) would overrun the tool call. The bound
+        plus the setup allowance must stay strictly below that ceiling; a
+        routed build outliving the bound is covered by the running hand-back
+        contract below.
         """
-        assert factory._DAEMON_WAIT_BOUND_SECONDS == 600
+        per_call_ceiling_seconds = 600
+        setup_allowance_seconds = 30
+
+        assert 0 < factory._DAEMON_WAIT_BOUND_SECONDS
+        assert factory._DAEMON_WAIT_BOUND_SECONDS + setup_allowance_seconds < per_call_ceiling_seconds
 
 
 class TestRunningHandBackProjections:
