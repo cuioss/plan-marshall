@@ -403,7 +403,7 @@ def test_main_deliverable_hashes_changes_with_content(plan_context, monkeypatch,
 
 
 def test_main_deliverable_hashes_echoes_phase(plan_context, monkeypatch, capsys):
-    """``--phase`` is provenance only and is echoed back for the caller's row key."""
+    """The default mode echoes ``--phase`` back for the caller's row key."""
     _seed_outline(plan_context, 'so-cli-hashes-phase')
     code, out = _run_main(
         monkeypatch, capsys, ['deliverable-hashes', '--plan-id', 'so-cli-hashes-phase', '--phase', '4-plan']
