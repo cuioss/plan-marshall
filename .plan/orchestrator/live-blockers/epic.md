@@ -87,6 +87,12 @@ derive, for rows still live.
   its deliverables and Done-whens must not be merged in the outline — the failure every OpenCode
   run has shown.
 
+- **PLAN-LB-60** (shipped #1782, 2026-10-16) — first DeepSeek run; 1 met / 4 partial; dead-step
+  cleanup still deletes live defaults on a partial phase-6 scan; see `landings/PLAN-LB-60.md`.
+  Fix-forward **PLAN-LB-63** (WS-04, runbook lane, high only). Folded into PLAN-LB-55 D1
+  (`pre_merge_gate merge` enforces current-head participation itself) and PLAN-LB-53 D1 (no
+  self-authorised handshake override).
+
 - **PLAN-LB-56** (shipped #1781, 2026-10-16) — 0 met / 2 partial / 1 unmet; R5 refuses the
   repository's own steward, executor-recovery and harness-sync invocations in every OpenCode
   session (operator: run those from a plain terminal until fixed); see `landings/PLAN-LB-56.md`.
@@ -881,6 +887,15 @@ entries below are OpenCode 1 assumptions in plan-marshall that OpenCode 2 broke.
   OpenCode config, so the root model is the whole run's model. PLAN-LB-40, -47, -50 and -56 finish
   on Muse and join the baseline as each lands (eight Muse plans in all); the next emitted plan is
   the first DeepSeek run.
+  - **PLAN-LB-60 graded D+** (2026-10-16, `landings/PLAN-LB-60.md`) — **first DeepSeek grade**
+    (`deepseek-v4.1-flash`/high, 45/45 sessions). 1 met / 4 partial vs claimed 5/5 — best spec
+    fidelity of any OpenCode run, and the first with no fabricated evidence (27/27 cited tests
+    exist). Mechanics clearly better than Muse: 6 argparse rejections (Muse 21–24), 2 `python3 -c`
+    (LB-40: 92), root 25% of cost (Muse 50–69%), trailers 9/9, no root guard evasion, roster passed
+    correctly. Integrity failures unchanged from Muse: Done-whens dropped from the outline, no
+    pre-fix runs, the participation barrier skipped at the merged head (cuioss-review-bot never
+    reviewed `e4dc79f8e`), a self-authorised handshake override, voluntary stops. One run — no
+    conclusion yet (rule: compare after three).
   - **Correction (operator, 2026-10-16): no Gemini runs.** Every plan not run with Muse runs
     DeepSeek. Recorded per run from `opencode.db`:
     - PLAN-LB-60 — `deepseek-v4.1-flash`, provider `opencode-go`, variant `high` (plan-marshall
@@ -907,6 +922,12 @@ entries below are OpenCode 1 assumptions in plan-marshall that OpenCode 2 broke.
     | PLAN-LB-40 | 2 / 2 / 1 of 5 | 5/5 | 4 | 77 | $5.66 | D |
     | PLAN-LB-47 | 0 / 5 / 0 of 5 | 5/5 | 3 | 30 | $2.32 | F |
     | PLAN-LB-56 | 0 / 2 / 1 of 3 | 3/3 | 1 (R5 breadth) | 65 | $4.85 | D |
+
+    **DeepSeek** (`deepseek-v4.1-flash`):
+
+    | Plan | Spec met/partial/unmet | Claimed | Regressions | Sessions | Cost | Grade |
+    |------|------------------------|---------|-------------|----------|------|-------|
+    | PLAN-LB-60 | 1 / 4 / 0 of 5 | 5/5 | 1 high | 45 | $3.75 | D+ |
 
     Pooled: 9 of 42 spec deliverables met (21%); every run claimed 100%. The over-claim is the
     constant; mechanics (gh, rebase, trailers) improved run over run as enforcement arrived.
