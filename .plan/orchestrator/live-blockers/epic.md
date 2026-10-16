@@ -93,6 +93,13 @@ derive, for rows still live.
   runbook lane, critical). Folded into PLAN-LB-55 D1 (armed auto-merge is head-bound); PLAN-LB-45
   now owns wiring the preflight call; PLAN-LB-51 D2 and PLAN-LB-48 D5 now build on PLAN-LB-64 D1.
 
+- **PLAN-LB-61** (shipped #1787, 2026-10-16, runbook lane) — 3 met / 1 partial; grade C+, the best
+  so far; see `landings/PLAN-LB-61.md`. Its D2 "measured setup" is a hard-coded 30 s (low, not
+  staged).
+- **PLAN-LB-62** (in flight, runbook lane) — all three deliverables implemented and verify-green on
+  `a6071ea2b`; PR #1790 open, needing re-review on the head and the merge. Its interim landing
+  (`merge_state=open`) was archived as a progress report; the row stays running.
+
 - **PLAN-LB-60** (shipped #1782, 2026-10-16) — first DeepSeek run; 1 met / 4 partial; dead-step
   cleanup still deletes live defaults on a partial phase-6 scan; see `landings/PLAN-LB-60.md`.
   Fix-forward **PLAN-LB-63** (WS-04, runbook lane, high only). Folded into PLAN-LB-55 D1
@@ -347,6 +354,18 @@ derive, for rows still live.
   Emit form from now on: `load .plan/local/opencode/RUNBOOK.md and follow strictly the instructions.
   Plan: {spec path}`. Grading is unchanged: each landing gets the same adversarial analysis, with the
   model read from `opencode.db`.
+- 2026-10-16 — **Runbook amended after PLAN-LB-61, the first runbook-lane landing:**
+  - sub-agent prompts carry Section 1 verbatim (its self-review leaves ran 13 `git grep` and 12 `ls`,
+    and redirected to `/tmp` to get around R1);
+  - no operator question about a CodeRabbit quota until the 90-minute × 10 cycles and the
+    close/reopen are spent, waiting with `ci pr wait-for-comments`;
+  - merge questions state per-reviewer, per-head facts and mark no rule bend "Recommended";
+  - re-fetch `main` immediately before enqueue;
+  - cleanup by `git worktree remove` + `prune-local-and-remote-ref` + `switch-and-pull`
+    (`worktree-remove` refuses in this lane);
+  - the landing lists every model, every operator question, and every `guard.log` line for the run.
+
+  The runbook is now 316 lines.
 
 ## Open Defects
 
@@ -624,6 +643,13 @@ derive, for rows still live.
   and `ensure_project_trailer` (`git-workflow.py:283-299`) is called only from a test. Every
   merge-queue squash still takes the PR page body (footer, duplicate `## Intent`, CodeRabbit block,
   extra `Co-authored-by`). — `landings/PLAN-LB-47.md`.
+- **Build-finding dedup can fold distinct failures** (PLAN-LB-61 D4, `c1f68bd68`, re-check before
+  staging). The identity `(type, title, file)`, with the title carrying `message[:80]`
+  (`_build_shared.py:343-358`), folds two distinct failures in the same file, line and category,
+  even within one build. The second is `deduplicated` and counted as stored. If it lands on a
+  record owned by a pending fix task, the short-circuit guard reads all-owned and the new failure is
+  not triaged. A recurrence also keeps the first detection's `detail`. Frequency unverified.
+  Medium-high; not staged. — `landings/PLAN-LB-61.md`.
 - **Medium and low items are not owned by any staged plan.** They are listed with evidence
   in `backlog.md` (sections 1.12 onward, 2.3 onward, 3.2 onward, 4.7 onward and 5). Promote an
   item into a plan spec when it starts to hurt; re-verify it at HEAD first.
@@ -937,6 +963,17 @@ entries below are OpenCode 1 assumptions in plan-marshall that OpenCode 2 broke.
     | Plan | Spec met/partial/unmet | Claimed | Regressions | Sessions | Cost | Grade |
     |------|------------------------|---------|-------------|----------|------|-------|
     | PLAN-LB-60 | 1 / 4 / 0 of 5 | 5/5 | 1 high | 45 | $3.75 | D+ |
+
+    **Runbook lane** (DeepSeek; first run mixed — implementation on `deepseek-v4.1-flash-free`/max,
+    review and merge on paid `deepseek-v4.1-flash`/high after a free-tier 429):
+
+    | Plan | Spec met/partial/unmet | Claimed | Regressions | Sessions | Cost | Grade |
+    |------|------------------------|---------|-------------|----------|------|-------|
+    | PLAN-LB-61 | 3 / 1 / 0 of 4 | 4/4 | 0 confirmed | 5 | $0.40 | C+ |
+
+    PLAN-LB-61 is the first run to keep every Done-when verbatim with genuine fail-first evidence.
+    It still bent the CodeRabbit policy (the merged head has no CodeRabbit review; Q4's premise was
+    partly false), its sub-agents broke rules undisclosed, and its report had about 10 omissions.
 
     Pooled: see the Muse total below the table; every run claimed 100%. The over-claim is the
     constant; mechanics (gh, rebase, trailers) improved run over run as enforcement arrived.

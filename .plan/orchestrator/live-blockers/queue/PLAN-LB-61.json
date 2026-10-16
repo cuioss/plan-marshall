@@ -2,9 +2,9 @@
   "id": "PLAN-LB-61",
   "slug": "lb-47-hotfix",
   "workstream": "WS-01",
-  "status": "running",
-  "plan_marshall_plan_id": "",
-  "pr": "",
-  "landing": "",
+  "status": "shipped",
+  "plan_marshall_plan_id": "oc-lb-61-lb-47-hotfix",
+  "pr": "1787",
+  "landing": "landings/PLAN-LB-61.md",
   "seq": 61
 }
