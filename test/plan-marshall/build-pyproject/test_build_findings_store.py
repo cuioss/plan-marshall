@@ -1152,11 +1152,17 @@ _FIX_COMMIT = 'a1b2c3d4e5f60718293a4b5c6d7e8f9012345678'
 
 
 def _pending_build_findings(plan_id: str) -> list[dict]:
-    """The plan-scoped slice of the guard's pending union: the three build types."""
+    """The plan-scoped slice of the guard's pending union: every build finding type.
+
+    The types come from the authoritative :data:`BUILD_FINDING_TYPES` — the same
+    tuple the auto-store classifies into — never a local copy, so a type added
+    there cannot make this read silently omit its pending findings.
+    """
+    from _build_examined import BUILD_FINDING_TYPES
     from _findings_core import query_findings
 
     records: list[dict] = []
-    for finding_type in ('build-error', 'test-failure', 'lint-issue'):
+    for finding_type in BUILD_FINDING_TYPES:
         result = query_findings(plan_id, finding_type=finding_type, resolution='pending')
         assert result['status'] == 'success'
         records.extend(result['findings'])
