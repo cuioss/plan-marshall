@@ -161,7 +161,7 @@ A `fixed` resolution is recorded when the fix is decided, which is before the fi
 
 - `fix_task_number` is set by `resolve` when the fix is a task. A `fixed` finding without it is an inline fix.
 - `fix_commit_sha` is set by `stamp-fix-commit`, by fix task or by finding. The store does not check that the commit is on the pull request; the reader does.
-- A changed resolution clears both fields. So does a re-resolve to `fixed` under a different fix task, which also stores the new task number.
+- A changed resolution clears `fix_commit_sha`, and clears `fix_task_number` too — except on a reopen: the plan-scoped store's `deduplicate` opt-in returns a re-detected failure's `fixed` record to `pending` carrying its owning `fix_task_number` forward, so a pending recurrence still reads as owned. A re-resolve to `fixed` under a different fix task stores the new task number.
 - A re-resolve of a `fixed` finding to `fixed` that names no task changes neither field: a task-owned fix keeps its `fix_task_number` and its `fix_commit_sha`.
 - Stamping again replaces `fix_commit_sha`.
 
@@ -249,9 +249,11 @@ Each line in `findings/qgate-{phase}.jsonl` is a JSON object:
 |-------|------|-------------|
 | `source` | string | `qgate` (automated verification) or `user_review` (user feedback) |
 | `iteration` | int | Verification cycle number (1 = first build attempt, 2 = after fixes) |
-| `content_discriminator` | string | 6-char stable hash over (`detail`, `file_path`, `rule`) folded into the dedup key (see [Deduplication](#deduplication-q-gate-only)) |
+| `content_discriminator` | string | 6-char stable hash over (`detail`, `file_path`, `rule`) folded into the dedup key (see [Deduplication](#deduplication)) |
 | `history` | array | Prior resolution snapshots, appended only by the fixed-only `--reopen` opt-in — each entry carries the overridden `resolution`, `resolution_detail`, `resolution_timestamp` and `timestamp` |
 | `reobserved_count` | int | How many times an unchanged re-emission re-detected this record while its resolution was kept |
+
+Neither `history` nor `reobserved_count` is Q-Gate-only: a plan-scoped record gets both from `add`'s `deduplicate` opt-in (see [Deduplication](#deduplication)), whose `history` entries carry `resolution`, `resolution_detail` and `timestamp` — a plan-scoped record has no `resolution_timestamp`.
 
 Q-Gate findings do NOT have `promoted`/`promoted_to` fields — they are not promotable.
 
@@ -285,9 +287,11 @@ Hash IDs are 6-character hex strings generated using `SHA-256(timestamp + random
 - IDs are unique per record, NOT deterministic from content
 - Q-Gate deduplication uses the `(title, content_discriminator)` pair (see below), not the random `hash_id`
 
-## Deduplication (Q-Gate Only)
+## Deduplication
 
-When adding a Q-Gate finding, the system dedups on the **`(title, content_discriminator)` pair** — never the title alone. The `content_discriminator` is a stable 6-char hash over (`detail`, `file_path`, `rule`); folding it into the dedup key means a bare `defect_class` title collision alone can NEVER reopen an unrelated already-resolved finding of the same class, while the intended same-defect merge across iterations (same title AND same discriminator) still collapses:
+One key per store, each folding an unchanged re-emission into the record it repeats instead of appending a copy.
+
+**Q-Gate store.** When adding a Q-Gate finding, the system dedups on the **`(title, content_discriminator)` pair** — never the title alone. The `content_discriminator` is a stable 6-char hash over (`detail`, `file_path`, `rule`); folding it into the dedup key means a bare `defect_class` title collision alone can NEVER reopen an unrelated already-resolved finding of the same class, while the intended same-defect merge across iterations (same title AND same discriminator) still collapses:
 
 | Existing State | Action | Returned Status |
 |----------------|--------|-----------------|
@@ -297,6 +301,8 @@ When adding a Q-Gate finding, the system dedups on the **`(title, content_discri
 | Match with `fixed` resolution AND the `--reopen` opt-in | Return to `pending`; move the prior resolution, detail and timestamp into `history` | `reopened` |
 
 A same-title finding whose `content_discriminator` differs (a different subject / file / rule) is a DISTINCT record — it never reopens the resolved one. Q-Gate dedup tests must use unique `plan_id`s per test (test-isolation constraint) so stale cross-test data cannot perturb the `(title, discriminator)` match.
+
+**Plan-scoped store.** A plan-scoped `add` folds a re-detected finding into its own record only under the caller's `deduplicate` opt-in (the build auto-store sets it; a plain `add` still appends). The key is `(type, title, file_path)` — the type selects the per-type store file, so the match is scoped to that type. The outcomes mirror the Q-Gate four above: no match appends (`success`); a match still `pending` stands (`deduplicated`); a match resolved under another disposition stands with the re-observation counted (`kept`); a match `fixed` is returned to `pending`, carrying its `fix_task_number` forward and clearing its `fix_commit_sha` (`reopened`), so a recurrence of an owned failure reads as still owned.
 
 ## Valid Phases
 

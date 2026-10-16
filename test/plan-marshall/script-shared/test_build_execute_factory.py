@@ -1280,8 +1280,8 @@ class TestPerTaskRoutedBuildOutliving300s:
     """A per_task routed build outliving 300 s hands back running plus job id.
 
     Pins the single running hand-back contract on the per_task tier: with the
-    wrapper bound at the per-call ceiling (600 s), a job still running past
-    the old 300 s bound delivers the documented leaf handling — a live
+    wrapper bound raised to the per-call ceiling (600 s), a job still running
+    past the old 300 s bound delivers the documented leaf handling — a live
     ``running`` status plus daemon ``job_id`` carried in ``pending_verify_steps``
     by the leaf — or a terminal status, never a block past the ceiling.
     Fails at 501aeb313 where the bound was 300 and the leaf had no rule.
