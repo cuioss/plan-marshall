@@ -207,7 +207,7 @@ binding, output channels, platform abstraction, and the glyph + icon vocabulary.
 
 ## PreToolUse Enforcement Hook
 
-A conditional PreToolUse enforcement hook deterministically blocks four
+A conditional PreToolUse enforcement hook deterministically blocks six
 mechanically-checkable hard-rule violation families, but ONLY when the call
 originates inside a plan-marshall plan context — failing open everywhere else.
 It is implemented by three sibling scripts:

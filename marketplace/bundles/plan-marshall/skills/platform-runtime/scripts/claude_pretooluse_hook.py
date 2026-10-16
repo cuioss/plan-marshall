@@ -567,7 +567,7 @@ def _strip_wrapper_tokens(tokens: list[str]) -> list[str]:
                 if '=' in option:
                     value = option.split('=', 1)[1]
                     index += 1
-                elif option == '-S':
+                elif option in ('-S', '--split-string'):
                     index += 1
                     value = tokens[index] if index < total else ''
                     index += 1
@@ -805,6 +805,32 @@ def _plan_phase(payload: dict[str, Any]) -> str | None:
     return None
 
 
+def _is_git_commit(command: str) -> bool:
+    """Whether *command* is a ``git commit`` invocation after wrapper stripping.
+
+    Mirrors the guard's ``isGitCommit``: the R5 wrappers are stripped first, so
+    a wrapper-prefixed raw commit (``env git commit``) is seen, and the
+    subcommand is then resolved by walking past git's global options.
+    """
+    stripped = _r5_stripped_tokens(command)
+    if len(stripped) < 2:
+        return False
+    program = _strip_matched_quotes(stripped[0]).rsplit('/', 1)[-1].lower()
+    if program != 'git':
+        return False
+    index = 1
+    while index < len(stripped):
+        token = _strip_matched_quotes(stripped[index])
+        if token in _R2_GIT_VALUE_OPTIONS:
+            index += 2
+            continue
+        if token.startswith('-'):
+            index += 1
+            continue
+        return token.lower() == 'commit'
+    return False
+
+
 def _match_r6_raw_finalize_commit(
     payload: dict[str, Any], tool_name: str | None, tool_input: dict[str, Any]
 ) -> str | None:
@@ -814,13 +840,12 @@ def _match_r6_raw_finalize_commit(
     ``git-workflow commit`` verb. A commit in any other phase, a non-``git``
     program, and a non-``commit`` subcommand all pass through. Runs after the
     R1-R5 chain, so a command R1-R5 already refuse keeps its own rule label.
+    Wrapper prefixes are stripped, matching the guard's ``isGitCommit``.
     """
     command = _bash_command(tool_name, tool_input)
     if command is None:
         return None
-    if _program_name(command).lower() != 'git':
-        return None
-    if _git_subcommand(command) != 'commit':
+    if not _is_git_commit(command):
         return None
     if _plan_phase(payload) != _SOURCE_COMMIT_GATE_PHASE:
         return None

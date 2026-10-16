@@ -6407,10 +6407,11 @@ def _persisted_approval_report() -> dict[str, Any]:
     puts the stale-approval report in the plan-start CALL RESULT rather than
     only on stderr.
     """
-    from opencode_runtime import OpenCodeRuntime
     from toon_parser import parse_toon
 
     try:
+        from opencode_runtime import OpenCodeRuntime
+
         report = OpenCodeRuntime().permission_report_persisted_contradictions(os.getcwd())
         parsed = parse_toon(report) if isinstance(report, str) else report
     except Exception as exc:

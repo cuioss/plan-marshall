@@ -1055,9 +1055,10 @@ _R5_NEW_WRAPPER_DENIED = [
     'time python3 -c "x"',
     'xargs -I{} python3 -c "x"',
     'env -S "python3 -c x"',
+    'env --split-string "python3 -c x"',
 ]
 
-_R5_NEW_WRAPPER_IDS = ['timeout', 'nice', 'nohup', 'time', 'xargs', 'env-split-string']
+_R5_NEW_WRAPPER_IDS = ['timeout', 'nice', 'nohup', 'time', 'xargs', 'env-split-string', 'env-split-string-long']
 
 
 @pytest.mark.parametrize('command', _R5_NEW_WRAPPER_DENIED, ids=_R5_NEW_WRAPPER_IDS)
@@ -1163,6 +1164,14 @@ def test_r6_refuses_raw_commit_in_finalize(tmp_path) -> None:
     # A global option before the subcommand is walked past.
     payload_opt = {'cwd': str(worktree), 'tool_name': 'Bash', 'tool_input': _bash('git -C . commit -m "fix: y"')}
     assert hook.evaluate(payload_opt) == hook._R6_REASON
+
+    # A wrapper prefix does not hide the commit.
+    payload_wrapped = {
+        'cwd': str(worktree),
+        'tool_name': 'Bash',
+        'tool_input': _bash('env git commit -m "fix: w"'),
+    }
+    assert hook.evaluate(payload_wrapped) == hook._R6_REASON
 
     # Outside 6-finalize the same raw commit passes.
     status.write_text(json.dumps({'phase': '5-execute'}), encoding='utf-8')

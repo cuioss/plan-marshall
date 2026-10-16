@@ -301,7 +301,7 @@ function stripWrappers(tokens) {
         if (option.includes("=")) {
           value = option.slice(option.indexOf("=") + 1)
           i++
-        } else if (option === "-S") {
+        } else if (option === "-S" || option === "--split-string") {
           i++
           value = tokens[i] ?? ""
           i++

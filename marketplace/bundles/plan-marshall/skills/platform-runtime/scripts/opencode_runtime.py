@@ -458,8 +458,8 @@ def _read_project_deny_rules(project_dir: str) -> list[tuple[str, str]]:
     """Read deny rules as (tool, pattern) pairs, read-only.
 
     Unions THREE sources, so a contradiction is found wherever the deny lives:
-    the project ``opencode.json``, the project ``.opencode/opencode.json`` (first
-    hit wins, as before), and the GLOBAL ``~/.config/opencode/opencode.json``
+    the project ``opencode.json``, the project ``.opencode/opencode.json``,
+    and the GLOBAL ``~/.config/opencode/opencode.json``
     (or ``$OPENCODE_CONFIG_DIR/opencode.json``). Each source contributes its
     top-level deny rules AND its ``agent``/``agents`` scoped denies. Never
     creates or writes any settings file; an absent or unreadable config yields

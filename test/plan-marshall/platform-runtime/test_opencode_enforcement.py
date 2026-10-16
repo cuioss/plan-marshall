@@ -383,6 +383,9 @@ def test_guard_node_r6_refuses_raw_commit_in_finalize(tmp_path_factory: pytest.T
     blocked_opt, _ = harness.blocks(shell_event('git -C . commit -m "fix: y"', agent=SUB_AGENT_AGENT))
     assert blocked_opt, 'git -C . commit must still resolve to the commit subcommand'
 
+    blocked_wrapped, _ = harness.blocks(shell_event('env git commit -m "fix: w"', agent=SUB_AGENT_AGENT))
+    assert blocked_wrapped, 'a wrapper-prefixed raw commit must still be refused'
+
     status.write_text(json.dumps({'phase': '5-execute'}), encoding='utf-8')
     allowed, _ = harness.blocks(shell_event('git commit -m "fix: z"', agent=SUB_AGENT_AGENT))
     assert not allowed, 'a raw commit outside 6-finalize must pass through'
