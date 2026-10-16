@@ -14,19 +14,23 @@ from argparse import Namespace
 from _manage_findings_fixtures import (
     SCRIPT_PATH,
     _add_ns,
+    _get_ns,
     _qgate_add_ns,
     _qgate_query_ns,
     _qgate_resolve_ns,
     _query_ns,
     cmd_add,
+    cmd_get,
     cmd_qgate_add,
     cmd_qgate_query,
     cmd_qgate_resolve,
     cmd_query,
+    cmd_resolve,
+    cmd_stamp_fix_commit,
     query_findings_unified,
 )
 
-from conftest import run_script
+from conftest import get_skill_dir, run_script
 
 
 def _qgate_add_optin_ns(*args, **kwargs):
@@ -55,6 +59,8 @@ PLAN_IDS = (
     'qgate-short-new',
     'qgate-d2-ownership',
     'qgate-d2-builderror',
+    'qgate-d1-plan-store',
+    'qgate-d1-qgate-store',
 )
 
 # =============================================================================
@@ -710,3 +716,157 @@ def test_d2_orchestrator_error_build_routes_to_triage(plan_context):
         include_qgate=True,
     )
     assert unified['filtered_count'] >= 1
+
+
+# =============================================================================
+# Test: D1 store-routed task fix (ownership recorded in the finding's own store)
+# =============================================================================
+
+# The commit sha the stamp tests record; any 7-40 hex id works.
+_FIX_COMMIT = 'a1b2c3d4e5f60718293a4b5c6d7e8f9012345678'
+
+_TRIAGE_MD = get_skill_dir('plan-marshall', 'plan-marshall') / 'workflow' / 'triage.md'
+
+
+def _fix_shape1_block() -> str:
+    """The Shape-1 (task fix) slice of triage.md's FIX action body.
+
+    Sliced from the Shape-1 marker to the Shape-2 marker, so neither an
+    inline-fix command nor a command of the FIX preamble above Shape 1 can
+    satisfy an assertion about the task-fix shape.
+    """
+    body = _TRIAGE_MD.read_text(encoding='utf-8')
+    start = body.index('**Shape 1')
+    end = body.index('**Shape 2', start)
+    return body[start:end]
+
+
+def _resolve_commands_in(block: str) -> dict[str, list[str]]:
+    """The manage-findings resolve invocations in ``block``, keyed by target store.
+
+    Each invocation is joined across its backslash continuations first, so an
+    assertion about the flags one verb carries cannot be satisfied by a flag on
+    another verb's continuation line.
+    """
+    joined = block.replace('\\\n', ' ')
+    commands: dict[str, list[str]] = {'plan': [], 'qgate': []}
+    for line in joined.splitlines():
+        if 'plan-marshall:manage-findings:manage-findings qgate resolve' in line:
+            commands['qgate'].append(line.strip())
+        elif 'plan-marshall:manage-findings:manage-findings resolve' in line:
+            commands['plan'].append(line.strip())
+    return commands
+
+
+def test_d1_plan_scoped_task_fix_resolves_in_the_plan_store(plan_context):
+    """A plan-scoped PR-comment finding triaged into a fix task is owned and stampable.
+
+    At ``b9cd36be1`` FIX Shape 1 routes every finding through the Q-Gate verb,
+    which answers ``Q-Gate finding not found`` for a plan-scoped hash — so the
+    finding never gains a ``fix_task_number`` and the short-circuit guard cannot
+    see an owner. Shape 1 must route by the record's store: a plan-scoped
+    finding through the plan-scoped ``resolve --task-number``, a Q-Gate finding
+    through ``qgate resolve --phase ... --task-number``.
+
+    The behaviour half drives the plan-scoped route end to end: add a
+    PR-comment finding, resolve it fixed under its owning fix task, then find
+    it with ``stamp-fix-commit --task-number``.
+    """
+    commands = _resolve_commands_in(_fix_shape1_block())
+
+    assert len(commands['plan']) == 1, (
+        'Shape 1 must route a plan-scoped finding through the plan-scoped '
+        '`resolve` verb; before the fix it carries no plan-scoped command at all'
+    )
+    plan_command = commands['plan'][0]
+    assert '--task-number {N}' in plan_command
+    assert '--phase' not in plan_command
+
+    assert len(commands['qgate']) == 1, 'Shape 1 must keep routing a Q-Gate finding through `qgate resolve`'
+    qgate_command = commands['qgate'][0]
+    assert '--phase {qgate_phase}' in qgate_command
+    assert '--task-number {N}' in qgate_command
+
+    plan_id = 'qgate-d1-plan-store'
+    added = cmd_add(
+        _add_ns(
+            plan_id=plan_id,
+            type='pr-comment',
+            title='Reviewer: the bound equals the per-call ceiling',
+            detail='The wrapper must hand back below the ceiling, not at it.',
+            file_path='marketplace/bundles/plan-marshall/skills/script-shared/scripts/build/_build_execute_factory.py',
+            author='coderabbitai[bot]',
+            kind='review_body',
+        )
+    )
+    assert added['status'] == 'success'
+    hash_id = str(added['hash_id'])
+
+    resolved = cmd_resolve(
+        Namespace(
+            plan_id=plan_id,
+            hash_id=hash_id,
+            resolution='fixed',
+            detail='Will be addressed by TASK-7; see follow-up commit on this branch',
+            task_number=7,
+        )
+    )
+    assert resolved['status'] == 'success'
+    assert resolved['fix_task_number'] == 7
+
+    stored = cmd_get(_get_ns(plan_id=plan_id, hash_id=hash_id))
+    assert stored['resolution'] == 'fixed'
+    assert stored['fix_task_number'] == 7
+
+    stamped = cmd_stamp_fix_commit(Namespace(plan_id=plan_id, commit_sha=_FIX_COMMIT, task_number=7, hash_id=None))
+    assert stamped['status'] == 'success'
+    assert stamped['selector'] == 'fix_task_number'
+    assert stamped['stamped_count'] == 1
+    assert cmd_get(_get_ns(plan_id=plan_id, hash_id=hash_id))['fix_commit_sha'] == _FIX_COMMIT
+
+
+def test_d1_qgate_task_fix_resolves_in_the_qgate_store(plan_context):
+    """A Q-Gate finding resolved with a fix task keeps its ownership in the Q-Gate store.
+
+    The companion route of the same task fix: a record that lives in the
+    Q-Gate store records ``fix_task_number`` through ``qgate resolve``, reads
+    back owned, and is identified — not resolved — by the plan-scoped verb.
+    """
+    plan_id = 'qgate-d1-qgate-store'
+    add_result = cmd_qgate_add(
+        _qgate_add_ns(
+            plan_id=plan_id,
+            phase='5-execute',
+            source='qgate',
+            type='test-failure',
+            title='FAILED test_the_wait_bound_stays_foreground_safe',
+            detail='AssertionError: the bound equals the per-call ceiling',
+            file_path='test/plan-marshall/script-shared/test_build_execute_factory.py',
+        )
+    )
+    assert add_result['status'] == 'success'
+    hash_id = str(add_result['hash_id'])
+
+    resolve_result = cmd_qgate_resolve(
+        Namespace(
+            plan_id=plan_id,
+            phase='5-execute',
+            hash_id=hash_id,
+            resolution='fixed',
+            detail='Will be addressed by TASK-7; see follow-up commit on this branch',
+            task_number=7,
+        )
+    )
+    assert resolve_result['status'] == 'success'
+    assert resolve_result['fix_task_number'] == 7
+
+    fixed = cmd_qgate_query(_qgate_query_ns(plan_id=plan_id, phase='5-execute', resolution='fixed'))
+    assert fixed['filtered_count'] == 1
+    assert fixed['findings'][0]['fix_task_number'] == 7
+
+    # The record lives in the Q-Gate store only: the plan-scoped verb identifies
+    # it elsewhere instead of reporting a bare not-found.
+    plan_side = cmd_get(_get_ns(plan_id=plan_id, hash_id=hash_id))
+    assert plan_side['status'] == 'error'
+    assert plan_side['error'] == 'finding_in_other_store'
+    assert plan_side['use_verb'] == 'qgate resolve --phase 5-execute'

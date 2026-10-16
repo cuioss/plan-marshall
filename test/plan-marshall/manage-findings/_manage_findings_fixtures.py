@@ -40,6 +40,9 @@ cmd_query = _mod.cmd_query
 cmd_resolve = _mod.cmd_resolve
 
 
+cmd_stamp_fix_commit = _mod.cmd_stamp_fix_commit
+
+
 cmd_qgate_add = _mod.cmd_qgate_add
 
 
