@@ -1141,3 +1141,143 @@ class TestToonErrorRowDetailProjection:
 
         # Backward-compatible 4-field shape when no error carries a detail.
         assert 'errors[1]{file,line,message,category}' in out
+
+
+# =============================================================================
+# The short-circuit guard's verdict for repeated failing builds
+# =============================================================================
+
+# The fixed-commit stamp these tests record; any 7-40 hex id works.
+_FIX_COMMIT = 'a1b2c3d4e5f60718293a4b5c6d7e8f9012345678'
+
+
+def _pending_build_findings(plan_id: str) -> list[dict]:
+    """The plan-scoped slice of the guard's pending union: every build finding type.
+
+    The types come from the authoritative :data:`BUILD_FINDING_TYPES` — the same
+    tuple the auto-store classifies into — never a local copy, so a type added
+    there cannot make this read silently omit its pending findings.
+    """
+    from _build_examined import BUILD_FINDING_TYPES
+    from _findings_core import query_findings
+
+    records: list[dict] = []
+    for finding_type in BUILD_FINDING_TYPES:
+        result = query_findings(plan_id, finding_type=finding_type, resolution='pending')
+        assert result['status'] == 'success'
+        records.extend(result['findings'])
+    return records
+
+
+def _short_circuit_verdict(plan_id: str, open_task_numbers: set[int]) -> str:
+    """Compute the execution.md short-circuit verdict from the real stores.
+
+    Implements the documented procedure (``plan-marshall/workflow/execution.md``
+    § "Short-circuit guard"): read the pending union — the Q-Gate phase slice
+    plus the plan-scoped build slice — then a pending finding is owned when it
+    carries a ``fix_task_number`` naming a task that is still open. The
+    ``manage-tasks`` read behind "still open" is stubbed to
+    ``open_task_numbers``, the set a fixture knows. Returns the verdict the
+    orchestrator branches on: ``no-pending``, ``all-owned-by-TASK-<n>`` or
+    ``new-findings``.
+    """
+    from _findings_core import query_qgate_findings
+
+    qgate = query_qgate_findings(plan_id, '5-execute', resolution='pending')
+    assert qgate['status'] == 'success'
+    pending = list(qgate['findings']) + _pending_build_findings(plan_id)
+
+    if not pending:
+        return 'no-pending'
+    owners = {record.get('fix_task_number') for record in pending}
+    if all(owner in open_task_numbers for owner in owners):
+        return 'all-owned-by-TASK-' + ','.join(str(owner) for owner in sorted(owners))
+    return 'new-findings'
+
+
+class TestShortCircuitGuardVerdict:
+    """A repeated failing build whose finding is owned by a pending fix task.
+
+    The auto-store files with the plan-scoped store's dedup opt-in, so the
+    second run of the same failing build lands on the first run's record. The
+    guard must then see the pending recurrence as owned (no second fix task);
+    a genuinely new failure beside it must still yield ``new-findings``.
+    """
+
+    _ISSUE = {
+        'file': 'src/Main.py',
+        'line': 10,
+        'message': 'Compile failed: missing import',
+        'severity': 'error',
+        'category': 'compilation',
+    }
+
+    def test_repeated_owned_failure_reaches_the_all_owned_verdict(self, plan_context):
+        from _build_parse import Issue
+        from _build_shared import _store_build_findings
+        from _findings_core import query_findings, resolve_finding, stamp_fix_commit
+
+        plan_id = 'qgate-d4-guard-owned'
+        plan_context.plan_dir_for(plan_id)
+
+        first = _store_build_findings(
+            plan_id=plan_id, tool_name='python', issues=[Issue(**self._ISSUE)], command_str='verify'
+        )
+        assert first == (1, 1, [])
+
+        detected = query_findings(plan_id, finding_type='build-error', resolution='pending')
+        assert detected['filtered_count'] == 1
+        record = detected['findings'][0]
+        hash_id = str(record['hash_id'])
+        assert record.get('fix_task_number') is None, 'the auto-store never writes an owner by itself'
+
+        resolved = resolve_finding(plan_id, hash_id, 'fixed', detail='Will be addressed by TASK-7', fix_task_number=7)
+        assert resolved['status'] == 'success'
+        stamped = stamp_fix_commit(plan_id, _FIX_COMMIT, fix_task_number=7)
+        assert stamped['stamped_count'] == 1
+
+        repeated = _store_build_findings(
+            plan_id=plan_id, tool_name='python', issues=[Issue(**self._ISSUE)], command_str='verify'
+        )
+        assert repeated == (1, 1, [])
+
+        assert _short_circuit_verdict(plan_id, {7}) == 'all-owned-by-TASK-7', (
+            'a repeated owned failure must take the all-owned branch (no second fix task); '
+            'before the fix the re-detection appends a copy carrying no owner, so the verdict is new-findings'
+        )
+
+        records = query_findings(plan_id, finding_type='build-error')
+        assert records['filtered_count'] == 1, 'the re-detection must fold into its own record, not append a copy'
+        reopened = records['findings'][0]
+        assert reopened['resolution'] == 'pending'
+        assert reopened['fix_task_number'] == 7
+        assert reopened.get('fix_commit_sha') is None
+
+    def test_a_genuinely_new_failure_still_yields_new_findings(self, plan_context):
+        from _build_parse import Issue
+        from _build_shared import _store_build_findings
+        from _findings_core import query_findings, resolve_finding
+
+        plan_id = 'qgate-d4-guard-new'
+        plan_context.plan_dir_for(plan_id)
+
+        known = Issue(**self._ISSUE)
+        _store_build_findings(plan_id=plan_id, tool_name='python', issues=[known], command_str='verify')
+        detected = query_findings(plan_id, finding_type='build-error', resolution='pending')
+        assert detected['filtered_count'] == 1
+        hash_id = str(detected['findings'][0]['hash_id'])
+        resolve_finding(plan_id, hash_id, 'fixed', detail='Will be addressed by TASK-7', fix_task_number=7)
+
+        new_issue = Issue(
+            file='src/Other.py',
+            line=42,
+            message='Compile failed: unknown symbol',
+            severity='error',
+            category='compilation',
+        )
+        result = _store_build_findings(
+            plan_id=plan_id, tool_name='python', issues=[known, new_issue], command_str='verify'
+        )
+        assert result == (2, 2, [])
+
+        assert _short_circuit_verdict(plan_id, {7}) == 'new-findings'

@@ -6,6 +6,7 @@ Git workflow operations - format commits, analyze diffs, manage worktrees.
 Usage:
     git-workflow.py format-commit --type <type> --subject <subject> [options]
     git-workflow.py source-commit-gate (--plan-id <plan-id> | --project-dir <path>) [--phase <phase>] [--changed-paths <csv>]
+    git-workflow.py commit (--plan-id <plan-id> | --project-dir <path>) (--message <msg> | --message-file <path>) [--phase <phase>] [--step <step>] [--push]
     git-workflow.py analyze-diff (--plan-id <plan-id> | --project-dir <path>) [--cached]
     git-workflow.py detect-artifacts [--root <dir>]
     git-workflow.py force-push-with-lease (--plan-id <plan-id> | --project-dir <path> --branch <branch>)
@@ -23,6 +24,7 @@ Usage:
 Subcommands:
     format-commit             Format commit message following conventional commits
     source-commit-gate        Refuse a finalize-phase source-tree commit without sanction
+    commit                    Commit through the source-commit gate (the sanctioned commit path)
     analyze-diff              Capture and analyze the worktree diff to suggest a commit message
     detect-artifacts          Scan for committable artifacts (build outputs, temp files)
     force-push-with-lease     Force-push feature branch with lease guard (post-rebase)
@@ -465,14 +467,21 @@ def evaluate_source_commit_gate(
     changed_paths: list[str] | None,
     tasks: list[dict] | None,
     findings: list | None,
+    step: str | None = None,
 ) -> dict:
     """Evaluate the finalize-phase source-commit gate (pure predicate).
 
     Allow iff the commit is outside the guarded phase, touches only plan
-    state, or carries either sanction signal (open loop-back fix task OR
-    rubric §6 inline-correction record). Otherwise refuse, naming the
-    loop-back route. Never touches the filesystem — the CLI wrapper resolves
-    the four inputs and calls this.
+    state, or carries a sanction signal — an open loop-back fix task, a
+    review-rubric section-6 inline-correction record, or a phase-6 settle-band
+    ``step``. Otherwise refuse, naming the loop-back route. Never touches the
+    filesystem — the CLI wrapper resolves the inputs and calls this.
+
+    The ``step`` sanction is recognised by the STEP IDENTITY, never by scanning
+    a finding for magic words: the dispatcher's commit instrumentation passes
+    the id of the ``mutates_source: true`` step whose edits it is committing,
+    and the source-edit-pushability contract confines such steps to the pre-merge
+    settle band — so a non-empty ``step`` IS a settle-band commit.
     """
     paths = list(changed_paths or [])
     source_paths = [path for path in paths if not is_plan_only_path(path)]
@@ -495,6 +504,17 @@ def evaluate_source_commit_gate(
             'changed_paths': paths,
             'source_paths': source_paths,
             'message': 'Plan-state-only commit — no source tree touched',
+        }
+    if step:
+        return {
+            'status': 'success',
+            'phase': phase,
+            'allowed': True,
+            'reason': 'settle_band_step',
+            'step': step,
+            'changed_paths': paths,
+            'source_paths': source_paths,
+            'message': f'Source-tree commit sanctioned by the settle-band step {step}',
         }
     if has_open_fix_task(tasks or []):
         return {
@@ -533,11 +553,26 @@ def evaluate_source_commit_gate(
 
 
 def _source_gate_plan_dir(worktree: Path, plan_id: str | None) -> Path | None:
-    """Resolve the plan directory holding this plan's tasks and findings."""
-    if plan_id is None:
+    """Resolve the plan directory holding this plan's tasks and findings.
+
+    With an explicit plan id that directory is fixed. With no plan id the FIRST
+    plan directory carrying a ``status.json`` under
+    ``<worktree>/.plan/local/plans/`` is used — the same fallback
+    :func:`_plan_phase` applies, so a ``--project-dir``-only commit reads the
+    signals of the plan whose worktree it is.
+    """
+    plans_root = worktree / _PLAN_DIR_NAME / 'local' / 'plans'
+    if plan_id is not None:
+        candidate = plans_root / plan_id
+        return candidate if candidate.is_dir() else None
+    try:
+        candidates = sorted(path for path in plans_root.glob('*') if path.is_dir()) if plans_root.is_dir() else []
+    except OSError:
         return None
-    candidate = worktree / _PLAN_DIR_NAME / 'local' / 'plans' / plan_id
-    return candidate if candidate.is_dir() else None
+    for candidate in candidates:
+        if (candidate / 'status.json').is_file():
+            return candidate
+    return candidates[0] if candidates else None
 
 
 def _source_gate_tasks(plan_dir: Path | None) -> tuple[list[dict], int]:
@@ -725,6 +760,136 @@ def cmd_source_commit_gate(args):
     verdict['findings_scanned'] = findings_scanned
     verdict['signals_resolved'] = plan_dir is not None
     return verdict
+
+
+def _staged_changed_paths(worktree: Path) -> tuple[list[str] | None, dict | None]:
+    """Resolve the STAGED path list from the git index.
+
+    The commit gate judges the commit that is about to be made, so it reads the
+    INDEX (``git diff --cached``), never the dirty tree. NUL separation keeps
+    quoted and space-padded paths verbatim, exactly as the diagnostic verb's
+    derivation does. A failed listing fails closed — an unlistable index never
+    sanctions a source commit.
+    """
+    rc, out, err = _run_git_nul_verbatim(['-C', str(worktree), 'diff', '--cached', '--name-only', '-z'])
+    if rc != 0:
+        return None, make_error(
+            f'git diff --cached failed: {err or f"exit {rc}"}',
+            code=ErrorCode.FETCH_FAILURE,
+        )
+    return [part for part in out.split('\0') if part], None
+
+
+def _plan_phase(worktree: Path, plan_id: str | None) -> str | None:
+    """Resolve the plan phase for the commit gate, or ``None`` when unknown.
+
+    Reads the top-level ``phase`` from the plan's ``status.json``. With an
+    explicit plan id that file is fixed; otherwise the FIRST plan directory under
+    ``<worktree>/.plan/local/plans/`` is read. An absent or unreadable status
+    reads as ``None``, and the gate then treats the phase as outside
+    ``6-finalize`` — the same fail-open posture as any unknown phase.
+    """
+    if plan_id:
+        candidates = [worktree / _PLAN_DIR_NAME / 'local' / 'plans' / plan_id / 'status.json']
+    else:
+        base = worktree / _PLAN_DIR_NAME / 'local' / 'plans'
+        try:
+            candidates = sorted(base.glob('*/status.json')) if base.is_dir() else []
+        except OSError:
+            candidates = []
+    for path in candidates:
+        try:
+            data = json.loads(path.read_text(encoding='utf-8'))
+        except (OSError, ValueError):
+            continue
+        phase = data.get('phase') if isinstance(data, dict) else None
+        if isinstance(phase, str) and phase:
+            return phase
+    return None
+
+
+def cmd_commit(args):
+    """Handle the commit subcommand — the single gate-bearing commit path.
+
+    Judges the STAGED commit (``git diff --cached``), not the dirty tree, and
+    refuses a ``6-finalize`` source-tree commit without a sanction by returning
+    an ERROR result that exits NON-ZERO — never ``status: success, allowed:
+    false``. This verb IS the sanctioned path: a raw ``git commit`` in
+    ``6-finalize`` is refused by the guard rule on both harnesses.
+
+    Sanctions are the documented ones: an open loop-back fix task, a
+    review-rubric section-6 inline-correction record, or a phase-6 settle-band
+    ``--step``. A ``.plan/``-only commit always passes. On allow it performs the
+    commit (``-F`` message file or ``-m`` message) and, with ``--push``, pushes.
+    """
+    worktree, err = _resolve_analyze_diff_path(args)
+    if err is not None:
+        return err
+    assert worktree is not None  # narrowing
+
+    plan_id = getattr(args, 'plan_id', None)
+    phase = getattr(args, 'phase', None) or _plan_phase(worktree, plan_id)
+    staged, git_err = _staged_changed_paths(worktree)
+    if git_err is not None:
+        return git_err
+    assert staged is not None
+
+    plan_dir = _source_gate_plan_dir(worktree, plan_id)
+    tasks, tasks_scanned = _source_gate_tasks(plan_dir)
+    finding_texts, findings_scanned = _source_gate_finding_texts(plan_dir)
+
+    step = getattr(args, 'step', None)
+    verdict = evaluate_source_commit_gate(phase, staged, tasks, finding_texts, step=step)
+    if verdict.get('allowed') is not True:
+        refusal = make_error(verdict['message'], code=ErrorCode.INVALID_INPUT)
+        refusal.update(
+            {
+                'refused': True,
+                'reason': verdict.get('reason'),
+                'phase': phase,
+                'step': step,
+                'changed_paths': staged,
+                'source_paths': verdict.get('source_paths'),
+                'plan_id': plan_id,
+                'tasks_scanned': tasks_scanned,
+                'findings_scanned': findings_scanned,
+            }
+        )
+        return refusal
+
+    message_file = getattr(args, 'message_file', None)
+    message = getattr(args, 'message', None)
+    if message_file is not None:
+        commit_args = ['-C', str(worktree), 'commit', '-F', str(message_file)]
+    elif message is not None:
+        commit_args = ['-C', str(worktree), 'commit', '-m', str(message)]
+    else:
+        return make_error('one of --message or --message-file is required', code=ErrorCode.INVALID_INPUT)
+
+    rc, _out, err = _run_git_nul_verbatim(commit_args)
+    if rc != 0:
+        return make_error(f'git commit failed: {err or f"exit {rc}"}', code=ErrorCode.FETCH_FAILURE)
+
+    rc, head, _err = _run_git_nul_verbatim(['-C', str(worktree), 'rev-parse', 'HEAD'])
+    commit_hash = head.strip() if rc == 0 else None
+
+    pushed = False
+    if getattr(args, 'push', False):
+        rc, _out, push_err = _run_git_nul_verbatim(['-C', str(worktree), 'push'])
+        if rc != 0:
+            return make_error(f'git push failed: {push_err or f"exit {rc}"}', code=ErrorCode.FETCH_FAILURE)
+        pushed = True
+
+    return {
+        'status': 'success',
+        'allowed': True,
+        'reason': verdict.get('reason'),
+        'phase': phase,
+        'step': step,
+        'commit_hash': commit_hash,
+        'files_changed': len(staged),
+        'pushed': pushed,
+    }
 
 
 def analyze_diff(diff_content: str) -> dict:
@@ -3159,6 +3324,7 @@ def main():
 Examples:
   git-workflow.py format-commit --type feat --scope auth --subject "add login"
   git-workflow.py source-commit-gate --plan-id EXAMPLE-PLAN [--phase 6-finalize] [--changed-paths src/a.py,.plan/x]
+  git-workflow.py commit --plan-id EXAMPLE-PLAN --message-file /p/.plan/temp/msg.txt [--step finalize-step-simplify] [--push]
   git-workflow.py analyze-diff --plan-id EXAMPLE-PLAN [--cached]
   git-workflow.py analyze-diff --project-dir /path/to/worktree [--cached]
   git-workflow.py detect-artifacts --root /path/to/repo
@@ -3215,6 +3381,42 @@ Examples:
                         'flags': ['--changed-paths'],
                         'dest': 'changed_paths',
                         'help': 'Comma-separated changed paths (default: derived from git diff --name-only HEAD)',
+                    },
+                ],
+            },
+            {
+                'name': 'commit',
+                'help': 'Commit through the source-commit gate (the sanctioned commit path)',
+                'handler': cmd_commit,
+                'args': [
+                    {
+                        'flags': ['--plan-id'],
+                        'dest': 'plan_id',
+                        'help': 'Plan identifier — resolves the working tree and reads task/finding signals',
+                    },
+                    {
+                        'flags': ['--project-dir'],
+                        'dest': 'project_dir',
+                        'help': 'Explicit working tree path (escape hatch when plan-id is unavailable)',
+                    },
+                    {'flags': ['--message'], 'help': 'Commit message (one-line; prefer --message-file)'},
+                    {
+                        'flags': ['--message-file'],
+                        'dest': 'message_file',
+                        'help': 'Path to a file holding the commit message (use -F)',
+                    },
+                    {
+                        'flags': ['--phase'],
+                        'help': 'Phase the commit is made in (default: read from plan status.json)',
+                    },
+                    {
+                        'flags': ['--step'],
+                        'help': 'Finalize step id producing this commit (sanctions a settle-band commit)',
+                    },
+                    {
+                        'flags': ['--push'],
+                        'action': 'store_true',
+                        'help': 'Push the feature branch after a successful commit',
                     },
                 ],
             },
@@ -3521,7 +3723,14 @@ Examples:
     args = parser.parse_args()
     from triage_helpers import print_toon as _output_toon
 
-    return _output_toon(args.func(args))
+    result = args.func(args)
+    code = _output_toon(result)
+    # A refusal is an ERROR EXIT, never a success payload carrying allowed:false.
+    # The commit verb marks its refusal with `refused: True`; every other verb
+    # keeps print_toon's exit code.
+    if isinstance(result, dict) and result.get('refused'):
+        return 1
+    return code
 
 
 if __name__ == '__main__':

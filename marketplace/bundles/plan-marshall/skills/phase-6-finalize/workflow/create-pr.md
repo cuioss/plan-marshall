@@ -197,10 +197,10 @@ characters the rendered section omits). Then branch:
 
 - **`truncated: true`** (`overflow: true`) — the draft exceeded the budget. It was cut at a sentence
   or paragraph boundary: only the sentences (or whole paragraphs) that fit are rendered — none at all when even the first does not fit — and the truncation marker is
-  rendered INSIDE the budget so the loss is visible to the reviewer. The body is appended to, not
-  replaced, so this return is the only place the caller learns how much of the draft a reviewer will
-  not see. Record it so a recurring truncation is visible as a signal that the distillations are
-  running long:
+  rendered INSIDE the budget so the loss is visible to the reviewer. The section is filled in place at
+  its template position, so this return is the only place the caller learns how much of the draft a
+  reviewer will not see. Record it so a recurring truncation is visible as a signal that the
+  distillations are running long:
 
   ```bash
   python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \

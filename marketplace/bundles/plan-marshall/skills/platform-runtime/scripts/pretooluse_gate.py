@@ -72,6 +72,10 @@ TOOL_NAME_FIELD = 'tool_name'
 #: ``{"file_path": "..."}`` for Edit).
 TOOL_INPUT_FIELD = 'tool_input'
 
+#: Field carrying the session identity, used to stamp an audit line. Present on
+#: real PreToolUse payloads as ``session_id``.
+SESSION_ID_FIELD = 'session_id'
+
 #: Substring marker the sub-agent identity value carries when the call originates
 #: inside a dispatched execution-context sub-agent (Signal 1). The identity is
 #: bundle-qualified (``{bundle}:execution-context[-reader]-level-N``), so the gate
@@ -144,6 +148,24 @@ def cwd(payload: dict[str, Any]) -> str | None:
     if not isinstance(payload, dict):
         return None
     value = payload.get(CWD_FIELD)
+    if isinstance(value, str) and value:
+        return value
+    return None
+
+
+def session_id(payload: dict[str, Any]) -> str | None:
+    """Read the session identity field, used to stamp an audit line.
+
+    Args:
+        payload: The parsed PreToolUse payload.
+
+    Returns:
+        The ``session_id`` string, or ``None`` when the payload is not a dict
+        or the field is absent or not a non-empty string.
+    """
+    if not isinstance(payload, dict):
+        return None
+    value = payload.get(SESSION_ID_FIELD)
     if isinstance(value, str) and value:
         return value
     return None

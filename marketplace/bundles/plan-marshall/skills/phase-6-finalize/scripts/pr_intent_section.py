@@ -49,7 +49,11 @@ Behaviour, in order:
    section: when the body already carries the ``## Intent`` heading the
    rendered section replaces it in place, so the body keeps exactly one
    Intent section and the renderer never appends a second one; only a body
-   with no heading gets the section appended. Then enforce the budget.
+   with no heading gets the section appended. The fill runs through a
+   FUNCTION replacement, so the draft's text is inserted as literal data —
+   a backslash in it can never be read as a regex escape, and the filled
+   section keeps the blank line before the next heading. Then enforce the
+   budget.
 5. **Budget: cut at a sentence, and REPORT the overflow.** See
    :data:`INTENT_BUDGET_CHARS`. A draft over budget is cut at a sentence or
    paragraph boundary: only the sentences (or whole paragraphs) that fit are rendered — none
@@ -58,9 +62,9 @@ Behaviour, in order:
    is never larger than the budget it claims to honour. **Silent truncation is
    categorically forbidden**: a clipped intent that looks complete is worse than
    an obviously-clipped one. The return states the overflow explicitly, because
-   the body is appended to rather than replaced and ``ci pr view`` is the only way
-   to read it back — a caller learns what was dropped from this return or not at
-   all.
+   the fill reaches the body without any diff reaching the caller and ``ci pr view``
+   is the only way to read it back — a caller learns what was dropped from this
+   return or not at all.
 
 Return TOON carries ``status``, ``omitted``, ``truncated``, ``chars_written`` and
 ``budget``; a rendered section additionally carries ``overflow`` (the draft did
@@ -407,11 +411,19 @@ def cmd_render(args: argparse.Namespace) -> int:
         )
         return 1
 
-    if _INTENT_SECTION_RE.search(existing):
+    match = _INTENT_SECTION_RE.search(existing)
+    if match:
         # The template-position section exists: fill it in place so the body
         # keeps exactly one Intent section. Appending here would ship a second
-        # one after the rest of the body.
-        updated = _INTENT_SECTION_RE.sub(rendered.section + '\n', existing, count=1)
+        # one after the rest of the body. The replacement is a FUNCTION so the
+        # rendered text is inserted as literal data — a string replacement would
+        # read backslashes in the LLM-written draft as regex escapes (\d raises
+        # bad escape, \1 back-references a group, \n silently becomes a
+        # newline). The two trailing newlines restore the blank line before the
+        # next heading that the pattern consumed; a match running to the end of
+        # the body gets a single terminating newline instead.
+        tail = '\n\n' if match.end() < len(existing) else '\n'
+        updated = _INTENT_SECTION_RE.sub(lambda _match: rendered.section + tail, existing, count=1)
     else:
         separator = '' if existing.endswith('\n\n') else ('\n' if existing.endswith('\n') else '\n\n')
         updated = existing + separator + rendered.section + '\n'
@@ -427,8 +439,8 @@ def cmd_render(args: argparse.Namespace) -> int:
                 'chars_written': len(rendered.section),
                 'budget': INTENT_BUDGET_CHARS,
                 # The overflow, stated rather than left to be inferred from the body:
-                # the section is appended, and this return is where a caller learns
-                # how much of the draft a reviewer will not see.
+                # the section is filled into the body, and this return is where a
+                # caller learns how much of the draft a reviewer will not see.
                 'overflow': rendered.truncated,
                 'draft_chars': rendered.draft_chars,
                 'chars_not_shown': rendered.chars_not_shown,
@@ -451,7 +463,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     render_parser = subparsers.add_parser(
         'render',
-        help='Append the Intent section to the PR body, or omit it entirely',
+        help='Fill the Intent section into the PR body, or omit it entirely',
         allow_abbrev=False,
     )
     render_parser.add_argument('--plan-id', required=True, help='Plan identifier (kebab-case)')
@@ -467,7 +479,10 @@ def build_parser() -> argparse.ArgumentParser:
     render_parser.add_argument(
         '--body-path',
         required=True,
-        help='PR body file the rendered section is appended to (left byte-identical when omitted)',
+        help=(
+            'PR body file the rendered section is filled into; when the outline carries no '
+            'intent, the template-position Intent section is stripped from it instead'
+        ),
     )
     render_parser.set_defaults(func=cmd_render)
     return parser

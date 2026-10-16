@@ -69,6 +69,7 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workf
 **Input Parameters:**
 - **message** (optional): Custom commit message
 - **push** (optional): Push after committing
+- **step** (optional): Finalize step id producing this commit — passed through to the gate so a phase-6 settle-band commit is sanctioned by its step.
 
 ### Steps
 
@@ -158,14 +159,17 @@ Co-Authored-By: plan-marshall <noreply@cuioss.de>
 
 Append no other attribution — in particular no `Generated with …` footer. See `plan-marshall:manage-run-config` § "commit-trailer get / set" for the schema and the per-half fallback.
 
-Then commit using `-F` to read the message from the file — this is one Bash call with no `&&`, no heredoc, no `$(...)` substitution:
+Commit through the gate-bearing `commit` verb — ONE Bash call. It judges the STAGED commit and refuses a `6-finalize` source commit without a sanction (an open loop-back fix task, a review-rubric section-6 record, or a settle-band `--step`), exiting non-zero on a refusal:
 
 ```bash
-# ONE Bash call — commit reading message from worktree-absolute .plan/temp/ file
-git -C {worktree_path} commit -F {worktree_path}/.plan/temp/{plan_id}-commit-msg.txt
+# ONE Bash call — commit through the gate (message read from the worktree-absolute file)
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow commit \
+  --project-dir {worktree_path} \
+  --message-file {worktree_path}/.plan/temp/{plan_id}-commit-msg.txt \
+  [--step {step}]
 ```
 
-The `git commit -m "$(cat <<'EOF' … EOF)"` form is forbidden — it combines `$(…)` substitution with a heredoc, both of which trip the Bash safety harness. See `persona-plan-marshall-agent/standards/tool-usage-patterns.md` for the chain-shape and Bash-write rules.
+A **raw** `git commit` is refused by the enforcement guard in phase `6-finalize` (both harnesses) precisely so this verb is the single commit path; do not bypass it. The `git commit -m "$(cat <<'EOF' … EOF)"` form is forbidden — it combines `$(…)` substitution with a heredoc, both of which trip the Bash safety harness. See `persona-plan-marshall-agent/standards/tool-usage-patterns.md` for the chain-shape and Bash-write rules.
 
 **Step 6: Push (Optional)**
 

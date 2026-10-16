@@ -32,6 +32,16 @@ participation is current.
      this in prose only.
    - The merge barrier refuses when any head-dependent finalize step's `head_at_completion`
      differs from the merge candidate's head (the PLAN-LB-26 `3db65fc05`/`74e6bfda` case).
+   - An armed auto-merge or merge-queue entry is bound to the head it was armed for. A push of a
+     new head while armed disarms it (or the push verb refuses while armed), and the barrier must
+     pass again on the new head. PLAN-LB-50's auto-merge, armed for `f4ca42ab`, merged a
+     force-pushed `779b035ab` 89 s later; no required bot had reviewed it, and no grant covered it.
+   - `pre_merge_gate merge` itself runs the required-bot participation check against the merge
+     candidate (`review_completeness check` with the configured roster) and refuses unless every
+     required bot participated on that head or a recorded grant covers the gap. Today it checks
+     pending findings only, so a run that skips the barrier step merges unchecked — PLAN-LB-60
+     merged `e4dc79f8e`, which cuioss-review-bot never reviewed, after replacing the barrier with a
+     grep "execution skeleton".
 
    *Done when:* tests: a fix commit after the last gate makes push refuse; a rebased head makes
    `force-push-with-lease` refuse; a merge candidate newer than the functional-review head makes

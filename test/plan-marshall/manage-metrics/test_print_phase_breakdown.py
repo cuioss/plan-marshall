@@ -113,7 +113,7 @@ class TestPhaseBreakdownRenderingRule:
             assert numeric_cell == '**-**', f'expected dash, got {numeric_cell!r}'
 
     def test_subset_present_total_marker(self, plan_context):
-        """A subset with an unmeasured hole → Tokens Total is `unknown`, never a partial sum."""
+        """A subset with an unmeasured hole → Tokens Total quotes the measured subset with its count."""
         _seed_phases(
             'render-rule-02',
             {
@@ -124,11 +124,12 @@ class TestPhaseBreakdownRenderingRule:
         )
         lines = _render_breakdown('render-rule-02')
         total_line = next(ln for ln in lines if '**Total**' in ln)
-        # The unmeasured 2-refine row makes the Tokens Total `unknown`: a sum
-        # with a hole in it is not a sum (unknown-token reporting). The
-        # measured rows still render their own figures, and the unmeasured row
-        # states its absence in its own cell.
-        assert '**unknown**' in total_line, total_line
+        # The unmeasured 2-refine row keeps its own `unknown` cell, but the
+        # Tokens Total quotes the measured subset with its count
+        # (measured-subset contract): 1,000 + 2,000 over 2 of the canonical 6.
+        # The measured rows still render their own figures, and the unmeasured
+        # row states its absence in its own cell.
+        assert '**3,000 (n=2/6)**' in total_line, total_line
         for phase, figure in (('1-init', '1,000'), ('3-outline', '2,000')):
             row = next(ln for ln in lines if phase in ln)
             assert figure in row, row

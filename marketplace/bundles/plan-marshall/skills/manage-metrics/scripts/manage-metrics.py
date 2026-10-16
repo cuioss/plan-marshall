@@ -2397,11 +2397,11 @@ def cmd_generate(args: argparse.Namespace) -> dict:
         field = _TOTALS_FIELDS[column]
         data[field] = sum(int(v) for v in values)
         data[f'{field}{_POPULATION_COUNT_SUFFIX}'] = len(values)
-    # Phases without any measurement keep the Tokens Total honest: a sum with a
-    # hole in it is not a sum. The persisted numeric sum above still covers the
-    # measured rows (with its count), and this companion names the rows it does
-    # not cover — so the Total renders `unknown` while the measured subset stays
-    # checkable. Empty string when every rendered row measured.
+    # Single landing-totals contract (measured-subset total): the persisted
+    # numeric sum above covers the measured rows with its count, and this
+    # companion names the rows it does not cover. The render quotes the measured
+    # subset with its count while any row is measured; only the nothing-measured
+    # run renders `unknown`. Empty string when every rendered row measured.
     data[TOTALS_TOKENS_UNKNOWN_PHASES_FIELD] = ','.join(unknown_token_phases)
     # The Total is a cell in the same column and inherits the same declared
     # default, so it takes the same marking discipline as every other cell: when
@@ -2449,12 +2449,13 @@ def cmd_generate(args: argparse.Namespace) -> dict:
     total_worked_str = _total_str('worked', str, is_duration=True)
     total_wall_str = _total_str('wall', str, is_duration=True)
     total_idle_str = _total_str('idle', str, is_duration=True)
-    # A Total with a hole in it is not a sum: any unmeasured phase row makes
-    # the Tokens Total itself `unknown`, naming the measured subset's count
-    # nowhere — the persisted sum beside its count stays checkable in the
-    # store, but the rendered figure refuses to quote it as the whole.
+    # Single landing-totals contract (measured-subset total): a partly measured
+    # run renders the measured subset sum with its (n=k/N) count, so the landing
+    # still drains complete; only the nothing-measured run renders `unknown`,
+    # never `0` and never the empty-subset `-`. The persisted sum beside its
+    # count stays checkable in the store either way.
     unknown_tokens_csv = str(data.get(TOTALS_TOKENS_UNKNOWN_PHASES_FIELD) or '')
-    if unknown_tokens_csv:
+    if not tokens_values:
         total_tokens_str = UNKNOWN_TOKEN
     else:
         total_tokens_str = _total_str('tokens', lambda n: f'{n:,}')
@@ -2509,16 +2510,17 @@ def cmd_generate(args: argparse.Namespace) -> dict:
         )
         lines.append('')
 
-    # Unknown annotation: an `unknown` cell is stated absence, and the Total it
-    # feeds is itself `unknown`. The annotation names the phases so a reader
-    # sees which rows the Total does not cover — and that the measured subset's
-    # sum beside its count stays checkable in the store.
+    # Unknown annotation: an `unknown` cell is stated absence. The annotation names
+    # the phases so a reader sees which rows the Total does not cover — the Total
+    # quotes the measured subset with its count while any row is measured, and
+    # only the nothing-measured run renders `unknown`.
     if unknown_token_phases:
         lines.append(
             '> Tokens unknown — no measurement was recorded for these phases: '
             f'{", ".join(unknown_token_phases)}. Their cells render `unknown`, never '
-            '`0`, and the **Total** is itself `unknown` — a sum with a hole in it '
-            'is not a sum. A measured zero still renders `0`; only never-measured '
+            '`0`, and the **Total** quotes the measured subset with its (n=k/N) count '
+            'while any row is measured; only the nothing-measured run renders `unknown`. '
+            'A measured zero still renders `0`; only never-measured '
             'reads as `unknown`.'
         )
         lines.append('')
@@ -2902,13 +2904,13 @@ def cmd_generate(args: argparse.Namespace) -> dict:
         totals_echo[count_field] = data[count_field]
     totals_echo[_TOTALS_SPANS_POPULATIONS_FIELD] = data[_TOTALS_SPANS_POPULATIONS_FIELD]
     totals_echo[_TOTALS_SAMPLED_AT_FIELD] = data[_TOTALS_SAMPLED_AT_FIELD]
-    # The rendered Tokens Total refuses to quote a sum with a hole in it: any
-    # unmeasured phase row makes the total `unknown`. The echo carries the same
-    # verdict plus the phase list, so a caller reading the return cannot quote
-    # the numeric subset sum as the whole either.
+    # Measured-subset total: the return quotes the measured subset sum with its
+    # count while any row is measured; only the nothing-measured run returns
+    # `unknown`. The echo still carries the unknown-phase list, so a caller
+    # reading the return sees which rows the numeric total does not cover.
     unknown_tokens_csv = str(data.get(TOTALS_TOKENS_UNKNOWN_PHASES_FIELD) or '')
     totals_echo[TOTALS_TOKENS_UNKNOWN_PHASES_FIELD] = unknown_tokens_csv
-    if unknown_tokens_csv:
+    if not tokens_values:
         total_tokens_out: object = UNKNOWN_TOKEN
         total_tokens_formatted = UNKNOWN_TOKEN
     else:

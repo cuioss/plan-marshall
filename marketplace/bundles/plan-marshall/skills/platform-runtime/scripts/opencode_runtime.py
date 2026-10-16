@@ -88,60 +88,6 @@ def _bridge_rules_path(project_dir: Path) -> Path:
     return project_dir / '.opencode' / 'rules' / 'plan-marshall-target-rules.md'
 
 
-def _marshal_target_present(project_dir: Path, target: str) -> bool:
-    """True when marshal.json already carries the target (benign no-write).
-
-    A ``False`` seed on a file that already carries the target is the idle
-    re-setup path, not a failure. Every other ``False`` — corrupt content,
-    a non-dict document, an unwritable file — leaves the target unseeded.
-    """
-    try:
-        data = json.loads((project_dir / '.plan' / 'marshal.json').read_text(encoding='utf-8'))
-    except (OSError, ValueError):
-        return False
-    return isinstance(data, dict) and isinstance(data.get('runtime'), dict) and data['runtime'].get('target') == target
-
-
-def _seed_marshal_runtime_target(project_dir: Path, target: str) -> bool:
-    """Seed ``runtime.target`` into ``.plan/marshal.json``, preserving other keys.
-
-    Returns True when the file was written, False when it already carried the
-    target or could not be written. Never raises.
-    """
-    marshal_file = project_dir / '.plan' / 'marshal.json'
-    try:
-        if marshal_file.is_file():
-            data = json.loads(marshal_file.read_text(encoding='utf-8'))
-            if not isinstance(data, dict):
-                return False
-            runtime = data.get('runtime')
-            if isinstance(runtime, dict) and runtime.get('target') == target:
-                return False
-            if not isinstance(runtime, dict):
-                if runtime is None:
-                    data['runtime'] = {'target': target}
-                else:
-                    # Present but malformed: refuse without writing (fail-closed).
-                    # The caller reports io_error; the corrupt value is never destroyed.
-                    return False
-            else:
-                runtime['target'] = target
-            marshal_file.write_text(json.dumps(data, indent=2) + '\n', encoding='utf-8')
-            return True
-        marshal_file.parent.mkdir(parents=True, exist_ok=True)
-        payload = {
-            'runtime': {'target': target},
-            'standing_rules_bridge': {
-                'version': STANDING_RULES_BRIDGE_VERSION,
-                'source': STANDING_RULES_BASELINE,
-            },
-        }
-        marshal_file.write_text(json.dumps(payload, indent=2) + '\n', encoding='utf-8')
-        return True
-    except (OSError, ValueError):
-        return False
-
-
 def _write_rules_bridge(project_dir: Path) -> bool:
     """Copy the bridged standing-rules header into the OpenCode grant surface."""
     bridge = _bridge_rules_path(project_dir)
@@ -408,52 +354,81 @@ def _patterns_contradict(allow_pattern: str, deny_pattern: str) -> bool:
     return bare_allow != '' and bare_allow == bare_deny
 
 
-def _read_project_deny_rules(project_dir: str) -> list[tuple[str, str]]:
-    """Read project deny rules as (tool, pattern) pairs, read-only.
+def _deny_rules_from_config(data: dict[str, Any]) -> list[tuple[str, str]]:
+    """Extract deny ``(tool, pattern)`` pairs from one OpenCode config object.
 
-    Parses both the OpenCode 2 list shape (``permissions: [{action, resource,
-    effect}]``) and the permission-map shape (``permission: {bash: {pattern:
-    action}}``). Never creates or writes any settings file; an absent or
-    unreadable config yields no deny rules. The repository root
-    ``opencode.json`` is only ever read here, never written.
+    Parses the OpenCode 2 list shape (``permissions: [{action, resource,
+    effect}]``) at the top level AND under each ``agent``/``agents`` entry, and
+    the permission-map shape (``permission: {bash: {pattern: action}}``) in both
+    places. An agent-scoped deny is a deny too — the spec's
+    ``agents.*.permissions`` surface — so it participates in the contradiction
+    check exactly as a top-level deny does.
+    """
+    denies: list[tuple[str, str]] = []
+
+    def _consume(container: dict[str, Any]) -> None:
+        permissions = container.get('permissions')
+        if isinstance(permissions, list):
+            for entry in permissions:
+                if not isinstance(entry, dict):
+                    continue
+                if str(entry.get('effect', '')).lower() != 'deny':
+                    continue
+                resource = entry.get('resource')
+                if not isinstance(resource, str) or not resource.strip():
+                    continue
+                denies.append((str(entry.get('action', 'bash')), resource.strip()))
+        perm_map = container.get('permission')
+        if isinstance(perm_map, dict):
+            for tool, value in perm_map.items():
+                if isinstance(value, dict):
+                    for pattern, action in value.items():
+                        if str(action).lower() == 'deny' and isinstance(pattern, str) and pattern.strip():
+                            denies.append((str(tool), pattern.strip()))
+                elif isinstance(value, str) and value.lower() == 'deny':
+                    denies.append((str(tool), '*'))
+
+    if not isinstance(data, dict):
+        return denies
+    _consume(data)
+    for key in ('agent', 'agents'):
+        agents = data.get(key)
+        if isinstance(agents, dict):
+            for agent in agents.values():
+                if isinstance(agent, dict):
+                    _consume(agent)
+    return denies
+
+
+def _read_project_deny_rules(project_dir: str) -> list[tuple[str, str]]:
+    """Read deny rules as (tool, pattern) pairs, read-only.
+
+    Unions THREE sources, so a contradiction is found wherever the deny lives:
+    the project ``opencode.json``, the project ``.opencode/opencode.json``,
+    and the GLOBAL ``~/.config/opencode/opencode.json``
+    (or ``$OPENCODE_CONFIG_DIR/opencode.json``). Each source contributes its
+    top-level deny rules AND its ``agent``/``agents`` scoped denies. Never
+    creates or writes any settings file; an absent or unreadable config yields
+    nothing from that source. No config is ever written here.
     """
     proj = Path(project_dir)
-    candidates = [proj / 'opencode.json', proj / '.opencode' / 'opencode.json']
-    config_path: Path | None = None
-    for candidate in candidates:
-        if candidate.is_file():
-            config_path = candidate
-            break
-    if config_path is None:
-        return []
-    try:
-        data = json.loads(config_path.read_text(encoding='utf-8'))
-    except (OSError, ValueError):
-        return []
-    if not isinstance(data, dict):
-        return []
+    candidates = [
+        proj / 'opencode.json',
+        proj / '.opencode' / 'opencode.json',
+        _opencode_config_dir() / 'opencode.json',
+    ]
     denies: list[tuple[str, str]] = []
-    permissions = data.get('permissions')
-    if isinstance(permissions, list):
-        for entry in permissions:
-            if not isinstance(entry, dict):
-                continue
-            if str(entry.get('effect', '')).lower() != 'deny':
-                continue
-            resource = entry.get('resource')
-            if not isinstance(resource, str) or not resource.strip():
-                continue
-            tool = entry.get('action', 'bash')
-            denies.append((str(tool), resource.strip()))
-    perm_map = data.get('permission')
-    if isinstance(perm_map, dict):
-        for tool, value in perm_map.items():
-            if isinstance(value, dict):
-                for pattern, action in value.items():
-                    if str(action).lower() == 'deny' and isinstance(pattern, str) and pattern.strip():
-                        denies.append((str(tool), pattern.strip()))
-            elif isinstance(value, str) and value.lower() == 'deny':
-                denies.append((str(tool), '*'))
+    seen: set[str] = set()
+    for candidate in candidates:
+        key = str(candidate)
+        if key in seen or not candidate.is_file():
+            continue
+        seen.add(key)
+        try:
+            data = json.loads(candidate.read_text(encoding='utf-8'))
+        except (OSError, ValueError):
+            continue
+        denies.extend(_deny_rules_from_config(data))
     return denies
 
 
@@ -466,8 +441,15 @@ def _column_lookup(columns: list[str], candidates: tuple[str, ...]) -> str | Non
     return None
 
 
-def _list_persisted_allow_rows(conn: sqlite3.Connection) -> list[dict[str, Any]]:
+def _list_persisted_allow_rows(conn: sqlite3.Connection) -> tuple[list[dict[str, Any]], bool]:
     """List persisted allow rows from every permission-like table, read-only.
+
+    Returns ``(rows, recognised)``. ``recognised`` is True when at least ONE
+    table carried both a pattern-like and a decision-like column — the live
+    permission-table shape. When no table matches, the schema is unrecognised
+    and the caller MUST report ``checkable: false`` rather than a clean result:
+    an empty read of an unknown schema is an unmeasured observation, never
+    evidence that nothing contradicts.
 
     Only ``SELECT`` statements run here; this helper never writes. Tables
     without both a pattern-like and a decision-like column are skipped. A
@@ -479,6 +461,7 @@ def _list_persisted_allow_rows(conn: sqlite3.Connection) -> list[dict[str, Any]]
     tables = [row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")]
     prioritized = sorted(tables, key=lambda name: 0 if name.lower() in ('permission', 'permissions') else 1)
     rows: list[dict[str, Any]] = []
+    recognised = False
     for table in prioritized:
         try:
             info = conn.execute(f'PRAGMA table_info("{table}")').fetchall()
@@ -494,6 +477,7 @@ def _list_persisted_allow_rows(conn: sqlite3.Connection) -> list[dict[str, Any]]
                 decision_col = maybe_action
         if pattern_col is None or decision_col is None:
             continue
+        recognised = True
         select_cols = f'rowid, "{tool_col}"' if tool_col else 'rowid, NULL'
         select_cols += f', "{pattern_col}", "{decision_col}"'
         try:
@@ -512,7 +496,7 @@ def _list_persisted_allow_rows(conn: sqlite3.Connection) -> list[dict[str, Any]]
                 )
         except sqlite3.Error:
             continue
-    return rows
+    return rows, recognised
 
 
 class OpenCodeRuntime(Runtime):
@@ -550,9 +534,10 @@ class OpenCodeRuntime(Runtime):
     def project_initial_setup(self, project_dir: str, target: str) -> str:
         """One-time project setup for OpenCode.
 
-        Creates ``.plan/``, seeds ``marshal.json`` with ``runtime.target``,
-        bridges the standing rules into the OpenCode settings surface, and
-        reports bridge drift against the CLAUDE.md baseline on re-setup.
+        Creates ``.plan/``, bridges the standing rules into the OpenCode
+        settings surface, and reports bridge drift against the CLAUDE.md
+        baseline on re-setup. Shared ``marshal.json`` carries no
+        runtime-owned keys: routing stays config-driven via the registry.
         No SessionStart hook is installed because OpenCode has no equivalent.
         The ``platform_runtime.py`` project initial-setup CLI renders this
         result verbatim as the steward-path operator surface.
@@ -579,13 +564,6 @@ class OpenCodeRuntime(Runtime):
         self.permission_ensure_defaults(settings, settings_path, dry_run=False)
 
         resolved = pathlib.Path(project_dir).resolve()
-        marshal_written = _seed_marshal_runtime_target(resolved, target)
-        if not marshal_written and not _marshal_target_present(resolved, target):
-            return toon_error(
-                'project initial-setup',
-                'io_error',
-                'Failed to seed runtime.target into .plan/marshal.json: file is corrupt or unwritable',
-            )
         bridge_written = _write_rules_bridge(resolved)
         drift = standing_rules_drift_status(str(resolved))
 
@@ -609,7 +587,7 @@ class OpenCodeRuntime(Runtime):
             {
                 'target': target,
                 'project_dir': str(proj.resolve()),
-                'marshal_written': marshal_written,
+                'marshal_written': False,
                 'bridge_written': bridge_written,
                 'bridge_drift': drift['drift'],
                 'bridge_reason': drift['reason'],
@@ -1282,12 +1260,16 @@ class OpenCodeRuntime(Runtime):
         """Report persisted allow rows contradicting project deny rules.
 
         Read-only: opens ``opencode.db`` with sqlite3 read-only intent
-        (``mode=ro``), selects persisted allow rows, and diffs them against
-        the project deny rules read from ``project_dir``'s ``opencode.json``.
-        Each contradiction is returned as a warning entry carrying the
-        operator removal command; the verb performs no writes, removes none
-        of the persisted approvals, and never touches the root
-        ``opencode.json``. The plan-start flow surfaces the returned
+        (``mode=ro``), inspects the LIVE permission-table schema, selects
+        persisted allow rows, and diffs them against the deny rules read from
+        ``project_dir``'s ``opencode.json``, its ``.opencode/opencode.json``,
+        and the global ``~/.config/opencode/opencode.json`` — top-level AND
+        ``agent``/``agents`` scoped. When no table carries the permission shape
+        the schema is unrecognised and the result is ``checkable: false``
+        (``schema_unrecognised``), never a clean zero. Each contradiction is
+        returned as a warning entry carrying the operator removal command; the
+        verb performs no writes, removes none of the persisted approvals, and
+        never touches any config file. The plan-start flow surfaces the returned
         warnings verbatim.
         """
         resolved_db = Path(db_path).expanduser() if db_path else _default_opencode_db_path()
@@ -1316,7 +1298,7 @@ class OpenCodeRuntime(Runtime):
                 },
             )
         try:
-            allow_rows = _list_persisted_allow_rows(conn)
+            allow_rows, recognised = _list_persisted_allow_rows(conn)
         except sqlite3.Error:
             return toon_success(
                 PERSISTED_CONTRADICTION_OPERATION,
@@ -1333,6 +1315,17 @@ class OpenCodeRuntime(Runtime):
                 conn.close()
             except sqlite3.Error:
                 pass
+        if not recognised:
+            return toon_success(
+                PERSISTED_CONTRADICTION_OPERATION,
+                {
+                    'checkable': False,
+                    'reason': 'schema_unrecognised',
+                    'db_path': str(resolved_db),
+                    'persisted_allow_count': 0,
+                    'contradictions': [],
+                },
+            )
         deny_rules = _read_project_deny_rules(project_dir)
         contradictions: list[dict[str, Any]] = []
         for row in allow_rows:

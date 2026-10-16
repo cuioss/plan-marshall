@@ -95,7 +95,7 @@ OpenCode major cannot drift silently again.
      a bridge that carries the rules of the repository's `CLAUDE.md`, generated from it, with drift
      detected by content (a hash of the source recorded in the bridge), not by mtime. Setup
      reports drift before it heals, and never reports `bridge_drift: False` for a bridge it just
-     rewrote. The bridge is a separate file from `plan-marshall-target-rules.md` (PLAN-LB-50 D1).
+     rewrote. The bridge is a separate file from `plan-marshall-target-rules.md` — PLAN-LB-64 D1 creates it; extend that file.
    - The OpenCode target rules (`plan-marshall-opencode/skills/target-rules/standards/opencode-rules.md`)
      and the base persona carry both rules: (a) build and format commands resolve through
      `architecture resolve`, never a guessed plugin; (b) `No plugin found for prefix …` means the
@@ -154,9 +154,8 @@ durable instrument moved to PLAN-LB-57. The measurement half of the OpenCode wor
 
 - Depends on: PR #1772 (the hotfix) merged — this plan starts from its root `opencode.json` and
   regression test, and does not edit either.
-- Overlaps with: PLAN-LB-50 (running) on `opencode_runtime.py` and `test_opencode_runtime.py`
-  (its D1 moves the bridge file path that deliverable 5 writes) — start after PLAN-LB-50 lands, or
-  accept the overlap at the gate and rebase. PLAN-LB-49 on `opencode_runtime.py` and
+- Depends on PLAN-LB-64 for deliverable 5 (the separate bridge file). PLAN-LB-50 shipped (#1777).
+- Overlaps with: PLAN-LB-62 and PLAN-LB-64 on `opencode_runtime.py` (different functions). PLAN-LB-49 on `opencode_runtime.py` and
   `test_opencode_runtime.py` — this plan goes first. PLAN-LB-51 on the persona's rule (b) — whichever
   lands second reuses the text. PLAN-LB-43 (staged) on
   `test/marketplace/targets/opencode/test_variant_emitter.py`. PLAN-LB-45 (staged) on its

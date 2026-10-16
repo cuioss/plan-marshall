@@ -27,6 +27,7 @@ Operations:
     permission fix          --scope project|global  --operation <op>  [--permissions <p> ...] [--dry-run]
     permission ensure-wildcards  --scope project|global  [--marketplace-dir <path>] [--dry-run]
     permission ensure-steps --marshal <path>  --scope project|global  [--dry-run]
+    permission report-persisted-contradictions  [--project-dir <path>]  [--db-path <path>]
     permission web-analyze  --scope global|project|both
     permission web-apply    --scope project|global  [--add <json>]  [--remove <json>]  [--dry-run]
     metrics capture         --plan-id <id>  --phase <phase>  [--total-tokens <n>]
@@ -190,6 +191,7 @@ from runtime_base import (  # noqa: E402
     Runtime,
     describe_targets,
     toon_error,
+    toon_success,
 )
 
 # --- single registration record ------------------------------------------------
@@ -253,6 +255,7 @@ OPERATION_REGISTRY: tuple[str, ...] = (
     'permission fix',
     'permission ensure-wildcards',
     'permission ensure-steps',
+    'permission report-persisted-contradictions',
     'permission web-analyze',
     'permission web-apply',
     'metrics capture',
@@ -583,6 +586,30 @@ def _dispatch(runtime: Runtime, operation: str, remaining: list[str]) -> str:
         ns = p.parse_args(remaining)
         checks = [c.strip() for c in ns.checks.split(',') if c.strip()]
         return runtime.permission_analyze(ns.scope, checks, ns.marshal)
+
+    # ------------------------------------------------------------------
+    # permission report-persisted-contradictions
+    # ------------------------------------------------------------------
+    if operation == 'permission report-persisted-contradictions':
+        p = argparse.ArgumentParser(
+            allow_abbrev=False, prog='platform_runtime permission report-persisted-contradictions'
+        )
+        p.add_argument('--project-dir', default='.')
+        p.add_argument('--db-path', default=None)
+        ns = p.parse_args(remaining)
+        reporter = getattr(runtime, 'permission_report_persisted_contradictions', None)
+        if reporter is None:
+            return toon_success(
+                operation,
+                {
+                    'checkable': False,
+                    'reason': 'unsupported_target',
+                    'persisted_allow_count': 0,
+                    'contradictions': [],
+                },
+            )
+        report = reporter(ns.project_dir, ns.db_path)
+        return report if isinstance(report, str) else str(report)
 
     # ------------------------------------------------------------------
     # permission fix
