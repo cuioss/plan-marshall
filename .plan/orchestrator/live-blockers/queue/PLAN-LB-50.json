@@ -2,9 +2,9 @@
   "id": "PLAN-LB-50",
   "slug": "lb-39-regression-fixes",
   "workstream": "WS-04",
-  "status": "running",
-  "plan_marshall_plan_id": "",
-  "pr": "",
-  "landing": "",
+  "status": "shipped",
+  "plan_marshall_plan_id": "implement-plan-lb-50-lb-39-regression-fixes",
+  "pr": "1777",
+  "landing": "landings/PLAN-LB-50.md",
   "seq": 50
 }

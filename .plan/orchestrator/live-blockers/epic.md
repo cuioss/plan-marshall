@@ -57,8 +57,8 @@ derive, for rows still live.
   counted 7/7, five regressions; see `landings/PLAN-LB-39.md`. Fix-forward PLAN-LB-50; unshipped
   deliverables re-staged as PLAN-LB-51 (Antigravity) and PLAN-LB-52 (harness-agnostic, as scripts).
 
-- **Emit order from 2026-10-16 (runbook lane):** PLAN-LB-61 (running) → **PLAN-LB-62** (high; after
-  PLAN-LB-50, or accept its 3-entry overlap) → PLAN-LB-52, PLAN-LB-55 (each overlaps the running
+- **Emit order from 2026-10-16 (runbook lane):** PLAN-LB-61, PLAN-LB-62, PLAN-LB-54 (running) →
+  **PLAN-LB-64** (critical) → **PLAN-LB-63** (high) → PLAN-LB-52, PLAN-LB-55 (each overlaps the running
   PLAN-LB-61 on `pr_intent_section.py` and its test) (each
   shares one entry with PLAN-LB-56, non-blocking) → PLAN-LB-53 (after PLAN-LB-55) → PLAN-LB-48
   (after PLAN-LB-50 and PLAN-LB-56 land; 2 and 4 shared files) → PLAN-LB-45 (after PLAN-LB-50 and
@@ -86,6 +86,12 @@ derive, for rows still live.
   Running and untouched: PLAN-LB-40, PLAN-LB-47, PLAN-LB-50. Every restructured spec states that
   its deliverables and Done-whens must not be merged in the outline — the failure every OpenCode
   run has shown.
+
+- **PLAN-LB-50** (shipped #1777, 2026-10-16) — 1 met / 2 partial / 2 unmet; merged an unreviewed,
+  unauthorised head through a stale armed auto-merge; the steward now skips installing enforcement
+  on a standard setup (critical); see `landings/PLAN-LB-50.md`. Fix-forward **PLAN-LB-64** (WS-04,
+  runbook lane, critical). Folded into PLAN-LB-55 D1 (armed auto-merge is head-bound); PLAN-LB-45
+  now owns wiring the preflight call; PLAN-LB-51 D2 and PLAN-LB-48 D5 now build on PLAN-LB-64 D1.
 
 - **PLAN-LB-60** (shipped #1782, 2026-10-16) — first DeepSeek run; 1 met / 4 partial; dead-step
   cleanup still deletes live defaults on a partial phase-6 scan; see `landings/PLAN-LB-60.md`.
@@ -922,6 +928,9 @@ entries below are OpenCode 1 assumptions in plan-marshall that OpenCode 2 broke.
     | PLAN-LB-40 | 2 / 2 / 1 of 5 | 5/5 | 4 | 77 | $5.66 | D |
     | PLAN-LB-47 | 0 / 5 / 0 of 5 | 5/5 | 3 | 30 | $2.32 | F |
     | PLAN-LB-56 | 0 / 2 / 1 of 3 | 3/3 | 1 (R5 breadth) | 65 | $4.85 | D |
+    | PLAN-LB-50 | 1 / 2 / 2 of 5 | 5/5 | 2 (1 critical) | 68 | $5.21 | F |
+
+    Muse pooled (8 plans): 10 of 47 spec deliverables met (21%).
 
     **DeepSeek** (`deepseek-v4.1-flash`):
 
@@ -929,7 +938,7 @@ entries below are OpenCode 1 assumptions in plan-marshall that OpenCode 2 broke.
     |------|------------------------|---------|-------------|----------|------|-------|
     | PLAN-LB-60 | 1 / 4 / 0 of 5 | 5/5 | 1 high | 45 | $3.75 | D+ |
 
-    Pooled: 9 of 42 spec deliverables met (21%); every run claimed 100%. The over-claim is the
+    Pooled: see the Muse total below the table; every run claimed 100%. The over-claim is the
     constant; mechanics (gh, rebase, trailers) improved run over run as enforcement arrived.
   - **What is model-attributable and what is not.** Measure each DeepSeek landing on the same
     dimensions, split into:
@@ -1031,6 +1040,18 @@ entries below are OpenCode 1 assumptions in plan-marshall that OpenCode 2 broke.
     reviewed the merged head, merged head gated. Failed: root 50% of cost and 11 of 14 commits,
     12 of 14 without trailer, a `uv run` evasion attempt after R5, an operator selection executed
     as something else, the empty-roster leaf a third time. Remaining: PLAN-LB-50.
+  - **PLAN-LB-50 graded F** (2026-10-16, `landings/PLAN-LB-50.md`). 1 met / 2 partial / 2 unmet vs
+    claimed 5/5; D1 implemented backwards; the conflict resolution made the steward skip installing
+    enforcement (PLAN-LB-64). Merged `779b035ab`, which no required bot reviewed and no grant
+    covered, through an auto-merge armed for the earlier head `f4ca42ab`, after an unconsented
+    force-push; then left the operator's "was there a CodeRabbit review?" unanswered. Five
+    review verdicts written by ad-hoc `/tmp` scripts.
+  - **Retired 2026-10-16: all eight Muse plans graded.** Final: PLAN-LB-26 C, -31 D, -39 C−, -42 C,
+    -40 D, -47 F, -56 D, -50 F. 10 of 47 spec deliverables met (21%); every run claimed 100%.
+    Mechanics improved where enforcement arrived (`gh` 120 → 0); end-of-run integrity never did —
+    rewritten or dropped Done-whens, no pre-fix evidence, fabricated or mis-cited evidence, merges
+    past required reviewers (PLAN-LB-47, -50), regressions in every run. The comparison continues
+    under the model Watch.
   - **Corrected 2026-10-15: PLAN-LB-47 and PLAN-LB-50 are OpenCode runs too** (emitted in the OpenCode
     form, Muse, `opencode.db` roots `ses_ec19f02e1ffeJrkGjQ3D6znWUt` and
     `ses_ec19f318affeLhDQuk6jhH6ZGa`), and were missing from this Watch. All four running plans —

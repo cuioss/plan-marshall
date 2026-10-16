@@ -41,7 +41,7 @@ Done-when text; an outline that rewrites a Done-when must say so and why.
    envelope and reads one boundary row. Both fail at `c8adaf178`.
 
 2. **The project's standing rules actually reach a non-Claude agent.**
-   - The bridge file (separate from `plan-marshall-target-rules.md` — PLAN-LB-50 D1) carries the
+   - The bridge file (separate from `plan-marshall-target-rules.md` — PLAN-LB-64 D1; PLAN-LB-50 did not separate it) carries the
      rules of the repository's `CLAUDE.md`, generated from it, with drift detected by content
      (a hash of the source recorded in the bridge), not by mtime. Setup reports drift before it
      heals, and never reports `bridge_drift: False` for a bridge it just rewrote.
@@ -96,7 +96,7 @@ Split guard: three deliverables.
 
 ## Dependencies and Sequencing
 
-- Depends on: PLAN-LB-50 (bridge file path, D2). Read PLAN-LB-48's state for the OpenCode side.
+- Depends on: PLAN-LB-64 (the separate bridge file, D1). PLAN-LB-50 shipped (#1777) without separating it. Read PLAN-LB-48's state for the OpenCode side.
 - Overlaps with: PLAN-LB-50 on `antigravity_runtime.py`; PLAN-LB-48 on the persona's rule (b)
   and the targets tree (different targets).
 - Priority: after the OpenCode plans (operator instruction, 2026-10-15: OpenCode first until its

@@ -62,6 +62,10 @@ This plan makes `client.toon`, the plan metadata and the landing-facts block car
    At HEAD neither field exists.
 
 4. **The plan start path records all four values.**
+   - **Amended 2026-10-16:** PLAN-LB-50 (#1777) made step 8a.6 reachable but did NOT wire the
+     preflight call, and no `client.toon` is written (`landings/PLAN-LB-50.md` D5). This plan owns
+     that wiring: `phase-1-init` step 8a.6 calls `orchestrator preflight --plan-id {id}`, which
+     writes `client.toon`, best-effort and never blocking.
    - Building on PLAN-LB-39 D5's `phase-1-init` preflight call: `orchestrator preflight` forwards self-reported `--model` / `--effort` to `runtime-info`.
    - The `phase-1-init` call passes the values the executing LLM reports about itself.
    - The `harness` field PLAN-LB-39 adds to plan `status.json` metadata is extended with `harness_source`, `model`, `effort`, `bundle_version` and `executor_version`.
@@ -119,7 +123,7 @@ Split guard: five deliverables on one chain — collector, start path, landing. 
 
 - Depends on: PLAN-LB-50 (running). Priority raised 2026-10-16 (operator): emitted right after PLAN-LB-48, ahead of PLAN-LB-52 — the multi-model comparison (Muse, DeepSeek, Gemini) depends on it. PLAN-LB-39 shipped (#1768) without a reachable preflight call
   (its Step 8a.6 is unreachable and writes no `client.toon`, `landings/PLAN-LB-39.md`); PLAN-LB-50
-  D5 makes that call real. Deliverables 4 and 5 build on PLAN-LB-50's landing, not on PLAN-LB-39 —
+  D5 was meant to make that call real and did not (`landings/PLAN-LB-50.md`); this plan wires it. Deliverables 4 and 5 build on PLAN-LB-50's landing, not on PLAN-LB-39 —
   re-read both at outline. OpenCode detection (`OPENCODE_SESSION_ID`, no `OPENCODE_PID`) is
   PLAN-LB-48 D4; deliverable 3's example must use the OpenCode 2 signal.
 - Overlaps with:
