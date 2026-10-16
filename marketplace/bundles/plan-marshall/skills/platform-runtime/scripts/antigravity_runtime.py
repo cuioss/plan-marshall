@@ -62,61 +62,6 @@ def _bridge_rules_path(project_dir: Path) -> Path:
     return project_dir / '.agents' / 'rules' / 'plan-marshall-target-rules.md'
 
 
-def _marshal_target_present(project_dir: Path, target: str) -> bool:
-    """True when marshal.json already carries the target (benign no-write).
-
-    A ``False`` seed on a file that already carries the target is the idle
-    re-setup path, not a failure. Every other ``False`` — corrupt content,
-    a non-dict document, an unwritable file — leaves the target unseeded.
-    """
-    try:
-        data = json.loads((project_dir / '.plan' / 'marshal.json').read_text(encoding='utf-8'))
-    except (OSError, ValueError):
-        return False
-    return isinstance(data, dict) and isinstance(data.get('runtime'), dict) and data['runtime'].get('target') == target
-
-
-def _seed_marshal_runtime_target(project_dir: Path, target: str) -> bool:
-    """Seed ``runtime.target`` into ``.plan/marshal.json``, preserving other keys.
-
-    Returns True when the file was written, False when it already carried the
-    target or could not be written. Never raises — setup treats a seeding
-    failure as an unwritten bridge, not as a setup failure.
-    """
-    marshal_file = project_dir / '.plan' / 'marshal.json'
-    try:
-        if marshal_file.is_file():
-            data = json.loads(marshal_file.read_text(encoding='utf-8'))
-            if not isinstance(data, dict):
-                return False
-            runtime = data.get('runtime')
-            if isinstance(runtime, dict) and runtime.get('target') == target:
-                return False
-            if not isinstance(runtime, dict):
-                if runtime is None:
-                    data['runtime'] = {'target': target}
-                else:
-                    # Present but malformed: refuse without writing (fail-closed).
-                    # The caller reports io_error; the corrupt value is never destroyed.
-                    return False
-            else:
-                runtime['target'] = target
-            marshal_file.write_text(json.dumps(data, indent=2) + '\n', encoding='utf-8')
-            return True
-        marshal_file.parent.mkdir(parents=True, exist_ok=True)
-        payload = {
-            'runtime': {'target': target},
-            'standing_rules_bridge': {
-                'version': STANDING_RULES_BRIDGE_VERSION,
-                'source': STANDING_RULES_BASELINE,
-            },
-        }
-        marshal_file.write_text(json.dumps(payload, indent=2) + '\n', encoding='utf-8')
-        return True
-    except (OSError, ValueError):
-        return False
-
-
 def _write_rules_bridge(project_dir: Path) -> bool:
     """Copy the bridged standing-rules header into the harness grant surface.
 
@@ -295,10 +240,11 @@ class AntigravityRuntime(Runtime):
     def project_initial_setup(self, project_dir: str, target: str) -> str:
         """One-time project setup for Google Antigravity.
 
-        Creates ``.plan/``, seeds ``marshal.json`` with ``runtime.target``,
-        bridges the standing rules into the harness grant surface, and
-        initializes project settings in Antigravity's project registry.
-        Re-setup reports bridge drift against the CLAUDE.md baseline.
+        Creates ``.plan/``, bridges the standing rules into the harness
+        grant surface, and initializes project settings in Antigravity's
+        project registry. Re-setup reports bridge drift against the
+        CLAUDE.md baseline. Shared ``marshal.json`` carries no
+        runtime-owned keys: routing stays config-driven via the registry.
         """
         proj = Path(project_dir).resolve()
         plan_dir = proj / '.plan'
@@ -319,13 +265,6 @@ class AntigravityRuntime(Runtime):
         settings = self.permission_load_settings(settings_path)
         self.permission_ensure_defaults(settings, settings_path, dry_run=False)
 
-        marshal_written = _seed_marshal_runtime_target(proj, target)
-        if not marshal_written and not _marshal_target_present(proj, target):
-            return toon_error(
-                'project initial-setup',
-                'io_error',
-                'Failed to seed runtime.target into .plan/marshal.json: file is corrupt or unwritable',
-            )
         bridge_written = _write_rules_bridge(proj)
         drift = standing_rules_drift_status(str(proj))
 
@@ -334,7 +273,7 @@ class AntigravityRuntime(Runtime):
             {
                 'target': target,
                 'project_dir': str(proj),
-                'marshal_written': marshal_written,
+                'marshal_written': False,
                 'bridge_written': bridge_written,
                 'bridge_drift': drift['drift'],
                 'bridge_reason': drift['reason'],

@@ -811,7 +811,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 ### Step 8: Resolve Session, Lane, Sibling & Posture
 
-`status.json` was already created at Step 3a, so this step performs no create. It runs the remaining status-dependent resolutions in order: the session_id early-warning check (8a), the pre-route change_type/scope_estimate classification (8a.5), the planning-lane routing (8b), the sibling-dedup collision gate (8c), and the execution-profile posture dialogue (8d).
+`status.json` was already created at Step 3a, so this step performs no create. It runs the remaining status-dependent resolutions in order: the session_id early-warning check (8a), the harness stamp (8a.6), the pre-route change_type/scope_estimate classification (8a.5), the planning-lane routing (8b), the sibling-dedup collision gate (8c), and the execution-profile posture dialogue (8d).
 
 ### Step 8a: session_id Early-Warning Check
 
@@ -831,12 +831,12 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level WARNING --message "[WARNING] (plan-marshall:phase-1-init) session_id not captured at plan-init — phase-6-finalize will attempt a late session capture before its hard-block abort"
 ```
 
-If `value` is present and non-empty, no log entry is required — continue to Step 8a.5. This check only surfaces the gap; it never aborts the phase and never renumbers existing steps.
+If `value` is present and non-empty, no log entry is required — continue to Step 8a.6. This check only surfaces the gap; it never aborts the phase and never renumbers existing steps.
 
 ### Step 8a.6: Stamp Harness
 
 Stamp the harness this plan runs on into `status.metadata.harness` via the
-orchestrator preflight hook, so every downstream reader — metrics, landing
+platform-runtime `runtime-info` op, so every downstream reader — metrics, landing
 payload, retrospective — knows which harness produced the run without
 re-resolving it. The stamp is best-effort and never blocks init.
 

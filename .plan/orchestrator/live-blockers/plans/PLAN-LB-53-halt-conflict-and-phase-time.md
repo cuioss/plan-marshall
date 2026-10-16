@@ -50,6 +50,12 @@ Two behaviours recurred on consecutive OpenCode landings (PLAN-LB-31, -39, -42):
    - After the operator reports a problem (e.g. "#1778 has build bailure (not green)"), the main
      context takes no remedial action the operator did not choose; it states the options and asks.
      PLAN-LB-47 re-ran the failed CI check unasked, which let auto-merge proceed.
+   - A refused phase transition (handshake drift) is never overridden by the main context:
+     `phase_handshake capture --override` requires an operator answer recorded with it
+     (`phase-lifecycle.md:83-84`). PLAN-LB-60's root overrode a 5→6 drift refusal with its own
+     reason.
+   - The option the operator selected is executed as worded. PLAN-LB-56's operator selected "Wait
+     another 600s" for the review bots, and the root ran a CI wait instead.
 
    *Done when:* a test records a halted create-pr step and reads a refusal for a re-run that is not
    a named continuation; a named continuation passes; a step resolution recorded after an

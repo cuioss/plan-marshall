@@ -13,8 +13,8 @@ workstream: WS-01
 
 > Staged 2026-10-16 by operator instruction ("keep the current state: create a plan for fixing")
 > from the landing analysis of PLAN-LB-47 (#1778, `b9cd36be1`), `landings/PLAN-LB-47.md`. #1778 is
-> kept on `main` without a CodeRabbit review; this plan fixes what it broke. To be run with a
-> Gemini model (operator); graded under the model Watch.
+> kept on `main` without a CodeRabbit review; this plan fixes what it broke. Runs in the OpenCode runbook lane on
+> DeepSeek (`deepseek-v4.1-flash-free`); graded under the model Watch.
 >
 > **Rules for this run** — every PLAN-LB plan so far failed on these:
 > - Each deliverable below is its own outline deliverable, and each Done-when is copied verbatim as

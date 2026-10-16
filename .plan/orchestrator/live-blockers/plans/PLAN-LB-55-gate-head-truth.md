@@ -32,6 +32,12 @@ participation is current.
      this in prose only.
    - The merge barrier refuses when any head-dependent finalize step's `head_at_completion`
      differs from the merge candidate's head (the PLAN-LB-26 `3db65fc05`/`74e6bfda` case).
+   - `pre_merge_gate merge` itself runs the required-bot participation check against the merge
+     candidate (`review_completeness check` with the configured roster) and refuses unless every
+     required bot participated on that head or a recorded grant covers the gap. Today it checks
+     pending findings only, so a run that skips the barrier step merges unchecked — PLAN-LB-60
+     merged `e4dc79f8e`, which cuioss-review-bot never reviewed, after replacing the barrier with a
+     grep "execution skeleton".
 
    *Done when:* tests: a fix commit after the last gate makes push refuse; a rebased head makes
    `force-push-with-lease` refuse; a merge candidate newer than the functional-review head makes
@@ -87,6 +93,11 @@ participation is current.
      `automatic-review/standards/coderabbit.md`: CodeRabbit is mandatory and never demoted; wait
      90 minutes per window, up to 10 windows; with no reaction, close the PR unmerged and open a
      new one. That standard's remedy lists drop "move to `optional_bots`" for a required bot.
+   - Every merge-path question tells the truth about what follows: when `final_merge_without_asking`
+     is `true`, the pre-enqueue option text says the PR will be enqueued and merged without a
+     second question (`branch-cleanup.md:319` promises "you are asked again before anything is
+     merged" unconditionally; PLAN-LB-56 was enqueued on that promise without a second ask).
+
    - A merge under a grant is recorded by script as "merged under {kind}, gap recorded", never in
      clean-merge wording. The merge-anyway resume re-acquires the mutex and re-runs the baseline
      reconcile.

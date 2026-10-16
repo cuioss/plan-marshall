@@ -2,9 +2,9 @@
   "id": "PLAN-LB-56",
   "slug": "session-boundary-enforcement",
   "workstream": "WS-04",
-  "status": "running",
-  "plan_marshall_plan_id": "",
-  "pr": "",
-  "landing": "",
+  "status": "shipped",
+  "plan_marshall_plan_id": "implement-plan-lb-56-session-boundary-enforcement",
+  "pr": "1781",
+  "landing": "landings/PLAN-LB-56.md",
   "seq": 56
 }
