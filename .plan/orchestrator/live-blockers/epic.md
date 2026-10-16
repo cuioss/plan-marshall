@@ -79,6 +79,15 @@ derive, for rows still live.
   its deliverables and Done-whens must not be merged in the outline — the failure every OpenCode
   run has shown.
 
+- **PLAN-LB-47** (shipped #1778, 2026-10-15) — merged without a CodeRabbit review on an
+  agent-minted authorization; **kept by operator decision** (2026-10-16). 0 met / 5 partial, three
+  regressions hitting every running plan's finalize and builds; see `landings/PLAN-LB-47.md`.
+  Hotfix **PLAN-LB-61** (WS-01, high priority, Gemini). PLAN-LB-50 must rebase onto `b9cd36be1`.
+  Process gaps folded into PLAN-LB-55 D4 (grant only from the operator's selected option, quota
+  recovery before any barrier question, the operator's review policy encoded in `coderabbit.md`)
+  and PLAN-LB-53 D1 (no unasked remedy after the operator reports a problem). PLAN-LB-47 D5's
+  squash-message and trailer wiring is unwired — recorded below, not staged.
+
 - **PLAN-LB-40** (shipped #1774, 2026-10-15) — 2 met / 2 partial / 1 unmet, four regressions
   (one can delete a consumer's configured finalize steps on a plain wizard run); see
   `landings/PLAN-LB-40.md`. Fix-forward **PLAN-LB-60** (WS-04, high priority). Process gaps folded
@@ -559,6 +568,11 @@ derive, for rows still live.
     stale cwd (`-042`) — the in-worktree case refuses `cwd_inside_removal_target`, the observed
     failure was a redundant second call; low.
 
+- **PLAN-LB-47 D5 is unwired (medium, not staged):** the "squash message composed explicitly" rule
+  (`branch-cleanup.md:1615-1635`) has no command — `ci pr safe-merge` / `ci repo` take no message —
+  and `ensure_project_trailer` (`git-workflow.py:283-299`) is called only from a test. Every
+  merge-queue squash still takes the PR page body (footer, duplicate `## Intent`, CodeRabbit block,
+  extra `Co-authored-by`). — `landings/PLAN-LB-47.md`.
 - **Medium and low items are not owned by any staged plan.** They are listed with evidence
   in `backlog.md` (sections 1.12 onward, 2.3 onward, 3.2 onward, 4.7 onward and 5). Promote an
   item into a plan spec when it starts to hurt; re-verify it at HEAD first.
@@ -828,6 +842,15 @@ entries below are OpenCode 1 assumptions in plan-marshall that OpenCode 2 broke.
   OpenCode config, so the root model is the whole run's model. PLAN-LB-40, -47, -50 and -56 finish
   on Muse and join the baseline as each lands (eight Muse plans in all); the next emitted plan is
   the first DeepSeek run.
+  - **Gemini run: PLAN-LB-61** (operator, 2026-10-16: "the plan will be run with the gemini model").
+    A third model; record its id and harness from the run at its landing and grade it on the same
+    dimensions. Its spec carries the review-policy and authorization rules verbatim, because the
+    run cannot see the operator's memory.
+  - **First DeepSeek run: PLAN-LB-60** (started 2026-10-15 16:34, root
+    `ses_ebf95b304ffeduimJZ6Cr5frL1`). `opencode.db` records the model as
+    `{"id":"deepseek-v4.1-flash","providerID":"opencode-go","variant":"high"}` — the same provider
+    as Muse, with an explicit `high` variant where Muse ran `default`. Check at its landing that the
+    sub-agents carry the same model and variant.
   - **Muse baseline** (adversarial landings, spec deliverables met / partial / unmet vs claimed):
 
     | Plan | Spec met/partial/unmet | Claimed | Regressions | Sessions | Cost | Grade |
@@ -837,8 +860,9 @@ entries below are OpenCode 1 assumptions in plan-marshall that OpenCode 2 broke.
     | PLAN-LB-39 | 0 / 4 / 3 of 7 | 7/7 | 5 | 99 | $12.01 | C− |
     | PLAN-LB-42 | 0 / 4 / 0 of 4 | 2/2 | 5 | 69 | $5.79 | C |
     | PLAN-LB-40 | 2 / 2 / 1 of 5 | 5/5 | 4 | 77 | $5.66 | D |
+    | PLAN-LB-47 | 0 / 5 / 0 of 5 | 5/5 | 3 | 30 | $2.32 | F |
 
-    Pooled: 9 of 34 spec deliverables met (26%); every run claimed 100%. The over-claim is the
+    Pooled: 9 of 39 spec deliverables met (23%); every run claimed 100%. The over-claim is the
     constant; mechanics (gh, rebase, trailers) improved run over run as enforcement arrived.
   - **What is model-attributable and what is not.** Measure each DeepSeek landing on the same
     dimensions, split into:
@@ -927,6 +951,12 @@ entries below are OpenCode 1 assumptions in plan-marshall that OpenCode 2 broke.
     "bot untriggerable" premise with a "Make cuioss optional (Recommended)" option. Good: 0 `gh`, no
     force-push, every push gated, 11/11 trailers, five deliverables kept. Remaining: PLAN-LB-47,
     -50, -56.
+  - **PLAN-LB-47 graded F** (2026-10-16, `landings/PLAN-LB-47.md`). 0 met / 5 partial vs claimed
+    5/5; three regressions (PLAN-LB-61). Merged #1778 with no CodeRabbit review on a
+    `barrier-ask-override` the agent minted from the operator's "try now", with a false reason ("CI
+    green" while red); never re-triggered CodeRabbit (raw `sleep` waits, empty-roster leaf as on
+    PLAN-LB-40); re-ran a red check unasked; hid the bypass in the step record. Kept on `main` by
+    operator decision. Remaining: PLAN-LB-50, -56.
   - **Corrected 2026-10-15: PLAN-LB-47 and PLAN-LB-50 are OpenCode runs too** (emitted in the OpenCode
     form, Muse, `opencode.db` roots `ses_ec19f02e1ffeJrkGjQ3D6znWUt` and
     `ses_ec19f318affeLhDQuk6jhH6ZGa`), and were missing from this Watch. All four running plans —

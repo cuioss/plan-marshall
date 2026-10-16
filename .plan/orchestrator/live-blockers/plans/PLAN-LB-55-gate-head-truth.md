@@ -76,9 +76,27 @@ participation is current.
    - The barrier's options are generated, not authored: they never include moving a required bot to
      `optional_bots` (standing rule), and none is marked recommended unless the script marks it.
 
+   - A merge authorization grant exists only for the option the operator selected: the grant verb
+     records the operator's verbatim answer and refuses when it is not the override option's label.
+     Free text such as "try now" or "wait another round" is never a grant (PLAN-LB-47 minted
+     `barrier-ask-override` from "try now", with a reason the operator never gave and "CI green"
+     while CI was red).
+   - Quota recovery runs before any barrier question: after a rate-window refusal the bot is
+     re-triggered once the window has passed, through `merge_lock rate-window wait` (not a raw
+     `sleep`), up to the configured cap. The operator's policy is encoded in
+     `automatic-review/standards/coderabbit.md`: CodeRabbit is mandatory and never demoted; wait
+     90 minutes per window, up to 10 windows; with no reaction, close the PR unmerged and open a
+     new one. That standard's remedy lists drop "move to `optional_bots`" for a required bot.
+   - A merge under a grant is recorded by script as "merged under {kind}, gap recorded", never in
+     clean-merge wording. The merge-anyway resume re-acquires the mutex and re-runs the baseline
+     reconcile.
+
    *Done when:* tests: `step-params get` failing makes automatic-review return an error, not an
    empty roster; a `participated_stale` required bot gets a trigger before the barrier question; the
-   barrier's option set contains no "make required bot optional". The first two fail at `f5d661d87`.
+   barrier's option set contains no "make required bot optional"; the grant verb refuses an answer
+   that is not the override label; a refused bot is re-triggered after its window before the barrier
+   asks; a granted merge's step record carries the merged-under-authorization wording; a doc test
+   finds the operator's review policy in `coderabbit.md`. Each fails at `b9cd36be1`.
 
 Split guard: four deliverables, one theme (a verdict covers the head that ships, and reports what
 the gates actually saw).
@@ -94,6 +112,7 @@ the gates actually saw).
 - HYPOTHESIS: PLAN-LB-32 (shipped) already carries part of the head-binding at the barrier — read `merge_barrier` before adding (verify-at-outline).
 - HYPOTHESIS: the currency test for in-place re-reviewers (`participation_requires_update`) already handles CodeRabbit's edited summary review; deliverable 3 may then reduce to append-per-review bots and comment-only evidence — confirm in `bot-participation-contract.md` (verify-at-outline).
 - OBSERVED (D4): PLAN-LB-40's automatic-review leaves for rounds 1 and 3 passed `--required-bots "" --optional-bots ""` after `execution.toon not found`; the merge question at 2026-10-15T14:37:21 said the bot "has no trigger to re-review" and offered "Make cuioss optional (Recommended)" (`landings/PLAN-LB-40.md`, orchestrator spot check of the OpenCode transcript).
+- OBSERVED (D4): PLAN-LB-47's grant at `status.json` L206-214 (`archived-plans/2026-10-15-lb-26-regression-fixes/`) reads "Operator directed merge now … CI green"; the operator's answers were "…wait for 60 minutes and try again", "wait another round", "try now"; waits were raw `sleep 600` ×12; CodeRabbit was never re-triggered (`landings/PLAN-LB-47.md`, orchestrator spot check).
 - Verify-first clause: PLAN-LB-53 D2's conflict question relies on deliverable 1's push refusal as its backstop — this plan goes first.
 
 ## Expected Surface
@@ -108,7 +127,9 @@ the gates actually saw).
 - HYPOTHESIS: `marketplace/bundles/plan-marshall/skills/automatic-review/standards/bot-participation-contract.md` (verify-at-outline) (D3)
 - HYPOTHESIS: `test/plan-marshall/automatic-review/` — classification and roster-read tests (verify-at-outline) (D3, D4)
 - HYPOTHESIS: `marketplace/bundles/plan-marshall/skills/automatic-review/SKILL.md` — roster read failure (verify-at-outline) (D4)
-- OBSERVED: `marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/branch-cleanup.md` — stale-bot re-trigger before the barrier question (D4)
+- OBSERVED: `marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/branch-cleanup.md` — stale-bot re-trigger, grant minting, merged-under-authorization record (D4)
+- OBSERVED: `marketplace/bundles/plan-marshall/skills/automatic-review/standards/coderabbit.md` — operator review policy, remedy list (D4)
+- HYPOTHESIS: `marketplace/bundles/plan-marshall/skills/manage-locks/scripts/merge_lock.py` — recovery cap and wait per the policy (verify-at-outline) (D4)
 - HYPOTHESIS: `test/plan-marshall/phase-6-finalize/` — push and barrier tests (verify-at-outline) (D1)
 
 ## Dependencies and Sequencing

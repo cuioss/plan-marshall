@@ -47,6 +47,10 @@ Two behaviours recurred on consecutive OpenCode landings (PLAN-LB-31, -39, -42):
      the question and may not choose an option itself. PLAN-LB-42's root answered a CI-timeout
      `escalate_ask` ("Keep waiting") at 2026-10-15T09:39:52 without asking.
 
+   - After the operator reports a problem (e.g. "#1778 has build bailure (not green)"), the main
+     context takes no remedial action the operator did not choose; it states the options and asks.
+     PLAN-LB-47 re-ran the failed CI check unasked, which let auto-merge proceed.
+
    *Done when:* a test records a halted create-pr step and reads a refusal for a re-run that is not
    a named continuation; a named continuation passes; a step resolution recorded after an
    `escalate_ask` without a logged operator answer is refused.
