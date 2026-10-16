@@ -1142,3 +1142,48 @@ def test_hook_writes_no_log_without_a_cwd() -> None:
     result = _run(json.dumps(payload))
     assert result.returncode == 0
     assert _decision(result.stdout)['permissionDecision'] == 'deny'
+
+
+# =============================================================================
+# R6 — raw finalize commit (D2)
+# =============================================================================
+
+
+def test_r6_refuses_raw_commit_in_finalize(tmp_path) -> None:
+    """A raw ``git commit`` is refused while the plan is in phase 6-finalize."""
+    worktree = tmp_path / '.plan' / 'local' / 'worktrees' / 'plan-a'
+    plan_dir = worktree / '.plan' / 'local' / 'plans' / 'P'
+    plan_dir.mkdir(parents=True)
+    status = plan_dir / 'status.json'
+    status.write_text(json.dumps({'phase': '6-finalize'}), encoding='utf-8')
+
+    payload = {'cwd': str(worktree), 'tool_name': 'Bash', 'tool_input': _bash('git commit -m "fix: x"')}
+    assert hook.evaluate(payload) == hook._R6_REASON
+
+    # A global option before the subcommand is walked past.
+    payload_opt = {'cwd': str(worktree), 'tool_name': 'Bash', 'tool_input': _bash('git -C . commit -m "fix: y"')}
+    assert hook.evaluate(payload_opt) == hook._R6_REASON
+
+    # Outside 6-finalize the same raw commit passes.
+    status.write_text(json.dumps({'phase': '5-execute'}), encoding='utf-8')
+    assert hook.evaluate(payload) is None
+
+
+def test_r6_ignores_non_commit_git_subcommands(tmp_path) -> None:
+    """Only ``git commit`` is refused — other git subcommands pass through."""
+    worktree = tmp_path / '.plan' / 'local' / 'worktrees' / 'plan-a'
+    plan_dir = worktree / '.plan' / 'local' / 'plans' / 'P'
+    plan_dir.mkdir(parents=True)
+    (plan_dir / 'status.json').write_text(json.dumps({'phase': '6-finalize'}), encoding='utf-8')
+
+    for command in ('git status', 'git log --oneline', 'git add foo'):
+        payload = {'cwd': str(worktree), 'tool_name': 'Bash', 'tool_input': _bash(command)}
+        assert hook.evaluate(payload) is None, command
+
+
+def test_r6_needs_plan_state(tmp_path) -> None:
+    """With no status.json the raw-commit rule does not fire."""
+    worktree = tmp_path / 'plain'
+    worktree.mkdir()
+    payload = {'cwd': str(worktree), 'tool_name': 'Bash', 'tool_input': _bash('git commit -m "fix: x"')}
+    assert hook.evaluate(payload) is None

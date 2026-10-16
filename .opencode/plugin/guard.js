@@ -60,12 +60,18 @@
  *   context: the executor permit, and the SHARED allow-list of documented
  *   non-executor invocations read from `r5-allowlist.json`.
  *
+ *   R6 — a raw `git commit` while the enclosing plan is in phase `6-finalize`
+ *   => block. Every plan commit must pass through the gate-bearing
+ *   `git-workflow commit` verb, which sanctions an open loop-back fix task, a
+ *   review-rubric section-6 record, or a phase-6 settle-band step. Outside
+ *   `6-finalize`, or with no plan state present, a raw commit is untouched.
+ *
  * TOKENISATION PARITY: the R5 branch tokenises with a quoting-aware splitter
  * (`shellSplit`) matching the Python hook's `shlex.split`, strips the SAME
  * wrapper set, and lowercases the program token for the interpreter check, so
  * the two decision tables agree on the interpreter surface.
  */
-import { appendFileSync, mkdirSync, readFileSync } from "node:fs"
+import { appendFileSync, mkdirSync, readFileSync, readdirSync } from "node:fs"
 import path from "node:path"
 import { Plugin } from "@opencode/plugin"
 
@@ -171,6 +177,24 @@ const WORKTREE_PATH_SEGMENT = ".plan/local/worktrees"
 
 const ASSIGNMENT_RE = /^[A-Za-z_][A-Za-z0-9_]*=/
 const VERSIONED_PYTHON_RE = /^python(\d+(\.\d+)*)?$/
+
+// Phase the raw-commit rule guards, mirroring git-workflow.py's
+// `_SOURCE_COMMIT_GATE_PHASE`. Outside it a raw `git commit` is untouched.
+const SOURCE_COMMIT_GATE_PHASE = "6-finalize"
+
+// `git` global options that consume a SEPARATE following token, so the
+// subcommand walk steps over the option AND its value.
+const GIT_VALUE_OPTIONS = new Set([
+  "-C",
+  "-c",
+  "--git-dir",
+  "--work-tree",
+  "--namespace",
+  "--super-prefix",
+  "--config-env",
+  "--exec-path",
+  "--attr-source",
+])
 
 // Quoting-aware tokenizer mirroring Python's `shlex.split` (POSIX mode) on the
 // shapes R5 sees. Returns null on malformed quoting (an unterminated span or a
@@ -502,6 +526,54 @@ function patchTextTargetsExecutor(patchText) {
   return candidates.some(normalizedIsExecutorPath)
 }
 
+// Whether the command is a plain `git commit` invocation — `git` as the
+// program, `commit` as the subcommand after any global options.
+function isGitCommit(command) {
+  if (normalizeToken(tokenAt(command, 0)).toLowerCase() !== "git") return false
+  const tokens = commandTokens(command)
+  let i = 1
+  while (i < tokens.length) {
+    const t = stripMatchedQuotes(tokens[i])
+    if (GIT_VALUE_OPTIONS.has(t)) {
+      i += 2
+      continue
+    }
+    if (t.startsWith("-")) {
+      i++
+      continue
+    }
+    return t.toLowerCase() === "commit"
+  }
+  return false
+}
+
+// The enclosing plan's phase, read from the first plan status.json under the
+// project root. Empty when no plan state is present or none is readable.
+function planPhase(root) {
+  const base = path.join(root, ".plan", "local", "plans")
+  let entries
+  try {
+    entries = readdirSync(base)
+  } catch {
+    return ""
+  }
+  for (const name of entries.sort()) {
+    try {
+      const data = JSON.parse(readFileSync(path.join(base, name, "status.json"), "utf8"))
+      if (data && typeof data.phase === "string" && data.phase) return data.phase
+    } catch {
+      // Skip an unreadable or malformed status.
+    }
+  }
+  return ""
+}
+
+// R6 — a raw `git commit` in phase 6-finalize is refused: every plan commit
+// must pass through the gate-bearing `git-workflow commit` verb.
+function isRawFinalizeCommit(command, root) {
+  return isGitCommit(command) && planPhase(root) === SOURCE_COMMIT_GATE_PHASE
+}
+
 function auditLine(rule, tool, sessionID, callID, detail) {
   return `${new Date().toISOString()} | tool=${tool} | rule=${rule} | session=${sessionID} | call=${callID} | ${detail}`
 }
@@ -554,6 +626,13 @@ export default Plugin.define({
         audit(auditLine("R2", tool, sessionID, callID, command))
         throw new Error(
           "[plan-marshall-guard] R2: shell file operations (mutation class) via Bash are forbidden; use the Read/Edit/Write tools or manage-* scripts",
+        )
+      }
+
+      if (isRawFinalizeCommit(command, root)) {
+        audit(auditLine("R6", tool, sessionID, callID, command))
+        throw new Error(
+          "[plan-marshall-guard] R6: a raw git commit is refused in phase 6-finalize — commit through python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow commit (the gate-bearing path), which sanctions an open loop-back fix task, a review-rubric section-6 record, or a settle-band step",
         )
       }
 

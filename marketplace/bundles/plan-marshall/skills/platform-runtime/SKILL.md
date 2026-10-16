@@ -93,17 +93,19 @@ settings block in `opencode.json`:
   `success` no-op, mirroring the Claude target's contract split.
 
 The `tool.execute.before` guard plugin under `.opencode/plugin/guard.js`
-enforces the five hard-rule bypass classes (shell chaining, shell file
-operations, direct executor edits, hard-coded builds, and direct interpreter
-calls) by throwing to block, with one audit line per blocked invocation in
-`.plan/temp/guard.log`. R1–R4 are unconditional; the interpreter rule (R5)
-applies only inside a plan-marshall plan context (a dispatched
-`execution-context` sub-agent, or a working directory under
+enforces the six hard-rule bypass classes (shell chaining, shell file
+operations, direct executor edits, hard-coded builds, direct interpreter
+calls, and a raw finalize commit) by throwing to block, with one audit line per
+blocked invocation in `.plan/temp/guard.log`. R1–R4 are unconditional; the
+interpreter rule (R5) applies only inside a plan-marshall plan context (a
+dispatched `execution-context` sub-agent, or a working directory under
 `.plan/local/worktrees/`), and exempts both the executor permit and the shared
 allow-list of documented non-executor invocations in
 `standards/r5-allowlist.json` — the same data file the Claude
 `claude_pretooluse_hook.py` reads, so the two decision tables agree on the
-interpreter surface. The full role x surface x path matrix lives in
+interpreter surface. R6 refuses a raw `git commit` while the plan is in phase
+`6-finalize`, so every plan commit passes through the gate-bearing
+`git-workflow commit` verb. The full role x surface x path matrix lives in
 `doc/developer/opencode.adoc`.
 
 ## Architecture

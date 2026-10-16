@@ -121,7 +121,7 @@ Skill and agent markdown bodies undergo deterministic transformation before emis
 
 == Permission Architecture & Enforcement
 
-OpenCode enforces tool-execution permissions from a **two-tier map**: a project-level `permission` block in `opencode.json` (host grant resolution) and a `tool.execute.before` guard plugin under `.opencode/plugin/` (hard-rule enforcement that throws to block). The two tiers are complementary: the map decides *which commands may run at all* per agent, and the guard blocks the five plan-marshall hard-rule bypass classes regardless of what the map permits.
+OpenCode enforces tool-execution permissions from a **two-tier map**: a project-level `permission` block in `opencode.json` (host grant resolution) and a `tool.execute.before` guard plugin under `.opencode/plugin/` (hard-rule enforcement that throws to block). The two tiers are complementary: the map decides *which commands may run at all* per agent, and the guard blocks the six plan-marshall hard-rule bypass classes regardless of what the map permits.
 
 === Configuration Locations & Precedence
 
@@ -171,6 +171,7 @@ The guard plugin `.opencode/plugin/guard.js` registers a `tool.execute.before` h
 * **R3 — direct executor edits** (edit/write/patch): target resolves under `.plan/execute-script.py`.
 * **R4 — hard-coded builds** (bash): `./pw` with no verb or a build verb (`./pw generate*` and `./pw --*` pass), bare build tools (`mvn`, `mvnw`, `gradle`, `gradlew`, `make`, `cmake`, `ant`, `uv`), JS runners (`npm`, `npx`, `bun`, `pnpm`, `yarn`) followed by `test`/`run`/`build`, `python3 build.py`, `python3 -m {pytest mypy ruff}` and bare `{pytest mypy ruff}`. The executor permit `python3 .plan/execute-script.py …` is exempt. R1–R4 are unconditional.
 * **R5 — direct interpreter calls** (bash), GATED: an interpreter invocation (`python`/`python3` or a versioned spelling such as `python3.12`, case-insensitively) as `-c`, a script path, or `-m` with any module. Applies only inside a plan-marshall plan context — a dispatched `execution-context` sub-agent (`event.agent`), or a working directory under `.plan/local/worktrees/` (the shell `workdir`, or the project root) — matching the Claude hook's gate. Wrapper prefixes (`command`/`env`/`sudo`/`timeout`/`nice`/`nohup`/`time`/`xargs`, including `env -S`) are stripped first. Two exemptions inside the context: the executor permit, and the shared allow-list of documented non-executor invocations in `marketplace/bundles/plan-marshall/skills/platform-runtime/standards/r5-allowlist.json` — the SAME data file the Claude hook reads.
+* **R6 — raw finalize commit** (bash): a raw `git commit` while the enclosing plan (`<root>/.plan/local/plans/*/status.json`) is in phase `6-finalize`. Every plan commit must pass through the gate-bearing `git-workflow commit` verb; outside `6-finalize`, or with no plan state present, a raw commit is untouched.
 
 The plugin is exercised by the Python test harness: `test/plan-marshall/platform-runtime/test_opencode_enforcement.py` runs its registered hook under `node` (a real ES-module scratch project), and `test_guard_hook_parity.py` drives both guards against the same corpus so their decision tables cannot drift. `test_guard_documentation_sweep.py` feeds every documented interpreter invocation in the corpus through both guards.
 

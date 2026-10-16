@@ -37,6 +37,10 @@ of its own. The only logic it owns is the R1-R5 rule matchers and the
   ``xargs``, including ``env -S``) are stripped first, so a wrapper cannot hide
   the interpreter. The allow set is otherwise executor-only, so every ``-m``
   form refuses.
+- **R6 raw finalize commit** — a raw ``git commit`` while the enclosing plan is
+  in phase ``6-finalize``. Every plan commit must pass through the gate-bearing
+  ``git-workflow commit`` verb; outside ``6-finalize`` a raw commit is
+  untouched.
 
 Control flow:
 
@@ -196,6 +200,13 @@ _R5_REASON = (
     'python -m) bypass the executor — route builds and checks via '
     'python3 .plan/execute-script.py and .plan state via manage-* verbs or '
     'the Read/Edit/Write tools.'
+)
+_R6_REASON = (
+    'plan-marshall: a raw git commit is refused in phase 6-finalize — commit '
+    'through python3 .plan/execute-script.py '
+    'plan-marshall:workflow-integration-git:git-workflow commit (the gate-bearing '
+    'path), which sanctions an open loop-back fix task, a review-rubric '
+    'section-6 record, or a settle-band step.'
 )
 
 
@@ -763,6 +774,59 @@ def _has_flag_prefixed_bypass(stripped: list[str]) -> bool:
     return False
 
 
+#: Phase the raw-commit rule guards, mirroring git-workflow's
+#: ``_SOURCE_COMMIT_GATE_PHASE``. Outside it a raw ``git commit`` is untouched.
+_SOURCE_COMMIT_GATE_PHASE = '6-finalize'
+
+
+def _plan_phase(payload: dict[str, Any]) -> str | None:
+    """Read the enclosing plan's phase from the first readable ``status.json``.
+
+    Looks under ``<cwd>/.plan/local/plans/*/status.json`` and returns the first
+    non-empty top-level ``phase``. ``None`` when there is no cwd, no plan state,
+    or nothing readable — the raw-commit rule then does not fire.
+    """
+    current = gate.cwd(payload)
+    if not current:
+        return None
+    base = pathlib.Path(current) / '.plan' / 'local' / 'plans'
+    try:
+        statuses = sorted(base.glob('*/status.json')) if base.is_dir() else []
+    except OSError:
+        return None
+    for path in statuses:
+        try:
+            data = json.loads(path.read_text(encoding='utf-8'))
+        except (OSError, ValueError):
+            continue
+        phase = data.get('phase') if isinstance(data, dict) else None
+        if isinstance(phase, str) and phase:
+            return phase
+    return None
+
+
+def _match_r6_raw_finalize_commit(
+    payload: dict[str, Any], tool_name: str | None, tool_input: dict[str, Any]
+) -> str | None:
+    """R6 — a raw ``git commit`` while the enclosing plan is in ``6-finalize``.
+
+    Refuses the raw form so every plan commit passes through the gate-bearing
+    ``git-workflow commit`` verb. A commit in any other phase, a non-``git``
+    program, and a non-``commit`` subcommand all pass through. Runs after the
+    R1-R5 chain, so a command R1-R5 already refuse keeps its own rule label.
+    """
+    command = _bash_command(tool_name, tool_input)
+    if command is None:
+        return None
+    if _program_name(command).lower() != 'git':
+        return None
+    if _git_subcommand(command) != 'commit':
+        return None
+    if _plan_phase(payload) != _SOURCE_COMMIT_GATE_PHASE:
+        return None
+    return _R6_REASON
+
+
 #: Ordered ``(rule name, matcher)`` chain — the first matcher returning a reason
 #: wins. The name is stamped into the ``guard.log`` audit line, matching the
 #: OpenCode guard's ``rule=Rn`` field.
@@ -845,6 +909,10 @@ def evaluate(payload: dict[str, Any]) -> str | None:
         if reason is not None:
             _append_guard_log(payload, rule_name, _refusal_detail(payload))
             return reason
+    reason = _match_r6_raw_finalize_commit(payload, tool_name, tool_input)
+    if reason is not None:
+        _append_guard_log(payload, 'R6', _refusal_detail(payload))
+        return reason
     return None
 
 

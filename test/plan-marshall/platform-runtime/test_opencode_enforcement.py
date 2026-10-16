@@ -366,3 +366,30 @@ def test_guard_node_allows_python_build_py_out_of_context_but_refuses_in(
     assert out_blocked, 'R4 (python3 build.py) must refuse out of context'
     assert in_blocked, 'R4 (python3 build.py) must refuse in context'
     assert 'R4' in in_message
+
+
+def test_guard_node_r6_refuses_raw_commit_in_finalize(tmp_path_factory: pytest.TempPathFactory) -> None:
+    """R6: a raw ``git commit`` is refused while the plan is in phase 6-finalize."""
+    harness = build_harness(tmp_path_factory.mktemp('guard-r6'))
+    plan_dir = harness.root / '.plan' / 'local' / 'plans' / 'P'
+    plan_dir.mkdir(parents=True, exist_ok=True)
+    status = plan_dir / 'status.json'
+
+    status.write_text(json.dumps({'phase': '6-finalize'}), encoding='utf-8')
+    blocked, message = harness.blocks(shell_event('git commit -m "fix: x"', agent=SUB_AGENT_AGENT))
+    assert blocked, 'a raw git commit must be refused in 6-finalize'
+    assert 'R6' in message, f'the refusal must be rule R6; message={message!r}'
+
+    blocked_opt, _ = harness.blocks(shell_event('git -C . commit -m "fix: y"', agent=SUB_AGENT_AGENT))
+    assert blocked_opt, 'git -C . commit must still resolve to the commit subcommand'
+
+    status.write_text(json.dumps({'phase': '5-execute'}), encoding='utf-8')
+    allowed, _ = harness.blocks(shell_event('git commit -m "fix: z"', agent=SUB_AGENT_AGENT))
+    assert not allowed, 'a raw commit outside 6-finalize must pass through'
+
+
+def test_guard_node_r6_no_plan_state_does_not_fire(tmp_path_factory: pytest.TempPathFactory) -> None:
+    """R6 needs plan state: with no status.json a raw commit is untouched."""
+    harness = build_harness(tmp_path_factory.mktemp('guard-r6-none'))
+    blocked, _ = harness.blocks(shell_event('git commit -m "fix: x"', agent=SUB_AGENT_AGENT))
+    assert not blocked
