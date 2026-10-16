@@ -10,10 +10,11 @@ Covers deliverable 5's enforcement surface:
   through ``to_opencode_grant`` into the persisted bash map).
 * Carve-out operations pass (the executor permit resolves to ``allow``).
 * The D2 guard decision table (``.opencode/plugin/guard.js``,
-  ``tool.execute.before``) is read from the plugin at test time as a
-  behavioral contract: the R1-R5 declared sets below are parsed out of
-  guard.js and compared to the expected pins, so plugin drift fails the
-  contract test instead of passing against a stale literal.
+  ``tool.execute.before``) is exercised by REAL EXECUTION under ``node``
+  (see ``_guard_node_harness``), so a decision change fails the suite
+  instead of passing against a stale literal. The declared sets are still
+  parsed out of guard.js and compared to their pins so set drift fails
+  loudly, and a few source-shape pins guard structural ordering.
   Read-side probes (``ls``, ``cat``, ``head``, ``tail``, ``grep``,
   ``find``) are NOT in the R2 guard class — the two-tier permission map
   governs them.
@@ -30,6 +31,7 @@ import re
 from typing import Any
 
 import pytest
+from _guard_node_harness import SUB_AGENT_AGENT, WORKTREE_WORKDIR, build_harness, shell_event
 from opencode_runtime import OpenCodeRuntime, to_opencode_grant
 from toon_parser import parse_toon
 
@@ -155,7 +157,8 @@ def _parse_guard_sets(path: pathlib.Path) -> dict[str, frozenset[str]]:
 
 #: Expected guard decision-table pins. The parsed sets above must equal
 #: these exactly — drift in either direction (a removed or an added entry)
-#: fails the contract test.
+#: fails the contract test. ``SHELL_WRAPPERS`` now names the full wrapper set
+#: the guard strips before its interpreter check (the D1 wrapper contract).
 _GUARD_EXPECTED: dict[str, frozenset[str]] = {
     'MUTATION_FILE_OPS': frozenset(
         {
@@ -180,7 +183,7 @@ _GUARD_EXPECTED: dict[str, frozenset[str]] = {
     'JS_RUNNERS': frozenset({'npm', 'npx', 'bun', 'pnpm', 'yarn'}),
     'JS_RUNNER_BUILD_VERBS': frozenset({'test', 'run', 'build'}),
     'PYTHON_DIRECT_RUNNERS': frozenset({'pytest', 'mypy', 'ruff'}),
-    'SHELL_WRAPPERS': frozenset({'command', 'env', 'sudo'}),
+    'SHELL_WRAPPERS': frozenset({'command', 'env', 'sudo', 'timeout', 'nice', 'nohup', 'time', 'xargs'}),
     'PYTHON_INTERPRETERS': frozenset({'python', 'python3'}),
     'R5_ALWAYS_REFUSE_FLAGS': frozenset({'-c', '-m'}),
 }
@@ -304,39 +307,6 @@ def test_guard_r4_exempts_executor_permit() -> None:
     assert r1_at < permit_at < bare_at, 'hook order must be R1 gate, then executor permit, then R4 branches'
 
 
-def test_guard_r5_refuses_c_flag() -> None:
-    """R5 refuses python -c: the always-refuse flag set names it and the branch audits rule R5."""
-    assert '-c' in _GUARD_SETS['R5_ALWAYS_REFUSE_FLAGS']
-    source = _guard_plugin_source()
-    assert 'isInterpreterBypass' in source
-    assert 'auditLine("R5"' in source
-    assert 'R5_ALWAYS_REFUSE_FLAGS.has' in source
-
-
-def test_guard_r5_refuses_script_paths() -> None:
-    """R5 refuses script-path invocations: a non-flag second token is a bypass."""
-    source = _guard_plugin_source()
-    assert 'isInterpreterBypass(tokenAt(command, 1))' in source
-    assert 'script paths' in source or 'script' in source
-
-
-def test_guard_r5_refuses_m_flag_for_any_module() -> None:
-    """R5 refuses python -m for any module: the allow set is executor-only."""
-    assert '-m' in _GUARD_SETS['R5_ALWAYS_REFUSE_FLAGS']
-    source = _guard_plugin_source()
-    assert 'PYTHON_INTERPRETERS.has(token)' in source
-
-
-def test_guard_r5_exempts_executor_permit() -> None:
-    """The executor permit passes R5: the permit check precedes the R5 branch."""
-    command = 'python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks list --plan-id x'
-    assert command.startswith(_GUARD_EXECUTOR_PERMIT_PREFIX)
-    source = _guard_plugin_source()
-    permit_at = source.index('isExecutorPermit(command)) return')
-    r5_at = source.index('isInterpreterBypass(tokenAt(command, 1))')
-    assert permit_at < r5_at, 'the executor permit must return before the R5 branch'
-
-
 def test_guard_r5_refusal_names_remedy() -> None:
     """The R5 refusal names the remedy: executor for builds, manage tools for state."""
     source = _guard_plugin_source()
@@ -344,24 +314,55 @@ def test_guard_r5_refusal_names_remedy() -> None:
     assert 'manage-*' in source
 
 
-def test_guard_r5_scans_past_option_flags() -> None:
-    """The R5 branch pairs the second-token check with the flag-prefix scan."""
-    source = _guard_plugin_source()
-    assert 'hasFlagPrefixedBypass(command)' in source
-    assert 'isInterpreterBypass(tokenAt(command, 1)) || hasFlagPrefixedBypass(command)' in source
+# =============================================================================
+# Guard decision table, exercised by real execution under node (D1)
+# =============================================================================
 
 
-def test_guard_r5_bypass_cluster_helpers_present() -> None:
-    """The R5 bypass-cluster helpers exist and the wrapper/executor pins hold."""
-    source = _guard_plugin_source()
-    assert 'isCMCluster' in source
-    assert 'mModuleOf' in source
-    assert 'R5_VALUE_TAKING_SINGLE' in source
-    assert '!o.includes("=")' in source
-    assert r'(?:\s|$)' in source
+def test_guard_node_refuses_wrapper_and_versioned_interpreter(tmp_path_factory: pytest.TempPathFactory) -> None:
+    """Done-when (a): a wrapper or a versioned interpreter does not hide an R5 bypass."""
+    harness = build_harness(tmp_path_factory.mktemp('guard-a'))
+    commands = ['timeout 5 python3 -c "x"', 'python3.12 -c "x"']
+    outcomes = harness.run([shell_event(command, agent=SUB_AGENT_AGENT) for command in commands])
+    for command, outcome in zip(commands, outcomes, strict=True):
+        assert outcome.blocked, f'guard.js must refuse {command!r}; message={outcome.message!r}'
+        assert 'R5' in outcome.message, f'the refusal for {command!r} must be rule R5; message={outcome.message!r}'
 
 
-def test_guard_r4_m_flag_prefix_check_present() -> None:
-    """The R4 python -m branch reads the module through the attached-form helper."""
-    source = _guard_plugin_source()
-    assert 'mModuleOf(tokenAt(command, 1), tokenAt(command, 2))' in source
+def test_guard_node_allows_documented_non_executor_invocations(tmp_path_factory: pytest.TempPathFactory) -> None:
+    """Done-when (b): the documented sync engine and an absolute executor call pass."""
+    harness = build_harness(tmp_path_factory.mktemp('guard-b'))
+    commands = [
+        'python3 marketplace/targets/sync.py --target opencode',
+        'python3 /abs/repo/.plan/execute-script.py a:b:c verb',
+    ]
+    outcomes = harness.run([shell_event(command, agent=SUB_AGENT_AGENT) for command in commands])
+    for command, outcome in zip(commands, outcomes, strict=True):
+        assert not outcome.blocked, f'guard.js must allow {command!r}; message={outcome.message!r}'
+
+
+def test_guard_node_outside_context_allows_py_compile(tmp_path_factory: pytest.TempPathFactory) -> None:
+    """Done-when (c): R5 is gated, so py_compile passes outside a plan context."""
+    harness = build_harness(tmp_path_factory.mktemp('guard-c'))
+    blocked, message = harness.blocks(shell_event('python3 -m py_compile f.py'))
+    assert not blocked, f'guard.js must allow py_compile outside a plan context; message={message!r}'
+
+
+def test_guard_node_signal2_worktree_workdir_enables_r5(tmp_path_factory: pytest.TempPathFactory) -> None:
+    """Signal 2 (a worktree cwd) alone turns R5 on — the gate is an OR."""
+    harness = build_harness(tmp_path_factory.mktemp('guard-signal2'))
+    blocked, message = harness.blocks(shell_event('python3 -c "x"', workdir=WORKTREE_WORKDIR))
+    assert blocked, f'a worktree cwd must enable R5; message={message!r}'
+    assert 'R5' in message
+
+
+def test_guard_node_allows_python_build_py_out_of_context_but_refuses_in(
+    tmp_path_factory: pytest.TempPathFactory,
+) -> None:
+    """The R4 python branch stays unconditional while R5 is gated."""
+    harness = build_harness(tmp_path_factory.mktemp('guard-r4'))
+    out_blocked, _ = harness.blocks(shell_event('python3 build.py'))
+    in_blocked, in_message = harness.blocks(shell_event('python3 build.py', agent=SUB_AGENT_AGENT))
+    assert out_blocked, 'R4 (python3 build.py) must refuse out of context'
+    assert in_blocked, 'R4 (python3 build.py) must refuse in context'
+    assert 'R4' in in_message

@@ -1,6 +1,6 @@
 # PreToolUse Enforcement Hook
 
-The conditional PreToolUse enforcement hook deterministically blocks four
+The conditional PreToolUse enforcement hook deterministically blocks five
 mechanically-checkable hard-rule violation families — but ONLY when the call
 originates inside a plan-marshall plan context. Every other call passes through
 untouched. This document is the canonical reference for the hook's context gate,
@@ -15,7 +15,7 @@ Three scripts in `scripts/` implement the hook, layered shared-gate-first:
 |--------|------|
 | `pretooluse_gate.py` | Shared, pure-function library: the SINGLE home of payload-field knowledge and the context-gate predicate. Imported by both leaves; owns NO rule matchers. |
 | `claude_pretooluse_capture.py` | Observe-only leaf that imports the shared gate and records the raw payload + the gate's extracted fields + would-be verdict. Always exits 0 emitting nothing. Used to validate the gate's field names against real payloads before enforcement is armed. |
-| `claude_pretooluse_hook.py` | Enforcement leaf that imports the SAME shared gate and adds ONLY the R1–R4 rule matchers + the `permissionDecision: deny` envelope on top. |
+| `claude_pretooluse_hook.py` | Enforcement leaf that imports the SAME shared gate and adds ONLY the R1–R5 rule matchers + the `permissionDecision: deny` envelope on top. |
 
 The dependency ordering is **shared-gate (best-guess) → capture (validate /
 correct) → enforce (final)**: the shared gate's best-guess field names are
@@ -45,10 +45,11 @@ An absent Signal-1 field still lets Signal 2 satisfy the gate, and vice versa.
 
 ## Rule families
 
-The R1–R4 matchers are enforcement-only — they live solely in the enforcement
+The R1–R5 matchers are enforcement-only — they live solely in the enforcement
 leaf, layered on top of the shared gate, and run against the shared gate's
 `tool_name(payload)` / `tool_input(payload)` accessors. On the first matching
-rule the leaf emits a `permissionDecision: deny` envelope carrying a one-line
+rule the leaf appends one `guard.log` audit line (best-effort) and emits a
+`permissionDecision: deny` envelope carrying a one-line
 `permissionDecisionReason`; on no match it emits nothing.
 
 | Rule | Fires on | Redirect reason (substance) |
@@ -57,6 +58,30 @@ rule the leaf emits a `permissionDecision: deny` envelope carrying a one-line
 | **R2 Bash file-ops** | A Bash command whose program is `cat` / `grep` / `head` / `tail` / `find` / `ls`, **or** `git` whose subcommand (after any global options) is `grep` | Use the Read/Glob/Grep tools, not Bash, for file operations; for a content sweep run `architecture search --content --pattern P` |
 | **R3 generated-executor edit** | An Edit/Write whose path is the generated `.plan/execute-script.py` | Regenerate the executor via `/sync-harnesses` + `/marshall-steward`; never edit it |
 | **R4 hard-coded build** | A Bash command invoking `./pw` or a bare `mvn` / `npm` / `gradle` | Resolve build commands via `plan-marshall:manage-architecture:architecture resolve` |
+| **R5 direct interpreter call** | A Bash command invoking an interpreter (`python` / `python3` / a versioned spelling such as `python3.12`, case-insensitively) as `-c`, a script path, or `-m` with any module — except the `python3 .plan/execute-script.py` executor permit (which may be an absolute path) and the shared allow-list of documented non-executor invocations. Wrapper prefixes (`command` / `env` / `sudo` / `timeout` / `nice` / `nohup` / `time` / `xargs`, including `env -S`) are stripped first, so a wrapper cannot hide the interpreter | Route builds and checks via `python3 .plan/execute-script.py`; `.plan` state via `manage-*` verbs or the Read/Edit/Write tools |
+
+### R5 — allow-list, wrappers, and the audit line
+
+R5 refuses the interpreter side door while leaving the repository's own
+documented workflows runnable. Three things make that split explicit:
+
+- **Allow-list.** One declared data file,
+  [`r5-allowlist.json`](r5-allowlist.json), names the documented non-executor
+  invocations R5 permits (the harness sync engine, the stewards' bootstrap
+  scripts, and the executor generator). The Claude hook and the OpenCode guard
+  plugin read the SAME file, so the two decision tables agree. An entry matches
+  the invocation's second shell token exactly or as a path suffix, so an
+  absolute or relative path ending in the entry resolves to it. When the file is
+  absent the hook uses a narrow built-in base table (`marketplace/targets/sync.py`);
+  the executor permit is hardcoded separately.
+- **Wrappers and versioned interpreters.** A prefix cannot hide the interpreter:
+  the shell wrappers above (with their options and, for `timeout`, its mandatory
+  duration) are stripped before the interpreter check, `env -S` / `--split-string`
+  splices its string back into the command, and a versioned spelling
+  (`python3.12`) is recognised. The program token is matched case-insensitively.
+- **Audit line.** On a refusal the hook appends one line to
+  `<cwd>/.plan/temp/guard.log`, in the same shape the OpenCode guard writes:
+  `<ISO-8601 millis> | tool=<tool> | rule=<Rn> | session=<session_id> | call=? | <detail>`.
 
 ### R1 — quoting and escape resolution
 

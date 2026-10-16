@@ -121,7 +121,7 @@ Skill and agent markdown bodies undergo deterministic transformation before emis
 
 == Permission Architecture & Enforcement
 
-OpenCode enforces tool-execution permissions from a **two-tier map**: a project-level `permission` block in `opencode.json` (host grant resolution) and a `tool.execute.before` guard plugin under `.opencode/plugin/` (hard-rule enforcement that throws to block). The two tiers are complementary: the map decides *which commands may run at all* per agent, and the guard blocks the four plan-marshall hard-rule bypass classes regardless of what the map permits.
+OpenCode enforces tool-execution permissions from a **two-tier map**: a project-level `permission` block in `opencode.json` (host grant resolution) and a `tool.execute.before` guard plugin under `.opencode/plugin/` (hard-rule enforcement that throws to block). The two tiers are complementary: the map decides *which commands may run at all* per agent, and the guard blocks the five plan-marshall hard-rule bypass classes regardless of what the map permits.
 
 === Configuration Locations & Precedence
 
@@ -169,9 +169,10 @@ The guard plugin `.opencode/plugin/guard.js` registers a `tool.execute.before` h
 * **R1 — shell chaining** (bash): command contains `&&`, `||`, `;`, `|`, `$(`, a backtick, a trailing `&`, or a newline (quote-aware scan).
 * **R2 — shell file operations** (bash): first token is a mutation-class file op (`rm`, `mv`, `cp`, `touch`, `mkdir`, `rmdir`, `truncate`, `tee`, `chmod`, `chown`, `ln`, `dd`) or a shell spawn (`sh`, `bash`, `source`). Read-side probes (`ls`, `cat`, `head`, `tail`, `grep`, `find`) are NOT in this guard class — the two-tier permission map governs them.
 * **R3 — direct executor edits** (edit/write/patch): target resolves under `.plan/execute-script.py`.
-* **R4 — hard-coded builds** (bash): `./pw` with no verb or a build verb (`./pw generate*` and `./pw --*` pass), bare build tools (`mvn`, `mvnw`, `gradle`, `gradlew`, `make`, `cmake`, `ant`, `uv`), JS runners (`npm`, `npx`, `bun`, `pnpm`, `yarn`) followed by `test`/`run`/`build`, `python3 build.py`, `python3 -m {pytest mypy ruff}` and bare `{pytest mypy ruff}`. The executor permit `python3 .plan/execute-script.py …` is exempt.
+* **R4 — hard-coded builds** (bash): `./pw` with no verb or a build verb (`./pw generate*` and `./pw --*` pass), bare build tools (`mvn`, `mvnw`, `gradle`, `gradlew`, `make`, `cmake`, `ant`, `uv`), JS runners (`npm`, `npx`, `bun`, `pnpm`, `yarn`) followed by `test`/`run`/`build`, `python3 build.py`, `python3 -m {pytest mypy ruff}` and bare `{pytest mypy ruff}`. The executor permit `python3 .plan/execute-script.py …` is exempt. R1–R4 are unconditional.
+* **R5 — direct interpreter calls** (bash), GATED: an interpreter invocation (`python`/`python3` or a versioned spelling such as `python3.12`, case-insensitively) as `-c`, a script path, or `-m` with any module. Applies only inside a plan-marshall plan context — a dispatched `execution-context` sub-agent (`event.agent`), or a working directory under `.plan/local/worktrees/` (the shell `workdir`, or the project root) — matching the Claude hook's gate. Wrapper prefixes (`command`/`env`/`sudo`/`timeout`/`nice`/`nohup`/`time`/`xargs`, including `env -S`) are stripped first. Two exemptions inside the context: the executor permit, and the shared allow-list of documented non-executor invocations in `marketplace/bundles/plan-marshall/skills/platform-runtime/standards/r5-allowlist.json` — the SAME data file the Claude hook reads.
 
-The plugin is not covered by the Python test harness; its decision table is mirrored as a behavioral contract in `test/plan-marshall/platform-runtime/test_opencode_enforcement.py`, which stays in lock-step with the plugin's rules.
+The plugin is exercised by the Python test harness: `test/plan-marshall/platform-runtime/test_opencode_enforcement.py` runs its registered hook under `node` (a real ES-module scratch project), and `test_guard_hook_parity.py` drives both guards against the same corpus so their decision tables cannot drift. `test_guard_documentation_sweep.py` feeds every documented interpreter invocation in the corpus through both guards.
 
 === Role × Surface × Path Matrix
 
@@ -371,7 +372,9 @@ The OpenCode target is verified by dedicated automated tests:
   ** `test_emitter.py`: Target emission, singular directory layout, target-scoped bundle emission, `bundle-components.json` attribution emission, and installer lifecycle validation (selective bundle flags, aliases, dependency closure, manifest persistence, `opencode.json` tailoring with custom agent preservation, atomic update backup/rollback, workspace rule emission, selective uninstallation, and safe non-destructive full uninstallation).
 * `test/plan-marshall/platform-runtime/`:
   ** `test_opencode_runtime.py`: Unit tests for `OpenCodeRuntime` covering layout resolution, project setup, permission settings paths, defaults injection, permission fix operations, and health checks.
-  ** `test_opencode_enforcement.py`: Deny refusals, ask prompts, and carve-out passes pinned against the runtime matrix, plus the mirror of the guard plugin decision table as a behavioral contract.
+  ** `test_opencode_enforcement.py`: Deny refusals, ask prompts, and carve-out passes pinned against the runtime matrix, plus the guard plugin decision table EXERCISED by running its hook under `node`.
+  ** `test_guard_hook_parity.py`: the OpenCode guard and the Claude hook driven against the same interpreter-surface corpus, so their decision tables cannot drift.
+  ** `test_guard_documentation_sweep.py`: every documented interpreter invocation in the corpus fed through both guards, so no documented workflow is refused.
 * `test/plan-marshall/marshall-steward/`:
   ** `test_bootstrap_plugin_behavior.py`: Tests for OpenCode singular layout path resolution (`skill/{bundle}-{skill}/`).
   ** `test_harness_config.py`: Unit test suite covering `check_harness`, `configure_harness`, schema verification, freshness checks, multi-harness coexistence, `determine_mode` return fields, and worktree inheritance.

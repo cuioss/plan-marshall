@@ -28,6 +28,7 @@ Coverage:
 from __future__ import annotations
 
 import json
+import re
 
 # PLAIN import, deliberately — matching ``test_pretooluse_gate.py``, whose typed
 # probes need mypy to see the real module. The name must be bound the same way in
@@ -1037,3 +1038,107 @@ def test_r5_value_taking_cluster_helper_first_value_taking_wins() -> None:
     assert hook._is_c_m_cluster('-Wignore') is False
     assert hook._is_c_m_cluster('--version') is False
     assert hook._is_c_m_cluster('-u') is False
+
+
+# =============================================================================
+# R5 — wrapper / versioned interpreter / allow-list / logging (D1)
+# =============================================================================
+
+
+#: Wrapper-prefixed interpreter calls the D1 wrapper contract must refuse — the
+#: same wrapper set (timeout, nice, nohup, time, xargs, env -S) the OpenCode
+#: guard strips, so a prefix cannot hide the interpreter on either harness.
+_R5_NEW_WRAPPER_DENIED = [
+    'timeout 5 python3 -c "x"',
+    'nice -n 5 python3 -c "x"',
+    'nohup python3 -c "x"',
+    'time python3 -c "x"',
+    'xargs -I{} python3 -c "x"',
+    'env -S "python3 -c x"',
+]
+
+_R5_NEW_WRAPPER_IDS = ['timeout', 'nice', 'nohup', 'time', 'xargs', 'env-split-string']
+
+
+@pytest.mark.parametrize('command', _R5_NEW_WRAPPER_DENIED, ids=_R5_NEW_WRAPPER_IDS)
+def test_r5_denies_new_wrapper_prefixed_interpreter_calls(command: str) -> None:
+    """Each D1 wrapper prefix is stripped before the interpreter check."""
+    assert hook.evaluate(_signal2_payload('Bash', _bash(command))) == hook._R5_REASON, command
+
+
+@pytest.mark.parametrize('command', ['python3.12 -c "x"', 'python3.11 script.py', 'PYTHON3 -c "x"'])
+def test_r5_denies_versioned_and_uppercase_interpreters(command: str) -> None:
+    """Versioned interpreters and case variants are recognised, not walked past."""
+    assert hook.evaluate(_signal2_payload('Bash', _bash(command))) == hook._R5_REASON, command
+
+
+def test_r5_allows_documented_sync_engine() -> None:
+    """The documented sync engine is on the shared allow-list — R5 must allow it."""
+    command = 'python3 marketplace/targets/sync.py --target opencode'
+    assert hook.evaluate(_signal2_payload('Bash', _bash(command))) is None
+
+
+def test_r5_allows_nested_allowlist_path() -> None:
+    """An allow-listed script reached by a longer path still matches by suffix."""
+    command = 'python3 /abs/repo/marketplace/targets/generate.py --target all'
+    assert hook.evaluate(_signal2_payload('Bash', _bash(command))) is None
+
+
+def test_r5_allows_absolute_executor() -> None:
+    """An absolute executor path is the executor permit — R5 must allow it."""
+    command = 'python3 /abs/repo/.plan/execute-script.py a:b:c verb'
+    assert hook.evaluate(_signal2_payload('Bash', _bash(command))) is None
+
+
+def test_r5_absent_allowlist_falls_back_to_base_table(monkeypatch: pytest.MonkeyPatch) -> None:
+    """With no allow-list file, the built-in base table still allows the sync engine.
+
+    The base table is deliberately narrow, so a script that only the data file
+    names (``generate.py``) is refused on the absent-file path — the fallback is
+    the base table, never "allow everything".
+    """
+    monkeypatch.setattr(hook, '_r5_allowlist_path', lambda: '/nonexistent/r5-allowlist.json')
+    assert hook.evaluate(_signal2_payload('Bash', _bash('python3 marketplace/targets/sync.py'))) is None
+    assert hook.evaluate(_signal2_payload('Bash', _bash('python3 marketplace/targets/generate.py'))) == hook._R5_REASON
+
+
+def test_r5_allowlist_path_resolves_to_the_shared_data_file() -> None:
+    """The hook reads the SAME one data file the guard reads."""
+    path = hook._r5_allowlist_path()
+    assert str(path).endswith('platform-runtime/standards/r5-allowlist.json')
+    assert path.is_file(), f'the shared R5 allow-list data file is missing: {path}'
+
+
+def test_hook_writes_rule_r5_guard_log_line(tmp_path) -> None:
+    """Done-when (d): a refusal appends a ``rule=R5`` line to ``<cwd>/.plan/temp/guard.log``.
+
+    The worktree cwd both satisfies the gate and locates the log, exactly as the
+    OpenCode guard writes its own audit line.
+    """
+    worktree = tmp_path / '.plan' / 'local' / 'worktrees' / 'plan-a'
+    worktree.mkdir(parents=True)
+    payload = {
+        'cwd': str(worktree),
+        'session_id': 'sess-abc',
+        'tool_name': 'Bash',
+        'tool_input': _bash('python3 -c "x"'),
+    }
+    result = _run(json.dumps(payload))
+    assert result.returncode == 0
+    assert _decision(result.stdout)['permissionDecision'] == 'deny'
+
+    log = worktree / '.plan' / 'temp' / 'guard.log'
+    assert log.is_file(), 'the hook wrote no guard.log for the refusal'
+    lines = [line for line in log.read_text(encoding='utf-8').splitlines() if 'rule=R5' in line]
+    assert lines, f'no rule=R5 line in guard.log: {log.read_text(encoding="utf-8")!r}'
+    assert re.search(
+        r'\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z \| tool=Bash \| rule=R5 \| session=sess-abc \| call=', lines[0]
+    ), f'guard.log line does not match the guard.js format: {lines[0]!r}'
+
+
+def test_hook_writes_no_log_without_a_cwd() -> None:
+    """A Signal-1 refusal with no cwd writes no guard.log — nothing to key the path on."""
+    payload = _signal1_payload('Bash', _bash('python3 -c "x"'))
+    result = _run(json.dumps(payload))
+    assert result.returncode == 0
+    assert _decision(result.stdout)['permissionDecision'] == 'deny'

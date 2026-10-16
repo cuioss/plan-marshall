@@ -27,10 +27,16 @@ of its own. The only logic it owns is the R1-R5 rule matchers and the
   ``.plan/execute-script.py``.
 - **R4 hard-coded build** — a Bash command invoking ``./pw`` or a bare ``mvn`` /
   ``npm`` / ``gradle``.
-- **R5 direct interpreter call** — a Bash command invoking ``python`` /
-  ``python3`` as ``-c``, a script path, or ``-m`` with any module, except the
-  ``python3 .plan/execute-script.py`` executor permit. The allow set is
-  executor-only, so every ``-m`` form refuses.
+- **R5 direct interpreter call** — a Bash command invoking an interpreter
+  (``python`` / ``python3`` / a versioned spelling such as ``python3.12``,
+  case-insensitively) as ``-c``, a script path, or ``-m`` with any module,
+  except the ``python3 .plan/execute-script.py`` executor permit (which may be
+  an absolute path), and except the shared allow-list of documented
+  non-executor invocations read from ``standards/r5-allowlist.json``. Wrapper
+  prefixes (``command``/``env``/``sudo``/``timeout``/``nice``/``nohup``/``time``/
+  ``xargs``, including ``env -S``) are stripped first, so a wrapper cannot hide
+  the interpreter. The allow set is otherwise executor-only, so every ``-m``
+  form refuses.
 
 Control flow:
 
@@ -38,8 +44,9 @@ Control flow:
 2. Apply ``gate.context_gate(payload)`` (``Signal1 OR Signal2``) — false → emit
    nothing, exit 0 (fail OPEN).
 3. Run the matchers against ``gate.tool_name(payload)`` /
-   ``gate.tool_input(payload)``; on the FIRST match, emit the deny envelope with
-   a one-line redirect reason. No match → emit nothing, exit 0.
+   ``gate.tool_input(payload)``; on the FIRST match, append one ``guard.log``
+   audit line (best-effort) and emit the deny envelope with a one-line redirect
+   reason. No match → emit nothing, exit 0.
 
 The whole leaf is best-effort/no-raise: any internal error degrades to a silent
 no-op (emit nothing, exit 0).
@@ -52,7 +59,9 @@ Usage (invoked by Claude Code's PreToolUse hook mechanism, not directly):
 
 from __future__ import annotations
 
+import datetime
 import json
+import pathlib
 import re
 import shlex
 import sys
@@ -448,29 +457,52 @@ def _match_r4_hardcoded_build(tool_name: str | None, tool_input: dict[str, Any])
     return None
 
 
-#: Shell wrappers (``command`` / ``env`` / ``sudo``) and leading ``NAME=value``
-#: assignments the R5 matcher strips before its program check. Mirrors the
-#: opencode guard's ``commandTokens`` stripping (``SHELL_WRAPPERS``,
-#: ``WRAPPER_OPTS_WITH_VALUE`` and the assignment pattern there) so a
-#: wrapper-prefixed interpreter call (``env python3 -c ...``) is judged the
-#: same on both harnesses. Used ONLY by the R5 matcher — R1, R2 and R4 keep
-#: their existing unstripped program checks.
-_R5_SHELL_WRAPPERS = frozenset({'command', 'env', 'sudo'})
+#: Shell wrappers (``command`` / ``env`` / ``sudo`` / ``timeout`` / ``nice`` /
+#: ``nohup`` / ``time`` / ``xargs``) and leading ``NAME=value`` assignments the
+#: R5 matcher strips before its program check. Mirrors the opencode guard's
+#: ``commandTokens`` stripping (``SHELL_WRAPPERS`` and the value-option tables
+#: there) so a wrapper-prefixed interpreter call (``timeout 5 python3 -c ...``)
+#: is judged the same on both harnesses. Used ONLY by the R5 matcher — R1, R2
+#: and R4 keep their existing unstripped program checks.
+_R5_SHELL_WRAPPERS = frozenset({'command', 'env', 'sudo', 'timeout', 'nice', 'nohup', 'time', 'xargs'})
 
-#: Wrapper options that consume a following value token (``sudo -u <user>``).
-_R5_WRAPPER_OPTS_WITH_VALUE = frozenset(
-    {
-        '-u',
-        '--user',
-        '-g',
-        '--group',
-        '-U',
-        '--other-user',
-        '-C',
-        '--chdir',
-        '--directory',
-    }
-)
+#: Per-wrapper options that consume a following value token. Kept PER WRAPPER so
+#: ``sudo -n`` (a non-interactive FLAG) does not swallow the interpreter behind
+#: it, while ``nice -n 5`` and ``xargs -n 5`` do consume their value. Mirrors the
+#: guard's ``WRAPPER_VALUE_OPTS``.
+_R5_WRAPPER_VALUE_OPTS: dict[str, frozenset[str]] = {
+    'command': frozenset(),
+    'env': frozenset({'-u', '--unset', '-C', '--chdir'}),
+    'sudo': frozenset({'-u', '--user', '-g', '--group', '-U', '--other-user', '-C', '--chdir', '--directory'}),
+    'timeout': frozenset({'-s', '--signal', '-k', '--kill-after'}),
+    'nice': frozenset({'-n', '--adjustment'}),
+    'nohup': frozenset(),
+    'time': frozenset(),
+    'xargs': frozenset(
+        {
+            '-I',
+            '-n',
+            '-P',
+            '-s',
+            '-d',
+            '-a',
+            '-E',
+            '-L',
+            '-o',
+            '-R',
+            '-S',
+            '--max-args',
+            '--max-lines',
+            '--max-chars',
+            '--delimiter',
+            '--arg-file',
+            '--replace',
+            '--max-procs',
+            '--eof',
+            '--arg-separator',
+        }
+    ),
+}
 
 #: Leading ``NAME=value`` assignment, transparent to the shell.
 _R5_ASSIGNMENT_RE = re.compile(r'^[A-Za-z_][A-Za-z0-9_]*=')
@@ -481,42 +513,69 @@ def _r5_stripped_tokens(command: str) -> list[str]:
 
     Drops leading shell wrappers (each with its options, option values and
     inline assignments) and leading ``NAME=value`` assignments, mirroring the
-    guard's ``commandTokens`` walk. Shell-lexical (``shlex``) like the other
-    R5 helpers, falling back to the whitespace split on malformed quoting
-    rather than returning early.
+    guard's ``commandTokens`` walk. ``timeout`` additionally consumes its
+    mandatory duration value; ``env -S``/``--split-string`` splices its string
+    back through the splitter, because ``env -S`` runs that string as the
+    command. Shell-lexical (``shlex``) like the other R5 helpers, falling back
+    to the whitespace split on malformed quoting rather than returning early.
     """
     try:
         tokens = shlex.split(command)
     except ValueError:
         tokens = command.split()
+    return _strip_wrapper_tokens(tokens)
+
+
+def _strip_wrapper_tokens(tokens: list[str]) -> list[str]:
+    """Strip leading wrappers/assignments from *tokens* (the R5 prefix walk).
+
+    Factored out so the ``env -S`` splice can recurse on the spliced head
+    without re-lexing the whole command.
+    """
     index = 0
     total = len(tokens)
     while index < total:
         token = tokens[index]
-        if token in _R5_SHELL_WRAPPERS:
-            index += 1
-            while index < total:
-                option = tokens[index]
-                if _R5_ASSIGNMENT_RE.match(option):
-                    index += 1
-                    continue
-                if option.startswith('-') and len(option) > 1:
-                    base = option.split('=')[0]
-                    index += 1
-                    if (
-                        '=' not in option
-                        and base in _R5_WRAPPER_OPTS_WITH_VALUE
-                        and index < total
-                        and not tokens[index].startswith('-')
-                    ):
-                        index += 1
-                    continue
-                break
-            continue
         if _R5_ASSIGNMENT_RE.match(token):
             index += 1
             continue
-        break
+        if token not in _R5_SHELL_WRAPPERS:
+            break
+        wrapper = token
+        value_opts = _R5_WRAPPER_VALUE_OPTS.get(wrapper, frozenset())
+        index += 1
+        spliced: list[str] | None = None
+        while index < total:
+            option = tokens[index]
+            if _R5_ASSIGNMENT_RE.match(option):
+                index += 1
+                continue
+            if not (option.startswith('-') and len(option) > 1):
+                break
+            if wrapper == 'env' and (option.startswith('-S') or option.split('=', 1)[0] == '--split-string'):
+                if '=' in option:
+                    value = option.split('=', 1)[1]
+                    index += 1
+                elif option == '-S':
+                    index += 1
+                    value = tokens[index] if index < total else ''
+                    index += 1
+                else:
+                    value = option[2:]
+                    index += 1
+                try:
+                    spliced = shlex.split(value)
+                except ValueError:
+                    spliced = value.split()
+                break
+            base = option.split('=', 1)[0]
+            index += 1
+            if '=' not in option and base in value_opts and index < total and not tokens[index].startswith('-'):
+                index += 1
+        if spliced is not None:
+            return _strip_wrapper_tokens([*spliced, *tokens[index:]])
+        if wrapper == 'timeout' and index < total and not tokens[index].startswith('-'):
+            index += 1
     return tokens[index:]
 
 
@@ -525,14 +584,71 @@ def _is_executor_permit(command: str) -> bool:
 
     Compared after R5 wrapper stripping, so a wrapper-prefixed executor call
     (``env python3 .plan/execute-script.py ...``) stays exempt exactly as the
-    guard exempts it. Used only by the R5 matcher.
+    guard exempts it, and the second token may be the executor's ABSOLUTE path
+    (``/abs/repo/.plan/execute-script.py``) — the runbook lane invokes it by an
+    absolute path. Used only by the R5 matcher.
     """
     stripped = _r5_stripped_tokens(command)
     if len(stripped) < 2:
         return False
-    if stripped[0] != 'python3':
+    program = _strip_matched_quotes(stripped[0]).rsplit('/', 1)[-1].lower()
+    if program != 'python3':
         return False
-    return stripped[1] == '.plan/execute-script.py'
+    second = _strip_matched_quotes(stripped[1]).replace('\\', '/')
+    return second == '.plan/execute-script.py' or second.endswith('/.plan/execute-script.py')
+
+
+#: Interpreter program name, including a versioned spelling (``python3.12``).
+#: Matched after lowercasing, mirroring the guard's ``isPythonInterpreter``.
+_PYTHON_PROGRAM_RE = re.compile(r'^python(\d+(\.\d+)*)?$')
+
+#: The shared allow-list data file both harnesses read. Resolved relative to the
+#: script so the deployed Claude hook finds the skill's ``standards/`` directory.
+_R5_ALLOWLIST_RELATIVE = ('standards', 'r5-allowlist.json')
+
+#: The base allow-list used when no data file can be read — deliberately narrow.
+_R5_ALLOWLIST_BASE = ('marketplace/targets/sync.py',)
+
+
+def _r5_allowlist_path() -> pathlib.Path:
+    """Return the path to the shared R5 allow-list data file."""
+    return pathlib.Path(__file__).resolve().parent.parent.joinpath(*_R5_ALLOWLIST_RELATIVE)
+
+
+def _r5_allowlist_entries() -> tuple[str, ...]:
+    """Return the allow-list entries, falling back to the base table when absent.
+
+    Read on each call rather than cached, so a test can point the path at a
+    missing file and observe the base-table fallback without an invalidation
+    step. The file is read only for an interpreter invocation, never on the
+    hot path for other tools.
+    """
+    path = pathlib.Path(_r5_allowlist_path())
+    try:
+        data = json.loads(path.read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return _R5_ALLOWLIST_BASE
+    entries = data.get('entries') if isinstance(data, dict) else None
+    if isinstance(entries, dict) and entries:
+        return tuple(str(key) for key in entries)
+    if isinstance(entries, list) and entries:
+        return tuple(str(entry) for entry in entries)
+    return _R5_ALLOWLIST_BASE
+
+
+def _is_allow_listed(command: str) -> bool:
+    """Whether *command*'s second stripped token is on the shared allow-list.
+
+    Matched exactly or as a path suffix, so an absolute or relative path ending
+    in an entry resolves to it (``/abs/repo/marketplace/targets/sync.py`` matches
+    ``marketplace/targets/sync.py``; ``/abs/.../generate_executor.py`` matches
+    the bare ``generate_executor.py``). Mirrors the guard's ``isAllowListed``.
+    """
+    stripped = _r5_stripped_tokens(command)
+    if len(stripped) < 2:
+        return False
+    second = _strip_matched_quotes(stripped[1]).replace('\\', '/')
+    return any(second == entry or second.endswith('/' + entry) for entry in _r5_allowlist_entries())
 
 
 def _second_token(command: str) -> str:
@@ -608,10 +724,12 @@ def _match_r5_interpreter_call(tool_name: str | None, tool_input: dict[str, Any]
     stripped = _r5_stripped_tokens(command)
     first = stripped[0].strip().lower() if stripped else ''
     program = _strip_matched_quotes(first.rsplit('/', 1)[-1] if first else '')
-    if program not in ('python', 'python3'):
+    if not _PYTHON_PROGRAM_RE.match(program):
         return None
     second = _strip_matched_quotes(_second_token(command).strip())
     if not second:
+        return None
+    if _is_allow_listed(command):
         return None
     if second in ('-c', '-m'):
         return _R5_REASON
@@ -645,14 +763,60 @@ def _has_flag_prefixed_bypass(stripped: list[str]) -> bool:
     return False
 
 
-#: Ordered rule chain — the first matcher returning a reason wins.
-_RULES: tuple[Callable[[str | None, dict[str, Any]], str | None], ...] = (
-    _match_r1_shell_construct,
-    _match_r2_file_ops,
-    _match_r3_generated_executor,
-    _match_r4_hardcoded_build,
-    _match_r5_interpreter_call,
+#: Ordered ``(rule name, matcher)`` chain — the first matcher returning a reason
+#: wins. The name is stamped into the ``guard.log`` audit line, matching the
+#: OpenCode guard's ``rule=Rn`` field.
+_RULES: tuple[tuple[str, Callable[[str | None, dict[str, Any]], str | None]], ...] = (
+    ('R1', _match_r1_shell_construct),
+    ('R2', _match_r2_file_ops),
+    ('R3', _match_r3_generated_executor),
+    ('R4', _match_r4_hardcoded_build),
+    ('R5', _match_r5_interpreter_call),
 )
+
+
+def _utc_iso_millis() -> str:
+    """Return the current UTC time as ``YYYY-MM-DDTHH:MM:SS.mmmZ``.
+
+    Matches the JavaScript guard's ``new Date().toISOString()`` shape so the two
+    harnesses write identically formatted audit lines.
+    """
+    now = datetime.datetime.now(datetime.UTC)
+    return now.strftime('%Y-%m-%dT%H:%M:%S.') + f'{now.microsecond // 1000:03d}Z'
+
+
+def _append_guard_log(payload: dict[str, Any], rule: str, detail: str) -> None:
+    """Append one ``<cwd>/.plan/temp/guard.log`` line for a refusal (best-effort).
+
+    The line is the same shape the OpenCode guard writes. A refusal with no
+    ``cwd`` writes nothing — there is no path to key the log on. Any I/O failure
+    is swallowed so logging can never mask the deny envelope (fail-open).
+    """
+    current = gate.cwd(payload)
+    if not current:
+        return
+    try:
+        log_dir = pathlib.Path(current) / '.plan' / 'temp'
+        log_dir.mkdir(parents=True, exist_ok=True)
+        tool = gate.tool_name(payload) or ''
+        session = gate.session_id(payload) or '?'
+        line = f'{_utc_iso_millis()} | tool={tool} | rule={rule} | session={session} | call=? | {detail}'
+        with (log_dir / 'guard.log').open('a', encoding='utf-8') as handle:
+            handle.write(line + '\n')
+    except OSError:
+        pass
+
+
+def _refusal_detail(payload: dict[str, Any]) -> str:
+    """The command (or file path) a refusal is about, for the audit line."""
+    tool_input = gate.tool_input(payload)
+    command = tool_input.get('command')
+    if isinstance(command, str) and command:
+        return command
+    file_path = tool_input.get('file_path')
+    if isinstance(file_path, str) and file_path:
+        return file_path
+    return ''
 
 
 def evaluate(payload: dict[str, Any]) -> str | None:
@@ -662,7 +826,8 @@ def evaluate(payload: dict[str, Any]) -> str | None:
     is not satisfied, returns ``None`` (fail OPEN — no enforcement). When the gate
     is satisfied, runs the R1-R5 matchers in order against the shared gate's
     ``tool_name`` / ``tool_input`` accessors and returns the first matching rule's
-    redirect reason, or ``None`` when no rule fires.
+    redirect reason, or ``None`` when no rule fires. A match also appends one
+    ``guard.log`` audit line (best-effort — logging never changes the verdict).
 
     Args:
         payload: The parsed PreToolUse payload.
@@ -675,9 +840,10 @@ def evaluate(payload: dict[str, Any]) -> str | None:
         return None
     tool_name = gate.tool_name(payload)
     tool_input = gate.tool_input(payload)
-    for rule in _RULES:
+    for rule_name, rule in _RULES:
         reason = rule(tool_name, tool_input)
         if reason is not None:
+            _append_guard_log(payload, rule_name, _refusal_detail(payload))
             return reason
     return None
 

@@ -8,15 +8,15 @@
  * plan-marshall hard-rule bypass classes and THROWS to block the execution,
  * appending one audit line to `.plan/temp/guard.log` per blocked invocation.
  *
- * The plugin is not covered by the Python test harness; its decision table below
- * is mirrored as a behavioral contract in
- * `test/plan-marshall/platform-runtime/test_opencode_enforcement.py`. Keep the
+ * The plugin's decision table is mirrored as a behavioral contract in
+ * `test/plan-marshall/platform-runtime/test_opencode_enforcement.py`, which
+ * EXECUTES this module under node rather than grepping its source. Keep the
  * two in lock-step when the table changes.
  *
  * DECISION TABLE (authoritative — mirrored in the D4 runtime matrix):
  *
-  *   Guarded tools: bash (R1, R2, R4, R5), edit/write/patch/apply_patch (R3).
-  *   Every other tool passes through untouched.
+ *   Guarded tools: bash (R1, R2, R4, R5), edit/write/patch/apply_patch (R3).
+ *   Every other tool passes through untouched.
  *
  *   R1 — shell-chaining constructors (bash): the command, with single-quoted
  *   regions stripped and double-quoted regions stripped except for command
@@ -25,9 +25,9 @@
  *   inside double quotes still block because Bash executes them there.
  *
  *   R2 — shell file operations, mutation class (bash): the command's first token,
- *   after stripping `command`/`env`/`sudo` wrappers (with options), leading
- *   `NAME=value` assignments, quotes, and path qualification,
- *   is one of {rm mv cp touch mkdir rmdir truncate tee chmod chown ln dd}  => block.
+ *   after stripping the shell wrappers (with options), leading `NAME=value`
+ *   assignments, quotes, and path qualification, is one of
+ *   {rm mv cp touch mkdir rmdir truncate tee chmod chown ln dd}  => block.
  *   Read-side probes (ls cat head tail grep find) are NOT in this guard class:
  *   the two-tier permission map governs them (global deny, orchestrator
  *   small-ops carve-out under ask). Shell spawns `sh`/`bash`/`source` also block.
@@ -44,18 +44,28 @@
  *     - first token is a bare build tool {mvn mvnw gradle gradlew make cmake ant
  *       uv}; or a JS runner {npm npx bun pnpm yarn} followed by
  *       {test run build};
- *     - first token is `python`/`python3` and the basename of the second
+ *     - first token is an interpreter and the basename of the second
  *       token is `build.py` (`python3 ./build.py` included);
  *     - `python(3) -m {pytest mypy ruff}`; a bare {pytest mypy ruff}.
- *   The executor permit stays exempt under R4 and R5. R5 refuses direct interpreter calls.
-  *
-  *   R5 — direct interpreter calls bypassing the executor (bash): block when
-  *   the first token is python or python3 and the invocation is -c, a script
-  *   path (any second token not starting with -), or -m with any module —
-  *   the allow set is executor-only, so every -m form refuses. The executor
-  *   permit stays exempt.
+ *   R4 is UNCONDITIONAL. The executor permit stays exempt under R4 and R5.
+ *
+ *   R5 — direct interpreter calls bypassing the executor (bash), GATED: block
+ *   when the first token is an interpreter (python/python3 or a versioned
+ *   spelling such as python3.12) and the invocation is -c, a script path (any
+ *   second token not starting with -), or -m with any module — the allow set is
+ *   executor-only, so every -m form refuses. R5 applies ONLY inside a
+ *   plan-marshall plan context (a dispatched execution-context sub-agent, or a
+ *   working directory under `.plan/local/worktrees/`), matching the Claude
+ *   hook's gate; R1-R4 stay unconditional. Two exemptions apply inside the
+ *   context: the executor permit, and the SHARED allow-list of documented
+ *   non-executor invocations read from `r5-allowlist.json`.
+ *
+ * TOKENISATION PARITY: the R5 branch tokenises with a quoting-aware splitter
+ * (`shellSplit`) matching the Python hook's `shlex.split`, strips the SAME
+ * wrapper set, and lowercases the program token for the interpreter check, so
+ * the two decision tables agree on the interpreter surface.
  */
-import { appendFileSync, mkdirSync } from "node:fs"
+import { appendFileSync, mkdirSync, readFileSync } from "node:fs"
 import path from "node:path"
 import { Plugin } from "@opencode/plugin"
 
@@ -116,56 +126,196 @@ const PYTHON_DIRECT_RUNNERS = new Set(["pytest", "mypy", "ruff"])
 // The allow set is executor-only: every -m form refuses, so no allowed-module
 // set exists to declare. The two sets below are the whole R5 population the
 // contract test parses: the interpreter names and the always-refuse flags.
+// A versioned spelling (python3.12) is recognised by `isPythonInterpreter`.
 const PYTHON_INTERPRETERS = new Set(["python", "python3"])
 const R5_ALWAYS_REFUSE_FLAGS = new Set(["-c", "-m"])
 
-// Shell wrappers (`command`, `env`, `sudo`) and leading `NAME=value`
-// assignments are transparent to the shell: `command rm -f file` still runs
-// `rm`. Strip them before first-token checks so R2/R4 cannot be bypassed
-// by prefixing a blocked invocation. Wrapper options (`env -i`,
-// `sudo -u <user>`, `command -p`) are skipped alongside the wrapper itself;
-// fail closed on unparseable wrapper syntax by treating the invocation as
-// wrapped until a non-option executable token is reached.
-const SHELL_WRAPPERS = new Set(["command", "env", "sudo"])
+// Shell wrappers a prefix of which is transparent to the shell: `timeout 5 rm
+// file` still runs `rm`, `env python3 -c x` still runs the interpreter. Strip
+// them (with their options, option values and inline `NAME=value` assignments)
+// before the first-token checks so a blocked invocation cannot be reached by
+// prefixing a wrapper. Options a wrapper does not itself consume are skipped
+// structurally; `timeout` additionally consumes its mandatory DURATION value.
+const SHELL_WRAPPERS = new Set(["command", "env", "sudo", "timeout", "nice", "nohup", "time", "xargs"])
 
-// Wrapper options that consume a following value token (`sudo -u <user>`).
-const WRAPPER_OPTS_WITH_VALUE = new Set([
-  "-u", "--user", "-g", "--group", "-U", "--other-user",
-  "-C", "--chdir", "--directory",
-])
+// Per-wrapper options that consume a FOLLOWING value token. Kept PER WRAPPER on
+// purpose: `sudo -n` is a flag (non-interactive), so a single shared value set
+// would swallow the interpreter behind it, while `nice -n 5` and `xargs -n 5`
+// DO take a value.
+const WRAPPER_VALUE_OPTS = {
+  command: new Set([]),
+  env: new Set(["-u", "--unset", "-C", "--chdir"]),
+  sudo: new Set(["-u", "--user", "-g", "--group", "-U", "--other-user", "-C", "--chdir", "--directory"]),
+  timeout: new Set(["-s", "--signal", "-k", "--kill-after"]),
+  nice: new Set(["-n", "--adjustment"]),
+  nohup: new Set([]),
+  time: new Set([]),
+  xargs: new Set([
+    "-I", "-n", "-P", "-s", "-d", "-a", "-E", "-L", "-o", "-R", "-S",
+    "--max-args", "--max-lines", "--max-chars", "--delimiter", "--arg-file",
+    "--replace", "--max-procs", "--eof", "--arg-separator",
+  ]),
+}
 
-function commandTokens(command) {
-  const tokens = command.trimStart().split(/\s+/)
+// The base allow-list used when no shared data file can be read. Deliberately
+// narrow: the sync engine is the one non-executor invocation that must survive
+// even a missing data file, because it is the harness's own deploy step.
+const R5_ALLOWLIST_BASE = ["marketplace/targets/sync.py"]
+
+// Marker in the OpenCode agent identity that identifies a dispatched
+// execution-context sub-agent (mirrors pretooluse_gate.EXECUTION_CONTEXT_MARKER).
+const EXECUTION_CONTEXT_MARKER = "execution-context"
+
+// Path segment marking a plan worktree (mirrors pretooluse_gate.WORKTREE_PATH_SEGMENT).
+const WORKTREE_PATH_SEGMENT = ".plan/local/worktrees"
+
+const ASSIGNMENT_RE = /^[A-Za-z_][A-Za-z0-9_]*=/
+const VERSIONED_PYTHON_RE = /^python(\d+(\.\d+)*)?$/
+
+// Quoting-aware tokenizer mirroring Python's `shlex.split` (POSIX mode) on the
+// shapes R5 sees. Returns null on malformed quoting (an unterminated span or a
+// trailing escape), so the caller can fall back to a whitespace split exactly
+// as the hook's shlex fallback does.
+function shellSplit(command) {
+  const tokens = []
+  let current = ""
+  let started = false
+  let i = 0
+  const n = command.length
+  while (i < n) {
+    const ch = command[i]
+    if (ch === "\\") {
+      if (i + 1 >= n) return null
+      current += command[i + 1]
+      started = true
+      i += 2
+      continue
+    }
+    if (ch === "'") {
+      started = true
+      i++
+      let closed = false
+      while (i < n) {
+        if (command[i] === "'") {
+          closed = true
+          i++
+          break
+        }
+        current += command[i]
+        i++
+      }
+      if (!closed) return null
+      continue
+    }
+    if (ch === '"') {
+      started = true
+      i++
+      let closed = false
+      while (i < n) {
+        if (command[i] === '"') {
+          closed = true
+          i++
+          break
+        }
+        current += command[i]
+        i++
+      }
+      if (!closed) return null
+      continue
+    }
+    if (ch === " " || ch === "\t" || ch === "\n" || ch === "\r") {
+      if (started) {
+        tokens.push(current)
+        current = ""
+        started = false
+      }
+      i++
+      continue
+    }
+    current += ch
+    started = true
+    i++
+  }
+  if (started) tokens.push(current)
+  return tokens
+}
+
+function whitespaceSplit(command) {
+  const trimmed = command.trim()
+  return trimmed ? trimmed.split(/\s+/) : []
+}
+
+function isAssignment(token) {
+  return ASSIGNMENT_RE.test(token)
+}
+
+// Strip leading wrapper/assignment prefixes, mirroring the hook's
+// `_r5_stripped_tokens`. `env -S <string>`/`--split-string[=]<string>` splices
+// the string back through the splitter, because `env -S` runs it as the command.
+function stripWrappers(tokens) {
   let i = 0
   while (i < tokens.length) {
-    const t = tokens[i]
-    if (SHELL_WRAPPERS.has(t)) {
+    const token = tokens[i]
+    if (isAssignment(token)) {
       i++
-      while (i < tokens.length) {
-        const o = tokens[i]
-        if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(o)) {
+      continue
+    }
+    if (!SHELL_WRAPPERS.has(token)) break
+    const wrapper = token
+    const valueOpts = WRAPPER_VALUE_OPTS[wrapper] || new Set()
+    i++
+    let spliced = null
+    while (i < tokens.length) {
+      const option = tokens[i]
+      if (isAssignment(option)) {
+        i++
+        continue
+      }
+      if (!(option.startsWith("-") && option.length > 1)) break
+      if (wrapper === "env" && (option.startsWith("-S") || option.split("=")[0] === "--split-string")) {
+        let value
+        if (option.includes("=")) {
+          value = option.slice(option.indexOf("=") + 1)
           i++
-          continue
-        }
-        if (o.startsWith("-") && o.length > 1) {
-          const base = o.split("=")[0]
+        } else if (option === "-S") {
           i++
-          if (!o.includes("=") && WRAPPER_OPTS_WITH_VALUE.has(base) && i < tokens.length && !tokens[i].startsWith("-")) {
-            i++
-          }
-          continue
+          value = tokens[i] ?? ""
+          i++
+        } else {
+          value = option.slice(2)
+          i++
         }
+        const parts = shellSplit(value)
+        spliced = parts === null ? whitespaceSplit(value) : parts
         break
       }
-      continue
-    }
-    if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(t)) {
+      const base = option.split("=")[0]
       i++
-      continue
+      if (!option.includes("=") && valueOpts.has(base) && i < tokens.length && !tokens[i].startsWith("-")) {
+        i++
+      }
     }
-    break
+    if (spliced !== null) return stripWrappers(spliced.concat(tokens.slice(i)))
+    if (wrapper === "timeout" && i < tokens.length && !tokens[i].startsWith("-")) {
+      i++
+    }
   }
   return tokens.slice(i)
+}
+
+function commandTokens(command) {
+  const split = shellSplit(command)
+  const tokens = split === null ? whitespaceSplit(command) : split
+  return stripWrappers(tokens)
+}
+
+function stripMatchedQuotes(raw) {
+  if (!raw || typeof raw !== "string") return ""
+  let t = raw.trim()
+  if (t.length >= 2 && ((t.startsWith('"') && t.endsWith('"')) || (t.startsWith("'") && t.endsWith("'")))) {
+    t = t.slice(1, -1)
+  }
+  return t
 }
 
 // Normalize an executable token for R2/R4 comparison: strip surrounding
@@ -173,21 +323,16 @@ function commandTokens(command) {
 // resolve to `rm`). Executor-permit matching stays exact and separate.
 function normalizeToken(raw) {
   if (!raw || typeof raw !== "string") return ""
-  let t = raw.trim()
-  if (t.length >= 2 && ((t.startsWith('"') && t.endsWith('"')) || (t.startsWith("'") && t.endsWith("'")))) {
-    t = t.slice(1, -1)
-  }
+  const t = stripMatchedQuotes(raw)
   const slash = t.lastIndexOf("/")
-  if (slash !== -1) t = t.slice(slash + 1)
+  if (slash !== -1) return t.slice(slash + 1)
   return t
 }
 
 function basenameOf(raw) {
   if (!raw || typeof raw !== "string") return ""
   let t = raw.trim().replace(/\\/g, "/")
-  if ((t.startsWith('"') && t.endsWith('"')) || (t.startsWith("'") && t.endsWith("'"))) {
-    t = t.slice(1, -1)
-  }
+  t = stripMatchedQuotes(t)
   const slash = t.lastIndexOf("/")
   if (slash !== -1) t = t.slice(slash + 1)
   return t
@@ -198,8 +343,80 @@ function tokenAt(command, index) {
   return tokens[index] ?? ""
 }
 
+// Whether a token names a python interpreter, case-insensitively, including a
+// versioned spelling (`python3.12`). The hook lowercases the program token the
+// same way, so the two guards agree on `PYTHON3` and on `python3.12`.
+function isPythonInterpreter(raw) {
+  const t = normalizeToken(raw).toLowerCase()
+  if (PYTHON_INTERPRETERS.has(t)) return true
+  return VERSIONED_PYTHON_RE.test(t)
+}
+
 function isExecutorPermit(command) {
-  return /^python3\s+\.plan\/execute-script\.py(?:\s|$)/.test(commandTokens(command).join(" "))
+  const tokens = commandTokens(command)
+  if (tokens.length < 2) return false
+  if (basenameOf(tokens[0]).toLowerCase() !== "python3") return false
+  const second = stripMatchedQuotes(tokens[1]).replace(/\\/g, "/")
+  return second === ".plan/execute-script.py" || second.endsWith("/.plan/execute-script.py")
+}
+
+// Whether a second token is on the shared allow-list, matched exactly or as a
+// path suffix (an absolute or relative path ending in the entry).
+function isAllowListed(command, entries) {
+  const tokens = commandTokens(command)
+  if (tokens.length < 2) return false
+  const second = stripMatchedQuotes(tokens[1]).replace(/\\/g, "/")
+  return entries.some((entry) => second === entry || second.endsWith("/" + entry))
+}
+
+// Whether a path resolves under the plan-worktree segment. Normalized to
+// forward slashes with a trailing boundary so a partial segment cannot match.
+function isWorktreePath(candidate) {
+  if (typeof candidate !== "string" || !candidate) return false
+  const normalized = candidate.replace(/\\/g, "/").replace(/\/+$/, "") + "/"
+  return normalized.includes("/" + WORKTREE_PATH_SEGMENT + "/")
+}
+
+// The plan-context gate (Signal1 OR Signal2), mirroring the hook's predicate:
+// a dispatched execution-context sub-agent, or a working directory under
+// `.plan/local/worktrees/`.
+function inPlanContext(event, args, root) {
+  const agent = typeof event?.agent === "string" ? event.agent : ""
+  if (agent.includes(EXECUTION_CONTEXT_MARKER)) return true
+  const workdir = typeof args?.workdir === "string" ? args.workdir : ""
+  return isWorktreePath(workdir || root)
+}
+
+// Read the shared allow-list. Project first, then the deployed OpenCode config
+// directory; absent (or empty) falls back to the built-in base table.
+function loadAllowList(root) {
+  const configRoot = process.env.XDG_CONFIG_HOME || path.join(process.env.HOME || "", ".config")
+  const candidates = [
+    path.join(
+      root,
+      "marketplace",
+      "bundles",
+      "plan-marshall",
+      "skills",
+      "platform-runtime",
+      "standards",
+      "r5-allowlist.json",
+    ),
+    path.join(configRoot, "opencode", "skills", "plan-marshall-platform-runtime", "standards", "r5-allowlist.json"),
+  ]
+  for (const candidate of candidates) {
+    try {
+      const data = JSON.parse(readFileSync(candidate, "utf8"))
+      const entries = data && data.entries
+      if (entries && typeof entries === "object") {
+        const keys = Object.keys(entries)
+        if (keys.length) return keys
+      }
+    } catch {
+      // Try the next candidate.
+    }
+  }
+  return [...R5_ALLOWLIST_BASE]
 }
 
 const R5_VALUE_TAKING_SINGLE = new Set(["c", "m", "W", "X"])
@@ -222,10 +439,7 @@ function mModuleOf(secondRaw, thirdRaw) {
 
 function isInterpreterBypass(secondRaw) {
   if (!secondRaw || typeof secondRaw !== "string") return false
-  let t = secondRaw.trim()
-  if (t.length >= 2 && ((t.startsWith('"') && t.endsWith('"')) || (t.startsWith("'") && t.endsWith("'")))) {
-    t = t.slice(1, -1).trim()
-  }
+  const t = stripMatchedQuotes(secondRaw)
   if (!t) return false
   if (R5_ALWAYS_REFUSE_FLAGS.has(t)) return true
   if (isCMCluster(t)) return true
@@ -243,10 +457,7 @@ function isInterpreterBypass(secondRaw) {
 function hasFlagPrefixedBypass(command) {
   const toks = commandTokens(command).slice(1)
   for (let i = 1; i < toks.length; i++) {
-    let t = toks[i].trim()
-    if (t.length >= 2 && ((t.startsWith('"') && t.endsWith('"')) || (t.startsWith("'") && t.endsWith("'")))) {
-      t = t.slice(1, -1).trim()
-    }
+    const t = stripMatchedQuotes(toks[i])
     if (!t) continue
     if (t === "-c" || t === "-m" || t === "-" || t === "--") return true
     if (isCMCluster(t)) return true
@@ -300,6 +511,7 @@ export default Plugin.define({
   async setup(ctx) {
     const root = ctx.location?.directory || "."
     const logPath = path.join(root, ".plan", "temp", "guard.log")
+    const allowList = loadAllowList(root)
 
     function audit(entry) {
       try {
@@ -373,9 +585,8 @@ export default Plugin.define({
         )
       }
 
-      if (PYTHON_INTERPRETERS.has(token)) {
+      if (PYTHON_INTERPRETERS.has(token) || isPythonInterpreter(token)) {
         const second = basenameOf(tokenAt(command, 1))
-        const third = normalizeToken(tokenAt(command, 2))
         const mModule = normalizeToken(mModuleOf(tokenAt(command, 1), tokenAt(command, 2)))
         if (second === "build.py" || (mModule && PYTHON_DIRECT_RUNNERS.has(mModule))) {
           audit(auditLine("R4", tool, sessionID, callID, command))
@@ -383,11 +594,15 @@ export default Plugin.define({
             "[plan-marshall-guard] R4: hard-coded build command bypassing python3 .plan/execute-script.py is forbidden",
           )
         }
-        if (isInterpreterBypass(tokenAt(command, 1)) || hasFlagPrefixedBypass(command)) {
-          audit(auditLine("R5", tool, sessionID, callID, command))
-          throw new Error(
-            "[plan-marshall-guard] R5: direct python interpreter calls (python -c, script paths, python -m) bypassing the executor are forbidden; route builds and checks via python3 .plan/execute-script.py and .plan state via manage-* verbs or the Read/Edit/Write tools",
-          )
+        // R5 is gated on the plan context; R4 above is not.
+        if (inPlanContext(event, args, root)) {
+          if (isAllowListed(command, allowList)) return
+          if (isInterpreterBypass(tokenAt(command, 1)) || hasFlagPrefixedBypass(command)) {
+            audit(auditLine("R5", tool, sessionID, callID, command))
+            throw new Error(
+              "[plan-marshall-guard] R5: direct python interpreter calls (python -c, script paths, python -m) bypassing the executor are forbidden; route builds and checks via python3 .plan/execute-script.py and .plan state via manage-* verbs or the Read/Edit/Write tools",
+            )
+          }
         }
         return
       }
