@@ -32,8 +32,16 @@ This plan makes `client.toon`, the plan metadata and the landing-facts block car
      - `measured` when it came from a script-readable source (the environment lists stay as that source);
      - absent when neither applies.
    - Nothing is estimated.
+   - **On OpenCode the model is measured, not self-reported** (amended 2026-10-16, operator): the
+     collector reads `session_v2.model` (id, provider, variant) from `opencode.db`, opened read-only,
+     for the plan's root session (`OPENCODE_SESSION_ID` resolved to its root through `parent_id`) and
+     for every descendant, and records it as `measured`. A tree whose sessions ran more than one
+     model or variant is recorded as `mixed` with the distinct values listed — never averaged and
+     never reduced to the root's value. An absent database or unreadable schema records the model as
+     `unknown`, never as the flag value. Reuse PLAN-LB-49 D1's reader if it has landed; otherwise
+     read the one table directly and leave a pointer for PLAN-LB-49 to absorb.
 
-   *Done when:* `platform_runtime runtime-info --model claude-opus-5-5 --effort high` returns `model: claude-opus-5-5`, `model_source: self_reported`, `effort: high`, `effort_source: self_reported`. A call with no flags and no environment variables returns neither key. At HEAD the first call is an argparse rejection (exit 2).
+   *Done when:* `platform_runtime runtime-info --model claude-opus-5-5 --effort high` returns `model: claude-opus-5-5`, `model_source: self_reported`, `effort: high`, `effort_source: self_reported`. A call with no flags and no environment variables returns neither key. At HEAD the first call is an argparse rejection (exit 2). On OpenCode, a fixture database whose root and two sub-agents ran `deepseek-v4.1-flash`/`high` yields `model: deepseek-v4.1-flash`, `variant: high`, `model_source: measured`; a fixture with one sub-agent on another model yields `model: mixed` with both listed; a missing database yields `model: unknown`.
 
 2. **The plan-marshall version is the installed bundle and executor version, not the marketplace manifest.**
    - `runtime-info` reports `bundle_version` — the `version` in `.claude-plugin/plugin.json` of the bundle the collector is running from — and `executor_version` (`MARSHALL_VERSION`, read through `plugin_registry.read_executor_version`).
@@ -86,7 +94,8 @@ Split guard: five deliverables on one chain — collector, start path, landing. 
 - OBSERVED: PLAN-LB-39 D5 (running) adds the `phase-1-init` preflight call, a `harness` field in plan `status.json` metadata, and an OPTIONAL `harness=` landing key — read at `plans/PLAN-LB-39-antigravity-execution-fidelity.md`.
 - Verify-first clause: rebase onto PLAN-LB-39's landing before outlining deliverables 4 and 5. Extend its `harness` field and its landing key; do not add a second preflight call or a second metadata key. If PLAN-LB-39 has not landed, stop after deliverables 1-3 and report.
 - Verify-first clause: making the four keys required makes every landing emitted before this change incomplete. The operator asked for that. State it in the PR and do not add a grandfather rule.
-- Verify-first clause: the model value is self-reported by the executing LLM. Record it as `self_reported`, never as `measured`.
+- Verify-first clause: outside OpenCode the model value is self-reported by the executing LLM. Record it as `self_reported`, never as `measured`. On OpenCode `opencode.db` is authoritative and wins over a flag.
+- OBSERVED (amendment): `opencode.db` `session_v2.model` holds `{"id":…,"providerID":…,"variant":…}` per session — e.g. PLAN-LB-60 root `ses_ebf95b304ffeduimJZ6Cr5frL1` → `deepseek-v4.1-flash`/`high`; Muse plans `muse-spark-1.3-contributor`/`default` (orchestrator-read). The plan's records hold no model today: PLAN-LB-47's archived `status.json` carries only `harness: opencode`, and no `client.toon` was written.
 
 ## Expected Surface
 
@@ -108,7 +117,7 @@ Split guard: five deliverables on one chain — collector, start path, landing. 
 
 ## Dependencies and Sequencing
 
-- Depends on: PLAN-LB-50 (running). PLAN-LB-39 shipped (#1768) without a reachable preflight call
+- Depends on: PLAN-LB-50 (running). Priority raised 2026-10-16 (operator): emitted right after PLAN-LB-48, ahead of PLAN-LB-52 — the multi-model comparison (Muse, DeepSeek, Gemini) depends on it. PLAN-LB-39 shipped (#1768) without a reachable preflight call
   (its Step 8a.6 is unreachable and writes no `client.toon`, `landings/PLAN-LB-39.md`); PLAN-LB-50
   D5 makes that call real. Deliverables 4 and 5 build on PLAN-LB-50's landing, not on PLAN-LB-39 —
   re-read both at outline. OpenCode detection (`OPENCODE_SESSION_ID`, no `OPENCODE_PID`) is
