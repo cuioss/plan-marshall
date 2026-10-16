@@ -819,24 +819,24 @@ def _result_for_log_verdict(
 
 
 # Single running hand-back contract on every tier: the wrapper call
-# for a daemon-routed build returns within _DAEMON_WAIT_BOUND_SECONDS (at
-# most the per-call ceiling) with a terminal result or a live running hand-back
-# carrying the daemon job_id, and the orchestrator re-attaches with a bounded
-# wait on that id. Backgrounding (run_in_background) is named only for the
-# non-daemon fallback, never for a daemon-routed build.
+# for a daemon-routed build returns within _DAEMON_WAIT_BOUND_SECONDS with a
+# terminal result or a live running hand-back carrying the daemon job_id, and
+# the orchestrator re-attaches with a bounded wait on that id. Backgrounding
+# (run_in_background) is named only for the non-daemon fallback, never for a
+# daemon-routed build.
 #
-# The per_task wrapper bound is at least the per-call ceiling (the ceiling is
-# known to the wrapper through the harness bash-timeout-ceiling seam): a
-# per_task routed build outliving the bound hands back the same live running
-# status plus job id a longer tier would, and the leaf hands it back through
-# pending_verify_steps rather than backgrounding it.
-_DAEMON_WAIT_BOUND_SECONDS = 600
+# The bound stays below the per-call Bash ceiling: preflight, submit and job
+# start run inside the same tool call before the wait, so a bound equal to
+# the ceiling would overrun it. A routed build outliving the bound hands back
+# a live running status plus the job id, and the leaf carries that hand-back
+# forward through pending_verify_steps rather than backgrounding it.
+_DAEMON_WAIT_BOUND_SECONDS = 300
 """Foreground-safe bound for one daemon-routed wrapper call.
 
-Mirrors the build-server-client wait default raised to the per-call ceiling:
-the daemon holds each long-poll server-side, so one call stays within the
-per-call Bash ceiling while a job that outlives it returns the running
-hand-back instead of blocking.
+Mirrors the build-server-client wait default (300 s), kept below the per-call
+Bash ceiling so the call's setup fits inside the same tool call: the daemon
+holds each long-poll server-side, so one call returns within the bound while
+a job that outlives it gets the running hand-back instead of blocking.
 """
 
 

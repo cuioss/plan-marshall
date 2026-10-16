@@ -211,7 +211,17 @@ The action body:
     --plan-id {plan_id}
   ```
 
-  Capture the returned task number as `{N}`, then resolve the finding through the Q-Gate verb — NOT the plan-scoped `resolve` verb, which refuses Q-Gate findings with `finding_in_other_store` so the short-circuit guard never sees an owner — passing `{N}` as `--task-number` so the structured `fix_task_number` survives a `--reopen` refile (the reopened recurrence IS the pending record, carrying its `fix_task_number` forward). The `resolution_detail` is the reviewer-ready text the RESPOND loop posts to the finding's PR thread — in a finalize run once the fix commit is stamped, otherwise in the pass that follows triage. It MUST name the fix task:
+  Capture the returned task number as `{N}`, then resolve the finding through the verb for the store the record lives in — the record's store decides which, and the triage list (`list --include-qgate`, which merges both stores) carries it: a Q-Gate record carries a `phase` field, while a plan-scoped record carries none. Sending a finding to the other store's verb is refused (`finding_in_other_store` for a Q-Gate hash on the plan-scoped verb; `Q-Gate finding not found` for a plan-scoped hash on `qgate resolve`) and leaves the short-circuit guard without an owner. The `resolution_detail` is the reviewer-ready text the RESPOND loop posts to the finding's PR thread — in a finalize run once the fix commit is stamped, otherwise in the pass that follows triage. It MUST name the fix task.
+
+  A **plan-scoped finding** (a PR comment, a Sonar issue, an auto-stored build finding) is resolved through the plan-scoped `resolve` verb, passing `{N}` as `--task-number` so the structured `fix_task_number` is recorded — and survives the plan-scoped `deduplicate` reopen of a re-detected build failure (the reopened recurrence IS the pending record, carrying its `fix_task_number` forward):
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings resolve \
+    --plan-id {plan_id} --hash-id {finding.hash_id} --resolution fixed --task-number {N} \
+    --detail 'Will be addressed by TASK-{N}; see follow-up commit on this branch'
+  ```
+
+  A **Q-Gate finding** is resolved through the `qgate resolve` verb, passing its phase and `{N}`:
 
   ```bash
   python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings qgate resolve \
@@ -219,7 +229,7 @@ The action body:
     --detail 'Will be addressed by TASK-{N}; see follow-up commit on this branch'
   ```
 
-  `{qgate_phase}` is the Q-Gate phase the finding was filed under (`5-execute` for the `build-runner` test-failure / lint-issue / build-error producer; the calling producer's phase otherwise — read it from the `qgate list` record). `{finding.hash_id}` and the `TASK-{N}` text inside `--detail` are finding-derived text, so `--detail` is quoted per [§ Shell-safe free text in command templates](#shell-safe-free-text-in-command-templates).
+  `{qgate_phase}` (the Q-Gate form only) is the Q-Gate phase the finding was filed under (`5-execute` for the `build-runner` test-failure / lint-issue / build-error producer; the calling producer's phase otherwise — read it from the `qgate list` record). `{finding.hash_id}` and the `TASK-{N}` text inside `--detail` are finding-derived text, so `--detail` is quoted per [§ Shell-safe free text in command templates](#shell-safe-free-text-in-command-templates).
 
   Then STOP for this finding. In a finalize run the reply waits for the stamped commit.
 

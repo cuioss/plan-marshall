@@ -321,11 +321,17 @@ def _store_build_findings(
 
     Returns a ``(count_seen, count_stored, store_failures)`` tuple. The
     "expected_stored" value equals ``count_seen`` because every parsed issue
-    must be stored (no producer-side filtering). Mismatches between
-    ``count_seen`` and ``count_stored`` are surfaced by the caller as a Q-Gate
-    finding with title prefix ``(producer-mismatch)``.
+    must be stored (no producer-side filtering). The add runs with the store's
+    ``deduplicate`` opt-in, so a re-detected failure folds into its existing
+    record — ``deduplicated``, ``reopened`` or ``kept`` — instead of
+    accumulating a second pending copy the short-circuit guard would count as
+    new; those statuses still count as stored because the finding IS represented
+    in the store (membership in ``PLAN_PERSIST_OK``, never
+    ``status == 'success'``). Mismatches between ``count_seen`` and
+    ``count_stored`` are surfaced by the caller as a Q-Gate finding with title
+    prefix ``(producer-mismatch)``.
     """
-    from _findings_core import add_finding
+    from _findings_core import PLAN_PERSIST_OK, add_finding
 
     count_seen = len(issues)
     count_stored = 0
@@ -388,8 +394,9 @@ def _store_build_findings(
             module=tool_name,
             rule=issue.category or None,
             severity=severity,
+            deduplicate=True,
         )
-        if add_result.get('status') == 'success':
+        if add_result.get('status') in PLAN_PERSIST_OK:
             count_stored += 1
         else:
             store_failures.append(issue.message[:60])
