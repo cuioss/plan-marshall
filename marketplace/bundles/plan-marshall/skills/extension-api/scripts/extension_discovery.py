@@ -1426,6 +1426,24 @@ def find_implementors(ext_point: str) -> list[dict[str, Any]]:
     return records
 
 
+def _dir_entries_readable(path: Path) -> bool:
+    """Whether ``path`` is a directory whose entries can actually be enumerated.
+
+    :meth:`Path.is_dir` is true for a directory that exists but cannot be read,
+    where ``iterdir()`` raises ``OSError``; :func:`_scan_skills_roots_for_implementors`
+    swallows that ``OSError`` and silently skips the root. Probing with
+    ``is_dir()`` alone therefore reports a surface resolved while the scan ran
+    over nothing — the fail-open state the discriminator exists to prevent.
+    Forcing the same ``iterdir()`` the scan performs keeps the probe and the scan
+    in agreement: an unreadable root is not resolvable.
+    """
+    try:
+        next(path.iterdir(), None)
+    except OSError:
+        return False
+    return True
+
+
 def _implementor_scan_surfaces_resolve() -> list[bool]:
     """Report, per scan surface :func:`find_implementors` consults, whether it resolved.
 
@@ -1433,8 +1451,9 @@ def _implementor_scan_surfaces_resolve() -> list[bool]:
     phase-6-finalize step-doc root, the phase-5-execute verify-step standards
     root, the bundle ``skills`` roots (source tree + plugin cache roots), and
     the project-local skill root(s). ``False`` means that surface's root could
-    not be located, so the scan ran over nothing — an empty result is then
-    "discovery could not run", NOT "discovery ran and found nothing".
+    not be located — or, for the bundle roots, could not be READ — so the scan
+    ran over nothing: an empty result is then "discovery could not run", NOT
+    "discovery ran and found nothing".
 
     Production consumers read this through :func:`find_implementors_with_status`;
     it is the discriminator the fail-closed reconcile consumes.
@@ -1452,10 +1471,14 @@ def _implementor_scan_surfaces_resolve() -> list[bool]:
     except Exception:
         surfaces.append(False)
     roots: list[Path] = []
+    unreadable_root = False
     try:
         bundles_path = get_marketplace_bundles_path()
         if bundles_path.is_dir():
-            roots.append(bundles_path)
+            if _dir_entries_readable(bundles_path):
+                roots.append(bundles_path)
+            else:
+                unreadable_root = True
     except Exception:
         pass
     for cache_root in get_bundle_cache_roots():
@@ -1464,8 +1487,11 @@ def _implementor_scan_surfaces_resolve() -> list[bool]:
         except Exception:
             continue
         if cache_path.is_dir():
-            roots.append(cache_path)
-    surfaces.append(bool(roots))
+            if _dir_entries_readable(cache_path):
+                roots.append(cache_path)
+            else:
+                unreadable_root = True
+    surfaces.append(bool(roots) and not unreadable_root)
     try:
         surfaces.append(_resolve_plan_root() is not None)
     except Exception:
