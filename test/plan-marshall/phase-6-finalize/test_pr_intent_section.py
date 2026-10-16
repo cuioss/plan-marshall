@@ -541,6 +541,56 @@ class TestFailLoudOnABadDraft:
 
 
 # =============================================================================
+# The rendered text is literal data, never a replacement template
+# =============================================================================
+
+#: A template-shaped body whose ``## Intent`` slot sits mid-body: the fill-in-place
+#: path runs, and the next template heading must keep its blank line.
+_BODY_WITH_INTENT_SLOT = '## Summary\n\nReplace the thread_id-presence routing.\n\n## Intent\n\n## Changes\n\n- none\n'
+
+
+class TestTheRenderedTextIsLiteralData:
+    """Backslashes in the draft are prose, never regex replacement syntax.
+
+    ``re.sub`` processes backslash escapes in a STRING replacement — ``\\d``
+    raises ``bad escape``, ``\\1`` reads as a group reference, ``\\n`` silently
+    becomes a newline — so the LLM-written draft must never enter the fill as a
+    replacement template.
+    """
+
+    def _body(self, tmp_path: Path) -> Path:
+        body = tmp_path / 'pr-body.md'
+        body.write_text(_BODY_WITH_INTENT_SLOT, encoding='utf-8')
+        return body
+
+    def test_regex_escapes_in_the_draft_render_verbatim(self, tmp_path, capsys):
+        """``\\d``, ``\\1`` and ``\\n`` are inserted character-for-character."""
+        body = self._body(tmp_path)
+        draft = tmp_path / 'intent-draft.md'
+        text = 'The renderer must insert \\d, \\1 and \\n literally, never as regex escapes.'
+        draft.write_text(text, encoding='utf-8')
+
+        code, _, _ = _run('p', draft, body, _outline_toon('s'), capsys)
+
+        assert code == 0
+        assert text in body.read_text(encoding='utf-8')
+
+    def test_the_next_heading_keeps_its_blank_line(self, tmp_path, capsys):
+        """Filling the slot restores the blank line the section pattern consumed."""
+        body = self._body(tmp_path)
+        draft = tmp_path / 'intent-draft.md'
+        draft.write_text('Keys route by comment kind.', encoding='utf-8')
+
+        code, _, _ = _run('p', draft, body, _outline_toon('s'), capsys)
+
+        assert code == 0
+        assert body.read_text(encoding='utf-8') == (
+            '## Summary\n\nReplace the thread_id-presence routing.\n\n'
+            '## Intent\n\nKeys route by comment kind.\n\n## Changes\n\n- none\n'
+        )
+
+
+# =============================================================================
 # CLI surface
 # =============================================================================
 
