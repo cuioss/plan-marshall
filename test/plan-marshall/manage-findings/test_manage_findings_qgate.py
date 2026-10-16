@@ -741,7 +741,7 @@ def _fix_shape1_block() -> str:
     inline-fix command nor a command of the FIX preamble above Shape 1 can
     satisfy an assertion about the task-fix shape.
     """
-    body = _TRIAGE_MD.read_text(encoding='utf-8')
+    body: str = _TRIAGE_MD.read_text(encoding='utf-8')
     start = body.index('**Shape 1')
     end = body.index('**Shape 2', start)
     return body[start:end]
