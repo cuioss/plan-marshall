@@ -19,6 +19,7 @@ from _manage_findings_fixtures import (
     _qgate_query_ns,
     _qgate_resolve_ns,
     _query_ns,
+    add_finding,
     cmd_add,
     cmd_get,
     cmd_qgate_add,
@@ -61,6 +62,11 @@ PLAN_IDS = (
     'qgate-d2-builderror',
     'qgate-d1-plan-store',
     'qgate-d1-qgate-store',
+    'qgate-d4-reopen',
+    'qgate-d4-dedup',
+    'qgate-d4-kept',
+    'qgate-d4-default-off',
+    'qgate-d4-identity',
 )
 
 # =============================================================================
@@ -870,3 +876,187 @@ def test_d1_qgate_task_fix_resolves_in_the_qgate_store(plan_context):
     assert plan_side['status'] == 'error'
     assert plan_side['error'] == 'finding_in_other_store'
     assert plan_side['use_verb'] == 'qgate resolve --phase 5-execute'
+
+
+# =============================================================================
+# Test: D4 plan-scoped dedup — re-detections fold into or reopen their record
+# =============================================================================
+
+
+def test_d4_reopen_restores_the_owning_task_and_clears_the_stamp(plan_context):
+    """A re-detection of a fixed, task-owned finding reopens it in place.
+
+    The build auto-store files plan-scoped findings with the ``deduplicate``
+    opt-in, so a repeated failing build must land on its OWN record instead of
+    appending a copy: a record resolved ``fixed`` under fix task 7 comes back
+    ``pending`` with ``fix_task_number`` 7 carried forward — the read the
+    short-circuit guard's ownership rule depends on — and its fix-commit stamp
+    cleared (the named commit no longer carries the disposition). At
+    ``b9cd36be1`` the re-detection appends a second pending copy that carries
+    no task at all, so the guard can never see the recurrence as owned.
+    """
+    plan_id = 'qgate-d4-reopen'
+    identity = {
+        'plan_id': plan_id,
+        'finding_type': 'test-failure',
+        'title': 'Test failure in test_build_execute_factory.py:1183: FAILED test_the_bound_stays_foreground_safe',
+        'file_path': 'test/plan-marshall/script-shared/test_build_execute_factory.py',
+    }
+
+    first = add_finding(**identity, detail='first detection', deduplicate=True)
+    assert first['status'] == 'success'
+    hash_id = str(first['hash_id'])
+    before = cmd_get(_get_ns(plan_id=plan_id, hash_id=hash_id))
+    assert before['resolution'] == 'pending'
+
+    detail = 'Will be addressed by TASK-7; see follow-up commit on this branch'
+    resolved = cmd_resolve(
+        Namespace(plan_id=plan_id, hash_id=hash_id, resolution='fixed', detail=detail, task_number=7)
+    )
+    assert resolved['status'] == 'success'
+    assert resolved['fix_task_number'] == 7
+    stamped = cmd_stamp_fix_commit(Namespace(plan_id=plan_id, commit_sha=_FIX_COMMIT, task_number=7, hash_id=None))
+    assert stamped['status'] == 'success'
+
+    repeated = add_finding(**identity, detail='second detection of the same failure', deduplicate=True)
+    assert repeated['status'] == 'reopened'
+    assert str(repeated['hash_id']) == hash_id
+    assert repeated['resolution'] == 'pending'
+    assert repeated['previous_resolution'] == 'fixed'
+    assert repeated['fix_task_number'] == 7
+    assert repeated['reobserved_count'] == 1
+
+    stored = cmd_get(_get_ns(plan_id=plan_id, hash_id=hash_id))
+    assert stored['resolution'] == 'pending'
+    assert stored['fix_task_number'] == 7
+    assert stored.get('fix_commit_sha') is None
+    assert stored['reobserved_count'] == 1
+    assert stored['timestamp'] == before['timestamp'], 'the reopen preserves the original detection timestamp'
+    assert stored['history'][0]['resolution'] == 'fixed'
+    assert stored['history'][0]['resolution_detail'] == detail
+
+    records = cmd_query(_query_ns(plan_id=plan_id, type='test-failure'))
+    assert records['filtered_count'] == 1, 'the re-detection must fold into its own record, never append a second copy'
+
+
+def test_d4_pending_re_detection_deduplicates_without_a_copy(plan_context):
+    """A re-detection of a still-pending finding is reported, not stored twice.
+
+    The record the first detection wrote stands exactly as stored — fold-in is
+    not a mutation of a pending record — and no second copy is appended.
+    """
+    plan_id = 'qgate-d4-dedup'
+    kwargs = {
+        'plan_id': plan_id,
+        'finding_type': 'build-error',
+        'title': 'Build error in src/Main.py:10 [compilation]: Compile failed: missing import',
+        'file_path': 'src/Main.py',
+    }
+
+    first = add_finding(**kwargs, detail='first detection', deduplicate=True)
+    assert first['status'] == 'success'
+
+    repeat = add_finding(**kwargs, detail='a different narrative of the same failure', deduplicate=True)
+    assert repeat['status'] == 'deduplicated'
+    assert str(repeat['hash_id']) == str(first['hash_id'])
+
+    records = cmd_query(_query_ns(plan_id=plan_id, type='build-error'))
+    assert records['filtered_count'] == 1
+    record = records['findings'][0]
+    assert record['resolution'] == 'pending'
+    assert record.get('reobserved_count', 0) == 0
+
+
+def test_d4_kept_resolution_stands_when_re_detected(plan_context):
+    """A re-detection resolved under another disposition keeps that disposition.
+
+    A cleared finding is not re-armed by a re-detection alone: the recorded
+    resolution and detail stand and only the re-observation counter moves.
+    """
+    plan_id = 'qgate-d4-kept'
+    kwargs = {
+        'plan_id': plan_id,
+        'finding_type': 'lint-issue',
+        'title': 'Lint issue in src/Main.py:30 [style_violation]: Style: line too long',
+        'file_path': 'src/Main.py',
+    }
+
+    first = add_finding(**kwargs, detail='first detection', deduplicate=True)
+    assert first['status'] == 'success'
+
+    resolved = cmd_resolve(
+        Namespace(
+            plan_id=plan_id,
+            hash_id=str(first['hash_id']),
+            resolution='rejected',
+            detail='Not a defect; suppressed by lint config',
+            task_number=None,
+        )
+    )
+    assert resolved['status'] == 'success'
+
+    repeat = add_finding(**kwargs, detail='re-detected', deduplicate=True)
+    assert repeat['status'] == 'kept'
+    assert repeat['resolution'] == 'rejected'
+    assert repeat['reobserved_count'] == 1
+
+    stored = cmd_get(_get_ns(plan_id=plan_id, hash_id=str(first['hash_id'])))
+    assert stored['resolution'] == 'rejected'
+    assert stored['resolution_detail'] == 'Not a defect; suppressed by lint config'
+    assert stored['reobserved_count'] == 1
+    records = cmd_query(_query_ns(plan_id=plan_id, type='lint-issue'))
+    assert records['filtered_count'] == 1
+
+
+def test_d4_without_the_opt_in_re_detections_still_append(plan_context):
+    """The default is unchanged: without the opt-in every detection is stored."""
+    plan_id = 'qgate-d4-default-off'
+    kwargs = {
+        'plan_id': plan_id,
+        'finding_type': 'test-failure',
+        'title': 'Test failure in test_example.py:10: FAILED test_example',
+        'file_path': 'test/test_example.py',
+    }
+
+    first = add_finding(**kwargs, detail='first detection')
+    second = add_finding(**kwargs, detail='re-detected')
+    assert first['status'] == 'success'
+    assert second['status'] == 'success'
+    assert str(first['hash_id']) != str(second['hash_id'])
+    records = cmd_query(_query_ns(plan_id=plan_id, type='test-failure'))
+    assert records['filtered_count'] == 2
+
+
+def test_d4_identity_needs_the_same_file_path(plan_context):
+    """A same-title detection in another file is a different finding."""
+    plan_id = 'qgate-d4-identity'
+    title = 'Test failure: FAILED test_shared_helper'
+    first = add_finding(
+        plan_id=plan_id,
+        finding_type='test-failure',
+        title=title,
+        detail='first detection',
+        file_path='test/plan-marshall/alpha/test_a.py',
+        deduplicate=True,
+    )
+    other = add_finding(
+        plan_id=plan_id,
+        finding_type='test-failure',
+        title=title,
+        detail='first detection',
+        file_path='test/plan-marshall/beta/test_b.py',
+        deduplicate=True,
+    )
+    assert first['status'] == 'success'
+    assert other['status'] == 'success'
+    assert str(first['hash_id']) != str(other['hash_id'])
+    records = cmd_query(_query_ns(plan_id=plan_id, type='test-failure'))
+    assert records['filtered_count'] == 2
+
+
+def test_d4_plan_persist_ok_partitions_the_plan_store_statuses():
+    """The published plan-scoped partition: four in-store statuses, `error` outside."""
+    from _findings_core import PLAN_PERSIST_OK
+
+    assert PLAN_PERSIST_OK == frozenset({'success', 'deduplicated', 'reopened', 'kept'})
+    assert 'error' not in PLAN_PERSIST_OK

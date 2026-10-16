@@ -43,6 +43,11 @@ cmd_resolve = _mod.cmd_resolve
 cmd_stamp_fix_commit = _mod.cmd_stamp_fix_commit
 
 
+# Core plan-scoped add (direct, exercising the ``deduplicate`` opt-in) for the
+# D4 re-detection tests
+add_finding = _mod.add_finding
+
+
 cmd_qgate_add = _mod.cmd_qgate_add
 
 

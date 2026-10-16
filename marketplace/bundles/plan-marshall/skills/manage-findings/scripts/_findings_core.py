@@ -93,14 +93,33 @@ CERTAINTY_VALUES = VALID_CERTAINTIES
 # ``status == 'success'``.
 QGATE_PERSIST_OK = frozenset({'success', 'deduplicated', 'reopened', 'kept'})
 
+# The published partition of ``add_finding``'s five-valued ``status`` (the values
+# its ``deduplicate`` opt-in can produce) into "the record is in the store"
+# versus "the record was rejected", the plan-scoped counterpart of
+# :data:`QGATE_PERSIST_OK`.
+#
+# ``success`` (freshly appended), ``deduplicated`` (an equivalent pending record
+# already exists), ``reopened`` (an equivalent fixed record was returned to
+# pending, carrying its ``fix_task_number`` forward) and ``kept`` (a
+# re-detection of a record resolved under another disposition left that
+# disposition exactly as stored, recording the re-observation as a counter) all
+# mean the finding IS in the store. The remaining value, ``error``, means it is
+# NOT — and callers MUST NOT fold it into the benign no-op outcomes. Every
+# caller consults this set rather than re-deriving the partition inline with
+# ``status == 'success'``.
+PLAN_PERSIST_OK = frozenset({'success', 'deduplicated', 'reopened', 'kept'})
+
 # Valid kind discriminator values for pr-comment findings.
 PR_COMMENT_KINDS = ['inline', 'review_body', 'issue_comment']
 
 # The resolution a fix is recorded under, and the two optional record fields that
 # describe that fix. ``fix_commit_sha`` is the commit the fix landed in, written by
 # ``stamp_fix_commit``. ``fix_task_number`` is the fix task that owns the fix,
-# written by ``resolve_finding``; a fixed finding without it is an inline fix. Both
-# are absent (or ``None``) on every finding that is not ``fixed``.
+# written by ``resolve_finding``; a fixed finding without it is an inline fix.
+# ``fix_commit_sha`` is absent (or ``None``) on every finding that is not ``fixed``;
+# an owning ``fix_task_number`` additionally SURVIVES the reopen of a fixed finding
+# (see :func:`add_finding`'s ``deduplicate`` opt-in), so a pending recurrence can
+# read as already owned.
 FIXED_RESOLUTION = 'fixed'
 FIX_COMMIT_FIELD = 'fix_commit_sha'
 FIX_TASK_FIELD = 'fix_task_number'
@@ -490,6 +509,93 @@ def _preference_basis_fields(admissibility: PreferenceAdmissibility) -> dict[str
 # --- Plan Findings ---
 
 
+def _fold_plan_re_detection(
+    store: FindingsStore,
+    finding_type: str,
+    title: str,
+    file_path: str | None,
+) -> dict[str, Any] | None:
+    """Fold a re-detected plan-scoped finding into its equivalent stored record.
+
+    Called by :func:`add_finding` under its ``deduplicate`` opt-in. Identity is
+    (type, title, ``file_path``) — the type narrows the scan to its own store
+    file. Returns the fold-in outcome when an equivalent record exists, so the
+    caller must NOT append a copy; returns ``None`` when the finding is new and
+    must be filed fresh:
+
+    - ``reopened`` — the equivalent record was ``fixed``: the recurrence
+      restores it to ``pending``, carrying its ``fix_task_number`` forward (the
+      ownership the short-circuit guard reads) and clearing its fix-commit
+      stamp (that commit no longer carries the disposition), moving the
+      overridden resolution into ``history`` and counting the re-observation.
+    - ``deduplicated`` — the equivalent record is still ``pending``: it stands
+      exactly as stored and owns the re-detection.
+    - ``kept`` — the equivalent record was resolved under another disposition:
+      the recorded disposition stands (a cleared finding is not re-armed by a
+      re-detection alone) and only the re-observation counter moves.
+    """
+    path = _store_findings_path(store, finding_type)
+    matches = [
+        record for record in read_jsonl(path) if record.get('title') == title and record.get('file_path') == file_path
+    ]
+    if not matches:
+        return None
+
+    # A fixed record outranks a pending one when both match: reopening the owned
+    # record is what restores the guard's ownership read, while folding into an
+    # unowned pending copy would hide the recurrence.
+    fixed = [record for record in matches if record.get('resolution') == FIXED_RESOLUTION]
+    target = fixed[-1] if fixed else matches[-1]
+
+    if target.get('resolution') == 'pending':
+        return {
+            'status': 'deduplicated',
+            'hash_id': target['hash_id'],
+            'type': finding_type,
+            **store_state_fields(store),
+        }
+
+    reobserved_count = int(target.get('reobserved_count', 0) or 0) + 1
+    if target.get('resolution') != FIXED_RESOLUTION:
+        update_jsonl(path, target['hash_id'], {'reobserved_count': reobserved_count})
+        return {
+            'status': 'kept',
+            'hash_id': target['hash_id'],
+            'type': finding_type,
+            'resolution': target['resolution'],
+            'reobserved_count': reobserved_count,
+            **store_state_fields(store),
+        }
+
+    prior = {
+        'resolution': target.get('resolution'),
+        'resolution_detail': target.get('resolution_detail'),
+        'timestamp': target.get('timestamp'),
+    }
+    history = list(target.get('history') or [])
+    history.append(prior)
+    reopen_updates: dict[str, Any] = {
+        'resolution': 'pending',
+        'resolution_detail': None,
+        'history': history,
+        'reobserved_count': reobserved_count,
+    }
+    if target.get(FIX_COMMIT_FIELD) is not None:
+        reopen_updates[FIX_COMMIT_FIELD] = None
+    update_jsonl(path, target['hash_id'], reopen_updates)
+    return {
+        'status': 'reopened',
+        'hash_id': target['hash_id'],
+        'type': finding_type,
+        'resolution': 'pending',
+        'previous_resolution': FIXED_RESOLUTION,
+        FIX_TASK_FIELD: target.get(FIX_TASK_FIELD),
+        'history': history,
+        'reobserved_count': reobserved_count,
+        **store_state_fields(store),
+    }
+
+
 def add_finding(
     plan_id: str,
     finding_type: str,
@@ -507,6 +613,7 @@ def add_finding(
     bot_kind: str | None = None,
     raw_input: dict[str, Any] | None = None,
     raw_input_max_bytes: int = DEFAULT_RAW_INPUT_MAX_BYTES,
+    deduplicate: bool = False,
 ) -> dict[str, Any]:
     """Add a finding record.
 
@@ -521,6 +628,19 @@ def add_finding(
     MANUFACTURE the very phantom store the read surfaces exist to surface. The
     guard keys on ``plans/{plan_id}/``, never on ``artifacts/findings/``, so a
     real plan's first-ever finding still creates its findings directory.
+
+    The ``deduplicate`` opt-in is for producer-side re-emission: when the SAME
+    failure is filed again (the build auto-store on a repeated failing build),
+    an equivalent record — same title and ``file_path`` in the type's own store
+    file — absorbs the detection instead of appending a duplicate copy. A
+    ``fixed`` record is reopened back to ``pending``, carrying its
+    ``fix_task_number`` forward (the recurrence of an owned failure stays
+    visible to the short-circuit guard as owned) with its fix-commit stamp
+    cleared; a ``pending`` record stands exactly as stored and the call reports
+    ``deduplicated``; any other resolution stands with the re-observation
+    counted (``kept``). The four in-store statuses are :data:`PLAN_PERSIST_OK`;
+    callers MUST consult that set, never ``status == 'success'``. The default is
+    off: without the opt-in every call appends a record as before.
     """
     if finding_type not in FINDING_TYPES:
         return {'status': 'error', 'message': f'Invalid finding type: {finding_type}. Must be one of {FINDING_TYPES}'}
@@ -537,6 +657,11 @@ def add_finding(
     store = resolve_findings_store(plan_id)
     if store_unreached(store):
         return unresolved_store_error(plan_id, store)
+
+    if deduplicate:
+        folded = _fold_plan_re_detection(store, finding_type, title, file_path)
+        if folded is not None:
+            return folded
 
     hash_id = generate_hash_id()
     record: dict[str, Any] = {
