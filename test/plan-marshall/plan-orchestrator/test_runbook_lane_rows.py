@@ -201,7 +201,7 @@ def _make_lane_worktree(plan_context, plan_name: str) -> Path:
     the fixture cannot pass by placing the directory somewhere the detector never
     looks.
     """
-    worktree = _ORCH.get_worktree_root() / plan_name
+    worktree = Path(_ORCH.get_worktree_root()) / plan_name
     worktree.mkdir(parents=True, exist_ok=True)
     return worktree
 

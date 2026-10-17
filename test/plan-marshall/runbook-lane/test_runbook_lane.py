@@ -27,10 +27,12 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 from conftest import (
     MARKETPLACE_ROOT,
     get_scripts_dir,
+    load_script_module,
     run_script,
 )
 
@@ -96,22 +98,23 @@ def test_skill_exists_and_is_user_invocable() -> None:
 def test_skill_passes_plugin_doctor() -> None:
     """plugin-doctor reports no finding against the runbook-lane skill.
 
-    Scoped with ``quality-gate --paths`` so the gate reads the new skill's tree
-    (and the executor that must register its notation) and nothing else.
+    Driven through the skill's own gate handler in-process — the pattern the
+    plugin-doctor suite uses — rather than by subprocessing the CLI, so the check
+    costs a scoped walk of one skill and can run beside the suite's other
+    plugin-doctor invocations without racing the shared help cache.
     """
-    script = get_scripts_dir('pm-plugin-development', 'plugin-doctor') / 'doctor-marketplace.py'
-    result = run_script(
-        script,
-        'quality-gate',
-        '--marketplace-root',
-        str(MARKETPLACE_ROOT.parent),
-        '--paths',
-        'bundles/plan-marshall/skills/runbook-lane',
-        timeout=300,
+    doctor = load_script_module(
+        'pm-plugin-development', 'plugin-doctor', 'doctor-marketplace.py', 'doctor_for_runbook_lane'
     )
-    data = result.toon()
-    assert data.get('status') == 'pass', f'plugin-doctor issues: {result.stdout}'
-    assert data.get('total_issues') == 0, f'plugin-doctor issues: {result.stdout}'
+
+    class _Args:
+        marketplace_root = str(MARKETPLACE_ROOT.parent)
+        paths = ['bundles/plan-marshall/skills/runbook-lane']
+
+    report = doctor.cmd_quality_gate(_Args())
+
+    assert report.get('status') == 'pass', report
+    assert report.get('total_issues') == 0, report
 
 
 def test_skill_contains_no_repository_specific_literal() -> None:
@@ -240,7 +243,8 @@ def _run_resolve(spec: Path, project_dir: Path, *, env_overrides: dict[str, str]
         env_overrides=env_overrides,
     )
     assert result.success, f'resolve crashed: {result.stderr}'
-    return result.toon()
+    data: dict[str, Any] = result.toon()
+    return data
 
 
 def test_resolve_pyproject_fixture(tmp_path: Path) -> None:

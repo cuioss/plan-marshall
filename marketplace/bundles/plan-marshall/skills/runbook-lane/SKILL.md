@@ -16,6 +16,13 @@ Every project-specific value named below as `{field}` is a field of the step 0 r
 lane carries no project literal of its own, so the same contract runs in any project that has
 plan-marshall installed and one orchestrator epic holding the spec.
 
+## Exit-code convention for every script call
+
+The exit-code contract for every `python3 .plan/execute-script.py` call in this document — of EVERY
+notation, not only `manage-*` — is stated once in
+[`tools-script-executor/standards/exit-code-convention.md`](../tools-script-executor/standards/exit-code-convention.md);
+it is not restated here. The resolve verb above and every `ci` invocation below are subject to it.
+
 ## Canonical invocations
 
 The canonical argparse surface for `runbook_lane.py`.
