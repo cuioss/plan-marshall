@@ -99,9 +99,17 @@ the drain consumes. These keys are **required** — a landing missing any of the
 | `steps` | Comma-joined `{step}:{outcome}` for every finalize step in composed order. **A consumer splits each element on its LAST colon**, never its first: a namespaced step id contains a colon itself (`project:finalize-step-plugin-doctor:done`, `plan-marshall:plan-retrospective:done`), so a first-colon split yields the bare namespace as the step and the rest as the outcome. The split is APPLIED by the one consumer of this key, [`../workflow/analyze.md`](../workflow/analyze.md) § Step 4, which carries the worked example — this row states the rule, that step is its mechanism | `manage-status read` phase_steps |
 
 Optional keys a landing MAY carry (not required, so their absence is not incompleteness): `epic`,
-`total_wall_seconds`, `harness`, and any per-step typed fact transcribed as `step.{name}.{fact_key}={value}`. The
-functional review's verdict facts and the code review's counts are the named instances of the last
-kind — see § "Functional verdict facts" and § "Code-review counts" below.
+`total_wall_seconds`, `harness`, `model`, and any per-step typed fact transcribed as
+`step.{name}.{fact_key}={value}`. The functional review's verdict facts and the code review's counts
+are the named instances of the last kind — see § "Functional verdict facts" and § "Code-review
+counts" below.
+
+`model` names the model — or models — the run used. It is a comma-separated list, because a run may
+switch models: a plan that starts on one model and continues on another records
+`deepseek-v4.1-flash/max,deepseek-v4.1-flash/high`, one `{model}/{variant}` element per model used.
+A single-model run carries one element and reads exactly as a scalar would. The runbook lane writes
+this key with every model and variant it used (`unknown` when the harness reports none), so a
+consumer reads the whole list rather than assuming one model per landing.
 
 `harness` names the harness the plan ran on (`claude` / `opencode` /
 `antigravity`), read from `status.metadata.harness` (stamped at phase-1-init

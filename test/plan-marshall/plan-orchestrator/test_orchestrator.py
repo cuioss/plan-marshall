@@ -118,6 +118,7 @@ EPIC_SUBDIRS = _orch.EPIC_SUBDIRS
 PLAN_ROW_FIELDS = _orch.PLAN_ROW_FIELDS
 ADD_ROW_SEED_FIELDS = _orch.ADD_ROW_SEED_FIELDS
 VALID_STATUS_VOCABULARY = _orch.VALID_STATUS_VOCABULARY
+LANE_RUNBOOK = _orch.LANE_RUNBOOK
 LIVE_PLAN_STATUSES = _orch.LIVE_PLAN_STATUSES
 SHIPPED_PLAN_STATUSES = _orch.SHIPPED_PLAN_STATUSES
 CLOSED_UNSHIPPED_PLAN_STATUSES = _orch.CLOSED_UNSHIPPED_PLAN_STATUSES
@@ -269,6 +270,7 @@ def _make_plan(
     plan_id: str,
     status: str = 'staged',
     workstream: str = 'WS-01',
+    lane: str = 'plan-marshall',
     plan_marshall_plan_id: str = '',
     pr: str = '',
     landing: str = '',
@@ -278,6 +280,7 @@ def _make_plan(
         'slug': plan_id.lower(),
         'workstream': workstream,
         'status': status,
+        'lane': lane,
         'plan_marshall_plan_id': plan_marshall_plan_id,
         'pr': pr,
         'landing': landing,
@@ -614,7 +617,11 @@ class TestQueueSetRow:
 
     def test_should_round_trip_every_whitelisted_field(self, plan_context):
         _write_status(plan_context, 'fields-epic', plans=[_make_plan('PLAN-01')])
+        # ``lane`` is a whitelisted field with a CLOSED vocabulary, so its
+        # round-trip value is drawn from that vocabulary rather than invented
+        # like the free-form fields beside it.
         values = {
+            'lane': LANE_RUNBOOK,
             'plan_marshall_plan_id': 'epic-plan-1',
             'pr': '#1002',
             'landing': 'PLAN-01.md',
@@ -1095,11 +1102,13 @@ class TestQueueAddRow:
         result = cmd_queue(_add_row_args('add-shape-epic'))
 
         # The seeded row is exactly the fixture shape: three identity fields, a
-        # status, the three PLAN_ROW_FIELDS empty — a staged row has landed
-        # nothing yet — and the allocated ``seq``.
+        # status, the row's LANE (seeded to its default, which is not a result
+        # field and so is not empty), the three PLAN_ROW_FIELDS empty — a staged
+        # row has landed nothing yet — and the allocated ``seq``.
         assert result['row'] == {**_make_plan('PLAN-07'), 'seq': 1}
         assert list(result['row']) == list(ADD_ROW_SEED_FIELDS)
-        assert all(result['row'][field] == '' for field in PLAN_ROW_FIELDS)
+        assert all(result['row'][field] == '' for field in PLAN_ROW_FIELDS - {'lane'})
+        assert result['row']['lane'] == 'plan-marshall'
 
     def test_should_allocate_seq_as_the_local_maximum_plus_one(self, plan_context):
         root = _write_status(plan_context, 'add-seq-epic', plans=[_make_plan('PLAN-01'), _make_plan('PLAN-02')])
@@ -1596,7 +1605,7 @@ class TestResumeSummary:
         result = cmd_resume_summary(_variant(_RESUME_SUMMARY_ARGS, slug='oq-epic'))
 
         queue = result['ordered_queue']
-        assert '| # | Plan | Workstream | Status | Surface (expected) |' in queue
+        assert '| # | Plan | Workstream | Status | Surface (expected) | Lane |' in queue
         assert '| 1 | PLAN-02 | WS-01 | running |' in queue
         assert '| 2 | PLAN-03 | WS-02 | staged |' in queue
         # The terminal row is excluded from the live queue.
