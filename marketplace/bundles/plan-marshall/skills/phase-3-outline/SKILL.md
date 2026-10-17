@@ -667,6 +667,15 @@ Like the Prospective Lessons Consult above, this step fires on **every** authori
 
 ### Log Completion
 
+The success criteria are frozen here, at outline approval, before the phase advances. From this point the plan is graded against this record: the functional review compares the current outline with it and files a blocking finding for any criterion the outline no longer carries verbatim, and the finalize completion gate reads the same record for criteria still open.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-solution-outline \
+  snapshot-criteria --plan-id {plan_id}
+```
+
+On a non-`success` result the outline could not be read and nothing was frozen — apply the [refused-transition halt rule](../ref-workflow-architecture/standards/phase-lifecycle.md#refused-transition-halt-rule) and return the refusal as this phase's error return rather than advancing without a freeze.
+
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level INFO --message "[ARTIFACT] (plan-marshall:phase-3-outline) Created solution_outline.md"
