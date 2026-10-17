@@ -850,22 +850,32 @@ def _has_flag_prefixed_bypass(stripped: list[str]) -> bool:
 _SOURCE_COMMIT_GATE_PHASE = '6-finalize'
 
 
-def _plan_id_from_worktree_path(candidate: str | None) -> str:
-    """Return the plan id a path names, or ``""``.
+def _worktree_root_from_path(candidate: str | None) -> tuple[pathlib.Path, str] | None:
+    """Return ``(worktree_root, plan_id)`` a path names, or ``None``.
 
     A plan worktree path carries ``.../.plan/local/worktrees/{plan_id}``; the
-    plan id is the segment right after the ``worktrees`` directory. The plan is
-    NAMED by the path, so R6 never judges "the first plan found" by a scan. When
-    a path carries more than one such segment, the INNERMOST (last) names the plan.
+    plan id is the segment right after ``worktrees`` and the ROOT is the path
+    prefix through that segment — so a path in a SUBDIRECTORY of the worktree
+    still yields the worktree root. When a path carries more than one such
+    segment, the INNERMOST (last) names the plan.
     """
     if not candidate:
-        return ''
+        return None
     normalized = candidate.replace('\\', '/')
     marker = '/.plan/local/worktrees/'
     at = normalized.rfind(marker)
     if at == -1:
-        return ''
-    return normalized[at + len(marker) :].split('/', 1)[0]
+        return None
+    plan_id = normalized[at + len(marker) :].split('/', 1)[0]
+    if not plan_id:
+        return None
+    return pathlib.Path(normalized[: at + len(marker) + len(plan_id)]), plan_id
+
+
+def _plan_id_from_worktree_path(candidate: str | None) -> str:
+    """Return the plan id a path names, or ``""``."""
+    info = _worktree_root_from_path(candidate)
+    return '' if info is None else info[1]
 
 
 def _main_anchored_status_path(plan_id: str) -> pathlib.Path | None:
@@ -899,13 +909,14 @@ def _plan_phase(payload: dict[str, Any]) -> str | None:
     not fire.
     """
     cwd = gate.cwd(payload)
-    plan_id = _plan_id_from_worktree_path(cwd)
-    if not plan_id:
+    worktree = _worktree_root_from_path(cwd)
+    if worktree is None:
         return None
-    candidates: list[pathlib.Path | None] = []
-    if cwd:
-        candidates.append(pathlib.Path(cwd) / '.plan' / 'local' / 'plans' / plan_id / 'status.json')
-    candidates.append(_main_anchored_status_path(plan_id))
+    worktree_root, plan_id = worktree
+    candidates: list[pathlib.Path | None] = [
+        worktree_root / '.plan' / 'local' / 'plans' / plan_id / 'status.json',
+        _main_anchored_status_path(plan_id),
+    ]
     for status_path in candidates:
         if status_path is None:
             continue

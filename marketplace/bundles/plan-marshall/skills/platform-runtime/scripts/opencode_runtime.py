@@ -464,11 +464,10 @@ def _resolve_project_id(conn: sqlite3.Connection, project_dir: str | None) -> tu
     """Resolve the project id whose worktree path matches *project_dir*.
 
     Returns ``(project_table_present, project_id)``. The first element is True
-    when a ``project`` table with usable id and path columns exists, whatever the
-    match outcome — so the caller can fail CLOSED when a project table exists but
-    no row matches the worktree (the reporter must not compare another project's
-    approvals). ``(False, None)`` when there is no such table: the fixture shape,
-    which is read unscoped.
+    whenever a ``project`` table EXISTS — even one lacking a usable id or path
+    column — so the caller fails CLOSED rather than reading permission rows it
+    cannot scope to the requested worktree. ``(False, None)`` only when there is
+    no ``project`` table at all: the fixture shape, which is read unscoped.
     """
     try:
         info = conn.execute('PRAGMA table_info("project")').fetchall()
@@ -480,7 +479,7 @@ def _resolve_project_id(conn: sqlite3.Connection, project_dir: str | None) -> tu
     id_col = _column_lookup(columns, _PROJECT_ID_COLUMNS)
     path_col = _column_lookup(columns, _PROJECT_PATH_COLUMNS)
     if id_col is None or path_col is None:
-        return False, None
+        return True, None
     if not project_dir:
         return True, None
     target = _normalize_fs_path(project_dir)

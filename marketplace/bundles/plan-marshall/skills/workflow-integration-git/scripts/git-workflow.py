@@ -592,19 +592,40 @@ def _plan_id_from_worktree_path(path: str | Path | None) -> str | None:
     return found
 
 
+def _plan_worktree_root(path: Path | None) -> Path | None:
+    """Return the worktree ROOT a path lies in, or ``None``.
+
+    A path carrying ``.../.plan/local/worktrees/{plan_id}`` names a plan
+    worktree; the root is the prefix through that plan-id segment, so a path in a
+    SUBDIRECTORY of the worktree still yields the worktree root. When a path
+    carries more than one such segment the INNERMOST (last) wins. ``None`` when
+    the path names no plan worktree.
+    """
+    if path is None:
+        return None
+    parts = path.as_posix().split('/')
+    found: str | None = None
+    for index in range(len(parts) - 3):
+        if tuple(parts[index : index + 3]) == _WORKTREE_PATH_SEGMENT and parts[index + 3]:
+            found = '/'.join(parts[: index + 4])
+    return Path(found) if found else None
+
+
 def _plan_record_path(plan_id: str, worktree: Path | None) -> Path | None:
     """Return the plan's ``status.json``, or ``None``.
 
     Precedence, because the plan directory MOVES between main and its worktree
     (ADR-002): during phase 5+ ``prepare_execute`` moves it INTO the worktree, so
-    the worktree-resident record is the LIVE one and is preferred; the
+    the worktree-resident record is the LIVE one and is preferred (resolved from
+    the worktree ROOT, so a path in a subdirectory still finds it); the
     main-anchored live record (via the single sanctioned resolver,
     ``resolve_main_anchored_path``) is next, and the archived record last. The
     plan is NAMED by ``plan_id`` at every step — never a glob for "the first plan
     found". ``None`` when no record exists (a runbook-lane worktree).
     """
-    if worktree is not None:
-        resident = worktree / _PLAN_DIR_NAME / 'local' / 'plans' / plan_id / 'status.json'
+    root = _plan_worktree_root(worktree)
+    if root is not None:
+        resident = root / _PLAN_DIR_NAME / 'local' / 'plans' / plan_id / 'status.json'
         if resident.is_file():
             return resident
     try:
@@ -1171,7 +1192,9 @@ def _resolve_analyze_diff_path(args) -> tuple[Path | None, dict | None]:
         return path, None
 
     elif project_dir is not None:
-        path = Path(project_dir)
+        # Resolve to an absolute path so a relative ``--project-dir .`` names the
+        # real checkout, and a path in a SUBDIRECTORY resolves consistently.
+        path = Path(project_dir).resolve()
         if not path.is_dir():
             return None, make_error(
                 f'Worktree path not found: {project_dir}',

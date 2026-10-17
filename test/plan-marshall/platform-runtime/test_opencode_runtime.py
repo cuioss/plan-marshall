@@ -1567,3 +1567,25 @@ def test_reporter_unresolved_project_is_uncheckable(runtime: OpenCodeRuntime, tm
     assert result['checkable'] is False
     assert result['reason'] == 'project_unresolved'
     assert result['contradictions'] == []
+
+
+def test_reporter_project_table_without_usable_columns_is_uncheckable(
+    runtime: OpenCodeRuntime, tmp_path: pathlib.Path
+) -> None:
+    """An existing project table lacking id/path columns fails closed, never unscoped."""
+    _write_deny_config(tmp_path, ['grep *'])
+    db_path = tmp_path / 'opencode.db'
+    conn = sqlite3.connect(str(db_path))
+    try:
+        conn.execute('CREATE TABLE project (name TEXT)')
+        conn.execute("INSERT INTO project (name) VALUES ('x')")
+        conn.execute('CREATE TABLE permission (id INTEGER PRIMARY KEY, project_id TEXT, action TEXT, resource TEXT)')
+        conn.execute("INSERT INTO permission (project_id, action, resource) VALUES ('p', 'shell', 'grep *')")
+        conn.commit()
+    finally:
+        conn.close()
+
+    result = _parse(runtime.permission_report_persisted_contradictions(str(tmp_path), str(db_path)))
+
+    assert result['checkable'] is False
+    assert result['reason'] == 'project_unresolved'

@@ -267,6 +267,25 @@ def test_worktree_resident_plan_record_is_read(tmp_path: Path) -> None:
     assert ok == 0
 
 
+def test_project_dir_in_a_worktree_subdirectory_still_refuses(tmp_path: Path) -> None:
+    """A ``--project-dir`` in a SUBDIRECTORY of the worktree still resolves the plan."""
+    _init_repo(tmp_path)
+    worktree = _worktree(tmp_path, 'plan-a')
+    plan_dir = worktree / '.plan' / 'local' / 'plans' / 'plan-a'
+    plan_dir.mkdir(parents=True)
+    (plan_dir / 'status.json').write_text(json.dumps({'current_phase': '6-finalize'}), encoding='utf-8')
+    subdir = worktree / 'src'
+    subdir.mkdir(parents=True)
+    _stage(tmp_path, 'src/a.py')
+
+    refused, code = _run_commit(tmp_path, subdir)
+
+    assert refused.get('refused') is True, f'{refused!r}'
+    assert refused['phase'] == '6-finalize'
+    assert refused['reason'] == 'no_sanction'
+    assert code != 0
+
+
 def test_unresolvable_phase_reports_unknown_and_refuses(tmp_path: Path) -> None:
     """A plan whose ``current_phase`` cannot be read reports ``unknown`` and refuses."""
     _init_repo(tmp_path)
