@@ -52,7 +52,7 @@ def _outline(criteria: list[str]) -> str:
 
 
 def _plan(plan_context: Any, criteria: list[str] | None = None, *, freeze: bool = False) -> Path:
-    plan_dir = plan_context.plan_dir_for(PLAN_ID)
+    plan_dir = Path(plan_context.plan_dir_for(PLAN_ID))
     (plan_dir / 'solution_outline.md').write_text(_outline(criteria or CRITERIA), encoding='utf-8')
     (plan_dir / 'references.json').write_text(json.dumps({'base_branch': 'main'}), encoding='utf-8')
     if freeze:
@@ -275,7 +275,8 @@ def _finalize(plan_context: Any, tmp_path: Path, monkeypatch: Any, statuses: lis
     )
     monkeypatch.setattr(_lifecycle, 'assert_finalize_findings_clean', lambda *_args, **_kwargs: 0)
     monkeypatch.setattr(_lifecycle, 'log_entry', lambda *_args, **_kwargs: None)
-    return _lifecycle._finalize_findings_refusal(PLAN_ID, {'title': 'fixture', 'metadata': {}})
+    refusal: dict[str, Any] | None = _lifecycle._finalize_findings_refusal(PLAN_ID, {'title': 'fixture', 'metadata': {}})
+    return refusal
 
 
 def test_finalize_with_an_empty_bot_queue_and_one_unmet_done_when_does_not_exit(
