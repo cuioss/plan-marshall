@@ -200,6 +200,29 @@ def test_spec_done_when_an_outline_criterion_covers_is_not_a_finding(env, plan_c
     assert payload['valid'] is True
 
 
+# --- D1: the request text cannot name a file outside the checkout ---------------------------
+
+
+def test_referenced_spec_path_refuses_a_traversal_outside_the_checkout(monkeypatch, tmp_path) -> None:
+    """Request text is untrusted: a ``..`` path must not be read as the spec."""
+    root = tmp_path / 'root'
+    root.mkdir()
+    (tmp_path / 'outside.md').write_text('secret\n', encoding='utf-8')
+    monkeypatch.setattr(_snap, 'cwd_checkout_root', lambda: str(root))
+
+    assert _snap._referenced_spec_path(PLAN_ID, 'implement ../outside.md please') is None
+
+
+def test_referenced_spec_path_accepts_a_path_inside_the_checkout(monkeypatch, tmp_path) -> None:
+    root = tmp_path / 'root'
+    (root / 'doc').mkdir(parents=True)
+    spec = root / 'doc' / 'spec.md'
+    spec.write_text('the spec\n', encoding='utf-8')
+    monkeypatch.setattr(_snap, 'cwd_checkout_root', lambda: str(root))
+
+    assert _snap._referenced_spec_path(PLAN_ID, 'implement doc/spec.md please') == spec.resolve()
+
+
 # --- D1: the seal covers the FUNCTIONAL verdict, not the code review's findings file --------
 
 

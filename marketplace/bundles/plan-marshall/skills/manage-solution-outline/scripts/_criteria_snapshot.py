@@ -147,9 +147,14 @@ def _referenced_spec_path(plan_id: str, text: str) -> Path | None:
     Request text names the spec a plan implements (for a staged orchestrator plan
     that is the one-line ``.plan/orchestrator/.../PLAN-LB-NN-*.md`` pointer). The
     request document itself and the outline are never treated as the spec.
+
+    The path is constrained to the checkout: request text is untrusted input, and
+    an absolute path or a ``..`` traversal would otherwise let it name a file
+    outside the repository for this reader to open. A candidate that resolves
+    outside the checkout root is skipped exactly as a non-existent one is.
     """
     try:
-        root = Path(cwd_checkout_root())
+        root = Path(cwd_checkout_root()).resolve()
     except Exception:
         return None
     for match in _MD_PATH_RE.finditer(text):
@@ -157,6 +162,8 @@ def _referenced_spec_path(plan_id: str, text: str) -> Path | None:
         if candidate.endswith(REQUEST_FILE) or candidate.endswith('solution_outline.md'):
             continue
         resolved = (root / candidate).resolve()
+        if not resolved.is_relative_to(root):
+            continue
         if resolved.is_file():
             return resolved
     return None

@@ -274,6 +274,22 @@ def test_verdict_citing_a_class_scoped_test_name_at_the_graded_head_is_accepted(
     assert payload['errors'] == []
 
 
+def test_evidence_citing_a_path_outside_the_graded_head_is_refused(plan_context, tmp_path, monkeypatch) -> None:
+    """A verdict is author text: a ``..`` citation must not be read outside the graded tree."""
+    repo = _repo(tmp_path)
+    (tmp_path / 'outside.py').write_text('def test_outside():\n    assert 1 == 1\n', encoding='utf-8')
+    _commit(repo, {'README.md': 'readme\n'})
+    monkeypatch.setattr(_attr, 'resolve_live_worktree', lambda _plan_id: repo)
+    criteria = ['parser accepts input']
+    _plan(plan_context, criteria, freeze=True)
+    document = _verdict(criteria, ['met'], [['../outside.py::test_outside']])
+
+    payload = review_support.run_validate(PLAN_ID, 'functional', _sealed(plan_context, tmp_path, document), None)
+
+    assert payload['valid'] is False
+    assert any('does not exist at the graded head' in error for error in payload['errors'])
+
+
 # --- D2 (d): a verify-first record timestamped after the gated commit is refused ------------
 
 

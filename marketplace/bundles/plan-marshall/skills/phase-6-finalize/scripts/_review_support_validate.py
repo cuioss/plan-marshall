@@ -196,21 +196,29 @@ def missing_evidence(evidence_root: Path, evidence: list[str]) -> list[str]:
     the PLAN-LB-40 fabrication — a cited test that exists nowhere. A dotted name
     is checked segment by segment, so a class-scoped citation counts when the
     file holds its class and its method.
+
+    Every citation is constrained to the graded tree. A verdict is author-written
+    text, so an absolute path or a ``..`` traversal would otherwise make this
+    reader open a file outside the tree it is grading — ``Path('/tree') /
+    '/elsewhere'`` is ``/elsewhere``. A citation that resolves outside the tree is
+    reported as absent, which is what it is: something the graded change does not
+    contain.
     """
+    root = evidence_root.resolve()
     missing: list[str] = []
     for entry in evidence:
         raw = str(entry).strip()
         path = cited_evidence_path(raw)
         if path is None:
             continue
-        target = evidence_root / path
-        if not target.is_file():
+        resolved = (evidence_root / path).resolve()
+        if not resolved.is_relative_to(root) or not resolved.is_file():
             missing.append(raw)
             continue
         _, _, name = raw.partition('::')
         if name and name.strip():
             try:
-                content = target.read_text(encoding='utf-8')
+                content = resolved.read_text(encoding='utf-8')
             except OSError:
                 missing.append(raw)
                 continue
