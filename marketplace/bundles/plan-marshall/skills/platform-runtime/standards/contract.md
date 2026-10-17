@@ -1448,23 +1448,31 @@ message: .plan/marshal.json not found; run 'project initial-setup' first
 
 ### `runtime-info`
 
-Collect runtime information for the `client.toon` pre-flight artifact. Takes
-no arguments. See `standards/runtime-info.md` for the schema, the
-best-effort drop semantics, and the extension-point contract.
+Collect runtime information for the `client.toon` pre-flight artifact. See
+`standards/runtime-info.md` for the schema,
+the best-effort drop semantics, and the extension-point contract.
 
-**Arguments**: none
+**Arguments**:
+```text
+--model <id>      Self-reported model the executing LLM ran under (optional)
+--effort <level>  Self-reported effort level (optional)
+```
 
 **Success (all attributes readable)**:
 ```toon
 status: success
 operation: runtime-info
 harness: claude
+harness_source: env
 transcripts: full
-model_name: claude-sonnet-4-5
+model: claude-sonnet-4-5
+model_source: measured
 model_type: chat
 model_version: 2026-09-01
 effort: standard
-build_version: "0.1"
+effort_source: measured
+bundle_version: 0.1.1919
+executor_version: 0.1.1916
 ```
 
 **Success (best-effort drop)**:
@@ -1472,8 +1480,9 @@ build_version: "0.1"
 status: success
 operation: runtime-info
 harness: claude
+harness_source: local_config
 transcripts: full
-build_version: "0.1"
+bundle_version: 0.1.1919
 ```
 
 **Error (unregistered target)**:

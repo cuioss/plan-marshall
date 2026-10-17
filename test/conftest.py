@@ -30,7 +30,36 @@ from unittest import mock
 
 # Strip ambient platform env signals so host harness environment (e.g. Antigravity/Claude CLI)
 # does not poison top-level conftest imports or process-level caches.
-_PLATFORM_ENV_SIGNALS: tuple[str, ...] = ('ANTIGRAVITY_AGENT', 'OPENCODE', 'OPENCODE_PID', 'CLAUDE_CODE_SESSION_ID')
+#
+# The signal NAMES are DERIVED from their authoritative declarations — the detector's
+# ``TARGET_ENV_SIGNALS`` plus the OpenCode session variable the runtime-info model probe
+# reads — never restated here. That derivation has to happen at this point in the module,
+# BEFORE ``_ensure_executor_present()`` runs its generator subprocess, so the two modules
+# are brought onto ``sys.path`` temporarily. Those entries are REMOVED again immediately:
+# ``_setup_marketplace_pythonpath()`` below only publishes the directories it actually
+# added, so leaving them present would drop them from the ``PYTHONPATH`` every
+# subprocessed script receives.
+_MARKETPLACE_BUNDLES = Path(__file__).resolve().parent.parent / 'marketplace' / 'bundles'
+_BOOTSTRAP_LIB_DIRS = (
+    _MARKETPLACE_BUNDLES / 'plan-marshall' / 'skills' / 'script-shared' / 'scripts',
+    _MARKETPLACE_BUNDLES / 'plan-marshall' / 'skills' / 'platform-runtime' / 'scripts',
+    _MARKETPLACE_BUNDLES / 'plan-marshall' / 'skills' / 'ref-toon-format' / 'scripts',
+)
+_TEMPORARY_SYS_PATH: list[str] = []
+for _lib_dir in _BOOTSTRAP_LIB_DIRS:
+    if str(_lib_dir) not in sys.path:
+        sys.path.insert(0, str(_lib_dir))
+        _TEMPORARY_SYS_PATH.append(str(_lib_dir))
+import runtime_info as _runtime_info  # noqa: E402
+import target_context as _target_context  # noqa: E402
+
+for _temporary in _TEMPORARY_SYS_PATH:
+    sys.path.remove(_temporary)
+
+_PLATFORM_ENV_SIGNALS: tuple[str, ...] = (
+    *(_name for _name, _target in _target_context.TARGET_ENV_SIGNALS),
+    _runtime_info.OPENCODE_SESSION_ID_ENV,
+)
 for _sig in _PLATFORM_ENV_SIGNALS:
     os.environ.pop(_sig, None)
 os.environ.setdefault('PLAN_MARSHALL_NON_INTERACTIVE', '1')

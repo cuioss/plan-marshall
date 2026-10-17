@@ -232,10 +232,17 @@ The report names `view_written` (whether `queue-view.md` changed; `false` on a s
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator preflight \
-  --plan-id PLAN_ID
+  --plan-id PLAN_ID [--model MODEL] [--effort EFFORT]
 ```
 
-Invokes `platform_runtime runtime-info` and writes the returned payload as the per-plan `client.toon` pre-flight artifact. Best-effort: a collector failure degrades to `degraded: true` with `artifact_written: false` and still returns `status: success` — the hook never blocks plan start. See `workflow/preflight.md` for when the hook fires and where the artifact lands.
+Invokes `platform_runtime runtime-info` (forwarding the executing LLM's
+self-reported `--model` / `--effort`) and writes the returned payload as the
+per-plan `client.toon` pre-flight artifact, then stamps the collected harness,
+model, effort and plan-marshall version into the plan's `status.json` metadata —
+all best-effort: a collector failure degrades to `degraded: true` with
+`artifact_written: false` and still returns `status: success`, and a metadata
+failure alone records `metadata_stamped: false`. The hook never blocks plan
+start. See `workflow/preflight.md` for the full contract.
 
 ### corpus epics
 

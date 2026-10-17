@@ -6,12 +6,19 @@ Pure runtime-information collector owning the client.toon schema.
 Client.toon entries are keyed by human-readable UTC datetime stamp; multiple
 runs append a new timestamped entry instead of overwriting.
 
-Collects the client.toon attributes — two required (`harness`, `transcripts`)
-plus five optional (model name/type/version, effort level, and build-version) —
-on a best-effort basis.
+Collects the client.toon attributes — always-present `harness`, `transcripts`
+and `harness_source`, plus optional (model, model type/version, effort level and
+the bundle/executor version) — on a best-effort basis.
 Attributes that scripts cannot read are dropped rather than estimated; where
 script access is hard or strange an LLM fallback may fill the gap upstream —
 this module never estimates.
+
+Every value that CAN come from more than one place carries its source: `model`
+and `effort` are tagged `self_reported` when a caller-supplied flag supplied
+them and `measured` when a script-readable source did. On OpenCode the model is
+measured rather than self-reported: it is read from the `session_v2` table of
+`opencode.db` (read-only) for the plan's root session and its descendants, so a
+flag never stands in for the record. See :func:`measure_opencode_model`.
 
 Scope: concrete implementations exist for ``claude``, ``opencode``, and
 ``antigravity``.
@@ -21,6 +28,7 @@ from __future__ import annotations
 
 import json
 import os
+import sqlite3
 from collections.abc import Mapping
 from datetime import UTC, datetime
 from pathlib import Path
@@ -36,6 +44,29 @@ CLIENT_TOON_ENTRIES_KEY = 'entries'
 
 #: Entry key a legacy flat client.toon migrates under on first append.
 LEGACY_ENTRY_KEY = 'legacy'
+
+#: Source tag for a value the executing LLM reported about itself (a CLI flag).
+SOURCE_SELF_REPORTED = 'self_reported'
+
+#: Source tag for a value read from a script-readable source — the environment
+#: lists, or the OpenCode session database.
+SOURCE_MEASURED = 'measured'
+
+#: The value recorded when a source that SHOULD carry the value could not be
+#: read. It asserts only that nothing was observed — never a real model.
+VALUE_UNKNOWN = 'unknown'
+
+#: The value recorded when a measured session tree ran more than one model or
+#: variant. The distinct values are listed beside it — never averaged, and never
+#: reduced to the root session's value.
+MODEL_MIXED = 'mixed'
+
+#: Harness identifier whose measured model source is the session database.
+OPENCODE_HARNESS = 'opencode'
+
+#: Environment variable naming the OpenCode session the plan's LLM runs under.
+#: Resolved to its root through ``session_v2.parent_id`` before measurement.
+OPENCODE_SESSION_ID_ENV = 'OPENCODE_SESSION_ID'
 
 #: Human-readable UTC timestamp shape for entry keys. Colons are deliberately
 #: absent: a TOON key ends at its first colon, so a ``HH:MM:SS`` stamp would
@@ -88,11 +119,6 @@ _EFFORT_ENV: tuple[str, ...] = (
     'PLAN_MARSHALL_EFFORT',
     'MARSHALL_EFFORT',
     'EFFORT_LEVEL',
-)
-
-_BUILD_VERSION_ENV: tuple[str, ...] = (
-    'PLAN_MARSHALL_BUILD_VERSION',
-    'BUILD_VERSION',
 )
 
 
@@ -148,55 +174,310 @@ def read_effort(env: Mapping[str, str] | None = None) -> str | None:
     return _first_env(_EFFORT_ENV, env)
 
 
-def read_build_version(
-    env: Mapping[str, str] | None = None,
-    marketplace_root: Path | None = None,
-) -> str | None:
-    """Read the build version from script-accessible sources.
+def resolve_harness_attribution(cwd: Path | None = None) -> dict[str, Any]:
+    """Resolve the harness and the cascade tier that produced it.
 
-    Preference order: explicit environment override, then the marketplace
-    manifest version, otherwise None. Never estimated.
+    The router already resolves the target through ``target_context``; this
+    reader reports the SAME verdict as client.toon fields, so a fallback
+    ``claude`` is never confusable with a detected one:
+
+    - ``harness`` — the resolved identifier;
+    - ``harness_source`` — ``env`` / ``local_config`` / ``fallback``;
+    - ``reason`` — the fallback tier's own reason for falling through;
+    - ``harness_configured`` / ``harness_mismatch`` — present only when the
+      AMBIENT tier and the machine-local configuration name DIFFERENT targets,
+      which is a real disagreement between two tiers rather than a stale config.
 
     Args:
-        env: Explicit environment mapping for tests; defaults to ``os.environ``.
-        marketplace_root: Directory holding ``.claude-plugin/marketplace.json``.
-            When None, the ancestor walk from this file locates it.
+        cwd: Directory the machine-local config walk starts from. Defaults to
+            ``Path.cwd()``.
 
     Returns:
-        The build version string, or None when unreadable.
+        The client.toon harness fields.
     """
-    override = _first_env(_BUILD_VERSION_ENV, env)
-    if override:
-        return override
-    root = marketplace_root
+    import target_context
+
+    resolved = target_context.resolve_target(cwd)
+    fields: dict[str, Any] = {
+        'harness': resolved['target'],
+        'harness_source': resolved['target_source'],
+    }
+    if resolved['target_source'] == target_context.SOURCE_FALLBACK and resolved['reason']:
+        fields['reason'] = resolved['reason']
+    if resolved['target_source'] == target_context.SOURCE_ENV:
+        configured = target_context.read_configured_target(cwd)
+        if configured and configured != resolved['target']:
+            fields['harness_configured'] = configured
+            fields['harness_mismatch'] = True
+    return fields
+
+
+def _parse_opencode_model(raw: object) -> dict[str, str] | None:
+    """Parse one ``session_v2.model`` cell into its id/provider/variant parts.
+
+    The column holds a JSON object shaped
+    ``{"id": ..., "providerID": ..., "variant": ...}``. A cell that is absent,
+    not JSON, or not an object carrying a non-blank ``id`` yields ``None`` —
+    the cell is dropped rather than guessed at.
+    """
+    if not isinstance(raw, str) or not raw.strip():
+        return None
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(parsed, dict):
+        return None
+    model_id = parsed.get('id')
+    if not isinstance(model_id, str) or not model_id.strip():
+        return None
+    fields: dict[str, str] = {'id': model_id.strip()}
+    for key, column in (('provider', 'providerID'), ('variant', 'variant')):
+        value = parsed.get(column)
+        if isinstance(value, str) and value.strip():
+            fields[key] = value.strip()
+    return fields
+
+
+def _read_session_rows(db_path: Path) -> dict[str, tuple[str | None, object]]:
+    """Read ``session_v2`` (id, parent_id, model) into a mapping, read-only.
+
+    The database is opened with ``mode=ro`` so this reader can never write to
+    the developer's session store. A missing file, an unreadable schema or a
+    non-``session_v2`` database all surface as an exception the caller maps to
+    :data:`VALUE_UNKNOWN`.
+
+    The table is read DIRECTLY here (PLAN-LB-49 D1 has not landed): when that
+    plan ships its shared reader, this function is the seam to absorb it.
+    """
+    conn = sqlite3.connect(f'file:{db_path}?mode=ro', uri=True)
+    try:
+        cursor = conn.execute('SELECT id, parent_id, model FROM session_v2')
+        return {str(row[0]): (row[1], row[2]) for row in cursor.fetchall()}
+    finally:
+        conn.close()
+
+
+def _session_root(session_id: str, rows: Mapping[str, tuple[str | None, object]]) -> str | None:
+    """Resolve *session_id* to its root through ``parent_id``, or ``None``.
+
+    ``None`` means the id names no row in the tree — there is nothing to
+    measure. A cycle in a malformed tree terminates at the last unvisited id.
+    """
+    if session_id not in rows:
+        return None
+    current = session_id
+    seen: set[str] = set()
+    while current not in seen:
+        seen.add(current)
+        parent = rows[current][0]
+        if not isinstance(parent, str) or not parent or parent not in rows:
+            return current
+        current = parent
+    return current
+
+
+def _session_tree(root: str, rows: Mapping[str, tuple[str | None, object]]) -> list[str]:
+    """Return *root* plus every descendant reachable through ``parent_id``."""
+    children: dict[str, list[str]] = {}
+    for session_id, (parent, _model) in rows.items():
+        if isinstance(parent, str) and parent:
+            children.setdefault(parent, []).append(session_id)
+    ordered: list[str] = []
+    stack = [root]
+    seen: set[str] = set()
+    while stack:
+        current = stack.pop()
+        if current in seen or current not in rows:
+            continue
+        seen.add(current)
+        ordered.append(current)
+        stack.extend(children.get(current, ()))
+    return ordered
+
+
+def _format_model_key(fields: Mapping[str, str]) -> str:
+    """Render one measured model as ``id`` or ``id/variant`` for the mixed list."""
+    variant = fields.get('variant')
+    return f'{fields["id"]}/{variant}' if variant else fields['id']
+
+
+def measure_opencode_model(
+    db_path: Path | None,
+    session_id: str | None,
+) -> dict[str, Any] | None:
+    """Measure the model the OpenCode session tree ran under.
+
+    Reads ``session_v2.model`` from *db_path* (opened read-only) for *session_id*
+    resolved to its root through ``parent_id``, plus every descendant. A tree
+    that ran exactly one model/variant records that model, its variant and its
+    provider as :data:`SOURCE_MEASURED`. A tree that ran more than one records
+    ``model: mixed`` with the distinct ``id/variant`` values listed — never
+    averaged and never reduced to the root's value.
+
+    Args:
+        db_path: The ``opencode.db`` to read, or ``None``.
+        session_id: The session the plan's LLM runs under, or ``None`` when no
+            session is in scope — the caller then has nothing to measure.
+
+    Returns:
+        The measured model fields, ``{'model': unknown, 'model_source:
+        'measured'}`` when the tree could not be read, or ``None`` when no
+        *session_id* is in scope (the caller falls back to its own sources).
+    """
+    if not session_id:
+        return None
+    unknown = {'model': VALUE_UNKNOWN, 'model_source': SOURCE_MEASURED}
+    if db_path is None or not Path(db_path).is_file():
+        return dict(unknown)
+    try:
+        rows = _read_session_rows(Path(db_path))
+    except (sqlite3.Error, OSError, ValueError):
+        return dict(unknown)
+    root = _session_root(session_id, rows)
     if root is None:
-        root = _find_marketplace_root()
+        return dict(unknown)
+    distinct: dict[tuple[str, str, str], dict[str, str]] = {}
+    for member in _session_tree(root, rows):
+        fields = _parse_opencode_model(rows[member][1])
+        if fields is None:
+            continue
+        distinct[(fields['id'], fields.get('provider', ''), fields.get('variant', ''))] = fields
+    if not distinct:
+        return dict(unknown)
+    if len(distinct) == 1:
+        only = next(iter(distinct.values()))
+        measured: dict[str, Any] = {'model': only['id'], 'model_source': SOURCE_MEASURED}
+        if 'variant' in only:
+            measured['variant'] = only['variant']
+        if 'provider' in only:
+            measured['provider'] = only['provider']
+        return measured
+    listed = ', '.join(sorted(_format_model_key(fields) for fields in distinct.values()))
+    return {'model': MODEL_MIXED, 'models': listed, 'model_source': SOURCE_MEASURED}
+
+
+def _resolve_model_fields(
+    harness: str,
+    env: Mapping[str, str] | None,
+    model_name: str | None,
+    opencode_db_path: Path | None,
+    opencode_session_id: str | None,
+) -> dict[str, Any]:
+    """Resolve the ``model`` / ``model_source`` pair for one collection.
+
+    On OpenCode the model is MEASURED, never self-reported: the session database
+    is authoritative and wins over a flag. When a session id is in scope the
+    measurement's answer stands (``unknown`` included); with no session id in
+    scope there is nothing to measure, so the script-readable environment lists
+    are measured and a still-unreadable value is OMITTED — the flag is never
+    consulted, on either path.
+
+    Everywhere else a caller-supplied flag wins and is tagged
+    :data:`SOURCE_SELF_REPORTED`; otherwise the environment lists are measured.
+    A value with no readable source is omitted entirely.
+    """
+    if harness == OPENCODE_HARNESS:
+        measured = measure_opencode_model(opencode_db_path, opencode_session_id)
+        if measured is not None:
+            return measured
+        from_env = read_model_name(env)
+        if from_env:
+            return {'model': from_env, 'model_source': SOURCE_MEASURED}
+        return {}
+
+    if model_name:
+        return {'model': model_name, 'model_source': SOURCE_SELF_REPORTED}
+    from_env = read_model_name(env)
+    if from_env:
+        return {'model': from_env, 'model_source': SOURCE_MEASURED}
+    return {}
+
+
+def _resolve_effort_fields(
+    env: Mapping[str, str] | None,
+    effort: str | None,
+) -> dict[str, Any]:
+    """Resolve the ``effort`` / ``effort_source`` pair for one collection.
+
+    A caller-supplied flag wins and is tagged :data:`SOURCE_SELF_REPORTED`;
+    otherwise the environment lists are measured. A value with no readable
+    source is omitted entirely. Nothing is ever estimated.
+    """
+    if effort:
+        return {'effort': effort, 'effort_source': SOURCE_SELF_REPORTED}
+    from_env = read_effort(env)
+    if from_env:
+        return {'effort': from_env, 'effort_source': SOURCE_MEASURED}
+    return {}
+
+
+def _find_bundle_root() -> Path | None:
+    """Locate the bundle this module runs from via the ancestor walk.
+
+    The root is the first ancestor holding ``.claude-plugin/plugin.json`` — the
+    bundle manifest, so an INSTALLED bundle (whose ancestor chain carries no
+    marketplace manifest) resolves its own version.
+    """
+    for ancestor in Path(__file__).resolve().parents:
+        if (ancestor / '.claude-plugin' / 'plugin.json').is_file():
+            return ancestor
+    return None
+
+
+def read_bundle_version(bundle_root: Path | None = None) -> str | None:
+    """Read the ``version`` of the bundle manifest the collector runs from.
+
+    The value is the ``version`` in ``.claude-plugin/plugin.json`` of the bundle
+    at *bundle_root* (default: the bundle this module runs from). It replaces the
+    marketplace manifest's ``metadata.version``: the marketplace manifest
+    describes the aggregate project, not the bundle that is loaded. Never
+    estimated.
+
+    Args:
+        bundle_root: Directory holding ``.claude-plugin/plugin.json``. When
+            None, the ancestor walk from this file locates it.
+
+    Returns:
+        The bundle version string, or None when unreadable.
+    """
+    root = bundle_root if bundle_root is not None else _find_bundle_root()
     if root is None:
         return None
-    manifest = root / '.claude-plugin' / 'marketplace.json'
+    manifest = root / '.claude-plugin' / 'plugin.json'
     try:
         data = json.loads(manifest.read_text(encoding='utf-8'))
     except (OSError, json.JSONDecodeError):
         return None
     if not isinstance(data, dict):
         return None
-    metadata = data.get('metadata')
-    if not isinstance(metadata, dict):
-        return None
-    version = metadata.get('version')
+    version = data.get('version')
     if isinstance(version, str) and version.strip():
         return version.strip()
     return None
 
 
-def _find_marketplace_root() -> Path | None:
-    """Locate the marketplace root via the ancestor walk.
+def read_executor_version(executor_path: Path | None = None) -> str | None:
+    """Read the executor's ``MARSHALL_VERSION`` through the shared registry reader.
 
-    The root is the first ancestor holding ``.claude-plugin/marketplace.json``.
+    Reuses ``plugin_registry.read_executor_version`` rather than re-parsing the
+    assignment, so the version's grammar has one definition. An executor that is
+    absent, unreadable or carries no usable assignment yields None — never a
+    substituted version.
+
+    Args:
+        executor_path: The generated executor to read. When None, the executor
+            of the current project (``{cwd}/.plan/execute-script.py``) is read.
+
+    Returns:
+        The executor version string, or None when it could not be read.
     """
-    for ancestor in Path(__file__).resolve().parents:
-        if (ancestor / '.claude-plugin' / 'marketplace.json').is_file():
-            return ancestor
+    import plugin_registry
+
+    path = executor_path if executor_path is not None else plugin_registry.default_executor_path(Path.cwd())
+    state, version = plugin_registry.read_executor_version(Path(path))
+    if state == plugin_registry.EXECUTOR_VERSION_FOUND:
+        return version
     return None
 
 
@@ -218,51 +499,79 @@ def read_transcripts_capability(harness: str) -> str:
 def collect_runtime_info(
     harness: str,
     env: Mapping[str, str] | None = None,
-    marketplace_root: Path | None = None,
+    bundle_root: Path | None = None,
     model_name: str | None = None,
     model_type: str | None = None,
     model_version: str | None = None,
     effort: str | None = None,
-    build_version: str | None = None,
+    bundle_version: str | None = None,
+    *,
+    harness_attribution: Mapping[str, Any] | None = None,
+    executor_path: Path | None = None,
+    opencode_db_path: Path | None = None,
+    opencode_session_id: str | None = None,
 ) -> dict[str, Any]:
     """Collect the client.toon attribute dict on a best-effort basis.
 
     The harness identifier is caller-supplied and always present. Every other
     attribute resolves from its explicit override first, then from
     script-accessible sources; attributes with no readable value are dropped
-    rather than estimated.
+    rather than estimated. ``model`` and ``effort`` additionally carry their
+    source tag, and on OpenCode the model is measured from the session database
+    rather than taken from a flag (see :func:`_resolve_model_fields`).
 
     Args:
         harness: Harness identifier — ``claude``, ``opencode``, or ``antigravity``.
         env: Explicit environment mapping for tests; defaults to ``os.environ``.
-        marketplace_root: Override for build-version manifest lookup.
+        bundle_root: Bundle whose ``.claude-plugin/plugin.json`` carries the
+            reported ``bundle_version``; auto-located when None.
         model_name: Explicit model name override; auto-read when None.
         model_type: Explicit model type override; auto-read when None.
         model_version: Explicit model version override; auto-read when None.
         effort: Explicit effort override; auto-read when None.
-        build_version: Explicit build-version override; auto-read when None.
+        bundle_version: Explicit bundle-version override; auto-read when None.
+        harness_attribution: The ``target_context`` verdict fields to report;
+            resolved by the ancestor/cwd walk when None.
+        executor_path: The executor whose ``MARSHALL_VERSION`` is reported as
+            ``executor_version``; the current project's when None.
+        opencode_db_path: The ``opencode.db`` to measure the OpenCode model
+            from; only consulted when *harness* is ``opencode``.
+        opencode_session_id: The session whose tree the OpenCode model is
+            measured over; only consulted when *harness* is ``opencode``.
 
     Returns:
-        Attribute dict carrying ``harness`` and ``transcripts`` plus whichever of ``model_name``,
-        ``model_type``, ``model_version``, ``effort``, and ``build_version``
-        were readable.
+        Attribute dict carrying ``harness``, ``transcripts`` and
+        ``harness_source`` plus whichever of
+        ``model`` (with ``model_source``), ``model_type``, ``model_version``,
+        ``effort`` (with ``effort_source``), ``bundle_version`` and
+        ``executor_version`` were readable, plus the fallback ``reason`` or the
+        mismatch fields when they apply.
     """
+    attribution = dict(harness_attribution) if harness_attribution is not None else resolve_harness_attribution()
     info: dict[str, Any] = {'harness': harness, 'transcripts': read_transcripts_capability(harness)}
-    resolved_name = model_name if model_name else read_model_name(env)
-    if resolved_name:
-        info['model_name'] = resolved_name
+    source = attribution.get('harness_source')
+    if isinstance(source, str) and source:
+        info['harness_source'] = source
+    if attribution.get('reason'):
+        info['reason'] = attribution['reason']
+    if attribution.get('harness_configured'):
+        info['harness_configured'] = attribution['harness_configured']
+    if attribution.get('harness_mismatch'):
+        info['harness_mismatch'] = True
+    info.update(_resolve_model_fields(harness, env, model_name, opencode_db_path, opencode_session_id))
     resolved_type = model_type if model_type else read_model_type(env)
     if resolved_type:
         info['model_type'] = resolved_type
     resolved_version = model_version if model_version else read_model_version(env)
     if resolved_version:
         info['model_version'] = resolved_version
-    resolved_effort = effort if effort else read_effort(env)
-    if resolved_effort:
-        info['effort'] = resolved_effort
-    resolved_build = build_version if build_version else read_build_version(env, marketplace_root)
-    if resolved_build:
-        info['build_version'] = resolved_build
+    info.update(_resolve_effort_fields(env, effort))
+    resolved_bundle = bundle_version if bundle_version else read_bundle_version(bundle_root)
+    if resolved_bundle:
+        info['bundle_version'] = resolved_bundle
+    resolved_executor = read_executor_version(executor_path)
+    if resolved_executor:
+        info['executor_version'] = resolved_executor
     return info
 
 
