@@ -1463,6 +1463,7 @@ the best-effort drop semantics, and the extension-point contract.
 status: success
 operation: runtime-info
 harness: claude
+harness_source: env
 transcripts: full
 model: claude-sonnet-4-5
 model_source: measured
@@ -1479,6 +1480,7 @@ executor_version: 0.1.1916
 status: success
 operation: runtime-info
 harness: claude
+harness_source: local_config
 transcripts: full
 bundle_version: 0.1.1919
 ```

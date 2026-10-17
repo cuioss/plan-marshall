@@ -569,8 +569,6 @@ class OpenCodeRuntime(Runtime):
             'PLAN_MARSHALL_EFFORT',
             'MARSHALL_EFFORT',
             'EFFORT_LEVEL',
-            'PLAN_MARSHALL_BUILD_VERSION',
-            'BUILD_VERSION',
         }
     )
 
@@ -1910,7 +1908,8 @@ class OpenCodeRuntime(Runtime):
     def runtime_info(self, model: str | None = None, effort: str | None = None) -> str:
         """Collect runtime information for the opencode target.
 
-        Reads harness, model, effort, and build-version from
+        Reads harness, model, effort, the harness source, and the bundle/executor
+        version from
         script-accessible sources via the shared collector; unreadable
         attributes are dropped rather than estimated. Model resolution is
         target-scoped here (never in the shared collector): only

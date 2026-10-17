@@ -492,6 +492,33 @@ def test_the_marketplace_manifest_build_version_is_replaced() -> None:
     assert 'build_version' not in info
 
 
+def test_read_bundle_version_reads_the_bundle_manifest(tmp_path: Path) -> None:
+    """The reader takes the bundle's own plugin.json version, or nothing."""
+    bundle = _fixture_bundle(tmp_path, '1.2.3')
+
+    assert runtime_info.read_bundle_version(bundle) == '1.2.3'
+    assert runtime_info.read_bundle_version(tmp_path / 'absent-bundle') is None
+
+
+def test_opencode_without_a_session_emits_no_model_key() -> None:
+    """With nothing to measure and nothing readable, OpenCode omits the model.
+
+    The Done-when's "no flags and no environment variables returns neither key"
+    clause therefore holds on OpenCode too: the flag is never substituted, and
+    the ``unknown`` marker is reserved for a session whose tree could not be read.
+    """
+    info = runtime_info.collect_runtime_info(
+        'opencode',
+        env={},
+        model_name='a-flag-value',
+        opencode_db_path=None,
+        opencode_session_id=None,
+    )
+
+    assert 'model' not in info
+    assert 'model_source' not in info
+
+
 # =============================================================================
 # D3 — the harness carries the tier that produced it, and a mismatch is reported
 # =============================================================================

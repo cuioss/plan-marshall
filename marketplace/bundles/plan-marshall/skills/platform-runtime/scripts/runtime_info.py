@@ -6,9 +6,9 @@ Pure runtime-information collector owning the client.toon schema.
 Client.toon entries are keyed by human-readable UTC datetime stamp; multiple
 runs append a new timestamped entry instead of overwriting.
 
-Collects the client.toon attributes — two required (`harness`, `transcripts`)
-plus optional (model, model type/version, effort level, harness source, and the
-bundle/executor version) — on a best-effort basis.
+Collects the client.toon attributes — always-present `harness`, `transcripts`
+and `harness_source`, plus optional (model, model type/version, effort level and
+the bundle/executor version) — on a best-effort basis.
 Attributes that scripts cannot read are dropped rather than estimated; where
 script access is hard or strange an LLM fallback may fill the gap upstream —
 this module never estimates.
@@ -368,9 +368,10 @@ def _resolve_model_fields(
 
     On OpenCode the model is MEASURED, never self-reported: the session database
     is authoritative and wins over a flag. When a session id is in scope the
-    measurement's answer stands (``unknown`` included); otherwise the
-    script-readable environment lists are measured, and a still-unreadable value
-    is recorded as ``unknown`` — the flag is never consulted.
+    measurement's answer stands (``unknown`` included); with no session id in
+    scope there is nothing to measure, so the script-readable environment lists
+    are measured and a still-unreadable value is OMITTED — the flag is never
+    consulted, on either path.
 
     Everywhere else a caller-supplied flag wins and is tagged
     :data:`SOURCE_SELF_REPORTED`; otherwise the environment lists are measured.
@@ -383,7 +384,7 @@ def _resolve_model_fields(
         from_env = read_model_name(env)
         if from_env:
             return {'model': from_env, 'model_source': SOURCE_MEASURED}
-        return {'model': VALUE_UNKNOWN, 'model_source': SOURCE_MEASURED}
+        return {}
 
     if model_name:
         return {'model': model_name, 'model_source': SOURCE_SELF_REPORTED}

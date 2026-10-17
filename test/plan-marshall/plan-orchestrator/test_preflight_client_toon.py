@@ -15,6 +15,8 @@ from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
+import runtime_info
+from runtime_base import toon_success
 from toon_parser import parse_toon
 
 from conftest import load_script_module
@@ -337,3 +339,48 @@ def test_preflight_metadata_stamp_is_best_effort_without_a_status(
 
     assert result['status'] == 'success'
     assert result['artifact_written'] is True
+
+
+def _real_collector_payload(tmp_path: Path) -> str:
+    """A runtime-info payload produced by the REAL collector, not a fixture string.
+
+    The metadata stamp reads keys the collector emits; building the payload here
+    from :func:`runtime_info.collect_runtime_info` is what proves the two ends
+    agree, rather than asserting against a hand-written block that could carry
+    keys the collector never produces.
+    """
+    bundle = tmp_path / 'bundle'
+    (bundle / '.claude-plugin').mkdir(parents=True)
+    (bundle / '.claude-plugin' / 'plugin.json').write_text(json.dumps({'version': '0.1.1919'}), encoding='utf-8')
+    executor = tmp_path / 'execute-script.py'
+    executor.write_text("MARSHALL_VERSION = '0.1.1916'\n", encoding='utf-8')
+    info = runtime_info.collect_runtime_info(
+        'claude',
+        env={},
+        bundle_root=bundle,
+        executor_path=executor,
+        model_name='claude-opus-5-5',
+        effort='high',
+        harness_attribution={'harness': 'claude', 'harness_source': 'env'},
+    )
+    return toon_success(runtime_info.RUNTIME_INFO_OPERATION, info)
+
+
+def test_preflight_stamps_the_real_collector_payload(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The collector's own output is what the plan metadata ends up carrying."""
+    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+    plan_dir = _plan_with_status(tmp_path, 'my-plan')
+    _capture_runtime_info_argv([_real_collector_payload(tmp_path)], monkeypatch)
+
+    result: dict[str, Any] = cmd_preflight(_ns('my-plan', model='claude-opus-5-5', effort='high'))
+
+    assert result['metadata_stamped'] is True
+    metadata = _status_metadata(plan_dir)
+    assert metadata['harness'] == 'claude'
+    assert metadata['harness_source'] == 'env'
+    assert metadata['model'] == 'claude-opus-5-5'
+    assert metadata['model_source'] == 'self_reported'
+    assert metadata['effort'] == 'high'
+    assert metadata['effort_source'] == 'self_reported'
+    assert metadata['bundle_version'] == '0.1.1919'
+    assert metadata['executor_version'] == '0.1.1916'

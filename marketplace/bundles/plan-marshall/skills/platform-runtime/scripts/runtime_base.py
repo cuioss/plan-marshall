@@ -497,9 +497,9 @@ class Runtime(ABC):
     """Abstract base for platform-runtime target implementations.
 
     Subclasses must implement every abstract method.  The router
-    (platform_runtime.py) instantiates the correct subclass based on
-    ``runtime.target`` in ``.plan/marshal.json`` and dispatches the requested
-    operation.
+    (platform_runtime.py) resolves the active target through
+    ``target_context.resolve_target``, instantiates the correct subclass, and
+    dispatches the requested operation.
 
     Methods return a serialized TOON string ready for ``print()``.  Use the
     ``toon_success``, ``toon_error``, and ``toon_noop`` helpers from this module

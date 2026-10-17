@@ -409,7 +409,7 @@ def _dispatch(runtime: Runtime, operation: str, remaining: list[str]) -> str:
     # ------------------------------------------------------------------
     if operation == 'project install-hook':
         p = argparse.ArgumentParser(allow_abbrev=False, prog='platform_runtime project install-hook')
-        p.add_argument('--target', required=True, help='Platform target identifier, as in marshal.json runtime.target')
+        p.add_argument('--target', required=True, help='Platform target identifier (one of the registered targets)')
         p.add_argument(
             '--overwrite',
             action='append',
