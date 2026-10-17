@@ -57,8 +57,8 @@ derive, for rows still live.
   counted 7/7, five regressions; see `landings/PLAN-LB-39.md`. Fix-forward PLAN-LB-50; unshipped
   deliverables re-staged as PLAN-LB-51 (Antigravity) and PLAN-LB-52 (harness-agnostic, as scripts).
 
-- **Emit order from 2026-10-16 (runbook lane):** PLAN-LB-61, PLAN-LB-62, PLAN-LB-54 (running) →
-  **PLAN-LB-64** (critical) → **PLAN-LB-63** (high) → PLAN-LB-52, PLAN-LB-55 (each overlaps the running
+- **Emit order from 2026-10-17 (runbook lane):** PLAN-LB-54 (running) → **PLAN-LB-65** and
+  **PLAN-LB-64** (both critical) → **PLAN-LB-63** (high) → PLAN-LB-52, PLAN-LB-55 (each overlaps the running
   PLAN-LB-61 on `pr_intent_section.py` and its test) (each
   shares one entry with PLAN-LB-56, non-blocking) → PLAN-LB-53 (after PLAN-LB-55) → PLAN-LB-48
   (after PLAN-LB-50 and PLAN-LB-56 land; 2 and 4 shared files) → PLAN-LB-45 (after PLAN-LB-50 and
@@ -96,9 +96,11 @@ derive, for rows still live.
 - **PLAN-LB-61** (shipped #1787, 2026-10-16, runbook lane) — 3 met / 1 partial; grade C+, the best
   so far; see `landings/PLAN-LB-61.md`. Its D2 "measured setup" is a hard-coded 30 s (low, not
   staged).
-- **PLAN-LB-62** (in flight, runbook lane) — all three deliverables implemented and verify-green on
-  `a6071ea2b`; PR #1790 open, needing re-review on the head and the merge. Its interim landing
-  (`merge_state=open`) was archived as a progress report; the row stays running.
+- **PLAN-LB-62** (shipped #1790, 2026-10-16, runbook lane) — 0 met / 2 partial / 1 unmet; merged on
+  free text with neither required bot on the final head; the commit gate and R6 are inert (wrong
+  status key); R5 no longer covers root sessions; **leaked the OpenCode service credential into the
+  transcript** (operator: rotate it); see `landings/PLAN-LB-62.md`. Fix-forward **PLAN-LB-65**
+  (WS-04, critical).
 
 - **PLAN-LB-60** (shipped #1782, 2026-10-16) — first DeepSeek run; 1 met / 4 partial; dead-step
   cleanup still deletes live defaults on a partial phase-6 scan; see `landings/PLAN-LB-60.md`.
@@ -366,6 +368,15 @@ derive, for rows still live.
   - the landing lists every model, every operator question, and every `guard.log` line for the run.
 
   The runbook is now 316 lines.
+- 2026-10-17 — **Runbook amended after PLAN-LB-62:**
+  - stay inside the repository (a run printed `~/.config/opencode/service.json` into its
+    transcript);
+  - there is no session budget (runs stopped and skipped `verify` and PR-comment handling "for
+    budget");
+  - the free-text rule is restated at enqueue;
+  - the report quotes question-tool calls only, listing free text separately.
+
+  The runbook is now 330 lines.
 
 ## Open Defects
 
@@ -970,6 +981,7 @@ entries below are OpenCode 1 assumptions in plan-marshall that OpenCode 2 broke.
     | Plan | Spec met/partial/unmet | Claimed | Regressions | Sessions | Cost | Grade |
     |------|------------------------|---------|-------------|----------|------|-------|
     | PLAN-LB-61 | 3 / 1 / 0 of 4 | 4/4 | 0 confirmed | 5 | $0.40 | C+ |
+    | PLAN-LB-62 | 0 / 2 / 1 of 3 | 3/3 | 2 high (R5 root gap, allow-list bypass) | 2 | $0.58 | F |
 
     PLAN-LB-61 is the first run to keep every Done-when verbatim with genuine fail-first evidence.
     It still bent the CodeRabbit policy (the merged head has no CodeRabbit review; Q4's premise was
