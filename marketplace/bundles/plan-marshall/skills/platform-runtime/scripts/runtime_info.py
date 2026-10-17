@@ -174,6 +174,44 @@ def read_effort(env: Mapping[str, str] | None = None) -> str | None:
     return _first_env(_EFFORT_ENV, env)
 
 
+def resolve_harness_attribution(cwd: Path | None = None) -> dict[str, Any]:
+    """Resolve the harness and the cascade tier that produced it.
+
+    The router already resolves the target through ``target_context``; this
+    reader reports the SAME verdict as client.toon fields, so a fallback
+    ``claude`` is never confusable with a detected one:
+
+    - ``harness`` — the resolved identifier;
+    - ``harness_source`` — ``env`` / ``local_config`` / ``fallback``;
+    - ``reason`` — the fallback tier's own reason for falling through;
+    - ``harness_configured`` / ``harness_mismatch`` — present only when the
+      AMBIENT tier and the machine-local configuration name DIFFERENT targets,
+      which is a real disagreement between two tiers rather than a stale config.
+
+    Args:
+        cwd: Directory the machine-local config walk starts from. Defaults to
+            ``Path.cwd()``.
+
+    Returns:
+        The client.toon harness fields.
+    """
+    import target_context
+
+    resolved = target_context.resolve_target(cwd)
+    fields: dict[str, Any] = {
+        'harness': resolved['target'],
+        'harness_source': resolved['target_source'],
+    }
+    if resolved['target_source'] == target_context.SOURCE_FALLBACK and resolved['reason']:
+        fields['reason'] = resolved['reason']
+    if resolved['target_source'] == target_context.SOURCE_ENV:
+        configured = target_context.read_configured_target(cwd)
+        if configured and configured != resolved['target']:
+            fields['harness_configured'] = configured
+            fields['harness_mismatch'] = True
+    return fields
+
+
 def _parse_opencode_model(raw: object) -> dict[str, str] | None:
     """Parse one ``session_v2.model`` cell into its id/provider/variant parts.
 
@@ -467,6 +505,7 @@ def collect_runtime_info(
     effort: str | None = None,
     bundle_version: str | None = None,
     *,
+    harness_attribution: Mapping[str, Any] | None = None,
     executor_path: Path | None = None,
     opencode_db_path: Path | None = None,
     opencode_session_id: str | None = None,
@@ -490,6 +529,8 @@ def collect_runtime_info(
         model_version: Explicit model version override; auto-read when None.
         effort: Explicit effort override; auto-read when None.
         bundle_version: Explicit bundle-version override; auto-read when None.
+        harness_attribution: The ``target_context`` verdict fields to report;
+            resolved by the ancestor/cwd walk when None.
         executor_path: The executor whose ``MARSHALL_VERSION`` is reported as
             ``executor_version``; the current project's when None.
         opencode_db_path: The ``opencode.db`` to measure the OpenCode model
@@ -498,12 +539,24 @@ def collect_runtime_info(
             measured over; only consulted when *harness* is ``opencode``.
 
     Returns:
-        Attribute dict carrying ``harness`` and ``transcripts`` plus whichever of
+        Attribute dict carrying ``harness``, ``transcripts`` and
+        ``harness_source`` plus whichever of
         ``model`` (with ``model_source``), ``model_type``, ``model_version``,
         ``effort`` (with ``effort_source``), ``bundle_version`` and
-        ``executor_version`` were readable.
+        ``executor_version`` were readable, plus the fallback ``reason`` or the
+        mismatch fields when they apply.
     """
+    attribution = dict(harness_attribution) if harness_attribution is not None else resolve_harness_attribution()
     info: dict[str, Any] = {'harness': harness, 'transcripts': read_transcripts_capability(harness)}
+    source = attribution.get('harness_source')
+    if isinstance(source, str) and source:
+        info['harness_source'] = source
+    if attribution.get('reason'):
+        info['reason'] = attribution['reason']
+    if attribution.get('harness_configured'):
+        info['harness_configured'] = attribution['harness_configured']
+    if attribution.get('harness_mismatch'):
+        info['harness_mismatch'] = True
     info.update(_resolve_model_fields(harness, env, model_name, opencode_db_path, opencode_session_id))
     resolved_type = model_type if model_type else read_model_type(env)
     if resolved_type:

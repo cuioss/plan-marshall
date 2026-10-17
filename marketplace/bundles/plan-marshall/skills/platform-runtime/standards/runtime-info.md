@@ -34,12 +34,16 @@ unregistered target yields the established `unknown_target` error path.
 
 ## Client.toon Schema
 
-One required attribute pair (`harness`, `transcripts`) and eight optional attributes per run entry. Unreadable attributes are absent rather than estimated.
+One required attribute pair (`harness`, `transcripts`), one further always-present attribute (`harness_source`), and seven optional attributes per run entry. Unreadable attributes are absent rather than estimated.
 
 | Key | Meaning | Always present |
 |-----|---------|----------------|
 | `harness` | Harness identifier (`claude`, `opencode`, `antigravity`) | Yes |
 | `transcripts` | Transcript-availability capability (`full` on `claude`, `none` on `opencode`/`antigravity`; unrecognised harness reads as `none`) | Yes |
+| `harness_source` | The cascade tier that produced the identifier — `env` (an ambient signal), `local_config` (machine-local harness/run configuration), or `fallback` | Yes |
+| `reason` | On the `fallback` tier, WHICH absence it was (`local_config_absent`, `local_config_unreadable`, `local_config_malformed`, `target_absent`) | No |
+| `harness_configured` | The target the machine-local configuration names, when it differs from an ambient-tier resolution | No |
+| `harness_mismatch` | `true` when the ambient tier and the machine-local configuration name different targets | No |
 | `model` | Model identifier as reported by a script-accessible source or self-reported through `--model`; `mixed` when an OpenCode session tree ran more than one, `unknown` when the OpenCode session database could not be read | No |
 | `model_source` | `self_reported` (a `--model` flag) or `measured` (a script-readable source) | No |
 | `variant` | The OpenCode session tree's variant (e.g. `high`) | No |
@@ -51,6 +55,15 @@ One required attribute pair (`harness`, `transcripts`) and eight optional attrib
 | `effort_source` | `self_reported` (an `--effort` flag) or `measured` (a script-readable source) | No |
 | `bundle_version` | The `version` in `.claude-plugin/plugin.json` of the bundle the collector runs from | No |
 | `executor_version` | The `MARSHALL_VERSION` of the executor (`plugin_registry.read_executor_version`) | No |
+
+`harness_source` is what keeps a fallback `claude` distinguishable from a
+DETECTED `claude`: the same identifier no longer means the same thing, and a
+reader that only saw `harness` could not tell them apart. A `fallback` tier names
+its own `reason`, so the four distinct fall-through conditions stay separable
+downstream. When the ambient tier and the machine-local configuration name
+different targets, `harness_configured` carries the configured one and
+`harness_mismatch: true` records the disagreement — a stale machine-local
+configuration is a fact worth reporting, not a silent loss.
 
 `bundle_version` is the INSTALLED bundle's own manifest version — not the
 marketplace manifest's `metadata.version`, which describes the aggregate project
@@ -94,6 +107,7 @@ Full attribute set, when every source is readable:
 status: success
 operation: runtime-info
 harness: claude
+harness_source: env
 transcripts: full
 model: claude-sonnet-4-5
 model_source: measured
@@ -101,8 +115,8 @@ model_type: chat
 model_version: 2026-09-01
 effort: standard
 effort_source: measured
-bundle_version: "0.1.1919"
-executor_version: "0.1.1916"
+bundle_version: 0.1.1919
+executor_version: 0.1.1916
 ```
 
 Best-effort drop, when only the harness and the bundle version are readable:
@@ -111,8 +125,20 @@ Best-effort drop, when only the harness and the bundle version are readable:
 status: success
 operation: runtime-info
 harness: opencode
+harness_source: env
 transcripts: none
-bundle_version: "0.1.1919"
+bundle_version: 0.1.1919
+```
+
+Fallback tier, with the ambient signal absent and no machine-local configuration:
+
+```toon
+status: success
+operation: runtime-info
+harness: claude
+harness_source: fallback
+reason: local_config_absent
+transcripts: full
 ```
 
 Timestamp-keyed client.toon artifact, after two runs appended:
@@ -122,16 +148,18 @@ schema_version: 1
 entries:
   2026-09-15 07-00-00 UTC:
     harness: claude
+    harness_source: local_config
     transcripts: full
-    bundle_version: "0.1.1919"
+    bundle_version: 0.1.1919
   2026-09-15 08-00-00 UTC:
     harness: claude
+    harness_source: local_config
     transcripts: full
     model: claude-sonnet-4-5
     model_source: measured
     effort: standard
     effort_source: measured
-    bundle_version: "0.1.1919"
+    bundle_version: 0.1.1919
 ```
 
 ## Error

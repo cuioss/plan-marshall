@@ -245,6 +245,33 @@ def _read_local_target(candidate: Path) -> tuple[str | None, str]:
     return None, REASON_TARGET_ABSENT
 
 
+def read_configured_target(cwd: Path | None = None) -> str | None:
+    """Return the target the machine-local configuration names, or ``None``.
+
+    The config tier read IN ISOLATION from the cascade — what the machine-local
+    harness/run configuration FILE says, whether or not an ambient environment
+    signal outranks it. That isolation is what makes a mismatch between the two
+    lower tiers reportable: :func:`resolve_target` collapses the config tier
+    away the moment an env signal is present, so a caller comparing the two
+    tiers needs this separate read.
+
+    Args:
+        cwd: Directory the upward walk starts from. Defaults to
+            ``Path.cwd()``.
+
+    Returns:
+        The configured target, or ``None`` when no config file exists, it
+        cannot be read or parsed, or it names no target — the same four
+        conditions :func:`resolve_target` distinguishes with its ``REASON_*``
+        values, collapsed here to the one answer this reader is asked for.
+    """
+    candidate = find_local_config(cwd)
+    if candidate is None:
+        return None
+    target, _reason = _read_local_target(candidate)
+    return target
+
+
 def resolve_target(cwd: Path | None = None) -> ResolvedTarget:
     """Resolve the active runtime target and the cascade tier that produced it.
 

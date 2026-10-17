@@ -1470,8 +1470,8 @@ model_type: chat
 model_version: 2026-09-01
 effort: standard
 effort_source: measured
-bundle_version: "0.1.1919"
-executor_version: "0.1.1916"
+bundle_version: 0.1.1919
+executor_version: 0.1.1916
 ```
 
 **Success (best-effort drop)**:
@@ -1480,7 +1480,7 @@ status: success
 operation: runtime-info
 harness: claude
 transcripts: full
-bundle_version: "0.1.1919"
+bundle_version: 0.1.1919
 ```
 
 **Error (unregistered target)**:

@@ -75,6 +75,16 @@ def _fixture_project(tmp_path: Path) -> Path:
     return project
 
 
+def _write_local_harness(project: Path, harness: str) -> None:
+    """Write a machine-local harness config naming *harness* for *project*."""
+    harness_dir = project / '.plan' / 'local' / 'harness'
+    harness_dir.mkdir(parents=True, exist_ok=True)
+    (harness_dir / f'{harness}.json').write_text(
+        json.dumps({'schema_version': 1, 'harness': harness}),
+        encoding='utf-8',
+    )
+
+
 def _write_session_db(db_path: Path, rows: list[tuple[str, str | None, str]]) -> None:
     """Create a fixture ``session_v2`` table with ``(id, parent_id, model_json)`` rows."""
     conn = sqlite3.connect(db_path)
@@ -480,3 +490,43 @@ def test_the_marketplace_manifest_build_version_is_replaced() -> None:
 
     assert 'bundle_version' in info
     assert 'build_version' not in info
+
+
+# =============================================================================
+# D3 — the harness carries the tier that produced it, and a mismatch is reported
+# =============================================================================
+
+
+def _is_true(value: Any) -> bool:
+    """TOON may render a boolean as ``true`` or as the string; accept either."""
+    return value is True or value == 'true'
+
+
+def test_harness_source_env_with_a_configured_mismatch(tmp_path: Path) -> None:
+    """An env signal outranking a differently-configured local target is reported."""
+    project = _fixture_project(tmp_path)
+    _write_local_harness(project, 'claude')
+    env = _clean_platform_env()
+    env['OPENCODE'] = '1'
+
+    result = run_script(_PLATFORM_SCRIPT, 'runtime-info', cwd=project, env_overrides=env)
+
+    assert result.returncode == 0, result.stderr
+    parsed = _parse(result.stdout)
+    assert parsed['harness'] == 'opencode'
+    assert parsed['harness_source'] == 'env'
+    assert _is_true(parsed.get('harness_mismatch'))
+    assert parsed['harness_configured'] == 'claude'
+
+
+def test_harness_source_fallback_names_its_reason(tmp_path: Path) -> None:
+    """With no signal at all the tier is fallback and its reason is carried."""
+    project = _fixture_project(tmp_path)
+
+    result = run_script(_PLATFORM_SCRIPT, 'runtime-info', cwd=project, env_overrides=_clean_platform_env())
+
+    assert result.returncode == 0, result.stderr
+    parsed = _parse(result.stdout)
+    assert parsed['harness_source'] == 'fallback'
+    assert parsed['reason'] == 'local_config_absent'
+    assert 'harness_mismatch' not in parsed
