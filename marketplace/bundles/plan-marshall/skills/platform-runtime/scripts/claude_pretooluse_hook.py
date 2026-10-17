@@ -825,30 +825,48 @@ def _has_flag_prefixed_bypass(stripped: list[str]) -> bool:
 _SOURCE_COMMIT_GATE_PHASE = '6-finalize'
 
 
-def _plan_phase(payload: dict[str, Any]) -> str | None:
-    """Read the enclosing plan's phase from the first readable ``status.json``.
+def _worktree_from_path(candidate: str | None) -> tuple[str, str] | None:
+    """Return ``(worktree_root, plan_id)`` a path names, or ``None``.
 
-    Looks under ``<cwd>/.plan/local/plans/*/status.json`` and returns the first
-    non-empty top-level ``phase``. ``None`` when there is no cwd, no plan state,
-    or nothing readable — the raw-commit rule then does not fire.
+    A plan worktree path carries ``.../.plan/local/worktrees/{plan_id}``; the
+    plan id is the segment right after the ``worktrees`` directory. The plan is
+    NAMED by the path, so R6 never judges "the first plan found" by a scan. When
+    a path carries more than one such segment, the INNERMOST (last) names the plan.
     """
-    current = gate.cwd(payload)
-    if not current:
+    if not candidate:
         return None
-    base = pathlib.Path(current) / '.plan' / 'local' / 'plans'
+    normalized = candidate.replace('\\', '/')
+    marker = '/.plan/local/worktrees/'
+    at = normalized.rfind(marker)
+    if at == -1:
+        return None
+    tail = normalized[at + len(marker) :]
+    plan_id = tail.split('/', 1)[0]
+    if not plan_id:
+        return None
+    return normalized[: at + len(marker) + len(plan_id)], plan_id
+
+
+def _plan_phase(payload: dict[str, Any]) -> str | None:
+    """Read the enclosing plan's phase from its own ``status.json``.
+
+    The plan is named by the payload ``cwd`` worktree path; its phase is read
+    from that plan's ``status.json`` field ``current_phase`` — never ``phase``,
+    and never a glob for "the first plan found". ``None`` when the cwd names no
+    plan worktree, or no readable plan state is present — the raw-commit rule
+    then does not fire.
+    """
+    worktree = _worktree_from_path(gate.cwd(payload))
+    if worktree is None:
+        return None
+    worktree_root, plan_id = worktree
+    status_path = pathlib.Path(worktree_root) / '.plan' / 'local' / 'plans' / plan_id / 'status.json'
     try:
-        statuses = sorted(base.glob('*/status.json')) if base.is_dir() else []
-    except OSError:
+        data = json.loads(status_path.read_text(encoding='utf-8'))
+    except (OSError, ValueError):
         return None
-    for path in statuses:
-        try:
-            data = json.loads(path.read_text(encoding='utf-8'))
-        except (OSError, ValueError):
-            continue
-        phase = data.get('phase') if isinstance(data, dict) else None
-        if isinstance(phase, str) and phase:
-            return phase
-    return None
+    phase = data.get('current_phase') if isinstance(data, dict) else None
+    return phase if isinstance(phase, str) and phase else None
 
 
 def _is_git_commit(command: str) -> bool:

@@ -63,17 +63,21 @@
  *   repository never matches.
  *
  *   R6 — a raw `git commit` while the enclosing plan is in phase `6-finalize`
- *   => block. Every plan commit must pass through the gate-bearing
- *   `git-workflow commit` verb, which sanctions an open loop-back fix task, a
- *   review-rubric section-6 record, or a phase-6 settle-band step. Outside
- *   `6-finalize`, or with no plan state present, a raw commit is untouched.
+ *   => block. The plan is NAMED by the worktree path
+ *   (`.../.plan/local/worktrees/{plan_id}`) and its phase is read from that
+ *   plan's own `status.json` field `current_phase` — never `phase`, and never
+ *   "the first plan found" by a directory scan. Every plan commit must pass
+ *   through the gate-bearing `git-workflow commit` verb, which sanctions an open
+ *   loop-back fix task, a review-rubric section-6 record, or a phase-6
+ *   settle-band step. Outside `6-finalize`, or with no plan state present, a raw
+ *   commit is untouched.
  *
  * TOKENISATION PARITY: the R5 branch tokenises with a quoting-aware splitter
  * (`shellSplit`) matching the Python hook's `shlex.split`, strips the SAME
  * wrapper set, and lowercases the program token for the interpreter check, so
  * the two decision tables agree on the interpreter surface.
  */
-import { appendFileSync, mkdirSync, readFileSync, readdirSync } from "node:fs"
+import { appendFileSync, mkdirSync, readFileSync } from "node:fs"
 import path from "node:path"
 import { Plugin } from "@opencode/plugin"
 
@@ -571,31 +575,46 @@ function isGitCommit(command) {
   return false
 }
 
-// The enclosing plan's phase, read from the first plan status.json under the
-// project root. Empty when no plan state is present or none is readable.
-function planPhase(root) {
-  const base = path.join(root, ".plan", "local", "plans")
-  let entries
-  try {
-    entries = readdirSync(base)
-  } catch {
-    return ""
-  }
-  for (const name of entries.sort()) {
+// The plan worktree a path names: `{ root, planId }` for a path carrying
+// `.plan/local/worktrees/{plan_id}`, else null. The plan id is NAMED by the
+// path, so R6 never judges "the first plan found". When a path carries more than
+// one such segment, the INNERMOST (last) names the plan.
+function worktreeFromPath(candidate) {
+  if (typeof candidate !== "string" || !candidate) return null
+  const normalized = candidate.replace(/\\/g, "/")
+  const marker = "/.plan/local/worktrees/"
+  const at = normalized.lastIndexOf(marker)
+  if (at === -1) return null
+  const tail = normalized.slice(at + marker.length)
+  const planId = tail.split("/")[0]
+  if (!planId) return null
+  return { root: normalized.slice(0, at + marker.length + planId.length), planId }
+}
+
+// The enclosing plan's phase, read from the plan's own status.json under the
+// plan worktree the path names (field `current_phase`). Empty when neither the
+// shell workdir nor the project root names a plan worktree, or when no readable
+// plan state is present.
+function planPhase(workdir, root) {
+  for (const candidate of [workdir, root]) {
+    const worktree = worktreeFromPath(candidate)
+    if (worktree === null) continue
+    const statusPath = path.join(worktree.root, ".plan", "local", "plans", worktree.planId, "status.json")
     try {
-      const data = JSON.parse(readFileSync(path.join(base, name, "status.json"), "utf8"))
-      if (data && typeof data.phase === "string" && data.phase) return data.phase
+      const data = JSON.parse(readFileSync(statusPath, "utf8"))
+      if (data && typeof data.current_phase === "string" && data.current_phase) return data.current_phase
     } catch {
-      // Skip an unreadable or malformed status.
+      return ""
     }
   }
   return ""
 }
 
 // R6 — a raw `git commit` in phase 6-finalize is refused: every plan commit
-// must pass through the gate-bearing `git-workflow commit` verb.
-function isRawFinalizeCommit(command, root) {
-  return isGitCommit(command) && planPhase(root) === SOURCE_COMMIT_GATE_PHASE
+// must pass through the gate-bearing `git-workflow commit` verb. The plan is
+// named by the worktree path and its phase read from `current_phase`.
+function isRawFinalizeCommit(command, workdir, root) {
+  return isGitCommit(command) && planPhase(workdir, root) === SOURCE_COMMIT_GATE_PHASE
 }
 
 function auditLine(rule, tool, sessionID, callID, detail) {
@@ -624,6 +643,7 @@ export default Plugin.define({
       const callID = event?.callID ?? event?.callId ?? event?.id ?? "?"
       const args = (event && (event.input ?? event.args ?? event.params)) || {}
       const command = typeof args.command === "string" ? args.command : ""
+      const workdir = typeof args.workdir === "string" ? args.workdir : ""
 
       if (tool === "edit" || tool === "write" || tool === "patch" || tool === "apply_patch") {
         if (targetsExecutor(args)) {
@@ -653,7 +673,7 @@ export default Plugin.define({
         )
       }
 
-      if (isRawFinalizeCommit(command, root)) {
+      if (isRawFinalizeCommit(command, workdir, root)) {
         audit(auditLine("R6", tool, sessionID, callID, command))
         throw new Error(
           "[plan-marshall-guard] R6: a raw git commit is refused in phase 6-finalize — commit through python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow commit (the gate-bearing path), which sanctions an open loop-back fix task, a review-rubric section-6 record, or a settle-band step",

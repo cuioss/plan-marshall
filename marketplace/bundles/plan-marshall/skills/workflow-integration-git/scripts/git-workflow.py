@@ -6,7 +6,7 @@ Git workflow operations - format commits, analyze diffs, manage worktrees.
 Usage:
     git-workflow.py format-commit --type <type> --subject <subject> [options]
     git-workflow.py source-commit-gate (--plan-id <plan-id> | --project-dir <path>) [--phase <phase>] [--changed-paths <csv>]
-    git-workflow.py commit (--plan-id <plan-id> | --project-dir <path>) (--message <msg> | --message-file <path>) [--phase <phase>] [--step <step>] [--push]
+    git-workflow.py commit (--plan-id <plan-id> | --project-dir <path>) (--message <msg> | --message-file <path>) [--step <step>] [--push]
     git-workflow.py analyze-diff (--plan-id <plan-id> | --project-dir <path>) [--cached]
     git-workflow.py detect-artifacts [--root <dir>]
     git-workflow.py force-push-with-lease (--plan-id <plan-id> | --project-dir <path> --branch <branch>)
@@ -357,6 +357,12 @@ def cmd_format_commit(args):
 #: allowed — the gate is a finalize-only refusal, not a general commit policy.
 _SOURCE_COMMIT_GATE_PHASE = '6-finalize'
 
+#: The phase reported when a plan record EXISTS but its phase could not be read.
+#: The commit gate fails CLOSED on it — a source commit from a plan worktree is
+#: refused — while a worktree with no plan record at all (a runbook-lane
+#: worktree) is not ``unknown`` and passes.
+_UNKNOWN_PHASE = 'unknown'
+
 #: Task origins that count as loop-back fix work. ``plan`` is the default for
 #: deliverable work and never qualifies; every other value of the task-contract
 #: origin set names triage-created fix work (see
@@ -468,24 +474,30 @@ def evaluate_source_commit_gate(
     tasks: list[dict] | None,
     findings: list | None,
     step: str | None = None,
+    manifest_steps: frozenset[str] | set[str] | None = None,
 ) -> dict:
     """Evaluate the finalize-phase source-commit gate (pure predicate).
 
     Allow iff the commit is outside the guarded phase, touches only plan
     state, or carries a sanction signal — an open loop-back fix task, a
-    review-rubric section-6 inline-correction record, or a phase-6 settle-band
-    ``step``. Otherwise refuse, naming the loop-back route. Never touches the
-    filesystem — the CLI wrapper resolves the inputs and calls this.
+    review-rubric section-6 inline-correction record, or a step id belonging to
+    the plan's COMPOSED phase-6 manifest. Otherwise refuse, naming the loop-back
+    route. Never touches the filesystem — the CLI wrapper resolves the inputs and
+    calls this.
 
-    The ``step`` sanction is recognised by the STEP IDENTITY, never by scanning
-    a finding for magic words: the dispatcher's commit instrumentation passes
-    the id of the ``mutates_source: true`` step whose edits it is committing,
-    and the source-edit-pushability contract confines such steps to the pre-merge
-    settle band — so a non-empty ``step`` IS a settle-band commit.
+    ``phase`` is the plan's own ``current_phase``. ``None`` means no plan record
+    was resolved for the worktree (a runbook-lane worktree has no plan status, so
+    it passes); ``'unknown'`` means a plan record EXISTS but its phase could not
+    be read, and the gate FAILS CLOSED — a source commit from a plan worktree is
+    refused.
+
+    ``step`` sanctions only when its id is present in ``manifest_steps``, the
+    step-id set of the plan's composed phase-6 manifest. An unknown step id — or
+    a caller that resolved no manifest — sanctions nothing.
     """
     paths = list(changed_paths or [])
     source_paths = [path for path in paths if not is_plan_only_path(path)]
-    if (phase or '') != _SOURCE_COMMIT_GATE_PHASE:
+    if phase not in (_SOURCE_COMMIT_GATE_PHASE, _UNKNOWN_PHASE):
         return {
             'status': 'success',
             'phase': phase,
@@ -505,7 +517,7 @@ def evaluate_source_commit_gate(
             'source_paths': source_paths,
             'message': 'Plan-state-only commit — no source tree touched',
         }
-    if step:
+    if step and manifest_steps and step in manifest_steps:
         return {
             'status': 'success',
             'phase': phase,
@@ -514,7 +526,7 @@ def evaluate_source_commit_gate(
             'step': step,
             'changed_paths': paths,
             'source_paths': source_paths,
-            'message': f'Source-tree commit sanctioned by the settle-band step {step}',
+            'message': f'Source-tree commit sanctioned by the settled phase-6 manifest step {step}',
         }
     if has_open_fix_task(tasks or []):
         return {
@@ -536,6 +548,9 @@ def evaluate_source_commit_gate(
             'source_paths': source_paths,
             'message': 'Source-tree commit sanctioned by a review-rubric section-6 inline-correction record',
         }
+    unknown_note = (
+        'The plan phase could not be resolved (unknown), so the gate fails closed. ' if phase == _UNKNOWN_PHASE else ''
+    )
     return {
         'status': 'success',
         'phase': phase,
@@ -544,35 +559,75 @@ def evaluate_source_commit_gate(
         'changed_paths': paths,
         'source_paths': source_paths,
         'message': (
-            'Source-tree commit refused in 6-finalize: no open loop-back fix task and no '
-            'review-rubric section-6 inline-correction record. Route the fix through a '
-            'loop-back to 5-execute (open a fix task) or record the section-6 inline '
-            'correction, then retry.'
+            unknown_note + 'Source-tree commit refused in 6-finalize: no settle-band manifest step, '
+            'no open loop-back fix task and no review-rubric section-6 inline-correction '
+            'record. Route the fix through a loop-back to 5-execute (open a fix task) or '
+            'record the section-6 inline correction, then retry.'
         ),
     }
 
 
-def _source_gate_plan_dir(worktree: Path, plan_id: str | None) -> Path | None:
-    """Resolve the plan directory holding this plan's tasks and findings.
+#: Path segment that marks a plan worktree: ``.../.plan/local/worktrees/{plan_id}``.
+_WORKTREE_PATH_SEGMENT = ('.plan', 'local', 'worktrees')
 
-    With an explicit plan id that directory is fixed. With no plan id the FIRST
-    plan directory carrying a ``status.json`` under
-    ``<worktree>/.plan/local/plans/`` is used — the same fallback
-    :func:`_plan_phase` applies, so a ``--project-dir``-only commit reads the
-    signals of the plan whose worktree it is.
+
+def _plan_id_from_worktree_path(path: str | Path) -> str | None:
+    """Return the plan id a worktree path names, or ``None``.
+
+    A plan worktree path carries ``.../.plan/local/worktrees/{plan_id}``; the id
+    is the segment right after the ``worktrees`` directory. When a path carries
+    MORE than one such segment (a fixture nested inside a live worktree), the
+    INNERMOST — the last one — names the plan. ``None`` for a path that does not
+    name a plan worktree (so a runbook-lane worktree or a plain checkout resolves
+    to no plan).
     """
-    plans_root = worktree / _PLAN_DIR_NAME / 'local' / 'plans'
-    if plan_id is not None:
-        candidate = plans_root / plan_id
-        return candidate if candidate.is_dir() else None
+    parts = Path(path).as_posix().split('/')
+    found: str | None = None
+    for index in range(len(parts) - 3):
+        if tuple(parts[index : index + 3]) == _WORKTREE_PATH_SEGMENT and parts[index + 3]:
+            found = parts[index + 3]
+    return found
+
+
+def _main_anchored_plan_status_path(plan_id: str) -> Path | None:
+    """Return the main-anchored ``status.json`` for *plan_id*, or ``None``.
+
+    Resolves ``plans/{plan_id}/status.json`` through the single sanctioned
+    main-anchored resolver (ADR-002) — the SAME mechanism the other
+    ``git-workflow`` verbs use — never the worktree-local
+    ``<worktree>/.plan/local/plans`` and never a glob for "the first plan found".
+    The archived shape is the fallback, exactly as :func:`_main_anchored_plan_records`
+    accepts it. ``None`` when no record exists (a runbook-lane worktree).
+    """
     try:
-        candidates = sorted(path for path in plans_root.glob('*') if path.is_dir()) if plans_root.is_dir() else []
-    except OSError:
+        live = resolve_main_anchored_path(f'plans/{plan_id}/status.json')
+        archived_root = resolve_main_anchored_path(DIR_ARCHIVED)
+    except RuntimeError:
         return None
-    for candidate in candidates:
-        if (candidate / 'status.json').is_file():
-            return candidate
-    return candidates[0] if candidates else None
+    if live.is_file():
+        return live
+    for candidate in sorted(archived_root.glob(f'{_ARCHIVE_DATE_GLOB}-{plan_id}')):
+        status = candidate / 'status.json'
+        if status.is_file():
+            return status
+    return None
+
+
+def _source_gate_plan_dir(worktree: Path, plan_id: str | None) -> Path | None:
+    """Resolve the plan directory holding this plan's tasks, findings and manifest.
+
+    The plan id is ``--plan-id`` when given, else the one the worktree path
+    names. The directory is resolved MAIN-ANCHORED (live, then archived) — the
+    same plan whose phase is read — never a scan of the worktree-local
+    ``.plan/local/plans`` for "the first plan". ``None`` when no plan record
+    exists: a runbook-lane worktree reads as no signal (an unreadable store never
+    sanctions a source commit).
+    """
+    resolved_id = plan_id or _plan_id_from_worktree_path(worktree)
+    if not resolved_id:
+        return None
+    status_path = _main_anchored_plan_status_path(resolved_id)
+    return status_path.parent if status_path is not None else None
 
 
 def _source_gate_tasks(plan_dir: Path | None) -> tuple[list[dict], int]:
@@ -724,7 +779,6 @@ def cmd_source_commit_gate(args):
     An unresolvable signal reads as absent (fail closed): unreadable tasks or
     findings never sanction a source commit.
     """
-    phase = getattr(args, 'phase', None) or _SOURCE_COMMIT_GATE_PHASE
     plan_id = getattr(args, 'plan_id', None)
     project_dir = getattr(args, 'project_dir', None)
 
@@ -744,6 +798,8 @@ def cmd_source_commit_gate(args):
                 'one of --plan-id or --project-dir is required',
                 code=ErrorCode.INVALID_INPUT,
             )
+
+    phase = getattr(args, 'phase', None) or _plan_phase(worktree, plan_id)
 
     changed, git_err = _source_gate_changed_paths(worktree, getattr(args, 'changed_paths', None))
     if git_err is not None:
@@ -781,31 +837,64 @@ def _staged_changed_paths(worktree: Path) -> tuple[list[str] | None, dict | None
 
 
 def _plan_phase(worktree: Path, plan_id: str | None) -> str | None:
-    """Resolve the plan phase for the commit gate, or ``None`` when unknown.
+    """Resolve the plan phase for the commit gate.
 
-    Reads the top-level ``phase`` from the plan's ``status.json``. With an
-    explicit plan id that file is fixed; otherwise the FIRST plan directory under
-    ``<worktree>/.plan/local/plans/`` is read. An absent or unreadable status
-    reads as ``None``, and the gate then treats the phase as outside
-    ``6-finalize`` — the same fail-open posture as any unknown phase.
+    The plan id is ``--plan-id`` when given, else the one the worktree path
+    names. The phase is read from the plan's own ``status.json`` field
+    ``current_phase``, located through the main-anchored plan resolution the other
+    ``git-workflow`` verbs use — never ``<worktree>/.plan/local/plans`` and never
+    "the first plan found". Returns:
+
+    * the real phase string when the record resolves and carries ``current_phase``;
+    * ``'unknown'`` when a plan record EXISTS but its phase cannot be read — the
+      gate then fails closed;
+    * ``None`` when the worktree names no plan, or names one with no record — a
+      runbook-lane worktree, whose commits pass.
     """
-    if plan_id:
-        candidates = [worktree / _PLAN_DIR_NAME / 'local' / 'plans' / plan_id / 'status.json']
-    else:
-        base = worktree / _PLAN_DIR_NAME / 'local' / 'plans'
-        try:
-            candidates = sorted(base.glob('*/status.json')) if base.is_dir() else []
-        except OSError:
-            candidates = []
-    for path in candidates:
-        try:
-            data = json.loads(path.read_text(encoding='utf-8'))
-        except (OSError, ValueError):
-            continue
-        phase = data.get('phase') if isinstance(data, dict) else None
-        if isinstance(phase, str) and phase:
-            return phase
-    return None
+    resolved_id = plan_id or _plan_id_from_worktree_path(worktree)
+    if not resolved_id:
+        return None
+    status_path = _main_anchored_plan_status_path(resolved_id)
+    if status_path is None:
+        return None
+    try:
+        data = json.loads(status_path.read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return _UNKNOWN_PHASE
+    phase = data.get('current_phase') if isinstance(data, dict) else None
+    if isinstance(phase, str) and phase:
+        return phase
+    return _UNKNOWN_PHASE
+
+
+def _plan_phase_6_steps(plan_dir: Path | None) -> frozenset[str]:
+    """The plan's composed phase-6 manifest step ids, or an empty set.
+
+    Reads ``execution.toon`` in the plan directory (TOON ``phase_6.steps``) — the
+    ONE composed manifest the phase-6 dispatcher writes. An absent or unreadable
+    manifest yields an empty set, so ``--step`` sanctions nothing: fail closed,
+    never "any non-empty string".
+    """
+    if plan_dir is None:
+        return frozenset()
+    manifest = plan_dir / 'execution.toon'
+    try:
+        text = manifest.read_text(encoding='utf-8')
+    except OSError:
+        return frozenset()
+    try:
+        data = parse_toon(text)
+    except Exception:
+        return frozenset()
+    if not isinstance(data, dict):
+        return frozenset()
+    phase_6 = data.get('phase_6')
+    if not isinstance(phase_6, dict):
+        return frozenset()
+    steps = phase_6.get('steps')
+    if not isinstance(steps, list):
+        return frozenset()
+    return frozenset(str(step) for step in steps if isinstance(step, str) and step)
 
 
 def cmd_commit(args):
@@ -818,8 +907,10 @@ def cmd_commit(args):
     ``6-finalize`` is refused by the guard rule on both harnesses.
 
     Sanctions are the documented ones: an open loop-back fix task, a
-    review-rubric section-6 inline-correction record, or a phase-6 settle-band
-    ``--step``. A ``.plan/``-only commit always passes. On allow it performs the
+    review-rubric section-6 inline-correction record, or a ``--step`` naming a
+    step id of the plan's COMPOSED phase-6 manifest. A ``.plan/``-only commit
+    always passes. The phase comes from the plan's own ``current_phase`` — never
+    a caller-settable ``--phase``. On allow it performs the
     commit (``-F`` message file or ``-m`` message) and, with ``--push``, pushes.
     """
     worktree, err = _resolve_analyze_diff_path(args)
@@ -828,7 +919,7 @@ def cmd_commit(args):
     assert worktree is not None  # narrowing
 
     plan_id = getattr(args, 'plan_id', None)
-    phase = getattr(args, 'phase', None) or _plan_phase(worktree, plan_id)
+    phase = _plan_phase(worktree, plan_id)
     staged, git_err = _staged_changed_paths(worktree)
     if git_err is not None:
         return git_err
@@ -839,7 +930,8 @@ def cmd_commit(args):
     finding_texts, findings_scanned = _source_gate_finding_texts(plan_dir)
 
     step = getattr(args, 'step', None)
-    verdict = evaluate_source_commit_gate(phase, staged, tasks, finding_texts, step=step)
+    manifest_steps = _plan_phase_6_steps(plan_dir)
+    verdict = evaluate_source_commit_gate(phase, staged, tasks, finding_texts, step=step, manifest_steps=manifest_steps)
     if verdict.get('allowed') is not True:
         refusal = make_error(verdict['message'], code=ErrorCode.INVALID_INPUT)
         refusal.update(
@@ -3404,10 +3496,6 @@ Examples:
                         'flags': ['--message-file'],
                         'dest': 'message_file',
                         'help': 'Path to a file holding the commit message (use -F)',
-                    },
-                    {
-                        'flags': ['--phase'],
-                        'help': 'Phase the commit is made in (default: read from plan status.json)',
                     },
                     {
                         'flags': ['--step'],

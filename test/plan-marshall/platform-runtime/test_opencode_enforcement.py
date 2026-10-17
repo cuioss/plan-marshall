@@ -370,26 +370,53 @@ def test_guard_node_allows_python_build_py_out_of_context_but_refuses_in(
 
 
 def test_guard_node_r6_refuses_raw_commit_in_finalize(tmp_path_factory: pytest.TempPathFactory) -> None:
-    """R6: a raw ``git commit`` is refused while the plan is in phase 6-finalize."""
+    """R6: a raw ``git commit`` is refused while the plan is in phase 6-finalize.
+
+    The plan is named by the worktree path and its phase is read from the plan's
+    own ``status.json`` field ``current_phase`` — never an alphabetically-first
+    plan found by a directory scan.
+    """
     harness = build_harness(tmp_path_factory.mktemp('guard-r6'))
-    plan_dir = harness.root / '.plan' / 'local' / 'plans' / 'P'
+    worktree = harness.root / '.plan' / 'local' / 'worktrees' / 'PLAN-A'
+    plan_dir = worktree / '.plan' / 'local' / 'plans' / 'PLAN-A'
     plan_dir.mkdir(parents=True, exist_ok=True)
     status = plan_dir / 'status.json'
 
-    status.write_text(json.dumps({'phase': '6-finalize'}), encoding='utf-8')
-    blocked, message = harness.blocks(shell_event('git commit -m "fix: x"', agent=SUB_AGENT_AGENT))
+    status.write_text(json.dumps({'current_phase': '6-finalize'}), encoding='utf-8')
+    blocked, message = harness.blocks(shell_event('git commit -m "fix: x"', workdir=str(worktree)))
     assert blocked, 'a raw git commit must be refused in 6-finalize'
     assert 'R6' in message, f'the refusal must be rule R6; message={message!r}'
 
-    blocked_opt, _ = harness.blocks(shell_event('git -C . commit -m "fix: y"', agent=SUB_AGENT_AGENT))
+    blocked_opt, _ = harness.blocks(shell_event('git -C . commit -m "fix: y"', workdir=str(worktree)))
     assert blocked_opt, 'git -C . commit must still resolve to the commit subcommand'
 
-    blocked_wrapped, _ = harness.blocks(shell_event('env git commit -m "fix: w"', agent=SUB_AGENT_AGENT))
+    blocked_wrapped, _ = harness.blocks(shell_event('env git commit -m "fix: w"', workdir=str(worktree)))
     assert blocked_wrapped, 'a wrapper-prefixed raw commit must still be refused'
 
-    status.write_text(json.dumps({'phase': '5-execute'}), encoding='utf-8')
-    allowed, _ = harness.blocks(shell_event('git commit -m "fix: z"', agent=SUB_AGENT_AGENT))
+    status.write_text(json.dumps({'current_phase': '5-execute'}), encoding='utf-8')
+    allowed, _ = harness.blocks(shell_event('git commit -m "fix: z"', workdir=str(worktree)))
     assert not allowed, 'a raw commit outside 6-finalize must pass through'
+
+
+def test_guard_node_r6_does_not_judge_another_plans_status(tmp_path_factory: pytest.TempPathFactory) -> None:
+    """R6 reads the phase of the worktree NAMED plan, never the first plan found.
+
+    A finalize plan sits under a DIFFERENT worktree; the committing worktree's own
+    plan is in 5-execute. Resolving by directory scan would refuse this commit.
+    """
+    harness = build_harness(tmp_path_factory.mktemp('guard-r6-named'))
+    other = harness.root / '.plan' / 'local' / 'worktrees' / 'AAA-other'
+    other_plan = other / '.plan' / 'local' / 'plans' / 'AAA-other'
+    other_plan.mkdir(parents=True, exist_ok=True)
+    (other_plan / 'status.json').write_text(json.dumps({'current_phase': '6-finalize'}), encoding='utf-8')
+
+    mine = harness.root / '.plan' / 'local' / 'worktrees' / 'PLAN-Z'
+    my_plan = mine / '.plan' / 'local' / 'plans' / 'PLAN-Z'
+    my_plan.mkdir(parents=True, exist_ok=True)
+    (my_plan / 'status.json').write_text(json.dumps({'current_phase': '5-execute'}), encoding='utf-8')
+
+    blocked, message = harness.blocks(shell_event('git commit -m "fix: x"', workdir=str(mine)))
+    assert not blocked, f'the commit must be judged by PLAN-Z (5-execute), not AAA-other; message={message!r}'
 
 
 def test_guard_node_r6_no_plan_state_does_not_fire(tmp_path_factory: pytest.TempPathFactory) -> None:

@@ -1162,12 +1162,16 @@ def test_hook_writes_no_log_without_a_cwd() -> None:
 
 
 def test_r6_refuses_raw_commit_in_finalize(tmp_path) -> None:
-    """A raw ``git commit`` is refused while the plan is in phase 6-finalize."""
+    """A raw ``git commit`` is refused while the plan is in phase 6-finalize.
+
+    The plan is named by the worktree path (``plan-a``) and its phase is read from
+    that plan's own ``status.json`` field ``current_phase``.
+    """
     worktree = tmp_path / '.plan' / 'local' / 'worktrees' / 'plan-a'
-    plan_dir = worktree / '.plan' / 'local' / 'plans' / 'P'
+    plan_dir = worktree / '.plan' / 'local' / 'plans' / 'plan-a'
     plan_dir.mkdir(parents=True)
     status = plan_dir / 'status.json'
-    status.write_text(json.dumps({'phase': '6-finalize'}), encoding='utf-8')
+    status.write_text(json.dumps({'current_phase': '6-finalize'}), encoding='utf-8')
 
     payload = {'cwd': str(worktree), 'tool_name': 'Bash', 'tool_input': _bash('git commit -m "fix: x"')}
     assert hook.evaluate(payload) == hook._R6_REASON
@@ -1185,16 +1189,16 @@ def test_r6_refuses_raw_commit_in_finalize(tmp_path) -> None:
     assert hook.evaluate(payload_wrapped) == hook._R6_REASON
 
     # Outside 6-finalize the same raw commit passes.
-    status.write_text(json.dumps({'phase': '5-execute'}), encoding='utf-8')
+    status.write_text(json.dumps({'current_phase': '5-execute'}), encoding='utf-8')
     assert hook.evaluate(payload) is None
 
 
 def test_r6_ignores_non_commit_git_subcommands(tmp_path) -> None:
     """Only ``git commit`` is refused — other git subcommands pass through."""
     worktree = tmp_path / '.plan' / 'local' / 'worktrees' / 'plan-a'
-    plan_dir = worktree / '.plan' / 'local' / 'plans' / 'P'
+    plan_dir = worktree / '.plan' / 'local' / 'plans' / 'plan-a'
     plan_dir.mkdir(parents=True)
-    (plan_dir / 'status.json').write_text(json.dumps({'phase': '6-finalize'}), encoding='utf-8')
+    (plan_dir / 'status.json').write_text(json.dumps({'current_phase': '6-finalize'}), encoding='utf-8')
 
     for command in ('git status', 'git log --oneline', 'git add foo'):
         payload = {'cwd': str(worktree), 'tool_name': 'Bash', 'tool_input': _bash(command)}
@@ -1206,6 +1210,24 @@ def test_r6_needs_plan_state(tmp_path) -> None:
     worktree = tmp_path / 'plain'
     worktree.mkdir()
     payload = {'cwd': str(worktree), 'tool_name': 'Bash', 'tool_input': _bash('git commit -m "fix: x"')}
+    assert hook.evaluate(payload) is None
+
+
+def test_r6_judges_the_named_plan_not_the_first_found(tmp_path) -> None:
+    """R6 reads the phase of the worktree NAMED plan, never the first plan found."""
+    other = tmp_path / '.plan' / 'local' / 'worktrees' / 'AAA-other'
+    (other / '.plan' / 'local' / 'plans' / 'AAA-other').mkdir(parents=True)
+    (other / '.plan' / 'local' / 'plans' / 'AAA-other' / 'status.json').write_text(
+        json.dumps({'current_phase': '6-finalize'}), encoding='utf-8'
+    )
+
+    mine = tmp_path / '.plan' / 'local' / 'worktrees' / 'PLAN-Z'
+    (mine / '.plan' / 'local' / 'plans' / 'PLAN-Z').mkdir(parents=True)
+    (mine / '.plan' / 'local' / 'plans' / 'PLAN-Z' / 'status.json').write_text(
+        json.dumps({'current_phase': '5-execute'}), encoding='utf-8'
+    )
+
+    payload = {'cwd': str(mine), 'tool_name': 'Bash', 'tool_input': _bash('git commit -m "fix: x"')}
     assert hook.evaluate(payload) is None
 
 
