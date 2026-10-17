@@ -176,11 +176,13 @@ def run_validate(plan_id: str, kind: str, verdict_file: str, verifier_file: str 
     an ``accepted`` verifier answer; every other outcome reports it false.
 
     When the plan carries a criteria snapshot (the criteria-integrity regime) the
-    verdict must also match the reviewer's recorded output — a verdict the
-    review's own verb did not write, or one edited after it did, is refused — and
-    every criterion the frozen snapshot holds that the current outline no longer
-    carries verbatim is a blocking finding. The same regime checks that each
-    ``met`` criterion's cited paths and test names exist at the graded head. A
+    FUNCTIONAL verdict must also match the reviewer's recorded output — a verdict
+    the review's own verb did not write, or one edited after it did, is refused —
+    and every criterion the frozen snapshot holds that the current outline no
+    longer carries verbatim is a blocking finding. The same regime checks that
+    each ``met`` criterion's cited paths and test names exist at the graded head.
+    The authorship check is functional-only: the code review's findings file is
+    not covered by the freeze, and its own document writes and validates it. A
     plan without a snapshot is the legacy shape: there is nothing frozen to
     compare against, so only the verdict's own rules apply.
     """
@@ -189,7 +191,7 @@ def run_validate(plan_id: str, kind: str, verdict_file: str, verifier_file: str 
         return error_payload(plan_id, 'verdict_file_unreadable', f'{verdict_file}: {problem}')
     grading = Grading()
     snapshot = read_snapshot(plan_id)
-    if snapshot is not None:
+    if snapshot is not None and kind == KIND_FUNCTIONAL:
         authorship = authorship_problem(verdict)
         if authorship:
             grading.errors.append(f'{verdict_file}: {authorship}')

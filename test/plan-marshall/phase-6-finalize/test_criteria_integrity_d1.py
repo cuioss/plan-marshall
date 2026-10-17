@@ -198,3 +198,31 @@ def test_spec_done_when_an_outline_criterion_covers_is_not_a_finding(env, plan_c
 
     assert [f for f in payload['findings'] if f['kind'] == 'spec_criterion_missing'] == []
     assert payload['valid'] is True
+
+
+# --- D1: the seal covers the FUNCTIONAL verdict, not the code review's findings file --------
+
+
+def test_code_kind_findings_file_is_not_covered_by_the_freeze(env, plan_context, tmp_path) -> None:
+    """The code review writes its findings file with the Write tool, so the seal must not hold it."""
+    _plan(plan_context, FROZEN, freeze_from=FROZEN)
+    findings = {
+        'findings': [
+            {
+                'rule': {'form': 'pack_rule', 'ref': 'python.R1'},
+                'location': 'src/parser.py:12',
+                'failure_scenario': 'an empty input returns the previous parse',
+                'failure_class': 'none',
+                'title': 'stale parse returned',
+            }
+        ],
+        'domains_reviewed': ['python'],
+        'files_read': ['src/parser.py'],
+    }
+    path = tmp_path / 'code.json'
+    path.write_text(json.dumps(findings), encoding='utf-8')
+
+    payload = review_support.run_validate(PLAN_ID, 'code', str(path), None)
+
+    assert payload['valid'] is True
+    assert payload['errors'] == []

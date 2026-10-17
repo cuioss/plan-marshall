@@ -313,7 +313,7 @@ python3 .plan/execute-script.py plan-marshall:phase-6-finalize:review_support ve
   --plan-id {plan_id} --gate {gate} --check --commit {commit}
 ```
 
-Run that once per verify-first gate the plan declares, with the commit the gate gates. A `status: error` return means the gate's evidence was recorded at or after the action it gated, or was never recorded at all — either way the gate did not run before the thing it licenses, and the round reports it as a blocking finding naming the gate. A `status: success` return means every recorded evidence entry predates the commit. When the plan declares no verify-first gate, run nothing.
+Run that once per verify-first gate the plan declares, with the commit the gate gates. A `status: error` return with `verify_first_evidence_postdates_commit` or `verify_first_evidence_missing` means the gate's evidence was recorded at or after the action it gated, or was never recorded at all — either way the gate did not run before the thing it licenses, and the round reports it as a blocking finding naming the gate. The other two errors (`worktree_unresolved`, `unknown_commit`) mean the check could not run at all: nothing was evaluated, so the round reports that instead, never a gate finding. A `status: success` return means every recorded evidence entry predates the commit. When the plan declares no verify-first gate, run nothing.
 
 ### 3f. Write the verdict file — and seal it
 
