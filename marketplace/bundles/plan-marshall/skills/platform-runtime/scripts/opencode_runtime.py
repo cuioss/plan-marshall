@@ -460,63 +460,70 @@ def _normalize_fs_path(value: str) -> str:
         return expanded.as_posix().rstrip('/')
 
 
-def _resolve_project_id(conn: sqlite3.Connection, project_dir: str | None) -> str | None:
+def _resolve_project_id(conn: sqlite3.Connection, project_dir: str | None) -> tuple[bool, str | None]:
     """Resolve the project id whose worktree path matches *project_dir*.
 
-    Reads the ``project`` table's worktree-path column and returns the id of the
-    row whose path equals *project_dir*. ``None`` when there is no ``project``
-    table, no usable id/path column, or no matching row — the caller then does
-    not filter, so a fixture database without a project table keeps working.
+    Returns ``(project_table_present, project_id)``. The first element is True
+    when a ``project`` table with usable id and path columns exists, whatever the
+    match outcome — so the caller can fail CLOSED when a project table exists but
+    no row matches the worktree (the reporter must not compare another project's
+    approvals). ``(False, None)`` when there is no such table: the fixture shape,
+    which is read unscoped.
     """
-    if not project_dir:
-        return None
     try:
         info = conn.execute('PRAGMA table_info("project")').fetchall()
     except sqlite3.Error:
-        return None
+        return False, None
     if not info:
-        return None
+        return False, None
     columns = [str(col[1]) for col in info]
     id_col = _column_lookup(columns, _PROJECT_ID_COLUMNS)
     path_col = _column_lookup(columns, _PROJECT_PATH_COLUMNS)
     if id_col is None or path_col is None:
-        return None
+        return False, None
+    if not project_dir:
+        return True, None
     target = _normalize_fs_path(project_dir)
     try:
         for row_id, row_path in conn.execute(f'SELECT "{id_col}", "{path_col}" FROM "project"'):
             if isinstance(row_path, str) and _normalize_fs_path(row_path) == target:
-                return str(row_id)
+                return True, str(row_id)
     except sqlite3.Error:
-        return None
-    return None
+        return True, None
+    return True, None
 
 
 def _list_persisted_allow_rows(
     conn: sqlite3.Connection, project_dir: str | None = None
-) -> tuple[list[dict[str, Any]], bool]:
+) -> tuple[list[dict[str, Any]], str]:
     """List persisted allow rows from every permission-like table, read-only.
 
-    Returns ``(rows, recognised)``. ``recognised`` is True when at least ONE
-    table carried the permission shape — a pattern-like column plus EITHER a
-    decision-like column (the declared shape) OR a ``tool``/``action`` column
-    (the LIVE shape, in which every row is a persisted allow because the table
-    has no decision column). When no table matches, the schema is unrecognised
-    and the caller MUST report ``checkable: false`` rather than a clean result:
-    an empty read of an unknown schema is an unmeasured observation, never
-    evidence that nothing contradicts.
+    Returns ``(rows, state)`` where ``state`` is one of:
 
-    Only ``SELECT`` statements run here; this helper never writes. Rows are
-    scoped to *project_dir* by the table's own ``project_id`` column when the
-    ``project`` table resolves an id for it; a database with no ``project`` table
-    is read unscoped so fixture shapes keep working. A decision column named
-    ``action`` is only honored alongside an explicit ``tool`` column, so a
-    list-shape ``(action, resource)`` table is not misread as ``(tool, decision)``.
-    The table-list query error propagates so the caller maps an unreadable
-    database to checkable False / db_unreadable.
+    * ``'recognised'`` — a permission-shaped table was read;
+    * ``'project_unresolved'`` — a ``project`` table exists but no row's worktree
+      path matches *project_dir*, so rows CANNOT be scoped to this project and the
+      read fails closed (the caller reports ``checkable: false``) rather than
+      comparing another project's approvals against this project's denies;
+    * ``'schema_unrecognised'`` — no table carried the permission shape.
+
+    A permission table is recognised when it carries a pattern-like column plus
+    EITHER a decision-like column (the declared shape) OR a ``tool``/``action``
+    column (the LIVE shape, in which every row is a persisted allow because the
+    table has no decision column).
+
+    Only ``SELECT`` statements run here; this helper never writes. A database with
+    no ``project`` table is read unscoped so fixture shapes keep working. A
+    decision column named ``action`` is only honored alongside an explicit
+    ``tool`` column, so a list-shape ``(action, resource)`` table is not misread
+    as ``(tool, decision)``. The table-list query error propagates so the caller
+    maps an unreadable database to checkable False / db_unreadable.
     """
     tables = [row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")]
     prioritized = sorted(tables, key=lambda name: 0 if name.lower() in ('permission', 'permissions') else 1)
-    project_id = _resolve_project_id(conn, project_dir)
+    project_present, project_id = _resolve_project_id(conn, project_dir)
+    if project_present and project_id is None:
+        return [], 'project_unresolved'
     rows: list[dict[str, Any]] = []
     recognised = False
     for table in prioritized:
@@ -566,7 +573,7 @@ def _list_persisted_allow_rows(
                 )
         except sqlite3.Error:
             continue
-    return rows, recognised
+    return rows, 'recognised' if recognised else 'schema_unrecognised'
 
 
 class OpenCodeRuntime(Runtime):
@@ -1372,7 +1379,7 @@ class OpenCodeRuntime(Runtime):
                 },
             )
         try:
-            allow_rows, recognised = _list_persisted_allow_rows(conn, project_dir)
+            allow_rows, state = _list_persisted_allow_rows(conn, project_dir)
         except sqlite3.Error:
             return toon_success(
                 PERSISTED_CONTRADICTION_OPERATION,
@@ -1389,12 +1396,12 @@ class OpenCodeRuntime(Runtime):
                 conn.close()
             except sqlite3.Error:
                 pass
-        if not recognised:
+        if state != 'recognised':
             return toon_success(
                 PERSISTED_CONTRADICTION_OPERATION,
                 {
                     'checkable': False,
-                    'reason': 'schema_unrecognised',
+                    'reason': state,
                     'db_path': str(resolved_db),
                     'persisted_allow_count': 0,
                     'contradictions': [],

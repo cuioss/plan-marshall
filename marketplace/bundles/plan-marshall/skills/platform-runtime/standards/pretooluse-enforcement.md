@@ -62,7 +62,7 @@ one-line `permissionDecisionReason`; on no match it emits nothing.
 | **R3 generated-executor edit** | An Edit/Write whose path is the generated `.plan/execute-script.py` | Regenerate the executor via `/sync-harnesses` + `/marshall-steward`; never edit it |
 | **R4 hard-coded build** | A Bash command invoking `./pw` or a bare `mvn` / `npm` / `gradle` | Resolve build commands via `plan-marshall:manage-architecture:architecture resolve` |
 | **R5 direct interpreter call** | A Bash command invoking an interpreter (`python` / `python3` / a versioned spelling such as `python3.12`, case-insensitively) as `-c`, a script path, or `-m` with any module — except the `python3 .plan/execute-script.py` executor permit (which may be an absolute path) and the shared allow-list of documented non-executor invocations. **R5 is not context-gated: it applies in every session, root sessions included.** Wrapper prefixes (`command` / `env` / `sudo` / `timeout` / `nice` / `nohup` / `time` / `xargs`, including `env -S`) are stripped first, so a wrapper cannot hide the interpreter | Route builds and checks via `python3 .plan/execute-script.py`; `.plan` state via `manage-*` verbs or the Read/Edit/Write tools |
-| **R6 raw finalize commit** | A raw `git commit` while the enclosing plan — NAMED by the worktree path and resolved MAIN-ANCHORED (its `status.json` field `current_phase`), never `<worktree>/.plan/local/plans` and never "the first plan found" — is in phase `6-finalize`. Every plan commit must pass through the gate-bearing `git-workflow commit` verb, which sanctions an open loop-back fix task, a review-rubric section-6 record, or a step id of the plan's composed phase-6 manifest | Commit via `python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow commit` |
+| **R6 raw finalize commit** | A raw `git commit` while the enclosing plan — NAMED by the worktree path, its `status.json` field `current_phase` read from the WORKTREE-RESIDENT record first (the live one during phase 5+) and the main-anchored record otherwise, never "the first plan found" — is in phase `6-finalize`. Every plan commit must pass through the gate-bearing `git-workflow commit` verb, which sanctions an open loop-back fix task, a review-rubric section-6 record, or a step id of the plan's composed phase-6 manifest | Commit via `python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow commit` |
 
 ### R5 — allow-list, wrappers, and the audit line
 
@@ -76,9 +76,13 @@ documented workflows runnable. Three things make that split explicit:
   plugin read the SAME file, so the two decision tables agree. An entry is a
   REPOSITORY-RELATIVE path, matched EXACTLY against the invocation's script path
   resolved against the repository root — never a basename and never a suffix, so a
-  copy of an allow-listed script outside the repository never matches. When the
-  file is absent the hook uses a narrow built-in base table
-  (`marketplace/targets/sync.py`); the executor permit is hardcoded separately.
+  copy of an allow-listed script outside the repository never matches. A RELATIVE
+  token is joined with the shell's working directory FIRST, so a same-named script
+  under a different cwd resolves outside the repository and is refused; the root
+  is the project directory (the guard's `ctx.location.directory`; the hook's
+  `CLAUDE_PROJECT_DIR`, falling back to `cwd`). When the file is absent the hook
+  uses a narrow built-in base table (`marketplace/targets/sync.py`); the executor
+  permit is hardcoded separately.
 - **Wrappers and versioned interpreters.** A prefix cannot hide the interpreter:
   the shell wrappers above (with their options and, for `timeout`, its mandatory
   duration) are stripped before the interpreter check, `env -S` / `--split-string`

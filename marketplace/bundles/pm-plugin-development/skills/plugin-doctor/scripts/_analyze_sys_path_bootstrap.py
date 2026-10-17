@@ -111,11 +111,6 @@ _ALLOWLIST: frozenset[str] = frozenset(
         'plan-marshall/skills/tools-permission-doctor/scripts/permission_doctor.py',
         'plan-marshall/skills/platform-runtime/scripts/platform_runtime.py',
         'plan-marshall/skills/platform-runtime/scripts/claude_runtime.py',
-        # A Claude PreToolUse hook, invoked DIRECTLY by the harness (never via the
-        # executor), so no PYTHONPATH is injected. Its R6 plan-phase read uses the
-        # shared marketplace_paths resolver — the one sanctioned main-anchored
-        # resolver — which is a sibling skill's script directory.
-        'plan-marshall/skills/platform-runtime/scripts/claude_pretooluse_hook.py',
         # 2. Functional lazy-imports (add a directory on demand, degrade gracefully)
         'plan-marshall/skills/script-shared/scripts/marketplace_paths.py',
         'plan-marshall/skills/manage-architecture/scripts/_architecture_core.py',

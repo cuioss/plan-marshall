@@ -241,6 +241,32 @@ def test_runbook_lane_worktree_without_plan_record_passes(tmp_path: Path) -> Non
     assert _commit_count(tmp_path) == 2
 
 
+def test_worktree_resident_plan_record_is_read(tmp_path: Path) -> None:
+    """The LIVE record during phase 5+ is the worktree-resident one.
+
+    ``prepare_execute`` MOVES the plan directory into the worktree, so a real
+    finalize plan keeps its ``status.json`` under the worktree. The gate must read
+    it (the recorded defect was that it did not engage on a real plan).
+    """
+    _init_repo(tmp_path)
+    worktree = _worktree(tmp_path, 'plan-a')
+    plan_dir = worktree / '.plan' / 'local' / 'plans' / 'plan-a'
+    plan_dir.mkdir(parents=True)
+    (plan_dir / 'status.json').write_text(json.dumps({'current_phase': '6-finalize'}), encoding='utf-8')
+    (plan_dir / 'execution.toon').write_text(_manifest_toon('plan-a', ['pre-push-quality-gate']), encoding='utf-8')
+    _stage(tmp_path, 'src/a.py')
+
+    refused, code = _run_commit(tmp_path, worktree)
+    assert refused.get('refused') is True, f'{refused!r}'
+    assert refused['phase'] == '6-finalize'
+    assert refused['reason'] == 'no_sanction'
+
+    sanctioned, ok = _run_commit(tmp_path, worktree, '--step', 'pre-push-quality-gate')
+    assert sanctioned['status'] == 'success', f'{sanctioned!r}'
+    assert sanctioned['reason'] == 'settle_band_step'
+    assert ok == 0
+
+
 def test_unresolvable_phase_reports_unknown_and_refuses(tmp_path: Path) -> None:
     """A plan whose ``current_phase`` cannot be read reports ``unknown`` and refuses."""
     _init_repo(tmp_path)

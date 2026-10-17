@@ -44,9 +44,12 @@ of its own. The only logic it owns is the R1-R6 rule matchers and the
   ``env -S``) are stripped first, so a wrapper cannot hide the interpreter. The
   allow set is otherwise executor-only, so every ``-m`` form refuses.
 - **R6 raw finalize commit** — a raw ``git commit`` while the enclosing plan is
-  in phase ``6-finalize``. Every plan commit must pass through the gate-bearing
-  ``git-workflow commit`` verb; outside ``6-finalize`` a raw commit is
-  untouched.
+  in phase ``6-finalize``. The plan is NAMED by the payload ``cwd`` worktree path
+  (never "the first plan found") and its phase is read from that plan's own
+  ``status.json`` field ``current_phase`` — the worktree-resident record first
+  (the live one during phase 5+), then the main-anchored record. Every plan
+  commit must pass through the gate-bearing ``git-workflow commit`` verb; outside
+  ``6-finalize`` a raw commit is untouched.
 
 Control flow:
 
@@ -72,7 +75,9 @@ from __future__ import annotations
 
 import datetime
 import json
+import os
 import pathlib
+import posixpath
 import re
 import shlex
 import sys
@@ -654,21 +659,27 @@ def _r5_allowlist_entries() -> tuple[str, ...]:
     return _R5_ALLOWLIST_BASE
 
 
-def _repo_relative_path(raw: str, root: str | None) -> str | None:
+def _repo_relative_path(raw: str, root: str | None, cwd: str | None = None) -> str | None:
     """Resolve *raw* to its repository-relative path, or ``None`` when outside.
 
-    An ABSOLUTE token is made relative to *root* and refused when it does not lie
-    under it; a RELATIVE token is normalized (a leading ``./`` collapsed, ``..``
-    segments applied) and refused when it escapes the root. The result is matched
-    EXACTLY against an allow-list entry, so a basename — or a copy of an
-    allow-listed script outside the repository — never matches. Mirrors the
-    guard's ``repoRelativePath``.
+    A RELATIVE token is joined with *cwd* (the shell's working directory) first,
+    so a token that would execute a copy OUTSIDE the repository — e.g. a
+    same-named script under the shell's cwd — resolves outside *root* and is
+    refused. The joined (or absolute) token is then made relative to *root* and
+    refused when it does not lie under it. The result is matched EXACTLY against
+    an allow-list entry, so a basename — or a copy of an allow-listed script
+    outside the repository — never matches. Mirrors the guard's
+    ``repoRelativePath``.
     """
     token = _strip_matched_quotes(raw).replace('\\', '/')
     if not token:
         return None
+    if not token.startswith('/'):
+        base = (cwd or '').replace('\\', '/').rstrip('/')
+        if base:
+            token = posixpath.normpath(f'{base}/{token}')
+    normalized_root = (root or '').replace('\\', '/').rstrip('/')
     if token.startswith('/'):
-        normalized_root = (root or '').replace('\\', '/').rstrip('/')
         if not normalized_root:
             return None
         prefix = normalized_root + '/'
@@ -688,18 +699,29 @@ def _repo_relative_path(raw: str, root: str | None) -> str | None:
     return '/'.join(parts) if parts else None
 
 
-def _is_allow_listed(command: str, root: str | None) -> bool:
+def _allow_list_root(payload: dict[str, Any]) -> str | None:
+    """The repository root the allow-list resolves against.
+
+    ``CLAUDE_PROJECT_DIR`` pins the session's project directory independently of
+    the shell's working directory, so a command cannot move the root by running
+    from elsewhere; the payload ``cwd`` is the fallback.
+    """
+    return os.environ.get('CLAUDE_PROJECT_DIR') or gate.cwd(payload)
+
+
+def _is_allow_listed(command: str, root: str | None, cwd: str | None) -> bool:
     """Whether *command*'s second stripped token resolves to an allow-list entry.
 
     Matched EXACTLY on the token's repository-relative path, resolved against the
-    repository root *root*. Never a basename and never a suffix: a copy of an
-    allow-listed script outside the repository resolves to ``None`` and is
-    refused. Mirrors the guard's ``isAllowListed``.
+    repository root *root* (the relative token joined with the shell *cwd* first).
+    Never a basename and never a suffix: a copy of an allow-listed script outside
+    the repository resolves to ``None`` and is refused. Mirrors the guard's
+    ``isAllowListed``.
     """
     stripped = _r5_stripped_tokens(command)
     if len(stripped) < 2:
         return False
-    relative = _repo_relative_path(stripped[1], root)
+    relative = _repo_relative_path(stripped[1], root, cwd)
     if relative is None:
         return False
     return relative in _r5_allowlist_entries()
@@ -759,7 +781,10 @@ def _is_c_m_cluster(text: str) -> bool:
 
 
 def _match_r5_interpreter_call(
-    tool_name: str | None, tool_input: dict[str, Any], root: str | None = None
+    tool_name: str | None,
+    tool_input: dict[str, Any],
+    root: str | None = None,
+    cwd: str | None = None,
 ) -> str | None:
     """R5 — direct python interpreter call bypassing the executor.
 
@@ -786,7 +811,7 @@ def _match_r5_interpreter_call(
     second = _strip_matched_quotes(_second_token(command).strip())
     if not second:
         return None
-    if _is_allow_listed(command, root):
+    if _is_allow_listed(command, root, cwd):
         return None
     if second in ('-c', '-m'):
         return _R5_REASON
@@ -825,12 +850,6 @@ def _has_flag_prefixed_bypass(stripped: list[str]) -> bool:
 _SOURCE_COMMIT_GATE_PHASE = '6-finalize'
 
 
-#: The sibling skill's ``scripts/`` directory, where the shared
-#: ``marketplace_paths`` resolver lives. Resolved relative to this file so the
-#: deployed hook finds it in the installed skill tree.
-_SHARED_SCRIPTS_DIR = pathlib.Path(__file__).resolve().parent.parent.parent / 'script-shared' / 'scripts'
-
-
 def _plan_id_from_worktree_path(candidate: str | None) -> str:
     """Return the plan id a path names, or ``""``.
 
@@ -853,14 +872,13 @@ def _main_anchored_status_path(plan_id: str) -> pathlib.Path | None:
     """Resolve ``plans/{plan_id}/status.json`` MAIN-ANCHORED, or ``None``.
 
     Uses the sanctioned ``marketplace_paths.resolve_main_anchored_path`` — the
-    SAME resolver the other ``git-workflow`` verbs use — so R6 reads the same plan
-    record the commit gate does. ``None`` when the shared module is not deployed
-    beside this skill, or no main checkout resolves, so R6 does not fire rather
-    than guess.
+    SAME resolver the other ``git-workflow`` verbs use. The hook is dispatched
+    through ``.plan/execute-script.py`` (see
+    ``claude_runtime._ENFORCEMENT_HOOK_COMMAND``), so the executor's PYTHONPATH
+    already covers the sibling skill's scripts directory and the import needs no
+    bootstrap. ``None`` when no main checkout resolves, so R6 does not fire.
     """
     try:
-        if str(_SHARED_SCRIPTS_DIR) not in sys.path:
-            sys.path.insert(0, str(_SHARED_SCRIPTS_DIR))
         import marketplace_paths
     except ImportError:
         return None
@@ -873,24 +891,35 @@ def _main_anchored_status_path(plan_id: str) -> pathlib.Path | None:
 def _plan_phase(payload: dict[str, Any]) -> str | None:
     """Read the enclosing plan's phase from its own ``status.json``.
 
-    The plan is named by the payload ``cwd`` worktree path; its phase is read
-    from that plan's ``status.json`` field ``current_phase``, resolved
-    MAIN-ANCHORED — never from ``<cwd>/.plan/local/plans`` and never a glob for
-    "the first plan found". ``None`` when the cwd names no plan worktree, or no
-    readable record resolves — the raw-commit rule then does not fire.
+    The plan is named by the payload ``cwd`` worktree path (never "the first plan
+    found"). The record is the WORKTREE-RESIDENT one first — the live record
+    during phase 5+, where ``prepare_execute`` moves the plan directory into the
+    worktree — then the main-anchored live record. ``None`` when the cwd names no
+    plan worktree, or no readable record resolves — the raw-commit rule then does
+    not fire.
     """
-    plan_id = _plan_id_from_worktree_path(gate.cwd(payload))
+    cwd = gate.cwd(payload)
+    plan_id = _plan_id_from_worktree_path(cwd)
     if not plan_id:
         return None
-    status_path = _main_anchored_status_path(plan_id)
-    if status_path is None:
+    candidates: list[pathlib.Path | None] = []
+    if cwd:
+        candidates.append(pathlib.Path(cwd) / '.plan' / 'local' / 'plans' / plan_id / 'status.json')
+    candidates.append(_main_anchored_status_path(plan_id))
+    for status_path in candidates:
+        if status_path is None:
+            continue
+        try:
+            data = json.loads(status_path.read_text(encoding='utf-8'))
+        except FileNotFoundError:
+            continue
+        except (OSError, ValueError):
+            return None
+        phase = data.get('current_phase') if isinstance(data, dict) else None
+        if isinstance(phase, str) and phase:
+            return phase
         return None
-    try:
-        data = json.loads(status_path.read_text(encoding='utf-8'))
-    except (OSError, ValueError):
-        return None
-    phase = data.get('current_phase') if isinstance(data, dict) else None
-    return phase if isinstance(phase, str) and phase else None
+    return None
 
 
 def _is_git_commit(command: str) -> bool:
@@ -1022,7 +1051,7 @@ def evaluate(payload: dict[str, Any]) -> str | None:
             if reason is not None:
                 _append_guard_log(payload, rule_name, _refusal_detail(payload))
                 return reason
-    reason = _match_r5_interpreter_call(tool_name, tool_input, gate.cwd(payload))
+    reason = _match_r5_interpreter_call(tool_name, tool_input, _allow_list_root(payload), gate.cwd(payload))
     if reason is not None:
         _append_guard_log(payload, 'R5', _refusal_detail(payload))
         return reason

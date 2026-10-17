@@ -590,16 +590,21 @@ def _plan_id_from_worktree_path(path: str | Path) -> str | None:
     return found
 
 
-def _main_anchored_plan_status_path(plan_id: str) -> Path | None:
-    """Return the main-anchored ``status.json`` for *plan_id*, or ``None``.
+def _plan_record_path(plan_id: str, worktree: Path | None) -> Path | None:
+    """Return the plan's ``status.json``, or ``None``.
 
-    Resolves ``plans/{plan_id}/status.json`` through the single sanctioned
-    main-anchored resolver (ADR-002) — the SAME mechanism the other
-    ``git-workflow`` verbs use — never the worktree-local
-    ``<worktree>/.plan/local/plans`` and never a glob for "the first plan found".
-    The archived shape is the fallback, exactly as :func:`_main_anchored_plan_records`
-    accepts it. ``None`` when no record exists (a runbook-lane worktree).
+    Precedence, because the plan directory MOVES between main and its worktree
+    (ADR-002): during phase 5+ ``prepare_execute`` moves it INTO the worktree, so
+    the worktree-resident record is the LIVE one and is preferred; the
+    main-anchored live record (via the single sanctioned resolver,
+    ``resolve_main_anchored_path``) is next, and the archived record last. The
+    plan is NAMED by ``plan_id`` at every step — never a glob for "the first plan
+    found". ``None`` when no record exists (a runbook-lane worktree).
     """
+    if worktree is not None:
+        resident = worktree / _PLAN_DIR_NAME / 'local' / 'plans' / plan_id / 'status.json'
+        if resident.is_file():
+            return resident
     try:
         live = resolve_main_anchored_path(f'plans/{plan_id}/status.json')
         archived_root = resolve_main_anchored_path(DIR_ARCHIVED)
@@ -618,16 +623,16 @@ def _source_gate_plan_dir(worktree: Path, plan_id: str | None) -> Path | None:
     """Resolve the plan directory holding this plan's tasks, findings and manifest.
 
     The plan id is ``--plan-id`` when given, else the one the worktree path
-    names. The directory is resolved MAIN-ANCHORED (live, then archived) — the
-    same plan whose phase is read — never a scan of the worktree-local
-    ``.plan/local/plans`` for "the first plan". ``None`` when no plan record
-    exists: a runbook-lane worktree reads as no signal (an unreadable store never
-    sanctions a source commit).
+    names. The directory is resolved by :func:`_plan_record_path` (worktree-
+    resident first, then main-anchored live, then archived) — the SAME plan whose
+    phase is read — never a scan of a plans directory for "the first plan".
+    ``None`` when no plan record exists: a runbook-lane worktree reads as no
+    signal (an unreadable store never sanctions a source commit).
     """
     resolved_id = plan_id or _plan_id_from_worktree_path(worktree)
     if not resolved_id:
         return None
-    status_path = _main_anchored_plan_status_path(resolved_id)
+    status_path = _plan_record_path(resolved_id, worktree)
     return status_path.parent if status_path is not None else None
 
 
@@ -842,9 +847,10 @@ def _plan_phase(worktree: Path, plan_id: str | None) -> str | None:
 
     The plan id is ``--plan-id`` when given, else the one the worktree path
     names. The phase is read from the plan's own ``status.json`` field
-    ``current_phase``, located through the main-anchored plan resolution the other
-    ``git-workflow`` verbs use — never ``<worktree>/.plan/local/plans`` and never
-    "the first plan found". Returns:
+    ``current_phase``, resolved by :func:`_plan_record_path` (the worktree-
+    resident record first — the live one during phase 5+ — then the
+    main-anchored live record, then the archived record); never a scan for "the
+    first plan found". Returns:
 
     * the real phase string when the record resolves and carries ``current_phase``;
     * ``'unknown'`` when a plan record EXISTS but its phase cannot be read — the
@@ -855,7 +861,7 @@ def _plan_phase(worktree: Path, plan_id: str | None) -> str | None:
     resolved_id = plan_id or _plan_id_from_worktree_path(worktree)
     if not resolved_id:
         return None
-    status_path = _main_anchored_plan_status_path(resolved_id)
+    status_path = _plan_record_path(resolved_id, worktree)
     if status_path is None:
         return None
     try:
@@ -3468,7 +3474,10 @@ Examples:
                     },
                     {
                         'flags': ['--phase'],
-                        'help': 'Phase the commit is made in (default: 6-finalize — fail closed)',
+                        'help': (
+                            "Phase override (default: the plan's current_phase; "
+                            'no plan record means the gate does not apply)'
+                        ),
                     },
                     {
                         'flags': ['--changed-paths'],

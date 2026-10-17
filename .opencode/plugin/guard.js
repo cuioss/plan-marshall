@@ -65,13 +65,14 @@
  *   R6 — a raw `git commit` while the enclosing plan is in phase `6-finalize`
  *   => block. The plan is NAMED by the worktree path
  *   (`.../.plan/local/worktrees/{plan_id}`) and its phase is read from that
- *   plan's own `status.json` field `current_phase`, resolved MAIN-ANCHORED (the
- *   git common dir, or a `PLAN_BASE_DIR` override) — never from
- *   `<worktree>/.plan/local/plans` and never "the first plan found" by a
- *   directory scan. Every plan commit must pass through the gate-bearing
- *   `git-workflow commit` verb, which sanctions an open loop-back fix task, a
- *   review-rubric section-6 record, or a composed phase-6 manifest step. Outside
- *   `6-finalize`, or with no plan state present, a raw commit is untouched.
+ *   plan's own `status.json` field `current_phase` — the worktree-resident
+ *   record first (the live one during phase 5+), then the main-anchored record
+ *   (git's common dir, or a `PLAN_BASE_DIR` override). Never "the first plan
+ *   found" by a directory scan. Every plan commit must pass through the
+ *   gate-bearing `git-workflow commit` verb, which sanctions an open loop-back
+ *   fix task, a review-rubric section-6 record, or a composed phase-6 manifest
+ *   step. Outside `6-finalize`, or with no plan state present, a raw commit is
+ *   untouched.
  *
  * TOKENISATION PARITY: the R5 branch tokenises with a quoting-aware splitter
  * (`shellSplit`) matching the Python hook's `shlex.split`, strips the SAME
@@ -386,17 +387,37 @@ function isExecutorPermit(command) {
   return second === ".plan/execute-script.py" || second.endsWith("/.plan/execute-script.py")
 }
 
+// Collapse a posix path to its normal form (`..` applied, no empty segments),
+// always absolute-joined so the caller can test repository containment.
+function normalizePosixPath(value) {
+  const segments = []
+  for (const part of String(value).replace(/\\/g, "/").split("/")) {
+    if (part === "" || part === ".") continue
+    if (part === "..") {
+      segments.pop()
+      continue
+    }
+    segments.push(part)
+  }
+  return "/" + segments.join("/")
+}
+
 // Resolve a script token to its repository-relative path, or null when it does
-// not resolve inside the repository. An ABSOLUTE token is made relative to the
-// repository root and refused when it lies outside it; a RELATIVE token is
-// normalized (a leading `./` collapsed, `..` segments applied) and refused when
-// it escapes the root. Matching then compares this key EXACTLY against an
-// allow-list entry, so a basename (or a copy of an allow-listed script outside
-// the repository) can never match — the suffix hole PLAN-LB-62 shipped.
-function repoRelativePath(raw, root) {
+// not resolve inside the repository. A RELATIVE token is joined with `cwd` (the
+// shell's working directory) first, so a token that would execute a copy OUTSIDE
+// the repository — a same-named script under the shell's cwd — resolves outside
+// `root` and is refused. The joined (or absolute) token is then made relative to
+// `root`. Matching compares this key EXACTLY against an allow-list entry, so a
+// basename (or a copy of an allow-listed script outside the repository) can never
+// match — the suffix hole PLAN-LB-62 shipped.
+function repoRelativePath(raw, root, cwd) {
   if (!raw || typeof raw !== "string") return null
   let token = raw.trim().replace(/\\/g, "/")
   const normalizedRoot = (root || "").replace(/\\/g, "/").replace(/\/+$/, "")
+  if (!token.startsWith("/") && cwd) {
+    const base = String(cwd).replace(/\\/g, "/").replace(/\/+$/, "")
+    if (base.startsWith("/")) token = normalizePosixPath(base + "/" + token)
+  }
   if (token.startsWith("/")) {
     if (!normalizedRoot) return null
     const prefix = normalizedRoot + "/"
@@ -417,11 +438,11 @@ function repoRelativePath(raw, root) {
 }
 
 // Whether a second token is on the shared allow-list, matched EXACTLY on its
-// repository-relative path (resolved against the repository root).
-function isAllowListed(command, entries, root) {
+// repository-relative path (the relative token joined with the shell `cwd`).
+function isAllowListed(command, entries, root, cwd) {
   const tokens = commandTokens(command)
   if (tokens.length < 2) return false
-  const relative = repoRelativePath(stripMatchedQuotes(tokens[1]), root)
+  const relative = repoRelativePath(stripMatchedQuotes(tokens[1]), root, cwd)
   if (relative === null) return false
   return entries.includes(relative)
 }
@@ -577,17 +598,19 @@ function isGitCommit(command) {
   return false
 }
 
-// The plan id a path names, or "" — the segment after `.plan/local/worktrees`.
-// The plan is NAMED by the path, so R6 never judges "the first plan found".
-// When a path carries more than one such segment, the INNERMOST (last) names it.
-function planIdFromWorktreePath(candidate) {
-  if (typeof candidate !== "string" || !candidate) return ""
+// The plan worktree a path names: `{ root, planId }` for a path carrying
+// `.plan/local/worktrees/{plan_id}`, else null. The plan is NAMED by the path,
+// so R6 never judges "the first plan found". When a path carries more than one
+// such segment, the INNERMOST (last) names the plan.
+function worktreeInfoFromPath(candidate) {
+  if (typeof candidate !== "string" || !candidate) return null
   const normalized = candidate.replace(/\\/g, "/")
   const marker = "/.plan/local/worktrees/"
   const at = normalized.lastIndexOf(marker)
-  if (at === -1) return ""
+  if (at === -1) return null
   const planId = normalized.slice(at + marker.length).split("/")[0]
-  return planId || ""
+  if (!planId) return null
+  return { root: normalized.slice(0, at + marker.length + planId.length), planId }
 }
 
 // The MAIN checkout's `.plan/local` directory — the anchor the plan resolution
@@ -611,19 +634,31 @@ function mainPlanLocalDir(root) {
   }
 }
 
-// The enclosing plan's phase, read from the plan's own status.json (field
-// `current_phase`) MAIN-ANCHORED — the plan NAMED by the worktree path, never
-// `<worktree>/.plan/local/plans` and never "the first plan found". Empty when no
-// plan worktree is named, or no readable record resolves.
+// The enclosing plan's phase, read from the plan's own status.json field
+// `current_phase`. The plan is NAMED by the worktree path (never "the first plan
+// found"); the record is the WORKTREE-RESIDENT one first — the live record during
+// phase 5+, where prepare_execute moves the plan directory — then the
+// main-anchored live record. Empty when no plan worktree is named, or no readable
+// record resolves.
 function planPhase(workdir, root) {
-  const planId = planIdFromWorktreePath(workdir) || planIdFromWorktreePath(root)
+  const planId = worktreeInfoFromPath(workdir)?.planId || worktreeInfoFromPath(root)?.planId || ""
   if (!planId) return ""
+  const candidates = []
+  const worktree = worktreeInfoFromPath(workdir) || worktreeInfoFromPath(root)
+  if (worktree !== null) {
+    candidates.push(path.join(worktree.root, ".plan", "local", "plans", planId, "status.json"))
+  }
   const base = mainPlanLocalDir(root)
-  if (base === null) return ""
-  try {
-    const data = JSON.parse(readFileSync(path.join(base, "plans", planId, "status.json"), "utf8"))
+  if (base !== null) candidates.push(path.join(base, "plans", planId, "status.json"))
+  for (const candidate of candidates) {
+    let data
+    try {
+      data = JSON.parse(readFileSync(candidate, "utf8"))
+    } catch (error) {
+      if (error && error.code === "ENOENT") continue
+      return ""
+    }
     if (data && typeof data.current_phase === "string" && data.current_phase) return data.current_phase
-  } catch {
     return ""
   }
   return ""
@@ -737,7 +772,7 @@ export default Plugin.define({
         }
         // R5 applies in EVERY session — root sessions included — with no
         // plan-context gate. The allow-list is matched on the repo-relative path.
-        if (isAllowListed(command, allowList, root)) return
+        if (isAllowListed(command, allowList, root, workdir || root)) return
         if (isInterpreterBypass(tokenAt(command, 1)) || hasFlagPrefixedBypass(command)) {
           audit(auditLine("R5", tool, sessionID, callID, command))
           throw new Error(

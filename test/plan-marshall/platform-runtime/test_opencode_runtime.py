@@ -1541,3 +1541,29 @@ def test_reporter_scopes_live_rows_to_the_project(runtime: OpenCodeRuntime, tmp_
     # Only THIS project's row is read; the other project's ``grep *`` is not.
     assert result['persisted_allow_count'] == 1
     assert result['contradictions'] == []
+
+
+def test_reporter_unresolved_project_is_uncheckable(runtime: OpenCodeRuntime, tmp_path: pathlib.Path) -> None:
+    """A project table that does not list this worktree fails closed, never unscoped."""
+    _write_deny_config(tmp_path, ['grep *'])
+    db_path = tmp_path / 'opencode.db'
+    elsewhere = tmp_path / 'elsewhere'
+    elsewhere.mkdir()
+    conn = sqlite3.connect(str(db_path))
+    try:
+        conn.execute('CREATE TABLE project (id TEXT PRIMARY KEY, worktree TEXT)')
+        conn.execute('INSERT INTO project (id, worktree) VALUES (?, ?)', ('proj-9', str(elsewhere)))
+        conn.execute(
+            'CREATE TABLE permission (id INTEGER PRIMARY KEY, project_id TEXT, action TEXT, resource TEXT, '
+            'time_created TEXT, time_updated TEXT)'
+        )
+        conn.execute("INSERT INTO permission (project_id, action, resource) VALUES ('proj-9', 'shell', 'grep *')")
+        conn.commit()
+    finally:
+        conn.close()
+
+    result = _parse(runtime.permission_report_persisted_contradictions(str(tmp_path), str(db_path)))
+
+    assert result['checkable'] is False
+    assert result['reason'] == 'project_unresolved'
+    assert result['contradictions'] == []

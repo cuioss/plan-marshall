@@ -532,7 +532,9 @@ PM_MARKETPLACE_ROOT=/abs/path/to/checkout python3 /abs/path/to/checkout/.plan/ex
 
 `{GENERATE_EXECUTOR}` stands for the generator script's path — the
 cache-relative `skills/tools-script-executor/scripts/generate_executor.py` under
-the deployed plugin cache, or the same path under a checkout.
+the deployed plugin cache, or
+`marketplace/bundles/plan-marshall/skills/tools-script-executor/scripts/generate_executor.py`
+under the checkout root.
 
 The path passed to `--marketplace-root` (and `PM_MARKETPLACE_ROOT`) is the
 checkout root that contains `marketplace/bundles`, not the bundles directory

@@ -1236,6 +1236,39 @@ def test_r6_judges_the_named_plan_not_the_first_found(tmp_path, monkeypatch) -> 
     assert hook.evaluate(payload) is None
 
 
+def test_r6_reads_the_worktree_resident_record(tmp_path) -> None:
+    """R6 reads the WORKTREE-RESIDENT record — the live one during phase 5+."""
+    worktree = tmp_path / '.plan' / 'local' / 'worktrees' / 'plan-a'
+    plan_dir = worktree / '.plan' / 'local' / 'plans' / 'plan-a'
+    plan_dir.mkdir(parents=True)
+    (plan_dir / 'status.json').write_text(json.dumps({'current_phase': '6-finalize'}), encoding='utf-8')
+
+    payload = {'cwd': str(worktree), 'tool_name': 'Bash', 'tool_input': _bash('git commit -m "fix: x"')}
+    assert hook.evaluate(payload) == hook._R6_REASON
+
+
+def test_r5_refuses_a_relative_script_outside_the_pinned_root(tmp_path, monkeypatch) -> None:
+    """A relative allow-listed token run from another cwd resolves outside the repo."""
+    monkeypatch.setenv('CLAUDE_PROJECT_DIR', str(tmp_path))
+    payload = {
+        'cwd': '/tmp/elsewhere',
+        'tool_name': 'Bash',
+        'tool_input': _bash('python3 marketplace/targets/sync.py --target opencode'),
+    }
+    assert hook.evaluate(payload) == hook._R5_REASON
+
+
+def test_r5_allows_a_relative_script_under_the_pinned_root(tmp_path, monkeypatch) -> None:
+    """The matched negative: the same token under the pinned root is allowed."""
+    monkeypatch.setenv('CLAUDE_PROJECT_DIR', str(tmp_path))
+    payload = {
+        'cwd': str(tmp_path),
+        'tool_name': 'Bash',
+        'tool_input': _bash('python3 marketplace/targets/sync.py --target opencode'),
+    }
+    assert hook.evaluate(payload) is None
+
+
 # =============================================================================
 # D1 — R5 protects every session; the allow-list is exact (PLAN-LB-65)
 # =============================================================================

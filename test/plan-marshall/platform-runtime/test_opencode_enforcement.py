@@ -418,6 +418,29 @@ def test_guard_node_r6_does_not_judge_another_plans_status(tmp_path_factory: pyt
     assert not blocked, f'the commit must be judged by plan-z (5-execute), not aaa-other; message={message!r}'
 
 
+def test_guard_node_r6_reads_the_worktree_resident_record(tmp_path_factory: pytest.TempPathFactory) -> None:
+    """R6 reads the WORKTREE-RESIDENT plan record — the live one during phase 5+."""
+    harness = build_harness(tmp_path_factory.mktemp('guard-r6-resident'))
+    worktree = harness.root / '.plan' / 'local' / 'worktrees' / 'plan-a'
+    plan_dir = worktree / '.plan' / 'local' / 'plans' / 'plan-a'
+    plan_dir.mkdir(parents=True, exist_ok=True)
+    (plan_dir / 'status.json').write_text(json.dumps({'current_phase': '6-finalize'}), encoding='utf-8')
+
+    blocked, message = harness.blocks(shell_event('git commit -m "fix: x"', workdir=str(worktree)))
+    assert blocked, f'the worktree-resident record must drive R6; message={message!r}'
+    assert 'R6' in message
+
+
+def test_guard_node_refuses_a_relative_script_from_outside_the_project(
+    tmp_path_factory: pytest.TempPathFactory,
+) -> None:
+    """A relative allow-listed token run from another cwd resolves outside the repo."""
+    harness = build_harness(tmp_path_factory.mktemp('guard-r5-cwd'))
+    blocked, message = harness.blocks(shell_event('python3 marketplace/targets/sync.py', workdir='/tmp/elsewhere'))
+    assert blocked, f'a copy under another cwd must be refused; message={message!r}'
+    assert 'R5' in message
+
+
 def test_guard_node_r6_no_plan_state_does_not_fire(tmp_path_factory: pytest.TempPathFactory) -> None:
     """R6 needs plan state: with no status.json a raw commit is untouched."""
     harness = build_harness(tmp_path_factory.mktemp('guard-r6-none'))
