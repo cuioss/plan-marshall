@@ -1,0 +1,62 @@
+= INTER-{{NUMBER}}: {{TITLE}}
+:toc: left
+:toclevels: 3
+:sectnums:
+
+== Overview
+
+{{OVERVIEW}}
+
+== Interface Type
+
+{{INTERFACE_TYPE}}
+
+== Contract Definition
+
+=== Request/Input
+
+{{INPUT_DEFINITION}}
+
+=== Response/Output
+
+{{OUTPUT_DEFINITION}}
+
+=== Error Handling
+
+{{ERROR_HANDLING}}
+
+== Authentication & Authorization
+
+{{AUTH_REQUIREMENTS}}
+
+== Versioning
+
+{{VERSIONING}}
+
+== Examples
+
+=== Request Example
+
+[source,{{EXAMPLE_FORMAT}}]
+----
+{{REQUEST_EXAMPLE}}
+----
+
+=== Response Example
+
+[source,{{EXAMPLE_FORMAT}}]
+----
+{{RESPONSE_EXAMPLE}}
+----
+
+== Consumers
+
+{{CONSUMERS}}
+
+== Providers
+
+{{PROVIDERS}}
+
+== References
+
+{{REFERENCES}}
