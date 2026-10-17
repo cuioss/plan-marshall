@@ -752,9 +752,12 @@ def _run_bootstrap_generate(generator: Path, anchor: Path, project_dir: Path) ->
 
 
 #: Import-failure markers in a probe's stderr: the Python import-error phrases
-#: and the executor's own bootstrap-guard message (``cannot start:``), which
-#: prints instead of a traceback when the failed import coincides with an
-#: unresolved bootstrap directory. ``ImportError`` covers the whole family —
+#: and the executor's own bootstrap-guard prefix
+#: (``execute-script.py cannot start:``), which prints instead of a traceback
+#: when the failed import coincides with an unresolved bootstrap directory. The
+#: guard prefix is EXACT, not the bare ``cannot start:``: a generic substring
+#: would classify any unrelated stderr carrying those words as an import failure
+#: and rewrite the executor unconsented. ``ImportError`` covers the whole family —
 #: ``ModuleNotFoundError`` and every other subclass — and a subprocess probe
 #: wraps argparse errors in none of them, so no non-import failure is
 #: misclassified. The boundary is deliberate: only an IMPORT error (or the
@@ -762,7 +765,12 @@ def _run_bootstrap_generate(generator: Path, anchor: Path, project_dir: Path) ->
 #: NON-import failure — a syntax error, or a direct ``SystemExit`` — carries
 #: none of these markers, so it stays inconclusive and is reported under the
 #: consent gate instead of forcing an ungated rewrite.
-_IMPORT_FAILURE_MARKERS = ('ModuleNotFoundError', 'ImportError', 'No module named', 'cannot start:')
+_IMPORT_FAILURE_MARKERS = (
+    'ModuleNotFoundError',
+    'ImportError',
+    'No module named',
+    'execute-script.py cannot start:',
+)
 
 #: Timeout for the read-only executor import probe.
 _BOOTSTRAP_PROBE_TIMEOUT_SECONDS = 30

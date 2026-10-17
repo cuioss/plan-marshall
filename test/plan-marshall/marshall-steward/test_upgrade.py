@@ -1460,6 +1460,73 @@ def test_bootstrap_undecodable_probe_output_does_not_force_recovery(tmp_path: Pa
     assert fake.calls == []
 
 
+def test_bootstrap_executor_guard_message_forces_recovery(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """The executor's own unresolved-bootstrap guard line IS an import failure.
+
+    When the failed import coincides with an unresolved bootstrap directory the
+    executor prints ``execute-script.py cannot start: …`` and exits instead of a
+    traceback; that guard form must still force the ungated recovery.
+    """
+    cache = _fixture_cache(tmp_path, ['0.1.10'])
+    clone = tmp_path / 'clone'
+    _fixture_meta_generator(clone)
+    executor = _fixture_executor(clone, '0.1.10')
+    executor.write_text(
+        "MARSHALL_VERSION = '0.1.10'\n"
+        'import sys\n'
+        "sys.stderr.write('execute-script.py cannot start: No module named plan_logging.\\n')\n"
+        'raise SystemExit(1)\n',
+        encoding='utf-8',
+    )
+    fake = _RegenerateFake(executor, '0.1.10')
+    monkeypatch.chdir(clone)
+
+    report = upgrade.bootstrap_executor(
+        project_kind='meta',
+        cache_root=cache,
+        executor_path=executor,
+        _run_generate=fake,
+        allow_regenerate=False,
+    )
+
+    assert report['status'] == 'success'
+    assert report['action'] == 'regenerated'
+    assert len(fake.calls) == 1
+
+
+def test_bootstrap_unrelated_cannot_start_text_does_not_force_recovery(tmp_path: Path):
+    """Only the executor guard's own prefix is a marker — an unrelated line is not.
+
+    A generic ``cannot start:`` substring would classify any stderr that happens to
+    contain it as an import failure and rewrite the executor without consent on
+    evidence that names no broken import. The guard prefix is exact.
+    """
+    cache = _fixture_cache(tmp_path, ['0.1.9', '0.1.10'])
+    project = tmp_path / 'project'
+    executor = _fixture_executor(project, '0.1.9')
+    executor.write_text(
+        "MARSHALL_VERSION = '0.1.9'\n"
+        'import sys\n'
+        "sys.stderr.write('widget service cannot start: unrelated message\\n')\n"
+        'raise SystemExit(1)\n',
+        encoding='utf-8',
+    )
+    fake = _RegenerateFake(executor, '0.1.10')
+
+    report = upgrade.bootstrap_executor(
+        project_kind='consumer',
+        cache_root=cache,
+        executor_path=executor,
+        _run_generate=fake,
+        allow_regenerate=False,
+    )
+
+    assert report['status'] == 'success'
+    assert report['action'] == 'regenerate_required'
+    assert 'bootstrap true' in report['warning']
+    assert fake.calls == []
+
+
 def test_plan_recovers_from_an_executor_that_fails_to_import(
     capsys: pytest.CaptureFixture[str], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
