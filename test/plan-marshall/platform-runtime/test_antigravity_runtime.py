@@ -818,6 +818,21 @@ def test_project_initial_setup_does_not_rewrite_clobbered_target_rules(
     assert bridge.is_file()
 
 
+def test_installed_rules_clobbered_tolerates_invalid_utf8(tmp_path: Path) -> None:
+    """A non-UTF-8 installed rules file is judged, never raised on."""
+    from antigravity_runtime import installed_rules_clobbered
+
+    installed = tmp_path / '.agents' / 'rules' / 'plan-marshall-target-rules.md'
+    installed.parent.mkdir(parents=True, exist_ok=True)
+    installed.write_bytes(b'\xff\xfe bridge-version: 1 \xff tail')
+
+    assert installed_rules_clobbered(tmp_path) is True
+
+    installed.write_bytes(b'\xff\xfe no marker here \xff')
+
+    assert installed_rules_clobbered(tmp_path) is False
+
+
 def test_reconcile_standing_rules_bridge_heals_missing_bridge(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     """Observe-only reconcile reports a missing bridge without healing it."""
     from antigravity_runtime import _bridge_rules_path

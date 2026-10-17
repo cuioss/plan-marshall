@@ -472,6 +472,29 @@ def test_plain_bridge_stub_is_healed_by_setup_to_current(plan_env):
     assert 'bridge-version' in bridge.read_text(encoding='utf-8')
 
 
+def test_reconcile_tolerates_non_utf8_bridge(plan_env):
+    """A non-UTF-8 bridge file reconciles as not-current, never raises."""
+    project_dir = plan_env['project_dir']
+    bridge = project_dir / '.opencode' / 'rules' / 'plan-marshall-standing-rules.md'
+    bridge.parent.mkdir(parents=True, exist_ok=True)
+    bridge.write_bytes(b'\xff\xfe no marker \xff')
+
+    assert ch._reconcile_standing_rules_bridge('opencode', project_dir) is False
+
+
+def test_configure_harness_tolerates_non_utf8_installed_rules(plan_env):
+    """A non-UTF-8 installed rules file is reported clobbered, never raises."""
+    project_dir = plan_env['project_dir']
+    installed = project_dir / '.opencode' / 'rules' / 'plan-marshall-target-rules.md'
+    installed.parent.mkdir(parents=True, exist_ok=True)
+    installed.write_bytes(b'\xff\xfe bridge-version: 1 \xff tail')
+
+    res = ch.configure_harness(harness_override='opencode', plan_dir=plan_env['plan_dir'], project_dir=project_dir)
+
+    assert res['installed_rules_clobbered'] is True
+    assert res['installed_rules_restore_command'] == './install.sh --emit-rules'
+
+
 def test_configure_harness_reports_clobbered_target_rules(plan_env):
     """A stub left in the installed target rules is reported with the restore command."""
     project_dir = plan_env['project_dir']
@@ -559,6 +582,33 @@ def test_configure_harness_reports_failed_setup(plan_env, monkeypatch: pytest.Mo
 
     res = ch.configure_harness(harness_override='opencode', plan_dir=plan_env['plan_dir'], project_dir=project_dir)
 
+    assert res['setup_failed'] is True
+    assert res['bridge_verdict'] == 'missing'
+
+
+def test_configure_harness_stops_writers_when_setup_reports_failure(plan_env, monkeypatch: pytest.MonkeyPatch):
+    """A non-success setup status stops the later writers and is reported."""
+    project_dir = plan_env['project_dir']
+    calls: list[str] = []
+
+    class _FailingStatusRuntime:
+        def project_initial_setup(self, project_dir_arg: str, target: str) -> dict:
+            calls.append('project_initial_setup')
+            return {'status': 'error'}
+
+        def project_install_hook(self, target: str) -> None:
+            calls.append('project_install_hook')
+
+        def opencode_enforcement_apply(self, project_dir_arg: str) -> None:
+            calls.append('opencode_enforcement_apply')
+
+    import platform_runtime
+
+    monkeypatch.setattr(platform_runtime, '_make_runtime', lambda _harness: _FailingStatusRuntime())
+
+    res = ch.configure_harness(harness_override='opencode', plan_dir=plan_env['plan_dir'], project_dir=project_dir)
+
+    assert calls == ['project_initial_setup']
     assert res['setup_failed'] is True
     assert res['bridge_verdict'] == 'missing'
 

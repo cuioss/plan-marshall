@@ -120,7 +120,7 @@ def _reconcile_standing_rules_bridge(harness: str, project_dir: Path) -> bool:
         return (proj / 'AGENTS.md').is_file() or (proj / 'CLAUDE.md').is_file()
     if bridge.is_file():
         try:
-            text = bridge.read_text(encoding='utf-8')
+            text = bridge.read_text(encoding='utf-8', errors='replace')
         except OSError:
             return False
         # Boundary-aware marker match: the setup-written bridge embeds the
@@ -143,8 +143,9 @@ def dispatch_platform_runtime_setup(harness: str, project_dir: Path) -> dict[str
     (never retyped here), and bare file existence never overrides a failed
     reconcile. The setup writers always run — a bridge verdict never returns
     before them — so session-boundary enforcement is never skipped by a
-    bridge verdict; only a failing setup stops them (the install hook keeps
-    its pre-existing cwd gate), and the failure is reported as such.
+    bridge verdict; only a failing setup (one that raises or returns a
+    non-success status) stops the later writers (the install hook keeps its
+    pre-existing cwd gate), and the failure is reported as such.
 
     Returns a dict with:
 
@@ -191,9 +192,9 @@ def dispatch_platform_runtime_setup(harness: str, project_dir: Path) -> dict[str
                                     print(f'persisted approval warning: {warning}', file=sys.stderr)
                     except Exception:
                         setup_ok = False
-            if hasattr(rt, 'project_install_hook') and proj == Path.cwd().resolve():
+            if setup_ok and hasattr(rt, 'project_install_hook') and proj == Path.cwd().resolve():
                 rt.project_install_hook(harness)
-            if hasattr(rt, 'opencode_enforcement_apply'):
+            if setup_ok and hasattr(rt, 'opencode_enforcement_apply'):
                 rt.opencode_enforcement_apply(str(proj))
     except Exception:
         setup_ok = False

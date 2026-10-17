@@ -91,13 +91,14 @@ def _installed_rules_path(project_dir: Path) -> Path:
 def installed_rules_clobbered(project_dir: Path) -> bool:
     """Report whether a previous setup left its bridge stub in the installed rules.
 
-    Read-only: the installed target rules belong to the ``install.sh``
-    emit path (``--workspace`` / ``--emit-rules``), so this never writes.
-    A file carrying the bridge
-    marker is a clobbered install and is restored with that emit command.
+    Read-only: the installed target rules belong to the ``install.sh`` emit
+    path (``--workspace`` / ``--emit-rules``), so this never writes. A file
+    carrying the bridge marker is a clobbered install and is restored with that
+    emit command. Non-UTF-8 bytes are decoded with replacement, so a malformed
+    file is judged rather than raised on.
     """
     try:
-        text = _installed_rules_path(project_dir).read_text(encoding='utf-8')
+        text = _installed_rules_path(project_dir).read_text(encoding='utf-8', errors='replace')
     except OSError:
         return False
     return _BRIDGE_MARKER_PATTERN.search(text) is not None

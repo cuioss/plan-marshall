@@ -1246,6 +1246,21 @@ def test_project_initial_setup_does_not_rewrite_clobbered_target_rules(
     assert bridge.is_file()
 
 
+def test_installed_rules_clobbered_tolerates_invalid_utf8(tmp_path: pathlib.Path) -> None:
+    """A non-UTF-8 installed rules file is judged, never raised on."""
+    from opencode_runtime import installed_rules_clobbered
+
+    installed = tmp_path / '.opencode' / 'rules' / 'plan-marshall-target-rules.md'
+    installed.parent.mkdir(parents=True, exist_ok=True)
+    installed.write_bytes(b'\xff\xfe bridge-version: 1 \xff tail')
+
+    assert installed_rules_clobbered(tmp_path) is True
+
+    installed.write_bytes(b'\xff\xfe no marker here \xff')
+
+    assert installed_rules_clobbered(tmp_path) is False
+
+
 # =============================================================================
 # Persisted-approval contradiction reporter (D3)
 # =============================================================================
