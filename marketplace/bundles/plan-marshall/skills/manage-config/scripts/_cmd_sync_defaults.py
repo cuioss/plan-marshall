@@ -11,9 +11,7 @@ pick up new default rows without losing user-set overrides.
 
 from _cmd_quality_phases import (
     _find_dead_step_ids,
-    _read_removed_steps,
     _resolve_finalize_step_lane,
-    _write_removed_steps,
 )
 from _config_core import (
     error_exit,
@@ -26,6 +24,8 @@ from _config_defaults import (
     BOT_LISTS_PROVENANCE_ANSWERED,
     BOT_LISTS_PROVENANCE_KEY,
     BOT_LISTS_PROVENANCE_MIGRATED,
+    DEAD_REMOVED_STEP_ORIGIN,
+    DEAD_REMOVED_STEPS_KEY,
     OPERATOR_REMOVED_STEPS_KEY,
     OPERATOR_STEP_MAP_LOCATIONS,
     RETIRED_UNCONSUMED_KEYS,
@@ -649,7 +649,23 @@ def _backfill_standard_roster(merged: dict, *, enabled: bool) -> bool:
     return changed
 
 
-def _remove_dead_step_ids(live: dict, dead_reports: list[str], kept_reports: list[str]) -> dict:
+def _read_dead_removed_steps(section: dict) -> dict:
+    """Return the section's dead-removal record map, or ``{}`` when absent/malformed.
+
+    Reads ``section[DEAD_REMOVED_STEPS_KEY]`` as a fresh dict when it is one,
+    else an empty dict. Never raises — a malformed value degrades to "no
+    records yet" rather than failing the verb.
+    """
+    raw = section.get(DEAD_REMOVED_STEPS_KEY)
+    return dict(raw) if isinstance(raw, dict) else {}
+
+
+def _remove_dead_step_ids(
+    live: dict,
+    dead_reports: list[str],
+    kept_reports: list[str],
+    sweep: dict[str, str],
+) -> dict:
     """Remove genuinely-dead phase-6 step ids, failing closed on unresolved discovery.
 
     Runs the shared :func:`_cmd_quality_phases._find_dead_step_ids` resolver
@@ -659,20 +675,34 @@ def _remove_dead_step_ids(live: dict, dead_reports: list[str], kept_reports: lis
 
     - ``'unknown'`` — discovery did NOT resolve (a scan surface was unreadable),
       so an empty discovery result is no evidence of death. NOTHING is deleted
-      for that id; the configured entry is left exactly as it is.
+      for that id; the configured entry is left exactly as it is. The sweep
+      descriptor is marked ``unknown`` with the first such entry's reason, so
+      the caller reports an unresolved sweep explicitly instead of a clean
+      empty ``dead_removed``.
     - ``'dead'`` on an EXTERNAL step (``project:`` / ``bundle:skill``) — the id
       is unresolvable by design (no project-local source doc declares the
       ext-point) and the lane materializer leaves such a step untouched, so it is
       KEPT and reported in ``kept_reports``, never deleted.
     - ``'dead'`` on a built-in step — genuinely dead: it is dropped from the map
-      (its nested params go with it), its id is recorded in the phase's
-      ``removed_steps`` list so a later back-fill crossing it reads as an
-      operator-decision crossing rather than a routine addition, and it is
+      and recorded in the phase's dedicated ``dead_removed_steps`` map as
+      ``{step_id: {'origin': 'dead_step', 'params': <the removed row's nested
+      params>}}``. The record is deliberately NOT written to the operator
+      ``removed_steps`` list: it must stay distinguishable from an operator
+      removal, so a later back-fill crossing a dead-removed id reads as a
+      routine hold rather than as crossing an operator decision. The id is
       reported in ``dead_reports``.
 
     Runs BEFORE the deep-merge so the merge never treats a dead id as a kept
     step to back-fill params into. Idempotent: once no dead id remains, a re-run
     reports nothing. Mutates ``live`` in place and returns it.
+
+    Args:
+        live: The live config. ``plan.phase-6-finalize.steps`` is swept in place.
+        dead_reports: Accumulator of removed-dead-id report strings.
+        kept_reports: Accumulator of kept-external-step report strings.
+        sweep: Sweep outcome descriptor, filled in place: ``status`` becomes
+            ``'unknown'`` (from the initial ``'resolved'``) with ``reason`` set
+            to the first unresolved entry's reason as soon as one is seen.
     """
     plan = live.get('plan')
     if not isinstance(plan, dict):
@@ -684,11 +714,15 @@ def _remove_dead_step_ids(live: dict, dead_reports: list[str], kept_reports: lis
     if not isinstance(steps_map, dict):
         return live
 
-    removed_ids: list[str] = []
+    dead_records: dict[str, dict] = {}
     for entry in _find_dead_step_ids(list(steps_map.keys()), 'phase-6-finalize'):
         step_id = entry['step']
-        # Fail-closed: an unresolved discovery deletes nothing.
+        # Fail-closed: an unresolved discovery deletes nothing — and the sweep
+        # says so explicitly.
         if entry.get('outcome') == 'unknown':
+            if sweep['status'] != 'unknown':
+                sweep['status'] = 'unknown'
+                sweep['reason'] = entry.get('reason', '')
             continue
         # Unresolvable-by-design external steps are reported, never deleted.
         if _is_external_step(step_id):
@@ -697,15 +731,17 @@ def _remove_dead_step_ids(live: dict, dead_reports: list[str], kept_reports: lis
                 f'(kept: external step, no project-local source declares the ext-point — {entry["reason"]})'
             )
             continue
-        if step_id in steps_map:
-            del steps_map[step_id]
-        removed_ids.append(step_id)
+        params = steps_map.pop(step_id, None)
+        dead_records[step_id] = {
+            'origin': DEAD_REMOVED_STEP_ORIGIN,
+            'params': params if isinstance(params, dict) else {},
+        }
         dead_reports.append(
             f'plan.phase-6-finalize.steps.{step_id} (dead step id, no resolved order — removed: {entry["reason"]})'
         )
 
-    if removed_ids:
-        _write_removed_steps(phase6, [*_read_removed_steps(phase6), *removed_ids])
+    if dead_records:
+        phase6[DEAD_REMOVED_STEPS_KEY] = {**_read_dead_removed_steps(phase6), **dead_records}
     return live
 
 
@@ -765,11 +801,16 @@ def cmd_sync_defaults(args) -> dict:
 
     Dead-step removal (:func:`_remove_dead_step_ids`) runs alongside the
     pre-merge passes: it prunes a genuinely dead ``plan.phase-6-finalize.steps``
-    id (one discovery resolved and cannot order), records that id in the phase's
-    ``removed_steps`` list, and reports it under ``dead_removed`` — but FAILS
-    CLOSED when discovery did not resolve (nothing is deleted), and never deletes
-    an external ``project:`` / ``bundle:skill`` step (reported under
-    ``dead_kept`` instead).
+    id (one discovery resolved and cannot order), records it — with its nested
+    params and a ``dead_step`` origin — in the phase's dedicated
+    ``dead_removed_steps`` map (NEVER the operator ``removed_steps`` list, so a
+    later back-fill of the id reads as a routine hold rather than as crossing
+    an operator decision), and reports it under ``dead_removed``. It FAILS
+    CLOSED when discovery did not resolve (nothing is deleted; the report's
+    ``dead_sweep`` says ``unknown`` with the reason instead of reading as a
+    clean empty ``dead_removed: []``), and never deletes an external
+    ``project:`` / ``bundle:skill`` step (reported under ``dead_kept``
+    instead).
 
     Operator step-map atomicity (D1): a present
     ``plan.phase-5-execute.verification_steps`` / ``plan.phase-6-finalize.steps``
@@ -807,7 +848,8 @@ def cmd_sync_defaults(args) -> dict:
 
     dead_reports: list[str] = []
     dead_kept: list[str] = []
-    _remove_dead_step_ids(live, dead_reports, dead_kept)
+    dead_sweep: dict[str, str] = {'status': 'resolved', 'reason': ''}
+    _remove_dead_step_ids(live, dead_reports, dead_kept, dead_sweep)
 
     added: list[str] = []
     held_for_ask: list[str] = []
@@ -880,5 +922,7 @@ def cmd_sync_defaults(args) -> dict:
             'dead_removed_count': len(dead_reports),
             'dead_kept': sorted(dead_kept),
             'dead_kept_count': len(dead_kept),
+            'dead_sweep': dead_sweep['status'],
+            'dead_sweep_reason': dead_sweep['reason'],
         }
     )

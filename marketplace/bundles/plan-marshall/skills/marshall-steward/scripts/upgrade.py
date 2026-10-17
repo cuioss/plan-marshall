@@ -125,8 +125,10 @@ The ``bootstrap`` block reports the executor bootstrap (``fresh`` |
 ``regenerate_failed`` | ``unknown``). Rewriting a merely-stale executor is gated
 on ``--bootstrap true`` (default false — a stale executor reports
 ``regenerate_required`` and is left untouched); a missing-or-broken executor is
-always restored from the newest cache. A ``warning`` names a skill/planner
-version split and its remedy instead of a silently stale run.
+always restored from the newest cache. A ``warning`` names why the executor
+cannot serve current scripts — a skill/planner version split, with its remedy,
+or an observed import failure being restored from the newest cache — instead of
+a silently stale run.
 
 Exit 0 on success, 2 on argparse rejection.
 
@@ -643,7 +645,10 @@ def cmd_validate_bot_lists(_args: argparse.Namespace) -> dict:
 # is AHEAD of the newest cache, or regeneration failed and the executor is
 # still behind), the bootstrap reports a ``warning`` naming the split and its
 # remedy instead of letting the router run a silently stale plan: re-sync the
-# plugin cache, reload the plugin set, and re-request the stage plan.
+# plugin cache, reload the plugin set, and re-request the stage plan. An
+# observed IMPORT failure yields a ``warning`` naming the failure and the
+# restore from the newest cache — the regeneration IS that remedy, so no
+# separate one is prescribed.
 #
 # Regeneration runs the generator DIRECTLY, by its resolved script path — the
 # same sanctioned direct-path surface Stage 1's ``regenerate-executor``
@@ -744,6 +749,66 @@ def _run_bootstrap_generate(generator: Path, anchor: Path, project_dir: Path) ->
     except subprocess.TimeoutExpired:
         return 124, '', f'generate_executor generate timed out after {_BOOTSTRAP_REGENERATE_TIMEOUT_SECONDS}s'
     return result.returncode, result.stdout, result.stderr
+
+
+#: Import-failure markers in a probe's stderr: the Python import-error phrases
+#: and the executor's own bootstrap-guard prefix
+#: (``execute-script.py cannot start:``), which prints instead of a traceback
+#: when the failed import coincides with an unresolved bootstrap directory. The
+#: guard prefix is EXACT, not the bare ``cannot start:``: a generic substring
+#: would classify any unrelated stderr carrying those words as an import failure
+#: and rewrite the executor unconsented. ``ImportError`` covers the whole family —
+#: ``ModuleNotFoundError`` and every other subclass — and a subprocess probe
+#: wraps argparse errors in none of them, so no non-import failure is
+#: misclassified. The boundary is deliberate: only an IMPORT error (or the
+#: executor's guard form of one) is a recovery trigger. A module-level
+#: NON-import failure — a syntax error, or a direct ``SystemExit`` — carries
+#: none of these markers, so it stays inconclusive and is reported under the
+#: consent gate instead of forcing an ungated rewrite.
+_IMPORT_FAILURE_MARKERS = (
+    'ModuleNotFoundError',
+    'ImportError',
+    'No module named',
+    'execute-script.py cannot start:',
+)
+
+#: Timeout for the read-only executor import probe.
+_BOOTSTRAP_PROBE_TIMEOUT_SECONDS = 30
+
+
+def _probe_executor_import(executor_path: Path) -> str:
+    """Probe the serving executor's module-level imports. Never raises.
+
+    Runs ``python3 <executor> --list`` — the executor's cheapest read-only entry
+    point: it exercises the module-level bootstrap import block (every import
+    the executor needs to start) and exits before any notation resolution or
+    dispatch, so a broken import is observed without running any verb. Returns a
+    short reason when the probe observed an IMPORT failure, and ``''`` for a
+    healthy executor, a missing file, or any other failure — a non-import
+    nonzero exit is NOT an import failure, and an inconclusive probe never
+    triggers a recovery.
+    """
+    import subprocess
+
+    if not executor_path.is_file():
+        return ''
+    try:
+        result = subprocess.run(
+            ['python3', str(executor_path), '--list'],
+            cwd=str(executor_path.parent.parent),
+            capture_output=True,
+            text=True,
+            timeout=_BOOTSTRAP_PROBE_TIMEOUT_SECONDS,
+        )
+    except (OSError, subprocess.TimeoutExpired, UnicodeDecodeError):
+        return ''
+    if result.returncode == 0:
+        return ''
+    stderr = result.stderr or ''
+    if not any(marker in stderr for marker in _IMPORT_FAILURE_MARKERS):
+        return ''
+    lines = [line.strip() for line in stderr.splitlines() if line.strip()]
+    return (lines[-1] if lines else 'import failure')[:200]
 
 
 # A plugin-cache version directory name (``.../plan-marshall/0.1.1916/…``).
@@ -900,7 +965,7 @@ def bootstrap_executor(
     allow_regenerate: bool = True,
     registry_path: Path | None = None,
 ) -> dict:
-    """Validate the serving executor against the newest cache; regenerate when stale.
+    """Validate the serving executor against the newest cache; regenerate when stale or broken.
 
     Resolves the newest plugin-cache version for the plan-marshall bundle and
     the serving executor's embedded ``MARSHALL_VERSION``, decides via
@@ -930,9 +995,10 @@ def bootstrap_executor(
             ``--bootstrap`` flag here, whose default is ``false``, so the
             ``plan`` verb reports a stale executor rather than rewriting it
             unasked. The missing-or-broken executor RECOVERY is not gated: an
-            absent, unreadable or version-less executor is always restored from
-            the newest cache regardless of this flag, because no plan can run
-            against a broken tool and consent to restore one is meaningless.
+            absent, unreadable or version-less executor — or one whose import
+            probe fails — is always restored from the newest cache regardless
+            of this flag, because no plan can run against a broken tool and
+            consent to restore one is meaningless.
         registry_path: Explicit plugin-registry path, or ``None`` to resolve the
             plugin manager's registry (tests pass a fixture registry). It is
             read for the loaded marshall-steward skill version the skill/planner
@@ -979,16 +1045,31 @@ def bootstrap_executor(
     state, current = read_executor_version(executor_path)
     executor_version = current if state == EXECUTOR_VERSION_FOUND else None
 
+    # An executor can exist and carry the newest stamp and still fail to IMPORT:
+    # the stamp is read as text, so the version comparison alone cannot see a
+    # broken import (the original PLAN-LB-40 failure). The probe observes it,
+    # and an observed import failure forces the ungated recovery below.
+    import_failure = _probe_executor_import(executor_path)
+
     action, warning = resolve_bootstrap_action(executor_version, newest, loaded_skill_version, planner_version)
+    if import_failure:
+        action = 'regenerate_required'
+        warning = _join_warnings(
+            f'executor at {executor_path} fails to import ({import_failure}); restoring it from '
+            f'the newest cache at {newest} like a missing executor.',
+            warning,
+        )
     generator: Path | None = None
     anchor = executor_path.parent.parent
 
     # A merely-stale executor is rewritten ONLY with consent (allow_regenerate).
     # Without it the decision is reported and the executor is left untouched, so
     # an unconsented reconcile never rewrites the executor out from under the
-    # running session. The missing-or-broken RECOVERY (executor_version is None —
-    # absent, unreadable, or carrying no version assignment) is not gated.
-    needs_recovery = executor_version is None
+    # running session. The missing-or-broken RECOVERY is not gated: it covers an
+    # absent, unreadable or version-less executor (executor_version is None) and
+    # one whose probe observed an import failure (import_failure) — no plan can
+    # run against a tool that cannot start.
+    needs_recovery = executor_version is None or bool(import_failure)
     if action == 'regenerate_required' and not needs_recovery and not allow_regenerate:
         return {
             'status': 'success',
@@ -1009,6 +1090,17 @@ def bootstrap_executor(
 
     if action == 'regenerate_required':
         generator, anchor = _resolve_bootstrap_generator(project_kind, cache_root, newest)
+        # The phrase naming WHY the executor cannot serve: an observed import
+        # failure is not a version gap, and the stale phrasing would read false
+        # against an executor whose stamp matches the newest cache.
+        gap = (
+            f'executor at {executor_path} fails to import ({import_failure})'
+            if import_failure
+            else (
+                f'skill/planner version split: executor at {executor_version or "unknown"} is behind '
+                f'the newest cache at {newest}'
+            )
+        )
         if generator is None:
             return {
                 'status': 'success',
@@ -1019,11 +1111,10 @@ def bootstrap_executor(
                 'cache_root': str(cache_root),
                 'generator': '',
                 'warning': (
-                    f'skill/planner version split: executor at {executor_version or "unknown"} is '
-                    f'behind the newest cache at {newest}, but no generator resolves for '
-                    f'{project_kind!r} — currency cannot be restored here. {_VERSION_SPLIT_REMEDY}'
+                    f'{gap}, but no generator resolves for {project_kind!r} — currency cannot be '
+                    f'restored here. {_VERSION_SPLIT_REMEDY}'
                 ),
-                'detail': 'stale executor with no resolvable generator',
+                'detail': 'executor cannot be brought current: no generator resolves',
             }
         run_generate = _run_generate or _run_bootstrap_generate
         project_dir = executor_path.parent.parent
@@ -1038,8 +1129,7 @@ def bootstrap_executor(
                 'cache_root': str(cache_root),
                 'generator': str(generator),
                 'warning': (
-                    f'skill/planner version split: executor at {executor_version or "unknown"} is '
-                    f'behind the newest cache at {newest} and regeneration failed (rc={rc}): '
+                    f'{gap} and regeneration failed (rc={rc}): '
                     f'{(stdout or "").strip()[:200] or "no output"} — {_VERSION_SPLIT_REMEDY}'
                 ),
                 'detail': 'regeneration attempted and failed; Stage 1 regenerate-executor remains the repair',
