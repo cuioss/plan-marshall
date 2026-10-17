@@ -53,7 +53,7 @@ group's envelope schema and handler surface have theirs
   that tuple's order is the key order an appended row is written in; the
   ``--lane`` vocabulary's own doc-contract check lives in
   ``test_runbook_lane_rows.py``, beside the lane's other assertions.
-  whitelist's ``frozenset`` declares no order and none is pinned for it.
+  A whitelist's ``frozenset`` declares no order and none is pinned for it.
 - ``resume-summary``: START-HERE block generation derived purely from
   the ledger (resume anchor, phase, running/parked plans, ordered queue),
   including the two questions the terminal statuses answer separately — a

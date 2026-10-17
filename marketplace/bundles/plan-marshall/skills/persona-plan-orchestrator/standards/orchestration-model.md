@@ -226,7 +226,7 @@ The plan queue — the `queue/{PLAN-ID}.json` row files — is written by exactl
 | Occasion | Form | Scope of the write |
 |---|---|---|
 | **Single append** at stage — and at `decompose`, which seeds a new queue by calling it once per row | `orchestrator.py queue --add-row` | Creates one new row file, atomically (see [§ Staging identity](#staging-identity)) |
-| **Single mutate** at reconcile | `orchestrator.py queue --transition` (status) and `queue --set-row` (the three result fields) | Rewrites one located row file |
+| **Single mutate** at reconcile | `orchestrator.py queue --transition` (status) and `queue --set-row` (one row field — the plan-marshall plan id, the PR, the landing record, or the row's lane) | Rewrites one located row file |
 
 Three rules bind this boundary:
 
