@@ -77,10 +77,10 @@ def bridge_reemit_command(harness: str, plan_dir: Path, project_dir: Path) -> st
 def installed_rules_clobbered(harness: str, project_dir: Path) -> bool:
     """Report whether a previous setup left its bridge stub in the installed rules.
 
-    Read-only. The installed target rules belong to the ``install.sh
-    --emit-rules`` emit path; a file carrying the bridge marker was clobbered
-    by an older setup and is restored with that emit command. Claude has no
-    such file, so its answer is always False.
+    Read-only. The installed target rules belong to the ``install.sh`` emit
+    path (``--workspace`` / ``--emit-rules``); a file carrying the bridge
+    marker was clobbered by an older setup and is restored with that emit
+    command. Claude has no such file, so its answer is always False.
     """
     if harness == 'antigravity':
         return _antigravity_installed_rules_clobbered(project_dir)

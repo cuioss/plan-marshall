@@ -91,8 +91,9 @@ def _installed_rules_path(project_dir: Path) -> Path:
 def installed_rules_clobbered(project_dir: Path) -> bool:
     """Report whether a previous setup left its bridge stub in the installed rules.
 
-    Read-only: the installed target rules belong to the ``install.sh
-    --emit-rules`` emit path, so this never writes. A file carrying the bridge
+    Read-only: the installed target rules belong to the ``install.sh``
+    emit path (``--workspace`` / ``--emit-rules``), so this never writes.
+    A file carrying the bridge
     marker is a clobbered install and is restored with that emit command.
     """
     try:
@@ -282,8 +283,8 @@ class AntigravityRuntime(Runtime):
     def project_initial_setup(self, project_dir: str, target: str) -> str:
         """One-time project setup for Google Antigravity.
 
-        Creates ``.plan/``, bridges the standing rules into the harness
-        grant surface, and initializes project settings in Antigravity's
+        Creates ``.plan/``, writes the standing-rules bridge to its own
+        bridge file, and initializes project settings in Antigravity's
         project registry. Re-setup reports bridge drift against the
         CLAUDE.md baseline. Shared ``marshal.json`` carries no
         runtime-owned keys: routing stays config-driven via the registry.
