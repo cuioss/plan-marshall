@@ -572,16 +572,18 @@ def evaluate_source_commit_gate(
 _WORKTREE_PATH_SEGMENT = ('.plan', 'local', 'worktrees')
 
 
-def _plan_id_from_worktree_path(path: str | Path) -> str | None:
+def _plan_id_from_worktree_path(path: str | Path | None) -> str | None:
     """Return the plan id a worktree path names, or ``None``.
 
     A plan worktree path carries ``.../.plan/local/worktrees/{plan_id}``; the id
     is the segment right after the ``worktrees`` directory. When a path carries
     MORE than one such segment (a fixture nested inside a live worktree), the
-    INNERMOST — the last one — names the plan. ``None`` for a path that does not
-    name a plan worktree (so a runbook-lane worktree or a plain checkout resolves
-    to no plan).
+    INNERMOST — the last one — names the plan. ``None`` for ``None`` or a path
+    that does not name a plan worktree (so a runbook-lane worktree or a plain
+    checkout resolves to no plan).
     """
+    if not path:
+        return None
     parts = Path(path).as_posix().split('/')
     found: str | None = None
     for index in range(len(parts) - 3):

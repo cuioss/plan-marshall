@@ -361,3 +361,4 @@ def test_plan_id_from_worktree_path_names_the_plan() -> None:
     nested = '/outer/.plan/local/worktrees/outer/.plan/local/worktrees/plan-b'
     assert git_workflow._plan_id_from_worktree_path(nested) == 'plan-b'
     assert git_workflow._plan_id_from_worktree_path('/repo/src') is None
+    assert git_workflow._plan_id_from_worktree_path(None) is None

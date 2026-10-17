@@ -622,9 +622,19 @@ function mainPlanLocalDir(root) {
   const override = process.env.PLAN_BASE_DIR
   if (override) return override.replace(/\/+$/, "")
   try {
+    // Strip Git's repository-LOCATION environment variables from the child: if
+    // GIT_DIR / GIT_WORK_TREE (etc.) are set they override `-C root` and the
+    // resolution would name the wrong repository. A timeout keeps a hung `git`
+    // from blocking the tool call indefinitely.
+    const env = { ...process.env }
+    for (const key of ["GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_OBJECT_DIRECTORY", "GIT_COMMON_DIR"]) {
+      delete env[key]
+    }
     const out = execFileSync("git", ["-C", root, "rev-parse", "--git-common-dir"], {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "ignore"],
+      timeout: 5000,
+      env,
     }).trim()
     if (!out) return null
     const common = path.isAbsolute(out) ? out : path.resolve(root, out)
