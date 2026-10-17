@@ -12,7 +12,7 @@ import argparse
 import json
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 
 import pytest
 from toon_parser import parse_toon
@@ -272,7 +272,8 @@ def _capture_runtime_info_argv(payloads: list[str], monkeypatch: pytest.MonkeyPa
 
 
 def _status_metadata(plan_dir: Path) -> dict[str, Any]:
-    return json.loads((plan_dir / 'status.json').read_text(encoding='utf-8'))['metadata']
+    document = json.loads((plan_dir / 'status.json').read_text(encoding='utf-8'))
+    return cast('dict[str, Any]', document['metadata'])
 
 
 def test_preflight_forwards_the_self_report_and_stamps_metadata(
