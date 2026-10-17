@@ -16,7 +16,7 @@ Orchestration operates on exactly three tiers:
 | **Workstream** | A coherent slice of the epic with its own charter — a surface, a theme, a dependency chain | `workstreams/WS-NN-{slug}.md`, tracked in the `workstreams[]` status field | The orchestrator |
 | **Plan** | One shippable unit of work executed by the plan-marshall lifecycle | `plans/PLAN-NN-{slug}.md` (staged spec), then a real `/plan-marshall` plan once launched | The plan lifecycle (phases 1–6) |
 
-The tier vocabulary is closed and the mid-tier name is **workstream** — `workstreams/` directory, `WS-NN-{slug}.md` files, `workstreams[]` status field. No synonym (use-case, track, theme, lane) may substitute for it in any orchestrator artifact.
+The tier vocabulary is closed and the mid-tier name is **workstream** — `workstreams/` directory, `WS-NN-{slug}.md` files, `workstreams[]` status field. No synonym (use-case, track, theme, lane) may substitute for it in any orchestrator artifact. The one thing named `lane` in this ledger is NOT such a synonym: a queue row's `lane` field names the execution lane its plan runs in (`plan-marshall`, the default, or `runbook`), which is a property of *how* a plan runs, never a regrouping of *what* it belongs to.
 
 An epic decomposes into workstreams; a workstream decomposes into staged plan specs; a plan spec becomes a running plan only via an emitted `/plan-marshall` command. Every plan belongs to exactly one workstream. A workstream with a single plan is legitimate — the tier exists for grouping and charter, not as a mandatory fan-out.
 
@@ -30,8 +30,8 @@ Each epic lives in one git-tracked, repo-local tree under the orchestrator store
 │                        #   metadata, created — no updated stamp, no queue, no anchor
 ├── resume_anchor.md     # MACHINE AUTHORITY: the resume anchor text alone
 ├── queue/               # MACHINE AUTHORITY: the plan queue, one row per file
-│   └── {PLAN-ID}.json   #   id, slug, workstream, status, plan_marshall_plan_id, pr,
-│                        #   landing, seq — staging a plan creates ONE new file
+│   └── {PLAN-ID}.json   #   id, slug, workstream, status, lane, plan_marshall_plan_id,
+│                        #   pr, landing, seq — staging a plan creates ONE new file
 ├── queue-view.md        # GENERATED, git-tracked: START HERE + the Ordered Queue, rendered
 │                        #   from the files above; never hand-edited
 ├── epic.md              # Hand-written narrative only: vision, queue annotations,

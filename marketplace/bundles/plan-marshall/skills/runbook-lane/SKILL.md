@@ -341,7 +341,9 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr wait-fo
 2. `python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow prune-local-and-remote-ref --project-dir . --head {branch}`
 3. `python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow switch-and-pull --project-dir . --base main`
 
-Never force-delete a branch. If a cleanup step refuses, report it and ask.
+Never use `git branch -D`. If a cleanup step refuses, report it and ask. Never move the main
+checkout by hand (`git fetch` + `merge`, `pull`, `switch`, `reset`): other sessions may be working
+in it, and step 3 is the only sanctioned way to update it.
 
 ## 8. Landing message (the last step, after the merge)
 

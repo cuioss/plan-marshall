@@ -116,9 +116,13 @@ consumer reads the whole list rather than assuming one model per landing.
 Step 8a.6), or `unknown` when the stamp is absent. It stays optional — not
 required — so landings written before the stamp existed stay complete; the
 producer (`emit-landing.md`) always emits it, with the `unknown` fallback
-asserting only that nothing was observed. The `transcripts` capability that
-explains the run's token figures (`full` vs `none`) rides the same
-`runtime-info` record — see `platform-runtime/standards/runtime-info.md`.
+asserting only that nothing was observed. A landing written by the RUNBOOK lane
+has no `status.json` and no phase-1-init: that lane reads the same value from
+its own resolve result, which resolves the harness through the platform-runtime
+runtime-info seam, so the fact means the same thing on either producer. The
+`transcripts` capability that explains the run's token figures (`full` vs
+`none`) rides the same `runtime-info` record — see
+`platform-runtime/standards/runtime-info.md`.
 
 **A degraded value is not a fact.** A degraded value comes in TWO classes, and they are rejected on
 different terms because they assert different things.

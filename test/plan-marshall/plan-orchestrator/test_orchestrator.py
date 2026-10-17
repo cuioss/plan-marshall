@@ -1103,8 +1103,8 @@ class TestQueueAddRow:
 
         # The seeded row is exactly the fixture shape: three identity fields, a
         # status, the row's LANE (seeded to its default, which is not a result
-        # field and so is not empty), the three PLAN_ROW_FIELDS empty — a staged
-        # row has landed nothing yet — and the allocated ``seq``.
+        # field and so is not empty), the remaining PLAN_ROW_FIELDS empty — a
+        # staged row has landed nothing yet — and the allocated ``seq``.
         assert result['row'] == {**_make_plan('PLAN-07'), 'seq': 1}
         assert list(result['row']) == list(ADD_ROW_SEED_FIELDS)
         assert all(result['row'][field] == '' for field in PLAN_ROW_FIELDS - {'lane'})
