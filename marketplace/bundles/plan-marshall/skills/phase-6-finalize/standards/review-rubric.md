@@ -38,6 +38,8 @@ The blocking line for the functional review:
 - A **residual** on a `met_with_residuals` row is graded by its consequence: `blocking` when the missing part is part of what the deliverable was asked to deliver, `advisory` when it is not.
 - An **unrequested change** — a file the change touches that no deliverable declares or is attributed — is graded by its consequence: `blocking` when it alters behaviour, a contract or a document a reader acts on, `advisory` when it does not.
 - A **false or stale self-report** — a task note, a commit message, a decision-log entry or a document line that claims something the change does not do — is graded by its consequence. A false claim a reader would act on is `blocking`; a claim no reader acts on is `advisory`.
+- A **weakened existing test** — a test that passed before the change and now asserts less: an assertion removed, a check narrowed, a negative case dropped, a filter or skip marker added, or a fixture changed in the same commit as the rule it exercises — is `blocking`. One finding per weakened test, naming the test and what it no longer checks. The `test-integrity` verb of the step's own helper reports the changed tests in exactly this shape; a deliverable that ASKS for the change is what justifies it, and nothing weaker does.
+- A criterion the **frozen record** holds that the current outline no longer carries verbatim is `blocking`: `deleted` when the clause is gone, `rewritten` when its place is taken by different text, one finding per criterion. The frozen record is written at outline approval — the request's Done-when text, each outline deliverable's criteria, and each spec deliverable's own Done-when clause, which a later merge of spec deliverables into one outline deliverable does not collapse. Only a logged operator decision authorizing that exact change retires the finding; the `criteria-authorize` verb writes the decision and the authorization together, and neither without the other.
 
 ## 3. Code-review grading — `default:code-review`
 
@@ -67,6 +69,13 @@ A success criterion is `met` only when the row cites at least one piece of evide
 | A recorded verification run | the step id or build run the plan recorded, with its outcome |
 
 A criterion claimed `met` without evidence is `unevidenced`, never `met`. The claim is not taken on trust and not upgraded by agreement with the plan's own notes: the plan's self-report is the thing being checked (§ 9, the intent clause), so it cannot also be the evidence for itself.
+
+Two further rules narrow which citations count, and both are graded `unevidenced` — never refused outright — when they fail:
+
+- **A pre-fix criterion needs a pre-fix run.** A criterion whose own text makes a run against the tree WITHOUT the change its Done-when — "fails on the pre-fix tree", "fails at `<sha>`", "fails before the fix" — is `unevidenced` unless its evidence names a FAILING run against that tree. A green run at HEAD names neither a failure nor the tree the criterion is about, so it never satisfies one.
+- **A named test or file must exist at the graded head.** A criterion that cites a path or a test identifier is checked against the tree the verdict was written for; a citation of something the change never had, or a test name that appears nowhere in the file it names, is not evidence.
+
+**Evidence the reviewer cannot read is not a failure of this rule.** A cited path the reviewer cannot open because the tree is unreadable reads as `unevidenced`, and the round reports the unreadable input per § 11.
 
 ## 5. Citation forms for a code finding
 

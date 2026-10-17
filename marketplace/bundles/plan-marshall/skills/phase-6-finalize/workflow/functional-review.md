@@ -85,11 +85,11 @@ The recorded SHA is also what the next firing's delta round is measured from: `r
 
 ## Verdict-currency freeze — judge against outline approval
 
-The judgment criteria are frozen at outline approval, and the round judges the change against the frozen criteria — never against a later rewrite of them. The frozen record is the outline as approved at the 3-outline transition: each deliverable's success criteria text in outline order, read through `manage-solution-outline read`. Step 3a already reads that verb, so the author compares the criteria text it read against the approved record before grading.
+The judgment criteria are frozen at outline approval, and the round judges the change against the frozen criteria — never against a later rewrite of them. The frozen record is the criteria snapshot the outline phase writes at its 3-outline approval step (`work/criteria-snapshot.json`, through the outline skill's `snapshot-criteria` verb): the request's Done-when text, each outline deliverable's success-criteria text in outline order, and each spec deliverable's OWN Done-when clause — so a later pass that merges several spec deliverables into one outline deliverable cannot collapse two clauses into one criterion. Step 3a reads the same success criteria through `manage-solution-outline read`, and Step 4's validator compares that reading with the frozen record before it grades: a plan that predates the freeze carries no snapshot, and there is then nothing to compare against.
 
-- **Criteria rewrites are blocking.** A success-criterion text that differs from the frozen record — reworded, narrowed, dropped, or replaced after approval — is filed as a blocking finding with `fix_kind: implementation`, one per rewritten criterion. The finding cites the frozen sentence and the rewritten sentence so the loop-back re-authoring restores the approved wording or records an operator decision to re-approve it.
+- **Criteria rewrites and deletions are blocking.** A success-criterion text the frozen record holds that the current outline no longer carries verbatim — reworded, narrowed, dropped or replaced after approval — is graded by the validator as a blocking finding, one per criterion (`criterion_rewritten` when its place is taken by different text, `criterion_deleted` when it is gone). The finding cites the frozen sentence and the current sentence so the loop-back re-authoring restores the approved wording. Deleting a specified check requires a logged operator decision, recorded through the outline skill's `criteria-authorize` verb, which writes the decision and the authorization together and neither without the other; the verify-first "drop a refuted gap" clause does not cover it.
 - **Infeasible verdicts name the work-order sentence.** A deliverable graded `not_met` on the grounds that it cannot be built as written is blocking only when its entry names the work-order sentence that makes it infeasible — the frozen criterion sentence plus the tree fact that blocks it. A bare infeasible claim with no cited sentence is graded `unevidenced`.
-- **Weakened existing tests are blocking.** A recorded test that passed before the change and now asserts less — a removed assertion, a narrowed check, a dropped negative case — is filed as a blocking finding with `fix_kind: implementation`, one per weakened test. The entry names the test and what it no longer checks.
+- **Weakened existing tests are blocking.** A recorded test that passed before the change and now asserts less — a removed assertion, a narrowed check, a dropped negative case, an added filter or skip — is a blocking finding, one per weakened test, and the entry names the test and what it no longer checks. Step 3f enumerates them through the review's own `test-integrity` verb.
 - **Head capture at step start with compare-and-rerun.** The dispatcher captures `git -C {worktree_path} rev-parse HEAD` at Step 1 alongside the attribution call and holds that SHA as the round's start head. Immediately before every terminal `mark-step-done` call of Step 6 it resolves HEAD again through the same call and compares: on equality it records with the re-resolved SHA; on mismatch the tree moved under the round, so it discards the verdict and re-runs the round from Step 1 against the new HEAD instead of recording a verdict about a tree it never examined.
 
 ## Inputs of the dispatched author
@@ -296,9 +296,34 @@ Every path in `unrequested_candidates` is a file the change touches that no deli
 
 Collect the claims the plan makes about its own work — the task closing notes and step outcomes, the commit messages, the decision-log entries, and every changed document line that states what the code does. Write one `self_reports` entry per claim checked: its `source`, the `claim`, whether it `holds` against the change, and — for a claim that does not hold — whether a reader would act on it (`reader_acts_on`). A claim that holds is listed and graded nothing. A claim stale against a later commit is a claim that does not hold.
 
-### 3e. Write the verdict file
+### 3e. Audit the tree's own gates
 
-Write the verdict with the `Write` tool to `{verdict_file}`, as JSON in the § "Verdict schema" below, listing in `files_read` every file this round read. Then return the § "Author return".
+Two of the plan's own rules are graded from the tree rather than from a document, and both are reported as blocking findings on the verdict:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:phase-6-finalize:review_support test-integrity \
+  --plan-id {plan_id}
+```
+
+Every row it returns is one weakened test — a changed test whose assertions the branch removed, relaxed or filtered, or one that gained a skip marker — and each becomes one `weakened_test` entry in the verdict. A deliverable that asks for the change is what justifies the row; nothing else does.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:phase-6-finalize:review_support verify-first \
+  --plan-id {plan_id} --gate {gate} --check --commit {commit}
+```
+
+Run that once per verify-first gate the plan declares, with the commit the gate gates. A `status: error` return means the gate's evidence was recorded at or after the action it gated, or was never recorded at all — either way the gate did not run before the thing it licenses, and the round reports it as a blocking finding naming the gate. A `status: success` return means every recorded evidence entry predates the commit. When the plan declares no verify-first gate, run nothing.
+
+### 3f. Write the verdict file — and seal it
+
+Write the verdict with the `Write` tool to `{verdict_file}`, as JSON in the § "Verdict schema" below, listing in `files_read` every file this round read. Then seal it with the review's own verb, which stamps the reviewer's recorded output onto the file:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:phase-6-finalize:review_support author-verdict \
+  --plan-id {plan_id} --kind functional --verdict-file {verdict_file}
+```
+
+The seal is what makes the verdict the reviewer's: the file's content is bound to the digest the verb recorded, so a later edit of the file — a hand rewrite that turns an unevidenced criterion into a met one — no longer matches, and Step 4 refuses it. A verdict the review's own verb did not seal is refused in the same way. Then return the § "Author return".
 
 ## Verdict schema
 
@@ -355,7 +380,9 @@ python3 .plan/execute-script.py plan-marshall:phase-6-finalize:review_support va
 Branch on the returned TOON:
 
 - **`status: error`** — the verdict file or the outline could not be read. Go to **Step 6 Branch C** with the returned `error` as the reason.
-- **`valid: false`** — the verdict breaks the schema. Repair it ONCE, in the inline context: read the returned `errors[]`, re-read through the Step 3a verbs whatever input an error concerns, correct the verdict file with the `Write` tool so it answers each error, and validate again. The repair is author work, so the verifier of Step 5 is still a separate dispatch. A verdict still invalid after that one repair goes to **Step 6 Branch C** with reason `verdict_invalid` and the first error.
+- **`valid: false`** — the verdict breaks the schema. Repair it ONCE, in the inline context: read the returned `errors[]`, re-read through the Step 3a verbs whatever input an error concerns, correct the verdict file with the `Write` tool so it answers each error, re-seal it through the Step 3f verb, and validate again. The repair is author work, so the verifier of Step 5 is still a separate dispatch. A verdict still invalid after that one repair goes to **Step 6 Branch C** with reason `verdict_invalid` and the first error.
+- **`valid: false` on an authorship error is NOT repairable.** When an error says the verdict was not written by the review's own verb, or that it was modified after the reviewer wrote it, the file no longer holds what the reviewer recorded and re-sealing it would only launder the edit. Go straight to **Step 6 Branch C** with reason `verdict_modified` and that error. The review runs again from Step 1 with a verdict the author writes and seals afresh.
+- **Criteria drift is a finding, not a schema error.** A `valid: true` verdict whose findings carry `criterion_rewritten` or `criterion_deleted` is a round that found work for the next round; it goes through Step 5 like every other blocking round.
 - **`valid: true`** — capture `findings`, `facts` and `loop_back_target`. Every `rewrites[]` entry is a criterion the author called `met` without evidence; log it, because the grading changed under the author (quoted per [§ Shell-safe free text](#shell-safe-free-text-in-command-templates)):
 
   ```bash

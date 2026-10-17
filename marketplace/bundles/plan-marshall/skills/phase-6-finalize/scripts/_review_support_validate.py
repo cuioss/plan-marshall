@@ -13,6 +13,7 @@ Imported as ``from _review_support_validate import ...`` by ``review_support.py`
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from pathlib import Path
@@ -35,6 +36,22 @@ FAILURE_CLASSES = (*BLOCKING_FAILURE_CLASSES, 'none')
 
 SEVERITY_BLOCKING = 'blocking'
 SEVERITY_ADVISORY = 'advisory'
+
+#: The authorship marker the review's own script verb stamps onto a verdict file.
+AUTHORED_KEY = 'authored'
+AUTHORSHIP_SCHEMA = 'review-verdict-authorship/1'
+AUTHORSHIP_VERB = 'review_support author-verdict'
+
+#: A criterion whose Done-when is a run against the PRE-fix tree.
+PRE_FIX_CRITERION_RE = re.compile(
+    r'(?i)(pre-?fix|fails?\s+(?:at|on|against)\s+(?:the\s+)?`?[0-9a-f]{7,40}`?|fails?\s+before\s+the\s+fix)'
+)
+#: Evidence that names a failing run against the pre-fix tree (a SHA-bearing failure).
+PRE_FIX_EVIDENCE_RE = re.compile(r'(?i)(pre-?fix|before\s+the\s+fix)')
+FAILURE_TOKEN_RE = re.compile(r'(?i)\bfail(?:s|ed|ing)?\b')
+SHA_RE = re.compile(r'[0-9a-f]{7,40}')
+#: An evidence entry that cites a repository path (optionally ``:line`` and ``::name``).
+EVIDENCE_PATH_RE = re.compile(r'^(\S+\.\w+)(?::\d+(?:-\d+)?)?(?:(\S+))?$')
 
 #: The facts a valid functional verdict records, before the two shared counts.
 FUNCTIONAL_FACT_KEYS = (
@@ -78,6 +95,108 @@ def read_json_object(path: str) -> tuple[dict[str, Any] | None, str]:
     if not isinstance(parsed, dict):
         return None, f'top-level JSON value is {type(parsed).__name__}, not an object'
     return parsed, ''
+
+
+def canonical_digest(payload: dict[str, Any]) -> str:
+    """Return the SHA-256 of a verdict's content, independent of key order and whitespace.
+
+    The digest covers the verdict WITHOUT its authorship marker, so re-serialising
+    the same verdict anywhere (a different JSON indentation, a different key
+    order) reproduces it, while any edit to a graded value does not.
+    """
+    body = {key: value for key, value in payload.items() if key != AUTHORED_KEY}
+    encoded = json.dumps(body, sort_keys=True, separators=(',', ':'), ensure_ascii=False).encode('utf-8')
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def seal_verdict(payload: dict[str, Any], kind: str) -> dict[str, Any]:
+    """Return ``payload`` carrying its authorship marker (the marker last)."""
+    sealed = {key: value for key, value in payload.items() if key != AUTHORED_KEY}
+    sealed[AUTHORED_KEY] = {
+        'schema': AUTHORSHIP_SCHEMA,
+        'kind': kind,
+        'verb': AUTHORSHIP_VERB,
+        'digest': canonical_digest(payload),
+    }
+    return sealed
+
+
+def authorship_problem(verdict: dict[str, Any]) -> str | None:
+    """Return why the verdict does not match the reviewer's recorded output, or ``None``.
+
+    A verdict the review's own script verb did not write has no marker; a verdict
+    edited after the verb wrote it has a marker whose digest no longer matches
+    the content. Both are refusals at the finalize step gate — the failure is
+    ``python3 -c`` editing the verdict file in place, and a rewritten criterion
+    graded in the author's own words reads as clean without this check.
+    """
+    marker = verdict.get(AUTHORED_KEY)
+    if not isinstance(marker, dict) or marker.get('schema') != AUTHORSHIP_SCHEMA:
+        return f'the verdict was not written by {AUTHORSHIP_VERB}'
+    if not isinstance(marker.get('digest'), str) or marker['digest'] != canonical_digest(verdict):
+        return 'the verdict was modified after the reviewer wrote it'
+    return None
+
+
+def is_pre_fix_criterion(text: Any) -> bool:
+    """Whether a criterion's Done-when is a run against the pre-fix tree."""
+    return bool(PRE_FIX_CRITERION_RE.search(str(text or '')))
+
+
+def names_pre_fix_run(evidence: list[str]) -> bool:
+    """Whether any evidence entry names a FAILING run against the pre-fix tree.
+
+    A green run at HEAD names neither a failure nor the pre-fix tree, so it never
+    satisfies a pre-fix criterion: the evidence that a test fails without the fix
+    is the failing run against the tree without it.
+    """
+    for item in evidence:
+        text = str(item)
+        if PRE_FIX_EVIDENCE_RE.search(text):
+            return True
+        if FAILURE_TOKEN_RE.search(text) and SHA_RE.search(text):
+            return True
+    return False
+
+
+def cited_evidence_path(entry: Any) -> str | None:
+    """Return the repository path an evidence entry cites, or ``None``.
+
+    Only an entry shaped like a path is a citation that must exist at the graded
+    head; a free-form description of a recorded run (``module-tests at <sha>``)
+    is not a path and is never existence-checked.
+    """
+    match = EVIDENCE_PATH_RE.match(str(entry or '').strip())
+    if not match:
+        return None
+    return match.group(1)
+
+
+def missing_evidence(evidence_root: Path, evidence: list[str]) -> list[str]:
+    """Return every cited path, or cited test name, absent from ``evidence_root``.
+
+    A path that does not exist at the graded head is a citation of something the
+    change never had; a ``path::name`` whose name does not appear in the file is
+    the PLAN-LB-40 fabrication — a cited test that exists nowhere.
+    """
+    missing: list[str] = []
+    for entry in evidence:
+        raw = str(entry).strip()
+        path = cited_evidence_path(raw)
+        if path is None:
+            continue
+        target = evidence_root / path
+        if not target.is_file():
+            missing.append(raw)
+            continue
+        _, _, name = raw.partition('::')
+        if name and name.strip():
+            try:
+                if name.strip() not in target.read_text(encoding='utf-8'):
+                    missing.append(raw)
+            except OSError:
+                missing.append(raw)
+    return missing
 
 
 def verifier_status(path: str | None, has_blocking: bool) -> str:
@@ -167,7 +286,13 @@ def _grade_consequential(grading: Grading, item: Any, kind: str, ref: str, flag:
     return True
 
 
-def _grade_criteria(grading: Grading, row: dict[str, Any], expected: dict[str, Any], facts: dict[str, int]) -> None:
+def _grade_criteria(
+    grading: Grading,
+    row: dict[str, Any],
+    expected: dict[str, Any],
+    facts: dict[str, int],
+    evidence_root: Path | None = None,
+) -> None:
     number, verdict = expected['number'], row['verdict']
     where = f'deliverable {number}'
     criteria = row.get('criteria')
@@ -187,19 +312,34 @@ def _grade_criteria(grading: Grading, row: dict[str, Any], expected: dict[str, A
             grading.errors.append(f'{where} criterion {index}: status {status!r} is not valid')
             continue
         facts['criteria_checked'] += 1
-        if status == 'met' and not _str_list(criterion.get('evidence')):
+        text = str(criterion.get('criterion') or f'criterion {index}')
+        evidence = _str_list(criterion.get('evidence'))
+        pre_fix_gap = is_pre_fix_criterion(text) and not names_pre_fix_run(evidence)
+        if status == 'met' and (not evidence or pre_fix_gap):
             grading.rewrites.append({'deliverable': number, 'criterion': index, 'from': 'met', 'to': 'unevidenced'})
             status = 'unevidenced'
+        if status == 'met' and evidence_root is not None:
+            # Every path and test name a criterion cites must exist at the graded
+            # head: a citation of something the change never had is not evidence,
+            # and grading it met is how a fabricated test name passes a review.
+            for raw in missing_evidence(evidence_root, evidence):
+                grading.errors.append(f'{where} criterion {index}: evidence {raw!r} does not exist at the graded head')
         if status == 'not_met' and verdict == 'met':
             grading.errors.append(f'{where} criterion {index}: a met deliverable carries a not_met criterion')
         if status == 'unevidenced':
             facts['criteria_unevidenced'] += 1
-            text = str(criterion.get('criterion') or f'criterion {index}')
+            title = f'{text} — no run against the pre-fix tree' if pre_fix_gap else text
             fix_kind = criterion.get('fix_kind') or FIX_KIND_IMPLEMENTATION
-            grading.add('unevidenced_criterion', f'D{number}.C{index}', text, True, fix_kind, where)
+            grading.add('unevidenced_criterion', f'D{number}.C{index}', title, True, fix_kind, where)
 
 
-def _grade_row(grading: Grading, row: dict[str, Any], expected: dict[str, Any], facts: dict[str, int]) -> None:
+def _grade_row(
+    grading: Grading,
+    row: dict[str, Any],
+    expected: dict[str, Any],
+    facts: dict[str, int],
+    evidence_root: Path | None = None,
+) -> None:
     number = expected['number']
     where = f'deliverable {number}'
     verdict = row.get('verdict')
@@ -212,7 +352,7 @@ def _grade_row(grading: Grading, row: dict[str, Any], expected: dict[str, Any], 
         if not str(row.get('superseded_by') or '').strip():
             grading.errors.append(f'{where}: superseded without a cited operator decision or refutation')
         return
-    _grade_criteria(grading, row, expected, facts)
+    _grade_criteria(grading, row, expected, facts, evidence_root)
     if verdict == 'not_met':
         fix_kind = row.get('fix_kind') or FIX_KIND_IMPLEMENTATION
         grading.add('deliverable_not_met', f'D{number}', str(expected.get('title', '')), True, fix_kind, where)
@@ -225,14 +365,36 @@ def _grade_row(grading: Grading, row: dict[str, Any], expected: dict[str, Any], 
             _grade_consequential(grading, residual, 'residual', f'D{number}.R{index}', 'consequential', where)
 
 
+def grade_frozen_criteria(grading: Grading, drift: list[dict[str, Any]]) -> int:
+    """Grade the frozen-criteria drift as blocking findings; return the count.
+
+    One finding per criterion the current outline no longer carries verbatim, and
+    one per frozen deliverable that vanished. A criterion the snapshot froze and
+    an operator decision authorized is not in ``drift`` at all, so it is a pass.
+    """
+    for row in drift:
+        number = row.get('deliverable')
+        if row.get('kind') == 'rewritten':
+            kind, title = 'criterion_rewritten', f'{row.get("criterion")} -> {row.get("current")}'
+        else:
+            kind, title = 'criterion_deleted', str(row.get('criterion'))
+        grading.add(kind, f'D{number}', title, True, FIX_KIND_IMPLEMENTATION, f'deliverable {number}')
+    return len(drift)
+
+
 def validate_functional(
-    verdict: dict[str, Any], deliverables: list[dict[str, Any]], grading: Grading
+    verdict: dict[str, Any],
+    deliverables: list[dict[str, Any]],
+    grading: Grading,
+    evidence_root: Path | None = None,
 ) -> dict[str, int]:
     """Grade a functional verdict against the outline; return its facts (meaningful only when valid).
 
     Requires exactly one row per outline deliverable. Each ``deliverables``
     entry of ``deliverables`` carries ``number``, ``title`` and
-    ``success_criteria`` (the outline's criterion bullets).
+    ``success_criteria`` (the outline's criterion bullets). When
+    ``evidence_root`` is given, every path and test name a ``met`` criterion
+    cites is checked against the tree at the graded head.
     """
     facts = dict.fromkeys(FUNCTIONAL_FACT_KEYS, 0)
     by_number: dict[int, dict[str, Any]] = {}
@@ -248,7 +410,7 @@ def validate_functional(
     for number in sorted(set(by_number) - set(expected)):
         grading.errors.append(f'deliverable {number}: not an outline deliverable')
     for number in sorted(set(expected) & set(by_number)):
-        _grade_row(grading, by_number[number], expected[number], facts)
+        _grade_row(grading, by_number[number], expected[number], facts, evidence_root)
 
     for index, change in enumerate(_list_field(verdict, 'unrequested_changes', grading, False), start=1):
         path = str(change.get('path') or '').strip() if isinstance(change, dict) else ''
@@ -305,6 +467,8 @@ def validate_code(verdict: dict[str, Any], grading: Grading) -> dict[str, int]:
 
 
 __all__ = [
+    'AUTHORED_KEY',
+    'AUTHORSHIP_SCHEMA',
     'BLOCKING_FAILURE_CLASSES',
     'CITATION_FORMS',
     'CODE_FACT_KEYS',
@@ -326,8 +490,16 @@ __all__ = [
     'VERIFIER_ACCEPTED',
     'VERIFIER_DECLINED',
     'VERIFIER_MALFORMED',
+    'authorship_problem',
+    'canonical_digest',
+    'cited_evidence_path',
     'deliverable_number',
+    'grade_frozen_criteria',
+    'is_pre_fix_criterion',
+    'missing_evidence',
+    'names_pre_fix_run',
     'read_json_object',
+    'seal_verdict',
     'validate_code',
     'validate_functional',
     'verifier_status',
