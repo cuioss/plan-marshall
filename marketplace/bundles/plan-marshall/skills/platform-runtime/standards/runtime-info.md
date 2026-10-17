@@ -4,7 +4,9 @@ Logical extension point for runtime information collection. The `runtime-info`
 operation reports the harness/client identifier, the transcript-availability
 capability, model name/type/version,
 effort level, and build-version on a best-effort basis for the `client.toon`
-pre-flight artifact.
+pre-flight artifact. Every value that can come from more than one place carries
+its source (`model_source` / `effort_source`): `self_reported` when a CLI flag
+supplied it, `measured` when a script-readable source did.
 
 ## Exit-code convention for every script call
 
@@ -18,24 +20,34 @@ Concrete providers exist for `claude`, `opencode`, and `antigravity`.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:platform-runtime:platform_runtime runtime-info
+python3 .plan/execute-script.py plan-marshall:platform-runtime:platform_runtime runtime-info \
+  --model <id> --effort <level>
 ```
 
-Takes no arguments. Routing is config-driven via `runtime.target` in
-`.plan/marshal.json`; an unregistered target yields the established
-`unknown_target` error path.
+`--model` and `--effort` are optional and carry the executing LLM's
+self-report about itself; each is recorded with its `self_reported` source tag.
+Routing is config-driven: the target is resolved through
+`target_context.resolve_target` (ambient environment signal, then the
+machine-local harness/run configuration, then the `claude` fallback); an
+unregistered target yields the established `unknown_target` error path.
 
 ## Client.toon Schema
 
-One required attribute pair (`harness`, `transcripts`) and five optional attributes per run entry. Unreadable attributes are absent rather than estimated.
+One required attribute pair (`harness`, `transcripts`) and eight optional attributes per run entry. Unreadable attributes are absent rather than estimated.
 
 | Key | Meaning | Always present |
 |-----|---------|----------------|
 | `harness` | Harness identifier (`claude`, `opencode`, `antigravity`) | Yes |
 | `transcripts` | Transcript-availability capability (`full` on `claude`, `none` on `opencode`/`antigravity`; unrecognised harness reads as `none`) | Yes |
-| `model_name` | Model name as reported by script-accessible sources | No |
+| `model` | Model identifier as reported by a script-accessible source or self-reported through `--model`; `mixed` when an OpenCode session tree ran more than one, `unknown` when the OpenCode session database could not be read | No |
+| `model_source` | `self_reported` (a `--model` flag) or `measured` (a script-readable source) | No |
+| `variant` | The OpenCode session tree's variant (e.g. `high`) | No |
+| `provider` | The OpenCode session tree's provider id | No |
+| `models` | Distinct `id/variant` values of an OpenCode session tree recorded as `mixed` | No |
 | `model_type` | Model type as reported by script-accessible sources | No |
 | `model_version` | Model version as reported by script-accessible sources | No |
-| `effort` | Effort level as reported by script-accessible sources | No |
+| `effort` | Effort level as reported by a script-accessible source or self-reported through `--effort` | No |
+| `effort_source` | `self_reported` (an `--effort` flag) or `measured` (a script-readable source) | No |
 | `build_version` | Build version as reported by script-accessible sources | No |
 
 `transcripts: none` is the capability flag a transcript-less harness carries:
@@ -43,9 +55,20 @@ its token figures report `unknown` rather than zero (see
 `manage-metrics/standards/data-format.md` § unknown vocabulary). The value is
 derived from the harness identifier alone — never estimated, and never absent.
 
-`model_type` and `model_version` are never derived from `model_name`.
+`model_type` and `model_version` are never derived from `model`.
 Derivation would be estimation. Where script access is hard or strange, an LLM
 fallback may fill the gap upstream; the collector itself never estimates.
+
+### The OpenCode model is measured, not self-reported
+
+On OpenCode the model comes from the session record, not from a flag: the
+collector reads `session_v2.model` (id, provider, variant) from `opencode.db`
+opened read-only, for the plan's root session (`OPENCODE_SESSION_ID` resolved to
+its root through `parent_id`) and for every descendant, and records it as
+`measured`. A flag never stands in for the record. A tree that ran more than one
+model or variant is recorded as `model: mixed` with the distinct values listed —
+never averaged and never reduced to the root's value. An absent database, an
+unreadable schema or an unresolvable session records `model: unknown`.
 
 Entries are keyed by human-readable UTC datetime stamp
 (`YYYY-MM-DD HH-MM-SS UTC`, no colons so the key survives TOON parsing).
@@ -64,10 +87,12 @@ status: success
 operation: runtime-info
 harness: claude
 transcripts: full
-model_name: claude-sonnet-4-5
+model: claude-sonnet-4-5
+model_source: measured
 model_type: chat
 model_version: 2026-09-01
 effort: standard
+effort_source: measured
 build_version: "0.1"
 ```
 
@@ -93,8 +118,10 @@ entries:
   2026-09-15 08-00-00 UTC:
     harness: claude
     transcripts: full
-    model_name: claude-sonnet-4-5
+    model: claude-sonnet-4-5
+    model_source: measured
     effort: standard
+    effort_source: measured
     build_version: "0.1"
 ```
 
@@ -125,10 +152,12 @@ alternative: record the client attributes manually
 
 ## Runtime ABC Contract
 
-`Runtime.runtime_info` takes no arguments and returns a serialized TOON
-string. Providers read from script-accessible sources through the shared
+`Runtime.runtime_info(model=None, effort=None)` returns a serialized TOON
+string; the two keyword arguments carry the executing LLM's self-report and are
+optional. Providers read from script-accessible sources through the shared
 `runtime_info` collector module and wrap the result with `toon_success`.
-No per-target logic lives in the ABC or the collector.
+No per-target logic lives in the ABC; the collector owns the OpenCode session
+measurement.
 
 ## Adding a Future Target
 

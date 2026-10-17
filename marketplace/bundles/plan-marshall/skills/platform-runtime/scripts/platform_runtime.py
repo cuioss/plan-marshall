@@ -36,7 +36,7 @@ Operations:
     subagent dispatch       --agent <name>  [--prompt-file <path>]  [--context <json>]
     wait for                --observable <kind>  --reference <id>  --bound-seconds <n>
     health-check            --checks all|permissions|display|mcp-diagnostics
-    runtime-info            (no arguments)
+    runtime-info            [--model <id>] [--effort <level>]
 
 The router resolves ``PLAN_DIR_NAME`` (default ``.plan``) from the environment,
 reads ``marshal.json``, looks up ``runtime.target``, and dispatches to the
@@ -803,8 +803,18 @@ def _dispatch(runtime: Runtime, operation: str, remaining: list[str]) -> str:
     # ------------------------------------------------------------------
     if operation == 'runtime-info':
         p = argparse.ArgumentParser(allow_abbrev=False, prog='platform_runtime runtime-info')
-        p.parse_args(remaining)
-        return runtime.runtime_info()
+        p.add_argument(
+            '--model',
+            default=None,
+            help='Self-reported model identifier the executing LLM ran under; recorded with model_source: self_reported',
+        )
+        p.add_argument(
+            '--effort',
+            default=None,
+            help='Self-reported effort level the executing LLM ran under; recorded with effort_source: self_reported',
+        )
+        ns = p.parse_args(remaining)
+        return runtime.runtime_info(ns.model, ns.effort)
 
     # Unrecognized operation.
     return toon_error(

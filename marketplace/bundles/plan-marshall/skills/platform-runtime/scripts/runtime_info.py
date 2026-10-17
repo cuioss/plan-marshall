@@ -7,11 +7,18 @@ Client.toon entries are keyed by human-readable UTC datetime stamp; multiple
 runs append a new timestamped entry instead of overwriting.
 
 Collects the client.toon attributes — two required (`harness`, `transcripts`)
-plus five optional (model name/type/version, effort level, and build-version) —
-on a best-effort basis.
+plus optional (model, model type/version, effort level, harness source, and the
+bundle/executor version) — on a best-effort basis.
 Attributes that scripts cannot read are dropped rather than estimated; where
 script access is hard or strange an LLM fallback may fill the gap upstream —
 this module never estimates.
+
+Every value that CAN come from more than one place carries its source: `model`
+and `effort` are tagged `self_reported` when a caller-supplied flag supplied
+them and `measured` when a script-readable source did. On OpenCode the model is
+measured rather than self-reported: it is read from the `session_v2` table of
+`opencode.db` (read-only) for the plan's root session and its descendants, so a
+flag never stands in for the record. See :func:`measure_opencode_model`.
 
 Scope: concrete implementations exist for ``claude``, ``opencode``, and
 ``antigravity``.
@@ -21,6 +28,7 @@ from __future__ import annotations
 
 import json
 import os
+import sqlite3
 from collections.abc import Mapping
 from datetime import UTC, datetime
 from pathlib import Path
@@ -36,6 +44,29 @@ CLIENT_TOON_ENTRIES_KEY = 'entries'
 
 #: Entry key a legacy flat client.toon migrates under on first append.
 LEGACY_ENTRY_KEY = 'legacy'
+
+#: Source tag for a value the executing LLM reported about itself (a CLI flag).
+SOURCE_SELF_REPORTED = 'self_reported'
+
+#: Source tag for a value read from a script-readable source — the environment
+#: lists, or the OpenCode session database.
+SOURCE_MEASURED = 'measured'
+
+#: The value recorded when a source that SHOULD carry the value could not be
+#: read. It asserts only that nothing was observed — never a real model.
+VALUE_UNKNOWN = 'unknown'
+
+#: The value recorded when a measured session tree ran more than one model or
+#: variant. The distinct values are listed beside it — never averaged, and never
+#: reduced to the root session's value.
+MODEL_MIXED = 'mixed'
+
+#: Harness identifier whose measured model source is the session database.
+OPENCODE_HARNESS = 'opencode'
+
+#: Environment variable naming the OpenCode session the plan's LLM runs under.
+#: Resolved to its root through ``session_v2.parent_id`` before measurement.
+OPENCODE_SESSION_ID_ENV = 'OPENCODE_SESSION_ID'
 
 #: Human-readable UTC timestamp shape for entry keys. Colons are deliberately
 #: absent: a TOON key ends at its first colon, so a ``HH:MM:SS`` stamp would
@@ -148,6 +179,205 @@ def read_effort(env: Mapping[str, str] | None = None) -> str | None:
     return _first_env(_EFFORT_ENV, env)
 
 
+def _parse_opencode_model(raw: object) -> dict[str, str] | None:
+    """Parse one ``session_v2.model`` cell into its id/provider/variant parts.
+
+    The column holds a JSON object shaped
+    ``{"id": ..., "providerID": ..., "variant": ...}``. A cell that is absent,
+    not JSON, or not an object carrying a non-blank ``id`` yields ``None`` —
+    the cell is dropped rather than guessed at.
+    """
+    if not isinstance(raw, str) or not raw.strip():
+        return None
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(parsed, dict):
+        return None
+    model_id = parsed.get('id')
+    if not isinstance(model_id, str) or not model_id.strip():
+        return None
+    fields: dict[str, str] = {'id': model_id.strip()}
+    for key, column in (('provider', 'providerID'), ('variant', 'variant')):
+        value = parsed.get(column)
+        if isinstance(value, str) and value.strip():
+            fields[key] = value.strip()
+    return fields
+
+
+def _read_session_rows(db_path: Path) -> dict[str, tuple[str | None, object]]:
+    """Read ``session_v2`` (id, parent_id, model) into a mapping, read-only.
+
+    The database is opened with ``mode=ro`` so this reader can never write to
+    the developer's session store. A missing file, an unreadable schema or a
+    non-``session_v2`` database all surface as an exception the caller maps to
+    :data:`VALUE_UNKNOWN`.
+
+    The table is read DIRECTLY here (PLAN-LB-49 D1 has not landed): when that
+    plan ships its shared reader, this function is the seam to absorb it.
+    """
+    conn = sqlite3.connect(f'file:{db_path}?mode=ro', uri=True)
+    try:
+        cursor = conn.execute('SELECT id, parent_id, model FROM session_v2')
+        return {str(row[0]): (row[1], row[2]) for row in cursor.fetchall()}
+    finally:
+        conn.close()
+
+
+def _session_root(session_id: str, rows: Mapping[str, tuple[str | None, object]]) -> str | None:
+    """Resolve *session_id* to its root through ``parent_id``, or ``None``.
+
+    ``None`` means the id names no row in the tree — there is nothing to
+    measure. A cycle in a malformed tree terminates at the last unvisited id.
+    """
+    if session_id not in rows:
+        return None
+    current = session_id
+    seen: set[str] = set()
+    while current not in seen:
+        seen.add(current)
+        parent = rows[current][0]
+        if not isinstance(parent, str) or not parent or parent not in rows:
+            return current
+        current = parent
+    return current
+
+
+def _session_tree(root: str, rows: Mapping[str, tuple[str | None, object]]) -> list[str]:
+    """Return *root* plus every descendant reachable through ``parent_id``."""
+    children: dict[str, list[str]] = {}
+    for session_id, (parent, _model) in rows.items():
+        if isinstance(parent, str) and parent:
+            children.setdefault(parent, []).append(session_id)
+    ordered: list[str] = []
+    stack = [root]
+    seen: set[str] = set()
+    while stack:
+        current = stack.pop()
+        if current in seen or current not in rows:
+            continue
+        seen.add(current)
+        ordered.append(current)
+        stack.extend(children.get(current, ()))
+    return ordered
+
+
+def _format_model_key(fields: Mapping[str, str]) -> str:
+    """Render one measured model as ``id`` or ``id/variant`` for the mixed list."""
+    variant = fields.get('variant')
+    return f'{fields["id"]}/{variant}' if variant else fields['id']
+
+
+def measure_opencode_model(
+    db_path: Path | None,
+    session_id: str | None,
+) -> dict[str, Any] | None:
+    """Measure the model the OpenCode session tree ran under.
+
+    Reads ``session_v2.model`` from *db_path* (opened read-only) for *session_id*
+    resolved to its root through ``parent_id``, plus every descendant. A tree
+    that ran exactly one model/variant records that model, its variant and its
+    provider as :data:`SOURCE_MEASURED`. A tree that ran more than one records
+    ``model: mixed`` with the distinct ``id/variant`` values listed — never
+    averaged and never reduced to the root's value.
+
+    Args:
+        db_path: The ``opencode.db`` to read, or ``None``.
+        session_id: The session the plan's LLM runs under, or ``None`` when no
+            session is in scope — the caller then has nothing to measure.
+
+    Returns:
+        The measured model fields, ``{'model': unknown, 'model_source:
+        'measured'}`` when the tree could not be read, or ``None`` when no
+        *session_id* is in scope (the caller falls back to its own sources).
+    """
+    if not session_id:
+        return None
+    unknown = {'model': VALUE_UNKNOWN, 'model_source': SOURCE_MEASURED}
+    if db_path is None or not Path(db_path).is_file():
+        return dict(unknown)
+    try:
+        rows = _read_session_rows(Path(db_path))
+    except (sqlite3.Error, OSError, ValueError):
+        return dict(unknown)
+    root = _session_root(session_id, rows)
+    if root is None:
+        return dict(unknown)
+    distinct: dict[tuple[str, str, str], dict[str, str]] = {}
+    for member in _session_tree(root, rows):
+        fields = _parse_opencode_model(rows[member][1])
+        if fields is None:
+            continue
+        distinct[(fields['id'], fields.get('provider', ''), fields.get('variant', ''))] = fields
+    if not distinct:
+        return dict(unknown)
+    if len(distinct) == 1:
+        only = next(iter(distinct.values()))
+        measured: dict[str, Any] = {'model': only['id'], 'model_source': SOURCE_MEASURED}
+        if 'variant' in only:
+            measured['variant'] = only['variant']
+        if 'provider' in only:
+            measured['provider'] = only['provider']
+        return measured
+    listed = ', '.join(sorted(_format_model_key(fields) for fields in distinct.values()))
+    return {'model': MODEL_MIXED, 'models': listed, 'model_source': SOURCE_MEASURED}
+
+
+def _resolve_model_fields(
+    harness: str,
+    env: Mapping[str, str] | None,
+    model_name: str | None,
+    opencode_db_path: Path | None,
+    opencode_session_id: str | None,
+) -> dict[str, Any]:
+    """Resolve the ``model`` / ``model_source`` pair for one collection.
+
+    On OpenCode the model is MEASURED, never self-reported: the session database
+    is authoritative and wins over a flag. When a session id is in scope the
+    measurement's answer stands (``unknown`` included); otherwise the
+    script-readable environment lists are measured, and a still-unreadable value
+    is recorded as ``unknown`` — the flag is never consulted.
+
+    Everywhere else a caller-supplied flag wins and is tagged
+    :data:`SOURCE_SELF_REPORTED`; otherwise the environment lists are measured.
+    A value with no readable source is omitted entirely.
+    """
+    if harness == OPENCODE_HARNESS:
+        measured = measure_opencode_model(opencode_db_path, opencode_session_id)
+        if measured is not None:
+            return measured
+        from_env = read_model_name(env)
+        if from_env:
+            return {'model': from_env, 'model_source': SOURCE_MEASURED}
+        return {'model': VALUE_UNKNOWN, 'model_source': SOURCE_MEASURED}
+
+    if model_name:
+        return {'model': model_name, 'model_source': SOURCE_SELF_REPORTED}
+    from_env = read_model_name(env)
+    if from_env:
+        return {'model': from_env, 'model_source': SOURCE_MEASURED}
+    return {}
+
+
+def _resolve_effort_fields(
+    env: Mapping[str, str] | None,
+    effort: str | None,
+) -> dict[str, Any]:
+    """Resolve the ``effort`` / ``effort_source`` pair for one collection.
+
+    A caller-supplied flag wins and is tagged :data:`SOURCE_SELF_REPORTED`;
+    otherwise the environment lists are measured. A value with no readable
+    source is omitted entirely. Nothing is ever estimated.
+    """
+    if effort:
+        return {'effort': effort, 'effort_source': SOURCE_SELF_REPORTED}
+    from_env = read_effort(env)
+    if from_env:
+        return {'effort': from_env, 'effort_source': SOURCE_MEASURED}
+    return {}
+
+
 def read_build_version(
     env: Mapping[str, str] | None = None,
     marketplace_root: Path | None = None,
@@ -224,13 +454,18 @@ def collect_runtime_info(
     model_version: str | None = None,
     effort: str | None = None,
     build_version: str | None = None,
+    *,
+    opencode_db_path: Path | None = None,
+    opencode_session_id: str | None = None,
 ) -> dict[str, Any]:
     """Collect the client.toon attribute dict on a best-effort basis.
 
     The harness identifier is caller-supplied and always present. Every other
     attribute resolves from its explicit override first, then from
     script-accessible sources; attributes with no readable value are dropped
-    rather than estimated.
+    rather than estimated. ``model`` and ``effort`` additionally carry their
+    source tag, and on OpenCode the model is measured from the session database
+    rather than taken from a flag (see :func:`_resolve_model_fields`).
 
     Args:
         harness: Harness identifier — ``claude``, ``opencode``, or ``antigravity``.
@@ -241,25 +476,25 @@ def collect_runtime_info(
         model_version: Explicit model version override; auto-read when None.
         effort: Explicit effort override; auto-read when None.
         build_version: Explicit build-version override; auto-read when None.
+        opencode_db_path: The ``opencode.db`` to measure the OpenCode model
+            from; only consulted when *harness* is ``opencode``.
+        opencode_session_id: The session whose tree the OpenCode model is
+            measured over; only consulted when *harness* is ``opencode``.
 
     Returns:
-        Attribute dict carrying ``harness`` and ``transcripts`` plus whichever of ``model_name``,
-        ``model_type``, ``model_version``, ``effort``, and ``build_version``
-        were readable.
+        Attribute dict carrying ``harness`` and ``transcripts`` plus whichever of
+        ``model`` (with ``model_source``), ``model_type``, ``model_version``,
+        ``effort`` (with ``effort_source``), and ``build_version`` were readable.
     """
     info: dict[str, Any] = {'harness': harness, 'transcripts': read_transcripts_capability(harness)}
-    resolved_name = model_name if model_name else read_model_name(env)
-    if resolved_name:
-        info['model_name'] = resolved_name
+    info.update(_resolve_model_fields(harness, env, model_name, opencode_db_path, opencode_session_id))
     resolved_type = model_type if model_type else read_model_type(env)
     if resolved_type:
         info['model_type'] = resolved_type
     resolved_version = model_version if model_version else read_model_version(env)
     if resolved_version:
         info['model_version'] = resolved_version
-    resolved_effort = effort if effort else read_effort(env)
-    if resolved_effort:
-        info['effort'] = resolved_effort
+    info.update(_resolve_effort_fields(env, effort))
     resolved_build = build_version if build_version else read_build_version(env, marketplace_root)
     if resolved_build:
         info['build_version'] = resolved_build

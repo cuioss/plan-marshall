@@ -30,7 +30,16 @@ from unittest import mock
 
 # Strip ambient platform env signals so host harness environment (e.g. Antigravity/Claude CLI)
 # does not poison top-level conftest imports or process-level caches.
-_PLATFORM_ENV_SIGNALS: tuple[str, ...] = ('ANTIGRAVITY_AGENT', 'OPENCODE', 'OPENCODE_PID', 'CLAUDE_CODE_SESSION_ID')
+# ``OPENCODE_SESSION_ID`` is included because the runtime-info OpenCode model probe now
+# measures the plan's session tree from ``opencode.db``: a leaked session id would make the
+# suite read the developer's real session database and report a host-dependent model.
+_PLATFORM_ENV_SIGNALS: tuple[str, ...] = (
+    'ANTIGRAVITY_AGENT',
+    'OPENCODE',
+    'OPENCODE_PID',
+    'OPENCODE_SESSION_ID',
+    'CLAUDE_CODE_SESSION_ID',
+)
 for _sig in _PLATFORM_ENV_SIGNALS:
     os.environ.pop(_sig, None)
 os.environ.setdefault('PLAN_MARSHALL_NON_INTERACTIVE', '1')

@@ -1562,12 +1562,20 @@ class Runtime(ABC):
         """
 
     @abstractmethod
-    def runtime_info(self) -> str:
+    def runtime_info(self, model: str | None = None, effort: str | None = None) -> str:
         """Collect runtime information for the client.toon artifact.
 
         Returns the harness/client identifier, model name/type/version, effort
-        level, and build-version on a best-effort basis — attributes that
-        scripts cannot read are dropped rather than estimated.
+        level, harness source, and the bundle/executor version on a best-effort
+        basis — attributes that scripts cannot read are dropped rather than
+        estimated.
+
+        Args:
+            model: Self-reported model identifier the executing LLM ran under,
+                or ``None``. Recorded with ``model_source: self_reported``
+                (except on OpenCode, whose session database is authoritative).
+            effort: Self-reported effort level, or ``None``. Recorded with
+                ``effort_source: self_reported``.
 
         A target that cannot collect runtime information returns ``no-op``
         with a ``reason`` and an ``alternative`` rather than fabricating
