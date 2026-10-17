@@ -48,8 +48,10 @@ timestamp-keyed entry and never overwrites prior entries.
 The same run stamps the plan's runtime metadata into `status.json` — `harness`,
 `harness_source`, `model`, `model_source`, `effort`, `effort_source`,
 `bundle_version` and `executor_version` — through manage-status's shared status
-writer. Only the fields the collected payload carried are written, so a value
-that could not be read stays absent rather than being recorded as the flag value.
+writer. Only the fields the collected payload carried are written, and those
+the stamper manages but the payload did NOT carry are REMOVED: the stamper owns
+those keys, so a later preflight that could not read a field never leaves the
+earlier run's value in place for the landing to attribute to this run.
 The stamp is best-effort: a plan with no readable status document, or a write
 failure, reports `metadata_stamped: false` and never blocks plan start.
 

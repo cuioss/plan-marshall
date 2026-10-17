@@ -366,6 +366,24 @@ def _real_collector_payload(tmp_path: Path) -> str:
     return toon_success(runtime_info.RUNTIME_INFO_OPERATION, info)
 
 
+def test_preflight_clears_a_stale_runtime_stamp(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A later unreadable field does NOT keep the earlier run's value."""
+    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+    plan_dir = _plan_with_status(tmp_path, 'my-plan')
+    _capture_runtime_info_argv([_SELF_REPORTED_PAYLOAD], monkeypatch)
+
+    assert cmd_preflight(_ns('my-plan', model='claude-opus-5-5', effort='high'))['metadata_stamped'] is True
+    assert _status_metadata(plan_dir)['model'] == 'claude-opus-5-5'
+
+    _capture_runtime_info_argv([_BARE_PAYLOAD], monkeypatch)
+
+    assert cmd_preflight(_ns('my-plan'))['metadata_stamped'] is True
+    metadata = _status_metadata(plan_dir)
+    assert 'model' not in metadata
+    assert 'effort' not in metadata
+    assert metadata['harness'] == 'opencode'
+
+
 def test_preflight_stamps_the_real_collector_payload(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """The collector's own output is what the plan metadata ends up carrying."""
     monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))

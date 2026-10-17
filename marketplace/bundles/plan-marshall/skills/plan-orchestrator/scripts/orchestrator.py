@@ -6331,6 +6331,11 @@ def _best_effort_runtime_metadata(plan_id: str, payload: str) -> bool:
             value = 'true' if value else 'false'
         if value is not None and str(value).strip():
             metadata[key] = str(value)
+        else:
+            # The stamper OWNS these keys. A later preflight that cannot read a
+            # field must not leave the PREVIOUS run's value in place: the landing
+            # would then attribute this run to the earlier one's model or effort.
+            metadata.pop(key, None)
     try:
         write_status(plan_id, status)
     except Exception:
