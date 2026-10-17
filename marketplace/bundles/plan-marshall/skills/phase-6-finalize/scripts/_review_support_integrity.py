@@ -6,9 +6,11 @@ Both answer a question the review used to answer in prose, and both were
 observed fail open on real runs:
 
 * :func:`compute_test_integrity` — every pre-existing test whose assertions the
-  branch removed, relaxed or filtered. pm-mcp-core PLAN-41 filtered an assertion
-  and PLAN-44 reshaped a test-catalog entry to stay green; a review that compares
-  only the tests the branch ADDS never sees it.
+  branch removed or filtered. pm-mcp-core PLAN-41 filtered an assertion and
+  PLAN-44 reshaped a test-catalog entry to stay green; a review that compares
+  only the tests the branch ADDS never sees it. A relaxed assertion that keeps
+  its assertion count is not caught by the count and stays the review author's
+  reading of the change.
 * :func:`record_verify_first` / :func:`check_verify_first` — a verify-first gate's
   evidence must predate the action it gates. PLAN-LB-40 logged its nine-consumer
   gate as passed before running it, committed the gated change at 20:15 and ran

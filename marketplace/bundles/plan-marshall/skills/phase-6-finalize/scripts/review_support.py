@@ -24,8 +24,8 @@ instead of re-deriving it in prose:
 * ``open-criteria`` — the frozen Done-when criteria the plan has not yet graded
   ``met`` (the standing finalize triage source, and what the finalize completion
   gate reads).
-* ``test-integrity`` — every changed test whose assertions the branch removed,
-  relaxed or filtered.
+* ``test-integrity`` — every changed test whose assertions the branch removed or
+  filtered (a relaxed assertion that keeps its count stays the author's reading).
 * ``verify-first`` — record a verify-first gate's evidence, or check that it
   predates the commit it gates.
 
@@ -400,7 +400,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     integrity = sub.add_parser(
         'test-integrity',
-        help='Changed tests whose assertions the branch removed, relaxed or filtered',
+        help='Changed tests whose assertions the branch removed or filtered',
         allow_abbrev=False,
     )
     integrity.add_argument('--plan-id', required=True, dest='plan_id', help='Plan identifier.')

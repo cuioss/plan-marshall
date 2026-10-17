@@ -306,7 +306,7 @@ python3 .plan/execute-script.py plan-marshall:phase-6-finalize:review_support te
   --plan-id {plan_id}
 ```
 
-Every row it returns is one weakened test — a changed test whose assertions the branch removed, relaxed or filtered, or one that gained a skip marker — and each becomes one `weakened_test` entry in the verdict. The verb's own count catches a removed assertion and an added filter, and a RELAXED assertion that keeps the count is what the author finds while reading the change; both are reported the same way. A deliverable that asks for the change is what justifies the row; nothing else does.
+Every row it returns is one weakened test — a changed test whose assertions the branch removed, relaxed or filtered, or one that gained a skip marker. The verb's own count catches a removed assertion and an added filter; a RELAXED assertion that keeps the count is what the author finds while reading the change. Report each row as the blocking finding it is, in the field that carries it: an `unrequested_changes` entry naming the changed test path with `consequential: true` and a `fix_kind`, or — when a deliverable asked for the change — as the justification that retires it. A deliverable that asks for the change is what justifies the row; nothing else does.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:phase-6-finalize:review_support verify-first \

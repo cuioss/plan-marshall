@@ -52,6 +52,8 @@ PRE_FIX_CRITERION_RE = re.compile(
 PRE_FIX_EVIDENCE_RE = re.compile(r'(?i)(pre-?fix|before\s+the\s+fix)')
 FAILURE_TOKEN_RE = re.compile(r'(?i)\bfail(?:s|ed|ing)?\b')
 SHA_RE = re.compile(r'[0-9a-f]{7,40}')
+#: Mention of HEAD disqualifies an entry as pre-fix-run evidence: it names the wrong tree.
+HEAD_TOKEN_RE = re.compile(r'(?i)\bhead\b')
 #: An evidence entry that cites a repository path (optionally ``:line`` and ``::name``).
 #:
 #: The path component excludes ``:`` deliberately. ``\S+`` used to swallow the
@@ -154,14 +156,19 @@ def is_pre_fix_criterion(text: Any) -> bool:
 def names_pre_fix_run(evidence: list[str]) -> bool:
     """Whether any evidence entry names a FAILING run against the pre-fix tree.
 
-    Both halves are required: a marker that the entry is about the pre-fix tree
-    (or the SHA of the tree it failed against) AND a failure token. An entry that
-    merely mentions the pre-fix tree — "the suite passes on the pre-fix tree" —
-    names no failure, and a green run at HEAD names neither.
+    Three things are required and one is disqualifying: a failure token, a marker
+    that the entry is about the pre-fix tree (an explicit pre-fix phrase, or the
+    SHA of the tree it failed against), and no attribution of the run to HEAD —
+    a run against HEAD is the wrong tree whatever its outcome. So an entry that
+    merely mentions the pre-fix tree ("the suite passes on the pre-fix tree")
+    names no failure, a green run at HEAD names neither the failure nor the tree,
+    and "fails at HEAD `<sha>`" names the wrong tree.
     """
     for item in evidence:
         text = str(item)
         if not FAILURE_TOKEN_RE.search(text):
+            continue
+        if HEAD_TOKEN_RE.search(text):
             continue
         if PRE_FIX_EVIDENCE_RE.search(text) or SHA_RE.search(text):
             return True

@@ -198,6 +198,18 @@ def test_pre_fix_criterion_evidenced_by_a_green_pre_fix_mention_is_unevidenced(
     assert payload['rewrites'] == [{'deliverable': 1, 'criterion': 1, 'from': 'met', 'to': 'unevidenced'}]
 
 
+def test_pre_fix_criterion_evidenced_by_a_head_failure_is_unevidenced(plan_context, tmp_path, monkeypatch) -> None:
+    """A failing run at HEAD names the wrong tree: the criterion is about the tree without the fix."""
+    monkeypatch.setattr(_attr, 'resolve_live_worktree', lambda _plan_id: None)
+    criteria = ['Regression test fails on the pre-fix tree']
+    _plan(plan_context, criteria)
+    document = _verdict(criteria, ['met'], [['test/sample_test.py::test_a fails at HEAD 2248478b']])
+
+    payload = review_support.run_validate(PLAN_ID, 'functional', _sealed(plan_context, tmp_path, document), None)
+
+    assert payload['rewrites'] == [{'deliverable': 1, 'criterion': 1, 'from': 'met', 'to': 'unevidenced'}]
+
+
 def test_pre_fix_criterion_evidenced_by_a_pre_fix_run_is_met(plan_context, tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(_attr, 'resolve_live_worktree', lambda _plan_id: None)
     criteria = ['Regression test fails on the pre-fix tree']

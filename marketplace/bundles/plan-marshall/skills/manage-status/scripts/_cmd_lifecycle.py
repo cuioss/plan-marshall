@@ -919,13 +919,16 @@ def _finalize_findings_refusal(plan_id: str, status: dict[str, Any]) -> dict[str
       beside it is not a clean exit. A plan with no criteria snapshot carries no
       frozen clauses and is unaffected;
     - unevaluable query (returns ``None`` — executor unreachable / partial query
-      failure) → ``None`` (proceed, with a logged WARNING). The completion
-      boundary fails OPEN on an unevaluable query so a degenerate context with no
-      reachable findings subsystem cannot strand a legitimate completion; the
-      fail-CLOSED handling of a genuine partial query failure is owned by the
-      pre-merge entry point ``pre_merge_gate merge`` (which runs the
-      ``findings-check`` verdict and owns the merge dispatch), where the executor
-      is guaranteed present: it returns ``query_failed`` and merges nothing.
+      failure) → the findings half proceeds, with a logged WARNING. The
+      completion boundary fails OPEN on an unevaluable findings query so a
+      degenerate context with no reachable findings subsystem cannot strand a
+      legitimate completion; the fail-CLOSED handling of a genuine partial query
+      failure is owned by the pre-merge entry point ``pre_merge_gate merge``
+      (which runs the ``findings-check`` verdict and owns the merge dispatch),
+      where the executor is guaranteed present: it returns ``query_failed`` and
+      merges nothing. The criteria half still runs: an unevaluable findings store
+      says nothing about whether a Done-when was met, so the check below refuses
+      on an open criterion whatever the findings query answered.
     """
     metadata = normalize_metadata(status)
     try:
