@@ -290,6 +290,38 @@ def test_evidence_citing_a_path_outside_the_graded_head_is_refused(plan_context,
     assert any('does not exist at the graded head' in error for error in payload['errors'])
 
 
+def test_evidence_with_trailing_text_is_still_checked(plan_context, tmp_path, monkeypatch) -> None:
+    """The citation is the entry's FIRST token; prose after it must not hide it."""
+    repo = _repo(tmp_path)
+    _commit(repo, {'README.md': 'readme\n'})
+    monkeypatch.setattr(_attr, 'resolve_live_worktree', lambda _plan_id: repo)
+    criteria = ['parser accepts input']
+    _plan(plan_context, criteria, freeze=True)
+    document = _verdict(criteria, ['met'], [['test/absent_test.py::test_nowhere fails at 8442a5e33']])
+
+    payload = review_support.run_validate(PLAN_ID, 'functional', _sealed(plan_context, tmp_path, document), None)
+
+    assert payload['valid'] is False
+    assert any('does not exist at the graded head' in error for error in payload['errors'])
+
+
+def test_branch_deleting_a_test_file_yields_a_finding(tmp_path, monkeypatch) -> None:
+    """A deleted test file removes every assertion it held."""
+    repo = _repo(tmp_path)
+    _commit(repo, {'README.md': 'readme\n'})
+    _commit(repo, {'test/sample_test.py': STRONG_TEST})
+    _git(repo, 'checkout', '--quiet', '-b', 'feature')
+    _git(repo, 'rm', '--quiet', 'test/sample_test.py')
+    _git(repo, 'commit', '--quiet', '--message', 'delete the test')
+    monkeypatch.setattr(_integrity, 'resolve_live_worktree', lambda _plan_id: repo)
+
+    payload = _integrity.compute_test_integrity(PLAN_ID)
+
+    assert [(row['path'], row['kind'], row['removed_assertions']) for row in payload['findings']] == [
+        ('test/sample_test.py', 'assertion_removed', 2)
+    ]
+
+
 # --- D2 (d): a verify-first record timestamped after the gated commit is refused ------------
 
 
@@ -334,6 +366,7 @@ def _finalize(plan_context: Any, tmp_path: Path, monkeypatch: Any, statuses: lis
     verdict_file.write_text(
         json.dumps(_verdict(CRITERIA, statuses, [['src/parser.py:1'], ['src/parser.py:2']])), encoding='utf-8'
     )
+    assert review_support.run_author_verdict(PLAN_ID, 'functional', str(verdict_file))['status'] == 'success'
     monkeypatch.setattr(_lifecycle, 'assert_finalize_findings_clean', lambda *_args, **_kwargs: 0)
     monkeypatch.setattr(_lifecycle, 'log_entry', lambda *_args, **_kwargs: None)
     refusal: dict[str, Any] | None = _lifecycle._finalize_findings_refusal(

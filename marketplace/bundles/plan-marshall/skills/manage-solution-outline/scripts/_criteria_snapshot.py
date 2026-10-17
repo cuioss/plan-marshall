@@ -76,6 +76,56 @@ DELETED = 'deleted'
 REWRITTEN = 'rewritten'
 #: A spec deliverable's own Done-when that no outline criterion covers.
 SPEC_MISSING = 'spec_criterion_missing'
+#: The request's own Done-when that no outline criterion covers.
+REQUEST_MISSING = 'request_criterion_missing'
+
+#: The authorship marker the review's own script verb stamps onto a verdict file.
+AUTHORED_KEY = 'authored'
+AUTHORSHIP_SCHEMA = 'review-verdict-authorship/1'
+AUTHORSHIP_VERB = 'review_support author-verdict'
+
+
+def canonical_digest(payload: dict[str, Any]) -> str:
+    """Return the SHA-256 of a verdict's content, independent of key order and whitespace.
+
+    The digest covers the verdict WITHOUT its authorship marker, so re-serialising
+    the same verdict anywhere reproduces it, while any edit to a graded value does
+    not. It lives here, not in the review layer, because the finalize completion
+    gate reads the same verdict file and must apply the same rule.
+    """
+    body = {key: value for key, value in payload.items() if key != AUTHORED_KEY}
+    encoded = json.dumps(body, sort_keys=True, separators=(',', ':'), ensure_ascii=False).encode('utf-8')
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def seal_verdict(payload: dict[str, Any], kind: str) -> dict[str, Any]:
+    """Return ``payload`` carrying its authorship marker (the marker last)."""
+    sealed = {key: value for key, value in payload.items() if key != AUTHORED_KEY}
+    sealed[AUTHORED_KEY] = {
+        'schema': AUTHORSHIP_SCHEMA,
+        'kind': kind,
+        'verb': AUTHORSHIP_VERB,
+        'digest': canonical_digest(payload),
+    }
+    return sealed
+
+
+def authorship_problem(verdict: dict[str, Any]) -> str | None:
+    """Return why the verdict does not match the reviewer's recorded output, or ``None``.
+
+    A verdict the review's own script verb did not write has no marker; a verdict
+    edited after the verb wrote it has a marker whose digest no longer matches the
+    content. Both are refusals — the failure is ``python3 -c`` editing the verdict
+    file in place, and a rewritten criterion graded in the author's own words
+    reads as clean without this check. The finalize completion gate applies it
+    too, because an unsealed verdict must not release a plan.
+    """
+    marker = verdict.get(AUTHORED_KEY)
+    if not isinstance(marker, dict) or marker.get('schema') != AUTHORSHIP_SCHEMA:
+        return f'the verdict was not written by {AUTHORSHIP_VERB}'
+    if not isinstance(marker.get('digest'), str) or marker['digest'] != canonical_digest(verdict):
+        return 'the verdict was modified after the reviewer wrote it'
+    return None
 
 
 def normalize_criterion(text: Any) -> str:
@@ -255,10 +305,36 @@ def read_snapshot(plan_id: str) -> dict[str, Any] | None:
 
 
 def write_snapshot(plan_id: str) -> dict[str, Any]:
-    """Freeze the current outline as the plan's criteria snapshot."""
+    """Freeze the current outline as the plan's criteria snapshot.
+
+    A re-write is legal only while the plan is still in ``3-outline`` (the q-gate
+    can re-dispatch that phase before the transition, so an existing snapshot is
+    not itself a refusal). Past that boundary the frozen record is what the plan
+    is graded against and a re-write would let the plan re-freeze the criteria it
+    is failing, so it is refused. When the plan's phase cannot be read the write
+    is allowed — the honest fail-open here, since a missing status is not proof
+    that outline approval has passed.
+    """
+    existing = read_snapshot(plan_id)
+    if existing is not None:
+        phase = _current_phase(plan_id)
+        if phase is not None and phase != '3-outline':
+            return {
+                'status': 'error',
+                'plan_id': plan_id,
+                'error': 'snapshot_exists',
+                'message': (
+                    f'{SNAPSHOT_FILE} was frozen at outline approval and the plan is at {phase!r}; '
+                    f'the frozen criteria cannot be replaced after the boundary'
+                ),
+            }
     snapshot = build_snapshot(plan_id)
     if snapshot.get('status') == 'error':
         return snapshot
+    if existing is not None:
+        # An operator decision authorizes a criterion change; a re-freeze must not
+        # silently revoke it.
+        snapshot['authorized_changes'] = list(existing.get('authorized_changes') or [])
     path = snapshot_path(plan_id)
     path.parent.mkdir(parents=True, exist_ok=True)
     atomic_write_file(path, json.dumps(snapshot, indent=2, sort_keys=True) + '\n')
@@ -270,7 +346,31 @@ def write_snapshot(plan_id: str) -> dict[str, Any]:
         'criterion_count': sum(len(row['criteria']) for row in snapshot['deliverables']),
         'request_done_when_count': len(snapshot['request']['done_when']),
         'spec_deliverable_count': len(snapshot['spec']['deliverables']) if snapshot['spec'] else 0,
+        'preserved_authorizations': len(snapshot['authorized_changes']),
     }
+
+
+def _current_phase(plan_id: str) -> str | None:
+    """Return the plan's recorded phase, or ``None`` when it cannot be read."""
+    path = base_path('plans', plan_id, 'status.json')
+    if not path.is_file():
+        return None
+    try:
+        parsed = json.loads(path.read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(parsed, dict):
+        return None
+    for key in ('current_phase', 'phase'):
+        value = parsed.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    metadata = parsed.get('metadata')
+    if isinstance(metadata, dict):
+        value = metadata.get('current_phase') or metadata.get('phase')
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return None
 
 
 def _authorization(snapshot: dict[str, Any], number: Any, criterion: str) -> bool:
@@ -334,7 +434,41 @@ def criteria_drift(plan_id: str, current: list[dict[str, Any]] | None = None) ->
                 }
             )
     drift.extend(_spec_clause_drift(snapshot, by_number))
+    drift.extend(_request_clause_drift(snapshot, by_number))
     return drift
+
+
+def _covered_by_outline(clause: str, outline: list[str]) -> bool:
+    """Whether some outline criterion covers ``clause`` (loose containment either way)."""
+    return any(clause in candidate or candidate in clause for candidate in outline if candidate)
+
+
+def _outline_text(by_number: dict[Any, dict[str, Any]]) -> list[str]:
+    return [normalize_criterion(text) for row in by_number.values() for text in (row.get('success_criteria') or [])]
+
+
+def _request_clause_drift(snapshot: dict[str, Any], by_number: dict[Any, dict[str, Any]]) -> list[dict[str, Any]]:
+    """One row per request Done-when clause no current outline criterion covers.
+
+    The request's Done-when is frozen for the same reason the spec's clauses are:
+    it is part of what the plan was asked to deliver, and a plan graded only
+    against its own outline can quietly deliver something else.
+    """
+    clauses = (snapshot.get('request') or {}).get('done_when') or []
+    if not clauses:
+        return []
+    outline = _outline_text(by_number)
+    return [
+        {
+            'deliverable': None,
+            'spec_deliverable': f'request:{index}',
+            'kind': REQUEST_MISSING,
+            'criterion': normalize_criterion(clause),
+            'current': '',
+        }
+        for index, clause in enumerate(clauses, start=1)
+        if normalize_criterion(clause) and not _covered_by_outline(normalize_criterion(clause), outline)
+    ]
 
 
 def _spec_clause_drift(snapshot: dict[str, Any], by_number: dict[Any, dict[str, Any]]) -> list[dict[str, Any]]:
@@ -348,7 +482,7 @@ def _spec_clause_drift(snapshot: dict[str, Any], by_number: dict[Any, dict[str, 
     spec_rows = (snapshot.get('spec') or {}).get('deliverables') or []
     if not spec_rows:
         return []
-    outline = [normalize_criterion(text) for row in by_number.values() for text in (row.get('success_criteria') or [])]
+    outline = _outline_text(by_number)
     rows: list[dict[str, Any]] = []
     for index, row in enumerate(spec_rows, start=1):
         if not isinstance(row, dict):
@@ -356,7 +490,7 @@ def _spec_clause_drift(snapshot: dict[str, Any], by_number: dict[Any, dict[str, 
         clause = normalize_criterion(row.get('done_when'))
         if not clause:
             continue
-        if any(clause in candidate or candidate in clause for candidate in outline if candidate):
+        if _covered_by_outline(clause, outline):
             continue
         rows.append(
             {
@@ -468,15 +602,24 @@ def open_criteria(plan_id: str, verdict_file: Path | None = None) -> dict[str, A
 
     ``source`` is ``snapshot`` when a snapshot exists and ``none`` when it does
     not (the legacy shape — no frozen criteria, so nothing is reported open).
-    A criterion is ``met`` only when the functional review's verdict grades it
-    ``met``; a clause the verdict does not carry at all is ``ungraded``, because
-    an ungraded clause is exactly as open as an unevidenced one.
+
+    A criterion counts as ``met`` only under three conditions, all of which the
+    validator would also enforce and none of which this reader may skip, because
+    the completion gate never runs the validator:
+
+    * the verdict carries the review's authorship seal and its digest matches, so
+      a file rewritten in place does not release the plan;
+    * the criterion is found by its TEXT (never by position, which would let a
+      row with different text answer for it);
+    * the row is ``met`` AND carries non-empty evidence.
+
+    Anything else is open, which is the fail-closed direction.
     """
     snapshot = read_snapshot(plan_id)
     if snapshot is None:
         return {'source': 'none', 'open_count': 0, 'open': []}
     path = verdict_file if verdict_file is not None else base_path('plans', plan_id, FUNCTIONAL_VERDICT_FILE)
-    verdict = _functional_verdict(path)
+    verdict, verdict_state = _checked_verdict(path)
     rows: list[dict[str, Any]] = []
     for row in snapshot.get('deliverables') or []:
         if not isinstance(row, dict):
@@ -484,7 +627,7 @@ def open_criteria(plan_id: str, verdict_file: Path | None = None) -> dict[str, A
         number = row.get('number')
         graded = verdict.get(number, [])
         for index, criterion in enumerate(row.get('criteria') or [], start=1):
-            status = _graded_status(graded, criterion, index)
+            status = _graded_status(graded, criterion)
             if status == 'met':
                 continue
             rows.append(
@@ -497,25 +640,30 @@ def open_criteria(plan_id: str, verdict_file: Path | None = None) -> dict[str, A
             )
     return {
         'source': 'snapshot',
+        'verdict_state': verdict_state,
         'snapshot_deliverables': len(snapshot.get('deliverables') or []),
         'open_count': len(rows),
         'open': rows,
     }
 
 
-def _functional_verdict(path: Path) -> dict[Any, list[Any]]:
-    """Return ``{deliverable_number: [criterion rows]}`` from a verdict file.
+def _checked_verdict(path: Path) -> tuple[dict[Any, list[Any]], str]:
+    """Return ``({deliverable: rows}, state)`` for a verdict the gate may trust.
 
-    An absent or unreadable verdict yields an empty map, so every frozen
-    criterion reads ``ungraded`` — which is open, the fail-closed direction.
+    ``state`` is ``sealed`` when the authorship marker matches, ``unsealed`` when
+    the marker is absent or its digest does not match, and ``absent`` when there is
+    no readable verdict. Only a sealed verdict is returned; every other state
+    returns an empty map, so every frozen criterion reads ``ungraded`` — open.
     """
     if not path.is_file():
-        return {}
+        return {}, 'absent'
     try:
         parsed = json.loads(path.read_text(encoding='utf-8'))
     except (OSError, ValueError):
-        return {}
-    rows = parsed.get('deliverables') if isinstance(parsed, dict) else None
+        return {}, 'unreadable'
+    if not isinstance(parsed, dict) or authorship_problem(parsed) is not None:
+        return {}, 'unsealed'
+    rows = parsed.get('deliverables')
     result: dict[Any, list[Any]] = {}
     for row in rows if isinstance(rows, list) else []:
         if not isinstance(row, dict):
@@ -525,19 +673,26 @@ def _functional_verdict(path: Path) -> dict[Any, list[Any]]:
             number = int(number.strip())
         criteria = row.get('criteria')
         result[number] = list(criteria) if isinstance(criteria, list) else []
-    return result
+    return result, 'sealed'
 
 
-def _graded_status(criteria: list[Any], criterion: str, index: int) -> str:
-    """Status the verdict gives one frozen criterion: text first, position second."""
+def _graded_status(criteria: list[Any], criterion: str) -> str:
+    """Status a sealed verdict gives one frozen criterion, matched by TEXT.
+
+    No positional fallback: a row whose text differs from the frozen criterion
+    answers for a different criterion, and reading it by position would report
+    ``met`` for a clause the reviewer never graded. A ``met`` row with no evidence
+    is ``unevidenced`` here for the same reason the validator treats it so.
+    """
     wanted = normalize_criterion(criterion)
     for row in criteria:
-        if isinstance(row, dict) and normalize_criterion(row.get('criterion')) == wanted:
-            return str(row.get('status') or 'ungraded')
-    if index <= len(criteria):
-        row = criteria[index - 1]
-        if isinstance(row, dict):
-            return str(row.get('status') or 'ungraded')
+        if not isinstance(row, dict) or normalize_criterion(row.get('criterion')) != wanted:
+            continue
+        status = str(row.get('status') or 'ungraded')
+        evidence = row.get('evidence')
+        if status == 'met' and (not isinstance(evidence, list) or not [item for item in evidence if str(item).strip()]):
+            return 'unevidenced'
+        return status
     return 'ungraded'
 
 

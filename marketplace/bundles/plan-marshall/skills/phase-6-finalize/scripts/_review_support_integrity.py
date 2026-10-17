@@ -81,7 +81,7 @@ def _git(worktree: Path, args: list[str]) -> subprocess.CompletedProcess[str]:
 
 def changed_files(worktree: Path, base_ref: str) -> list[str]:
     """Return the three-dot ``{base_ref}...HEAD`` changed paths (may raise on git failure)."""
-    proc = _git(worktree, ['diff', '--name-only', f'{base_ref}...HEAD'])
+    proc = _git(worktree, ['diff', '--name-only', '--no-renames', f'{base_ref}...HEAD'])
     if proc.returncode != 0:
         raise subprocess.CalledProcessError(proc.returncode, proc.args, output=proc.stdout, stderr=proc.stderr)
     return [line.strip() for line in proc.stdout.splitlines() if line.strip()]
@@ -141,10 +141,14 @@ def compute_test_integrity(plan_id: str, base_ref: str | None = None) -> dict[st
         if before is None:
             continue
         target = worktree / path
-        try:
-            after = target.read_text(encoding='utf-8')
-        except OSError:
-            continue
+        if not target.exists():
+            # The branch DELETED an existing test: every assertion it held is gone.
+            after = ''
+        else:
+            try:
+                after = target.read_text(encoding='utf-8')
+            except OSError:
+                continue
         removed = max(0, _count(before, ASSERTION_PATTERNS) - _count(after, ASSERTION_PATTERNS))
         added_markers = sorted(_markers(after) - _markers(before))
         if removed:

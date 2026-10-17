@@ -226,6 +226,36 @@ def test_referenced_spec_path_accepts_a_path_inside_the_checkout(monkeypatch, tm
 # --- D1: the seal covers the FUNCTIONAL verdict, not the code review's findings file --------
 
 
+# --- D1: the completion gate trusts only a sealed verdict -----------------------------------
+
+
+def test_open_criteria_treats_an_unsealed_verdict_as_open(env, plan_context, tmp_path) -> None:
+    """The gate never runs the validator, so it must apply the seal itself."""
+    plan_dir = _plan(plan_context, FROZEN, freeze_from=FROZEN)
+    work = plan_dir / 'work'
+    work.mkdir(parents=True, exist_ok=True)
+    unsealed = _verdict(FROZEN)
+    (work / 'functional-review-verdict.json').write_text(json.dumps(unsealed), encoding='utf-8')
+
+    payload = _snap.open_criteria(PLAN_ID)
+
+    assert payload['verdict_state'] == 'unsealed'
+    assert payload['open_count'] == len(FROZEN)
+
+
+def test_open_criteria_accepts_a_sealed_verdict_and_counts_every_met_criterion(env, plan_context, tmp_path) -> None:
+    plan_dir = _plan(plan_context, FROZEN, freeze_from=FROZEN)
+    sealed = json.loads(Path(_sealed_verdict(tmp_path, FROZEN)).read_text(encoding='utf-8'))
+    work = plan_dir / 'work'
+    work.mkdir(parents=True, exist_ok=True)
+    (work / 'functional-review-verdict.json').write_text(json.dumps(sealed), encoding='utf-8')
+
+    payload = _snap.open_criteria(PLAN_ID)
+
+    assert payload['verdict_state'] == 'sealed'
+    assert payload['open_count'] == 0
+
+
 def test_code_kind_findings_file_is_not_covered_by_the_freeze(env, plan_context, tmp_path) -> None:
     """The code review writes its findings file with the Write tool, so the seal must not hold it."""
     _plan(plan_context, FROZEN, freeze_from=FROZEN)

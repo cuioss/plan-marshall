@@ -190,6 +190,7 @@ def run_validate(plan_id: str, kind: str, verdict_file: str, verifier_file: str 
     if verdict is None:
         return error_payload(plan_id, 'verdict_file_unreadable', f'{verdict_file}: {problem}')
     grading = Grading()
+    payload_evidence_check = 'not_run'
     snapshot = read_snapshot(plan_id)
     if snapshot is not None and kind == KIND_FUNCTIONAL:
         authorship = authorship_problem(verdict)
@@ -203,8 +204,15 @@ def run_validate(plan_id: str, kind: str, verdict_file: str, verifier_file: str 
         facts = validate_functional(verdict, deliverables, grading, evidence_root)
         if snapshot is not None:
             grade_frozen_criteria(grading, criteria_drift(plan_id, deliverables))
+            # Prove the citation check ran, or say why it did not: an unrun check
+            # that renders identically to a passed one is a green nothing produced.
+            if evidence_root is None:
+                payload_evidence_check = 'not_run'
+            else:
+                payload_evidence_check = 'run'
     else:
         facts = validate_code(verdict, grading)
+        payload_evidence_check = 'not_run'
 
     blocking_count = sum(1 for finding in grading.findings if finding['severity'] == SEVERITY_BLOCKING)
     verifier = verifier_status(verifier_file, blocking_count > 0)
@@ -217,6 +225,7 @@ def run_validate(plan_id: str, kind: str, verdict_file: str, verifier_file: str 
         'may_close': False,
         'errors': grading.errors,
         'rewrites': grading.rewrites,
+        'evidence_check': payload_evidence_check,
     }
     if kind == KIND_CODE:
         payload['rejected_findings'] = grading.rejected

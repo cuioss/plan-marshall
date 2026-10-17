@@ -13,13 +13,20 @@ Imported as ``from _review_support_validate import ...`` by ``review_support.py`
 
 from __future__ import annotations
 
-import hashlib
 import json
 import re
 from pathlib import Path
 from typing import Any
 
-from _criteria_snapshot import SPEC_MISSING
+from _criteria_snapshot import (
+    AUTHORED_KEY,
+    AUTHORSHIP_SCHEMA,
+    REQUEST_MISSING,
+    SPEC_MISSING,
+    authorship_problem,
+    canonical_digest,
+    seal_verdict,
+)
 
 KIND_FUNCTIONAL = 'functional'
 KIND_CODE = 'code'
@@ -38,11 +45,6 @@ FAILURE_CLASSES = (*BLOCKING_FAILURE_CLASSES, 'none')
 
 SEVERITY_BLOCKING = 'blocking'
 SEVERITY_ADVISORY = 'advisory'
-
-#: The authorship marker the review's own script verb stamps onto a verdict file.
-AUTHORED_KEY = 'authored'
-AUTHORSHIP_SCHEMA = 'review-verdict-authorship/1'
-AUTHORSHIP_VERB = 'review_support author-verdict'
 
 #: A criterion whose Done-when is a run against the PRE-fix tree.
 PRE_FIX_CRITERION_RE = re.compile(
@@ -107,47 +109,6 @@ def read_json_object(path: str) -> tuple[dict[str, Any] | None, str]:
     return parsed, ''
 
 
-def canonical_digest(payload: dict[str, Any]) -> str:
-    """Return the SHA-256 of a verdict's content, independent of key order and whitespace.
-
-    The digest covers the verdict WITHOUT its authorship marker, so re-serialising
-    the same verdict anywhere (a different JSON indentation, a different key
-    order) reproduces it, while any edit to a graded value does not.
-    """
-    body = {key: value for key, value in payload.items() if key != AUTHORED_KEY}
-    encoded = json.dumps(body, sort_keys=True, separators=(',', ':'), ensure_ascii=False).encode('utf-8')
-    return hashlib.sha256(encoded).hexdigest()
-
-
-def seal_verdict(payload: dict[str, Any], kind: str) -> dict[str, Any]:
-    """Return ``payload`` carrying its authorship marker (the marker last)."""
-    sealed = {key: value for key, value in payload.items() if key != AUTHORED_KEY}
-    sealed[AUTHORED_KEY] = {
-        'schema': AUTHORSHIP_SCHEMA,
-        'kind': kind,
-        'verb': AUTHORSHIP_VERB,
-        'digest': canonical_digest(payload),
-    }
-    return sealed
-
-
-def authorship_problem(verdict: dict[str, Any]) -> str | None:
-    """Return why the verdict does not match the reviewer's recorded output, or ``None``.
-
-    A verdict the review's own script verb did not write has no marker; a verdict
-    edited after the verb wrote it has a marker whose digest no longer matches
-    the content. Both are refusals at the finalize step gate — the failure is
-    ``python3 -c`` editing the verdict file in place, and a rewritten criterion
-    graded in the author's own words reads as clean without this check.
-    """
-    marker = verdict.get(AUTHORED_KEY)
-    if not isinstance(marker, dict) or marker.get('schema') != AUTHORSHIP_SCHEMA:
-        return f'the verdict was not written by {AUTHORSHIP_VERB}'
-    if not isinstance(marker.get('digest'), str) or marker['digest'] != canonical_digest(verdict):
-        return 'the verdict was modified after the reviewer wrote it'
-    return None
-
-
 def is_pre_fix_criterion(text: Any) -> bool:
     """Whether a criterion's Done-when is a run against the pre-fix tree."""
     return bool(PRE_FIX_CRITERION_RE.search(str(text or '')))
@@ -178,14 +139,28 @@ def names_pre_fix_run(evidence: list[str]) -> bool:
 def cited_evidence_path(entry: Any) -> str | None:
     """Return the repository path an evidence entry cites, or ``None``.
 
-    Only an entry shaped like a path is a citation that must exist at the graded
-    head; a free-form description of a recorded run (``module-tests at <sha>``)
-    is not a path and is never existence-checked.
+    Only the entry's FIRST token is considered a citation. The entry may carry
+    prose after it — ``test/x.py::test_never passes``, or the pre-fix form
+    ``test/x.py::test_a fails at 8442a5e33`` — and anchoring on the whole entry
+    would let that prose hide a citation from the existence check. A free-form
+    first token that is not a path (``module-tests``, ``green``) yields ``None``.
     """
-    match = EVIDENCE_PATH_RE.match(str(entry or '').strip())
+    tokens = str(entry or '').strip().split(maxsplit=1)
+    if not tokens:
+        return None
+    match = EVIDENCE_PATH_RE.match(tokens[0])
     if not match:
         return None
     return match.group(1)
+
+
+def _cited_name(entry: Any) -> str:
+    """Return the ``::name`` part of an entry's FIRST token, or ``''``."""
+    tokens = str(entry or '').strip().split(maxsplit=1)
+    if not tokens:
+        return ''
+    _, _, name = tokens[0].partition('::')
+    return name.strip()
 
 
 def missing_evidence(evidence_root: Path, evidence: list[str]) -> list[str]:
@@ -215,8 +190,8 @@ def missing_evidence(evidence_root: Path, evidence: list[str]) -> list[str]:
         if not resolved.is_relative_to(root) or not resolved.is_file():
             missing.append(raw)
             continue
-        _, _, name = raw.partition('::')
-        if name and name.strip():
+        name = _cited_name(raw)
+        if name:
             try:
                 content = resolved.read_text(encoding='utf-8')
             except OSError:
@@ -407,14 +382,14 @@ def grade_frozen_criteria(grading: Grading, drift: list[dict[str, Any]]) -> int:
     """
     for row in drift:
         kind = row.get('kind')
-        if kind == SPEC_MISSING:
+        if kind in (SPEC_MISSING, REQUEST_MISSING):
             grading.add(
                 kind,
-                str(row.get('spec_deliverable') or 'spec'),
+                str(row.get('spec_deliverable') or 'request'),
                 str(row.get('criterion')),
                 True,
                 FIX_KIND_IMPLEMENTATION,
-                'spec deliverable',
+                'request or spec Done-when',
             )
             continue
         number = row.get('deliverable')
