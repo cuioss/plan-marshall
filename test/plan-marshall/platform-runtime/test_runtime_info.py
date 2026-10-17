@@ -92,18 +92,18 @@ def _model_json(model_id: str, variant: str, provider: str = 'opencode') -> str:
 
 def test_collector_always_carries_harness() -> None:
     """The collector names the caller-supplied harness."""
-    info = runtime_info.collect_runtime_info('claude', env={}, marketplace_root=Path('/nonexistent'))
+    info = runtime_info.collect_runtime_info('claude', env={}, bundle_root=Path('/nonexistent'))
     assert info['harness'] == 'claude'
 
 
 def test_collector_drops_unreadable_attributes() -> None:
     """Attributes with no readable source are absent rather than estimated."""
-    info = runtime_info.collect_runtime_info('claude', env={}, marketplace_root=Path('/nonexistent'))
+    info = runtime_info.collect_runtime_info('claude', env={}, bundle_root=Path('/nonexistent'))
     assert 'model' not in info
     assert 'model_type' not in info
     assert 'model_version' not in info
     assert 'effort' not in info
-    assert 'build_version' not in info
+    assert 'bundle_version' not in info
 
 
 def test_collector_reads_model_and_effort_from_env() -> None:
@@ -114,7 +114,7 @@ def test_collector_reads_model_and_effort_from_env() -> None:
         'MODEL_VERSION': '2026-09-01',
         'PLAN_MARSHALL_EFFORT': 'standard',
     }
-    info = runtime_info.collect_runtime_info('claude', env=env, marketplace_root=Path('/nonexistent'))
+    info = runtime_info.collect_runtime_info('claude', env=env, bundle_root=Path('/nonexistent'))
     assert info['model'] == 'claude-sonnet-4-5'
     assert info['model_type'] == 'chat'
     assert info['model_version'] == '2026-09-01'
@@ -126,22 +126,11 @@ def test_collector_never_derives_type_from_name() -> None:
     info = runtime_info.collect_runtime_info(
         'claude',
         env={'CLAUDE_CODE_MODEL': 'claude-sonnet-4-5'},
-        marketplace_root=Path('/nonexistent'),
+        bundle_root=Path('/nonexistent'),
     )
     assert info['model'] == 'claude-sonnet-4-5'
     assert 'model_type' not in info
     assert 'model_version' not in info
-
-
-def test_collector_reads_build_version_from_manifest(tmp_path: Path) -> None:
-    """The marketplace manifest version is a readable build-version source."""
-    manifest_dir = tmp_path / '.claude-plugin'
-    manifest_dir.mkdir(parents=True)
-    (manifest_dir / 'marketplace.json').write_text(
-        json.dumps({'metadata': {'version': '9.9'}}),
-        encoding='utf-8',
-    )
-    assert runtime_info.read_build_version(env={}, marketplace_root=tmp_path) == '9.9'
 
 
 def test_client_toon_carries_schema_version() -> None:
@@ -281,7 +270,7 @@ def test_custom_harness_is_an_example_harness_value_only() -> None:
     info = runtime_info.collect_runtime_info(
         'custom-harness',
         env={},
-        marketplace_root=Path('/nonexistent'),
+        bundle_root=Path('/nonexistent'),
     )
     assert info['harness'] == 'custom-harness'
     assert 'custom-harness' not in platform_runtime._REGISTRY
@@ -304,7 +293,7 @@ def test_self_reported_model_and_effort_carry_their_source() -> None:
     info = runtime_info.collect_runtime_info(
         'claude',
         env={},
-        marketplace_root=Path('/nonexistent'),
+        bundle_root=Path('/nonexistent'),
         model_name='claude-opus-5-5',
         effort='high',
     )
@@ -319,7 +308,7 @@ def test_script_readable_model_and_effort_are_measured() -> None:
     info = runtime_info.collect_runtime_info(
         'claude',
         env={'CLAUDE_CODE_MODEL': 'claude-sonnet-4-5', 'PLAN_MARSHALL_EFFORT': 'standard'},
-        marketplace_root=Path('/nonexistent'),
+        bundle_root=Path('/nonexistent'),
     )
     assert info['model'] == 'claude-sonnet-4-5'
     assert info['model_source'] == runtime_info.SOURCE_MEASURED
@@ -329,7 +318,7 @@ def test_script_readable_model_and_effort_are_measured() -> None:
 
 def test_absent_model_and_effort_carry_no_source() -> None:
     """Neither the value nor its source is emitted when nothing is readable."""
-    info = runtime_info.collect_runtime_info('claude', env={}, marketplace_root=Path('/nonexistent'))
+    info = runtime_info.collect_runtime_info('claude', env={}, bundle_root=Path('/nonexistent'))
     assert 'model' not in info
     assert 'model_source' not in info
     assert 'effort' not in info
@@ -434,3 +423,60 @@ def test_opencode_missing_database_records_unknown(tmp_path: Path) -> None:
 
     assert info['model'] == 'unknown'
     assert info['model'] != 'some-flag-value'
+
+
+# =============================================================================
+# D2 — the version is the installed bundle and executor, not the marketplace manifest
+# =============================================================================
+
+
+def _fixture_bundle(tmp_path: Path, version: str) -> Path:
+    bundle = tmp_path / 'bundle'
+    (bundle / '.claude-plugin').mkdir(parents=True)
+    (bundle / '.claude-plugin' / 'plugin.json').write_text(json.dumps({'name': 'fixture', 'version': version}))
+    return bundle
+
+
+def _fixture_executor(tmp_path: Path, content: str) -> Path:
+    executor = tmp_path / 'execute-script.py'
+    executor.write_text(content, encoding='utf-8')
+    return executor
+
+
+def test_bundle_and_executor_versions_come_from_their_fixtures(tmp_path: Path) -> None:
+    """A fixture bundle and executor yield both version values."""
+    bundle = _fixture_bundle(tmp_path, '0.1.1919')
+    executor = _fixture_executor(tmp_path, "MARSHALL_VERSION = '0.1.1916'\n")
+
+    info = runtime_info.collect_runtime_info(
+        'claude',
+        env={},
+        bundle_root=bundle,
+        executor_path=executor,
+    )
+
+    assert info['bundle_version'] == '0.1.1919'
+    assert info['executor_version'] == '0.1.1916'
+
+
+def test_unreadable_executor_yields_no_executor_version(tmp_path: Path) -> None:
+    """An unreadable executor omits executor_version — never the manifest's 0.1."""
+    bundle = _fixture_bundle(tmp_path, '0.1.1919')
+
+    info = runtime_info.collect_runtime_info(
+        'claude',
+        env={},
+        bundle_root=bundle,
+        executor_path=tmp_path / 'absent-executor.py',
+    )
+
+    assert 'executor_version' not in info
+    assert info.get('executor_version') != '0.1'
+
+
+def test_the_marketplace_manifest_build_version_is_replaced() -> None:
+    """A default collection reports bundle_version and no marketplace build_version."""
+    info = runtime_info.collect_runtime_info('claude', env={})
+
+    assert 'bundle_version' in info
+    assert 'build_version' not in info

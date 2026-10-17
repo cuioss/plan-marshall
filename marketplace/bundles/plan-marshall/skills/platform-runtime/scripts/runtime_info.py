@@ -121,11 +121,6 @@ _EFFORT_ENV: tuple[str, ...] = (
     'EFFORT_LEVEL',
 )
 
-_BUILD_VERSION_ENV: tuple[str, ...] = (
-    'PLAN_MARSHALL_BUILD_VERSION',
-    'BUILD_VERSION',
-)
-
 
 def _first_env(names: tuple[str, ...], env: Mapping[str, str] | None = None) -> str | None:
     """Return the first non-empty value among *names*, or None.
@@ -378,55 +373,72 @@ def _resolve_effort_fields(
     return {}
 
 
-def read_build_version(
-    env: Mapping[str, str] | None = None,
-    marketplace_root: Path | None = None,
-) -> str | None:
-    """Read the build version from script-accessible sources.
+def _find_bundle_root() -> Path | None:
+    """Locate the bundle this module runs from via the ancestor walk.
 
-    Preference order: explicit environment override, then the marketplace
-    manifest version, otherwise None. Never estimated.
+    The root is the first ancestor holding ``.claude-plugin/plugin.json`` — the
+    bundle manifest, so an INSTALLED bundle (whose ancestor chain carries no
+    marketplace manifest) resolves its own version.
+    """
+    for ancestor in Path(__file__).resolve().parents:
+        if (ancestor / '.claude-plugin' / 'plugin.json').is_file():
+            return ancestor
+    return None
+
+
+def read_bundle_version(bundle_root: Path | None = None) -> str | None:
+    """Read the ``version`` of the bundle manifest the collector runs from.
+
+    The value is the ``version`` in ``.claude-plugin/plugin.json`` of the bundle
+    at *bundle_root* (default: the bundle this module runs from). It replaces the
+    marketplace manifest's ``metadata.version``: the marketplace manifest
+    describes the aggregate project, not the bundle that is loaded. Never
+    estimated.
 
     Args:
-        env: Explicit environment mapping for tests; defaults to ``os.environ``.
-        marketplace_root: Directory holding ``.claude-plugin/marketplace.json``.
-            When None, the ancestor walk from this file locates it.
+        bundle_root: Directory holding ``.claude-plugin/plugin.json``. When
+            None, the ancestor walk from this file locates it.
 
     Returns:
-        The build version string, or None when unreadable.
+        The bundle version string, or None when unreadable.
     """
-    override = _first_env(_BUILD_VERSION_ENV, env)
-    if override:
-        return override
-    root = marketplace_root
-    if root is None:
-        root = _find_marketplace_root()
+    root = bundle_root if bundle_root is not None else _find_bundle_root()
     if root is None:
         return None
-    manifest = root / '.claude-plugin' / 'marketplace.json'
+    manifest = root / '.claude-plugin' / 'plugin.json'
     try:
         data = json.loads(manifest.read_text(encoding='utf-8'))
     except (OSError, json.JSONDecodeError):
         return None
     if not isinstance(data, dict):
         return None
-    metadata = data.get('metadata')
-    if not isinstance(metadata, dict):
-        return None
-    version = metadata.get('version')
+    version = data.get('version')
     if isinstance(version, str) and version.strip():
         return version.strip()
     return None
 
 
-def _find_marketplace_root() -> Path | None:
-    """Locate the marketplace root via the ancestor walk.
+def read_executor_version(executor_path: Path | None = None) -> str | None:
+    """Read the executor's ``MARSHALL_VERSION`` through the shared registry reader.
 
-    The root is the first ancestor holding ``.claude-plugin/marketplace.json``.
+    Reuses ``plugin_registry.read_executor_version`` rather than re-parsing the
+    assignment, so the version's grammar has one definition. An executor that is
+    absent, unreadable or carries no usable assignment yields None — never a
+    substituted version.
+
+    Args:
+        executor_path: The generated executor to read. When None, the executor
+            of the current project (``{cwd}/.plan/execute-script.py``) is read.
+
+    Returns:
+        The executor version string, or None when it could not be read.
     """
-    for ancestor in Path(__file__).resolve().parents:
-        if (ancestor / '.claude-plugin' / 'marketplace.json').is_file():
-            return ancestor
+    import plugin_registry
+
+    path = executor_path if executor_path is not None else plugin_registry.default_executor_path(Path.cwd())
+    state, version = plugin_registry.read_executor_version(Path(path))
+    if state == plugin_registry.EXECUTOR_VERSION_FOUND:
+        return version
     return None
 
 
@@ -448,13 +460,14 @@ def read_transcripts_capability(harness: str) -> str:
 def collect_runtime_info(
     harness: str,
     env: Mapping[str, str] | None = None,
-    marketplace_root: Path | None = None,
+    bundle_root: Path | None = None,
     model_name: str | None = None,
     model_type: str | None = None,
     model_version: str | None = None,
     effort: str | None = None,
-    build_version: str | None = None,
+    bundle_version: str | None = None,
     *,
+    executor_path: Path | None = None,
     opencode_db_path: Path | None = None,
     opencode_session_id: str | None = None,
 ) -> dict[str, Any]:
@@ -470,12 +483,15 @@ def collect_runtime_info(
     Args:
         harness: Harness identifier — ``claude``, ``opencode``, or ``antigravity``.
         env: Explicit environment mapping for tests; defaults to ``os.environ``.
-        marketplace_root: Override for build-version manifest lookup.
+        bundle_root: Bundle whose ``.claude-plugin/plugin.json`` carries the
+            reported ``bundle_version``; auto-located when None.
         model_name: Explicit model name override; auto-read when None.
         model_type: Explicit model type override; auto-read when None.
         model_version: Explicit model version override; auto-read when None.
         effort: Explicit effort override; auto-read when None.
-        build_version: Explicit build-version override; auto-read when None.
+        bundle_version: Explicit bundle-version override; auto-read when None.
+        executor_path: The executor whose ``MARSHALL_VERSION`` is reported as
+            ``executor_version``; the current project's when None.
         opencode_db_path: The ``opencode.db`` to measure the OpenCode model
             from; only consulted when *harness* is ``opencode``.
         opencode_session_id: The session whose tree the OpenCode model is
@@ -484,7 +500,8 @@ def collect_runtime_info(
     Returns:
         Attribute dict carrying ``harness`` and ``transcripts`` plus whichever of
         ``model`` (with ``model_source``), ``model_type``, ``model_version``,
-        ``effort`` (with ``effort_source``), and ``build_version`` were readable.
+        ``effort`` (with ``effort_source``), ``bundle_version`` and
+        ``executor_version`` were readable.
     """
     info: dict[str, Any] = {'harness': harness, 'transcripts': read_transcripts_capability(harness)}
     info.update(_resolve_model_fields(harness, env, model_name, opencode_db_path, opencode_session_id))
@@ -495,9 +512,12 @@ def collect_runtime_info(
     if resolved_version:
         info['model_version'] = resolved_version
     info.update(_resolve_effort_fields(env, effort))
-    resolved_build = build_version if build_version else read_build_version(env, marketplace_root)
-    if resolved_build:
-        info['build_version'] = resolved_build
+    resolved_bundle = bundle_version if bundle_version else read_bundle_version(bundle_root)
+    if resolved_bundle:
+        info['bundle_version'] = resolved_bundle
+    resolved_executor = read_executor_version(executor_path)
+    if resolved_executor:
+        info['executor_version'] = resolved_executor
     return info
 
 

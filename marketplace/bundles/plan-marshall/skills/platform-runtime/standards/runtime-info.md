@@ -3,7 +3,8 @@
 Logical extension point for runtime information collection. The `runtime-info`
 operation reports the harness/client identifier, the transcript-availability
 capability, model name/type/version,
-effort level, and build-version on a best-effort basis for the `client.toon`
+effort level, and the installed bundle and executor version on a best-effort
+basis for the `client.toon`
 pre-flight artifact. Every value that can come from more than one place carries
 its source (`model_source` / `effort_source`): `self_reported` when a CLI flag
 supplied it, `measured` when a script-readable source did.
@@ -48,7 +49,14 @@ One required attribute pair (`harness`, `transcripts`) and eight optional attrib
 | `model_version` | Model version as reported by script-accessible sources | No |
 | `effort` | Effort level as reported by a script-accessible source or self-reported through `--effort` | No |
 | `effort_source` | `self_reported` (an `--effort` flag) or `measured` (a script-readable source) | No |
-| `build_version` | Build version as reported by script-accessible sources | No |
+| `bundle_version` | The `version` in `.claude-plugin/plugin.json` of the bundle the collector runs from | No |
+| `executor_version` | The `MARSHALL_VERSION` of the executor (`plugin_registry.read_executor_version`) | No |
+
+`bundle_version` is the INSTALLED bundle's own manifest version — not the
+marketplace manifest's `metadata.version`, which describes the aggregate project
+rather than the bundle that is loaded. `executor_version` is read through the
+shared `plugin_registry` reader, so the assignment's grammar has one definition;
+an absent or unreadable executor omits the key rather than substituting a version.
 
 `transcripts: none` is the capability flag a transcript-less harness carries:
 its token figures report `unknown` rather than zero (see
@@ -93,17 +101,18 @@ model_type: chat
 model_version: 2026-09-01
 effort: standard
 effort_source: measured
-build_version: "0.1"
+bundle_version: "0.1.1919"
+executor_version: "0.1.1916"
 ```
 
-Best-effort drop, when only the harness and build-version are readable:
+Best-effort drop, when only the harness and the bundle version are readable:
 
 ```toon
 status: success
 operation: runtime-info
 harness: opencode
 transcripts: none
-build_version: "0.1"
+bundle_version: "0.1.1919"
 ```
 
 Timestamp-keyed client.toon artifact, after two runs appended:
@@ -114,7 +123,7 @@ entries:
   2026-09-15 07-00-00 UTC:
     harness: claude
     transcripts: full
-    build_version: "0.1"
+    bundle_version: "0.1.1919"
   2026-09-15 08-00-00 UTC:
     harness: claude
     transcripts: full
@@ -122,7 +131,7 @@ entries:
     model_source: measured
     effort: standard
     effort_source: measured
-    build_version: "0.1"
+    bundle_version: "0.1.1919"
 ```
 
 ## Error
