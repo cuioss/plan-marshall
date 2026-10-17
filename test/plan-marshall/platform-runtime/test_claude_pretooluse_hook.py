@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import json
 import re
+from pathlib import Path
 
 # PLAIN import, deliberately — matching ``test_pretooluse_gate.py``, whose typed
 # probes need mypy to see the real module. The name must be bound the same way in
@@ -1080,9 +1081,19 @@ def test_r5_allows_documented_sync_engine() -> None:
 
 
 def test_r5_allows_nested_allowlist_path() -> None:
-    """An allow-listed script reached by a longer path still matches by suffix."""
-    command = 'python3 /abs/repo/marketplace/targets/generate.py --target all'
-    assert hook.evaluate(_signal2_payload('Bash', _bash(command))) is None
+    """An allow-listed script named by its absolute in-repo path matches its repo-relative entry."""
+    repo_root = Path(__file__).resolve().parents[3]
+    command = f'python3 {repo_root}/marketplace/targets/sync.py --target opencode'
+    payload = {'cwd': str(repo_root), 'tool_name': 'Bash', 'tool_input': _bash(command)}
+    assert hook.evaluate(payload) is None
+
+
+def test_r5_refuses_an_allowlist_basename_outside_the_repository() -> None:
+    """A copy of an allow-listed script outside the repository never matches (no basename suffix)."""
+    repo_root = Path(__file__).resolve().parents[3]
+    command = 'python3 /tmp/x/marketplace/targets/sync.py'
+    payload = {'cwd': str(repo_root), 'tool_name': 'Bash', 'tool_input': _bash(command)}
+    assert hook.evaluate(payload) == hook._R5_REASON
 
 
 def test_r5_allows_absolute_executor() -> None:
@@ -1196,3 +1207,60 @@ def test_r6_needs_plan_state(tmp_path) -> None:
     worktree.mkdir()
     payload = {'cwd': str(worktree), 'tool_name': 'Bash', 'tool_input': _bash('git commit -m "fix: x"')}
     assert hook.evaluate(payload) is None
+
+
+# =============================================================================
+# D1 — R5 protects every session; the allow-list is exact (PLAN-LB-65)
+# =============================================================================
+
+#: The documented repository-relative form of the steward's permission-fix
+#: script.
+_DOCUMENTED_PERMISSION_FIX = 'marketplace/bundles/plan-marshall/skills/tools-permission-fix/scripts/permission_fix.py'
+
+#: A cwd in the main checkout — deliberately NOT under ``.plan/local/worktrees/``,
+#: so Signal 2 is OFF and the payload exercises a genuine ROOT session.
+_MAIN_CHECKOUT_CWD = '/home/dev/project'
+
+
+def _root_payload(command: str, cwd: str) -> dict:
+    """A payload for a ROOT session: no sub-agent identity, cwd not a worktree."""
+    return {'cwd': cwd, 'tool_name': 'Bash', 'tool_input': _bash(command)}
+
+
+def test_r5_enforced_in_a_root_session_outside_a_plan_context() -> None:
+    """Done-when (D1) — R5 applies in a ROOT session with the cwd in the main checkout."""
+    payload = _root_payload('python3 -c "x"', _MAIN_CHECKOUT_CWD)
+    assert hook.evaluate(payload) == hook._R5_REASON
+
+
+def test_r5_refuses_an_outside_repo_permission_fix() -> None:
+    """Done-when (D1) — ``python3 /tmp/x/permission_fix.py`` is refused."""
+    payload = _root_payload('python3 /tmp/x/permission_fix.py', _MAIN_CHECKOUT_CWD)
+    assert hook.evaluate(payload) == hook._R5_REASON
+
+
+def test_r5_allows_the_documented_repo_relative_permission_fix() -> None:
+    """Done-when (D1) — the documented repo-relative form is allowed."""
+    command = f'python3 {_DOCUMENTED_PERMISSION_FIX} ensure-executor --target project --dry-run'
+    payload = _root_payload(command, _MAIN_CHECKOUT_CWD)
+    assert hook.evaluate(payload) is None
+
+
+def test_r5_allows_absolute_in_repo_path() -> None:
+    """An absolute path resolving to an allow-listed repo-relative path is allowed."""
+    repo_root = Path(__file__).resolve().parents[3]
+    command = f'python3 {repo_root}/{_DOCUMENTED_PERMISSION_FIX} ensure-executor'
+    payload = _root_payload(command, str(repo_root))
+    assert hook.evaluate(payload) is None
+
+
+def test_r5_refuses_suffix_of_repo_relative_path_outside_repo() -> None:
+    """A path outside the repository never matches, even when it carries the full suffix."""
+    payload = _root_payload(f'python3 /tmp/x/{_DOCUMENTED_PERMISSION_FIX}', _MAIN_CHECKOUT_CWD)
+    assert hook.evaluate(payload) == hook._R5_REASON
+
+
+@pytest.mark.parametrize('command', ['python3 -u x.py', 'python3 foo.py', 'python3 -Ic "x"'])
+def test_r5_refuses_extra_interpreter_shapes_out_of_context(command: str) -> None:
+    """R5 refuses the extra interpreter shapes in a root session as well."""
+    assert hook.evaluate(_root_payload(command, _MAIN_CHECKOUT_CWD)) == hook._R5_REASON

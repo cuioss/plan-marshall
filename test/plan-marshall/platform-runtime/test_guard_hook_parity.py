@@ -37,19 +37,22 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 
 #: ``(command, refused_in_context, refused_out_of_context)``. Both guards must
 #: produce these values. ``refused`` means the guard threw and the hook returned
-#: a deny reason.
+#: a deny reason. R5 is enforced in EVERY session in both harnesses since
+#: PLAN-LB-65 D1, so a refusal row is refused in context AND out of it — the two
+#: columns agree on every row and are kept separate so a future re-gating shows
+#: up here.
 _PARITY_CORPUS: tuple[tuple[str, bool, bool], ...] = (
-    ('timeout 5 python3 -c "x"', True, False),
-    ('python3.12 -c "x"', True, False),
-    ('PYTHON3 -c "x"', True, False),
-    ('env python3 -c "x"', True, False),
-    ('nice -n 5 python3 -c "x"', True, False),
-    ('nohup python3 -c "x"', True, False),
-    ('env -S "python3 -c x"', True, False),
-    ('xargs -I{} python3 -c "x"', True, False),
-    ('timeout 600s python3 -m py_compile f.py', True, False),
-    ('python3 -m py_compile f.py', True, False),
-    ('python3 -mjson.tool', True, False),
+    ('timeout 5 python3 -c "x"', True, True),
+    ('python3.12 -c "x"', True, True),
+    ('PYTHON3 -c "x"', True, True),
+    ('env python3 -c "x"', True, True),
+    ('nice -n 5 python3 -c "x"', True, True),
+    ('nohup python3 -c "x"', True, True),
+    ('env -S "python3 -c x"', True, True),
+    ('xargs -I{} python3 -c "x"', True, True),
+    ('timeout 600s python3 -m py_compile f.py', True, True),
+    ('python3 -m py_compile f.py', True, True),
+    ('python3 -mjson.tool', True, True),
     ('python3 marketplace/targets/sync.py --target opencode', False, False),
     ('python3 /abs/repo/.plan/execute-script.py a:b:c verb', False, False),
     ('python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks list --plan-id x', False, False),
@@ -100,19 +103,19 @@ def test_guards_agree_on_the_interpreter_surface(
 
 
 @pytest.mark.parametrize('command', ['python3 build.py', 'python3 -m pytest x'])
-def test_guard_r4_python_branch_is_unconditional_where_the_hook_is_gated(
+def test_guards_agree_that_interpreter_bypasses_are_unconditional(
     tmp_path_factory: pytest.TempPathFactory, command: str
 ) -> None:
-    """The guard's R4 python branch refuses out of context; the hook's gate still applies.
+    """Both guards refuse an interpreter bypass out of context, by their own rule.
 
-    This divergence is DELIBERATE and documented: R1–R4 stay unconditional in
-    guard.js, while the Claude hook enforces every rule only inside a plan
-    context. It is pinned here so the two surfaces cannot drift silently and so
-    the parity table above is not read as claiming a symmetry the guard does not
-    have.
+    Before PLAN-LB-65 D1 the guard refused via its unconditional R4 while the
+    hook's context gate let it through — the documented divergence. R5 is now
+    unconditional on both harnesses, so both refuse out of context: the guard on
+    its R4 python branch, the hook on R5. The row is kept so the surface cannot
+    silently re-diverge.
     """
     harness = build_harness(tmp_path_factory.mktemp('guard-r4-out'))
     guard_out = _guard_refused(harness, command, in_context=False)
     hook_out = _HOOK.evaluate(_hook_payload(command, in_context=False)) is not None
-    assert guard_out is True, f'guard.js must refuse {command!r} out of context (unconditional R4)'
-    assert hook_out is False, f'hook must allow {command!r} out of context (gated)'
+    assert guard_out is True, f'guard.js must refuse {command!r} out of context'
+    assert hook_out is True, f'hook must refuse {command!r} out of context'

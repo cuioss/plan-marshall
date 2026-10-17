@@ -341,11 +341,12 @@ def test_guard_node_allows_documented_non_executor_invocations(tmp_path_factory:
         assert not outcome.blocked, f'guard.js must allow {command!r}; message={outcome.message!r}'
 
 
-def test_guard_node_outside_context_allows_py_compile(tmp_path_factory: pytest.TempPathFactory) -> None:
-    """Done-when (c): R5 is gated, so py_compile passes outside a plan context."""
+def test_guard_node_outside_context_still_refuses_py_compile(tmp_path_factory: pytest.TempPathFactory) -> None:
+    """R5 is now unconditional, so py_compile is refused outside a plan context too."""
     harness = build_harness(tmp_path_factory.mktemp('guard-c'))
     blocked, message = harness.blocks(shell_event('python3 -m py_compile f.py'))
-    assert not blocked, f'guard.js must allow py_compile outside a plan context; message={message!r}'
+    assert blocked, f'guard.js must refuse py_compile outside a plan context; message={message!r}'
+    assert 'R5' in message, f'the refusal must be rule R5; message={message!r}'
 
 
 def test_guard_node_signal2_worktree_workdir_enables_r5(tmp_path_factory: pytest.TempPathFactory) -> None:
@@ -404,3 +405,58 @@ def test_guard_node_r4_reads_an_attached_m_module(tmp_path_factory: pytest.TempP
     blocked, message = harness.blocks(shell_event('python3 -mpytest x', agent=SUB_AGENT_AGENT))
     assert blocked, 'python3 -mpytest must be refused'
     assert 'R4' in message, f'the refusal must be rule R4; message={message!r}'
+
+
+# =============================================================================
+# D1 — R5 protects every session; the allow-list is exact (PLAN-LB-65)
+# =============================================================================
+
+#: The documented repository-relative form of the steward's permission-fix
+#: script. The allow-list entry is this exact repository-relative path, so the
+#: invocation below is permitted; a basename or a copy outside the repository is
+#: not.
+_DOCUMENTED_PERMISSION_FIX = 'marketplace/bundles/plan-marshall/skills/tools-permission-fix/scripts/permission_fix.py'
+
+
+def test_guard_node_root_session_refuses_python_c(tmp_path_factory: pytest.TempPathFactory) -> None:
+    """Done-when (D1): a ROOT session (no plan context) still has R5 enforced.
+
+    The command carries no sub-agent identity and no worktree workdir, so the old
+    plan-context gate was OFF — yet R5 must still refuse ``python3 -c``.
+    """
+    harness = build_harness(tmp_path_factory.mktemp('guard-d1-root'))
+    blocked, message = harness.blocks(shell_event('python3 -c "x"'))
+    assert blocked, f'a root session must refuse python3 -c; message={message!r}'
+    assert 'R5' in message, f'the refusal must be rule R5; message={message!r}'
+
+
+def test_guard_node_root_session_refuses_outside_repo_script(tmp_path_factory: pytest.TempPathFactory) -> None:
+    """Done-when (D1): a copy of an allow-listed script OUTSIDE the repo is refused.
+
+    ``/tmp/x/permission_fix.py`` shares the basename of an allow-list entry but
+    is not the repository-relative path, so it must be refused (the basename
+    bypass PLAN-LB-62 shipped).
+    """
+    harness = build_harness(tmp_path_factory.mktemp('guard-d1-outside'))
+    blocked, message = harness.blocks(shell_event('python3 /tmp/x/permission_fix.py'))
+    assert blocked, f'a script outside the repository must be refused; message={message!r}'
+    assert 'R5' in message, f'the refusal must be rule R5; message={message!r}'
+
+
+def test_guard_node_root_session_allows_documented_repo_relative_script(
+    tmp_path_factory: pytest.TempPathFactory,
+) -> None:
+    """Done-when (D1): the documented repository-relative form is allowed."""
+    harness = build_harness(tmp_path_factory.mktemp('guard-d1-allow'))
+    command = f'python3 {_DOCUMENTED_PERMISSION_FIX} ensure-executor --target project --dry-run'
+    blocked, message = harness.blocks(shell_event(command))
+    assert not blocked, f'the documented repo-relative invocation must be allowed; message={message!r}'
+
+
+@pytest.mark.parametrize('command', ['python3 -u x.py', 'python3 foo.py', 'python3 -Ic "x"'])
+def test_guard_node_refuses_extra_interpreter_shapes(command: str, tmp_path_factory: pytest.TempPathFactory) -> None:
+    """Done-when (D1): the executed guard refuses the extra interpreter shapes."""
+    harness = build_harness(tmp_path_factory.mktemp('guard-d1-shapes'))
+    blocked, message = harness.blocks(shell_event(command))
+    assert blocked, f'{command!r} must be refused; message={message!r}'
+    assert 'R5' in message, f'the refusal for {command!r} must be rule R5; message={message!r}'

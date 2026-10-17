@@ -72,9 +72,11 @@ Restore it from the newest plugin-cache version by running the generator
 Stage 1's `regenerate-executor` uses, which needs no working executor:
 
 ```bash
-python3 {newest_cache}/skills/tools-script-executor/scripts/generate_executor.py generate
+python3 "{GENERATE_EXECUTOR}" generate
 ```
 
+`{GENERATE_EXECUTOR}` is
+`{newest_cache}/skills/tools-script-executor/scripts/generate_executor.py`, where
 `{newest_cache}` is the newest version directory under the deployed
 plan-marshall plugin cache. Once the executor is restored, continue with the
 normal call below — restoring it first is what makes every downstream stage

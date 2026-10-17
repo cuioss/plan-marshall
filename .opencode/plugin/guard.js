@@ -49,16 +49,18 @@
  *     - `python(3) -m {pytest mypy ruff}`; a bare {pytest mypy ruff}.
  *   R4 is UNCONDITIONAL. The executor permit stays exempt under R4 and R5.
  *
- *   R5 — direct interpreter calls bypassing the executor (bash), GATED: block
- *   when the first token is an interpreter (python/python3 or a versioned
- *   spelling such as python3.12) and the invocation is -c, a script path (any
- *   second token not starting with -), or -m with any module — the allow set is
- *   executor-only, so every -m form refuses. R5 applies ONLY inside a
- *   plan-marshall plan context (a dispatched execution-context sub-agent, or a
- *   working directory under `.plan/local/worktrees/`), matching the Claude
- *   hook's gate; R1-R4 stay unconditional. Two exemptions apply inside the
- *   context: the executor permit, and the SHARED allow-list of documented
- *   non-executor invocations read from `r5-allowlist.json`.
+ *   R5 — direct interpreter calls bypassing the executor (bash): block when the
+ *   first token is an interpreter (python/python3 or a versioned spelling such
+ *   as python3.12) and the invocation is -c, a script path (any second token not
+ *   starting with -), or -m with any module — the allow set is executor-only, so
+ *   every -m form refuses. R5 applies in EVERY session in this repository, root
+ *   sessions included, matching the Claude hook — there is no plan-context gate.
+ *   Two exemptions apply: the executor permit, and the SHARED allow-list of
+ *   documented non-executor invocations read from `r5-allowlist.json`. An
+ *   allow-list entry is a REPOSITORY-RELATIVE path matched EXACTLY against the
+ *   invocation's path resolved against the repository root — never a basename
+ *   and never a suffix — so a copy of an allow-listed script outside the
+ *   repository never matches.
  *
  *   R6 — a raw `git commit` while the enclosing plan is in phase `6-finalize`
  *   => block. Every plan commit must pass through the gate-bearing
@@ -165,15 +167,9 @@ const WRAPPER_VALUE_OPTS = {
 
 // The base allow-list used when no shared data file can be read. Deliberately
 // narrow: the sync engine is the one non-executor invocation that must survive
-// even a missing data file, because it is the harness's own deploy step.
+// even a missing data file, because it is the harness's own deploy step. An
+// entry is a REPOSITORY-RELATIVE path (see `repoRelativePath`).
 const R5_ALLOWLIST_BASE = ["marketplace/targets/sync.py"]
-
-// Marker in the OpenCode agent identity that identifies a dispatched
-// execution-context sub-agent (mirrors pretooluse_gate.EXECUTION_CONTEXT_MARKER).
-const EXECUTION_CONTEXT_MARKER = "execution-context"
-
-// Path segment marking a plan worktree (mirrors pretooluse_gate.WORKTREE_PATH_SEGMENT).
-const WORKTREE_PATH_SEGMENT = ".plan/local/worktrees"
 
 const ASSIGNMENT_RE = /^[A-Za-z_][A-Za-z0-9_]*=/
 const VERSIONED_PYTHON_RE = /^python(\d+(\.\d+)*)?$/
@@ -384,31 +380,44 @@ function isExecutorPermit(command) {
   return second === ".plan/execute-script.py" || second.endsWith("/.plan/execute-script.py")
 }
 
-// Whether a second token is on the shared allow-list, matched exactly or as a
-// path suffix (an absolute or relative path ending in the entry).
-function isAllowListed(command, entries) {
+// Resolve a script token to its repository-relative path, or null when it does
+// not resolve inside the repository. An ABSOLUTE token is made relative to the
+// repository root and refused when it lies outside it; a RELATIVE token is
+// normalized (a leading `./` collapsed, `..` segments applied) and refused when
+// it escapes the root. Matching then compares this key EXACTLY against an
+// allow-list entry, so a basename (or a copy of an allow-listed script outside
+// the repository) can never match — the suffix hole PLAN-LB-62 shipped.
+function repoRelativePath(raw, root) {
+  if (!raw || typeof raw !== "string") return null
+  let token = raw.trim().replace(/\\/g, "/")
+  const normalizedRoot = (root || "").replace(/\\/g, "/").replace(/\/+$/, "")
+  if (token.startsWith("/")) {
+    if (!normalizedRoot) return null
+    const prefix = normalizedRoot + "/"
+    if (!token.startsWith(prefix)) return null
+    token = token.slice(prefix.length)
+  }
+  const parts = []
+  for (const segment of token.split("/")) {
+    if (segment === "" || segment === ".") continue
+    if (segment === "..") {
+      if (parts.length === 0) return null
+      parts.pop()
+      continue
+    }
+    parts.push(segment)
+  }
+  return parts.length ? parts.join("/") : null
+}
+
+// Whether a second token is on the shared allow-list, matched EXACTLY on its
+// repository-relative path (resolved against the repository root).
+function isAllowListed(command, entries, root) {
   const tokens = commandTokens(command)
   if (tokens.length < 2) return false
-  const second = stripMatchedQuotes(tokens[1]).replace(/\\/g, "/")
-  return entries.some((entry) => second === entry || second.endsWith("/" + entry))
-}
-
-// Whether a path resolves under the plan-worktree segment. Normalized to
-// forward slashes with a trailing boundary so a partial segment cannot match.
-function isWorktreePath(candidate) {
-  if (typeof candidate !== "string" || !candidate) return false
-  const normalized = candidate.replace(/\\/g, "/").replace(/\/+$/, "") + "/"
-  return normalized.includes("/" + WORKTREE_PATH_SEGMENT + "/")
-}
-
-// The plan-context gate (Signal1 OR Signal2), mirroring the hook's predicate:
-// a dispatched execution-context sub-agent, or a working directory under
-// `.plan/local/worktrees/`.
-function inPlanContext(event, args, root) {
-  const agent = typeof event?.agent === "string" ? event.agent : ""
-  if (agent.includes(EXECUTION_CONTEXT_MARKER)) return true
-  const workdir = typeof args?.workdir === "string" ? args.workdir : ""
-  return isWorktreePath(workdir || root)
+  const relative = repoRelativePath(stripMatchedQuotes(tokens[1]), root)
+  if (relative === null) return false
+  return entries.includes(relative)
 }
 
 // Read the shared allow-list. Project first, then the deployed OpenCode config
@@ -688,15 +697,14 @@ export default Plugin.define({
             "[plan-marshall-guard] R4: hard-coded build command bypassing python3 .plan/execute-script.py is forbidden",
           )
         }
-        // R5 is gated on the plan context; R4 above is not.
-        if (inPlanContext(event, args, root)) {
-          if (isAllowListed(command, allowList)) return
-          if (isInterpreterBypass(tokenAt(command, 1)) || hasFlagPrefixedBypass(command)) {
-            audit(auditLine("R5", tool, sessionID, callID, command))
-            throw new Error(
-              "[plan-marshall-guard] R5: direct python interpreter calls (python -c, script paths, python -m) bypassing the executor are forbidden; route builds and checks via python3 .plan/execute-script.py and .plan state via manage-* verbs or the Read/Edit/Write tools",
-            )
-          }
+        // R5 applies in EVERY session — root sessions included — with no
+        // plan-context gate. The allow-list is matched on the repo-relative path.
+        if (isAllowListed(command, allowList, root)) return
+        if (isInterpreterBypass(tokenAt(command, 1)) || hasFlagPrefixedBypass(command)) {
+          audit(auditLine("R5", tool, sessionID, callID, command))
+          throw new Error(
+            "[plan-marshall-guard] R5: direct python interpreter calls (python -c, script paths, python -m) bypassing the executor are forbidden; route builds and checks via python3 .plan/execute-script.py and .plan state via manage-* verbs or the Read/Edit/Write tools",
+          )
         }
         return
       }

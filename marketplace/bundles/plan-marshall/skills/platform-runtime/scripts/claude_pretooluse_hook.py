@@ -3,10 +3,12 @@
 """Conditional PreToolUse enforcement leaf for Claude Code.
 
 Registered (opt-in) as a matcher-less ``hooks.PreToolUse`` entry. It blocks six
-mechanically-checkable hard-rule violation families, but ONLY when the call
-originates inside a plan-marshall plan context. Outside that context — and on
-every error path — it emits nothing and exits 0, so a hook bug can never block
-the user (fail OPEN).
+mechanically-checkable hard-rule violation families. R1-R4 and R6 are enforced
+ONLY when the call originates inside a plan-marshall plan context; outside that
+context (and on every error path) those rules emit nothing and the hook exits 0
+(fail OPEN). **R5 is the exception — it is enforced in EVERY session, root
+sessions included**, so a root shell cannot run ``python3 -c`` or an ad-hoc
+script; its only exemptions are the executor permit and the shared allow-list.
 
 ALL payload parsing, field access, and the context-gate predicate are delegated
 to the shared ``pretooluse_gate`` module — this leaf adds NO field-name knowledge
@@ -32,11 +34,15 @@ of its own. The only logic it owns is the R1-R6 rule matchers and the
   case-insensitively) as ``-c``, a script path, or ``-m`` with any module,
   except the ``python3 .plan/execute-script.py`` executor permit (which may be
   an absolute path), and except the shared allow-list of documented
-  non-executor invocations read from ``standards/r5-allowlist.json``. Wrapper
-  prefixes (``command``/``env``/``sudo``/``timeout``/``nice``/``nohup``/``time``/
-  ``xargs``, including ``env -S``) are stripped first, so a wrapper cannot hide
-  the interpreter. The allow set is otherwise executor-only, so every ``-m``
-  form refuses.
+  non-executor invocations read from ``standards/r5-allowlist.json``. Unlike
+  R1-R4 and R6, R5 is **not context-gated**: it applies in every session, root
+  sessions included. An allow-list entry is a REPOSITORY-RELATIVE path matched
+  EXACTLY against the invocation's script path resolved against the repository
+  root — never a basename or a suffix — so a copy of an allow-listed script
+  outside the repository never matches. Wrapper prefixes (``command``/``env``/
+  ``sudo``/``timeout``/``nice``/``nohup``/``time``/``xargs``, including
+  ``env -S``) are stripped first, so a wrapper cannot hide the interpreter. The
+  allow set is otherwise executor-only, so every ``-m`` form refuses.
 - **R6 raw finalize commit** — a raw ``git commit`` while the enclosing plan is
   in phase ``6-finalize``. Every plan commit must pass through the gate-bearing
   ``git-workflow commit`` verb; outside ``6-finalize`` a raw commit is
@@ -45,12 +51,13 @@ of its own. The only logic it owns is the R1-R6 rule matchers and the
 Control flow:
 
 1. Parse stdin via ``gate.parse`` (empty/malformed → emit nothing, exit 0).
-2. Apply ``gate.context_gate(payload)`` (``Signal1 OR Signal2``) — false → emit
-   nothing, exit 0 (fail OPEN).
-3. Run the matchers against ``gate.tool_name(payload)`` /
-   ``gate.tool_input(payload)``; on the FIRST match, append one ``guard.log``
-   audit line (best-effort) and emit the deny envelope with a one-line redirect
-   reason. No match → emit nothing, exit 0.
+2. Run the R5 matcher unconditionally (it is not context-gated); on a match,
+   append one ``guard.log`` audit line (best-effort) and emit the deny envelope.
+3. Apply ``gate.context_gate(payload)`` (``Signal1 OR Signal2``) — false → emit
+   nothing, exit 0 (fail OPEN for R1-R4/R6). When true, run the R1-R4 matchers,
+   then the R6 raw-finalize-commit rule; on the FIRST match, append one
+   ``guard.log`` audit line (best-effort) and emit the deny envelope with a
+   one-line redirect reason. No match → emit nothing, exit 0.
 
 The whole leaf is best-effort/no-raise: any internal error degrades to a silent
 no-op (emit nothing, exit 0).
@@ -647,19 +654,55 @@ def _r5_allowlist_entries() -> tuple[str, ...]:
     return _R5_ALLOWLIST_BASE
 
 
-def _is_allow_listed(command: str) -> bool:
-    """Whether *command*'s second stripped token is on the shared allow-list.
+def _repo_relative_path(raw: str, root: str | None) -> str | None:
+    """Resolve *raw* to its repository-relative path, or ``None`` when outside.
 
-    Matched exactly or as a path suffix, so an absolute or relative path ending
-    in an entry resolves to it (``/abs/repo/marketplace/targets/sync.py`` matches
-    ``marketplace/targets/sync.py``; ``/abs/.../generate_executor.py`` matches
-    the bare ``generate_executor.py``). Mirrors the guard's ``isAllowListed``.
+    An ABSOLUTE token is made relative to *root* and refused when it does not lie
+    under it; a RELATIVE token is normalized (a leading ``./`` collapsed, ``..``
+    segments applied) and refused when it escapes the root. The result is matched
+    EXACTLY against an allow-list entry, so a basename — or a copy of an
+    allow-listed script outside the repository — never matches. Mirrors the
+    guard's ``repoRelativePath``.
+    """
+    token = _strip_matched_quotes(raw).replace('\\', '/')
+    if not token:
+        return None
+    if token.startswith('/'):
+        normalized_root = (root or '').replace('\\', '/').rstrip('/')
+        if not normalized_root:
+            return None
+        prefix = normalized_root + '/'
+        if not token.startswith(prefix):
+            return None
+        token = token[len(prefix) :]
+    parts: list[str] = []
+    for segment in token.split('/'):
+        if segment in ('', '.'):
+            continue
+        if segment == '..':
+            if not parts:
+                return None
+            parts.pop()
+            continue
+        parts.append(segment)
+    return '/'.join(parts) if parts else None
+
+
+def _is_allow_listed(command: str, root: str | None) -> bool:
+    """Whether *command*'s second stripped token resolves to an allow-list entry.
+
+    Matched EXACTLY on the token's repository-relative path, resolved against the
+    repository root *root*. Never a basename and never a suffix: a copy of an
+    allow-listed script outside the repository resolves to ``None`` and is
+    refused. Mirrors the guard's ``isAllowListed``.
     """
     stripped = _r5_stripped_tokens(command)
     if len(stripped) < 2:
         return False
-    second = _strip_matched_quotes(stripped[1]).replace('\\', '/')
-    return any(second == entry or second.endswith('/' + entry) for entry in _r5_allowlist_entries())
+    relative = _repo_relative_path(stripped[1], root)
+    if relative is None:
+        return False
+    return relative in _r5_allowlist_entries()
 
 
 def _second_token(command: str) -> str:
@@ -715,7 +758,9 @@ def _is_c_m_cluster(text: str) -> bool:
     return False
 
 
-def _match_r5_interpreter_call(tool_name: str | None, tool_input: dict[str, Any]) -> str | None:
+def _match_r5_interpreter_call(
+    tool_name: str | None, tool_input: dict[str, Any], root: str | None = None
+) -> str | None:
     """R5 — direct python interpreter call bypassing the executor.
 
     The program check runs on the wrapper-stripped tokens (``command`` /
@@ -725,7 +770,8 @@ def _match_r5_interpreter_call(tool_name: str | None, tool_input: dict[str, Any]
     An interpreter option in second position (``-u``, ``-W``, ``-X``,
     ``-B``, ``-E``, ``-I``, ``--``, bare ``-``) does not hide what follows:
     every later token is scanned with the same fail-closed rule. R1, R2
-    and R4 match against the unstripped command and are untouched.
+    and R4 match against the unstripped command and are untouched. *root* is the
+    repository root the allow-list match resolves against (the payload ``cwd``).
     """
     command = _bash_command(tool_name, tool_input)
     if command is None:
@@ -740,7 +786,7 @@ def _match_r5_interpreter_call(tool_name: str | None, tool_input: dict[str, Any]
     second = _strip_matched_quotes(_second_token(command).strip())
     if not second:
         return None
-    if _is_allow_listed(command):
+    if _is_allow_listed(command, root):
         return None
     if second in ('-c', '-m'):
         return _R5_REASON
@@ -854,13 +900,13 @@ def _match_r6_raw_finalize_commit(
 
 #: Ordered ``(rule name, matcher)`` chain — the first matcher returning a reason
 #: wins. The name is stamped into the ``guard.log`` audit line, matching the
-#: OpenCode guard's ``rule=Rn`` field.
+#: OpenCode guard's ``rule=Rn`` field. R5 is NOT here: it is enforced in every
+#: session (no context gate) and runs on its own before this gated chain.
 _RULES: tuple[tuple[str, Callable[[str | None, dict[str, Any]], str | None]], ...] = (
     ('R1', _match_r1_shell_construct),
     ('R2', _match_r2_file_ops),
     ('R3', _match_r3_generated_executor),
     ('R4', _match_r4_hardcoded_build),
-    ('R5', _match_r5_interpreter_call),
 )
 
 
@@ -911,34 +957,38 @@ def _refusal_detail(payload: dict[str, Any]) -> str:
 def evaluate(payload: dict[str, Any]) -> str | None:
     """Return the deny reason for the first matched rule, or ``None``.
 
-    Applies the shared context gate first (``Signal1 OR Signal2``); when the gate
-    is not satisfied, returns ``None`` (fail OPEN — no enforcement). When the gate
-    is satisfied, runs the R1-R5 matchers in order and then the R6 raw-finalize
-    commit rule against the shared gate's
-    ``tool_name`` / ``tool_input`` accessors and returns the first matching rule's
-    redirect reason, or ``None`` when no rule fires. A match also appends one
-    ``guard.log`` audit line (best-effort — logging never changes the verdict).
+    Runs the R1-R4 matchers and the R6 raw-finalize commit rule inside the shared
+    context gate (``Signal1 OR Signal2``); when the gate is not satisfied those
+    rules return ``None`` (fail OPEN). **R5 is enforced in every session** — it
+    runs unconditionally, before the gate, so a root session outside any plan
+    context is still protected. A match also appends one ``guard.log`` audit line
+    (best-effort — logging never changes the verdict).
 
     Args:
         payload: The parsed PreToolUse payload.
 
     Returns:
         The ``permissionDecisionReason`` string when a rule denies the call, or
-        ``None`` when the gate is unsatisfied or no rule matches.
+        ``None`` when no rule matches.
     """
-    if not gate.context_gate(payload):
-        return None
     tool_name = gate.tool_name(payload)
     tool_input = gate.tool_input(payload)
-    for rule_name, rule in _RULES:
-        reason = rule(tool_name, tool_input)
-        if reason is not None:
-            _append_guard_log(payload, rule_name, _refusal_detail(payload))
-            return reason
-    reason = _match_r6_raw_finalize_commit(payload, tool_name, tool_input)
+    gated = gate.context_gate(payload)
+    if gated:
+        for rule_name, rule in _RULES:
+            reason = rule(tool_name, tool_input)
+            if reason is not None:
+                _append_guard_log(payload, rule_name, _refusal_detail(payload))
+                return reason
+    reason = _match_r5_interpreter_call(tool_name, tool_input, gate.cwd(payload))
     if reason is not None:
-        _append_guard_log(payload, 'R6', _refusal_detail(payload))
+        _append_guard_log(payload, 'R5', _refusal_detail(payload))
         return reason
+    if gated:
+        reason = _match_r6_raw_finalize_commit(payload, tool_name, tool_input)
+        if reason is not None:
+            _append_guard_log(payload, 'R6', _refusal_detail(payload))
+            return reason
     return None
 
 
