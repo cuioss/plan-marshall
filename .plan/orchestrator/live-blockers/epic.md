@@ -418,6 +418,9 @@ derive, for rows still live.
   amendments go through PRs.
 - 2026-10-17 — **Runbook amended after PLAN-LB-63:** never move the main checkout by hand;
   `switch-and-pull` is the only sanctioned update (PLAN-LB-63 ff-merged it under the live PLAN-LB-66).
+- 2026-10-17 — **Operator: the inert executor recovery is high**, added to the next plan.
+  It is staged as PLAN-LB-43 D3: a direct-path recovery entry that the executor's own failure
+  output names, a re-probe after regeneration, and end-to-end subprocess tests.
 - 2026-10-17 — **Mid-flight: PLAN-LB-66 edited the main checkout** (D3, 6 files) instead of its
   worktree, against runbook §1. Operator interrupted it; the D3 work moved to the worktree and main
   is clean. Debited at its landing.
@@ -736,7 +739,8 @@ derive, for rows still live.
   - one unreadable doc disables the whole sweep, unnamed;
   - `dead_removed_steps` is never read;
   - the sync-defaults output contract is stale.
-  Medium; not staged. — `landings/PLAN-LB-63.md`.
+  **High** (operator elevated it); staged as **PLAN-LB-43 D3**, together with the re-probe and the
+  overwritten warning. The other low items are not staged. — `landings/PLAN-LB-63.md`.
 - **Medium and low items are not owned by any staged plan.** They are listed with evidence
   in `backlog.md` (sections 1.12 onward, 2.3 onward, 3.2 onward, 4.7 onward and 5). Promote an
   item into a plan spec when it starts to hurt; re-verify it at HEAD first.

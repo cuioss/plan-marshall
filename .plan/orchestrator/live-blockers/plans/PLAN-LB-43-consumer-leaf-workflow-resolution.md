@@ -44,6 +44,32 @@ This plan gives the leaf one script verb that returns the verified absolute path
 
    *Done when:* a doc test asserts that Step 4 names the verb and no longer maps a notation only to `marketplace/bundles/`; the generated Claude, OpenCode and Antigravity variants carry the same Step 4. At HEAD, Step 4 (L107-122) maps only to `marketplace/bundles/`.
 
+3. **An executor that fails to import is recovered by a script path that a broken executor can reach.** Added 2026-10-17 by operator instruction, graded **high**, from the PLAN-LB-63 landing (`landings/PLAN-LB-63.md`, Regression 1).
+
+   **The defect.** PLAN-LB-63 D2 added an import probe (`_probe_executor_import`, `upgrade.py:779-811`) and `needs_recovery = executor_version is None or bool(import_failure)` (`:1052-1072`). That code runs only inside `upgrade plan`, and the only documented `upgrade plan` invocation goes through the executor itself (`upgrade-flow.md:87-89`):
+   - if the executor cannot import, `upgrade.py` never runs;
+   - if it can, the probe child, which inherits the same environment, succeeds as well.
+
+   The probe therefore never fires in production. Recovery still depends on the LLM following the prose of `upgrade-flow.md` Step 0 (L67-81) by hand. PLAN-LB-63's test ran `upgrade.main()` in-process with a stub generator, so it could not see this.
+
+   **Requirements.**
+   - **One direct-path recovery entry.** The fix must be a single deterministic command that needs no working executor:
+     - either `upgrade.py` run by its newest-cache script path, or a dedicated `generate_executor` verb — choose at outline and record why;
+     - it finds the newest cache, probes, regenerates, **re-probes** the regenerated executor, and reports;
+     - a regenerated executor that still fails to import is `action: regenerate_failed` with the probe's reason, never `regenerated`.
+   - **The executor's own failure output names that command.** The bootstrap failure path (`execute-script.py.template:252-265`, the `execute-script.py cannot start:` message, and the uncaught `ImportError` path, which needs a guard) prints the exact recovery command line with the resolved newest-cache path. Any harness then recovers from the error text alone.
+   - **Step 0 in `upgrade-flow.md` calls that command** instead of describing the generator call in prose.
+   - **The import-failure warning is not overwritten** by the version-split warning (`upgrade.py:1154-1158`): both are reported.
+   - **Probe environment.** The probe runs with the interpreter and environment a fresh shell would use, not the parent's injected `PYTHONPATH` (`template:1774-1776`). Otherwise a probe started from a working executor can mask a broken one.
+
+   *Done when:* every test below fails at `b90e8a25f`.
+   - **End-to-end recovery.** A fixture project holds a real generated executor whose bootstrap directory has been removed (import fails). Run, as a subprocess:
+     1. `python3 .plan/execute-script.py --list` — stderr contains the recovery command line;
+     2. that exact command line — the executor is regenerated, `python3 .plan/execute-script.py --list` then exits 0, and the report says `regenerated`.
+   - **Failed regeneration.** The same fixture, with a newest cache that is itself missing a bootstrap module, reports `regenerate_failed` naming the import error, not `regenerated`.
+   - **Warning precedence.** An import failure combined with a post-regeneration version split reports both warnings.
+   - **Probe environment.** A probe started from a process whose `PYTHONPATH` makes the import succeed still reports the failure of the on-disk executor.
+
 ## Claim Labels
 
 - OBSERVED: Step 4 maps `{bundle}:{skill}/SKILL.md` and `{bundle}:{skill}/workflow/{file}.md` only to `marketplace/bundles/{bundle}/skills/{skill}/…` and otherwise returns `workflow_not_found` — `marketplace/bundles/plan-marshall/agents/execution-context.md` L107-122.
@@ -66,10 +92,20 @@ This plan gives the leaf one script verb that returns the verified absolute path
 - HYPOTHESIS: `marketplace/bundles/plan-marshall/skills/extension-api/SKILL.md` — canonical invocation of the verb (verify-at-outline) (D1)
 - OBSERVED: `test/plan-marshall/extension-api/` — new test module for the verb (D1)
 - HYPOTHESIS: `test/marketplace/targets/opencode/test_variant_emitter.py` — only if it asserts the Step 4 text (verify-at-outline) (D2)
+- OBSERVED: `marketplace/bundles/plan-marshall/skills/marshall-steward/scripts/upgrade.py` — probe environment, re-probe, warning precedence, direct-path entry (D3)
+- OBSERVED: `marketplace/bundles/plan-marshall/skills/tools-script-executor/templates/execute-script.py.template` — the failure output names the recovery command (D3)
+- OBSERVED: `marketplace/bundles/plan-marshall/skills/marshall-steward/references/upgrade-flow.md` — Step 0 calls the command (D3)
+- HYPOTHESIS: `marketplace/bundles/plan-marshall/skills/tools-script-executor/scripts/generate_executor.py` and its `SKILL.md` — only if the entry is hosted there (verify-at-outline) (D3)
+- HYPOTHESIS: `marketplace/bundles/plan-marshall/skills/marshall-steward/SKILL.md` — canonical invocation of the entry (verify-at-outline) (D3)
+- OBSERVED: `test/plan-marshall/marshall-steward/` and `test/plan-marshall/tools-script-executor/` — the subprocess end-to-end tests (D3)
 
 ## Dependencies and Sequencing
 
-- Depends on: none.
+- Depends on: none. D3 builds on PLAN-LB-63 (shipped, `b90e8a25f`).
+- Split guard: three deliverables, each its own outline deliverable; each Done-when is its own
+  success criterion. Do not merge them.
+- D3 overlap: the running PLAN-LB-65 edits `marshall-steward/references/upgrade-flow.md` and
+  `tools-script-executor/SKILL.md`. The emit gate decides.
 - Overlaps with:
   - None of the declared running or staged plans on a file.
   - PLAN-LB-39 (running) declares `test/marketplace/targets/` and changes the OpenCode and Antigravity emitters' dispatch-line handling. If deliverable 2 needs emitter-test changes, sequence after PLAN-LB-39.
