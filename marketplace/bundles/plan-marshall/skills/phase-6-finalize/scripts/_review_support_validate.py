@@ -19,6 +19,8 @@ import re
 from pathlib import Path
 from typing import Any
 
+from _criteria_snapshot import SPEC_MISSING
+
 KIND_FUNCTIONAL = 'functional'
 KIND_CODE = 'code'
 
@@ -152,15 +154,16 @@ def is_pre_fix_criterion(text: Any) -> bool:
 def names_pre_fix_run(evidence: list[str]) -> bool:
     """Whether any evidence entry names a FAILING run against the pre-fix tree.
 
-    A green run at HEAD names neither a failure nor the pre-fix tree, so it never
-    satisfies a pre-fix criterion: the evidence that a test fails without the fix
-    is the failing run against the tree without it.
+    Both halves are required: a marker that the entry is about the pre-fix tree
+    (or the SHA of the tree it failed against) AND a failure token. An entry that
+    merely mentions the pre-fix tree — "the suite passes on the pre-fix tree" —
+    names no failure, and a green run at HEAD names neither.
     """
     for item in evidence:
         text = str(item)
-        if PRE_FIX_EVIDENCE_RE.search(text):
-            return True
-        if FAILURE_TOKEN_RE.search(text) and SHA_RE.search(text):
+        if not FAILURE_TOKEN_RE.search(text):
+            continue
+        if PRE_FIX_EVIDENCE_RE.search(text) or SHA_RE.search(text):
             return True
     return False
 
@@ -382,17 +385,29 @@ def _grade_row(
 def grade_frozen_criteria(grading: Grading, drift: list[dict[str, Any]]) -> int:
     """Grade the frozen-criteria drift as blocking findings; return the count.
 
-    One finding per criterion the current outline no longer carries verbatim, and
-    one per frozen deliverable that vanished. A criterion the snapshot froze and
-    an operator decision authorized is not in ``drift`` at all, so it is a pass.
+    One finding per criterion the current outline no longer carries verbatim, one
+    per frozen deliverable that vanished, and one per spec deliverable whose own
+    Done-when no outline criterion covers. A criterion the snapshot froze and an
+    operator decision authorized is not in ``drift`` at all, so it is a pass.
     """
     for row in drift:
+        kind = row.get('kind')
+        if kind == SPEC_MISSING:
+            grading.add(
+                kind,
+                str(row.get('spec_deliverable') or 'spec'),
+                str(row.get('criterion')),
+                True,
+                FIX_KIND_IMPLEMENTATION,
+                'spec deliverable',
+            )
+            continue
         number = row.get('deliverable')
-        if row.get('kind') == 'rewritten':
-            kind, title = 'criterion_rewritten', f'{row.get("criterion")} -> {row.get("current")}'
+        if kind == 'rewritten':
+            graded_kind, title = 'criterion_rewritten', f'{row.get("criterion")} -> {row.get("current")}'
         else:
-            kind, title = 'criterion_deleted', str(row.get('criterion'))
-        grading.add(kind, f'D{number}', title, True, FIX_KIND_IMPLEMENTATION, f'deliverable {number}')
+            graded_kind, title = 'criterion_deleted', str(row.get('criterion'))
+        grading.add(graded_kind, f'D{number}', title, True, FIX_KIND_IMPLEMENTATION, f'deliverable {number}')
     return len(drift)
 
 

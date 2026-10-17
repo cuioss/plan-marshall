@@ -153,3 +153,48 @@ def test_deleted_criterion_with_a_logged_operator_decision_is_not_refused(env, p
 
     assert [f for f in payload['findings'] if f['kind'] == 'criterion_deleted'] == []
     assert payload['valid'] is True
+
+
+# --- D1: a spec deliverable's own Done-when stays a separate, graded criterion --------------
+
+
+def _freeze_with_spec(plan_context: Any, clause: str, criteria: list[str]) -> None:
+    """Write a snapshot that carries ONE spec deliverable's Done-when beside the outline's."""
+    plan_dir = _plan(plan_context, criteria)
+    snapshot = {
+        'schema': _snap.SCHEMA,
+        'plan_id': PLAN_ID,
+        'deliverables': [{'number': 1, 'title': TITLE, 'criteria': list(criteria)}],
+        'request': {'done_when': [], 'source': 'absent'},
+        'spec': {
+            'path': '/spec.md',
+            'digest': 'x',
+            'deliverables': [{'spec_deliverable': 'D3', 'title': 'Third spec deliverable', 'done_when': clause}],
+        },
+        'authorized_changes': [],
+    }
+    work = plan_dir / 'work'
+    work.mkdir(parents=True, exist_ok=True)
+    (work / 'criteria-snapshot.json').write_text(json.dumps(snapshot), encoding='utf-8')
+
+
+def test_spec_done_when_no_outline_criterion_covers_yields_a_finding(env, plan_context, tmp_path) -> None:
+    clause = 'the migration removes every caller of the retired path'
+    criteria = ['parser accepts input']
+    _freeze_with_spec(plan_context, clause, criteria)
+
+    payload = review_support.run_validate(PLAN_ID, 'functional', _sealed_verdict(tmp_path, criteria), None)
+
+    assert ('spec_criterion_missing', 'D3') in [(f['kind'], f['ref']) for f in payload['findings']]
+    assert payload['may_close'] is False
+
+
+def test_spec_done_when_an_outline_criterion_covers_is_not_a_finding(env, plan_context, tmp_path) -> None:
+    clause = 'the migration removes every caller of the retired path'
+    criteria = ['the migration removes every caller of the retired path']
+    _freeze_with_spec(plan_context, clause, criteria)
+
+    payload = review_support.run_validate(PLAN_ID, 'functional', _sealed_verdict(tmp_path, criteria), None)
+
+    assert [f for f in payload['findings'] if f['kind'] == 'spec_criterion_missing'] == []
+    assert payload['valid'] is True

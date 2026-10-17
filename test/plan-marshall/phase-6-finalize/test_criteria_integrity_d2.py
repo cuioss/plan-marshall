@@ -20,14 +20,13 @@ from __future__ import annotations
 import json
 import os
 import subprocess
-from datetime import UTC, datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 import _criteria_snapshot as _snap
 import _review_support_attribution as _attr
 import _review_support_integrity as _integrity
-import pytest
 import review_support
 
 from conftest import load_script_module
@@ -183,6 +182,20 @@ def test_pre_fix_criterion_evidenced_only_by_a_head_run_is_unevidenced(plan_cont
 
     assert payload['rewrites'] == [{'deliverable': 1, 'criterion': 1, 'from': 'met', 'to': 'unevidenced'}]
     assert [(f['kind'], f['severity']) for f in payload['findings']] == [('unevidenced_criterion', 'blocking')]
+
+
+def test_pre_fix_criterion_evidenced_by_a_green_pre_fix_mention_is_unevidenced(
+    plan_context, tmp_path, monkeypatch
+) -> None:
+    """Naming the pre-fix tree without naming a failure is not a pre-fix run."""
+    monkeypatch.setattr(_attr, 'resolve_live_worktree', lambda _plan_id: None)
+    criteria = ['Regression test fails on the pre-fix tree']
+    _plan(plan_context, criteria)
+    document = _verdict(criteria, ['met'], [['the whole suite passes on the pre-fix tree']])
+
+    payload = review_support.run_validate(PLAN_ID, 'functional', _sealed(plan_context, tmp_path, document), None)
+
+    assert payload['rewrites'] == [{'deliverable': 1, 'criterion': 1, 'from': 'met', 'to': 'unevidenced'}]
 
 
 def test_pre_fix_criterion_evidenced_by_a_pre_fix_run_is_met(plan_context, tmp_path, monkeypatch) -> None:

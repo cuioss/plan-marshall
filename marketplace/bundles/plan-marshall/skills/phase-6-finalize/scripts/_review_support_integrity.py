@@ -115,9 +115,11 @@ def compute_test_integrity(plan_id: str, base_ref: str | None = None) -> dict[st
       not carry.
 
     A file the branch ADDS is not reported: removing an assertion means removing
-    one that existed before the change. The comparator is deliberately the count
-    of assertion constructs, not a diff-line heuristic — an assertion rewritten
-    into a weaker form is caught by the count, and a reformatted one is not.
+    one that existed before the change. The comparator is the COUNT of assertion
+    constructs, not a diff-line heuristic, so it catches a removed assertion and a
+    dropped negative case; it does NOT catch a RELAXED assertion that keeps the
+    count (`assert x == 5` rewritten to `assert x is not None`), which stays the
+    author's reading of the change rather than this verb's count.
     """
     worktree = resolve_live_worktree(plan_id)
     if worktree is None:

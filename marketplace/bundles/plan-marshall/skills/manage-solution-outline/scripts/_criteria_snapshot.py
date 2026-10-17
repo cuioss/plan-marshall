@@ -74,6 +74,8 @@ _MD_PATH_RE = re.compile(r'(?:^|\s)([\w./-]+\.md)(?=[\s,.;:)]|$)', re.MULTILINE)
 
 DELETED = 'deleted'
 REWRITTEN = 'rewritten'
+#: A spec deliverable's own Done-when that no outline criterion covers.
+SPEC_MISSING = 'spec_criterion_missing'
 
 
 def normalize_criterion(text: Any) -> str:
@@ -284,6 +286,12 @@ def criteria_drift(plan_id: str, current: list[dict[str, Any]] | None = None) ->
       outline (a dropped clause), or the whole deliverable is gone.
     * ``rewritten`` — the frozen position is occupied by different text (the
       clause was narrowed or reworded in place).
+    * ``spec_criterion_missing`` — a spec deliverable's own frozen Done-when that
+      NO current outline criterion covers. This is the PLAN-LB-42 failure: four
+      spec deliverables merged into one outline deliverable, three generic
+      criteria graded, and the dropped clause's Done-when never graded at all.
+      Because each spec clause is frozen as its own row, a merge cannot remove it
+      from the record, and the row below is what makes its absence a finding.
 
     A criterion an operator decision authorizes the change of is not reported.
     An absent snapshot reports nothing — there is nothing to compare against.
@@ -318,7 +326,41 @@ def criteria_drift(plan_id: str, current: list[dict[str, Any]] | None = None) ->
                     'current': live[index] if index < len(live) else '',
                 }
             )
+    drift.extend(_spec_clause_drift(snapshot, by_number))
     return drift
+
+
+def _spec_clause_drift(snapshot: dict[str, Any], by_number: dict[Any, dict[str, Any]]) -> list[dict[str, Any]]:
+    """One row per spec deliverable Done-when no current outline criterion covers.
+
+    Coverage is deliberately loose — either the clause contains the criterion or
+    the criterion contains the clause, on normalized text — because the outline
+    is expected to state the clause in its own words rather than to quote it. A
+    clause nothing covers is not covered.
+    """
+    spec_rows = (snapshot.get('spec') or {}).get('deliverables') or []
+    if not spec_rows:
+        return []
+    outline = [normalize_criterion(text) for row in by_number.values() for text in (row.get('success_criteria') or [])]
+    rows: list[dict[str, Any]] = []
+    for index, row in enumerate(spec_rows, start=1):
+        if not isinstance(row, dict):
+            continue
+        clause = normalize_criterion(row.get('done_when'))
+        if not clause:
+            continue
+        if any(clause in candidate or candidate in clause for candidate in outline if candidate):
+            continue
+        rows.append(
+            {
+                'deliverable': None,
+                'spec_deliverable': row.get('spec_deliverable') or f'D{index}',
+                'kind': SPEC_MISSING,
+                'criterion': clause,
+                'current': '',
+            }
+        )
+    return rows
 
 
 def authorize_change(
@@ -499,6 +541,7 @@ __all__ = [
     'REWRITTEN',
     'SCHEMA',
     'SNAPSHOT_FILE',
+    'SPEC_MISSING',
     'authorize_change',
     'build_snapshot',
     'criteria_drift',
