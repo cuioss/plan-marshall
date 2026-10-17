@@ -100,12 +100,12 @@ def _reconcile_standing_rules_bridge(harness: str, project_dir: Path) -> bool:
     from the runtime modules (never retyped here), so an outdated stub fails
     the marker check. This reconcile performs no writes at all — it only
     observes. A damaged stub (bridge present without its version marker) is
-    reported as not reconciled so the caller can surface
-    :func:`bridge_reemit_command`; it is never silently healed and never
-    propagated into the deployed harness. The installed target rules are
-    never judged damaged for lacking a bridge marker. Claude carries no
-    bridge file — its CLAUDE.md baseline is authoritative — so the reconcile
-    is a no-op success there. Returns True only when the bridge is current.
+    reported as not reconciled, so the caller can surface
+    :func:`bridge_reemit_command` for a stub that survived the setup writers;
+    the installed target rules are never judged damaged for lacking a bridge
+    marker. Claude carries no bridge file — its CLAUDE.md baseline is
+    authoritative — so the reconcile is a no-op success there. Returns True
+    only when the bridge is current.
     """
     proj = project_dir.resolve()
     if harness == 'claude':
@@ -141,31 +141,33 @@ def dispatch_platform_runtime_setup(harness: str, project_dir: Path) -> dict[str
     only in the bridge-owned file, never in the installed target-rules file.
     Bridge paths and the version marker are derived from the runtime modules
     (never retyped here), and bare file existence never overrides a failed
-    reconcile.
+    reconcile. The setup writers always run — a bridge verdict never returns
+    before them — so a standard install always gets the guard, the hook and
+    session-boundary enforcement; only a failing setup stops them, and the
+    failure is reported as such.
 
     Returns a dict with:
 
     - ``bridge_verdict``: `current`, `damaged` (bridge present without its
-      version marker or unreadable), or `missing` (no bridge file, or setup
-      itself failed). A present stub is judged before setup runs, so the
-      setup writers never overwrite damage the caller must report.
+      version marker or unreadable), or `missing` (no bridge file). Judged
+      after the setup writers ran, so a stub those writers heal reconciles
+      to `current`; `damaged` means a stub survived a failed write. When
+      setup itself fails, the verdict is `missing` and ``setup_failed`` is
+      True.
+    - ``setup_failed``: whether the setup itself raised or reported failure.
     - ``installed_rules_clobbered``: whether a previous setup left its stub
       in the installed target rules.
+    - ``persisted_approval_warnings``: the setup's persisted-approval
+      contradiction entries, also printed to stderr.
 
     The caller surfaces :func:`bridge_reemit_command` for the damaged or
-    missing verdict, never silently healed here.
+    missing verdict and :data:`TARGET_RULES_RESTORE_COMMAND` for a clobbered
+    installed file.
     """
     proj = project_dir.resolve()
     clobbered = installed_rules_clobbered(harness, proj)
     setup_ok = True
-
-    if harness in ('antigravity', 'opencode'):
-        bridge = _antigravity_bridge_path(proj) if harness == 'antigravity' else _opencode_bridge_path(proj)
-        if bridge.is_file() and not _reconcile_standing_rules_bridge(harness, proj):
-            # A present stub is judged as-is: invoking the setup writers below
-            # would overwrite it, silently healing damage the caller must
-            # report with the re-emit command instead.
-            return {'bridge_verdict': 'damaged', 'installed_rules_clobbered': clobbered}
+    persisted_warnings: list[dict[str, Any]] = []
 
     try:
         from platform_runtime import _make_runtime
@@ -181,7 +183,10 @@ def dispatch_platform_runtime_setup(harness: str, project_dir: Path) -> dict[str
                             setup_ok = False
                         if isinstance(setup_payload, dict):
                             for entry in setup_payload.get('persisted_approval_warnings') or []:
-                                warning = entry.get('warning') if isinstance(entry, dict) else None
+                                if not isinstance(entry, dict):
+                                    continue
+                                persisted_warnings.append(entry)
+                                warning = entry.get('warning')
                                 if warning:
                                     print(f'persisted approval warning: {warning}', file=sys.stderr)
                     except Exception:
@@ -196,7 +201,12 @@ def dispatch_platform_runtime_setup(harness: str, project_dir: Path) -> dict[str
     if not setup_ok:
         # Setup itself failed: emission is not established. Report missing so
         # the caller surfaces the re-emit command; re-running setup converges.
-        return {'bridge_verdict': 'missing', 'installed_rules_clobbered': clobbered}
+        return {
+            'bridge_verdict': 'missing',
+            'setup_failed': True,
+            'installed_rules_clobbered': clobbered,
+            'persisted_approval_warnings': persisted_warnings,
+        }
     if harness == 'claude':
         verdict = 'current' if (proj / 'CLAUDE.md').is_file() else 'missing'
     elif harness in ('antigravity', 'opencode'):
@@ -208,7 +218,12 @@ def dispatch_platform_runtime_setup(harness: str, project_dir: Path) -> dict[str
     else:
         exists = (proj / 'AGENTS.md').is_file() or (proj / 'CLAUDE.md').is_file()
         verdict = 'current' if exists else 'missing'
-    return {'bridge_verdict': verdict, 'installed_rules_clobbered': clobbered}
+    return {
+        'bridge_verdict': verdict,
+        'setup_failed': False,
+        'installed_rules_clobbered': clobbered,
+        'persisted_approval_warnings': persisted_warnings,
+    }
 
 
 def configure_harness(
@@ -279,7 +294,9 @@ def configure_harness(
         'config_path': str(config_path),
         'dist_manifest_sha': current_sha,
         'bridge_verdict': bridge_verdict,
+        'setup_failed': dispatch_result['setup_failed'],
         'installed_rules_clobbered': dispatch_result['installed_rules_clobbered'],
+        'persisted_approval_warnings': dispatch_result['persisted_approval_warnings'],
     }
     if dispatch_result['installed_rules_clobbered']:
         result['installed_rules_restore_command'] = TARGET_RULES_RESTORE_COMMAND
