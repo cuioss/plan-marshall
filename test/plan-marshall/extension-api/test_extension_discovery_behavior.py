@@ -1003,6 +1003,36 @@ def test_unreadable_phase6_part_leaves_the_surface_unresolved(tmp_path, monkeypa
         os.chmod(denied, original_mode)
 
 
+def test_undecodable_step_doc_is_unreadable_not_an_aborting_read(tmp_path, monkeypatch):
+    """A step doc that cannot be DECODED is unreadable — never an aborting read.
+
+    ``read_text(encoding='utf-8')`` raises ``UnicodeDecodeError`` (a ``ValueError``,
+    not an ``OSError``) for a non-UTF-8 byte, so a reader that catches only
+    ``OSError`` aborts instead of degrading to "no declaration": the step's
+    declaration goes silent and the surface-readability probe must treat it the
+    same way it treats an unreadable doc — the surface is not resolved.
+    """
+    import configurable_contract as cc
+
+    broken = tmp_path / 'broken-step.md'
+    broken.write_bytes(b'---\nname: default:broken\nimplements: plan-marshall:x/y\n---\n\n\xff\xfe\n')
+
+    # Both readers degrade to "no declaration" instead of raising.
+    assert _disc.read_implements_field(broken) == []
+    assert _disc._read_frontmatter_fields(broken, ('name',)) == {}
+
+    # An undecodable doc therefore leaves its surface unresolved, exactly like an
+    # unreadable one: the probe cannot enumerate what it cannot read.
+    skill_dir = tmp_path / 'phase-6-finalize'
+    for sub in ('workflow', 'standards'):
+        (skill_dir / sub).mkdir(parents=True)
+    (skill_dir / 'workflow' / 'rooted-step.md').write_text(_PARTIAL_STEP_DOC, encoding='utf-8')
+    (skill_dir / 'standards' / 'broken-step.md').write_bytes(b'---\nname: default:broken\n---\n\n\xff\xfe\n')
+    monkeypatch.setattr(cc, '_phase_6_skill_dir', lambda: skill_dir)
+
+    assert _disc._implementor_scan_surfaces_resolve()[_PHASE6_SURFACE_INDEX] is False
+
+
 def test_readable_phase5_standards_root_resolves_the_surface(tmp_path, monkeypatch):
     """Positive control for surface 1 (the phase-5 verify-step standards root)."""
     skills_root = tmp_path / 'skills'

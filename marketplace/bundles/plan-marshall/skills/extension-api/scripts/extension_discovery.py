@@ -255,7 +255,7 @@ def read_implements_field(skill_md_path: Path) -> list[str]:
     """
     try:
         content = skill_md_path.read_text(encoding='utf-8')
-    except OSError:
+    except (OSError, UnicodeDecodeError):
         return []
 
     if not content.startswith('---'):
@@ -934,7 +934,7 @@ def _read_frontmatter_fields(doc_path: Path, keys: tuple[str, ...]) -> dict[str,
 
     try:
         text = doc_path.read_text(encoding='utf-8')
-    except OSError:
+    except (OSError, UnicodeDecodeError):
         return {}
 
     fm_lines = _extract_frontmatter_lines(text)
@@ -1455,8 +1455,8 @@ def _step_doc_surface_resolves(skill_dir: Path, subdirs: tuple[str, ...]) -> boo
     - a subdirectory that is absent or denies ``iterdir()`` — the scan skips it
       (``OSError``), so every step rooted in it is invisible;
     - a step document that cannot be read — :func:`read_implements_field`
-      swallows the ``OSError`` to ``[]``, so the step's declaration is
-      invisible.
+      swallows the ``OSError`` (or an undecodable byte) to ``[]``, so the step's
+      declaration is invisible.
 
     ``Path.is_dir()`` alone reports the surface resolved in both shapes. This
     probe performs the same operations the scan performs (``iterdir()`` on each
@@ -1475,7 +1475,7 @@ def _step_doc_surface_resolves(skill_dir: Path, subdirs: tuple[str, ...]) -> boo
         for doc_path in doc_paths:
             try:
                 doc_path.read_text(encoding='utf-8')
-            except OSError:
+            except (OSError, UnicodeDecodeError):
                 return False
     return True
 
