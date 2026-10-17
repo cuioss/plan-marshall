@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import uuid
 from collections.abc import Sequence
 from pathlib import Path
@@ -56,23 +57,64 @@ STANDING_RULES_BASELINE = 'CLAUDE.md'
 #: bridge from a stale or foreign one without parsing rule prose.
 STANDING_RULES_BRIDGE_MARKER = f'bridge-version: {STANDING_RULES_BRIDGE_VERSION}'
 
+#: Filename of the bridge-owned standing-rules file. It is deliberately
+#: distinct from the installed target rules shipped by
+#: ``install.sh --emit-rules``, so a setup write can never land in the
+#: installed file.
+BRIDGE_RULES_FILENAME = 'plan-marshall-standing-rules.md'
+
+#: Filename of the installed target rules shipped by ``install.sh --emit-rules``.
+INSTALLED_RULES_FILENAME = 'plan-marshall-target-rules.md'
+
+#: Pattern matching a bridge stub a previous setup left in the installed
+#: target rules. Only the bridge marker spells ``bridge-version`` followed by
+#: a colon and a digit; the rule prose carries the bare words, so prose can
+#: never false-positive a clobber report.
+_BRIDGE_MARKER_PATTERN = re.compile(r'bridge-version\s*:\s*\d')
+
+
+def _rules_dir(project_dir: Path) -> Path:
+    """Return the Antigravity workspace rules directory."""
+    return project_dir / '.agents' / 'rules'
+
 
 def _bridge_rules_path(project_dir: Path) -> Path:
     """Return the Antigravity workspace rules-bridge file path."""
-    return project_dir / '.agents' / 'rules' / 'plan-marshall-target-rules.md'
+    return _rules_dir(project_dir) / BRIDGE_RULES_FILENAME
+
+
+def _installed_rules_path(project_dir: Path) -> Path:
+    """Return the installed target-rules file path shipped by ``install.sh``."""
+    return _rules_dir(project_dir) / INSTALLED_RULES_FILENAME
+
+
+def installed_rules_clobbered(project_dir: Path) -> bool:
+    """Report whether a previous setup left its bridge stub in the installed rules.
+
+    Read-only: the installed target rules belong to the ``install.sh
+    --emit-rules`` emit path, so this never writes. A file carrying the bridge
+    marker is a clobbered install and is restored with that emit command.
+    """
+    try:
+        text = _installed_rules_path(project_dir).read_text(encoding='utf-8')
+    except OSError:
+        return False
+    return _BRIDGE_MARKER_PATTERN.search(text) is not None
 
 
 def _write_rules_bridge(project_dir: Path) -> bool:
-    """Copy the bridged standing-rules header into the harness grant surface.
+    """Copy the bridged standing-rules header into the bridge-owned file.
 
     The bridge carries the version marker plus a pointer at the CLAUDE.md
     baseline rather than a full rule copy — the marker is what drift detection
     reads, so a full prose duplicate would only create a second source of
-    truth. Returns True when the file was written.
+    truth. The installed target rules shipped by ``install.sh --emit-rules``
+    are never written here, so a setup can no longer replace the full rules
+    with a stub. Returns True when the file was written.
     """
     bridge = _bridge_rules_path(project_dir)
     body = (
-        f'# Plan Marshall target rules (Antigravity bridge {STANDING_RULES_BRIDGE_MARKER})\n\n'
+        f'# Plan Marshall standing rules (Antigravity bridge {STANDING_RULES_BRIDGE_MARKER})\n\n'
         f'Standing rules bridged from {STANDING_RULES_BASELINE} at project setup. '
         'This file is a bridge, not a fork: the baseline stays authoritative, '
         'and re-setup flags drift when this marker no longer matches the source.\n'

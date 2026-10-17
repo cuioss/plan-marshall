@@ -32,6 +32,9 @@ from antigravity_runtime import (
 from antigravity_runtime import (
     _bridge_rules_path as _antigravity_bridge_path,
 )
+from antigravity_runtime import (
+    installed_rules_clobbered as _antigravity_installed_rules_clobbered,
+)
 from determine_mode import (
     check_harness_paths_valid,
     compute_current_harness_sha,
@@ -43,6 +46,9 @@ from opencode_runtime import (
     STANDING_RULES_BRIDGE_MARKER as _OPENCODE_BRIDGE_MARKER,
 )
 from opencode_runtime import _bridge_rules_path as _opencode_bridge_path
+from opencode_runtime import (
+    installed_rules_clobbered as _opencode_installed_rules_clobbered,
+)
 from target_context import SOURCE_EXPLICIT, resolve_target
 from toon_parser import parse_toon, serialize_toon
 
@@ -54,6 +60,10 @@ BRIDGE_REEMIT_COMMAND_TEMPLATE = (
     ' project initial-setup --project-dir {project_dir} --target {harness}'
 )
 
+#: Command that restores the installed target rules a previous setup clobbered
+#: by writing its bridge stub into that file.
+TARGET_RULES_RESTORE_COMMAND = './install.sh --emit-rules'
+
 
 def bridge_reemit_command(harness: str, plan_dir: Path, project_dir: Path) -> str:
     """Return the re-emit command for a damaged or missing bridge stub."""
@@ -64,22 +74,38 @@ def bridge_reemit_command(harness: str, plan_dir: Path, project_dir: Path) -> st
     )
 
 
+def installed_rules_clobbered(harness: str, project_dir: Path) -> bool:
+    """Report whether a previous setup left its bridge stub in the installed rules.
+
+    Read-only. The installed target rules belong to the ``install.sh
+    --emit-rules`` emit path; a file carrying the bridge marker was clobbered
+    by an older setup and is restored with that emit command. Claude has no
+    such file, so its answer is always False.
+    """
+    if harness == 'antigravity':
+        return _antigravity_installed_rules_clobbered(project_dir)
+    if harness == 'opencode':
+        return _opencode_installed_rules_clobbered(project_dir)
+    return False
+
+
 def _reconcile_standing_rules_bridge(harness: str, project_dir: Path) -> bool:
     """Observe standing-rules bridge state without writing through.
 
     Owned-file invariant: the bridge writes land only in the bridge-owned
-    file (``.opencode/rules/plan-marshall-target-rules.md`` on OpenCode,
-    ``.agents/rules/plan-marshall-target-rules.md`` on Antigravity) and
-    never in the installed target-rules file shipped by the bundles. Bridge
-    paths and the version marker are derived from the runtime modules
-    (never retyped here), so an outdated stub fails the marker check. This
-    reconcile performs no writes at all — it only observes. A damaged stub
-    (bridge present without its version marker) is reported as not reconciled
-    so the caller can surface :func:`bridge_reemit_command`; it is never
-    silently healed and never propagated into the deployed harness. Claude
-    carries no bridge file — its CLAUDE.md baseline is authoritative — so
-    the reconcile is a no-op success there. Returns True only when the bridge
-    is current.
+    file (``.opencode/rules/plan-marshall-standing-rules.md`` on OpenCode,
+    ``.agents/rules/plan-marshall-standing-rules.md`` on Antigravity) and
+    never in the installed target-rules file (``plan-marshall-target-rules.md``)
+    shipped by the bundles. Bridge paths and the version marker are derived
+    from the runtime modules (never retyped here), so an outdated stub fails
+    the marker check. This reconcile performs no writes at all — it only
+    observes. A damaged stub (bridge present without its version marker) is
+    reported as not reconciled so the caller can surface
+    :func:`bridge_reemit_command`; it is never silently healed and never
+    propagated into the deployed harness. The installed target rules are
+    never judged damaged for lacking a bridge marker. Claude carries no
+    bridge file — its CLAUDE.md baseline is authoritative — so the reconcile
+    is a no-op success there. Returns True only when the bridge is current.
     """
     proj = project_dir.resolve()
     if harness == 'claude':
@@ -106,7 +132,7 @@ def _reconcile_standing_rules_bridge(harness: str, project_dir: Path) -> bool:
     return False
 
 
-def dispatch_platform_runtime_setup(harness: str, project_dir: Path) -> str:
+def dispatch_platform_runtime_setup(harness: str, project_dir: Path) -> dict[str, Any]:
     """Observe rule emission without bridge-to-installed-target writes.
 
     Runs the runtime setup writers first (session-boundary enforcement) and
@@ -115,14 +141,22 @@ def dispatch_platform_runtime_setup(harness: str, project_dir: Path) -> str:
     only in the bridge-owned file, never in the installed target-rules file.
     Bridge paths and the version marker are derived from the runtime modules
     (never retyped here), and bare file existence never overrides a failed
-    reconcile. Returns the verdict `current`, `damaged` (bridge present
-    without its version marker or unreadable), or `missing` (no bridge file,
-    or setup itself failed). A present stub is judged before setup runs, so
-    the setup writers never overwrite damage the caller must report. The
-    caller surfaces :func:`bridge_reemit_command` for the damaged or missing
-    verdict, never silently healed here.
+    reconcile.
+
+    Returns a dict with:
+
+    - ``bridge_verdict``: `current`, `damaged` (bridge present without its
+      version marker or unreadable), or `missing` (no bridge file, or setup
+      itself failed). A present stub is judged before setup runs, so the
+      setup writers never overwrite damage the caller must report.
+    - ``installed_rules_clobbered``: whether a previous setup left its stub
+      in the installed target rules.
+
+    The caller surfaces :func:`bridge_reemit_command` for the damaged or
+    missing verdict, never silently healed here.
     """
     proj = project_dir.resolve()
+    clobbered = installed_rules_clobbered(harness, proj)
     setup_ok = True
 
     if harness in ('antigravity', 'opencode'):
@@ -131,7 +165,7 @@ def dispatch_platform_runtime_setup(harness: str, project_dir: Path) -> str:
             # A present stub is judged as-is: invoking the setup writers below
             # would overwrite it, silently healing damage the caller must
             # report with the re-emit command instead.
-            return 'damaged'
+            return {'bridge_verdict': 'damaged', 'installed_rules_clobbered': clobbered}
 
     try:
         from platform_runtime import _make_runtime
@@ -162,19 +196,19 @@ def dispatch_platform_runtime_setup(harness: str, project_dir: Path) -> str:
     if not setup_ok:
         # Setup itself failed: emission is not established. Report missing so
         # the caller surfaces the re-emit command; re-running setup converges.
-        return 'missing'
+        return {'bridge_verdict': 'missing', 'installed_rules_clobbered': clobbered}
     if harness == 'claude':
-        return 'current' if (proj / 'CLAUDE.md').is_file() else 'missing'
-    if harness in ('antigravity', 'opencode'):
+        verdict = 'current' if (proj / 'CLAUDE.md').is_file() else 'missing'
+    elif harness in ('antigravity', 'opencode'):
         bridge = _antigravity_bridge_path(proj) if harness == 'antigravity' else _opencode_bridge_path(proj)
-        reconciled = _reconcile_standing_rules_bridge(harness, proj)
-        if reconciled:
-            return 'current'
-        if bridge.is_file():
-            return 'damaged'
-        return 'missing'
-    exists = (proj / 'AGENTS.md').is_file() or (proj / 'CLAUDE.md').is_file()
-    return 'current' if exists else 'missing'
+        if _reconcile_standing_rules_bridge(harness, proj):
+            verdict = 'current'
+        else:
+            verdict = 'damaged' if bridge.is_file() else 'missing'
+    else:
+        exists = (proj / 'AGENTS.md').is_file() or (proj / 'CLAUDE.md').is_file()
+        verdict = 'current' if exists else 'missing'
+    return {'bridge_verdict': verdict, 'installed_rules_clobbered': clobbered}
 
 
 def configure_harness(
@@ -211,7 +245,8 @@ def configure_harness(
 
     harness_paths_valid = check_harness_paths_valid(harness, proj)
 
-    bridge_verdict = dispatch_platform_runtime_setup(harness, proj)
+    dispatch_result = dispatch_platform_runtime_setup(harness, proj)
+    bridge_verdict = dispatch_result['bridge_verdict']
     rules_emitted = bridge_verdict == 'current'
 
     current_sha = compute_current_harness_sha(plan_dir, harness)
@@ -244,7 +279,10 @@ def configure_harness(
         'config_path': str(config_path),
         'dist_manifest_sha': current_sha,
         'bridge_verdict': bridge_verdict,
+        'installed_rules_clobbered': dispatch_result['installed_rules_clobbered'],
     }
+    if dispatch_result['installed_rules_clobbered']:
+        result['installed_rules_restore_command'] = TARGET_RULES_RESTORE_COMMAND
     if bridge_verdict in ('damaged', 'missing'):
         result['bridge_reemit_command'] = bridge_reemit_command(harness, plan_dir, proj)
     return result

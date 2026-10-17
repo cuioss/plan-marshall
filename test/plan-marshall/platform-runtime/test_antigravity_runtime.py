@@ -12,6 +12,8 @@ from antigravity_runtime import AntigravityRuntime
 from platform_runtime import _make_runtime
 from toon_parser import parse_toon
 
+from conftest import get_skill_dir
+
 
 @pytest.fixture()
 def runtime() -> AntigravityRuntime:
@@ -175,7 +177,7 @@ def test_standing_rules_drift_detects_marker_mismatch(runtime: AntigravityRuntim
     from antigravity_runtime import standing_rules_drift_status
 
     (tmp_path / 'CLAUDE.md').write_text('# baseline\n', encoding='utf-8')
-    bridge = tmp_path / '.agents' / 'rules' / 'plan-marshall-target-rules.md'
+    bridge = tmp_path / '.agents' / 'rules' / 'plan-marshall-standing-rules.md'
     bridge.parent.mkdir(parents=True)
     bridge.write_text('stale foreign content\n', encoding='utf-8')
 
@@ -764,6 +766,56 @@ def test_resestup_clears_baseline_newer_drift(
 
     assert result['bridge_written'] is True
     assert standing_rules_drift_status(str(tmp_path))['reason'] == 'in_sync'
+
+
+def test_project_initial_setup_never_writes_installed_target_rules(
+    runtime: AntigravityRuntime, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
+    """Setup leaves the full emitted rules byte-identical and bridges to its own file."""
+    from antigravity_runtime import STANDING_RULES_BRIDGE_MARKER, _bridge_rules_path
+
+    monkeypatch.setenv('GEMINI_CONFIG_DIR', str(tmp_path / 'gemini-config'))
+    rules_text = (
+        get_skill_dir('plan-marshall-antigravity', 'target-rules') / 'standards' / 'antigravity-rules.md'
+    ).read_text(encoding='utf-8')
+    # Premise: the emitted rules carry no bridge marker, so a marker found in
+    # the installed file after setup could only have been written by the bridge.
+    assert STANDING_RULES_BRIDGE_MARKER not in rules_text
+
+    installed = tmp_path / '.agents' / 'rules' / 'plan-marshall-target-rules.md'
+    installed.parent.mkdir(parents=True, exist_ok=True)
+    installed.write_text(rules_text, encoding='utf-8')
+
+    result = _parse(runtime.project_initial_setup(str(tmp_path), 'antigravity'))
+
+    assert result['status'] == 'success'
+    assert installed.read_text(encoding='utf-8') == rules_text
+    bridge = _bridge_rules_path(tmp_path)
+    assert bridge != installed
+    assert bridge.is_file()
+    assert STANDING_RULES_BRIDGE_MARKER in bridge.read_text(encoding='utf-8')
+
+
+def test_project_initial_setup_does_not_rewrite_clobbered_target_rules(
+    runtime: AntigravityRuntime, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
+    """A leftover stub in the installed target rules survives setup for the restore command."""
+    from antigravity_runtime import STANDING_RULES_BRIDGE_MARKER, _bridge_rules_path
+
+    monkeypatch.setenv('GEMINI_CONFIG_DIR', str(tmp_path / 'gemini-config'))
+    installed = tmp_path / '.agents' / 'rules' / 'plan-marshall-target-rules.md'
+    installed.parent.mkdir(parents=True, exist_ok=True)
+    stub = f'# Plan Marshall standing rules (Antigravity bridge {STANDING_RULES_BRIDGE_MARKER})\n\nstub body\n'
+    installed.write_text(stub, encoding='utf-8')
+
+    result = _parse(runtime.project_initial_setup(str(tmp_path), 'antigravity'))
+
+    assert result['status'] == 'success'
+    assert result['bridge_written'] is True
+    assert installed.read_text(encoding='utf-8') == stub
+    bridge = _bridge_rules_path(tmp_path)
+    assert bridge != installed
+    assert bridge.is_file()
 
 
 def test_reconcile_standing_rules_bridge_heals_missing_bridge(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):

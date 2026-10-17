@@ -12,12 +12,13 @@ from __future__ import annotations
 
 import json
 import re
+import sqlite3
 import sys
 from pathlib import Path
 
 import pytest
 
-from conftest import load_script_module
+from conftest import get_skill_dir, load_script_module
 
 dm = load_script_module('plan-marshall', 'marshall-steward', 'determine_mode.py', 'determine_mode_harness_cov')
 ch = load_script_module('plan-marshall', 'marshall-steward', 'configure_harness.py', 'configure_harness_cov')
@@ -376,7 +377,7 @@ def test_bridge_reemit_command_names_project_initial_setup(plan_env):
 def test_reconcile_damaged_stub_returns_false(plan_env):
     """A bridge stub without its version marker is not reconciled."""
     project_dir = plan_env['project_dir']
-    bridge = project_dir / '.opencode' / 'rules' / 'plan-marshall-target-rules.md'
+    bridge = project_dir / '.opencode' / 'rules' / 'plan-marshall-standing-rules.md'
     bridge.parent.mkdir(parents=True, exist_ok=True)
     bridge.write_text('# damaged stub without marker\n', encoding='utf-8')
 
@@ -387,59 +388,188 @@ def test_dispatch_provisions_missing_bridge_via_setup(plan_env):
     """A missing bridge is provisioned by setup, then reported current."""
     project_dir = plan_env['project_dir']
     (project_dir / 'AGENTS.md').unlink(missing_ok=True)
-    bridge = project_dir / '.opencode' / 'rules' / 'plan-marshall-target-rules.md'
+    bridge = project_dir / '.opencode' / 'rules' / 'plan-marshall-standing-rules.md'
     if bridge.is_file():
         bridge.unlink()
 
-    assert ch.dispatch_platform_runtime_setup('opencode', project_dir) == 'current'
+    res = ch.dispatch_platform_runtime_setup('opencode', project_dir)
+
+    assert res['bridge_verdict'] == 'current'
     assert bridge.is_file()
 
 
 def test_bridge_owns_own_file_only(plan_env):
-    """A current bridge reconciles without touching the installed target file."""
+    """A current bridge reconciles without touching the installed target rules."""
     project_dir = plan_env['project_dir']
-    installed = project_dir / 'installed-target-rules.md'
+    installed = project_dir / '.opencode' / 'rules' / 'plan-marshall-target-rules.md'
+    installed.parent.mkdir(parents=True, exist_ok=True)
     installed.write_text('# installed target rules\n', encoding='utf-8')
-    before = installed.read_text(encoding='utf-8')
 
-    bridge = project_dir / '.opencode' / 'rules' / 'plan-marshall-target-rules.md'
-    bridge.parent.mkdir(parents=True, exist_ok=True)
+    bridge = project_dir / '.opencode' / 'rules' / 'plan-marshall-standing-rules.md'
     bridge.write_text('# bridge\n\nbridge-version: 1\n', encoding='utf-8')
 
     assert ch._reconcile_standing_rules_bridge('opencode', project_dir) is True
-    assert installed.read_text(encoding='utf-8') == before
+    assert installed.read_text(encoding='utf-8') == '# installed target rules\n'
 
 
-def test_dispatch_damaged_stub_returns_damaged_verdict(plan_env):
-    """Bare file existence never overrides a failed reconcile."""
+def test_dispatch_damaged_stub_returns_damaged_verdict(plan_env, monkeypatch: pytest.MonkeyPatch):
+    """A stub surviving a failed bridge write is reported damaged, never current."""
     project_dir = plan_env['project_dir']
-    bridge = project_dir / '.opencode' / 'rules' / 'plan-marshall-target-rules.md'
+    bridge = project_dir / '.opencode' / 'rules' / 'plan-marshall-standing-rules.md'
     bridge.parent.mkdir(parents=True, exist_ok=True)
     bridge.write_text('# damaged stub without marker\n', encoding='utf-8')
 
-    assert ch.dispatch_platform_runtime_setup('opencode', project_dir) == 'damaged'
+    import opencode_runtime
+
+    monkeypatch.setattr(opencode_runtime, '_write_rules_bridge', lambda _project_dir: False)
+
+    res = ch.dispatch_platform_runtime_setup('opencode', project_dir)
+
+    assert res['bridge_verdict'] == 'damaged'
+    assert bridge.read_text(encoding='utf-8') == '# damaged stub without marker\n'
 
 
-def test_outdated_bridge_version_is_damaged(plan_env):
+def test_outdated_bridge_version_is_damaged(plan_env, monkeypatch: pytest.MonkeyPatch):
     """A stub with an outdated version marker is damaged, never current."""
     project_dir = plan_env['project_dir']
-    bridge = project_dir / '.opencode' / 'rules' / 'plan-marshall-target-rules.md'
+    bridge = project_dir / '.opencode' / 'rules' / 'plan-marshall-standing-rules.md'
     bridge.parent.mkdir(parents=True, exist_ok=True)
     bridge.write_text('# bridge\n\nbridge-version: 0\n', encoding='utf-8')
 
+    import opencode_runtime
+
+    monkeypatch.setattr(opencode_runtime, '_write_rules_bridge', lambda _project_dir: False)
+
     assert ch._reconcile_standing_rules_bridge('opencode', project_dir) is False
-    assert ch.dispatch_platform_runtime_setup('opencode', project_dir) == 'damaged'
+    assert ch.dispatch_platform_runtime_setup('opencode', project_dir)['bridge_verdict'] == 'damaged'
 
 
 def test_setup_written_heading_reconciles_current(plan_env):
     """A setup-written bridge embeds its marker in the heading line."""
     project_dir = plan_env['project_dir']
-    bridge = project_dir / '.opencode' / 'rules' / 'plan-marshall-target-rules.md'
+    bridge = project_dir / '.opencode' / 'rules' / 'plan-marshall-standing-rules.md'
     bridge.parent.mkdir(parents=True, exist_ok=True)
     bridge.write_text(
-        '# Plan Marshall target rules (OpenCode bridge bridge-version: 1)\n\nbody\n',
+        '# Plan Marshall standing rules (OpenCode bridge bridge-version: 1)\n\nbody\n',
         encoding='utf-8',
     )
 
     assert ch._reconcile_standing_rules_bridge('opencode', project_dir) is True
-    assert ch.dispatch_platform_runtime_setup('opencode', project_dir) == 'current'
+    assert ch.dispatch_platform_runtime_setup('opencode', project_dir)['bridge_verdict'] == 'current'
+
+
+def test_configure_harness_reports_clobbered_target_rules(plan_env):
+    """A stub left in the installed target rules is reported with the restore command."""
+    project_dir = plan_env['project_dir']
+    installed = project_dir / '.opencode' / 'rules' / 'plan-marshall-target-rules.md'
+    installed.parent.mkdir(parents=True, exist_ok=True)
+    stub = '# Plan Marshall target rules (OpenCode bridge bridge-version: 1)\n\nstub body\n'
+    installed.write_text(stub, encoding='utf-8')
+
+    res = ch.configure_harness(harness_override='opencode', plan_dir=plan_env['plan_dir'], project_dir=project_dir)
+
+    assert res['bridge_verdict'] == 'current'
+    assert res['installed_rules_clobbered'] is True
+    assert res['installed_rules_restore_command'] == './install.sh --emit-rules'
+    assert installed.read_text(encoding='utf-8') == stub
+
+
+def test_configure_harness_full_rules_with_bridge_is_current(plan_env):
+    """Full emitted rules plus a present bridge reconcile to current, never damaged."""
+    project_dir = plan_env['project_dir']
+    rules_text = (
+        get_skill_dir('plan-marshall-opencode', 'target-rules') / 'standards' / 'opencode-rules.md'
+    ).read_text(encoding='utf-8')
+    installed = project_dir / '.opencode' / 'rules' / 'plan-marshall-target-rules.md'
+    installed.parent.mkdir(parents=True, exist_ok=True)
+    installed.write_text(rules_text, encoding='utf-8')
+    bridge = project_dir / '.opencode' / 'rules' / 'plan-marshall-standing-rules.md'
+    bridge.write_text('# Plan Marshall standing rules (OpenCode bridge bridge-version: 1)\n\nbody\n', encoding='utf-8')
+
+    res = ch.configure_harness(harness_override='opencode', plan_dir=plan_env['plan_dir'], project_dir=project_dir)
+
+    assert res['bridge_verdict'] == 'current'
+    assert res['installed_rules_clobbered'] is False
+    assert installed.read_text(encoding='utf-8') == rules_text
+
+
+def test_configure_harness_always_runs_setup_writers(plan_env, monkeypatch: pytest.MonkeyPatch):
+    """Full install.sh rules never block the setup, hook and enforcement writers."""
+    project_dir = plan_env['project_dir']
+    installed = project_dir / '.opencode' / 'rules' / 'plan-marshall-target-rules.md'
+    installed.parent.mkdir(parents=True, exist_ok=True)
+    rules_text = (
+        get_skill_dir('plan-marshall-opencode', 'target-rules') / 'standards' / 'opencode-rules.md'
+    ).read_text(encoding='utf-8')
+    installed.write_text(rules_text, encoding='utf-8')
+
+    calls: list[str] = []
+
+    class _FakeRuntime:
+        def project_initial_setup(self, project_dir_arg: str, target: str) -> dict:
+            calls.append('project_initial_setup')
+            bridge = Path(project_dir_arg) / '.opencode' / 'rules' / 'plan-marshall-standing-rules.md'
+            bridge.parent.mkdir(parents=True, exist_ok=True)
+            bridge.write_text('# bridge\n\nbridge-version: 1\n', encoding='utf-8')
+            return {'status': 'success'}
+
+        def project_install_hook(self, target: str) -> None:
+            calls.append('project_install_hook')
+
+        def opencode_enforcement_apply(self, project_dir_arg: str) -> None:
+            calls.append('opencode_enforcement_apply')
+
+    import platform_runtime
+
+    monkeypatch.setattr(platform_runtime, '_make_runtime', lambda _harness: _FakeRuntime())
+
+    res = ch.configure_harness(harness_override='opencode', plan_dir=plan_env['plan_dir'], project_dir=project_dir)
+
+    assert calls == ['project_initial_setup', 'project_install_hook', 'opencode_enforcement_apply']
+    assert res['bridge_verdict'] == 'current'
+    assert res['setup_failed'] is False
+    assert installed.read_text(encoding='utf-8') == rules_text
+
+
+def test_configure_harness_reports_failed_setup(plan_env, monkeypatch: pytest.MonkeyPatch):
+    """A setup that fails is reported as such and never reads as current."""
+    project_dir = plan_env['project_dir']
+
+    class _FailingRuntime:
+        def project_initial_setup(self, project_dir_arg: str, target: str) -> None:
+            raise OSError('setup failed')
+
+    import platform_runtime
+
+    monkeypatch.setattr(platform_runtime, '_make_runtime', lambda _harness: _FailingRuntime())
+
+    res = ch.configure_harness(harness_override='opencode', plan_dir=plan_env['plan_dir'], project_dir=project_dir)
+
+    assert res['setup_failed'] is True
+    assert res['bridge_verdict'] == 'missing'
+
+
+def test_configure_harness_persisted_approval_warnings_in_result(plan_env, monkeypatch: pytest.MonkeyPatch):
+    """Persisted-approval warnings reach the result payload, not only stderr."""
+    project_dir = plan_env['project_dir']
+    (project_dir / 'opencode.json').write_text(
+        json.dumps({'permissions': [{'action': 'shell', 'resource': 'ls *', 'effect': 'deny'}]}),
+        encoding='utf-8',
+    )
+    db_path = project_dir / 'opencode.db'
+    conn = sqlite3.connect(str(db_path))
+    try:
+        conn.execute('CREATE TABLE permission (tool TEXT, pattern TEXT, action TEXT)')
+        conn.execute("INSERT INTO permission (tool, pattern, action) VALUES ('bash', 'ls', 'allow')")
+        conn.commit()
+    finally:
+        conn.close()
+    monkeypatch.setenv('OPENCODE_DB_PATH', str(db_path))
+    monkeypatch.setenv('OPENCODE_CONFIG_DIR', str(project_dir / 'opencode-config'))
+
+    res = ch.configure_harness(harness_override='opencode', plan_dir=plan_env['plan_dir'], project_dir=project_dir)
+
+    warnings = res['persisted_approval_warnings']
+    assert len(warnings) == 1
+    assert warnings[0]['pattern'] == 'ls'
+    assert res['bridge_verdict'] == 'current'

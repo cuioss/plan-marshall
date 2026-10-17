@@ -24,6 +24,8 @@ from opencode_runtime import OpenCodeRuntime, to_opencode_grant
 from runtime_base import PERMISSION_FIX_OPERATIONS
 from toon_parser import parse_toon
 
+from conftest import get_skill_dir
+
 # ⛔ Vacuity guard — the operation set is production's, so emptying it there collects
 # zero cases at the parametrize below and still reports green.
 assert PERMISSION_FIX_OPERATIONS, 'runtime_base.PERMISSION_FIX_OPERATIONS is empty'
@@ -162,7 +164,7 @@ def test_standing_rules_drift_detects_marker_mismatch(runtime: OpenCodeRuntime, 
     from opencode_runtime import standing_rules_drift_status
 
     (tmp_path / 'CLAUDE.md').write_text('# baseline\n', encoding='utf-8')
-    bridge = tmp_path / '.opencode' / 'rules' / 'plan-marshall-target-rules.md'
+    bridge = tmp_path / '.opencode' / 'rules' / 'plan-marshall-standing-rules.md'
     bridge.parent.mkdir(parents=True)
     bridge.write_text('stale foreign content\n', encoding='utf-8')
 
@@ -1196,6 +1198,54 @@ def test_reconcile_standing_rules_bridge_heals_missing_bridge(tmp_path: pathlib.
     assert not _bridge_rules_path(tmp_path).is_file()
 
 
+def test_project_initial_setup_never_writes_installed_target_rules(
+    runtime: OpenCodeRuntime, tmp_path: pathlib.Path
+) -> None:
+    """Setup leaves the full emitted rules byte-identical and bridges to its own file."""
+    from opencode_runtime import STANDING_RULES_BRIDGE_MARKER, _bridge_rules_path
+
+    rules_text = (
+        get_skill_dir('plan-marshall-opencode', 'target-rules') / 'standards' / 'opencode-rules.md'
+    ).read_text(encoding='utf-8')
+    # Premise: the emitted rules carry no bridge marker, so a marker found in
+    # the installed file after setup could only have been written by the bridge.
+    assert STANDING_RULES_BRIDGE_MARKER not in rules_text
+
+    installed = tmp_path / '.opencode' / 'rules' / 'plan-marshall-target-rules.md'
+    installed.parent.mkdir(parents=True, exist_ok=True)
+    installed.write_text(rules_text, encoding='utf-8')
+
+    result = _parse(runtime.project_initial_setup(str(tmp_path), 'opencode'))
+
+    assert result['status'] == 'success'
+    assert installed.read_text(encoding='utf-8') == rules_text
+    bridge = _bridge_rules_path(tmp_path)
+    assert bridge != installed
+    assert bridge.is_file()
+    assert STANDING_RULES_BRIDGE_MARKER in bridge.read_text(encoding='utf-8')
+
+
+def test_project_initial_setup_does_not_rewrite_clobbered_target_rules(
+    runtime: OpenCodeRuntime, tmp_path: pathlib.Path
+) -> None:
+    """A leftover stub in the installed target rules survives setup for the restore command."""
+    from opencode_runtime import STANDING_RULES_BRIDGE_MARKER, _bridge_rules_path
+
+    installed = tmp_path / '.opencode' / 'rules' / 'plan-marshall-target-rules.md'
+    installed.parent.mkdir(parents=True, exist_ok=True)
+    stub = f'# Plan Marshall standing rules (OpenCode bridge {STANDING_RULES_BRIDGE_MARKER})\n\nstub body\n'
+    installed.write_text(stub, encoding='utf-8')
+
+    result = _parse(runtime.project_initial_setup(str(tmp_path), 'opencode'))
+
+    assert result['status'] == 'success'
+    assert result['bridge_written'] is True
+    assert installed.read_text(encoding='utf-8') == stub
+    bridge = _bridge_rules_path(tmp_path)
+    assert bridge != installed
+    assert bridge.is_file()
+
+
 # =============================================================================
 # Persisted-approval contradiction reporter (D3)
 # =============================================================================
@@ -1440,7 +1490,8 @@ def test_steward_setup_prints_persisted_warnings(
     from configure_harness import dispatch_platform_runtime_setup
 
     monkeypatch.chdir(tmp_path)
-    assert dispatch_platform_runtime_setup('opencode', tmp_path) == 'current'
+    res = dispatch_platform_runtime_setup('opencode', tmp_path)
+    assert res['bridge_verdict'] == 'current'
     captured = capsys.readouterr()
     assert 'persisted approval warning' in captured.err
     assert 'ls' in captured.err
