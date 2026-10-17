@@ -58,6 +58,11 @@ of relying on hand work.
    - **Registration:** the skill is registered wherever a new plan-marshall skill must be
      (`plugin.json` and any count or registry test). The component count in `CLAUDE.md` is
      updated.
+   - **Harness without a guard:** where no tool-call guard is installed (Antigravity has no
+     pre-tool-use hooks; an OpenCode project without `.opencode/plugin/guard.js`), the skill makes
+     the landing say `guard: none on this harness (unenforced)` in the facts block and in the rule
+     check. It never reports "all kept" or "no guard-log line" when nothing was enforced. How the
+     run detects the guard is part of the D2 `resolve` result (`guard: present|none`).
    - **Docs:** a short section in `doc/developer/opencode.adoc` names the lane, its invocation and
      its prerequisites:
      - the steward-installed executor;
@@ -71,8 +76,11 @@ of relying on hand work.
    - a content test asserts that every top-level section of the source runbook (0, 0a, 1–8) has a
      matching section in the skill. Quote the source headings in the test as fixed strings; do
      not read `.plan/local` from the test;
-   - generating the OpenCode target emits the skill and the `/plan-marshall-runbook-lane` command
-     (asserted in the existing target-generation tests).
+   - generating the OpenCode target emits the skill and the `/plan-marshall-runbook-lane` command,
+     and generating the Antigravity target emits the skill and its command with the tool names
+     rewritten (`ask_question`, `invoke_subagent`), both asserted in the existing
+     target-generation tests;
+   - a content test asserts the skill's landing section contains the unenforced-guard wording.
 
 2. **One script verb resolves every project-specific value.**
    - `runbook_lane resolve --spec PATH` (notation `plan-marshall:runbook-lane:runbook_lane`)
@@ -85,7 +93,10 @@ of relying on hand work.
      - `required_bots` and `optional_bots` from the project's `.plan/marshal.json`
        automatic-review step, each with `trigger_comment` and `escalated_trigger_comment` from
        its `automatic-review/standards/{bot}.md`;
-     - `commit_trailer` from `run_config commit-trailer get`.
+     - `commit_trailer` from `run_config commit-trailer get`;
+     - `harness` (from `platform_runtime runtime-info`) and `guard`: `present` when the harness
+       has a tool-call guard installed for this project, `none` otherwise (always `none` on
+       Antigravity).
    - **Fail closed:** a spec path outside `.plan/orchestrator/{slug}/plans/`, a missing or empty
      `required_bots`, or an unresolvable build command returns `status: error` with a specific
      code. It never falls back to a default reviewer list or a default build.
@@ -95,7 +106,9 @@ of relying on hand work.
      resolves all fields, including that override;
    - a fixture with a Maven build resolves Maven commands (no pyproject literal in the output);
    - an empty `required_bots` is an error;
-   - a spec outside `.plan/orchestrator/` is an error.
+   - a spec outside `.plan/orchestrator/` is an error;
+   - an Antigravity harness resolves `guard: none`, and an OpenCode fixture without
+     `.opencode/plugin/guard.js` resolves `guard: none`.
 
 3. **The orchestrator handles runbook-lane plans end to end.**
    - **Lane per row:** a queue row carries `lane` (`plan-marshall`, the default, or `runbook`). It is
@@ -144,6 +157,7 @@ Split guard: three deliverables.
 - OBSERVED: `CLAUDE.md:7` states "158 registered components (154 skills, 2 agents, 2 commands)" — orchestrator-read.
 - HYPOTHESIS: only `build-pyproject` accepts `--execution-mode in_process`. Other build skills may need the worktree executor for the daemon. Confirm how a Maven build runs in a worktree without a generated worktree executor, and make `resolve` return the form that works. If none works without the daemon, report it as not met for Maven rather than inventing one.
 - HYPOTHESIS: a new script needs the executor mapping regenerated before `python3 .plan/execute-script.py plan-marshall:runbook-lane:runbook_lane` resolves. Confirm which tests check script registration, and run the regeneration through the executor in process (as PLAN-LB-54 did with `generate-claude`).
+- OBSERVED: Antigravity runs without pre-tool-use hooks (`doc/developer/antigravity.adoc:343`), so no guard and no `guard.log` exist there; the target supports skills and commands (`marketplace/targets/antigravity/target.py:38-39`) — orchestrator-read.
 - HYPOTHESIS: `.plan/marshal.json` is read through an existing manage-config verb rather than by path. Confirm, and use the verb.
 
 ## Expected Surface
@@ -154,7 +168,7 @@ Split guard: three deliverables.
 - OBSERVED: `marketplace/bundles/plan-marshall/.claude-plugin/plugin.json` (D1)
 - OBSERVED: `CLAUDE.md` (D1, component count)
 - OBSERVED: `doc/developer/opencode.adoc` (D1)
-- HYPOTHESIS: the target-generation tests under `test/` that assert exported skills and commands (D1)
+- HYPOTHESIS: the target-generation tests under `test/` that assert exported skills and commands, for OpenCode and Antigravity (D1)
 - OBSERVED: `marketplace/bundles/plan-marshall/skills/plan-orchestrator/scripts/orchestrator.py` — `PLAN_ROW_FIELDS`, `queue`, `status`/`next` (D3)
 - OBSERVED: `marketplace/bundles/plan-marshall/skills/plan-orchestrator/scripts/_orchestrator_inbox.py` — `reconcile_queue_vs_landings`, owed-landing (D3)
 - OBSERVED: `marketplace/bundles/plan-marshall/skills/plan-orchestrator/workflow/orchestrate.md`, `workflow/analyze.md` (D3)
