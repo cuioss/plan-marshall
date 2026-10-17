@@ -57,6 +57,7 @@ Antigravity automatically discovers and loads workspace rules into assistant con
 
 ## 7. Standing-Rules Bridge & Drift Detection
 
-- **Bridge source**: the workspace rules file is bridged at project setup from the `CLAUDE.md` baseline (`bridge-version` marker embedded); the baseline stays authoritative.
+- **Two distinct files**: the deployed specification above (`.agents/rules/plan-marshall-target-rules.md`) is written by the installer (`./install.sh --workspace` / `--emit-rules`); project setup writes the standing-rules bridge to its own file, `.agents/rules/plan-marshall-standing-rules.md`, and never into the deployed specification file.
+- **Bridge source**: the bridge file is written at project setup from the `CLAUDE.md` baseline (`bridge-version` marker embedded); the baseline stays authoritative.
 - **Drift signal**: re-setup compares the marker and modification times — a marker mismatch or a baseline newer than the bridge reports drift (`marker_mismatch`, `baseline_newer`).
-- **Reconcile path**: the steward upgrade flow re-runs the bridge writer and heals a drifted or missing bridge; a current bridge is left untouched.
+- **Reconcile path**: re-setup re-runs the bridge writer, which heals a drifted or missing bridge in the bridge file only and leaves a current bridge untouched. A bridge stub found in the deployed specification file is a clobber by an older setup — restore it by re-running `./install.sh --emit-rules`.
