@@ -20,15 +20,18 @@ The scratch root is a self-contained ESM project:
 * ``driver.mjs`` registers the hook through ``setup`` and invokes it once per
   supplied event, reporting ``blocked`` + the thrown message.
 
-The scratch root is deliberately NOT under ``.plan/local/worktrees/``, so the
-guard's plan-context gate is off by default and each test turns it on with the
-event field it means to exercise (Signal 1 = the agent identity, Signal 2 = a
-worktree cwd).
+The scratch root is deliberately NOT under ``.plan/local/worktrees/``, so a test
+that wants to exercise a worktree-shaped path passes it as the shell ``workdir``.
+R5 has no plan-context gate since PLAN-LB-65 D1, so it fires in every session;
+R6 resolves the plan MAIN-ANCHORED, and the harness pins ``PLAN_BASE_DIR`` to
+``<scratch>/.plan/local`` so a test can place the plan's ``status.json`` where
+that resolution looks.
 """
 
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 import tempfile
@@ -142,20 +145,26 @@ process.stdout.write(JSON.stringify(results))
 class GuardHarness:
     """Runs the guard plugin against one scratch project root."""
 
-    def __init__(self, root: Path) -> None:
+    def __init__(self, root: Path, plan_base: Path) -> None:
         self.root = root
         self.guard_path = root / 'guard.js'
+        #: The ``.plan/local`` base the guard's R6 main-anchored plan resolution
+        #: anchors on (passed as ``PLAN_BASE_DIR``), mirroring the sanctioned
+        #: resolver's override precedence.
+        self.plan_base = plan_base
 
     def run(self, events: list[dict[str, Any]]) -> list[GuardOutcome]:
         """Invoke the registered hook once per event; return one outcome each."""
         node = require_node()
         payload = json.dumps({'root': str(self.root), 'guardPath': str(self.guard_path), 'events': events})
+        env = {**os.environ, 'PLAN_BASE_DIR': str(self.plan_base)}
         proc = subprocess.run(
             [node, str(self.root / 'driver.mjs')],
             input=payload,
             capture_output=True,
             text=True,
             timeout=120,
+            env=env,
         )
         if proc.returncode != 0:
             raise AssertionError(
@@ -178,12 +187,12 @@ def _write(path: Path, content: str) -> None:
 def _outside_any_worktree(scratch: Path) -> Path:
     """Return ``scratch`` unless it sits inside a plan worktree.
 
-    The guard's plan-context gate (Signal 2) is ON for any root under
-    ``.plan/local/worktrees/`` — and pytest's basetemp lives INSIDE the lane's
-    worktree, so a ``tmp_path_factory`` directory would keep R5 gated ON and make
-    the "outside a plan context" cases untestable. In that case a system temp
-    directory is used instead; the guard reads the allow-list from a scratch
-    location either way, so the relocation changes nothing else.
+    A guard root under ``.plan/local/worktrees/`` looks like a plan worktree, and
+    pytest's basetemp lives INSIDE the runbook lane's worktree, so a
+    ``tmp_path_factory`` directory would make the scratch root look worktree-ish
+    and couple every case to that shape. In that case a system temp directory is
+    used instead; the guard reads the allow-list from a scratch location either
+    way, so the relocation changes nothing else.
     """
     normalized = scratch.resolve().as_posix() + '/'
     if '/.plan/local/worktrees/' in normalized:
@@ -222,7 +231,9 @@ def build_harness(
         resolved = allowlist_entries() if entries is None else entries
         target = scratch / _ALLOWLIST_REL
         _write(target, json.dumps({'schema': 'r5-allowlist/1', 'entries': dict.fromkeys(resolved, 'test')}))
-    return GuardHarness(scratch)
+    plan_base = scratch / '.plan' / 'local'
+    plan_base.mkdir(parents=True, exist_ok=True)
+    return GuardHarness(scratch, plan_base)
 
 
 def shell_event(

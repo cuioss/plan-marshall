@@ -664,12 +664,18 @@ class TestSourceCommitGate:
         assert result['reason'] == 'plan_only'
 
     def test_cli_allow_with_open_fix_task(self, tmp_path):
-        """CLI plumbing: the gate reads an open fix task from the plan directory."""
+        """CLI plumbing: the gate reads an open fix task from the MAIN-ANCHORED plan dir."""
         import json
 
-        plan_dir = tmp_path / '.plan' / 'local' / 'plans' / 'FIXTURE'
+        # The gate resolves the plan directory main-anchored (ADR-002), so the
+        # tasks live under the PLAN_BASE_DIR the sandbox installed, not under the
+        # worktree-local ``<project-dir>/.plan/local/plans``.
+        plan_dir = Path(os.environ['PLAN_BASE_DIR']) / 'plans' / 'FIXTURE'
         tasks_dir = plan_dir / 'tasks'
         tasks_dir.mkdir(parents=True)
+        (plan_dir / 'status.json').write_text(
+            json.dumps({'plan_id': 'FIXTURE', 'current_phase': '6-finalize'}), encoding='utf-8'
+        )
         (tasks_dir / 'TASK-001.json').write_text(
             json.dumps({'number': 1, 'title': 'Fix: loop-back', 'status': 'pending', 'origin': 'fix'}),
             encoding='utf-8',

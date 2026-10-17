@@ -1,15 +1,14 @@
 {
   "schema": "r5-allowlist/1",
-  "description": "Documented non-executor interpreter invocations the R5 rule permits. One shared data file, read by both the OpenCode guard plugin (.opencode/plugin/guard.js) and the Claude PreToolUse hook (claude_pretooluse_hook.py). An entry matches the second shell token of a python invocation exactly or as a path SUFFIX, so an absolute or relative path ending in the entry resolves to it. Each entry cites the documenting line; entries are bare script basenames wherever the documented form is a resolved/absolute path.",
+  "description": "Documented non-executor interpreter invocations the R5 rule permits. One shared data file, read by both the OpenCode guard plugin (.opencode/plugin/guard.js) and the Claude PreToolUse hook (claude_pretooluse_hook.py). An entry is a REPOSITORY-RELATIVE path, matched EXACTLY against the invocation's script path resolved against the repository root — never a basename and never a suffix, so a copy of an allow-listed script outside the repository never matches. Each entry cites the documenting line.",
   "entries": {
     "marketplace/targets/sync.py": "marketplace/targets/README.md:379",
-    "marketplace/targets/generate.py": "marketplace/targets/README.md:119",
     "marketplace/targets/claude/reconcile_daemon.py": "marketplace/targets/claude/reconcile_daemon.py:51",
     "marketplace/targets/claude/registry_pin.py": "doc/developer/marketplace-build.adoc:196",
-    "generate_executor.py": "marketplace/bundles/plan-marshall/skills/tools-script-executor/SKILL.md:522",
-    "bootstrap_plugin.py": "marketplace/bundles/plan-marshall/skills/marshall-steward/references/wizard-flow.md:24",
-    "determine_mode.py": "marketplace/bundles/plan-marshall/skills/marshall-steward/references/wizard-flow.md:80",
-    "gitignore_setup.py": "marketplace/bundles/plan-marshall/skills/marshall-steward/references/wizard-flow.md:30",
-    "permission_fix.py": "marketplace/bundles/plan-marshall/skills/marshall-steward/references/wizard-flow.md:102"
+    "marketplace/bundles/plan-marshall/skills/tools-script-executor/scripts/generate_executor.py": "marketplace/bundles/plan-marshall/skills/tools-script-executor/SKILL.md:522",
+    "marketplace/bundles/plan-marshall/skills/marshall-steward/scripts/bootstrap_plugin.py": "marketplace/bundles/plan-marshall/skills/marshall-steward/references/wizard-flow.md:24",
+    "marketplace/bundles/plan-marshall/skills/marshall-steward/scripts/determine_mode.py": "marketplace/bundles/plan-marshall/skills/marshall-steward/references/wizard-flow.md:80",
+    "marketplace/bundles/plan-marshall/skills/marshall-steward/scripts/gitignore_setup.py": "marketplace/bundles/plan-marshall/skills/marshall-steward/references/wizard-flow.md:30",
+    "marketplace/bundles/plan-marshall/skills/tools-permission-fix/scripts/permission_fix.py": "marketplace/bundles/plan-marshall/skills/marshall-steward/references/wizard-flow.md:102"
   }
 }

@@ -49,29 +49,38 @@
  *     - `python(3) -m {pytest mypy ruff}`; a bare {pytest mypy ruff}.
  *   R4 is UNCONDITIONAL. The executor permit stays exempt under R4 and R5.
  *
- *   R5 — direct interpreter calls bypassing the executor (bash), GATED: block
- *   when the first token is an interpreter (python/python3 or a versioned
- *   spelling such as python3.12) and the invocation is -c, a script path (any
- *   second token not starting with -), or -m with any module — the allow set is
- *   executor-only, so every -m form refuses. R5 applies ONLY inside a
- *   plan-marshall plan context (a dispatched execution-context sub-agent, or a
- *   working directory under `.plan/local/worktrees/`), matching the Claude
- *   hook's gate; R1-R4 stay unconditional. Two exemptions apply inside the
- *   context: the executor permit, and the SHARED allow-list of documented
- *   non-executor invocations read from `r5-allowlist.json`.
+ *   R5 — direct interpreter calls bypassing the executor (bash): block when the
+ *   first token is an interpreter (python/python3 or a versioned spelling such
+ *   as python3.12) and the invocation is -c, a script path (any second token not
+ *   starting with -), or -m with any module — the allow set is executor-only, so
+ *   every -m form refuses. R5 applies in EVERY session in this repository, root
+ *   sessions included, matching the Claude hook — there is no plan-context gate.
+ *   Two exemptions apply: the executor permit, and the SHARED allow-list of
+ *   documented non-executor invocations read from `r5-allowlist.json`. An
+ *   allow-list entry is a REPOSITORY-RELATIVE path matched EXACTLY against the
+ *   invocation's path resolved against the repository root — never a basename
+ *   and never a suffix — so a copy of an allow-listed script outside the
+ *   repository never matches.
  *
  *   R6 — a raw `git commit` while the enclosing plan is in phase `6-finalize`
- *   => block. Every plan commit must pass through the gate-bearing
- *   `git-workflow commit` verb, which sanctions an open loop-back fix task, a
- *   review-rubric section-6 record, or a phase-6 settle-band step. Outside
- *   `6-finalize`, or with no plan state present, a raw commit is untouched.
+ *   => block. The plan is NAMED by the worktree path
+ *   (`.../.plan/local/worktrees/{plan_id}`) and its phase is read from that
+ *   plan's own `status.json` field `current_phase` — the worktree-resident
+ *   record first (the live one during phase 5+), then the main-anchored record
+ *   (git's common dir, or a `PLAN_BASE_DIR` override). Never "the first plan
+ *   found" by a directory scan. Every plan commit must pass through the
+ *   gate-bearing `git-workflow commit` verb, which sanctions an open loop-back
+ *   fix task, a review-rubric section-6 record, or a composed phase-6 manifest
+ *   step. Outside `6-finalize`, or with no plan state present, a raw commit is
+ *   untouched.
  *
  * TOKENISATION PARITY: the R5 branch tokenises with a quoting-aware splitter
  * (`shellSplit`) matching the Python hook's `shlex.split`, strips the SAME
  * wrapper set, and lowercases the program token for the interpreter check, so
  * the two decision tables agree on the interpreter surface.
  */
-import { appendFileSync, mkdirSync, readFileSync, readdirSync } from "node:fs"
+import { appendFileSync, mkdirSync, readFileSync } from "node:fs"
+import { execFileSync } from "node:child_process"
 import path from "node:path"
 import { Plugin } from "@opencode/plugin"
 
@@ -165,15 +174,9 @@ const WRAPPER_VALUE_OPTS = {
 
 // The base allow-list used when no shared data file can be read. Deliberately
 // narrow: the sync engine is the one non-executor invocation that must survive
-// even a missing data file, because it is the harness's own deploy step.
+// even a missing data file, because it is the harness's own deploy step. An
+// entry is a REPOSITORY-RELATIVE path (see `repoRelativePath`).
 const R5_ALLOWLIST_BASE = ["marketplace/targets/sync.py"]
-
-// Marker in the OpenCode agent identity that identifies a dispatched
-// execution-context sub-agent (mirrors pretooluse_gate.EXECUTION_CONTEXT_MARKER).
-const EXECUTION_CONTEXT_MARKER = "execution-context"
-
-// Path segment marking a plan worktree (mirrors pretooluse_gate.WORKTREE_PATH_SEGMENT).
-const WORKTREE_PATH_SEGMENT = ".plan/local/worktrees"
 
 const ASSIGNMENT_RE = /^[A-Za-z_][A-Za-z0-9_]*=/
 const VERSIONED_PYTHON_RE = /^python(\d+(\.\d+)*)?$/
@@ -384,31 +387,64 @@ function isExecutorPermit(command) {
   return second === ".plan/execute-script.py" || second.endsWith("/.plan/execute-script.py")
 }
 
-// Whether a second token is on the shared allow-list, matched exactly or as a
-// path suffix (an absolute or relative path ending in the entry).
-function isAllowListed(command, entries) {
+// Collapse a posix path to its normal form (`..` applied, no empty segments),
+// always absolute-joined so the caller can test repository containment.
+function normalizePosixPath(value) {
+  const segments = []
+  for (const part of String(value).replace(/\\/g, "/").split("/")) {
+    if (part === "" || part === ".") continue
+    if (part === "..") {
+      segments.pop()
+      continue
+    }
+    segments.push(part)
+  }
+  return "/" + segments.join("/")
+}
+
+// Resolve a script token to its repository-relative path, or null when it does
+// not resolve inside the repository. A RELATIVE token is joined with `cwd` (the
+// shell's working directory) first, so a token that would execute a copy OUTSIDE
+// the repository — a same-named script under the shell's cwd — resolves outside
+// `root` and is refused. The joined (or absolute) token is then made relative to
+// `root`. Matching compares this key EXACTLY against an allow-list entry, so a
+// basename (or a copy of an allow-listed script outside the repository) can never
+// match — the suffix hole PLAN-LB-62 shipped.
+function repoRelativePath(raw, root, cwd) {
+  if (!raw || typeof raw !== "string") return null
+  let token = raw.trim().replace(/\\/g, "/")
+  const normalizedRoot = (root || "").replace(/\\/g, "/").replace(/\/+$/, "")
+  if (!token.startsWith("/") && cwd) {
+    const base = String(cwd).replace(/\\/g, "/").replace(/\/+$/, "")
+    if (base.startsWith("/")) token = normalizePosixPath(base + "/" + token)
+  }
+  if (token.startsWith("/")) {
+    if (!normalizedRoot) return null
+    const prefix = normalizedRoot + "/"
+    if (!token.startsWith(prefix)) return null
+    token = token.slice(prefix.length)
+  }
+  const parts = []
+  for (const segment of token.split("/")) {
+    if (segment === "" || segment === ".") continue
+    if (segment === "..") {
+      if (parts.length === 0) return null
+      parts.pop()
+      continue
+    }
+    parts.push(segment)
+  }
+  return parts.length ? parts.join("/") : null
+}
+
+// Whether a second token is on the shared allow-list, matched EXACTLY on its
+// repository-relative path (the relative token joined with the shell `cwd`).
+function isAllowListed(command, entries, root, cwd) {
   const tokens = commandTokens(command)
   if (tokens.length < 2) return false
-  const second = stripMatchedQuotes(tokens[1]).replace(/\\/g, "/")
-  return entries.some((entry) => second === entry || second.endsWith("/" + entry))
-}
-
-// Whether a path resolves under the plan-worktree segment. Normalized to
-// forward slashes with a trailing boundary so a partial segment cannot match.
-function isWorktreePath(candidate) {
-  if (typeof candidate !== "string" || !candidate) return false
-  const normalized = candidate.replace(/\\/g, "/").replace(/\/+$/, "") + "/"
-  return normalized.includes("/" + WORKTREE_PATH_SEGMENT + "/")
-}
-
-// The plan-context gate (Signal1 OR Signal2), mirroring the hook's predicate:
-// a dispatched execution-context sub-agent, or a working directory under
-// `.plan/local/worktrees/`.
-function inPlanContext(event, args, root) {
-  const agent = typeof event?.agent === "string" ? event.agent : ""
-  if (agent.includes(EXECUTION_CONTEXT_MARKER)) return true
-  const workdir = typeof args?.workdir === "string" ? args.workdir : ""
-  return isWorktreePath(workdir || root)
+  const relative = repoRelativePath(stripMatchedQuotes(tokens[1]), root, cwd)
+  if (relative === null) return false
+  return entries.includes(relative)
 }
 
 // Read the shared allow-list. Project first, then the deployed OpenCode config
@@ -562,31 +598,87 @@ function isGitCommit(command) {
   return false
 }
 
-// The enclosing plan's phase, read from the first plan status.json under the
-// project root. Empty when no plan state is present or none is readable.
-function planPhase(root) {
-  const base = path.join(root, ".plan", "local", "plans")
-  let entries
+// The plan worktree a path names: `{ root, planId }` for a path carrying
+// `.plan/local/worktrees/{plan_id}`, else null. The plan is NAMED by the path,
+// so R6 never judges "the first plan found". When a path carries more than one
+// such segment, the INNERMOST (last) names the plan.
+function worktreeInfoFromPath(candidate) {
+  if (typeof candidate !== "string" || !candidate) return null
+  const normalized = candidate.replace(/\\/g, "/")
+  const marker = "/.plan/local/worktrees/"
+  const at = normalized.lastIndexOf(marker)
+  if (at === -1) return null
+  const planId = normalized.slice(at + marker.length).split("/")[0]
+  if (!planId) return null
+  return { root: normalized.slice(0, at + marker.length + planId.length), planId }
+}
+
+// The MAIN checkout's `.plan/local` directory — the anchor the plan resolution
+// uses, mirroring marketplace_paths.resolve_main_anchored_path: a PLAN_BASE_DIR
+// override stands in for it; otherwise main is derived from git's common dir
+// (main's `.git`) even when the project directory is a linked worktree. Null
+// when neither resolves, so R6 does not fire rather than guess.
+function mainPlanLocalDir(root) {
+  const override = process.env.PLAN_BASE_DIR
+  if (override) return override.replace(/\/+$/, "")
   try {
-    entries = readdirSync(base)
-  } catch {
-    return ""
-  }
-  for (const name of entries.sort()) {
-    try {
-      const data = JSON.parse(readFileSync(path.join(base, name, "status.json"), "utf8"))
-      if (data && typeof data.phase === "string" && data.phase) return data.phase
-    } catch {
-      // Skip an unreadable or malformed status.
+    // Strip Git's repository-LOCATION environment variables from the child: if
+    // GIT_DIR / GIT_WORK_TREE (etc.) are set they override `-C root` and the
+    // resolution would name the wrong repository. A timeout keeps a hung `git`
+    // from blocking the tool call indefinitely.
+    const env = { ...process.env }
+    for (const key of ["GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_OBJECT_DIRECTORY", "GIT_COMMON_DIR"]) {
+      delete env[key]
     }
+    const out = execFileSync("git", ["-C", root, "rev-parse", "--git-common-dir"], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+      timeout: 5000,
+      env,
+    }).trim()
+    if (!out) return null
+    const common = path.isAbsolute(out) ? out : path.resolve(root, out)
+    return path.join(path.dirname(common), ".plan", "local")
+  } catch {
+    return null
+  }
+}
+
+// The enclosing plan's phase, read from the plan's own status.json field
+// `current_phase`. The plan is NAMED by the worktree path (never "the first plan
+// found"); the record is the WORKTREE-RESIDENT one first — the live record during
+// phase 5+, where prepare_execute moves the plan directory — then the
+// main-anchored live record. Empty when no plan worktree is named, or no readable
+// record resolves.
+function planPhase(workdir, root) {
+  const planId = worktreeInfoFromPath(workdir)?.planId || worktreeInfoFromPath(root)?.planId || ""
+  if (!planId) return ""
+  const candidates = []
+  const worktree = worktreeInfoFromPath(workdir) || worktreeInfoFromPath(root)
+  if (worktree !== null) {
+    candidates.push(path.join(worktree.root, ".plan", "local", "plans", planId, "status.json"))
+  }
+  const base = mainPlanLocalDir(root)
+  if (base !== null) candidates.push(path.join(base, "plans", planId, "status.json"))
+  for (const candidate of candidates) {
+    let data
+    try {
+      data = JSON.parse(readFileSync(candidate, "utf8"))
+    } catch (error) {
+      if (error && error.code === "ENOENT") continue
+      return ""
+    }
+    if (data && typeof data.current_phase === "string" && data.current_phase) return data.current_phase
+    return ""
   }
   return ""
 }
 
 // R6 — a raw `git commit` in phase 6-finalize is refused: every plan commit
-// must pass through the gate-bearing `git-workflow commit` verb.
-function isRawFinalizeCommit(command, root) {
-  return isGitCommit(command) && planPhase(root) === SOURCE_COMMIT_GATE_PHASE
+// must pass through the gate-bearing `git-workflow commit` verb. The plan is
+// named by the worktree path and its phase read from `current_phase`.
+function isRawFinalizeCommit(command, workdir, root) {
+  return isGitCommit(command) && planPhase(workdir, root) === SOURCE_COMMIT_GATE_PHASE
 }
 
 function auditLine(rule, tool, sessionID, callID, detail) {
@@ -615,6 +707,7 @@ export default Plugin.define({
       const callID = event?.callID ?? event?.callId ?? event?.id ?? "?"
       const args = (event && (event.input ?? event.args ?? event.params)) || {}
       const command = typeof args.command === "string" ? args.command : ""
+      const workdir = typeof args.workdir === "string" ? args.workdir : ""
 
       if (tool === "edit" || tool === "write" || tool === "patch" || tool === "apply_patch") {
         if (targetsExecutor(args)) {
@@ -644,15 +737,14 @@ export default Plugin.define({
         )
       }
 
-      if (isRawFinalizeCommit(command, root)) {
+      if (isRawFinalizeCommit(command, workdir, root)) {
         audit(auditLine("R6", tool, sessionID, callID, command))
         throw new Error(
-          "[plan-marshall-guard] R6: a raw git commit is refused in phase 6-finalize — commit through python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow commit (the gate-bearing path), which sanctions an open loop-back fix task, a review-rubric section-6 record, or a settle-band step",
+          "[plan-marshall-guard] R6: a raw git commit is refused in phase 6-finalize — commit through python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow commit (the gate-bearing path), which sanctions an open loop-back fix task, a review-rubric section-6 record, or a step id of the composed phase-6 manifest",
         )
       }
 
       if (isExecutorPermit(command)) return
-
       if (token === "./pw" || basenameOf(tokenAt(command, 0)) === "pw") {
         const verb = tokenAt(command, 1)
         const passes = Boolean(verb && (verb.startsWith("generate") || verb.startsWith("--")))
@@ -688,15 +780,14 @@ export default Plugin.define({
             "[plan-marshall-guard] R4: hard-coded build command bypassing python3 .plan/execute-script.py is forbidden",
           )
         }
-        // R5 is gated on the plan context; R4 above is not.
-        if (inPlanContext(event, args, root)) {
-          if (isAllowListed(command, allowList)) return
-          if (isInterpreterBypass(tokenAt(command, 1)) || hasFlagPrefixedBypass(command)) {
-            audit(auditLine("R5", tool, sessionID, callID, command))
-            throw new Error(
-              "[plan-marshall-guard] R5: direct python interpreter calls (python -c, script paths, python -m) bypassing the executor are forbidden; route builds and checks via python3 .plan/execute-script.py and .plan state via manage-* verbs or the Read/Edit/Write tools",
-            )
-          }
+        // R5 applies in EVERY session — root sessions included — with no
+        // plan-context gate. The allow-list is matched on the repo-relative path.
+        if (isAllowListed(command, allowList, root, workdir || root)) return
+        if (isInterpreterBypass(tokenAt(command, 1)) || hasFlagPrefixedBypass(command)) {
+          audit(auditLine("R5", tool, sessionID, callID, command))
+          throw new Error(
+            "[plan-marshall-guard] R5: direct python interpreter calls (python -c, script paths, python -m) bypassing the executor are forbidden; route builds and checks via python3 .plan/execute-script.py and .plan state via manage-* verbs or the Read/Edit/Write tools",
+          )
         }
         return
       }
