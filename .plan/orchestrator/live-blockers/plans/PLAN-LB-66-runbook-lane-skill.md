@@ -1,4 +1,4 @@
-# PLAN-LB-66: The runbook lane ships as a plan-marshall skill, usable from any project
+# PLAN-LB-66: The runbook lane ships as a plan-marshall skill, usable from any project, and the orchestrator drives it
 
 epic: live-blockers
 workstream: WS-04
@@ -24,7 +24,8 @@ review cycle, merge gate, cleanup, and a landing message to the epic inbox. Its 
 only in a local file that names this repository's epic, build system, reviewers and commit
 trailer. Ship it as a bundle skill whose project-specific values come from the project's own
 configuration through one deterministic script verb, so any project with plan-marshall installed
-can run it.
+can run it. The orchestrator then emits, correlates and stamps runbook-lane plans itself instead
+of relying on hand work.
 
 ## Deliverables
 
@@ -96,13 +97,50 @@ can run it.
    - an empty `required_bots` is an error;
    - a spec outside `.plan/orchestrator/` is an error.
 
-Split guard: two deliverables.
+3. **The orchestrator handles runbook-lane plans end to end.**
+   - **Lane per row:** a queue row carries `lane` (`plan-marshall`, the default, or `runbook`). It is
+     set with `queue --add-row … --lane` and `queue --set-row --field lane`, and is shown in
+     `queue-view.md`.
+   - **Emit:** `next` emits by lane. A `runbook` row gets
+     `/plan-marshall-runbook-lane plan=.plan/orchestrator/{slug}/plans/{spec}`; a `plan-marshall`
+     row keeps today's `/plan-marshall task="implement …"`. The spec template's *Hand-Off Command*
+     section shows the lane's form.
+   - **Landing correlation:** a landing message is matched to its row. The sender `rb-{plan}`
+     matches the row whose spec basename gives `{plan}`, and any sender equal to a row's stamped
+     `plan_marshall_plan_id` matches that row. `owed_landing`, `queue_reconciliation` and
+     `landing-check` count the match. Today every one of the 65 rows reads "without landing" and
+     each landing reads "without queue".
+   - **Stamping:** `analyze` stamps `plan_marshall_plan_id` from a matched runbook sender, so the
+     orchestrator no longer types it by hand.
+   - **Start detection:** `status` reports a `staged` runbook row whose worktree
+     `.plan/local/worktrees/{plan}` exists as "started, not transitioned". It reports only and
+     writes nothing.
+   - **Analysis inputs:** `workflow/analyze.md` names the runbook-lane evidence set in place of the
+     plan directory:
+     - the progress file;
+     - `.plan/temp/guard.log`;
+     - the PR;
+     - the harness session store, read only.
+
+     It also states that `landing-facts` `model` may list several comma-separated models.
+
+   *Done when:* tests, each failing at `c3abf8c38`:
+   - a `runbook` row makes `next` emit the runbook form, and a `plan-marshall` row is unchanged;
+   - an inbox holding an `rb-lb-66-runbook-lane-skill` landing, with a running PLAN-LB-66 row
+     (`lane: runbook`), reconciles: the row is not in `queue_without_landing`, the landing is not
+     in `landing_without_queue`, and `owed_landing` counts it as queued;
+   - a landing whose sender equals a row's stamped `plan_marshall_plan_id` reconciles to that row;
+   - `status` flags a `staged` runbook row whose worktree exists.
+
+Split guard: three deliverables.
 
 ## Claim Labels
 
 - OBSERVED: the current contract is `.plan/local/opencode/RUNBOOK.md` (about 350 lines, machine-local), and its repository-specific references are §0 (spec path), §1 and §4 (`build-pyproject` commands, `--execution-mode in_process`), §1, §6 and §8 (reviewers and trigger phrases), §1 (trailer) and §8 (`--slug live-blockers`, `epic=`) — orchestrator-read.
 - OBSERVED: `automatic-review/standards/coderabbit.md:37-38` declares `trigger_comment` and `escalated_trigger_comment`; `cuioss-review-bot.md` and `sourcery.md` sit beside it — orchestrator-read.
 - OBSERVED: user-invocable plan-marshall skills are exported to OpenCode as `~/.config/opencode/skills/plan-marshall-{skill}` and `commands/plan-marshall-{skill}.md` (e.g. `plan-marshall-plan-orchestrator.md`) — orchestrator-read.
+- OBSERVED: the live ledger's `inbox list` reports `queue_without_landing_count: 65` and `landing_without_queue_count: 1` while a landing for a running row is queued: reconciliation compares row ids (`PLAN-LB-64`) with sender ids (`oc-lb-64-lb-50-completion`) — orchestrator-observed 2026-10-17.
+- OBSERVED: `orchestrate.md` `next` emits only `/plan-marshall task="implement …"` — orchestrator-read.
 - OBSERVED: `CLAUDE.md:7` states "158 registered components (154 skills, 2 agents, 2 commands)" — orchestrator-read.
 - HYPOTHESIS: only `build-pyproject` accepts `--execution-mode in_process`. Other build skills may need the worktree executor for the daemon. Confirm how a Maven build runs in a worktree without a generated worktree executor, and make `resolve` return the form that works. If none works without the daemon, report it as not met for Maven rather than inventing one.
 - HYPOTHESIS: a new script needs the executor mapping regenerated before `python3 .plan/execute-script.py plan-marshall:runbook-lane:runbook_lane` resolves. Confirm which tests check script registration, and run the regeneration through the executor in process (as PLAN-LB-54 did with `generate-claude`).
@@ -117,16 +155,23 @@ Split guard: two deliverables.
 - OBSERVED: `CLAUDE.md` (D1, component count)
 - OBSERVED: `doc/developer/opencode.adoc` (D1)
 - HYPOTHESIS: the target-generation tests under `test/` that assert exported skills and commands (D1)
+- OBSERVED: `marketplace/bundles/plan-marshall/skills/plan-orchestrator/scripts/orchestrator.py` — `PLAN_ROW_FIELDS`, `queue`, `status`/`next` (D3)
+- OBSERVED: `marketplace/bundles/plan-marshall/skills/plan-orchestrator/scripts/_orchestrator_inbox.py` — `reconcile_queue_vs_landings`, owed-landing (D3)
+- OBSERVED: `marketplace/bundles/plan-marshall/skills/plan-orchestrator/workflow/orchestrate.md`, `workflow/analyze.md` (D3)
+- OBSERVED: `marketplace/bundles/plan-marshall/skills/plan-orchestrator/templates/plan-spec.md` (D3)
+- HYPOTHESIS: `marketplace/bundles/plan-marshall/skills/plan-orchestrator/standards/landing-payload-spec.md` (D3, multi-model `model`)
+- HYPOTHESIS: the ledger layout module in `manage-status` that owns the row schema (D3)
+- OBSERVED: `test/plan-marshall/plan-orchestrator/test_orchestrator.py`, `test_inbox_drain_contract.py`, `test_orchestrator_queue_view.py` (D3)
 
 ## Dependencies and Sequencing
 
 - Depends on: none.
-- Overlaps with: no file shared with the running plans (PLAN-LB-45, PLAN-LB-52, PLAN-LB-63,
-  PLAN-LB-65). PLAN-LB-45 may touch `plugin.json` only if it adds a script; whichever lands second
-  merges `main`.
-- After it lands, the orchestrator emits runbook-lane plans as
-  `/plan-marshall-runbook-lane plan={spec}` and retires the local `RUNBOOK.md`. Later amendments
-  to the lane go through PRs.
+- Overlaps with: PLAN-LB-45 (running) on `orchestrator.py` (its `preflight` forwarding),
+  `_orchestrator_inbox.py` (its `LANDING_REQUIRED_KEYS`) and `landing-payload-spec.md`, in
+  different functions; whichever lands second merges `main`. No file is shared with PLAN-LB-52,
+  PLAN-LB-63 or PLAN-LB-65.
+- After it lands, the orchestrator sets `lane: runbook` on the runbook rows and retires the local
+  `RUNBOOK.md`. Later amendments to the lane go through PRs.
 
 ## Write-Boundary
 
