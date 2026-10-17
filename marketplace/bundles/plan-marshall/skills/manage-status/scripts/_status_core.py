@@ -347,8 +347,8 @@ def in_progress_phases(status: dict[Any, Any]) -> OpenPhaseScan:
 #   status.json       {kind, title, phase (init|orchestrating|closed),
 #                      workstreams[], metadata, created}
 #   resume_anchor.md  the anchor text
-#   queue/{ID}.json   {id, slug, workstream, status, plan_marshall_plan_id,
-#                      pr, landing, seq}
+#   queue/{ID}.json   {id, slug, workstream, status, lane,
+#                      plan_marshall_plan_id, pr, landing, seq}
 #
 # A ``status.json`` that still carries ``plans`` or ``resume_anchor`` is the
 # monolithic layout; every verb refuses it with ``legacy_layout`` and writes

@@ -83,6 +83,7 @@ def _row(plan_id: str, slug: str, status: str = 'staged', **extra) -> dict:
         'slug': slug,
         'workstream': 'WS-01',
         'status': status,
+        'lane': 'plan-marshall',
         'plan_marshall_plan_id': '',
         'pr': '',
         'landing': '',

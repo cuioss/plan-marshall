@@ -184,7 +184,7 @@ class TestLiveRowsOnly:
     def test_an_all_terminal_queue_renders_the_empty_marker(self):
         view = {'phase': 'orchestrating', 'resume_anchor': '', 'plans': [{**_row('PLAN-01', 'shipped'), 'seq': 1}]}
 
-        assert '| — | (empty) | — | — | — |' in render_queue_view(view, {}, slug=SLUG)
+        assert '| — | (empty) | — | — | — | — |' in render_queue_view(view, {}, slug=SLUG)
 
 
 def _table_rows(text: str) -> list[list[str]]:

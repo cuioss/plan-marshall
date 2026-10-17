@@ -99,18 +99,30 @@ the drain consumes. These keys are **required** — a landing missing any of the
 | `steps` | Comma-joined `{step}:{outcome}` for every finalize step in composed order. **A consumer splits each element on its LAST colon**, never its first: a namespaced step id contains a colon itself (`project:finalize-step-plugin-doctor:done`, `plan-marshall:plan-retrospective:done`), so a first-colon split yields the bare namespace as the step and the rest as the outcome. The split is APPLIED by the one consumer of this key, [`../workflow/analyze.md`](../workflow/analyze.md) § Step 4, which carries the worked example — this row states the rule, that step is its mechanism | `manage-status read` phase_steps |
 
 Optional keys a landing MAY carry (not required, so their absence is not incompleteness): `epic`,
-`total_wall_seconds`, `harness`, and any per-step typed fact transcribed as `step.{name}.{fact_key}={value}`. The
-functional review's verdict facts and the code review's counts are the named instances of the last
-kind — see § "Functional verdict facts" and § "Code-review counts" below.
+`total_wall_seconds`, `harness`, `model`, and any per-step typed fact transcribed as
+`step.{name}.{fact_key}={value}`. The functional review's verdict facts and the code review's counts
+are the named instances of the last kind — see § "Functional verdict facts" and § "Code-review
+counts" below.
+
+`model` names the model — or models — the run used. It is a comma-separated list, because a run may
+switch models: a plan that starts on one model and continues on another records
+`deepseek-v4.1-flash/max,deepseek-v4.1-flash/high`, one `{model}/{variant}` element per model used.
+A single-model run carries one element and reads exactly as a scalar would. The runbook lane writes
+this key with every model and variant it used (`unknown` when the harness reports none), so a
+consumer reads the whole list rather than assuming one model per landing.
 
 `harness` names the harness the plan ran on (`claude` / `opencode` /
 `antigravity`), read from `status.metadata.harness` (stamped at phase-1-init
 Step 8a.6), or `unknown` when the stamp is absent. It stays optional — not
 required — so landings written before the stamp existed stay complete; the
 producer (`emit-landing.md`) always emits it, with the `unknown` fallback
-asserting only that nothing was observed. The `transcripts` capability that
-explains the run's token figures (`full` vs `none`) rides the same
-`runtime-info` record — see `platform-runtime/standards/runtime-info.md`.
+asserting only that nothing was observed. A landing written by the RUNBOOK lane
+has no `status.json` and no phase-1-init: that lane reads the same value from
+its own resolve result, which resolves the harness through the platform-runtime
+runtime-info seam, so the fact means the same thing on either producer. The
+`transcripts` capability that explains the run's token figures (`full` vs
+`none`) rides the same `runtime-info` record — see
+`platform-runtime/standards/runtime-info.md`.
 
 **A degraded value is not a fact.** A degraded value comes in TWO classes, and they are rejected on
 different terms because they assert different things.

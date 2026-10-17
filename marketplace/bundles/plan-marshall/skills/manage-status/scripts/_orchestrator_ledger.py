@@ -102,8 +102,20 @@ LEGACY_KEYS = frozenset({'plans', 'resume_anchor'})
 _DROPPED_ON_MIGRATION = 'updated'
 
 #: The fields of one row, in the order a row file is written. ``seq`` is the
-#: queue-order key allocated at append time.
-ROW_FIELDS = ('id', 'slug', 'workstream', 'status', 'plan_marshall_plan_id', 'pr', 'landing', 'seq')
+#: queue-order key allocated at append time, and ``lane`` names the execution
+#: lane the row's plan runs in (``plan-marshall``, the default, or ``runbook``).
+ROW_FIELDS = ('id', 'slug', 'workstream', 'status', 'lane', 'plan_marshall_plan_id', 'pr', 'landing', 'seq')
+
+#: The execution lanes a plan row may name. ``plan-marshall`` is the default:
+#: the row's plan is run through the ``/plan-marshall`` lifecycle. ``runbook``
+#: names the runbook lane, whose plan is run by the ``plan-marshall:runbook-lane``
+#: skill instead. A row that carries no ``lane`` at all — every row staged before
+#: the field existed — reads as the default, so the vocabulary's meaning for the
+#: existing corpus is unchanged. Declared here, beside the row schema both the
+#: writer and the reader share, so neither can hold a different vocabulary.
+LANE_PLAN_MARSHALL = 'plan-marshall'
+LANE_RUNBOOK = 'runbook'
+VALID_LANE_VOCABULARY = (LANE_PLAN_MARSHALL, LANE_RUNBOOK)
 
 #: The shape every reader consumes — the pre-split document without ``updated``.
 VIEW_FIELDS = ('kind', 'title', 'phase', 'workstreams', 'plans', 'resume_anchor', 'metadata', 'created')
