@@ -103,6 +103,32 @@ def _worktree(root: Path, plan_id: str) -> Path:
     return path
 
 
+def _write_worktree_plan(
+    worktree: Path, plan_id: str, *, phase: str = '6-finalize', steps: list[str] | None = None
+) -> Path:
+    """Create a REAL worktree-resident plan whose status is written by ``manage-status``.
+
+    ``prepare_execute`` moves the plan directory INTO the worktree, so this is the
+    layout a real finalize plan has: the record lives under the worktree's own
+    ``.plan/local``. ``PLAN_BASE_DIR`` is pointed there so ``manage-status``
+    writes it where the gate looks.
+    """
+    env = {'PLAN_BASE_DIR': str(worktree / '.plan' / 'local'), 'PLAN_DIR_NAME': '.plan'}
+    created = run_script(
+        MANAGE_STATUS, 'create', '--plan-id', plan_id, '--title', 't', '--phases', _PHASES, env_overrides=env
+    )
+    assert created.returncode == 0, f'manage-status create failed: {created.stdout}{created.stderr}'
+    assert parse_toon(created.stdout).get('status') == 'success', f'manage-status create refused: {created.stdout}'
+    shifted = run_script(MANAGE_STATUS, 'set-phase', '--plan-id', plan_id, '--phase', phase, env_overrides=env)
+    assert shifted.returncode == 0, f'manage-status set-phase failed: {shifted.stdout}{shifted.stderr}'
+    plan_dir = worktree / '.plan' / 'local' / 'plans' / plan_id
+    status = json.loads((plan_dir / 'status.json').read_text(encoding='utf-8'))
+    assert status.get('current_phase') == phase, f'manage-status did not persist current_phase: {status!r}'
+    if steps is not None:
+        (plan_dir / 'execution.toon').write_text(_manifest_toon(plan_id, steps), encoding='utf-8')
+    return plan_dir
+
+
 def _stage(root: Path, name: str, content: str = 'x\n') -> None:
     path = root / name
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -144,7 +170,7 @@ def test_finalize_source_commit_refused_through_commit_verb(tmp_path: Path) -> N
     assert result.get('refused') is True, f'expected a refusal payload, got {result!r}'
     assert result['reason'] == 'no_sanction'
     assert result['phase'] == '6-finalize'
-    assert code != 0, 'a refusal must exit non-zero, not report status: success, allowed: false'
+    assert code == 1, 'a refusal must exit 1'
     assert _commit_count(tmp_path) == 1, 'the refused commit must not have been created'
 
 
@@ -172,7 +198,7 @@ def test_unknown_step_id_is_refused(tmp_path: Path) -> None:
 
     assert result.get('refused') is True, f'expected a refusal payload, got {result!r}'
     assert result['reason'] == 'no_sanction'
-    assert code != 0
+    assert code == 1
     assert _commit_count(tmp_path) == 1
 
 
@@ -250,16 +276,14 @@ def test_worktree_resident_plan_record_is_read(tmp_path: Path) -> None:
     """
     _init_repo(tmp_path)
     worktree = _worktree(tmp_path, 'plan-a')
-    plan_dir = worktree / '.plan' / 'local' / 'plans' / 'plan-a'
-    plan_dir.mkdir(parents=True)
-    (plan_dir / 'status.json').write_text(json.dumps({'current_phase': '6-finalize'}), encoding='utf-8')
-    (plan_dir / 'execution.toon').write_text(_manifest_toon('plan-a', ['pre-push-quality-gate']), encoding='utf-8')
+    _write_worktree_plan(worktree, 'plan-a', steps=['pre-push-quality-gate'])
     _stage(tmp_path, 'src/a.py')
 
     refused, code = _run_commit(tmp_path, worktree)
     assert refused.get('refused') is True, f'{refused!r}'
     assert refused['phase'] == '6-finalize'
     assert refused['reason'] == 'no_sanction'
+    assert code == 1
 
     sanctioned, ok = _run_commit(tmp_path, worktree, '--step', 'pre-push-quality-gate')
     assert sanctioned['status'] == 'success', f'{sanctioned!r}'
@@ -271,9 +295,7 @@ def test_project_dir_in_a_worktree_subdirectory_still_refuses(tmp_path: Path) ->
     """A ``--project-dir`` in a SUBDIRECTORY of the worktree still resolves the plan."""
     _init_repo(tmp_path)
     worktree = _worktree(tmp_path, 'plan-a')
-    plan_dir = worktree / '.plan' / 'local' / 'plans' / 'plan-a'
-    plan_dir.mkdir(parents=True)
-    (plan_dir / 'status.json').write_text(json.dumps({'current_phase': '6-finalize'}), encoding='utf-8')
+    _write_worktree_plan(worktree, 'plan-a')
     subdir = worktree / 'src'
     subdir.mkdir(parents=True)
     _stage(tmp_path, 'src/a.py')
@@ -283,7 +305,7 @@ def test_project_dir_in_a_worktree_subdirectory_still_refuses(tmp_path: Path) ->
     assert refused.get('refused') is True, f'{refused!r}'
     assert refused['phase'] == '6-finalize'
     assert refused['reason'] == 'no_sanction'
-    assert code != 0
+    assert code == 1
 
 
 def test_unresolvable_phase_reports_unknown_and_refuses(tmp_path: Path) -> None:
@@ -299,7 +321,7 @@ def test_unresolvable_phase_reports_unknown_and_refuses(tmp_path: Path) -> None:
     assert result.get('refused') is True, f'expected a refusal payload, got {result!r}'
     assert result['phase'] == 'unknown'
     assert result['reason'] == 'no_sanction'
-    assert code != 0
+    assert code == 1
 
 
 def test_commit_verb_rejects_a_caller_supplied_phase(tmp_path: Path) -> None:
@@ -320,7 +342,7 @@ def test_commit_verb_rejects_a_caller_supplied_phase(tmp_path: Path) -> None:
         env_overrides=_env(tmp_path),
     )
 
-    assert result.returncode != 0, f'--phase must not be accepted: {result.stdout}{result.stderr}'
+    assert result.returncode == 2, f'--phase must be rejected by argparse: {result.stdout}{result.stderr}'
     assert 'unrecognized arguments' in result.stderr, result.stderr
 
 
