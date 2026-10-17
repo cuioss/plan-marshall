@@ -1444,3 +1444,100 @@ def test_steward_setup_prints_persisted_warnings(
     captured = capsys.readouterr()
     assert 'persisted approval warning' in captured.err
     assert 'ls' in captured.err
+
+
+# =============================================================================
+# D3 — the approval reporter reads the LIVE schema (PLAN-LB-65)
+# =============================================================================
+
+
+def _make_live_db(db_path: pathlib.Path, project_dir: pathlib.Path, rows: list[tuple[str, str]]) -> None:
+    """Create the LIVE ``opencode.db`` schema.
+
+    ``permission(id, project_id, action, resource, time_created, time_updated)``
+    with NO decision column — every row is a persisted allow — plus the
+    ``project`` table whose worktree path scopes the rows.
+    """
+    conn = sqlite3.connect(str(db_path))
+    try:
+        conn.execute('CREATE TABLE project (id TEXT PRIMARY KEY, worktree TEXT)')
+        conn.execute('INSERT INTO project (id, worktree) VALUES (?, ?)', ('proj-1', str(project_dir)))
+        conn.execute(
+            'CREATE TABLE permission (id INTEGER PRIMARY KEY, project_id TEXT, action TEXT, resource TEXT, '
+            'time_created TEXT, time_updated TEXT)'
+        )
+        conn.executemany(
+            'INSERT INTO permission (project_id, action, resource, time_created, time_updated) VALUES (?, ?, ?, ?, ?)',
+            [('proj-1', action, resource, 't', 't') for action, resource in rows],
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def test_reporter_reads_the_live_permission_schema(runtime: OpenCodeRuntime, tmp_path: pathlib.Path) -> None:
+    """Done-when (D3): the live schema reports the ``grep *`` contradiction.
+
+    The permission table has ``action`` and ``resource`` and no decision column,
+    so every row is a persisted allow; the rows are scoped to the project by
+    ``project_id``.
+    """
+    _write_deny_config(tmp_path, ['grep *'])
+    db_path = tmp_path / 'opencode.db'
+    _make_live_db(db_path, tmp_path, [('shell', 'grep *'), ('shell', 'ls *')])
+
+    result = _parse(runtime.permission_report_persisted_contradictions(str(tmp_path), str(db_path)))
+
+    assert result['checkable'] is True, f'the live schema must be recognised: {result!r}'
+    assert result['persisted_allow_count'] == 2
+    patterns = {entry['pattern'] for entry in result['contradictions']}
+    assert patterns == {'grep *'}, f'only the denied pattern contradicts: {result["contradictions"]!r}'
+
+
+def test_reporter_live_schema_recognised_without_a_decision_column(
+    runtime: OpenCodeRuntime, tmp_path: pathlib.Path
+) -> None:
+    """A decision-column-less permission table is recognised, never schema_unrecognised."""
+    _write_deny_config(tmp_path, ['nope *'])
+    db_path = tmp_path / 'opencode.db'
+    _make_live_db(db_path, tmp_path, [('shell', 'grep *')])
+
+    result = _parse(runtime.permission_report_persisted_contradictions(str(tmp_path), str(db_path)))
+
+    assert result['checkable'] is True
+    assert result.get('reason') is None
+    assert result['persisted_allow_count'] == 1
+    assert result['contradictions'] == []
+
+
+def test_reporter_scopes_live_rows_to_the_project(runtime: OpenCodeRuntime, tmp_path: pathlib.Path) -> None:
+    """Live rows are scoped by ``project_id`` (resolved from the project table's worktree)."""
+    _write_deny_config(tmp_path, ['grep *'])
+    db_path = tmp_path / 'opencode.db'
+    other_dir = tmp_path / 'other-project'
+    other_dir.mkdir()
+    conn = sqlite3.connect(str(db_path))
+    try:
+        conn.execute('CREATE TABLE project (id TEXT PRIMARY KEY, worktree TEXT)')
+        conn.executemany(
+            'INSERT INTO project (id, worktree) VALUES (?, ?)',
+            [('proj-1', str(tmp_path)), ('proj-2', str(other_dir))],
+        )
+        conn.execute(
+            'CREATE TABLE permission (id INTEGER PRIMARY KEY, project_id TEXT, action TEXT, resource TEXT, '
+            'time_created TEXT, time_updated TEXT)'
+        )
+        conn.executemany(
+            'INSERT INTO permission (project_id, action, resource) VALUES (?, ?, ?)',
+            [('proj-1', 'shell', 'ls *'), ('proj-2', 'shell', 'grep *')],
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    result = _parse(runtime.permission_report_persisted_contradictions(str(tmp_path), str(db_path)))
+
+    assert result['checkable'] is True
+    # Only THIS project's row is read; the other project's ``grep *`` is not.
+    assert result['persisted_allow_count'] == 1
+    assert result['contradictions'] == []
