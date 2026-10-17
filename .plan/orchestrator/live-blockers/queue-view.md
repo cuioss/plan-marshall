@@ -4,13 +4,14 @@
 
 ## START HERE
 
-**Resume anchor**: Running (runbook lane): PLAN-LB-45, PLAN-LB-52, PLAN-LB-63, PLAN-LB-65. EMITTED: PLAN-LB-66 (runbook lane as product skill) — transition staged->running when the operator says started; after it lands, emit as /plan-marshall-runbook-lane plan={spec}, sender rb-{plan}, retire local RUNBOOK.md. Next: LB-51 (unblocked by LB-64), LB-55 (after LB-52; shares phase-6-finalize files), LB-53 (after LB-55), LB-48/49 (after LB-65), LB-43/59 (after LB-63), LB-44, LB-58, LB-41, LB-46, LB-57. Operator question open: park LB-48/49/51 unless OpenCode/Antigravity is a consumer product target. DEFERRED, SILENT (operator 2026-10-17): opencode.db persisted-approval clearing — recorded steps; do NOT mention until asked. Operator owes: harness sync from a plain terminal; #1777/#1787/#1790 kept unless told otherwise.
+**Resume anchor**: Running (runbook lane): PLAN-LB-45, PLAN-LB-52, PLAN-LB-63, PLAN-LB-65, PLAN-LB-66. After LB-66 lands: set lane=runbook on runbook rows, emit as /plan-marshall-runbook-lane plan={spec}, senders arrive as rb-{plan}, retire local RUNBOOK.md (amendments via PR). Next: LB-51 (unblocked by LB-64), LB-55 (after LB-52; shares phase-6-finalize files), LB-53 (after LB-55), LB-48/49 (after LB-65), LB-43/59 (after LB-63), LB-44, LB-58, LB-41, LB-46, LB-57. Operator question open: park LB-48/49/51 unless OpenCode/Antigravity is a consumer product target. DEFERRED, SILENT (operator 2026-10-17): opencode.db persisted-approval clearing — recorded steps; do NOT mention until asked. Operator owes: harness sync from a plain terminal; #1777/#1787/#1790 kept unless told otherwise.
 **Phase**: orchestrating
 **Running**:
 - PLAN-LB-45 (WS-04)
 - PLAN-LB-52 (WS-01)
 - PLAN-LB-63 (WS-04)
 - PLAN-LB-65 (WS-04)
+- PLAN-LB-66 (WS-04)
 **Queue** (staged, in order):
 1. PLAN-LB-41 (WS-05)
 2. PLAN-LB-43 (WS-04)
@@ -24,7 +25,6 @@
 10. PLAN-LB-57 (WS-05)
 11. PLAN-LB-58 (WS-01)
 12. PLAN-LB-59 (WS-01)
-13. PLAN-LB-66 (WS-04)
 - PLAN-LB-14 (WS-03) — plan=lb-14-launch-gate-scope — PR 1715 — landing=landings/PLAN-LB-14.md — status: shipped
 - PLAN-LB-01 (WS-01) — status: superseded
 - PLAN-LB-04 (WS-01) — status: superseded
@@ -95,4 +95,4 @@
 | 14 | PLAN-LB-59 | WS-01 | staged | marketplace/bundles/plan-marshall/skills/extension-api/; marketplace/bundles/plan-marshall/skills/manage-adr/SKILL.md; marketplace/bundles/plan-marshall/skills/manage-adr/scripts/manage-adr.py; marketplace/bundles/plan-marshall/skills/manage-personas/scripts/manage_personas.py; marketplace/bundles/plan-marshall/skills/phase-4-plan/SKILL.md; marketplace/bundles/plan-marshall/skills/phase-6-finalize/workflow/adr-propose.md; marketplace/bundles/pm-dev-java/skills/plan-marshall-plugin/extension.py; test/plan-marshall/manage-adr/; test/plan-marshall/manage-personas/ |
 | 15 | PLAN-LB-63 | WS-04 | running | marketplace/bundles/plan-marshall/skills/extension-api/scripts/extension_discovery.py; marketplace/bundles/plan-marshall/skills/manage-config/scripts/_cmd_quality_phases.py; marketplace/bundles/plan-marshall/skills/manage-config/scripts/_cmd_sync_defaults.py; marketplace/bundles/plan-marshall/skills/marshall-steward/scripts/upgrade.py; test/plan-marshall/extension-api/test_extension_discovery_behavior.py; test/plan-marshall/manage-config/test_sync_defaults.py; test/plan-marshall/marshall-steward/test_upgrade.py |
 | 16 | PLAN-LB-65 | WS-04 | running | .opencode/plugin/guard.js; marketplace/bundles/plan-marshall/skills/platform-runtime/scripts/claude_pretooluse_hook.py; marketplace/bundles/plan-marshall/skills/platform-runtime/scripts/opencode_runtime.py; marketplace/bundles/plan-marshall/skills/platform-runtime/standards/r5-allowlist.json; marketplace/bundles/plan-marshall/skills/workflow-integration-git/scripts/git-workflow.py; test/plan-marshall/platform-runtime/_guard_node_harness.py; test/plan-marshall/platform-runtime/test_claude_pretooluse_hook.py; test/plan-marshall/platform-runtime/test_guard_hook_parity.py; test/plan-marshall/platform-runtime/test_opencode_runtime.py; test/plan-marshall/workflow-integration-git/test_source_commit_gate_commit_path.py |
-| 17 | PLAN-LB-66 | WS-04 | staged | CLAUDE.md; doc/developer/opencode.adoc; marketplace/bundles/plan-marshall/.claude-plugin/plugin.json; marketplace/bundles/plan-marshall/skills/runbook-lane/SKILL.md; marketplace/bundles/plan-marshall/skills/runbook-lane/scripts/runbook_lane.py; test/; test/plan-marshall/runbook-lane/test_runbook_lane.py |
+| 17 | PLAN-LB-66 | WS-04 | running | CLAUDE.md; doc/developer/opencode.adoc; marketplace/bundles/plan-marshall/.claude-plugin/plugin.json; marketplace/bundles/plan-marshall/skills/plan-orchestrator/scripts/_orchestrator_inbox.py; marketplace/bundles/plan-marshall/skills/plan-orchestrator/scripts/orchestrator.py; marketplace/bundles/plan-marshall/skills/plan-orchestrator/standards/landing-payload-spec.md; marketplace/bundles/plan-marshall/skills/plan-orchestrator/templates/plan-spec.md; marketplace/bundles/plan-marshall/skills/plan-orchestrator/workflow/orchestrate.md; marketplace/bundles/plan-marshall/skills/plan-orchestrator/workflow/workflow/analyze.md; marketplace/bundles/plan-marshall/skills/runbook-lane/SKILL.md; marketplace/bundles/plan-marshall/skills/runbook-lane/scripts/runbook_lane.py; test/; test/plan-marshall/plan-orchestrator/test_orchestrator.py; test/plan-marshall/runbook-lane/test_runbook_lane.py |
