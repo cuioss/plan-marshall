@@ -458,6 +458,20 @@ def test_setup_written_heading_reconciles_current(plan_env):
     assert ch.dispatch_platform_runtime_setup('opencode', project_dir)['bridge_verdict'] == 'current'
 
 
+def test_plain_bridge_stub_is_healed_by_setup_to_current(plan_env):
+    """A plain bridge stub is healed by the setup writer, so the verdict is current."""
+    project_dir = plan_env['project_dir']
+    bridge = project_dir / '.opencode' / 'rules' / 'plan-marshall-standing-rules.md'
+    bridge.parent.mkdir(parents=True, exist_ok=True)
+    bridge.write_text('# damaged stub without marker\n', encoding='utf-8')
+
+    res = ch.configure_harness(harness_override='opencode', plan_dir=plan_env['plan_dir'], project_dir=project_dir)
+
+    assert res['bridge_verdict'] == 'current'
+    assert res['setup_failed'] is False
+    assert 'bridge-version' in bridge.read_text(encoding='utf-8')
+
+
 def test_configure_harness_reports_clobbered_target_rules(plan_env):
     """A stub left in the installed target rules is reported with the restore command."""
     project_dir = plan_env['project_dir']

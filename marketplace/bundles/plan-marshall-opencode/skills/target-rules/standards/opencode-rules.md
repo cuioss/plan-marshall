@@ -54,8 +54,8 @@ OpenCode automatically discovers and loads workspace rules into assistant contex
 
 ## 5. Standing-Rules Bridge & Drift Detection
 
-- **Two distinct files**: the deployed specification above (`.opencode/rules/plan-marshall-target-rules.md`) is written only by `./install.sh --emit-rules`; project setup writes the standing-rules bridge to its own file, `.opencode/rules/plan-marshall-standing-rules.md`, and never into the deployed specification file.
+- **Two distinct files**: the deployed specification above (`.opencode/rules/plan-marshall-target-rules.md`) is written by the installer (`./install.sh --workspace` / `--emit-rules`); project setup writes the standing-rules bridge to its own file, `.opencode/rules/plan-marshall-standing-rules.md`, and never into the deployed specification file.
 - **Bridge source**: the bridge file is written at project setup from the `CLAUDE.md` baseline (`bridge-version` marker embedded); the baseline stays authoritative.
 - **Drift signal**: re-setup compares the marker and modification times — a marker mismatch or a baseline newer than the bridge reports drift (`marker_mismatch`, `baseline_newer`).
-- **Reconcile path**: the steward upgrade flow re-runs the bridge writer and heals a drifted or missing bridge in the bridge file only; a current bridge is left untouched. A bridge stub found in the deployed specification file is a clobber by an older setup — restore it by re-running `./install.sh --emit-rules`.
+- **Reconcile path**: re-setup re-runs the bridge writer, which heals a drifted or missing bridge in the bridge file only and leaves a current bridge untouched. A bridge stub found in the deployed specification file is a clobber by an older setup — restore it by re-running `./install.sh --emit-rules`.
 - **Dispatch conditional**: the `task`-tool subagent dispatch fires only when the tool is available in the envelope; otherwise take the explicit logged inline branch with usage unknown.

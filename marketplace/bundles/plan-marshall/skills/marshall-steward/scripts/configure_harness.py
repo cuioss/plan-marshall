@@ -142,9 +142,9 @@ def dispatch_platform_runtime_setup(harness: str, project_dir: Path) -> dict[str
     Bridge paths and the version marker are derived from the runtime modules
     (never retyped here), and bare file existence never overrides a failed
     reconcile. The setup writers always run — a bridge verdict never returns
-    before them — so a standard install always gets the guard, the hook and
-    session-boundary enforcement; only a failing setup stops them, and the
-    failure is reported as such.
+    before them — so session-boundary enforcement is never skipped by a
+    bridge verdict; only a failing setup stops them (the install hook keeps
+    its pre-existing cwd gate), and the failure is reported as such.
 
     Returns a dict with:
 
