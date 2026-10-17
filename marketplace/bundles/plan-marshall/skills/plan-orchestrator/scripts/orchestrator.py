@@ -362,15 +362,17 @@ assert _DECLARED_STATUS_COUNT == len(VALID_STATUS_VOCABULARY), (
 
 #: The fields one staged row file is seeded with, in the order ``--add-row``
 #: writes them: the three identity fields the caller supplies, the status it
-#: starts at, the three RESULT fields (:data:`PLAN_ROW_FIELDS`) seeded EMPTY
-#: because a staged row has landed nothing yet, and ``seq`` — the queue-order
-#: key the ledger module allocates at create time as the local maximum plus one,
-#: so the rendered order reproduces staging order. A seeded row carries every
-#: field of a row file, so the order is NOT re-listed here: it is the ledger
-#: module's :data:`_orchestrator_ledger.ROW_FIELDS`, the single definition of the
-#: row field order, and a field added there is seeded here by construction.
-#: :data:`PLAN_ROW_FIELDS` and :func:`_set_row_field` are untouched by the append
-#: path, which writes a whole row rather than patching a field of one.
+#: starts at, its LANE (seeded with the default, which is not a result field and
+#: so is not empty), the RESULT fields (:data:`PLAN_ROW_FIELDS` minus ``lane``)
+#: seeded EMPTY because a staged row has landed nothing yet, and ``seq`` — the
+#: queue-order key the ledger module allocates at create time as the local
+#: maximum plus one, so the rendered order reproduces staging order. A seeded row
+#: carries every field of a row file, so the order is NOT re-listed here: it is
+#: the ledger module's :data:`_orchestrator_ledger.ROW_FIELDS`, the single
+#: definition of the row field order, and a field added there is seeded here by
+#: construction. :data:`PLAN_ROW_FIELDS` and :func:`_set_row_field` are untouched
+#: by the append path, which writes a whole row rather than patching a field of
+#: one.
 ADD_ROW_SEED_FIELDS = ROW_FIELDS
 
 #: The status an appended row starts at when the caller names none. ``--status``

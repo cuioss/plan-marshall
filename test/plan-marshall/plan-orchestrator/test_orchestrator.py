@@ -40,15 +40,19 @@ group's envelope schema and handler surface have theirs
   an equal copy. Both count-claim directions are covered over the whole noun
   population: every legal status is a checkable noun, and every noun both
   matches the derived alternation and resolves to a ``_derive_counts`` key.
-- doc contract: ALL THREE enumerations SKILL.md mirrors are extracted through one
-  shared anchored reader and asserted EQUAL to their declaring constants in both
+- doc contract: every enumeration SKILL.md mirrors is extracted through one
+  shared anchored reader and asserted EQUAL to its declaring constant in both
   directions — the ``--field`` whitelist against ``PLAN_ROW_FIELDS``, which
-  ``cmd_queue`` validates against, the ``--status`` vocabulary against
-  ``VALID_STATUS_VOCABULARY``, which ``cmd_queue`` validates against, and the
-  ``--add-row`` seed fields against ``ADD_ROW_SEED_FIELDS``. Each check asserts its anchored extraction and both
+  ``cmd_queue`` validates against, the ``--lane`` vocabulary against
+  ``VALID_LANE_VOCABULARY``, which ``cmd_queue`` validates against, the
+  ``--status`` vocabulary against ``VALID_STATUS_VOCABULARY``, which
+  ``cmd_queue`` validates against, and the ``--add-row`` seed fields against
+  ``ADD_ROW_SEED_FIELDS``. Each check asserts its anchored extraction and both
   populations non-empty FIRST, so an equality can never pass over two empty
   sets. The seed fields are additionally asserted in DECLARATION ORDER, because
   that tuple's order is the key order an appended row is written in; the
+  ``--lane`` vocabulary's own doc-contract check lives in
+  ``test_runbook_lane_rows.py``, beside the lane's other assertions.
   whitelist's ``frozenset`` declares no order and none is pinned for it.
 - ``resume-summary``: START-HERE block generation derived purely from
   the ledger (resume anchor, phase, running/parked plans, ordered queue),
