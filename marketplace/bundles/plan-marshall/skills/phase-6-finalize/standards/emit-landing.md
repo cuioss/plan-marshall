@@ -204,6 +204,18 @@ below.
      dequeued, whose `merge_state=closed` is a fully-readable value that would otherwise leave the
      landing looking complete and clean.
 
+5. **The runtime stamp** — which harness, model, effort and plan-marshall version produced the run,
+   read from the plan's `status.json` metadata that phase-1-init Step 8a.6 stamped through the
+   orchestrator preflight hook (`manage-status` `metadata --get`, one field per key):
+
+   - `harness` ← `metadata.harness`, `model` ← `metadata.model`, `effort` ← `metadata.effort`, and
+     `plugin_version` ← `metadata.bundle_version`.
+   - `executor_version` ← `metadata.executor_version` — OPTIONAL; omit the key when the stamp carries
+     none rather than writing a degraded value.
+   - A field whose stamp is ABSENT or unreadable is written as `unknown`. These four are REQUIRED, so an
+     `unknown` there records the landing as INCOMPLETE — which is the honest outcome, never a reason to
+     substitute a settled-looking value.
+
 #### Which degraded token a field gets
 
 Every field above keeps its key. WHICH degraded token stands in for a missing value is decided by the
@@ -233,7 +245,7 @@ Write {plan_dir}/work/inbox-payload.md
 The body has three parts, in order:
 
 1. **An optional one-line narrative headline** under a `## What landed` heading — e.g. `{plan_id} shipped as {pr} ({merge_state}).`
-2. **The required `landing-facts` fenced block** — it MUST open with a ` landing-facts ` info-string fence and close with a bare fence, and MUST carry every required key from the payload spec — `schema=landing-facts/1`, `plan_id`, `pr`, `merge_state`, `cleanup_owed`, `deliverables_total`, `deliverables_done`, `total_tokens`, and `steps` (comma-joined `{step}:{outcome}` in composed order). A value the run has none of — no PR was created, the step did not run — is written as `n/a`, and a value this step tried to read and did not obtain is written as `unknown` (Step 1 states the two conditions); either way the key stays present. ⚠ **A degraded value is not a fact, and the consumer says so:** `n/a` is accepted for `pr`, `merge_state` and `cleanup_owed` — "no PR exists" and "no cleanup step ran" are real end states — but for `plan_id`, `deliverables_total`, `deliverables_done`, `total_tokens` and `steps` the drain's completeness check reads it as MISSING and reports the landing INCOMPLETE. Writing `n/a` there is still the correct thing to do when the fact genuinely does not exist (it never blocks the emission), but it is recorded as a gap rather than absorbed as a value — see [`landing-payload-spec.md`](../../plan-orchestrator/standards/landing-payload-spec.md) § "Required machine-readable fact keys". ⚠ **The could-not-read class is stricter, and it has no carve-out:** a value asserting only that a state could not be READ — written `unknown` — is a gap at EVERY required key, `pr`, `merge_state` and `cleanup_owed` included, so it never inherits the exemption `n/a` gets at those three. Writing it when a state genuinely could not be read stays CORRECT producer behaviour and never blocks the emission; the landing is simply recorded INCOMPLETE at that key, which is the honest outcome. Never substitute a settled-looking value for one the run did not observe — a fabricated state is worse than a recorded gap. Optional keys (`epic`, `total_wall_seconds`, per-step `step.{name}.{fact}=…`) MAY follow. The block's contents are `key=value` lines:
+2. **The required `landing-facts` fenced block** — it MUST open with a ` landing-facts ` info-string fence and close with a bare fence, and MUST carry every required key from the payload spec — `schema=landing-facts/1`, `plan_id`, `pr`, `merge_state`, `cleanup_owed`, `deliverables_total`, `deliverables_done`, `total_tokens`, `harness`, `model`, `effort`, `plugin_version`, and `steps` (comma-joined `{step}:{outcome}` in composed order). A value the run has none of — no PR was created, the step did not run — is written as `n/a`, and a value this step tried to read and did not obtain is written as `unknown` (Step 1 states the two conditions); either way the key stays present. ⚠ **A degraded value is not a fact, and the consumer says so:** `n/a` is accepted for `pr`, `merge_state` and `cleanup_owed` — "no PR exists" and "no cleanup step ran" are real end states — but for `plan_id`, `deliverables_total`, `deliverables_done`, `total_tokens`, `harness`, `model`, `effort`, `plugin_version` and `steps` the drain's completeness check reads it as MISSING and reports the landing INCOMPLETE. Writing `n/a` there is still the correct thing to do when the fact genuinely does not exist (it never blocks the emission), but it is recorded as a gap rather than absorbed as a value — see [`landing-payload-spec.md`](../../plan-orchestrator/standards/landing-payload-spec.md) § "Required machine-readable fact keys". ⚠ **The could-not-read class is stricter, and it has no carve-out:** a value asserting only that a state could not be READ — written `unknown` — is a gap at EVERY required key, `pr`, `merge_state` and `cleanup_owed` included, so it never inherits the exemption `n/a` gets at those three. Writing it when a state genuinely could not be read stays CORRECT producer behaviour and never blocks the emission; the landing is simply recorded INCOMPLETE at that key, which is the honest outcome. Never substitute a settled-looking value for one the run did not observe — a fabricated state is worse than a recorded gap. Optional keys (`epic`, `total_wall_seconds`, per-step `step.{name}.{fact}=…`) MAY follow. The block's contents are `key=value` lines:
 
 ```landing-facts
 schema=landing-facts/1
@@ -247,10 +259,14 @@ deliverables_done={M}
 total_tokens={tokens}
 total_wall_seconds={seconds}
 harness={harness}
+model={model}
+effort={effort}
+plugin_version={plugin_version}
+executor_version={executor_version}
 steps={step1}:{outcome1},{step2}:{outcome2},...
 ```
 
-**The harness key.** Always emit `harness={harness}` after `total_wall_seconds` — the value `record-metrics` recorded as its `harness` fact (read from `status.metadata.harness`), or `unknown` when that fact is absent. It is optional, so its absence leaves the landing complete, but the producer always writes it: a `transcripts: none` run whose token figures read `unknown` is only interpretable beside the harness that explains why. Never substitute a settled-looking harness for one the run did not stamp.
+**The runtime-stamp keys.** Always emit `harness={harness}`, `model={model}`, `effort={effort}` and `plugin_version={plugin_version}` after `total_wall_seconds` — the plan metadata phase-1-init Step 8a.6 stamped (`metadata.harness`, `metadata.model`, `metadata.effort`, `metadata.bundle_version`), or `unknown` when a stamp is absent. They are REQUIRED: an `unknown` there records the landing as INCOMPLETE, which is honest rather than blocking. `executor_version={executor_version}` — the `metadata.executor_version` value — is OPTIONAL; omit the key when the stamp carries none. Never substitute a settled-looking value for one the run did not stamp: a `transcripts: none` run whose token figures read `unknown` is only interpretable beside the harness and model that explain why.
 
 **The functional verdict facts.** When `functional-review` recorded its step, transcribe its four
 verdict facts as optional per-step keys after the required ones —

@@ -47,6 +47,8 @@ from contextlib import contextmanager
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 from conftest import MARKETPLACE_ROOT, get_script_path, load_script_module, run_script
 
 _inbox = load_script_module('plan-marshall', 'plan-orchestrator', '_orchestrator_inbox.py', 'orchestrator_inbox')
@@ -98,6 +100,10 @@ _SAMPLE_FACT_VALUES: dict[str, str] = {
     'deliverables_done': '6',
     'total_tokens': '512000',
     'steps': 'push:done,create-pr:done,archive-plan:done',
+    'harness': 'opencode',
+    'model': 'deepseek-v4.1-flash',
+    'effort': 'high',
+    'plugin_version': '0.1.1919',
 }
 
 
@@ -1141,6 +1147,55 @@ class TestCodeReviewCounts:
 
         for key in _CODE_REVIEW_COUNTS:
             assert f'`{key}`' in section, key
+
+
+# =============================================================================
+# The landing-facts block requires the four runtime values
+# =============================================================================
+#
+# ``harness``, ``model``, ``effort`` and ``plugin_version`` record WHO ran the
+# plan. They became REQUIRED, so a landing that omits one is INCOMPLETE — the
+# operator accepted that every landing emitted before the change is now
+# incomplete, and deliberately added no grandfather rule.
+
+_RUNTIME_STAMP_KEYS: tuple[str, ...] = ('harness', 'model', 'effort', 'plugin_version')
+
+
+class TestRuntimeStampFacts:
+    def test_the_four_runtime_keys_are_required(self):
+        for key in _RUNTIME_STAMP_KEYS:
+            assert key in LANDING_REQUIRED_KEYS, key
+
+    @pytest.mark.parametrize('key', _RUNTIME_STAMP_KEYS)
+    def test_a_block_missing_one_reports_it_missing(self, key):
+        complete, missing = check_landing_completeness(_facts_landing(**{key: ''}))
+
+        assert complete is False
+        assert key in missing
+
+    def test_a_block_carrying_all_four_is_complete(self):
+        complete, missing = check_landing_completeness(_facts_landing())
+
+        assert complete is True
+        assert missing == []
+
+    def test_a_runtime_stamp_key_of_unknown_is_incomplete(self):
+        """A runtime value that could not be read is a gap, not an end state."""
+        complete, missing = check_landing_completeness(_facts_landing(model='unknown'))
+
+        assert complete is False
+        assert missing == ['model']
+
+    def test_the_spec_documents_them_as_required(self):
+        table = _spec_table_keys()
+        for key in _RUNTIME_STAMP_KEYS:
+            assert key in table, key
+
+    def test_the_executor_version_stays_optional(self):
+        """``plugin_version`` is required; the executor version riding beside it is not."""
+        assert 'executor_version' not in _spec_table_keys()
+        assert 'executor_version' not in LANDING_REQUIRED_KEYS
+        assert check_landing_completeness(_facts_landing()) == (True, [])
 
 
 # =============================================================================
