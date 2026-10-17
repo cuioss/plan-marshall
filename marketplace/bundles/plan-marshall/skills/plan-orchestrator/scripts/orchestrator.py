@@ -6268,6 +6268,76 @@ def _best_effort_plan_title(plan_id: str) -> None:
         pass
 
 
+#: The runtime attributes the preflight stamp writes into plan ``status.json``
+#: metadata, in write order. A field the collected payload did not carry is
+#: SKIPPED rather than invented, so an unreadable value stays absent instead of
+#: being recorded as the flag value or as a default.
+_PREFLIGHT_METADATA_FIELDS: tuple[str, ...] = (
+    'harness',
+    'harness_source',
+    'model',
+    'model_source',
+    'effort',
+    'effort_source',
+    'bundle_version',
+    'executor_version',
+)
+
+
+def _best_effort_runtime_metadata(plan_id: str, payload: str) -> bool:
+    """Stamp the collected runtime attributes into the plan's status metadata.
+
+    The plan-start record of WHICH harness, model, effort and plan-marshall
+    version the plan ran under, written through manage-status's shared
+    ``read_status`` / ``write_status`` seam so the document is committed by the
+    same title-token-safe writer every other status mutation uses rather than by
+    a second hand-rolled path. Only the fields the payload carried are written.
+
+    Best-effort by contract: a plan with no readable status document, or any
+    write failure, returns ``False`` and never blocks plan start.
+
+    Args:
+        plan_id: Plan whose ``status.json`` metadata is stamped.
+        payload: The runtime-info TOON payload the artifact was built from.
+
+    Returns:
+        True when the stamp was written, False when it was skipped.
+    """
+    try:
+        info = parse_toon(payload)
+    except Exception:
+        return False
+    if not isinstance(info, dict):
+        return False
+    try:
+        from _status_core import read_status, write_status
+    except Exception:
+        return False
+    try:
+        status = read_status(plan_id)
+    except Exception:
+        return False
+    if not isinstance(status, dict) or not status:
+        # No status document resolves for this plan; nothing to stamp, and
+        # creating one here would fabricate plan state.
+        return False
+    metadata = status.get('metadata')
+    if not isinstance(metadata, dict):
+        metadata = {}
+        status['metadata'] = metadata
+    for key in _PREFLIGHT_METADATA_FIELDS:
+        value = info.get(key)
+        if isinstance(value, bool):
+            value = 'true' if value else 'false'
+        if value is not None and str(value).strip():
+            metadata[key] = str(value)
+    try:
+        write_status(plan_id, status)
+    except Exception:
+        return False
+    return True
+
+
 def _merge_client_toon_text(existing_text: str | None, payload: str) -> str | None:
     """Merge a runtime-info payload into timestamp-keyed client.toon text.
 
@@ -6425,11 +6495,20 @@ def cmd_preflight(args: argparse.Namespace) -> dict[str, Any]:
     """Invoke runtime-info and append to the per-plan client.toon artifact.
 
     Read-merge-write: each run appends a new timestamp-keyed entry and never
-    overwrites prior entries.
+    overwrites prior entries. The executing LLM's self-report (``--model`` /
+    ``--effort``) rides the runtime-info argv, so the entry records what the
+    model actually reports.
+
+    The same collected attributes are stamped into the plan's ``status.json``
+    metadata — the plan-start record of the harness, model, effort and
+    plan-marshall version the plan ran under — through manage-status's shared
+    status writer.
 
     Best-effort by contract: any collector, resolution, or write failure
     degrades to ``degraded: true`` with ``artifact_written: false`` and still
     returns ``status: success`` — a pre-flight probe never blocks plan start.
+    A metadata-stamp failure alone leaves ``artifact_written: true`` and
+    records ``metadata_stamped: false``.
     """
     try:
         validate_plan_id(args.plan_id)
@@ -6454,14 +6533,19 @@ def cmd_preflight(args: argparse.Namespace) -> dict[str, Any]:
             'degrade_reason': f'plan directory unresolvable: {exc}',
             'artifact_written': False,
         }
+    runtime_info_argv = [
+        sys.executable,
+        '.plan/execute-script.py',
+        'plan-marshall:platform-runtime:platform_runtime',
+        'runtime-info',
+    ]
+    if getattr(args, 'model', None):
+        runtime_info_argv.extend(['--model', str(args.model)])
+    if getattr(args, 'effort', None):
+        runtime_info_argv.extend(['--effort', str(args.effort)])
     try:
         completed = subprocess.run(
-            [
-                sys.executable,
-                '.plan/execute-script.py',
-                'plan-marshall:platform-runtime:platform_runtime',
-                'runtime-info',
-            ],
+            runtime_info_argv,
             capture_output=True,
             text=True,
             timeout=60,
@@ -6514,6 +6598,7 @@ def cmd_preflight(args: argparse.Namespace) -> dict[str, Any]:
         'degraded': False,
         'artifact_written': True,
         'artifact': 'client.toon',
+        'metadata_stamped': _best_effort_runtime_metadata(args.plan_id, payload),
         'persisted_approval': _persisted_approval_report(),
     }
 
@@ -6687,6 +6772,16 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         '--plan-id',
         required=True,
         help='Plan identifier the client.toon artifact is written for.',
+    )
+    preflight.add_argument(
+        '--model',
+        default=None,
+        help="Self-reported model the executing LLM ran under, forwarded to runtime-info and stamped into the plan's runtime metadata",
+    )
+    preflight.add_argument(
+        '--effort',
+        default=None,
+        help="Self-reported effort level, forwarded to runtime-info and stamped into the plan's runtime metadata",
     )
     preflight.set_defaults(handler=cmd_preflight)
 

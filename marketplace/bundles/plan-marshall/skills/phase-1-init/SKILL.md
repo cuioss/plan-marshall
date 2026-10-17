@@ -835,36 +835,38 @@ If `value` is present and non-empty, no log entry is required — continue to St
 
 ### Step 8a.6: Stamp Harness
 
-Stamp the harness this plan runs on into `status.metadata.harness` via the
-platform-runtime `runtime-info` op, so every downstream reader — metrics, landing
-payload, retrospective — knows which harness produced the run without
-re-resolving it. The stamp is best-effort and never blocks init.
+Stamp the harness this plan runs on — and the model, effort and plan-marshall
+version it ran under — into `status.metadata` via the orchestrator preflight
+hook, so every downstream reader (metrics, landing payload, retrospective) knows
+which harness produced the run without re-resolving it. The stamp is best-effort
+and never blocks init.
 
-Resolve the live harness through the platform-runtime `runtime-info` op, which
-reports the harness identifier alongside its `transcripts` capability flag:
-
-```bash
-python3 .plan/execute-script.py plan-marshall:platform-runtime:platform_runtime runtime-info
-```
-
-Parse `harness` from the returned TOON and persist it:
+Call the documented pre-flight entry point, passing the model and effort the
+executing LLM reports about itself (a value no script can read):
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \
-  --plan-id {plan_id} --set --field harness --value {harness}
+python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator preflight \
+  --plan-id {plan_id} --model {model} --effort {effort}
 ```
 
-On `status: error` or `status: no-op` (no harness resolvable), or on `status: success`
-with an empty `harness` value, skip the persist and emit a `[WARNING]` work-log
-entry noting the gap — an absent `harness` reads as "not stamped", never as a
-default harness:
+The hook writes the plan's `client.toon` pre-flight artifact AND stamps
+`harness`, `harness_source`, `model`, `model_source`, `effort`, `effort_source`,
+`bundle_version` and `executor_version` into `status.metadata`. It is
+best-effort: absent `--model` / `--effort` values simply omit those keys. See
+`plan-orchestrator/workflow/preflight.md` for the full contract and
+`platform-runtime/standards/runtime-info.md` for what each value means.
+
+On `degraded: true` the preflight call failed and no stamp was written: emit a
+`[WARNING]` work-log entry noting the gap — an absent `harness` reads as "not
+stamped", never as a default harness:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  work --plan-id {plan_id} --level WARNING --message "[WARNING] (plan-marshall:phase-1-init) harness not stamped at plan-init — downstream readers treat an absent harness as not stamped"
+  work --plan-id {plan_id} --level WARNING --message "[WARNING] (plan-marshall:phase-1-init) runtime stamp not written at plan-init — downstream readers treat an absent harness as not stamped"
 ```
 
-Continue to Step 8a.5 either way. See `manage-status/SKILL.md` for the `harness` field contract and
+Continue to Step 8a.5 either way. See `manage-status/SKILL.md` for the metadata
+field contract and
 `platform-runtime/standards/runtime-info.md` for the `transcripts` capability
 the same op reports.
 
