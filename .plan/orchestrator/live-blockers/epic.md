@@ -400,6 +400,15 @@ derive, for rows still live.
   start, restart and compaction (the run loaded it once and missed the mid-run amendments);
   repository files are edited only inside the worktree (PLAN-LB-52 left drafts in the main
   checkout).
+- 2026-10-17 — **Operator: the runbook lane ships as a product skill** ("do the proper version").
+  Staged **PLAN-LB-66 runbook-lane-skill** (WS-04, runbook lane):
+  - D1: the bundle skill `plan-marshall:runbook-lane`, repository-neutral;
+  - D2: a `resolve` verb that takes the slug, build, reviewers and trailer from the project's own
+    configuration and fails closed.
+
+  The sender id becomes `rb-{plan}`. After it lands, plans are emitted as
+  `/plan-marshall-runbook-lane plan={spec}`, the local `RUNBOOK.md` is retired, and lane
+  amendments go through PRs.
 
 ## Open Defects
 
