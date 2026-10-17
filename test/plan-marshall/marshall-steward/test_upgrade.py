@@ -1429,6 +1429,37 @@ def test_bootstrap_non_import_probe_failure_does_not_force_recovery(tmp_path: Pa
     assert fake.calls == []
 
 
+def test_bootstrap_undecodable_probe_output_does_not_force_recovery(tmp_path: Path):
+    """An undecodable probe output is inconclusive — it never forces a recovery.
+
+    The probe promises never to raise: an executor that writes a non-UTF-8 byte to
+    stderr and exits would otherwise surface as a `UnicodeDecodeError` out of
+    `subprocess.run` (a `ValueError`, not an `OSError`). An inconclusive probe is
+    treated exactly like a non-import failure: the consent gate is unchanged and
+    the executor is reported, never rewritten unasked.
+    """
+    cache = _fixture_cache(tmp_path, ['0.1.9', '0.1.10'])
+    project = tmp_path / 'project'
+    executor = _fixture_executor(project, '0.1.9')
+    executor.write_bytes(
+        b"MARSHALL_VERSION = '0.1.9'\nimport sys\nsys.stderr.buffer.write(b'\\xff\\xfe')\nraise SystemExit(3)\n"
+    )
+    fake = _RegenerateFake(executor, '0.1.10')
+
+    report = upgrade.bootstrap_executor(
+        project_kind='consumer',
+        cache_root=cache,
+        executor_path=executor,
+        _run_generate=fake,
+        allow_regenerate=False,
+    )
+
+    assert report['status'] == 'success'
+    assert report['action'] == 'regenerate_required'
+    assert 'bootstrap true' in report['warning']
+    assert fake.calls == []
+
+
 def test_plan_recovers_from_an_executor_that_fails_to_import(
     capsys: pytest.CaptureFixture[str], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):

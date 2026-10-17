@@ -108,14 +108,17 @@ block, and the `stages[4]{order,key,name,mutating,top_level_gate,nested_gates,su
 The `bootstrap` block reports `action` (`fresh` | `regenerated` |
 `regenerate_required` | `no_cache` | `regenerate_failed` | `unknown`), the
 compared `executor_version` / `newest_cache_version`, and a `warning`. A
-non-empty `warning` names a skill/planner version split — the installed skill
-surface and the planner disagree on the version — and its remedy, instead of a
-silently stale run: re-sync the plugin cache (`/plugin update plan-marshall`),
-reload the session plugin set so the refreshed cache is visible (resolve the
-harness-appropriate directive through `platform_runtime session reload-directive`),
-then re-request the stage plan so the skill docs and the planner resolve one
-version. Surface the warning verbatim and follow the remedy before driving any
-stage: the plan just emitted was produced by a planner whose currency is unproven.
+non-empty `warning` names why the executor cannot serve current scripts instead
+of a silently stale run. A skill/planner version split — the installed skill
+surface and the planner disagree on the version — carries its remedy: re-sync
+the plugin cache (`/plugin update plan-marshall`), reload the session plugin set
+so the refreshed cache is visible (resolve the harness-appropriate directive
+through `platform_runtime session reload-directive`), then re-request the stage
+plan so the skill docs and the planner resolve one version. An observed import
+failure names the failure and the restore from the newest cache; the
+regeneration is its remedy. Surface the warning verbatim before driving any
+stage, and follow a split's remedy: the plan just emitted was produced by a
+planner whose currency is unproven.
 
 Each stage's `top_level_gate` is the disposition this flow honors below: `prompt`
 (ask before running the stage) or `suppressed` (run without the top-level

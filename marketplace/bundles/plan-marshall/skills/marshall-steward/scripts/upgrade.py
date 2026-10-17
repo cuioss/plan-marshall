@@ -125,8 +125,10 @@ The ``bootstrap`` block reports the executor bootstrap (``fresh`` |
 ``regenerate_failed`` | ``unknown``). Rewriting a merely-stale executor is gated
 on ``--bootstrap true`` (default false — a stale executor reports
 ``regenerate_required`` and is left untouched); a missing-or-broken executor is
-always restored from the newest cache. A ``warning`` names a skill/planner
-version split and its remedy instead of a silently stale run.
+always restored from the newest cache. A ``warning`` names why the executor
+cannot serve current scripts — a skill/planner version split, with its remedy,
+or an observed import failure being restored from the newest cache — instead of
+a silently stale run.
 
 Exit 0 on success, 2 on argparse rejection.
 
@@ -643,7 +645,10 @@ def cmd_validate_bot_lists(_args: argparse.Namespace) -> dict:
 # is AHEAD of the newest cache, or regeneration failed and the executor is
 # still behind), the bootstrap reports a ``warning`` naming the split and its
 # remedy instead of letting the router run a silently stale plan: re-sync the
-# plugin cache, reload the plugin set, and re-request the stage plan.
+# plugin cache, reload the plugin set, and re-request the stage plan. An
+# observed IMPORT failure yields a ``warning`` naming the failure and the
+# restore from the newest cache — the regeneration IS that remedy, so no
+# separate one is prescribed.
 #
 # Regeneration runs the generator DIRECTLY, by its resolved script path — the
 # same sanctioned direct-path surface Stage 1's ``regenerate-executor``
@@ -749,7 +754,14 @@ def _run_bootstrap_generate(generator: Path, anchor: Path, project_dir: Path) ->
 #: Import-failure markers in a probe's stderr: the Python import-error phrases
 #: and the executor's own bootstrap-guard message (``cannot start:``), which
 #: prints instead of a traceback when the failed import coincides with an
-#: unresolved bootstrap directory.
+#: unresolved bootstrap directory. ``ImportError`` covers the whole family —
+#: ``ModuleNotFoundError`` and every other subclass — and a subprocess probe
+#: wraps argparse errors in none of them, so no non-import failure is
+#: misclassified. The boundary is deliberate: only an IMPORT error (or the
+#: executor's guard form of one) is a recovery trigger. A module-level
+#: NON-import failure — a syntax error, or a direct ``SystemExit`` — carries
+#: none of these markers, so it stays inconclusive and is reported under the
+#: consent gate instead of forcing an ungated rewrite.
 _IMPORT_FAILURE_MARKERS = ('ModuleNotFoundError', 'ImportError', 'No module named', 'cannot start:')
 
 #: Timeout for the read-only executor import probe.
@@ -780,7 +792,7 @@ def _probe_executor_import(executor_path: Path) -> str:
             text=True,
             timeout=_BOOTSTRAP_PROBE_TIMEOUT_SECONDS,
         )
-    except (OSError, subprocess.TimeoutExpired):
+    except (OSError, subprocess.TimeoutExpired, UnicodeDecodeError):
         return ''
     if result.returncode == 0:
         return ''
