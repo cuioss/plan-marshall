@@ -837,6 +837,23 @@ OPERATOR_STEP_MAP_LOCATIONS: tuple[tuple[str, str], ...] = (
 # list is absent.
 OPERATOR_REMOVED_STEPS_KEY = 'removed_steps'
 
+# Product-written dead-removal record map persisted per phase section (e.g.
+# ``plan.phase-6-finalize.dead_removed_steps``). ``sync-defaults``' dead-step
+# sweep writes one entry per id it removed as genuinely dead —
+# ``{step_id: {'origin': DEAD_REMOVED_STEP_ORIGIN, 'params': <the removed
+# row's nested params>}}``. It is a SIBLING of OPERATOR_REMOVED_STEPS_KEY,
+# never folded into it: the two removal sources stay distinguishable by
+# construction, so a later back-fill crossing a dead-removed id reads as a
+# routine hold rather than as crossing an operator decision (the ``re_added``
+# bucket). Like the removal-intent key it is absent from
+# ``get_default_config()``; it is written by the product sweep, not by any
+# operator verb.
+DEAD_REMOVED_STEPS_KEY = 'dead_removed_steps'
+# The ``origin`` marker on each DEAD_REMOVED_STEPS_KEY record — names the
+# product sweep as the remover, so a consumer can tell it from an operator
+# removal without consulting the operator list.
+DEAD_REMOVED_STEP_ORIGIN = 'dead_step'
+
 
 # The standard reviewer roster seeded by the Stage 2 bot-list preservation.
 # The SINGLE source both roster writers derive from (``upgrade`` for the

@@ -894,3 +894,138 @@ def test_unreadable_root_leaves_the_bundle_surface_unresolved(tmp_path, monkeypa
         os.chmod(denied, original_mode)
 
     assert status['status'] == 'unresolved'
+
+
+# =============================================================================
+# _implementor_scan_surfaces_resolve — phase-6 / phase-5 step-doc surfaces
+# =============================================================================
+#
+# Surfaces 0 and 1 are the phase-6-finalize step-doc root and the phase-5-execute
+# verify-step standards root. The phase-6 scan walks the skill dir's `workflow/`
+# AND `standards/` subdirectories, so a skill dir that exists but lacks one of
+# them is a PARTIAL scan: every step doc rooted in the missing subdirectory
+# (`default:push` lives in `workflow/`) is invisible to it, while the old
+# `is_dir()`-only probe reported the surface resolved. The probe must require
+# both subdirectories, readable, and every `*.md` step document readable — an
+# unreadable doc is swallowed to `[]` by `read_implements_field`, so the step
+# would otherwise read as dead.
+
+_PHASE6_SURFACE_INDEX = 0
+_PHASE5_SURFACE_INDEX = 1
+
+# A minimal finalize-step body doc: declares the ext-point and an int order, so
+# a scan that reaches it surfaces a live step record.
+_PARTIAL_STEP_DOC = (
+    '---\n'
+    'name: default:partial-live-step\n'
+    'order: 10\n'
+    'implements: plan-marshall:extension-api/standards/ext-point-finalize-step\n'
+    '---\n\n'
+    '# Partial live step\n'
+)
+
+
+def test_partial_phase6_dir_without_workflow_leaves_the_surface_unresolved(tmp_path, monkeypatch):
+    """A phase-6 dir carrying only `standards/` is a partial scan — unknown, not dead.
+
+    The deliverable's core shape: the fixture skill directory has a readable
+    `standards/` (the scan DOES find a live step there) but no `workflow/`, so
+    every workflow-rooted step (`default:push`) cannot be enumerated. Finding
+    some implementors is still not an answered scan.
+    """
+    import configurable_contract as cc
+
+    skill_dir = tmp_path / 'phase-6-finalize'
+    (skill_dir / 'standards').mkdir(parents=True)
+    (skill_dir / 'standards' / 'partial-live-step.md').write_text(_PARTIAL_STEP_DOC, encoding='utf-8')
+    monkeypatch.setattr(cc, '_phase_6_skill_dir', lambda: skill_dir)
+
+    assert _disc._implementor_scan_surfaces_resolve()[_PHASE6_SURFACE_INDEX] is False
+
+    status = _disc.find_implementors_with_status(_FINALIZE_STEP_EXT_POINT)
+    assert status['status'] == 'unresolved'
+    # The partial scan DID find the standards-rooted step — "found something" is
+    # still not "scanned the whole surface".
+    assert any(rec['name'] == 'default:partial-live-step' for rec in status['implementors'])
+
+
+def test_complete_readable_phase6_dir_resolves_the_surface(tmp_path, monkeypatch):
+    """Positive control: `workflow/` + `standards/`, both readable, resolve surface 0.
+
+    Without this direction a probe that had collapsed to always returning
+    ``False`` would satisfy the partial-dir and unreadable tests below.
+    """
+    import configurable_contract as cc
+
+    skill_dir = tmp_path / 'phase-6-finalize'
+    for sub in ('workflow', 'standards'):
+        (skill_dir / sub).mkdir(parents=True)
+    (skill_dir / 'standards' / 'partial-live-step.md').write_text(_PARTIAL_STEP_DOC, encoding='utf-8')
+    monkeypatch.setattr(cc, '_phase_6_skill_dir', lambda: skill_dir)
+
+    assert _disc._implementor_scan_surfaces_resolve()[_PHASE6_SURFACE_INDEX] is True
+
+
+@pytest.mark.skipif(
+    hasattr(os, 'geteuid') and os.geteuid() == 0,
+    reason='a root host bypasses the file mode, so the read cannot be made to fail',
+)
+@pytest.mark.parametrize('denied_kind', ['workflow-dir', 'standards-dir', 'workflow-step-doc'])
+def test_unreadable_phase6_part_leaves_the_surface_unresolved(tmp_path, monkeypatch, denied_kind):
+    """An unreadable subdir OR step doc leaves the phase-6 surface unresolved.
+
+    ``Path.is_dir()`` is true for a directory that denies ``iterdir()``, and
+    ``read_implements_field`` swallows an unreadable doc's ``OSError`` to
+    ``[]`` — a probe that stopped at ``is_dir()`` reported the surface resolved
+    while the scan ran over a missing subdirectory's steps or an unreadable step
+    doc. Both subdirs and step docs are covered.
+    """
+    import configurable_contract as cc
+
+    skill_dir = tmp_path / 'phase-6-finalize'
+    for sub in ('workflow', 'standards'):
+        (skill_dir / sub).mkdir(parents=True)
+    (skill_dir / 'workflow' / 'rooted-step.md').write_text(_PARTIAL_STEP_DOC, encoding='utf-8')
+    (skill_dir / 'standards' / 'partial-live-step.md').write_text(_PARTIAL_STEP_DOC, encoding='utf-8')
+    monkeypatch.setattr(cc, '_phase_6_skill_dir', lambda: skill_dir)
+
+    denied = {
+        'workflow-dir': skill_dir / 'workflow',
+        'standards-dir': skill_dir / 'standards',
+        'workflow-step-doc': skill_dir / 'workflow' / 'rooted-step.md',
+    }[denied_kind]
+
+    original_mode = denied.stat().st_mode
+    try:
+        os.chmod(denied, 0o000)
+        assert _disc._implementor_scan_surfaces_resolve()[_PHASE6_SURFACE_INDEX] is False
+    finally:
+        os.chmod(denied, original_mode)
+
+
+def test_readable_phase5_standards_root_resolves_the_surface(tmp_path, monkeypatch):
+    """Positive control for surface 1 (the phase-5 verify-step standards root)."""
+    skills_root = tmp_path / 'skills'
+    (skills_root / 'phase-5-execute' / 'standards').mkdir(parents=True)
+    monkeypatch.setattr(_disc, 'resolve_skills_root', lambda _script_file: skills_root)
+
+    assert _disc._implementor_scan_surfaces_resolve()[_PHASE5_SURFACE_INDEX] is True
+
+
+@pytest.mark.skipif(
+    hasattr(os, 'geteuid') and os.geteuid() == 0,
+    reason='a root host bypasses the file mode, so iterdir() cannot be made to fail',
+)
+def test_unreadable_phase5_standards_root_leaves_the_surface_unresolved(tmp_path, monkeypatch):
+    """An unreadable phase-5 standards root is unresolved, not a resolved-empty scan."""
+    skills_root = tmp_path / 'skills'
+    standards = skills_root / 'phase-5-execute' / 'standards'
+    standards.mkdir(parents=True)
+    monkeypatch.setattr(_disc, 'resolve_skills_root', lambda _script_file: skills_root)
+
+    original_mode = standards.stat().st_mode
+    try:
+        os.chmod(standards, 0o000)
+        assert _disc._implementor_scan_surfaces_resolve()[_PHASE5_SURFACE_INDEX] is False
+    finally:
+        os.chmod(standards, original_mode)

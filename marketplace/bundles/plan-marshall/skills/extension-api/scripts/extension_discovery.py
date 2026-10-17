@@ -1444,6 +1444,42 @@ def _dir_entries_readable(path: Path) -> bool:
     return True
 
 
+def _step_doc_surface_resolves(skill_dir: Path, subdirs: tuple[str, ...]) -> bool:
+    """Whether a step-doc surface's directories AND every ``*.md`` doc are readable.
+
+    The step-doc scans (:func:`_scan_phase6_for_implementors`,
+    :func:`_scan_phase5_for_implementors`) walk one or more subdirectories of a
+    skill dir and read every ``*.md`` step document in them. Two silent-loss
+    shapes make such a scan run over less than the whole surface:
+
+    - a subdirectory that is absent or denies ``iterdir()`` — the scan skips it
+      (``OSError``), so every step rooted in it is invisible;
+    - a step document that cannot be read — :func:`read_implements_field`
+      swallows the ``OSError`` to ``[]``, so the step's declaration is
+      invisible.
+
+    ``Path.is_dir()`` alone reports the surface resolved in both shapes. This
+    probe performs the same operations the scan performs (``iterdir()`` on each
+    subdirectory, ``read_text()`` on each ``*.md`` doc), so an unreadable part
+    leaves the surface unresolved — an unreadable step document is ``unknown``
+    for that step, never ``dead``.
+    """
+    for subdir in subdirs:
+        docs_dir = skill_dir / subdir
+        if not _dir_entries_readable(docs_dir):
+            return False
+        try:
+            doc_paths = sorted(docs_dir.glob('*.md'))
+        except OSError:
+            return False
+        for doc_path in doc_paths:
+            try:
+                doc_path.read_text(encoding='utf-8')
+            except OSError:
+                return False
+    return True
+
+
 def _implementor_scan_surfaces_resolve() -> list[bool]:
     """Report, per scan surface :func:`find_implementors` consults, whether it resolved.
 
@@ -1451,9 +1487,14 @@ def _implementor_scan_surfaces_resolve() -> list[bool]:
     phase-6-finalize step-doc root, the phase-5-execute verify-step standards
     root, the bundle ``skills`` roots (source tree + plugin cache roots), and
     the project-local skill root(s). ``False`` means that surface's root could
-    not be located — or, for the bundle roots, could not be READ — so the scan
-    ran over nothing: an empty result is then "discovery could not run", NOT
-    "discovery ran and found nothing".
+    not be located — or could not be READ (the bundle roots and the two
+    step-doc roots, whose scans walk subdirectories and step documents) — so
+    the scan ran over nothing: an empty result is then "discovery could not
+    run", NOT "discovery ran and found nothing". The phase-6 step-doc surface
+    resolves only when BOTH subdirectories its scan walks (``workflow/`` and
+    ``standards/``) exist and are readable AND every ``*.md`` step document in
+    them is readable; the phase-5 surface requires its single ``standards/``
+    subdirectory on the same terms.
 
     Production consumers read this through :func:`find_implementors_with_status`;
     it is the discriminator the fail-closed reconcile consumes.
@@ -1463,11 +1504,12 @@ def _implementor_scan_surfaces_resolve() -> list[bool]:
 
     surfaces: list[bool] = []
     try:
-        surfaces.append(_phase_6_skill_dir().is_dir())
+        surfaces.append(_step_doc_surface_resolves(_phase_6_skill_dir(), ('workflow', 'standards')))
     except Exception:
         surfaces.append(False)
     try:
-        surfaces.append((resolve_skills_root(Path(__file__)) / 'phase-5-execute' / 'standards').is_dir())
+        phase5_dir = resolve_skills_root(Path(__file__)) / 'phase-5-execute'
+        surfaces.append(_step_doc_surface_resolves(phase5_dir, ('standards',)))
     except Exception:
         surfaces.append(False)
     roots: list[Path] = []

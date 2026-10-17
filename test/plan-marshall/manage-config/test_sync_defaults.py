@@ -1714,6 +1714,34 @@ def test_normalize_keys_ignores_dynamic_step_ids(plan_context):
     assert nested == []
 
 
+def test_normalize_keys_is_clean_after_a_dead_step_removal_recorded_by_sync(plan_context, monkeypatch):
+    """The product-written dead-removal record is a dynamic subtree, never stray.
+
+    End to end: the reconcile records the dead id (with its params and origin)
+    under `plan.phase-6-finalize.dead_removed_steps`; a later `normalize-keys`
+    must not name that product-written record as an unrecognized knob.
+    """
+    _write_marshal(
+        plan_context.fixture_dir,
+        {'plan': {'phase-6-finalize': {'steps': {'default:push': {}, 'default:stale-step': {'lane': 'off'}}}}},
+    )
+    monkeypatch.setattr(
+        _sync_mod,
+        '_find_dead_step_ids',
+        lambda steps, phase: [
+            {'step': step, 'reason': f"Step '{step}' has no resolved order in {phase}.", 'outcome': 'dead'}
+            for step in steps
+            if step == 'default:stale-step'
+        ],
+    )
+    assert cmd_sync_defaults(_sync_ns())['status'] == 'success'
+    assert 'dead_removed_steps' in _read_marshal(plan_context.fixture_dir)['plan']['phase-6-finalize']
+
+    result = _config_core.normalize_keys()
+
+    assert result['unrecognized_nested_keys'] == []
+
+
 # =============================================================================
 # Dead phase-6 step-id detection during reconcile
 # =============================================================================
@@ -1784,7 +1812,8 @@ def test_sync_defaults_unresolved_discovery_deletes_no_step(plan_context, monkey
 
     Models the bug shape: a discovery surface that returns ``[]`` because it
     could not run (its directory was absent), reported as ``unknown`` for every
-    configured id. The reconcile must keep every step and report no removal.
+    configured id. The reconcile must keep every step, report the sweep as
+    ``unknown`` with the reason, and report no removal.
     """
     _write_marshal(
         plan_context.fixture_dir,
@@ -1807,15 +1836,25 @@ def test_sync_defaults_unresolved_discovery_deletes_no_step(plan_context, monkey
     assert 'default:stale-step' in steps
     assert result['dead_removed'] == []
     assert result['dead_removed_count'] == 0
+    # the sweep says so explicitly, never as a bare `dead_removed: []`
+    assert result['dead_sweep'] == 'unknown'
+    assert result['dead_sweep_reason'] == 'discovery did not resolve in phase-6-finalize'
     # nothing was recorded as removed either
     assert 'default:stale-step' not in config['plan']['phase-6-finalize'].get('removed_steps', [])
 
 
-def test_sync_defaults_dead_default_id_is_removed_and_recorded_in_removed_steps(plan_context, monkeypatch):
-    """A genuinely dead ``default:`` id is removed, recorded in ``removed_steps``, and reported."""
+def test_sync_defaults_dead_default_id_removal_record_carries_params_and_dead_step_origin(plan_context, monkeypatch):
+    """A genuinely dead ``default:`` id is removed and recorded with its params + a ``dead_step`` origin.
+
+    The record must be DISTINGUISHABLE from an operator removal: it is stored
+    under the phase's dedicated dead-removal map (never in the operator
+    ``removed_steps`` list), carrying the removed row's nested params so a later
+    consumer can tell a product sweep from an operator decision.
+    """
+    params = {'lane': 'off', 'max_iterations': 2}
     _write_marshal(
         plan_context.fixture_dir,
-        {'plan': {'phase-6-finalize': {'steps': {'default:push': {}, 'default:stale-step': {}}}}},
+        {'plan': {'phase-6-finalize': {'steps': {'default:push': {}, 'default:stale-step': dict(params)}}}},
     )
     monkeypatch.setattr(
         _sync_mod,
@@ -1831,14 +1870,116 @@ def test_sync_defaults_dead_default_id_is_removed_and_recorded_in_removed_steps(
 
     assert result['status'] == 'success'
     config = _read_marshal(plan_context.fixture_dir)
-    steps = config['plan']['phase-6-finalize']['steps']
-    assert 'default:stale-step' not in steps
-    assert 'default:push' in steps
-    # recorded in the phase's removed_steps list so a later back-fill reads as a crossing ...
-    assert 'default:stale-step' in config['plan']['phase-6-finalize'].get('removed_steps', [])
+    section = config['plan']['phase-6-finalize']
+    assert 'default:stale-step' not in section['steps']
+    assert 'default:push' in section['steps']
+    # Distinguishable from an operator removal: NOT in the operator list ...
+    assert 'default:stale-step' not in section.get('removed_steps', [])
+    # ... but recorded with its params and a `dead_step` origin.
+    record = section['dead_removed_steps']['default:stale-step']
+    assert record['origin'] == 'dead_step'
+    assert record['params'] == params
     # ... and reported
     assert result['dead_removed_count'] == 1
     assert any('default:stale-step' in entry for entry in result['dead_removed'])
+
+
+def test_sync_defaults_dead_removed_id_later_backfill_does_not_read_as_operator_removal(plan_context, monkeypatch):
+    """A later back-fill of a dead-removed id is a routine hold, not an operator crossing.
+
+    Full sequence: sweep-one removes ``default:branch-cleanup`` as dead; the
+    sweep-two resolver answers again and the id is absent from the live map, so
+    the merge attempts a back-fill. Because the dead removal was recorded
+    distinguishably — not as an operator removal — the back-fill must read as
+    ``held_for_ask``, never as ``re_added`` ("crosses operator removal").
+    """
+    _write_marshal(
+        plan_context.fixture_dir,
+        {'plan': {'phase-6-finalize': {'steps': {'default:push': {}, 'default:branch-cleanup': {}}}}},
+    )
+    monkeypatch.setattr(
+        _sync_mod,
+        '_find_dead_step_ids',
+        lambda steps, phase: [
+            {'step': step, 'reason': f"Step '{step}' has no resolved order in {phase}.", 'outcome': 'dead'}
+            for step in steps
+            if step == 'default:branch-cleanup'
+        ],
+    )
+
+    first = cmd_sync_defaults(_sync_ns())
+    assert first['status'] == 'success'
+    steps = _read_marshal(plan_context.fixture_dir)['plan']['phase-6-finalize']['steps']
+    assert 'default:branch-cleanup' not in steps
+
+    # The sweep answers again on the second run and the id is back in defaults.
+    monkeypatch.setattr(_sync_mod, '_find_dead_step_ids', lambda steps, phase: [])
+    second = cmd_sync_defaults(_sync_ns())
+
+    assert second['status'] == 'success'
+    assert 'plan.phase-6-finalize.steps.default:branch-cleanup' in second['held_for_ask']
+    assert second['re_added'] == []
+    assert second['re_added_count'] == 0
+
+
+def test_sync_defaults_partial_phase6_scan_keeps_steps_and_reports_unknown_sweep(plan_context, monkeypatch, tmp_path):
+    """A partial phase-6 scan (dir without ``workflow/``) is ``unknown`` — it deletes nothing.
+
+    The real chain runs end to end: the fixture phase-6 skill directory has a
+    readable ``standards/`` (carrying a live step doc — the scan finds it) but no
+    ``workflow/``, where ``default:push`` and ``default:create-pr`` live. The
+    steps must be kept (their liveness is unknown, not established as dead), and
+    the sweep must say so explicitly instead of reporting ``dead_removed: []``.
+    """
+    import configurable_contract as cc
+
+    skill_dir = tmp_path / 'phase-6-finalize'
+    (skill_dir / 'standards').mkdir(parents=True)
+    (skill_dir / 'standards' / 'partial-live-step.md').write_text(
+        '---\n'
+        'name: default:partial-live-step\n'
+        'order: 10\n'
+        'implements: plan-marshall:extension-api/standards/ext-point-finalize-step\n'
+        '---\n\n'
+        '# Partial live step\n',
+        encoding='utf-8',
+    )
+    monkeypatch.setattr(cc, '_phase_6_skill_dir', lambda: skill_dir)
+
+    _write_marshal(
+        plan_context.fixture_dir,
+        {'plan': {'phase-6-finalize': {'steps': {'default:push': {}, 'default:create-pr': {}}}}},
+    )
+
+    result = cmd_sync_defaults(_sync_ns())
+
+    assert result['status'] == 'success'
+    config = _read_marshal(plan_context.fixture_dir)
+    steps = config['plan']['phase-6-finalize']['steps']
+    assert 'default:push' in steps
+    assert 'default:create-pr' in steps
+    assert result['dead_removed'] == []
+    assert result['dead_removed_count'] == 0
+    # The unresolved sweep is reported explicitly, with the reason ...
+    assert result['dead_sweep'] == 'unknown'
+    assert 'default:push' in result['dead_sweep_reason']
+    # ... and nothing was recorded as an operator removal either.
+    assert config['plan']['phase-6-finalize'].get('removed_steps', []) == []
+
+
+def test_sync_defaults_resolved_sweep_reports_resolved(plan_context, monkeypatch):
+    """Positive control: a sweep with no unknown entry reports ``dead_sweep: resolved``."""
+    _write_marshal(
+        plan_context.fixture_dir,
+        {'plan': {'phase-6-finalize': {'steps': {'default:push': {}}}}},
+    )
+    monkeypatch.setattr(_sync_mod, '_find_dead_step_ids', lambda steps, phase: [])
+
+    result = cmd_sync_defaults(_sync_ns())
+
+    assert result['status'] == 'success'
+    assert result['dead_sweep'] == 'resolved'
+    assert result['dead_sweep_reason'] == ''
 
 
 def test_sync_defaults_project_step_without_implements_is_reported_and_kept(plan_context, monkeypatch):
