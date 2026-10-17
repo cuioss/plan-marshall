@@ -675,11 +675,11 @@ its `bridge-version` marker.
 
 Owned-file invariant: bridge writes land only in the bridge-owned file and
 never in the installed target-rules file (`plan-marshall-target-rules.md`)
-shipped by the bundles via `./install.sh --emit-rules`. The reconcile
-performs no writes — a current bridge is left untouched, and a drifted or
-missing bridge is not healed by this observe-only sub-step. A stub the setup
-writers could not heal (bridge present without its version marker) is reported
-with the re-emit command
+shipped by the bundles via `./install.sh --emit-rules`. The reconcile itself
+performs no writes — the setup writers run first and heal a drifted or missing
+bridge in the bridge-owned file, leaving a current bridge untouched. A stub the
+setup writers could not heal (bridge present without its version marker) is
+reported with the re-emit command
 `python3 .plan/execute-script.py plan-marshall:platform-runtime:platform_runtime project initial-setup --target {harness}`,
 never silent, and a stub an older setup left in the installed target-rules file
 is reported as clobbered with the `./install.sh --emit-rules` restore command.
