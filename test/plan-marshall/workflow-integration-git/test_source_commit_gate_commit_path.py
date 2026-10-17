@@ -199,6 +199,7 @@ def test_review_rubric_section6_record_sanctions_the_commit(tmp_path: Path) -> N
     assert result['status'] == 'success', f'{result!r}'
     assert result['reason'] == 'section6_record'
     assert code == 0
+    assert _commit_count(tmp_path) == 2, 'the sanctioned commit must have been created'
 
 
 def test_plan_only_commit_passes(tmp_path: Path) -> None:
@@ -295,6 +296,7 @@ def test_pure_gate_sanctions_a_composed_manifest_step() -> None:
     )
     assert verdict['allowed'] is True
     assert verdict['reason'] == 'settle_band_step'
+    assert verdict['step'] == 'pre-push-quality-gate'
 
 
 def test_pure_gate_refuses_a_step_outside_the_manifest() -> None:

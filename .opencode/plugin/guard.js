@@ -65,12 +65,13 @@
  *   R6 — a raw `git commit` while the enclosing plan is in phase `6-finalize`
  *   => block. The plan is NAMED by the worktree path
  *   (`.../.plan/local/worktrees/{plan_id}`) and its phase is read from that
- *   plan's own `status.json` field `current_phase` — never `phase`, and never
- *   "the first plan found" by a directory scan. Every plan commit must pass
- *   through the gate-bearing `git-workflow commit` verb, which sanctions an open
- *   loop-back fix task, a review-rubric section-6 record, or a phase-6
- *   settle-band step. Outside `6-finalize`, or with no plan state present, a raw
- *   commit is untouched.
+ *   plan's own `status.json` field `current_phase`, resolved MAIN-ANCHORED (the
+ *   git common dir, or a `PLAN_BASE_DIR` override) — never from
+ *   `<worktree>/.plan/local/plans` and never "the first plan found" by a
+ *   directory scan. Every plan commit must pass through the gate-bearing
+ *   `git-workflow commit` verb, which sanctions an open loop-back fix task, a
+ *   review-rubric section-6 record, or a composed phase-6 manifest step. Outside
+ *   `6-finalize`, or with no plan state present, a raw commit is untouched.
  *
  * TOKENISATION PARITY: the R5 branch tokenises with a quoting-aware splitter
  * (`shellSplit`) matching the Python hook's `shlex.split`, strips the SAME
@@ -78,6 +79,7 @@
  * the two decision tables agree on the interpreter surface.
  */
 import { appendFileSync, mkdirSync, readFileSync } from "node:fs"
+import { execFileSync } from "node:child_process"
 import path from "node:path"
 import { Plugin } from "@opencode/plugin"
 
@@ -575,37 +577,54 @@ function isGitCommit(command) {
   return false
 }
 
-// The plan worktree a path names: `{ root, planId }` for a path carrying
-// `.plan/local/worktrees/{plan_id}`, else null. The plan id is NAMED by the
-// path, so R6 never judges "the first plan found". When a path carries more than
-// one such segment, the INNERMOST (last) names the plan.
-function worktreeFromPath(candidate) {
-  if (typeof candidate !== "string" || !candidate) return null
+// The plan id a path names, or "" — the segment after `.plan/local/worktrees`.
+// The plan is NAMED by the path, so R6 never judges "the first plan found".
+// When a path carries more than one such segment, the INNERMOST (last) names it.
+function planIdFromWorktreePath(candidate) {
+  if (typeof candidate !== "string" || !candidate) return ""
   const normalized = candidate.replace(/\\/g, "/")
   const marker = "/.plan/local/worktrees/"
   const at = normalized.lastIndexOf(marker)
-  if (at === -1) return null
-  const tail = normalized.slice(at + marker.length)
-  const planId = tail.split("/")[0]
-  if (!planId) return null
-  return { root: normalized.slice(0, at + marker.length + planId.length), planId }
+  if (at === -1) return ""
+  const planId = normalized.slice(at + marker.length).split("/")[0]
+  return planId || ""
 }
 
-// The enclosing plan's phase, read from the plan's own status.json under the
-// plan worktree the path names (field `current_phase`). Empty when neither the
-// shell workdir nor the project root names a plan worktree, or when no readable
-// plan state is present.
+// The MAIN checkout's `.plan/local` directory — the anchor the plan resolution
+// uses, mirroring marketplace_paths.resolve_main_anchored_path: a PLAN_BASE_DIR
+// override stands in for it; otherwise main is derived from git's common dir
+// (main's `.git`) even when the project directory is a linked worktree. Null
+// when neither resolves, so R6 does not fire rather than guess.
+function mainPlanLocalDir(root) {
+  const override = process.env.PLAN_BASE_DIR
+  if (override) return override.replace(/\/+$/, "")
+  try {
+    const out = execFileSync("git", ["-C", root, "rev-parse", "--git-common-dir"], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim()
+    if (!out) return null
+    const common = path.isAbsolute(out) ? out : path.resolve(root, out)
+    return path.join(path.dirname(common), ".plan", "local")
+  } catch {
+    return null
+  }
+}
+
+// The enclosing plan's phase, read from the plan's own status.json (field
+// `current_phase`) MAIN-ANCHORED — the plan NAMED by the worktree path, never
+// `<worktree>/.plan/local/plans` and never "the first plan found". Empty when no
+// plan worktree is named, or no readable record resolves.
 function planPhase(workdir, root) {
-  for (const candidate of [workdir, root]) {
-    const worktree = worktreeFromPath(candidate)
-    if (worktree === null) continue
-    const statusPath = path.join(worktree.root, ".plan", "local", "plans", worktree.planId, "status.json")
-    try {
-      const data = JSON.parse(readFileSync(statusPath, "utf8"))
-      if (data && typeof data.current_phase === "string" && data.current_phase) return data.current_phase
-    } catch {
-      return ""
-    }
+  const planId = planIdFromWorktreePath(workdir) || planIdFromWorktreePath(root)
+  if (!planId) return ""
+  const base = mainPlanLocalDir(root)
+  if (base === null) return ""
+  try {
+    const data = JSON.parse(readFileSync(path.join(base, "plans", planId, "status.json"), "utf8"))
+    if (data && typeof data.current_phase === "string" && data.current_phase) return data.current_phase
+  } catch {
+    return ""
   }
   return ""
 }
@@ -681,7 +700,6 @@ export default Plugin.define({
       }
 
       if (isExecutorPermit(command)) return
-
       if (token === "./pw" || basenameOf(tokenAt(command, 0)) === "pw") {
         const verb = tokenAt(command, 1)
         const passes = Boolean(verb && (verb.startsWith("generate") || verb.startsWith("--")))

@@ -4,17 +4,19 @@
 
 Deliverable 1 makes the two decision tables identical on the interpreter
 surface: quoting-aware tokenisation, the same wrapper stripping, the same
-case handling, the same shared allow-list, and the same plan-context gate on
-R5. A source-level comparison cannot show any of that, so every row below is
-driven through BOTH implementations by REAL EXECUTION — the OpenCode plugin
-under ``node`` and the Claude hook's ``evaluate`` — and the two verdicts must
-agree.
+case handling, the same shared allow-list (matched exactly on the script's
+repository-relative path), and the same UNCONDITIONAL R5 — the plan-context
+gate is gone, so R5 fires in every session on both harnesses. A source-level
+comparison cannot show any of that, so every row below is driven through BOTH
+implementations by REAL EXECUTION — the OpenCode plugin under ``node`` and the
+Claude hook's ``evaluate`` — and the two verdicts must agree.
 
 The corpus is the INTERPRETER (R5) surface only. The guard's R4 python branch
 (``python3 build.py``, ``python3 -m {pytest mypy ruff}``) is a deliberately
-broader, UNCONDITIONAL rule with no hook counterpart; its documented
-out-of-context divergence is pinned separately at the bottom rather than
-folded into the parity table, where it would be a false equivalence.
+broader rule with no hook counterpart; the bottom test pins that BOTH harnesses
+still refuse those shapes out of context (the guard on R4, the hook on R5)
+rather than folding them into the parity table, where they would be a false
+equivalence.
 """
 
 from __future__ import annotations

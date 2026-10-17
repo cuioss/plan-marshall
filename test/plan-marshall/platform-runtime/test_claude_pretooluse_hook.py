@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for claude_pretooluse_hook.py — the conditional PreToolUse enforcement leaf.
+"""Tests for claude_pretooluse_hook.py — the PreToolUse enforcement leaf.
 
 The leaf is a stdin->stdout hook script, so it is exercised both via subprocess (a
 fresh interpreter, exactly as Claude Code would invoke it — proving the whole
 fail-open + deny-envelope contract end to end) and via direct import of its pure
-``evaluate`` function (proving each R1-R5 matcher and the gate-delegation behaviour
-without subprocess overhead).
+``evaluate`` function (proving each rule matcher without subprocess overhead).
 
 The shared ``pretooluse_gate`` module is imported directly (sibling-import
 scaffolding) so the tests can build realistic in-context fixtures from the gate's
@@ -14,7 +13,9 @@ own field-name constants and prove the hook delegates parse/accessors/gate to th
 shared module rather than carrying its own field-name copies.
 
 Coverage:
-  - Gate fail-open when neither signal fires (emit nothing, exit 0).
+  - R5 enforced in EVERY session (no context gate): a root session with cwd in the
+    main checkout refuses ``python3 -c``.
+  - Gate fail-open for R1-R4/R6 when neither signal fires (emit nothing, exit 0).
   - Signal-1-only enforcement (sub-agent identity carries the execution-context
     marker) and Signal-2-only enforcement (worktree cwd).
   - Each of R1-R4 producing a ``permissionDecision: deny`` with the expected
@@ -1161,18 +1162,22 @@ def test_hook_writes_no_log_without_a_cwd() -> None:
 # =============================================================================
 
 
-def test_r6_refuses_raw_commit_in_finalize(tmp_path) -> None:
+def test_r6_refuses_raw_commit_in_finalize(tmp_path, monkeypatch) -> None:
     """A raw ``git commit`` is refused while the plan is in phase 6-finalize.
 
     The plan is named by the worktree path (``plan-a``) and its phase is read from
-    that plan's own ``status.json`` field ``current_phase``.
+    that plan's own ``status.json`` field ``current_phase``, resolved
+    MAIN-ANCHORED (here, the ``PLAN_BASE_DIR`` the plan state lives under).
     """
-    worktree = tmp_path / '.plan' / 'local' / 'worktrees' / 'plan-a'
-    plan_dir = worktree / '.plan' / 'local' / 'plans' / 'plan-a'
+    base = tmp_path / '.plan' / 'local'
+    plan_dir = base / 'plans' / 'plan-a'
     plan_dir.mkdir(parents=True)
     status = plan_dir / 'status.json'
     status.write_text(json.dumps({'current_phase': '6-finalize'}), encoding='utf-8')
+    monkeypatch.setenv('PLAN_BASE_DIR', str(base))
 
+    worktree = base / 'worktrees' / 'plan-a'
+    worktree.mkdir(parents=True)
     payload = {'cwd': str(worktree), 'tool_name': 'Bash', 'tool_input': _bash('git commit -m "fix: x"')}
     assert hook.evaluate(payload) == hook._R6_REASON
 
@@ -1193,12 +1198,15 @@ def test_r6_refuses_raw_commit_in_finalize(tmp_path) -> None:
     assert hook.evaluate(payload) is None
 
 
-def test_r6_ignores_non_commit_git_subcommands(tmp_path) -> None:
+def test_r6_ignores_non_commit_git_subcommands(tmp_path, monkeypatch) -> None:
     """Only ``git commit`` is refused — other git subcommands pass through."""
-    worktree = tmp_path / '.plan' / 'local' / 'worktrees' / 'plan-a'
-    plan_dir = worktree / '.plan' / 'local' / 'plans' / 'plan-a'
+    base = tmp_path / '.plan' / 'local'
+    plan_dir = base / 'plans' / 'plan-a'
     plan_dir.mkdir(parents=True)
     (plan_dir / 'status.json').write_text(json.dumps({'current_phase': '6-finalize'}), encoding='utf-8')
+    monkeypatch.setenv('PLAN_BASE_DIR', str(base))
+    worktree = base / 'worktrees' / 'plan-a'
+    worktree.mkdir(parents=True)
 
     for command in ('git status', 'git log --oneline', 'git add foo'):
         payload = {'cwd': str(worktree), 'tool_name': 'Bash', 'tool_input': _bash(command)}
@@ -1213,20 +1221,17 @@ def test_r6_needs_plan_state(tmp_path) -> None:
     assert hook.evaluate(payload) is None
 
 
-def test_r6_judges_the_named_plan_not_the_first_found(tmp_path) -> None:
+def test_r6_judges_the_named_plan_not_the_first_found(tmp_path, monkeypatch) -> None:
     """R6 reads the phase of the worktree NAMED plan, never the first plan found."""
-    other = tmp_path / '.plan' / 'local' / 'worktrees' / 'AAA-other'
-    (other / '.plan' / 'local' / 'plans' / 'AAA-other').mkdir(parents=True)
-    (other / '.plan' / 'local' / 'plans' / 'AAA-other' / 'status.json').write_text(
-        json.dumps({'current_phase': '6-finalize'}), encoding='utf-8'
-    )
+    base = tmp_path / '.plan' / 'local'
+    for plan_id, phase in (('aaa-other', '6-finalize'), ('plan-z', '5-execute')):
+        plan_dir = base / 'plans' / plan_id
+        plan_dir.mkdir(parents=True)
+        (plan_dir / 'status.json').write_text(json.dumps({'current_phase': phase}), encoding='utf-8')
+    monkeypatch.setenv('PLAN_BASE_DIR', str(base))
 
-    mine = tmp_path / '.plan' / 'local' / 'worktrees' / 'PLAN-Z'
-    (mine / '.plan' / 'local' / 'plans' / 'PLAN-Z').mkdir(parents=True)
-    (mine / '.plan' / 'local' / 'plans' / 'PLAN-Z' / 'status.json').write_text(
-        json.dumps({'current_phase': '5-execute'}), encoding='utf-8'
-    )
-
+    mine = base / 'worktrees' / 'plan-z'
+    mine.mkdir(parents=True)
     payload = {'cwd': str(mine), 'tool_name': 'Bash', 'tool_input': _bash('git commit -m "fix: x"')}
     assert hook.evaluate(payload) is None
 

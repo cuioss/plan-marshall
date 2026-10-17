@@ -1,11 +1,12 @@
 # PreToolUse Enforcement Hook
 
-The conditional PreToolUse enforcement hook deterministically blocks six
-mechanically-checkable hard-rule violation families — but ONLY when the call
-originates inside a plan-marshall plan context. Every other call passes through
-untouched. This document is the canonical reference for the hook's context gate,
-rule families, fail-open contract, the capture-validates-the-gate dependency
-chain, and the on-demand registration model.
+The PreToolUse enforcement hook deterministically blocks six
+mechanically-checkable hard-rule violation families. Rules **R1–R4 and R6** apply
+ONLY when the call originates inside a plan-marshall plan context; **R5 applies in
+EVERY session, root sessions included** (it is not context-gated). This document
+is the canonical reference for the hook's context gate, rule families, fail-open
+contract, the capture-validates-the-gate dependency chain, and the on-demand
+registration model.
 
 ## Components
 
@@ -47,10 +48,11 @@ An absent Signal-1 field still lets Signal 2 satisfy the gate, and vice versa.
 
 The R1–R6 matchers are enforcement-only — they live solely in the enforcement
 leaf, layered on top of the shared gate, and run against the shared gate's
-`tool_name(payload)` / `tool_input(payload)` accessors. On the first matching
-rule the leaf appends one `guard.log` audit line (best-effort) and emits a
-`permissionDecision: deny` envelope carrying a one-line
-`permissionDecisionReason`; on no match it emits nothing.
+`tool_name(payload)` / `tool_input(payload)` accessors. The leaf runs the R5
+matcher in EVERY session (no gate); when the gate is satisfied it also runs
+R1–R4 and R6. On the first matching rule the leaf appends one `guard.log` audit
+line (best-effort) and emits a `permissionDecision: deny` envelope carrying a
+one-line `permissionDecisionReason`; on no match it emits nothing.
 
 | Rule | Fires on | Redirect reason (substance) |
 |------|----------|-----------------------------|
@@ -58,8 +60,8 @@ rule the leaf appends one `guard.log` audit line (best-effort) and emits a
 | **R2 Bash file-ops** | A Bash command whose program is `cat` / `grep` / `head` / `tail` / `find` / `ls`, **or** `git` whose subcommand (after any global options) is `grep` | Use the Read/Glob/Grep tools, not Bash, for file operations; for a content sweep run `architecture search --content --pattern P` |
 | **R3 generated-executor edit** | An Edit/Write whose path is the generated `.plan/execute-script.py` | Regenerate the executor via `/sync-harnesses` + `/marshall-steward`; never edit it |
 | **R4 hard-coded build** | A Bash command invoking `./pw` or a bare `mvn` / `npm` / `gradle` | Resolve build commands via `plan-marshall:manage-architecture:architecture resolve` |
-| **R5 direct interpreter call** | A Bash command invoking an interpreter (`python` / `python3` / a versioned spelling such as `python3.12`, case-insensitively) as `-c`, a script path, or `-m` with any module — except the `python3 .plan/execute-script.py` executor permit (which may be an absolute path) and the shared allow-list of documented non-executor invocations. Wrapper prefixes (`command` / `env` / `sudo` / `timeout` / `nice` / `nohup` / `time` / `xargs`, including `env -S`) are stripped first, so a wrapper cannot hide the interpreter | Route builds and checks via `python3 .plan/execute-script.py`; `.plan` state via `manage-*` verbs or the Read/Edit/Write tools |
-| **R6 raw finalize commit** | A raw `git commit` while the enclosing plan (`<cwd>/.plan/local/plans/*/status.json`) is in phase `6-finalize`. Every plan commit must pass through the gate-bearing `git-workflow commit` verb, which sanctions an open loop-back fix task, a review-rubric section-6 record, or a settle-band step | Commit via `python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow commit` |
+| **R5 direct interpreter call** | A Bash command invoking an interpreter (`python` / `python3` / a versioned spelling such as `python3.12`, case-insensitively) as `-c`, a script path, or `-m` with any module — except the `python3 .plan/execute-script.py` executor permit (which may be an absolute path) and the shared allow-list of documented non-executor invocations. **R5 is not context-gated: it applies in every session, root sessions included.** Wrapper prefixes (`command` / `env` / `sudo` / `timeout` / `nice` / `nohup` / `time` / `xargs`, including `env -S`) are stripped first, so a wrapper cannot hide the interpreter | Route builds and checks via `python3 .plan/execute-script.py`; `.plan` state via `manage-*` verbs or the Read/Edit/Write tools |
+| **R6 raw finalize commit** | A raw `git commit` while the enclosing plan — NAMED by the worktree path and resolved MAIN-ANCHORED (its `status.json` field `current_phase`), never `<worktree>/.plan/local/plans` and never "the first plan found" — is in phase `6-finalize`. Every plan commit must pass through the gate-bearing `git-workflow commit` verb, which sanctions an open loop-back fix task, a review-rubric section-6 record, or a step id of the plan's composed phase-6 manifest | Commit via `python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow commit` |
 
 ### R5 — allow-list, wrappers, and the audit line
 
@@ -70,11 +72,12 @@ documented workflows runnable. Three things make that split explicit:
   [`r5-allowlist.json`](r5-allowlist.json), names the documented non-executor
   invocations R5 permits (the harness sync engine, the stewards' bootstrap
   scripts, and the executor generator). The Claude hook and the OpenCode guard
-  plugin read the SAME file, so the two decision tables agree. An entry matches
-  the invocation's second shell token exactly or as a path suffix, so an
-  absolute or relative path ending in the entry resolves to it. When the file is
-  absent the hook uses a narrow built-in base table (`marketplace/targets/sync.py`);
-  the executor permit is hardcoded separately.
+  plugin read the SAME file, so the two decision tables agree. An entry is a
+  REPOSITORY-RELATIVE path, matched EXACTLY against the invocation's script path
+  resolved against the repository root — never a basename and never a suffix, so a
+  copy of an allow-listed script outside the repository never matches. When the
+  file is absent the hook uses a narrow built-in base table
+  (`marketplace/targets/sync.py`); the executor permit is hardcoded separately.
 - **Wrappers and versioned interpreters.** A prefix cannot hide the interpreter:
   the shell wrappers above (with their options and, for `timeout`, its mandatory
   duration) are stripped before the interpreter check, `env -S` / `--split-string`
@@ -176,17 +179,18 @@ matters because the hook runs on **every** tool call.
 
 ## Fail-open / best-effort-no-raise contract
 
-The whole enforcement leaf fails OPEN on every path outside a satisfied gate
-plus a matched rule, so a hook bug can never block the user:
+The enforcement leaf fails OPEN on every path outside a matched rule, so a hook
+bug can never block the user:
 
 - Empty or malformed stdin → emit nothing, exit 0.
-- Context gate unsatisfied → emit nothing, exit 0.
+- R5: run in every session; a match → deny, no match → fall through.
+- R1–R4/R6 context gate unsatisfied → emit nothing, exit 0.
 - Gate satisfied but no rule matches → emit nothing, exit 0.
 - Any internal error → emit nothing, exit 0.
 
-Only a satisfied gate plus a first-matching rule produces a deny. Every accessor
-in the shared gate is best-effort and degrades to a safe default rather than
-raising.
+Only R5 (unconditional) or a satisfied gate plus a first-matching R1–R4/R6 rule
+produces a deny. Every accessor in the shared gate is best-effort and degrades to
+a safe default rather than raising.
 
 ## Registration — orthogonal, on-demand, human-gated
 

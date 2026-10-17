@@ -825,8 +825,14 @@ def _has_flag_prefixed_bypass(stripped: list[str]) -> bool:
 _SOURCE_COMMIT_GATE_PHASE = '6-finalize'
 
 
-def _worktree_from_path(candidate: str | None) -> tuple[str, str] | None:
-    """Return ``(worktree_root, plan_id)`` a path names, or ``None``.
+#: The sibling skill's ``scripts/`` directory, where the shared
+#: ``marketplace_paths`` resolver lives. Resolved relative to this file so the
+#: deployed hook finds it in the installed skill tree.
+_SHARED_SCRIPTS_DIR = pathlib.Path(__file__).resolve().parent.parent.parent / 'script-shared' / 'scripts'
+
+
+def _plan_id_from_worktree_path(candidate: str | None) -> str:
+    """Return the plan id a path names, or ``""``.
 
     A plan worktree path carries ``.../.plan/local/worktrees/{plan_id}``; the
     plan id is the segment right after the ``worktrees`` directory. The plan is
@@ -834,33 +840,51 @@ def _worktree_from_path(candidate: str | None) -> tuple[str, str] | None:
     a path carries more than one such segment, the INNERMOST (last) names the plan.
     """
     if not candidate:
-        return None
+        return ''
     normalized = candidate.replace('\\', '/')
     marker = '/.plan/local/worktrees/'
     at = normalized.rfind(marker)
     if at == -1:
+        return ''
+    return normalized[at + len(marker) :].split('/', 1)[0]
+
+
+def _main_anchored_status_path(plan_id: str) -> pathlib.Path | None:
+    """Resolve ``plans/{plan_id}/status.json`` MAIN-ANCHORED, or ``None``.
+
+    Uses the sanctioned ``marketplace_paths.resolve_main_anchored_path`` — the
+    SAME resolver the other ``git-workflow`` verbs use — so R6 reads the same plan
+    record the commit gate does. ``None`` when the shared module is not deployed
+    beside this skill, or no main checkout resolves, so R6 does not fire rather
+    than guess.
+    """
+    try:
+        if str(_SHARED_SCRIPTS_DIR) not in sys.path:
+            sys.path.insert(0, str(_SHARED_SCRIPTS_DIR))
+        import marketplace_paths
+    except ImportError:
         return None
-    tail = normalized[at + len(marker) :]
-    plan_id = tail.split('/', 1)[0]
-    if not plan_id:
+    try:
+        return marketplace_paths.resolve_main_anchored_path(f'plans/{plan_id}/status.json')
+    except RuntimeError:
         return None
-    return normalized[: at + len(marker) + len(plan_id)], plan_id
 
 
 def _plan_phase(payload: dict[str, Any]) -> str | None:
     """Read the enclosing plan's phase from its own ``status.json``.
 
     The plan is named by the payload ``cwd`` worktree path; its phase is read
-    from that plan's ``status.json`` field ``current_phase`` — never ``phase``,
-    and never a glob for "the first plan found". ``None`` when the cwd names no
-    plan worktree, or no readable plan state is present — the raw-commit rule
-    then does not fire.
+    from that plan's ``status.json`` field ``current_phase``, resolved
+    MAIN-ANCHORED — never from ``<cwd>/.plan/local/plans`` and never a glob for
+    "the first plan found". ``None`` when the cwd names no plan worktree, or no
+    readable record resolves — the raw-commit rule then does not fire.
     """
-    worktree = _worktree_from_path(gate.cwd(payload))
-    if worktree is None:
+    plan_id = _plan_id_from_worktree_path(gate.cwd(payload))
+    if not plan_id:
         return None
-    worktree_root, plan_id = worktree
-    status_path = pathlib.Path(worktree_root) / '.plan' / 'local' / 'plans' / plan_id / 'status.json'
+    status_path = _main_anchored_status_path(plan_id)
+    if status_path is None:
+        return None
     try:
         data = json.loads(status_path.read_text(encoding='utf-8'))
     except (OSError, ValueError):

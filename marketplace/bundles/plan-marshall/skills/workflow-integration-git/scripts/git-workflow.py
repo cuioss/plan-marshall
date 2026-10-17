@@ -3499,7 +3499,10 @@ Examples:
                     },
                     {
                         'flags': ['--step'],
-                        'help': 'Finalize step id producing this commit (sanctions a settle-band commit)',
+                        'help': (
+                            'Finalize step id producing this commit — sanctions a source commit only '
+                            "when the id is in the plan's composed phase-6 manifest"
+                        ),
                     },
                     {
                         'flags': ['--push'],

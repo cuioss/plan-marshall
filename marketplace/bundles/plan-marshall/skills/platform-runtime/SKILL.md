@@ -97,16 +97,17 @@ enforces the six hard-rule bypass classes (shell chaining, shell file
 operations, direct executor edits, hard-coded builds, direct interpreter
 calls, and a raw finalize commit) by throwing to block, with one audit line per
 blocked invocation in `.plan/temp/guard.log`. R1–R4 are unconditional; the
-interpreter rule (R5) applies only inside a plan-marshall plan context (a
-dispatched `execution-context` sub-agent, or a working directory under
-`.plan/local/worktrees/`), and exempts both the executor permit and the shared
-allow-list of documented non-executor invocations in
+interpreter rule (R5) also applies in EVERY session, root sessions included (it
+carries no plan-context gate), and exempts both the executor permit and the
+shared allow-list of documented non-executor invocations in
 `standards/r5-allowlist.json` — the same data file the Claude
 `claude_pretooluse_hook.py` reads, so the two decision tables agree on the
-interpreter surface. R6 refuses a raw `git commit` while the plan is in phase
-`6-finalize`, so every plan commit passes through the gate-bearing
-`git-workflow commit` verb. The full role x surface x path matrix lives in
-`doc/developer/opencode.adoc`.
+interpreter surface. An allow-list entry is a repository-relative path matched
+exactly, never a basename or a suffix. R6 refuses a raw `git commit` while the
+plan — named by the worktree path and resolved main-anchored (its `status.json`
+field `current_phase`) — is in phase `6-finalize`, so every plan commit passes
+through the gate-bearing `git-workflow commit` verb. The full role x surface x
+path matrix lives in `doc/developer/opencode.adoc`.
 
 ## Architecture
 
