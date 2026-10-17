@@ -51,7 +51,13 @@ PRE_FIX_EVIDENCE_RE = re.compile(r'(?i)(pre-?fix|before\s+the\s+fix)')
 FAILURE_TOKEN_RE = re.compile(r'(?i)\bfail(?:s|ed|ing)?\b')
 SHA_RE = re.compile(r'[0-9a-f]{7,40}')
 #: An evidence entry that cites a repository path (optionally ``:line`` and ``::name``).
-EVIDENCE_PATH_RE = re.compile(r'^(\S+\.\w+)(?::\d+(?:-\d+)?)?(?:(\S+))?$')
+#:
+#: The path component excludes ``:`` deliberately. ``\S+`` used to swallow the
+#: ``::`` separator too, so a class-scoped citation
+#: (``test/test_parser.py::TestClass.test_method``) resolved to the WHOLE string
+#: as its path, failed the existence check, and reported a valid citation as
+#: absent at the graded head — the false refusal this pattern exists to avoid.
+EVIDENCE_PATH_RE = re.compile(r'^([^:\s]+\.\w+)(?::\d+(?:-\d+)?)?(?:::(\S+))?$')
 
 #: The facts a valid functional verdict records, before the two shared counts.
 FUNCTIONAL_FACT_KEYS = (
@@ -176,8 +182,10 @@ def missing_evidence(evidence_root: Path, evidence: list[str]) -> list[str]:
     """Return every cited path, or cited test name, absent from ``evidence_root``.
 
     A path that does not exist at the graded head is a citation of something the
-    change never had; a ``path::name`` whose name does not appear in the file is
-    the PLAN-LB-40 fabrication — a cited test that exists nowhere.
+    change never had; a ``path::name`` whose name appears nowhere in the file is
+    the PLAN-LB-40 fabrication — a cited test that exists nowhere. A dotted name
+    is checked segment by segment, so a class-scoped citation counts when the
+    file holds its class and its method.
     """
     missing: list[str] = []
     for entry in evidence:
@@ -192,9 +200,15 @@ def missing_evidence(evidence_root: Path, evidence: list[str]) -> list[str]:
         _, _, name = raw.partition('::')
         if name and name.strip():
             try:
-                if name.strip() not in target.read_text(encoding='utf-8'):
-                    missing.append(raw)
+                content = target.read_text(encoding='utf-8')
             except OSError:
+                missing.append(raw)
+                continue
+            # A dotted name is checked SEGMENT by SEGMENT: a class-scoped citation
+            # names a class and a method the file holds separately, so requiring
+            # the literal dotted string would refuse a real test.
+            segments = [segment for segment in name.strip().split('.') if segment]
+            if not segments or any(segment not in content for segment in segments):
                 missing.append(raw)
     return missing
 

@@ -229,6 +229,26 @@ def test_verdict_citing_a_test_name_present_at_the_graded_head_is_accepted(plan_
     assert payload['errors'] == []
 
 
+def test_verdict_citing_a_class_scoped_test_name_at_the_graded_head_is_accepted(
+    plan_context, tmp_path, monkeypatch
+) -> None:
+    """The ``path::Class.method`` form resolves to the FILE, not to the whole citation."""
+    repo = _repo(tmp_path)
+    _commit(
+        repo,
+        {'test/sample_test.py': 'class TestSample:\n    def test_method(self):\n        assert 1 == 1\n'},
+    )
+    monkeypatch.setattr(_attr, 'resolve_live_worktree', lambda _plan_id: repo)
+    criteria = ['parser accepts input']
+    _plan(plan_context, criteria, freeze=True)
+    document = _verdict(criteria, ['met'], [['test/sample_test.py::TestSample.test_method']])
+
+    payload = review_support.run_validate(PLAN_ID, 'functional', _sealed(plan_context, tmp_path, document), None)
+
+    assert payload['valid'] is True
+    assert payload['errors'] == []
+
+
 # --- D2 (d): a verify-first record timestamped after the gated commit is refused ------------
 
 
