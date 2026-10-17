@@ -29,13 +29,24 @@ Triage RECORDS dispositions; it does not talk to the provider. The reviewer-faci
 
 Domain-triage extensions (`{bundle}:ext-triage-{domain}`) are loaded on demand inside this workflow — they are NOT pre-loaded by the caller.
 
+## Exit-code convention for every script call
+
+The exit-code contract for every `python3 .plan/execute-script.py` call in this document — of EVERY notation, not only `manage-*` — is stated once in [`tools-script-executor/standards/exit-code-convention.md`](../../tools-script-executor/standards/exit-code-convention.md); it is not restated here.
+
 ## Shell-safe free text in command templates
 
 The FIX body below interpolates finding-derived text — titles, details, paths — into shell arguments. The shell-quoting rule those templates follow is stated once in [`functional-review.md`](../../phase-6-finalize/workflow/functional-review.md) § "Shell-safe free text in command templates" and is not restated here: every `--detail` carrying finding text is written as ONE single-quoted shell argument, each embedded single quote is escaped as `'\''` before substitution, and interpolated text is never put in double quotes. Each FIX template that interpolates text names that section.
 
 ## Done-When consumption — open criteria as a finalize triage source
 
-Open Done-When criteria are a finalize triage source alongside the findings store. Before Step 1, read the plan's Done-When record — the request's Done-When statements via `manage-plan-documents request read` and the outline's success criteria via `manage-solution-outline read` — and treat each criterion still open (not met, not superseded by an operator decision) as one triage item. Each open criterion is decided in the Step 3b batched shape (FIX when the fix is one edit at the cited location, otherwise a fix task per Step 3c Shape 1; SUPPRESS / ACCEPT / AskUserQuestion otherwise) and recorded through the same `manage-findings resolve` call the group uses, so the Step 7 loop-back signalling counts it exactly as it counts a store finding.
+Open Done-When criteria are a finalize triage source alongside the findings store, and the standing read for them is the plan's frozen criteria snapshot — the record the outline phase wrote at approval. Before Step 1, read it:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:phase-6-finalize:review_support open-criteria \
+  --plan-id {plan_id}
+```
+
+Every row in the returned `open[]` is one frozen criterion the functional review has not graded `met` — `unevidenced`, `not_met` or `ungraded` — and `source: none` means the plan predates the freeze and has no frozen criteria to report. Treat each `open[]` row as one triage item, decided in the Step 3b batched shape (FIX when the fix is one edit at the cited location, otherwise a fix task per Step 3c Shape 1; SUPPRESS / ACCEPT / AskUserQuestion otherwise) and recorded through the same `manage-findings resolve` call the group uses, so the Step 7 loop-back signalling counts it exactly as it counts a store finding. A criterion is open until the verdict grades it `met`, so the loop cannot exit at an empty store while a Done-when is unmet — the finalize completion gate refuses that exit independently (`manage-status` refuses with `open_done_when_criteria`).
 
 ## Step 1: List the findings store
 
