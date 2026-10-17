@@ -213,7 +213,7 @@ _R6_REASON = (
     'through python3 .plan/execute-script.py '
     'plan-marshall:workflow-integration-git:git-workflow commit (the gate-bearing '
     'path), which sanctions an open loop-back fix task, a review-rubric '
-    'section-6 record, or a settle-band step.'
+    'section-6 record, or a step id of the composed phase-6 manifest.'
 )
 
 

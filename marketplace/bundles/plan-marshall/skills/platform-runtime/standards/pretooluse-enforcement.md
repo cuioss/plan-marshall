@@ -28,9 +28,10 @@ the two leaves — all of it lives in `pretooluse_gate.py`.
 ## Context gate — `Signal1 OR Signal2` (fail-open)
 
 `pretooluse_gate.context_gate(payload)` is the single-sourced decision for
-whether a call is eligible for enforcement. It returns the OR of two stateless
-signals and is fail-open (False when neither fires, so calls outside a plan
-context are never enforced):
+whether a call is eligible for the GATED rules (R1–R4 and R6). It returns the OR
+of two stateless signals and is fail-open (False when neither fires, so calls
+outside a plan context are never enforced for those rules). R5 is NOT gated: the
+enforcement leaf runs it unconditionally, in every session.
 
 - **Signal 1 — sub-agent identity.** The sub-agent identity field carries the
   `:execution-context` marker (the call runs inside a dispatched

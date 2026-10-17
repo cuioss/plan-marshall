@@ -695,7 +695,7 @@ export default Plugin.define({
       if (isRawFinalizeCommit(command, workdir, root)) {
         audit(auditLine("R6", tool, sessionID, callID, command))
         throw new Error(
-          "[plan-marshall-guard] R6: a raw git commit is refused in phase 6-finalize — commit through python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow commit (the gate-bearing path), which sanctions an open loop-back fix task, a review-rubric section-6 record, or a settle-band step",
+          "[plan-marshall-guard] R6: a raw git commit is refused in phase 6-finalize — commit through python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow commit (the gate-bearing path), which sanctions an open loop-back fix task, a review-rubric section-6 record, or a step id of the composed phase-6 manifest",
         )
       }
 

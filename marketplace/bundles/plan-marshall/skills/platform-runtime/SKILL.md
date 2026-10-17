@@ -208,9 +208,10 @@ binding, output channels, platform abstraction, and the glyph + icon vocabulary.
 
 ## PreToolUse Enforcement Hook
 
-A conditional PreToolUse enforcement hook deterministically blocks six
-mechanically-checkable hard-rule violation families, but ONLY when the call
-originates inside a plan-marshall plan context — failing open everywhere else.
+A PreToolUse enforcement hook deterministically blocks six
+mechanically-checkable hard-rule violation families. R1–R4 and R6 apply ONLY
+when the call originates inside a plan-marshall plan context — failing open
+everywhere else — while R5 applies in EVERY session, root sessions included.
 It is implemented by three sibling scripts:
 
 - `pretooluse_gate.py` — the shared, pure-function module that is the SINGLE

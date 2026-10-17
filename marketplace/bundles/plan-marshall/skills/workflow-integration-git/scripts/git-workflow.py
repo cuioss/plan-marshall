@@ -559,10 +559,11 @@ def evaluate_source_commit_gate(
         'changed_paths': paths,
         'source_paths': source_paths,
         'message': (
-            unknown_note + 'Source-tree commit refused in 6-finalize: no settle-band manifest step, '
-            'no open loop-back fix task and no review-rubric section-6 inline-correction '
-            'record. Route the fix through a loop-back to 5-execute (open a fix task) or '
-            'record the section-6 inline correction, then retry.'
+            unknown_note + 'Source-tree commit refused in 6-finalize: no step id from the '
+            'composed phase-6 manifest, no open loop-back fix task and no review-rubric '
+            'section-6 inline-correction record. Route the fix through a loop-back to '
+            '5-execute (open a fix task), pass --step with a composed phase-6 manifest step '
+            'id, or record the section-6 inline correction, then retry.'
         ),
     }
 
