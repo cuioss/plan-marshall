@@ -29,17 +29,122 @@ import json
 from pathlib import Path
 
 from conftest import (
+    MARKETPLACE_ROOT,
     get_scripts_dir,
     run_script,
 )
 
-# The skill under test.
+# The skill under test. Everything D1 asserts is read from these paths.
 _SKILL_NAME = 'runbook-lane'
+_SKILL_DIR = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / _SKILL_NAME
+
+#: The eight repository-specific literals the shipped skill must not contain.
+_FORBIDDEN_LITERALS = (
+    'live-blockers',
+    'PLAN-LB',
+    'build-pyproject',
+    'pyproject_build',
+    'cuioss-review-bot',
+    'coderabbit',
+    'sourcery',
+    'noreply@cuioss.de',
+)
+
+#: The source runbook's top-level headings. Quoted as fixed strings on purpose:
+#: the test must never read ``.plan/local`` — the lane's source file is
+#: machine-local and absent from a fresh clone.
+_SOURCE_HEADINGS = (
+    '## 0. Input',
+    '## 0a. Progress file and resume (do this first, every session)',
+    '## 1. Rules (every one binds; breaking one fails the run)',
+    '## 2. Set up the worktree',
+    '## 3. Implement, deliverable by deliverable',
+    '## 4. Build gate',
+    '## 5. Self-review before the PR',
+    '## 6. Pull request and reviews',
+    '## 7. Merge gate',
+    '## 8. Landing message (the last step, after the merge)',
+)
+
+#: The wording a harness without a tool-call guard must produce.
+_UNENFORCED_GUARD_WORDING = 'guard: none on this harness (unenforced)'
 
 _PYPROJECT_EXEC = (
     'python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run --command-args "{args}"'
 )
 _MAVEN_EXEC = 'python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args "{args}"'
+
+
+# =============================================================================
+# D1 — the skill carries the lane contract
+# =============================================================================
+
+
+def _skill_files() -> list[Path]:
+    return sorted(p for p in _SKILL_DIR.rglob('*') if p.is_file())
+
+
+def test_skill_exists_and_is_user_invocable() -> None:
+    skill_md = _SKILL_DIR / 'SKILL.md'
+    assert skill_md.is_file(), f'expected {skill_md}'
+    text = skill_md.read_text(encoding='utf-8')
+    assert text.startswith('---'), 'SKILL.md must open with YAML frontmatter'
+    assert 'name: runbook-lane' in text
+    assert 'user-invocable: true' in text
+
+
+def test_skill_passes_plugin_doctor() -> None:
+    """plugin-doctor reports no finding against the runbook-lane skill.
+
+    Scoped with ``quality-gate --paths`` so the gate reads the new skill's tree
+    (and the executor that must register its notation) and nothing else.
+    """
+    script = get_scripts_dir('pm-plugin-development', 'plugin-doctor') / 'doctor-marketplace.py'
+    result = run_script(
+        script,
+        'quality-gate',
+        '--marketplace-root',
+        str(MARKETPLACE_ROOT.parent),
+        '--paths',
+        'bundles/plan-marshall/skills/runbook-lane',
+        timeout=300,
+    )
+    data = result.toon()
+    assert data.get('status') == 'pass', f'plugin-doctor issues: {result.stdout}'
+    assert data.get('total_issues') == 0, f'plugin-doctor issues: {result.stdout}'
+
+
+def test_skill_contains_no_repository_specific_literal() -> None:
+    files = _skill_files()
+    assert files, f'no files found under {_SKILL_DIR}'
+    offenders: list[str] = []
+    for path in files:
+        try:
+            text = path.read_text(encoding='utf-8').lower()
+        except UnicodeDecodeError:
+            continue
+        for literal in _FORBIDDEN_LITERALS:
+            if literal.lower() in text:
+                offenders.append(f'{path.relative_to(_SKILL_DIR)}: {literal}')
+    assert not offenders, f'repository-specific literals found: {offenders}'
+
+
+def test_skill_sections_mirror_the_source_runbook() -> None:
+    text = (_SKILL_DIR / 'SKILL.md').read_text(encoding='utf-8')
+    missing = [heading for heading in _SOURCE_HEADINGS if heading not in text]
+    assert not missing, f'source runbook sections dropped from the skill: {missing}'
+
+
+def test_skill_states_the_unenforced_guard_wording() -> None:
+    text = (_SKILL_DIR / 'SKILL.md').read_text(encoding='utf-8')
+    assert _UNENFORCED_GUARD_WORDING in text
+
+
+def test_skill_is_registered_in_plugin_json() -> None:
+    plugin = json.loads(
+        (MARKETPLACE_ROOT / 'plan-marshall' / '.claude-plugin' / 'plugin.json').read_text(encoding='utf-8')
+    )
+    assert './skills/runbook-lane' in plugin['skills']
 
 
 # =============================================================================

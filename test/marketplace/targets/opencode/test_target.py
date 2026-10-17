@@ -121,3 +121,31 @@ def test_generate_filters_by_bundle_list(fixture_marketplace: Path, tmp_path: Pa
     target.generate(fixture_marketplace, out_dir, bundles=['nonexistent'])
     assert not (out_dir / 'skill').exists()
     assert not (out_dir / 'agent').exists()
+
+
+def test_runbook_lane_skill_emits_as_skill_and_command(tmp_path: Path):
+    """The user-invocable runbook-lane skill emits both a skill and a command.
+
+    Asserted against the real marketplace: a user-invocable plan-marshall skill
+    must reach the OpenCode target as `skill/plan-marshall-runbook-lane/` plus the
+    `/plan-marshall-runbook-lane` command.
+    """
+    from conftest import MARKETPLACE_ROOT
+
+    target = OpenCodeTarget()
+    out_dir = tmp_path / 'opencode-runbook-lane'
+    target.generate(MARKETPLACE_ROOT, out_dir, bundles=['plan-marshall'])
+
+    skill_md = out_dir / 'skill' / 'plan-marshall-runbook-lane' / 'SKILL.md'
+    command_md = out_dir / 'command' / 'plan-marshall-runbook-lane.md'
+    assert skill_md.is_file(), f'expected {skill_md}'
+    assert command_md.is_file(), f'expected {command_md}'
+
+    # The command is the user-invocable wrapper naming the emitted skill id.
+    assert 'plan-marshall-runbook-lane' in command_md.read_text(encoding='utf-8')
+
+    # Tool-name rewriting reaches the emitted skill body: the backticked
+    # question tool is renamed to the OpenCode tool.
+    skill_body = skill_md.read_text(encoding='utf-8')
+    assert '`question`' in skill_body
+    assert '`AskUserQuestion`' not in skill_body
