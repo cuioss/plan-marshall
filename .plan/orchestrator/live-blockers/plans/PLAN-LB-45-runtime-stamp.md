@@ -121,14 +121,18 @@ Split guard: five deliverables on one chain — collector, start path, landing. 
 
 ## Dependencies and Sequencing
 
-- Depends on: PLAN-LB-50 (running). Priority raised 2026-10-16 (operator): emitted right after PLAN-LB-48, ahead of PLAN-LB-52 — the multi-model comparison (Muse, DeepSeek, Gemini) depends on it. PLAN-LB-39 shipped (#1768) without a reachable preflight call
-  (its Step 8a.6 is unreachable and writes no `client.toon`, `landings/PLAN-LB-39.md`); PLAN-LB-50
-  D5 was meant to make that call real and did not (`landings/PLAN-LB-50.md`); this plan wires it. Deliverables 4 and 5 build on PLAN-LB-50's landing, not on PLAN-LB-39 —
-  re-read both at outline. OpenCode detection (`OPENCODE_SESSION_ID`, no `OPENCODE_PID`) is
-  PLAN-LB-48 D4; deliverable 3's example must use the OpenCode 2 signal.
-- Overlaps with:
-  - PLAN-LB-50 (running) on `phase-1-init/SKILL.md`, `landing-payload-spec.md`, `emit-landing.md` and the `test/plan-marshall/platform-runtime/` directory. Possibly also `platform-runtime/standards/contract.md` and the runtime classes.
-  - None of the other four candidates in this batch shares a file. `consumer-leaf-workflow-resolution` reads platform-runtime `layout bundle-cache-root` but does not edit `platform_runtime.py`.
+- Depends on: none open. PLAN-LB-50 shipped (#1777) and PLAN-LB-64 (#1794) completed it.
+  Priority raised 2026-10-16 (operator): the model comparison across Muse and DeepSeek runs
+  depends on it. PLAN-LB-39 shipped (#1768) without a reachable preflight call (its Step 8a.6 is
+  unreachable and writes no `client.toon`, `landings/PLAN-LB-39.md`); PLAN-LB-50 D5 was meant to
+  make that call real and did not (`landings/PLAN-LB-50.md`); this plan wires it. Deliverables 4
+  and 5 build on what is on `main` now — confirm before implementing each. OpenCode detection
+  (`OPENCODE_SESSION_ID`, no `OPENCODE_PID`) is PLAN-LB-48 D4, still staged; deliverable 3's
+  example must use that OpenCode 2 signal.
+- Overlaps with: no file shared with the running plans (PLAN-LB-52, PLAN-LB-63, PLAN-LB-65).
+  It shares the `platform-runtime/scripts` and `test/plan-marshall/platform-runtime/` directories
+  with PLAN-LB-65 and `phase-6-finalize/standards` with PLAN-LB-52; whichever lands second merges
+  `main`.
 - Adjacent to:
   - `manage-metrics` and the `total_tokens=0` producer (PLAN-LB-39 D5) — not touched here.
   - The orchestrator restart check's `registry_parity` — reused as a reader, not changed.
