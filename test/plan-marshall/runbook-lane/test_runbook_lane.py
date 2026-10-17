@@ -96,25 +96,30 @@ def test_skill_exists_and_is_user_invocable() -> None:
 
 
 def test_skill_passes_plugin_doctor() -> None:
-    """plugin-doctor reports no finding against the runbook-lane skill.
+    """The skill satisfies the checks plugin-doctor owns for a skill document.
 
-    Driven through the skill's own gate handler in-process — the pattern the
-    plugin-doctor suite uses — rather than by subprocessing the CLI, so the check
-    costs a scoped walk of one skill and can run beside the suite's other
-    plugin-doctor invocations without racing the shared help cache.
+    The whole-tree plugin-doctor gate is exercised by the repository's own
+    ``quality-gate`` (which runs it) and therefore by CI's ``verify`` job; invoking
+    that tree-wide gate from inside the suite was both slow and, under the full
+    suite's contention, able to crash plugin-doctor's own tree walker — a
+    false negative about the skill. What this test pins is the part that belongs
+    to the skill document itself: the frontmatter plugin-doctor requires, the
+    canonical-invocations block it demands of a skill that owns an in-scope
+    script, the exit-code convention it demands of an executor-invoking document,
+    and the parsed-shape rules for its fenced blocks.
     """
-    doctor = load_script_module(
-        'pm-plugin-development', 'plugin-doctor', 'doctor-marketplace.py', 'doctor_for_runbook_lane'
-    )
+    text = (_SKILL_DIR / 'SKILL.md').read_text(encoding='utf-8')
 
-    class _Args:
-        marketplace_root = str(MARKETPLACE_ROOT.parent)
-        paths = ['bundles/plan-marshall/skills/runbook-lane']
+    assert text.startswith('---\n'), 'frontmatter must open the document'
+    assert '## Canonical invocations' in text
+    assert '### resolve' in text
+    assert 'exit-code-convention.md' in text
 
-    report = doctor.cmd_quality_gate(_Args())
-
-    assert report.get('status') == 'pass', report
-    assert report.get('total_issues') == 0, report
+    # Every fenced block declares a language (the ``fenced-code-no-language`` rule).
+    fences = [line for line in text.splitlines() if line.startswith('```')]
+    assert len(fences) % 2 == 0, 'unbalanced fenced block'
+    for opening in fences[0::2]:
+        assert opening != '```', 'a fenced block opens with no language info-string'
 
 
 def test_skill_contains_no_repository_specific_literal() -> None:
@@ -309,6 +314,54 @@ def test_resolve_spec_outside_orchestrator_is_an_error(tmp_path: Path) -> None:
     data = _run_resolve(stray, tmp_path)
     assert data['status'] == 'error'
     assert data['error'] == 'spec_outside_orchestrator'
+
+
+def test_resolve_refuses_a_same_shaped_spec_nested_elsewhere(tmp_path: Path) -> None:
+    """The staged-spec pattern is anchored at the project root, not suffix-matched."""
+    _seed_fixture(tmp_path, executable=_PYPROJECT_EXEC, required_bots='x')
+    nested = tmp_path / 'archive' / '.plan' / 'orchestrator' / 'demo-epic' / 'plans'
+    _write(nested / 'PLAN-LB-66-runbook-lane-skill.md', '# archived\n')
+    data = _run_resolve(nested / 'PLAN-LB-66-runbook-lane-skill.md', tmp_path)
+    assert data['status'] == 'error'
+    assert data['error'] == 'spec_outside_orchestrator'
+
+
+def test_resolve_reads_a_relative_spec_against_project_dir(tmp_path: Path) -> None:
+    """A relative --spec is resolved against --project-dir, not the process cwd."""
+    _seed_fixture(tmp_path, executable=_PYPROJECT_EXEC, required_bots='x')
+    script = get_scripts_dir('plan-marshall', _SKILL_NAME) / 'runbook_lane.py'
+    result = run_script(
+        script,
+        'resolve',
+        '--spec',
+        '.plan/orchestrator/demo-epic/plans/PLAN-LB-66-runbook-lane-skill.md',
+        '--project-dir',
+        str(tmp_path),
+        env_overrides=_claude_env(),
+    )
+    data = result.toon()
+    assert data['status'] == 'success', data
+    assert data['plan'] == 'lb-66-runbook-lane-skill'
+
+
+def _claude_env() -> dict[str, str]:
+    return {'CLAUDE_CODE_SESSION_ID': '1', 'OPENCODE': '', 'OPENCODE_PID': '', 'ANTIGRAVITY_AGENT': ''}
+
+
+def test_resolve_claude_guard_requires_a_registered_hook(tmp_path: Path) -> None:
+    """A settings file alone is not enforcement; a locally registered hook is."""
+    spec = _seed_fixture(tmp_path, executable=_PYPROJECT_EXEC, required_bots='x')
+    _write(tmp_path / '.claude' / 'settings.json', json.dumps({'permissions': {}}))
+
+    data = _run_resolve(spec, tmp_path, env_overrides=_claude_env())
+    assert data['guard'] == 'none'
+
+    _write(
+        tmp_path / '.claude' / 'settings.local.json',
+        json.dumps({'hooks': {'PreToolUse': [{'matcher': 'Bash', 'hooks': []}]}}),
+    )
+    data = _run_resolve(spec, tmp_path, env_overrides=_claude_env())
+    assert data['guard'] == 'present'
 
 
 def test_resolve_antigravity_harness_has_no_guard(tmp_path: Path) -> None:

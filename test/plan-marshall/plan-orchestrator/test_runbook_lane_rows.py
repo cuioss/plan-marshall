@@ -144,6 +144,16 @@ def test_add_row_refuses_an_unknown_lane(plan_context):
     assert result['error'] == 'invalid_field'
 
 
+def test_lane_without_add_row_is_refused(plan_context):
+    """``--lane`` seeds a row; supplied otherwise it must not be silently ignored."""
+    _seed(plan_context, [_row('PLAN-01')])
+
+    result = cmd_queue(_args(lane=LANE_RUNBOOK))
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'wrong_parameters'
+
+
 def test_set_row_moves_a_row_to_the_runbook_lane(plan_context):
     _seed(plan_context, [_row('PLAN-01')])
 

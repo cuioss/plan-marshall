@@ -1665,6 +1665,16 @@ def cmd_queue(args: argparse.Namespace) -> dict[str, Any]:
     # (tests, an embedded call) may build a namespace without it; an absent flag
     # means "unstated", never an invalid value.
     lane_arg = getattr(args, 'lane', None)
+    # ``--lane`` SEEDS a row. On any other form it would be silently ignored,
+    # which reads as "the lane was set" — so it is refused as a parameter error,
+    # and the message names the form that does change an existing row's lane.
+    if lane_arg is not None and not add_row_given:
+        return _error(
+            args.slug,
+            'wrong_parameters',
+            '--lane seeds an appended row and is accepted with --add-row only; '
+            'use --set-row --field lane to change an existing row',
+        )
     lane_value = lane_arg if add_row_given else (args.value if set_row_given and args.field == 'lane' else None)
     if lane_value is not None and lane_value not in VALID_LANE_VOCABULARY:
         return _error(

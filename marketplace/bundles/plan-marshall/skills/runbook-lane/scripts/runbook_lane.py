@@ -50,8 +50,12 @@ _BUILD_PROBE = 'verify'
 _BUILD_CANONICALS = ('quality-gate', 'module-tests', 'verify')
 _SPLIT_FORM = ('quality-gate', 'test-compile', 'module-tests')
 
-#: A staged spec: ``.plan/orchestrator/{slug}/plans/PLAN-*.md``.
-_SPEC_RE = re.compile(r'(?:^|/)\.plan/orchestrator/(?P<slug>[^/]+)/plans/(?P<name>PLAN-[^/]+)\.md$')
+#: A staged spec, ANCHORED to the project root: ``.plan/orchestrator/{slug}/plans/PLAN-*.md``.
+#: Matched with ``fullmatch`` against the project-relative path, so a same-shaped
+#: file nested under another directory (an archive, a fixture tree) does not
+#: satisfy it — the lane runs a spec at the root of the orchestrator tree, not any
+#: file that happens to end the same way.
+_SPEC_RE = re.compile(r'\.plan/orchestrator/(?P<slug>[^/]+)/plans/(?P<name>PLAN-[^/]+)\.md')
 
 #: Lifts the executor prefix and the build notation out of a resolved
 #: executable, so the lane composes the rest of its command set from the build
@@ -60,6 +64,14 @@ _NOTATION_RE = re.compile(r'^(?P<prefix>.*?execute-script\.py)\s+(?P<notation>[^
 
 #: Harness identifiers whose tool-call guard the lane can observe on disk.
 _GUARD_NONE_HARNESSES = frozenset({'antigravity'})
+
+#: The OpenCode guard's marker file, relative to the project root.
+_OPENCODE_GUARD = ('.opencode', 'plugin', 'guard.js')
+
+#: The settings files a Claude install registers a pre-tool-use hook in, relative
+#: to the project root. ``settings.local.json`` is the machine-local one, so a
+#: hook installed there counts exactly as a shared one does.
+_CLAUDE_SETTINGS_FILES = (('.claude', 'settings.json'), ('.claude', 'settings.local.json'))
 
 
 def _plan_id_from_spec(spec: Path) -> str:
@@ -80,19 +92,25 @@ def _plan_id_from_spec(spec: Path) -> str:
 def _resolve_spec(spec_value: str, project_dir: Path) -> tuple[Path, str, str]:
     """Validate ``--spec`` and return ``(spec, slug, plan_id)``.
 
+    A RELATIVE spec is resolved against ``--project-dir``, not against the
+    process's working directory: the flag names the project the whole resolution
+    is about, so a caller that passes both must get the spec file it named. The
+    project-relative path is then matched as a WHOLE against :data:`_SPEC_RE`, so
+    only a spec at the root of the orchestrator tree qualifies.
+
     Raised as ``ValueError`` carrying the refusal code so the caller can emit a
     structured error rather than a traceback.
     """
     spec = Path(spec_value)
+    if not spec.is_absolute():
+        spec = project_dir / spec
     if not spec.is_file():
         raise ValueError('invalid_spec')
-    # Match on the path relative to the project root so a fixture under a tmp
-    # dir and a real checkout resolve identically.
     try:
         rel = spec.resolve().relative_to(project_dir.resolve())
     except ValueError:
         raise ValueError('spec_outside_orchestrator') from None
-    match = _SPEC_RE.search(rel.as_posix())
+    match = _SPEC_RE.fullmatch(rel.as_posix())
     if match is None:
         raise ValueError('spec_outside_orchestrator')
     return spec, match.group('slug'), _plan_id_from_spec(spec)
@@ -180,12 +198,15 @@ def _resolve_build(project_dir: Path) -> dict[str, Any]:
 
 
 def _resolve_harness_guard(project_dir: Path) -> tuple[str, str]:
-    """Resolve the active harness and whether a tool-call guard is installed.
+    """Resolve the active harness and whether a tool-call guard is INSTALLED.
 
     ``antigravity`` has no pre-tool-use hooks at all, so its guard is always
-    absent. On the other harnesses the guard is observed on disk for THIS
-    project, so a project without one is reported as unguarded rather than
-    assumed guarded.
+    absent. On the other harnesses the guard is observed for THIS project, and
+    observed as an INSTALLED hook rather than as a directory: an OpenCode guard
+    is its plugin file, and a Claude guard is a ``PreToolUse`` hook registered in
+    either settings file — the shared ``settings.json`` or the machine-local
+    ``settings.local.json``. A settings file that merely exists proves nothing,
+    and a hook installed only locally still enforces, so both arms are read.
     """
     import target_context
 
@@ -193,10 +214,15 @@ def _resolve_harness_guard(project_dir: Path) -> tuple[str, str]:
     if harness in _GUARD_NONE_HARNESSES:
         return harness, 'none'
     if harness == 'opencode':
-        guard = project_dir / '.opencode' / 'plugin' / 'guard.js'
-    else:
-        guard = project_dir / '.claude' / 'settings.json'
-    return harness, 'present' if guard.is_file() else 'none'
+        return harness, 'present' if project_dir.joinpath(*_OPENCODE_GUARD).is_file() else 'none'
+    for parts in _CLAUDE_SETTINGS_FILES:
+        try:
+            text = project_dir.joinpath(*parts).read_text(encoding='utf-8')
+        except OSError:
+            continue
+        if 'PreToolUse' in text:
+            return harness, 'present'
+    return harness, 'none'
 
 
 def cmd_resolve(args: argparse.Namespace) -> dict[str, Any]:
