@@ -93,6 +93,11 @@ derive, for rows still live.
   runbook lane, critical). Folded into PLAN-LB-55 D1 (armed auto-merge is head-bound); PLAN-LB-45
   now owns wiring the preflight call; PLAN-LB-51 D2 and PLAN-LB-48 D5 now build on PLAN-LB-64 D1.
 
+- **PLAN-LB-54** (shipped #1788, 2026-10-16, runbook lane) — 2 met of 2, the first runbook run whose
+  claim matches; legitimate merge; grade C for process (bot-ETA polling instead of 90 min, an
+  aborted question acted on, unauthorised `branch -D` / unchecked `--force`, the filed inbox message
+  rewritten without `inbox amend`); see `landings/PLAN-LB-54.md`.
+
 - **PLAN-LB-61** (shipped #1787, 2026-10-16, runbook lane) — 3 met / 1 partial; grade C+, the best
   so far; see `landings/PLAN-LB-61.md`. Its D2 "measured setup" is a hard-coded 30 s (low, not
   staged).
@@ -377,6 +382,13 @@ derive, for rows still live.
   - the report quotes question-tool calls only, listing free text separately.
 
   The runbook is now 330 lines.
+- 2026-10-17 — **Runbook amended after PLAN-LB-54:**
+  - re-trigger CodeRabbit no sooner than 90 minutes after a refusal, whatever the bot's ETA;
+  - an aborted question has no answer: ask again;
+  - cleanup never uses `--force` or `git branch -D`;
+  - a filed inbox message is corrected only through `inbox amend`.
+
+  The runbook is now 342 lines.
 
 ## Open Defects
 
@@ -661,6 +673,13 @@ derive, for rows still live.
   record owned by a pending fix task, the short-circuit guard reads all-owned and the new failure is
   not triaged. A recurrence also keeps the first detection's `detail`. Frequency unverified.
   Medium-high; not staged. — `landings/PLAN-LB-61.md`.
+- **The shared outline metadata parser was widened unsafely** (PLAN-LB-54, `6953df489`,
+  `_plan_parsing.py:325`). The pattern `-\s*\*{0,2}(\w+)\*{0,2}:\*{0,2}\s*(.+)` leaks bold
+  markers into values (`- **domain: java**` → `java**`), produces case-kept keys from bold labels,
+  and no longer reads a `domain:` line after a blank line or indented. This affects every
+  `extract_deliverables` caller (outline validator, qgate mechanical, review attribution,
+  `foreign_pr_gate`); a dropped domain is silent when another survives. No `test_plan_parsing.py`
+  case. Medium; not staged. — `landings/PLAN-LB-54.md`.
 - **Medium and low items are not owned by any staged plan.** They are listed with evidence
   in `backlog.md` (sections 1.12 onward, 2.3 onward, 3.2 onward, 4.7 onward and 5). Promote an
   item into a plan spec when it starts to hurt; re-verify it at HEAD first.
@@ -982,6 +1001,7 @@ entries below are OpenCode 1 assumptions in plan-marshall that OpenCode 2 broke.
     |------|------------------------|---------|-------------|----------|------|-------|
     | PLAN-LB-61 | 3 / 1 / 0 of 4 | 4/4 | 0 confirmed | 5 | $0.40 | C+ |
     | PLAN-LB-62 | 0 / 2 / 1 of 3 | 3/3 | 2 high (R5 root gap, allow-list bypass) | 2 | $0.58 | F |
+    | PLAN-LB-54 | 2 / 0 / 0 of 2 | 2/2 | 1 medium (shared metadata regex) | 5 | $0.51 | C |
 
     PLAN-LB-61 is the first run to keep every Done-when verbatim with genuine fail-first evidence.
     It still bent the CodeRabbit policy (the merged head has no CodeRabbit review; Q4's premise was
