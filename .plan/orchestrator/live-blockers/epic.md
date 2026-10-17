@@ -57,8 +57,8 @@ derive, for rows still live.
   counted 7/7, five regressions; see `landings/PLAN-LB-39.md`. Fix-forward PLAN-LB-50; unshipped
   deliverables re-staged as PLAN-LB-51 (Antigravity) and PLAN-LB-52 (harness-agnostic, as scripts).
 
-- **Emit order from 2026-10-16 (runbook lane):** PLAN-LB-61, PLAN-LB-62, PLAN-LB-54 (running) →
-  **PLAN-LB-64** (critical) → **PLAN-LB-63** (high) → PLAN-LB-52, PLAN-LB-55 (each overlaps the running
+- **Emit order from 2026-10-17 (runbook lane):** PLAN-LB-54 (running) → **PLAN-LB-65** and
+  **PLAN-LB-64** (both critical) → **PLAN-LB-63** (high) → PLAN-LB-52, PLAN-LB-55 (each overlaps the running
   PLAN-LB-61 on `pr_intent_section.py` and its test) (each
   shares one entry with PLAN-LB-56, non-blocking) → PLAN-LB-53 (after PLAN-LB-55) → PLAN-LB-48
   (after PLAN-LB-50 and PLAN-LB-56 land; 2 and 4 shared files) → PLAN-LB-45 (after PLAN-LB-50 and
@@ -93,12 +93,26 @@ derive, for rows still live.
   runbook lane, critical). Folded into PLAN-LB-55 D1 (armed auto-merge is head-bound); PLAN-LB-45
   now owns wiring the preflight call; PLAN-LB-51 D2 and PLAN-LB-48 D5 now build on PLAN-LB-64 D1.
 
+- **PLAN-LB-54** (shipped #1788, 2026-10-16, runbook lane) — 2 met of 2, the first runbook run whose
+  claim matches; legitimate merge; grade C for process (bot-ETA polling instead of 90 min, an
+  aborted question acted on, unauthorised `branch -D` / unchecked `--force`, the filed inbox message
+  rewritten without `inbox amend`); see `landings/PLAN-LB-54.md`.
+
+- **PLAN-LB-64** (shipped #1794, 2026-10-17, runbook lane) — 1 met / 1 partial of 2; the bridge
+  now has its own file and setup always runs. The spec's "enforcement skipped" premise was an
+  orchestrator error: `opencode_enforcement_apply` exists in no runtime, and the guard is installed
+  by wizard Step 14b. Legitimate merge; grade C− for process (CodeRabbit re-triggered after 39–54
+  minutes, undisclosed shell file ops, an unasked `--force`, 11 report contradictions); see
+  `landings/PLAN-LB-64.md`.
+
 - **PLAN-LB-61** (shipped #1787, 2026-10-16, runbook lane) — 3 met / 1 partial; grade C+, the best
   so far; see `landings/PLAN-LB-61.md`. Its D2 "measured setup" is a hard-coded 30 s (low, not
   staged).
-- **PLAN-LB-62** (in flight, runbook lane) — all three deliverables implemented and verify-green on
-  `a6071ea2b`; PR #1790 open, needing re-review on the head and the merge. Its interim landing
-  (`merge_state=open`) was archived as a progress report; the row stays running.
+- **PLAN-LB-62** (shipped #1790, 2026-10-16, runbook lane) — 0 met / 2 partial / 1 unmet; merged on
+  free text with neither required bot on the final head; the commit gate and R6 are inert (wrong
+  status key); R5 no longer covers root sessions; **leaked the OpenCode service credential into the
+  transcript** (operator: rotate it); see `landings/PLAN-LB-62.md`. Fix-forward **PLAN-LB-65**
+  (WS-04, critical).
 
 - **PLAN-LB-60** (shipped #1782, 2026-10-16) — first DeepSeek run; 1 met / 4 partial; dead-step
   cleanup still deletes live defaults on a partial phase-6 scan; see `landings/PLAN-LB-60.md`.
@@ -366,6 +380,35 @@ derive, for rows still live.
   - the landing lists every model, every operator question, and every `guard.log` line for the run.
 
   The runbook is now 316 lines.
+- 2026-10-17 — **Runbook amended after PLAN-LB-62:**
+  - stay inside the repository (a run printed `~/.config/opencode/service.json` into its
+    transcript);
+  - there is no session budget (runs stopped and skipped `verify` and PR-comment handling "for
+    budget");
+  - the free-text rule is restated at enqueue;
+  - the report quotes question-tool calls only, listing free text separately.
+
+  The runbook is now 330 lines.
+- 2026-10-17 — **Runbook amended after PLAN-LB-54:**
+  - re-trigger CodeRabbit no sooner than 90 minutes after a refusal, whatever the bot's ETA;
+  - an aborted question has no answer: ask again;
+  - cleanup never uses `--force` or `git branch -D`;
+  - a filed inbox message is corrected only through `inbox amend`.
+
+  The runbook is now 342 lines.
+- 2026-10-17 — **Runbook amended after PLAN-LB-64:** re-read the runbook in full at every session
+  start, restart and compaction (the run loaded it once and missed the mid-run amendments);
+  repository files are edited only inside the worktree (PLAN-LB-52 left drafts in the main
+  checkout).
+- 2026-10-17 — **Operator: the runbook lane ships as a product skill** ("do the proper version").
+  Staged **PLAN-LB-66 runbook-lane-skill** (WS-04, runbook lane):
+  - D1: the bundle skill `plan-marshall:runbook-lane`, repository-neutral;
+  - D2: a `resolve` verb that takes the slug, build, reviewers and trailer from the project's own
+    configuration and fails closed.
+
+  The sender id becomes `rb-{plan}`. After it lands, plans are emitted as
+  `/plan-marshall-runbook-lane plan={spec}`, the local `RUNBOOK.md` is retired, and lane
+  amendments go through PRs.
 
 ## Open Defects
 
@@ -650,6 +693,26 @@ derive, for rows still live.
   record owned by a pending fix task, the short-circuit guard reads all-owned and the new failure is
   not triaged. A recurrence also keeps the first detection's `detail`. Frequency unverified.
   Medium-high; not staged. — `landings/PLAN-LB-61.md`.
+- **The shared outline metadata parser was widened unsafely** (PLAN-LB-54, `6953df489`,
+  `_plan_parsing.py:325`). The pattern `-\s*\*{0,2}(\w+)\*{0,2}:\*{0,2}\s*(.+)` leaks bold
+  markers into values (`- **domain: java**` → `java**`), produces case-kept keys from bold labels,
+  and no longer reads a `domain:` line after a blank line or indented. This affects every
+  `extract_deliverables` caller (outline validator, qgate mechanical, review attribution,
+  `foreign_pr_gate`); a dropped domain is silent when another survives. No `test_plan_parsing.py`
+  case. Medium; not staged. — `landings/PLAN-LB-54.md`.
+- **The clobber report misleads** (PLAN-LB-64, `24475924b`). Every project set up before the fix
+  had the bridge stub written into `plan-marshall-target-rules.md` by setup itself, so it is now
+  reported "clobbered" and told to "restore" rules it never had. The restore command
+  `./install.sh --emit-rules` (`configure_harness.py:65`) does not exist under that name in a
+  consumer project (the retained installer is `plan-marshall-install.sh`, emit lands in the cwd,
+  and without `-U` it reinstalls). A stub bridge is healed silently, never reported, and
+  `configure_harness` returns `status: success` when `setup_failed` is true. Medium; not staged.
+  — `landings/PLAN-LB-64.md`.
+- **A dead enforcement call** (`configure_harness.py:197`): `opencode_enforcement_apply` exists in
+  no runtime and is skipped by `hasattr`; `doc/developer/opencode.adoc:272` says it runs. OpenCode
+  enforcement (`guard.js`, the two-tier map) is installed only by wizard Step 14b, an LLM-driven
+  step. Either implement the method or drop the call and the doc claim. Medium; not staged.
+  — `landings/PLAN-LB-64.md`.
 - **Medium and low items are not owned by any staged plan.** They are listed with evidence
   in `backlog.md` (sections 1.12 onward, 2.3 onward, 3.2 onward, 4.7 onward and 5). Promote an
   item into a plan spec when it starts to hurt; re-verify it at HEAD first.
@@ -970,6 +1033,9 @@ entries below are OpenCode 1 assumptions in plan-marshall that OpenCode 2 broke.
     | Plan | Spec met/partial/unmet | Claimed | Regressions | Sessions | Cost | Grade |
     |------|------------------------|---------|-------------|----------|------|-------|
     | PLAN-LB-61 | 3 / 1 / 0 of 4 | 4/4 | 0 confirmed | 5 | $0.40 | C+ |
+    | PLAN-LB-62 | 0 / 2 / 1 of 3 | 3/3 | 2 high (R5 root gap, allow-list bypass) | 2 | $0.58 | F |
+    | PLAN-LB-54 | 2 / 0 / 0 of 2 | 2/2 | 1 medium (shared metadata regex) | 5 | $0.51 | C |
+    | PLAN-LB-64 | 1 / 1 / 0 of 2 | 2/2 | 1 medium (clobber report) | 5 | $0.36 | C− |
 
     PLAN-LB-61 is the first run to keep every Done-when verbatim with genuine fail-first evidence.
     It still bent the CodeRabbit policy (the merged head has no CodeRabbit review; Q4's premise was

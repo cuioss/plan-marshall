@@ -672,19 +672,24 @@ Run after the `build-map` drift gate, still inside Stage 2. Observe the
 standing-rules bridge state on every harness: Claude is a no-op success (its
 `CLAUDE.md` baseline is authoritative and carries no bridge file), while
 Antigravity and OpenCode check the bridge-owned workspace file
-(`.agents/rules/plan-marshall-target-rules.md` and
-`.opencode/rules/plan-marshall-target-rules.md` respectively) for presence and
+(`.agents/rules/plan-marshall-standing-rules.md` and
+`.opencode/rules/plan-marshall-standing-rules.md` respectively) for presence and
 its `bridge-version` marker.
 
 Owned-file invariant: bridge writes land only in the bridge-owned file and
-never in the installed target-rules file shipped by the bundles. The reconcile
-performs no writes — a current bridge is left untouched, and a drifted or
-missing bridge is not silently healed here. A damaged stub (bridge present
-without its version marker) is reported with the re-emit command
+never in the installed target-rules file (`plan-marshall-target-rules.md`)
+shipped by the bundles via `./install.sh --emit-rules`. The reconcile itself
+performs no writes — the setup writers run first and heal a drifted or missing
+bridge in the bridge-owned file, leaving a current bridge untouched. A stub the
+setup writers could not heal (bridge present without its version marker) is
+reported with the re-emit command
 `python3 .plan/execute-script.py plan-marshall:platform-runtime:platform_runtime project initial-setup --target {harness}`,
-never silent. The verdict (already current vs damaged vs missing, with the
+never silent, and a stub an older setup left in the installed target-rules file
+is reported as clobbered with the `./install.sh --emit-rules` restore command.
+The verdict (already current vs damaged vs missing, with the
 re-emit command when owed) is reported alongside the Stage 2 outcome. See
-`configure_harness.py` `_reconcile_standing_rules_bridge` and
+`configure_harness.py` `dispatch_platform_runtime_setup`,
+`_reconcile_standing_rules_bridge`, `installed_rules_clobbered` and
 `bridge_reemit_command` for the implementation; this prose names the stage, not
 the code.
 
