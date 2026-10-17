@@ -275,7 +275,9 @@ def _finalize(plan_context: Any, tmp_path: Path, monkeypatch: Any, statuses: lis
     )
     monkeypatch.setattr(_lifecycle, 'assert_finalize_findings_clean', lambda *_args, **_kwargs: 0)
     monkeypatch.setattr(_lifecycle, 'log_entry', lambda *_args, **_kwargs: None)
-    refusal: dict[str, Any] | None = _lifecycle._finalize_findings_refusal(PLAN_ID, {'title': 'fixture', 'metadata': {}})
+    refusal: dict[str, Any] | None = _lifecycle._finalize_findings_refusal(
+        PLAN_ID, {'title': 'fixture', 'metadata': {}}
+    )
     return refusal
 
 
