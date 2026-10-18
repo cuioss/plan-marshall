@@ -866,11 +866,11 @@ def test_r5_wrapper_prefixed_benign_command_stays_allowed() -> None:
 
 
 def test_r1_r2_r4_matchers_do_not_strip_wrappers() -> None:
-    """R5-only parity: the other matchers still see the unstripped program.
+    """R2's FILE-OP class keeps the unstripped program — the pinned boundary.
 
-    ``sudo cat foo`` names ``sudo``, not ``cat``, to R2 — wrapper stripping
-    was mirrored for the R5 program check only, and this pins that boundary so
-    a future edit cannot silently widen it.
+    ``sudo cat foo`` names ``sudo``, not ``cat``, to R2's file-op check: wrapper
+    stripping is applied to R2's SHELL-SPAWN class and to R4's build class (and,
+    of course, to R5), but the file-op boundary is deliberately un-stripped.
     """
     assert hook.evaluate(_signal2_payload('Bash', _bash('sudo cat foo'))) is None
     assert hook.evaluate(_signal2_payload('Bash', _bash('cat foo'))) == hook._R2_REASON

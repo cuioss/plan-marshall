@@ -521,11 +521,12 @@ def _match_r4_hardcoded_build(tool_name: str | None, tool_input: dict[str, Any])
 
 #: Shell wrappers (``command`` / ``env`` / ``sudo`` / ``timeout`` / ``nice`` /
 #: ``nohup`` / ``time`` / ``xargs`` / ``exec`` / ``stdbuf`` / ``setsid``) and
-#: leading ``NAME=value`` assignments the R5 matcher strips before its program
-#: check. This is the EXPLICIT list of known prefix programs — extended in one
-#: place and mirrored by the OpenCode guard's ``SHELL_WRAPPERS`` — never guessed
-#: from shape. Used ONLY by the R5 matcher — R1, R2 and R4 keep their existing
-#: unstripped program checks.
+#: leading ``NAME=value`` assignments used before the interpreter check. This is
+#: the EXPLICIT list of known prefix programs — extended in one place and
+#: mirrored by the OpenCode guard's ``SHELL_WRAPPERS`` — never guessed from shape.
+#: R5 strips these ahead of its program check; R2 strips them for its SHELL-SPAWN
+#: class only (a file-op keeps its un-stripped read), and R4 strips them so a
+#: wrapper-prefixed build tool is still seen. R1 keeps its unstripped scan.
 _R5_SHELL_WRAPPERS = frozenset(
     {'command', 'env', 'sudo', 'timeout', 'nice', 'nohup', 'time', 'xargs', 'exec', 'stdbuf', 'setsid'}
 )
@@ -1004,8 +1005,10 @@ def _match_r5_interpreter_call(
     the same stripping the guard applies before its own first-token checks.
     An interpreter option in second position (``-u``, ``-W``, ``-X``,
     ``-B``, ``-E``, ``-I``, ``--``, bare ``-``) does not hide what follows:
-    every later token is scanned with the same fail-closed rule. R1, R2
-    and R4 match against the unstripped command and are untouched. *root* is the
+    every later token is scanned with the same fail-closed rule. R1 matches
+    against the unstripped command; R2's shell-spawn class and R4's build class
+    also read the stripped program, so a wrapper cannot hide a shell spawn or a
+    build tool from them. *root* is the
     repository root the allow-list match resolves against (the payload ``cwd``).
     """
     command = _bash_command(tool_name, tool_input)

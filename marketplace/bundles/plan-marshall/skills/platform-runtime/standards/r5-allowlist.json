@@ -9,7 +9,8 @@
     "marketplace/bundles/plan-marshall/skills/marshall-steward/scripts/bootstrap_plugin.py": "marketplace/bundles/plan-marshall/skills/marshall-steward/references/wizard-flow.md:24",
     "marketplace/bundles/plan-marshall/skills/marshall-steward/scripts/determine_mode.py": "marketplace/bundles/plan-marshall/skills/marshall-steward/references/wizard-flow.md:80",
     "marketplace/bundles/plan-marshall/skills/marshall-steward/scripts/gitignore_setup.py": "marketplace/bundles/plan-marshall/skills/marshall-steward/references/wizard-flow.md:30",
-    "marketplace/bundles/plan-marshall/skills/tools-permission-fix/scripts/permission_fix.py": "marketplace/bundles/plan-marshall/skills/marshall-steward/references/wizard-flow.md:102"
+    "marketplace/bundles/plan-marshall/skills/tools-permission-fix/scripts/permission_fix.py": "marketplace/bundles/plan-marshall/skills/marshall-steward/references/wizard-flow.md:102",
+    "marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/doctor-marketplace.py": "marketplace/bundles/pm-plugin-development/skills/plugin-doctor/standards/doctor-marketplace.md:26"
   },
   "bundle_entries": {
     "skills/tools-script-executor/scripts/generate_executor.py": "marketplace/bundles/plan-marshall/skills/tools-script-executor/SKILL.md:523",

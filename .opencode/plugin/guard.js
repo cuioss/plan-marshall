@@ -57,11 +57,12 @@
  *   inside a plan context (Signal 1 or Signal 2) and in EVERY session of THIS
  *   repository; in a consumer repository outside a plan context it does not
  *   refuse a consumer's ordinary Python work (python3 x.py, python3 -m venv,
- *   python3 -m pip). Four admissions apply: the executor permit, the SHARED
- *   repository-relative allow-list, the SHARED bundle-relative allow-list (matched
- *   EXACTLY against a resolved deployed bundle root), and neither is ever a
- *   basename or a suffix — so a copy of an allow-listed script outside the
- *   repository, or under a non-deployed directory, never matches.
+ *   python3 -m pip). Three admissions apply: the executor permit, the SHARED
+ *   repository-relative allow-list, and the SHARED bundle-relative allow-list
+ *   (matched EXACTLY against a resolved deployed bundle root); neither
+ *   allow-list form is ever a basename or a suffix — so a copy of an
+ *   allow-listed script outside the repository, or under a non-deployed
+ *   directory, never matches.
  *
  *   R6 — a raw `git commit` while the enclosing plan is in phase `6-finalize`
  *   => block. The plan is NAMED from the `git -C` TARGET (the persona-mandated
