@@ -16,6 +16,7 @@ from typing import Any
 
 import platform_runtime
 import runtime_info
+import target_context
 from antigravity_runtime import AntigravityRuntime
 from claude_runtime import ClaudeRuntime
 from opencode_runtime import OpenCodeRuntime
@@ -36,28 +37,14 @@ def _clean_platform_env() -> dict[str, str]:
     collector could read, so a subprocess resolves the fallback target and no
     model/effort value.
     """
-    names = (
-        'ANTIGRAVITY_AGENT',
-        'OPENCODE',
-        'OPENCODE_PID',
-        'OPENCODE_SESSION_ID',
-        'CLAUDE_CODE_SESSION_ID',
-        'CLAUDE_CODE_MODEL',
-        'CLAUDE_MODEL',
-        'ANTHROPIC_MODEL',
-        'OPENCODE_MODEL',
-        'OPENCODE_MODEL_NAME',
-        'MODEL_NAME',
-        'MODEL_TYPE',
-        'MODEL_VERSION',
-        'CLAUDE_MODEL_TYPE',
-        'OPENCODE_MODEL_TYPE',
-        'CLAUDE_MODEL_VERSION',
-        'OPENCODE_MODEL_VERSION',
-        'PLAN_MARSHALL_EFFORT',
-        'MARSHALL_EFFORT',
-        'EFFORT_LEVEL',
-    )
+    names = {
+        *(name for name, _target in target_context.TARGET_ENV_SIGNALS),
+        runtime_info.OPENCODE_SESSION_ID_ENV,
+        *runtime_info._MODEL_NAME_ENV,
+        *runtime_info._MODEL_TYPE_ENV,
+        *runtime_info._MODEL_VERSION_ENV,
+        *runtime_info._EFFORT_ENV,
+    }
     return dict.fromkeys(names, '')
 
 
