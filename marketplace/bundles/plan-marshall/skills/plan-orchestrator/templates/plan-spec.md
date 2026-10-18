@@ -99,10 +99,16 @@ surfaces this plan sits next to without touching, which a reader needs to avoid 
 
 {The ready-to-run command the orchestrator emits when this plan reaches the queue head. The
 command is a ONE-LINE POINTER to this spec path — the spec body is the brief, so nothing is
-transcribed into the command.}
+transcribed into the command. Which form it takes follows the plan's queue-row `lane`: the
+`plan-marshall` lane (the default) runs the plan lifecycle, and the `runbook` lane runs the
+runbook-lane skill. Show the form the plan's lane uses.}
 
 ```text
 /plan-marshall task="implement .plan/orchestrator/{slug}/plans/PLAN-NN-{plan_slug}.md"
+```
+
+```text
+/plan-marshall-runbook-lane plan=.plan/orchestrator/{slug}/plans/PLAN-NN-{plan_slug}.md
 ```
 
 ## Write-Boundary

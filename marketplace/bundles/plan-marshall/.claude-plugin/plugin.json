@@ -93,6 +93,7 @@
     "./skills/ref-agentfile-hygiene",
     "./skills/ref-toon-format",
     "./skills/ref-workflow-architecture",
+    "./skills/runbook-lane",
     "./skills/script-shared",
     "./skills/tools-file-ops",
     "./skills/tools-input-validation",

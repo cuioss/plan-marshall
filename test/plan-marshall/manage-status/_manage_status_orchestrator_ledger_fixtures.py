@@ -40,6 +40,7 @@ def _row(plan_id: str, slug: str, **extra) -> dict:
         'slug': slug,
         'workstream': 'WS-01',
         'status': 'staged',
+        'lane': 'plan-marshall',
         'plan_marshall_plan_id': '',
         'pr': '',
         'landing': '',
