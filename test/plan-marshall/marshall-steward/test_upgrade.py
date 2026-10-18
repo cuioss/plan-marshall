@@ -1044,6 +1044,18 @@ def _fixture_executor(project_dir: Path, version: str) -> Path:
     return executor
 
 
+def _fixture_import_failing_executor(project_dir: Path, version: str, module: str) -> Path:
+    """Write a fixture executor stamped ``version`` whose import of ``module`` fails.
+
+    The stamp is intact — only EXECUTING the file reveals the failure, which is
+    the PLAN-LB-40 shape: the version comparison reads the executor as current
+    while every invocation dies at the module-level import.
+    """
+    executor = _fixture_executor(project_dir, version)
+    executor.write_text(f"MARSHALL_VERSION = '{version}'\nimport {module}\n", encoding='utf-8')
+    return executor
+
+
 def _fixture_registry(root: Path, version: str) -> Path:
     """Write a plugin registry pinning plan-marshall at ``version``.
 
@@ -1358,6 +1370,196 @@ def test_bootstrap_missing_executor_recovers_without_consent(tmp_path: Path, mon
     assert report['status'] == 'success'
     assert report['action'] == 'regenerated'
     assert len(fake.calls) == 1
+
+
+def test_bootstrap_import_failing_executor_recovers_without_consent(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """An executor whose import raises is restored like a missing one — ungated.
+
+    The stamp reads current, so the version comparison alone would report
+    ``fresh``; the import probe observes the failure and forces the recovery
+    path. No consent applies to an executor that cannot start.
+    """
+    cache = _fixture_cache(tmp_path, ['0.1.10'])
+    clone = tmp_path / 'clone'
+    generator = _fixture_meta_generator(clone)
+    executor = _fixture_import_failing_executor(clone, '0.1.10', 'fixture_missing_module')
+    fake = _RegenerateFake(executor, '0.1.10')
+    monkeypatch.chdir(clone)
+
+    report = upgrade.bootstrap_executor(
+        project_kind='meta',
+        cache_root=cache,
+        executor_path=executor,
+        _run_generate=fake,
+        allow_regenerate=False,
+    )
+
+    assert report['status'] == 'success'
+    assert report['action'] == 'regenerated'
+    assert 'fixture_missing_module' in report['warning']
+    assert len(fake.calls) == 1
+    assert fake.calls[0]['generator'] == generator
+    assert fake.calls[0]['anchor'] == clone
+    assert fake.calls[0]['project_dir'] == clone
+
+
+def test_bootstrap_non_import_probe_failure_does_not_force_recovery(tmp_path: Path):
+    """A probe that fails for a NON-import reason never turns into a recovery.
+
+    The consent gate stays exactly as for any stale executor: reported, not
+    rewritten. Only an observed IMPORT failure takes the ungated recovery path.
+    """
+    cache = _fixture_cache(tmp_path, ['0.1.9', '0.1.10'])
+    project = tmp_path / 'project'
+    executor = _fixture_executor(project, '0.1.9')
+    executor.write_text("MARSHALL_VERSION = '0.1.9'\nraise SystemExit(3)\n", encoding='utf-8')
+    fake = _RegenerateFake(executor, '0.1.10')
+
+    report = upgrade.bootstrap_executor(
+        project_kind='consumer',
+        cache_root=cache,
+        executor_path=executor,
+        _run_generate=fake,
+        allow_regenerate=False,
+    )
+
+    assert report['status'] == 'success'
+    assert report['action'] == 'regenerate_required'
+    assert 'bootstrap true' in report['warning']
+    assert fake.calls == []
+
+
+def test_bootstrap_undecodable_probe_output_does_not_force_recovery(tmp_path: Path):
+    """An undecodable probe output is inconclusive — it never forces a recovery.
+
+    The probe promises never to raise: an executor that writes a non-UTF-8 byte to
+    stderr and exits would otherwise surface as a `UnicodeDecodeError` out of
+    `subprocess.run` (a `ValueError`, not an `OSError`). An inconclusive probe is
+    treated exactly like a non-import failure: the consent gate is unchanged and
+    the executor is reported, never rewritten unasked.
+    """
+    cache = _fixture_cache(tmp_path, ['0.1.9', '0.1.10'])
+    project = tmp_path / 'project'
+    executor = _fixture_executor(project, '0.1.9')
+    executor.write_bytes(
+        b"MARSHALL_VERSION = '0.1.9'\nimport sys\nsys.stderr.buffer.write(b'\\xff\\xfe')\nraise SystemExit(3)\n"
+    )
+    fake = _RegenerateFake(executor, '0.1.10')
+
+    report = upgrade.bootstrap_executor(
+        project_kind='consumer',
+        cache_root=cache,
+        executor_path=executor,
+        _run_generate=fake,
+        allow_regenerate=False,
+    )
+
+    assert report['status'] == 'success'
+    assert report['action'] == 'regenerate_required'
+    assert 'bootstrap true' in report['warning']
+    assert fake.calls == []
+
+
+def test_bootstrap_executor_guard_message_forces_recovery(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """The executor's own unresolved-bootstrap guard line IS an import failure.
+
+    When the failed import coincides with an unresolved bootstrap directory the
+    executor prints ``execute-script.py cannot start: …`` and exits instead of a
+    traceback; that guard form must still force the ungated recovery.
+    """
+    cache = _fixture_cache(tmp_path, ['0.1.10'])
+    clone = tmp_path / 'clone'
+    _fixture_meta_generator(clone)
+    executor = _fixture_executor(clone, '0.1.10')
+    executor.write_text(
+        "MARSHALL_VERSION = '0.1.10'\n"
+        'import sys\n'
+        "sys.stderr.write('execute-script.py cannot start: No module named plan_logging.\\n')\n"
+        'raise SystemExit(1)\n',
+        encoding='utf-8',
+    )
+    fake = _RegenerateFake(executor, '0.1.10')
+    monkeypatch.chdir(clone)
+
+    report = upgrade.bootstrap_executor(
+        project_kind='meta',
+        cache_root=cache,
+        executor_path=executor,
+        _run_generate=fake,
+        allow_regenerate=False,
+    )
+
+    assert report['status'] == 'success'
+    assert report['action'] == 'regenerated'
+    assert len(fake.calls) == 1
+
+
+def test_bootstrap_unrelated_cannot_start_text_does_not_force_recovery(tmp_path: Path):
+    """Only the executor guard's own prefix is a marker — an unrelated line is not.
+
+    A generic ``cannot start:`` substring would classify any stderr that happens to
+    contain it as an import failure and rewrite the executor without consent on
+    evidence that names no broken import. The guard prefix is exact.
+    """
+    cache = _fixture_cache(tmp_path, ['0.1.9', '0.1.10'])
+    project = tmp_path / 'project'
+    executor = _fixture_executor(project, '0.1.9')
+    executor.write_text(
+        "MARSHALL_VERSION = '0.1.9'\n"
+        'import sys\n'
+        "sys.stderr.write('widget service cannot start: unrelated message\\n')\n"
+        'raise SystemExit(1)\n',
+        encoding='utf-8',
+    )
+    fake = _RegenerateFake(executor, '0.1.10')
+
+    report = upgrade.bootstrap_executor(
+        project_kind='consumer',
+        cache_root=cache,
+        executor_path=executor,
+        _run_generate=fake,
+        allow_regenerate=False,
+    )
+
+    assert report['status'] == 'success'
+    assert report['action'] == 'regenerate_required'
+    assert 'bootstrap true' in report['warning']
+    assert fake.calls == []
+
+
+def test_plan_recovers_from_an_executor_that_fails_to_import(
+    capsys: pytest.CaptureFixture[str], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """An executor whose import raises reaches the stage plan after regeneration.
+
+    The PLAN-LB-40 failure: the executor file exists and even stamps the newest
+    version, so the version comparison alone reads ``fresh`` — but every
+    invocation dies on the module-level import. The bootstrap's import probe
+    observes the failure, restores the executor from the newest cache (ungated,
+    like the missing case), and the ``plan`` verb still reaches the stage plan.
+    """
+    cache = _fixture_cache(tmp_path, ['0.1.10'])
+    clone = tmp_path / 'clone'
+    generator = _fixture_meta_generator(clone)
+    executor = _fixture_import_failing_executor(clone, '0.1.10', 'fixture_missing_module')
+    # The recovery is OBSERVED, not inferred: the generator stub rewrites the
+    # executor to a healthy one, the shape the real generator emits.
+    generator.write_text(
+        'from pathlib import Path\n'
+        "Path('.plan/execute-script.py').write_text("
+        "\"MARSHALL_VERSION = '0.1.10'\\n\", encoding='utf-8')\n",
+        encoding='utf-8',
+    )
+    monkeypatch.setattr(upgrade, '_default_bootstrap_cache_root', lambda: cache)
+    monkeypatch.chdir(clone)
+
+    exit_code, parsed = _run(['plan', '--project-kind', 'meta'], capsys, monkeypatch, bootstrap=True)
+
+    assert exit_code == 0
+    assert [stage['key'] for stage in parsed['stages']] == _EXPECTED_STAGE_KEYS
+    assert parsed['bootstrap']['action'] == 'regenerated'
+    assert 'fixture_missing_module' in parsed['bootstrap']['warning']
+    assert 'fixture_missing_module' not in executor.read_text(encoding='utf-8')
 
 
 def test_bootstrap_stale_executor_without_consent_is_reported_not_rewritten(tmp_path: Path):

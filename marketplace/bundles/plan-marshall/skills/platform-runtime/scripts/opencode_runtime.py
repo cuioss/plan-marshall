@@ -488,25 +488,88 @@ def _column_lookup(columns: list[str], candidates: tuple[str, ...]) -> str | Non
     return None
 
 
-def _list_persisted_allow_rows(conn: sqlite3.Connection) -> tuple[list[dict[str, Any]], bool]:
+#: Candidate columns carrying a ``permission`` row's owning project id.
+_PERMISSION_PROJECT_COLUMNS = ('project_id', 'project')
+
+#: Candidate id columns on the ``project`` table.
+_PROJECT_ID_COLUMNS = ('id', 'project_id')
+
+#: Candidate worktree-path columns on the ``project`` table.
+_PROJECT_PATH_COLUMNS = ('worktree', 'worktree_path', 'directory', 'path', 'worktree_dir', 'project_path', 'root')
+
+
+def _normalize_fs_path(value: str) -> str:
+    """Normalize a filesystem path for equality comparison (absolute, no trailing slash)."""
+    expanded = Path(value).expanduser()
+    try:
+        return expanded.resolve().as_posix().rstrip('/')
+    except OSError:
+        return expanded.as_posix().rstrip('/')
+
+
+def _resolve_project_id(conn: sqlite3.Connection, project_dir: str | None) -> tuple[bool, str | None]:
+    """Resolve the project id whose worktree path matches *project_dir*.
+
+    Returns ``(project_table_present, project_id)``. The first element is True
+    whenever a ``project`` table EXISTS — even one lacking a usable id or path
+    column — so the caller fails CLOSED rather than reading permission rows it
+    cannot scope to the requested worktree. ``(False, None)`` only when there is
+    no ``project`` table at all: the fixture shape, which is read unscoped.
+    """
+    try:
+        info = conn.execute('PRAGMA table_info("project")').fetchall()
+    except sqlite3.Error:
+        return False, None
+    if not info:
+        return False, None
+    columns = [str(col[1]) for col in info]
+    id_col = _column_lookup(columns, _PROJECT_ID_COLUMNS)
+    path_col = _column_lookup(columns, _PROJECT_PATH_COLUMNS)
+    if id_col is None or path_col is None:
+        return True, None
+    if not project_dir:
+        return True, None
+    target = _normalize_fs_path(project_dir)
+    try:
+        for row_id, row_path in conn.execute(f'SELECT "{id_col}", "{path_col}" FROM "project"'):
+            if isinstance(row_path, str) and _normalize_fs_path(row_path) == target:
+                return True, str(row_id)
+    except sqlite3.Error:
+        return True, None
+    return True, None
+
+
+def _list_persisted_allow_rows(
+    conn: sqlite3.Connection, project_dir: str | None = None
+) -> tuple[list[dict[str, Any]], str]:
     """List persisted allow rows from every permission-like table, read-only.
 
-    Returns ``(rows, recognised)``. ``recognised`` is True when at least ONE
-    table carried both a pattern-like and a decision-like column — the live
-    permission-table shape. When no table matches, the schema is unrecognised
-    and the caller MUST report ``checkable: false`` rather than a clean result:
-    an empty read of an unknown schema is an unmeasured observation, never
-    evidence that nothing contradicts.
+    Returns ``(rows, state)`` where ``state`` is one of:
 
-    Only ``SELECT`` statements run here; this helper never writes. Tables
-    without both a pattern-like and a decision-like column are skipped. A
+    * ``'recognised'`` — a permission-shaped table was read;
+    * ``'project_unresolved'`` — a ``project`` table exists but no row's worktree
+      path matches *project_dir*, so rows CANNOT be scoped to this project and the
+      read fails closed (the caller reports ``checkable: false``) rather than
+      comparing another project's approvals against this project's denies;
+    * ``'schema_unrecognised'`` — no table carried the permission shape.
+
+    A permission table is recognised when it carries a pattern-like column plus
+    EITHER a decision-like column (the declared shape) OR a ``tool``/``action``
+    column (the LIVE shape, in which every row is a persisted allow because the
+    table has no decision column).
+
+    Only ``SELECT`` statements run here; this helper never writes. A database with
+    no ``project`` table is read unscoped so fixture shapes keep working. A
     decision column named ``action`` is only honored alongside an explicit
-    ``tool`` column, so a list-shape ``(action, resource)`` table is not
-    misread as ``(tool, decision)``. The table-list query error propagates so
-    the caller maps an unreadable database to checkable False / db_unreadable.
+    ``tool`` column, so a list-shape ``(action, resource)`` table is not misread
+    as ``(tool, decision)``. The table-list query error propagates so the caller
+    maps an unreadable database to checkable False / db_unreadable.
     """
     tables = [row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")]
     prioritized = sorted(tables, key=lambda name: 0 if name.lower() in ('permission', 'permissions') else 1)
+    project_present, project_id = _resolve_project_id(conn, project_dir)
+    if project_present and project_id is None:
+        return [], 'project_unresolved'
     rows: list[dict[str, Any]] = []
     recognised = False
     for table in prioritized:
@@ -516,22 +579,35 @@ def _list_persisted_allow_rows(conn: sqlite3.Connection) -> tuple[list[dict[str,
             continue
         columns = [str(col[1]) for col in info]
         pattern_col = _column_lookup(columns, _PATTERN_COLUMNS)
-        decision_col = _column_lookup(columns, ('effect', 'decision', 'status', 'approval'))
-        tool_col = _column_lookup(columns, _TOOL_COLUMNS)
+        if pattern_col is None:
+            continue
+        tool_col = _column_lookup(columns, (*_TOOL_COLUMNS, 'action'))
+        decision_col = _column_lookup(columns, _DECISION_COLUMNS)
         if decision_col is None and tool_col is not None:
             maybe_action = _column_lookup(columns, ('action',))
             if maybe_action is not None and maybe_action.lower() != tool_col.lower():
                 decision_col = maybe_action
-        if pattern_col is None or decision_col is None:
+        # The LIVE permission shape: a ``tool``/``action`` column with NO decision
+        # column — every row is a persisted allow.
+        live_shape = decision_col is None and tool_col is not None
+        if decision_col is None and not live_shape:
             continue
         recognised = True
+        table_project_col = _column_lookup(columns, _PERMISSION_PROJECT_COLUMNS)
         select_cols = f'rowid, "{tool_col}"' if tool_col else 'rowid, NULL'
-        select_cols += f', "{pattern_col}", "{decision_col}"'
+        select_cols += f', "{pattern_col}"'
+        select_cols += f', "{decision_col}"' if decision_col else ', NULL'
+        where = ''
+        params: tuple[Any, ...] = ()
+        if project_id is not None and table_project_col is not None:
+            where = f' WHERE "{table_project_col}" = ?'
+            params = (project_id,)
         try:
-            for rowid, tool, pattern, decision in conn.execute(f'SELECT {select_cols} FROM "{table}"'):
+            for rowid, tool, pattern, decision in conn.execute(f'SELECT {select_cols} FROM "{table}"{where}', params):
                 if not isinstance(pattern, str) or not pattern.strip():
                     continue
-                if str(decision).strip().lower() not in _PERSISTED_ALLOW_VALUES:
+                allowed = live_shape or str(decision).strip().lower() in _PERSISTED_ALLOW_VALUES
+                if not allowed:
                     continue
                 rows.append(
                     {
@@ -543,7 +619,7 @@ def _list_persisted_allow_rows(conn: sqlite3.Connection) -> tuple[list[dict[str,
                 )
         except sqlite3.Error:
             continue
-    return rows, recognised
+    return rows, 'recognised' if recognised else 'schema_unrecognised'
 
 
 class OpenCodeRuntime(Runtime):
@@ -1309,8 +1385,12 @@ class OpenCodeRuntime(Runtime):
         persisted allow rows, and diffs them against the deny rules read from
         ``project_dir``'s ``opencode.json``, its ``.opencode/opencode.json``,
         and the global ``~/.config/opencode/opencode.json`` — top-level AND
-        ``agent``/``agents`` scoped. When no table carries the permission shape
-        the schema is unrecognised and the result is ``checkable: false``
+        ``agent``/``agents`` scoped. The LIVE ``permission(id, project_id,
+        action, resource, time_created, time_updated)`` table carries NO decision
+        column, so every row is a persisted allow; such rows are scoped to the
+        project by ``project_id``, resolved from the ``project`` table's worktree
+        path. When no table carries the permission shape the schema is
+        unrecognised and the result is ``checkable: false``
         (``schema_unrecognised``), never a clean zero. Each contradiction is
         returned as a warning entry carrying the operator removal command; the
         verb performs no writes, removes none of the persisted approvals, and
@@ -1343,7 +1423,7 @@ class OpenCodeRuntime(Runtime):
                 },
             )
         try:
-            allow_rows, recognised = _list_persisted_allow_rows(conn)
+            allow_rows, state = _list_persisted_allow_rows(conn, project_dir)
         except sqlite3.Error:
             return toon_success(
                 PERSISTED_CONTRADICTION_OPERATION,
@@ -1360,12 +1440,12 @@ class OpenCodeRuntime(Runtime):
                 conn.close()
             except sqlite3.Error:
                 pass
-        if not recognised:
+        if state != 'recognised':
             return toon_success(
                 PERSISTED_CONTRADICTION_OPERATION,
                 {
                     'checkable': False,
-                    'reason': 'schema_unrecognised',
+                    'reason': state,
                     'db_path': str(resolved_db),
                     'persisted_allow_count': 0,
                     'contradictions': [],
