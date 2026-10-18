@@ -150,6 +150,8 @@ _SIDE_DOOR_REFUSED: tuple[str, ...] = (
     'env bash -c "python3 -c print(1)"',
     'uv run python -c "print(1)"',
     'env uv run python -c "print(1)"',
+    'env ./pw verify',
+    'timeout 10 ./pw verify',
 )
 
 _SIDE_DOOR_REFUSED_IDS = list(_SIDE_DOOR_REFUSED)

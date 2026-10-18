@@ -513,8 +513,15 @@ def _match_r4_hardcoded_build(tool_name: str | None, tool_input: dict[str, Any])
         return None
     first = _first_word(command)
     stripped = _r5_stripped_tokens(command)
-    stripped_program = _strip_matched_quotes(stripped[0]).rsplit('/', 1)[-1] if stripped else ''
-    if first == './pw' or _program_name(command) in _R4_BUILD_PROGRAMS or stripped_program in _R4_BUILD_PROGRAMS:
+    stripped_first = _strip_matched_quotes(stripped[0]) if stripped else ''
+    stripped_program = stripped_first.rsplit('/', 1)[-1] if stripped_first else ''
+    if (
+        first == './pw'
+        or stripped_first == './pw'
+        or stripped_program == 'pw'
+        or _program_name(command) in _R4_BUILD_PROGRAMS
+        or stripped_program in _R4_BUILD_PROGRAMS
+    ):
         return _R4_REASON
     return None
 
