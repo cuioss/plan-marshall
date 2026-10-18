@@ -421,6 +421,20 @@ derive, for rows still live.
 - 2026-10-17 — **Operator: the inert executor recovery is high**, added to the next plan.
   It is staged as PLAN-LB-43 D3: a direct-path recovery entry that the executor's own failure
   output names, a re-probe after regeneration, and end-to-end subprocess tests.
+- 2026-10-18 — **Operator: standing CodeRabbit merge authorization.** "If there was at least one
+  correct CodeRabbit review and all findings were handled: you are authorized to merge", because
+  the quota regularly blocks a review of the latest head. Applied at once to the local runbook
+  (§ 7 "Standing CodeRabbit authorization", with the quota policy only while no qualifying review
+  exists). The authorization:
+  - covers CodeRabbit only, never cuioss-review-bot;
+  - needs a formal review, all findings handled and threads resolved, and one re-trigger after
+    the last push;
+  - never applies to a PR with no CodeRabbit review (PLAN-LB-52 stays blocked).
+
+  This settles the PLAN-LB-63 free-text question. Staged **PLAN-LB-67
+  standing-review-authorization** (WS-04, runbook lane, 2 deliverables) to carry the rule into
+  the `runbook-lane` skill, repository-neutral and keyed on a per-bot `quota_limited`
+  declaration. Emit after PLAN-LB-66 lands.
 - 2026-10-17 — **Mid-flight: PLAN-LB-66 edited the main checkout** (D3, 6 files) instead of its
   worktree, against runbook §1. Operator interrupted it; the D3 work moved to the worktree and main
   is clean. Debited at its landing.
