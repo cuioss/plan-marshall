@@ -470,6 +470,13 @@ derive, for rows still live.
   - D5: a docs-only build path keyed on the project's footprint rule.
 
   Five deliverables, kept unsplit by operator instruction.
+- 2026-10-18 — **Operator: always use the new `runbook-lane` skill, to find its bugs early.**
+  Every emit after the drain uses `/plan-marshall-runbook-lane plan={spec}`, PLAN-LB-67 included.
+  The local `RUNBOOK.md` is no longer used for new emits; only the running PLAN-LB-45 still runs
+  on it. The skill's known gaps (the ten weakened rules, the 2026-10-18 rules) are fixed by
+  PLAN-LB-67 D1 and D6. Until then, every landing audit judges runs against the skill version they
+  loaded, and records each gap the run hit as evidence for PLAN-LB-67. Precondition for the first
+  emit: `/sync-harnesses`, plus a main executor regenerated for Claude.
 - 2026-10-18 — **PLAN-LB-52 fix-forward staged as PLAN-LB-70** (high), with four deliverables:
   - the gate refuses only genuinely open criteria;
   - spec and citation parsing matches real documents;
