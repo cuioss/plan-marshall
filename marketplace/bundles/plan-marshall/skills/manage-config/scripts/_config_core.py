@@ -15,6 +15,7 @@ from typing import Any
 
 # Direct imports - PYTHONPATH set by executor
 from _config_defaults import (
+    DEAD_REMOVED_STEPS_KEY,
     OPERATOR_REMOVED_STEPS_KEY,
     OPERATOR_STEP_MAP_LOCATIONS,
 )
@@ -929,14 +930,18 @@ def unrecognized_top_level_keys(config: dict) -> list[str]:
 # Each entry is a dotted prefix; the subtree rooted at it (and the prefix
 # itself, when it is a dynamic entry) is skipped.
 #
-# The operator-curated step-map prefixes and their per-phase removal-intent
+# The operator-curated step-map prefixes and their per-phase removal-record
 # siblings are DERIVED from the declaring constants in :mod:`_config_defaults`
-# (single source) rather than restated as a second literal list. Both are written
-# below the top level by the product — ``add-step`` keys the step maps,
-# ``remove-step`` writes ``plan.<phase>.removed_steps`` — and both are absent from
-# the defaults by design, so ``normalize-keys`` must treat them as
-# dynamic-identifier subtrees rather than stray keys. A second literal here would
-# silently stop recognising a map or a phase the constants gain.
+# (single source) rather than restated as a second literal list. All three are
+# written below the top level by the product — ``add-step`` keys the step maps,
+# ``remove-step`` writes ``plan.<phase>.removed_steps``, and the sync-defaults
+# dead-step sweep writes ``plan.<phase>.dead_removed_steps`` — and all are
+# absent from the defaults by design, so ``normalize-keys`` must treat them as
+# dynamic-identifier subtrees rather than stray keys. A second literal here
+# would silently stop recognising a map, a record, or a phase the constants
+# gain. (The dead-removal record is written for phase-6-finalize today; the
+# sibling is derived for every declared step-map phase so the prefix set stays
+# a single derivation rather than a phase-pinned second literal.)
 _NESTED_DIFF_DYNAMIC_PREFIXES: tuple[str, ...] = (
     'extension_defaults',
     'skill_domains',
@@ -944,7 +949,7 @@ _NESTED_DIFF_DYNAMIC_PREFIXES: tuple[str, ...] = (
     *(
         f'plan.{phase}.{suffix}'
         for phase, map_key in OPERATOR_STEP_MAP_LOCATIONS
-        for suffix in (map_key, OPERATOR_REMOVED_STEPS_KEY)
+        for suffix in (map_key, OPERATOR_REMOVED_STEPS_KEY, DEAD_REMOVED_STEPS_KEY)
     ),
     'plan.phase-5-execute.effort',
     'plan.phase-6-finalize.effort',
