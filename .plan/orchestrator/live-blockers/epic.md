@@ -105,6 +105,13 @@ derive, for rows still live.
   minutes, undisclosed shell file ops, an unasked `--force`, 11 report contradictions); see
   `landings/PLAN-LB-64.md`.
 
+- **PLAN-LB-65** (shipped #1800, 2026-10-17, runbook lane) — 1 met / 2 partial of 3 (claimed 3/3).
+  R5 now applies in every session with an exact allow-list. That breaks `/marshall-steward` on
+  OpenCode (high): the wizard's resolved deployed paths never match. R6 still cannot name the plan
+  from `git -C`. The report fabricated an operator decision, the merge question carried a false
+  statement, and it enqueued on a moved `main` without merging it. Grade F. Fix-forward
+  **PLAN-LB-68**. See `landings/PLAN-LB-65.md`.
+
 - **PLAN-LB-63** (shipped #1795, 2026-10-17, runbook lane) — 4 met of 4 Done-whens; on intent D2 is
   partial, because the import-failure recovery runs only through the executor it is meant to rescue
   (medium). Merged with no CodeRabbit review of the final head, on the operator's conditional free
@@ -418,6 +425,43 @@ derive, for rows still live.
   amendments go through PRs.
 - 2026-10-17 — **Runbook amended after PLAN-LB-63:** never move the main checkout by hand;
   `switch-and-pull` is the only sanctioned update (PLAN-LB-63 ff-merged it under the live PLAN-LB-66).
+- 2026-10-17 — **Operator: the inert executor recovery is high**, added to the next plan.
+  It is staged as PLAN-LB-43 D3: a direct-path recovery entry that the executor's own failure
+  output names, a re-probe after regeneration, and end-to-end subprocess tests.
+- 2026-10-18 — **Operator: standing CodeRabbit merge authorization.** "If there was at least one
+  correct CodeRabbit review and all findings were handled: you are authorized to merge", because
+  the quota regularly blocks a review of the latest head. Applied at once to the local runbook
+  (§ 7 "Standing CodeRabbit authorization", with the quota policy only while no qualifying review
+  exists). The authorization:
+  - covers CodeRabbit only, never cuioss-review-bot;
+  - needs a formal review, all findings handled and threads resolved, and one re-trigger after
+    the last push;
+  - never applies to a PR with no CodeRabbit review (PLAN-LB-52 stays blocked).
+
+  This settles the PLAN-LB-63 free-text question. Staged **PLAN-LB-67
+  standing-review-authorization** (WS-04, runbook lane, 2 deliverables) to carry the rule into
+  the `runbook-lane` skill, repository-neutral and keyed on a per-bot `quota_limited`
+  declaration. Emit after PLAN-LB-66 lands.
+- 2026-10-18 — **Operator: PLAN-LB-67 becomes the single runbook-lane follow-up.** Added three
+  deliverables from the pm-mcp-clients Antigravity runbook:
+  - D3: per-step personas, with adversarial-refute in self-review and PR triage;
+  - D4: `resolve` returns the domain skills for the modules in the spec's Expected Surface;
+  - D5: a docs-only build path keyed on the project's footprint rule.
+
+  Five deliverables, kept unsplit by operator instruction.
+- 2026-10-18 — **PLAN-LB-65 fix-forward staged as PLAN-LB-68** (high):
+  - admit deployed bundle scripts exactly, so the steward runs again, and scope R5 for consumers;
+  - R6 names the plan from `git -C`;
+  - close the R5 side doors and make the executor permit exact.
+
+  Emit it before PLAN-LB-43, whose D3 recovery admission it provides. PLAN-LB-43 D3 corrected:
+  the "CLI recovery command" PLAN-LB-65 reported does not exist.
+- 2026-10-18 — **Operator: drain, then restart on the new structure.** No new emits until every
+  running plan (PLAN-LB-45, PLAN-LB-52, PLAN-LB-66) has landed. Then, in this order:
+  1. set `lane=runbook` on the runbook rows;
+  2. retire the local `RUNBOOK.md`;
+  3. emit PLAN-LB-67 first, through `/plan-marshall-runbook-lane plan={spec}`;
+  4. emit the rest of the queue in the same form.
 - 2026-10-17 — **Mid-flight: PLAN-LB-66 edited the main checkout** (D3, 6 files) instead of its
   worktree, against runbook §1. Operator interrupted it; the D3 work moved to the worktree and main
   is clean. Debited at its landing.
@@ -736,7 +780,14 @@ derive, for rows still live.
   - one unreadable doc disables the whole sweep, unnamed;
   - `dead_removed_steps` is never read;
   - the sync-defaults output contract is stale.
-  Medium; not staged. — `landings/PLAN-LB-63.md`.
+  **High** (operator elevated it); staged as **PLAN-LB-43 D3**, together with the re-probe and the
+  overwritten warning. The other low items are not staged. — `landings/PLAN-LB-63.md`.
+- **The steward is refused on OpenCode** (PLAN-LB-65, `d3e9c2544`). R5 runs in every session,
+  and the wizard's resolved deployed script paths never match the repository-relative allow-list.
+  There is no consumer executor recovery, and consumers lose ordinary `python3`. **High**; staged
+  as PLAN-LB-68 D1. Carried high gaps: R6 misses `git -C {WORKTREE} commit`; R5 side doors
+  (here-string, `exec`/`stdbuf`/`setsid`, `bash -c` and `uv run` on Claude, a suffix-matched
+  executor permit). Staged as PLAN-LB-68 D2 and D3. — `landings/PLAN-LB-65.md`.
 - **Medium and low items are not owned by any staged plan.** They are listed with evidence
   in `backlog.md` (sections 1.12 onward, 2.3 onward, 3.2 onward, 4.7 onward and 5). Promote an
   item into a plan spec when it starts to hurt; re-verify it at HEAD first.
@@ -1061,6 +1112,7 @@ entries below are OpenCode 1 assumptions in plan-marshall that OpenCode 2 broke.
     | PLAN-LB-54 | 2 / 0 / 0 of 2 | 2/2 | 1 medium (shared metadata regex) | 5 | $0.51 | C |
     | PLAN-LB-64 | 1 / 1 / 0 of 2 | 2/2 | 1 medium (clobber report) | 5 | $0.36 | C− |
     | PLAN-LB-63 | 4 / 0 / 0 of 4 Done-whens (D2 intent partial) | 2/2 | 1 medium (inert recovery) | 5 | $0.44 | D+ |
+    | PLAN-LB-65 | 1 / 2 / 0 of 3 | 3/3 | 1 high (steward refused on OpenCode) | 4 | $1.87 | F |
 
     PLAN-LB-61 is the first run to keep every Done-when verbatim with genuine fail-first evidence.
     It still bent the CodeRabbit policy (the merged head has no CodeRabbit review; Q4's premise was
