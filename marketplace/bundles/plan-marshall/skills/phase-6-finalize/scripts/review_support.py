@@ -208,6 +208,18 @@ def run_validate(plan_id: str, kind: str, verdict_file: str, verifier_file: str 
             # that renders identically to a passed one is a green nothing produced.
             if evidence_root is None:
                 payload_evidence_check = 'not_run'
+                # Rubric § 4: a citation the reviewer cannot evaluate is never
+                # silently accepted. The not-run state is a FINDING, not a quiet
+                # field a reader may overlook — a verdict graded with no tree to
+                # check its citations against cannot be closed on.
+                grading.add(
+                    'evidence_check_not_run',
+                    '-',
+                    'the citation-existence check could not run: no tree resolved for the graded head',
+                    True,
+                    FIX_KIND_IMPLEMENTATION,
+                    'evidence check',
+                )
             else:
                 payload_evidence_check = 'run'
     else:

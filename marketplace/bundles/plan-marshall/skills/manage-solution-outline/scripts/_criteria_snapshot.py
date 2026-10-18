@@ -66,7 +66,16 @@ _SUCCESS_CRITERIA_RE = re.compile(r'\*\*Success Criteria:\*\*\s*((?:- [^\n]+\n?)
 #: A numbered bold deliverable heading in a request-named spec document.
 _SPEC_DELIVERABLE_RE = re.compile(r'^(\d+)\.\s+\*\*(.+?)\*\*', re.MULTILINE)
 #: The Done-when sentence of a spec deliverable, in any of the three spellings.
-_SPEC_DONE_WHEN_RE = re.compile(r'(?:\*Done[- ]when:\*|\*\*Done[- ]when:\*\*|Done[- ]when:)\s*(.+)', re.IGNORECASE)
+#:
+#: The clause runs from its marker to the NEXT deliverable heading (``N. **``) or
+#: section heading, so a Done-when written as wrapped prose — or as a bullet list —
+#: is captured whole. The retired ``(.+)`` captured one line, which truncated
+#: every wrapped clause to its first line and read an outline that paraphrased the
+#: rest as a missing criterion.
+_SPEC_DONE_WHEN_RE = re.compile(
+    r'(?:\*Done[- ]when:\*|\*\*Done[- ]when:\*\*|Done[- ]when:)\s*(.+?)(?=\n\s*(?:\d+\.\s+\*\*|#{1,6}\s)|\Z)',
+    re.IGNORECASE | re.DOTALL,
+)
 #: A heading that introduces the request's own Done-when text.
 _REQUEST_DONE_WHEN_RE = re.compile(r'^\s*(?:#+\s*)?(?:\*\*)?Done[- ]when(?:\*\*)?\s*:?\s*$', re.IGNORECASE)
 #: A markdown path token in free request text (``.plan/x/PLAN-1.md``, ``doc/y.md``).
