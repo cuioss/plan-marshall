@@ -560,10 +560,15 @@ def _classify_path(path: str, extra: list[str], module_prefixes: list[str], sour
     """
     if any(fnmatch.fnmatch(path, pattern) for pattern in extra):
         return 'buildable'
-    if path.startswith(_NON_BUILDING_PREFIXES) or path.lower().endswith(_NON_BUILDING_SUFFIXES):
-        return 'docs-only'
     if source == 'ci-workflow':
+        # The gate's own direction: it names what to SKIP, so anything outside the
+        # non-building classes builds.
+        if path.startswith(_NON_BUILDING_PREFIXES) or path.lower().endswith(_NON_BUILDING_SUFFIXES):
+            return 'docs-only'
         return 'buildable'
+    # Architecture fallback: the architecture's module directories ARE the rule, so
+    # a document extension is not consulted — a path builds iff it lies inside a
+    # module the architecture reports.
     return 'buildable' if any(path.startswith(prefix) for prefix in module_prefixes) else 'docs-only'
 
 

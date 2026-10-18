@@ -252,7 +252,9 @@ All commands run from the main checkout (the repository root).
    - `error: worktree_exists` means this is a resume: reuse the worktree.
 4. `git -C {worktree} push -u origin {branch}`. Make no edit before this push.
 5. **Check every named skill and persona exists.** The resolve result carries one row per spec
-   deliverable with its `Skills:` and `Persona:` declarations. Every named skill and persona must
+   deliverable with its `Skills:` and `Persona:` declarations. A `Skills:` entry is a
+   `bundle:skill` notation (comma-separated for several); a `Persona:` entry is the persona kind
+   (`implementer`) or its full skill name. Every named skill and persona must
    exist in the installed bundles; `resolve` reports a name that does not as a
    `named_skill_not_found` error, and the run then **stops and asks the operator**. A missing skill
    is never skipped silently. Load the declared skills and persona as standards before working on
@@ -308,11 +310,11 @@ resolve result supplies:
   `verify`: check the changed docs instead (format, internal links and references, and a
   `git status` showing only doc files) and record `build-gate: docs-only` in the progress file and
   the landing message. `kind: buildable` runs the gate below as usual. The classifier applies the
-  PROJECT's own footprint rule — this repository's CI opt-in
-  (`.github/workflows/python-verify.yml`: `skip-on-docs-only` plus `extra-buildable`, so
-  `marketplace/**/*.md` still builds) when it has one, otherwise the architecture's module
-  directories — rather than assuming a `.py` file is the only thing that builds. Required CI checks
-  still have to be green, so the merge gate is unchanged.
+  PROJECT's own footprint rule — its CI opt-in when it has one (a `skip-on-docs-only` declaration
+  plus the `extra-buildable` paths that force a build even for a document extension), otherwise the
+  architecture's module directories — rather than assuming a `.py` file is the only thing that
+  builds. Pass the same `--project-dir` the build gate uses. Required CI checks still have to be
+  green, so the merge gate is unchanged.
 - **When to run what:** run `{build.quality-gate}` before each commit that touches `*.py`, and
   `{build.verify}` once before the PR. Scope the tests to one module while iterating.
 - **Shell timeout:** in-process builds hold the shell call for their whole duration. Give each call
@@ -482,9 +484,9 @@ steps=setup:done,implement:done,build-gate:done,self-review:{clear|budget-exhaus
   parser. The guard state travels as a prose note beside the block rather than as a fence line:
   `guard: none on this harness (unenforced)` when the resolve result reported `guard: none`, and
   `guard: present` otherwise.
-- **Guard:** where the resolve result reported `guard: none`, the facts block's rule check line and
-  the report's rule-check section both say `guard: none on this harness (unenforced)`. Never report
-  "all kept" or "no guard-log line" for a harness with no guard.
+- **Guard:** where the resolve result reported `guard: none`, the rule-check section of the report
+  says `guard: none on this harness (unenforced)`. Never report "all kept" or "no guard-log line"
+  for a harness with no guard.
 - **The report follows the facts block,** one short section each:
   1. **Deliverables** — per Done-when: met or not met; the test name and its fail-then-pass evidence;
      the commit.

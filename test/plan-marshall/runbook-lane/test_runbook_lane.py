@@ -1,22 +1,26 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for the ``runbook-lane`` skill (D1) and its ``resolve`` verb (D2).
+"""Tests for the ``runbook-lane`` skill (D1, D3–D6) and its ``resolve`` verb (D2, D4, D6).
 
 The runbook lane implements one staged orchestrator plan spec without the
 ``/plan-marshall`` lifecycle. Its contract used to live in a machine-local file
 that named this repository's epic, build system, reviewers and commit trailer;
-D1 ships that contract as a bundle skill whose project-specific values come from
-the D2 ``runbook_lane resolve`` verb, and D2 is the verb itself.
+the skill now carries the contract and every project-specific value comes from
+the ``runbook_lane resolve`` verb.
 
-Three properties are load-bearing here and each is asserted directly rather than
+Five properties are load-bearing here and each is asserted directly rather than
 inferred:
 
 * the skill carries no repository-specific literal, so it is usable from any
   project;
-* the skill's section structure still mirrors the source runbook, so no rule was
-  dropped in the move;
+* the merge gate's standing review authorization, the persona standards and the
+  per-deliverable skill declarations are present as written;
+* the restored rule set survives at RULE granularity, not merely as headings;
 * ``resolve`` fails closed — an empty reviewer list, a spec outside the
-  orchestrator tree, or an unresolvable build is an error, never a default.
+  orchestrator tree, an unresolvable build, or a named skill that is not
+  installed is an error, never a default;
+* the build classifier and the two target emitters answer per the project's own
+  footprint rule and the targets' own tool vocabulary.
 
 The ``resolve`` fixtures seed a project-scoped ``.plan/marshal.json``, a
 project-architecture module whose command map carries one build per case, and a
@@ -703,6 +707,10 @@ def test_build_classify_treats_a_python_change_as_buildable(tmp_path: Path) -> N
 def test_build_classify_without_an_opt_in_falls_back_to_the_architecture(tmp_path: Path) -> None:
     data = _build_classify(_seed_footprint(tmp_path, opt_in=False), 'doc/developer/build.adoc')
     assert data['source'] == 'architecture'
+    # The fixture architecture has a root module (``paths.module: '.'``), so every
+    # path lies inside a building module and the fallback answers buildable —
+    # the fail-closed direction rather than a docs-only skip nobody declared.
+    assert data['kind'] == 'buildable'
 
 
 def test_skill_build_gate_documents_the_docs_only_path() -> None:
@@ -726,7 +734,7 @@ _RULE_PARITY: tuple[tuple[str, tuple[str, ...]], ...] = (
         ('`sleep`', '`gh`', '`glab`', '`ruff`', '`mypy`', '`pytest`', '{guard_log}'),
     ),
     ('## 4. Build gate', ('{build_timeout_seconds}', '{base_branch}')),
-    ('## 5. Self-review before the PR', ('{base_branch}',)),
+    ('## 5. Self-review before the PR', ('{base_branch}', '`Task`')),
     (
         '## 6. Pull request and reviews',
         ('ci pr comments', 'ci pr reviews', 'ci pr thread-reply', 'ci pr resolve-thread', '`sleep`'),
@@ -756,7 +764,9 @@ def _emitted_body(target: str) -> str:
     return make_body_transformer({}, rules)(_skill_text(), 'plan-marshall', 'skill')
 
 
-def test_the_subagent_tool_is_rewritten_for_every_target() -> None:
+def test_the_subagent_tool_is_rewritten_for_opencode_and_antigravity() -> None:
+    # Claude IS the source format, so its name needs no rewrite; the two
+    # emitting targets are the ones that must carry their own tool name.
     assert '`Task`' in _skill_text(), 'the source skill does not name the sub-agent tool'
     assert '`subagent`' in _emitted_body('opencode')
     assert '`invoke_subagent`' in _emitted_body('antigravity')
