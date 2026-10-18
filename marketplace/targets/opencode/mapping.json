@@ -9,7 +9,7 @@
     "WebFetch": "webfetch",
     "WebSearch": "websearch",
     "AskUserQuestion": "question",
-    "Task": "task",
+    "Task": "subagent",
     "Skill": "skill",
     "NotebookEdit": "edit",
     "TaskCreate": "todowrite",
@@ -34,6 +34,11 @@
     }
   },
   "body_idiom_rewrites": {
+    "Task": {
+      "disposition": "rewrite_inline_code",
+      "opencode_tool": "subagent",
+      "note": "Backtick-wrapped `Task` tool references rewrite to the OpenCode `subagent` tool. The `Task:` entry below stays `preserve`: a `Task:` dispatch line is descriptive leaf-constraint prose, and the colon-bearing idiom is a different string."
+    },
     "AskUserQuestion": {
       "disposition": "rewrite_inline_code",
       "opencode_tool": "question",

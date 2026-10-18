@@ -42,6 +42,18 @@ Fails closed with a specific error code for a spec outside the orchestrator tree
 configuration, a missing automatic-review step, an empty required-reviewer list, or an
 unresolvable build command.
 
+### build-classify
+
+```bash
+python3 .plan/execute-script.py plan-marshall:runbook-lane:runbook_lane build-classify \
+  --paths "changed/path/one,changed/path/two" \
+  [--project-dir DIR]
+```
+
+Classifies changed paths as `docs-only` or `buildable` for the build gate (section 4), reading the
+project's own footprint rule. It answers `source: ci-workflow` when the project's CI opts in to the
+footprint gate, and `source: architecture` otherwise.
+
 ## 0. Input
 
 The invocation names a spec:
@@ -64,15 +76,21 @@ The result supplies, and nothing below is spelled from anywhere else:
 | epic slug | `slug` |
 | `{plan}` | `plan` |
 | worktree | `worktree` |
-| branch prefix | the project's `manage-config project get --field working_prefixes` (choose `feature/` for a new capability, `fix/` for a bug fix, `chore/` for docs or maintenance) |
+| branch | `{branch} = {prefix}{plan}`; the prefix is one the project's `working_prefixes` declares, and the project's own set wins over the canonical `feature/` (a new capability), `fix/` (a bug fix) and `chore/` (docs or maintenance) |
+| base branch | `base_branch` (the project's own base branch, never a spelling of it) |
 | inbox sender id | `sender_id` |
 | progress file | `progress_file` |
 | landing file | `landing_file` |
 | build commands | `build` |
+| build timeout (seconds) | `build_timeout_seconds` |
 | required and optional reviewers, with their trigger comments | `required_bots`, `optional_bots` |
 | commit trailer | `commit_trailer` |
 | `inbox write` command | `inbox_write_command` |
 | harness and guard state | `harness`, `guard` |
+| guard-log path | `guard_log` |
+
+The branch row is derived from the project's configuration rather than returned by `resolve`; every
+other row names a field of the resolve result.
 
 The verb **fails closed**: a spec outside `.plan/orchestrator/{slug}/plans/`, an unreadable
 configuration, a missing automatic-review step, an empty required-reviewer list, or a build command
@@ -83,6 +101,8 @@ substitute a value.
 **How to read the spec:**
 
 - **Implement:** its *Deliverables* and every *Done when* clause.
+- **Load:** each deliverable's `Skills:` and `Persona:` lines, before working on that deliverable
+  (step 2 checks they exist).
 - **Facts, not instructions:** its *Claim Labels*. A `HYPOTHESIS` is confirmed or refuted before
   you build on it, and the result goes in your report.
 - **A hint, not a fence:** its *Expected Surface*.
@@ -101,7 +121,7 @@ context compaction. It can change during a run; the current version binds.
 **Check for a resume first.** If `{progress_file}` exists, this session is a resume:
 
 1. Read the progress file.
-2. Check it against `git -C {worktree} log --oneline origin/main..HEAD` and, if a PR is recorded,
+2. Check it against `git -C {worktree} log --oneline origin/{base_branch}..HEAD` and, if a PR is recorded,
    `ci pr view --pr-number {N}`.
 3. Continue at the **first step not recorded as done**. Never redo a recorded step.
 4. If git or the PR contradicts an entry, trust git and the PR, and record the correction.
@@ -145,9 +165,11 @@ so git alone shows which deliverables are committed.
   - Every script: `python3 .plan/execute-script.py {bundle}:{skill}:{script} …`.
   - Every build: the `build` commands the resolve result supplies (step 4).
   - Every CI action: `plan-marshall:tools-integration-ci:ci`.
-  - Never: the CI CLIs directly, the project build wrapper directly, the test/lint/type-check
-    binaries directly, `python3 -c`, `python3 some_script.py`, scripts under a system temp
-    directory, git's `grep` subcommand, or a bare `sleep`.
+  - Never: the CI CLIs directly (`gh`, `glab`), the project's build wrapper directly, the
+    test/lint/type-check binaries directly (`ruff`, `mypy` and `pytest` are the familiar cases),
+    `python3 -c`, `python3 some_script.py`, scripts under a system temp directory, git's `grep`
+    subcommand, or `sleep`. Every one of these goes through its resolved command instead: the
+    executor for scripts, the `build` map for builds, and `ci` for CI.
 - **Shell.**
   - One command per call: no `&&`, `;`, pipes, command substitution, loops or heredocs.
   - Files are read and searched with the file tools, never with shell `cat`, `ls`, `grep`, `find`,
@@ -191,21 +213,59 @@ so git alone shows which deliverables are committed.
 - **Guard.** The resolve result reports `guard: present` only when this project has a tool-call guard
   installed for the active harness, and `guard: none` otherwise (the Antigravity harness has no
   pre-tool-use hooks at all). Where nothing was enforced, the landing message says so — step 8's
-  facts block and rule check report `guard: none on this harness (unenforced)`. The lane never
-  reports "all kept" or "no guard-log line" when nothing was enforced.
+  facts block, and its rule-check section, report `guard: none on this harness (unenforced)`. The lane never
+  reports "all kept" or "no guard-log line" when nothing was enforced. The guard's audit log is
+  `{guard_log}` (the path `resolve` returns); step 8 reads it there for this run's sessions.
+
+### Personas — loaded as standards, one per kind of work
+
+Load the engineering persona for the kind of work a step does, and apply it as a standard:
+
+| Kind of work | Persona skill |
+|---|---|
+| production code | `persona-implementer` |
+| unit and module tests | `persona-module-tester` |
+| multi-module tests | `persona-integration-tester` |
+| trust boundaries, input validation and secrets | `persona-security-expert` |
+| documentation | `persona-documenter` |
+| every self-review round, and triaging every PR comment | `persona-code-reviewer` |
+
+A deliverable's own `Persona:` line (section 0) selects its persona; with no declaration, this table
+decides from the kind of work.
+
+The persona skills are loaded as **standards only**: any plan-marshall machinery they mention
+(`manage-personas`, extension points, orchestrator pipelines) is ignored in this lane. The lane
+loads the skill for its judgement, never to run its pipeline.
+
+`persona-code-reviewer` applies its adversarial-refute lenses to every finding: is it a defect or a
+preference; is it surplus or load-bearing; is the reported drift real or a false positive; and what
+is its severity. Apply the same lenses to the run's own Done-when verdicts, so that "met on paper"
+is challenged on reachability, on the end-to-end path, and against the spec's intent.
 
 ## 2. Set up the worktree
 
 All commands run from the main checkout (the repository root).
 
 1. `git status --porcelain` must print nothing. If it prints anything, stop and report **blocked**.
-2. `git fetch origin main`
+2. `git fetch origin {base_branch}`
 3. Create the worktree and branch:
-   `python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow worktree-create --plan-id {plan} --branch {branch} --base origin/main`.
+   `python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow worktree-create --plan-id {plan} --branch {branch} --base origin/{base_branch}`.
    - The verb also prepares the worktree's plan-local directory and its build tool. Bookkeeping
      warnings about a missing plan status are expected; ignore them.
    - `error: worktree_exists` means this is a resume: reuse the worktree.
 4. `git -C {worktree} push -u origin {branch}`. Make no edit before this push.
+5. **Check every named skill and persona exists.** The resolve result carries one row per spec
+   deliverable with its `Skills:` and `Persona:` declarations. A `Skills:` entry is a
+   `bundle:skill` notation (comma-separated for several); a `Persona:` entry is the persona kind
+   (`implementer`) or its full skill name. Every named skill and persona must
+   exist in the installed bundles; `resolve` reports a name that does not as a
+   `named_skill_not_found` error, and the run then **stops and asks the operator**. A missing skill
+   is never skipped silently. Load the declared skills and persona as standards before working on
+   their deliverable, and list them per deliverable in the progress file.
+   - **Surface drift.** If a deliverable ends up touching a module the spec's Expected Surface did
+     not name, load that module's domain skills too, through the same configuration source the
+     orchestrator uses. Record the addition in the landing report as `skills added: …, reason: …`.
+     Never drop a skill the spec named.
 
 All edits, staging, commits and pushes target the worktree (`git -C {worktree} …`). The main
 checkout stays untouched.
@@ -220,6 +280,13 @@ inside the project directory; in-process runs need none.
 
 For each deliverable, in the spec's order:
 
+0. Load the deliverable's persona and its declared domain skills as standards before any work: its
+   `Persona:` and `Skills:` lines when the spec carries them, otherwise the kind of work selects the
+   persona from the persona table in section 1 — `persona-implementer` for production code,
+   `persona-module-tester` for unit and module tests, `persona-integration-tester` for multi-module
+   tests, `persona-security-expert` where trust boundaries, input validation or secrets are touched,
+   and `persona-documenter` for documentation. A spec without the lines names no domain skills; the
+   landing report then says `skills: none named`.
 1. Confirm the spec's HYPOTHESIS lines for this deliverable by reading the code. Write down
    confirmed or refuted, with `file:line`.
 2. Write the Done-when tests. Run them on the unfixed code and record the failing output (step 4
@@ -237,9 +304,20 @@ resolve result supplies:
 ```bash
 {build.quality-gate} --execution-mode in_process --project-dir {worktree}
 {build.module-tests} --execution-mode in_process --project-dir {worktree}
-{build.verify} --execution-mode in_process --project-dir {worktree} --timeout 1800
+{build.verify} --execution-mode in_process --project-dir {worktree} --timeout {build_timeout_seconds}
 ```
 
+- **Docs-only change.** Before running the full build, classify the worktree diff against the base:
+  get the changed paths with `git -C {worktree} diff --name-only origin/{base_branch}...HEAD`, then
+  pass them to the `build-classify` verb. When it answers `kind: docs-only`, run **no** full
+  `verify`: check the changed docs instead (format, internal links and references, and a
+  `git status` showing only doc files) and record `build-gate: docs-only` in the progress file and
+  the landing message. `kind: buildable` runs the gate below as usual. The classifier applies the
+  PROJECT's own footprint rule — its CI opt-in when it has one (a `skip-on-docs-only` declaration
+  plus the `extra-buildable` paths that force a build even for a document extension), otherwise the
+  architecture's module directories — rather than assuming a `.py` file is the only thing that
+  builds. Pass the same `--project-dir` the build gate uses. Required CI checks still have to be
+  green, so the merge gate is unchanged.
 - **When to run what:** run `{build.quality-gate}` before each commit that touches `*.py`, and
   `{build.verify}` once before the PR. Scope the tests to one module while iterating.
 - **Shell timeout:** in-process builds hold the shell call for their whole duration. Give each call
@@ -259,13 +337,16 @@ resolve result supplies:
 
 ## 5. Self-review before the PR
 
-Dispatch one sub-agent (the `Task` tool, the general agent). It reports and never edits. Give it:
+Dispatch one sub-agent (the `Task` tool, the general agent) with `persona-code-reviewer` loaded as a
+standard. It reports and never edits. Have it apply its adversarial-refute lenses — defect or
+preference, surplus or load-bearing, real or false-positive drift, and severity — to every finding
+and to the run's own Done-when verdicts. Give it:
 
 - **section 1 of this skill, verbatim, as rules it must keep.** That means no git grep, no shell
   file listing or reading commands, no temp-directory writes or redirects, no inline Python, and no
   workarounds after a guard refusal; use the file tools. Its rule breaks count as yours.
 - the spec path;
-- `git -C {worktree} diff origin/main...HEAD`;
+- `git -C {worktree} diff origin/{base_branch}...HEAD`;
 - the instruction to grade **each Done-when as written** as met or not met, with evidence;
 - the instruction to report:
   - every pre-existing test assertion the diff removed or relaxed;
@@ -282,19 +363,23 @@ the round limit, ask the operator whether to continue. Record every finding and 
      returns a path.
    - Write the body there: Summary; Changes, grouped per deliverable; Test evidence, naming the
      failing-then-passing tests. No footer.
-   - Then: `python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr create --plan-id NO_PLAN --head {branch} --base main --title "{conventional title}"`
+   - Then: `python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr create --plan-id NO_PLAN --head {branch} --base {base_branch} --title "{conventional title}"`
 2. **Trigger each reviewer** with a PR comment (`ci pr prepare-comment` + `ci pr reply`), posting
    its resolved `trigger_comment`.
 3. **Wait for CI:** `python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci checks wait --pr-number {N} --timeout 540`.
-4. **Read all three surfaces** after each push: the PR comments, the PR reviews, and the inline
-   threads in the PR comments. Handle every comment:
+4. **Read all three surfaces** after each push — the PR comments (`ci pr comments`), the PR reviews
+   (`ci pr reviews`), and the inline threads in the PR comments. Triage every comment with
+   `persona-code-reviewer`, applying its adversarial-refute lenses — defect or preference, surplus
+   or load-bearing, real or false-positive drift, and severity — before deciding whether it applies.
+   Handle every comment:
    - fix it, commit and push; or
-   - reply with the reason it does not apply, then resolve the thread.
+   - answer it with `ci pr thread-reply` (the reason it does not apply), then close it with
+     `ci pr resolve-thread`.
 5. **After every push, re-trigger** a reviewer whose last review predates the head.
 6. **Reviewer quota policy** ("review limit reached" or similar), for ANY required reviewer that
    refuses on quota:
    1. Wait 90 minutes. Record the refusal and the next allowed trigger time in the progress file,
-      then stop the session or wait for the operator; never hold a bare sleep. Then post that
+      then stop the session or wait for the operator; never `sleep`. Then post that
       reviewer's `trigger_comment` again. Repeat up to 10 times. If no review from that reviewer
       exists at all, post its `escalated_trigger_comment` once.
    2. Still no reaction: close the PR **unmerged**, open a new PR from the same branch, and trigger
@@ -311,17 +396,34 @@ the round limit, ask the operator whether to continue. Record every finding and 
 
 Merge only when all of these hold:
 
-- Every required reviewer reviewed the **current head**.
+- Every required reviewer reviewed the **current head**. **Exception — standing review
+  authorization, quota-limited reviewers only.** For a required reviewer that the resolve result
+  marks `quota_limited`, "reviewed the current head" may be replaced by ALL of:
+  1. **a qualifying review exists** — a formal review by that reviewer on one of this PR's heads,
+     listed by `ci pr reviews` with its commit id. Rate-limit notices, summary comments and thread
+     replies do not count;
+  2. **every finding is handled** — each finding from that review and from any later one is fixed in
+     a pushed commit, or answered with a reason, and every one of that reviewer's threads is
+     resolved;
+  3. **it was re-triggered once after the last push**, and the refusal or silence is recorded;
+  4. **every other gate condition holds on the current head** — every reviewer that is not
+     quota-limited reviewed it, every comment is handled, the build gate is green, CI is green.
 - Every comment is handled.
-- The build gate (step 4) is green on the current head.
+- `verify` (the full build, step 4) is green on the current head.
 - CI is green on the current head.
 
+The reviewer quota policy (step 6) applies only while no qualifying review exists. The standing
+authorization never applies to a reviewer that is not quota-limited, and never to a PR without a
+qualifying review.
+
 **Any question that bears on the merge** states, per required reviewer, which head it last reviewed,
-and whether that is the current head. Its options never mark a rule-bending choice
-"Recommended". A false or incomplete statement in such a question fails the run.
+and whether that is the current head. It states the CI status and the `verify` status only from a
+result obtained on that head AFTER the last push; where no such result exists it reports `pending`,
+never an older run's answer. Its options never mark a rule-bending choice "Recommended". A false or
+incomplete statement in such a question fails the run.
 
 **Immediately before enqueue,** fetch the base branch again. **If it moved:**
-`git -C {worktree} fetch origin main`, then `git -C {worktree} merge origin/main`. Run the build
+`git -C {worktree} fetch origin {base_branch}`, then `git -C {worktree} merge origin/{base_branch}`. Run the build
 gate again, push, re-trigger the reviewers, and repeat step 6.
 
 **Before enqueue, re-check the authorization rule:** merge only when every condition above holds, or
@@ -346,7 +448,7 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr wait-fo
    `git worktree remove {worktree}`, never with force. The git-workflow `worktree-remove` verb
    refuses in this lane, so do not use it.
 2. `python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow prune-local-and-remote-ref --project-dir . --head {branch}`
-3. `python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow switch-and-pull --project-dir . --base main`
+3. `python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow switch-and-pull --project-dir . --base {base_branch}`
 
 Never use `git branch -D`. If a cleanup step refuses, report it and ask. Never move the main
 checkout by hand (`git fetch` + `merge`, `pull`, `switch`, `reset`): other sessions may be working
@@ -364,7 +466,7 @@ The payload is a facts block followed by the report, both taken from the progres
 The facts block is fenced with the `landing-facts` info-string and carries exactly the schema fields
 the orchestrator's landing-payload contract defines; its field values follow.
 
-```text
+```landing-facts
 schema=landing-facts/1
 plan_id={sender_id}
 epic={slug}
@@ -379,29 +481,36 @@ model={every model and variant used, comma-separated, e.g. deepseek-v4.1-flash/m
 steps=setup:done,implement:done,build-gate:done,self-review:{clear|budget-exhausted},pr:done,reviews:done,merge:done
 ```
 
-The facts block also carries a `guard` line: `guard: none on this harness (unenforced)` when the
-resolve result reported `guard: none`, and `guard: present` otherwise.
-
 - **Values:** write `unknown` for anything you could not read, never `n/a` and never a guess.
   `deliverables_done` counts only fully met deliverables.
-- **Guard:** where the resolve result reported `guard: none`, the facts block's rule check line and
-  the report's rule-check section both say `guard: none on this harness (unenforced)`. Never report
-  "all kept" or "no guard-log line" for a harness with no guard.
+- **Every line inside the facts fence is a `key=value` pair** — no line is dropped by the consumer's
+  parser. The guard state travels as a prose note beside the block rather than as a fence line:
+  `guard: none on this harness (unenforced)` when the resolve result reported `guard: none`, and
+  `guard: present` otherwise.
+- **Guard:** where the resolve result reported `guard: none`, the rule-check section of the report
+  says `guard: none on this harness (unenforced)`. Never report "all kept" or "no guard-log line"
+  for a harness with no guard.
 - **The report follows the facts block,** one short section each:
   1. **Deliverables** — per Done-when: met or not met; the test name and its fail-then-pass evidence;
      the commit.
-  2. **Hypotheses** — each one confirmed or refuted, with `file:line`.
-  3. **Findings** — self-review, CI and every PR comment, each with its disposition.
-  4. **Reviewers** — one row per reviewer in `{required_bots}` and `{optional_bots}`: reviewed /
-     refused / silent, the head reviewed, and the trigger and wait history.
-  5. **Operator questions** — **every** question-tool call in the run, in order: its text, its
+  2. **Personas and skills** — per step, which persona was applied (section 1's table, or the
+     deliverable's own `Persona:` line); per deliverable, the domain skills it named — or
+     `skills: none named` when the spec declares none — and any skill added for surface drift as
+     `skills added: …, reason: …`.
+  3. **Hypotheses** — each one confirmed or refuted, with `file:line`.
+  4. **Findings** — self-review, CI and every PR comment, each with its disposition.
+  5. **Reviewers** — one row per reviewer in `{required_bots}` and `{optional_bots}`: reviewed /
+     refused / silent, the head reviewed, and the trigger and wait history. **Standing review
+     authorization:** per quota-limited reviewer, the head it reviewed, the current head, and each
+     finding with how it was handled.
+  6. **Operator questions** — **every** question-tool call in the run, in order: its text, its
      options, and the option selected. List free-text operator messages separately, as free text.
      If no question-tool call was made, write "none asked".
-  6. **Rule check** — every section 1 rule that you or a sub-agent did not keep, and every guard
-     refusal: read the guard log for this run's sessions and list each line. "All kept" is allowed
-     only when the guard log has no line for the run — and never on a harness whose resolve result
-     reported `guard: none`.
-  7. **Residue** — anything left open.
+  7. **Rule check** — every section 1 rule that you or a sub-agent did not keep, and every guard
+     refusal: read `{guard_log}` (the path `resolve` returns) for this run's sessions and list each
+     line. "All kept" is allowed only when that log has no line for the run — and never on a harness
+     whose resolve result reported `guard: none`.
+  8. **Residue** — anything left open.
 
 Then tell the operator the PR number, the merge commit, and that the landing message was written.
 

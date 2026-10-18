@@ -1,22 +1,26 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for the ``runbook-lane`` skill (D1) and its ``resolve`` verb (D2).
+"""Tests for the ``runbook-lane`` skill (D1, D3–D6) and its ``resolve`` verb (D2, D4, D6).
 
 The runbook lane implements one staged orchestrator plan spec without the
 ``/plan-marshall`` lifecycle. Its contract used to live in a machine-local file
 that named this repository's epic, build system, reviewers and commit trailer;
-D1 ships that contract as a bundle skill whose project-specific values come from
-the D2 ``runbook_lane resolve`` verb, and D2 is the verb itself.
+the skill now carries the contract and every project-specific value comes from
+the ``runbook_lane resolve`` verb.
 
-Three properties are load-bearing here and each is asserted directly rather than
+Five properties are load-bearing here and each is asserted directly rather than
 inferred:
 
 * the skill carries no repository-specific literal, so it is usable from any
   project;
-* the skill's section structure still mirrors the source runbook, so no rule was
-  dropped in the move;
+* the merge gate's standing review authorization, the persona standards and the
+  per-deliverable skill declarations are present as written;
+* the restored rule set survives at RULE granularity, not merely as headings;
 * ``resolve`` fails closed — an empty reviewer list, a spec outside the
-  orchestrator tree, or an unresolvable build is an error, never a default.
+  orchestrator tree, an unresolvable build, or a named skill that is not
+  installed is an error, never a default;
+* the build classifier and the two target emitters answer per the project's own
+  footprint rule and the targets' own tool vocabulary.
 
 The ``resolve`` fixtures seed a project-scoped ``.plan/marshal.json``, a
 project-architecture module whose command map carries one build per case, and a
@@ -26,11 +30,13 @@ staged spec. They never read this repository's own ``.plan/`` state.
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any
 
 from conftest import (
     MARKETPLACE_ROOT,
+    PROJECT_ROOT,
     get_scripts_dir,
     load_script_module,
     run_script,
@@ -155,6 +161,71 @@ def test_skill_is_registered_in_plugin_json() -> None:
     assert './skills/runbook-lane' in plugin['skills']
 
 
+# -----------------------------------------------------------------------------
+# D1 — the standing review authorization in the merge gate
+# -----------------------------------------------------------------------------
+
+
+def _skill_text() -> str:
+    return str((_SKILL_DIR / 'SKILL.md').read_text(encoding='utf-8'))
+
+
+def _section(heading: str) -> str:
+    """Return one ``## `` section of the skill, from *heading* to the next one.
+
+    Whitespace-normalised, so an assertion is about the wording rather than about
+    where the author happened to wrap a line.
+    """
+    text = _skill_text()
+    start = text.index(heading)
+    rest = text[start + len(heading) :]
+    end = rest.find('\n## ')
+    return ' '.join((heading + (rest if end == -1 else rest[:end])).split())
+
+
+#: The four conditions the standing authorization replaces "reviewed the current
+#: head" with. Each is a distinct requirement, so each is asserted separately.
+_STANDING_CONDITIONS = (
+    'a qualifying review exists',
+    'every finding is handled',
+    'it was re-triggered once after the last push',
+    'every other gate condition holds on the current head',
+)
+
+
+def test_merge_gate_names_the_four_standing_authorization_conditions() -> None:
+    gate = _section('## 7. Merge gate')
+    for condition in _STANDING_CONDITIONS:
+        assert condition in gate, f'the merge gate does not name the condition {condition!r}'
+
+
+def test_quota_policy_is_conditional_on_no_qualifying_review() -> None:
+    gate = _section('## 7. Merge gate')
+    assert 'applies only while no qualifying review exists' in gate
+
+
+def test_standing_authorization_scope_excludes_non_quota_limited_reviewers() -> None:
+    gate = _section('## 7. Merge gate')
+    assert 'never applies to a reviewer that is not quota-limited' in gate
+
+
+def test_landing_report_requires_the_standing_authorization_evidence() -> None:
+    landing = _section('## 8. Landing message (the last step, after the merge)')
+    assert 'the head it reviewed' in landing
+    assert 'the current head' in landing
+    assert 'how it was handled' in landing
+
+
+def test_standing_authorization_stays_repository_neutral() -> None:
+    gate = _section('## 7. Merge gate')
+    # Anchored to the new section so this assertion fails before the change and
+    # then guards the added wording against a repository-specific literal.
+    assert 'standing review authorization' in gate.lower()
+    lowered = gate.lower()
+    for literal in _FORBIDDEN_LITERALS:
+        assert literal.lower() not in lowered, f'repository-specific literal in the merge gate: {literal}'
+
+
 # =============================================================================
 # D2 — the resolve verb
 # =============================================================================
@@ -173,6 +244,9 @@ def _seed_fixture(
     optional_bots: str = '',
     slug: str = 'demo-epic',
     spec_name: str = 'PLAN-LB-66-runbook-lane-skill.md',
+    spec_text: str = '# staged spec\n',
+    base_branch: str | None = None,
+    module_path: str = '.',
 ) -> Path:
     """Seed a project fixture and return the staged spec path.
 
@@ -194,7 +268,8 @@ def _seed_fixture(
                             }
                         }
                     }
-                }
+                },
+                **({'project': {'default_base_branch': base_branch}} if base_branch else {}),
             }
         ),
     )
@@ -217,7 +292,7 @@ def _seed_fixture(
             {
                 'name': 'root-mod',
                 'build_systems': ['pyproject'],
-                'paths': {'module': '.'},
+                'paths': {'module': module_path},
                 'commands': {
                     'quality-gate': executable.format(args='quality-gate'),
                     'module-tests': executable.format(args='module-tests'),
@@ -227,7 +302,7 @@ def _seed_fixture(
         ),
     )
     spec = root / '.plan' / 'orchestrator' / slug / 'plans' / spec_name
-    _write(spec, '# staged spec\n')
+    _write(spec, spec_text)
     return spec
 
 
@@ -427,3 +502,317 @@ def test_resolve_unresolvable_build_is_an_error(tmp_path: Path) -> None:
     data = _run_resolve(spec, tmp_path)
     assert data['status'] == 'error'
     assert data['error'] == 'build_command_unresolvable'
+
+
+# -----------------------------------------------------------------------------
+# D2 — the per-reviewer quota-limited flag
+# -----------------------------------------------------------------------------
+
+
+def test_resolve_reports_a_quota_limited_reviewer(tmp_path: Path) -> None:
+    spec = _seed_fixture(tmp_path, executable=_PYPROJECT_EXEC, required_bots='coderabbit')
+    data = _run_resolve(spec, tmp_path)
+    row = next(row for row in data['required_bots'] if row['bot'] == 'coderabbit')
+    assert row['quota_limited'] is True
+
+
+def test_resolve_reports_a_reviewer_that_is_not_quota_limited(tmp_path: Path) -> None:
+    spec = _seed_fixture(tmp_path, executable=_PYPROJECT_EXEC, required_bots='cuioss-review-bot')
+    data = _run_resolve(spec, tmp_path)
+    row = next(row for row in data['required_bots'] if row['bot'] == 'cuioss-review-bot')
+    assert row['quota_limited'] is False
+
+
+def test_bot_standard_without_a_declaration_resolves_not_quota_limited(tmp_path: Path) -> None:
+    """The authorization stays OFF by default: an undeclared bot is not quota-limited."""
+    standards = tmp_path / 'standards'
+    _write(
+        standards / 'fixture-bot.md',
+        '# Fixture bot\n\n```yaml\nbot_kind: fixture-bot\ntrigger_comment: "@fixture review"\n```\n',
+    )
+    registry = load_script_module('plan-marshall', 'automatic-review', 'bot_registry.py', register=False)
+    assert registry.BotRegistry(standards).quota_limited('fixture-bot') is False
+
+
+def test_optional_reviewers_also_carry_the_flag(tmp_path: Path) -> None:
+    spec = _seed_fixture(tmp_path, executable=_PYPROJECT_EXEC, required_bots='x', optional_bots='sourcery')
+    data = _run_resolve(spec, tmp_path)
+    assert data['optional_bots'][0]['quota_limited'] is True
+
+
+# =============================================================================
+# D3 — engineering personas, loaded as standards
+# =============================================================================
+
+#: The lane steps that write code, tests or docs, or that review — and the
+#: persona each must name.
+_WRITING_OR_REVIEWING_STEP_PERSONAS = (
+    ('## 3. Implement, deliverable by deliverable', ('persona-implementer', 'persona-module-tester')),
+    ('## 5. Self-review before the PR', ('persona-code-reviewer',)),
+    ('## 6. Pull request and reviews', ('persona-code-reviewer',)),
+)
+
+
+def test_each_writing_or_reviewing_step_names_its_persona() -> None:
+    for heading, personas in _WRITING_OR_REVIEWING_STEP_PERSONAS:
+        section = _section(heading)
+        for persona in personas:
+            assert persona in section, f'{heading} does not name {persona}'
+
+
+def test_self_review_and_pr_triage_name_adversarial_refute() -> None:
+    for heading in ('## 5. Self-review before the PR', '## 6. Pull request and reviews'):
+        assert 'adversarial-refute' in _section(heading), f'{heading} does not name adversarial-refute'
+
+
+def test_personas_are_loaded_as_standards_only() -> None:
+    text = _skill_text()
+    assert 'standards only' in ' '.join(text.split()).lower()
+    assert 'manage-personas' in text
+
+
+def test_landing_report_requires_the_persona_list() -> None:
+    landing = _section('## 8. Landing message (the last step, after the merge)')
+    assert 'persona' in landing.lower()
+    assert 'per step' in landing.lower()
+
+
+def test_every_named_persona_resolves_to_a_bundle_skill() -> None:
+    named = sorted(set(re.findall(r'persona-[a-z][a-z-]*[a-z]', _skill_text())))
+    assert named, 'the skill names no persona'
+    missing = [p for p in named if not (MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / p / 'SKILL.md').is_file()]
+    assert not missing, f'named personas that do not resolve: {missing}'
+
+
+# =============================================================================
+# D4 — per-deliverable skills and personas, with an existence check
+# =============================================================================
+
+
+def test_setup_names_the_skill_existence_check_and_the_stop_and_ask() -> None:
+    setup = _section('## 2. Set up the worktree')
+    assert 'must exist in the installed bundles' in setup
+    assert 'stops and asks the operator' in setup
+
+
+def test_landing_report_requires_per_deliverable_skills_and_drift_additions() -> None:
+    landing = _section('## 8. Landing message (the last step, after the merge)').lower()
+    assert 'per deliverable' in landing
+    assert 'skills added:' in landing
+    assert 'reason:' in landing
+
+
+_DECLARED_SPEC = (
+    '## Deliverables\n\n'
+    '1. **First deliverable**\n'
+    '   - Skills: plan-marshall:runbook-lane\n'
+    '   - Persona: implementer\n'
+    '2. **Second deliverable**\n'
+    '   - Skills: plan-marshall:manage-files\n'
+    '   - Persona: module-tester\n'
+)
+
+
+def test_resolve_reports_each_deliverables_skills_and_persona(tmp_path: Path) -> None:
+    spec = _seed_fixture(tmp_path, executable=_PYPROJECT_EXEC, required_bots='x', spec_text=_DECLARED_SPEC)
+    data = _run_resolve(spec, tmp_path)
+    rows = data['deliverables']
+    assert [str(row['number']) for row in rows] == ['1', '2']
+    assert rows[0]['skills'] == 'plan-marshall:runbook-lane'
+    assert rows[0]['persona'] == 'persona-implementer'
+    assert rows[1]['persona'] == 'persona-module-tester'
+    assert data['skills_note'] == 'declared'
+
+
+def test_resolve_fails_on_a_nonexistent_named_skill(tmp_path: Path) -> None:
+    spec_text = '## Deliverables\n\n1. **First**\n   - Skills: plan-marshall:no-such-skill\n'
+    spec = _seed_fixture(tmp_path, executable=_PYPROJECT_EXEC, required_bots='x', spec_text=spec_text)
+    data = _run_resolve(spec, tmp_path)
+    assert data['status'] == 'error'
+    assert data['error'] == 'named_skill_not_found'
+
+
+def test_resolve_fails_on_a_nonexistent_named_persona(tmp_path: Path) -> None:
+    spec_text = '## Deliverables\n\n1. **First**\n   - Persona: no-such-persona\n'
+    spec = _seed_fixture(tmp_path, executable=_PYPROJECT_EXEC, required_bots='x', spec_text=spec_text)
+    data = _run_resolve(spec, tmp_path)
+    assert data['status'] == 'error'
+    assert data['error'] == 'named_skill_not_found'
+
+
+def test_spec_without_skill_or_persona_lines_says_none_named(tmp_path: Path) -> None:
+    spec = _seed_fixture(tmp_path, executable=_PYPROJECT_EXEC, required_bots='x')
+    data = _run_resolve(spec, tmp_path)
+    assert data['skills_note'] == 'none named'
+
+
+# =============================================================================
+# D5 — a docs-only change skips the full local build
+# =============================================================================
+
+#: This repository's own footprint opt-in, as `.github/workflows/python-verify.yml`
+#: declares it. Seeded into a fixture so the classifier is exercised against the
+#: repository's real rule rather than against the repository tree.
+_VERIFY_WORKFLOW = (
+    'name: Python Verify\n'
+    '\n'
+    'jobs:\n'
+    '  verify:\n'
+    '    with:\n'
+    '      skip-on-docs-only: true\n'
+    '      extra-buildable: >-\n'
+    '        .plan/marshal.json\n'
+    '        .claude/**\n'
+    '        marketplace/**/*.md\n'
+    '        test/**/*.md\n'
+    '      pre-verify-goals: generate\n'
+)
+
+
+def _seed_footprint(tmp_path: Path, *, opt_in: bool = True, module_path: str = '.') -> Path:
+    _seed_fixture(tmp_path, executable=_PYPROJECT_EXEC, required_bots='x', module_path=module_path)
+    _write(
+        tmp_path / '.github' / 'workflows' / 'python-verify.yml',
+        _VERIFY_WORKFLOW if opt_in else 'name: Other\n',
+    )
+    return tmp_path
+
+
+def _build_classify(project_dir: Path, paths: str) -> dict:
+    script = get_scripts_dir('plan-marshall', _SKILL_NAME) / 'runbook_lane.py'
+    result = run_script(script, 'build-classify', '--project-dir', str(project_dir), '--paths', paths)
+    assert result.success, f'build-classify crashed: {result.stderr}'
+    data: dict[str, Any] = result.toon()
+    return data
+
+
+def test_build_classify_treats_a_docs_only_diff_as_docs_only(tmp_path: Path) -> None:
+    data = _build_classify(_seed_footprint(tmp_path), 'doc/developer/build.adoc')
+    assert data['kind'] == 'docs-only'
+    assert data['source'] == 'ci-workflow'
+
+
+def test_build_classify_treats_a_bundle_markdown_change_as_buildable(tmp_path: Path) -> None:
+    data = _build_classify(
+        _seed_footprint(tmp_path),
+        'marketplace/bundles/plan-marshall/skills/runbook-lane/SKILL.md',
+    )
+    assert data['kind'] == 'buildable'
+
+
+def test_build_classify_treats_a_python_change_as_buildable(tmp_path: Path) -> None:
+    data = _build_classify(_seed_footprint(tmp_path), 'build.py')
+    assert data['kind'] == 'buildable'
+
+
+def test_build_classify_without_an_opt_in_falls_back_to_the_architecture(tmp_path: Path) -> None:
+    data = _build_classify(_seed_footprint(tmp_path, opt_in=False), 'doc/developer/build.adoc')
+    assert data['source'] == 'architecture'
+    # The fixture architecture has a root module (``paths.module: '.'``), so every
+    # path lies inside a building module and the fallback answers buildable —
+    # the fail-closed direction rather than a docs-only skip nobody declared.
+    assert data['kind'] == 'buildable'
+
+
+def test_skill_build_gate_documents_the_docs_only_path() -> None:
+    gate = _section('## 4. Build gate')
+    assert 'docs-only' in gate
+    assert 'build-gate: docs-only' in gate
+
+
+def test_build_classify_does_not_invent_a_document_class(tmp_path: Path) -> None:
+    """A `.txt` file is not a document class of the gate, so it must build."""
+    data = _build_classify(_seed_footprint(tmp_path), 'notes/plain.txt')
+    assert data['kind'] == 'buildable'
+
+
+def test_build_classify_keeps_an_unlisted_build_file_buildable(tmp_path: Path) -> None:
+    """Architecture silence about a root build file must not become a docs-only skip."""
+    project = _seed_footprint(tmp_path, opt_in=False, module_path='core')
+    data = _build_classify(project, 'pyproject.toml')
+    assert data['source'] == 'architecture'
+    assert data['kind'] == 'buildable'
+
+
+def test_build_classify_keeps_an_unlisted_document_docs_only(tmp_path: Path) -> None:
+    """The same silence still lets a genuine document be classified docs-only."""
+    project = _seed_footprint(tmp_path, opt_in=False, module_path='core')
+    data = _build_classify(project, 'notes/readme.md')
+    assert data['kind'] == 'docs-only'
+
+
+# =============================================================================
+# D6 — the restored runbook rules
+# =============================================================================
+
+#: Rule-level parity: one entry per section, each carrying the rules that section
+#: must keep. A heading-only parity check cannot catch a rule lost inside a
+#: surviving heading; this table can, which is the whole point of restoring parity
+#: at rule granularity rather than at heading granularity.
+_RULE_PARITY: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ('## 0. Input', ('{branch}', '{prefix}{plan}', 'feature/', 'fix/', 'chore/')),
+    (
+        '## 1. Rules (every one binds; breaking one fails the run)',
+        ('`sleep`', '`gh`', '`glab`', '`ruff`', '`mypy`', '`pytest`', '{guard_log}'),
+    ),
+    ('## 4. Build gate', ('{build_timeout_seconds}', '{base_branch}')),
+    ('## 5. Self-review before the PR', ('{base_branch}', '`Task`')),
+    (
+        '## 6. Pull request and reviews',
+        ('ci pr comments', 'ci pr reviews', 'ci pr thread-reply', 'ci pr resolve-thread', '`sleep`'),
+    ),
+    ('## 7. Merge gate', ('`verify`', 'origin/{base_branch}', 'pending', 'qualifying review')),
+    ('## 8. Landing message (the last step, after the merge)', ('{guard_log}', '```landing-facts')),
+)
+
+
+def test_rule_level_parity_per_section() -> None:
+    for heading, keywords in _RULE_PARITY:
+        section = _section(heading)
+        for keyword in keywords:
+            assert keyword in section, f'{heading} lost {keyword!r}'
+
+
+def test_skill_never_spells_the_base_branch_literally() -> None:
+    text = _skill_text()
+    assert 'origin/main' not in text, 'the skill spells the base branch literally'
+    assert '--base main' not in text, 'the skill spells the base branch literally'
+
+
+def _emitted_body(target: str) -> str:
+    from marketplace.targets.body_transform_engine import load_transform_rules, make_body_transformer
+
+    rules = load_transform_rules(PROJECT_ROOT / 'marketplace' / 'targets' / target / 'mapping.json')
+    return make_body_transformer({}, rules)(_skill_text(), 'plan-marshall', 'skill')
+
+
+def test_the_subagent_tool_is_rewritten_for_opencode_and_antigravity() -> None:
+    # Claude IS the source format, so its name needs no rewrite; the two
+    # emitting targets are the ones that must carry their own tool name.
+    assert '`Task`' in _skill_text(), 'the source skill does not name the sub-agent tool'
+    assert '`subagent`' in _emitted_body('opencode')
+    assert '`invoke_subagent`' in _emitted_body('antigravity')
+
+
+def test_the_skill_landing_facts_example_parses_with_no_dropped_line() -> None:
+    inbox = load_script_module(
+        'plan-marshall', 'plan-orchestrator', '_orchestrator_inbox.py', 'rb_lb67_orchestrator_inbox'
+    )
+    text = _skill_text()
+    assert '```landing-facts' in text
+    facts = inbox.parse_landing_facts(text)
+    assert facts is not None, 'the skill carries no landing-facts fence'
+    assert facts['schema'] == 'landing-facts/1'
+    block = text.split('```landing-facts', 1)[1].split('```', 1)[0]
+    lines = [line for line in block.splitlines() if line.strip()]
+    assert all('=' in line for line in lines), 'a facts line carries no key=value pair'
+    assert len(lines) == len(facts), 'a facts line was dropped by the parser'
+
+
+def test_resolve_returns_the_base_branch_and_build_timeout(tmp_path: Path) -> None:
+    spec = _seed_fixture(tmp_path, executable=_PYPROJECT_EXEC, required_bots='x', base_branch='develop')
+    data = _run_resolve(spec, tmp_path)
+    assert data['base_branch'] == 'develop'
+    assert isinstance(data['build_timeout_seconds'], int)
+    assert data['build_timeout_seconds'] > 0
+    assert data['guard_log'] == '.plan/temp/guard.log'

@@ -14,7 +14,7 @@ bot appears in neither list, with a warning recorded. See
 
 The fenced-YAML block below is the machine-readable per-bot record. It is data, not frontmatter —
 a fenced code block that plugin-doctor treats as an example, not an executable directive. Consumers
-read `bot_kind`, `author_login`, `trigger_comment`, `escalated_trigger_comment`, `completion_check_name`, `honors_skip_label`,
+read `bot_kind`, `author_login`, `trigger_comment`, `escalated_trigger_comment`, `quota_limited`, `completion_check_name`, `honors_skip_label`,
 `participation_evidence`, `participation_evidence_markers`, `participation_requires_update`, `ignore_patterns`,
 `acknowledgment_patterns`, `review_body_summary_patterns`, `refusal_patterns`, `no_unreviewed_commit_patterns`, `contentless_review_markers`,
 `actionable_content_markers`, `rate_limit_class`, `rate_limit_eta_patterns`, and `severity_map` from
@@ -37,6 +37,7 @@ author_login: coderabbitai
 trigger_comment: "@coderabbitai review"
 escalated_trigger_comment: "@coderabbitai full review"   # re-reviews the WHOLE changeset; posted only after a "nothing new to review" reply, and it uses one review from the allowance
 trigger_semantics: requires_explicit_trigger   # the trigger comment above must be posted
+quota_limited: true              # reviews under a finite allowance: a later head can be refused for the quota
 completion_check_name: "CodeRabbit"   # in-progress check-run polled to completion by the wait step
 honors_skip_label: true          # central cuioss/coderabbit config skips PRs labelled skip-bot-review
 # ORDERING IS LOAD-BEARING: `issue_comment` is APPENDED after the existing two and must never be
