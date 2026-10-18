@@ -356,9 +356,24 @@ def test_resolve_claude_guard_requires_a_registered_hook(tmp_path: Path) -> None
     data = _run_resolve(spec, tmp_path, env_overrides=_claude_env())
     assert data['guard'] == 'none'
 
+    # A DECLARED but empty hook list is still not enforcement.
+    _write(
+        tmp_path / '.claude' / 'settings.json',
+        json.dumps({'hooks': {'PreToolUse': []}}),
+    )
+    data = _run_resolve(spec, tmp_path, env_overrides=_claude_env())
+    assert data['guard'] == 'none'
+
+    # A hook carrying a command, registered in the MACHINE-LOCAL file, enforces.
     _write(
         tmp_path / '.claude' / 'settings.local.json',
-        json.dumps({'hooks': {'PreToolUse': [{'matcher': 'Bash', 'hooks': []}]}}),
+        json.dumps(
+            {
+                'hooks': {
+                    'PreToolUse': [{'matcher': 'Bash', 'hooks': [{'type': 'command', 'command': 'python3 gate.py'}]}]
+                }
+            }
+        ),
     )
     data = _run_resolve(spec, tmp_path, env_overrides=_claude_env())
     assert data['guard'] == 'present'

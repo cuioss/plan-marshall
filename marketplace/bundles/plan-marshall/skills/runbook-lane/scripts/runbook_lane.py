@@ -197,16 +197,48 @@ def _resolve_build(project_dir: Path) -> dict[str, Any]:
     return build
 
 
+def _claude_guard_installed(project_dir: Path) -> bool:
+    """Whether a Claude install registers a REAL pre-tool-use hook.
+
+    A settings file's existence proves nothing, and neither does the KEY: a
+    ``hooks.PreToolUse`` holding an empty list is a declaration, not enforcement.
+    The hook has to carry at least one entry whose inner hook list holds a
+    command. Both settings files are read — the shared ``settings.json`` and the
+    machine-local ``settings.local.json`` — and either one registering such a hook
+    is enough, since a locally installed hook enforces exactly as a shared one
+    does. An unreadable or unparseable file contributes nothing.
+    """
+    for parts in _CLAUDE_SETTINGS_FILES:
+        try:
+            text = project_dir.joinpath(*parts).read_text(encoding='utf-8')
+        except OSError:
+            continue
+        try:
+            document = json.loads(text)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(document, dict):
+            continue
+        hooks = document.get('hooks')
+        entries = hooks.get('PreToolUse') if isinstance(hooks, dict) else None
+        if not isinstance(entries, list):
+            continue
+        for entry in entries:
+            inner = entry.get('hooks') if isinstance(entry, dict) else None
+            if isinstance(inner, list) and any(isinstance(hook, dict) and hook.get('command') for hook in inner):
+                return True
+    return False
+
+
 def _resolve_harness_guard(project_dir: Path) -> tuple[str, str]:
     """Resolve the active harness and whether a tool-call guard is INSTALLED.
 
     ``antigravity`` has no pre-tool-use hooks at all, so its guard is always
     absent. On the other harnesses the guard is observed for THIS project, and
-    observed as an INSTALLED hook rather than as a directory: an OpenCode guard
-    is its plugin file, and a Claude guard is a ``PreToolUse`` hook registered in
-    either settings file — the shared ``settings.json`` or the machine-local
-    ``settings.local.json``. A settings file that merely exists proves nothing,
-    and a hook installed only locally still enforces, so both arms are read.
+    observed as an INSTALLED hook rather than as a directory or a key: an OpenCode
+    guard is its plugin file, and a Claude guard is a non-empty ``PreToolUse``
+    hook registered in either settings file (see
+    :func:`_claude_guard_installed`).
     """
     import target_context
 
@@ -215,14 +247,7 @@ def _resolve_harness_guard(project_dir: Path) -> tuple[str, str]:
         return harness, 'none'
     if harness == 'opencode':
         return harness, 'present' if project_dir.joinpath(*_OPENCODE_GUARD).is_file() else 'none'
-    for parts in _CLAUDE_SETTINGS_FILES:
-        try:
-            text = project_dir.joinpath(*parts).read_text(encoding='utf-8')
-        except OSError:
-            continue
-        if 'PreToolUse' in text:
-            return harness, 'present'
-    return harness, 'none'
+    return harness, 'present' if _claude_guard_installed(project_dir) else 'none'
 
 
 def cmd_resolve(args: argparse.Namespace) -> dict[str, Any]:
