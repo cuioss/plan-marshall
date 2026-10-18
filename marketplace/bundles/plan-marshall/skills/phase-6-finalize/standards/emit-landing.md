@@ -210,6 +210,9 @@ below.
 
    - `harness` ← `metadata.harness`, `model` ← `metadata.model`, `effort` ← `metadata.effort`, and
      `plugin_version` ← `metadata.bundle_version`.
+   - When the stamped `model` is `mixed`, the distinct `{model}/{variant}` labels are in
+     `metadata.models`: write THOSE as the `model` fact rather than the bare `mixed`, so the landing
+     names the models the run actually used (the payload spec's `model` row defines the list form).
    - `executor_version` ← `metadata.executor_version` — OPTIONAL; omit the key when the stamp carries
      none rather than writing a degraded value.
    - A field whose stamp is ABSENT or unreadable is written as `unknown`. These four are REQUIRED, so an

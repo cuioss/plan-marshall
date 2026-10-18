@@ -46,14 +46,20 @@ worktree-resident when the plan runs in a worktree). Each run appends a new
 timestamp-keyed entry and never overwrites prior entries.
 
 The same run stamps the plan's runtime metadata into `status.json` — `harness`,
-`harness_source`, `model`, `model_source`, `effort`, `effort_source`,
+`harness_source`, `model`, `models`, `model_source`, `effort`, `effort_source`,
 `bundle_version` and `executor_version` — through manage-status's shared status
 writer. Only the fields the collected payload carried are written, and those
 the stamper manages but the payload did NOT carry are REMOVED: the stamper owns
 those keys, so a later preflight that could not read a field never leaves the
 earlier run's value in place for the landing to attribute to this run.
-The stamp is best-effort: a plan with no readable status document, or a write
-failure, reports `metadata_stamped: false` and never blocks plan start.
+`models` rides beside `model` so a MIXED OpenCode session tree keeps the distinct
+`{model}/{variant}` labels the landing needs to name.
+The stamp is attempted as soon as the collector returns a usable payload,
+INDEPENDENT of the artifact write: a `client.toon` that cannot be read or written
+is no reason to lose the collected attributes, and the two outcomes are reported
+separately (`artifact_written` / `metadata_stamped`). The stamp is best-effort: a
+plan with no readable status document, or a write failure, reports
+`metadata_stamped: false` and never blocks plan start.
 
 ### Step 2: Continue plan start regardless of outcome
 

@@ -341,6 +341,61 @@ def test_preflight_metadata_stamp_is_best_effort_without_a_status(
     assert result['artifact_written'] is True
 
 
+#: A payload from a MIXED OpenCode session tree: the distinct labels ride
+#: ``models`` beside ``model: mixed``.
+_MIXED_MODEL_PAYLOAD = (
+    'status: success\n'
+    'operation: runtime-info\n'
+    'harness: opencode\n'
+    'harness_source: env\n'
+    'transcripts: none\n'
+    'model: mixed\n'
+    'models: deepseek-v4.1-flash/high, gpt-5/low\n'
+    'model_source: measured\n'
+    'bundle_version: 0.1.1919\n'
+)
+
+
+def test_preflight_stamps_the_mixed_model_labels(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A mixed session tree keeps the distinct labels in the plan metadata."""
+    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+    plan_dir = _plan_with_status(tmp_path, 'my-plan')
+    _capture_runtime_info_argv([_MIXED_MODEL_PAYLOAD], monkeypatch)
+
+    result: dict[str, Any] = cmd_preflight(_ns('my-plan'))
+
+    assert result['metadata_stamped'] is True
+    metadata = _status_metadata(plan_dir)
+    assert metadata['model'] == 'mixed'
+    assert metadata['models'] == 'deepseek-v4.1-flash/high, gpt-5/low'
+
+
+def test_preflight_stamps_metadata_even_when_the_artifact_write_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A failed client.toon write does not lose the collected attributes."""
+    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+    plan_dir = _plan_with_status(tmp_path, 'my-plan')
+    before = 'schema_version: 1\nentries: [not, a, mapping]\n'
+    (plan_dir / 'client.toon').write_text(before, encoding='utf-8')
+    real_parse = _orch.parse_toon
+
+    def _fail_on_existing(text: str) -> Any:
+        if 'not, a, mapping' in text:
+            raise ValueError('unparseable artifact')
+        return real_parse(text)
+
+    monkeypatch.setattr(_orch, 'parse_toon', _fail_on_existing)
+    _capture_runtime_info_argv([_SELF_REPORTED_PAYLOAD], monkeypatch)
+
+    result: dict[str, Any] = cmd_preflight(_ns('my-plan', model='claude-opus-5-5', effort='high'))
+
+    assert result['degraded'] is True
+    assert result['artifact_written'] is False
+    assert result['metadata_stamped'] is True
+    assert _status_metadata(plan_dir)['model'] == 'claude-opus-5-5'
+
+
 def _real_collector_payload(tmp_path: Path) -> str:
     """A runtime-info payload produced by the REAL collector, not a fixture string.
 

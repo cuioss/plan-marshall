@@ -6381,11 +6381,15 @@ def _best_effort_plan_title(plan_id: str) -> None:
 #: The runtime attributes the preflight stamp writes into plan ``status.json``
 #: metadata, in write order. A field the collected payload did not carry is
 #: SKIPPED rather than invented, so an unreadable value stays absent instead of
-#: being recorded as the flag value or as a default.
+#: being recorded as the flag value or as a default. ``models`` rides beside
+#: ``model`` because a MIXED OpenCode session tree records ``model: mixed`` and
+#: keeps the distinct ``id/variant`` labels there — dropping it would leave the
+#: landing unable to name which models the run actually used.
 _PREFLIGHT_METADATA_FIELDS: tuple[str, ...] = (
     'harness',
     'harness_source',
     'model',
+    'models',
     'model_source',
     'effort',
     'effort_source',
@@ -6684,6 +6688,11 @@ def cmd_preflight(args: argparse.Namespace) -> dict[str, Any]:
             'degrade_reason': 'runtime-info returned no success payload',
             'artifact_written': False,
         }
+    # The metadata stamp is INDEPENDENT of the artifact write: the runtime
+    # attributes were collected successfully here, and a client.toon that cannot
+    # be read or written is no reason to lose them. Stamp first, then attempt the
+    # artifact, and report the two outcomes separately.
+    metadata_stamped = _best_effort_runtime_metadata(args.plan_id, payload)
     try:
         plan_dir.mkdir(parents=True, exist_ok=True)
         artifact_path = plan_dir / 'client.toon'
@@ -6695,6 +6704,7 @@ def cmd_preflight(args: argparse.Namespace) -> dict[str, Any]:
                 'degraded': True,
                 'degrade_reason': f'client.toon exists but is unreadable: {artifact_path}',
                 'artifact_written': False,
+                'metadata_stamped': metadata_stamped,
             }
         _write_client_toon_locked(artifact_path, payload)
     except OSError as exc:
@@ -6705,6 +6715,7 @@ def cmd_preflight(args: argparse.Namespace) -> dict[str, Any]:
             'degraded': True,
             'degrade_reason': f'client.toon unwritable: {exc}',
             'artifact_written': False,
+            'metadata_stamped': metadata_stamped,
         }
     return {
         'status': 'success',
@@ -6713,7 +6724,7 @@ def cmd_preflight(args: argparse.Namespace) -> dict[str, Any]:
         'degraded': False,
         'artifact_written': True,
         'artifact': 'client.toon',
-        'metadata_stamped': _best_effort_runtime_metadata(args.plan_id, payload),
+        'metadata_stamped': metadata_stamped,
         'persisted_approval': _persisted_approval_report(),
     }
 
