@@ -74,6 +74,8 @@ _MD_PATH_RE = re.compile(r'(?:^|\s)([\w./-]+\.md)(?=[\s,.;:)]|$)', re.MULTILINE)
 
 DELETED = 'deleted'
 REWRITTEN = 'rewritten'
+#: The functional verdict that retires a deliverable: its criteria are not open.
+SUPERSEDED = 'superseded'
 #: A spec deliverable's own Done-when that no outline criterion covers.
 SPEC_MISSING = 'spec_criterion_missing'
 #: The request's own Done-when that no outline criterion covers.
@@ -83,6 +85,52 @@ REQUEST_MISSING = 'request_criterion_missing'
 AUTHORED_KEY = 'authored'
 AUTHORSHIP_SCHEMA = 'review-verdict-authorship/1'
 AUTHORSHIP_VERB = 'review_support author-verdict'
+
+#: The plan-relative file of the plan's status record — where the operator's
+#: review closure is recorded, outside the artifacts it is read with.
+STATUS_FILE = 'status.json'
+
+
+def _status_doc(plan_id: str) -> dict[str, Any] | None:
+    """Return the plan's parsed status record, or ``None`` when it cannot be read."""
+    path = base_path('plans', plan_id, STATUS_FILE)
+    if not path.is_file():
+        return None
+    try:
+        parsed = json.loads(path.read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return None
+    return parsed if isinstance(parsed, dict) else None
+
+
+def _review_closed_reason(plan_id: str) -> str | None:
+    """Return why the operator closed the functional review, or ``None``.
+
+    The rubric's round-cap override (§ 8) closes the HEAD the operator judged and
+    is recorded on the plan's status record — either as the override-head list or
+    as the review step's ``may_close: operator_override`` fact. A closed review's
+    criteria are not open: the operator decided the head ships unreviewed, so the
+    gate must not read the ungraded criteria as outstanding work.
+    """
+    status = _status_doc(plan_id)
+    if status is None:
+        return None
+    metadata = status.get('metadata')
+    if not isinstance(metadata, dict):
+        return None
+    heads = metadata.get('functional_review_override_heads')
+    if isinstance(heads, list) and [head for head in heads if str(head).strip()]:
+        return 'the operator closed the functional review past its round cap'
+    phase_steps = metadata.get('phase_steps')
+    review = None
+    if isinstance(phase_steps, dict):
+        finalize = phase_steps.get('6-finalize')
+        if isinstance(finalize, dict):
+            review = finalize.get('functional-review')
+    facts = review.get('facts') if isinstance(review, dict) else None
+    if isinstance(facts, dict) and facts.get('may_close') == 'operator_override':
+        return 'the operator closed the functional review past its round cap'
+    return None
 
 
 def canonical_digest(payload: dict[str, Any]) -> str:
@@ -609,15 +657,25 @@ def open_criteria(plan_id: str, verdict_file: Path | None = None) -> dict[str, A
 
     * the verdict carries the review's authorship seal and its digest matches, so
       a file rewritten in place does not release the plan;
-    * the criterion is found by its TEXT (never by position, which would let a
-      row with different text answer for it);
-    * the row is ``met`` AND carries non-empty evidence.
+    * the row's status is ``met`` AND it carries non-empty evidence;
+    * the row is matched by a STABLE id — its position within the deliverable — so
+      a verdict row that paraphrases the frozen criterion still answers for it.
+      Exact text is the FALLBACK, never the only key: an exact-text match orphaned
+      every paraphrase.
 
-    Anything else is open, which is the fail-closed direction.
+    Anything else is open, which is the fail-closed direction. Three deliberate
+    states additionally close criteria rather than reading them as open work:
+
+    * an operator decision authorizes the exact change (``authorized_changes``);
+    * the deliverable's verdict is ``superseded``;
+    * the operator closed the review past its round cap (:func:`_review_closed_reason`).
     """
     snapshot = read_snapshot(plan_id)
     if snapshot is None:
         return {'source': 'none', 'open_count': 0, 'open': []}
+    closed_reason = _review_closed_reason(plan_id)
+    if closed_reason is not None:
+        return {'source': 'review_closed', 'closed_reason': closed_reason, 'open_count': 0, 'open': []}
     path = verdict_file if verdict_file is not None else base_path('plans', plan_id, FUNCTIONAL_VERDICT_FILE)
     verdict, verdict_state = _checked_verdict(path)
     rows: list[dict[str, Any]] = []
@@ -625,15 +683,22 @@ def open_criteria(plan_id: str, verdict_file: Path | None = None) -> dict[str, A
         if not isinstance(row, dict):
             continue
         number = row.get('number')
-        graded = verdict.get(number, [])
+        graded_row = verdict.get(number) or {}
+        if str(graded_row.get('verdict') or '') == SUPERSEDED:
+            continue
+        graded = graded_row.get('criteria') or []
         for index, criterion in enumerate(row.get('criteria') or [], start=1):
-            status = _graded_status(graded, criterion)
+            raw = criterion.get('text') if isinstance(criterion, dict) else criterion
+            text = normalize_criterion(raw)
+            if _authorization(snapshot, number, text):
+                continue
+            status = _graded_status(graded, text, index)
             if status == 'met':
                 continue
             rows.append(
                 {
                     'deliverable': number,
-                    'criterion': criterion,
+                    'criterion': text,
                     'criterion_index': index,
                     'status': status,
                 }
@@ -647,8 +712,8 @@ def open_criteria(plan_id: str, verdict_file: Path | None = None) -> dict[str, A
     }
 
 
-def _checked_verdict(path: Path) -> tuple[dict[Any, list[Any]], str]:
-    """Return ``({deliverable: rows}, state)`` for a verdict the gate may trust.
+def _checked_verdict(path: Path) -> tuple[dict[Any, dict[str, Any]], str]:
+    """Return ``({deliverable: row}, state)`` for a verdict the gate may trust.
 
     ``state`` is ``sealed`` when the authorship marker matches, ``unsealed`` when
     the marker is absent or its digest does not match, and ``absent`` when there is
@@ -664,36 +729,50 @@ def _checked_verdict(path: Path) -> tuple[dict[Any, list[Any]], str]:
     if not isinstance(parsed, dict) or authorship_problem(parsed) is not None:
         return {}, 'unsealed'
     rows = parsed.get('deliverables')
-    result: dict[Any, list[Any]] = {}
+    result: dict[Any, dict[str, Any]] = {}
     for row in rows if isinstance(rows, list) else []:
         if not isinstance(row, dict):
             continue
         number = row.get('number')
         if isinstance(number, str) and number.strip().isdigit():
             number = int(number.strip())
-        criteria = row.get('criteria')
-        result[number] = list(criteria) if isinstance(criteria, list) else []
+        result[number] = row
     return result, 'sealed'
 
 
-def _graded_status(criteria: list[Any], criterion: str) -> str:
-    """Status a sealed verdict gives one frozen criterion, matched by TEXT.
+def _graded_status(criteria: list[Any], criterion: str, index: int) -> str:
+    """Status a sealed verdict gives one frozen criterion, matched by stable id.
 
-    No positional fallback: a row whose text differs from the frozen criterion
-    answers for a different criterion, and reading it by position would report
-    ``met`` for a clause the reviewer never graded. A ``met`` row with no evidence
-    is ``unevidenced`` here for the same reason the validator treats it so.
+    A verdict row answers for the frozen criterion at its own position (the stable
+    id ``C{index}``), an explicit ``criterion_id`` answer wins, and exact text is
+    the last resort. Every row is stored under its deliverable, so its position is
+    the criterion index the author graded. A ``met`` row with no evidence is
+    ``unevidenced`` here for the same reason the validator treats it so.
     """
     wanted = normalize_criterion(criterion)
-    for row in criteria:
-        if not isinstance(row, dict) or normalize_criterion(row.get('criterion')) != wanted:
+    stable = f'C{index}'
+    row: dict[str, Any] | None = None
+    for candidate in criteria:
+        if not isinstance(candidate, dict):
             continue
-        status = str(row.get('status') or 'ungraded')
-        evidence = row.get('evidence')
-        if status == 'met' and (not isinstance(evidence, list) or not [item for item in evidence if str(item).strip()]):
-            return 'unevidenced'
-        return status
-    return 'ungraded'
+        cid = str(candidate.get('criterion_id') or '')
+        if cid and cid.split('.')[-1] == stable:
+            row = candidate
+            break
+    if row is None:
+        for candidate in criteria:
+            if isinstance(candidate, dict) and normalize_criterion(candidate.get('criterion')) == wanted:
+                row = candidate
+                break
+    if row is None and 0 <= index - 1 < len(criteria) and isinstance(criteria[index - 1], dict):
+        row = criteria[index - 1]
+    if row is None:
+        return 'ungraded'
+    status = str(row.get('status') or 'ungraded')
+    evidence = row.get('evidence')
+    if status == 'met' and (not isinstance(evidence, list) or not [item for item in evidence if str(item).strip()]):
+        return 'unevidenced'
+    return status
 
 
 __all__ = [
@@ -704,6 +783,8 @@ __all__ = [
     'SCHEMA',
     'SNAPSHOT_FILE',
     'SPEC_MISSING',
+    'STATUS_FILE',
+    'SUPERSEDED',
     'authorize_change',
     'build_snapshot',
     'criteria_drift',
