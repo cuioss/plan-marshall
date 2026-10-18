@@ -69,7 +69,8 @@ def _sealed(tmp_path: Path, document: dict[str, Any]) -> dict[str, Any]:
     path = tmp_path / 'verdict.json'
     path.write_text(json.dumps(document), encoding='utf-8')
     assert review_support.run_author_verdict(PLAN_ID, 'functional', str(path))['status'] == 'success'
-    return json.loads(Path(path).read_text(encoding='utf-8'))
+    parsed: dict[str, Any] = json.loads(Path(path).read_text(encoding='utf-8'))
+    return parsed
 
 
 def _write_verdict(plan_dir: Path, document: dict[str, Any]) -> None:

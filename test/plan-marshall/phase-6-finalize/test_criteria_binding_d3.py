@@ -19,7 +19,7 @@ import argparse
 import hashlib
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import _criteria_snapshot as _snap
 import _review_support_attribution as _attr
@@ -160,7 +160,7 @@ def _transition(monkeypatch: Any, completed: str) -> dict[str, Any]:
         argparse.Namespace(plan_id=PLAN_ID, completed=completed, allow_bare_transition=False, bare_reason=None)
     )
     assert result is not None
-    return result
+    return cast('dict[str, Any]', result)
 
 
 def test_new_plan_cannot_leave_outline_without_a_snapshot(plan_context, monkeypatch) -> None:
