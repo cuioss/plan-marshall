@@ -248,7 +248,14 @@ def missing_evidence(evidence_root: Path, evidence: list[str]) -> list[str]:
         if path is None:
             continue
         if path.startswith('.plan/'):
-            candidate = Path(cwd_checkout_root()) / path
+            checkout = Path(cwd_checkout_root()).resolve()
+            # Constrained to the checkout root exactly as a repository citation is
+            # constrained to the graded tree: a ``..`` in the citation must not open
+            # a file outside the checkout.
+            candidate = (checkout / path).resolve()
+            if not candidate.is_relative_to(checkout):
+                missing.append(raw)
+                continue
             content = _read_text(candidate) if candidate.is_file() else None
             if content is None:
                 missing.append(raw)

@@ -124,17 +124,19 @@ def compute_test_integrity(plan_id: str, base_ref: str | None = None) -> dict[st
 
     One finding per weakened test file:
 
-    * ``assertion_removed`` — the branch leaves fewer assertion constructs in the
-      file than the base tree had.
+    * ``assertion_removed`` — an assertion the base tree held is gone, either from
+      the FILE total or from one test function whose count dropped while another
+      function's count rose (net-count evasion).
     * ``test_filtered`` — the branch adds a skip/xfail marker the base tree did
       not carry.
 
     A file the branch ADDS is not reported: removing an assertion means removing
-    one that existed before the change. The comparator is the COUNT of assertion
-    constructs, not a diff-line heuristic, so it catches a removed assertion and a
-    dropped negative case; it does NOT catch a RELAXED assertion that keeps the
-    count (`assert x == 5` rewritten to `assert x is not None`), which stays the
-    author's reading of the change rather than this verb's count.
+    one that existed before the change. The comparator counts assertion constructs
+    both per file and per test function — the per-function leg is what catches a
+    net-zero file whose loss moved from one test to another — not a diff-line
+    heuristic. It does NOT catch a RELAXED assertion that keeps the count
+    (`assert x == 5` rewritten to `assert x is not None`), which stays the author's
+    reading of the change rather than this verb's count.
     """
     worktree = resolve_live_worktree(plan_id)
     if worktree is None:

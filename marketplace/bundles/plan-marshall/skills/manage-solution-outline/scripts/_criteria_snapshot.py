@@ -118,10 +118,10 @@ def integrity_record(plan_id: str) -> dict[str, Any]:
     """Return the status record's criteria-integrity block, or ``{}`` when absent.
 
     The block is the OUTSIDE-the-artifact half of the seal: the snapshot digest
-    and the verdict digests are recorded in the plan's status record, written by a
-    different verb than the artifact, so a digest recomputed inside a rewritten
-    artifact does not reproduce the recorded one. An absent status record yields
-    ``{}`` — the legacy shape — never an empty freeze.
+    and the verdict digests are recorded in the plan's status record — a DIFFERENT
+    FILE from the artifact — so a digest recomputed inside a rewritten artifact
+    does not reproduce the recorded one. An absent status record yields ``{}`` —
+    the legacy shape — never an empty freeze.
     """
     status = _status_doc(plan_id)
     if status is None:
@@ -134,10 +134,13 @@ def integrity_record(plan_id: str) -> dict[str, Any]:
 def record_integrity(plan_id: str, **fields: Any) -> bool:
     """Merge ``fields`` into the status record's integrity block; return success.
 
-    Written by re-reading the live status document immediately before the write,
-    so the merge never clobbers a sibling field from a stale snapshot. A plan with
-    no readable status record is left untouched and reports ``False`` — the
-    caller's artifact is still written, it is simply not bound outside itself.
+    Written by re-reading the live status document immediately before the write, so
+    the merge carries the sibling fields it reads. The write is not serialized
+    against another writer's critical section, so a concurrent status write can
+    still race it — a narrow window the callers accept rather than importing the
+    status writer upward. A plan with no readable status record is left untouched
+    and reports ``False``; the caller's artifact is still written, it is simply not
+    bound outside itself.
     """
     status = _status_doc(plan_id)
     if status is None:
@@ -195,13 +198,25 @@ def record_snapshot_digest(plan_id: str) -> bool:
 
 
 def record_verdict_digest(plan_id: str, kind: str, verdict_file: str | Path) -> bool:
-    """Record a sealed verdict's digest in the status record, outside the file."""
+    """Record a sealed verdict's CONTENT digest in the status record, outside the file.
+
+    The value stored is :func:`canonical_digest` of the parsed verdict — the same
+    digest ``authorship_problem`` compares against — never the digest of the file's
+    exact bytes, which would be a different number for the same verdict and would
+    make every correctly sealed verdict read as modified.
+    """
     path = Path(verdict_file)
     if not path.is_file():
         return False
+    try:
+        parsed = json.loads(path.read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return False
+    if not isinstance(parsed, dict):
+        return False
     existing = integrity_record(plan_id).get('verdicts')
     verdicts = dict(existing) if isinstance(existing, dict) else {}
-    verdicts[kind] = {'digest': path_digest(path), 'path': str(path)}
+    verdicts[kind] = {'digest': canonical_digest(parsed), 'path': str(path)}
     return record_integrity(plan_id, verdicts=verdicts)
 
 
@@ -550,8 +565,8 @@ def write_snapshot(plan_id: str) -> dict[str, Any]:
     path = snapshot_path(plan_id)
     path.parent.mkdir(parents=True, exist_ok=True)
     atomic_write_file(path, json.dumps(snapshot, indent=2, sort_keys=True) + '\n')
-    # Bind the freeze OUTSIDE the file it protects: the status record (written by
-    # a different verb) holds the digest, so editing or deleting the snapshot
+    # Bind the freeze OUTSIDE the file it protects: the status record (a different
+    # file) holds the digest, so editing or deleting the snapshot
     # afterwards is detectable rather than silently read as the legacy shape.
     record_snapshot_digest(plan_id)
     if existing is not None and authorized:
@@ -776,6 +791,9 @@ def authorize_change(
     entries.append({'deliverable': number, 'criterion': criterion, 'decision': decision, 'phase': phase})
     snapshot['authorized_changes'] = entries
     atomic_write_file(snapshot_path(plan_id), json.dumps(snapshot, indent=2, sort_keys=True) + '\n')
+    # Re-record the digest: the authorization rewrites the snapshot file, and a
+    # recorded digest left on the pre-authorization bytes would read as tampering.
+    record_snapshot_digest(plan_id)
     return {
         'status': 'success',
         'plan_id': plan_id,
@@ -807,10 +825,10 @@ def open_criteria(plan_id: str, verdict_file: Path | None = None) -> dict[str, A
     * the verdict carries the review's authorship seal and its digest matches, so
       a file rewritten in place does not release the plan;
     * the row's status is ``met`` AND it carries non-empty evidence;
-    * the row is matched by a STABLE id — its position within the deliverable — so
-      a verdict row that paraphrases the frozen criterion still answers for it.
-      Exact text is the FALLBACK, never the only key: an exact-text match orphaned
-      every paraphrase.
+    * the row is matched by a STABLE id — an explicit ``criterion_id`` wins, exact
+      text is tried next, and the row's position within the deliverable is the last
+      resort — so a verdict row that paraphrases the frozen criterion still answers
+      for it.
 
     Anything else is open, which is the fail-closed direction. Four deliberate
     states additionally close criteria rather than reading them as open work:
@@ -910,11 +928,12 @@ def _checked_verdict(path: Path, plan_id: str | None = None) -> tuple[dict[Any, 
 def _graded_status(criteria: list[Any], criterion: str, index: int) -> str:
     """Status a sealed verdict gives one frozen criterion, matched by stable id.
 
-    A verdict row answers for the frozen criterion at its own position (the stable
-    id ``C{index}``), an explicit ``criterion_id`` answer wins, and exact text is
-    the last resort. Every row is stored under its deliverable, so its position is
-    the criterion index the author graded. A ``met`` row with no evidence is
-    ``unevidenced`` here for the same reason the validator treats it so.
+    A row carrying an explicit ``criterion_id`` wins; exact text is tried next; and
+    the frozen criterion's own position (the stable id ``C{index}``) is the last
+    resort, so a verdict row that paraphrases the criterion still answers for it.
+    Every row is stored under its deliverable, so its position is the criterion
+    index the author graded. A ``met`` row with no evidence is ``unevidenced`` here
+    for the same reason the validator treats it so.
     """
     wanted = normalize_criterion(criterion)
     stable = f'C{index}'

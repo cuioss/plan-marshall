@@ -1065,7 +1065,12 @@ def _finalize_findings_refusal(plan_id: str, status: dict[str, Any]) -> dict[str
     # that is silent. Read AFTER the findings refusal, so a plan with both is
     # reported with its findings first.
     criteria = open_criteria(plan_id)
-    if criteria.get('open_count') and _functional_review_drop_reason(plan_id, status) is None:
+    # A frozen record the status record says exists but which is now deleted or
+    # edited is refused REGARDLESS of whether the review was dropped: the freeze is
+    # independent of the review, and reading its absence as "not applicable" would
+    # let deleting the snapshot disable the check the freeze exists for.
+    frozen_record_broken = str(criteria.get('source') or '').startswith('frozen_')
+    if criteria.get('open_count') and (frozen_record_broken or _functional_review_drop_reason(plan_id, status) is None):
         open_rows = criteria['open']
         log_entry(
             'decision',

@@ -149,6 +149,32 @@ def test_refreeze_with_a_logged_decision_is_allowed(plan_context, tmp_path) -> N
     assert _snap.write_snapshot(PLAN_ID)['status'] == 'success'
 
 
+def test_unedited_sealed_verdict_validates_with_a_status_record(plan_context, tmp_path, monkeypatch) -> None:
+    """The recorded digest must compare equal to a CLEAN verdict's digest.
+
+    Without this, every sealed verdict on a real plan (which has a status record)
+    would read as modified, and the edit-refusal test above would pass for the
+    wrong reason.
+    """
+    monkeypatch.setattr(_attr, 'resolve_live_worktree', lambda _plan_id: None)
+    criteria = ['parser accepts input']
+    _plan(plan_context, criteria, freeze=True)
+    path = _seal(Path(plan_context.plan_dir_for(PLAN_ID)), tmp_path, criteria)
+
+    payload = review_support.run_validate(PLAN_ID, 'functional', str(path), None)
+
+    assert payload['valid'] is True
+    assert payload['errors'] == []
+
+
+def test_authorization_does_not_read_as_snapshot_tampering(plan_context, tmp_path) -> None:
+    """Authorizing a criterion rewrites the snapshot; that is not tampering."""
+    _plan(plan_context, ['a', 'b'], freeze=True)
+    assert _snap.authorize_change(PLAN_ID, 1, 'b', 'operator: the gap is refuted')['status'] == 'success'
+
+    assert _snap.snapshot_state(PLAN_ID) == 'frozen'
+
+
 # --- D3 (d): a new plan cannot leave 3-outline without a snapshot ---------------------------
 
 

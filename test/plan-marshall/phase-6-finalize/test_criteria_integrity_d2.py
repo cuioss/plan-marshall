@@ -2,13 +2,12 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """PLAN-LB-52 D2 — what the review grades cannot be weakened on the way.
 
-Five behaviours, each with the nearest input that must NOT produce a finding or a
+Behaviours, each with the nearest input that must NOT produce a finding or a
 refusal:
 
 * a branch that DELETES an assertion from an existing test yields a finding;
 * a "fails pre-fix" criterion evidenced only by a HEAD run is graded ``unevidenced``;
 * a verdict citing a test name absent at the graded head is refused;
-* a verify-first record timestamped after the gated commit is refused;
 * finalize with an EMPTY bot queue and one unmet Done-when does not exit.
 
 The tree-dependent behaviours run against a REAL temporary git repository; only

@@ -306,7 +306,7 @@ python3 .plan/execute-script.py plan-marshall:phase-6-finalize:review_support te
   --plan-id {plan_id}
 ```
 
-Every row it returns is one weakened test — a changed test whose assertions the branch removed, relaxed or filtered, or one that gained a skip marker. The verb's own count catches a removed assertion, a dropped net (an assertion removed from one test and added to another), and an added filter; a RELAXED assertion that keeps its count is what the author finds while reading the change. Report each row as the blocking finding it is, in the field that carries it: an `unrequested_changes` entry naming the changed test path with `consequential: true` and a `fix_kind`, or — when a deliverable asked for the change — as the justification that retires it. A deliverable that asks for the change is what justifies the row; nothing else does.
+Every row it returns is one weakened test — a changed test whose assertions the branch removed, relaxed or filtered, or one that gained a skip marker. The verb's own count catches a removed assertion, a dropped net (an assertion removed from one test and added to another), and an added filter; a RELAXED assertion that keeps its count is what the author finds while reading the change. The step's own `validate` verb consumes these rows and raises each as a `weakened_test` blocking finding, so a removed assertion blocks even when the author never mentions it. A deliverable that asked for the change is the justification the author states in the verdict; the finding stands until the change is justified by that declared surface or restored.
 
 ### 3f. Write the verdict file — and seal it
 
