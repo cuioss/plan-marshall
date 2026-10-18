@@ -84,8 +84,10 @@ metadata_stamped: true | false
 
 `display_detail` is composed by the calling workflow and is ≤80 chars, ASCII,
 no trailing period. `artifact` is present only when `artifact_written` is
-true; `metadata_stamped` is present only when `artifact_written` is true, and
-records whether the runtime metadata reached `status.json`. `degraded` names
+true. `metadata_stamped` is present whenever the collector returned a usable
+payload — the stamp is attempted independently of the artifact write, so it is
+reported on the artifact-failure paths too — and records whether the runtime
+metadata reached `status.json`. `degraded` names
 whether any preflight-path step failed and
 `degrade_reason` names which one; it is present only when `degraded` is true.
 The plan starts either way.
