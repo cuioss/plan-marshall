@@ -1265,6 +1265,7 @@ No refusal advances the plan: `current_phase` is unchanged and the payload carri
 | `error: refine_bare_transition` / `outline_bare_transition` / `plan_bare_transition` | 0 | The phase-completion artifact gate above refused a bare transition. |
 | `error: missing_exempt_reason` | 0 | `--allow-bare-transition` was passed without a `--bare-reason`. |
 | `error: blocking_findings_present` | 0 | Completing `6-finalize` while an actionable finding is still pending. |
+| `error: open_done_when_criteria` | 0 | Completing `6-finalize` while the plan's frozen criteria snapshot still holds a Done-when criterion the functional review has not graded `met`. An empty findings queue beside an unmet criterion is not a clean exit; a plan with no snapshot carries no frozen clauses and is unaffected. Carries `open_count` and `open_criteria[]`. |
 | `error: phase_end_markers_missing` | 1 | Completing `5-execute` while the end-marker store cannot prove recording — either the change-ledger marker store could not be read at all (no `unrecorded_commits` key: nothing was enumerated), or the store holds zero `kind=change` rows while worktree-branch commits exist (the Step 10a bookkeeping never ran). |
 | `error: execute_commits_unrecorded` | 1 | Completing `5-execute` after both sides were read and named worktree-branch commits carry no `kind=change` ledger row, enumerated in `unrecorded_commits` with `recorded_count` / `branch_commit_count`. |
 

@@ -270,7 +270,14 @@ The verb owns the narrowing decision; this envelope invokes it, persists its res
 
 ### Step 6: Transition Phase
 
-The light lane completes the outline phase in one envelope; transition to phase-4-plan:
+The light lane completes the outline phase in one envelope; freeze the success criteria first, then transition to phase-4-plan:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-solution-outline \
+  snapshot-criteria --plan-id {plan_id}
+```
+
+The freeze is the same one the deep lane writes at its own approval step and the same record every later review and gate reads, so the lane is not exempt from it. On a non-`success` result nothing was frozen: apply the refused-transition halt rule and return the refusal as this envelope's `status: error` return rather than advancing without a freeze.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status transition \

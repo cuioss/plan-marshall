@@ -190,6 +190,7 @@ from _orchestrator_inbox import (
     cmd_inbox_validate,
     cmd_inbox_write,
     inbox_counts,
+    runbook_plan_name,
 )
 from _orchestrator_land import (
     cmd_land_bind,
@@ -198,12 +199,15 @@ from _orchestrator_land import (
     cmd_land_status,
 )
 from _orchestrator_ledger import (
+    LANE_PLAN_MARSHALL,
+    LANE_RUNBOOK,
     LEDGER_ABSENT,
     LEDGER_LEGACY,
     LEDGER_OK,
     LEDGER_UNREADABLE,
     QUEUE_UNLISTABLE,
     ROW_FIELDS,
+    VALID_LANE_VOCABULARY,
     LedgerRead,
     QueueRead,
     assemble_view,
@@ -229,6 +233,7 @@ from file_ops import (
     get_archived_orchestrator_dir,
     get_orchestrator_store_root,
     get_store_dir,
+    get_worktree_root,
     now_utc_iso,
     output_toon,
     safe_main,
@@ -246,13 +251,20 @@ EPIC_SUBDIRS = ('workstreams', 'plans', 'landings', 'logs', INBOX_SUBDIR)
 
 FILE_STATUS = 'status.json'
 
+#: The marker ``status`` appends to a staged RUNBOOK row whose lane worktree
+#: already exists: the lane started but the row was never transitioned, so the
+#: queue would otherwise show it as merely staged.
+STARTED_NOT_TRANSITIONED = 'started, not transitioned'
+
 # The per-row RESULT fields ``queue --set-row`` may write. Deliberately narrow:
 # ``status`` stays outside the set (a status change and a landing stamp are
 # independent events, so a status is written by ``--transition`` or seeded once
 # by ``--add-row``, never patched as a result), and ``id``/``slug``/
 # ``workstream`` are row identity, not result, so they are seeded at row
-# creation — by ``decompose`` or by ``--add-row`` — and never patched.
-PLAN_ROW_FIELDS = frozenset({'plan_marshall_plan_id', 'pr', 'landing'})
+# creation — by ``decompose`` or by ``--add-row`` — and never patched. ``lane``
+# is settable because a staged plan's lane is an operator decision that may
+# change before the plan starts, which is exactly what a settable field is for.
+PLAN_ROW_FIELDS = frozenset({'lane', 'plan_marshall_plan_id', 'pr', 'landing'})
 
 # --- the plan-queue status vocabulary ---------------------------------------
 #
@@ -350,15 +362,17 @@ assert _DECLARED_STATUS_COUNT == len(VALID_STATUS_VOCABULARY), (
 
 #: The fields one staged row file is seeded with, in the order ``--add-row``
 #: writes them: the three identity fields the caller supplies, the status it
-#: starts at, the three RESULT fields (:data:`PLAN_ROW_FIELDS`) seeded EMPTY
-#: because a staged row has landed nothing yet, and ``seq`` — the queue-order
-#: key the ledger module allocates at create time as the local maximum plus one,
-#: so the rendered order reproduces staging order. A seeded row carries every
-#: field of a row file, so the order is NOT re-listed here: it is the ledger
-#: module's :data:`_orchestrator_ledger.ROW_FIELDS`, the single definition of the
-#: row field order, and a field added there is seeded here by construction.
-#: :data:`PLAN_ROW_FIELDS` and :func:`_set_row_field` are untouched by the append
-#: path, which writes a whole row rather than patching a field of one.
+#: starts at, its LANE (seeded with the default, which is not a result field and
+#: so is not empty), the RESULT fields (:data:`PLAN_ROW_FIELDS` minus ``lane``)
+#: seeded EMPTY because a staged row has landed nothing yet, and ``seq`` — the
+#: queue-order key the ledger module allocates at create time as the local
+#: maximum plus one, so the rendered order reproduces staging order. A seeded row
+#: carries every field of a row file, so the order is NOT re-listed here: it is
+#: the ledger module's :data:`_orchestrator_ledger.ROW_FIELDS`, the single
+#: definition of the row field order, and a field added there is seeded here by
+#: construction. :data:`PLAN_ROW_FIELDS` and :func:`_set_row_field` are untouched
+#: by the append path, which writes a whole row rather than patching a field of
+#: one.
 ADD_ROW_SEED_FIELDS = ROW_FIELDS
 
 #: The status an appended row starts at when the caller names none. ``--status``
@@ -1498,6 +1512,12 @@ def _queue_add_row(args: argparse.Namespace) -> dict[str, Any]:
     row['slug'] = args.slug_value
     row['workstream'] = args.workstream
     row['status'] = args.status if args.status is not None else ADD_ROW_DEFAULT_STATUS
+    # ``lane`` is not a result field, so it is seeded at creation rather than
+    # left empty: a row with no lane would read as the default, but writing the
+    # default explicitly makes the row's lane visible in the queue view instead
+    # of implied. ``getattr`` covers a programmatic caller's namespace that
+    # carries no ``--lane`` flag.
+    row['lane'] = getattr(args, 'lane', None) or LANE_PLAN_MARSHALL
     outcome = _append_plan_row(args.slug, row)
     if 'invalid_id' in outcome:
         return _error(
@@ -1637,6 +1657,31 @@ def cmd_queue(args: argparse.Namespace) -> dict[str, Any]:
             'invalid_field',
             f'--status must be one of {sorted(VALID_STATUS_VOCABULARY)}, got: {args.status}',
         )
+    # The lane vocabulary is validated on BOTH carriers: the append form's seed
+    # and the set-row form's value. A lane outside the vocabulary would make the
+    # row's emit branch and its landing correlation unreadable, so it is refused
+    # with nothing written. ``getattr`` because ``--lane`` reaches this handler
+    # through the ``queue`` parser's namespace, while a programmatic caller
+    # (tests, an embedded call) may build a namespace without it; an absent flag
+    # means "unstated", never an invalid value.
+    lane_arg = getattr(args, 'lane', None)
+    # ``--lane`` SEEDS a row. On any other form it would be silently ignored,
+    # which reads as "the lane was set" — so it is refused as a parameter error,
+    # and the message names the form that does change an existing row's lane.
+    if lane_arg is not None and not add_row_given:
+        return _error(
+            args.slug,
+            'wrong_parameters',
+            '--lane seeds an appended row and is accepted with --add-row only; '
+            'use --set-row --field lane to change an existing row',
+        )
+    lane_value = lane_arg if add_row_given else (args.value if set_row_given and args.field == 'lane' else None)
+    if lane_value is not None and lane_value not in VALID_LANE_VOCABULARY:
+        return _error(
+            args.slug,
+            'invalid_field',
+            f'--lane must be one of {sorted(VALID_LANE_VOCABULARY)}, got: {lane_value}',
+        )
     if add_row_given and not _ADD_ROW_PLAN_ID_RE.match(args.add_row):
         return _error(
             args.slug,
@@ -1769,7 +1814,11 @@ def _ordered_plans(view: dict[str, Any]) -> list[dict[str, Any]]:
     return sorted(rows, key=queue_order_key)
 
 
-def _build_summary(status_doc: dict[str, Any], counts: InboxCounts | None = None) -> str:
+def _build_summary(
+    status_doc: dict[str, Any],
+    counts: InboxCounts | None = None,
+    started: list[dict[str, str]] | None = None,
+) -> str:
     """Build the START-HERE markdown block, derived purely from the ledger view.
 
     Renders the resume anchor, the epic phase, the running/parked plans, the
@@ -1793,6 +1842,10 @@ def _build_summary(status_doc: dict[str, Any], counts: InboxCounts | None = None
             ledger alone, so an inbox drain — which is not a queue change —
             never makes the committed view stale. ``resume-summary`` supplies
             the live counts for its own read.
+        started: The ``staged`` runbook rows whose lane worktree already exists
+            (:func:`_started_not_transitioned`), rendered as a marker on their
+            queue line. Filesystem-derived like ``counts``, so the committed view
+            omits it (``None``) and only ``resume-summary`` supplies it.
     """
     plans = _ordered_plans(status_doc)
     lines = [
@@ -1811,7 +1864,12 @@ def _build_summary(status_doc: dict[str, Any], counts: InboxCounts | None = None
             lines.extend(f'- {_format_plan_line(plan)}' for plan in group)
     lines.append('**Queue** (staged, in order):')
     if staged:
-        lines.extend(f'{position}. {_format_plan_line(plan)}' for position, plan in enumerate(staged, start=1))
+        started_ids = {row['id'] for row in (started or [])}
+        lines.extend(
+            f'{position}. {_format_plan_line(plan)}'
+            + (f' — {STARTED_NOT_TRANSITIONED}' if str(plan.get('id', '')) in started_ids else '')
+            for position, plan in enumerate(staged, start=1)
+        )
     else:
         lines.append('- (empty)')
     for plan in other:
@@ -2119,7 +2177,8 @@ def cmd_resume_summary(args: argparse.Namespace) -> dict[str, Any]:
     root = _epic_root(args.slug, allow_archived=True)
     counts = inbox_counts(root / INBOX_SUBDIR)
     surfaces = _resolve_row_surfaces(status_doc, root)
-    summary = _build_summary(status_doc, counts)
+    started = _started_not_transitioned(_ordered_plans(status_doc))
+    summary = _build_summary(status_doc, counts, started=started)
     ordered_queue = _build_ordered_queue(status_doc, surfaces)
     view_current = _committed_view_matches(root, render_queue_view(status_doc, surfaces, slug=args.slug))
     unreadable = _unreadable_row_names(ledger)
@@ -2149,6 +2208,8 @@ def cmd_resume_summary(args: argparse.Namespace) -> dict[str, Any]:
         'epic_slug_scan_state': epic_slug_scan_state,
         'epic_slug_matches_count': len(epic_slug_matches),
         'epic_slug_matches': epic_slug_matches,
+        'started_not_transitioned_count': len(started),
+        'started_not_transitioned': started,
         'unreadable_row_count': len(unreadable),
         'unreadable_rows': unreadable,
         'view_current': view_current,
@@ -5620,6 +5681,54 @@ def _live_rows(view: dict[str, Any]) -> list[dict[str, Any]]:
     return [row for row in _ordered_plans(view) if str(row.get('status', '')) not in LIVE_QUEUE_EXCLUDED_STATUSES]
 
 
+def _row_lane(row: dict[str, Any]) -> str:
+    """The row's execution lane, defaulting to :data:`LANE_PLAN_MARSHALL`.
+
+    A row staged before the field existed carries no ``lane`` key, and an empty
+    value is likewise "unstated": both read as the default, so the lane
+    vocabulary's meaning for the existing corpus is unchanged.
+    """
+    lane = str(row.get('lane', '') or '')
+    return lane if lane in VALID_LANE_VOCABULARY else LANE_PLAN_MARSHALL
+
+
+def _runbook_plan_name(row: dict[str, Any]) -> str:
+    """The lane plan name a runbook row's derived names are built from.
+
+    A thin alias of the lane's single derivation
+    (:func:`_orchestrator_inbox.runbook_plan_name`), so the emit branch, the
+    landing correlation and the start detector all resolve the same name from one
+    spelling rather than from three copies that could drift.
+    """
+    return runbook_plan_name(row)
+
+
+def _started_not_transitioned(plans: list[dict[str, Any]]) -> list[dict[str, str]]:
+    """Report every staged RUNBOOK row whose lane worktree already exists.
+
+    A runbook-lane row is transitioned to ``running`` by the operator when the
+    lane starts, exactly as a ``/plan-marshall`` row is. The lane, however,
+    creates its worktree in its own step 2 — before any transition — so a
+    ``staged`` row beside a live worktree is a START that was never recorded.
+    Reading the filesystem is how ``status`` names that state without asking the
+    operator to remember it.
+
+    REPORTS only: nothing is written and no row is transitioned. The transition
+    stays the operator's decision, and a detector that moved the row would
+    silently manufacture the confirmation it exists to request.
+    """
+    worktrees = get_worktree_root()
+    findings: list[dict[str, str]] = []
+    for plan in plans:
+        if str(plan.get('status', '')) != 'staged' or _row_lane(plan) != LANE_RUNBOOK:
+            continue
+        plan_name = _runbook_plan_name(plan)
+        worktree = worktrees / plan_name
+        if worktree.is_dir():
+            findings.append({'id': str(plan.get('id', '')), 'plan': plan_name, 'worktree': str(worktree)})
+    return findings
+
+
 def _resolve_row_surfaces(view: dict[str, Any], root: Path) -> dict[str, str]:
     """Resolve the Surface cell of every LIVE row from its staged spec.
 
@@ -5644,11 +5753,11 @@ def _build_ordered_queue(status_doc: dict[str, Any], surfaces: dict[str, str]) -
     Only non-terminal rows appear, BY CONSTRUCTION: a shipped row belongs in its
     landing record and a row that closed without shipping is finished either
     way, so neither is live (:data:`LIVE_QUEUE_EXCLUDED_STATUSES`). Rows render in
-    ``(seq, id)`` order. The five columns are all derivable — order, plan id,
-    workstream and status from the row file; the surface from each row's spec,
-    resolved by :func:`_resolve_row_surfaces`. Per-row narrative (a sequencing
-    caveat, a park reason) is NOT here — it lives in ``epic.md``'s hand-written
-    queue annotations, which no regeneration touches.
+    ``(seq, id)`` order. The six columns are all derivable — order, plan id,
+    workstream, status and lane from the row file; the surface from each row's
+    spec, resolved by :func:`_resolve_row_surfaces`. Per-row narrative (a
+    sequencing caveat, a park reason) is NOT here — it lives in ``epic.md``'s
+    hand-written queue annotations, which no regeneration touches.
 
     ⛔ The Plan cell is the ROW's own ``id``, never a re-derivation from the
     matched spec's filename. The row carries the exact id string as data, so
@@ -5658,20 +5767,21 @@ def _build_ordered_queue(status_doc: dict[str, Any], surfaces: dict[str, str]) -
     is absorbed onto its unsuffixed sibling. Reading the field the queue already
     holds cannot conflate two rows whatever their ids look like.
     """
-    header = '| # | Plan | Workstream | Status | Surface (expected) |'
-    divider = '|---|------|------------|--------|--------------------|'
+    header = '| # | Plan | Workstream | Status | Surface (expected) | Lane |'
+    divider = '|---|------|------------|--------|--------------------|------|'
     lines = [header, divider]
     live = _live_rows(status_doc)
     if not live:
-        lines.append('| — | (empty) | — | — | — |')
+        lines.append('| — | (empty) | — | — | — | — |')
         return '\n'.join(lines)
     for position, row in enumerate(live, start=1):
         plan_id = str(row.get('id', ''))
         plan_cell = _queue_cell(plan_id or '?')
         workstream = _queue_cell(str(row.get('workstream', '') or '?'))
         status_cell = _queue_cell(str(row.get('status', '') or '?'))
+        lane_cell = _queue_cell(_row_lane(row))
         surface = surfaces.get(plan_id, '(spec missing)')
-        lines.append(f'| {position} | {plan_cell} | {workstream} | {status_cell} | {surface} |')
+        lines.append(f'| {position} | {plan_cell} | {workstream} | {status_cell} | {surface} | {lane_cell} |')
     return '\n'.join(lines)
 
 
@@ -6713,6 +6823,15 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         default=None,
         metavar='VALUE',
         help='New value for the field named by --field (requires --set-row).',
+    )
+    queue.add_argument(
+        '--lane',
+        default=None,
+        metavar='LANE',
+        help=(
+            f'Execution lane for the appended row, one of {list(VALID_LANE_VOCABULARY)} '
+            f'(default {LANE_PLAN_MARSHALL}; requires --add-row).'
+        ),
     )
     queue.set_defaults(handler=cmd_queue)
 

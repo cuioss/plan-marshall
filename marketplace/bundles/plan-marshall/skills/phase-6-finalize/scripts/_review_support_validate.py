@@ -18,6 +18,16 @@ import re
 from pathlib import Path
 from typing import Any
 
+from _criteria_snapshot import (
+    AUTHORED_KEY,
+    AUTHORSHIP_SCHEMA,
+    REQUEST_MISSING,
+    SPEC_MISSING,
+    authorship_problem,
+    canonical_digest,
+    seal_verdict,
+)
+
 KIND_FUNCTIONAL = 'functional'
 KIND_CODE = 'code'
 
@@ -35,6 +45,25 @@ FAILURE_CLASSES = (*BLOCKING_FAILURE_CLASSES, 'none')
 
 SEVERITY_BLOCKING = 'blocking'
 SEVERITY_ADVISORY = 'advisory'
+
+#: A criterion whose Done-when is a run against the PRE-fix tree.
+PRE_FIX_CRITERION_RE = re.compile(
+    r'(?i)(pre-?fix|fails?\s+(?:at|on|against)\s+(?:the\s+)?`?[0-9a-f]{7,40}`?|fails?\s+before\s+the\s+fix)'
+)
+#: Evidence that names a failing run against the pre-fix tree (a SHA-bearing failure).
+PRE_FIX_EVIDENCE_RE = re.compile(r'(?i)(pre-?fix|before\s+the\s+fix)')
+FAILURE_TOKEN_RE = re.compile(r'(?i)\bfail(?:s|ed|ing)?\b')
+SHA_RE = re.compile(r'[0-9a-f]{7,40}')
+#: Mention of HEAD disqualifies an entry as pre-fix-run evidence: it names the wrong tree.
+HEAD_TOKEN_RE = re.compile(r'(?i)\bhead\b')
+#: An evidence entry that cites a repository path (optionally ``:line`` and ``::name``).
+#:
+#: The path component excludes ``:`` deliberately. ``\S+`` used to swallow the
+#: ``::`` separator too, so a class-scoped citation
+#: (``test/test_parser.py::TestClass.test_method``) resolved to the WHOLE string
+#: as its path, failed the existence check, and reported a valid citation as
+#: absent at the graded head — the false refusal this pattern exists to avoid.
+EVIDENCE_PATH_RE = re.compile(r'^([^:\s]+\.\w+)(?::\d+(?:-\d+)?)?(?:::(\S+))?$')
 
 #: The facts a valid functional verdict records, before the two shared counts.
 FUNCTIONAL_FACT_KEYS = (
@@ -78,6 +107,103 @@ def read_json_object(path: str) -> tuple[dict[str, Any] | None, str]:
     if not isinstance(parsed, dict):
         return None, f'top-level JSON value is {type(parsed).__name__}, not an object'
     return parsed, ''
+
+
+def is_pre_fix_criterion(text: Any) -> bool:
+    """Whether a criterion's Done-when is a run against the pre-fix tree."""
+    return bool(PRE_FIX_CRITERION_RE.search(str(text or '')))
+
+
+def names_pre_fix_run(evidence: list[str]) -> bool:
+    """Whether any evidence entry names a FAILING run against the pre-fix tree.
+
+    Three things are required and one is disqualifying: a failure token, a marker
+    that the entry is about the pre-fix tree (an explicit pre-fix phrase, or the
+    SHA of the tree it failed against), and no attribution of the run to HEAD —
+    a run against HEAD is the wrong tree whatever its outcome. So an entry that
+    merely mentions the pre-fix tree ("the suite passes on the pre-fix tree")
+    names no failure, a green run at HEAD names neither the failure nor the tree,
+    and "fails at HEAD `<sha>`" names the wrong tree.
+    """
+    for item in evidence:
+        text = str(item)
+        if not FAILURE_TOKEN_RE.search(text):
+            continue
+        if HEAD_TOKEN_RE.search(text):
+            continue
+        if PRE_FIX_EVIDENCE_RE.search(text) or SHA_RE.search(text):
+            return True
+    return False
+
+
+def cited_evidence_path(entry: Any) -> str | None:
+    """Return the repository path an evidence entry cites, or ``None``.
+
+    Only the entry's FIRST token is considered a citation. The entry may carry
+    prose after it — ``test/x.py::test_never passes``, or the pre-fix form
+    ``test/x.py::test_a fails at 8442a5e33`` — and anchoring on the whole entry
+    would let that prose hide a citation from the existence check. A free-form
+    first token that is not a path (``module-tests``, ``green``) yields ``None``.
+    """
+    tokens = str(entry or '').strip().split(maxsplit=1)
+    if not tokens:
+        return None
+    match = EVIDENCE_PATH_RE.match(tokens[0])
+    if not match:
+        return None
+    return match.group(1)
+
+
+def _cited_name(entry: Any) -> str:
+    """Return the ``::name`` part of an entry's FIRST token, or ``''``."""
+    tokens = str(entry or '').strip().split(maxsplit=1)
+    if not tokens:
+        return ''
+    _, _, name = tokens[0].partition('::')
+    return name.strip()
+
+
+def missing_evidence(evidence_root: Path, evidence: list[str]) -> list[str]:
+    """Return every cited path, or cited test name, absent from ``evidence_root``.
+
+    A path that does not exist at the graded head is a citation of something the
+    change never had; a ``path::name`` whose name appears nowhere in the file is
+    the PLAN-LB-40 fabrication — a cited test that exists nowhere. A dotted name
+    is checked segment by segment, so a class-scoped citation counts when the
+    file holds its class and its method.
+
+    Every citation is constrained to the graded tree. A verdict is author-written
+    text, so an absolute path or a ``..`` traversal would otherwise make this
+    reader open a file outside the tree it is grading — ``Path('/tree') /
+    '/elsewhere'`` is ``/elsewhere``. A citation that resolves outside the tree is
+    reported as absent, which is what it is: something the graded change does not
+    contain.
+    """
+    root = evidence_root.resolve()
+    missing: list[str] = []
+    for entry in evidence:
+        raw = str(entry).strip()
+        path = cited_evidence_path(raw)
+        if path is None:
+            continue
+        resolved = (evidence_root / path).resolve()
+        if not resolved.is_relative_to(root) or not resolved.is_file():
+            missing.append(raw)
+            continue
+        name = _cited_name(raw)
+        if name:
+            try:
+                content = resolved.read_text(encoding='utf-8')
+            except OSError:
+                missing.append(raw)
+                continue
+            # A dotted name is checked SEGMENT by SEGMENT: a class-scoped citation
+            # names a class and a method the file holds separately, so requiring
+            # the literal dotted string would refuse a real test.
+            segments = [segment for segment in name.strip().split('.') if segment]
+            if not segments or any(segment not in content for segment in segments):
+                missing.append(raw)
+    return missing
 
 
 def verifier_status(path: str | None, has_blocking: bool) -> str:
@@ -167,7 +293,13 @@ def _grade_consequential(grading: Grading, item: Any, kind: str, ref: str, flag:
     return True
 
 
-def _grade_criteria(grading: Grading, row: dict[str, Any], expected: dict[str, Any], facts: dict[str, int]) -> None:
+def _grade_criteria(
+    grading: Grading,
+    row: dict[str, Any],
+    expected: dict[str, Any],
+    facts: dict[str, int],
+    evidence_root: Path | None = None,
+) -> None:
     number, verdict = expected['number'], row['verdict']
     where = f'deliverable {number}'
     criteria = row.get('criteria')
@@ -187,19 +319,34 @@ def _grade_criteria(grading: Grading, row: dict[str, Any], expected: dict[str, A
             grading.errors.append(f'{where} criterion {index}: status {status!r} is not valid')
             continue
         facts['criteria_checked'] += 1
-        if status == 'met' and not _str_list(criterion.get('evidence')):
+        text = str(criterion.get('criterion') or f'criterion {index}')
+        evidence = _str_list(criterion.get('evidence'))
+        pre_fix_gap = is_pre_fix_criterion(text) and not names_pre_fix_run(evidence)
+        if status == 'met' and (not evidence or pre_fix_gap):
             grading.rewrites.append({'deliverable': number, 'criterion': index, 'from': 'met', 'to': 'unevidenced'})
             status = 'unevidenced'
+        if status == 'met' and evidence_root is not None:
+            # Every path and test name a criterion cites must exist at the graded
+            # head: a citation of something the change never had is not evidence,
+            # and grading it met is how a fabricated test name passes a review.
+            for raw in missing_evidence(evidence_root, evidence):
+                grading.errors.append(f'{where} criterion {index}: evidence {raw!r} does not exist at the graded head')
         if status == 'not_met' and verdict == 'met':
             grading.errors.append(f'{where} criterion {index}: a met deliverable carries a not_met criterion')
         if status == 'unevidenced':
             facts['criteria_unevidenced'] += 1
-            text = str(criterion.get('criterion') or f'criterion {index}')
+            title = f'{text} — no run against the pre-fix tree' if pre_fix_gap else text
             fix_kind = criterion.get('fix_kind') or FIX_KIND_IMPLEMENTATION
-            grading.add('unevidenced_criterion', f'D{number}.C{index}', text, True, fix_kind, where)
+            grading.add('unevidenced_criterion', f'D{number}.C{index}', title, True, fix_kind, where)
 
 
-def _grade_row(grading: Grading, row: dict[str, Any], expected: dict[str, Any], facts: dict[str, int]) -> None:
+def _grade_row(
+    grading: Grading,
+    row: dict[str, Any],
+    expected: dict[str, Any],
+    facts: dict[str, int],
+    evidence_root: Path | None = None,
+) -> None:
     number = expected['number']
     where = f'deliverable {number}'
     verdict = row.get('verdict')
@@ -212,7 +359,7 @@ def _grade_row(grading: Grading, row: dict[str, Any], expected: dict[str, Any], 
         if not str(row.get('superseded_by') or '').strip():
             grading.errors.append(f'{where}: superseded without a cited operator decision or refutation')
         return
-    _grade_criteria(grading, row, expected, facts)
+    _grade_criteria(grading, row, expected, facts, evidence_root)
     if verdict == 'not_met':
         fix_kind = row.get('fix_kind') or FIX_KIND_IMPLEMENTATION
         grading.add('deliverable_not_met', f'D{number}', str(expected.get('title', '')), True, fix_kind, where)
@@ -225,14 +372,48 @@ def _grade_row(grading: Grading, row: dict[str, Any], expected: dict[str, Any], 
             _grade_consequential(grading, residual, 'residual', f'D{number}.R{index}', 'consequential', where)
 
 
+def grade_frozen_criteria(grading: Grading, drift: list[dict[str, Any]]) -> int:
+    """Grade the frozen-criteria drift as blocking findings; return the count.
+
+    One finding per criterion the current outline no longer carries verbatim, one
+    per frozen deliverable that vanished, and one per spec deliverable whose own
+    Done-when no outline criterion covers. A criterion the snapshot froze and an
+    operator decision authorized is not in ``drift`` at all, so it is a pass.
+    """
+    for row in drift:
+        kind = row.get('kind')
+        if kind in (SPEC_MISSING, REQUEST_MISSING):
+            grading.add(
+                kind,
+                str(row.get('spec_deliverable') or 'request'),
+                str(row.get('criterion')),
+                True,
+                FIX_KIND_IMPLEMENTATION,
+                'request or spec Done-when',
+            )
+            continue
+        number = row.get('deliverable')
+        if kind == 'rewritten':
+            graded_kind, title = 'criterion_rewritten', f'{row.get("criterion")} -> {row.get("current")}'
+        else:
+            graded_kind, title = 'criterion_deleted', str(row.get('criterion'))
+        grading.add(graded_kind, f'D{number}', title, True, FIX_KIND_IMPLEMENTATION, f'deliverable {number}')
+    return len(drift)
+
+
 def validate_functional(
-    verdict: dict[str, Any], deliverables: list[dict[str, Any]], grading: Grading
+    verdict: dict[str, Any],
+    deliverables: list[dict[str, Any]],
+    grading: Grading,
+    evidence_root: Path | None = None,
 ) -> dict[str, int]:
     """Grade a functional verdict against the outline; return its facts (meaningful only when valid).
 
     Requires exactly one row per outline deliverable. Each ``deliverables``
     entry of ``deliverables`` carries ``number``, ``title`` and
-    ``success_criteria`` (the outline's criterion bullets).
+    ``success_criteria`` (the outline's criterion bullets). When
+    ``evidence_root`` is given, every path and test name a ``met`` criterion
+    cites is checked against the tree at the graded head.
     """
     facts = dict.fromkeys(FUNCTIONAL_FACT_KEYS, 0)
     by_number: dict[int, dict[str, Any]] = {}
@@ -248,7 +429,7 @@ def validate_functional(
     for number in sorted(set(by_number) - set(expected)):
         grading.errors.append(f'deliverable {number}: not an outline deliverable')
     for number in sorted(set(expected) & set(by_number)):
-        _grade_row(grading, by_number[number], expected[number], facts)
+        _grade_row(grading, by_number[number], expected[number], facts, evidence_root)
 
     for index, change in enumerate(_list_field(verdict, 'unrequested_changes', grading, False), start=1):
         path = str(change.get('path') or '').strip() if isinstance(change, dict) else ''
@@ -305,6 +486,8 @@ def validate_code(verdict: dict[str, Any], grading: Grading) -> dict[str, int]:
 
 
 __all__ = [
+    'AUTHORED_KEY',
+    'AUTHORSHIP_SCHEMA',
     'BLOCKING_FAILURE_CLASSES',
     'CITATION_FORMS',
     'CODE_FACT_KEYS',
@@ -326,8 +509,16 @@ __all__ = [
     'VERIFIER_ACCEPTED',
     'VERIFIER_DECLINED',
     'VERIFIER_MALFORMED',
+    'authorship_problem',
+    'canonical_digest',
+    'cited_evidence_path',
     'deliverable_number',
+    'grade_frozen_criteria',
+    'is_pre_fix_criterion',
+    'missing_evidence',
+    'names_pre_fix_run',
     'read_json_object',
+    'seal_verdict',
     'validate_code',
     'validate_functional',
     'verifier_status',

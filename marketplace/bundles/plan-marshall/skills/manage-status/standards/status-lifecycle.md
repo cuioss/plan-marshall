@@ -202,12 +202,15 @@ The ledger has three shapes. None of them carries an `updated` stamp: a field ev
   "slug": "short-slug",
   "workstream": "WS-01",
   "status": "staged",
+  "lane": "plan-marshall",
   "plan_marshall_plan_id": "",
   "pr": "",
   "landing": "",
   "seq": 1
 }
 ```
+
+`lane` names the execution lane the row's plan runs in — `plan-marshall` (the default) for the plan lifecycle, `runbook` for the runbook lane. A row staged before the field existed carries none and reads as the default.
 
 An absent `queue/` directory is a measured empty queue. A row file that cannot be read is reported as unreadable, never as an absent row.
 

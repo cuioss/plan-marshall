@@ -103,9 +103,10 @@ the drain consumes. These keys are **required** — a landing missing any of the
 | `plugin_version` | The plan-marshall BUNDLE version the plan ran under (the `version` in the bundle's `.claude-plugin/plugin.json`), or `unknown` when it could not be read. The executor's `MARSHALL_VERSION` rides the OPTIONAL `executor_version` beside it | `status.metadata.bundle_version` |
 
 Optional keys a landing MAY carry (not required, so their absence is not incompleteness): `epic`,
-`total_wall_seconds`, `executor_version`, and any per-step typed fact transcribed as `step.{name}.{fact_key}={value}`. The
-functional review's verdict facts and the code review's counts are the named instances of the last
-kind — see § "Functional verdict facts" and § "Code-review counts" below.
+`total_wall_seconds`, `executor_version`, and any per-step typed fact transcribed as
+`step.{name}.{fact_key}={value}`. The functional review's verdict facts and the code review's counts
+are the named instances of the last kind — see § "Functional verdict facts" and § "Code-review
+counts" below.
 
 The four runtime-stamp keys — `harness`, `model`, `effort` and `plugin_version` —
 are read from the plan's runtime metadata, which phase-1-init Step 8a.6 stamps
@@ -114,7 +115,20 @@ say which harness, model, effort and plan-marshall version produced the run cann
 support the cross-model comparison they exist for. Every landing emitted before
 they were required is INCOMPLETE — that is accepted deliberately, and no
 grandfather rule exempts one. `executor_version` follows the same record but stays
-OPTIONAL. The `transcripts` capability that
+OPTIONAL.
+
+`model` names the model — or models — the run used. It is a comma-separated list, because a run may
+switch models: a plan that starts on one model and continues on another records
+`deepseek-v4.1-flash/max,deepseek-v4.1-flash/high`, one `{model}/{variant}` element per model used.
+A single-model run carries one element and reads exactly as a scalar would. The runbook lane writes
+this key with every model and variant it used (`unknown` when the harness reports none), so a
+consumer reads the whole list rather than assuming one model per landing. On OpenCode the measured
+session tree may itself be `mixed`, with the distinct `id/variant` values listed.
+
+A landing written by the RUNBOOK lane has no `status.json` and no phase-1-init: that lane reads the
+same runtime-stamp values from its own resolve result, which resolves the harness through the
+platform-runtime runtime-info seam, so each fact means the same thing on either producer. The
+`transcripts` capability that
 explains the run's token figures (`full` vs `none`) rides the same
 `runtime-info` record — see `platform-runtime/standards/runtime-info.md`.
 

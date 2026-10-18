@@ -12,6 +12,7 @@ import subprocess
 from pathlib import Path
 from typing import Any, NamedTuple
 
+from _criteria_snapshot import open_criteria
 from _handshake_commands import cmd_capture, cmd_verify
 from _invariants import (
     _BLOCKING_BOUNDARIES,
@@ -911,14 +912,23 @@ def _finalize_findings_refusal(plan_id: str, status: dict[str, Any]) -> dict[str
 
     - clean actionable-findings state (:func:`assert_finalize_findings_clean`
       returns ``0``) → ``None`` (proceed);
+    - a frozen Done-when criterion the plan has not graded ``met`` →
+      ``open_done_when_criteria`` (refuse). The bot queue is not the only
+      standing source: a plan whose criteria snapshot still holds an unmet clause
+      has not delivered what it was asked to deliver, and an empty findings store
+      beside it is not a clean exit. A plan with no criteria snapshot carries no
+      frozen clauses and is unaffected;
     - unevaluable query (returns ``None`` — executor unreachable / partial query
-      failure) → ``None`` (proceed, with a logged WARNING). The completion
-      boundary fails OPEN on an unevaluable query so a degenerate context with no
-      reachable findings subsystem cannot strand a legitimate completion; the
-      fail-CLOSED handling of a genuine partial query failure is owned by the
-      pre-merge entry point ``pre_merge_gate merge`` (which runs the
-      ``findings-check`` verdict and owns the merge dispatch), where the executor
-      is guaranteed present: it returns ``query_failed`` and merges nothing.
+      failure) → the findings half proceeds, with a logged WARNING. The
+      completion boundary fails OPEN on an unevaluable findings query so a
+      degenerate context with no reachable findings subsystem cannot strand a
+      legitimate completion; the fail-CLOSED handling of a genuine partial query
+      failure is owned by the pre-merge entry point ``pre_merge_gate merge``
+      (which runs the ``findings-check`` verdict and owns the merge dispatch),
+      where the executor is guaranteed present: it returns ``query_failed`` and
+      merges nothing. The criteria half still runs: an unevaluable findings store
+      says nothing about whether a Done-when was met, so the check below refuses
+      on an open criterion whatever the findings query answered.
     """
     metadata = normalize_metadata(status)
     try:
@@ -952,6 +962,37 @@ def _finalize_findings_refusal(plan_id: str, status: dict[str, Any]) -> dict[str
             'the pre-merge entry point pre_merge_gate (running the findings-check verdict) '
             'owns the fail-closed path',
         )
+
+    # The bot queue is not the only standing source. The frozen Done-when criteria
+    # are the other, and an empty findings store next to an unmet criterion is the
+    # exit this gate exists to stop: the plan has not delivered what it was asked
+    # to deliver, and no reviewer will say so because the review grades a queue
+    # that is silent. Read AFTER the findings refusal, so a plan with both is
+    # reported with its findings first.
+    criteria = open_criteria(plan_id)
+    if criteria.get('open_count'):
+        open_rows = criteria['open']
+        log_entry(
+            'decision',
+            plan_id,
+            'ERROR',
+            f'(plan-marshall:manage-status) Finalize completion refused at 6-finalize: '
+            f'{criteria["open_count"]} frozen Done-when criterion(s) still open '
+            f'({", ".join(sorted({str(row.get("status")) for row in open_rows}))}) '
+            f'— the plan may not complete while a criterion is unmet',
+        )
+        return {
+            'status': 'error',
+            'plan_id': plan_id,
+            'error': 'open_done_when_criteria',
+            'phase': '6-finalize',
+            'open_count': criteria['open_count'],
+            'open_criteria': open_rows,
+            'message': (
+                f'{criteria["open_count"]} Done-when criterion(s) from the criteria snapshot are '
+                f'not graded met; an empty findings queue does not release the plan'
+            ),
+        }
     return None
 
 

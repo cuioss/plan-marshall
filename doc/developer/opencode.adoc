@@ -364,6 +364,31 @@ python3 marketplace/targets/sync.py --target opencode
 
 The project-level command (`.opencode/commands/sync-harnesses.md`) is a thin pointer at the single sync engine (`marketplace/targets/sync.py`), which deploys `skill/`, `agent/`, `command/`, and `opencode.json` for the OpenCode target. `--target-dir` redirects the deploy to a staging directory.
 
+== Runbook Lane
+
+The runbook lane implements ONE staged orchestrator plan on a cheap model without the
+`/plan-marshall` lifecycle. It ships as the user-invocable `plan-marshall:runbook-lane` skill, which
+OpenCode exports as skill `plan-marshall-runbook-lane` and command
+`/plan-marshall-runbook-lane`.
+
+[source,bash]
+----
+/plan-marshall-runbook-lane plan=.plan/orchestrator/{slug}/plans/PLAN-NN-{slug}.md
+----
+
+The lane's first step resolves every project-specific value through the deterministic
+`plan-marshall:runbook-lane:runbook_lane resolve --spec PATH` verb; the skill itself carries no
+project literal.
+
+Prerequisites:
+
+* the steward-installed executor (`.plan/execute-script.py`), which dispatches the resolve verb and
+  every build the lane runs;
+* the OpenCode guard plugin (wizard Step 14b, `.opencode/plugin/guard.js`) — without it the lane
+  reports `guard: none on this harness (unenforced)` rather than claiming a clean rule check;
+* an orchestrator epic holding the staged spec, so `resolve` can read the epic slug from the spec
+  path.
+
 == Verification & Test Coverage
 
 The OpenCode target is verified by dedicated automated tests:
