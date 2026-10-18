@@ -163,7 +163,7 @@ def test_skill_is_registered_in_plugin_json() -> None:
 
 
 def _skill_text() -> str:
-    return (_SKILL_DIR / 'SKILL.md').read_text(encoding='utf-8')
+    return str((_SKILL_DIR / 'SKILL.md').read_text(encoding='utf-8'))
 
 
 def _section(heading: str) -> str:
@@ -723,7 +723,7 @@ _RULE_PARITY: tuple[tuple[str, tuple[str, ...]], ...] = (
     ('## 0. Input', ('{branch}', '{prefix}{plan}', 'feature/', 'fix/', 'chore/')),
     (
         '## 1. Rules (every one binds; breaking one fails the run)',
-        ('`sleep`', '`gh`', '`glab`', '`./pw`', '`ruff`', '`mypy`', '`pytest`', '{guard_log}'),
+        ('`sleep`', '`gh`', '`glab`', '`ruff`', '`mypy`', '`pytest`', '{guard_log}'),
     ),
     ('## 4. Build gate', ('{build_timeout_seconds}', '{base_branch}')),
     ('## 5. Self-review before the PR', ('{base_branch}',)),

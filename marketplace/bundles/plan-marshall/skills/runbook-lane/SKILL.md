@@ -162,10 +162,11 @@ so git alone shows which deliverables are committed.
   - Every script: `python3 .plan/execute-script.py {bundle}:{skill}:{script} …`.
   - Every build: the `build` commands the resolve result supplies (step 4).
   - Every CI action: `plan-marshall:tools-integration-ci:ci`.
-  - Never: the CI CLIs directly (`gh`, `glab`), the project's build wrapper directly (`./pw`, or
-    whatever the project wraps), the test/lint/type-check binaries directly (`ruff`, `mypy`,
-    `pytest`), `python3 -c`, `python3 some_script.py`, scripts under a system temp directory, git's
-    `grep` subcommand, or `sleep`.
+  - Never: the CI CLIs directly (`gh`, `glab`), the project's build wrapper directly, the
+    test/lint/type-check binaries directly (`ruff`, `mypy` and `pytest` are the familiar cases),
+    `python3 -c`, `python3 some_script.py`, scripts under a system temp directory, git's `grep`
+    subcommand, or `sleep`. Every one of these goes through its resolved command instead: the
+    executor for scripts, the `build` map for builds, and `ci` for CI.
 - **Shell.**
   - One command per call: no `&&`, `;`, pipes, command substitution, loops or heredocs.
   - Files are read and searched with the file tools, never with shell `cat`, `ls`, `grep`, `find`,
