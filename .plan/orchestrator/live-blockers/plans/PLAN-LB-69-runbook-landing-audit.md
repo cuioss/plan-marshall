@@ -1,4 +1,4 @@
-# PLAN-LB-69: The orchestrator audits every runbook-lane landing adversarially, with full depth on harnesses without the plan lifecycle
+# PLAN-LB-69: The orchestrator audits every runbook-lane landing adversarially, and names each deliverable's skills when it stages a spec
 
 epic: live-blockers
 workstream: WS-04
@@ -130,7 +130,35 @@ gives it a sanctioned, read-only session-store reader.
    *Done when:* template and spec doc tests assert the five sections and the "leads, recorded
    contradictions" sentence. Each fails against PLAN-LB-66's merged template and spec.
 
-Split guard: three deliverables.
+4. **The orchestrator names each deliverable's domain skills and persona when it stages a spec.**
+   Operator decision (2026-10-18): skill selection happens at the orchestrator, not inside the
+   run. PLAN-LB-67 D4 makes the lane load what is named.
+   - `templates/plan-spec.md` gives every deliverable a `Skills:` line (domain skills) and a
+     `Persona:` line (implementer, module-tester, integration-tester, security-expert or
+     documenter; code-reviewer is implied for review).
+   - `decompose` and every staging path fill the lines with a script call, not by hand:
+     - an `orchestrator` verb (for example `spec-skills --spec PATH`) maps each deliverable's
+       Expected Surface paths to modules through `architecture which-module`;
+     - it returns the domain skills from the project's configuration (`marshal.json`
+       `skill_domains` and the architecture data; the source is chosen at outline and recorded);
+     - it suggests a persona from the path kind (source, test, doc);
+     - the orchestrator reviews the result and writes it into the spec.
+   - An unmapped path is reported as `unmapped`, never guessed. The orchestrator then names
+     skills explicitly or records `none`.
+   - `next` refuses to emit a spec whose named skills or persona do not exist in the installed
+     bundles. That catches names that went stale while the spec waited.
+   - `cleanup` (corpus review) flags staged specs that are missing the lines.
+
+   *Done when:*
+   - template and workflow doc tests assert the two lines and the script-filled staging step;
+   - `spec-skills` fixture tests show a pyproject spec yields this repository's Python domain
+     skills, a Maven spec touching a Java module yields the Java domain skills, and an unmapped
+     path yields `unmapped`;
+   - a `next` test refuses a fixture spec naming a nonexistent skill.
+
+   Each fails before the change.
+
+Split guard: four deliverables.
 
 ## Claim Labels
 
@@ -154,7 +182,9 @@ Split guard: three deliverables.
 - OBSERVED: `marketplace/bundles/plan-marshall/skills/plan-orchestrator/standards/landing-payload-spec.md` (D3)
 - HYPOTHESIS: `marketplace/bundles/plan-marshall/skills/persona-plan-orchestrator/standards/orchestration-model.md`, Dispatch Decision Rule cross-reference (verify-at-outline) (D1)
 - HYPOTHESIS: `marketplace/bundles/plan-marshall/skills/platform-runtime/scripts/` or `plan-orchestrator/scripts/`, the session-store reader, with SKILL.md canonical invocations (verify-at-outline) (D2)
-- OBSERVED: `test/plan-marshall/plan-orchestrator/` and the reader's test module (D1, D2, D3)
+- OBSERVED: `marketplace/bundles/plan-marshall/skills/plan-orchestrator/templates/plan-spec.md`, `workflow/decompose.md`, `workflow/orchestrate.md` (`next`), `workflow/cleanup.md` (D4)
+- OBSERVED: `marketplace/bundles/plan-marshall/skills/plan-orchestrator/scripts/orchestrator.py` and `SKILL.md`, the `spec-skills` verb and the `next` existence check (D4)
+- OBSERVED: `test/plan-marshall/plan-orchestrator/` and the reader's test module (D1, D2, D3, D4)
 
 ## Dependencies and Sequencing
 

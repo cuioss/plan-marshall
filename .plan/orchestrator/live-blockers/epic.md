@@ -449,6 +449,16 @@ derive, for rows still live.
   - D5: a docs-only build path keyed on the project's footprint rule.
 
   Five deliverables, kept unsplit by operator instruction.
+- 2026-10-18 — **Operator: domain skills are named at the orchestrator.** Each spec deliverable
+  carries `Skills:` and `Persona:` lines, filled at staging time from the project's
+  configuration. The lane loads exactly what is named, checks it exists, and records any
+  surface-drift additions.
+  - PLAN-LB-67 D4 was rewritten: the lane loads the named skills and checks they exist, instead of
+    `resolve` returning them.
+  - PLAN-LB-69 gains D4: the template lines, an `orchestrator spec-skills` verb, an existence check
+    in `next`, and a gap flag in `cleanup`.
+  - Until PLAN-LB-69 lands, the orchestrator writes the lines by hand into each spec before
+    emitting it, starting with PLAN-LB-67 and PLAN-LB-69 themselves.
 - 2026-10-18 — **Operator: the landing audit becomes the orchestrator contract.** The method used
   since PLAN-LB-61 is two read-only leaves (fidelity and process), the lane contract in force,
   report contradictions, spot checks, and a grade. It moves into `analyze`, with full depth
