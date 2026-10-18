@@ -194,6 +194,31 @@ so git alone shows which deliverables are committed.
   facts block and rule check report `guard: none on this harness (unenforced)`. The lane never
   reports "all kept" or "no guard-log line" when nothing was enforced.
 
+### Personas — loaded as standards, one per kind of work
+
+Load the engineering persona for the kind of work a step does, and apply it as a standard:
+
+| Kind of work | Persona skill |
+|---|---|
+| production code | `persona-implementer` |
+| unit and module tests | `persona-module-tester` |
+| multi-module tests | `persona-integration-tester` |
+| trust boundaries, input validation and secrets | `persona-security-expert` |
+| documentation | `persona-documenter` |
+| every self-review round, and triaging every PR comment | `persona-code-reviewer` |
+
+A deliverable's own `Persona:` line (section 0) selects its persona; with no declaration, this table
+decides from the kind of work.
+
+The persona skills are loaded as **standards only**: any plan-marshall machinery they mention
+(`manage-personas`, extension points, orchestrator pipelines) is ignored in this lane. The lane
+loads the skill for its judgement, never to run its pipeline.
+
+`persona-code-reviewer` applies its adversarial-refute lenses to every finding: is it a defect or a
+preference; is it surplus or load-bearing; is the reported drift real or a false positive; and what
+is its severity. Apply the same lenses to the run's own Done-when verdicts, so that "met on paper"
+is challenged on reachability, on the end-to-end path, and against the spec's intent.
+
 ## 2. Set up the worktree
 
 All commands run from the main checkout (the repository root).
@@ -220,6 +245,11 @@ inside the project directory; in-process runs need none.
 
 For each deliverable, in the spec's order:
 
+0. Load the deliverable's persona as a standard before any work: its `Persona:` line when the spec
+   carries one, otherwise the kind of work selects it from the persona table in section 1 —
+   `persona-implementer` for production code, `persona-module-tester` for unit and module tests,
+   `persona-integration-tester` for multi-module tests, `persona-security-expert` where trust
+   boundaries, input validation or secrets are touched, and `persona-documenter` for documentation.
 1. Confirm the spec's HYPOTHESIS lines for this deliverable by reading the code. Write down
    confirmed or refuted, with `file:line`.
 2. Write the Done-when tests. Run them on the unfixed code and record the failing output (step 4
@@ -259,7 +289,10 @@ resolve result supplies:
 
 ## 5. Self-review before the PR
 
-Dispatch one sub-agent (the `Task` tool, the general agent). It reports and never edits. Give it:
+Dispatch one sub-agent (the `Task` tool, the general agent) with `persona-code-reviewer` loaded as a
+standard. It reports and never edits. Have it apply its adversarial-refute lenses — defect or
+preference, surplus or load-bearing, real or false-positive drift, and severity — to every finding
+and to the run's own Done-when verdicts. Give it:
 
 - **section 1 of this skill, verbatim, as rules it must keep.** That means no git grep, no shell
   file listing or reading commands, no temp-directory writes or redirects, no inline Python, and no
@@ -287,7 +320,9 @@ the round limit, ask the operator whether to continue. Record every finding and 
    its resolved `trigger_comment`.
 3. **Wait for CI:** `python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci checks wait --pr-number {N} --timeout 540`.
 4. **Read all three surfaces** after each push: the PR comments, the PR reviews, and the inline
-   threads in the PR comments. Handle every comment:
+   threads in the PR comments. Triage every comment with `persona-code-reviewer`, applying its
+   adversarial-refute lenses — defect or preference, surplus or load-bearing, real or false-positive
+   drift, and severity — before deciding whether it applies. Handle every comment:
    - fix it, commit and push; or
    - reply with the reason it does not apply, then resolve the thread.
 5. **After every push, re-trigger** a reviewer whose last review predates the head.
@@ -405,20 +440,22 @@ resolve result reported `guard: none`, and `guard: present` otherwise.
 - **The report follows the facts block,** one short section each:
   1. **Deliverables** — per Done-when: met or not met; the test name and its fail-then-pass evidence;
      the commit.
-  2. **Hypotheses** — each one confirmed or refuted, with `file:line`.
-  3. **Findings** — self-review, CI and every PR comment, each with its disposition.
-  4. **Reviewers** — one row per reviewer in `{required_bots}` and `{optional_bots}`: reviewed /
+  2. **Personas** — per step, which persona was applied (section 1's table, or the deliverable's own
+     `Persona:` line).
+  3. **Hypotheses** — each one confirmed or refuted, with `file:line`.
+  4. **Findings** — self-review, CI and every PR comment, each with its disposition.
+  5. **Reviewers** — one row per reviewer in `{required_bots}` and `{optional_bots}`: reviewed /
      refused / silent, the head reviewed, and the trigger and wait history. **Standing review
      authorization:** per quota-limited reviewer, the head it reviewed, the current head, and each
      finding with how it was handled.
-  5. **Operator questions** — **every** question-tool call in the run, in order: its text, its
+  6. **Operator questions** — **every** question-tool call in the run, in order: its text, its
      options, and the option selected. List free-text operator messages separately, as free text.
      If no question-tool call was made, write "none asked".
-  6. **Rule check** — every section 1 rule that you or a sub-agent did not keep, and every guard
+  7. **Rule check** — every section 1 rule that you or a sub-agent did not keep, and every guard
      refusal: read the guard log for this run's sessions and list each line. "All kept" is allowed
      only when the guard log has no line for the run — and never on a harness whose resolve result
      reported `guard: none`.
-  7. **Residue** — anything left open.
+  8. **Residue** — anything left open.
 
 Then tell the operator the PR number, the merge commit, and that the landing message was written.
 

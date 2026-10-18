@@ -26,6 +26,7 @@ staged spec. They never read this repository's own ``.plan/`` state.
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -528,3 +529,47 @@ def test_optional_reviewers_also_carry_the_flag(tmp_path: Path) -> None:
     spec = _seed_fixture(tmp_path, executable=_PYPROJECT_EXEC, required_bots='x', optional_bots='sourcery')
     data = _run_resolve(spec, tmp_path)
     assert data['optional_bots'][0]['quota_limited'] is True
+
+
+# =============================================================================
+# D3 — engineering personas, loaded as standards
+# =============================================================================
+
+#: The lane steps that write code, tests or docs, or that review — and the
+#: persona each must name.
+_WRITING_OR_REVIEWING_STEP_PERSONAS = (
+    ('## 3. Implement, deliverable by deliverable', ('persona-implementer', 'persona-module-tester')),
+    ('## 5. Self-review before the PR', ('persona-code-reviewer',)),
+    ('## 6. Pull request and reviews', ('persona-code-reviewer',)),
+)
+
+
+def test_each_writing_or_reviewing_step_names_its_persona() -> None:
+    for heading, personas in _WRITING_OR_REVIEWING_STEP_PERSONAS:
+        section = _section(heading)
+        for persona in personas:
+            assert persona in section, f'{heading} does not name {persona}'
+
+
+def test_self_review_and_pr_triage_name_adversarial_refute() -> None:
+    for heading in ('## 5. Self-review before the PR', '## 6. Pull request and reviews'):
+        assert 'adversarial-refute' in _section(heading), f'{heading} does not name adversarial-refute'
+
+
+def test_personas_are_loaded_as_standards_only() -> None:
+    text = _skill_text()
+    assert 'standards only' in ' '.join(text.split()).lower()
+    assert 'manage-personas' in text
+
+
+def test_landing_report_requires_the_persona_list() -> None:
+    landing = _section('## 8. Landing message (the last step, after the merge)')
+    assert 'persona' in landing.lower()
+    assert 'per step' in landing.lower()
+
+
+def test_every_named_persona_resolves_to_a_bundle_skill() -> None:
+    named = sorted(set(re.findall(r'persona-[a-z][a-z-]*[a-z]', _skill_text())))
+    assert named, 'the skill names no persona'
+    missing = [p for p in named if not (MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / p / 'SKILL.md').is_file()]
+    assert not missing, f'named personas that do not resolve: {missing}'
