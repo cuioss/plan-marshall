@@ -182,7 +182,7 @@ const WRAPPER_VALUE_OPTS = {
   nice: new Set(["-n", "--adjustment"]),
   nohup: new Set([]),
   time: new Set([]),
-  exec: new Set([]),
+  exec: new Set(["-a"]),
   stdbuf: new Set(["-i", "-o", "-e", "--input", "--output", "--error"]),
   setsid: new Set([]),
   xargs: new Set([
@@ -741,7 +741,9 @@ function patchTextTargetsExecutor(patchText) {
 // the `-C` TARGET the commit is aimed at. R6 names the plan from that target
 // (when it lies under a plan worktree), so the persona-mandated
 // `git -C {WORKTREE} commit` form from the main checkout is judged by the
-// worktree's own plan.
+// worktree's own plan. Successive `-C` values COMPOSE (git applies each in
+// order, resolving a relative value against the running target), so
+// `git -C . -C .plan/local/worktrees/plan-a commit` names the worktree too.
 function gitCommitTarget(command) {
   if (normalizeToken(tokenAt(command, 0)).toLowerCase() !== "git") return { isCommit: false, target: null }
   const tokens = commandTokens(command)
@@ -750,12 +752,14 @@ function gitCommitTarget(command) {
   while (i < tokens.length) {
     const t = stripMatchedQuotes(tokens[i])
     if (t === "-C") {
-      if (target === null) target = stripMatchedQuotes(tokens[i + 1] ?? "")
+      const value = stripMatchedQuotes(tokens[i + 1] ?? "")
+      target = target === null || value.startsWith("/") ? value : `${target}/${value}`
       i += 2
       continue
     }
     if (t.startsWith("-C") && !t.startsWith("--") && t.length > 2) {
-      if (target === null) target = t.slice(2)
+      const value = t.slice(2)
+      target = target === null || value.startsWith("/") ? value : `${target}/${value}`
       i += 1
       continue
     }

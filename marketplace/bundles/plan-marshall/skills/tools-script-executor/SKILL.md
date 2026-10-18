@@ -579,13 +579,14 @@ source	detected|cached
 
 ### Step 2: Execute Scripts Directly
 
-Use the plugin root with a glob pattern for the version segment. Resolve the script path with the `Glob` tool against the pattern `${PLUGIN_ROOT}/plan-marshall/*/skills/<skill>/scr*ts/<script>.py` and capture the first match as `{SCRIPT_FILE}`. Then invoke it — through the executor when one exists, or by the resolved path directly when the script is on the shared R5 allow-list (`standards/r5-allowlist.json`):
+Use the plugin root with a glob pattern for the version segment. Resolve the script path with the `Glob` tool against the pattern `${PLUGIN_ROOT}/plan-marshall/*/skills/<skill>/scr*ts/<script>.py`. Then invoke it — a direct call for a script on the shared R5 allow-list (`standards/r5-allowlist.json`), and through the executor (`python3 .plan/execute-script.py <bundle>:<skill>:<script> <args>`) for every other script:
 
 ```bash
-python3 .plan/execute-script.py <bundle>:<skill>:<script> <args>
+# Direct (the bootstrap form, no executor needed): ONLY an allow-listed script.
+python3 marketplace/bundles/plan-marshall/skills/marshall-steward/scripts/determine_mode.py mode
 
-# A direct `python3 {SCRIPT_FILE} <args>` survives the guard ONLY for an
-# allow-listed script; every other direct interpreter call is refused by R5.
+# Once the executor exists, route every other script through it:
+python3 .plan/execute-script.py <bundle>:<skill>:<script> <args>
 ```
 
 (Replace `<skill>`, `<script>`, and `<args>` with literal values. The `scr*ts` glob refers to the skill's `scripts` subdirectory; it is written with a wildcard to avoid scanner false positives on this standards document.)

@@ -1258,6 +1258,14 @@ def test_r6_names_the_plan_from_the_dash_C_target(tmp_path, monkeypatch) -> None
     }
     assert hook.evaluate(payload) == hook._R6_REASON
 
+    # Successive -C values COMPOSE (git resolves each against the running target).
+    chained = {
+        'cwd': str(tmp_path),
+        'tool_name': 'Bash',
+        'tool_input': _bash('git -C . -C .plan/local/worktrees/plan-a commit -m "fix: c"'),
+    }
+    assert hook.evaluate(chained) == hook._R6_REASON
+
     lane = {
         'cwd': str(tmp_path),
         'tool_name': 'Bash',

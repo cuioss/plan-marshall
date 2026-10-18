@@ -443,6 +443,13 @@ def test_guard_node_r6_names_the_plan_from_the_dash_C_target(tmp_path_factory: p
     assert blocked, f'a raw commit into the named worktree must be refused; message={message!r}'
     assert 'R6' in message, f'the refusal must be rule R6; message={message!r}'
 
+    # Successive -C values COMPOSE (git resolves each against the running target).
+    blocked_chained, chained_message = harness.blocks(
+        shell_event('git -C . -C .plan/local/worktrees/plan-a commit -m "fix: c"')
+    )
+    assert blocked_chained, f'a chained -C commit must be refused; message={chained_message!r}'
+    assert 'R6' in chained_message, f'the refusal must be rule R6; message={chained_message!r}'
+
     lane_ok, lane_message = harness.blocks(
         shell_event('git -C .plan/local/worktrees/lb-99-runbook-lane commit -m "fix: y"')
     )

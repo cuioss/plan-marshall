@@ -550,7 +550,7 @@ _R5_WRAPPER_VALUE_OPTS: dict[str, frozenset[str]] = {
     'nice': frozenset({'-n', '--adjustment'}),
     'nohup': frozenset(),
     'time': frozenset(),
-    'exec': frozenset(),
+    'exec': frozenset({'-a'}),
     'stdbuf': frozenset({'-i', '-o', '-e', '--input', '--output', '--error'}),
     'setsid': frozenset(),
     'xargs': frozenset(
@@ -1189,9 +1189,11 @@ def _git_commit_target(command: str) -> tuple[bool, str | None]:
     """Return ``(is_commit, target)`` for a ``git commit`` command.
 
     ``target`` is the value of git's ``-C`` global option (attached ``-C.`` form
-    included), so R6 can name the plan the commit is AIMED at. Mirrors the
-    guard's ``gitCommitTarget``: the R5 wrappers are stripped first, then git's
-    global options are walked.
+    included), so R6 can name the plan the commit is AIMED at. Successive ``-C``
+    values COMPOSE — git applies each in order, resolving a relative value against
+    the running target — so ``git -C . -C .plan/local/worktrees/plan-a commit``
+    names the worktree too. Mirrors the guard's ``gitCommitTarget``: the R5
+    wrappers are stripped first, then git's global options are walked.
     """
     stripped = _r5_stripped_tokens(command)
     if len(stripped) < 2:
@@ -1204,13 +1206,13 @@ def _git_commit_target(command: str) -> tuple[bool, str | None]:
     while index < len(stripped):
         token = _strip_matched_quotes(stripped[index])
         if token == '-C':
-            if target is None:
-                target = _strip_matched_quotes(stripped[index + 1]) if index + 1 < len(stripped) else ''
+            value = _strip_matched_quotes(stripped[index + 1]) if index + 1 < len(stripped) else ''
+            target = value if target is None or value.startswith('/') else f'{target}/{value}'
             index += 2
             continue
         if token.startswith('-C') and not token.startswith('--') and len(token) > 2:
-            if target is None:
-                target = token[2:]
+            value = token[2:]
+            target = value if target is None or value.startswith('/') else f'{target}/{value}'
             index += 1
             continue
         if token in _R2_GIT_VALUE_OPTIONS:
