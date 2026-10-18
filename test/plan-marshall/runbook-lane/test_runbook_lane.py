@@ -32,6 +32,7 @@ from typing import Any
 
 from conftest import (
     MARKETPLACE_ROOT,
+    PROJECT_ROOT,
     get_scripts_dir,
     load_script_module,
     run_script,
@@ -240,6 +241,7 @@ def _seed_fixture(
     slug: str = 'demo-epic',
     spec_name: str = 'PLAN-LB-66-runbook-lane-skill.md',
     spec_text: str = '# staged spec\n',
+    base_branch: str | None = None,
 ) -> Path:
     """Seed a project fixture and return the staged spec path.
 
@@ -261,7 +263,8 @@ def _seed_fixture(
                             }
                         }
                     }
-                }
+                },
+                **({'project': {'default_base_branch': base_branch}} if base_branch else {}),
             }
         ),
     )
@@ -706,3 +709,78 @@ def test_skill_build_gate_documents_the_docs_only_path() -> None:
     gate = _section('## 4. Build gate')
     assert 'docs-only' in gate
     assert 'build-gate: docs-only' in gate
+
+
+# =============================================================================
+# D6 — the restored runbook rules
+# =============================================================================
+
+#: Rule-level parity: one entry per section, each carrying the rules that section
+#: must keep. A heading-only parity check cannot catch a rule lost inside a
+#: surviving heading; this table can, which is the whole point of restoring parity
+#: at rule granularity rather than at heading granularity.
+_RULE_PARITY: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ('## 0. Input', ('{branch}', '{prefix}{plan}', 'feature/', 'fix/', 'chore/')),
+    (
+        '## 1. Rules (every one binds; breaking one fails the run)',
+        ('`sleep`', '`gh`', '`glab`', '`./pw`', '`ruff`', '`mypy`', '`pytest`', '{guard_log}'),
+    ),
+    ('## 4. Build gate', ('{build_timeout_seconds}', '{base_branch}')),
+    ('## 5. Self-review before the PR', ('{base_branch}',)),
+    (
+        '## 6. Pull request and reviews',
+        ('ci pr comments', 'ci pr reviews', 'ci pr thread-reply', 'ci pr resolve-thread', '`sleep`'),
+    ),
+    ('## 7. Merge gate', ('`verify`', 'origin/{base_branch}', 'pending', 'qualifying review')),
+    ('## 8. Landing message (the last step, after the merge)', ('{guard_log}', '```landing-facts')),
+)
+
+
+def test_rule_level_parity_per_section() -> None:
+    for heading, keywords in _RULE_PARITY:
+        section = _section(heading)
+        for keyword in keywords:
+            assert keyword in section, f'{heading} lost {keyword!r}'
+
+
+def test_skill_never_spells_the_base_branch_literally() -> None:
+    text = _skill_text()
+    assert 'origin/main' not in text, 'the skill spells the base branch literally'
+    assert '--base main' not in text, 'the skill spells the base branch literally'
+
+
+def _emitted_body(target: str) -> str:
+    from marketplace.targets.body_transform_engine import load_transform_rules, make_body_transformer
+
+    rules = load_transform_rules(PROJECT_ROOT / 'marketplace' / 'targets' / target / 'mapping.json')
+    return make_body_transformer({}, rules)(_skill_text(), 'plan-marshall', 'skill')
+
+
+def test_the_subagent_tool_is_rewritten_for_every_target() -> None:
+    assert '`Task`' in _skill_text(), 'the source skill does not name the sub-agent tool'
+    assert '`subagent`' in _emitted_body('opencode')
+    assert '`invoke_subagent`' in _emitted_body('antigravity')
+
+
+def test_the_skill_landing_facts_example_parses_with_no_dropped_line() -> None:
+    inbox = load_script_module(
+        'plan-marshall', 'plan-orchestrator', '_orchestrator_inbox.py', 'rb_lb67_orchestrator_inbox'
+    )
+    text = _skill_text()
+    assert '```landing-facts' in text
+    facts = inbox.parse_landing_facts(text)
+    assert facts is not None, 'the skill carries no landing-facts fence'
+    assert facts['schema'] == 'landing-facts/1'
+    block = text.split('```landing-facts', 1)[1].split('```', 1)[0]
+    lines = [line for line in block.splitlines() if line.strip()]
+    assert all('=' in line for line in lines), 'a facts line carries no key=value pair'
+    assert len(lines) == len(facts), 'a facts line was dropped by the parser'
+
+
+def test_resolve_returns_the_base_branch_and_build_timeout(tmp_path: Path) -> None:
+    spec = _seed_fixture(tmp_path, executable=_PYPROJECT_EXEC, required_bots='x', base_branch='develop')
+    data = _run_resolve(spec, tmp_path)
+    assert data['base_branch'] == 'develop'
+    assert isinstance(data['build_timeout_seconds'], int)
+    assert data['build_timeout_seconds'] > 0
+    assert data['guard_log'] == '.plan/temp/guard.log'

@@ -74,6 +74,19 @@ _OPENCODE_GUARD = ('.opencode', 'plugin', 'guard.js')
 #: hook installed there counts exactly as a shared one does.
 _CLAUDE_SETTINGS_FILES = (('.claude', 'settings.json'), ('.claude', 'settings.local.json'))
 
+#: The tool-call guard's audit log, relative to the project root. Returned by
+#: ``resolve`` so the lane reads the log at a path it was told, rather than
+#: guessing one.
+_GUARD_LOG_PARTS = ('.plan', 'temp', 'guard.log')
+
+#: The build timeout the lane falls back to when the project's architecture can
+#: stamp none. Scaled on purpose to survive a full project verification.
+_DEFAULT_BUILD_TIMEOUT_SECONDS = 1800
+
+#: The base branch a project falls back to when it never configured one. A
+#: fallback, not the lane's answer: the lane always uses the resolved value.
+_DEFAULT_BASE_BRANCH = 'main'
+
 
 def _plan_id_from_spec(spec: Path) -> str:
     """Derive the lane plan id from a spec's basename.
@@ -324,13 +337,17 @@ def _resolve_bots(marshal: dict[str, Any]) -> tuple[list[dict[str, Any]], list[d
     return _rows(required), _rows(_split_bots(step.get('optional_bots')))
 
 
-def _resolve_build(project_dir: Path) -> dict[str, Any]:
+def _resolve_build(project_dir: Path) -> tuple[dict[str, Any], dict[str, Any]]:
     """Resolve the lane's build commands for this project's build system.
 
     The build system is read from the project architecture through the same
     resolution seam ``architecture resolve`` uses — never from a hard-coded
     build skill. ``verify`` is the probe; the remaining canons are passed to the
     notation it resolved.
+
+    Returns ``(build, probed)``: the build command map, and the architecture's own
+    resolved ``verify`` record, so the caller can read the timeout stamp off the
+    same resolution instead of re-deriving the build system.
     """
     from _cmd_client_query import resolve_command
 
@@ -352,7 +369,52 @@ def _resolve_build(project_dir: Path) -> dict[str, Any]:
     # parts are the lane's own arguments on the SAME resolved build system.
     build['test-compile'] = f'{prefix} {notation} run --command-args "test-compile"'
     build['split'] = list(_SPLIT_FORM)
-    return build
+    return build, probed
+
+
+def _resolve_build_timeout(probed: dict[str, Any], project_dir: Path) -> int:
+    """Return the build timeout, in seconds, from the architecture's own stamp.
+
+    The architecture augments a resolved build command with
+    ``bash_timeout_seconds`` — the bound the next real run will measure against,
+    derived from the project's persisted run configuration and the build system's
+    own floor. Reading it here is what keeps the lane's ``--timeout`` tied to the
+    project's build configuration rather than to a number spelled into the skill.
+
+    Falls back, only when the stamp is unavailable, to the run configuration's
+    generic value and finally to the lane's documented default — never to
+    ``None``, since the lane has to hand a number to the build command.
+    """
+    try:
+        from _cmd_client import _augment_resolved
+
+        stamped = _augment_resolved(probed, str(project_dir)).get('bash_timeout_seconds')
+        if isinstance(stamped, int) and stamped > 0:
+            return stamped
+    except Exception:
+        pass
+    try:
+        import run_config
+
+        return int(run_config.timeout_get('verify', _DEFAULT_BUILD_TIMEOUT_SECONDS, str(project_dir)))
+    except Exception:
+        return _DEFAULT_BUILD_TIMEOUT_SECONDS
+
+
+def _resolve_base_branch(marshal: dict[str, Any]) -> str:
+    """Return the project's base branch.
+
+    Read from ``project.default_base_branch`` in the project's own configuration.
+    The fallback is the value the configuration seeds when the key is absent, and
+    it exists only so a project that never set the key still has one: the lane
+    itself never spells a base branch.
+    """
+    project = marshal.get('project')
+    if isinstance(project, dict):
+        value = project.get('default_base_branch')
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return _DEFAULT_BASE_BRANCH
 
 
 def _claude_guard_installed(project_dir: Path) -> bool:
@@ -549,7 +611,9 @@ def cmd_resolve(args: argparse.Namespace) -> dict[str, Any]:
     try:
         marshal = _read_marshal(project_dir)
         required, optional = _resolve_bots(marshal)
-        build = _resolve_build(project_dir)
+        build, probed = _resolve_build(project_dir)
+        build_timeout_seconds = _resolve_build_timeout(probed, project_dir)
+        base_branch = _resolve_base_branch(marshal)
         deliverable_state = _resolve_deliverable_skills(spec)
     except ValueError as exc:
         return {'status': 'error', 'error': str(exc), 'spec': args.spec, 'plan': plan_id}
@@ -594,11 +658,14 @@ def cmd_resolve(args: argparse.Namespace) -> dict[str, Any]:
         'sender_id': sender_id,
         'inbox_write_command': inbox_write_command,
         'build': build,
+        'build_timeout_seconds': build_timeout_seconds,
+        'base_branch': base_branch,
         'required_bots': required,
         'optional_bots': optional,
         'commit_trailer': trailer,
         'harness': harness,
         'guard': guard,
+        'guard_log': '/'.join(_GUARD_LOG_PARTS),
         'skills_note': deliverable_state['skills_note'],
     }
     # Presence-gated: an empty population would render an empty row set that reads

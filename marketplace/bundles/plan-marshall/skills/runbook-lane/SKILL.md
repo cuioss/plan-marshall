@@ -76,15 +76,18 @@ The result supplies, and nothing below is spelled from anywhere else:
 | epic slug | `slug` |
 | `{plan}` | `plan` |
 | worktree | `worktree` |
-| branch prefix | the project's `manage-config project get --field working_prefixes` (choose `feature/` for a new capability, `fix/` for a bug fix, `chore/` for docs or maintenance) |
+| branch | `{branch} = {prefix}{plan}`; the prefix set is closed — `feature/` for a new capability, `fix/` for a bug fix, `chore/` for docs or maintenance — and it comes from the project's `manage-config project get --field working_prefixes` |
+| base branch | `base_branch` (the project's own base branch, never a spelling of it) |
 | inbox sender id | `sender_id` |
 | progress file | `progress_file` |
 | landing file | `landing_file` |
 | build commands | `build` |
+| build timeout (seconds) | `build_timeout_seconds` |
 | required and optional reviewers, with their trigger comments | `required_bots`, `optional_bots` |
 | commit trailer | `commit_trailer` |
 | `inbox write` command | `inbox_write_command` |
 | harness and guard state | `harness`, `guard` |
+| guard-log path | `guard_log` |
 
 The verb **fails closed**: a spec outside `.plan/orchestrator/{slug}/plans/`, an unreadable
 configuration, a missing automatic-review step, an empty required-reviewer list, or a build command
@@ -95,6 +98,8 @@ substitute a value.
 **How to read the spec:**
 
 - **Implement:** its *Deliverables* and every *Done when* clause.
+- **Load:** each deliverable's `Skills:` and `Persona:` lines, before working on that deliverable
+  (step 2 checks they exist).
 - **Facts, not instructions:** its *Claim Labels*. A `HYPOTHESIS` is confirmed or refuted before
   you build on it, and the result goes in your report.
 - **A hint, not a fence:** its *Expected Surface*.
@@ -113,7 +118,7 @@ context compaction. It can change during a run; the current version binds.
 **Check for a resume first.** If `{progress_file}` exists, this session is a resume:
 
 1. Read the progress file.
-2. Check it against `git -C {worktree} log --oneline origin/main..HEAD` and, if a PR is recorded,
+2. Check it against `git -C {worktree} log --oneline origin/{base_branch}..HEAD` and, if a PR is recorded,
    `ci pr view --pr-number {N}`.
 3. Continue at the **first step not recorded as done**. Never redo a recorded step.
 4. If git or the PR contradicts an entry, trust git and the PR, and record the correction.
@@ -157,9 +162,10 @@ so git alone shows which deliverables are committed.
   - Every script: `python3 .plan/execute-script.py {bundle}:{skill}:{script} …`.
   - Every build: the `build` commands the resolve result supplies (step 4).
   - Every CI action: `plan-marshall:tools-integration-ci:ci`.
-  - Never: the CI CLIs directly, the project build wrapper directly, the test/lint/type-check
-    binaries directly, `python3 -c`, `python3 some_script.py`, scripts under a system temp
-    directory, git's `grep` subcommand, or a bare `sleep`.
+  - Never: the CI CLIs directly (`gh`, `glab`), the project's build wrapper directly (`./pw`, or
+    whatever the project wraps), the test/lint/type-check binaries directly (`ruff`, `mypy`,
+    `pytest`), `python3 -c`, `python3 some_script.py`, scripts under a system temp directory, git's
+    `grep` subcommand, or `sleep`.
 - **Shell.**
   - One command per call: no `&&`, `;`, pipes, command substitution, loops or heredocs.
   - Files are read and searched with the file tools, never with shell `cat`, `ls`, `grep`, `find`,
@@ -204,7 +210,8 @@ so git alone shows which deliverables are committed.
   installed for the active harness, and `guard: none` otherwise (the Antigravity harness has no
   pre-tool-use hooks at all). Where nothing was enforced, the landing message says so — step 8's
   facts block and rule check report `guard: none on this harness (unenforced)`. The lane never
-  reports "all kept" or "no guard-log line" when nothing was enforced.
+  reports "all kept" or "no guard-log line" when nothing was enforced. The guard's audit log is
+  `{guard_log}` (the path `resolve` returns); step 8 reads it there for this run's sessions.
 
 ### Personas — loaded as standards, one per kind of work
 
@@ -236,9 +243,9 @@ is challenged on reachability, on the end-to-end path, and against the spec's in
 All commands run from the main checkout (the repository root).
 
 1. `git status --porcelain` must print nothing. If it prints anything, stop and report **blocked**.
-2. `git fetch origin main`
+2. `git fetch origin {base_branch}`
 3. Create the worktree and branch:
-   `python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow worktree-create --plan-id {plan} --branch {branch} --base origin/main`.
+   `python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow worktree-create --plan-id {plan} --branch {branch} --base origin/{base_branch}`.
    - The verb also prepares the worktree's plan-local directory and its build tool. Bookkeeping
      warnings about a missing plan status are expected; ignore them.
    - `error: worktree_exists` means this is a resume: reuse the worktree.
@@ -291,7 +298,7 @@ resolve result supplies:
 ```bash
 {build.quality-gate} --execution-mode in_process --project-dir {worktree}
 {build.module-tests} --execution-mode in_process --project-dir {worktree}
-{build.verify} --execution-mode in_process --project-dir {worktree} --timeout 1800
+{build.verify} --execution-mode in_process --project-dir {worktree} --timeout {build_timeout_seconds}
 ```
 
 - **Docs-only change.** Before running the full build, classify the worktree diff against the base:
@@ -333,7 +340,7 @@ and to the run's own Done-when verdicts. Give it:
   file listing or reading commands, no temp-directory writes or redirects, no inline Python, and no
   workarounds after a guard refusal; use the file tools. Its rule breaks count as yours.
 - the spec path;
-- `git -C {worktree} diff origin/main...HEAD`;
+- `git -C {worktree} diff origin/{base_branch}...HEAD`;
 - the instruction to grade **each Done-when as written** as met or not met, with evidence;
 - the instruction to report:
   - every pre-existing test assertion the diff removed or relaxed;
@@ -350,21 +357,23 @@ the round limit, ask the operator whether to continue. Record every finding and 
      returns a path.
    - Write the body there: Summary; Changes, grouped per deliverable; Test evidence, naming the
      failing-then-passing tests. No footer.
-   - Then: `python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr create --plan-id NO_PLAN --head {branch} --base main --title "{conventional title}"`
+   - Then: `python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr create --plan-id NO_PLAN --head {branch} --base {base_branch} --title "{conventional title}"`
 2. **Trigger each reviewer** with a PR comment (`ci pr prepare-comment` + `ci pr reply`), posting
    its resolved `trigger_comment`.
 3. **Wait for CI:** `python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci checks wait --pr-number {N} --timeout 540`.
-4. **Read all three surfaces** after each push: the PR comments, the PR reviews, and the inline
-   threads in the PR comments. Triage every comment with `persona-code-reviewer`, applying its
-   adversarial-refute lenses — defect or preference, surplus or load-bearing, real or false-positive
-   drift, and severity — before deciding whether it applies. Handle every comment:
+4. **Read all three surfaces** after each push — the PR comments (`ci pr comments`), the PR reviews
+   (`ci pr reviews`), and the inline threads in the PR comments. Triage every comment with
+   `persona-code-reviewer`, applying its adversarial-refute lenses — defect or preference, surplus
+   or load-bearing, real or false-positive drift, and severity — before deciding whether it applies.
+   Handle every comment:
    - fix it, commit and push; or
-   - reply with the reason it does not apply, then resolve the thread.
+   - answer it with `ci pr thread-reply` (the reason it does not apply), then close it with
+     `ci pr resolve-thread`.
 5. **After every push, re-trigger** a reviewer whose last review predates the head.
 6. **Reviewer quota policy** ("review limit reached" or similar), for ANY required reviewer that
    refuses on quota:
    1. Wait 90 minutes. Record the refusal and the next allowed trigger time in the progress file,
-      then stop the session or wait for the operator; never hold a bare sleep. Then post that
+      then stop the session or wait for the operator; never `sleep`. Then post that
       reviewer's `trigger_comment` again. Repeat up to 10 times. If no review from that reviewer
       exists at all, post its `escalated_trigger_comment` once.
    2. Still no reaction: close the PR **unmerged**, open a new PR from the same branch, and trigger
@@ -394,7 +403,7 @@ Merge only when all of these hold:
   4. **every other gate condition holds on the current head** — every reviewer that is not
      quota-limited reviewed it, every comment is handled, the build gate is green, CI is green.
 - Every comment is handled.
-- The build gate (step 4) is green on the current head.
+- `verify` (the full build, step 4) is green on the current head.
 - CI is green on the current head.
 
 The reviewer quota policy (step 6) applies only while no qualifying review exists. The standing
@@ -402,11 +411,13 @@ authorization never applies to a reviewer that is not quota-limited, and never t
 qualifying review.
 
 **Any question that bears on the merge** states, per required reviewer, which head it last reviewed,
-and whether that is the current head. Its options never mark a rule-bending choice
-"Recommended". A false or incomplete statement in such a question fails the run.
+and whether that is the current head. It states the CI status and the `verify` status only from a
+result obtained on that head AFTER the last push; where no such result exists it reports `pending`,
+never an older run's answer. Its options never mark a rule-bending choice "Recommended". A false or
+incomplete statement in such a question fails the run.
 
 **Immediately before enqueue,** fetch the base branch again. **If it moved:**
-`git -C {worktree} fetch origin main`, then `git -C {worktree} merge origin/main`. Run the build
+`git -C {worktree} fetch origin/{base_branch}`, then `git -C {worktree} merge origin/{base_branch}`. Run the build
 gate again, push, re-trigger the reviewers, and repeat step 6.
 
 **Before enqueue, re-check the authorization rule:** merge only when every condition above holds, or
@@ -431,7 +442,7 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr wait-fo
    `git worktree remove {worktree}`, never with force. The git-workflow `worktree-remove` verb
    refuses in this lane, so do not use it.
 2. `python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow prune-local-and-remote-ref --project-dir . --head {branch}`
-3. `python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow switch-and-pull --project-dir . --base main`
+3. `python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow switch-and-pull --project-dir . --base {base_branch}`
 
 Never use `git branch -D`. If a cleanup step refuses, report it and ask. Never move the main
 checkout by hand (`git fetch` + `merge`, `pull`, `switch`, `reset`): other sessions may be working
@@ -449,7 +460,7 @@ The payload is a facts block followed by the report, both taken from the progres
 The facts block is fenced with the `landing-facts` info-string and carries exactly the schema fields
 the orchestrator's landing-payload contract defines; its field values follow.
 
-```text
+```landing-facts
 schema=landing-facts/1
 plan_id={sender_id}
 epic={slug}
@@ -464,11 +475,12 @@ model={every model and variant used, comma-separated, e.g. deepseek-v4.1-flash/m
 steps=setup:done,implement:done,build-gate:done,self-review:{clear|budget-exhausted},pr:done,reviews:done,merge:done
 ```
 
-The facts block also carries a `guard` line: `guard: none on this harness (unenforced)` when the
-resolve result reported `guard: none`, and `guard: present` otherwise.
-
 - **Values:** write `unknown` for anything you could not read, never `n/a` and never a guess.
   `deliverables_done` counts only fully met deliverables.
+- **Every line inside the facts fence is a `key=value` pair** — no line is dropped by the consumer's
+  parser. The guard state travels as a prose note beside the block rather than as a fence line:
+  `guard: none on this harness (unenforced)` when the resolve result reported `guard: none`, and
+  `guard: present` otherwise.
 - **Guard:** where the resolve result reported `guard: none`, the facts block's rule check line and
   the report's rule-check section both say `guard: none on this harness (unenforced)`. Never report
   "all kept" or "no guard-log line" for a harness with no guard.
@@ -489,9 +501,9 @@ resolve result reported `guard: none`, and `guard: present` otherwise.
      options, and the option selected. List free-text operator messages separately, as free text.
      If no question-tool call was made, write "none asked".
   7. **Rule check** — every section 1 rule that you or a sub-agent did not keep, and every guard
-     refusal: read the guard log for this run's sessions and list each line. "All kept" is allowed
-     only when the guard log has no line for the run — and never on a harness whose resolve result
-     reported `guard: none`.
+     refusal: read `{guard_log}` (the path `resolve` returns) for this run's sessions and list each
+     line. "All kept" is allowed only when that log has no line for the run — and never on a harness
+     whose resolve result reported `guard: none`.
   8. **Residue** — anything left open.
 
 Then tell the operator the PR number, the merge commit, and that the landing message was written.
