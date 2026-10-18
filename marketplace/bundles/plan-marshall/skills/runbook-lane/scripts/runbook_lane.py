@@ -135,12 +135,19 @@ def _split_bots(value: Any) -> list[str]:
     return [part.strip() for part in value.split(',') if part.strip()]
 
 
-def _resolve_bots(marshal: dict[str, Any]) -> tuple[list[dict[str, str]], list[dict[str, str]]]:
+def _resolve_bots(marshal: dict[str, Any]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """Resolve the required and optional reviewers with their trigger comments.
 
     An absent empty ``required_bots`` fails closed: a lane with no required
     reviewer would merge without a review, so it is refused here rather than
     silently defaulted.
+
+    Each row also carries the reviewer's ``quota_limited`` flag, read from the
+    same per-bot standards record as its trigger comments. The merge gate uses it
+    to decide whether an earlier qualifying review may stand in for "reviewed the
+    current head"; see ``runbook-lane/SKILL.md`` § merge gate. Because the flag
+    resolves ``False`` when a record declares nothing, the authorization stays off
+    for every reviewer the project has not positively marked.
     """
     plan_block = marshal.get('plan')
     steps = plan_block.get('phase-6-finalize', {}).get('steps', {}) if isinstance(plan_block, dict) else {}
@@ -150,12 +157,13 @@ def _resolve_bots(marshal: dict[str, Any]) -> tuple[list[dict[str, str]], list[d
 
     import bot_registry
 
-    def _rows(names: list[str]) -> list[dict[str, str]]:
+    def _rows(names: list[str]) -> list[dict[str, Any]]:
         return [
             {
                 'bot': bot,
                 'trigger_comment': bot_registry.trigger_comment(bot),
                 'escalated_trigger_comment': bot_registry.escalated_trigger_comment(bot),
+                'quota_limited': bot_registry.quota_limited(bot),
             }
             for bot in names
         ]

@@ -492,3 +492,39 @@ def test_resolve_unresolvable_build_is_an_error(tmp_path: Path) -> None:
     data = _run_resolve(spec, tmp_path)
     assert data['status'] == 'error'
     assert data['error'] == 'build_command_unresolvable'
+
+
+# -----------------------------------------------------------------------------
+# D2 — the per-reviewer quota-limited flag
+# -----------------------------------------------------------------------------
+
+
+def test_resolve_reports_a_quota_limited_reviewer(tmp_path: Path) -> None:
+    spec = _seed_fixture(tmp_path, executable=_PYPROJECT_EXEC, required_bots='coderabbit')
+    data = _run_resolve(spec, tmp_path)
+    row = next(row for row in data['required_bots'] if row['bot'] == 'coderabbit')
+    assert row['quota_limited'] is True
+
+
+def test_resolve_reports_a_reviewer_that_is_not_quota_limited(tmp_path: Path) -> None:
+    spec = _seed_fixture(tmp_path, executable=_PYPROJECT_EXEC, required_bots='cuioss-review-bot')
+    data = _run_resolve(spec, tmp_path)
+    row = next(row for row in data['required_bots'] if row['bot'] == 'cuioss-review-bot')
+    assert row['quota_limited'] is False
+
+
+def test_bot_standard_without_a_declaration_resolves_not_quota_limited(tmp_path: Path) -> None:
+    """The authorization stays OFF by default: an undeclared bot is not quota-limited."""
+    standards = tmp_path / 'standards'
+    _write(
+        standards / 'fixture-bot.md',
+        '# Fixture bot\n\n```yaml\nbot_kind: fixture-bot\ntrigger_comment: "@fixture review"\n```\n',
+    )
+    registry = load_script_module('plan-marshall', 'automatic-review', 'bot_registry.py', register=False)
+    assert registry.BotRegistry(standards).quota_limited('fixture-bot') is False
+
+
+def test_optional_reviewers_also_carry_the_flag(tmp_path: Path) -> None:
+    spec = _seed_fixture(tmp_path, executable=_PYPROJECT_EXEC, required_bots='x', optional_bots='sourcery')
+    data = _run_resolve(spec, tmp_path)
+    assert data['optional_bots'][0]['quota_limited'] is True
