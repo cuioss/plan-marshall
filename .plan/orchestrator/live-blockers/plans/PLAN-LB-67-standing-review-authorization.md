@@ -112,22 +112,32 @@ product skill, in repository-neutral form.
 
    Each fails against PLAN-LB-66's merged skill, which names no persona.
 
-4. **`runbook_lane resolve` returns the domain skills for the modules the spec touches.**
-   - Resolve reads the spec's `## Expected Surface` paths, maps each to its module
-     (`architecture which-module`), and returns the domain skills those modules need, taken from
-     the project's configuration (`marshal.json` `skill_domains` and the architecture data; the
-     source is chosen at outline and recorded). This is the configuration-driven counterpart of
-     the Antigravity runbook's skill matrix (§ 1.1–1.2).
-   - The skill tells the run to load those skills before implementing.
-   - A path with no module, or a module with no domain, is reported as such. Resolve never
-     invents a skill.
+4. **The lane loads exactly the skills and persona each deliverable names, and checks they exist.**
+   Operator decision (2026-10-18): domain skills are decided **at the orchestrator**, when the spec
+   is staged, not resolved inside the run. PLAN-LB-69 D4 makes the orchestrator write them into the
+   spec.
+   - Each spec deliverable carries a `Skills:` line (domain skills) and a `Persona:` line. The
+     lane reads both, loads them as standards before working on that deliverable, and lists them
+     per deliverable in the progress file and the landing report.
+   - **Existence check at setup:** every named skill and persona must exist in the installed
+     bundles. A missing one stops the run with a question to the operator; it is never skipped
+     silently.
+   - **Surface drift:** if a deliverable ends up touching a module the spec's surface did not
+     name, the run loads that module's domain skills too, through the same configuration source
+     the orchestrator uses. It records the addition (`skills added: …, reason: …`) in the
+     landing report. The run never drops a named skill.
+   - A spec without `Skills:`/`Persona:` lines (staged before this change) gets D3's per-step
+     persona defaults and no domain skills. The landing report says `skills: none named`.
 
-   *Done when:* resolve tests show:
-   - a pyproject fixture spec resolves this repository's Python domain skills;
-   - a Maven fixture spec touching a Java module resolves the Java domain skills;
-   - an unmapped path is reported as `unmapped` rather than dropped.
+   *Done when:*
+   - skill doc tests assert that the setup step names the existence check and the stop-and-ask,
+     and that the landing-report section requires the per-deliverable skill list and any
+     additions with a reason;
+   - a resolve or setup test fails on a fixture spec naming a nonexistent skill, and passes on one
+     naming existing skills;
+   - a test shows a spec without the lines resolving to `skills: none named`.
 
-   All three fail against PLAN-LB-66's merged verb.
+   Each fails against PLAN-LB-66's merged skill and verb.
 
 5. **A docs-only change skips the full local build.**
    - The build gate checks the worktree diff against the base. If no buildable source changed, it
@@ -151,9 +161,42 @@ product skill, in repository-neutral form.
    The skill's build-gate section documents the docs-only path. Each fails against PLAN-LB-66's
    merged skill.
 
-Split guard: five deliverables, under the ~6 threshold, one cohesive surface (the `runbook-lane`
-skill and its resolve verb). Kept unsplit by operator instruction ("add this all to the
-follow-up (one) plan").
+6. **The skill restores every runbook rule PLAN-LB-66 weakened, so the local `RUNBOOK.md` can be
+   retired.** Added 2026-10-18 from the PLAN-LB-66 landing (`landings/PLAN-LB-66.md`), high.
+   - The ten weakened or dropped rules are restored in repository-neutral form:
+     1. "never `sleep`", with no "bare" qualifier;
+     2. the merge gate names `verify` (the full build) green on the current head, not "the build
+        gate";
+     3. the named review verbs: `ci pr comments`, `ci pr reviews`, `ci pr thread-reply`,
+        `ci pr resolve-thread`;
+     4. the guard-log path, returned by `resolve`;
+     5. the facts block shown inside a literal `landing-facts` fence, with every line in
+        `key=value` form (the `guard` fact included, or moved to prose);
+     6. `{branch} = {prefix}{plan}` with the closed prefix set;
+     7. the build timeout, returned by `resolve` from the architecture data;
+     8. the sub-agent tool named so that every target rewrites it (OpenCode `subagent`,
+        Antigravity `invoke_subagent`, Claude `Task`), with a target test;
+     9. the concrete forbidden-binary list, resolved per project or stated generically with
+        examples;
+     10. the base branch from `project.default_base_branch` via `resolve`, never a literal `main`.
+   - The local runbook's 2026-10-18 rules are carried too:
+     - a merge question states CI and `verify` status only from a result obtained on that head
+       after the last push, otherwise "pending";
+     - the standing review authorization (D1).
+   - **Rule-parity test:** the section-parity test is replaced or extended by a rule-level check —
+     a list of required rule sentences or keywords per section, extracted from the source runbook
+     — so that losing a rule fails the test even when every heading survives.
+
+   *Done when:*
+   - a rule-parity test enumerates items 1–10 plus the "pending" rule and fails against
+     PLAN-LB-66's merged skill;
+   - an emitted-skill test shows the sub-agent tool rewritten for OpenCode and Antigravity;
+   - a `parse_landing_facts` test parses the skill's facts example with no dropped line;
+   - `resolve` returns `base_branch` and `build_timeout_seconds` for the pyproject fixture.
+
+Split guard: six deliverables, at the ~6 threshold. Kept as one plan by operator instruction ("add
+this all to the follow-up (one) plan"); every deliverable lives on the `runbook-lane` skill and its
+resolve verb.
 
 ## Claim Labels
 
@@ -181,7 +224,7 @@ follow-up (one) plan").
   which documents the new declaration (verify-at-outline) (D2)
 - HYPOTHESIS: `doc/developer/opencode.adoc`, the runbook-lane section (verify-at-outline) (D1, D3, D5)
 - OBSERVED: `runbook-lane/SKILL.md` steps for implementation, self-review, PR triage, build gate and landing report (D3, D5)
-- HYPOTHESIS: `runbook_lane.py`, the domain-skill and footprint resolution (verify-at-outline) (D4, D5)
+- HYPOTHESIS: `runbook_lane.py`, the skill existence check, the drift additions and the footprint resolution (verify-at-outline) (D4, D5)
 - HYPOTHESIS: `.github/workflows/python-verify.yml`, read only, as the footprint source for this repository (D5)
 
 ## Dependencies and Sequencing
