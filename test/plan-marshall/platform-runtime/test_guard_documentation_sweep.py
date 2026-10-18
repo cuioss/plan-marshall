@@ -34,9 +34,10 @@ Population and dispositions
   test exists to find.
 
 The guards run with the plan-context gate SATISFIED, so a refusal is the
-strictest verdict a documented line could meet.  Signal 1 (the sub-agent
-identity) is used rather than a worktree cwd so no scratch log write is
-implied; the node scratch root itself is ephemeral.
+strictest verdict a documented line could meet for the gated rules. Signal 1
+(the sub-agent identity) is used rather than a worktree cwd so no scratch log
+write is implied; the node scratch root itself is ephemeral. R5 is
+unconditional, so its verdict does not depend on the gate either way.
 """
 
 from __future__ import annotations

@@ -69,7 +69,7 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workf
 **Input Parameters:**
 - **message** (optional): Custom commit message
 - **push** (optional): Push after committing
-- **step** (optional): Finalize step id producing this commit — passed through to the gate so a phase-6 settle-band commit is sanctioned by its step.
+- **step** (optional): Finalize step id producing this commit — passed through to the gate, which sanctions a source commit only when the id is in the plan's composed phase-6 manifest.
 
 ### Steps
 
@@ -159,7 +159,7 @@ Co-Authored-By: plan-marshall <noreply@cuioss.de>
 
 Append no other attribution — in particular no `Generated with …` footer. See `plan-marshall:manage-run-config` § "commit-trailer get / set" for the schema and the per-half fallback.
 
-Commit through the gate-bearing `commit` verb — ONE Bash call. It judges the STAGED commit and refuses a `6-finalize` source commit without a sanction (an open loop-back fix task, a review-rubric section-6 record, or a settle-band `--step`), exiting non-zero on a refusal:
+Commit through the gate-bearing `commit` verb — ONE Bash call. It judges the STAGED commit and refuses a `6-finalize` source commit without a sanction (an open loop-back fix task, a review-rubric section-6 record, or a `--step` naming a step id of the plan's composed phase-6 manifest), exiting non-zero on a refusal:
 
 ```bash
 # ONE Bash call — commit through the gate (message read from the worktree-absolute file)

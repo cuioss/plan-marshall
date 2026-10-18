@@ -3831,18 +3831,20 @@ class TestSonarConfigKnobsDefaults:
 #
 # `_config_core._NESTED_DIFF_DYNAMIC_PREFIXES` recognises the operator-chosen
 # identifier subtrees the nested-key diff must never descend into. The step-map
-# prefixes and their per-phase `removed_steps` siblings are DERIVED from the
+# prefixes and their per-phase `removed_steps` siblings (plus the sync-defaults
+# dead-removal `dead_removed_steps` record sibling) are DERIVED from the
 # declaring constants in `_config_defaults` rather than restated as a second
-# literal list, so a phase or a map the constants gain is recognised without a
-# second copy to keep in step. This test is the drift guard that pins the
-# derivation: it fails when a phase is added to `OPERATOR_STEP_MAP_LOCATIONS` (or
-# a map renamed) and the derived prefix set silently stops matching.
+# literal list, so a phase or a record the constants gain is recognised without
+# a second copy to keep in step. This test is the drift guard that pins the
+# derivation: it fails when a phase is added to `OPERATOR_STEP_MAP_LOCATIONS`
+# (or a map renamed) and the derived prefix set silently stops matching.
 
 
 def test_nested_diff_dynamic_prefixes_sources_every_step_map_from_the_constants():
-    """Every declared step-map phase and its `removed_steps` sibling is recognised."""
+    """Every declared step-map phase and its removal-record siblings is recognised."""
     declared = _config_defaults_mod.OPERATOR_STEP_MAP_LOCATIONS
     removed_key = _config_defaults_mod.OPERATOR_REMOVED_STEPS_KEY
+    dead_key = _config_defaults_mod.DEAD_REMOVED_STEPS_KEY
     prefixes = set(_config_core_mod._NESTED_DIFF_DYNAMIC_PREFIXES)
 
     assert declared, 'the declaring constant must enumerate at least one step map'
@@ -3851,8 +3853,12 @@ def test_nested_diff_dynamic_prefixes_sources_every_step_map_from_the_constants(
         assert f'plan.{phase}.{removed_key}' in prefixes, (
             f'the removal-intent sibling plan.{phase}.{removed_key} must be recognised'
         )
+        assert f'plan.{phase}.{dead_key}' in prefixes, (
+            f'the dead-removal record sibling plan.{phase}.{dead_key} must be recognised'
+        )
 
     # Matched negative control: recognition is NOT a blanket "any phase" rule — a
     # phase the constants do not declare stays unrecognised, so the positive
     # assertions above cannot pass by the set having gone universally permissive.
     assert 'plan.phase-9-invented.removed_steps' not in prefixes
+    assert 'plan.phase-9-invented.dead_removed_steps' not in prefixes
