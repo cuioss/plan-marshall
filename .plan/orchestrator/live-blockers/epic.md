@@ -105,6 +105,16 @@ derive, for rows still live.
   minutes, undisclosed shell file ops, an unasked `--force`, 11 report contradictions); see
   `landings/PLAN-LB-64.md`.
 
+- **PLAN-LB-52** (shipped #1806, 2026-10-18, runbook lane) — 5 met / 3 partial of 8 Done-whens.
+  The criteria are frozen and gate the finalize exit, but the gate refuses ordinary plans: a
+  surgical plan with its review dropped can never finalize (high), and a wrapped spec Done-when
+  reads as missing.
+  - The seal is a digest inside the sealed file. Fail-first tests were written after the fix.
+  - Grade F: three unauthorized rewrites of the shared main executor, still polluted with 163
+    foreign notations; a self-written blank-cheque merge authorization; a merge with local
+    `verify` red on free text; five quota breaches.
+  - Fix-forward **PLAN-LB-70**. See `landings/PLAN-LB-52.md`.
+
 - **PLAN-LB-66** (shipped #1808, 2026-10-18, runbook lane) — 1 met / 2 partial of 3 (11 of 14
   Done-whens met). The skill, the resolve verb and the lane-aware orchestrator are on `main`. But
   the skill weakened ten runbook rules (high; PLAN-LB-67 D6), and its build commands are valid only
@@ -460,6 +470,14 @@ derive, for rows still live.
   - D5: a docs-only build path keyed on the project's footprint rule.
 
   Five deliverables, kept unsplit by operator instruction.
+- 2026-10-18 — **PLAN-LB-52 fix-forward staged as PLAN-LB-70** (high), with four deliverables:
+  - the gate refuses only genuinely open criteria;
+  - spec and citation parsing matches real documents;
+  - the seal and the snapshot are bound in the status record;
+  - deleted-assertion rows reach the validator.
+
+  Emit before PLAN-LB-55. Runbook amended: never regenerate `.plan/execute-script.py`; never
+  offer an authorization for a head that does not exist yet.
 - 2026-10-18 — **PLAN-LB-66 landed; PLAN-LB-67 gains D6** (high): restore the ten runbook rules
   the skill weakened, test rule parity, and carry the "pending" rule. The runbook was amended
   (§7): a merge question states CI or `verify` status only from a result obtained after the last
@@ -836,6 +854,15 @@ derive, for rows still live.
   - CodeRabbit's unhandled worktree-epic-scoping finding (`orchestrator.py:5726`).
 
   Medium; not staged. — `landings/PLAN-LB-66.md`.
+- **The criteria gate refuses ordinary finalizes** (PLAN-LB-52, `6286484d8`). With a snapshot and
+  no verdict (functional review dropped for surgical scope, commit-push disabled, or review off),
+  `open_done_when_criteria` refuses `6-finalize` completion and archive. A wrapped spec Done-when
+  is captured as its first line, giving a false `spec_criterion_missing`. Also: "prefix" is read
+  as "pre-fix"; authorized changes, superseded deliverables and paraphrased verdict rows are
+  ignored; the seal is in-file. **High**; staged as PLAN-LB-70. — `landings/PLAN-LB-52.md`.
+- **The main executor is polluted** (PLAN-LB-52 run). `.plan/execute-script.py` was generated for
+  the OpenCode target, with 163 foreign `default-bundle:*` notations. Operator action: regenerate
+  it for Claude.
 - **Medium and low items are not owned by any staged plan.** They are listed with evidence
   in `backlog.md` (sections 1.12 onward, 2.3 onward, 3.2 onward, 4.7 onward and 5). Promote an
   item into a plan spec when it starts to hurt; re-verify it at HEAD first.
@@ -1162,6 +1189,7 @@ entries below are OpenCode 1 assumptions in plan-marshall that OpenCode 2 broke.
     | PLAN-LB-63 | 4 / 0 / 0 of 4 Done-whens (D2 intent partial) | 2/2 | 1 medium (inert recovery) | 5 | $0.44 | D+ |
     | PLAN-LB-65 | 1 / 2 / 0 of 3 | 3/3 | 1 high (steward refused on OpenCode) | 4 | $1.87 | F |
     | PLAN-LB-66 | 1 / 2 / 0 of 3 | 3/3 | 1 high (ten runbook rules weakened) | 10 | $1.85 | F |
+    | PLAN-LB-52 | 5 / 3 / 0 of 8 Done-whens | 2/2 | 2 high (finalize gate refuses, spec parse) | 4 | $1.77 | F |
 
     PLAN-LB-61 is the first run to keep every Done-when verbatim with genuine fail-first evidence.
     It still bent the CodeRabbit policy (the merged head has no CodeRabbit review; Q4's premise was
