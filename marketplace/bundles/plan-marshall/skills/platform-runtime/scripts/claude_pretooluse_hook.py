@@ -213,8 +213,8 @@ _R1_REASON = (
 )
 _R2_REASON = (
     'plan-marshall: use the Read/Glob/Grep tools, not Bash, for file '
-    'operations (cat/grep/head/tail/find/ls, git grep). For a content sweep '
-    'run: architecture search --content --pattern P.'
+    'operations (cat/grep/head/tail/find/ls, sh/bash/source, git grep). For a '
+    'content sweep run: architecture search --content --pattern P.'
 )
 _R3_REASON = (
     'plan-marshall: never edit the generated .plan/execute-script.py — '
@@ -487,12 +487,20 @@ def _match_r3_generated_executor(tool_name: str | None, tool_input: dict[str, An
 
 
 def _match_r4_hardcoded_build(tool_name: str | None, tool_input: dict[str, Any]) -> str | None:
-    """R4 — Bash command invoking ./pw or a bare mvn/npm/gradle."""
+    """R4 — Bash command invoking ./pw or a bare mvn/npm/gradle/uv.
+
+    The program is read BOTH un-stripped (``./pw`` is matched as a literal) and
+    after R5 wrapper stripping, mirroring the OpenCode guard's first-token check
+    on its wrapper-stripped ``commandTokens``: ``env uv run python -c ...`` is
+    refused here exactly as the guard refuses it.
+    """
     command = _bash_command(tool_name, tool_input)
     if command is None:
         return None
     first = _first_word(command)
-    if first == './pw' or _program_name(command) in _R4_BUILD_PROGRAMS:
+    stripped = _r5_stripped_tokens(command)
+    stripped_program = _strip_matched_quotes(stripped[0]).rsplit('/', 1)[-1] if stripped else ''
+    if first == './pw' or _program_name(command) in _R4_BUILD_PROGRAMS or stripped_program in _R4_BUILD_PROGRAMS:
         return _R4_REASON
     return None
 
@@ -773,6 +781,7 @@ def _deployed_bundle_roots() -> tuple[str, ...]:
                 str(pathlib.Path(home) / '.claude' / 'plugins' / 'cache' / 'plan-marshall'),
                 str(pathlib.Path(home) / '.agents' / 'skills'),
                 str(pathlib.Path(home) / '.gemini' / 'config' / 'plugins' / 'plan-marshall' / 'skills'),
+                str(pathlib.Path(home) / '.gemini' / 'config' / 'skills'),
                 str(pathlib.Path(home) / '.gemini' / 'antigravity' / 'skills'),
             ]
         )

@@ -524,6 +524,7 @@ function deployedBundleRoots() {
       path.join(home, ".claude", "plugins", "cache", "plan-marshall"),
       path.join(home, ".agents", "skills"),
       path.join(home, ".gemini", "config", "plugins", "plan-marshall", "skills"),
+      path.join(home, ".gemini", "config", "skills"),
       path.join(home, ".gemini", "antigravity", "skills"),
     )
   }

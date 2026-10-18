@@ -22,10 +22,11 @@ The scratch root is a self-contained ESM project:
 
 The scratch root is deliberately NOT under ``.plan/local/worktrees/``, so a test
 that wants to exercise a worktree-shaped path passes it as the shell ``workdir``.
-R5 has no plan-context gate since PLAN-LB-65 D1, so it fires in every session;
-R6 resolves the plan MAIN-ANCHORED, and the harness pins ``PLAN_BASE_DIR`` to
-``<scratch>/.plan/local`` so a test can place the plan's ``status.json`` where
-that resolution looks.
+R5 binds when the plan-context gate fires OR the project root carries the
+repository marker (this scratch root does), so the guard refuses an interpreter
+bypass in a root session here; R6 resolves the plan MAIN-ANCHORED, and the
+harness pins ``PLAN_BASE_DIR`` to ``<scratch>/.plan/local`` so a test can place
+the plan's ``status.json`` where that resolution looks.
 """
 
 from __future__ import annotations

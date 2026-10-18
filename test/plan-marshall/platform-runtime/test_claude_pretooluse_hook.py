@@ -13,8 +13,9 @@ own field-name constants and prove the hook delegates parse/accessors/gate to th
 shared module rather than carrying its own field-name copies.
 
 Coverage:
-  - R5 enforced in EVERY session (no context gate): a root session with cwd in the
-    main checkout refuses ``python3 -c``.
+  - R5 binds inside a plan context AND in every session of THIS repository: a
+    root session with cwd in the main checkout refuses ``python3 -c``, while a
+    consumer repository outside a plan context is untouched.
   - Gate fail-open for R1-R4/R6 when neither signal fires (emit nothing, exit 0).
   - Signal-1-only enforcement (sub-agent identity carries the execution-context
     marker) and Signal-2-only enforcement (worktree cwd).
@@ -1445,6 +1446,29 @@ def test_r5_admits_a_nested_cache_bundle_script(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv('HOME', str(tmp_path))
     monkeypatch.setenv('XDG_CONFIG_HOME', str(tmp_path / '.config'))
     command = f'python3 {script} generate'
+    assert hook.evaluate(_root_payload(command, _MAIN_CHECKOUT_CWD)) is None
+
+
+def test_r5_admits_the_steward_script_at_its_nested_cache_path(tmp_path, monkeypatch) -> None:
+    """Done-when (D1): the hook admits ``{resolved}/skills/marshall-steward/scripts/determine_mode.py``."""
+    script = (
+        tmp_path
+        / '.claude'
+        / 'plugins'
+        / 'cache'
+        / 'plan-marshall'
+        / 'plan-marshall'
+        / '1.0.0'
+        / 'skills'
+        / 'marshall-steward'
+        / 'scripts'
+        / 'determine_mode.py'
+    )
+    script.parent.mkdir(parents=True, exist_ok=True)
+    script.write_text('# deployed\n', encoding='utf-8')
+    monkeypatch.setenv('HOME', str(tmp_path))
+    monkeypatch.setenv('XDG_CONFIG_HOME', str(tmp_path / '.config'))
+    command = f'python3 {script} mode'
     assert hook.evaluate(_root_payload(command, _MAIN_CHECKOUT_CWD)) is None
 
 

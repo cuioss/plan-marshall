@@ -37,8 +37,10 @@ Population and dispositions
 The guards run with the plan-context gate SATISFIED, so a refusal is the
 strictest verdict a documented line could meet for the gated rules. Signal 1
 (the sub-agent identity) is used rather than a worktree cwd so no scratch log
-write is implied; the node scratch root itself is ephemeral. R5 is
-unconditional, so its verdict does not depend on the gate either way.
+write is implied; the node scratch root itself is ephemeral. R5 binds inside a
+plan context AND in every session of this repository — which the node scratch
+root is (it carries the repository marker) and which the hook's own location is
+— so its verdict follows from the resolved command either way.
 """
 
 from __future__ import annotations

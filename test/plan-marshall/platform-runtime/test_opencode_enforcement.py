@@ -373,7 +373,7 @@ def test_guard_node_allows_documented_non_executor_invocations(tmp_path_factory:
 
 
 def test_guard_node_outside_context_still_refuses_py_compile(tmp_path_factory: pytest.TempPathFactory) -> None:
-    """R5 is now unconditional, so py_compile is refused outside a plan context too."""
+    """R5 binds in this repository in every session, so py_compile is refused outside a plan context too."""
     harness = build_harness(tmp_path_factory.mktemp('guard-c'))
     blocked, message = harness.blocks(shell_event('python3 -m py_compile f.py'))
     assert blocked, f'guard.js must refuse py_compile outside a plan context; message={message!r}'
@@ -504,7 +504,7 @@ def test_guard_node_r4_reads_an_attached_m_module(tmp_path_factory: pytest.TempP
 
 
 # =============================================================================
-# D1 — R5 protects every session; the allow-list is exact (PLAN-LB-65)
+# D1 — R5 binds in this repository in every session; the allow-list is exact
 # =============================================================================
 
 #: The documented repository-relative form of the steward's permission-fix
@@ -515,10 +515,11 @@ _DOCUMENTED_PERMISSION_FIX = 'marketplace/bundles/plan-marshall/skills/tools-per
 
 
 def test_guard_node_root_session_refuses_python_c(tmp_path_factory: pytest.TempPathFactory) -> None:
-    """Done-when (D1): a ROOT session (no plan context) still has R5 enforced.
+    """Done-when (D1): a ROOT session (no plan context) in this repo still enforces R5.
 
-    The command carries no sub-agent identity and no worktree workdir, so the old
-    plan-context gate was OFF — yet R5 must still refuse ``python3 -c``.
+    The command carries no sub-agent identity and no worktree workdir, so the
+    plan-context gate is OFF — yet this repository binds R5 in every session, so
+    ``python3 -c`` is refused.
     """
     harness = build_harness(tmp_path_factory.mktemp('guard-d1-root'))
     blocked, message = harness.blocks(shell_event('python3 -c "x"'))
@@ -586,30 +587,27 @@ def test_guard_node_admits_a_flat_deployed_bundle_script(tmp_path_factory: pytes
 
 
 def test_guard_node_admits_a_nested_cache_bundle_script(tmp_path_factory: pytest.TempPathFactory) -> None:
-    """Done-when (D1): the guard admits the cache-path generator (nested layout)."""
+    """Done-when (D1): the guard admits the nested-cache steward and generator scripts."""
     home = tmp_path_factory.mktemp('home')
-    script = (
-        home
-        / '.claude'
-        / 'plugins'
-        / 'cache'
-        / 'plan-marshall'
-        / 'plan-marshall'
-        / _NESTED_DEPLOYED_VERSION
-        / 'skills'
-        / 'tools-script-executor'
-        / 'scripts'
-        / 'generate_executor.py'
-    )
-    script.parent.mkdir(parents=True, exist_ok=True)
-    script.write_text('# deployed\n', encoding='utf-8')
+    base = home / '.claude' / 'plugins' / 'cache' / 'plan-marshall' / 'plan-marshall' / _NESTED_DEPLOYED_VERSION
+    scripts = {
+        'determine_mode.py': ('marshall-steward', 'mode'),
+        'generate_executor.py': ('tools-script-executor', 'generate'),
+    }
+    commands = []
+    for name, (skill, verb) in scripts.items():
+        script = base / 'skills' / skill / 'scripts' / name
+        script.parent.mkdir(parents=True, exist_ok=True)
+        script.write_text('# deployed\n', encoding='utf-8')
+        commands.append(f'python3 {script} {verb}')
     harness = build_harness(
         tmp_path_factory.mktemp('guard-d1-nested'),
         extra_env={'HOME': str(home), 'XDG_CONFIG_HOME': str(home / '.config')},
     )
 
-    blocked, message = harness.blocks(shell_event(f'python3 {script} generate'))
-    assert not blocked, f'the cache-path generator must be admitted; message={message!r}'
+    outcomes = harness.run([shell_event(command) for command in commands])
+    for command, outcome in zip(commands, outcomes, strict=True):
+        assert not outcome.blocked, f'the cache-path script must be admitted: {command!r} — {outcome.message!r}'
 
 
 def test_guard_node_refuses_a_non_deployed_same_named_script(tmp_path_factory: pytest.TempPathFactory) -> None:

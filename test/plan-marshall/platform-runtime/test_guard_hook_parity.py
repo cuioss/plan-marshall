@@ -5,11 +5,12 @@
 Deliverable 1 makes the two decision tables identical on the interpreter
 surface: quoting-aware tokenisation, the same wrapper stripping, the same
 case handling, the same shared allow-list (matched exactly on the script's
-repository-relative path), and the same UNCONDITIONAL R5 — the plan-context
-gate is gone, so R5 fires in every session on both harnesses. A source-level
-comparison cannot show any of that, so every row below is driven through BOTH
-implementations by REAL EXECUTION — the OpenCode plugin under ``node`` and the
-Claude hook's ``evaluate`` — and the two verdicts must agree.
+repository-relative path, and its deployed bundle-relative form), and the same
+R5 SCOPE — R5 binds inside a plan context and in every session of THIS
+repository, so a consumer repository outside a plan context is untouched. A
+source-level comparison cannot show any of that, so every row below is driven
+through BOTH implementations by REAL EXECUTION — the OpenCode plugin under
+``node`` and the Claude hook's ``evaluate`` — and the two verdicts must agree.
 
 The corpus is the INTERPRETER (R5) surface only. The guard's R4 python branch
 (``python3 build.py``, ``python3 -m {pytest mypy ruff}``) is a deliberately
@@ -39,10 +40,11 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 
 #: ``(command, refused_in_context, refused_out_of_context)``. Both guards must
 #: produce these values. ``refused`` means the guard threw and the hook returned
-#: a deny reason. R5 is enforced in EVERY session in both harnesses since
-#: PLAN-LB-65 D1, so a refusal row is refused in context AND out of it — the two
-#: columns agree on every row and are kept separate so a future re-gating shows
-#: up here.
+#: a deny reason. R5 binds inside a plan context AND in every session of THIS
+#: repository — which the node scratch root is (it carries the repository
+#: marker), and which the hook's own location is — so a refusal row is refused in
+#: context AND out of it; the two columns agree on every row and are kept
+#: separate so a future re-scoping shows up here.
 _PARITY_CORPUS: tuple[tuple[str, bool, bool], ...] = (
     ('timeout 5 python3 -c "x"', True, True),
     ('python3.12 -c "x"', True, True),
@@ -111,9 +113,9 @@ def test_guards_agree_that_interpreter_bypasses_are_unconditional(
     """Both guards refuse an interpreter bypass out of context, by their own rule.
 
     Before PLAN-LB-65 D1 the guard refused via its unconditional R4 while the
-    hook's context gate let it through — the documented divergence. R5 is now
-    unconditional on both harnesses, so both refuse out of context: the guard on
-    its R4 python branch, the hook on R5. The row is kept so the surface cannot
+    hook's context gate let it through — the documented divergence. R5 now binds
+    in this repository in every session, so both refuse out of context: the guard
+    on its R4 python branch, the hook on R5. The row is kept so the surface cannot
     silently re-diverge.
     """
     harness = build_harness(tmp_path_factory.mktemp('guard-r4-out'))
@@ -146,6 +148,7 @@ _SIDE_DOOR_REFUSED: tuple[str, ...] = (
     'bash -c "python3 -c print(1)"',
     'sh -c "python3 -c print(1)"',
     'uv run python -c "print(1)"',
+    'env uv run python -c "print(1)"',
 )
 
 _SIDE_DOOR_REFUSED_IDS = list(_SIDE_DOOR_REFUSED)
