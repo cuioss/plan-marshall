@@ -246,6 +246,7 @@ def _seed_fixture(
     spec_name: str = 'PLAN-LB-66-runbook-lane-skill.md',
     spec_text: str = '# staged spec\n',
     base_branch: str | None = None,
+    module_path: str = '.',
 ) -> Path:
     """Seed a project fixture and return the staged spec path.
 
@@ -291,7 +292,7 @@ def _seed_fixture(
             {
                 'name': 'root-mod',
                 'build_systems': ['pyproject'],
-                'paths': {'module': '.'},
+                'paths': {'module': module_path},
                 'commands': {
                     'quality-gate': executable.format(args='quality-gate'),
                     'module-tests': executable.format(args='module-tests'),
@@ -668,8 +669,8 @@ _VERIFY_WORKFLOW = (
 )
 
 
-def _seed_footprint(tmp_path: Path, *, opt_in: bool = True) -> Path:
-    _seed_fixture(tmp_path, executable=_PYPROJECT_EXEC, required_bots='x')
+def _seed_footprint(tmp_path: Path, *, opt_in: bool = True, module_path: str = '.') -> Path:
+    _seed_fixture(tmp_path, executable=_PYPROJECT_EXEC, required_bots='x', module_path=module_path)
     _write(
         tmp_path / '.github' / 'workflows' / 'python-verify.yml',
         _VERIFY_WORKFLOW if opt_in else 'name: Other\n',
@@ -717,6 +718,27 @@ def test_skill_build_gate_documents_the_docs_only_path() -> None:
     gate = _section('## 4. Build gate')
     assert 'docs-only' in gate
     assert 'build-gate: docs-only' in gate
+
+
+def test_build_classify_does_not_invent_a_document_class(tmp_path: Path) -> None:
+    """A `.txt` file is not a document class of the gate, so it must build."""
+    data = _build_classify(_seed_footprint(tmp_path), 'notes/plain.txt')
+    assert data['kind'] == 'buildable'
+
+
+def test_build_classify_keeps_an_unlisted_build_file_buildable(tmp_path: Path) -> None:
+    """Architecture silence about a root build file must not become a docs-only skip."""
+    project = _seed_footprint(tmp_path, opt_in=False, module_path='core')
+    data = _build_classify(project, 'pyproject.toml')
+    assert data['source'] == 'architecture'
+    assert data['kind'] == 'buildable'
+
+
+def test_build_classify_keeps_an_unlisted_document_docs_only(tmp_path: Path) -> None:
+    """The same silence still lets a genuine document be classified docs-only."""
+    project = _seed_footprint(tmp_path, opt_in=False, module_path='core')
+    data = _build_classify(project, 'notes/readme.md')
+    assert data['kind'] == 'docs-only'
 
 
 # =============================================================================

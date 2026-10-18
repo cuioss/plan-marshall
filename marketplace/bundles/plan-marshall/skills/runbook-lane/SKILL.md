@@ -76,7 +76,7 @@ The result supplies, and nothing below is spelled from anywhere else:
 | epic slug | `slug` |
 | `{plan}` | `plan` |
 | worktree | `worktree` |
-| branch | `{branch} = {prefix}{plan}`; the prefix set is closed — `feature/` for a new capability, `fix/` for a bug fix, `chore/` for docs or maintenance — and it comes from the project's `manage-config project get --field working_prefixes` |
+| branch | `{branch} = {prefix}{plan}`; the prefix is one the project's `working_prefixes` declares, and the project's own set wins over the canonical `feature/` (a new capability), `fix/` (a bug fix) and `chore/` (docs or maintenance) |
 | base branch | `base_branch` (the project's own base branch, never a spelling of it) |
 | inbox sender id | `sender_id` |
 | progress file | `progress_file` |
@@ -88,6 +88,9 @@ The result supplies, and nothing below is spelled from anywhere else:
 | `inbox write` command | `inbox_write_command` |
 | harness and guard state | `harness`, `guard` |
 | guard-log path | `guard_log` |
+
+The branch row is derived from the project's configuration rather than returned by `resolve`; every
+other row names a field of the resolve result.
 
 The verb **fails closed**: a spec outside `.plan/orchestrator/{slug}/plans/`, an unreadable
 configuration, a missing automatic-review step, an empty required-reviewer list, or a build command
@@ -210,7 +213,7 @@ so git alone shows which deliverables are committed.
 - **Guard.** The resolve result reports `guard: present` only when this project has a tool-call guard
   installed for the active harness, and `guard: none` otherwise (the Antigravity harness has no
   pre-tool-use hooks at all). Where nothing was enforced, the landing message says so — step 8's
-  facts block and rule check report `guard: none on this harness (unenforced)`. The lane never
+  facts block, and its rule-check section, report `guard: none on this harness (unenforced)`. The lane never
   reports "all kept" or "no guard-log line" when nothing was enforced. The guard's audit log is
   `{guard_log}` (the path `resolve` returns); step 8 reads it there for this run's sessions.
 
@@ -420,7 +423,7 @@ never an older run's answer. Its options never mark a rule-bending choice "Recom
 incomplete statement in such a question fails the run.
 
 **Immediately before enqueue,** fetch the base branch again. **If it moved:**
-`git -C {worktree} fetch origin/{base_branch}`, then `git -C {worktree} merge origin/{base_branch}`. Run the build
+`git -C {worktree} fetch origin {base_branch}`, then `git -C {worktree} merge origin/{base_branch}`. Run the build
 gate again, push, re-trigger the reviewers, and repeat step 6.
 
 **Before enqueue, re-check the authorization rule:** merge only when every condition above holds, or

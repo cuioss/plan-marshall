@@ -475,12 +475,23 @@ def _resolve_harness_guard(project_dir: Path) -> tuple[str, str]:
 #: by the PROJECT's own rule rather than by a list hard-coded here.
 _FOOTPRINT_WORKFLOW = ('.github', 'workflows', 'python-verify.yml')
 
-#: The path prefixes and the document extensions the CI footprint gate treats as
-#: non-building when its ``skip-on-docs-only`` opt-in is on. Reproducing the
-#: gate's own classes is what makes a local skip agree with the CI skip; a path
-#: is buildable when it matches NEITHER and is not covered by ``extra-buildable``.
-_NON_BUILDING_PREFIXES = ('.plan/', '.claude/')
-_NON_BUILDING_SUFFIXES = ('.md', '.adoc', '.asciidoc', '.rst', '.txt')
+#: The path prefixes, document extensions and bare filenames the CI footprint gate
+#: treats as non-building when its ``skip-on-docs-only`` opt-in is on. The mirrored
+#: set is the pinned reusable workflow's own docs/config exclusions, and it is
+#: applied ONLY where the opt-in is in force. Anything outside it BUILDS, so a
+#: class the gate adds later lands as ``buildable`` — the fail-closed direction,
+#: since a wrong ``docs-only`` silently skips a build while a wrong ``buildable``
+#: only costs time.
+_NON_BUILDING_PREFIXES = ('.plan/', '.claude/', '.agents/', '.opencode/', 'doc/')
+_NON_BUILDING_SUFFIXES = ('.md', '.adoc')
+_NON_BUILDING_BASENAMES = ('LICENSE', 'NOTICE')
+
+
+def _is_non_building(path: str) -> bool:
+    """Whether the footprint gate's docs/config classes cover *path*."""
+    if path in _NON_BUILDING_BASENAMES:
+        return True
+    return path.startswith(_NON_BUILDING_PREFIXES) or path.lower().endswith(_NON_BUILDING_SUFFIXES)
 
 
 def _read_extra_buildable(project_dir: Path) -> list[str] | None:
@@ -554,22 +565,27 @@ def _classify_path(path: str, extra: list[str], module_prefixes: list[str], sour
     call them docs-only.
 
     Under the CI rule a path that is in NEITHER class is buildable — the gate's
-    own direction, since its opt-in names what to SKIP, not what to build. Under
-    the architecture fallback the direction is the opposite: only a path inside a
-    module the architecture knows about builds.
+    own direction, since its opt-in names what to SKIP, not what to build. The
+    architecture fallback keeps that same fail-closed bias: a path inside a module
+    builds, and a path outside every module builds unless it is provably a
+    document, because the module list is not an inventory of everything that can
+    affect a build.
     """
     if any(fnmatch.fnmatch(path, pattern) for pattern in extra):
         return 'buildable'
     if source == 'ci-workflow':
         # The gate's own direction: it names what to SKIP, so anything outside the
         # non-building classes builds.
-        if path.startswith(_NON_BUILDING_PREFIXES) or path.lower().endswith(_NON_BUILDING_SUFFIXES):
-            return 'docs-only'
+        return 'docs-only' if _is_non_building(path) else 'buildable'
+    # Architecture fallback: the architecture's module directories decide what
+    # BUILDS, and the document classes decide only what is provably a document. A
+    # path that matches neither — a root build file, an unlisted configuration —
+    # is buildable: the architecture's module list is not an inventory of
+    # everything that can affect a build, so its silence must not be read as
+    # "docs-only".
+    if any(path.startswith(prefix) for prefix in module_prefixes):
         return 'buildable'
-    # Architecture fallback: the architecture's module directories ARE the rule, so
-    # a document extension is not consulted — a path builds iff it lies inside a
-    # module the architecture reports.
-    return 'buildable' if any(path.startswith(prefix) for prefix in module_prefixes) else 'docs-only'
+    return 'docs-only' if _is_non_building(path) else 'buildable'
 
 
 def cmd_build_classify(args: argparse.Namespace) -> dict[str, Any]:
