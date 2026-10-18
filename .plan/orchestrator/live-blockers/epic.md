@@ -449,6 +449,16 @@ derive, for rows still live.
   - D5: a docs-only build path keyed on the project's footprint rule.
 
   Five deliverables, kept unsplit by operator instruction.
+- 2026-10-18 — **Operator: the landing audit becomes the orchestrator contract.** The method used
+  since PLAN-LB-61 is two read-only leaves (fidelity and process), the lane contract in force,
+  report contradictions, spot checks, and a grade. It moves into `analyze`, with full depth
+  mandatory for OpenCode, Antigravity and unguarded runs. Staged **PLAN-LB-69
+  runbook-landing-audit** (3 deliverables):
+  - D1: `analyze.md`;
+  - D2: a read-only session-store reader per harness that never reads permission data;
+  - D3: template and payload sections.
+
+  Emit after PLAN-LB-66, alongside PLAN-LB-67.
 - 2026-10-18 — **PLAN-LB-65 fix-forward staged as PLAN-LB-68** (high):
   - admit deployed bundle scripts exactly, so the steward runs again, and scope R5 for consumers;
   - R6 names the plan from `git -C`;
