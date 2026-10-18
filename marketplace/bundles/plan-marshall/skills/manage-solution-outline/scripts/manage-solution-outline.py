@@ -19,6 +19,9 @@ Usage:
     python3 manage-solution-outline.py read --plan-id EXAMPLE-PLAN [--raw | --section summary | --deliverable-number N]
     python3 manage-solution-outline.py get-deliverable --plan-id EXAMPLE-PLAN --deliverable-number N
     python3 manage-solution-outline.py exists --plan-id EXAMPLE-PLAN
+    python3 manage-solution-outline.py snapshot-criteria --plan-id EXAMPLE-PLAN
+    python3 manage-solution-outline.py criteria-authorize --plan-id EXAMPLE-PLAN \\
+        --deliverable-number 2 --criterion "criterion text" --decision "operator: ..."
     python3 manage-solution-outline.py get-module-context
 """
 
@@ -39,6 +42,7 @@ from _architecture_core import (
     load_project_meta,
     migrate_key_packages,
 )
+from _criteria_snapshot import authorize_change, write_snapshot
 from _findings_core import query_assessments
 from _plan_parsing import (
     DECLARATION_FIELDS,
@@ -1248,6 +1252,39 @@ def cmd_exists(args: argparse.Namespace) -> dict[str, Any]:
     return {'status': 'success', 'plan_id': args.plan_id, 'file': SOLUTION_FILE, 'exists': exists}
 
 
+def cmd_snapshot_criteria(args: argparse.Namespace) -> dict[str, Any]:
+    """Freeze the outline's success criteria as the plan's criteria snapshot.
+
+    Run at outline approval. The frozen record is what the functional review
+    grades against and what the finalize completion gate reads for open
+    Done-when criteria, so a criterion narrowed, reworded or dropped after
+    approval is a difference from this record rather than a silent rewrite of
+    the criteria the plan is judged by.
+    """
+    require_valid_plan_id(args)
+
+    return write_snapshot(args.plan_id)
+
+
+def cmd_criteria_authorize(args: argparse.Namespace) -> dict[str, Any]:
+    """Log an operator decision authorizing one frozen criterion's change.
+
+    A frozen criterion that the current outline no longer carries verbatim is a
+    blocking finding at the functional review. This verb is the single way that
+    change is authorized: it logs the decision AND records it against the
+    snapshot, and it writes neither when the decision log cannot be written.
+    """
+    require_valid_plan_id(args)
+
+    return authorize_change(
+        args.plan_id,
+        args.deliverable_number,
+        args.criterion,
+        args.decision,
+        phase=getattr(args, 'phase', '3-outline'),
+    )
+
+
 def _validate_file_on_disk(plan_id: str, file_path: Path) -> tuple[int, dict[str, Any]]:
     """Validate solution outline file already on disk.
 
@@ -1611,6 +1648,46 @@ def main() -> int:
     )
     _routing.add_plan_id_arg(context_parser)
     context_parser.set_defaults(func=cmd_get_module_context)
+
+    # snapshot-criteria
+    snapshot_parser = subparsers.add_parser(
+        'snapshot-criteria',
+        help='Freeze the outline success criteria as the plan criteria snapshot (outline approval)',
+        allow_abbrev=False,
+    )
+    add_plan_id_arg(snapshot_parser)
+    snapshot_parser.set_defaults(func=cmd_snapshot_criteria)
+
+    # criteria-authorize
+    authorize_parser = subparsers.add_parser(
+        'criteria-authorize',
+        help='Log an operator decision authorizing one frozen criterion change',
+        allow_abbrev=False,
+    )
+    add_plan_id_arg(authorize_parser)
+    authorize_parser.add_argument(
+        '--deliverable-number',
+        type=int,
+        required=True,
+        dest='deliverable_number',
+        help='Deliverable whose frozen criterion the decision authorizes changing',
+    )
+    authorize_parser.add_argument(
+        '--criterion',
+        required=True,
+        help='The frozen criterion text the decision authorizes changing',
+    )
+    authorize_parser.add_argument(
+        '--decision',
+        required=True,
+        help='The operator decision that authorizes the change',
+    )
+    authorize_parser.add_argument(
+        '--phase',
+        default='3-outline',
+        help='Phase the decision-log entry is recorded under (default: 3-outline)',
+    )
+    authorize_parser.set_defaults(func=cmd_criteria_authorize)
 
     # deliverable-hashes
     hashes_parser = subparsers.add_parser(

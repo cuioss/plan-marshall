@@ -21,21 +21,15 @@ Imported as ``from _review_support_attribution import ...`` by ``review_support.
 
 from __future__ import annotations
 
-import re
 import subprocess
 from pathlib import Path
 from typing import Any
 
 from _cmd_domain_detect import _glob_matched_domains
 from _config_core import load_config
+from _criteria_snapshot import outline_deliverables
 from _ledger_core import KIND_CHANGE, read_entries
-from _plan_parsing import (
-    deliverable_write_set,
-    extract_deliverables,
-    normalize_declared_path,
-    parse_document_sections,
-    split_deliverable_blocks,
-)
+from _plan_parsing import deliverable_write_set, normalize_declared_path
 from _references_core import compute_plan_branch_diff, read_references, resolve_base_ref, resolve_live_worktree
 from _review_support_validate import deliverable_number
 from file_ops import get_plan_dir
@@ -70,8 +64,6 @@ PROVENANCE_DECLARED = 'declared'
 PROVENANCE_FOOTPRINT = 'footprint'
 PROVENANCE_BOTH = 'both'
 
-_SUCCESS_CRITERIA_RE = re.compile(r'\*\*Success Criteria:\*\*\s*((?:- [^\n]+\n?)+)', re.IGNORECASE)
-
 
 def error_payload(plan_id: str, error: str, message: str) -> dict[str, Any]:
     """Return the ``status: error`` payload every verb uses for an unreadable input."""
@@ -82,19 +74,16 @@ def load_outline_deliverables(plan_id: str) -> list[dict[str, Any]] | None:
     """Return the outline deliverables, each with its ``write_set`` and ``success_criteria``.
 
     ``None`` when the outline does not exist — the caller reports that, it does
-    not read it as an outline with no deliverables.
+    not read it as an outline with no deliverables. The success-criteria parse is
+    ``_criteria_snapshot.outline_deliverables`` (the one parser also used to
+    freeze the snapshot), so a delivered verdict and the frozen record it is
+    checked against can never read the document two different ways.
     """
-    path = get_plan_dir(plan_id) / SOLUTION_FILE
-    if not path.is_file():
+    deliverables = outline_deliverables(plan_id)
+    if deliverables is None:
         return None
-    section = parse_document_sections(path.read_text(encoding='utf-8')).get('deliverables', '')
-    bodies = {block['number']: block['content'] for block in split_deliverable_blocks(section)}
-    deliverables = extract_deliverables(section)
     for deliverable in deliverables:
         deliverable['write_set'] = deliverable_write_set(deliverable)
-        match = _SUCCESS_CRITERIA_RE.search(bodies.get(deliverable['number'], ''))
-        bullets = match.group(1).splitlines() if match else []
-        deliverable['success_criteria'] = [line[2:].strip() for line in bullets if line.startswith('- ')]
     return deliverables
 
 

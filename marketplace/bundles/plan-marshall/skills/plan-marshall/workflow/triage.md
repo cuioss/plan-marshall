@@ -29,13 +29,39 @@ Triage RECORDS dispositions; it does not talk to the provider. The reviewer-faci
 
 Domain-triage extensions (`{bundle}:ext-triage-{domain}`) are loaded on demand inside this workflow — they are NOT pre-loaded by the caller.
 
+## Exit-code convention for every script call
+
+The exit-code contract for every `python3 .plan/execute-script.py` call in this document — of EVERY notation, not only `manage-*` — is stated once in [`tools-script-executor/standards/exit-code-convention.md`](../../tools-script-executor/standards/exit-code-convention.md); it is not restated here.
+
 ## Shell-safe free text in command templates
 
 The FIX body below interpolates finding-derived text — titles, details, paths — into shell arguments. The shell-quoting rule those templates follow is stated once in [`functional-review.md`](../../phase-6-finalize/workflow/functional-review.md) § "Shell-safe free text in command templates" and is not restated here: every `--detail` carrying finding text is written as ONE single-quoted shell argument, each embedded single quote is escaped as `'\''` before substitution, and interpolated text is never put in double quotes. Each FIX template that interpolates text names that section.
 
 ## Done-When consumption — open criteria as a finalize triage source
 
-Open Done-When criteria are a finalize triage source alongside the findings store. Before Step 1, read the plan's Done-When record — the request's Done-When statements via `manage-plan-documents request read` and the outline's success criteria via `manage-solution-outline read` — and treat each criterion still open (not met, not superseded by an operator decision) as one triage item. Each open criterion is decided in the Step 3b batched shape (FIX when the fix is one edit at the cited location, otherwise a fix task per Step 3c Shape 1; SUPPRESS / ACCEPT / AskUserQuestion otherwise) and recorded through the same `manage-findings resolve` call the group uses, so the Step 7 loop-back signalling counts it exactly as it counts a store finding.
+Open Done-When criteria are a finalize triage source alongside the findings store, and the standing read for them is the plan's frozen criteria snapshot — the record the outline phase wrote at approval. Before Step 1, read it:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:phase-6-finalize:review_support open-criteria \
+  --plan-id {plan_id}
+```
+
+Every row in the returned `open[]` is one frozen criterion the functional review has not graded `met` — `unevidenced`, `not_met` or `ungraded`; `verdict_state` says whether that verdict was sealed (`sealed`) or not (`unsealed` / `absent` / `unreadable`, where every criterion is open by definition); and `source: none` means the plan predates the freeze and has no frozen criteria to report.
+
+**Ingest each open row into the findings store before Step 1**, so it carries a `hash_id` and every later step — the Step 3c resolve call, the Step 7 loop-back count, the provider reply — applies to it unchanged:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings add \
+  --plan-id {plan_id} --type {finding_type} \
+  --title 'Open Done-when: {criterion}' --severity error \
+  --detail 'deliverable {deliverable}, criterion {criterion_index} — frozen at outline approval, not graded met ({status})'
+```
+
+The title and detail interpolate the criterion's own text, so both are single-quoted per the shell-quoting rule this workflow already follows. An item already in the store for the same criterion is not added twice: Step 1's `list` is the check.
+
+Then Step 1's empty case is **the store empty AND `open_count == 0`**. A run whose store is empty but whose snapshot still holds an open criterion is not "nothing to triage": it triages those items. The run cannot exit at an empty store while a Done-when is unmet, and the finalize completion gate refuses that exit independently (`manage-status` refuses with `open_done_when_criteria`).
+
+A criterion is open until the review's sealed verdict grades it `met` with evidence, so the loop cannot exit at an empty store while a Done-when is unmet — the finalize completion gate refuses that exit independently (`manage-status` refuses with `open_done_when_criteria`).
 
 ## Step 1: List the findings store
 
@@ -52,7 +78,7 @@ This is **by-reference** — the store is the single source of truth. Loop-back 
 
 > **Verify pre-stage may have already closed refuted findings.** This loop sees only the confirmed survivors of any verify pre-stage — refuted false positives are already non-pending and never appear in the `--resolution pending` query above. See [`ext-point-verify.md`](../../extension-api/standards/ext-point-verify.md) for the full verify-stage contract.
 
-**If empty** → return immediately with `status: success`, `display_detail: "0 finding(s) — nothing to triage"`, `loop_back_needed: false`.
+**If empty** — the store query returns nothing **and** the Done-When read above returned `open_count: 0` → return immediately with `status: success`, `display_detail: "0 finding(s) — nothing to triage"`, `loop_back_needed: false`. An empty store beside an open criterion is NOT this case: those rows were ingested above and are triaged like any other item.
 
 ## Step 2: Pre-group by `(domain, rule_id)`
 
