@@ -636,3 +636,73 @@ def test_spec_without_skill_or_persona_lines_says_none_named(tmp_path: Path) -> 
     spec = _seed_fixture(tmp_path, executable=_PYPROJECT_EXEC, required_bots='x')
     data = _run_resolve(spec, tmp_path)
     assert data['skills_note'] == 'none named'
+
+
+# =============================================================================
+# D5 — a docs-only change skips the full local build
+# =============================================================================
+
+#: This repository's own footprint opt-in, as `.github/workflows/python-verify.yml`
+#: declares it. Seeded into a fixture so the classifier is exercised against the
+#: repository's real rule rather than against the repository tree.
+_VERIFY_WORKFLOW = (
+    'name: Python Verify\n'
+    '\n'
+    'jobs:\n'
+    '  verify:\n'
+    '    with:\n'
+    '      skip-on-docs-only: true\n'
+    '      extra-buildable: >-\n'
+    '        .plan/marshal.json\n'
+    '        .claude/**\n'
+    '        marketplace/**/*.md\n'
+    '        test/**/*.md\n'
+    '      pre-verify-goals: generate\n'
+)
+
+
+def _seed_footprint(tmp_path: Path, *, opt_in: bool = True) -> Path:
+    _seed_fixture(tmp_path, executable=_PYPROJECT_EXEC, required_bots='x')
+    _write(
+        tmp_path / '.github' / 'workflows' / 'python-verify.yml',
+        _VERIFY_WORKFLOW if opt_in else 'name: Other\n',
+    )
+    return tmp_path
+
+
+def _build_classify(project_dir: Path, paths: str) -> dict:
+    script = get_scripts_dir('plan-marshall', _SKILL_NAME) / 'runbook_lane.py'
+    result = run_script(script, 'build-classify', '--project-dir', str(project_dir), '--paths', paths)
+    assert result.success, f'build-classify crashed: {result.stderr}'
+    data: dict[str, Any] = result.toon()
+    return data
+
+
+def test_build_classify_treats_a_docs_only_diff_as_docs_only(tmp_path: Path) -> None:
+    data = _build_classify(_seed_footprint(tmp_path), 'doc/developer/build.adoc')
+    assert data['kind'] == 'docs-only'
+    assert data['source'] == 'ci-workflow'
+
+
+def test_build_classify_treats_a_bundle_markdown_change_as_buildable(tmp_path: Path) -> None:
+    data = _build_classify(
+        _seed_footprint(tmp_path),
+        'marketplace/bundles/plan-marshall/skills/runbook-lane/SKILL.md',
+    )
+    assert data['kind'] == 'buildable'
+
+
+def test_build_classify_treats_a_python_change_as_buildable(tmp_path: Path) -> None:
+    data = _build_classify(_seed_footprint(tmp_path), 'build.py')
+    assert data['kind'] == 'buildable'
+
+
+def test_build_classify_without_an_opt_in_falls_back_to_the_architecture(tmp_path: Path) -> None:
+    data = _build_classify(_seed_footprint(tmp_path, opt_in=False), 'doc/developer/build.adoc')
+    assert data['source'] == 'architecture'
+
+
+def test_skill_build_gate_documents_the_docs_only_path() -> None:
+    gate = _section('## 4. Build gate')
+    assert 'docs-only' in gate
+    assert 'build-gate: docs-only' in gate

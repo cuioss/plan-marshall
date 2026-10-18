@@ -29,6 +29,7 @@ builds with the wrong tool, would report a green run over work nobody checked.
 from __future__ import annotations
 
 import argparse
+import fnmatch
 import json
 import re
 from pathlib import Path
@@ -407,6 +408,136 @@ def _resolve_harness_guard(project_dir: Path) -> tuple[str, str]:
     return harness, 'present' if _claude_guard_installed(project_dir) else 'none'
 
 
+#: The CI workflow that declares this repository's footprint opt-in. Read only —
+#: the lane never writes it — and consulted so the lane classifies changed paths
+#: by the PROJECT's own rule rather than by a list hard-coded here.
+_FOOTPRINT_WORKFLOW = ('.github', 'workflows', 'python-verify.yml')
+
+#: The path prefixes and the document extensions the CI footprint gate treats as
+#: non-building when its ``skip-on-docs-only`` opt-in is on. Reproducing the
+#: gate's own classes is what makes a local skip agree with the CI skip; a path
+#: is buildable when it matches NEITHER and is not covered by ``extra-buildable``.
+_NON_BUILDING_PREFIXES = ('.plan/', '.claude/')
+_NON_BUILDING_SUFFIXES = ('.md', '.adoc', '.asciidoc', '.rst', '.txt')
+
+
+def _read_extra_buildable(project_dir: Path) -> list[str] | None:
+    """Return the project's ``extra-buildable`` globs, or ``None`` when there is no opt-in.
+
+    ``None`` means "this project declares no footprint rule", which the caller
+    answers from the architecture instead. A workflow present but NOT opting in
+    (``skip-on-docs-only`` absent or false) also returns ``None``: the lane must
+    never skip a build the project's CI would run.
+    """
+    try:
+        lines = project_dir.joinpath(*_FOOTPRINT_WORKFLOW).read_text(encoding='utf-8').splitlines()
+    except OSError:
+        return None
+    opted_in = False
+    extra: list[str] = []
+    index = 0
+    while index < len(lines):
+        line = lines[index]
+        stripped = line.strip()
+        if stripped.startswith('skip-on-docs-only:'):
+            opted_in = stripped.split(':', 1)[1].strip().lower() == 'true'
+        elif stripped.startswith('extra-buildable:'):
+            base_indent = len(line) - len(line.lstrip(' '))
+            inline = stripped.split(':', 1)[1].strip()
+            if inline and not inline.startswith('>'):
+                extra.extend(part for part in inline.split() if part)
+            index += 1
+            while index < len(lines):
+                candidate = lines[index]
+                if not candidate.strip():
+                    index += 1
+                    continue
+                indent = len(candidate) - len(candidate.lstrip(' '))
+                if indent <= base_indent:
+                    break
+                extra.extend(part for part in candidate.split() if part)
+                index += 1
+            continue
+        index += 1
+    return extra if opted_in else None
+
+
+def _architecture_module_prefixes(project_dir: Path) -> list[str] | None:
+    """Return the module directory prefixes the architecture reports, or ``None``.
+
+    The fallback footprint source for a project with no CI opt-in: a changed path
+    is buildable when it lies inside a module the architecture knows about, and
+    docs-only when it lies outside every one. A root module (``paths.module`` of
+    ``.``) covers the whole tree, so such a project simply builds.
+    """
+    try:
+        from _architecture_core import iter_modules, load_module_derived
+
+        prefixes: list[str] = []
+        for name in iter_modules(str(project_dir)):
+            derived = load_module_derived(name, str(project_dir))
+            module_path = str((derived.get('paths') or {}).get('module') or '').strip('/')
+            prefixes.append('' if module_path in ('', '.') else f'{module_path}/')
+        return prefixes
+    except Exception:
+        return None
+
+
+def _classify_path(path: str, extra: list[str], module_prefixes: list[str], source: str) -> str:
+    """Classify ONE changed path as ``buildable`` or ``docs-only``.
+
+    ``extra-buildable`` is an OVERRIDE that forces a build, so it is tested first:
+    this repository lists ``marketplace/**/*.md`` there precisely because those
+    Markdown files are test input, and the extension rule below would otherwise
+    call them docs-only.
+
+    Under the CI rule a path that is in NEITHER class is buildable — the gate's
+    own direction, since its opt-in names what to SKIP, not what to build. Under
+    the architecture fallback the direction is the opposite: only a path inside a
+    module the architecture knows about builds.
+    """
+    if any(fnmatch.fnmatch(path, pattern) for pattern in extra):
+        return 'buildable'
+    if path.startswith(_NON_BUILDING_PREFIXES) or path.lower().endswith(_NON_BUILDING_SUFFIXES):
+        return 'docs-only'
+    if source == 'ci-workflow':
+        return 'buildable'
+    return 'buildable' if any(path.startswith(prefix) for prefix in module_prefixes) else 'docs-only'
+
+
+def cmd_build_classify(args: argparse.Namespace) -> dict[str, Any]:
+    """Classify the changed paths so the build gate can skip a docs-only change.
+
+    The rule's SOURCE is the project's own: its CI footprint opt-in when it has
+    one, else the architecture's module directories. A project that declares
+    neither yields ``buildable`` for every path — the fail-closed direction, since
+    skipping a build the project would have run is the expensive mistake.
+    """
+    project_dir = Path(getattr(args, 'project_dir', '.') or '.').resolve()
+    paths = [part.strip() for part in (args.paths or '').split(',') if part.strip()]
+    if not paths:
+        return {'status': 'error', 'error': 'no_paths', 'message': 'no changed paths to classify'}
+
+    extra = _read_extra_buildable(project_dir)
+    if extra is not None:
+        source = 'ci-workflow'
+        module_prefixes: list[str] = []
+    else:
+        source = 'architecture'
+        module_prefixes = _architecture_module_prefixes(project_dir) or ['']
+
+    rows = [{'path': path, 'kind': _classify_path(path, extra or [], module_prefixes, source)} for path in paths]
+    buildable = any(row['kind'] == 'buildable' for row in rows)
+    return {
+        'status': 'success',
+        'operation': 'build-classify',
+        'source': source,
+        'kind': 'buildable' if buildable else 'docs-only',
+        'buildable': buildable,
+        'paths': rows,
+    }
+
+
 def cmd_resolve(args: argparse.Namespace) -> dict[str, Any]:
     """Resolve every project-specific value the runbook lane needs."""
     project_dir = Path(getattr(args, 'project_dir', '.') or '.').resolve()
@@ -489,6 +620,12 @@ def main() -> int:
     )
     resolve_parser.add_argument('--project-dir', default='.', help='Project root (default: current directory)')
 
+    classify_parser = subparsers.add_parser(
+        'build-classify', help='Classify changed paths as docs-only or buildable', allow_abbrev=False
+    )
+    classify_parser.add_argument('--paths', required=True, help='Comma-separated changed paths')
+    classify_parser.add_argument('--project-dir', default='.', help='Project root (default: current directory)')
+
     args = parser.parse_args()
     if args.command == 'resolve':
         data = cmd_resolve(args)
@@ -498,6 +635,13 @@ def main() -> int:
                 data.get('message', data['error']),
                 **{k: v for k, v in data.items() if k not in ('status', 'error', 'message')},
             )
+            return 0
+        output_toon(data)
+        return 0
+    if args.command == 'build-classify':
+        data = cmd_build_classify(args)
+        if data.get('status') == 'error':
+            output_toon_error(data['error'], data.get('message', data['error']))
             return 0
         output_toon(data)
         return 0

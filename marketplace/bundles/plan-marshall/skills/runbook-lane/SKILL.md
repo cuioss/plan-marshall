@@ -42,6 +42,18 @@ Fails closed with a specific error code for a spec outside the orchestrator tree
 configuration, a missing automatic-review step, an empty required-reviewer list, or an
 unresolvable build command.
 
+### build-classify
+
+```bash
+python3 .plan/execute-script.py plan-marshall:runbook-lane:runbook_lane build-classify \
+  --paths "changed/path/one,changed/path/two" \
+  [--project-dir DIR]
+```
+
+Classifies changed paths as `docs-only` or `buildable` for the build gate (section 4), reading the
+project's own footprint rule. It answers `source: ci-workflow` when the project's CI opts in to the
+footprint gate, and `source: architecture` otherwise.
+
 ## 0. Input
 
 The invocation names a spec:
@@ -282,6 +294,17 @@ resolve result supplies:
 {build.verify} --execution-mode in_process --project-dir {worktree} --timeout 1800
 ```
 
+- **Docs-only change.** Before running the full build, classify the worktree diff against the base:
+  get the changed paths with `git -C {worktree} diff --name-only origin/{base_branch}...HEAD`, then
+  pass them to the `build-classify` verb. When it answers `kind: docs-only`, run **no** full
+  `verify`: check the changed docs instead (format, internal links and references, and a
+  `git status` showing only doc files) and record `build-gate: docs-only` in the progress file and
+  the landing message. `kind: buildable` runs the gate below as usual. The classifier applies the
+  PROJECT's own footprint rule — this repository's CI opt-in
+  (`.github/workflows/python-verify.yml`: `skip-on-docs-only` plus `extra-buildable`, so
+  `marketplace/**/*.md` still builds) when it has one, otherwise the architecture's module
+  directories — rather than assuming a `.py` file is the only thing that builds. Required CI checks
+  still have to be green, so the merge gate is unchanged.
 - **When to run what:** run `{build.quality-gate}` before each commit that touches `*.py`, and
   `{build.verify}` once before the PR. Scope the tests to one module while iterating.
 - **Shell timeout:** in-process builds hold the shell call for their whole duration. Give each call
