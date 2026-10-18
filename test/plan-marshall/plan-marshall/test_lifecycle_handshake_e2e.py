@@ -416,6 +416,12 @@ def test_lifecycle_captures_handshakes_for_all_phases(
     plan_id = 'e2e-handshake-lifecycle'
     plan_dir = plan_context.plan_dir_for(plan_id)
     _create_plan(plan_id)
+    # PLAN-LB-70 D3: a plan created after the criteria-freeze cutoff must freeze a
+    # snapshot to leave 3-outline. This handshake fixture predates the freeze, so it
+    # is dated before the cutoff to isolate the handshake behaviour under test.
+    _status = json.loads((plan_dir / 'status.json').read_text(encoding='utf-8'))
+    _status['created'] = '2024-01-01T00:00:00+00:00'
+    (plan_dir / 'status.json').write_text(json.dumps(_status), encoding='utf-8')
     # Phase-gate artifacts: the 2-refine / 3-outline / 4-plan gates require
     # phase artifacts, so seed them up front to isolate the handshake
     # behavior under test from the bare-transition refusal.

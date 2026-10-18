@@ -25,9 +25,8 @@ instead of re-deriving it in prose:
   ``met`` (the standing finalize triage source, and what the finalize completion
   gate reads).
 * ``test-integrity`` — every changed test whose assertions the branch removed or
-  filtered (a relaxed assertion that keeps its count stays the author's reading).
-* ``verify-first`` — record a verify-first gate's evidence, or check that it
-  predates the commit it gates.
+  filtered (a relaxed assertion that keeps its count stays the author's reading;
+  a net-count evasion is still caught, by matching per test function).
 
 The blocking line, the evidence forms, the citation forms and the loop-back
 targets are stated once, in ``phase-6-finalize/standards/review-rubric.md``;
@@ -92,7 +91,6 @@ Usage::
     review_support.py author-verdict --plan-id P --kind functional|code --verdict-file F
     review_support.py open-criteria --plan-id P
     review_support.py test-integrity --plan-id P [--base-ref R]
-    review_support.py verify-first --plan-id P --gate G (--record --evidence TEXT | --check --commit SHA)
 """
 
 from __future__ import annotations
@@ -104,7 +102,14 @@ from pathlib import Path
 from typing import Any
 
 import _review_support_attribution as _attr
-from _criteria_snapshot import FUNCTIONAL_VERDICT_FILE, criteria_drift, open_criteria, read_snapshot
+from _criteria_snapshot import (
+    FUNCTIONAL_VERDICT_FILE,
+    criteria_drift,
+    open_criteria,
+    read_snapshot,
+    record_verdict_digest,
+    snapshot_state,
+)
 from _review_support_attribution import (
     SOLUTION_FILE,
     compute_attribution,
@@ -112,8 +117,9 @@ from _review_support_attribution import (
     error_payload,
     load_outline_deliverables,
 )
-from _review_support_integrity import check_verify_first, compute_test_integrity, record_verify_first
+from _review_support_integrity import compute_test_integrity
 from _review_support_validate import (
+    FIX_KIND_CORRECTION,
     FIX_KIND_IMPLEMENTATION,
     KIND_CODE,
     KIND_FUNCTIONAL,
@@ -169,6 +175,24 @@ def loop_back_target(findings: list[dict[str, Any]]) -> str:
     return TARGET_FINALIZE
 
 
+def _grade_test_integrity(grading: Grading, plan_id: str) -> None:
+    """Consume the plan's ``test-integrity`` rows as blocking findings (rubric § 2).
+
+    One finding per changed test whose assertions the branch removed or filtered.
+    A plan whose worktree cannot be resolved produces no rows, so nothing is added
+    here — that trade-off is reported by the verb itself, never invented here.
+    """
+    report = compute_test_integrity(plan_id)
+    if not isinstance(report, dict) or report.get('status') != 'success':
+        return
+    for row in report.get('findings') or []:
+        if not isinstance(row, dict):
+            continue
+        path = str(row.get('path') or '-')
+        detail = str(row.get('detail') or row.get('kind') or 'weakened test')
+        grading.add('weakened_test', path, detail, True, FIX_KIND_CORRECTION, f'test-integrity {path}')
+
+
 def run_validate(plan_id: str, kind: str, verdict_file: str, verifier_file: str | None) -> dict[str, Any]:
     """Validate one verdict file and derive grading, loop-back target, ``may_close`` and facts.
 
@@ -191,9 +215,17 @@ def run_validate(plan_id: str, kind: str, verdict_file: str, verifier_file: str 
         return error_payload(plan_id, 'verdict_file_unreadable', f'{verdict_file}: {problem}')
     grading = Grading()
     payload_evidence_check = 'not_run'
+    state = snapshot_state(plan_id)
+    if state in ('deleted', 'tampered'):
+        return error_payload(
+            plan_id,
+            f'frozen_snapshot_{state}',
+            f'the status record froze a criteria snapshot that is now {state}; '
+            f'nothing can be graded against a record that is no longer there',
+        )
     snapshot = read_snapshot(plan_id)
     if snapshot is not None and kind == KIND_FUNCTIONAL:
-        authorship = authorship_problem(verdict)
+        authorship = authorship_problem(verdict, plan_id)
         if authorship:
             grading.errors.append(f'{verdict_file}: {authorship}')
     if kind == KIND_FUNCTIONAL:
@@ -225,6 +257,12 @@ def run_validate(plan_id: str, kind: str, verdict_file: str, verifier_file: str 
     else:
         facts = validate_code(verdict, grading)
         payload_evidence_check = 'not_run'
+
+    # Consume the plan's own ``test-integrity`` rows: a weakened pre-existing test
+    # is a blocking finding (rubric § 2), and before this the rows were produced by
+    # a verb no validator read, so a removed assertion blocked nothing unless the
+    # author remembered to copy it into prose. One finding per weakened test.
+    _grade_test_integrity(grading, plan_id)
 
     blocking_count = sum(1 for finding in grading.findings if finding['severity'] == SEVERITY_BLOCKING)
     verifier = verifier_status(verifier_file, blocking_count > 0)
@@ -266,6 +304,11 @@ def run_author_verdict(plan_id: str, kind: str, verdict_file: str) -> dict[str, 
         return error_payload(plan_id, 'verdict_file_unreadable', f'{verdict_file}: {problem}')
     sealed = seal_verdict(verdict, kind)
     atomic_write_file(verdict_file, json.dumps(sealed, indent=2, sort_keys=True) + '\n')
+    # Bind the seal OUTSIDE the file: the plan's status record holds the digest the
+    # checks compare against, so recomputing the in-file digest after an edit does
+    # not reproduce it. A plan with no status record keeps the legacy in-file check
+    # (the digest is still written into the marker either way).
+    record_verdict_digest(plan_id, kind, verdict_file)
     return {
         'status': 'success',
         'plan_id': plan_id,
@@ -320,22 +363,6 @@ def cmd_test_integrity(args: argparse.Namespace) -> int:
     """CLI wrapper for :func:`compute_test_integrity` — emits TOON, returns 0."""
     require_valid_plan_id(args)
     print(serialize_toon(compute_test_integrity(args.plan_id, args.base_ref)))
-    return 0
-
-
-def cmd_verify_first(args: argparse.Namespace) -> int:
-    """CLI wrapper for the verify-first record and check modes — emits TOON, returns 0."""
-    require_valid_plan_id(args)
-    if getattr(args, 'check', False):
-        if not str(args.commit or '').strip():
-            print(serialize_toon(error_payload(args.plan_id, 'invalid_arguments', '--check requires --commit')))
-            return 0
-        print(serialize_toon(check_verify_first(args.plan_id, args.gate, args.commit)))
-        return 0
-    if not str(args.evidence or '').strip():
-        print(serialize_toon(error_payload(args.plan_id, 'invalid_arguments', '--record requires --evidence')))
-        return 0
-    print(serialize_toon(record_verify_first(args.plan_id, args.gate, args.evidence)))
     return 0
 
 
@@ -431,28 +458,6 @@ def build_parser() -> argparse.ArgumentParser:
         '--base-ref', default=None, dest='base_ref', help='Base ref for the branch diff (default: resolved).'
     )
     integrity.set_defaults(func=cmd_test_integrity)
-
-    verify_first = sub.add_parser(
-        'verify-first',
-        help="Record a verify-first gate's evidence, or check that it predates the commit it gates",
-        allow_abbrev=False,
-    )
-    verify_first.add_argument('--plan-id', required=True, dest='plan_id', help='Plan identifier.')
-    verify_first.add_argument('--gate', required=True, help='Name of the verify-first gate.')
-    verify_first_mode = verify_first.add_mutually_exclusive_group(required=True)
-    verify_first_mode.add_argument(
-        '--record',
-        action='store_true',
-        help='Append an evidence record, stamped with the moment it is written.',
-    )
-    verify_first_mode.add_argument(
-        '--check',
-        action='store_true',
-        help='Refuse when the gate has no record, or one written at or after --commit.',
-    )
-    verify_first.add_argument('--evidence', default=None, help='With --record: what the gate actually ran.')
-    verify_first.add_argument('--commit', default=None, help='With --check: the commit the gate gates.')
-    verify_first.set_defaults(func=cmd_verify_first)
     return parser
 
 

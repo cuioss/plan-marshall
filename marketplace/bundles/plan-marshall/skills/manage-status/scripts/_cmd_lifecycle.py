@@ -12,7 +12,7 @@ import subprocess
 from pathlib import Path
 from typing import Any, NamedTuple
 
-from _criteria_snapshot import open_criteria
+from _criteria_snapshot import open_criteria, read_snapshot
 from _handshake_commands import cmd_capture, cmd_verify
 from _invariants import (
     _BLOCKING_BOUNDARIES,
@@ -124,6 +124,10 @@ BRANCH_RANGE_UNRESOLVABLE_ERROR = 'branch_range_unresolvable'
 # relationship — so the two are separate constants and neither is derived from
 # the other.
 _COMPLETION_GUARD_PHASES: frozenset[str] = frozenset({'6-finalize'})
+
+#: The creation date on/after which a plan MUST freeze its criteria before leaving
+#: ``3-outline``. A plan created before it predates the freeze and is exempt.
+SNAPSHOT_REQUIRED_AFTER = '2026-10-18'
 
 #: ``archive --reason`` values that ASSERT the plan completed. An archive carrying one
 #: of these takes the same gated path as an archive with no reason at all — the
@@ -932,6 +936,31 @@ def _functional_review_scheduled(plan_id: str) -> bool | None:
     return any(step == 'functional-review' or step.endswith(':functional-review') for step in steps)
 
 
+def _outline_snapshot_refusal(plan_id: str, status: dict[str, Any]) -> dict[str, Any] | None:
+    """Refuse leaving ``3-outline`` for ``4-plan`` without a frozen snapshot.
+
+    The freeze is a transition requirement: a plan created on or after
+    :data:`SNAPSHOT_REQUIRED_AFTER` must freeze its success criteria before
+    planning. Legacy plans (created before that date) predate the freeze and are
+    exempt, so the requirement cannot strand an in-flight plan.
+    """
+    created = status.get('created') if isinstance(status, dict) else None
+    if isinstance(created, str) and created.strip() and created.strip()[:10] < SNAPSHOT_REQUIRED_AFTER:
+        return None
+    if read_snapshot(plan_id) is not None:
+        return None
+    return {
+        'status': 'error',
+        'plan_id': plan_id,
+        'error': 'outline_snapshot_missing',
+        'phase': '3-outline',
+        'message': (
+            'Refusing to leave 3-outline without a frozen criteria snapshot: run '
+            'manage-solution-outline snapshot-criteria at outline approval, then retry.'
+        ),
+    }
+
+
 def _functional_review_drop_reason(plan_id: str, status: dict[str, Any]) -> str | None:
     """Why the manifest dropped the functional review, or ``None`` when it did not.
 
@@ -1240,6 +1269,14 @@ def cmd_transition(args: argparse.Namespace) -> dict[str, Any] | None:
         next_phase: str | None = phase_names[completed_idx + 1]
     else:
         next_phase = None
+
+    # Freeze transition requirement: leaving 3-outline for 4-plan requires a
+    # frozen criteria snapshot on a plan created after the freeze was introduced.
+    # Legacy plans are exempt by creation date.
+    if args.completed == '3-outline' and next_phase == '4-plan':
+        snapshot_refusal = _outline_snapshot_refusal(args.plan_id, status)
+        if snapshot_refusal is not None:
+            return snapshot_refusal
 
     # Finalize completion boundary (D2): completing ``6-finalize`` asserts the
     # blocking-findings STATE — the merge boundary asserts a state that must

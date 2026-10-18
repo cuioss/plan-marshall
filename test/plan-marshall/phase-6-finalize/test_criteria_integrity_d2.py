@@ -322,40 +322,6 @@ def test_branch_deleting_a_test_file_yields_a_finding(tmp_path, monkeypatch) -> 
     ]
 
 
-# --- D2 (d): a verify-first record timestamped after the gated commit is refused ------------
-
-
-def test_verify_first_record_after_the_gated_commit_is_refused(plan_context, tmp_path, monkeypatch) -> None:
-    repo = _repo(tmp_path)
-    _commit(repo, {'README.md': 'readme\n'})
-    sha = _commit(repo, {'src/migration.py': 'x\n'}, committer_date='2020-01-01T00:00:00+00:00')
-    monkeypatch.setattr(_integrity, 'resolve_live_worktree', lambda _plan_id: repo)
-    _plan(plan_context)
-    assert _integrity.record_verify_first(PLAN_ID, 'nine-consumer gate', 'read local files only')['status'] == 'success'
-
-    payload = _integrity.check_verify_first(PLAN_ID, 'nine-consumer gate', sha)
-
-    assert (payload['status'], payload['error']) == ('error', 'verify_first_evidence_postdates_commit')
-    assert len(payload['postdating']) == 1
-
-
-def test_verify_first_record_before_the_gated_commit_passes(plan_context, tmp_path, monkeypatch) -> None:
-    repo = _repo(tmp_path)
-    _commit(repo, {'README.md': 'readme\n'})
-    monkeypatch.setattr(_integrity, 'resolve_live_worktree', lambda _plan_id: repo)
-    _plan(plan_context)
-    assert (
-        _integrity.record_verify_first(PLAN_ID, 'nine-consumer gate', 'checked all 9 consumers')['status'] == 'success'
-    )
-    future = (datetime.now(UTC) + timedelta(days=1)).isoformat()
-    sha = _commit(repo, {'src/migration.py': 'x\n'}, committer_date=future)
-
-    payload = _integrity.check_verify_first(PLAN_ID, 'nine-consumer gate', sha)
-
-    assert payload['status'] == 'success'
-    assert payload['records'] == 1
-
-
 # --- D2 (e): finalize with an empty bot queue and one unmet Done-when does not exit --------
 
 

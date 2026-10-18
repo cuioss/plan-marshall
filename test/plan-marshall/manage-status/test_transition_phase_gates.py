@@ -49,6 +49,20 @@ def _seed_at_phase(plan_id: str, phase: str) -> None:
     cmd_set_phase(Namespace(plan_id=plan_id, phase=phase))
 
 
+def _make_legacy(plan_context: Any, plan_id: str) -> None:
+    """Date a seeded plan before the criteria-freeze transition requirement.
+
+    These pins are about the phase-ARTIFACT gate. PLAN-LB-70 D3 adds an orthogonal
+    requirement — a plan created after the freeze cutoff must carry a criteria
+    snapshot to leave ``3-outline`` — so the plan here is dated before that cutoff
+    to isolate the artifact-gate subject under test.
+    """
+    plan_dir = plan_context.plan_dir_for(plan_id)
+    status = json.loads((plan_dir / 'status.json').read_text(encoding='utf-8'))
+    status['created'] = '2024-01-01T00:00:00+00:00'
+    (plan_dir / 'status.json').write_text(json.dumps(status), encoding='utf-8')
+
+
 def test_bare_2_refine_refuses(plan_context):
     plan_id = 'gate-bare-2refine'
     _seed_at_phase(plan_id, '2-refine')
@@ -93,6 +107,7 @@ def test_bare_3_outline_refuses(plan_context):
 def test_3_outline_passes_with_solution_outline(plan_context):
     plan_id = 'gate-3outline-ok'
     _seed_at_phase(plan_id, '3-outline')
+    _make_legacy(plan_context, plan_id)
     plan_dir = plan_context.plan_dir_for(plan_id)
     (plan_dir / 'solution_outline.md').write_text(
         '# Solution\n\n## Deliverables\n\n### Deliverable 1\n\nBody\n',
@@ -145,6 +160,7 @@ def test_exemption_without_reason_refuses(plan_context):
 def test_exemption_with_reason_persists_and_logs(plan_context):
     plan_id = 'gate-exempt-ok'
     _seed_at_phase(plan_id, '3-outline')
+    _make_legacy(plan_context, plan_id)
     result = cmd_transition(
         Namespace(
             plan_id=plan_id,

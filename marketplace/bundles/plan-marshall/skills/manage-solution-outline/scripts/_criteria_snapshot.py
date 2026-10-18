@@ -95,9 +95,11 @@ AUTHORED_KEY = 'authored'
 AUTHORSHIP_SCHEMA = 'review-verdict-authorship/1'
 AUTHORSHIP_VERB = 'review_support author-verdict'
 
-#: The plan-relative file of the plan's status record — where the operator's
-#: review closure is recorded, outside the artifacts it is read with.
+#: The plan-relative file of the plan's status record — where the seal and the
+#: snapshot digest are bound outside the artifacts they protect.
 STATUS_FILE = 'status.json'
+#: The status-record metadata key holding those digests.
+INTEGRITY_KEY = 'criteria_integrity'
 
 
 def _status_doc(plan_id: str) -> dict[str, Any] | None:
@@ -110,6 +112,144 @@ def _status_doc(plan_id: str) -> dict[str, Any] | None:
     except (OSError, ValueError):
         return None
     return parsed if isinstance(parsed, dict) else None
+
+
+def integrity_record(plan_id: str) -> dict[str, Any]:
+    """Return the status record's criteria-integrity block, or ``{}`` when absent.
+
+    The block is the OUTSIDE-the-artifact half of the seal: the snapshot digest
+    and the verdict digests are recorded in the plan's status record, written by a
+    different verb than the artifact, so a digest recomputed inside a rewritten
+    artifact does not reproduce the recorded one. An absent status record yields
+    ``{}`` — the legacy shape — never an empty freeze.
+    """
+    status = _status_doc(plan_id)
+    if status is None:
+        return {}
+    metadata = status.get('metadata')
+    block = metadata.get(INTEGRITY_KEY) if isinstance(metadata, dict) else None
+    return block if isinstance(block, dict) else {}
+
+
+def record_integrity(plan_id: str, **fields: Any) -> bool:
+    """Merge ``fields`` into the status record's integrity block; return success.
+
+    Written by re-reading the live status document immediately before the write,
+    so the merge never clobbers a sibling field from a stale snapshot. A plan with
+    no readable status record is left untouched and reports ``False`` — the
+    caller's artifact is still written, it is simply not bound outside itself.
+    """
+    status = _status_doc(plan_id)
+    if status is None:
+        return False
+    metadata = status.get('metadata')
+    if not isinstance(metadata, dict):
+        metadata = {}
+        status['metadata'] = metadata
+    block = metadata.get(INTEGRITY_KEY)
+    if not isinstance(block, dict):
+        block = {}
+        metadata[INTEGRITY_KEY] = block
+    block.update(fields)
+    try:
+        atomic_write_file(base_path('plans', plan_id, STATUS_FILE), json.dumps(status, indent=2, sort_keys=True) + '\n')
+    except OSError:
+        return False
+    return True
+
+
+def path_digest(path: Path) -> str:
+    """Return the SHA-256 of a file's exact bytes."""
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+
+def snapshot_state(plan_id: str) -> str:
+    """Classify the frozen snapshot's binding outside itself.
+
+    * ``present`` — a snapshot file exists with no recorded freeze (legacy).
+    * ``frozen`` — a snapshot file exists and its recorded digest matches.
+    * ``tampered`` — the status record froze a snapshot whose bytes no longer
+      match the recorded digest (edited in place).
+    * ``deleted`` — the status record froze a snapshot and the file is gone. The
+      deleted snapshot is the sharpest failure the old design allowed: every check
+      that reads a missing snapshot silently took the legacy path.
+    * ``absent`` — never frozen and no file (the legacy shape, no bindings).
+    """
+    info = integrity_record(plan_id)
+    frozen = bool(info.get('snapshot_frozen'))
+    path = snapshot_path(plan_id)
+    if path.is_file():
+        recorded = info.get('snapshot_digest')
+        if frozen and isinstance(recorded, str) and path_digest(path) != recorded:
+            return 'tampered'
+        return 'frozen' if frozen else 'present'
+    return 'deleted' if frozen else 'absent'
+
+
+def record_snapshot_digest(plan_id: str) -> bool:
+    """Record the frozen snapshot's digest in the status record, outside the file."""
+    path = snapshot_path(plan_id)
+    if not path.is_file():
+        return False
+    return record_integrity(plan_id, snapshot_frozen=True, snapshot_digest=path_digest(path))
+
+
+def record_verdict_digest(plan_id: str, kind: str, verdict_file: str | Path) -> bool:
+    """Record a sealed verdict's digest in the status record, outside the file."""
+    path = Path(verdict_file)
+    if not path.is_file():
+        return False
+    existing = integrity_record(plan_id).get('verdicts')
+    verdicts = dict(existing) if isinstance(existing, dict) else {}
+    verdicts[kind] = {'digest': path_digest(path), 'path': str(path)}
+    return record_integrity(plan_id, verdicts=verdicts)
+
+
+def authorize_refreeze(plan_id: str, decision: str, phase: str = '3-outline') -> dict[str, Any]:
+    """Record an operator decision authorizing a re-freeze of the snapshot.
+
+    The decision is logged through the same decision-log path ``criteria-authorize``
+    uses, and the authorization is recorded in the plan's status record so the next
+    ``write_snapshot`` sees it. Logging and recording are one operation: an
+    authorization that reached only one of the two is not a decision the record can
+    stand behind, so a failure of either refuses.
+    """
+    if not str(decision or '').strip():
+        return {
+            'status': 'error',
+            'plan_id': plan_id,
+            'error': 'decision_required',
+            'message': 'a snapshot re-freeze is authorized only by a named operator decision',
+        }
+    try:
+        import plan_logging
+    except ImportError as exc:  # pragma: no cover - import-time environment failure
+        return {
+            'status': 'error',
+            'plan_id': plan_id,
+            'error': 'decision_log_unavailable',
+            'message': f'plan_logging could not be imported ({exc}); the authorization was not recorded',
+        }
+    logged = plan_logging.log_decision(
+        plan_id,
+        f'(criteria-integrity) Operator decision authorizes re-freezing the criteria snapshot — {decision}',
+        phase=phase,
+    )
+    if logged.get('status') != 'success':
+        return {
+            'status': 'error',
+            'plan_id': plan_id,
+            'error': 'decision_log_unavailable',
+            'message': f'the operator decision could not be logged ({logged.get("error", "unknown")})',
+        }
+    if not record_integrity(plan_id, refreeze_authorized=True):
+        return {
+            'status': 'error',
+            'plan_id': plan_id,
+            'error': 'status_record_unavailable',
+            'message': 'the plan status record could not be written, so the authorization was not recorded',
+        }
+    return {'status': 'success', 'plan_id': plan_id, 'refreeze_authorized': True}
 
 
 def _review_closed_reason(plan_id: str) -> str | None:
@@ -167,20 +307,36 @@ def seal_verdict(payload: dict[str, Any], kind: str) -> dict[str, Any]:
     return sealed
 
 
-def authorship_problem(verdict: dict[str, Any]) -> str | None:
+def authorship_problem(verdict: dict[str, Any], plan_id: str | None = None) -> str | None:
     """Return why the verdict does not match the reviewer's recorded output, or ``None``.
 
     A verdict the review's own script verb did not write has no marker; a verdict
     edited after the verb wrote it has a marker whose digest no longer matches the
-    content. Both are refusals — the failure is ``python3 -c`` editing the verdict
-    file in place, and a rewritten criterion graded in the author's own words
-    reads as clean without this check. The finalize completion gate applies it
-    too, because an unsealed verdict must not release a plan.
+    content. The failure is ``python3 -c`` editing the verdict file in place, and a
+    rewritten criterion graded in the author's own words reads as clean without
+    this check. The finalize completion gate applies it too, because an unsealed
+    verdict must not release a plan.
+
+    When ``plan_id`` names a plan whose status record holds a recorded verdict
+    digest, that OUTSIDE-the-file digest is authoritative: recomputing the marker
+    digest inside a rewritten verdict does not reproduce the recorded one, so an
+    edit-then-re-seal is refused. Without a recorded digest the check falls back to
+    the in-file marker digest (the legacy shape).
     """
     marker = verdict.get(AUTHORED_KEY)
     if not isinstance(marker, dict) or marker.get('schema') != AUTHORSHIP_SCHEMA:
         return f'the verdict was not written by {AUTHORSHIP_VERB}'
-    if not isinstance(marker.get('digest'), str) or marker['digest'] != canonical_digest(verdict):
+    digest = canonical_digest(verdict)
+    recorded: Any = None
+    kind = marker.get('kind')
+    if plan_id and isinstance(kind, str):
+        entry = (integrity_record(plan_id).get('verdicts') or {}).get(kind)
+        recorded = entry.get('digest') if isinstance(entry, dict) else None
+    if isinstance(recorded, str):
+        if marker.get('digest') != recorded or digest != recorded:
+            return 'the verdict was modified after the reviewer wrote it'
+        return None
+    if not isinstance(marker.get('digest'), str) or marker['digest'] != digest:
         return 'the verdict was modified after the reviewer wrote it'
     return None
 
@@ -364,27 +520,26 @@ def read_snapshot(plan_id: str) -> dict[str, Any] | None:
 def write_snapshot(plan_id: str) -> dict[str, Any]:
     """Freeze the current outline as the plan's criteria snapshot.
 
-    A re-write is legal only while the plan is still in ``3-outline`` (the q-gate
-    can re-dispatch that phase before the transition, so an existing snapshot is
-    not itself a refusal). Past that boundary the frozen record is what the plan
-    is graded against and a re-write would let the plan re-freeze the criteria it
-    is failing, so it is refused. When the plan's phase cannot be read the write
-    is allowed — the honest fail-open here, since a missing status is not proof
-    that outline approval has passed.
+    The FIRST freeze is unconditional: there is nothing to replace. A RE-freeze
+    requires an operator decision logged through ``criteria-refreeze-authorize``
+    (:func:`authorize_refreeze`), which records that decision in the plan's status
+    record. A phase rollback alone is not such a decision — the retired check let
+    ``set-phase 3-outline`` re-open the write, which let a plan re-freeze the
+    criteria it was failing. The authorization is consumed by the re-freeze it
+    permits, so one decision authorizes exactly one re-freeze.
     """
     existing = read_snapshot(plan_id)
-    if existing is not None:
-        phase = _current_phase(plan_id)
-        if phase is not None and phase != '3-outline':
-            return {
-                'status': 'error',
-                'plan_id': plan_id,
-                'error': 'snapshot_exists',
-                'message': (
-                    f'{SNAPSHOT_FILE} was frozen at outline approval and the plan is at {phase!r}; '
-                    f'the frozen criteria cannot be replaced after the boundary'
-                ),
-            }
+    authorized = bool(integrity_record(plan_id).get('refreeze_authorized'))
+    if existing is not None and not authorized:
+        return {
+            'status': 'error',
+            'plan_id': plan_id,
+            'error': 'refreeze_requires_decision',
+            'message': (
+                f'{SNAPSHOT_FILE} was frozen at outline approval; re-freezing it requires an operator '
+                f'decision logged through criteria-refreeze-authorize, not a phase rollback alone'
+            ),
+        }
     snapshot = build_snapshot(plan_id)
     if snapshot.get('status') == 'error':
         return snapshot
@@ -395,6 +550,14 @@ def write_snapshot(plan_id: str) -> dict[str, Any]:
     path = snapshot_path(plan_id)
     path.parent.mkdir(parents=True, exist_ok=True)
     atomic_write_file(path, json.dumps(snapshot, indent=2, sort_keys=True) + '\n')
+    # Bind the freeze OUTSIDE the file it protects: the status record (written by
+    # a different verb) holds the digest, so editing or deleting the snapshot
+    # afterwards is detectable rather than silently read as the legacy shape.
+    record_snapshot_digest(plan_id)
+    if existing is not None and authorized:
+        # One decision authorizes one re-freeze: consume it so the next write is
+        # gated again.
+        record_integrity(plan_id, refreeze_authorized=False)
     return {
         'status': 'success',
         'plan_id': plan_id,
@@ -405,29 +568,6 @@ def write_snapshot(plan_id: str) -> dict[str, Any]:
         'spec_deliverable_count': len(snapshot['spec']['deliverables']) if snapshot['spec'] else 0,
         'preserved_authorizations': len(snapshot['authorized_changes']),
     }
-
-
-def _current_phase(plan_id: str) -> str | None:
-    """Return the plan's recorded phase, or ``None`` when it cannot be read."""
-    path = base_path('plans', plan_id, 'status.json')
-    if not path.is_file():
-        return None
-    try:
-        parsed = json.loads(path.read_text(encoding='utf-8'))
-    except (OSError, ValueError):
-        return None
-    if not isinstance(parsed, dict):
-        return None
-    for key in ('current_phase', 'phase'):
-        value = parsed.get(key)
-        if isinstance(value, str) and value.strip():
-            return value.strip()
-    metadata = parsed.get('metadata')
-    if isinstance(metadata, dict):
-        value = metadata.get('current_phase') or metadata.get('phase')
-        if isinstance(value, str) and value.strip():
-            return value.strip()
-    return None
 
 
 def _authorization(snapshot: dict[str, Any], number: Any, criterion: str) -> bool:
@@ -672,13 +812,31 @@ def open_criteria(plan_id: str, verdict_file: Path | None = None) -> dict[str, A
       Exact text is the FALLBACK, never the only key: an exact-text match orphaned
       every paraphrase.
 
-    Anything else is open, which is the fail-closed direction. Three deliberate
+    Anything else is open, which is the fail-closed direction. Four deliberate
     states additionally close criteria rather than reading them as open work:
 
     * an operator decision authorizes the exact change (``authorized_changes``);
     * the deliverable's verdict is ``superseded``;
-    * the operator closed the review past its round cap (:func:`_review_closed_reason`).
+    * the operator closed the review past its round cap (:func:`_review_closed_reason`);
+    * ``state`` reports a snapshot the status record froze but which is now deleted
+      or edited — the snapshot's own absence is the open criterion, and every check
+      refuses rather than falling back to the legacy path.
     """
+    state = snapshot_state(plan_id)
+    if state in ('deleted', 'tampered'):
+        return {
+            'source': f'frozen_{state}',
+            'verdict_state': 'absent',
+            'open_count': 1,
+            'open': [
+                {
+                    'deliverable': None,
+                    'criterion': f'<the frozen criteria snapshot is {state}>',
+                    'criterion_index': 1,
+                    'status': 'ungraded',
+                }
+            ],
+        }
     snapshot = read_snapshot(plan_id)
     if snapshot is None:
         return {'source': 'none', 'open_count': 0, 'open': []}
@@ -686,7 +844,7 @@ def open_criteria(plan_id: str, verdict_file: Path | None = None) -> dict[str, A
     if closed_reason is not None:
         return {'source': 'review_closed', 'closed_reason': closed_reason, 'open_count': 0, 'open': []}
     path = verdict_file if verdict_file is not None else base_path('plans', plan_id, FUNCTIONAL_VERDICT_FILE)
-    verdict, verdict_state = _checked_verdict(path)
+    verdict, verdict_state = _checked_verdict(path, plan_id)
     rows: list[dict[str, Any]] = []
     for row in snapshot.get('deliverables') or []:
         if not isinstance(row, dict):
@@ -721,7 +879,7 @@ def open_criteria(plan_id: str, verdict_file: Path | None = None) -> dict[str, A
     }
 
 
-def _checked_verdict(path: Path) -> tuple[dict[Any, dict[str, Any]], str]:
+def _checked_verdict(path: Path, plan_id: str | None = None) -> tuple[dict[Any, dict[str, Any]], str]:
     """Return ``({deliverable: row}, state)`` for a verdict the gate may trust.
 
     ``state`` is ``sealed`` when the authorship marker matches, ``unsealed`` when
@@ -735,7 +893,7 @@ def _checked_verdict(path: Path) -> tuple[dict[Any, dict[str, Any]], str]:
         parsed = json.loads(path.read_text(encoding='utf-8'))
     except (OSError, ValueError):
         return {}, 'unreadable'
-    if not isinstance(parsed, dict) or authorship_problem(parsed) is not None:
+    if not isinstance(parsed, dict) or authorship_problem(parsed, plan_id) is not None:
         return {}, 'unsealed'
     rows = parsed.get('deliverables')
     result: dict[Any, dict[str, Any]] = {}
@@ -787,6 +945,7 @@ def _graded_status(criteria: list[Any], criterion: str, index: int) -> str:
 __all__ = [
     'DELETED',
     'FUNCTIONAL_VERDICT_FILE',
+    'INTEGRITY_KEY',
     'REQUEST_FILE',
     'REWRITTEN',
     'SCHEMA',
@@ -795,13 +954,20 @@ __all__ = [
     'STATUS_FILE',
     'SUPERSEDED',
     'authorize_change',
+    'authorize_refreeze',
     'build_snapshot',
     'criteria_drift',
+    'integrity_record',
     'normalize_criterion',
     'open_criteria',
     'outline_deliverables',
+    'path_digest',
     'read_snapshot',
+    'record_integrity',
+    'record_snapshot_digest',
+    'record_verdict_digest',
     'request_done_when',
     'snapshot_path',
+    'snapshot_state',
     'write_snapshot',
 ]
