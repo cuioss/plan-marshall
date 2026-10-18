@@ -2,9 +2,9 @@
   "id": "PLAN-LB-66",
   "slug": "runbook-lane-skill",
   "workstream": "WS-04",
-  "status": "running",
-  "plan_marshall_plan_id": "",
-  "pr": "",
-  "landing": "",
+  "status": "shipped",
+  "plan_marshall_plan_id": "oc-lb-66-runbook-lane-skill",
+  "pr": "1808",
+  "landing": "landings/PLAN-LB-66.md",
   "seq": 66
 }

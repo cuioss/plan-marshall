@@ -105,6 +105,17 @@ derive, for rows still live.
   minutes, undisclosed shell file ops, an unasked `--force`, 11 report contradictions); see
   `landings/PLAN-LB-64.md`.
 
+- **PLAN-LB-66** (shipped #1808, 2026-10-18, runbook lane) — 1 met / 2 partial of 3 (11 of 14
+  Done-whens met). The skill, the resolve verb and the lane-aware orchestrator are on `main`. But
+  the skill weakened ten runbook rules (high; PLAN-LB-67 D6), and its build commands are valid only
+  for pyproject (medium).
+  - Grade F: the merge question said "CI green" with no CI result, and the run merged outside
+    authorization, before CodeRabbit's Moderate-risk review of the merged head.
+  - It made 32 edits in the main checkout, including a repeat after STOP.
+  - Not usable until `/sync-harnesses` runs and the executor is regenerated.
+
+  See `landings/PLAN-LB-66.md`.
+
 - **PLAN-LB-65** (shipped #1800, 2026-10-17, runbook lane) — 1 met / 2 partial of 3 (claimed 3/3).
   R5 now applies in every session with an exact allow-list. That breaks `/marshall-steward` on
   OpenCode (high): the wizard's resolved deployed paths never match. R6 still cannot name the plan
@@ -449,6 +460,12 @@ derive, for rows still live.
   - D5: a docs-only build path keyed on the project's footprint rule.
 
   Five deliverables, kept unsplit by operator instruction.
+- 2026-10-18 — **PLAN-LB-66 landed; PLAN-LB-67 gains D6** (high): restore the ten runbook rules
+  the skill weakened, test rule parity, and carry the "pending" rule. The runbook was amended
+  (§7): a merge question states CI or `verify` status only from a result obtained after the last
+  push. **Recommendation pending operator:** run PLAN-LB-67 itself under the local `RUNBOOK.md`
+  (old form). Retire the local file only after PLAN-LB-67 lands, since the skill is not yet a
+  faithful replacement.
 - 2026-10-18 — **Operator: domain skills are named at the orchestrator.** Each spec deliverable
   carries `Skills:` and `Persona:` lines, filled at staging time from the project's
   configuration. The lane loads exactly what is named, checks it exists, and records any
@@ -808,6 +825,17 @@ derive, for rows still live.
   as PLAN-LB-68 D1. Carried high gaps: R6 misses `git -C {WORKTREE} commit`; R5 side doors
   (here-string, `exec`/`stdbuf`/`setsid`, `bash -c` and `uv run` on Claude, a suffix-matched
   executor permit). Staged as PLAN-LB-68 D2 and D3. — `landings/PLAN-LB-65.md`.
+- **The runbook-lane build commands are valid only for pyproject** (PLAN-LB-66, `f54acb7a5`).
+  `runbook_lane.py:192-195` passes the canonical names through as `--command-args`, which is
+  invalid for Maven, npm and Gradle. **The Claude guard false positive:** any `PreToolUse` hook
+  reads as `guard: present`. Low items alongside:
+  - the stamp doc and docstring disagree;
+  - double listing in `owed_landing`;
+  - cwd-relative `resume-summary`;
+  - an unknown bot gives an empty trigger;
+  - CodeRabbit's unhandled worktree-epic-scoping finding (`orchestrator.py:5726`).
+
+  Medium; not staged. — `landings/PLAN-LB-66.md`.
 - **Medium and low items are not owned by any staged plan.** They are listed with evidence
   in `backlog.md` (sections 1.12 onward, 2.3 onward, 3.2 onward, 4.7 onward and 5). Promote an
   item into a plan spec when it starts to hurt; re-verify it at HEAD first.
@@ -1133,6 +1161,7 @@ entries below are OpenCode 1 assumptions in plan-marshall that OpenCode 2 broke.
     | PLAN-LB-64 | 1 / 1 / 0 of 2 | 2/2 | 1 medium (clobber report) | 5 | $0.36 | C− |
     | PLAN-LB-63 | 4 / 0 / 0 of 4 Done-whens (D2 intent partial) | 2/2 | 1 medium (inert recovery) | 5 | $0.44 | D+ |
     | PLAN-LB-65 | 1 / 2 / 0 of 3 | 3/3 | 1 high (steward refused on OpenCode) | 4 | $1.87 | F |
+    | PLAN-LB-66 | 1 / 2 / 0 of 3 | 3/3 | 1 high (ten runbook rules weakened) | 10 | $1.85 | F |
 
     PLAN-LB-61 is the first run to keep every Done-when verbatim with genuine fail-first evidence.
     It still bent the CodeRabbit policy (the merged head has no CodeRabbit review; Q4's premise was

@@ -161,9 +161,42 @@ product skill, in repository-neutral form.
    The skill's build-gate section documents the docs-only path. Each fails against PLAN-LB-66's
    merged skill.
 
-Split guard: five deliverables, under the ~6 threshold, one cohesive surface (the `runbook-lane`
-skill and its resolve verb). Kept unsplit by operator instruction ("add this all to the
-follow-up (one) plan").
+6. **The skill restores every runbook rule PLAN-LB-66 weakened, so the local `RUNBOOK.md` can be
+   retired.** Added 2026-10-18 from the PLAN-LB-66 landing (`landings/PLAN-LB-66.md`), high.
+   - The ten weakened or dropped rules are restored in repository-neutral form:
+     1. "never `sleep`", with no "bare" qualifier;
+     2. the merge gate names `verify` (the full build) green on the current head, not "the build
+        gate";
+     3. the named review verbs: `ci pr comments`, `ci pr reviews`, `ci pr thread-reply`,
+        `ci pr resolve-thread`;
+     4. the guard-log path, returned by `resolve`;
+     5. the facts block shown inside a literal `landing-facts` fence, with every line in
+        `key=value` form (the `guard` fact included, or moved to prose);
+     6. `{branch} = {prefix}{plan}` with the closed prefix set;
+     7. the build timeout, returned by `resolve` from the architecture data;
+     8. the sub-agent tool named so that every target rewrites it (OpenCode `subagent`,
+        Antigravity `invoke_subagent`, Claude `Task`), with a target test;
+     9. the concrete forbidden-binary list, resolved per project or stated generically with
+        examples;
+     10. the base branch from `project.default_base_branch` via `resolve`, never a literal `main`.
+   - The local runbook's 2026-10-18 rules are carried too:
+     - a merge question states CI and `verify` status only from a result obtained on that head
+       after the last push, otherwise "pending";
+     - the standing review authorization (D1).
+   - **Rule-parity test:** the section-parity test is replaced or extended by a rule-level check —
+     a list of required rule sentences or keywords per section, extracted from the source runbook
+     — so that losing a rule fails the test even when every heading survives.
+
+   *Done when:*
+   - a rule-parity test enumerates items 1–10 plus the "pending" rule and fails against
+     PLAN-LB-66's merged skill;
+   - an emitted-skill test shows the sub-agent tool rewritten for OpenCode and Antigravity;
+   - a `parse_landing_facts` test parses the skill's facts example with no dropped line;
+   - `resolve` returns `base_branch` and `build_timeout_seconds` for the pyproject fixture.
+
+Split guard: six deliverables, at the ~6 threshold. Kept as one plan by operator instruction ("add
+this all to the follow-up (one) plan"); every deliverable lives on the `runbook-lane` skill and its
+resolve verb.
 
 ## Claim Labels
 
