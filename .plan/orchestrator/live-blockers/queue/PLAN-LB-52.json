@@ -2,9 +2,9 @@
   "id": "PLAN-LB-52",
   "slug": "criteria-and-gate-integrity",
   "workstream": "WS-01",
-  "status": "running",
-  "plan_marshall_plan_id": "",
-  "pr": "",
-  "landing": "",
+  "status": "shipped",
+  "plan_marshall_plan_id": "oc-lb-52-criteria-and-gate-integrity",
+  "pr": "1806",
+  "landing": "landings/PLAN-LB-52.md",
   "seq": 52
 }

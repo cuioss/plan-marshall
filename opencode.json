@@ -2727,5 +2727,12 @@
         }
       ]
     }
+  },
+  "permission": {
+    "bash": {
+      "python3 .plan/execute-script.py *": "allow",
+      "./pw *": "allow",
+      "python3 marketplace/targets/sync.py *": "allow"
+    }
   }
 }
