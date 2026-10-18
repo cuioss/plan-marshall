@@ -341,11 +341,12 @@ def test_guard_node_allows_documented_non_executor_invocations(tmp_path_factory:
         assert not outcome.blocked, f'guard.js must allow {command!r}; message={outcome.message!r}'
 
 
-def test_guard_node_outside_context_allows_py_compile(tmp_path_factory: pytest.TempPathFactory) -> None:
-    """Done-when (c): R5 is gated, so py_compile passes outside a plan context."""
+def test_guard_node_outside_context_still_refuses_py_compile(tmp_path_factory: pytest.TempPathFactory) -> None:
+    """R5 is now unconditional, so py_compile is refused outside a plan context too."""
     harness = build_harness(tmp_path_factory.mktemp('guard-c'))
     blocked, message = harness.blocks(shell_event('python3 -m py_compile f.py'))
-    assert not blocked, f'guard.js must allow py_compile outside a plan context; message={message!r}'
+    assert blocked, f'guard.js must refuse py_compile outside a plan context; message={message!r}'
+    assert 'R5' in message, f'the refusal must be rule R5; message={message!r}'
 
 
 def test_guard_node_signal2_worktree_workdir_enables_r5(tmp_path_factory: pytest.TempPathFactory) -> None:
@@ -369,26 +370,75 @@ def test_guard_node_allows_python_build_py_out_of_context_but_refuses_in(
 
 
 def test_guard_node_r6_refuses_raw_commit_in_finalize(tmp_path_factory: pytest.TempPathFactory) -> None:
-    """R6: a raw ``git commit`` is refused while the plan is in phase 6-finalize."""
+    """R6: a raw ``git commit`` is refused while the plan is in phase 6-finalize.
+
+    The plan is named by the worktree path and its phase is read from the plan's
+    own ``status.json`` field ``current_phase``, resolved MAIN-ANCHORED — never an
+    alphabetically-first plan found by a directory scan.
+    """
     harness = build_harness(tmp_path_factory.mktemp('guard-r6'))
-    plan_dir = harness.root / '.plan' / 'local' / 'plans' / 'P'
+    plan_dir = harness.plan_base / 'plans' / 'plan-a'
     plan_dir.mkdir(parents=True, exist_ok=True)
     status = plan_dir / 'status.json'
+    worktree = harness.root / '.plan' / 'local' / 'worktrees' / 'plan-a'
+    worktree.mkdir(parents=True, exist_ok=True)
 
-    status.write_text(json.dumps({'phase': '6-finalize'}), encoding='utf-8')
-    blocked, message = harness.blocks(shell_event('git commit -m "fix: x"', agent=SUB_AGENT_AGENT))
+    status.write_text(json.dumps({'current_phase': '6-finalize'}), encoding='utf-8')
+    blocked, message = harness.blocks(shell_event('git commit -m "fix: x"', workdir=str(worktree)))
     assert blocked, 'a raw git commit must be refused in 6-finalize'
     assert 'R6' in message, f'the refusal must be rule R6; message={message!r}'
 
-    blocked_opt, _ = harness.blocks(shell_event('git -C . commit -m "fix: y"', agent=SUB_AGENT_AGENT))
+    blocked_opt, _ = harness.blocks(shell_event('git -C . commit -m "fix: y"', workdir=str(worktree)))
     assert blocked_opt, 'git -C . commit must still resolve to the commit subcommand'
 
-    blocked_wrapped, _ = harness.blocks(shell_event('env git commit -m "fix: w"', agent=SUB_AGENT_AGENT))
+    blocked_wrapped, _ = harness.blocks(shell_event('env git commit -m "fix: w"', workdir=str(worktree)))
     assert blocked_wrapped, 'a wrapper-prefixed raw commit must still be refused'
 
-    status.write_text(json.dumps({'phase': '5-execute'}), encoding='utf-8')
-    allowed, _ = harness.blocks(shell_event('git commit -m "fix: z"', agent=SUB_AGENT_AGENT))
+    status.write_text(json.dumps({'current_phase': '5-execute'}), encoding='utf-8')
+    allowed, _ = harness.blocks(shell_event('git commit -m "fix: z"', workdir=str(worktree)))
     assert not allowed, 'a raw commit outside 6-finalize must pass through'
+
+
+def test_guard_node_r6_does_not_judge_another_plans_status(tmp_path_factory: pytest.TempPathFactory) -> None:
+    """R6 reads the phase of the worktree NAMED plan, never the first plan found.
+
+    A finalize plan sits under the same main anchor; the committing worktree's own
+    plan is in 5-execute. Resolving by directory scan would refuse this commit.
+    """
+    harness = build_harness(tmp_path_factory.mktemp('guard-r6-named'))
+    for plan_id, phase in (('aaa-other', '6-finalize'), ('plan-z', '5-execute')):
+        plan_dir = harness.plan_base / 'plans' / plan_id
+        plan_dir.mkdir(parents=True, exist_ok=True)
+        (plan_dir / 'status.json').write_text(json.dumps({'current_phase': phase}), encoding='utf-8')
+
+    mine = harness.root / '.plan' / 'local' / 'worktrees' / 'plan-z'
+    mine.mkdir(parents=True, exist_ok=True)
+
+    blocked, message = harness.blocks(shell_event('git commit -m "fix: x"', workdir=str(mine)))
+    assert not blocked, f'the commit must be judged by plan-z (5-execute), not aaa-other; message={message!r}'
+
+
+def test_guard_node_r6_reads_the_worktree_resident_record(tmp_path_factory: pytest.TempPathFactory) -> None:
+    """R6 reads the WORKTREE-RESIDENT plan record — the live one during phase 5+."""
+    harness = build_harness(tmp_path_factory.mktemp('guard-r6-resident'))
+    worktree = harness.root / '.plan' / 'local' / 'worktrees' / 'plan-a'
+    plan_dir = worktree / '.plan' / 'local' / 'plans' / 'plan-a'
+    plan_dir.mkdir(parents=True, exist_ok=True)
+    (plan_dir / 'status.json').write_text(json.dumps({'current_phase': '6-finalize'}), encoding='utf-8')
+
+    blocked, message = harness.blocks(shell_event('git commit -m "fix: x"', workdir=str(worktree)))
+    assert blocked, f'the worktree-resident record must drive R6; message={message!r}'
+    assert 'R6' in message
+
+
+def test_guard_node_refuses_a_relative_script_from_outside_the_project(
+    tmp_path_factory: pytest.TempPathFactory,
+) -> None:
+    """A relative allow-listed token run from another cwd resolves outside the repo."""
+    harness = build_harness(tmp_path_factory.mktemp('guard-r5-cwd'))
+    blocked, message = harness.blocks(shell_event('python3 marketplace/targets/sync.py', workdir='/tmp/elsewhere'))
+    assert blocked, f'a copy under another cwd must be refused; message={message!r}'
+    assert 'R5' in message
 
 
 def test_guard_node_r6_no_plan_state_does_not_fire(tmp_path_factory: pytest.TempPathFactory) -> None:
@@ -404,3 +454,58 @@ def test_guard_node_r4_reads_an_attached_m_module(tmp_path_factory: pytest.TempP
     blocked, message = harness.blocks(shell_event('python3 -mpytest x', agent=SUB_AGENT_AGENT))
     assert blocked, 'python3 -mpytest must be refused'
     assert 'R4' in message, f'the refusal must be rule R4; message={message!r}'
+
+
+# =============================================================================
+# D1 — R5 protects every session; the allow-list is exact (PLAN-LB-65)
+# =============================================================================
+
+#: The documented repository-relative form of the steward's permission-fix
+#: script. The allow-list entry is this exact repository-relative path, so the
+#: invocation below is permitted; a basename or a copy outside the repository is
+#: not.
+_DOCUMENTED_PERMISSION_FIX = 'marketplace/bundles/plan-marshall/skills/tools-permission-fix/scripts/permission_fix.py'
+
+
+def test_guard_node_root_session_refuses_python_c(tmp_path_factory: pytest.TempPathFactory) -> None:
+    """Done-when (D1): a ROOT session (no plan context) still has R5 enforced.
+
+    The command carries no sub-agent identity and no worktree workdir, so the old
+    plan-context gate was OFF — yet R5 must still refuse ``python3 -c``.
+    """
+    harness = build_harness(tmp_path_factory.mktemp('guard-d1-root'))
+    blocked, message = harness.blocks(shell_event('python3 -c "x"'))
+    assert blocked, f'a root session must refuse python3 -c; message={message!r}'
+    assert 'R5' in message, f'the refusal must be rule R5; message={message!r}'
+
+
+def test_guard_node_root_session_refuses_outside_repo_script(tmp_path_factory: pytest.TempPathFactory) -> None:
+    """Done-when (D1): a copy of an allow-listed script OUTSIDE the repo is refused.
+
+    ``/tmp/x/permission_fix.py`` shares the basename of an allow-list entry but
+    is not the repository-relative path, so it must be refused (the basename
+    bypass PLAN-LB-62 shipped).
+    """
+    harness = build_harness(tmp_path_factory.mktemp('guard-d1-outside'))
+    blocked, message = harness.blocks(shell_event('python3 /tmp/x/permission_fix.py'))
+    assert blocked, f'a script outside the repository must be refused; message={message!r}'
+    assert 'R5' in message, f'the refusal must be rule R5; message={message!r}'
+
+
+def test_guard_node_root_session_allows_documented_repo_relative_script(
+    tmp_path_factory: pytest.TempPathFactory,
+) -> None:
+    """Done-when (D1): the documented repository-relative form is allowed."""
+    harness = build_harness(tmp_path_factory.mktemp('guard-d1-allow'))
+    command = f'python3 {_DOCUMENTED_PERMISSION_FIX} ensure-executor --target project --dry-run'
+    blocked, message = harness.blocks(shell_event(command))
+    assert not blocked, f'the documented repo-relative invocation must be allowed; message={message!r}'
+
+
+@pytest.mark.parametrize('command', ['python3 -u x.py', 'python3 foo.py', 'python3 -Ic "x"'])
+def test_guard_node_refuses_extra_interpreter_shapes(command: str, tmp_path_factory: pytest.TempPathFactory) -> None:
+    """Done-when (D1): the executed guard refuses the extra interpreter shapes."""
+    harness = build_harness(tmp_path_factory.mktemp('guard-d1-shapes'))
+    blocked, message = harness.blocks(shell_event(command))
+    assert blocked, f'{command!r} must be refused; message={message!r}'
+    assert 'R5' in message, f'the refusal for {command!r} must be rule R5; message={message!r}'

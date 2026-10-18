@@ -520,8 +520,8 @@ ignored whenever a target is declared (`--target`, a platform env signal, or
 
 ```bash
 # Option A — CLI flag (preferred, single-call discipline)
-python3 generate_executor.py generate --marketplace --marketplace-root /abs/path/to/checkout
-python3 generate_executor.py drift    --marketplace --marketplace-root /abs/path/to/checkout
+python3 "{GENERATE_EXECUTOR}" generate --marketplace --marketplace-root /abs/path/to/checkout
+python3 "{GENERATE_EXECUTOR}" drift    --marketplace --marketplace-root /abs/path/to/checkout
 
 # Option B — env var as a SINGLE-COMMAND inline assignment. The assignment and
 # the command MUST be one call; never a `cd`+`export` compound (an `export`
@@ -529,6 +529,12 @@ python3 generate_executor.py drift    --marketplace --marketplace-root /abs/path
 # one-command-per-call / no-shell-constructs safety rules).
 PM_MARKETPLACE_ROOT=/abs/path/to/checkout python3 /abs/path/to/checkout/.plan/execute-script.py <notation> ...
 ```
+
+`{GENERATE_EXECUTOR}` stands for the generator script's path — the
+cache-relative `skills/tools-script-executor/scripts/generate_executor.py` under
+the deployed plugin cache, or
+`marketplace/bundles/plan-marshall/skills/tools-script-executor/scripts/generate_executor.py`
+under the checkout root.
 
 The path passed to `--marketplace-root` (and `PM_MARKETPLACE_ROOT`) is the
 checkout root that contains `marketplace/bundles`, not the bundles directory
