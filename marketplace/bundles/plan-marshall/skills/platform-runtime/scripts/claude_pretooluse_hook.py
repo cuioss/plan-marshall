@@ -175,10 +175,17 @@ _R1_FAMILIES: tuple[tuple[str, str, Callable[[str], bool]], ...] = (
 )
 
 #: R2 — Bash file-operation programs that have dedicated Read/Glob/Grep tools.
-#: ``sh`` / ``bash`` / ``source`` join the family as SHELL SPAWNS: a shell that
-#: re-executes a string can carry any bypass (`bash -c "python3 -c ..."`), so
-#: the R2 class refuses them exactly as the OpenCode guard's mutation class does.
-_R2_FILE_OPS = ('cat', 'grep', 'head', 'tail', 'find', 'ls', 'sh', 'bash', 'source')
+#: Read on the UN-STRIPPED program, so ``sudo cat foo`` names ``sudo`` and is not
+#: an R2 file-op (R2's wrapper boundary is pinned by
+#: ``test_r1_r2_r4_matchers_do_not_strip_wrappers``).
+_R2_FILE_OPS = ('cat', 'grep', 'head', 'tail', 'find', 'ls')
+
+#: R2 — SHELL SPAWNS. A shell that re-executes a string can carry any bypass
+#: (``bash -c "python3 -c ..."``), so this class is refused exactly as the
+#: OpenCode guard's mutation class refuses ``sh`` / ``bash`` / ``source``. Unlike
+#: the file-op class, a spawn is ALSO read after R5 wrapper stripping, so
+#: ``env bash -c "python3 -c ..."`` cannot hide behind a wrapper.
+_R2_SHELL_SPAWNS = ('sh', 'bash', 'source')
 
 #: R2 — ``git`` global options that consume a SEPARATE following token as their
 #: value. Only the detached spellings need naming: ``_git_subcommand`` skips any
@@ -466,7 +473,14 @@ def _match_r2_file_ops(tool_name: str | None, tool_input: dict[str, Any]) -> str
     if command is None:
         return None
     program = _program_name(command)
-    if program in _R2_FILE_OPS:
+    if program in _R2_FILE_OPS or program in _R2_SHELL_SPAWNS:
+        return _R2_REASON
+    # A shell spawn is read a SECOND time after R5 wrapper stripping, so a
+    # wrapper prefix (`env bash -c "python3 -c ..."`) cannot hide it. The
+    # file-op class keeps its un-stripped read (see ``_R2_FILE_OPS``).
+    stripped = _r5_stripped_tokens(command)
+    stripped_program = _strip_matched_quotes(stripped[0]).rsplit('/', 1)[-1] if stripped else ''
+    if stripped_program in _R2_SHELL_SPAWNS:
         return _R2_REASON
     if program == 'git' and _git_subcommand(command) == 'grep':
         return _R2_REASON
@@ -1208,7 +1222,7 @@ def _match_r6_raw_finalize_commit(
     ``git-workflow commit`` verb. A commit in any other phase, a non-``git``
     program, and a non-``commit`` subcommand all pass through. Runs after the
     R1-R5 chain, so a command R1-R5 already refuse keeps its own rule label.
-    Wrapper prefixes are stripped, matching the guard's ``isGitCommit``.
+    Wrapper prefixes are stripped, matching the guard's ``gitCommitTarget``.
     """
     command = _bash_command(tool_name, tool_input)
     if command is None:

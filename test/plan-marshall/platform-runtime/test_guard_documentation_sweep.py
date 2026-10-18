@@ -88,25 +88,14 @@ _ROOT_FILES = ('AGENTS.md', 'CLAUDE.md')
 _WRAPPER_WORDS = frozenset({'command', 'env', 'sudo', 'timeout', 'nice', 'nohup', 'time', 'xargs', 'exec', 'setsid'})
 
 #: ``(path, fragment, reason)`` exclusion entries. Each must still match a live
-#: candidate site, or it is stale and fails the test. Kept to sites the scan
-#: proved cannot be dispositioned as a resolved path: illustrative relative-path
-#: spellings, an anti-pattern, and a generic placeholder — none of them a
-#: prescribed command with a real script path.
+#: candidate site, or it is stale and fails the test. Kept to the one site the
+#: scan proved cannot be dispositioned as a resolved path: a prose fence listing
+#: illustrative relative-path spellings, not a runnable repository invocation.
 _EXCLUSIONS: tuple[tuple[str, str, str], ...] = (
     (
         'marketplace/bundles/pm-plugin-development/skills/plugin-architecture/references/core-principles.md',
         'python scripts/processor.py input.txt',
         'illustrative relative-path example in a prose fence, not a runnable repository invocation',
-    ),
-    (
-        'marketplace/bundles/plan-marshall/skills/tools-file-ops/SKILL.md',
-        'python3 {script} --lesson-file {lesson.file}',
-        'anti-pattern illustration inside a python fence, explicitly labelled BAD — not a prescribed command',
-    ),
-    (
-        'marketplace/bundles/plan-marshall/skills/tools-script-executor/SKILL.md',
-        'python3 "{SCRIPT_FILE}" <args>',
-        'generic placeholder for an arbitrary resolved script path, not a resolved-path template',
     ),
 )
 

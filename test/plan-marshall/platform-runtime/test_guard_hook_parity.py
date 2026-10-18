@@ -147,6 +147,7 @@ _SIDE_DOOR_REFUSED: tuple[str, ...] = (
     'env -i python3 script.py',
     'bash -c "python3 -c print(1)"',
     'sh -c "python3 -c print(1)"',
+    'env bash -c "python3 -c print(1)"',
     'uv run python -c "print(1)"',
     'env uv run python -c "print(1)"',
 )

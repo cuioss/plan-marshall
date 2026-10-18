@@ -96,10 +96,11 @@ The `tool.execute.before` guard plugin under `.opencode/plugin/guard.js`
 enforces the six hard-rule bypass classes (shell chaining, shell file
 operations, direct executor edits, hard-coded builds, direct interpreter
 calls, and a raw finalize commit) by throwing to block, with one audit line per
-blocked invocation in `.plan/temp/guard.log`. R1–R4 are gated on a plan context;
-the interpreter rule (R5) BINDS inside a plan context AND in every session of the
-plan-marshall source repository, so a consumer repository's ordinary Python work
-is untouched outside a plan context; R6 is not gated at all. R5 admits the
+blocked invocation in `.plan/temp/guard.log`. R1–R4 are UNCONDITIONAL in the
+OpenCode guard; the interpreter rule (R5) BINDS inside a plan context AND in
+every session of the plan-marshall source repository, so a consumer repository's
+ordinary Python work is untouched outside a plan context; R6 is not gated at all.
+R5 admits the
 executor permit (the relative form, or an absolute form resolving to
 `{repository root}/.plan/execute-script.py`) and the shared allow-list of
 documented non-executor invocations in `standards/r5-allowlist.json` — the same

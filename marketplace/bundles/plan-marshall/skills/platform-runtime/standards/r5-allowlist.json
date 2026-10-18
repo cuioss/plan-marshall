@@ -5,7 +5,7 @@
     "marketplace/targets/sync.py": "marketplace/targets/README.md:379",
     "marketplace/targets/claude/reconcile_daemon.py": "marketplace/targets/claude/reconcile_daemon.py:51",
     "marketplace/targets/claude/registry_pin.py": "doc/developer/marketplace-build.adoc:196",
-    "marketplace/bundles/plan-marshall/skills/tools-script-executor/scripts/generate_executor.py": "marketplace/bundles/plan-marshall/skills/tools-script-executor/SKILL.md:522",
+    "marketplace/bundles/plan-marshall/skills/tools-script-executor/scripts/generate_executor.py": "marketplace/bundles/plan-marshall/skills/tools-script-executor/SKILL.md:523",
     "marketplace/bundles/plan-marshall/skills/marshall-steward/scripts/bootstrap_plugin.py": "marketplace/bundles/plan-marshall/skills/marshall-steward/references/wizard-flow.md:24",
     "marketplace/bundles/plan-marshall/skills/marshall-steward/scripts/determine_mode.py": "marketplace/bundles/plan-marshall/skills/marshall-steward/references/wizard-flow.md:80",
     "marketplace/bundles/plan-marshall/skills/marshall-steward/scripts/gitignore_setup.py": "marketplace/bundles/plan-marshall/skills/marshall-steward/references/wizard-flow.md:30",
@@ -13,8 +13,8 @@
   },
   "bundle_entries": {
     "skills/tools-script-executor/scripts/generate_executor.py": "marketplace/bundles/plan-marshall/skills/tools-script-executor/SKILL.md:523",
-    "skills/marshall-steward/scripts/bootstrap_plugin.py": "marketplace/bundles/plan-marshall/skills/marshall-steward/references/wizard-flow.md:156",
-    "skills/marshall-steward/scripts/determine_mode.py": "marketplace/bundles/plan-marshall/skills/marshall-steward/references/wizard-flow.md:162",
+    "skills/marshall-steward/scripts/bootstrap_plugin.py": "marketplace/bundles/plan-marshall/skills/marshall-steward/SKILL.md:99",
+    "skills/marshall-steward/scripts/determine_mode.py": "marketplace/bundles/plan-marshall/skills/marshall-steward/references/wizard-flow.md:80",
     "skills/marshall-steward/scripts/gitignore_setup.py": "marketplace/bundles/plan-marshall/skills/marshall-steward/references/wizard-flow.md:30",
     "skills/tools-permission-fix/scripts/permission_fix.py": "marketplace/bundles/plan-marshall/skills/marshall-steward/references/wizard-flow.md:102"
   }
