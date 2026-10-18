@@ -366,11 +366,12 @@ _STATUSLINE_COMMAND = (
     f'{_EXECUTOR_GUARD_SUFFIX}'
 )
 
-# Conditional PreToolUse enforcement hook command. Installed (opt-in) as a
+# PreToolUse enforcement hook command. Installed (opt-in) as a
 # matcher-less ``hooks.PreToolUse`` entry, ORTHOGONAL to the terminal-title
-# render wiring: it invokes the enforcement leaf that blocks the four hard-rule
-# violation families inside a plan-marshall plan context (fail-open everywhere
-# else). Keyed on its own command string so its present/divergence/MISSING
+# render wiring: it invokes the enforcement leaf that blocks six hard-rule
+# violation families. R1-R4 and R6 apply inside a plan-marshall plan context
+# (fail-open elsewhere); R5 applies in every session. Keyed on its own command
+# string so its present/divergence/MISSING
 # detection is independent of the render-entry detection.
 _ENFORCEMENT_HOOK_COMMAND = (
     f'{_EXECUTOR_GUARD_PREFIX}'

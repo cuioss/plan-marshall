@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for claude_pretooluse_hook.py — the conditional PreToolUse enforcement leaf.
+"""Tests for claude_pretooluse_hook.py — the PreToolUse enforcement leaf.
 
 The leaf is a stdin->stdout hook script, so it is exercised both via subprocess (a
 fresh interpreter, exactly as Claude Code would invoke it — proving the whole
 fail-open + deny-envelope contract end to end) and via direct import of its pure
-``evaluate`` function (proving each R1-R5 matcher and the gate-delegation behaviour
-without subprocess overhead).
+``evaluate`` function (proving each rule matcher without subprocess overhead).
 
 The shared ``pretooluse_gate`` module is imported directly (sibling-import
 scaffolding) so the tests can build realistic in-context fixtures from the gate's
@@ -14,7 +13,9 @@ own field-name constants and prove the hook delegates parse/accessors/gate to th
 shared module rather than carrying its own field-name copies.
 
 Coverage:
-  - Gate fail-open when neither signal fires (emit nothing, exit 0).
+  - R5 enforced in EVERY session (no context gate): a root session with cwd in the
+    main checkout refuses ``python3 -c``.
+  - Gate fail-open for R1-R4/R6 when neither signal fires (emit nothing, exit 0).
   - Signal-1-only enforcement (sub-agent identity carries the execution-context
     marker) and Signal-2-only enforcement (worktree cwd).
   - Each of R1-R4 producing a ``permissionDecision: deny`` with the expected
@@ -29,6 +30,7 @@ from __future__ import annotations
 
 import json
 import re
+from pathlib import Path
 
 # PLAIN import, deliberately — matching ``test_pretooluse_gate.py``, whose typed
 # probes need mypy to see the real module. The name must be bound the same way in
@@ -1080,9 +1082,19 @@ def test_r5_allows_documented_sync_engine() -> None:
 
 
 def test_r5_allows_nested_allowlist_path() -> None:
-    """An allow-listed script reached by a longer path still matches by suffix."""
-    command = 'python3 /abs/repo/marketplace/targets/generate.py --target all'
-    assert hook.evaluate(_signal2_payload('Bash', _bash(command))) is None
+    """An allow-listed script named by its absolute in-repo path matches its repo-relative entry."""
+    repo_root = Path(__file__).resolve().parents[3]
+    command = f'python3 {repo_root}/marketplace/targets/sync.py --target opencode'
+    payload = {'cwd': str(repo_root), 'tool_name': 'Bash', 'tool_input': _bash(command)}
+    assert hook.evaluate(payload) is None
+
+
+def test_r5_refuses_an_allowlist_basename_outside_the_repository() -> None:
+    """A copy of an allow-listed script outside the repository never matches (no basename suffix)."""
+    repo_root = Path(__file__).resolve().parents[3]
+    command = 'python3 /tmp/x/marketplace/targets/sync.py'
+    payload = {'cwd': str(repo_root), 'tool_name': 'Bash', 'tool_input': _bash(command)}
+    assert hook.evaluate(payload) == hook._R5_REASON
 
 
 def test_r5_allows_absolute_executor() -> None:
@@ -1150,14 +1162,22 @@ def test_hook_writes_no_log_without_a_cwd() -> None:
 # =============================================================================
 
 
-def test_r6_refuses_raw_commit_in_finalize(tmp_path) -> None:
-    """A raw ``git commit`` is refused while the plan is in phase 6-finalize."""
-    worktree = tmp_path / '.plan' / 'local' / 'worktrees' / 'plan-a'
-    plan_dir = worktree / '.plan' / 'local' / 'plans' / 'P'
+def test_r6_refuses_raw_commit_in_finalize(tmp_path, monkeypatch) -> None:
+    """A raw ``git commit`` is refused while the plan is in phase 6-finalize.
+
+    The plan is named by the worktree path (``plan-a``) and its phase is read from
+    that plan's own ``status.json`` field ``current_phase``, resolved
+    MAIN-ANCHORED (here, the ``PLAN_BASE_DIR`` the plan state lives under).
+    """
+    base = tmp_path / '.plan' / 'local'
+    plan_dir = base / 'plans' / 'plan-a'
     plan_dir.mkdir(parents=True)
     status = plan_dir / 'status.json'
-    status.write_text(json.dumps({'phase': '6-finalize'}), encoding='utf-8')
+    status.write_text(json.dumps({'current_phase': '6-finalize'}), encoding='utf-8')
+    monkeypatch.setenv('PLAN_BASE_DIR', str(base))
 
+    worktree = base / 'worktrees' / 'plan-a'
+    worktree.mkdir(parents=True)
     payload = {'cwd': str(worktree), 'tool_name': 'Bash', 'tool_input': _bash('git commit -m "fix: x"')}
     assert hook.evaluate(payload) == hook._R6_REASON
 
@@ -1174,16 +1194,19 @@ def test_r6_refuses_raw_commit_in_finalize(tmp_path) -> None:
     assert hook.evaluate(payload_wrapped) == hook._R6_REASON
 
     # Outside 6-finalize the same raw commit passes.
-    status.write_text(json.dumps({'phase': '5-execute'}), encoding='utf-8')
+    status.write_text(json.dumps({'current_phase': '5-execute'}), encoding='utf-8')
     assert hook.evaluate(payload) is None
 
 
-def test_r6_ignores_non_commit_git_subcommands(tmp_path) -> None:
+def test_r6_ignores_non_commit_git_subcommands(tmp_path, monkeypatch) -> None:
     """Only ``git commit`` is refused — other git subcommands pass through."""
-    worktree = tmp_path / '.plan' / 'local' / 'worktrees' / 'plan-a'
-    plan_dir = worktree / '.plan' / 'local' / 'plans' / 'P'
+    base = tmp_path / '.plan' / 'local'
+    plan_dir = base / 'plans' / 'plan-a'
     plan_dir.mkdir(parents=True)
-    (plan_dir / 'status.json').write_text(json.dumps({'phase': '6-finalize'}), encoding='utf-8')
+    (plan_dir / 'status.json').write_text(json.dumps({'current_phase': '6-finalize'}), encoding='utf-8')
+    monkeypatch.setenv('PLAN_BASE_DIR', str(base))
+    worktree = base / 'worktrees' / 'plan-a'
+    worktree.mkdir(parents=True)
 
     for command in ('git status', 'git log --oneline', 'git add foo'):
         payload = {'cwd': str(worktree), 'tool_name': 'Bash', 'tool_input': _bash(command)}
@@ -1196,3 +1219,121 @@ def test_r6_needs_plan_state(tmp_path) -> None:
     worktree.mkdir()
     payload = {'cwd': str(worktree), 'tool_name': 'Bash', 'tool_input': _bash('git commit -m "fix: x"')}
     assert hook.evaluate(payload) is None
+
+
+def test_r6_judges_the_named_plan_not_the_first_found(tmp_path, monkeypatch) -> None:
+    """R6 reads the phase of the worktree NAMED plan, never the first plan found."""
+    base = tmp_path / '.plan' / 'local'
+    for plan_id, phase in (('aaa-other', '6-finalize'), ('plan-z', '5-execute')):
+        plan_dir = base / 'plans' / plan_id
+        plan_dir.mkdir(parents=True)
+        (plan_dir / 'status.json').write_text(json.dumps({'current_phase': phase}), encoding='utf-8')
+    monkeypatch.setenv('PLAN_BASE_DIR', str(base))
+
+    mine = base / 'worktrees' / 'plan-z'
+    mine.mkdir(parents=True)
+    payload = {'cwd': str(mine), 'tool_name': 'Bash', 'tool_input': _bash('git commit -m "fix: x"')}
+    assert hook.evaluate(payload) is None
+
+
+def test_r6_reads_the_worktree_resident_record(tmp_path) -> None:
+    """R6 reads the WORKTREE-RESIDENT record — the live one during phase 5+."""
+    worktree = tmp_path / '.plan' / 'local' / 'worktrees' / 'plan-a'
+    plan_dir = worktree / '.plan' / 'local' / 'plans' / 'plan-a'
+    plan_dir.mkdir(parents=True)
+    (plan_dir / 'status.json').write_text(json.dumps({'current_phase': '6-finalize'}), encoding='utf-8')
+
+    payload = {'cwd': str(worktree), 'tool_name': 'Bash', 'tool_input': _bash('git commit -m "fix: x"')}
+    assert hook.evaluate(payload) == hook._R6_REASON
+
+
+def test_r6_reads_the_resident_record_from_a_worktree_subdirectory(tmp_path) -> None:
+    """A cwd in a SUBDIRECTORY of the worktree still resolves the resident record."""
+    worktree = tmp_path / '.plan' / 'local' / 'worktrees' / 'plan-a'
+    plan_dir = worktree / '.plan' / 'local' / 'plans' / 'plan-a'
+    plan_dir.mkdir(parents=True)
+    (plan_dir / 'status.json').write_text(json.dumps({'current_phase': '6-finalize'}), encoding='utf-8')
+    subdir = worktree / 'src' / 'deep'
+    subdir.mkdir(parents=True)
+
+    payload = {'cwd': str(subdir), 'tool_name': 'Bash', 'tool_input': _bash('git commit -m "fix: x"')}
+    assert hook.evaluate(payload) == hook._R6_REASON
+
+
+def test_r5_refuses_a_relative_script_outside_the_pinned_root(tmp_path, monkeypatch) -> None:
+    """A relative allow-listed token run from another cwd resolves outside the repo."""
+    monkeypatch.setenv('CLAUDE_PROJECT_DIR', str(tmp_path))
+    payload = {
+        'cwd': '/tmp/elsewhere',
+        'tool_name': 'Bash',
+        'tool_input': _bash('python3 marketplace/targets/sync.py --target opencode'),
+    }
+    assert hook.evaluate(payload) == hook._R5_REASON
+
+
+def test_r5_allows_a_relative_script_under_the_pinned_root(tmp_path, monkeypatch) -> None:
+    """The matched negative: the same token under the pinned root is allowed."""
+    monkeypatch.setenv('CLAUDE_PROJECT_DIR', str(tmp_path))
+    payload = {
+        'cwd': str(tmp_path),
+        'tool_name': 'Bash',
+        'tool_input': _bash('python3 marketplace/targets/sync.py --target opencode'),
+    }
+    assert hook.evaluate(payload) is None
+
+
+# =============================================================================
+# D1 — R5 protects every session; the allow-list is exact (PLAN-LB-65)
+# =============================================================================
+
+#: The documented repository-relative form of the steward's permission-fix
+#: script.
+_DOCUMENTED_PERMISSION_FIX = 'marketplace/bundles/plan-marshall/skills/tools-permission-fix/scripts/permission_fix.py'
+
+#: A cwd in the main checkout — deliberately NOT under ``.plan/local/worktrees/``,
+#: so Signal 2 is OFF and the payload exercises a genuine ROOT session.
+_MAIN_CHECKOUT_CWD = '/home/dev/project'
+
+
+def _root_payload(command: str, cwd: str) -> dict:
+    """A payload for a ROOT session: no sub-agent identity, cwd not a worktree."""
+    return {'cwd': cwd, 'tool_name': 'Bash', 'tool_input': _bash(command)}
+
+
+def test_r5_enforced_in_a_root_session_outside_a_plan_context() -> None:
+    """Done-when (D1) — R5 applies in a ROOT session with the cwd in the main checkout."""
+    payload = _root_payload('python3 -c "x"', _MAIN_CHECKOUT_CWD)
+    assert hook.evaluate(payload) == hook._R5_REASON
+
+
+def test_r5_refuses_an_outside_repo_permission_fix() -> None:
+    """Done-when (D1) — ``python3 /tmp/x/permission_fix.py`` is refused."""
+    payload = _root_payload('python3 /tmp/x/permission_fix.py', _MAIN_CHECKOUT_CWD)
+    assert hook.evaluate(payload) == hook._R5_REASON
+
+
+def test_r5_allows_the_documented_repo_relative_permission_fix() -> None:
+    """Done-when (D1) — the documented repo-relative form is allowed."""
+    command = f'python3 {_DOCUMENTED_PERMISSION_FIX} ensure-executor --target project --dry-run'
+    payload = _root_payload(command, _MAIN_CHECKOUT_CWD)
+    assert hook.evaluate(payload) is None
+
+
+def test_r5_allows_absolute_in_repo_path() -> None:
+    """An absolute path resolving to an allow-listed repo-relative path is allowed."""
+    repo_root = Path(__file__).resolve().parents[3]
+    command = f'python3 {repo_root}/{_DOCUMENTED_PERMISSION_FIX} ensure-executor'
+    payload = _root_payload(command, str(repo_root))
+    assert hook.evaluate(payload) is None
+
+
+def test_r5_refuses_suffix_of_repo_relative_path_outside_repo() -> None:
+    """A path outside the repository never matches, even when it carries the full suffix."""
+    payload = _root_payload(f'python3 /tmp/x/{_DOCUMENTED_PERMISSION_FIX}', _MAIN_CHECKOUT_CWD)
+    assert hook.evaluate(payload) == hook._R5_REASON
+
+
+@pytest.mark.parametrize('command', ['python3 -u x.py', 'python3 foo.py', 'python3 -Ic "x"'])
+def test_r5_refuses_extra_interpreter_shapes_out_of_context(command: str) -> None:
+    """R5 refuses the extra interpreter shapes in a root session as well."""
+    assert hook.evaluate(_root_payload(command, _MAIN_CHECKOUT_CWD)) == hook._R5_REASON
