@@ -58,6 +58,14 @@ This plan gives the leaf one script verb that returns the verified absolute path
      - it finds the newest cache, probes, regenerates, **re-probes** the regenerated executor, and reports;
      - a regenerated executor that still fails to import is `action: regenerate_failed` with the probe's reason, never `regenerated`.
    - **The executor's own failure output names that command.** The bootstrap failure path (`execute-script.py.template:252-265`, the `execute-script.py cannot start:` message, and the uncaught `ImportError` path, which needs a guard) prints the exact recovery command line with the resolved newest-cache path. Any harness then recovers from the error text alone.
+   - **The command must pass the R5 guard on every guarded harness.**
+     - PLAN-LB-65 (`d3e9c2544`) made the R5 allow-list exact and repository-relative.
+     - A newest-cache script path lies outside a consumer repository, so a cache-path invocation
+       is refused.
+     - Instead, PLAN-LB-65 allow-listed a documented CLI recovery command.
+     - The recovery entry must be that allow-listed form, or an exact, narrow new entry. The
+       allow-list must not be widened to cache paths.
+     - Test: the guard and the hook both admit the exact command line that the executor prints.
    - **Step 0 in `upgrade-flow.md` calls that command** instead of describing the generator call in prose.
    - **The import-failure warning is not overwritten** by the version-split warning (`upgrade.py:1154-1158`): both are reported.
    - **Probe environment.** The probe runs with the interpreter and environment a fresh shell would use, not the parent's injected `PYTHONPATH` (`template:1774-1776`). Otherwise a probe started from a working executor can mask a broken one.

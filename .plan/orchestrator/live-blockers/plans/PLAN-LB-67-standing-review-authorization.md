@@ -1,4 +1,4 @@
-# PLAN-LB-67: The runbook lane merges on one handled review when a quota-limited reviewer cannot re-review the latest head
+# PLAN-LB-67: Runbook-lane follow-up — standing review authorization, personas, domain skills, docs-only build
 
 epic: live-blockers
 workstream: WS-04
@@ -82,7 +82,78 @@ product skill, in repository-neutral form.
 
    All three fail against PLAN-LB-66's merged verb, which carries no such field.
 
-Split guard: two deliverables.
+3. **The lane applies the engineering personas as standards, and the reviewer persona refutes
+   adversarially.** Added 2026-10-18 by operator instruction, from the pm-mcp-clients Antigravity
+   runbook (`~/git/pm-mcp-clients/doc/agy/runbook.md` § 1.3, § 2 Steps 2–3 and 6).
+   - The skill names one persona per kind of work and tells the run to load it at that step:
+     - implementer for production code;
+     - module-tester for unit and module tests;
+     - integration-tester for multi-module tests;
+     - security-expert for trust boundaries, input validation and secrets;
+     - documenter for docs;
+     - code-reviewer for every self-review round and for triaging every PR comment.
+   - The code-reviewer persona applies its adversarial-refute lenses to each finding: defect or
+     preference, surplus or load-bearing, real or false-positive drift, and severity. It also
+     applies them to the run's own Done-when verdicts, so that "met on paper" is challenged
+     (reachability, end-to-end, intent).
+   - The persona skills are loaded as **standards only**: the skill states that any plan-marshall
+     machinery they mention (`manage-personas`, extension points, orchestrator pipelines) is
+     ignored in this lane.
+   - The landing report says, per step, which persona was applied.
+   - Persona names come from the bundle the lane ships in; no project literal is added.
+
+   *Done when:* skill doc tests assert that:
+   - every lane step that writes code, tests or docs, or that reviews, names its persona;
+   - self-review and PR triage name adversarial-refute;
+   - the "standards only, ignore the machinery" sentence is present;
+   - the landing-report section requires the persona list;
+   - every named persona resolves to an existing bundle skill (plugin-doctor or a direct
+     existence check).
+
+   Each fails against PLAN-LB-66's merged skill, which names no persona.
+
+4. **`runbook_lane resolve` returns the domain skills for the modules the spec touches.**
+   - Resolve reads the spec's `## Expected Surface` paths, maps each to its module
+     (`architecture which-module`), and returns the domain skills those modules need, taken from
+     the project's configuration (`marshal.json` `skill_domains` and the architecture data; the
+     source is chosen at outline and recorded). This is the configuration-driven counterpart of
+     the Antigravity runbook's skill matrix (§ 1.1–1.2).
+   - The skill tells the run to load those skills before implementing.
+   - A path with no module, or a module with no domain, is reported as such. Resolve never
+     invents a skill.
+
+   *Done when:* resolve tests show:
+   - a pyproject fixture spec resolves this repository's Python domain skills;
+   - a Maven fixture spec touching a Java module resolves the Java domain skills;
+   - an unmapped path is reported as `unmapped` rather than dropped.
+
+   All three fail against PLAN-LB-66's merged verb.
+
+5. **A docs-only change skips the full local build.**
+   - The build gate checks the worktree diff against the base. If no buildable source changed, it
+     runs no full `verify`: it checks the changed docs (format, internal links and references,
+     `git status` showing only doc files) and records `build-gate: docs-only` in the progress
+     file and the landing message.
+   - "Buildable" is decided by the project's own footprint rule, not by a hard-coded extension
+     list:
+     - this repository: the CI footprint gate (`skip-on-docs-only`) plus its `extra-buildable`
+       paths, so `marketplace/**/*.md` still builds;
+     - other projects: the architecture data.
+     The source is chosen at outline and recorded.
+   - Required CI checks still have to be green, so the merge gate is unchanged.
+
+   *Done when:* tests (a `resolve` field or a helper verb, decided at outline) show:
+   - a diff touching only `doc/**/*.adoc` classifies as docs-only;
+   - a diff touching `marketplace/bundles/**/SKILL.md` in this repository classifies as
+     buildable, because of `extra-buildable`;
+   - a diff touching a `.py` file classifies as buildable.
+
+   The skill's build-gate section documents the docs-only path. Each fails against PLAN-LB-66's
+   merged skill.
+
+Split guard: five deliverables, under the ~6 threshold, one cohesive surface (the `runbook-lane`
+skill and its resolve verb). Kept unsplit by operator instruction ("add this all to the
+follow-up (one) plan").
 
 ## Claim Labels
 
@@ -108,7 +179,10 @@ Split guard: two deliverables.
   `sourcery.md`, `cuioss-review-bot.md` (D2)
 - HYPOTHESIS: `marketplace/bundles/plan-marshall/skills/automatic-review/standards/bot-participation-contract.md`,
   which documents the new declaration (verify-at-outline) (D2)
-- HYPOTHESIS: `doc/developer/opencode.adoc`, the runbook-lane section (verify-at-outline) (D1)
+- HYPOTHESIS: `doc/developer/opencode.adoc`, the runbook-lane section (verify-at-outline) (D1, D3, D5)
+- OBSERVED: `runbook-lane/SKILL.md` steps for implementation, self-review, PR triage, build gate and landing report (D3, D5)
+- HYPOTHESIS: `runbook_lane.py`, the domain-skill and footprint resolution (verify-at-outline) (D4, D5)
+- HYPOTHESIS: `.github/workflows/python-verify.yml`, read only, as the footprint source for this repository (D5)
 
 ## Dependencies and Sequencing
 

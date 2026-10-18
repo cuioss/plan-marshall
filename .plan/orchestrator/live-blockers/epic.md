@@ -435,6 +435,19 @@ derive, for rows still live.
   standing-review-authorization** (WS-04, runbook lane, 2 deliverables) to carry the rule into
   the `runbook-lane` skill, repository-neutral and keyed on a per-bot `quota_limited`
   declaration. Emit after PLAN-LB-66 lands.
+- 2026-10-18 — **Operator: PLAN-LB-67 becomes the single runbook-lane follow-up.** Added three
+  deliverables from the pm-mcp-clients Antigravity runbook:
+  - D3: per-step personas, with adversarial-refute in self-review and PR triage;
+  - D4: `resolve` returns the domain skills for the modules in the spec's Expected Surface;
+  - D5: a docs-only build path keyed on the project's footprint rule.
+
+  Five deliverables, kept unsplit by operator instruction.
+- 2026-10-18 — **Operator: drain, then restart on the new structure.** No new emits until every
+  running plan (PLAN-LB-45, PLAN-LB-52, PLAN-LB-66) has landed. Then, in this order:
+  1. set `lane=runbook` on the runbook rows;
+  2. retire the local `RUNBOOK.md`;
+  3. emit PLAN-LB-67 first, through `/plan-marshall-runbook-lane plan={spec}`;
+  4. emit the rest of the queue in the same form.
 - 2026-10-17 — **Mid-flight: PLAN-LB-66 edited the main checkout** (D3, 6 files) instead of its
   worktree, against runbook §1. Operator interrupted it; the D3 work moved to the worktree and main
   is clean. Debited at its landing.
