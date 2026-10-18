@@ -56,7 +56,9 @@ The on-query epic discovery / store scan enumerates BOTH `.plan/orchestrator/` a
 
 ### Step 3 (verb = `status`): Report
 
-Render the queue report from the Step 2 reads: per-plan status from the queue rows (staged / launched / running / parked, and the terminal rows by their own status), workstream grouping, open defects and watches from `{epic_dir}/epic.md`, and the resume anchor. An archived epic reports identically — its tree is resolved from `archived-orchestrators/` and its ledger files are the same machine authority. Name every row file `unreadable_rows` reports, rather than omitting it from the report.
+Render the queue report from the Step 2 reads: per-plan status from the queue rows (staged / launched / running / parked, and the terminal rows by their own status), the row's `lane` alongside its status, workstream grouping, open defects and watches from `{epic_dir}/epic.md`, and the resume anchor. An archived epic reports identically — its tree is resolved from `archived-orchestrators/` and its ledger files are the same machine authority. Name every row file `unreadable_rows` reports, rather than omitting it from the report.
+
+Report every row `started_not_transitioned` names as **started, not transitioned**: its `lane` is `runbook` and its lane worktree already exists, yet the row is still `staged`. The runbook lane creates its worktree before it transitions the row, so this is the ordinary face of a lane that has started without the operator recording it. REPORT it and ask the operator to confirm the transition; do not transition the row yourself — `status` writes nothing.
 
 When `resume-summary` reported `view_current: false`, the committed `queue-view.md` is behind the ledger; bring it level:
 
@@ -143,13 +145,23 @@ A candidate failing either test is sequenced, not emitted. **Never emit, merely 
 
 ### Step 5 (verb = `next`): Emit the commands
 
-EMIT one ready-to-run command per selected candidate — the whole `N − R` block in one copy-paste surface — each a **one-line pointer** to its staged spec. The spec is the single source of the brief, so no request text is transcribed into the command:
+EMIT one ready-to-run command per selected candidate — the whole `N − R` block in one copy-paste surface — each a **one-line pointer** to its staged spec. The spec is the single source of the brief, so no request text is transcribed into the command.
+
+**The emitted form follows the row's `lane`.** A row whose `lane` is `plan-marshall` (the default, and the reading for a row carrying no `lane`) is emitted through the plan lifecycle:
 
 ```text
 /plan-marshall task="implement .plan/orchestrator/{slug}/plans/PLAN-NN-{plan_slug}.md"
 ```
 
-The one-line pointer is the whole hand-off. The plan lifecycle ingests the referenced spec file's *contents* at `phase-1-init` — the file-pointer branch of Step 4 "From Description" reads the path through the deterministic `request create --body-file` seam, so the referenced spec becomes the request body and the pointer alone is a self-sufficient brief. The emit therefore surfaces NO inlined spec body and NO operator-facing spec preview: there is deliberately no surface at this step that reproduces the spec text. Should a future author ever need to show a spec body at an orchestrator surface, it MUST be obtained by the script-mediated `corpus read --slug {slug} --plan PLAN-NN` — a deterministic read that resolves the spec through the store seam — NEVER by LLM retyping, paraphrase, or reconstruction from context; a re-introduced "verbatim spec text" inline is exactly the retyping-drift this retirement removed.
+A row whose `lane` is `runbook` is emitted through the runbook lane instead, which resolves its own project-specific values through the `runbook_lane resolve` verb rather than through the plan lifecycle:
+
+```text
+/plan-marshall-runbook-lane plan=.plan/orchestrator/{slug}/plans/PLAN-NN-{plan_slug}.md
+```
+
+Both are one-line pointers to the same staged spec path; the lane named by the row decides which runner reads it. A `runbook` row is emitted in the runbook form even when the row is `launched` rather than `staged`, so the block never mixes the two runners' forms for one plan.
+
+The one-line pointer is the whole hand-off. The plan lifecycle ingests the referenced spec file's *contents* at `phase-1-init` — the file-pointer branch of Step 4 "From Description" reads the path through the deterministic `request create --body-file` seam, so the referenced spec becomes the request body and the pointer alone is a self-sufficient brief. The runbook lane reads the same spec path as its `plan={spec}` argument and does the same: the spec body is the brief. The emit therefore surfaces NO inlined spec body and NO operator-facing spec preview: there is deliberately no surface at this step that reproduces the spec text. Should a future author ever need to show a spec body at an orchestrator surface, it MUST be obtained by the script-mediated `corpus read --slug {slug} --plan PLAN-NN` — a deterministic read that resolves the spec through the store seam — NEVER by LLM retyping, paraphrase, or reconstruction from context; a re-introduced "verbatim spec text" inline is exactly the retyping-drift this retirement removed.
 
 The verb NEVER launches the plan inline — the operator runs the emitted command; implementation happens exclusively inside the plan lifecycle. This holds for every command in the block: the orchestrator emits `N − R` ready commands and launches none of them.
 

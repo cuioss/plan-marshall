@@ -578,12 +578,13 @@ class TestOwedLanding:
         assert verdict['awaiting_plans'] == []
 
     def test_queue_reconciliation_runs_both_directions(self):
-        report = _inbox.reconcile_queue_vs_landings({'plan-a', 'plan-b'}, {'plan-b', 'plan-c'})
+        report = _inbox.reconcile_queue_vs_landings([{'id': 'plan-a'}, {'id': 'plan-b'}], {'plan-b', 'plan-c'})
 
         assert report['queue_without_landing'] == ['plan-a']
         assert report['landing_without_queue'] == ['plan-c']
         assert report['queue_without_landing_count'] == 1
         assert report['landing_without_queue_count'] == 1
+        assert report['queue_count'] == 2
 
     def test_surface_delta_rides_beside_counts(self):
         delta = _inbox.compute_surface_delta({'a.py'}, {'a.py', 'b.py'})
@@ -689,12 +690,12 @@ class TestDedupAtDrain:
 
 class TestQueueAvailability:
     def test_unreadable_queue_marks_unavailable(self):
-        report = _inbox._reconcile_queue_with_availability(set(), {'plan-c'}, False)
+        report = _inbox._reconcile_queue_with_availability([], {'plan-c'}, False)
 
         assert report['queue_readable'] is False
 
     def test_readable_queue_marks_readable(self):
-        report = _inbox._reconcile_queue_with_availability({'plan-a'}, set(), True)
+        report = _inbox._reconcile_queue_with_availability([{'id': 'plan-a'}], set(), True)
 
         assert report['queue_readable'] is True
         assert report['queue_without_landing'] == ['plan-a']
@@ -783,6 +784,70 @@ class TestInboxListOwedLandingReadability:
         )
         assert data['owed_landing']['state'] == 'no-news'
         assert data['queue_reconciliation']['queue_readable'] is False
+
+
+#: The runbook lane's derived plan name for the row below — the spec basename
+#: minus the ``PLAN-`` marker, lower-cased — and the sender id its landings
+#: carry. Derived here exactly as the lane derives them.
+_RUNBOOK_PLAN = 'lb-66-runbook-lane-skill'
+_RUNBOOK_SENDER = f'rb-{_RUNBOOK_PLAN}'
+
+#: A running runbook-lane row, in the same shape as ``_RUNNING_ROW`` but on the
+#: other lane. Its ``plan_marshall_plan_id`` stays empty in the first arm on
+#: purpose: there the row must be recognised by its LANE's sender id alone.
+_RUNBOOK_ROW = {
+    'id': 'PLAN-LB-66',
+    'slug': 'runbook-lane-skill',
+    'status': 'running',
+    'lane': 'runbook',
+    'plan_marshall_plan_id': '',
+}
+
+
+def _queue_runbook_landing(plan_context, tmp_path: Path, sender: str) -> None:
+    written = _queue_write(plan_context, _payload(tmp_path, 'landed', 'landing.md'), kind='landing', sender=sender)
+    assert written.toon()['destination'] == 'queue', 'the arrangement did not queue the landing message'
+
+
+class TestRunbookLaneLandingCorrelation:
+    """A runbook landing reconciles to its row instead of reading as an orphan.
+
+    Two distinct senders must reach the same row: the lane's own ``rb-{plan}``
+    id, and the plan id the row is stamped with. Without the lane identity every
+    runbook landing reads as ``landing_without_queue`` while its row reads as
+    ``queue_without_landing`` — the state the epic's rows were all in before this
+    correlation existed.
+    """
+
+    def test_an_rb_sender_reconciles_to_its_runbook_row(self, plan_context, tmp_path):
+        _scaffold(plan_context)
+        write_ledger(
+            _epic_dir(plan_context),
+            {'kind': 'orchestrator', 'phase': 'orchestrating', 'plans': [_RUNBOOK_ROW], 'resume_anchor': ''},
+        )
+        _queue_runbook_landing(plan_context, tmp_path, _RUNBOOK_SENDER)
+
+        data = _list(plan_context).toon()
+
+        assert data['queue_reconciliation']['queue_without_landing'] == []
+        assert data['queue_reconciliation']['landing_without_queue'] == []
+        assert data['owed_landing']['state'] == 'owed'
+        assert data['owed_landing']['owed_plans'] == [_RUNBOOK_SENDER]
+
+    def test_a_sender_equal_to_the_stamped_plan_id_reconciles(self, plan_context, tmp_path):
+        _scaffold(plan_context)
+        row = {**_RUNBOOK_ROW, 'plan_marshall_plan_id': _RUNBOOK_PLAN}
+        write_ledger(
+            _epic_dir(plan_context),
+            {'kind': 'orchestrator', 'phase': 'orchestrating', 'plans': [row], 'resume_anchor': ''},
+        )
+        _queue_runbook_landing(plan_context, tmp_path, _RUNBOOK_PLAN)
+
+        data = _list(plan_context).toon()
+
+        assert data['queue_reconciliation']['queue_without_landing'] == []
+        assert data['queue_reconciliation']['landing_without_queue'] == []
+        assert data['owed_landing']['state'] == 'owed'
 
 
 # =============================================================================

@@ -115,3 +115,57 @@ def test_generate_filters_by_bundle_list(fixture_marketplace: Path, tmp_path: Pa
     target.generate(fixture_marketplace, out_dir, bundles=['nonexistent'])
     assert not (out_dir / 'skills').exists()
     assert not (out_dir / 'agents').exists()
+
+
+def test_runbook_lane_skill_emits_as_skill_and_command_with_rewritten_tools(tmp_path: Path):
+    """The runbook-lane skill emits, and the Antigravity tool names are rewritten.
+
+    Two halves, both required by the D1 Done-when: the user-invocable
+    plan-marshall skill reaches the Antigravity target as
+    `skills/plan-marshall-runbook-lane/` plus the `/plan-marshall-runbook-lane`
+    command, and the target's tool-name mapping rewrites both the question tool
+    (`ask_question`, in the emitted skill body) and the sub-agent tool
+    (`invoke_subagent`, in an agent's frontmatter).
+    """
+    from conftest import MARKETPLACE_ROOT
+
+    target = AntigravityTarget()
+    out_dir = tmp_path / 'antigravity-runbook-lane'
+    target.generate(MARKETPLACE_ROOT, out_dir, bundles=['plan-marshall'])
+
+    skill_md = out_dir / 'skills' / 'plan-marshall-runbook-lane' / 'SKILL.md'
+    command_md = out_dir / 'commands' / 'plan-marshall-runbook-lane.md'
+    assert skill_md.is_file(), f'expected {skill_md}'
+    assert command_md.is_file(), f'expected {command_md}'
+    assert 'plan-marshall-runbook-lane' in command_md.read_text(encoding='utf-8')
+
+    skill_body = skill_md.read_text(encoding='utf-8')
+    assert '`ask_question`' in skill_body
+    assert '`AskUserQuestion`' not in skill_body
+
+    # The sub-agent tool name is rewritten in the AGENT frontmatter, the surface
+    # the Antigravity tool_permissions map governs.
+    fixture = tmp_path / 'agent-fixture'
+    bundle = fixture / 'demo'
+    (bundle / '.claude-plugin').mkdir(parents=True)
+    (bundle / '.claude-plugin' / 'plugin.json').write_text(
+        json.dumps(
+            {
+                'name': 'demo',
+                'version': '0.0.1',
+                'description': 'demo',
+                'agents': ['./agents/demo-agent.md'],
+                'skills': [],
+            }
+        ),
+        encoding='utf-8',
+    )
+    (bundle / 'agents').mkdir(parents=True)
+    (bundle / 'agents' / 'demo-agent.md').write_text(
+        '---\nname: demo-agent\ndescription: demo agent\nmodel: sonnet\ntools: Read, Task\n---\nbody\n',
+        encoding='utf-8',
+    )
+    agent_out = tmp_path / 'agent-out'
+    AntigravityTarget().generate(fixture, agent_out, bundles=['demo'])
+    agent_text = (agent_out / 'agents' / 'demo-agent.md').read_text(encoding='utf-8')
+    assert 'invoke_subagent' in agent_text

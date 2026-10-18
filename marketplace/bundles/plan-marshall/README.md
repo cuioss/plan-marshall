@@ -24,12 +24,12 @@ This bundle provides **core infrastructure** organized into functional areas:
 
 Configuration (`marshall-steward`) and WebFetch permission consolidation (`workflow-permission-web`) are skills, not commands.
 
-### Skills (77)
+### Skills (78)
 
 | Category | Skills |
 |----------|--------|
 | **Workflow phases** | `phase-1-init`, `phase-2-refine`, `phase-3-outline`, `phase-4-plan`, `phase-5-execute`, `phase-6-finalize` |
-| **Orchestration** | `plan-marshall`, `execute-task`, `plan-doctor`, `plan-retrospective`, `marshall-steward`, `plan-orchestrator` |
+| **Orchestration** | `plan-marshall`, `execute-task`, `plan-doctor`, `plan-retrospective`, `marshall-steward`, `plan-orchestrator`, `runbook-lane` |
 | **Personas** | `persona-plan-marshall-agent` plus 8 role personas (`persona-auditor`, `persona-code-reviewer`, `persona-documenter`, `persona-implementer`, `persona-integration-tester`, `persona-plan-orchestrator`, `persona-module-tester`, `persona-security-expert`) |
 | **Services (`manage-*`)** | `manage-adr`, `manage-architecture`, `manage-build-server`, `manage-change-ledger`, `manage-ci-artifacts`, `manage-config`, `manage-execution-manifest`, `manage-files`, `manage-findings`, `manage-lessons`, `manage-locks`, `manage-logging`, `manage-metrics`, `manage-personas`, `manage-plan-documents`, `manage-providers`, `manage-references`, `manage-run-config`, `manage-solution-outline`, `manage-status`, `manage-tasks`, `manage-terminal-title` |
 | **Build systems** | `build-gradle`, `build-maven`, `build-npm`, `build-pyproject`, `build-server-client` |

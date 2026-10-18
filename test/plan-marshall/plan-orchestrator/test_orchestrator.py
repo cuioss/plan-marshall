@@ -40,7 +40,7 @@ group's envelope schema and handler surface have theirs
   an equal copy. Both count-claim directions are covered over the whole noun
   population: every legal status is a checkable noun, and every noun both
   matches the derived alternation and resolves to a ``_derive_counts`` key.
-- doc contract: ALL THREE enumerations SKILL.md mirrors are extracted through one
+- doc contract: the enumerations SKILL.md mirrors are extracted through one
   shared anchored reader and asserted EQUAL to their declaring constants in both
   directions — the ``--field`` whitelist against ``PLAN_ROW_FIELDS``, which
   ``cmd_queue`` validates against, the ``--status`` vocabulary against
@@ -49,7 +49,11 @@ group's envelope schema and handler surface have theirs
   populations non-empty FIRST, so an equality can never pass over two empty
   sets. The seed fields are additionally asserted in DECLARATION ORDER, because
   that tuple's order is the key order an appended row is written in; the
-  whitelist's ``frozenset`` declares no order and none is pinned for it.
+  ``--lane`` vocabulary is a FOURTH mirrored enumeration, read by the same style
+  of anchored check in ``test_runbook_lane_rows.py``, beside the lane's other
+  assertions — it lives there rather than here so the whole lane surface is
+  asserted in one place.
+  A whitelist's ``frozenset`` declares no order and none is pinned for it.
 - ``resume-summary``: START-HERE block generation derived purely from
   the ledger (resume anchor, phase, running/parked plans, ordered queue),
   including the two questions the terminal statuses answer separately — a
@@ -118,6 +122,7 @@ EPIC_SUBDIRS = _orch.EPIC_SUBDIRS
 PLAN_ROW_FIELDS = _orch.PLAN_ROW_FIELDS
 ADD_ROW_SEED_FIELDS = _orch.ADD_ROW_SEED_FIELDS
 VALID_STATUS_VOCABULARY = _orch.VALID_STATUS_VOCABULARY
+LANE_RUNBOOK = _orch.LANE_RUNBOOK
 LIVE_PLAN_STATUSES = _orch.LIVE_PLAN_STATUSES
 SHIPPED_PLAN_STATUSES = _orch.SHIPPED_PLAN_STATUSES
 CLOSED_UNSHIPPED_PLAN_STATUSES = _orch.CLOSED_UNSHIPPED_PLAN_STATUSES
@@ -269,6 +274,7 @@ def _make_plan(
     plan_id: str,
     status: str = 'staged',
     workstream: str = 'WS-01',
+    lane: str = 'plan-marshall',
     plan_marshall_plan_id: str = '',
     pr: str = '',
     landing: str = '',
@@ -278,6 +284,7 @@ def _make_plan(
         'slug': plan_id.lower(),
         'workstream': workstream,
         'status': status,
+        'lane': lane,
         'plan_marshall_plan_id': plan_marshall_plan_id,
         'pr': pr,
         'landing': landing,
@@ -614,7 +621,11 @@ class TestQueueSetRow:
 
     def test_should_round_trip_every_whitelisted_field(self, plan_context):
         _write_status(plan_context, 'fields-epic', plans=[_make_plan('PLAN-01')])
+        # ``lane`` is a whitelisted field with a CLOSED vocabulary, so its
+        # round-trip value is drawn from that vocabulary rather than invented
+        # like the free-form fields beside it.
         values = {
+            'lane': LANE_RUNBOOK,
             'plan_marshall_plan_id': 'epic-plan-1',
             'pr': '#1002',
             'landing': 'PLAN-01.md',
@@ -895,8 +906,8 @@ class TestCountClaimNounsCoverTheSettledVocabulary:
 def _documented_entries(anchor: str) -> tuple[list[str], int]:
     """Extract the backticked entries SKILL.md publishes behind ``anchor``.
 
-    The single reader behind both anchored-fragment checks below, so the two
-    fragments are pinned by one mechanism rather than by two parallel ones.
+    The single reader behind the anchored-fragment checks below, so the fragments
+    are pinned by one mechanism rather than by parallel ones.
 
     Returns the parsed entries IN DOCUMENT ORDER — the order matters to the seed
     fields, whose tuple order is load-bearing — AND the number of anchored lines
@@ -1095,11 +1106,13 @@ class TestQueueAddRow:
         result = cmd_queue(_add_row_args('add-shape-epic'))
 
         # The seeded row is exactly the fixture shape: three identity fields, a
-        # status, the three PLAN_ROW_FIELDS empty — a staged row has landed
-        # nothing yet — and the allocated ``seq``.
+        # status, the row's LANE (seeded to its default, which is not a result
+        # field and so is not empty), the remaining PLAN_ROW_FIELDS empty — a
+        # staged row has landed nothing yet — and the allocated ``seq``.
         assert result['row'] == {**_make_plan('PLAN-07'), 'seq': 1}
         assert list(result['row']) == list(ADD_ROW_SEED_FIELDS)
-        assert all(result['row'][field] == '' for field in PLAN_ROW_FIELDS)
+        assert all(result['row'][field] == '' for field in PLAN_ROW_FIELDS - {'lane'})
+        assert result['row']['lane'] == 'plan-marshall'
 
     def test_should_allocate_seq_as_the_local_maximum_plus_one(self, plan_context):
         root = _write_status(plan_context, 'add-seq-epic', plans=[_make_plan('PLAN-01'), _make_plan('PLAN-02')])
@@ -1596,7 +1609,7 @@ class TestResumeSummary:
         result = cmd_resume_summary(_variant(_RESUME_SUMMARY_ARGS, slug='oq-epic'))
 
         queue = result['ordered_queue']
-        assert '| # | Plan | Workstream | Status | Surface (expected) |' in queue
+        assert '| # | Plan | Workstream | Status | Surface (expected) | Lane |' in queue
         assert '| 1 | PLAN-02 | WS-01 | running |' in queue
         assert '| 2 | PLAN-03 | WS-02 | staged |' in queue
         # The terminal row is excluded from the live queue.

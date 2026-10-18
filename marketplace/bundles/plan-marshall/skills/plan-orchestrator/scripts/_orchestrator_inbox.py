@@ -76,6 +76,7 @@ from pathlib import Path
 from typing import Any, NamedTuple
 
 from _orchestrator_ledger import (
+    LANE_RUNBOOK,
     LEDGER_ABSENT,
     LEDGER_LEGACY,
     LEDGER_OK,
@@ -493,10 +494,55 @@ def _row_identities(row: dict[str, Any]) -> set[str]:
     records in ``plan_marshall_plan_id`` at launch. Both are read as the row's
     identity, so a message addressed by either reaches the same row; an empty
     ``plan_marshall_plan_id`` (a row not yet launched) contributes nothing.
+
+    A RUNBOOK row answers to a third identity: the runbook lane's sender id
+    ``rb-{plan}``, where ``{plan}`` is the spec basename's own derived name
+    (``{id}-{slug}`` lower-cased). The lane's landing messages are sent from
+    that id, so without it every runbook landing would read as a message about
+    no queued row.
     """
     identities = {str(row.get('id', '')), str(row.get('plan_marshall_plan_id', '') or '')}
     identities.discard('')
+    if str(row.get('lane', '') or '') == LANE_RUNBOOK:
+        identities.add(runbook_sender_id(row))
     return identities
+
+
+def runbook_sender_id(row: dict[str, Any]) -> str:
+    """The runbook lane's sender id for one row: ``rb-{plan}``.
+
+    ``{plan}`` is the name :func:`runbook_plan_name` derives, so the sender id a
+    landing carries and the sender id the row answers to are computed by one
+    derivation. This is also the identity ``analyze`` stamps into
+    ``plan_marshall_plan_id`` for a matched runbook landing.
+    """
+    return f'{RUNBOOK_SENDER_PREFIX}{runbook_plan_name(row)}'
+
+
+#: The runbook lane's sender-id prefix. The lane is harness-neutral, so the
+#: prefix names the lane rather than the harness that ran it.
+RUNBOOK_SENDER_PREFIX = 'rb-'
+
+
+def runbook_plan_name(row: dict[str, Any]) -> str:
+    """The ``{plan}`` a runbook row's derived names come from.
+
+    The runbook lane derives ``{plan}`` from the spec BASENAME:
+    ``plans/PLAN-{id}-{slug}.md``. Rebuilding that basename from the row gives
+    ``{id}-{slug}`` — which still carries the ``PLAN-`` marker for a row whose id
+    is itself ``PLAN-NN`` — and the lane then drops that marker and lower-cases
+    what remains. Both steps are reproduced here, in the lane's order, so the
+    sender id, the worktree name and the landing correlation cannot drift from
+    the name the lane actually uses.
+
+    A reconstructed basename carrying no ``PLAN-`` marker is lower-cased as-is:
+    the marker is dropped when present, never required, so a differently spelled
+    id still resolves to one name here and in the lane.
+    """
+    stem = f'{row.get("id", "")}-{row.get("slug", "")}'
+    if stem.startswith('PLAN-'):
+        stem = stem[len('PLAN-') :]
+    return stem.lower()
 
 
 #: The closed vocabulary :func:`cmd_inbox_write` reports as ``routing_reason`` —
@@ -2351,7 +2397,6 @@ def cmd_inbox_list(args: Any) -> dict[str, Any]:
     queue_rows: list[dict[str, Any]] = (
         [row for row in ledger.document.get('plans', []) if isinstance(row, dict)] if queue_readable else []
     )
-    queue_ids = {str(row.get('id', '')) for row in queue_rows if str(row.get('id', ''))}
     # An unreadable queue is UNAVAILABLE, never empty: both verdicts ride an
     # explicit ``queue_readable`` discriminator, so an owed-landing ``no-news``
     # over a running set that was never measured is distinguishable from one that
@@ -2361,7 +2406,10 @@ def cmd_inbox_list(args: Any) -> dict[str, Any]:
     owed_verdict = _classify_owed_with_availability(
         _running_plan_ids(queue_rows), queued_landing_senders, queue_readable
     )
-    queue_reconciliation = _reconcile_queue_with_availability(queue_ids, queued_landing_senders, queue_readable)
+    # Both verdicts are computed from the SAME row objects, so the reconciliation
+    # compares each row through every identity it answers to rather than through
+    # its spec id alone.
+    queue_reconciliation = _reconcile_queue_with_availability(queue_rows, queued_landing_senders, queue_readable)
     return {
         'status': 'success',
         'operation': 'inbox-list',
@@ -3615,8 +3663,8 @@ def classify_owed_landing(
 
 
 def reconcile_queue_vs_landings(
-    queue_plan_ids: set[str],
-    landing_sender_ids: set[str],
+    queue_rows: Iterable[dict[str, Any]],
+    landing_sender_ids: Iterable[str],
 ) -> dict[str, Any]:
     """Reconcile queue rows against drained landing messages both ways.
 
@@ -3625,22 +3673,50 @@ def reconcile_queue_vs_landings(
     messages with no queue row (the orphan direction). Both ride sorted
     lists with their own counts naming the population each was computed
     over, so a drain that compared nothing never renders as clean.
+
+    **A row is compared through every identity it answers to**, not through its
+    spec id alone: :func:`_row_identities` adds the plan-marshall plan id the
+    row is stamped with and, for a ``runbook`` row, the lane's ``rb-{plan}``
+    sender id. A landing sent from ANY of those covers its row. Without that,
+    a row covered by its lane sender would still be listed as
+    ``queue_without_landing`` while its landing was listed as
+    ``landing_without_queue`` — the two directions disagreeing about one matched
+    pair — which is exactly the state a ledger whose rows run on the runbook
+    lane was in.
+
+    ``queue_count`` counts the rows that name a plan (an id-less row names
+    none), so every count rides the population it was computed over.
     """
-    queue_only = sorted(queue_plan_ids - landing_sender_ids)
-    landing_only = sorted(landing_sender_ids - queue_plan_ids)
+    senders = {str(sender) for sender in landing_sender_ids if str(sender)}
+    queue_only: list[str] = []
+    covered: set[str] = set()
+    rows_total = 0
+    for row in queue_rows:
+        if not isinstance(row, dict):
+            continue
+        row_id = str(row.get('id', ''))
+        if not row_id:
+            continue
+        rows_total += 1
+        identities = _row_identities(row)
+        if identities & senders:
+            covered |= identities
+        else:
+            queue_only.append(row_id)
+    landing_only = sorted(senders - covered)
     return {
-        'queue_count': len(queue_plan_ids),
-        'landing_count': len(landing_sender_ids),
+        'queue_count': rows_total,
+        'landing_count': len(senders),
         'queue_without_landing_count': len(queue_only),
         'landing_without_queue_count': len(landing_only),
-        'queue_without_landing': queue_only,
+        'queue_without_landing': sorted(queue_only),
         'landing_without_queue': landing_only,
     }
 
 
 def _reconcile_queue_with_availability(
-    queue_plan_ids: set[str],
-    landing_sender_ids: set[str],
+    queue_rows: Iterable[dict[str, Any]],
+    landing_sender_ids: Iterable[str],
     queue_readable: bool,
 ) -> dict[str, Any]:
     """Reconcile the queue, carrying whether the queue was readable.
@@ -3650,7 +3726,7 @@ def _reconcile_queue_with_availability(
     the report rides ``queue_readable: False`` and consumers must not read
     an empty ``landing_without_queue`` as proof no orphan landing exists.
     """
-    report = reconcile_queue_vs_landings(queue_plan_ids, landing_sender_ids)
+    report = reconcile_queue_vs_landings(queue_rows, landing_sender_ids)
     report['queue_readable'] = queue_readable
     return report
 
