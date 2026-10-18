@@ -186,6 +186,32 @@ def test_closed_review_criteria_do_not_block(plan_context, tmp_path) -> None:
     assert payload['open_count'] == 0, payload
 
 
+def test_closed_review_closes_criteria_even_with_a_sealed_verdict(plan_context, tmp_path) -> None:
+    """The production shape: the last round wrote a sealed verdict, then the operator closed."""
+    plan_dir = _plan(plan_context, ['a', 'b'], freeze_from=['a', 'b'])
+    _sealed_live(
+        plan_dir,
+        tmp_path,
+        {
+            'deliverables': [
+                {
+                    'number': 1,
+                    'verdict': 'met',
+                    'criteria': [{'criterion': 'a', 'status': 'met', 'evidence': ['src/parser.py:1']}],
+                }
+            ],
+            'unrequested_changes': [],
+            'self_reports': [],
+            'files_read': ['src/parser.py'],
+        },
+    )
+    _status(plan_dir, {'use_worktree': False, 'functional_review_override_heads': ['abc1234']})
+
+    payload = _snap.open_criteria(PLAN_ID)
+
+    assert payload['open_count'] == 0, payload
+
+
 # --- D1 (c): a verdict row matches its criterion by a stable id ----------------------------
 
 

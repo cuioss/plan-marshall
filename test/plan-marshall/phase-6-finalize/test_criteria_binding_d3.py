@@ -126,6 +126,23 @@ def test_deleted_snapshot_on_a_frozen_plan_is_refused(plan_context, tmp_path, mo
     assert payload['error'] == 'frozen_snapshot_deleted'
 
 
+def test_deleted_snapshot_is_refused_at_finalize_even_when_review_dropped(plan_context, monkeypatch) -> None:
+    """The freeze is independent of the review: a deleted snapshot refuses even without one."""
+    plan_dir = _plan(plan_context, ['parser accepts input'], freeze=True)
+    (plan_dir / 'execution.toon').write_text(
+        f'manifest_version: 1\nplan_id: {PLAN_ID}\nphase_6:\n  steps[1]:\n    - pre-push-quality-gate\n',
+        encoding='utf-8',
+    )
+    _snap.snapshot_path(PLAN_ID).unlink()
+    monkeypatch.setattr(_lifecycle, 'assert_finalize_findings_clean', lambda *_a, **_k: 0)
+    monkeypatch.setattr(_lifecycle, 'log_entry', lambda *_a, **_k: None)
+
+    refusal = _lifecycle._finalize_findings_refusal(PLAN_ID, {'title': 'fixture', 'metadata': {'use_worktree': False}})
+
+    assert refusal is not None
+    assert refusal['error'] == 'open_done_when_criteria'
+
+
 # --- D3 (c): a re-freeze after a phase rollback without a decision is refused ---------------
 
 

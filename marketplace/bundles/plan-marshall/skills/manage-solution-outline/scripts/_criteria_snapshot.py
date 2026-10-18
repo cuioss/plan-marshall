@@ -858,14 +858,15 @@ def open_criteria(plan_id: str, verdict_file: Path | None = None) -> dict[str, A
     snapshot = read_snapshot(plan_id)
     if snapshot is None:
         return {'source': 'none', 'open_count': 0, 'open': []}
+    # The operator's round-cap override closes the review FOR THE COMPLETION GATE:
+    # its criteria are not outstanding work. Head-specificity (rubric § 8) governs
+    # the REVIEW LOOP, which re-fires a delta round on a later head; the gate's job
+    # is only to stop reading an operator-closed review as open work.
+    closed_reason = _review_closed_reason(plan_id)
+    if closed_reason is not None:
+        return {'source': 'review_closed', 'closed_reason': closed_reason, 'open_count': 0, 'open': []}
     path = verdict_file if verdict_file is not None else base_path('plans', plan_id, FUNCTIONAL_VERDICT_FILE)
     verdict, verdict_state = _checked_verdict(path, plan_id)
-    # The operator's round-cap override closes the HEAD it judged. A sealed verdict
-    # at the graded head is graded normally; the override is the fallback only when
-    # no sealed verdict exists (the head it closed by definition carries none).
-    closed_reason = _review_closed_reason(plan_id)
-    if closed_reason is not None and verdict_state != 'sealed':
-        return {'source': 'review_closed', 'closed_reason': closed_reason, 'open_count': 0, 'open': []}
     rows: list[dict[str, Any]] = []
     for row in snapshot.get('deliverables') or []:
         if not isinstance(row, dict):
