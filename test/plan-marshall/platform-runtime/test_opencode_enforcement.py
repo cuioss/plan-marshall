@@ -35,6 +35,35 @@ from _guard_node_harness import SUB_AGENT_AGENT, WORKTREE_WORKDIR, build_harness
 from opencode_runtime import OpenCodeRuntime, to_opencode_grant
 from toon_parser import parse_toon
 
+from conftest import get_script_path, run_script
+
+MANAGE_STATUS = get_script_path('plan-marshall', 'manage-status', 'manage-status.py')
+_PHASES = '1-init,2-refine,3-outline,4-plan,5-execute,6-finalize'
+
+
+def _write_managed_plan(base: pathlib.Path, plan_id: str, phase: str) -> pathlib.Path:
+    """Create a REAL plan under *base* whose status is written by ``manage-status``.
+
+    The R6 tests must not hand-write ``status.json``: the field is
+    ``current_phase`` (never ``phase``), and only the sanctioned writer can
+    produce it. Returns the plan directory.
+    """
+    env = {'PLAN_BASE_DIR': str(base), 'PLAN_DIR_NAME': '.plan'}
+    created = run_script(
+        MANAGE_STATUS, 'create', '--plan-id', plan_id, '--title', 't', '--phases', _PHASES, env_overrides=env
+    )
+    assert created.returncode == 0, f'manage-status create failed: {created.stdout}{created.stderr}'
+    assert parse_toon(created.stdout).get('status') == 'success', f'manage-status create refused: {created.stdout}'
+    _set_managed_phase(base, plan_id, phase)
+    return base / 'plans' / plan_id
+
+
+def _set_managed_phase(base: pathlib.Path, plan_id: str, phase: str) -> None:
+    """Move an EXISTING managed plan to *phase* through ``manage-status set-phase``."""
+    env = {'PLAN_BASE_DIR': str(base), 'PLAN_DIR_NAME': '.plan'}
+    shifted = run_script(MANAGE_STATUS, 'set-phase', '--plan-id', plan_id, '--phase', phase, env_overrides=env)
+    assert shifted.returncode == 0, f'manage-status set-phase failed: {shifted.stdout}{shifted.stderr}'
+
 
 def _parse(output: str) -> dict[str, Any]:
     result = parse_toon(output)
@@ -183,7 +212,9 @@ _GUARD_EXPECTED: dict[str, frozenset[str]] = {
     'JS_RUNNERS': frozenset({'npm', 'npx', 'bun', 'pnpm', 'yarn'}),
     'JS_RUNNER_BUILD_VERBS': frozenset({'test', 'run', 'build'}),
     'PYTHON_DIRECT_RUNNERS': frozenset({'pytest', 'mypy', 'ruff'}),
-    'SHELL_WRAPPERS': frozenset({'command', 'env', 'sudo', 'timeout', 'nice', 'nohup', 'time', 'xargs'}),
+    'SHELL_WRAPPERS': frozenset(
+        {'command', 'env', 'sudo', 'timeout', 'nice', 'nohup', 'time', 'xargs', 'exec', 'stdbuf', 'setsid'}
+    ),
     'PYTHON_INTERPRETERS': frozenset({'python', 'python3'}),
     'R5_ALWAYS_REFUSE_FLAGS': frozenset({'-c', '-m'}),
 }
@@ -302,7 +333,7 @@ def test_guard_r4_exempts_executor_permit() -> None:
     source = _guard_plugin_source()
     assert 'isExecutorPermit' in source
     r1_at = source.index('hasChainingConstructor(command)')
-    permit_at = source.index('isExecutorPermit(command)) return')
+    permit_at = source.index('isExecutorPermit(command, root, workdir)) return')
     bare_at = source.index('BARE_BUILD_TOOLS.has')
     assert r1_at < permit_at < bare_at, 'hook order must be R1 gate, then executor permit, then R4 branches'
 
@@ -330,11 +361,11 @@ def test_guard_node_refuses_wrapper_and_versioned_interpreter(tmp_path_factory: 
 
 
 def test_guard_node_allows_documented_non_executor_invocations(tmp_path_factory: pytest.TempPathFactory) -> None:
-    """Done-when (b): the documented sync engine and an absolute executor call pass."""
+    """Done-when (b): the documented sync engine and the relative executor call pass."""
     harness = build_harness(tmp_path_factory.mktemp('guard-b'))
     commands = [
         'python3 marketplace/targets/sync.py --target opencode',
-        'python3 /abs/repo/.plan/execute-script.py a:b:c verb',
+        'python3 .plan/execute-script.py a:b:c verb',
     ]
     outcomes = harness.run([shell_event(command, agent=SUB_AGENT_AGENT) for command in commands])
     for command, outcome in zip(commands, outcomes, strict=True):
@@ -373,17 +404,15 @@ def test_guard_node_r6_refuses_raw_commit_in_finalize(tmp_path_factory: pytest.T
     """R6: a raw ``git commit`` is refused while the plan is in phase 6-finalize.
 
     The plan is named by the worktree path and its phase is read from the plan's
-    own ``status.json`` field ``current_phase``, resolved MAIN-ANCHORED — never an
-    alphabetically-first plan found by a directory scan.
+    own ``status.json`` field ``current_phase``, written by ``manage-status`` and
+    resolved MAIN-ANCHORED — never an alphabetically-first plan found by a
+    directory scan.
     """
     harness = build_harness(tmp_path_factory.mktemp('guard-r6'))
-    plan_dir = harness.plan_base / 'plans' / 'plan-a'
-    plan_dir.mkdir(parents=True, exist_ok=True)
-    status = plan_dir / 'status.json'
+    _write_managed_plan(harness.plan_base, 'plan-a', '6-finalize')
     worktree = harness.root / '.plan' / 'local' / 'worktrees' / 'plan-a'
     worktree.mkdir(parents=True, exist_ok=True)
 
-    status.write_text(json.dumps({'current_phase': '6-finalize'}), encoding='utf-8')
     blocked, message = harness.blocks(shell_event('git commit -m "fix: x"', workdir=str(worktree)))
     assert blocked, 'a raw git commit must be refused in 6-finalize'
     assert 'R6' in message, f'the refusal must be rule R6; message={message!r}'
@@ -394,9 +423,30 @@ def test_guard_node_r6_refuses_raw_commit_in_finalize(tmp_path_factory: pytest.T
     blocked_wrapped, _ = harness.blocks(shell_event('env git commit -m "fix: w"', workdir=str(worktree)))
     assert blocked_wrapped, 'a wrapper-prefixed raw commit must still be refused'
 
-    status.write_text(json.dumps({'current_phase': '5-execute'}), encoding='utf-8')
+    _set_managed_phase(harness.plan_base, 'plan-a', '5-execute')
     allowed, _ = harness.blocks(shell_event('git commit -m "fix: z"', workdir=str(worktree)))
     assert not allowed, 'a raw commit outside 6-finalize must pass through'
+
+
+def test_guard_node_r6_names_the_plan_from_the_dash_C_target(tmp_path_factory: pytest.TempPathFactory) -> None:
+    """Done-when (D2): the ``-C`` target names the plan, from the main checkout.
+
+    ``git -C .plan/local/worktrees/{plan} commit`` is the persona-mandated form
+    run from the main checkout. With NO shell ``workdir``, the plan must be named
+    from the ``-C`` value (resolved against the project root); the runbook-lane
+    worktree carries no plan record and passes.
+    """
+    harness = build_harness(tmp_path_factory.mktemp('guard-r6-dashc'))
+    _write_managed_plan(harness.plan_base, 'plan-a', '6-finalize')
+
+    blocked, message = harness.blocks(shell_event('git -C .plan/local/worktrees/plan-a commit -m "fix: x"'))
+    assert blocked, f'a raw commit into the named worktree must be refused; message={message!r}'
+    assert 'R6' in message, f'the refusal must be rule R6; message={message!r}'
+
+    lane_ok, lane_message = harness.blocks(
+        shell_event('git -C .plan/local/worktrees/lb-99-runbook-lane commit -m "fix: y"')
+    )
+    assert not lane_ok, f'a runbook-lane worktree with no plan record must pass; message={lane_message!r}'
 
 
 def test_guard_node_r6_does_not_judge_another_plans_status(tmp_path_factory: pytest.TempPathFactory) -> None:
@@ -406,10 +456,8 @@ def test_guard_node_r6_does_not_judge_another_plans_status(tmp_path_factory: pyt
     plan is in 5-execute. Resolving by directory scan would refuse this commit.
     """
     harness = build_harness(tmp_path_factory.mktemp('guard-r6-named'))
-    for plan_id, phase in (('aaa-other', '6-finalize'), ('plan-z', '5-execute')):
-        plan_dir = harness.plan_base / 'plans' / plan_id
-        plan_dir.mkdir(parents=True, exist_ok=True)
-        (plan_dir / 'status.json').write_text(json.dumps({'current_phase': phase}), encoding='utf-8')
+    _write_managed_plan(harness.plan_base, 'aaa-other', '6-finalize')
+    _write_managed_plan(harness.plan_base, 'plan-z', '5-execute')
 
     mine = harness.root / '.plan' / 'local' / 'worktrees' / 'plan-z'
     mine.mkdir(parents=True, exist_ok=True)
@@ -422,9 +470,8 @@ def test_guard_node_r6_reads_the_worktree_resident_record(tmp_path_factory: pyte
     """R6 reads the WORKTREE-RESIDENT plan record — the live one during phase 5+."""
     harness = build_harness(tmp_path_factory.mktemp('guard-r6-resident'))
     worktree = harness.root / '.plan' / 'local' / 'worktrees' / 'plan-a'
-    plan_dir = worktree / '.plan' / 'local' / 'plans' / 'plan-a'
-    plan_dir.mkdir(parents=True, exist_ok=True)
-    (plan_dir / 'status.json').write_text(json.dumps({'current_phase': '6-finalize'}), encoding='utf-8')
+    worktree.mkdir(parents=True, exist_ok=True)
+    _write_managed_plan(worktree / '.plan' / 'local', 'plan-a', '6-finalize')
 
     blocked, message = harness.blocks(shell_event('git commit -m "fix: x"', workdir=str(worktree)))
     assert blocked, f'the worktree-resident record must drive R6; message={message!r}'
@@ -509,3 +556,102 @@ def test_guard_node_refuses_extra_interpreter_shapes(command: str, tmp_path_fact
     blocked, message = harness.blocks(shell_event(command))
     assert blocked, f'{command!r} must be refused; message={message!r}'
     assert 'R5' in message, f'the refusal for {command!r} must be rule R5; message={message!r}'
+
+
+# =============================================================================
+# D1 — the deployed bundle-relative allow-list, and the consumer scope
+# =============================================================================
+
+#: The bundle-relative entry form a deployed steward script is admitted by.
+_FLAT_DEPLOYED_SKILL = 'plan-marshall-marshall-steward'
+_NESTED_DEPLOYED_VERSION = '1.0.0'
+
+
+def _deploy_flat(root: pathlib.Path, skill_dir_name: str, relative: str) -> pathlib.Path:
+    """Write a deployed FLAT skill tree under ``{root}/skills/``; return the script."""
+    script = root / 'skills' / skill_dir_name / relative
+    script.parent.mkdir(parents=True, exist_ok=True)
+    script.write_text('# deployed\n', encoding='utf-8')
+    return script
+
+
+def test_guard_node_admits_a_flat_deployed_bundle_script(tmp_path_factory: pytest.TempPathFactory) -> None:
+    """Done-when (D1): the guard admits a steward script at its FLAT deployed path."""
+    deployed = tmp_path_factory.mktemp('opencode-flat-root')
+    script = _deploy_flat(deployed, _FLAT_DEPLOYED_SKILL, 'scripts/determine_mode.py')
+    harness = build_harness(tmp_path_factory.mktemp('guard-d1-flat'), extra_env={'OPENCODE_CONFIG_DIR': str(deployed)})
+
+    blocked, message = harness.blocks(shell_event(f'python3 {script} mode'))
+    assert not blocked, f'the deployed flat script must be admitted; message={message!r}'
+
+
+def test_guard_node_admits_a_nested_cache_bundle_script(tmp_path_factory: pytest.TempPathFactory) -> None:
+    """Done-when (D1): the guard admits the cache-path generator (nested layout)."""
+    home = tmp_path_factory.mktemp('home')
+    script = (
+        home
+        / '.claude'
+        / 'plugins'
+        / 'cache'
+        / 'plan-marshall'
+        / 'plan-marshall'
+        / _NESTED_DEPLOYED_VERSION
+        / 'skills'
+        / 'tools-script-executor'
+        / 'scripts'
+        / 'generate_executor.py'
+    )
+    script.parent.mkdir(parents=True, exist_ok=True)
+    script.write_text('# deployed\n', encoding='utf-8')
+    harness = build_harness(
+        tmp_path_factory.mktemp('guard-d1-nested'),
+        extra_env={'HOME': str(home), 'XDG_CONFIG_HOME': str(home / '.config')},
+    )
+
+    blocked, message = harness.blocks(shell_event(f'python3 {script} generate'))
+    assert not blocked, f'the cache-path generator must be admitted; message={message!r}'
+
+
+def test_guard_node_refuses_a_non_deployed_same_named_script(tmp_path_factory: pytest.TempPathFactory) -> None:
+    """Done-when (D1): a same-named script under a NON-deployed directory is refused."""
+    deployed = tmp_path_factory.mktemp('opencode-flat-root-2')
+    _deploy_flat(deployed, _FLAT_DEPLOYED_SKILL, 'scripts/determine_mode.py')
+    harness = build_harness(
+        tmp_path_factory.mktemp('guard-d1-nondeployed'), extra_env={'OPENCODE_CONFIG_DIR': str(deployed)}
+    )
+    elsewhere = tmp_path_factory.mktemp('not-deployed')
+    impostor = elsewhere / 'skills' / 'marshall-steward' / 'scripts' / 'determine_mode.py'
+    impostor.parent.mkdir(parents=True, exist_ok=True)
+    impostor.write_text('# impostor\n', encoding='utf-8')
+
+    blocked, message = harness.blocks(shell_event(f'python3 {impostor} mode'))
+    assert blocked, f'a non-deployed same-named script must be refused; message={message!r}'
+    assert 'R5' in message, f'the refusal must be rule R5; message={message!r}'
+
+
+def test_guard_node_consumer_out_of_context_allows_ordinary_python(tmp_path_factory: pytest.TempPathFactory) -> None:
+    """Done-when (D1): a consumer repository outside a plan context is not refused.
+
+    The scratch root carries no repository marker (no allow-list file), so R5 does
+    not bind and the consumer's ordinary Python work passes.
+    """
+    harness = build_harness(tmp_path_factory.mktemp('guard-consumer'), include_allowlist=False)
+    for command in ('python3 -m pip install x', 'python3 x.py', 'python3 -m venv .venv'):
+        blocked, message = harness.blocks(shell_event(command))
+        assert not blocked, f'a consumer must be able to run {command!r}; message={message!r}'
+
+
+def test_guard_node_consumer_inside_a_plan_worktree_still_refuses(tmp_path_factory: pytest.TempPathFactory) -> None:
+    """Done-when (D1): the same consumer command IS refused inside a plan worktree."""
+    harness = build_harness(tmp_path_factory.mktemp('guard-consumer-in'), include_allowlist=False)
+    blocked, message = harness.blocks(shell_event('python3 -m pip install x', workdir=WORKTREE_WORKDIR))
+    assert blocked, f'inside a plan worktree the consumer command must be refused; message={message!r}'
+    assert 'R5' in message, f'the refusal must be rule R5; message={message!r}'
+
+
+def test_guard_node_this_repository_binds_every_session(tmp_path_factory: pytest.TempPathFactory) -> None:
+    """Done-when (D1): in THIS repository R5 binds even outside a plan context."""
+    harness = build_harness(tmp_path_factory.mktemp('guard-this-repo'))
+    blocked, message = harness.blocks(shell_event('python3 x.py'))
+    assert blocked, f'this repository must refuse python3 x.py in a root session; message={message!r}'
+    assert 'R5' in message

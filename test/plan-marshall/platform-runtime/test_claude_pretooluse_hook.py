@@ -1097,10 +1097,25 @@ def test_r5_refuses_an_allowlist_basename_outside_the_repository() -> None:
     assert hook.evaluate(payload) == hook._R5_REASON
 
 
-def test_r5_allows_absolute_executor() -> None:
-    """An absolute executor path is the executor permit — R5 must allow it."""
-    command = 'python3 /abs/repo/.plan/execute-script.py a:b:c verb'
+def test_r5_allows_relative_executor() -> None:
+    """The documented RELATIVE executor form is the executor permit — R5 allows it."""
+    command = 'python3 .plan/execute-script.py a:b:c verb'
     assert hook.evaluate(_signal2_payload('Bash', _bash(command))) is None
+
+
+def test_r5_allows_absolute_executor_under_the_project_root(tmp_path, monkeypatch) -> None:
+    """An ABSOLUTE executor under the project root is admitted (D3 exact permit)."""
+    monkeypatch.setenv('CLAUDE_PROJECT_DIR', str(tmp_path))
+    command = f'python3 {tmp_path}/.plan/execute-script.py a:b:c verb'
+    payload = {'cwd': str(tmp_path), 'tool_name': 'Bash', 'tool_input': _bash(command)}
+    assert hook.evaluate(payload) is None
+
+
+def test_r5_refuses_absolute_executor_outside_the_project_root(monkeypatch) -> None:
+    """``python3 /tmp/x/.plan/execute-script.py`` is refused — never a suffix match (D3)."""
+    monkeypatch.delenv('CLAUDE_PROJECT_DIR', raising=False)
+    command = 'python3 /tmp/x/.plan/execute-script.py a:b:c verb'
+    assert hook.evaluate(_signal2_payload('Bash', _bash(command))) == hook._R5_REASON
 
 
 def test_r5_absent_allowlist_falls_back_to_base_table(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1161,19 +1176,42 @@ def test_hook_writes_no_log_without_a_cwd() -> None:
 # R6 — raw finalize commit (D2)
 # =============================================================================
 
+_MANAGE_STATUS = get_script_path('plan-marshall', 'manage-status', 'manage-status.py')
+_PHASES = '1-init,2-refine,3-outline,4-plan,5-execute,6-finalize'
+
+
+def _write_managed_plan(base: Path, plan_id: str, phase: str) -> None:
+    """Create a REAL plan under *base* whose status is written by ``manage-status``.
+
+    R6 must not be tested against a hand-written ``status.json``: the field is
+    ``current_phase`` (never ``phase``), and only the sanctioned writer produces it.
+    """
+    env = {'PLAN_BASE_DIR': str(base), 'PLAN_DIR_NAME': '.plan'}
+    created = run_script(
+        _MANAGE_STATUS, 'create', '--plan-id', plan_id, '--title', 't', '--phases', _PHASES, env_overrides=env
+    )
+    assert created.returncode == 0, f'manage-status create failed: {created.stdout}{created.stderr}'
+    _set_managed_phase(base, plan_id, phase)
+
+
+def _set_managed_phase(base: Path, plan_id: str, phase: str) -> None:
+    """Move an EXISTING managed plan to *phase* through ``manage-status set-phase``."""
+    env = {'PLAN_BASE_DIR': str(base), 'PLAN_DIR_NAME': '.plan'}
+    shifted = run_script(_MANAGE_STATUS, 'set-phase', '--plan-id', plan_id, '--phase', phase, env_overrides=env)
+    assert shifted.returncode == 0, f'manage-status set-phase failed: {shifted.stdout}{shifted.stderr}'
+
 
 def test_r6_refuses_raw_commit_in_finalize(tmp_path, monkeypatch) -> None:
     """A raw ``git commit`` is refused while the plan is in phase 6-finalize.
 
     The plan is named by the worktree path (``plan-a``) and its phase is read from
-    that plan's own ``status.json`` field ``current_phase``, resolved
-    MAIN-ANCHORED (here, the ``PLAN_BASE_DIR`` the plan state lives under).
+    that plan's own ``status.json`` field ``current_phase``, written by
+    ``manage-status`` and resolved MAIN-ANCHORED (here, the ``PLAN_BASE_DIR`` the
+    plan state lives under).
     """
     base = tmp_path / '.plan' / 'local'
-    plan_dir = base / 'plans' / 'plan-a'
-    plan_dir.mkdir(parents=True)
-    status = plan_dir / 'status.json'
-    status.write_text(json.dumps({'current_phase': '6-finalize'}), encoding='utf-8')
+    base.mkdir(parents=True)
+    _write_managed_plan(base, 'plan-a', '6-finalize')
     monkeypatch.setenv('PLAN_BASE_DIR', str(base))
 
     worktree = base / 'worktrees' / 'plan-a'
@@ -1194,16 +1232,42 @@ def test_r6_refuses_raw_commit_in_finalize(tmp_path, monkeypatch) -> None:
     assert hook.evaluate(payload_wrapped) == hook._R6_REASON
 
     # Outside 6-finalize the same raw commit passes.
-    status.write_text(json.dumps({'current_phase': '5-execute'}), encoding='utf-8')
+    _set_managed_phase(base, 'plan-a', '5-execute')
     assert hook.evaluate(payload) is None
+
+
+def test_r6_names_the_plan_from_the_dash_C_target(tmp_path, monkeypatch) -> None:
+    """Done-when (D2): the ``-C`` target names the plan, from the main checkout.
+
+    ``git -C .plan/local/worktrees/{plan} commit`` is refused with NO gate: R6 is
+    not context-gated, so a main-context session is judged by the worktree's own
+    plan. A runbook-lane worktree with no plan record passes.
+    """
+    base = tmp_path / '.plan' / 'local'
+    base.mkdir(parents=True)
+    _write_managed_plan(base, 'plan-a', '6-finalize')
+    monkeypatch.setenv('PLAN_BASE_DIR', str(base))
+
+    payload = {
+        'cwd': str(tmp_path),
+        'tool_name': 'Bash',
+        'tool_input': _bash('git -C .plan/local/worktrees/plan-a commit -m "fix: x"'),
+    }
+    assert hook.evaluate(payload) == hook._R6_REASON
+
+    lane = {
+        'cwd': str(tmp_path),
+        'tool_name': 'Bash',
+        'tool_input': _bash('git -C .plan/local/worktrees/lb-99-runbook-lane commit -m "fix: y"'),
+    }
+    assert hook.evaluate(lane) is None
 
 
 def test_r6_ignores_non_commit_git_subcommands(tmp_path, monkeypatch) -> None:
     """Only ``git commit`` is refused — other git subcommands pass through."""
     base = tmp_path / '.plan' / 'local'
-    plan_dir = base / 'plans' / 'plan-a'
-    plan_dir.mkdir(parents=True)
-    (plan_dir / 'status.json').write_text(json.dumps({'current_phase': '6-finalize'}), encoding='utf-8')
+    base.mkdir(parents=True)
+    _write_managed_plan(base, 'plan-a', '6-finalize')
     monkeypatch.setenv('PLAN_BASE_DIR', str(base))
     worktree = base / 'worktrees' / 'plan-a'
     worktree.mkdir(parents=True)
@@ -1224,10 +1288,9 @@ def test_r6_needs_plan_state(tmp_path) -> None:
 def test_r6_judges_the_named_plan_not_the_first_found(tmp_path, monkeypatch) -> None:
     """R6 reads the phase of the worktree NAMED plan, never the first plan found."""
     base = tmp_path / '.plan' / 'local'
-    for plan_id, phase in (('aaa-other', '6-finalize'), ('plan-z', '5-execute')):
-        plan_dir = base / 'plans' / plan_id
-        plan_dir.mkdir(parents=True)
-        (plan_dir / 'status.json').write_text(json.dumps({'current_phase': phase}), encoding='utf-8')
+    base.mkdir(parents=True)
+    _write_managed_plan(base, 'aaa-other', '6-finalize')
+    _write_managed_plan(base, 'plan-z', '5-execute')
     monkeypatch.setenv('PLAN_BASE_DIR', str(base))
 
     mine = base / 'worktrees' / 'plan-z'
@@ -1239,9 +1302,8 @@ def test_r6_judges_the_named_plan_not_the_first_found(tmp_path, monkeypatch) -> 
 def test_r6_reads_the_worktree_resident_record(tmp_path) -> None:
     """R6 reads the WORKTREE-RESIDENT record — the live one during phase 5+."""
     worktree = tmp_path / '.plan' / 'local' / 'worktrees' / 'plan-a'
-    plan_dir = worktree / '.plan' / 'local' / 'plans' / 'plan-a'
-    plan_dir.mkdir(parents=True)
-    (plan_dir / 'status.json').write_text(json.dumps({'current_phase': '6-finalize'}), encoding='utf-8')
+    worktree.mkdir(parents=True)
+    _write_managed_plan(worktree / '.plan' / 'local', 'plan-a', '6-finalize')
 
     payload = {'cwd': str(worktree), 'tool_name': 'Bash', 'tool_input': _bash('git commit -m "fix: x"')}
     assert hook.evaluate(payload) == hook._R6_REASON
@@ -1250,9 +1312,8 @@ def test_r6_reads_the_worktree_resident_record(tmp_path) -> None:
 def test_r6_reads_the_resident_record_from_a_worktree_subdirectory(tmp_path) -> None:
     """A cwd in a SUBDIRECTORY of the worktree still resolves the resident record."""
     worktree = tmp_path / '.plan' / 'local' / 'worktrees' / 'plan-a'
-    plan_dir = worktree / '.plan' / 'local' / 'plans' / 'plan-a'
-    plan_dir.mkdir(parents=True)
-    (plan_dir / 'status.json').write_text(json.dumps({'current_phase': '6-finalize'}), encoding='utf-8')
+    worktree.mkdir(parents=True)
+    _write_managed_plan(worktree / '.plan' / 'local', 'plan-a', '6-finalize')
     subdir = worktree / 'src' / 'deep'
     subdir.mkdir(parents=True)
 
@@ -1337,3 +1398,89 @@ def test_r5_refuses_suffix_of_repo_relative_path_outside_repo() -> None:
 def test_r5_refuses_extra_interpreter_shapes_out_of_context(command: str) -> None:
     """R5 refuses the extra interpreter shapes in a root session as well."""
     assert hook.evaluate(_root_payload(command, _MAIN_CHECKOUT_CWD)) == hook._R5_REASON
+
+
+# =============================================================================
+# D1 — the deployed bundle-relative admission and the consumer scope (hook)
+# =============================================================================
+
+
+def _flat_deployed_script(home: Path, skill_dir: str, relative: str) -> Path:
+    """Write a deployed FLAT skill tree under ``{home}/skills``; return the script."""
+    script = home / 'skills' / skill_dir / relative
+    script.parent.mkdir(parents=True, exist_ok=True)
+    script.write_text('# deployed\n', encoding='utf-8')
+    return script
+
+
+def test_r5_admits_a_flat_deployed_bundle_script(tmp_path, monkeypatch) -> None:
+    """Done-when (D1): the hook admits a steward script at its deployed flat path."""
+    script = _flat_deployed_script(tmp_path, 'plan-marshall-marshall-steward', 'scripts/determine_mode.py')
+    monkeypatch.setenv('OPENCODE_CONFIG_DIR', str(tmp_path))
+    monkeypatch.setenv('HOME', str(tmp_path))
+    command = f'python3 {script} mode'
+    assert hook.evaluate(_root_payload(command, _MAIN_CHECKOUT_CWD)) is None
+
+
+def test_r5_admits_a_nested_cache_bundle_script(tmp_path, monkeypatch) -> None:
+    """Done-when (D1): the hook admits the cache-path generator (nested layout)."""
+    script = (
+        tmp_path
+        / '.claude'
+        / 'plugins'
+        / 'cache'
+        / 'plan-marshall'
+        / 'plan-marshall'
+        / '1.0.0'
+        / 'skills'
+        / 'tools-script-executor'
+        / 'scripts'
+        / 'generate_executor.py'
+    )
+    script.parent.mkdir(parents=True, exist_ok=True)
+    script.write_text('# deployed\n', encoding='utf-8')
+    monkeypatch.setenv('HOME', str(tmp_path))
+    monkeypatch.setenv('XDG_CONFIG_HOME', str(tmp_path / '.config'))
+    command = f'python3 {script} generate'
+    assert hook.evaluate(_root_payload(command, _MAIN_CHECKOUT_CWD)) is None
+
+
+def test_r5_refuses_a_non_deployed_same_named_script(tmp_path, monkeypatch) -> None:
+    """Done-when (D1): a same-named script under a NON-deployed directory is refused."""
+    _flat_deployed_script(tmp_path, 'plan-marshall-marshall-steward', 'scripts/determine_mode.py')
+    monkeypatch.setenv('OPENCODE_CONFIG_DIR', str(tmp_path))
+    monkeypatch.setenv('HOME', str(tmp_path))
+    impostor = tmp_path / 'not-deployed' / 'skills' / 'marshall-steward' / 'scripts' / 'determine_mode.py'
+    impostor.parent.mkdir(parents=True, exist_ok=True)
+    impostor.write_text('# impostor\n', encoding='utf-8')
+    command = f'python3 {impostor} mode'
+    assert hook.evaluate(_root_payload(command, _MAIN_CHECKOUT_CWD)) == hook._R5_REASON
+
+
+def test_r5_consumer_out_of_context_admits_ordinary_python(tmp_path, monkeypatch) -> None:
+    """Done-when (D1): a consumer repository outside a plan context is not refused.
+
+    The repository marker is absent from BOTH the project root and the hook
+    location, so R5 does not bind. The consumer root is a SYNTHETIC path — the
+    pytest basetemp lives inside the runbook-lane worktree, whose path carries
+    the plan-worktree segment and would otherwise satisfy Signal 2.
+    """
+    consumer = '/tmp/pm-consumer-fixture'
+    monkeypatch.setattr(hook, '_repo_root_from_hook_location', lambda: None)
+    monkeypatch.setenv('CLAUDE_PROJECT_DIR', consumer)
+    for command in ('python3 -m pip install x', 'python3 x.py', 'python3 -m venv .venv'):
+        payload = {'cwd': consumer, 'tool_name': 'Bash', 'tool_input': _bash(command)}
+        assert hook.evaluate(payload) is None, command
+
+
+def test_r5_consumer_inside_a_plan_worktree_still_refuses(tmp_path, monkeypatch) -> None:
+    """Done-when (D1): the same consumer command IS refused inside a plan worktree."""
+    consumer = '/tmp/pm-consumer-fixture'
+    monkeypatch.setattr(hook, '_repo_root_from_hook_location', lambda: None)
+    monkeypatch.setenv('CLAUDE_PROJECT_DIR', consumer)
+    payload = {
+        'cwd': f'{consumer}/{gate.WORKTREE_PATH_SEGMENT}/my-plan',
+        'tool_name': 'Bash',
+        'tool_input': _bash('python3 -m pip install x'),
+    }
+    assert hook.evaluate(payload) == hook._R5_REASON

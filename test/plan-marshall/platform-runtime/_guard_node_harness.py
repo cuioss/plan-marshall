@@ -83,6 +83,18 @@ def allowlist_entries() -> list[str]:
     return []
 
 
+def allowlist_bundle_entries() -> dict[str, str]:
+    """Return the BUNDLE-RELATIVE entries of the real shared allow-list."""
+    path = guard_allowlist_path()
+    if not path.is_file():
+        return {}
+    data = json.loads(path.read_text(encoding='utf-8'))
+    entries = data.get('bundle_entries')
+    if isinstance(entries, dict):
+        return {str(key): str(value) for key, value in entries.items()}
+    return {}
+
+
 def require_node() -> str:
     """Return the ``node`` executable, or fail loudly when it is unavailable.
 
@@ -145,19 +157,23 @@ process.stdout.write(JSON.stringify(results))
 class GuardHarness:
     """Runs the guard plugin against one scratch project root."""
 
-    def __init__(self, root: Path, plan_base: Path) -> None:
+    def __init__(self, root: Path, plan_base: Path, extra_env: dict[str, str] | None = None) -> None:
         self.root = root
         self.guard_path = root / 'guard.js'
         #: The ``.plan/local`` base the guard's R6 main-anchored plan resolution
         #: anchors on (passed as ``PLAN_BASE_DIR``), mirroring the sanctioned
         #: resolver's override precedence.
         self.plan_base = plan_base
+        #: Extra environment for the node child — used to point ``HOME`` /
+        #: ``OPENCODE_CONFIG_DIR`` at a fixture deployed tree so the guard's
+        #: deployed bundle-relative admission can be exercised.
+        self.extra_env = extra_env or {}
 
     def run(self, events: list[dict[str, Any]]) -> list[GuardOutcome]:
         """Invoke the registered hook once per event; return one outcome each."""
         node = require_node()
         payload = json.dumps({'root': str(self.root), 'guardPath': str(self.guard_path), 'events': events})
-        env = {**os.environ, 'PLAN_BASE_DIR': str(self.plan_base)}
+        env = {**os.environ, 'PLAN_BASE_DIR': str(self.plan_base), **self.extra_env}
         proc = subprocess.run(
             [node, str(self.root / 'driver.mjs')],
             input=payload,
@@ -205,6 +221,7 @@ def build_harness(
     *,
     entries: list[str] | None = None,
     include_allowlist: bool = True,
+    extra_env: dict[str, str] | None = None,
 ) -> GuardHarness:
     """Materialise a scratch ESM project around a copy of the real plugin.
 
@@ -215,7 +232,11 @@ def build_harness(
         entries: Allow-list entry keys to write. Defaults to the REAL shared
             allow-list's entries, so the guard resolves live content.
         include_allowlist: When False, no allow-list file is written, so the
-            guard falls back to its built-in base table (the absent-file path).
+            guard falls back to its built-in base table (the absent-file path)
+            and the scratch root carries no repository marker (R5 does not bind
+            out of a plan context).
+        extra_env: Extra environment for the node child (e.g. ``HOME`` or
+            ``OPENCODE_CONFIG_DIR`` pointing at a fixture deployed tree).
     """
     scratch = _outside_any_worktree(scratch)
     _write(scratch / 'package.json', json.dumps({'type': 'module'}))
@@ -229,11 +250,21 @@ def build_harness(
     _write(scratch / 'driver.mjs', _DRIVER)
     if include_allowlist:
         resolved = allowlist_entries() if entries is None else entries
+        bundle_entries = allowlist_bundle_entries()
         target = scratch / _ALLOWLIST_REL
-        _write(target, json.dumps({'schema': 'r5-allowlist/1', 'entries': dict.fromkeys(resolved, 'test')}))
+        _write(
+            target,
+            json.dumps(
+                {
+                    'schema': 'r5-allowlist/1',
+                    'entries': dict.fromkeys(resolved, 'test'),
+                    'bundle_entries': bundle_entries,
+                }
+            ),
+        )
     plan_base = scratch / '.plan' / 'local'
     plan_base.mkdir(parents=True, exist_ok=True)
-    return GuardHarness(scratch, plan_base)
+    return GuardHarness(scratch, plan_base, extra_env)
 
 
 def shell_event(

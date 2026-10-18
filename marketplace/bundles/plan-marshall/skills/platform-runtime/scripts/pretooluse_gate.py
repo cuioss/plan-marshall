@@ -18,9 +18,10 @@ It owns three things and nothing else:
    - ``tool_name(payload)`` / ``tool_input(payload)`` — the readers the
      enforcement matchers consume.
 3. ``context_gate(payload)`` — the ``Signal1 OR Signal2`` predicate, fail-open
-   (returns ``False`` when neither signal fires, so the GATED rules — R1-R4 and
-   R6 — apply no enforcement outside a plan-marshall plan context; R5 is not
-   gated and runs in every session).
+   (returns ``False`` when neither signal fires, so the GATED rules — R1-R4 —
+   apply no enforcement outside a plan-marshall plan context). R5 is not covered
+   by this predicate alone — it also binds in every session of the plan-marshall
+   source repository — and R6 is not context-gated at all.
 
 The field-name constants below are the single best-guess for the sub-agent
 identity field, the cwd field, and the tool-name/tool-input fields. The
@@ -247,8 +248,10 @@ def context_gate(payload: dict[str, Any]) -> bool:
 
     The gate is ``True`` when either signal fires (so an absent Signal-1 field
     still lets Signal 2 satisfy the gate, and vice versa) and ``False`` when
-    neither fires — fail-open, so the GATED rules (R1-R4 and R6) apply no
-    enforcement outside a plan context. R5 is not gated by this predicate.
+    neither fires — fail-open, so the GATED rules (R1-R4) apply no
+    enforcement outside a plan context. R5 is not covered by this predicate
+    alone — it also binds in every session of the plan-marshall source
+    repository — and R6 is not context-gated at all.
 
     Args:
         payload: The parsed PreToolUse payload.

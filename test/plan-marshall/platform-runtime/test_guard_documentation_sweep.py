@@ -21,12 +21,13 @@ Population and dispositions
   declared, and both floors below are asserted so an empty scan fails rather
   than reading as clean.
 * **Allowed.** Neither guard refuses the line — the healthy case.
-* **Template.** The line carries usage notation that cannot run verbatim — a
-  ``{placeholder}`` second token, a shell-variable second token
-  (``"$DOCTOR_SCRIPT"``), or an optional-argument bracket
-  (``[--scope global|project|all]``).  Such a line is reported apart and never
-  folded into the pass: the allow-list covers the SUBSTITUTED form, not the
-  notation.
+* **Resolved.** A line whose script token is a brace-delimited placeholder
+  (``{GENERATE_EXECUTOR}``) is not skipped: the placeholder is RESOLVED to the
+  documented path it stands for and the resolved command is checked. An unmapped
+  placeholder is an OFFENDER, so a placeholder can never dodge the sweep.
+* **Template.** A line whose script token is a brace-less shell variable
+  (``"$DOCTOR_SCRIPT"``) is ordinary usage notation the reader substitutes; it is
+  reported apart and never folded into the pass.
 * **Excluded.** A curated ``(path, line-fragment, reason)`` entry that still
   matches a live candidate site.  An entry matching nothing is STALE and fails
   the test, so an exclusion cannot outlive the line it excused.
@@ -85,14 +86,25 @@ _ROOT_FILES = ('AGENTS.md', 'CLAUDE.md')
 _WRAPPER_WORDS = frozenset({'command', 'env', 'sudo', 'timeout', 'nice', 'nohup', 'time', 'xargs', 'exec', 'setsid'})
 
 #: ``(path, fragment, reason)`` exclusion entries. Each must still match a live
-#: candidate site, or it is stale and fails the test. Kept to the one site the
-#: scan proved cannot be dispositioned as a template: a prose fence listing
-#: illustrative relative-path spellings, not a runnable repository invocation.
+#: candidate site, or it is stale and fails the test. Kept to sites the scan
+#: proved cannot be dispositioned as a resolved path: illustrative relative-path
+#: spellings, an anti-pattern, and a generic placeholder — none of them a
+#: prescribed command with a real script path.
 _EXCLUSIONS: tuple[tuple[str, str, str], ...] = (
     (
         'marketplace/bundles/pm-plugin-development/skills/plugin-architecture/references/core-principles.md',
         'python scripts/processor.py input.txt',
         'illustrative relative-path example in a prose fence, not a runnable repository invocation',
+    ),
+    (
+        'marketplace/bundles/plan-marshall/skills/tools-file-ops/SKILL.md',
+        'python3 {script} --lesson-file {lesson.file}',
+        'anti-pattern illustration inside a python fence, explicitly labelled BAD — not a prescribed command',
+    ),
+    (
+        'marketplace/bundles/plan-marshall/skills/tools-script-executor/SKILL.md',
+        'python3 "{SCRIPT_FILE}" <args>',
+        'generic placeholder for an arbitrary resolved script path, not a resolved-path template',
     ),
 )
 
@@ -108,14 +120,37 @@ _MIN_CANDIDATES = 15
 #: corpus instead.
 _LOWER_INTERPRETER_RE = re.compile(r'^python(\d+(?:\.\d+)*)?$')
 
-#: Template notation on a documented line — a ``{placeholder}`` second token, a
-#: shell-variable second token (``"$DOCTOR_SCRIPT"``), or an optional-argument
-#: bracket (``[--scope global|project|all]``). A line carrying one is usage
-#: notation that is not runnable verbatim, so a guard refusal of it reports the
-#: notation rather than a defect.
-_SECOND_TOKEN_TEMPLATE_RE = re.compile(
-    r'(?:\$?\{[^{}]*\})|(?:\$[A-Za-z_][A-Za-z0-9_]*)|(?:\$\{[A-Za-z_][A-Za-z0-9_]*\})'
-)
+#: The documented RESOLVED-PATH placeholders the corpus uses as a script token,
+#: mapped to the repository-relative path each stands for. A documented line
+#: whose script token is one of these is RESOLVED to the mapped path and CHECKED
+#: through both guards — a placeholder is never a way to dodge the sweep. The
+#: mapped paths are the admittable forms (the allow-listed scripts), so a
+#: resolved line passes exactly when the real command would.
+_RESOLVED_PATH_TEMPLATES: dict[str, str] = {
+    'GENERATE_EXECUTOR': (
+        'marketplace/bundles/plan-marshall/skills/tools-script-executor/scripts/generate_executor.py'
+    ),
+    'resolved_generate_executor_path': (
+        'marketplace/bundles/plan-marshall/skills/tools-script-executor/scripts/generate_executor.py'
+    ),
+    'DETERMINE_MODE': 'marketplace/bundles/plan-marshall/skills/marshall-steward/scripts/determine_mode.py',
+    'GITIGNORE_SETUP': 'marketplace/bundles/plan-marshall/skills/marshall-steward/scripts/gitignore_setup.py',
+    'PERMISSION_FIX': 'marketplace/bundles/plan-marshall/skills/tools-permission-fix/scripts/permission_fix.py',
+    'BOOTSTRAP': 'marketplace/bundles/plan-marshall/skills/marshall-steward/scripts/bootstrap_plugin.py',
+    'BOOTSTRAP_PLUGIN': 'marketplace/bundles/plan-marshall/skills/marshall-steward/scripts/bootstrap_plugin.py',
+}
+
+#: A brace-delimited path placeholder as the WHOLE script token: ``{NAME}`` or
+#: ``${NAME}``. A brace-less ``$NAME`` is ordinary shell-variable usage (the
+#: reader substitutes their own value), not a documented resolved path, so it
+#: stays a TEMPLATE rather than an unresolved offender.
+_BRACE_PLACEHOLDER_RE = re.compile(r'\$?\{([A-Za-z_][A-Za-z0-9_]*)\}')
+_SHELL_VARIABLE_RE = re.compile(r'\$[A-Za-z_][A-Za-z0-9_]*')
+
+#: Optional-argument usage notation (``[--scope global|project|all]``). The ``|``
+#: inside the bracket is shell pipe to R1, so such a line is usage notation, not
+#: a runnable command — reported apart, never folded into the pass. It is NOT a
+#: resolved-path template: no path is hidden behind it.
 _OPTIONAL_NOTATION_RE = re.compile(r'\[\s*-')
 
 
@@ -208,12 +243,53 @@ def collect_candidates() -> tuple[list[Candidate], int]:
     return candidates, fenced_lines
 
 
-def _is_template(command: str) -> bool:
+def _script_placeholder_name(command: str) -> str | None:
+    """Return the placeholder NAME a documented line uses as its script token.
+
+    The script token is the second shell-lexical token after R5 wrapper stripping
+    (the hook's own reader, so the two agree on what the script is). ``None`` when
+    that token is absent or is not a brace-delimited placeholder.
+    """
     tokens = _HOOK._r5_stripped_tokens(command)
-    second = _unquote(tokens[1].strip()) if len(tokens) >= 2 else ''
-    if second and _SECOND_TOKEN_TEMPLATE_RE.fullmatch(second):
-        return True
-    return _OPTIONAL_NOTATION_RE.search(command) is not None
+    if len(tokens) < 2:
+        return None
+    token = _unquote(tokens[1].strip())
+    match = _BRACE_PLACEHOLDER_RE.fullmatch(token)
+    return match.group(1) if match else None
+
+
+def _is_shell_variable_template(command: str) -> bool:
+    """Whether the script token is a brace-less ``$NAME`` shell variable.
+
+    Such a line is ordinary shell-variable usage the reader substitutes, not a
+    documented resolved path, so it stays a TEMPLATE rather than an offender.
+    """
+    tokens = _HOOK._r5_stripped_tokens(command)
+    if len(tokens) < 2:
+        return False
+    return _SHELL_VARIABLE_RE.fullmatch(_unquote(tokens[1].strip())) is not None
+
+
+def _resolve_script_template(command: str) -> tuple[str, str | None]:
+    """Return ``(command_to_check, unresolved_name)`` for a documented line.
+
+    When the script token is a brace-delimited placeholder, it is substituted
+    with the documented resolved path and the RESOLVED command is returned for
+    checking. An UNMAPPED placeholder returns the original command with its name
+    as ``unresolved_name`` — the caller reports it as an unresolved template,
+    which FAILS, so a placeholder can never dodge the check. A line with no
+    brace placeholder is returned unchanged with ``None``.
+    """
+    name = _script_placeholder_name(command)
+    if name is None:
+        return command, None
+    mapped = _RESOLVED_PATH_TEMPLATES.get(name)
+    if mapped is None:
+        return command, name
+    for pattern in (re.compile(r'\$\{' + re.escape(name) + r'\}'), re.compile(r'\{' + re.escape(name) + r'\}')):
+        if pattern.search(command):
+            return pattern.sub(mapped, command, count=1), None
+    return command, name
 
 
 def _exclusion_for(candidate: Candidate) -> str | None:
@@ -244,7 +320,8 @@ def test_no_documented_invocation_is_refused(tmp_path_factory: pytest.TempPathFa
 
     scratch = tmp_path_factory.mktemp('guard-sweep')
     harness = build_harness(scratch)
-    events = [shell_event(candidate.command, agent=SUB_AGENT_AGENT) for candidate in candidates]
+    checked = [_resolve_script_template(candidate.command) for candidate in candidates]
+    events = [shell_event(command, agent=SUB_AGENT_AGENT) for command, _unresolved in checked]
     outcomes = harness.run(events)
 
     offenders: list[str] = []
@@ -252,8 +329,8 @@ def test_no_documented_invocation_is_refused(tmp_path_factory: pytest.TempPathFa
     excused: list[str] = []
     matched_exclusions: set[int] = set()
 
-    for candidate, outcome in zip(candidates, outcomes, strict=True):
-        payload = {'agent_type': SUB_AGENT_AGENT, 'tool_name': 'Bash', 'tool_input': {'command': candidate.command}}
+    for candidate, (check_command, unresolved), outcome in zip(candidates, checked, outcomes, strict=True):
+        payload = {'agent_type': SUB_AGENT_AGENT, 'tool_name': 'Bash', 'tool_input': {'command': check_command}}
         hook_reason = _HOOK.evaluate(payload)
         refused = outcome.blocked or hook_reason is not None
         if not refused:
@@ -267,7 +344,13 @@ def test_no_documented_invocation_is_refused(tmp_path_factory: pytest.TempPathFa
                 if path == candidate.path and fragment in candidate.command
             )
             continue
-        if _is_template(candidate.command):
+        if unresolved is not None:
+            offenders.append(
+                f'{candidate.site}: {candidate.command}\n    unresolved resolved-path template '
+                f'"{{{unresolved}}}" — map it to its documented path or drop the placeholder'
+            )
+            continue
+        if _is_shell_variable_template(check_command) or _OPTIONAL_NOTATION_RE.search(check_command):
             templates.append(f'{candidate.site}: {candidate.command}')
             continue
         guards = []

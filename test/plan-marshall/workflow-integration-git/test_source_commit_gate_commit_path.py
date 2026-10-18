@@ -239,6 +239,7 @@ def test_plan_only_commit_passes(tmp_path: Path) -> None:
     assert result['status'] == 'success', f'{result!r}'
     assert result['reason'] == 'plan_only'
     assert code == 0
+    assert _commit_count(tmp_path) == 2, 'the plan-only commit must have been created'
 
 
 def test_non_finalize_plan_commit_passes_through_the_verb(tmp_path: Path) -> None:

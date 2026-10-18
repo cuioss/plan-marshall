@@ -520,21 +520,20 @@ ignored whenever a target is declared (`--target`, a platform env signal, or
 
 ```bash
 # Option A — CLI flag (preferred, single-call discipline)
-python3 "{GENERATE_EXECUTOR}" generate --marketplace --marketplace-root /abs/path/to/checkout
-python3 "{GENERATE_EXECUTOR}" drift    --marketplace --marketplace-root /abs/path/to/checkout
+python3 marketplace/bundles/plan-marshall/skills/tools-script-executor/scripts/generate_executor.py generate --marketplace --marketplace-root /abs/path/to/checkout
+python3 marketplace/bundles/plan-marshall/skills/tools-script-executor/scripts/generate_executor.py drift    --marketplace --marketplace-root /abs/path/to/checkout
 
 # Option B — env var as a SINGLE-COMMAND inline assignment. The assignment and
 # the command MUST be one call; never a `cd`+`export` compound (an `export`
 # does not persist across separate Bash calls, and the compound trips the Bash
 # one-command-per-call / no-shell-constructs safety rules).
-PM_MARKETPLACE_ROOT=/abs/path/to/checkout python3 /abs/path/to/checkout/.plan/execute-script.py <notation> ...
+PM_MARKETPLACE_ROOT=/abs/path/to/checkout python3 .plan/execute-script.py <notation> ...
 ```
 
-`{GENERATE_EXECUTOR}` stands for the generator script's path — the
-cache-relative `skills/tools-script-executor/scripts/generate_executor.py` under
-the deployed plugin cache, or
-`marketplace/bundles/plan-marshall/skills/tools-script-executor/scripts/generate_executor.py`
-under the checkout root.
+The generator script is invoked by its **admitted** path — the
+repository-relative `marketplace/bundles/plan-marshall/skills/tools-script-executor/scripts/generate_executor.py`
+in the checkout, or the same script's bundle-relative path under the deployed
+plugin cache. Both forms are on the shared R5 allow-list.
 
 The path passed to `--marketplace-root` (and `PM_MARKETPLACE_ROOT`) is the
 checkout root that contains `marketplace/bundles`, not the bundles directory

@@ -56,7 +56,7 @@ _PARITY_CORPUS: tuple[tuple[str, bool, bool], ...] = (
     ('python3 -m py_compile f.py', True, True),
     ('python3 -mjson.tool', True, True),
     ('python3 marketplace/targets/sync.py --target opencode', False, False),
-    ('python3 /abs/repo/.plan/execute-script.py a:b:c verb', False, False),
+    ('python3 .plan/execute-script.py a:b:c verb', False, False),
     ('python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks list --plan-id x', False, False),
     ('python3 --version', False, False),
     ('python3', False, False),
@@ -121,3 +121,85 @@ def test_guards_agree_that_interpreter_bypasses_are_unconditional(
     hook_out = _HOOK.evaluate(_hook_payload(command, in_context=False)) is not None
     assert guard_out is True, f'guard.js must refuse {command!r} out of context'
     assert hook_out is True, f'hook must refuse {command!r} out of context'
+
+
+# =============================================================================
+# D3 — the R5 side doors: one shared table, both harnesses refuse
+# =============================================================================
+
+
+#: The R5 side doors D3 closes: an interpreter reached through a wrapper prefix,
+#: a shell spawn, a bare ``-``/``-<`` stdin form, and ``uv run``. Every row must
+#: be refused on BOTH harnesses. Driven in a plan context (Signal 1) so the two
+#: guards' refusal rule is the only variable.
+_SIDE_DOOR_REFUSED: tuple[str, ...] = (
+    'python3 - <<< "print(1)"',
+    'python3 - < x.py',
+    'python3 -',
+    'exec python3 -c "print(1)"',
+    'stdbuf -o0 python3 -c "print(1)"',
+    'stdbuf -o L python3 -c "print(1)"',
+    'setsid python3 -c "print(1)"',
+    'nice python3 -c "print(1)"',
+    'timeout 5 python3 -c "print(1)"',
+    'env -i python3 script.py',
+    'bash -c "python3 -c print(1)"',
+    'sh -c "python3 -c print(1)"',
+    'uv run python -c "print(1)"',
+)
+
+_SIDE_DOOR_REFUSED_IDS = list(_SIDE_DOOR_REFUSED)
+
+
+@pytest.mark.parametrize('command', _SIDE_DOOR_REFUSED, ids=_SIDE_DOOR_REFUSED_IDS)
+def test_guards_refuse_every_r5_side_door(tmp_path_factory: pytest.TempPathFactory, command: str) -> None:
+    """Each side-door form is refused by BOTH the guard plugin and the hook."""
+    harness = build_harness(tmp_path_factory.mktemp('guard-side-door'))
+    guard_blocked = _guard_refused(harness, command, in_context=True)
+    hook_reason = _HOOK.evaluate(_hook_payload(command, in_context=True))
+    assert guard_blocked is True, f'guard.js must refuse {command!r}'
+    assert hook_reason is not None, f'hook must refuse {command!r}'
+
+
+#: The forms that MUST still pass: the documented relative executor form, the
+#: D1 allow-listed repository-relative scripts, and the bare interpreter probe.
+_SIDE_DOOR_ALLOWED: tuple[str, ...] = (
+    'python3 .plan/execute-script.py a:b:c verb',
+    'python3 marketplace/targets/sync.py --target opencode',
+    'python3 marketplace/bundles/plan-marshall/skills/marshall-steward/scripts/determine_mode.py mode',
+    'python3 marketplace/bundles/plan-marshall/skills/tools-permission-fix/scripts/permission_fix.py ensure-executor',
+    'python3 --version',
+    'python3',
+)
+
+_SIDE_DOOR_ALLOWED_IDS = list(_SIDE_DOOR_ALLOWED)
+
+
+@pytest.mark.parametrize('command', _SIDE_DOOR_ALLOWED, ids=_SIDE_DOOR_ALLOWED_IDS)
+def test_guards_allow_the_documented_and_admitted_forms(tmp_path_factory: pytest.TempPathFactory, command: str) -> None:
+    """The documented executor form and the D1 admitted forms still pass both guards."""
+    harness = build_harness(tmp_path_factory.mktemp('guard-side-door-allow'))
+    guard_blocked, guard_message = harness.blocks(shell_event(command, agent=SUB_AGENT_AGENT))
+    hook_reason = _HOOK.evaluate(_hook_payload(command, in_context=True))
+    assert not guard_blocked, f'guard.js must allow {command!r}; message={guard_message!r}'
+    assert hook_reason is None, f'hook must allow {command!r}; reason={hook_reason!r}'
+
+
+@pytest.mark.parametrize(
+    'command',
+    [
+        'python3 /tmp/x/.plan/execute-script.py a:b:c verb',
+        'python3 /tmp/x/skills/marshall-steward/scripts/determine_mode.py mode',
+        'python3 /tmp/x/marketplace/targets/sync.py',
+    ],
+    ids=['executor-outside-repo', 'same-named-script-outside-deploy', 'allow-listed-basename-outside-repo'],
+)
+def test_guards_refuse_paths_outside_the_repository_and_the_deployment(
+    tmp_path_factory: pytest.TempPathFactory, command: str
+) -> None:
+    """An out-of-repository copy never matches — neither the executor nor the allow-list."""
+    harness = build_harness(tmp_path_factory.mktemp('guard-outside'))
+    guard_blocked = _guard_refused(harness, command, in_context=True)
+    hook_reason = _HOOK.evaluate(_hook_payload(command, in_context=True))
+    assert guard_blocked is True, f'guard.js must refuse {command!r}'
+    assert hook_reason is not None, f'hook must refuse {command!r}'
