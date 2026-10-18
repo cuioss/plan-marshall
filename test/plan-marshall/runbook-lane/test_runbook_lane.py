@@ -239,6 +239,7 @@ def _seed_fixture(
     optional_bots: str = '',
     slug: str = 'demo-epic',
     spec_name: str = 'PLAN-LB-66-runbook-lane-skill.md',
+    spec_text: str = '# staged spec\n',
 ) -> Path:
     """Seed a project fixture and return the staged spec path.
 
@@ -293,7 +294,7 @@ def _seed_fixture(
         ),
     )
     spec = root / '.plan' / 'orchestrator' / slug / 'plans' / spec_name
-    _write(spec, '# staged spec\n')
+    _write(spec, spec_text)
     return spec
 
 
@@ -573,3 +574,65 @@ def test_every_named_persona_resolves_to_a_bundle_skill() -> None:
     assert named, 'the skill names no persona'
     missing = [p for p in named if not (MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / p / 'SKILL.md').is_file()]
     assert not missing, f'named personas that do not resolve: {missing}'
+
+
+# =============================================================================
+# D4 — per-deliverable skills and personas, with an existence check
+# =============================================================================
+
+
+def test_setup_names_the_skill_existence_check_and_the_stop_and_ask() -> None:
+    setup = _section('## 2. Set up the worktree')
+    assert 'must exist in the installed bundles' in setup
+    assert 'stops and asks the operator' in setup
+
+
+def test_landing_report_requires_per_deliverable_skills_and_drift_additions() -> None:
+    landing = _section('## 8. Landing message (the last step, after the merge)').lower()
+    assert 'per deliverable' in landing
+    assert 'skills added:' in landing
+    assert 'reason:' in landing
+
+
+_DECLARED_SPEC = (
+    '## Deliverables\n\n'
+    '1. **First deliverable**\n'
+    '   - Skills: plan-marshall:runbook-lane\n'
+    '   - Persona: implementer\n'
+    '2. **Second deliverable**\n'
+    '   - Skills: plan-marshall:manage-files\n'
+    '   - Persona: module-tester\n'
+)
+
+
+def test_resolve_reports_each_deliverables_skills_and_persona(tmp_path: Path) -> None:
+    spec = _seed_fixture(tmp_path, executable=_PYPROJECT_EXEC, required_bots='x', spec_text=_DECLARED_SPEC)
+    data = _run_resolve(spec, tmp_path)
+    rows = data['deliverables']
+    assert [str(row['number']) for row in rows] == ['1', '2']
+    assert rows[0]['skills'] == 'plan-marshall:runbook-lane'
+    assert rows[0]['persona'] == 'persona-implementer'
+    assert rows[1]['persona'] == 'persona-module-tester'
+    assert data['skills_note'] == 'declared'
+
+
+def test_resolve_fails_on_a_nonexistent_named_skill(tmp_path: Path) -> None:
+    spec_text = '## Deliverables\n\n1. **First**\n   - Skills: plan-marshall:no-such-skill\n'
+    spec = _seed_fixture(tmp_path, executable=_PYPROJECT_EXEC, required_bots='x', spec_text=spec_text)
+    data = _run_resolve(spec, tmp_path)
+    assert data['status'] == 'error'
+    assert data['error'] == 'named_skill_not_found'
+
+
+def test_resolve_fails_on_a_nonexistent_named_persona(tmp_path: Path) -> None:
+    spec_text = '## Deliverables\n\n1. **First**\n   - Persona: no-such-persona\n'
+    spec = _seed_fixture(tmp_path, executable=_PYPROJECT_EXEC, required_bots='x', spec_text=spec_text)
+    data = _run_resolve(spec, tmp_path)
+    assert data['status'] == 'error'
+    assert data['error'] == 'named_skill_not_found'
+
+
+def test_spec_without_skill_or_persona_lines_says_none_named(tmp_path: Path) -> None:
+    spec = _seed_fixture(tmp_path, executable=_PYPROJECT_EXEC, required_bots='x')
+    data = _run_resolve(spec, tmp_path)
+    assert data['skills_note'] == 'none named'

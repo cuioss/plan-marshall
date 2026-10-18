@@ -231,6 +231,16 @@ All commands run from the main checkout (the repository root).
      warnings about a missing plan status are expected; ignore them.
    - `error: worktree_exists` means this is a resume: reuse the worktree.
 4. `git -C {worktree} push -u origin {branch}`. Make no edit before this push.
+5. **Check every named skill and persona exists.** The resolve result carries one row per spec
+   deliverable with its `Skills:` and `Persona:` declarations. Every named skill and persona must
+   exist in the installed bundles; `resolve` reports a name that does not as a
+   `named_skill_not_found` error, and the run then **stops and asks the operator**. A missing skill
+   is never skipped silently. Load the declared skills and persona as standards before working on
+   their deliverable, and list them per deliverable in the progress file.
+   - **Surface drift.** If a deliverable ends up touching a module the spec's Expected Surface did
+     not name, load that module's domain skills too, through the same configuration source the
+     orchestrator uses. Record the addition in the landing report as `skills added: …, reason: …`.
+     Never drop a skill the spec named.
 
 All edits, staging, commits and pushes target the worktree (`git -C {worktree} …`). The main
 checkout stays untouched.
@@ -245,11 +255,13 @@ inside the project directory; in-process runs need none.
 
 For each deliverable, in the spec's order:
 
-0. Load the deliverable's persona as a standard before any work: its `Persona:` line when the spec
-   carries one, otherwise the kind of work selects it from the persona table in section 1 —
-   `persona-implementer` for production code, `persona-module-tester` for unit and module tests,
-   `persona-integration-tester` for multi-module tests, `persona-security-expert` where trust
-   boundaries, input validation or secrets are touched, and `persona-documenter` for documentation.
+0. Load the deliverable's persona and its declared domain skills as standards before any work: its
+   `Persona:` and `Skills:` lines when the spec carries them, otherwise the kind of work selects the
+   persona from the persona table in section 1 — `persona-implementer` for production code,
+   `persona-module-tester` for unit and module tests, `persona-integration-tester` for multi-module
+   tests, `persona-security-expert` where trust boundaries, input validation or secrets are touched,
+   and `persona-documenter` for documentation. A spec without the lines names no domain skills; the
+   landing report then says `skills: none named`.
 1. Confirm the spec's HYPOTHESIS lines for this deliverable by reading the code. Write down
    confirmed or refuted, with `file:line`.
 2. Write the Done-when tests. Run them on the unfixed code and record the failing output (step 4
@@ -440,8 +452,10 @@ resolve result reported `guard: none`, and `guard: present` otherwise.
 - **The report follows the facts block,** one short section each:
   1. **Deliverables** — per Done-when: met or not met; the test name and its fail-then-pass evidence;
      the commit.
-  2. **Personas** — per step, which persona was applied (section 1's table, or the deliverable's own
-     `Persona:` line).
+  2. **Personas and skills** — per step, which persona was applied (section 1's table, or the
+     deliverable's own `Persona:` line); per deliverable, the domain skills it named — or
+     `skills: none named` when the spec declares none — and any skill added for surface drift as
+     `skills added: …, reason: …`.
   3. **Hypotheses** — each one confirmed or refuted, with `file:line`.
   4. **Findings** — self-review, CI and every PR comment, each with its disposition.
   5. **Reviewers** — one row per reviewer in `{required_bots}` and `{optional_bots}`: reviewed /

@@ -135,6 +135,155 @@ def _split_bots(value: Any) -> list[str]:
     return [part.strip() for part in value.split(',') if part.strip()]
 
 
+#: The heading that opens a staged spec's deliverable list.
+_DELIVERABLES_HEADING = '## Deliverables'
+
+#: A numbered deliverable at column 0. Nested numbering is INDENTED, so the
+#: sub-conditions a deliverable states are never mistaken for further
+#: deliverables — a rule this parser depends on and a spec's own format supplies.
+_DELIVERABLE_HEAD_RE = re.compile(r'^(?P<number>\d+)\.\s+(?P<title>.+?)\s*$')
+
+#: The two per-deliverable declarations. Both are OPTIONAL: a spec staged before
+#: they existed carries neither, and the lane then falls back to the persona
+#: table's per-kind defaults with no domain skills.
+_SKILLS_DECL_RE = re.compile(r'^(?:\s*[-*]\s*)?Skills:\s*(?P<value>.+?)\s*$')
+_PERSONA_DECL_RE = re.compile(r'^(?:\s*[-*]\s*)?Persona:\s*(?P<value>.+?)\s*$')
+
+
+def _lane_skills_root() -> Path:
+    """The ``skills/`` directory the lane itself ships in."""
+    return Path(__file__).resolve().parents[2]
+
+
+def _lane_bundle() -> str:
+    """The bundle the lane ships in, used to resolve a bare skill name."""
+    from marketplace_bundles import extract_bundle_name
+
+    return extract_bundle_name(Path(__file__).resolve().parents[3])
+
+
+def _skill_exists(notation: str, lane_bundle: str) -> bool:
+    """Whether *notation* names a skill installed beside the lane.
+
+    A bare name — and a ``bundle:`` naming the lane's own bundle — resolves
+    against the sibling skill directories, so it works in the source tree and in
+    every deployed layout. A skill in ANOTHER bundle resolves through the
+    marketplace bundle resolver; when that root is not locatable (an unusual
+    deployment), the nested ``{bundle}/skills/{skill}`` probe is the fallback.
+    """
+    own_root = _lane_skills_root()
+    bundle, sep, skill = notation.partition(':')
+    if not sep:
+        return (own_root / notation / 'SKILL.md').is_file()
+    if bundle == lane_bundle:
+        return (own_root / skill / 'SKILL.md').is_file()
+    try:
+        from marketplace_bundles import resolve_bundle_path, resolve_bundles_root
+
+        bundles_root = resolve_bundles_root(Path(__file__))
+    except Exception:
+        bundles_root = None
+    if bundles_root is None:
+        return (own_root.parent.parent / bundle / 'skills' / skill / 'SKILL.md').is_file()
+    return resolve_bundle_path(bundles_root, bundle, f'skills/{skill}/SKILL.md').is_file()
+
+
+def _spec_deliverables(spec: Path) -> list[dict[str, str]]:
+    """Read a staged spec's ``## Deliverables`` section into per-deliverable rows.
+
+    Each row carries its number, title, raw ``Skills:`` value and raw
+    ``Persona:`` value. Only lines INSIDE the section and outside a fenced block
+    are read, so a spec that quotes the declaration format in prose or in an
+    example does not declare anything by it.
+    """
+    try:
+        lines = spec.read_text(encoding='utf-8').splitlines()
+    except OSError:
+        return []
+    start = next((i for i, line in enumerate(lines) if line.strip() == _DELIVERABLES_HEADING), None)
+    if start is None:
+        return []
+    rows: list[dict[str, str]] = []
+    current: dict[str, str] | None = None
+    in_fence = False
+    for line in lines[start + 1 :]:
+        if line.strip().startswith('```'):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
+        if line.startswith('## '):
+            break
+        head = _DELIVERABLE_HEAD_RE.match(line)
+        if head:
+            current = {
+                'number': head.group('number'),
+                'title': head.group('title').strip().strip('*').strip(),
+                'skills': '',
+                'persona': '',
+            }
+            rows.append(current)
+            continue
+        if current is None:
+            continue
+        skills = _SKILLS_DECL_RE.match(line)
+        if skills:
+            current['skills'] = skills.group('value')
+            continue
+        persona = _PERSONA_DECL_RE.match(line)
+        if persona:
+            current['persona'] = persona.group('value')
+    return rows
+
+
+def _declared_skills(value: str) -> list[str]:
+    """Split a ``Skills:`` value into its ``bundle:skill`` notations."""
+    return [part.strip().strip('`') for part in value.split(',') if part.strip().strip('`')]
+
+
+def _declared_persona(value: str) -> str:
+    """Normalise a ``Persona:`` value to its persona skill's name.
+
+    ``implementer`` and ``plan-marshall:persona-implementer`` name the same
+    skill, so both normalise to ``persona-implementer`` and the report always
+    carries a resolvable name.
+    """
+    persona = value.strip().strip('`')
+    if not persona:
+        return ''
+    if ':' in persona:
+        persona = persona.split(':', 1)[1]
+    return persona if persona.startswith('persona-') else f'persona-{persona}'
+
+
+def _resolve_deliverable_skills(spec: Path) -> dict[str, Any]:
+    """Resolve every deliverable's named skills and persona, and verify each exists.
+
+    The declaration is authored by the ORCHESTRATOR when the spec is staged; the
+    lane only reads it. A name that does not resolve to an installed skill is
+    reported as missing so the run can stop and ask, rather than silently working
+    without the standard it was told to apply.
+    """
+    lane_bundle = _lane_bundle()
+    rows = _spec_deliverables(spec)
+    declared: list[str] = []
+    personas: list[str] = []
+    for row in rows:
+        skills = _declared_skills(row['skills'])
+        declared.extend(skills)
+        row['skills'] = ', '.join(skills)
+        row['persona'] = _declared_persona(row['persona'])
+        if row['persona']:
+            personas.append(row['persona'])
+    missing = [name for name in declared if not _skill_exists(name, lane_bundle)]
+    missing.extend(name for name in personas if not _skill_exists(name, lane_bundle))
+    return {
+        'deliverables': rows,
+        'missing_skills': missing,
+        'skills_note': 'declared' if declared or personas else 'none named',
+    }
+
+
 def _resolve_bots(marshal: dict[str, Any]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """Resolve the required and optional reviewers with their trigger comments.
 
@@ -270,10 +419,23 @@ def cmd_resolve(args: argparse.Namespace) -> dict[str, Any]:
         marshal = _read_marshal(project_dir)
         required, optional = _resolve_bots(marshal)
         build = _resolve_build(project_dir)
+        deliverable_state = _resolve_deliverable_skills(spec)
     except ValueError as exc:
         return {'status': 'error', 'error': str(exc), 'spec': args.spec, 'plan': plan_id}
     except Exception as exc:
         return {'status': 'error', 'error': 'resolve_failed', 'message': str(exc), 'plan': plan_id}
+
+    if deliverable_state['missing_skills']:
+        # Fail closed: a spec that names a skill which is not installed cannot be
+        # run as written, and skipping it silently would drop a standard the
+        # orchestrator deliberately attached to that deliverable.
+        return {
+            'status': 'error',
+            'error': 'named_skill_not_found',
+            'missing': ', '.join(deliverable_state['missing_skills']),
+            'spec': args.spec,
+            'plan': plan_id,
+        }
 
     import run_config
 
@@ -289,7 +451,7 @@ def cmd_resolve(args: argparse.Namespace) -> dict[str, Any]:
         f'--slug {slug} --sender-type plan --sender-id {sender_id} --kind landing --payload-file {landing_file}'
     )
 
-    return {
+    resolved: dict[str, Any] = {
         'status': 'success',
         'operation': 'resolve',
         'spec': spec.as_posix(),
@@ -306,7 +468,13 @@ def cmd_resolve(args: argparse.Namespace) -> dict[str, Any]:
         'commit_trailer': trailer,
         'harness': harness,
         'guard': guard,
+        'skills_note': deliverable_state['skills_note'],
     }
+    # Presence-gated: an empty population would render an empty row set that reads
+    # like a parsed-but-empty answer, when the truth is that no spec declares one.
+    if deliverable_state['deliverables']:
+        resolved['deliverables'] = deliverable_state['deliverables']
+    return resolved
 
 
 def main() -> int:
