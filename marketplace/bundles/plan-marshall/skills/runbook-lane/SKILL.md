@@ -311,10 +311,25 @@ the round limit, ask the operator whether to continue. Record every finding and 
 
 Merge only when all of these hold:
 
-- Every required reviewer reviewed the **current head**.
+- Every required reviewer reviewed the **current head**. **Exception — standing review
+  authorization, quota-limited reviewers only.** For a required reviewer that the resolve result
+  marks `quota_limited`, "reviewed the current head" may be replaced by ALL of:
+  1. **a qualifying review exists** — a formal review by that reviewer on one of this PR's heads,
+     listed by `ci pr reviews` with its commit id. Rate-limit notices, summary comments and thread
+     replies do not count;
+  2. **every finding is handled** — each finding from that review and from any later one is fixed in
+     a pushed commit, or answered with a reason, and every one of that reviewer's threads is
+     resolved;
+  3. **it was re-triggered once after the last push**, and the refusal or silence is recorded;
+  4. **every other gate condition holds on the current head** — every reviewer that is not
+     quota-limited reviewed it, every comment is handled, the build gate is green, CI is green.
 - Every comment is handled.
 - The build gate (step 4) is green on the current head.
 - CI is green on the current head.
+
+The reviewer quota policy (step 6) applies only while no qualifying review exists. The standing
+authorization never applies to a reviewer that is not quota-limited, and never to a PR without a
+qualifying review.
 
 **Any question that bears on the merge** states, per required reviewer, which head it last reviewed,
 and whether that is the current head. Its options never mark a rule-bending choice
@@ -393,7 +408,9 @@ resolve result reported `guard: none`, and `guard: present` otherwise.
   2. **Hypotheses** — each one confirmed or refuted, with `file:line`.
   3. **Findings** — self-review, CI and every PR comment, each with its disposition.
   4. **Reviewers** — one row per reviewer in `{required_bots}` and `{optional_bots}`: reviewed /
-     refused / silent, the head reviewed, and the trigger and wait history.
+     refused / silent, the head reviewed, and the trigger and wait history. **Standing review
+     authorization:** per quota-limited reviewer, the head it reviewed, the current head, and each
+     finding with how it was handled.
   5. **Operator questions** — **every** question-tool call in the run, in order: its text, its
      options, and the option selected. List free-text operator messages separately, as free text.
      If no question-tool call was made, write "none asked".

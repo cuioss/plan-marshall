@@ -155,6 +155,71 @@ def test_skill_is_registered_in_plugin_json() -> None:
     assert './skills/runbook-lane' in plugin['skills']
 
 
+# -----------------------------------------------------------------------------
+# D1 — the standing review authorization in the merge gate
+# -----------------------------------------------------------------------------
+
+
+def _skill_text() -> str:
+    return (_SKILL_DIR / 'SKILL.md').read_text(encoding='utf-8')
+
+
+def _section(heading: str) -> str:
+    """Return one ``## `` section of the skill, from *heading* to the next one.
+
+    Whitespace-normalised, so an assertion is about the wording rather than about
+    where the author happened to wrap a line.
+    """
+    text = _skill_text()
+    start = text.index(heading)
+    rest = text[start + len(heading) :]
+    end = rest.find('\n## ')
+    return ' '.join((heading + (rest if end == -1 else rest[:end])).split())
+
+
+#: The four conditions the standing authorization replaces "reviewed the current
+#: head" with. Each is a distinct requirement, so each is asserted separately.
+_STANDING_CONDITIONS = (
+    'a qualifying review exists',
+    'every finding is handled',
+    'it was re-triggered once after the last push',
+    'every other gate condition holds on the current head',
+)
+
+
+def test_merge_gate_names_the_four_standing_authorization_conditions() -> None:
+    gate = _section('## 7. Merge gate')
+    for condition in _STANDING_CONDITIONS:
+        assert condition in gate, f'the merge gate does not name the condition {condition!r}'
+
+
+def test_quota_policy_is_conditional_on_no_qualifying_review() -> None:
+    gate = _section('## 7. Merge gate')
+    assert 'applies only while no qualifying review exists' in gate
+
+
+def test_standing_authorization_scope_excludes_non_quota_limited_reviewers() -> None:
+    gate = _section('## 7. Merge gate')
+    assert 'never applies to a reviewer that is not quota-limited' in gate
+
+
+def test_landing_report_requires_the_standing_authorization_evidence() -> None:
+    landing = _section('## 8. Landing message (the last step, after the merge)')
+    assert 'the head it reviewed' in landing
+    assert 'the current head' in landing
+    assert 'how it was handled' in landing
+
+
+def test_standing_authorization_stays_repository_neutral() -> None:
+    gate = _section('## 7. Merge gate')
+    # Anchored to the new section so this assertion fails before the change and
+    # then guards the added wording against a repository-specific literal.
+    assert 'standing review authorization' in gate.lower()
+    lowered = gate.lower()
+    for literal in _FORBIDDEN_LITERALS:
+        assert literal.lower() not in lowered, f'repository-specific literal in the merge gate: {literal}'
+
+
 # =============================================================================
 # D2 — the resolve verb
 # =============================================================================
