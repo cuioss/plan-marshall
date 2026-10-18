@@ -372,3 +372,28 @@ def test_no_documented_invocation_is_refused(tmp_path_factory: pytest.TempPathFa
         f'(out of {len(candidates)} candidates; {len(templates)} template(s), {len(excused)} excused):\n  '
         + '\n  '.join(offenders)
     )
+
+
+def test_a_resolved_path_template_is_checked_not_skipped(tmp_path_factory: pytest.TempPathFactory) -> None:
+    """Done-when (D1): a brace-delimited path template is RESOLVED and CHECKED.
+
+    The sweep no longer skips a ``{PLACEHOLDER}`` script token: it resolves the
+    placeholder to the documented path and feeds the RESOLVED command through both
+    guards, so a documented template cannot dodge the check. An UNMAPPED
+    placeholder is reported unresolved rather than skipped.
+    """
+    resolved, unresolved = _resolve_script_template('python3 "{GENERATE_EXECUTOR}" generate')
+    assert unresolved is None, 'a mapped placeholder must resolve, never be reported unresolved'
+    assert 'marketplace/bundles/plan-marshall/skills/tools-script-executor/scripts/generate_executor.py' in resolved
+
+    hook_reason = _HOOK.evaluate(
+        {'agent_type': SUB_AGENT_AGENT, 'tool_name': 'Bash', 'tool_input': {'command': resolved}}
+    )
+    assert hook_reason is None, f'the resolved command must be admitted by the hook; reason={hook_reason!r}'
+
+    harness = build_harness(tmp_path_factory.mktemp('guard-template'))
+    blocked, message = harness.blocks(shell_event(resolved, agent=SUB_AGENT_AGENT))
+    assert not blocked, f'the resolved command must be admitted by the guard; message={message!r}'
+
+    _command, name = _resolve_script_template('python3 "{NOT_A_KNOWN_PATH}" run')
+    assert name == 'NOT_A_KNOWN_PATH', 'an unmapped placeholder must be reported unresolved, never skipped'

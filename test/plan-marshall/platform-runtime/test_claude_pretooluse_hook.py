@@ -1081,16 +1081,18 @@ def test_r5_allows_documented_sync_engine() -> None:
     assert hook.evaluate(_signal2_payload('Bash', _bash(command))) is None
 
 
-def test_r5_allows_nested_allowlist_path() -> None:
+def test_r5_allows_nested_allowlist_path(monkeypatch: pytest.MonkeyPatch) -> None:
     """An allow-listed script named by its absolute in-repo path matches its repo-relative entry."""
+    monkeypatch.delenv('CLAUDE_PROJECT_DIR', raising=False)
     repo_root = Path(__file__).resolve().parents[3]
     command = f'python3 {repo_root}/marketplace/targets/sync.py --target opencode'
     payload = {'cwd': str(repo_root), 'tool_name': 'Bash', 'tool_input': _bash(command)}
     assert hook.evaluate(payload) is None
 
 
-def test_r5_refuses_an_allowlist_basename_outside_the_repository() -> None:
+def test_r5_refuses_an_allowlist_basename_outside_the_repository(monkeypatch: pytest.MonkeyPatch) -> None:
     """A copy of an allow-listed script outside the repository never matches (no basename suffix)."""
+    monkeypatch.delenv('CLAUDE_PROJECT_DIR', raising=False)
     repo_root = Path(__file__).resolve().parents[3]
     command = 'python3 /tmp/x/marketplace/targets/sync.py'
     payload = {'cwd': str(repo_root), 'tool_name': 'Bash', 'tool_input': _bash(command)}
@@ -1380,8 +1382,9 @@ def test_r5_allows_the_documented_repo_relative_permission_fix() -> None:
     assert hook.evaluate(payload) is None
 
 
-def test_r5_allows_absolute_in_repo_path() -> None:
+def test_r5_allows_absolute_in_repo_path(monkeypatch: pytest.MonkeyPatch) -> None:
     """An absolute path resolving to an allow-listed repo-relative path is allowed."""
+    monkeypatch.delenv('CLAUDE_PROJECT_DIR', raising=False)
     repo_root = Path(__file__).resolve().parents[3]
     command = f'python3 {repo_root}/{_DOCUMENTED_PERMISSION_FIX} ensure-executor'
     payload = _root_payload(command, str(repo_root))
