@@ -9,7 +9,7 @@
     "WebFetch": "webfetch",
     "WebSearch": "websearch",
     "AskUserQuestion": "question",
-    "Task": "task",
+    "Task": "subagent",
     "Skill": "skill",
     "NotebookEdit": "edit",
     "TaskCreate": "todowrite",
