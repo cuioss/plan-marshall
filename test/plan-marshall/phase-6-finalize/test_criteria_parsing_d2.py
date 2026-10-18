@@ -212,6 +212,26 @@ def test_build_log_citation_is_accepted(plan_context, tmp_path, monkeypatch) -> 
     assert payload['errors'] == []
 
 
+def test_plan_local_citation_cannot_escape_the_checkout(plan_context, tmp_path, monkeypatch) -> None:
+    """A `.plan/` citation resolves against the checkout and cannot climb out of it."""
+    repo = _repo(tmp_path)
+    _commit(repo, {'README.md': 'readme\n'})
+    monkeypatch.setattr(_attr, 'resolve_live_worktree', lambda _plan_id: repo)
+    root = tmp_path / 'checkout'
+    root.mkdir()
+    (tmp_path / 'secret.log').write_text('secret\n', encoding='utf-8')
+    monkeypatch.setattr(_validate, 'cwd_checkout_root', lambda: str(root), raising=False)
+    criteria = ['parser accepts input']
+    _plan(plan_context, criteria, freeze=True)
+
+    payload = review_support.run_validate(
+        PLAN_ID, 'functional', _sealed(tmp_path, _verdict(criteria, [['.plan/../../secret.log']])), None
+    )
+
+    assert payload['valid'] is False
+    assert any('does not exist at the graded head' in error for error in payload['errors'])
+
+
 # --- D2 (d): a test file absent at the graded head is refused -------------------------------
 
 

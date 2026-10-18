@@ -22,6 +22,8 @@ Usage:
     python3 manage-solution-outline.py snapshot-criteria --plan-id EXAMPLE-PLAN
     python3 manage-solution-outline.py criteria-authorize --plan-id EXAMPLE-PLAN \\
         --deliverable-number 2 --criterion "criterion text" --decision "operator: ..."
+    python3 manage-solution-outline.py criteria-refreeze-authorize --plan-id EXAMPLE-PLAN \\
+        --decision "operator: approve the re-freeze"
     python3 manage-solution-outline.py get-module-context
 """
 
