@@ -22,6 +22,8 @@ from constants import (
 # defaults/optionals: System domain top-level skills
 # always_on/file_globs: per-domain inclusion keys (bool / list[str]) — reserved so
 #   profile iteration never treats them as profile names.
+# excluded_skills: per-domain repository-level skill veto (list[str]) — reserved
+#   for the same reason; read by manage-personas when expanding a domain cell.
 RESERVED_DOMAIN_KEYS = [
     'bundle',
     'workflow_skill_extensions',
@@ -29,6 +31,7 @@ RESERVED_DOMAIN_KEYS = [
     'optionals',
     'always_on',
     'file_globs',
+    'excluded_skills',
 ]
 
 # Default system domain configuration

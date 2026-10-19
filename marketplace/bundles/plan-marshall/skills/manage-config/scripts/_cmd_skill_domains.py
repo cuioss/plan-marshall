@@ -883,16 +883,19 @@ def cmd_skill_domains(args) -> dict:
                     existing_project_skills[domain_key] = domain_config['project_skills']
                 if 'active_profiles' in domain_config:
                     existing_domain_active_profiles[domain_key] = domain_config['active_profiles']
-                # Both inclusion keys are snapshotted on PRESENCE, never on
-                # truthiness, so an operator's deliberate `always_on: false` or
-                # `file_globs: []` is captured rather than read as unset. The
-                # enclosing `if inclusion:` guard tests the non-empty dict, which
-                # a `{'file_globs': []}` entry satisfies.
+                # The operator-owned inclusion/veto keys are snapshotted on
+                # PRESENCE, never on truthiness, so an operator's deliberate
+                # `always_on: false`, `file_globs: []` or `excluded_skills: []`
+                # is captured rather than read as unset. The enclosing
+                # `if inclusion:` guard tests the non-empty dict, which a
+                # `{'file_globs': []}` entry satisfies.
                 inclusion = {}
                 if 'always_on' in domain_config:
                     inclusion['always_on'] = domain_config['always_on']
                 if 'file_globs' in domain_config:
                     inclusion['file_globs'] = domain_config['file_globs']
+                if 'excluded_skills' in domain_config:
+                    inclusion['excluded_skills'] = domain_config['excluded_skills']
                 if inclusion:
                     existing_domain_inclusion[domain_key] = inclusion
 
@@ -938,8 +941,9 @@ def cmd_skill_domains(args) -> dict:
             if domain_key in skill_domains:
                 skill_domains[domain_key]['active_profiles'] = ap
 
-        # Restore operator-set always_on / file_globs inclusion keys to domains
-        # that still exist (mirrors the project_skills / active_profiles blocks).
+        # Restore operator-set always_on / file_globs / excluded_skills keys to
+        # domains that still exist (mirrors the project_skills / active_profiles
+        # blocks).
         #
         # This restore runs AFTER the domain rebuild above, and that ORDERING —
         # not a conditional — is what makes "absent means seed" hold on every

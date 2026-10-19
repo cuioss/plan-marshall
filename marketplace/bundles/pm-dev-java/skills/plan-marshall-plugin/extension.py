@@ -175,16 +175,38 @@ class Extension(ExtensionBase):
         # baseline). When the corresponding dependency is present, promote the skill
         # from optionals to defaults so it always loads; when absent, demote any
         # default occurrence back to optionals (keeping the two paths symmetric).
-        deps = module_data.get('dependencies') or []
-        dep_strings = [d if isinstance(d, str) else '' for d in deps]
-        has_cdi = any('jakarta.enterprise' in d or 'javax.enterprise' in d for d in dep_strings)
-        has_lombok = any('lombok' in d for d in dep_strings)
+        has_cdi, has_lombok = self._module_dependency_flags(module_data)
 
         for profile in result['skills_by_profile'].values():
             self._apply_conditional_default(profile, 'java-cdi', present=has_cdi)
             self._apply_conditional_default(profile, 'java-lombok', present=has_lombok)
 
         return result
+
+    @staticmethod
+    def _module_dependency_flags(module_data: dict) -> tuple[bool, bool]:
+        """Return ``(has_cdi, has_lombok)`` for the module's declared dependencies."""
+        deps = module_data.get('dependencies') or []
+        dep_strings = [d if isinstance(d, str) else '' for d in deps]
+        has_cdi = any('jakarta.enterprise' in d or 'javax.enterprise' in d for d in dep_strings)
+        has_lombok = any('lombok' in d for d in dep_strings)
+        return has_cdi, has_lombok
+
+    def qualifies_optional(self, profile: str, skill: str, module_data: dict) -> bool:
+        """Qualify an optional against the module's dependency signals.
+
+        The CDI-dependent optionals (``java-cdi``, ``java-quarkus``,
+        ``junit-weld-testing``) apply only to a module that declares a CDI
+        dependency, and ``java-lombok`` only to a module that declares Lombok.
+        Every other optional is module-agnostic and stays applicable.
+        """
+        has_cdi, has_lombok = self._module_dependency_flags(module_data)
+        name = skill.split(':')[-1]
+        if name in {'java-cdi', 'java-quarkus', 'junit-weld-testing'}:
+            return has_cdi
+        if name == 'java-lombok':
+            return has_lombok
+        return True
 
     @staticmethod
     def _apply_conditional_default(profile: dict, skill_marker: str, present: bool) -> None:

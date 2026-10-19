@@ -23,6 +23,7 @@ executor).
 import argparse
 import re
 import sys
+from functools import lru_cache
 from pathlib import Path
 
 # Direct imports — PYTHONPATH set by the executor (collect_script_dirs adds
@@ -170,6 +171,25 @@ def _is_excluded(skill: str, exclusions: set[str]) -> bool:
     return skill in exclusions or skill.split(':', 1)[-1] in exclusions
 
 
+@lru_cache(maxsize=1)
+def _discovered_modules() -> dict:
+    """Discover and cache the project's module data for this resolver process.
+
+    The resolver walks the project once per process rather than once per
+    profile x domain cell: phase-4-plan resolves a persona once per task, and a
+    repeated full discovery would dominate the cost.
+    """
+    from extension_discovery import discover_project_modules
+    from resolve_project_dir import resolve_project_dir
+
+    project_root = Path(resolve_project_dir(None, None))
+    discovered = discover_project_modules(project_root)
+    modules = discovered.get('modules') if isinstance(discovered, dict) else None
+    if not isinstance(modules, dict):
+        raise ValueError('module discovery returned no module map')
+    return modules
+
+
 def _resolve_module_data(module: str) -> tuple[dict | None, str]:
     """Resolve one module's discovery data and its readable state.
 
@@ -181,37 +201,32 @@ def _resolve_module_data(module: str) -> tuple[dict | None, str]:
     if not module:
         return None, MODULE_STATUS_NOT_REQUESTED
     try:
-        from extension_discovery import discover_project_modules
-        from resolve_project_dir import resolve_project_dir
+        module_data = _discovered_modules().get(module)
     except Exception:
         return None, MODULE_STATUS_UNREADABLE
-    try:
-        project_root = Path(resolve_project_dir(None, None))
-        discovered = discover_project_modules(project_root)
-    except Exception:
-        return None, MODULE_STATUS_UNREADABLE
-    modules = discovered.get('modules') if isinstance(discovered, dict) else None
-    if not isinstance(modules, dict):
-        return None, MODULE_STATUS_UNREADABLE
-    module_data = modules.get(module)
     if not isinstance(module_data, dict):
         return None, MODULE_STATUS_UNREADABLE
     return module_data, MODULE_STATUS_RESOLVED
 
 
+@lru_cache(maxsize=1)
+def _all_extension_modules() -> tuple:
+    """Load every domain extension once for this resolver process."""
+    from extension_discovery import discover_all_extensions
+
+    return tuple(
+        entry.get('module') for entry in discover_all_extensions() if entry.get('module') is not None
+    )
+
+
 def _find_domain_extension(domain: str):
     """Return the extension module that owns ``domain``, or None."""
     try:
-        from extension_discovery import discover_all_extensions
+        extensions = _all_extension_modules()
     except Exception:
         return None
-    try:
-        extensions = discover_all_extensions()
-    except Exception:
-        return None
-    for ext in extensions:
-        ext_module = ext.get('module')
-        if ext_module is None or not hasattr(ext_module, 'applies_to_module'):
+    for ext_module in extensions:
+        if not hasattr(ext_module, 'applies_to_module'):
             continue
         if not hasattr(ext_module, 'get_skill_domains'):
             continue
@@ -228,29 +243,45 @@ def _find_domain_extension(domain: str):
     return None
 
 
-def _module_qualified_skills(domain: str, profile: str, module_data: dict) -> set[str] | None:
-    """Return the skills the domain extension qualifies for this module/profile.
+def _module_qualified_skills(
+    domain: str,
+    profile: str,
+    optionals: list[str],
+    module_data: dict,
+) -> set[str] | None:
+    """Return the optionals the domain extension qualifies for this module/profile.
 
-    The qualification source is the extension's existing module-level
-    applicability (``applies_to_module``): the java extension, for example,
-    promotes ``java-cdi`` to the profile's defaults only when the module carries
-    a CDI dependency, so a module without one does not qualify. ``None`` means
-    applicability could not be computed and the caller must fail closed.
+    Qualification is delegated to the extension's ``qualifies_optional`` hook —
+    the module-level applicability seam. The java extension, for example,
+    qualifies ``java-cdi`` only for a module carrying a CDI dependency, so a
+    module without one does not receive it. ``None`` means applicability could
+    not be computed and the caller must fail closed.
     """
     extension = _find_domain_extension(domain)
     if extension is None:
-        return None
+        # No owning extension means no module-level qualification signal: no
+        # optional is admitted, which is the fail-closed direction.
+        return set()
     try:
-        result = extension.applies_to_module(module_data)
+        applicable = extension.applies_to_module(module_data)
     except Exception:
         return None
-    if not isinstance(result, dict) or not result.get('applicable'):
+    if not isinstance(applicable, dict) or not applicable.get('applicable'):
         return set()
-    cell = (result.get('skills_by_profile') or {}).get(profile)
-    defaults = cell.get('defaults') if isinstance(cell, dict) else None
-    if not isinstance(defaults, list):
-        return set()
-    return {_skill_name(entry) for entry in defaults if _skill_name(entry)}
+
+    qualifies = getattr(extension, 'qualifies_optional', None)
+    if qualifies is None:
+        # An extension predating the hook carries no optional signal.
+        return set(optionals)
+
+    qualified: set[str] = set()
+    for skill in optionals:
+        try:
+            if qualifies(profile, skill, module_data):
+                qualified.add(skill)
+        except Exception:
+            return None
+    return qualified
 
 
 def _resolve_profile_domain_skills(profile: str, domain: str, module: str = '') -> dict:
@@ -291,23 +322,33 @@ def _resolve_profile_domain_skills(profile: str, domain: str, module: str = '') 
             target.extend(_skill_name(entry) for entry in block)
 
     exclusions = _excluded_skills(domain)
-    module_data, module_status = _resolve_module_data(module)
-
-    qualified: set[str] = set()
-    if module_status == MODULE_STATUS_RESOLVED and module_data is not None:
-        computed = _module_qualified_skills(domain, profile, module_data)
-        if computed is None:
-            module_status = MODULE_STATUS_UNREADABLE
-        else:
-            qualified = computed
 
     skills: list[str] = []
     for skill in defaults:
         if skill and not _is_excluded(skill, exclusions) and skill not in skills:
             skills.append(skill)
+
+    candidates: list[str] = []
     for skill in optionals:
-        if not skill or _is_excluded(skill, exclusions) or skill in skills:
-            continue
+        if skill and not _is_excluded(skill, exclusions) and skill not in skills and skill not in candidates:
+            candidates.append(skill)
+
+    qualified: set[str] = set()
+    if not module:
+        module_status = MODULE_STATUS_NOT_REQUESTED
+    elif not candidates:
+        # Nothing to qualify: no module data has to be read for this cell.
+        module_status = MODULE_STATUS_RESOLVED
+    else:
+        module_data, module_status = _resolve_module_data(module)
+        if module_status == MODULE_STATUS_RESOLVED and module_data is not None:
+            computed = _module_qualified_skills(domain, profile, candidates, module_data)
+            if computed is None:
+                module_status = MODULE_STATUS_UNREADABLE
+            else:
+                qualified = computed
+
+    for skill in candidates:
         if skill in qualified:
             skills.append(skill)
 

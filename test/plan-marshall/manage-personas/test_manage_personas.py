@@ -221,7 +221,11 @@ def test_resolve_profile_domain_skills_import_error_returns_empty(monkeypatch):
 def _qualify_for(monkeypatch, qualified: set[str]) -> None:
     """Make a resolved module qualify exactly ``qualified`` for every cell."""
     monkeypatch.setattr(_mp, '_resolve_module_data', lambda module: ({'name': module}, 'resolved'))
-    monkeypatch.setattr(_mp, '_module_qualified_skills', lambda domain, profile, data: set(qualified))
+    monkeypatch.setattr(
+        _mp,
+        '_module_qualified_skills',
+        lambda domain, profile, optionals, data: set(qualified),
+    )
     monkeypatch.setattr(_mp, '_excluded_skills', lambda domain: set())
 
 
@@ -365,7 +369,33 @@ def test_java_module_with_cdi_admits_java_cdi(monkeypatch):
     result = _mp._resolve_profile_domain_skills('implementation', 'java', module='sample-module')
 
     assert 'pm-dev-java:java-cdi' in _resolution(result)
-    assert 'pm-dev-java:java-quarkus' not in _resolution(result)
+
+
+def test_non_java_domain_keeps_optionals_the_hook_qualifies(monkeypatch):
+    """A domain without module-level demotion still admits its optionals."""
+
+    class PlainExtension:
+        def applies_to_module(self, module_data):
+            return {'applicable': True, 'skills_by_profile': {}}
+
+        def qualifies_optional(self, profile, skill, module_data):
+            return True
+
+    _install_fake_skill_resolution(
+        monkeypatch,
+        lambda ns: {
+            'status': 'success',
+            'defaults': ['pm-dev-python:python-core'],
+            'optionals': ['pm-dev-python:pytest-testing'],
+        },
+    )
+    monkeypatch.setattr(_mp, '_find_domain_extension', lambda domain: PlainExtension())
+    monkeypatch.setattr(_mp, '_excluded_skills', lambda domain: set())
+    monkeypatch.setattr(_mp, '_resolve_module_data', lambda module: (_java_module(), 'resolved'))
+
+    result = _mp._resolve_profile_domain_skills('module_testing', 'python', module='sample-module')
+
+    assert _resolution(result) == ['pm-dev-python:python-core', 'pm-dev-python:pytest-testing']
 
 
 @pytest.mark.parametrize('excluded', ['pm-dev-java:java-cdi', 'java-cdi'])
