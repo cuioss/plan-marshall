@@ -214,9 +214,7 @@ def _all_extension_modules() -> tuple:
     """Load every domain extension once for this resolver process."""
     from extension_discovery import discover_all_extensions
 
-    return tuple(
-        entry.get('module') for entry in discover_all_extensions() if entry.get('module') is not None
-    )
+    return tuple(entry.get('module') for entry in discover_all_extensions() if entry.get('module') is not None)
 
 
 def _find_domain_extension(domain: str):
