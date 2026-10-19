@@ -57,29 +57,35 @@ def validate_domain_invariants(domain: dict) -> None:
         raise ValueError(f'Skills must not appear in both defaults and optionals: {sorted(overlap)}')
 
 
-def validate_domain_inclusion(always_on: object, file_globs: object) -> None:
-    """Validate the per-domain inclusion keys ``always_on`` / ``file_globs``.
+def validate_domain_inclusion(always_on: object, file_globs: object, excluded_skills: object = None) -> None:
+    """Validate the per-domain keys ``always_on`` / ``file_globs`` / ``excluded_skills``.
 
     ``always_on`` (when provided) MUST be a ``bool``. Unlike the numeric
     validators (which reject ``bool`` because it is an ``int`` subclass), here a
     ``bool`` is exactly what is required — any non-bool (including an ``int``) is
     rejected. ``file_globs`` (when provided) MUST be a ``list`` whose members are
-    all ``str``. A ``None`` value for either key means it is not being set on this
-    call and is skipped (the ``set-inclusion`` verb sets each key independently).
+    all ``str``. ``excluded_skills`` (when provided) MUST be a ``list`` whose
+    members are all ``str``. A ``None`` value for any key means it is not being
+    set on this call and is skipped (the ``set-inclusion`` verb sets each key
+    independently).
 
     Args:
         always_on: The candidate ``always_on`` value, or ``None`` to skip.
         file_globs: The candidate ``file_globs`` value, or ``None`` to skip.
+        excluded_skills: The candidate ``excluded_skills`` value, or ``None`` to skip.
 
     Raises:
         ValueError: If ``always_on`` is provided and is not a bool, or
-            ``file_globs`` is provided and is not a list of str.
+            ``file_globs`` / ``excluded_skills`` is provided and is not a list of str.
     """
     if always_on is not None and not isinstance(always_on, bool):
         raise ValueError(f'Invalid always_on {always_on!r}: expected a bool.')
     if file_globs is not None:
         if not isinstance(file_globs, list) or not all(isinstance(g, str) for g in file_globs):
             raise ValueError(f'Invalid file_globs {file_globs!r}: expected a list of str.')
+    if excluded_skills is not None:
+        if not isinstance(excluded_skills, list) or not all(isinstance(s, str) for s in excluded_skills):
+            raise ValueError(f'Invalid excluded_skills {excluded_skills!r}: expected a list of str.')
 
 
 # System retention defaults.

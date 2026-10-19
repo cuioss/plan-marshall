@@ -633,6 +633,7 @@ def cmd_skill_domains(args) -> dict:
             # domain-detect always_on / file_globs merge legs.
             result['always_on'] = domain_config.get('always_on', False)
             result['file_globs'] = domain_config.get('file_globs', [])
+            result['excluded_skills'] = domain_config.get('excluded_skills', [])
 
             # Load profiles from extension.py if bundle is present
             bundle = domain_config.get('bundle')
@@ -723,9 +724,13 @@ def cmd_skill_domains(args) -> dict:
         file_globs = None
         if file_globs_raw is not None:
             file_globs = [g.strip() for g in file_globs_raw.split(',') if g.strip()]
+        excluded_raw = getattr(args, 'excluded_skills', None)
+        excluded_skills = None
+        if excluded_raw is not None:
+            excluded_skills = [s.strip() for s in excluded_raw.split(',') if s.strip()]
 
         try:
-            validate_domain_inclusion(always_on, file_globs)
+            validate_domain_inclusion(always_on, file_globs, excluded_skills)
         except ValueError as e:
             return error_exit(str(e))
 
@@ -735,6 +740,8 @@ def cmd_skill_domains(args) -> dict:
             domain_config['always_on'] = always_on
         if file_globs is not None:
             domain_config['file_globs'] = file_globs
+        if excluded_skills is not None:
+            domain_config['excluded_skills'] = excluded_skills
         skill_domains[domain] = domain_config
         config['skill_domains'] = skill_domains
         save_config(config)
@@ -743,6 +750,7 @@ def cmd_skill_domains(args) -> dict:
                 'domain': domain,
                 'always_on': domain_config.get('always_on', False),
                 'file_globs': domain_config.get('file_globs', []),
+                'excluded_skills': domain_config.get('excluded_skills', []),
             }
         )
 

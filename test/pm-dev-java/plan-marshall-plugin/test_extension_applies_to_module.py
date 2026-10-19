@@ -99,3 +99,44 @@ def test_java_lombok_remains_optional_when_lombok_dep_absent():
     impl = result['skills_by_profile']['implementation']
     assert _skill_in(impl['optionals'], 'java-lombok')
     assert not _skill_in(impl['defaults'], 'java-lombok')
+
+
+def _declared_module_data(declared):
+    """Build a cheap-crawl module dict carrying only ``declared_dependencies``."""
+    return {
+        'name': 'sample-module',
+        'build_systems': ['maven'],
+        'dependencies': [],
+        'declared_dependencies': declared,
+    }
+
+
+def test_qualifies_optional_rejects_cdi_dependent_skills_without_cdi():
+    """Without a CDI dependency none of the CDI-dependent optionals qualify."""
+    extension = _load_extension()
+    module_data = _declared_module_data([{'group_id': 'org.apache.commons', 'artifact_id': 'commons-lang3'}])
+
+    for skill in (
+        'pm-dev-java:java-cdi',
+        'pm-dev-java:java-quarkus',
+        'pm-dev-java:junit-weld-testing',
+    ):
+        assert extension.qualifies_optional('implementation', skill, module_data) is False, skill
+
+
+def test_qualifies_optional_admits_cdi_skills_from_declared_dependency_objects():
+    """A declared ``jakarta.enterprise`` dependency object qualifies java-cdi."""
+    extension = _load_extension()
+    module_data = _declared_module_data(
+        [{'group_id': 'jakarta.enterprise', 'artifact_id': 'jakarta.enterprise.cdi-api'}]
+    )
+
+    assert extension.qualifies_optional('implementation', 'pm-dev-java:java-cdi', module_data) is True
+
+
+def test_qualifies_optional_admits_module_agnostic_optionals():
+    """An optional with no module-level signal stays applicable."""
+    extension = _load_extension()
+    module_data = _declared_module_data([])
+
+    assert extension.qualifies_optional('implementation', 'pm-dev-java:java-maintenance', module_data) is True

@@ -415,6 +415,58 @@ def test_repository_exclusion_removes_skill_the_module_would_get(monkeypatch, ex
     assert 'pm-dev-java:java-cdi' not in _resolution(result)
 
 
+def _install_config(monkeypatch, config):
+    """Inject a fake ``_config_core`` exposing ``load_config``."""
+    fake = types.ModuleType('_config_core')
+    fake.load_config = lambda: config
+    monkeypatch.setitem(sys.modules, '_config_core', fake)
+
+
+def test_excluded_skills_reads_the_domain_list(monkeypatch):
+    """The reader returns the configured exclusion set for the named domain."""
+    _install_config(
+        monkeypatch,
+        {'skill_domains': {'java': {'excluded_skills': ['pm-dev-java:java-cdi', ' ', 'java-lombok']}}},
+    )
+
+    assert _mp._excluded_skills('java') == {'pm-dev-java:java-cdi', 'java-lombok'}
+
+
+def test_excluded_skills_absent_domain_or_key_is_empty(monkeypatch):
+    """A domain with no exclusion key, or no domain entry at all, excludes nothing."""
+    _install_config(monkeypatch, {'skill_domains': {'java': {'bundle': 'pm-dev-java'}}})
+
+    assert _mp._excluded_skills('java') == set()
+    assert _mp._excluded_skills('python') == set()
+
+
+def test_excluded_skills_malformed_value_is_ignored(monkeypatch):
+    """A non-list excluded_skills value is ignored rather than raising."""
+    _install_config(monkeypatch, {'skill_domains': {'java': {'excluded_skills': 'pm-dev-java:java-cdi'}}})
+
+    assert _mp._excluded_skills('java') == set()
+
+
+def test_repository_exclusion_reads_the_real_config_reader(monkeypatch):
+    """A bare-name exclusion from marshal.json removes a module-qualified skill end to end."""
+    _install_fake_skill_resolution(
+        monkeypatch,
+        lambda ns: {
+            'status': 'success',
+            'defaults': {'pm-dev-java:java-core': {}},
+            'optionals': {'pm-dev-java:java-cdi': {}},
+        },
+    )
+    monkeypatch.setattr(_mp, '_find_domain_extension', lambda domain: _java_extension())
+    cdi_module = _java_module('jakarta.enterprise:jakarta.enterprise.cdi-api:4.0')
+    monkeypatch.setattr(_mp, '_resolve_module_data', lambda module: (cdi_module, 'resolved'))
+    _install_config(monkeypatch, {'skill_domains': {'java': {'excluded_skills': ['java-cdi']}}})
+
+    result = _mp._resolve_profile_domain_skills('implementation', 'java', module='sample-module')
+
+    assert _resolution(result) == ['pm-dev-java:java-core']
+
+
 def test_unreadable_module_admits_defaults_only_and_reports_it(monkeypatch):
     """An unreadable module admits defaults only and reports the state, never all optionals."""
     _install_java_domain_cell(

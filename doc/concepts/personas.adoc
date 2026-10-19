@@ -104,12 +104,12 @@ A persona declares only its *direct* composition. It is **never** loaded by nest
 
 image::../resources/diagrams/persona-composition.svg["Persona composition — the four declared kinds (base persona-plan-marshall-agent, a work persona with profiles and composes, a meta persona that composes other personas as lenses, and a ref concern) are read from frontmatter by manage-personas resolve, which flattens the composition DAG (base always included, composes: edges walked recursively with cycle rejection, profiles x domains resolved via the Extension API) into one flat deduped skills[] for the execution-context dispatch", align=center]
 
-xref:../../marketplace/bundles/plan-marshall/skills/manage-personas/SKILL.md[`manage-personas resolve --persona-key {key} [--domains a,b]`] walks the composition DAG and emits one flat, deduped `skills[]` by unioning, in deterministic order:
+xref:../../marketplace/bundles/plan-marshall/skills/manage-personas/SKILL.md[`manage-personas resolve --persona-key {key} [--domains a,b] [--module {module}]`] walks the composition DAG and emits one flat, deduped `skills[]` by unioning, in deterministic order:
 
 . the base `plan-marshall:persona-plan-marshall-agent` (always, unconditionally);
 . the persona's direct `composes:` entries (`ref-*` concerns and composed `persona-*` skills);
 . recursively, the transitive closure of each composed persona's `composes:` and `profiles:`;
-. for **each** profile in the persona's `profiles:` list, the `profile × {domains}` domain skills, resolved through the Extension API for every domain in `--domains`.
+. for **each** profile in the persona's `profiles:` list, the `profile × {domains}` domain skills, resolved through the Extension API for every domain in `--domains` — a cell's defaults are kept, and an optional is admitted only when `--module` qualifies for it (plus no repository-level exclusion names it).
 
 The dispatcher then passes that flat list as the execution-context's explicit `skills[]` — the same reliable channel that has always carried skills. The composition graph must be a **DAG**: the base is a leaf composed by all, meta personas compose work personas, and there are no cycles (the resolver rejects them with `status: error`, `error: composition_cycle`). This is deterministic *resolution*, not new runtime authority — directly analogous to `architecture resolve` and `manage-config resolve-recipe`.
 

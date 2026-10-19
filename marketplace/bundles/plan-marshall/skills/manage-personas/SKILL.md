@@ -31,7 +31,7 @@ Given `--persona-key {bundle:persona}` and optional `--domains a,b,c`, the resol
 3. **Recursive composition** — for each composed `persona-*`, the transitive closure of *its* `composes:` and `profiles:` resolution (DAG walk; cycles rejected).
 4. **Profile × domain** — for **each** profile in the persona's `profiles:` frontmatter list, the `profile × {domains}` domain skills resolved via the Extension API (`manage-config resolve-domain-skills --domain {domain} --profile {profile}`), for every domain in `--domains`. When `--domains` is omitted, no profile×domain skills are merged (the resolver emits base + composition only).
 
-**Module qualification of optionals.** A cell's `defaults` are always kept. An `optional` is merged only when `--module` names a module the domain extension qualifies for that skill through its module-level applicability hook (`qualifies_optional`; the Java extension excludes its CDI- and Lombok-dependent optionals for a module without that dependency, and every other domain's hook default admits the optional) — not merely because the cell lists it. A repository-level exclusion in `skill_domains.{domain}.excluded_skills` (``bundle:skill`` or bare skill name) always removes a skill, even one the module qualifies for. When `--module` is omitted, or the module's frameworks cannot be read, the resolver keeps defaults only and reports `module_status: not_requested` / `unreadable`; it never falls back to every optional.
+**Module qualification of optionals.** A cell's `defaults` are kept unless a repository-level exclusion names them. An `optional` is merged only when `--module` names a module the domain extension qualifies for that skill through its module-level applicability hook (`qualifies_optional`; the Java extension excludes its CDI- and Lombok-dependent optionals for a module without that dependency, and every other domain's hook default admits the optional) — not merely because the cell lists it. A repository-level exclusion in `skill_domains.{domain}.excluded_skills` (``bundle:skill`` or bare skill name; the resolver compares both) always removes a skill, even one the module qualifies for. When `--module` is omitted, or the module's frameworks cannot be read, the resolver keeps defaults only and reports `module_status: not_requested` / `unreadable`; it never falls back to every optional.
 
 The persona's frontmatter (`profiles:` + `composes:`) is the sole binding source of truth — there is no hardcoded table anywhere in the resolver.
 
@@ -48,7 +48,7 @@ skills[N]:
   - ...
 ```
 
-`module` echoes the `--module` value (empty when omitted). `module_status` is `resolved` (the module was read wherever a cell had optionals to qualify, and no cell reported it unreadable), `not_requested` (no `--module` supplied), or `unreadable` (at least one cell could not read the module's data or applicability, so that cell admitted defaults only).
+`module` echoes the `--module` value (empty when omitted). `module_status` is `resolved` (the module was read wherever a cell had optionals to qualify, and no cell reported it unreadable), `not_requested` (no `--module` supplied), or `unreadable` (at least one cell could not read the module's data or its domain extension's applicability, so that cell contributes no optionals).
 
 On error: `status: error` with an `error` discriminator (`persona_not_found`, `not_a_persona`, `composition_cycle`, `composed_persona_not_found`).
 

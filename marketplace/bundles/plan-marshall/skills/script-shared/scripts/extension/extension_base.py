@@ -1109,9 +1109,9 @@ class ExtensionBase(ABC):
         disqualify — the Java extension, for example, excludes its CDI-dependent
         optionals for a module with no CDI dependency.
 
-        The default returns ``True``: an optional a domain does not qualify is
-        admitted, preserving the pre-existing behaviour for domains that carry
-        no module-level optional signal. Override in extensions that do.
+        The default returns ``True``: a domain that does not override this hook
+        has no module-level optional signal, so its optionals stay eligible.
+        Override in extensions that DO carry such a signal.
 
         Args:
             profile: The profile whose cell is being expanded.

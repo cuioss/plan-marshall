@@ -185,9 +185,20 @@ class Extension(ExtensionBase):
 
     @staticmethod
     def _module_dependency_flags(module_data: dict) -> tuple[bool, bool]:
-        """Return ``(has_cdi, has_lombok)`` for the module's declared dependencies."""
-        deps = module_data.get('dependencies') or []
-        dep_strings = [d if isinstance(d, str) else '' for d in deps]
+        """Return ``(has_cdi, has_lombok)`` for the module's declared dependencies.
+
+        Reads the resolved ``dependencies`` list when present (the enrich path)
+        and otherwise the cheap crawl's ``declared_dependencies``. Entries may be
+        strings (``group:artifact``) or the parser's ``{group_id, artifact_id}``
+        dicts.
+        """
+        raw = module_data.get('dependencies') or module_data.get('declared_dependencies') or []
+        dep_strings: list[str] = []
+        for dep in raw:
+            if isinstance(dep, str):
+                dep_strings.append(dep)
+            elif isinstance(dep, dict):
+                dep_strings.append(f'{dep.get("group_id") or ""}:{dep.get("artifact_id") or ""}')
         has_cdi = any('jakarta.enterprise' in d or 'javax.enterprise' in d for d in dep_strings)
         has_lombok = any('lombok' in d for d in dep_strings)
         return has_cdi, has_lombok
