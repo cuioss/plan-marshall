@@ -45,10 +45,12 @@ class Extension(ExtensionBase):
                             {
                                 'skill': 'pm-dev-java:java-lombok',
                                 'description': 'Lombok patterns including @Delegate, @Builder, @Value, @Data, @UtilityClass for reducing boilerplate',
+                                'requires': 'lombok',
                             },
                             {
                                 'skill': 'pm-dev-java:java-quarkus',
                                 'description': 'Quarkus-specific CDI standards with testing, native image support, and GraalVM reflection configuration',
+                                'requires': 'cdi',
                             },
                         ],
                     },
@@ -64,6 +66,7 @@ class Extension(ExtensionBase):
                             {
                                 'skill': 'pm-dev-java:java-cdi',
                                 'description': 'CDI patterns including constructor injection, scopes, producers, and Quarkus configuration',
+                                'requires': 'cdi',
                             },
                             {
                                 'skill': 'pm-dev-java:java-maintenance',
@@ -72,6 +75,7 @@ class Extension(ExtensionBase):
                             {
                                 'skill': 'pm-dev-java:java-quarkus',
                                 'description': 'Quarkus CDI and configuration patterns — use when module uses Quarkus framework',
+                                'requires': 'cdi',
                             },
                         ],
                     },
@@ -91,6 +95,7 @@ class Extension(ExtensionBase):
                             {
                                 'skill': 'pm-dev-java:java-quarkus',
                                 'description': 'Quarkus-specific CDI standards with testing, native image support, and GraalVM reflection configuration',
+                                'requires': 'cdi',
                             },
                             {
                                 'skill': 'pm-dev-java:junit-integration',
@@ -99,6 +104,7 @@ class Extension(ExtensionBase):
                             {
                                 'skill': 'pm-dev-java:junit-weld-testing',
                                 'description': 'Weld Testing standards for CDI unit testing with @EnableAutoWeld and auto-discovery patterns',
+                                'requires': 'cdi',
                             },
                         ],
                     },
@@ -190,7 +196,9 @@ class Extension(ExtensionBase):
         Reads the resolved ``dependencies`` list when present (the enrich path)
         and otherwise the cheap crawl's ``declared_dependencies``. Entries may be
         strings (``group:artifact``) or the parser's ``{group_id, artifact_id}``
-        dicts.
+        dicts. ``io.quarkus:quarkus-arc`` is CDI on its own — Quarkus ArC is the
+        CDI implementation — without implying CDI for every ``io.quarkus``
+        artifact.
         """
         raw = module_data.get('dependencies') or module_data.get('declared_dependencies') or []
         dep_strings: list[str] = []
@@ -199,23 +207,41 @@ class Extension(ExtensionBase):
                 dep_strings.append(dep)
             elif isinstance(dep, dict):
                 dep_strings.append(f'{dep.get("group_id") or ""}:{dep.get("artifact_id") or ""}')
-        has_cdi = any('jakarta.enterprise' in d or 'javax.enterprise' in d for d in dep_strings)
+        has_quarkus_arc = any(d.split(':', 2)[:2] == ['io.quarkus', 'quarkus-arc'] for d in dep_strings)
+        has_cdi = has_quarkus_arc or any('jakarta.enterprise' in d or 'javax.enterprise' in d for d in dep_strings)
         has_lombok = any('lombok' in d for d in dep_strings)
         return has_cdi, has_lombok
 
-    def qualifies_optional(self, profile: str, skill: str, module_data: dict) -> bool:
-        """Qualify an optional against the module's dependency signals.
+    def _declared_requirement(self, skill: str) -> str | None:
+        """Return the ``requires`` marker a skill declaration carries, if any.
 
-        The CDI-dependent optionals (``java-cdi``, ``java-quarkus``,
-        ``junit-weld-testing``) apply only to a module that declares a CDI
-        dependency, and ``java-lombok`` only to a module that declares Lombok.
-        Every other optional is module-agnostic and stays applicable.
+        The CDI/Lombok-gated optionals declare ``'requires': 'cdi'`` /
+        ``'requires': 'lombok'`` on their ``get_skill_domains()`` entries, so the
+        gated set is derived from the declarations rather than duplicated in a
+        hand-maintained list.
         """
+        for domain_info in self.get_skill_domains():
+            for profile_data in (domain_info.get('profiles') or {}).values():
+                entries = list(profile_data.get('defaults', [])) + list(profile_data.get('optionals', []))
+                for entry in entries:
+                    if isinstance(entry, dict) and entry.get('skill') == skill and entry.get('requires'):
+                        return str(entry['requires'])
+        return None
+
+    def qualifies_optional(self, profile: str, skill: str, module_data: dict) -> bool:
+        """Qualify an optional through the ``requires`` marker on its declaration.
+
+        Skills declaring ``requires: cdi`` apply only to a module carrying a CDI
+        signal; ``requires: lombok`` only to a Lombok module. Every optional
+        without a marker is module-agnostic and stays applicable.
+        """
+        requirement = self._declared_requirement(skill)
+        if requirement is None:
+            return True
         has_cdi, has_lombok = self._module_dependency_flags(module_data)
-        name = skill.split(':')[-1]
-        if name in {'java-cdi', 'java-quarkus', 'junit-weld-testing'}:
+        if requirement == 'cdi':
             return has_cdi
-        if name == 'java-lombok':
+        if requirement == 'lombok':
             return has_lombok
         return True
 

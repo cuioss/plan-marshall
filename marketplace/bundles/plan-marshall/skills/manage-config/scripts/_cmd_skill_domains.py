@@ -651,6 +651,7 @@ def cmd_skill_domains(args) -> dict:
                     'domain': domain,
                     'defaults': domain_config.get('defaults', []),
                     'optionals': domain_config.get('optionals', []),
+                    'excluded_skills': domain_config.get('excluded_skills', []),
                 }
             )
 
