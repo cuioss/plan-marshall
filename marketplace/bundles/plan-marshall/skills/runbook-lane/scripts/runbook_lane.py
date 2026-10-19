@@ -421,6 +421,19 @@ def _resolve_build(project_dir: Path) -> tuple[dict[str, Any], dict[str, Any]]:
     return build, probed
 
 
+def _augment_resolved(probed: dict[str, Any], project_dir: Path) -> dict[str, Any]:
+    """Return the architecture's augmented resolve record for *probed*.
+
+    A thin seam over ``manage-architecture``'s augmentation, so the timeout
+    resolution reads the architecture's own stamp without this module importing
+    the architecture client at load time. It is also the seam a test can replace
+    to pin a stamp the fixture architecture cannot express.
+    """
+    from _cmd_client import _augment_resolved as augment
+
+    return augment(probed, str(project_dir))
+
+
 def _resolve_build_timeout(probed: dict[str, Any], project_dir: Path) -> int:
     """Return the build timeout, in seconds, from the architecture's own stamp.
 
@@ -435,9 +448,7 @@ def _resolve_build_timeout(probed: dict[str, Any], project_dir: Path) -> int:
     ``None``, since the lane has to hand a number to the build command.
     """
     try:
-        from _cmd_client import _augment_resolved
-
-        stamped = _augment_resolved(probed, str(project_dir)).get('bash_timeout_seconds')
+        stamped = _augment_resolved(probed, project_dir).get('bash_timeout_seconds')
         if isinstance(stamped, int) and stamped > 0:
             return stamped
     except Exception:

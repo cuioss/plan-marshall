@@ -1017,8 +1017,8 @@ def test_sleep_parity_keyword_is_the_qualifier_free_sentence() -> None:
 
 def test_build_timeout_comes_from_the_architecture_stamp(tmp_path: Path, monkeypatch) -> None:
     module = load_script_module('plan-marshall', _SKILL_NAME, 'runbook_lane.py', register=False)
-    import _cmd_client
+    monkeypatch.setattr(module, '_augment_resolved', lambda resolved, project_dir: {'bash_timeout_seconds': 1234})
 
-    monkeypatch.setattr(_cmd_client, '_augment_resolved', lambda resolved, project_dir: {'bash_timeout_seconds': 1234})
-
+    # The stamp wins over the lane's 1800 fallback: a resolve that returned the
+    # fallback here would fail, which is the sensitivity this test pins.
     assert module._resolve_build_timeout({}, tmp_path) == 1234
