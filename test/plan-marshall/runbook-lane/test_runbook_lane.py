@@ -29,6 +29,7 @@ staged spec. They never read this repository's own ``.plan/`` state.
 
 from __future__ import annotations
 
+import argparse
 import ast
 import json
 import re
@@ -940,7 +941,7 @@ def _flat_persona_skill(name: str) -> str:
     return f'---\nname: {name}\nmetadata:\n  bundle: plan-marshall\n  skill: {name}\n---\n\n# {name}\n'
 
 
-def _install_lane(install_root: Path, *, layout: str) -> Path:
+def _install_lane(install_root: Path, *, layout: str, identity: bool = True) -> Path:
     """Copy the lane script into a fixture install and return the copied script.
 
     ``flat`` lays the lane at ``{root}/skills/plan-marshall-runbook-lane/``
@@ -948,11 +949,18 @@ def _install_lane(install_root: Path, *, layout: str) -> Path:
     (``{root}/plan-marshall/0.1.0/skills/runbook-lane/``). Either way the script
     is copied, because ``_lane_skills_root`` is derived from the script's own
     path.
+
+    ``identity=False`` writes a flat ``SKILL.md`` WITHOUT the ``metadata``
+    identity the flat emitters record, which is the shape that cannot attribute
+    the dash-joined directory back to a bundle.
     """
     source = get_scripts_dir('plan-marshall', _SKILL_NAME) / 'runbook_lane.py'
     if layout == 'flat':
         skill_dir = install_root / 'skills' / 'plan-marshall-runbook-lane'
-        _write(skill_dir / 'SKILL.md', _FLAT_LANE_SKILL)
+        _write(
+            skill_dir / 'SKILL.md',
+            _FLAT_LANE_SKILL if identity else '---\nname: runbook-lane\n---\n\n# Runbook Lane\n',
+        )
     else:
         skill_dir = install_root / 'plan-marshall' / '0.1.0' / 'skills' / 'runbook-lane'
         _write(install_root / 'plan-marshall' / '0.1.0' / '.claude-plugin' / 'plugin.json', '{}\n')
@@ -1031,6 +1039,85 @@ def test_resolve_missing_skill_names_every_probed_path(tmp_path: Path) -> None:
     assert data['error'] == 'named_skill_not_found'
     assert 'no-such-skill' in data['missing']
     assert 'skills/no-such-skill/SKILL.md' in data['probed']
+
+
+# -----------------------------------------------------------------------------
+# PLAN-LB-72 D2 — the existence check and its tests can fail for their reason
+# -----------------------------------------------------------------------------
+
+
+def test_resolve_missing_skill_names_every_probed_layout(tmp_path: Path) -> None:
+    """A name absent from EVERY layout reports a path for each layout.
+
+    The fixture carries both deployed shapes (the flat ``skills/`` root and a
+    versioned nested cache), and the name exists in neither; the source-tree
+    layout is read from the real module. Dropping any one layout's probe from the
+    error fails this test.
+    """
+    install = tmp_path / 'install'
+    script = _install_lane(install, layout='flat')
+    _write(install / 'plan-marshall' / '0.1.0' / '.claude-plugin' / 'plugin.json', '{}\n')
+    spec_text = '## Deliverables\n\n1. **First**\n   - Skills: plan-marshall:absent-everywhere\n'
+    spec = _seed_fixture(tmp_path, executable=_PYPROJECT_EXEC, required_bots='x', spec_text=spec_text)
+
+    result = run_script(script, 'resolve', '--spec', str(spec), '--project-dir', str(tmp_path))
+
+    assert result.success, result.stderr
+    data = result.toon()
+    assert data['status'] == 'error', data
+    assert data['error'] == 'named_skill_not_found'
+    probed = data['probed']
+    assert 'skills/plan-marshall-absent-everywhere/SKILL.md' in probed, 'the flat layout is not named'
+    assert 'plan-marshall/skills/absent-everywhere/SKILL.md' in probed, 'the nested layout is not named'
+
+    module = load_script_module('plan-marshall', _SKILL_NAME, 'runbook_lane.py', register=False)
+    tree_probed = [
+        path.as_posix() for path in module._skill_probe_paths('plan-marshall:absent-everywhere', 'plan-marshall')
+    ]
+    assert any(
+        path.endswith('marketplace/bundles/plan-marshall/skills/absent-everywhere/SKILL.md') for path in tree_probed
+    ), f'the source-tree layout is not named: {tree_probed}'
+
+
+def test_resolve_resolves_a_cross_bundle_skill_in_a_flat_install(tmp_path: Path) -> None:
+    """A flat install resolves ``pm-dev-python:python-core`` as a dash-joined peer.
+
+    The flat emitters deploy the cross-bundle skill as
+    ``pm-dev-python-python-core``; a bare per-bundle directory does not exist.
+    """
+    install = tmp_path / 'install'
+    script = _install_lane(install, layout='flat')
+    _write(
+        install / 'skills' / 'pm-dev-python-python-core' / 'SKILL.md',
+        '---\nname: python-core\nmetadata:\n  bundle: pm-dev-python\n  skill: python-core\n---\n',
+    )
+    spec_text = '## Deliverables\n\n1. **First**\n   - Skills: pm-dev-python:python-core\n'
+    spec = _seed_fixture(tmp_path, executable=_PYPROJECT_EXEC, required_bots='x', spec_text=spec_text)
+
+    result = run_script(script, 'resolve', '--spec', str(spec), '--project-dir', str(tmp_path))
+
+    assert result.success, result.stderr
+    assert result.toon()['status'] == 'success', result.toon()
+
+
+def test_resolve_refuses_a_bare_name_in_a_flat_install_without_an_identity(tmp_path: Path) -> None:
+    """A flat ``SKILL.md`` with no identity is a named error, not a silent miss.
+
+    The dash-joined directory cannot be split back into bundle and skill, so the
+    lane cannot resolve ANY bare name. Returning a wrong-bundle probed miss for
+    every one of them hides the real cause; the refusal names it.
+    """
+    install = tmp_path / 'install'
+    script = _install_lane(install, layout='flat', identity=False)
+    spec_text = '## Deliverables\n\n1. **First**\n   - Persona: persona-implementer\n'
+    spec = _seed_fixture(tmp_path, executable=_PYPROJECT_EXEC, required_bots='x', spec_text=spec_text)
+
+    result = run_script(script, 'resolve', '--spec', str(spec), '--project-dir', str(tmp_path))
+
+    assert result.success, result.stderr
+    data = result.toon()
+    assert data['status'] == 'error', data
+    assert data['error'] == 'flat_skill_identity_missing', data
 
 
 # =============================================================================
@@ -1153,6 +1240,8 @@ def test_branch_rule_states_the_canonical_prefix_set_as_closed() -> None:
 
     for prefix in ('feature/', 'fix/', 'chore/'):
         assert prefix in section
+    assert 'prefix set is closed' in section, 'the branch rule no longer calls the canonical prefix set closed'
+    assert 'working_prefixes' in section, 'the branch rule does not name the set the prefix must come from'
     assert 'only extension' in section
     assert 'own set wins' not in section, 'the branch rule lets the project set replace the canonical prefixes'
 
@@ -1173,9 +1262,24 @@ def test_sleep_parity_keyword_is_the_qualifier_free_sentence() -> None:
 
 
 def test_build_timeout_comes_from_the_architecture_stamp(tmp_path: Path, monkeypatch) -> None:
-    module = load_script_module('plan-marshall', _SKILL_NAME, 'runbook_lane.py', register=False)
-    monkeypatch.setattr(module, '_augment_resolved', lambda resolved, project_dir: {'bash_timeout_seconds': 1234})
+    """``resolve`` reports the stamp the REAL delegation reads.
 
-    # The stamp wins over the lane's 1800 fallback: a resolve that returned the
-    # fallback here would fail, which is the sensitivity this test pins.
-    assert module._resolve_build_timeout({}, tmp_path) == 1234
+    The test drives ``cmd_resolve``, not the extracted seam, and replaces the
+    DELEGATION TARGET — ``_cmd_client._augment_resolved`` — so a broken or
+    raising delegation is caught: either one leaves the lane's 1800 fallback in
+    place, and the assertion below fails.
+    """
+    import _cmd_client
+
+    spec = _seed_fixture(tmp_path, executable=_PYPROJECT_EXEC, required_bots='x')
+    monkeypatch.setattr(
+        _cmd_client,
+        '_augment_resolved',
+        lambda resolved, project_dir: {'bash_timeout_seconds': 1234},
+    )
+    module = load_script_module('plan-marshall', _SKILL_NAME, 'runbook_lane.py', register=False)
+
+    data = module.cmd_resolve(argparse.Namespace(spec=str(spec), project_dir=str(tmp_path)))
+
+    assert data['status'] == 'success', data
+    assert data['build_timeout_seconds'] == 1234

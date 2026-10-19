@@ -173,7 +173,7 @@ def _lane_skills_root() -> Path:
     return Path(__file__).resolve().parents[2]
 
 
-def _lane_bundle() -> str:
+def _lane_bundle() -> str | None:
     """The bundle the lane ships in, used to resolve a bare skill name.
 
     In the source tree and the nested plugin cache the bundle is the lane's
@@ -182,13 +182,20 @@ def _lane_bundle() -> str:
     back into the pair, so the bundle is read from the identity the flat emitters
     record in the lane's ``SKILL.md``
     (:func:`deployed_layout.read_flat_skill_identity`).
+
+    Returns ``None`` for a FLAT deployment whose ``SKILL.md`` records no
+    identity: the directory name cannot attribute it to a bundle, so every bare
+    name would silently miss. The caller turns that into a named refusal instead
+    of probing a bundle that does not exist.
     """
-    from deployed_layout import read_flat_skill_identity
+    from deployed_layout import is_flat_root, read_flat_skill_identity
     from marketplace_bundles import extract_bundle_name
 
     identity = read_flat_skill_identity(_lane_skill_dir())
     if identity is not None:
         return identity[0]
+    if is_flat_root(_lane_skills_root()):
+        return None
     return extract_bundle_name(_lane_skill_dir().parents[1])
 
 
@@ -196,32 +203,26 @@ def _skill_probe_paths(notation: str, lane_bundle: str) -> list[Path]:
     """Return every path the lane probes for *notation*, in probe order.
 
     A bare name is qualified with ``lane_bundle`` first, so the lane's own skills
-    resolve beside it without the caller spelling a bundle. The lane's own
-    ``skills/`` root is resolved through the shared layout resolver
-    (:func:`deployed_layout.resolve_skill_path`) and its candidates enumerated
-    from the same vocabulary (:func:`deployed_layout.skill_roots` plus
-    :func:`deployed_layout.flat_skill_dir_name`), which knows both the nested
-    shape and the flat ``{bundle}-{skill}`` shape. The nested bundle tree — and
-    every version dir in it — is probed through
-    :func:`marketplace_bundles.resolve_bundle_path`. The enumeration is what lets
-    a name present in none of the layouts report every path that was probed,
-    instead of a single guess.
+    resolve beside it without the caller spelling a bundle. ONE enumeration feeds
+    both the existence answer and the "every probed path" error: the flat
+    ``{bundle}-{skill}`` candidates come from the same vocabulary
+    :func:`deployed_layout.resolve_skill_path` uses internally
+    (:func:`deployed_layout.skill_roots` plus
+    :func:`deployed_layout.flat_skill_dir_name`), and the nested bundle tree —
+    every version dir in it — through :func:`marketplace_bundles.resolve_bundle_path`.
+    A second, redundant ``resolve_skill_path`` call beside this enumeration is
+    what used to make the two disagree.
     """
-    from deployed_layout import flat_skill_dir_name, resolve_skill_path, skill_roots
+    from deployed_layout import flat_skill_dir_name, skill_roots
 
     bundle, separator, skill = notation.partition(':')
     if not separator:
         bundle, skill = lane_bundle, notation
     subpath = f'skills/{skill}/SKILL.md'
 
-    candidates: list[Path] = []
-    resolved = resolve_skill_path(_lane_skills_root(), bundle, subpath)
-    if resolved is not None:
-        candidates.append(resolved)
-    for root in skill_roots(_lane_skills_root()):
-        candidate = root / flat_skill_dir_name(bundle, skill) / 'SKILL.md'
-        if candidate not in candidates:
-            candidates.append(candidate)
+    candidates: list[Path] = [
+        root / flat_skill_dir_name(bundle, skill) / 'SKILL.md' for root in skill_roots(_lane_skills_root())
+    ]
     try:
         from marketplace_bundles import resolve_bundle_path, resolve_bundles_root
 
@@ -337,9 +338,19 @@ def _resolve_deliverable_skills(spec: Path) -> dict[str, Any]:
         row['persona'] = _declared_persona(row['persona'])
         if row['persona']:
             personas.append(row['persona'])
+    names = [*declared, *personas]
+    if lane_bundle is None:
+        # A flat layout that records no identity cannot attribute its own
+        # dash-joined directory to a bundle, so a BARE name has no bundle to
+        # resolve in. Refuse by name; a silent miss on every bare name would
+        # report the wrong cause. A qualified name carries its own bundle and
+        # needs this one not at all.
+        if any(':' not in name for name in names):
+            raise ValueError('flat_skill_identity_missing')
+        lane_bundle = ''
     missing: list[str] = []
     probed: list[str] = []
-    for name in [*declared, *personas]:
+    for name in names:
         if _skill_exists(name, lane_bundle):
             continue
         missing.append(name)

@@ -76,7 +76,7 @@ The result supplies, and nothing below is spelled from anywhere else:
 | epic slug | `slug` |
 | `{plan}` | `plan` |
 | worktree | `worktree` |
-| branch | `{branch} = {prefix}{plan}`; the canonical prefix set is closed — `feature/` (a new capability), `fix/` (a bug fix), `chore/` (docs or maintenance) — and the project's `working_prefixes` is its only extension, never a replacement: the chosen prefix must be one that set declares |
+| branch | `{branch} = {prefix}{plan}`; the canonical prefix set is closed — `feature/` (a new capability), `fix/` (a bug fix), `chore/` (docs or maintenance) — and the project's configured `working_prefixes` is its only extension, never a replacement: the chosen prefix must be one the project's resolved `working_prefixes` set declares |
 | base branch | `base_branch` (the project's own base branch, never a spelling of it) |
 | inbox sender id | `sender_id` |
 | progress file | `progress_file` |
