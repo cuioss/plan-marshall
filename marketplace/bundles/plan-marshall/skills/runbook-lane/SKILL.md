@@ -1,6 +1,6 @@
 ---
 name: runbook-lane
-description: The runbook lane - implementation contract for ONE staged orchestrator plan spec on a cheap model, without the /plan-marshall lifecycle. Resolves every project-specific value (epic slug, derived names, build commands, reviewers with their trigger comments, commit trailer, inbox command) through the runbook_lane resolve verb, then runs the lane - progress file and resume, hard rules, fail-first evidence, build gate, self-review rounds, PR and review cycle, merge gate, cleanup, and a landing message to the epic inbox - from any project that has plan-marshall installed
+description: The runbook lane - implementation contract for ONE staged orchestrator plan spec on a cheap model, without the /plan-marshall lifecycle. Resolves every project-specific value (epic slug, derived names, build commands, reviewers with their trigger comments, commit trailer, inbox command) through the runbook_lane resolve verb, then runs the lane - progress file and resume, hard rules, evidence orders (test-first, mutation-after, none), build gate, self-review rounds, PR and review cycle, merge gate, cleanup, and a landing message to the epic inbox - from any project that has plan-marshall installed
 user-invocable: true
 mode: workflow
 ---
@@ -39,8 +39,9 @@ Resolves the epic slug, the derived names, the build commands, the required and 
 with their trigger comments, the commit trailer, the harness and guard state, and the `inbox write`
 command. `--project-dir` defaults to the current directory and anchors every project-scoped read.
 Fails closed with a specific error code for a spec outside the orchestrator tree, an unreadable
-configuration, a missing automatic-review step, an empty required-reviewer list, or an
-unresolvable build command.
+configuration, a missing automatic-review step, an empty required-reviewer list, an unresolvable
+build command, or a bare skill/persona name in a flat install with no recorded bundle identity
+(`flat_skill_identity_missing`).
 
 ### build-classify
 
@@ -162,8 +163,8 @@ so git alone shows which deliverables are committed.
     against the unfixed code, and record the failing output. Then fix, and see it pass.
   - A green run at HEAD is never evidence that a test fails without the fix.
   - A Done-when whose "fails at `{sha}`" clause was not seen failing is reported **not met as
-    written**, with the reason, and is excluded from `deliverables_done`, even when its behaviour
-    holds.
+    written**, with the reason, so its deliverable is **not** fully met — and `deliverables_done`
+    counts only fully met deliverables.
   - Never cite a test, file or log you have not just read or run.
 - **Executor only.**
   - Every script: `python3 .plan/execute-script.py {bundle}:{skill}:{script} …`.
@@ -511,13 +512,13 @@ steps=setup:done,implement:done,build-gate:done,self-review:{clear|budget-exhaus
   says `guard: none on this harness (unenforced)`. Never report "all kept" or "no guard-log line"
   for a harness with no guard.
 - **The report follows the facts block,** one short section each:
-  1. **Deliverables** — per Done-when: met or not met; the test name; an `order` field with exactly
+  1. **Deliverables** — per Done-when: met, or not met / **not met as written** (a Done-when whose
+     "fails at `{sha}`" clause was not seen failing); the test name; an `order` field with exactly
      one of `test-first`, `mutation-after` or `none`; the failing run's commit and output identifier
      that the order names; and the commit. The words "fail-first" and "observed failing before the
      fix" are reserved for `test-first` — `mutation-after` means the failing output came from
      mutating or reverting the committed fix, and `none` means no failing output was captured. A
-     Done-when whose "fails at `{sha}`" clause was not seen failing is reported **not met as
-     written**, with the reason, and is excluded from `deliverables_done`. Also report the sha of
+     `not met as written` Done-when leaves its deliverable not fully met. Also report the sha of
      every `test-compile` run against a pushed head.
   2. **Personas and skills** — per step, which persona was applied (section 1's table, or the
      deliverable's own `Persona:` line); per deliverable, the domain skills it named — or
@@ -532,8 +533,8 @@ steps=setup:done,implement:done,build-gate:done,self-review:{clear|budget-exhaus
   6. **Operator questions** — **every** question-tool call in the run, in order: its text, its
      options, and the option selected. List free-text operator messages separately, as free text. A
      surface/naming error that prompted a question is recorded here with the answer it got; when the
-     harness offered no question tool, say `no question tool was available` rather than
-     "none asked". If no question-tool call was made, write "none asked".
+     harness offered no question tool at all, this section says `no question tool was available`. If
+     no question was needed and none was asked, write "none asked".
   7. **Rule check** — every section 1 rule that you or a sub-agent did not keep, and every guard
      refusal: read `{guard_log}` (the path `resolve` returns) for this run's sessions and list each
      line. "All kept" is allowed only when that log has no line for the run — and never on a harness

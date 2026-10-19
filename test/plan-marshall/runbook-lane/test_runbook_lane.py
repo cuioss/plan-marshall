@@ -1298,7 +1298,7 @@ def test_a_done_when_without_failing_evidence_is_reported_not_met() -> None:
 
     for name, section in (('§1', rules), ('§8', landing)):
         assert 'not met as written' in section, f'{name} does not require a not-met verdict without failing evidence'
-    assert 'excluded from `deliverables_done`' in rules, 'the not-met verdict is not tied to the done count'
+    assert 'counts only fully met deliverables' in rules, 'the not-met verdict is not tied to the done count'
 
 
 def test_unknown_verb_rule_names_its_landing_record() -> None:
