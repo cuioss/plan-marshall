@@ -22,6 +22,8 @@ Usage:
     python3 manage-solution-outline.py snapshot-criteria --plan-id EXAMPLE-PLAN
     python3 manage-solution-outline.py criteria-authorize --plan-id EXAMPLE-PLAN \\
         --deliverable-number 2 --criterion "criterion text" --decision "operator: ..."
+    python3 manage-solution-outline.py criteria-refreeze-authorize --plan-id EXAMPLE-PLAN \\
+        --decision "operator: approve the re-freeze"
     python3 manage-solution-outline.py get-module-context
 """
 
@@ -42,7 +44,7 @@ from _architecture_core import (
     load_project_meta,
     migrate_key_packages,
 )
-from _criteria_snapshot import authorize_change, write_snapshot
+from _criteria_snapshot import authorize_change, authorize_refreeze, write_snapshot
 from _findings_core import query_assessments
 from _plan_parsing import (
     DECLARATION_FIELDS,
@@ -1285,6 +1287,24 @@ def cmd_criteria_authorize(args: argparse.Namespace) -> dict[str, Any]:
     )
 
 
+def cmd_criteria_refreeze_authorize(args: argparse.Namespace) -> dict[str, Any]:
+    """Log an operator decision authorizing a re-freeze of the criteria snapshot.
+
+    A snapshot that already exists cannot be replaced by ``snapshot-criteria``
+    without this decision; a phase rollback alone is not permission. The decision
+    is logged through the same path ``criteria-authorize`` uses and recorded in the
+    plan's status record, and the authorization is consumed by the one re-freeze it
+    permits.
+    """
+    require_valid_plan_id(args)
+
+    return authorize_refreeze(
+        args.plan_id,
+        args.decision,
+        phase=getattr(args, 'phase', '3-outline'),
+    )
+
+
 def _validate_file_on_disk(plan_id: str, file_path: Path) -> tuple[int, dict[str, Any]]:
     """Validate solution outline file already on disk.
 
@@ -1688,6 +1708,25 @@ def main() -> int:
         help='Phase the decision-log entry is recorded under (default: 3-outline)',
     )
     authorize_parser.set_defaults(func=cmd_criteria_authorize)
+
+    # criteria-refreeze-authorize
+    refreeze_parser = subparsers.add_parser(
+        'criteria-refreeze-authorize',
+        help='Log an operator decision authorizing a re-freeze of the criteria snapshot',
+        allow_abbrev=False,
+    )
+    add_plan_id_arg(refreeze_parser)
+    refreeze_parser.add_argument(
+        '--decision',
+        required=True,
+        help='The operator decision that authorizes re-freezing the snapshot',
+    )
+    refreeze_parser.add_argument(
+        '--phase',
+        default='3-outline',
+        help='Phase the decision-log entry is recorded under (default: 3-outline)',
+    )
+    refreeze_parser.set_defaults(func=cmd_criteria_refreeze_authorize)
 
     # deliverable-hashes
     hashes_parser = subparsers.add_parser(
