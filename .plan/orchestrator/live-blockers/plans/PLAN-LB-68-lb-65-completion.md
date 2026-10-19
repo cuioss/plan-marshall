@@ -36,6 +36,8 @@ repository-relative. Two problems remain.
 
 1. **R5 admits a deployed bundle script exactly, and the steward runs again on every guarded
    harness.**
+   - Skills: pm-plugin-development:plugin-architecture, pm-plugin-development:plugin-script-architecture, pm-dev-python:python-core, plan-marshall:ref-code-quality, pm-dev-frontend:javascript, pm-dev-python:pytest-testing, plan-marshall:persona-module-tester, pm-documents:ref-asciidoc, pm-documents:ref-documentation
+   - Persona: plan-marshall:persona-implementer
    - An invocation is admitted when its resolved script path equals
      `{deployed bundle root}/{bundle-relative entry}` for an allow-list entry.
      - `{deployed bundle root}` comes from the same resolver the wizard uses (`bootstrap_plugin
@@ -68,6 +70,8 @@ repository-relative. Two problems remain.
      prescribed command R5 would refuse.
 
 2. **R6 names the plan from the `git -C` target, on both harnesses.**
+   - Skills: pm-plugin-development:plugin-architecture, pm-plugin-development:plugin-script-architecture, pm-dev-python:python-core, plan-marshall:ref-code-quality, pm-dev-frontend:javascript, pm-dev-python:pytest-testing, plan-marshall:persona-module-tester
+   - Persona: plan-marshall:persona-implementer
    - `isGitCommit` and the hook's equivalent return the `-C` value.
    - The plan is named from that path when it lies under `.plan/local/worktrees/{plan}`, before
      the `workdir`, project-root and cwd fallbacks.
@@ -84,6 +88,8 @@ repository-relative. Two problems remain.
    - the restored commit-count assertion holds.
 
 3. **The R5 side doors are closed and the executor permit is exact.**
+   - Skills: pm-plugin-development:plugin-architecture, pm-plugin-development:plugin-script-architecture, pm-dev-python:python-core, plan-marshall:ref-code-quality, pm-dev-frontend:javascript, pm-dev-python:pytest-testing, plan-marshall:persona-module-tester
+   - Persona: plan-marshall:persona-implementer
    - Refused on both harnesses:
      - `python3 -<<<'…'`, `python3 - < x.py`, and `python3 -` reading stdin;
      - `exec python3 -c …`;

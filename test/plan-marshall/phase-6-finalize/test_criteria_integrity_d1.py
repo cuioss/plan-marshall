@@ -82,6 +82,7 @@ def _sealed_verdict(tmp_path: Path, criteria: list[str]) -> str:
 def env(plan_context, monkeypatch):
     """The evidence check stays off here: D1 is about the criteria, not the tree."""
     monkeypatch.setattr(_attr, 'resolve_live_worktree', lambda _plan_id: None)
+    monkeypatch.setattr(review_support, '_main_checkout_root', lambda: None)
 
 
 # --- D1 (a): a criterion narrowed after approval yields a finding --------------------------

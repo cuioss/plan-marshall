@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import re
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -27,6 +28,7 @@ from _criteria_snapshot import (
     canonical_digest,
     seal_verdict,
 )
+from file_ops import cwd_checkout_root
 
 KIND_FUNCTIONAL = 'functional'
 KIND_CODE = 'code'
@@ -47,11 +49,16 @@ SEVERITY_BLOCKING = 'blocking'
 SEVERITY_ADVISORY = 'advisory'
 
 #: A criterion whose Done-when is a run against the PRE-fix tree.
+#:
+#: ``pre[-_ ]fix`` requires a separator between the halves. The retired ``pre-?fix``
+#: made the separator optional, so it also matched the ordinary word "prefix" — a
+#: criterion naming "the canonical prefix set" was read as a pre-fix run and
+#: downgraded from ``met`` to ``unevidenced``, a blocking finding.
 PRE_FIX_CRITERION_RE = re.compile(
-    r'(?i)(pre-?fix|fails?\s+(?:at|on|against)\s+(?:the\s+)?`?[0-9a-f]{7,40}`?|fails?\s+before\s+the\s+fix)'
+    r'(?i)(?:\bpre[-_ ]fix\b|fails?\s+(?:at|on|against)\s+(?:the\s+)?`?[0-9a-f]{7,40}`?|fails?\s+before\s+the\s+fix)'
 )
 #: Evidence that names a failing run against the pre-fix tree (a SHA-bearing failure).
-PRE_FIX_EVIDENCE_RE = re.compile(r'(?i)(pre-?fix|before\s+the\s+fix)')
+PRE_FIX_EVIDENCE_RE = re.compile(r'(?i)(?:\bpre[-_ ]fix\b|before\s+the\s+fix)')
 FAILURE_TOKEN_RE = re.compile(r'(?i)\bfail(?:s|ed|ing)?\b')
 SHA_RE = re.compile(r'[0-9a-f]{7,40}')
 #: Mention of HEAD disqualifies an entry as pre-fix-run evidence: it names the wrong tree.
@@ -144,11 +151,15 @@ def cited_evidence_path(entry: Any) -> str | None:
     ``test/x.py::test_a fails at 8442a5e33`` — and anchoring on the whole entry
     would let that prose hide a citation from the existence check. A free-form
     first token that is not a path (``module-tests``, ``green``) yields ``None``.
+
+    A token wrapped in backticks — the normal markdown citation form,
+    ```test/x.py::test_a``` — has its backticks stripped before the match, so a
+    real citation is not refused for its formatting.
     """
     tokens = str(entry or '').strip().split(maxsplit=1)
     if not tokens:
         return None
-    match = EVIDENCE_PATH_RE.match(tokens[0])
+    match = EVIDENCE_PATH_RE.match(tokens[0].strip('`'))
     if not match:
         return None
     return match.group(1)
@@ -159,25 +170,75 @@ def _cited_name(entry: Any) -> str:
     tokens = str(entry or '').strip().split(maxsplit=1)
     if not tokens:
         return ''
-    _, _, name = tokens[0].partition('::')
+    _, _, name = tokens[0].strip('`').partition('::')
     return name.strip()
+
+
+def _read_text(path: Path) -> str | None:
+    """Read a file as UTF-8, or ``None`` when it cannot be read."""
+    try:
+        return path.read_text(encoding='utf-8')
+    except OSError:
+        return None
+
+
+def _is_git_checkout(root: Path) -> bool:
+    """Whether ``root`` is inside a git work tree (so a graded HEAD exists)."""
+    proc = subprocess.run(
+        ['git', '-C', str(root), 'rev-parse', '--git-dir'],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+    )
+    return proc.returncode == 0
+
+
+def _graded_head_file(root: Path, relative: str) -> tuple[bool, str]:
+    """Return ``(present, content)`` for a path AT THE GRADED HEAD (``HEAD:{path}``).
+
+    Existence is judged against the committed tree, never the working tree: a test
+    the change cites but never committed is cited of something the graded change
+    does not contain, and reading the working tree would accept it. A root that is
+    not a git checkout has no graded head, so the working tree is read instead
+    (the honest fallback for a non-repository root).
+    """
+    if _is_git_checkout(root):
+        proc = subprocess.run(
+            ['git', '-C', str(root), 'show', f'HEAD:{relative}'],
+            capture_output=True,
+            text=True,
+            timeout=60,
+            check=False,
+        )
+        if proc.returncode != 0:
+            return False, ''
+        return True, proc.stdout
+    target = root / relative
+    content = _read_text(target) if target.is_file() else None
+    return (content is not None), (content or '')
 
 
 def missing_evidence(evidence_root: Path, evidence: list[str]) -> list[str]:
     """Return every cited path, or cited test name, absent from ``evidence_root``.
 
-    A path that does not exist at the graded head is a citation of something the
+    A path that does not exist AT THE GRADED HEAD is a citation of something the
     change never had; a ``path::name`` whose name appears nowhere in the file is
     the PLAN-LB-40 fabrication — a cited test that exists nowhere. A dotted name
     is checked segment by segment, so a class-scoped citation counts when the
     file holds its class and its method.
 
-    Every citation is constrained to the graded tree. A verdict is author-written
-    text, so an absolute path or a ``..`` traversal would otherwise make this
-    reader open a file outside the tree it is grading — ``Path('/tree') /
-    '/elsewhere'`` is ``/elsewhere``. A citation that resolves outside the tree is
-    reported as absent, which is what it is: something the graded change does not
-    contain.
+    Every repository citation is constrained to the graded tree. A verdict is
+    author-written text, so an absolute path or a ``..`` traversal would otherwise
+    make this reader open a file outside the tree it is grading — ``Path('/tree')
+    / '/elsewhere'`` is ``/elsewhere``. A citation that resolves outside the tree
+    is reported as absent, which is what it is: something the graded change does
+    not contain.
+
+    One citation class is exempt from the graded-head rule: a PLAN-LOCAL citation
+    (a path under ``.plan/``, the normal build-log evidence) is a recorded artifact
+    of the run, not a graded source file, so it is checked against the checkout's
+    own ``.plan`` tree on the filesystem.
     """
     root = evidence_root.resolve()
     missing: list[str] = []
@@ -186,17 +247,30 @@ def missing_evidence(evidence_root: Path, evidence: list[str]) -> list[str]:
         path = cited_evidence_path(raw)
         if path is None:
             continue
-        resolved = (evidence_root / path).resolve()
-        if not resolved.is_relative_to(root) or not resolved.is_file():
-            missing.append(raw)
-            continue
-        name = _cited_name(raw)
-        if name:
-            try:
-                content = resolved.read_text(encoding='utf-8')
-            except OSError:
+        if path.startswith('.plan/'):
+            checkout = Path(cwd_checkout_root()).resolve()
+            # Constrained to the checkout root exactly as a repository citation is
+            # constrained to the graded tree: a ``..`` in the citation must not open
+            # a file outside the checkout.
+            candidate = (checkout / path).resolve()
+            if not candidate.is_relative_to(checkout):
                 missing.append(raw)
                 continue
+            content = _read_text(candidate) if candidate.is_file() else None
+            if content is None:
+                missing.append(raw)
+                continue
+        else:
+            resolved = (evidence_root / path).resolve()
+            if not resolved.is_relative_to(root):
+                missing.append(raw)
+                continue
+            present, content = _graded_head_file(root, resolved.relative_to(root).as_posix())
+            if not present:
+                missing.append(raw)
+                continue
+        name = _cited_name(raw)
+        if name:
             # A dotted name is checked SEGMENT by SEGMENT: a class-scoped citation
             # names a class and a method the file holds separately, so requiring
             # the literal dotted string would refuse a real test.

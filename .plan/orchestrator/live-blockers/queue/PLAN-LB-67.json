@@ -2,9 +2,10 @@
   "id": "PLAN-LB-67",
   "slug": "standing-review-authorization",
   "workstream": "WS-04",
-  "status": "staged",
-  "plan_marshall_plan_id": "",
-  "pr": "",
-  "landing": "",
+  "status": "shipped",
+  "lane": "runbook",
+  "plan_marshall_plan_id": "lb-67-standing-review-authorization",
+  "pr": "1813",
+  "landing": "landings/PLAN-LB-67.md",
   "seq": 67
 }
