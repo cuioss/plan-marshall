@@ -29,7 +29,6 @@ builds with the wrong tool, would report a green run over work nobody checked.
 from __future__ import annotations
 
 import argparse
-import fnmatch
 import json
 import re
 from pathlib import Path
@@ -164,42 +163,86 @@ _SKILLS_DECL_RE = re.compile(r'^(?:\s*[-*]\s*)?Skills:\s*(?P<value>.+?)\s*$')
 _PERSONA_DECL_RE = re.compile(r'^(?:\s*[-*]\s*)?Persona:\s*(?P<value>.+?)\s*$')
 
 
+def _lane_skill_dir() -> Path:
+    """The lane's own skill directory, ``{root}/{bundle}-{skill}`` or ``{bundle}/skills/{skill}``."""
+    return Path(__file__).resolve().parents[1]
+
+
 def _lane_skills_root() -> Path:
     """The ``skills/`` directory the lane itself ships in."""
     return Path(__file__).resolve().parents[2]
 
 
 def _lane_bundle() -> str:
-    """The bundle the lane ships in, used to resolve a bare skill name."""
+    """The bundle the lane ships in, used to resolve a bare skill name.
+
+    In the source tree and the nested plugin cache the bundle is the lane's
+    grandparent directory name. In a flat deployment the lane's own directory is
+    the dash-joined ``{bundle}-{skill}``, which no separator position can split
+    back into the pair, so the bundle is read from the identity the flat emitters
+    record in the lane's ``SKILL.md``
+    (:func:`deployed_layout.read_flat_skill_identity`).
+    """
+    from deployed_layout import read_flat_skill_identity
     from marketplace_bundles import extract_bundle_name
 
-    return extract_bundle_name(Path(__file__).resolve().parents[3])
+    identity = read_flat_skill_identity(_lane_skill_dir())
+    if identity is not None:
+        return identity[0]
+    return extract_bundle_name(_lane_skill_dir().parents[1])
 
 
-def _skill_exists(notation: str, lane_bundle: str) -> bool:
-    """Whether *notation* names a skill installed beside the lane.
+def _skill_probe_paths(notation: str, lane_bundle: str) -> list[Path]:
+    """Return every path the lane probes for *notation*, in probe order.
 
-    A bare name — and a ``bundle:`` naming the lane's own bundle — resolves
-    against the sibling skill directories, so it works in the source tree and in
-    every deployed layout. A skill in ANOTHER bundle resolves through the
-    marketplace bundle resolver; when that root is not locatable (an unusual
-    deployment), the nested ``{bundle}/skills/{skill}`` probe is the fallback.
+    A bare name is qualified with ``lane_bundle`` first, so the lane's own skills
+    resolve beside it without the caller spelling a bundle. The lane's own
+    ``skills/`` root is resolved through the shared layout resolver
+    (:func:`deployed_layout.resolve_skill_path`) and its candidates enumerated
+    from the same vocabulary (:func:`deployed_layout.skill_roots` plus
+    :func:`deployed_layout.flat_skill_dir_name`), which knows both the nested
+    shape and the flat ``{bundle}-{skill}`` shape. The nested bundle tree — and
+    every version dir in it — is probed through
+    :func:`marketplace_bundles.resolve_bundle_path`. The enumeration is what lets
+    a name present in none of the layouts report every path that was probed,
+    instead of a single guess.
     """
-    own_root = _lane_skills_root()
-    bundle, sep, skill = notation.partition(':')
-    if not sep:
-        return (own_root / notation / 'SKILL.md').is_file()
-    if bundle == lane_bundle:
-        return (own_root / skill / 'SKILL.md').is_file()
+    from deployed_layout import flat_skill_dir_name, resolve_skill_path, skill_roots
+
+    bundle, separator, skill = notation.partition(':')
+    if not separator:
+        bundle, skill = lane_bundle, notation
+    subpath = f'skills/{skill}/SKILL.md'
+
+    candidates: list[Path] = []
+    resolved = resolve_skill_path(_lane_skills_root(), bundle, subpath)
+    if resolved is not None:
+        candidates.append(resolved)
+    for root in skill_roots(_lane_skills_root()):
+        candidate = root / flat_skill_dir_name(bundle, skill) / 'SKILL.md'
+        if candidate not in candidates:
+            candidates.append(candidate)
     try:
         from marketplace_bundles import resolve_bundle_path, resolve_bundles_root
 
-        bundles_root = resolve_bundles_root(Path(__file__))
+        bundles_root: Path | None = resolve_bundles_root(Path(__file__))
     except Exception:
         bundles_root = None
-    if bundles_root is None:
-        return (own_root.parent.parent / bundle / 'skills' / skill / 'SKILL.md').is_file()
-    return resolve_bundle_path(bundles_root, bundle, f'skills/{skill}/SKILL.md').is_file()
+    if bundles_root is not None:
+        nested = resolve_bundle_path(bundles_root, bundle, subpath)
+        if nested not in candidates:
+            candidates.append(nested)
+    return candidates
+
+
+def _skill_exists(notation: str, lane_bundle: str) -> bool:
+    """Whether *notation* names a skill installed in any deployed layout.
+
+    True when any :func:`_skill_probe_paths` candidate exists: the lane's own
+    ``skills/`` root in either shape, or the nested bundle tree a cross-bundle
+    name resolves through.
+    """
+    return any(path.is_file() for path in _skill_probe_paths(notation, lane_bundle))
 
 
 def _spec_deliverables(spec: Path) -> list[dict[str, str]]:
@@ -256,18 +299,23 @@ def _declared_skills(value: str) -> list[str]:
 
 
 def _declared_persona(value: str) -> str:
-    """Normalise a ``Persona:`` value to its persona skill's name.
+    """Normalise a ``Persona:`` value to a resolvable persona notation.
 
     ``implementer`` and ``plan-marshall:persona-implementer`` name the same
-    skill, so both normalise to ``persona-implementer`` and the report always
-    carries a resolvable name.
+    skill. A KEEPS its bundle when it carries one — a persona in another bundle
+    must resolve there, not in the lane's own — while a bare kind is prefixed
+    with the canonical ``persona-`` marker and left bare, to be qualified with
+    the lane's own bundle at probe time.
     """
     persona = value.strip().strip('`')
     if not persona:
         return ''
-    if ':' in persona:
-        persona = persona.split(':', 1)[1]
-    return persona if persona.startswith('persona-') else f'persona-{persona}'
+    bundle, separator, skill = persona.partition(':')
+    if not separator:
+        skill = persona
+    if not skill.startswith('persona-'):
+        skill = f'persona-{skill}'
+    return f'{bundle}:{skill}' if separator else skill
 
 
 def _resolve_deliverable_skills(spec: Path) -> dict[str, Any]:
@@ -289,11 +337,17 @@ def _resolve_deliverable_skills(spec: Path) -> dict[str, Any]:
         row['persona'] = _declared_persona(row['persona'])
         if row['persona']:
             personas.append(row['persona'])
-    missing = [name for name in declared if not _skill_exists(name, lane_bundle)]
-    missing.extend(name for name in personas if not _skill_exists(name, lane_bundle))
+    missing: list[str] = []
+    probed: list[str] = []
+    for name in [*declared, *personas]:
+        if _skill_exists(name, lane_bundle):
+            continue
+        missing.append(name)
+        probed.extend(str(candidate) for candidate in _skill_probe_paths(name, lane_bundle))
     return {
         'deliverables': rows,
         'missing_skills': missing,
+        'missing_probed': probed,
         'skills_note': 'declared' if declared or personas else 'none named',
     }
 
@@ -372,6 +426,19 @@ def _resolve_build(project_dir: Path) -> tuple[dict[str, Any], dict[str, Any]]:
     return build, probed
 
 
+def _augment_resolved(probed: dict[str, Any], project_dir: Path) -> dict[str, Any]:
+    """Return the architecture's augmented resolve record for *probed*.
+
+    A thin seam over ``manage-architecture``'s augmentation, so the timeout
+    resolution reads the architecture's own stamp without this module importing
+    the architecture client at load time. It is also the seam a test can replace
+    to pin a stamp the fixture architecture cannot express.
+    """
+    from _cmd_client import _augment_resolved as augment
+
+    return augment(probed, str(project_dir))
+
+
 def _resolve_build_timeout(probed: dict[str, Any], project_dir: Path) -> int:
     """Return the build timeout, in seconds, from the architecture's own stamp.
 
@@ -386,9 +453,7 @@ def _resolve_build_timeout(probed: dict[str, Any], project_dir: Path) -> int:
     ``None``, since the lane has to hand a number to the build command.
     """
     try:
-        from _cmd_client import _augment_resolved
-
-        stamped = _augment_resolved(probed, str(project_dir)).get('bash_timeout_seconds')
+        stamped = _augment_resolved(probed, project_dir).get('bash_timeout_seconds')
         if isinstance(stamped, int) and stamped > 0:
             return stamped
     except Exception:
@@ -470,69 +535,152 @@ def _resolve_harness_guard(project_dir: Path) -> tuple[str, str]:
     return harness, 'present' if _claude_guard_installed(project_dir) else 'none'
 
 
-#: The CI workflow that declares this repository's footprint opt-in. Read only —
-#: the lane never writes it — and consulted so the lane classifies changed paths
-#: by the PROJECT's own rule rather than by a list hard-coded here.
-_FOOTPRINT_WORKFLOW = ('.github', 'workflows', 'python-verify.yml')
+#: The CI directory a workflow lives under, relative to the project root. A
+#: DIRECTORY, never a filename: the workflow that carries the opt-in is
+#: discovered, so no workflow name appears in this module.
+_CI_WORKFLOW_DIR = ('.github', 'workflows')
 
-#: The path prefixes, document extensions and bare filenames the CI footprint gate
-#: treats as non-building when its ``skip-on-docs-only`` opt-in is on. The mirrored
-#: set is the pinned reusable workflow's own docs/config exclusions, and it is
-#: applied ONLY where the opt-in is in force. Anything outside it BUILDS, so a
-#: class the gate adds later lands as ``buildable`` — the fail-closed direction,
-#: since a wrong ``docs-only`` silently skips a build while a wrong ``buildable``
-#: only costs time.
-_NON_BUILDING_PREFIXES = ('.plan/', '.claude/', '.agents/', '.opencode/', 'doc/')
-_NON_BUILDING_SUFFIXES = ('.md', '.adoc')
-_NON_BUILDING_BASENAMES = ('LICENSE', 'NOTICE')
+#: The extensions a workflow file may carry.
+_WORKFLOW_SUFFIXES = ('.yml', '.yaml')
 
+#: The workflow input that opts a project in to the footprint gate, and the input
+#: that lists the build overrides.
+_FOOTPRINT_OPT_IN_KEY = 'skip-on-docs-only'
+_EXTRA_BUILDABLE_KEY = 'extra-buildable'
 
-def _is_non_building(path: str) -> bool:
-    """Whether the footprint gate's docs/config classes cover *path*."""
-    if path in _NON_BUILDING_BASENAMES:
-        return True
-    return path.startswith(_NON_BUILDING_PREFIXES) or path.lower().endswith(_NON_BUILDING_SUFFIXES)
+#: The architecture file category whose extensions are the project's prose classes,
+#: and the ``build_systems`` marker the documentation extension writes on a
+#: prose-only module. Both are the architecture's own vocabulary: the lane reads
+#: them rather than spelling a class list of its own.
+_ARCHITECTURE_DOC_CATEGORY = 'doc'
+_ARCHITECTURE_DOC_BUILD_SYSTEM = 'documentation'
 
 
-def _read_extra_buildable(project_dir: Path) -> list[str] | None:
-    """Return the project's ``extra-buildable`` globs, or ``None`` when there is no opt-in.
+def _iter_workflow_files(project_dir: Path) -> list[Path]:
+    """Return the project's CI workflow files, sorted, or an empty list.
 
-    ``None`` means "this project declares no footprint rule", which the caller
-    answers from the architecture instead. A workflow present but NOT opting in
-    (``skip-on-docs-only`` absent or false) also returns ``None``: the lane must
-    never skip a build the project's CI would run.
+    Discovery, not a fixed name: a project's opt-in lives in whichever workflow
+    carries it, so the lane never names one.
     """
+    directory = project_dir.joinpath(*_CI_WORKFLOW_DIR)
     try:
-        lines = project_dir.joinpath(*_FOOTPRINT_WORKFLOW).read_text(encoding='utf-8').splitlines()
+        entries = sorted(directory.iterdir())
     except OSError:
-        return None
-    opted_in = False
-    extra: list[str] = []
-    index = 0
-    while index < len(lines):
-        line = lines[index]
+        return []
+    return [entry for entry in entries if entry.is_file() and entry.suffix.lower() in _WORKFLOW_SUFFIXES]
+
+
+def _footprint_opt_in(lines: list[str]) -> bool:
+    """Whether *lines* opt in to the footprint gate.
+
+    Only a literal ``true`` opts in. A definition that merely NAMES the input
+    (a reusable workflow's ``skip-on-docs-only:`` header, or a caller passing an
+    expression) is not an opt-in and is skipped, so a project that hosts the
+    reusable workflow is not mistaken for one that uses it.
+    """
+    for line in lines:
         stripped = line.strip()
-        if stripped.startswith('skip-on-docs-only:'):
-            opted_in = stripped.split(':', 1)[1].strip().lower() == 'true'
-        elif stripped.startswith('extra-buildable:'):
-            base_indent = len(line) - len(line.lstrip(' '))
-            inline = stripped.split(':', 1)[1].strip()
-            if inline and not inline.startswith('>'):
-                extra.extend(part for part in inline.split() if part)
-            index += 1
-            while index < len(lines):
-                candidate = lines[index]
-                if not candidate.strip():
-                    index += 1
-                    continue
-                indent = len(candidate) - len(candidate.lstrip(' '))
-                if indent <= base_indent:
-                    break
-                extra.extend(part for part in candidate.split() if part)
-                index += 1
+        if stripped.startswith(f'{_FOOTPRINT_OPT_IN_KEY}:'):
+            value = stripped.split(':', 1)[1].strip().strip('"\'').lower()
+            return value == 'true'
+    return False
+
+
+def _scalar_tokens(text: str) -> list[str]:
+    """Split one scalar line into glob tokens, dropping comments and wrapping quotes.
+
+    A quoted scalar is unwrapped before it is split, because the quote characters
+    are YAML syntax rather than part of the glob. A comment line contributes
+    nothing.
+    """
+    text = text.strip()
+    if not text or text.startswith('#'):
+        return []
+    if len(text) >= 2 and text[0] == text[-1] and text[0] in {'"', "'"}:
+        text = text[1:-1]
+    return [part for part in text.split() if part]
+
+
+def _extra_buildable_globs(lines: list[str]) -> list[str]:
+    """Return the ``extra-buildable`` globs from a workflow body, in declared order.
+
+    Handles both scalar styles a workflow may use: an inline value (optionally
+    quoted), and a block scalar whose indicator is ``>`` (folded) or ``|``
+    (literal). A block-scalar indicator is not a glob, so neither style is read
+    as one.
+    """
+    extra: list[str] = []
+    for index, line in enumerate(lines):
+        if not line.strip().startswith(f'{_EXTRA_BUILDABLE_KEY}:'):
             continue
-        index += 1
-    return extra if opted_in else None
+        base_indent = len(line) - len(line.lstrip(' '))
+        inline = line.strip().split(':', 1)[1].strip()
+        if inline and not inline.startswith(('>', '|')):
+            extra.extend(_scalar_tokens(inline))
+        for candidate in lines[index + 1 :]:
+            if not candidate.strip():
+                continue
+            if len(candidate) - len(candidate.lstrip(' ')) <= base_indent:
+                break
+            extra.extend(_scalar_tokens(candidate))
+        break
+    return extra
+
+
+def _read_footprint_rule(project_dir: Path) -> tuple[list[str] | None, str]:
+    """Return ``(extra_buildable, reason)`` for the project's own footprint rule.
+
+    ``extra_buildable`` is ``None`` when no workflow opts in — the architecture
+    then decides — and a list when one does. A workflow that cannot be decoded
+    yields an EMPTY list and a non-empty ``reason``: the caller then builds every
+    path, the fail-closed direction, because an unreadable rule must never become
+    a skipped build.
+    """
+    for workflow in _iter_workflow_files(project_dir):
+        try:
+            text = workflow.read_text(encoding='utf-8')
+        except (OSError, UnicodeDecodeError) as exc:
+            return [], f'{workflow.name}: {type(exc).__name__}'
+        lines = text.splitlines()
+        if not _footprint_opt_in(lines):
+            continue
+        return _extra_buildable_globs(lines), ''
+    return None, ''
+
+
+def _architecture_documentation_surfaces(project_dir: Path) -> tuple[list[str], set[str]]:
+    """Return the project's prose surfaces: ``(directory prefixes, extensions)``.
+
+    A documentation-surface module is one whose architecture ``build_systems``
+    carries the documentation marker the documentation extension writes on a
+    prose-only module. Its ``paths.module`` directory and the extensions of its
+    ``doc``-categorized files are the project's own non-building classes, read
+    here rather than spelled into this module. An empty result means the
+    architecture reports no such surface, and no path is then classified
+    docs-only by it.
+    """
+    prefixes: list[str] = []
+    extensions: set[str] = set()
+    try:
+        from _architecture_core import iter_modules, load_module_derived
+
+        for name in iter_modules(str(project_dir)):
+            try:
+                derived = load_module_derived(name, str(project_dir))
+            except Exception:
+                continue
+            if _ARCHITECTURE_DOC_BUILD_SYSTEM not in (derived.get('build_systems') or []):
+                continue
+            module_path = str((derived.get('paths') or {}).get('module') or '').strip('/')
+            if module_path and module_path != '.':
+                prefixes.append(f'{module_path}/')
+            for rel in (derived.get('files') or {}).get(_ARCHITECTURE_DOC_CATEGORY) or []:
+                suffix = Path(str(rel)).suffix.lower()
+                if suffix:
+                    extensions.add(suffix)
+    except Exception:
+        return [], set()
+    return prefixes, extensions
 
 
 def _architecture_module_prefixes(project_dir: Path) -> list[str] | None:
@@ -549,6 +697,10 @@ def _architecture_module_prefixes(project_dir: Path) -> list[str] | None:
         prefixes: list[str] = []
         for name in iter_modules(str(project_dir)):
             derived = load_module_derived(name, str(project_dir))
+            # A documentation-surface module is prose, not a building module: its
+            # directory must not force a build before the prose check below runs.
+            if _ARCHITECTURE_DOC_BUILD_SYSTEM in (derived.get('build_systems') or []):
+                continue
             module_path = str((derived.get('paths') or {}).get('module') or '').strip('/')
             prefixes.append('' if module_path in ('', '.') else f'{module_path}/')
         return prefixes
@@ -556,36 +708,82 @@ def _architecture_module_prefixes(project_dir: Path) -> list[str] | None:
         return None
 
 
-def _classify_path(path: str, extra: list[str], module_prefixes: list[str], source: str) -> str:
+def _glob_to_regex(pattern: str) -> str:
+    """Translate a glob pattern to a regex with ``**`` as a globstar.
+
+    ``*`` stays inside one path segment; ``**/`` matches zero or more whole
+    segments, so ``test/**/*.md`` matches a file directly under ``test/`` as well
+    as one nested deeper. ``fnmatch`` treats ``**`` as two ordinary wildcards and
+    misses the direct case, which is the fail-open defect this replaces.
+    """
+    out: list[str] = []
+    index = 0
+    length = len(pattern)
+    while index < length:
+        char = pattern[index]
+        if char == '*':
+            if index + 1 < length and pattern[index + 1] == '*':
+                if index + 2 < length and pattern[index + 2] == '/':
+                    out.append('(?:.*/)?')
+                    index += 3
+                else:
+                    out.append('.*')
+                    index += 2
+                continue
+            out.append('[^/]*')
+            index += 1
+            continue
+        if char == '?':
+            out.append('[^/]')
+            index += 1
+            continue
+        out.append(re.escape(char))
+        index += 1
+    return ''.join(out)
+
+
+def _matches_glob(path: str, pattern: str) -> bool:
+    """Whether *path* matches *pattern*, with ``**`` as a globstar."""
+    return re.fullmatch(_glob_to_regex(pattern), path) is not None
+
+
+def _is_project_doc(path: str, doc_prefixes: list[str], doc_extensions: set[str]) -> bool:
+    """Whether the architecture reports *path* as prose (a non-building class)."""
+    if any(path.startswith(prefix) for prefix in doc_prefixes):
+        return True
+    return Path(path).suffix.lower() in doc_extensions
+
+
+def _classify_path(
+    path: str,
+    extra: list[str],
+    module_prefixes: list[str],
+    doc_prefixes: list[str],
+    doc_extensions: set[str],
+    source: str,
+) -> str:
     """Classify ONE changed path as ``buildable`` or ``docs-only``.
 
     ``extra-buildable`` is an OVERRIDE that forces a build, so it is tested first:
     this repository lists ``marketplace/**/*.md`` there precisely because those
-    Markdown files are test input, and the extension rule below would otherwise
+    Markdown files are test input, and the prose classes below would otherwise
     call them docs-only.
 
-    Under the CI rule a path that is in NEITHER class is buildable — the gate's
-    own direction, since its opt-in names what to SKIP, not what to build. The
+    Under the CI rule a path is docs-only only when the project's architecture
+    reports it as prose; a path in NEITHER class is buildable — the gate's own
+    direction, since its opt-in names what to SKIP, not what to build. The
     architecture fallback keeps that same fail-closed bias: a path inside a module
-    builds, and a path outside every module builds unless it is provably a
-    document, because the module list is not an inventory of everything that can
-    affect a build.
+    builds, and a path outside every module builds unless the architecture
+    reports it as prose, because the module list is not an inventory of
+    everything that can affect a build.
     """
-    if any(fnmatch.fnmatch(path, pattern) for pattern in extra):
+    if any(_matches_glob(path, pattern) for pattern in extra):
         return 'buildable'
     if source == 'ci-workflow':
-        # The gate's own direction: it names what to SKIP, so anything outside the
-        # non-building classes builds.
-        return 'docs-only' if _is_non_building(path) else 'buildable'
-    # Architecture fallback: the architecture's module directories decide what
-    # BUILDS, and the document classes decide only what is provably a document. A
-    # path that matches neither — a root build file, an unlisted configuration —
-    # is buildable: the architecture's module list is not an inventory of
-    # everything that can affect a build, so its silence must not be read as
-    # "docs-only".
+        return 'docs-only' if _is_project_doc(path, doc_prefixes, doc_extensions) else 'buildable'
     if any(path.startswith(prefix) for prefix in module_prefixes):
         return 'buildable'
-    return 'docs-only' if _is_non_building(path) else 'buildable'
+    return 'docs-only' if _is_project_doc(path, doc_prefixes, doc_extensions) else 'buildable'
 
 
 def cmd_build_classify(args: argparse.Namespace) -> dict[str, Any]:
@@ -601,17 +799,29 @@ def cmd_build_classify(args: argparse.Namespace) -> dict[str, Any]:
     if not paths:
         return {'status': 'error', 'error': 'no_paths', 'message': 'no changed paths to classify'}
 
-    extra = _read_extra_buildable(project_dir)
+    extra, reason = _read_footprint_rule(project_dir)
     if extra is not None:
         source = 'ci-workflow'
         module_prefixes: list[str] = []
     else:
         source = 'architecture'
         module_prefixes = _architecture_module_prefixes(project_dir) or ['']
+    doc_prefixes, doc_extensions = _architecture_documentation_surfaces(project_dir)
 
-    rows = [{'path': path, 'kind': _classify_path(path, extra or [], module_prefixes, source)} for path in paths]
+    if reason:
+        # The opt-in was found but its rule could not be read: skip nothing, so
+        # the unknown rule costs a local build rather than a skipped CI one.
+        rows = [{'path': path, 'kind': 'buildable'} for path in paths]
+    else:
+        rows = [
+            {
+                'path': path,
+                'kind': _classify_path(path, extra or [], module_prefixes, doc_prefixes, doc_extensions, source),
+            }
+            for path in paths
+        ]
     buildable = any(row['kind'] == 'buildable' for row in rows)
-    return {
+    result: dict[str, Any] = {
         'status': 'success',
         'operation': 'build-classify',
         'source': source,
@@ -619,6 +829,11 @@ def cmd_build_classify(args: argparse.Namespace) -> dict[str, Any]:
         'buildable': buildable,
         'paths': rows,
     }
+    # A rule that could not be read is named, so the caller sees WHY every path
+    # built rather than reading the outcome as a rule that simply matched nothing.
+    if reason:
+        result['reason'] = reason
+    return result
 
 
 def cmd_resolve(args: argparse.Namespace) -> dict[str, Any]:
@@ -649,6 +864,7 @@ def cmd_resolve(args: argparse.Namespace) -> dict[str, Any]:
             'status': 'error',
             'error': 'named_skill_not_found',
             'missing': ', '.join(deliverable_state['missing_skills']),
+            'probed': ', '.join(deliverable_state['missing_probed']),
             'spec': args.spec,
             'plan': plan_id,
         }
