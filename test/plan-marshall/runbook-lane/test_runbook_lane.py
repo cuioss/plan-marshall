@@ -964,6 +964,25 @@ def test_build_classify_treats_an_unreadable_rule_as_buildable(tmp_path: Path) -
     assert 'UnicodeDecodeError' in data['reason']
 
 
+def test_build_classify_architecture_fallback_treats_a_doc_module_as_prose(tmp_path: Path) -> None:
+    project = _seed_footprint(tmp_path, opt_in=False, module_path='core')
+
+    data = _build_classify(project, 'doc/developer/build.adoc')
+
+    assert data['source'] == 'architecture'
+    assert data['kind'] == 'docs-only'
+
+
+def test_extra_buildable_globs_drops_a_block_indicator_and_unwraps_quotes() -> None:
+    module = load_script_module('plan-marshall', _SKILL_NAME, 'runbook_lane.py', register=False)
+
+    literal = module._extra_buildable_globs(['      extra-buildable: |', '        marketplace/**/*.md'])
+    quoted = module._extra_buildable_globs(['      extra-buildable: "test/**/*.md"'])
+
+    assert literal == ['marketplace/**/*.md']
+    assert quoted == ['test/**/*.md']
+
+
 def test_classifier_source_holds_no_workflow_name_or_suffix_list() -> None:
     source = (get_scripts_dir('plan-marshall', _SKILL_NAME) / 'runbook_lane.py').read_text(encoding='utf-8')
 

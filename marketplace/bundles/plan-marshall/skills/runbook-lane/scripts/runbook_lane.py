@@ -586,22 +586,43 @@ def _footprint_opt_in(lines: list[str]) -> bool:
     return False
 
 
+def _scalar_tokens(text: str) -> list[str]:
+    """Split one scalar line into glob tokens, dropping comments and wrapping quotes.
+
+    A quoted scalar is unwrapped before it is split, because the quote characters
+    are YAML syntax rather than part of the glob. A comment line contributes
+    nothing.
+    """
+    text = text.strip()
+    if not text or text.startswith('#'):
+        return []
+    if len(text) >= 2 and text[0] == text[-1] and text[0] in {'"', "'"}:
+        text = text[1:-1]
+    return [part for part in text.split() if part]
+
+
 def _extra_buildable_globs(lines: list[str]) -> list[str]:
-    """Return the ``extra-buildable`` globs from a workflow body, in declared order."""
+    """Return the ``extra-buildable`` globs from a workflow body, in declared order.
+
+    Handles both scalar styles a workflow may use: an inline value (optionally
+    quoted), and a block scalar whose indicator is ``>`` (folded) or ``|``
+    (literal). A block-scalar indicator is not a glob, so neither style is read
+    as one.
+    """
     extra: list[str] = []
     for index, line in enumerate(lines):
         if not line.strip().startswith(f'{_EXTRA_BUILDABLE_KEY}:'):
             continue
         base_indent = len(line) - len(line.lstrip(' '))
         inline = line.strip().split(':', 1)[1].strip()
-        if inline and not inline.startswith('>'):
-            extra.extend(part for part in inline.split() if part)
+        if inline and not inline.startswith(('>', '|')):
+            extra.extend(_scalar_tokens(inline))
         for candidate in lines[index + 1 :]:
             if not candidate.strip():
                 continue
             if len(candidate) - len(candidate.lstrip(' ')) <= base_indent:
                 break
-            extra.extend(part for part in candidate.split() if part)
+            extra.extend(_scalar_tokens(candidate))
         break
     return extra
 
@@ -676,6 +697,10 @@ def _architecture_module_prefixes(project_dir: Path) -> list[str] | None:
         prefixes: list[str] = []
         for name in iter_modules(str(project_dir)):
             derived = load_module_derived(name, str(project_dir))
+            # A documentation-surface module is prose, not a building module: its
+            # directory must not force a build before the prose check below runs.
+            if _ARCHITECTURE_DOC_BUILD_SYSTEM in (derived.get('build_systems') or []):
+                continue
             module_path = str((derived.get('paths') or {}).get('module') or '').strip('/')
             prefixes.append('' if module_path in ('', '.') else f'{module_path}/')
         return prefixes
