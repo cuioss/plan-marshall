@@ -76,7 +76,7 @@ The result supplies, and nothing below is spelled from anywhere else:
 | epic slug | `slug` |
 | `{plan}` | `plan` |
 | worktree | `worktree` |
-| branch | `{branch} = {prefix}{plan}`; the prefix is one the project's `working_prefixes` declares, and the project's own set wins over the canonical `feature/` (a new capability), `fix/` (a bug fix) and `chore/` (docs or maintenance) |
+| branch | `{branch} = {prefix}{plan}`; the canonical prefix set is closed — `feature/` (a new capability), `fix/` (a bug fix), `chore/` (docs or maintenance) — and the project's `working_prefixes` is its only extension, never a replacement: the chosen prefix must be one that set declares |
 | base branch | `base_branch` (the project's own base branch, never a spelling of it) |
 | inbox sender id | `sender_id` |
 | progress file | `progress_file` |
@@ -212,10 +212,11 @@ so git alone shows which deliverables are committed.
   nothing else by way of attribution. A PR body carries no attribution footer.
 - **Guard.** The resolve result reports `guard: present` only when this project has a tool-call guard
   installed for the active harness, and `guard: none` otherwise (the Antigravity harness has no
-  pre-tool-use hooks at all). Where nothing was enforced, the landing message says so — step 8's
-  facts block, and its rule-check section, report `guard: none on this harness (unenforced)`. The lane never
-  reports "all kept" or "no guard-log line" when nothing was enforced. The guard's audit log is
-  `{guard_log}` (the path `resolve` returns); step 8 reads it there for this run's sessions.
+  pre-tool-use hooks at all). Where nothing was enforced, the landing message says so: the guard
+  state travels as prose beside the fence, never as a facts-fence line, and the rule-check section
+  reports `guard: none on this harness (unenforced)`. The lane never reports "all kept" or "no
+  guard-log line" when nothing was enforced. The guard's audit log is `{guard_log}` (the path
+  `resolve` returns); step 8 reads it there for this run's sessions.
 
 ### Personas — loaded as standards, one per kind of work
 
@@ -377,7 +378,7 @@ the round limit, ask the operator whether to continue. Record every finding and 
      `ci pr resolve-thread`.
 5. **After every push, re-trigger** a reviewer whose last review predates the head.
 6. **Reviewer quota policy** ("review limit reached" or similar), for ANY required reviewer that
-   refuses on quota:
+   refuses on quota **while no qualifying review exists** (see section 7):
    1. Wait 90 minutes. Record the refusal and the next allowed trigger time in the progress file,
       then stop the session or wait for the operator; never `sleep`. Then post that
       reviewer's `trigger_comment` again. Repeat up to 10 times. If no review from that reviewer
@@ -484,7 +485,7 @@ steps=setup:done,implement:done,build-gate:done,self-review:{clear|budget-exhaus
 - **Values:** write `unknown` for anything you could not read, never `n/a` and never a guess.
   `deliverables_done` counts only fully met deliverables.
 - **Every line inside the facts fence is a `key=value` pair** — no line is dropped by the consumer's
-  parser. The guard state travels as a prose note beside the block rather than as a fence line:
+  parser. The guard state travels as prose beside the fence rather than as a fence line:
   `guard: none on this harness (unenforced)` when the resolve result reported `guard: none`, and
   `guard: present` otherwise.
 - **Guard:** where the resolve result reported `guard: none`, the rule-check section of the report
