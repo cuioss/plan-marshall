@@ -315,10 +315,15 @@ resolve result supplies:
   `git status` showing only doc files) and record `build-gate: docs-only` in the progress file and
   the landing message. `kind: buildable` runs the gate below as usual. The classifier applies the
   PROJECT's own footprint rule — its CI opt-in when it has one (a `skip-on-docs-only` declaration
-  plus the `extra-buildable` paths that force a build even for a document extension), otherwise the
-  architecture's module directories — rather than assuming a `.py` file is the only thing that
-  builds. Pass the same `--project-dir` the build gate uses. Required CI checks still have to be
-  green, so the merge gate is unchanged.
+  discovered in the workflow that carries it, plus the `extra-buildable` paths that force a build
+  even for a document extension), otherwise the architecture's module directories — rather than
+  assuming a `.py` file is the only thing that builds. It names no workflow and no class itself: the
+  non-building classes are the prose surfaces the architecture reports (a module marked
+  `documentation`, and the extensions the architecture files as `doc`). A path the classifier cannot
+  place, and any rule it could not read (reported as `reason`), builds — the fail-closed direction,
+  so a wrong answer costs a local build and never skips one the CI would run. Pass the same
+  `--project-dir` the build gate uses. Required CI checks still have to be green, so the merge gate
+  is unchanged.
 - **When to run what:** run `{build.quality-gate}` before each commit that touches `*.py`, and
   `{build.verify}` once before the PR. Scope the tests to one module while iterating.
 - **Shell timeout:** in-process builds hold the shell call for their whole duration. Give each call

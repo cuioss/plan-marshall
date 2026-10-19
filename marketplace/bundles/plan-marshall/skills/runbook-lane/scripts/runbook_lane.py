@@ -543,12 +543,12 @@ _WORKFLOW_SUFFIXES = ('.yml', '.yaml')
 _FOOTPRINT_OPT_IN_KEY = 'skip-on-docs-only'
 _EXTRA_BUILDABLE_KEY = 'extra-buildable'
 
-#: The architecture file category whose extensions are the project's prose classes.
+#: The architecture file category whose extensions are the project's prose classes,
+#: and the ``build_systems`` marker the documentation extension writes on a
+#: prose-only module. Both are the architecture's own vocabulary: the lane reads
+#: them rather than spelling a class list of its own.
 _ARCHITECTURE_DOC_CATEGORY = 'doc'
-
-
-class _FootprintRuleError(ValueError):
-    """The project's footprint rule was found but could not be read."""
+_ARCHITECTURE_DOC_BUILD_SYSTEM = 'documentation'
 
 
 def _iter_workflow_files(project_dir: Path) -> list[Path]:
@@ -568,18 +568,16 @@ def _iter_workflow_files(project_dir: Path) -> list[Path]:
 def _footprint_opt_in(lines: list[str]) -> bool:
     """Whether *lines* opt in to the footprint gate.
 
-    Raises :class:`_FootprintRuleError` when the key is present with a value that
-    is not a boolean — a rule the lane cannot read is a rule it must not act on.
+    Only a literal ``true`` opts in. A definition that merely NAMES the input
+    (a reusable workflow's ``skip-on-docs-only:`` header, or a caller passing an
+    expression) is not an opt-in and is skipped, so a project that hosts the
+    reusable workflow is not mistaken for one that uses it.
     """
     for line in lines:
         stripped = line.strip()
         if stripped.startswith(f'{_FOOTPRINT_OPT_IN_KEY}:'):
             value = stripped.split(':', 1)[1].strip().strip('"\'').lower()
-            if value == 'true':
-                return True
-            if value == 'false':
-                return False
-            raise _FootprintRuleError(f'{_FOOTPRINT_OPT_IN_KEY} is not a boolean')
+            return value == 'true'
     return False
 
 
@@ -607,10 +605,10 @@ def _read_footprint_rule(project_dir: Path) -> tuple[list[str] | None, str]:
     """Return ``(extra_buildable, reason)`` for the project's own footprint rule.
 
     ``extra_buildable`` is ``None`` when no workflow opts in — the architecture
-    then decides — and a list when one does. An opted-in workflow whose rule
-    cannot be read (an undecodable file, or an opt-in value that is not a
-    boolean) yields an EMPTY list and a non-empty ``reason``: the caller then
-    builds every path, the fail-closed direction.
+    then decides — and a list when one does. A workflow that cannot be decoded
+    yields an EMPTY list and a non-empty ``reason``: the caller then builds every
+    path, the fail-closed direction, because an unreadable rule must never become
+    a skipped build.
     """
     for workflow in _iter_workflow_files(project_dir):
         try:
@@ -618,11 +616,7 @@ def _read_footprint_rule(project_dir: Path) -> tuple[list[str] | None, str]:
         except (OSError, UnicodeDecodeError) as exc:
             return [], f'{workflow.name}: {type(exc).__name__}'
         lines = text.splitlines()
-        try:
-            opted_in = _footprint_opt_in(lines)
-        except _FootprintRuleError as exc:
-            return [], f'{workflow.name}: {exc}'
-        if not opted_in:
+        if not _footprint_opt_in(lines):
             continue
         return _extra_buildable_globs(lines), ''
     return None, ''
@@ -631,29 +625,26 @@ def _read_footprint_rule(project_dir: Path) -> tuple[list[str] | None, str]:
 def _architecture_documentation_surfaces(project_dir: Path) -> tuple[list[str], set[str]]:
     """Return the project's prose surfaces: ``(directory prefixes, extensions)``.
 
-    A documentation-surface module is one the architecture enriches with
-    ``purpose: documentation`` — its files are all category ``doc``. Its
-    ``paths.module`` directory and the extensions of its inventoried files are
-    the project's own non-building classes, read here rather than spelled into
-    this module. An empty result means the architecture reports no such surface,
-    and no path is then classified docs-only by it.
+    A documentation-surface module is one whose architecture ``build_systems``
+    carries the documentation marker the documentation extension writes on a
+    prose-only module. Its ``paths.module`` directory and the extensions of its
+    ``doc``-categorized files are the project's own non-building classes, read
+    here rather than spelled into this module. An empty result means the
+    architecture reports no such surface, and no path is then classified
+    docs-only by it.
     """
     prefixes: list[str] = []
     extensions: set[str] = set()
     try:
-        from _architecture_core import iter_modules, load_module_derived, load_module_enriched_or_empty
+        from _architecture_core import iter_modules, load_module_derived
 
         for name in iter_modules(str(project_dir)):
             try:
-                enriched = load_module_enriched_or_empty(name, str(project_dir))
-            except Exception:
-                enriched = {}
-            if str(enriched.get('purpose', '')).strip().lower() != 'documentation':
-                continue
-            try:
                 derived = load_module_derived(name, str(project_dir))
             except Exception:
-                derived = {}
+                continue
+            if _ARCHITECTURE_DOC_BUILD_SYSTEM not in (derived.get('build_systems') or []):
+                continue
             module_path = str((derived.get('paths') or {}).get('module') or '').strip('/')
             if module_path and module_path != '.':
                 prefixes.append(f'{module_path}/')

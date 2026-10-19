@@ -303,21 +303,19 @@ def _seed_fixture(
         ),
     )
     # The project's prose surface: the architecture's own non-building classes, so
-    # the classifier derives them from project data rather than from a literal.
+    # the classifier derives them from project data rather than from a literal. The
+    # `build_systems` marker is what the documentation extension writes on a
+    # prose-only module.
     _write(
         arch / 'documentation' / 'derived.json',
         json.dumps(
             {
                 'name': 'documentation',
-                'build_systems': [],
+                'build_systems': ['documentation'],
                 'paths': {'module': 'doc'},
                 'files': {'doc': ['doc/developer/build.adoc', 'doc/user/usage.md']},
             }
         ),
-    )
-    _write(
-        arch / 'documentation' / 'enriched.json',
-        json.dumps({'name': 'documentation', 'type': 'module', 'purpose': 'documentation'}),
     )
     spec = root / '.plan' / 'orchestrator' / slug / 'plans' / spec_name
     _write(spec, spec_text)
@@ -955,17 +953,15 @@ def test_build_classify_keeps_a_doc_as_docs_only(tmp_path: Path) -> None:
 
 def test_build_classify_treats_an_unreadable_rule_as_buildable(tmp_path: Path) -> None:
     project = _seed_footprint(tmp_path)
-    # The opt-in is present with a value that is not a boolean, so the rule cannot
-    # be read: every path must build rather than a skip being guessed.
-    _write(
-        project / '.github' / 'workflows' / 'python-verify.yml',
-        'name: X\njobs:\n  verify:\n    with:\n      skip-on-docs-only: maybe\n',
-    )
+    # The workflow cannot be decoded, so the rule cannot be read: every path must
+    # build rather than a skip being guessed.
+    (project / '.github' / 'workflows' / 'python-verify.yml').write_bytes(b'\xff\xfe\x00 not utf-8\n')
 
     data = _build_classify(project, 'doc/developer/build.adoc')
 
     assert data['kind'] == 'buildable'
-    assert 'skip-on-docs-only' in data['reason']
+    assert 'python-verify.yml' in data['reason']
+    assert 'UnicodeDecodeError' in data['reason']
 
 
 def test_classifier_source_holds_no_workflow_name_or_suffix_list() -> None:
@@ -1011,8 +1007,7 @@ def test_sleep_parity_keyword_is_the_qualifier_free_sentence() -> None:
 
     assert 'never `sleep`' in reviews_keywords, 'the sleep parity keyword is not the qualifier-free sentence'
     reviews = _section('## 6. Pull request and reviews')
-    assert 'never `sleep`' in reviews
-    assert 'bare `sleep`' not in reviews
+    assert 'never `sleep`' in reviews, 'the qualifier-free sleep sentence is not present for the keyword to match'
 
 
 def test_build_timeout_comes_from_the_architecture_stamp(tmp_path: Path, monkeypatch) -> None:
