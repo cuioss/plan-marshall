@@ -317,3 +317,60 @@ def test_scan_malformed_file_beside_numbered_corpus(adr_dir):
     assert result['duplicate_count'] == 0
     assert result['malformed_count'] == 1
     assert [Path(path).name for path in result['malformed_paths']] == ['notes.adoc']
+
+
+# =========================================================================
+# Tier 2: Per-package ADR trees — recursive scan and numbering
+# =========================================================================
+
+
+def _subdirectory_adr(adr_dir, directory, filename, *, title='Decision'):
+    """Write an ADR into a nested directory under the ADR root."""
+    nested = adr_dir / directory
+    nested.mkdir(parents=True, exist_ok=True)
+    _touch_adr(nested, filename, title=title)
+    return nested / filename
+
+
+def test_scan_reports_duplicate_number_across_directories(adr_dir):
+    """Two per-package ADRs sharing one number are reported as a duplicate."""
+    _subdirectory_adr(adr_dir, 'a', '0001-x.adoc', title='First')
+    _subdirectory_adr(adr_dir, 'b', '0001-y.adoc', title='Second')
+
+    result = cmd_scan(Namespace(command='scan', tag=None, affects=None))
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'duplicate_numbers'
+    assert result['duplicate_numbers'] == [1]
+    assert result['duplicate_count'] == 1
+    assert len(result['duplicate_paths']) == 2
+
+
+def test_next_number_sees_highest_adr_in_subdirectory(adr_dir):
+    """Numbering is unique across the tree: a nested highest ADR advances the counter."""
+    _subdirectory_adr(adr_dir, 'package', '0007-seventh.adoc', title='Seventh')
+
+    assert get_next_number() == 8
+    assert cmd_next_number(Namespace(command='next-number'))['next_number'] == 8
+
+
+def test_list_surfaces_adrs_in_subdirectories(adr_dir):
+    """The list surface reads the whole tree, not only the ADR root."""
+    _subdirectory_adr(adr_dir, 'package', '0001-nested.adoc', title='Nested')
+
+    result = cmd_list(Namespace(command='list', status=None))
+
+    assert result['status'] == 'success'
+    assert result['count'] == 1
+    assert result['adrs'][0]['title'] == 'Nested'
+
+
+def test_read_resolves_adr_in_subdirectory(adr_dir):
+    """A nested ADR is addressable by its width-agnostic number."""
+    _subdirectory_adr(adr_dir, 'package', '0003-nested.adoc', title='Nested Read')
+
+    result = cmd_read(Namespace(command='read', number=3))
+
+    assert result['status'] == 'success'
+    assert 'Nested Read' in result['content']
+

@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Manage Architectural Decision Records (ADRs) in doc/adr/ directory.
+"""Manage Architectural Decision Records (ADRs) recursively under doc/adr/.
 
-This script provides CRUD operations for ADRs with automatic numbering
-and AsciiDoc formatting.
+This script provides CRUD operations for ADRs with automatic numbering,
+recursive corpus discovery, and AsciiDoc formatting. ADRs may live in
+per-package subdirectories; numbering is unique across the whole tree.
 
 Operations:
     list        - List all ADRs with optional status filter
@@ -118,25 +119,25 @@ def generate_filename(number: int, title: str, width: int) -> str:
 def _detect_corpus_width() -> int:
     """Detect the prevailing numeric-prefix width of the existing ADR corpus.
 
-    Scans ``ADR_DIR`` for ``*.adoc`` files and returns the maximum digit-prefix
-    width found (e.g. a corpus numbered 001..007 yields 3). An empty or absent
-    corpus defaults to 4.
+    Scans ``ADR_DIR`` recursively for ``*.adoc`` files and returns the maximum
+    digit-prefix width found (e.g. a corpus numbered 001..007 yields 3). An empty
+    or absent corpus defaults to 4.
     """
     if not ADR_DIR.exists():
         return 4
 
     widths = [
-        len(match.group(1)) for filepath in ADR_DIR.glob('*.adoc') if (match := re.match(r'^(\d+)-', filepath.name))
+        len(match.group(1)) for filepath in ADR_DIR.rglob('*.adoc') if (match := re.match(r'^(\d+)-', filepath.name))
     ]
     return max(widths) if widths else 4
 
 
 def get_next_number() -> int:
-    """Get next available ADR number."""
+    """Get next available ADR number, unique across the whole ADR tree."""
     if not ADR_DIR.exists():
         return 1
 
-    existing = list(ADR_DIR.glob('*.adoc'))
+    existing = list(ADR_DIR.rglob('*.adoc'))
     if not existing:
         return 1
 
@@ -160,7 +161,7 @@ def find_adr_by_number(number: int) -> list[Path]:
         return []
     return [
         filepath
-        for filepath in sorted(ADR_DIR.glob('*.adoc'))
+        for filepath in sorted(ADR_DIR.rglob('*.adoc'))
         if (match := re.match(r'^(\d+)-', filepath.name)) and int(match.group(1)) == number
     ]
 
@@ -225,12 +226,12 @@ def parse_adr_file(filepath: Path) -> dict[str, Any]:
 
 
 def cmd_list(args: argparse.Namespace) -> dict[str, Any]:
-    """List all ADRs."""
+    """List all ADRs across the whole ADR tree."""
     if not ADR_DIR.exists():
         return {'status': 'success', 'operation': 'list', 'count': 0, 'adrs': []}
 
     adrs = []
-    for filepath in sorted(ADR_DIR.glob('*.adoc')):
+    for filepath in sorted(ADR_DIR.rglob('*.adoc')):
         adr = parse_adr_file(filepath)
         if args.status and adr['status'] != args.status:
             continue
@@ -499,7 +500,7 @@ def cmd_scan(args: argparse.Namespace) -> dict[str, Any]:
     parsed: list[dict[str, Any]] = []
     number_to_paths: dict[int, list[str]] = {}
     malformed_paths: list[str] = []
-    for filepath in sorted(ADR_DIR.glob('*.adoc')):
+    for filepath in sorted(ADR_DIR.rglob('*.adoc')):
         adr = parse_adr_file(filepath)
         parsed.append(adr)
         if adr['number'] is None:
