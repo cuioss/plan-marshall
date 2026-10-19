@@ -25,8 +25,7 @@ Population and dispositions
   ``${NAME}`` or a brace-less ``$NAME`` such as ``"$DOCTOR_SCRIPT"``) is not
   skipped: the placeholder is RESOLVED to the documented path it stands for and
   the resolved command is checked. An unmapped placeholder is an OFFENDER, so a
-  placeholder can never dodge the sweep.
-* **Template.** A line carrying optional-argument usage notation
+  placeholder can never dodge the sweep.* **Template.** A line carrying optional-argument usage notation
   (``[--scope global|project|all]``) is reported apart and never folded into the
   pass: no path is hidden behind an argument bracket.
 * **Excluded.** A curated ``(path, line-fragment, reason)`` entry that still
@@ -131,6 +130,13 @@ _RESOLVED_PATH_TEMPLATES: dict[str, str] = {
     'BOOTSTRAP': 'marketplace/bundles/plan-marshall/skills/marshall-steward/scripts/bootstrap_plugin.py',
     'BOOTSTRAP_PLUGIN': 'marketplace/bundles/plan-marshall/skills/marshall-steward/scripts/bootstrap_plugin.py',
     'DOCTOR_SCRIPT': 'marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/doctor-marketplace.py',
+    # A GENERIC placeholder standing for "the script resolved above". It maps to
+    # the canonical allow-listed steward script, so the sweep checks that the
+    # placeholder's resolved path is an ADMITTED one. A doc that used a generic
+    # placeholder for a script R5 refuses still passes on this mapped path — the
+    # residual cost of mapping a generic name; the alternative (skipping the
+    # line) is the dodge this rule exists to remove.
+    'SCRIPT_FILE': 'marketplace/bundles/plan-marshall/skills/marshall-steward/scripts/determine_mode.py',
 }
 
 #: A path placeholder as the WHOLE script token: ``{NAME}``, ``${NAME}`` or a

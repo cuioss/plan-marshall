@@ -579,10 +579,15 @@ source	detected|cached
 
 ### Step 2: Execute Scripts Directly
 
-Use the plugin root with a glob pattern for the version segment. Resolve the script path with the `Glob` tool against the pattern `${PLUGIN_ROOT}/plan-marshall/*/skills/<skill>/scr*ts/<script>.py`. Then invoke it — a direct call for a script on the shared R5 allow-list (`standards/r5-allowlist.json`), and through the executor (`python3 .plan/execute-script.py <bundle>:<skill>:<script> <args>`) for every other script:
+Use the plugin root with a glob pattern for the version segment. Resolve the script path with the `Glob` tool against the pattern `${PLUGIN_ROOT}/plan-marshall/*/skills/<skill>/scr*ts/<script>.py` and capture the first match as the resolved deployed path:
 
 ```bash
-# Direct (the bootstrap form, no executor needed): ONLY an allow-listed script.
+# Consumer / deployed install (the bootstrap form, no executor yet): invoke the
+# allow-listed script by the path the Glob above resolved. ONLY an allow-listed
+# script (standards/r5-allowlist.json) may run directly.
+python3 "{SCRIPT_FILE}" mode
+
+# Source checkout: the same allow-listed script, repository-relative.
 python3 marketplace/bundles/plan-marshall/skills/marshall-steward/scripts/determine_mode.py mode
 
 # Once the executor exists, route every other script through it:
