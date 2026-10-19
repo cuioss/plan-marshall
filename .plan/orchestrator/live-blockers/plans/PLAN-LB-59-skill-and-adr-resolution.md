@@ -30,6 +30,8 @@ Two resolvers ignore the module they act on:
 ## Deliverables
 
 1. **Task skills are resolved for the task's module.**
+   - Skills: pm-plugin-development:plugin-architecture, pm-plugin-development:plugin-script-architecture, pm-dev-python:python-core, plan-marshall:ref-code-quality, pm-dev-python:pytest-testing, plan-marshall:persona-module-tester
+   - Persona: plan-marshall:persona-implementer
    - `manage_personas` `_resolve_profile_domain_skills` keeps a domain×profile cell's `defaults`
      and admits an `optional` only when the task's module qualifies for it — through the domain
      extension's existing module-level applicability (`pm-dev-java/.../extension.py` L178-185, the
@@ -44,6 +46,8 @@ Two resolvers ignore the module they act on:
    only. The first and fourth fail at `d17ac5bef`.
 
 2. **ADR numbering and the scan see every ADR directory.**
+   - Skills: pm-plugin-development:plugin-architecture, pm-plugin-development:plugin-script-architecture, pm-dev-python:python-core, plan-marshall:ref-code-quality, pm-dev-python:pytest-testing, plan-marshall:persona-module-tester, pm-documents:ref-asciidoc
+   - Persona: plan-marshall:persona-implementer
    - `manage-adr` reads ADRs recursively under `doc/adr/` (L29 `ADR_DIR`; non-recursive globs at
      L129, L139, L163, L233, L502). Numbering is unique across the whole tree, or per directory if
      the project declares per-package numbering — choose at outline and record the choice.

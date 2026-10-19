@@ -19,11 +19,11 @@ mode: script-executor
 **Constraints:**
 - Run scripts EXACTLY as documented using `python3 .plan/execute-script.py plan-marshall:manage-adr:manage-adr ...`
 - Always validate ADR format after creation or update using ref-asciidoc
-- ADRs must be stored in `doc/adr/` directory
+- ADRs are stored recursively under the `doc/adr/` directory
 
 ---
 
-Manage Architectural Decision Records (ADRs) stored in `doc/adr/` directory.
+Manage Architectural Decision Records (ADRs) stored recursively under the `doc/adr/` directory.
 
 ## Purpose
 
@@ -193,7 +193,7 @@ Report deletion to user.
 
 ## Workflow: scan-adrs
 
-List all ADRs with their progressive-disclosure metadata so a caller can assess relevance without reading full files. This is the surface lifecycle hooks consume: the phase-3-outline reading hook scans `--affects {module}` to surface established decisions before deliverable authoring, and the phase-6 `adr-propose` step scans to avoid double-recording an already-captured decision.
+List all ADRs with their progressive-disclosure metadata so a caller can assess relevance without reading full files. The scan is **recursive**: it reads every `*.adoc` under `doc/adr/`, including per-package subdirectories, so duplicate numbers are detected across directories rather than only at the corpus root. This is the surface lifecycle hooks consume: the phase-3-outline reading hook scans `--affects {module}` to surface established decisions before deliverable authoring, and the phase-6 `adr-propose` step scans to avoid double-recording an already-captured decision.
 
 ### Parameters
 
@@ -375,7 +375,9 @@ ADRs follow this naming pattern:
 doc/adr/{N…}-{Title_With_Underscores}.adoc
 ```
 
-The numeric prefix is **zero-padded to the prevailing corpus width** — the widest existing ADR prefix in `doc/adr/`. A new ADR is numbered one past the highest existing number and emitted at that same width, so a 4-digit corpus (`0001`..`0006`) yields `0007` and a 3-digit corpus (`001`..`007`) yields `008`. An empty or absent corpus defaults to width 4 (`0001`). The parser accepts any prefix width, so mixed-width corpora are read correctly.
+**Numbering scope: unique across the whole ADR tree.** A project that keeps ADRs per package (`doc/adr/{package}/`) still allocates one global sequence — `next-number` reads every `*.adoc` recursively and returns one past the highest number anywhere in the tree, so adding an ADR in one package can never collide with another package's existing number. Per-directory numbering is deliberately not enabled. New ADRs are written to the `doc/adr/` root; existing ADRs may live in any subdirectory and remain addressable by number.
+
+The numeric prefix is **zero-padded to the prevailing corpus width** — the widest existing ADR prefix anywhere under `doc/adr/`. A new ADR is numbered one past the highest existing number and emitted at that same width, so a 4-digit corpus (`0001`..`0006`) yields `0007` and a 3-digit corpus (`001`..`007`) yields `008`. An empty or absent corpus defaults to width 4 (`0001`). The parser accepts any prefix width, so mixed-width corpora are read correctly.
 
 Examples (4-digit corpus):
 - `doc/adr/0001-Use_PostgreSQL_for_Persistence.adoc`

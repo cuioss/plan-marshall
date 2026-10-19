@@ -633,6 +633,7 @@ def cmd_skill_domains(args) -> dict:
             # domain-detect always_on / file_globs merge legs.
             result['always_on'] = domain_config.get('always_on', False)
             result['file_globs'] = domain_config.get('file_globs', [])
+            result['excluded_skills'] = domain_config.get('excluded_skills', [])
 
             # Load profiles from extension.py if bundle is present
             bundle = domain_config.get('bundle')
@@ -650,6 +651,7 @@ def cmd_skill_domains(args) -> dict:
                     'domain': domain,
                     'defaults': domain_config.get('defaults', []),
                     'optionals': domain_config.get('optionals', []),
+                    'excluded_skills': domain_config.get('excluded_skills', []),
                 }
             )
 
@@ -723,9 +725,13 @@ def cmd_skill_domains(args) -> dict:
         file_globs = None
         if file_globs_raw is not None:
             file_globs = [g.strip() for g in file_globs_raw.split(',') if g.strip()]
+        excluded_raw = getattr(args, 'excluded_skills', None)
+        excluded_skills = None
+        if excluded_raw is not None:
+            excluded_skills = [s.strip() for s in excluded_raw.split(',') if s.strip()]
 
         try:
-            validate_domain_inclusion(always_on, file_globs)
+            validate_domain_inclusion(always_on, file_globs, excluded_skills)
         except ValueError as e:
             return error_exit(str(e))
 
@@ -735,6 +741,8 @@ def cmd_skill_domains(args) -> dict:
             domain_config['always_on'] = always_on
         if file_globs is not None:
             domain_config['file_globs'] = file_globs
+        if excluded_skills is not None:
+            domain_config['excluded_skills'] = excluded_skills
         skill_domains[domain] = domain_config
         config['skill_domains'] = skill_domains
         save_config(config)
@@ -743,6 +751,7 @@ def cmd_skill_domains(args) -> dict:
                 'domain': domain,
                 'always_on': domain_config.get('always_on', False),
                 'file_globs': domain_config.get('file_globs', []),
+                'excluded_skills': domain_config.get('excluded_skills', []),
             }
         )
 
@@ -883,16 +892,19 @@ def cmd_skill_domains(args) -> dict:
                     existing_project_skills[domain_key] = domain_config['project_skills']
                 if 'active_profiles' in domain_config:
                     existing_domain_active_profiles[domain_key] = domain_config['active_profiles']
-                # Both inclusion keys are snapshotted on PRESENCE, never on
-                # truthiness, so an operator's deliberate `always_on: false` or
-                # `file_globs: []` is captured rather than read as unset. The
-                # enclosing `if inclusion:` guard tests the non-empty dict, which
-                # a `{'file_globs': []}` entry satisfies.
+                # The operator-owned inclusion/veto keys are snapshotted on
+                # PRESENCE, never on truthiness, so an operator's deliberate
+                # `always_on: false`, `file_globs: []` or `excluded_skills: []`
+                # is captured rather than read as unset. The enclosing
+                # `if inclusion:` guard tests the non-empty dict, which a
+                # `{'file_globs': []}` entry satisfies.
                 inclusion = {}
                 if 'always_on' in domain_config:
                     inclusion['always_on'] = domain_config['always_on']
                 if 'file_globs' in domain_config:
                     inclusion['file_globs'] = domain_config['file_globs']
+                if 'excluded_skills' in domain_config:
+                    inclusion['excluded_skills'] = domain_config['excluded_skills']
                 if inclusion:
                     existing_domain_inclusion[domain_key] = inclusion
 
@@ -938,8 +950,9 @@ def cmd_skill_domains(args) -> dict:
             if domain_key in skill_domains:
                 skill_domains[domain_key]['active_profiles'] = ap
 
-        # Restore operator-set always_on / file_globs inclusion keys to domains
-        # that still exist (mirrors the project_skills / active_profiles blocks).
+        # Restore operator-set always_on / file_globs / excluded_skills keys to
+        # domains that still exist (mirrors the project_skills / active_profiles
+        # blocks).
         #
         # This restore runs AFTER the domain rebuild above, and that ORDERING —
         # not a conditional — is what makes "absent means seed" hold on every

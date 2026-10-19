@@ -441,6 +441,28 @@ def applies_to_module(self, module_data: dict, active_profiles: set[str] | None 
 
 ---
 
+### qualifies_optional
+
+```python
+def qualifies_optional(self, profile: str, skill: str, module_data: dict) -> bool:
+    """Decide whether an optional skill is applicable to a specific module.
+
+    Args:
+        profile: The profile whose skill cell is being expanded.
+        skill: The ``bundle:skill`` notation of the optional.
+        module_data: Module dict from the module discovery/derived data.
+
+    Returns:
+        True when the optional applies to the module, False otherwise.
+
+    Default: returns True (module-agnostic optionals are admitted).
+    """
+```
+
+`manage-personas resolve --module` asks this hook once per optional in a `profile × domain` cell, so a domain can exclude optionals its module-level signals disqualify. The Java extension overrides it to exclude its CDI-dependent optionals (`java-cdi`, `java-quarkus`, `junit-weld-testing`) for a module with no CDI dependency and `java-lombok` without Lombok. A module-data dependency list is read from the resolved `dependencies` when present, else the cheap crawl's `declared_dependencies`.
+
+---
+
 ## BuildExtensionBase Methods (Axis-B)
 
 The four methods below form the **complete Axis-B contract** — the file-to-build classification surface. They are declared on `BuildExtensionBase`, **not** on `ExtensionBase`, and only a code build system's extension (`build-pyproject` / `build-maven` / `build-gradle` / `build-npm`) subclasses that ABC and overrides them.
@@ -987,9 +1009,9 @@ This is the only abstract method because every domain must:
 1. **Declare identity** — the domain key is used throughout marshal.json
 2. **Provide skills** — skills are the primary value a domain extension contributes
 
-### Why Eight Optional Hooks?
+### Why Nine Optional Hooks?
 
-All eight hooks (config_defaults, provides_triage, provides_outline_skill, provides_recipes, provides_retrospective_aspects, provides_arch_gate, provides_domain_verb, provides_file_globs) follow the same extension model:
+All nine hooks (config_defaults, provides_triage, provides_outline_skill, provides_recipes, provides_retrospective_aspects, provides_arch_gate, provides_domain_verb, provides_file_globs, qualifies_optional) follow the same extension model:
 
 1. **Domain ownership** — each domain declares its own capabilities rather than core code hardcoding domain-specific behavior
 2. **Safe defaults** — all hooks return None or empty, so bundles only implement what they need

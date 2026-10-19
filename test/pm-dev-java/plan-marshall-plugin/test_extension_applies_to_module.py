@@ -99,3 +99,70 @@ def test_java_lombok_remains_optional_when_lombok_dep_absent():
     impl = result['skills_by_profile']['implementation']
     assert _skill_in(impl['optionals'], 'java-lombok')
     assert not _skill_in(impl['defaults'], 'java-lombok')
+
+
+def _declared_module_data(declared):
+    """Build a cheap-crawl module dict carrying only ``declared_dependencies``."""
+    return {
+        'name': 'sample-module',
+        'build_systems': ['maven'],
+        'dependencies': [],
+        'declared_dependencies': declared,
+    }
+
+
+def test_qualifies_optional_rejects_cdi_dependent_skills_without_cdi():
+    """Without a CDI dependency none of the CDI-dependent optionals qualify."""
+    extension = _load_extension()
+    module_data = _declared_module_data([{'group_id': 'org.apache.commons', 'artifact_id': 'commons-lang3'}])
+
+    for skill in (
+        'pm-dev-java:java-cdi',
+        'pm-dev-java:java-quarkus',
+        'pm-dev-java:junit-weld-testing',
+    ):
+        assert extension.qualifies_optional('implementation', skill, module_data) is False, skill
+
+
+def test_qualifies_optional_admits_cdi_skills_from_declared_dependency_objects():
+    """A declared ``jakarta.enterprise`` dependency object qualifies java-cdi."""
+    extension = _load_extension()
+    module_data = _declared_module_data(
+        [{'group_id': 'jakarta.enterprise', 'artifact_id': 'jakarta.enterprise.cdi-api'}]
+    )
+
+    assert extension.qualifies_optional('implementation', 'pm-dev-java:java-cdi', module_data) is True
+
+
+def test_qualifies_optional_admits_module_agnostic_optionals():
+    """An optional with no module-level signal stays applicable."""
+    extension = _load_extension()
+    module_data = _declared_module_data([])
+
+    assert extension.qualifies_optional('implementation', 'pm-dev-java:java-maintenance', module_data) is True
+
+
+def test_qualifies_optional_treats_quarkus_arc_as_a_cdi_signal():
+    """io.quarkus:quarkus-arc is a CDI implementation and qualifies java-cdi."""
+    extension = _load_extension()
+    module_data = _declared_module_data([{'group_id': 'io.quarkus', 'artifact_id': 'quarkus-arc'}])
+
+    assert extension.qualifies_optional('implementation', 'pm-dev-java:java-cdi', module_data) is True
+
+
+def test_cdi_gated_set_is_declared_on_the_skill_entries():
+    """The gated set is carried by declaration markers, not a hand-maintained name list."""
+    extension = _load_extension()
+    requirements = {
+        entry['skill']: entry.get('requires')
+        for domain_info in extension.get_skill_domains()
+        for profile_data in domain_info['profiles'].values()
+        for entry in profile_data.get('defaults', []) + profile_data.get('optionals', [])
+        if isinstance(entry, dict)
+    }
+
+    assert requirements['pm-dev-java:java-cdi'] == 'cdi'
+    assert requirements['pm-dev-java:java-quarkus'] == 'cdi'
+    assert requirements['pm-dev-java:junit-weld-testing'] == 'cdi'
+    assert requirements['pm-dev-java:java-lombok'] == 'lombok'
+    assert requirements.get('pm-dev-java:java-maintenance') is None
