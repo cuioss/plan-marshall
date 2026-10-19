@@ -29,6 +29,8 @@ staged spec. They never read this repository's own ``.plan/`` state.
 
 from __future__ import annotations
 
+import argparse
+import ast
 import json
 import re
 import shutil
@@ -248,6 +250,8 @@ def _seed_fixture(
     spec_text: str = '# staged spec\n',
     base_branch: str | None = None,
     module_path: str = '.',
+    documentation_path: str = 'doc',
+    documentation_files: tuple[str, ...] = ('doc/developer/build.adoc', 'doc/user/usage.md'),
 ) -> Path:
     """Seed a project fixture and return the staged spec path.
 
@@ -312,8 +316,8 @@ def _seed_fixture(
             {
                 'name': 'documentation',
                 'build_systems': ['documentation'],
-                'paths': {'module': 'doc'},
-                'files': {'doc': ['doc/developer/build.adoc', 'doc/user/usage.md']},
+                'paths': {'module': documentation_path},
+                'files': {'doc': list(documentation_files)},
             }
         ),
     )
@@ -666,19 +670,58 @@ def test_spec_without_skill_or_persona_lines_says_none_named(tmp_path: Path) -> 
 # D5 — a docs-only change skips the full local build
 # =============================================================================
 
-#: This repository's own footprint opt-in, READ from the real workflow file so the
-#: matching cases are exercised against the project's actual rule rather than
-#: against a hand-copied stand-in.
+#: This repository's own footprint opt-in, READ from the real workflow file so the opt-in and the
+#: ``extra-buildable`` matching cases run against the project's actual file. This repository's
+#: workflow holds NO readable non-building class (it delegates via ``uses:``), so the cases that
+#: exercise the architecture fallback are driven by the fixture's documentation module.
 _VERIFY_WORKFLOW_FILE = PROJECT_ROOT / '.github' / 'workflows' / 'python-verify.yml'
 
 
-def _seed_footprint(tmp_path: Path, *, opt_in: bool = True, module_path: str = '.') -> Path:
-    _seed_fixture(tmp_path, executable=_PYPROJECT_EXEC, required_bots='x', module_path=module_path)
+def _seed_footprint(
+    tmp_path: Path,
+    *,
+    opt_in: bool = True,
+    module_path: str = '.',
+    documentation_path: str = 'doc',
+    documentation_files: tuple[str, ...] = ('doc/developer/build.adoc', 'doc/user/usage.md'),
+) -> Path:
+    _seed_fixture(
+        tmp_path,
+        executable=_PYPROJECT_EXEC,
+        required_bots='x',
+        module_path=module_path,
+        documentation_path=documentation_path,
+        documentation_files=documentation_files,
+    )
     _write(
         tmp_path / '.github' / 'workflows' / 'python-verify.yml',
         _VERIFY_WORKFLOW_FILE.read_text(encoding='utf-8') if opt_in else 'name: Other\n',
     )
     return tmp_path
+
+
+def _seed_local_ci_rule(root: Path, paths_ignore: list[str]) -> Path:
+    """Write a self-contained CI workflow whose non-building rule the repository HOLDS.
+
+    ``paths-ignore`` is the CI's own declaration of the paths it does not build.
+    A workflow that carries it is READABLE — unlike this repository's, whose rule
+    lives in a reusable workflow the checkout does not hold — and the classifier
+    must prefer it to the architecture's hint.
+    """
+    body = [
+        'name: Verify',
+        'on:',
+        '  pull_request:',
+        '    paths-ignore:',
+        *[f"      - '{glob}'" for glob in paths_ignore],
+        'jobs:',
+        '  verify:',
+        '    uses: example/reusable.yml@0123456789abcdef',
+        '    with:',
+        '      skip-on-docs-only: true',
+    ]
+    _write(root / '.github' / 'workflows' / 'local-verify.yml', '\n'.join(body) + '\n')
+    return root
 
 
 def _build_classify(project_dir: Path, paths: str) -> dict:
@@ -737,11 +780,94 @@ def test_build_classify_keeps_an_unlisted_build_file_buildable(tmp_path: Path) -
     assert data['kind'] == 'buildable'
 
 
-def test_build_classify_keeps_an_unlisted_document_docs_only(tmp_path: Path) -> None:
-    """The same silence still lets a genuine document be classified docs-only."""
+def test_build_classify_builds_a_document_outside_the_doc_module(tmp_path: Path) -> None:
+    """Architecture silence outside the documentation module must build.
+
+    The old rule let ANY document suffix classify a path docs-only even when the
+    architecture named no documentation module for it — the fail-open shape
+    deliverable 1 closes. Prose is now admitted only inside the documentation
+    module the architecture reports, so this path builds.
+    """
     project = _seed_footprint(tmp_path, opt_in=False, module_path='core')
     data = _build_classify(project, 'notes/readme.md')
-    assert data['kind'] == 'docs-only'
+    assert data['kind'] == 'buildable'
+
+
+# -----------------------------------------------------------------------------
+# PLAN-LB-72 D1 — the classifier never skips what the project's CI would build
+# -----------------------------------------------------------------------------
+
+
+def test_build_classify_reads_the_ci_skip_rule_when_the_repository_holds_it(tmp_path: Path) -> None:
+    """A readable CI rule wins over the architecture's documentation module.
+
+    The fixture's architecture says ``docs/`` is the documentation module, but
+    the CI rule it holds names only ``doc/**``. The CI would build
+    ``docs/guide.md``, so the classifier must too: the architecture is a hint
+    that can only make a change BUILD, never skip one.
+    """
+    project = _seed_footprint(tmp_path, opt_in=False, documentation_path='docs')
+    _seed_local_ci_rule(project, ['doc/**'])
+
+    data = _build_classify(project, 'docs/guide.md')
+
+    assert data['source'] == 'ci-workflow'
+    assert data['kind'] == 'buildable'
+
+
+def test_build_classify_matches_document_suffixes_case_sensitively(tmp_path: Path) -> None:
+    """``.MD`` is not ``.md``: the CI's path filter is case-sensitive.
+
+    ``README.MD`` builds because it lies outside the documentation module;
+    ``doc/guide.MD`` is the assertion that pins CASE, since it lies inside the
+    module and would be docs-only if the suffix were folded.
+    """
+    project = _seed_footprint(tmp_path)
+
+    assert _build_classify(project, 'README.MD')['kind'] == 'buildable'
+    assert _build_classify(project, 'doc/guide.MD')['kind'] == 'buildable'
+
+
+def test_build_classify_builds_asciidoc_unless_the_ci_rule_names_it(tmp_path: Path) -> None:
+    """A prose extension does not, by itself, make a path docs-only.
+
+    The architecture's prose class is consulted only INSIDE the documentation
+    module it belongs to, so a root-level ``guide.asciidoc`` builds; the CI rule
+    is the only thing that can name it non-building.
+    """
+    unnamed = _seed_footprint(
+        tmp_path / 'unnamed',
+        documentation_path='docs',
+        documentation_files=('docs/guide.asciidoc',),
+    )
+
+    assert _build_classify(unnamed, 'guide.asciidoc')['kind'] == 'buildable'
+
+    named = _seed_footprint(
+        tmp_path / 'named',
+        opt_in=False,
+        documentation_path='docs',
+        documentation_files=('docs/guide.asciidoc',),
+    )
+    _seed_local_ci_rule(named, ['**/*.asciidoc'])
+
+    assert _build_classify(named, 'guide.asciidoc')['kind'] == 'docs-only'
+
+
+def test_paths_ignore_reads_the_pull_request_block_not_a_push_only_one() -> None:
+    """A push-only filter must not drive the classification of a PR diff."""
+    module = load_script_module('plan-marshall', _SKILL_NAME, 'runbook_lane.py', register=False)
+    lines = [
+        'on:',
+        '  push:',
+        '    paths-ignore:',
+        "      - 'push-only/**'",
+        '  pull_request:',
+        '    paths-ignore:',
+        "      - 'pr-only/**'",
+    ]
+
+    assert module._paths_ignore_globs(lines) == ['pr-only/**']
 
 
 # =============================================================================
@@ -837,7 +963,7 @@ def _flat_persona_skill(name: str) -> str:
     return f'---\nname: {name}\nmetadata:\n  bundle: plan-marshall\n  skill: {name}\n---\n\n# {name}\n'
 
 
-def _install_lane(install_root: Path, *, layout: str) -> Path:
+def _install_lane(install_root: Path, *, layout: str, identity: bool = True) -> Path:
     """Copy the lane script into a fixture install and return the copied script.
 
     ``flat`` lays the lane at ``{root}/skills/plan-marshall-runbook-lane/``
@@ -845,11 +971,18 @@ def _install_lane(install_root: Path, *, layout: str) -> Path:
     (``{root}/plan-marshall/0.1.0/skills/runbook-lane/``). Either way the script
     is copied, because ``_lane_skills_root`` is derived from the script's own
     path.
+
+    ``identity=False`` writes a flat ``SKILL.md`` WITHOUT the ``metadata``
+    identity the flat emitters record, which is the shape that cannot attribute
+    the dash-joined directory back to a bundle.
     """
     source = get_scripts_dir('plan-marshall', _SKILL_NAME) / 'runbook_lane.py'
     if layout == 'flat':
         skill_dir = install_root / 'skills' / 'plan-marshall-runbook-lane'
-        _write(skill_dir / 'SKILL.md', _FLAT_LANE_SKILL)
+        _write(
+            skill_dir / 'SKILL.md',
+            _FLAT_LANE_SKILL if identity else '---\nname: runbook-lane\n---\n\n# Runbook Lane\n',
+        )
     else:
         skill_dir = install_root / 'plan-marshall' / '0.1.0' / 'skills' / 'runbook-lane'
         _write(install_root / 'plan-marshall' / '0.1.0' / '.claude-plugin' / 'plugin.json', '{}\n')
@@ -930,6 +1063,86 @@ def test_resolve_missing_skill_names_every_probed_path(tmp_path: Path) -> None:
     assert 'skills/no-such-skill/SKILL.md' in data['probed']
 
 
+# -----------------------------------------------------------------------------
+# PLAN-LB-72 D2 — the existence check and its tests can fail for their reason
+# -----------------------------------------------------------------------------
+
+
+def test_resolve_missing_skill_names_every_probed_layout(tmp_path: Path) -> None:
+    """A name absent from EVERY layout reports a path for each layout.
+
+    The fixture carries both deployed shapes (the flat ``skills/`` root and a
+    versioned nested cache), and the name exists in neither; the source-tree
+    layout is read from the real module. Dropping either deployed layout's probe
+    from the error — or the source-tree candidate from the enumeration — fails
+    this test.
+    """
+    install = tmp_path / 'install'
+    script = _install_lane(install, layout='flat')
+    _write(install / 'plan-marshall' / '0.1.0' / '.claude-plugin' / 'plugin.json', '{}\n')
+    spec_text = '## Deliverables\n\n1. **First**\n   - Skills: plan-marshall:absent-everywhere\n'
+    spec = _seed_fixture(tmp_path, executable=_PYPROJECT_EXEC, required_bots='x', spec_text=spec_text)
+
+    result = run_script(script, 'resolve', '--spec', str(spec), '--project-dir', str(tmp_path))
+
+    assert result.success, result.stderr
+    data = result.toon()
+    assert data['status'] == 'error', data
+    assert data['error'] == 'named_skill_not_found'
+    probed = data['probed']
+    assert 'skills/plan-marshall-absent-everywhere/SKILL.md' in probed, 'the flat layout is not named'
+    assert 'plan-marshall/skills/absent-everywhere/SKILL.md' in probed, 'the nested layout is not named'
+
+    module = load_script_module('plan-marshall', _SKILL_NAME, 'runbook_lane.py', register=False)
+    tree_probed = [
+        path.as_posix() for path in module._skill_probe_paths('plan-marshall:absent-everywhere', 'plan-marshall')
+    ]
+    assert any(
+        path.endswith('marketplace/bundles/plan-marshall/skills/absent-everywhere/SKILL.md') for path in tree_probed
+    ), f'the source-tree layout is not named: {tree_probed}'
+
+
+def test_resolve_resolves_a_cross_bundle_skill_in_a_flat_install(tmp_path: Path) -> None:
+    """A flat install resolves ``pm-dev-python:python-core`` as a dash-joined peer.
+
+    The flat emitters deploy the cross-bundle skill as
+    ``pm-dev-python-python-core``; a bare per-bundle directory does not exist.
+    """
+    install = tmp_path / 'install'
+    script = _install_lane(install, layout='flat')
+    _write(
+        install / 'skills' / 'pm-dev-python-python-core' / 'SKILL.md',
+        '---\nname: python-core\nmetadata:\n  bundle: pm-dev-python\n  skill: python-core\n---\n',
+    )
+    spec_text = '## Deliverables\n\n1. **First**\n   - Skills: pm-dev-python:python-core\n'
+    spec = _seed_fixture(tmp_path, executable=_PYPROJECT_EXEC, required_bots='x', spec_text=spec_text)
+
+    result = run_script(script, 'resolve', '--spec', str(spec), '--project-dir', str(tmp_path))
+
+    assert result.success, result.stderr
+    assert result.toon()['status'] == 'success', result.toon()
+
+
+def test_resolve_refuses_a_bare_name_in_a_flat_install_without_an_identity(tmp_path: Path) -> None:
+    """A flat ``SKILL.md`` with no identity is a named error, not a silent miss.
+
+    The dash-joined directory cannot be split back into bundle and skill, so the
+    lane cannot resolve ANY bare name. Returning a wrong-bundle probed miss for
+    every one of them hides the real cause; the refusal names it.
+    """
+    install = tmp_path / 'install'
+    script = _install_lane(install, layout='flat', identity=False)
+    spec_text = '## Deliverables\n\n1. **First**\n   - Persona: persona-implementer\n'
+    spec = _seed_fixture(tmp_path, executable=_PYPROJECT_EXEC, required_bots='x', spec_text=spec_text)
+
+    result = run_script(script, 'resolve', '--spec', str(spec), '--project-dir', str(tmp_path))
+
+    assert result.success, result.stderr
+    data = result.toon()
+    assert data['status'] == 'error', data
+    assert data['error'] == 'flat_skill_identity_missing', data
+
+
 # =============================================================================
 # D2 — the docs-only classifier derives its rule from the project
 # =============================================================================
@@ -983,17 +1196,119 @@ def test_extra_buildable_globs_drops_a_block_indicator_and_unwraps_quotes() -> N
     assert quoted == ['test/**/*.md']
 
 
+#: The written-as-a-suffix shapes a document-suffix list carries. Listed here,
+#: in the TEST, so the classifier itself need not spell one — which is the
+#: property under test.
+_DOCUMENT_SUFFIX_LITERALS = frozenset({'.md', '.adoc', '.asciidoc', '.rst', '.txt'})
+
+
+def _document_suffix_lists(source: str) -> list[int]:
+    """Return the lines of document-suffix collections in the module, if any.
+
+    Detected STRUCTURALLY and anywhere in the module — a module-level constant, a
+    renamed list (``_DOC_SUFFIXES``), or an inline ``{'.md', '.adoc'}`` — because
+    a name grep cannot catch any of those. The membership test is
+    case-insensitive, so ``('.MD',)`` is caught too: case-folding is exactly the
+    fail-open shape deliverable 1 closes.
+    """
+    offenders: list[int] = []
+    for node in ast.walk(ast.parse(source)):
+        if not isinstance(node, (ast.Tuple, ast.List, ast.Set)):
+            continue
+        literals = [element.value for element in node.elts if isinstance(element, ast.Constant)]
+        if not literals or len(literals) != len(node.elts):
+            continue
+        if any(isinstance(literal, str) and literal.lower() in _DOCUMENT_SUFFIX_LITERALS for literal in literals):
+            offenders.append(node.lineno)
+    return offenders
+
+
 def test_classifier_source_holds_no_workflow_name_or_suffix_list() -> None:
     source = (get_scripts_dir('plan-marshall', _SKILL_NAME) / 'runbook_lane.py').read_text(encoding='utf-8')
 
     assert 'python-verify.yml' not in source, 'the classifier names this repository workflow'
     assert '_NON_BUILDING_SUFFIXES' not in source, 'the classifier hard-codes non-building suffixes'
     assert "'.adoc'" not in source, 'the classifier hard-codes a document extension'
+    suffix_lists = _document_suffix_lists(source)
+    assert not suffix_lists, f'the classifier hard-codes a document-suffix collection at lines {suffix_lists}'
+
+
+def test_glob_matching_does_not_treat_a_pattern_as_a_directory_prefix() -> None:
+    """A CI path filter matches a FILE path; a matched directory does not cover its contents."""
+    module = load_script_module('plan-marshall', _SKILL_NAME, 'runbook_lane.py', register=False)
+
+    assert module._matches_glob('docs/a.md', 'docs/*')
+    assert not module._matches_glob('docs/a/b.md', 'docs/*'), 'the gitignore directory tail was not removed'
+
+
+def test_prose_extensions_do_not_leak_across_documentation_modules() -> None:
+    """A suffix one documentation module files as prose must not skip in another's prefix."""
+    module = load_script_module('plan-marshall', _SKILL_NAME, 'runbook_lane.py', register=False)
+    surfaces = [('docs/', {'.md'}), ('site/', {'.html'})]
+
+    assert module._is_project_doc('docs/a.md', surfaces)
+    assert module._is_project_doc('site/a.html', surfaces)
+    assert not module._is_project_doc('docs/a.html', surfaces), "site/'s extension leaked into docs/"
 
 
 # =============================================================================
 # D3 — the restored rules read the same everywhere and the parity tests can fail
 # =============================================================================
+
+
+def test_evidence_order_field_is_closed_and_reserved() -> None:
+    """Both evidence surfaces name a closed ``order``, and reserve "fail-first".
+
+    A run that produced its failing output by mutating or reverting the fix must
+    have a label that says so; the words "fail-first" and "observed failing
+    before the fix" are truthful only for ``test-first``.
+    """
+    landing = _section('## 8. Landing message (the last step, after the merge)')
+    pr_body = _section('## 6. Pull request and reviews')
+
+    for name, section in (('§8', landing), ('the PR-body rule', pr_body)):
+        assert '`order`' in section, f'{name} does not require an order field'
+        for value in ('`test-first`', '`mutation-after`', '`none`'):
+            assert value in section, f'{name} does not name the order value {value}'
+        assert 'reserved' in section, f'{name} does not reserve the fail-first wording'
+        assert 'observed failing before the fix' in section, f'{name} does not name the reserved phrase'
+        assert 'failing run' in section, f'{name} does not require the failing run evidence'
+        assert 'output identifier' in section, f'{name} does not require an output identifier'
+
+
+def test_test_compile_runs_at_every_pushed_head_and_is_reported() -> None:
+    gate = _section('## 4. Build gate')
+    landing = _section('## 8. Landing message (the last step, after the merge)')
+
+    assert 'every head pushed to a PR' in gate, 'the gate still lets a pushed head skip test-compile'
+    assert 'test-compile' in landing, 'the landing does not report the test-compile runs'
+    assert 'sha' in landing, 'the landing does not report the sha of each test-compile run'
+
+
+def test_self_review_clear_is_not_permitted_with_an_open_finding() -> None:
+    review = _section('## 5. Self-review before the PR')
+
+    assert '`self-review: clear` is never permitted while any finding is open' in review
+
+
+def test_a_done_when_without_failing_evidence_is_reported_not_met() -> None:
+    """The `order` vocabulary is coupled to the met/not-met verdict."""
+    rules = _section('## 1. Rules (every one binds; breaking one fails the run)')
+    landing = _section('## 8. Landing message (the last step, after the merge)')
+
+    for name, section in (('§1', rules), ('§8', landing)):
+        assert 'not met as written' in section, f'{name} does not require a not-met verdict without failing evidence'
+    assert 'counts only fully met deliverables' in rules, 'the not-met verdict is not tied to the done count'
+
+
+def test_unknown_verb_rule_names_its_landing_record() -> None:
+    gate = _section('## 4. Build gate')
+    landing = _section('## 8. Landing message (the last step, after the merge)')
+
+    assert 'unknown subcommand' in gate, 'the unknown-verb rule is gone'
+    assert 'question tool' in gate, 'the unknown-verb rule does not name the question tool'
+    assert 'the answer it got' in gate, 'the unknown-verb rule does not require the answer to be recorded'
+    assert 'no question tool was available' in landing, 'the landing cannot report a harness without a question tool'
 
 
 def test_guard_state_has_one_location_in_rules_and_landing() -> None:
@@ -1010,6 +1325,10 @@ def test_branch_rule_states_the_canonical_prefix_set_as_closed() -> None:
 
     for prefix in ('feature/', 'fix/', 'chore/'):
         assert prefix in section
+    assert 'prefix set is closed' in section, 'the branch rule no longer calls the canonical prefix set closed'
+    assert "the project's configured `working_prefixes`" in section, (
+        'the branch rule does not say WHICH set the prefix must come from'
+    )
     assert 'only extension' in section
     assert 'own set wins' not in section, 'the branch rule lets the project set replace the canonical prefixes'
 
@@ -1030,9 +1349,25 @@ def test_sleep_parity_keyword_is_the_qualifier_free_sentence() -> None:
 
 
 def test_build_timeout_comes_from_the_architecture_stamp(tmp_path: Path, monkeypatch) -> None:
-    module = load_script_module('plan-marshall', _SKILL_NAME, 'runbook_lane.py', register=False)
-    monkeypatch.setattr(module, '_augment_resolved', lambda resolved, project_dir: {'bash_timeout_seconds': 1234})
+    """``resolve`` reports the stamp the REAL delegation reads.
 
-    # The stamp wins over the lane's 1800 fallback: a resolve that returned the
-    # fallback here would fail, which is the sensitivity this test pins.
-    assert module._resolve_build_timeout({}, tmp_path) == 1234
+    The test drives ``cmd_resolve``, not the extracted seam, and replaces the
+    DELEGATION TARGET — ``_cmd_client._augment_resolved`` — so a broken or
+    raising delegation is caught: either one leaves the lane's 1800 fallback in
+    place, and the assertion below fails. The target is obtained through the
+    loader (never a plain ``import``) so it is the very object the lane's
+    deferred ``from _cmd_client import …`` resolves.
+    """
+    client = load_script_module('plan-marshall', 'manage-architecture', '_cmd_client.py')
+    spec = _seed_fixture(tmp_path, executable=_PYPROJECT_EXEC, required_bots='x')
+    monkeypatch.setattr(
+        client,
+        '_augment_resolved',
+        lambda resolved, project_dir: {'bash_timeout_seconds': 1234},
+    )
+    module = load_script_module('plan-marshall', _SKILL_NAME, 'runbook_lane.py', register=False)
+
+    data = module.cmd_resolve(argparse.Namespace(spec=str(spec), project_dir=str(tmp_path)))
+
+    assert data['status'] == 'success', data
+    assert data['build_timeout_seconds'] == 1234

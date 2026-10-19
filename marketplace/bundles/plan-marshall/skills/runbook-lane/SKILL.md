@@ -1,6 +1,6 @@
 ---
 name: runbook-lane
-description: The runbook lane - implementation contract for ONE staged orchestrator plan spec on a cheap model, without the /plan-marshall lifecycle. Resolves every project-specific value (epic slug, derived names, build commands, reviewers with their trigger comments, commit trailer, inbox command) through the runbook_lane resolve verb, then runs the lane - progress file and resume, hard rules, fail-first evidence, build gate, self-review rounds, PR and review cycle, merge gate, cleanup, and a landing message to the epic inbox - from any project that has plan-marshall installed
+description: The runbook lane - implementation contract for ONE staged orchestrator plan spec on a cheap model, without the /plan-marshall lifecycle. Resolves every project-specific value (epic slug, derived names, build commands, reviewers with their trigger comments, commit trailer, inbox command) through the runbook_lane resolve verb, then runs the lane - progress file and resume, hard rules, evidence orders (test-first, mutation-after, none), build gate, self-review rounds, PR and review cycle, merge gate, cleanup, and a landing message to the epic inbox - from any project that has plan-marshall installed
 user-invocable: true
 mode: workflow
 ---
@@ -39,8 +39,9 @@ Resolves the epic slug, the derived names, the build commands, the required and 
 with their trigger comments, the commit trailer, the harness and guard state, and the `inbox write`
 command. `--project-dir` defaults to the current directory and anchors every project-scoped read.
 Fails closed with a specific error code for a spec outside the orchestrator tree, an unreadable
-configuration, a missing automatic-review step, an empty required-reviewer list, or an
-unresolvable build command.
+configuration, a missing automatic-review step, an empty required-reviewer list, an unresolvable
+build command, or a bare skill/persona name in a flat install with no recorded bundle identity
+(`flat_skill_identity_missing`).
 
 ### build-classify
 
@@ -76,7 +77,7 @@ The result supplies, and nothing below is spelled from anywhere else:
 | epic slug | `slug` |
 | `{plan}` | `plan` |
 | worktree | `worktree` |
-| branch | `{branch} = {prefix}{plan}`; the canonical prefix set is closed — `feature/` (a new capability), `fix/` (a bug fix), `chore/` (docs or maintenance) — and the project's `working_prefixes` is its only extension, never a replacement: the chosen prefix must be one that set declares |
+| branch | `{branch} = {prefix}{plan}`; the canonical prefix set is closed — `feature/` (a new capability), `fix/` (a bug fix), `chore/` (docs or maintenance) — and the project's configured `working_prefixes` is its only extension, never a replacement: the chosen prefix must be one the project's configured `working_prefixes` declares |
 | base branch | `base_branch` (the project's own base branch, never a spelling of it) |
 | inbox sender id | `sender_id` |
 | progress file | `progress_file` |
@@ -93,10 +94,11 @@ The branch row is derived from the project's configuration rather than returned 
 other row names a field of the resolve result.
 
 The verb **fails closed**: a spec outside `.plan/orchestrator/{slug}/plans/`, an unreadable
-configuration, a missing automatic-review step, an empty required-reviewer list, or a build command
-the project's architecture cannot resolve is an error carrying a specific code. There is never a
-fall-back to a default reviewer list or a default build. Stop and report a resolve error; do not
-substitute a value.
+configuration, a missing automatic-review step, an empty required-reviewer list, a build command
+the project's architecture cannot resolve, or a bare `Skills:`/`Persona:` name in a flat install
+whose `SKILL.md` records no bundle identity (`flat_skill_identity_missing`) is an error carrying a
+specific code. There is never a fall-back to a default reviewer list or a default build. Stop and
+report a resolve error; do not substitute a value.
 
 **How to read the spec:**
 
@@ -160,6 +162,9 @@ so git alone shows which deliverables are committed.
   - A test that a Done-when says "fails at `{sha}`" must be **seen failing**. Write it first, run it
     against the unfixed code, and record the failing output. Then fix, and see it pass.
   - A green run at HEAD is never evidence that a test fails without the fix.
+  - A Done-when whose "fails at `{sha}`" clause was not seen failing is reported **not met as
+    written**, with the reason, so its deliverable is **not** fully met — and `deliverables_done`
+    counts only fully met deliverables.
   - Never cite a test, file or log you have not just read or run.
 - **Executor only.**
   - Every script: `python3 .plan/execute-script.py {bundle}:{skill}:{script} …`.
@@ -260,7 +265,9 @@ All commands run from the main checkout (the repository root).
    `bundle:skill` notation (comma-separated for several); a `Persona:` entry is the persona kind
    (`implementer`) or its full skill name. Every named skill and persona must
    exist in the installed bundles; `resolve` reports a name that does not as a
-   `named_skill_not_found` error, and the run then **stops and asks the operator**. A missing skill
+   `named_skill_not_found` error, and the run then **stops and asks the operator**. A bare name in a
+   flat install whose `SKILL.md` records no bundle identity is the
+   `flat_skill_identity_missing` error for the same reason. A missing skill
    is never skipped silently. Load the declared skills and persona as standards before working on
    their deliverable, and list them per deliverable in the progress file.
    - **Surface drift.** If a deliverable ends up touching a module the spec's Expected Surface did
@@ -314,18 +321,19 @@ resolve result supplies:
   `verify`: check the changed docs instead (format, internal links and references, and a
   `git status` showing only doc files) and record `build-gate: docs-only` in the progress file and
   the landing message. `kind: buildable` runs the gate below as usual. The classifier applies the
-  PROJECT's own footprint rule — its CI opt-in when it has one (a `skip-on-docs-only` declaration
-  discovered in the workflow that carries it, plus the `extra-buildable` paths that force a build
-  even for a document extension), otherwise the architecture's module directories — rather than
-  assuming a `.py` file is the only thing that builds. It names no workflow and no class itself: the
-  non-building classes are the prose surfaces the architecture reports (a module marked
-  `documentation`, and the extensions the architecture files as `doc`). A path the classifier cannot
-  place, and any rule it could not read (reported as `reason`), builds — the fail-closed direction,
-  so a wrong answer costs a local build and never skips one the CI would run. Pass the same
-  `--project-dir` the build gate uses. Required CI checks still have to be green, so the merge gate
-  is unchanged.
+  PROJECT's own footprint rule rather than assuming a `.py` file is the only thing that builds. Its
+  non-building class is the project's CI rule where the checkout HOLDS it: a `paths-ignore` block in
+  the workflow that carries the `skip-on-docs-only` opt-in. Where it does not — the rule lives in a
+  reusable workflow the checkout does not hold — the narrow fallback is the architecture's
+  documentation module prefix AND that module's own `doc` extensions, matched case-sensitively.
+  `extra-buildable` globs force a build ahead of either. A path the classifier cannot place, and any
+  rule it could not read (reported as `reason`), builds — the fail-closed direction, so a wrong
+  answer costs a local build and never skips one the CI would run. Pass the same `--project-dir`
+  the build gate uses. Required CI checks still have to be green, so the merge gate is unchanged.
 - **When to run what:** run `{build.quality-gate}` before each commit that touches `*.py`, and
   `{build.verify}` once before the PR. Scope the tests to one module while iterating.
+- **Every pushed head:** `test-compile` runs at every head pushed to a PR — not once for the run.
+  Record the sha of each run; a head whose `test-compile` did not run is not a green head.
 - **Shell timeout:** in-process builds hold the shell call for their whole duration. Give each call
   the shell tool's `timeout` parameter, set at or above the build's own timeout.
   - If the tool cannot wait that long, run `{build.verify}`'s three parts as separate calls, in the
@@ -339,7 +347,9 @@ resolve result supplies:
   project's local module-tests run. They are not yours. Only a failure in a module you touched, or
   one the base branch does not show, is yours.
 - **Surface/naming errors** such as "unknown subcommand": suspect a stale executor first and ask the
-  operator. Do not change source to silence them.
+  operator with the question tool — do not change source to silence them. The landing records that
+  the question was asked and the answer it got, or, where the harness offered no question tool, says
+  `no question tool was available`.
 
 ## 5. Self-review before the PR
 
@@ -359,8 +369,10 @@ and to the run's own Done-when verdicts. Give it:
   - every doc or comment the change made false;
   - every changed file the spec does not explain.
 
-Fix what it finds, then dispatch it again. Stop when it reports nothing open, or after 3 rounds. At
-the round limit, ask the operator whether to continue. Record every finding and its disposition.
+Fix what it finds, then dispatch it again. Stop when a round reports nothing open, or after 3 rounds.
+At the round limit the still-open items are reported AS open, and `self-review: clear` is never
+permitted while any finding is open — that state is reported as `budget-exhausted`. Ask the operator
+whether to continue at the limit. Record every finding and its disposition.
 
 ## 6. Pull request and reviews
 
@@ -368,7 +380,10 @@ the round limit, ask the operator whether to continue. Record every finding and 
    - `python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr prepare-body --plan-id NO_PLAN`
      returns a path.
    - Write the body there: Summary; Changes, grouped per deliverable; Test evidence, naming the
-     failing-then-passing tests. No footer.
+     failing-then-passing tests. The evidence carries, per Done-when, an `order` field with exactly
+     one of `test-first`, `mutation-after` or `none`, plus the failing run's commit and output
+     identifier. The words "fail-first" and "observed failing before the fix" are reserved for
+     `test-first`; a `mutation-after` or `none` order says so instead. No footer.
    - Then: `python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr create --plan-id NO_PLAN --head {branch} --base {base_branch} --title "{conventional title}"`
 2. **Trigger each reviewer** with a PR comment (`ci pr prepare-comment` + `ci pr reply`), posting
    its resolved `trigger_comment`.
@@ -497,8 +512,14 @@ steps=setup:done,implement:done,build-gate:done,self-review:{clear|budget-exhaus
   says `guard: none on this harness (unenforced)`. Never report "all kept" or "no guard-log line"
   for a harness with no guard.
 - **The report follows the facts block,** one short section each:
-  1. **Deliverables** — per Done-when: met or not met; the test name and its fail-then-pass evidence;
-     the commit.
+  1. **Deliverables** — per Done-when: met, or not met / **not met as written** (a Done-when whose
+     "fails at `{sha}`" clause was not seen failing); the test name; an `order` field with exactly
+     one of `test-first`, `mutation-after` or `none`; the failing run's commit and output identifier
+     that the order names; and the commit. The words "fail-first" and "observed failing before the
+     fix" are reserved for `test-first` — `mutation-after` means the failing output came from
+     mutating or reverting the committed fix, and `none` means no failing output was captured. A
+     `not met as written` Done-when leaves its deliverable not fully met. Also report the sha of
+     every `test-compile` run against a pushed head.
   2. **Personas and skills** — per step, which persona was applied (section 1's table, or the
      deliverable's own `Persona:` line); per deliverable, the domain skills it named — or
      `skills: none named` when the spec declares none — and any skill added for surface drift as
@@ -510,8 +531,10 @@ steps=setup:done,implement:done,build-gate:done,self-review:{clear|budget-exhaus
      authorization:** per quota-limited reviewer, the head it reviewed, the current head, and each
      finding with how it was handled.
   6. **Operator questions** — **every** question-tool call in the run, in order: its text, its
-     options, and the option selected. List free-text operator messages separately, as free text.
-     If no question-tool call was made, write "none asked".
+     options, and the option selected. List free-text operator messages separately, as free text. A
+     surface/naming error that prompted a question is recorded here with the answer it got; when the
+     harness offered no question tool at all, this section says `no question tool was available`. If
+     no question was needed and none was asked, write "none asked".
   7. **Rule check** — every section 1 rule that you or a sub-agent did not keep, and every guard
      refusal: read `{guard_log}` (the path `resolve` returns) for this run's sessions and list each
      line. "All kept" is allowed only when that log has no line for the run — and never on a harness
