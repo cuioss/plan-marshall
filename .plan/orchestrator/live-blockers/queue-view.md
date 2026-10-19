@@ -4,7 +4,7 @@
 
 ## START HERE
 
-**Resume anchor**: RUNNING (OpenCode runbook lane): PLAN-LB-45, PLAN-LB-68, PLAN-LB-70 - await landings, audit each at full depth. PLAN-LB-71 EMITTED but HALTED at resolve invalid_spec (ledger not landed; the lane stopped and asked, correct behaviour): row is launched, not running. LAND THE LEDGER, then answer the lane: stop, and re-run /plan-marshall-runbook-lane for PLAN-LB-71. PLAN-LB-67 shipped #1813 (grade C). Do not sync the OpenCode install and then emit Skills: specs before LB-71 D1 lands. Held: PLAN-LB-69 until LB-45 lands. After: LB-43 (after LB-68), LB-55 (after LB-70), LB-53 after LB-55, LB-48, LB-49, LB-59, LB-51, LB-44, -58, -41, -46, -57. Open: park LB-48/49/51? sourcery under the standing authorization?
+**Resume anchor**: RUNNING (OpenCode runbook lane): PLAN-LB-45, PLAN-LB-68, PLAN-LB-70 - await landings, audit each at full depth. PLAN-LB-67 (#1813, C) and PLAN-LB-71 (#1817, C-) shipped and reconciled. EMITTED, awaiting operator launch: PLAN-LB-72 (lane fix-forward, medium) - LAND THE LEDGER FIRST (its spec and row are only in the ledger worktree). Operator actions: regenerate the main executor (build-classify unknown_verb) then /sync-harnesses for OpenCode; ruling on checkable fail-first. Held: PLAN-LB-69 (until LB-45 lands), LB-48/49 (overlap prompts with LB-45/68), LB-43 (after LB-68), LB-55 (after LB-70). Free alternatives if LB-72 is declined: LB-59, LB-51, LB-44, -58, -41, -46, -57. Open: park LB-48/49/51? sourcery under the standing authorization?
 **Phase**: orchestrating
 **Running**:
 - PLAN-LB-45 (WS-04)
@@ -24,6 +24,7 @@
 11. PLAN-LB-58 (WS-01)
 12. PLAN-LB-59 (WS-01)
 13. PLAN-LB-69 (WS-04)
+14. PLAN-LB-72 (WS-04)
 - PLAN-LB-14 (WS-03) — plan=lb-14-launch-gate-scope — PR 1715 — landing=landings/PLAN-LB-14.md — status: shipped
 - PLAN-LB-01 (WS-01) — status: superseded
 - PLAN-LB-04 (WS-01) — status: superseded
@@ -78,7 +79,7 @@
 - PLAN-LB-65 (WS-04) — plan=oc-lb-65-lb-62-completion — PR 1800 — landing=landings/PLAN-LB-65.md — status: shipped
 - PLAN-LB-66 (WS-04) — plan=oc-lb-66-runbook-lane-skill — PR 1808 — landing=landings/PLAN-LB-66.md — status: shipped
 - PLAN-LB-67 (WS-04) — plan=lb-67-standing-review-authorization — PR 1813 — landing=landings/PLAN-LB-67.md — status: shipped
-- PLAN-LB-71 (WS-04) — status: launched
+- PLAN-LB-71 (WS-04) — plan=lb-71-lb-67-completion — PR 1817 — landing=landings/PLAN-LB-71.md — status: shipped
 
 ## Ordered Queue
 
@@ -100,4 +101,4 @@
 | 14 | PLAN-LB-68 | WS-04 | running | .opencode/plugin/guard.js; doc/developer/opencode.adoc; doc/developer/platform-runtime/SKILL.md; doc/developer/platform-runtime/standards/pretooluse-enforcement.md; marketplace/bundles/plan-marshall/skills/marshall-steward/references/marshall-steward/SKILL.md; marketplace/bundles/plan-marshall/skills/marshall-steward/references/upgrade-flow.md; marketplace/bundles/plan-marshall/skills/platform-runtime/scripts/claude_pretooluse_hook.py; marketplace/bundles/plan-marshall/skills/platform-runtime/standards/r5-allowlist.json; marketplace/bundles/plan-marshall/skills/tools-script-executor/SKILL.md; test/plan-marshall/platform-runtime/; test/plan-marshall/workflow-integration-git/test_source_commit_gate_commit_path.py | runbook |
 | 15 | PLAN-LB-69 | WS-04 | staged | marketplace/bundles/plan-marshall/skills/persona-plan-orchestrator/standards/orchestration-model.md; marketplace/bundles/plan-marshall/skills/plan-orchestrator/scripts/orchestrator.py; marketplace/bundles/plan-marshall/skills/plan-orchestrator/standards/landing-payload-spec.md; marketplace/bundles/plan-marshall/skills/plan-orchestrator/templates/landing-analysis.md; marketplace/bundles/plan-marshall/skills/plan-orchestrator/templates/plan-spec.md; marketplace/bundles/plan-marshall/skills/plan-orchestrator/templates/workflow/cleanup.md; marketplace/bundles/plan-marshall/skills/plan-orchestrator/templates/workflow/decompose.md; marketplace/bundles/plan-marshall/skills/plan-orchestrator/templates/workflow/orchestrate.md; marketplace/bundles/plan-marshall/skills/plan-orchestrator/workflow/analyze.md; marketplace/bundles/plan-marshall/skills/platform-runtime/plan-orchestrator/scripts/; marketplace/bundles/plan-marshall/skills/platform-runtime/scripts/; test/plan-marshall/plan-orchestrator/ | plan-marshall |
 | 16 | PLAN-LB-70 | WS-03 | running | marketplace/bundles/plan-marshall/skills/manage-solution-outline/scripts/_criteria_snapshot.py; marketplace/bundles/plan-marshall/skills/manage-status/scripts/_cmd_lifecycle.py; marketplace/bundles/plan-marshall/skills/phase-6-finalize/scripts/review_support.py; marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/plan-marshall/workflow/triage.md; marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/review-rubric.md; marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/workflow/functional-review.md; test/plan-marshall/phase-6-finalize/test_criteria_integrity_d1.py | runbook |
-| 17 | PLAN-LB-71 | WS-04 | launched | marketplace/bundles/plan-marshall/skills/runbook-lane/SKILL.md; marketplace/bundles/plan-marshall/skills/runbook-lane/scripts/runbook_lane.py; marketplace/bundles/plan-marshall/skills/script-shared/scripts/deployed_layout.py; test/plan-marshall/runbook-lane/test_runbook_lane.py | runbook |
+| 17 | PLAN-LB-72 | WS-04 | staged | marketplace/bundles/plan-marshall/skills/runbook-lane/SKILL.md; marketplace/bundles/plan-marshall/skills/runbook-lane/scripts/runbook_lane.py; marketplace/bundles/plan-marshall/skills/script-shared/scripts/_cmd_manage.py; test/plan-marshall/runbook-lane/test_runbook_lane.py | runbook |

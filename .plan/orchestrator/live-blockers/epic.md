@@ -115,6 +115,14 @@ derive, for rows still live.
     `verify` red on free text; five quota breaches.
   - Fix-forward **PLAN-LB-70**. See `landings/PLAN-LB-52.md`.
 
+- **PLAN-LB-71** (shipped #1817, 2026-10-19, runbook lane, `deepseek-v4.1-flash`) — 1 met / 2 partial
+  of 3 deliverables, 10 of 15 Done-when bullets (claimed 3/3); process grade C−. The flat-layout fix
+  is real and correct by trace; the classifier is right for this repository. Defects: no Done-when
+  was seen failing test-first (0 of 15) and the PR body and `main`'s squash message say they were;
+  `persona-code-reviewer` claimed and never loaded; `test-compile` omitted at the PR heads. The
+  cheapest run so far ($0.54, 2h44m) and the first without a history rewrite or an undisclosed shell
+  file operation in the run. Fix-forward **PLAN-LB-72** (medium). See `landings/PLAN-LB-71.md`.
+
 - **PLAN-LB-67** (shipped #1813, 2026-10-18, runbook lane, `deepseek-v4.1-flash`) — 3 met / 3 partial
   of 6 deliverables (claimed 6/6); process grade C. The merge was covered by the standing CodeRabbit
   authorization. Defects: the skill-existence check cannot find a skill in a flat OpenCode or
@@ -544,6 +552,13 @@ derive, for rows still live.
 - 2026-10-18 — **Operator: the PLAN-LB-43 D4 finding comes from an OpenCode run in a consumer
   repository.** `upgrade` stopped at Stage 1 `cache-freshness-check` (`freshness: unknown`)
   because the flat OpenCode install has no resolvable manifest. It is filed as PLAN-LB-43 D4 (high).
+- 2026-10-19 — **PLAN-LB-71 landed; PLAN-LB-72 staged** (WS-04, runbook lane, medium): D1 the
+  classifier never says `docs-only` for a path the project's CI builds (the skip class came from the
+  architecture; a `docs/` module, `.asciidoc` and `README.MD` can fail open in other projects),
+  D2 the existence-check and rule tests can fail for the reason they name, D3 structured evidence
+  labels (`order`) and the `test-compile`-per-pushed-head, self-review and unknown-verb rules. The
+  chain PLAN-LB-67 → 71 → 72 is a fix-forward of the lane skill itself; park PLAN-LB-72 if the
+  operator prefers to harvest the lane's gaps through PLAN-LB-69 instead.
 - 2026-10-19 — **PLAN-LB-67 landed; PLAN-LB-71 staged.** Fix-forward (WS-04, runbook lane, high)
   with three deliverables: D1 the skill-existence check in every deployed layout, D2 the docs-only
   classifier derived from the project and never failing open, D3 the restored rules read the same
@@ -559,8 +574,19 @@ derive, for rows still live.
 
 ## Open Defects
 
-- **The runbook lane's skill-existence check fails closed in a flat install (PLAN-LB-67 landing,
-  2026-10-18; high; fix-forward PLAN-LB-71 D1).** `runbook_lane.py:167-202` resolves a bare name and
+- **Fail-first is reported, not checkable (PLAN-LB-67 and PLAN-LB-71 landings; operator ruling
+  wanted).** Two runs in a row labelled mutation or revert evidence "fail-first"; PLAN-LB-71 put
+  "each observed failing before the fix" into the PR body and `main`'s squash message with 0 of 15
+  Done-whens test-first. PLAN-LB-72 D3 makes the label structured (`order`: `test-first` /
+  `mutation-after` / `none`); the full-depth audit (PLAN-LB-69) is the only check. Decide whether a
+  lane verb should record the failing run's output and commit before the fix commit.
+- **The main executor does not know `build-classify` (2026-10-19).** `.plan/execute-script.py`
+  lists only the `resolve` child for the lane (digest `2caadbf…`); the installed OpenCode lane text
+  is still pre-PLAN-LB-67. Operator action: regenerate the executor (`marshall-steward`), then
+  `/sync-harnesses`.
+- **FIXED IN SOURCE 2026-10-19 (PLAN-LB-71 D1, #1817; deployed after the sync above).** The runbook
+  lane's skill-existence check fails closed in a flat install (PLAN-LB-67 landing,
+  2026-10-18; high). `runbook_lane.py:167-202` resolves a bare name and
   a persona with its bundle dropped against the lane's own `skills/` directory. The OpenCode install
   names skills `plan-marshall-{skill}`, so every name misses and a spec with `Skills:` lines stops
   on `named_skill_not_found`. Until PLAN-LB-71 D1 lands, do not sync the OpenCode install and then
@@ -1173,6 +1199,11 @@ entries below are OpenCode 1 assumptions in plan-marshall that OpenCode 2 broke.
 
 ## Watches
 
+- **DeepSeek Flash runs, third grade.** PLAN-LB-71 (`deepseek-v4.1-flash`/high, 3 sessions, $0.54,
+  2h44m): C−. Execution hygiene improved (no history rewrite, no undisclosed shell file operation in
+  the run, no operator question, every commit trailered); evidence integrity did not (0 of 15
+  test-first, labelled fail-first). Retire with the second grade when three consecutive landings
+  grade B or better.
 - **DeepSeek Flash runs, second grade.** PLAN-LB-67 (`deepseek-v4.1-flash`/high, 2 sessions, $1.18):
   grade C, the best execution of the OpenCode runbook-lane runs since PLAN-LB-61 — a clean main
   checkout, a genuine operator question and all commits trailered — but about nine contradicted
