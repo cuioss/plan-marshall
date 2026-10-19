@@ -106,6 +106,7 @@ from _criteria_snapshot import (
     FUNCTIONAL_VERDICT_FILE,
     criteria_drift,
     open_criteria,
+    plan_uses_worktree,
     read_snapshot,
     record_verdict_digest,
     snapshot_state,
@@ -158,15 +159,24 @@ def _evidence_root(plan_id: str) -> Path | None:
     A worktree-bound plan is graded against its worktree. A plan that runs WITHOUT
     a worktree (``use_worktree: false``) is graded against the MAIN CHECKOUT — the
     tree the finalize contract assigns it — so its citations are still checked
-    rather than read as the not-run state (which is now a blocking finding).
-    ``None`` is returned only when no tree resolves at all, and ``None`` disables
-    the existence check rather than reading the absence as a pass.
+    rather than read as the not-run state (which is a blocking finding).
+
+    A plan that DECLARED a materialized worktree which does not resolve now is
+    different again: falling back to the main checkout would check citations
+    against a tree other than the graded head. That case returns ``None``, so the
+    not-run finding stands. ``None`` disables the existence check rather than
+    reading the absence as a pass.
     """
     try:
         worktree = _attr.resolve_live_worktree(plan_id)
     except Exception:
         worktree = None
-    root = Path(worktree) if worktree is not None else _main_checkout_root()
+    if worktree is not None:
+        root: Path | None = Path(worktree)
+    elif plan_uses_worktree(plan_id):
+        return None
+    else:
+        root = _main_checkout_root()
     if root is None:
         return None
     return root if root.is_dir() else None
@@ -191,11 +201,26 @@ def _grade_test_integrity(grading: Grading, plan_id: str) -> None:
     """Consume the plan's ``test-integrity`` rows as blocking findings (rubric § 2).
 
     One finding per changed test whose assertions the branch removed or filtered.
-    A plan whose worktree cannot be resolved produces no rows, so nothing is added
-    here — that trade-off is reported by the verb itself, never invented here.
+    A failed computation is NOT read as an empty report: when the worktree resolves
+    but the base diff cannot be read (``diff_unavailable``), the check did not run,
+    so a blocking ``test_integrity_not_run`` finding blocks closure. The one
+    non-applicable state is ``worktree_unresolved`` — a plan with no worktree has
+    no branch diff to grade.
     """
     report = compute_test_integrity(plan_id)
-    if not isinstance(report, dict) or report.get('status') != 'success':
+    if not isinstance(report, dict):
+        return
+    if report.get('status') != 'success':
+        error = str(report.get('error') or 'unknown')
+        if error != 'worktree_unresolved':
+            grading.add(
+                'test_integrity_not_run',
+                '-',
+                f'the test-integrity check could not run: {error}',
+                True,
+                FIX_KIND_CORRECTION,
+                'test-integrity',
+            )
         return
     for row in report.get('findings') or []:
         if not isinstance(row, dict):

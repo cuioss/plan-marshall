@@ -267,6 +267,20 @@ def authorize_refreeze(plan_id: str, decision: str, phase: str = '3-outline') ->
     return {'status': 'success', 'plan_id': plan_id, 'refreeze_authorized': True}
 
 
+def plan_uses_worktree(plan_id: str) -> bool:
+    """Whether the plan's status record declares an isolated worktree.
+
+    Used to tell a plan that never had a worktree (graded against the main
+    checkout) from one whose worktree is materialized but currently unresolvable
+    (which must NOT be graded against a different tree).
+    """
+    status = _status_doc(plan_id)
+    if status is None:
+        return False
+    metadata = status.get('metadata')
+    return bool(metadata.get('use_worktree')) if isinstance(metadata, dict) else False
+
+
 def _review_closed_reason(plan_id: str) -> str | None:
     """Return why the operator closed the functional review, or ``None``.
 
@@ -1000,6 +1014,7 @@ __all__ = [
     'open_criteria',
     'outline_deliverables',
     'path_digest',
+    'plan_uses_worktree',
     'read_snapshot',
     'record_integrity',
     'record_snapshot_digest',

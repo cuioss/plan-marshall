@@ -248,6 +248,18 @@ def test_evidence_root_falls_back_to_the_main_checkout(plan_context, tmp_path, m
     assert review_support._evidence_root(PLAN_ID) == tmp_path
 
 
+def test_evidence_root_does_not_fall_back_for_a_missing_worktree_plan(plan_context, tmp_path, monkeypatch) -> None:
+    """A declared-but-missing worktree must not be graded against the main checkout."""
+    plan_dir = _plan(plan_context, ['parser accepts input'])
+    (plan_dir / 'status.json').write_text(
+        json.dumps({'title': 'x', 'metadata': {'use_worktree': True, 'worktree_path': '/gone'}}), encoding='utf-8'
+    )
+    monkeypatch.setattr(_attr, 'resolve_live_worktree', lambda _plan_id: None)
+    monkeypatch.setattr(review_support, '_main_checkout_root', lambda: tmp_path)
+
+    assert review_support._evidence_root(PLAN_ID) is None
+
+
 def test_evidence_root_is_none_when_no_tree_resolves(plan_context, monkeypatch) -> None:
     monkeypatch.setattr(_attr, 'resolve_live_worktree', lambda _plan_id: None)
     monkeypatch.setattr(review_support, '_main_checkout_root', lambda: None)

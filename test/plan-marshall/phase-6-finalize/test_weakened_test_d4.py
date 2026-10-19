@@ -152,6 +152,22 @@ def test_unchanged_test_file_yields_no_validator_finding(plan_context, tmp_path,
 # --- D4 (b): net-count evasion is still reported --------------------------------------------
 
 
+def test_test_integrity_computation_failure_blocks_closure(plan_context, tmp_path, monkeypatch) -> None:
+    """An unreadable branch diff is a not-run check, not an empty report."""
+    monkeypatch.setattr(_attr, 'resolve_live_worktree', lambda _plan_id: None)
+    monkeypatch.setattr(
+        review_support, 'compute_test_integrity', lambda _plan_id: {'status': 'error', 'error': 'diff_unavailable'}
+    )
+    criteria = ['parser accepts input']
+    _plan(plan_context, criteria)
+
+    payload = review_support.run_validate(PLAN_ID, 'functional', _sealed(tmp_path, criteria), None)
+
+    finding = next((f for f in payload['findings'] if f['kind'] == 'test_integrity_not_run'), None)
+    assert finding is not None, payload['findings']
+    assert finding['severity'] == 'blocking'
+
+
 def test_net_count_evasion_is_reported(plan_context, tmp_path, monkeypatch) -> None:
     repo = _repo(tmp_path)
     _commit(repo, {'README.md': 'readme\n'})
