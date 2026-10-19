@@ -24,8 +24,10 @@ from _criteria_snapshot import (
     AUTHORSHIP_SCHEMA,
     REQUEST_MISSING,
     SPEC_MISSING,
+    SUPERSEDED,
     authorship_problem,
     canonical_digest,
+    normalize_criterion,
     seal_verdict,
     verdict_row_matches,
 )
@@ -481,33 +483,56 @@ def grade_frozen_criteria(grading: Grading, drift: list[dict[str, Any]]) -> int:
     return len(drift)
 
 
-def report_unmatched_rows(grading: Grading, verdict: dict[str, Any], snapshot: dict[str, Any]) -> int:
+def report_unmatched_rows(
+    grading: Grading, verdict: dict[str, Any], snapshot: dict[str, Any], current: list[dict[str, Any]]
+) -> int:
     """Report every verdict row that answers no frozen criterion by id or exact text.
 
     A row matched only by position is not an answer: it released the criterion that
     happened to sit at its index. The row is reported so the author sees which
     verdict entry the freeze could not bind — the criterion it was meant to grade
     stays ``ungraded`` and open.
+
+    Two cases are not reported. A ``superseded`` deliverable's criteria are not
+    graded at all. And a row whose text is a CURRENT outline criterion is the author
+    grading the outline as it now reads: an operator-authorized change lands there
+    (and an unauthorized one is already a blocking criterion-drift finding), so the
+    row is not surplus.
     """
     frozen_by_number: dict[Any, list[str]] = {}
     for frozen_row in snapshot.get('deliverables') or []:
         if not isinstance(frozen_row, dict):
             continue
         frozen_by_number[frozen_row.get('number')] = [str(text) for text in frozen_row.get('criteria') or []]
+    current_by_number: dict[Any, set[str]] = {}
+    for current_row in current:
+        if isinstance(current_row, dict):
+            number = deliverable_number(current_row.get('number'))
+            current_by_number[number] = {
+                normalize_criterion(text) for text in current_row.get('success_criteria') or []
+            }
     reported = 0
     for row in verdict.get('deliverables') or []:
         if not isinstance(row, dict):
+            continue
+        if str(row.get('verdict') or '') == SUPERSEDED:
             continue
         number = deliverable_number(row.get('number'))
         frozen = frozen_by_number.get(number)
         if frozen is None:
             continue
+        current_texts = current_by_number.get(number, set())
         for index, criterion in enumerate(row.get('criteria') or [], start=1):
             if not isinstance(criterion, dict):
                 continue
-            if any(verdict_row_matches(criterion, text, position) for position, text in enumerate(frozen, start=1)):
-                continue
             text = str(criterion.get('criterion') or '')
+            if normalize_criterion(text) in current_texts:
+                continue
+            if any(
+                verdict_row_matches(criterion, frozen_text, position, number)
+                for position, frozen_text in enumerate(frozen, start=1)
+            ):
+                continue
             grading.add(
                 'unmatched_criterion',
                 f'D{number}.C{index}',

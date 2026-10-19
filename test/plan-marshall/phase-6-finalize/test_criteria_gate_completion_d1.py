@@ -4,9 +4,10 @@
 
 PLAN-LB-52 gated the 6-finalize exit on the frozen criteria, but the gate
 refused legitimate work: a plan whose functional review the manifest dropped can
-never finalize, an operator-authorized deletion stays open forever, a superseded
-deliverable blocks, and a verdict that paraphrases its criterion is orphaned by
-an exact-text match.
+never finalize, an operator-authorized deletion stays open forever, and a
+superseded deliverable blocks. A verdict row answers its criterion by
+``criterion_id`` or exact text; a paraphrase that carries neither is the author's
+to correct, not a positional guess.
 
 Each Done-when here is driven over a real sandboxed plan directory and the real
 ``open_criteria`` / ``_finalize_findings_refusal`` code paths.

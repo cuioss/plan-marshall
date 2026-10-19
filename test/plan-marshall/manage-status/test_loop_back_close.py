@@ -14,8 +14,8 @@ exact and recognisable afterwards:
   call writes nothing: no step record, no resolution, no waiver;
 * a waived step keeps its ``done`` outcome and the anchor it completed at, and
   gains the waiver beside them;
-* the waivers are stamped onto the status document as last committed, and a
-  close that stamps none does not rewrite it;
+* the waivers are stamped onto the status document as last committed, and a close
+  that stamps no waiver adds only the override-closed head it owns;
 * a blank or missing rationale is refused.
 
 Each test uses its own ``plan_id`` so no test reads another's status document or
@@ -433,6 +433,30 @@ def test_a_close_on_the_functional_review_records_the_override_head(plan_context
 
     assert result['status'] == 'success', result
     assert read_status(plan_id)['metadata']['functional_review_override_heads'] == [head]
+
+
+def test_a_second_close_for_the_same_head_does_not_duplicate_the_override_head(plan_context):
+    plan_id = 'loop-back-close-override-head-idempotent'
+    _make_plan(plan_id)
+    head = _real_head()
+
+    _close(plan_id, head)
+    _close(plan_id, head)
+
+    assert read_status(plan_id)['metadata']['functional_review_override_heads'] == [head]
+
+
+def test_a_close_of_another_step_records_no_override_head(plan_context, tmp_path, monkeypatch):
+    plan_id = 'loop-back-close-other-step-no-override'
+    _make_plan(plan_id)
+    head, completed_at = _tmp_repo_two_heads(tmp_path, monkeypatch)
+    _mark(plan_id, _WAIVED_STEP, 'done', completed_at, 'quality gate green')
+
+    result = _close(plan_id, head, step=_WAIVED_STEP)
+
+    assert result['status'] == 'success', result
+    assert result['override_head_recorded'] is False
+    assert 'functional_review_override_heads' not in read_status(plan_id)['metadata']
 
 
 def test_a_close_whose_every_waiver_is_refused_stamps_no_waiver(plan_context, tmp_path, monkeypatch):

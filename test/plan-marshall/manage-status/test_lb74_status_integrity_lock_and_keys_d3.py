@@ -20,6 +20,7 @@ from argparse import Namespace
 from pathlib import Path
 
 import _criteria_snapshot as _snap
+from _locks_core import rmw_json
 
 from conftest import load_script_module
 
@@ -49,20 +50,31 @@ def _metadata(plan_dir: Path) -> dict:
 
 def test_record_integrity_waits_for_the_status_guard(plan_context) -> None:
     plan_dir = _plan(plan_context)
-    guard = plan_dir / 'status.json.lock'
-    guard.write_text('', encoding='utf-8')
+    status_path = plan_dir / 'status.json'
+    entered = threading.Event()
+    release = threading.Event()
     outcome: dict[str, bool] = {}
+
+    def _hold(current: dict) -> dict:
+        entered.set()
+        release.wait(10)
+        return current
 
     def _record() -> None:
         outcome['result'] = _snap.record_integrity(PLAN_ID, snapshot_frozen=True)
 
+    # Hold the REAL status-writer critical section: rmw_json is the seam write_status commits through.
+    holder = threading.Thread(target=lambda: rmw_json(status_path, _hold))
+    holder.start()
+    assert entered.wait(5)
     worker = threading.Thread(target=_record)
     worker.start()
     worker.join(0.3)
     assert worker.is_alive(), 'record_integrity wrote through the held status guard'
     assert _snap.integrity_record(PLAN_ID) == {}
 
-    guard.unlink()
+    release.set()
+    holder.join(10)
     worker.join(10)
     assert not worker.is_alive()
     assert outcome['result'] is True

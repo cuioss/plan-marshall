@@ -147,6 +147,56 @@ def test_author_verdict_refuses_a_criterion_id_that_names_no_frozen_criterion(pl
     assert result['error'] == 'unknown_criterion_id'
 
 
+def test_an_authorized_criterion_rewrite_is_not_reported_unmatched(plan_context, tmp_path) -> None:
+    plan_dir = _plan(plan_context)
+    assert _snap.authorize_change(PLAN_ID, 1, FROZEN[0], 'operator: the gap is refuted')['status'] == 'success'
+    (plan_dir / 'solution_outline.md').write_text(_outline(['the reader refuses junk', FROZEN[1]]), encoding='utf-8')
+    _seal_into_plan(
+        plan_dir,
+        tmp_path,
+        _document(
+            [
+                {'criterion': 'the reader refuses junk', 'status': 'met', 'evidence': ['src/parser.py:1']},
+                {'criterion': FROZEN[1], 'status': 'met', 'evidence': ['src/parser.py:2']},
+            ]
+        ),
+    )
+
+    payload = review_support.run_validate(
+        PLAN_ID, 'functional', str(plan_dir / 'work' / 'functional-review-verdict.json'), None
+    )
+
+    assert [item for item in payload['findings'] if item['kind'] == 'unmatched_criterion'] == []
+    assert [item for item in payload['findings'] if item['kind'] == 'criterion_rewritten'] == []
+
+
+def test_a_superseded_deliverables_rows_are_not_reported_unmatched(plan_context, tmp_path) -> None:
+    plan_dir = _plan(plan_context)
+    _seal_into_plan(
+        plan_dir,
+        tmp_path,
+        {
+            'deliverables': [
+                {
+                    'number': 1,
+                    'verdict': 'superseded',
+                    'superseded_by': 'operator decision: the deliverable was dropped',
+                    'criteria': [{'criterion': 'an unrelated row', 'status': 'not_met', 'evidence': []}],
+                }
+            ],
+            'unrequested_changes': [],
+            'self_reports': [],
+            'files_read': [],
+        },
+    )
+
+    payload = review_support.run_validate(
+        PLAN_ID, 'functional', str(plan_dir / 'work' / 'functional-review-verdict.json'), None
+    )
+
+    assert [item for item in payload['findings'] if item['kind'] == 'unmatched_criterion'] == []
+
+
 def test_a_paraphrased_row_carrying_the_id_grades_its_criterion(plan_context, tmp_path) -> None:
     plan_dir = _plan(plan_context)
     _seal_into_plan(

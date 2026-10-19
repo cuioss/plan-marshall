@@ -62,11 +62,18 @@ def _missing_worktree(plan_id: str) -> dict[str, Any]:
     return {'status': 'error', 'error': 'worktree_unresolved'}
 
 
+def _verifier(tmp_path: Path) -> str:
+    """A verifier answer that WOULD permit closure without a blocking finding."""
+    path = tmp_path / 'verifier.json'
+    path.write_text(json.dumps({'grading_supported': True, 'may_close': True}), encoding='utf-8')
+    return str(path)
+
+
 def test_a_missing_declared_worktree_blocks_the_code_review(plan_context, tmp_path, monkeypatch) -> None:
     _plan(plan_context, use_worktree=True)
     monkeypatch.setattr(review_support, 'compute_test_integrity', _missing_worktree)
 
-    payload = review_support.run_validate(PLAN_ID, 'code', _code_verdict(tmp_path), None)
+    payload = review_support.run_validate(PLAN_ID, 'code', _code_verdict(tmp_path), _verifier(tmp_path))
 
     finding = next((item for item in payload['findings'] if item['kind'] == 'test_integrity_not_run'), None)
     assert finding is not None, payload['findings']

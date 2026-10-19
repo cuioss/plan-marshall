@@ -169,7 +169,7 @@ def _merge_integrity(plan_id: str, merge: Callable[[dict[str, Any]], None]) -> b
                 atomic_write_file(path, json.dumps(status, indent=2, sort_keys=True) + '\n')
             except OSError:
                 return False
-    except TimeoutError:
+    except (TimeoutError, OSError):
         return False
     return True
 
@@ -887,10 +887,21 @@ def authorize_change(
     ]
     entries.append({'deliverable': number, 'criterion': criterion, 'decision': decision, 'phase': phase})
     snapshot['authorized_changes'] = entries
-    atomic_write_file(snapshot_path(plan_id), json.dumps(snapshot, indent=2, sort_keys=True) + '\n')
+    path = snapshot_path(plan_id)
+    previous = path.read_text(encoding='utf-8') if path.is_file() else None
+    atomic_write_file(path, json.dumps(snapshot, indent=2, sort_keys=True) + '\n')
     # Re-record the digest: the authorization rewrites the snapshot file, and a
     # recorded digest left on the pre-authorization bytes would read as tampering.
-    record_snapshot_digest(plan_id)
+    # When it cannot be recorded the authorization is rolled back — the same
+    # no-snapshot-without-its-binding rule write_snapshot applies.
+    if not record_snapshot_digest(plan_id):
+        _roll_back_snapshot(path, previous)
+        return {
+            'status': 'error',
+            'plan_id': plan_id,
+            'error': 'snapshot_integrity_unrecorded',
+            'message': 'the rewritten snapshot digest could not be recorded, so the authorization was rolled back',
+        }
     return {
         'status': 'success',
         'plan_id': plan_id,
@@ -922,10 +933,9 @@ def open_criteria(plan_id: str, verdict_file: Path | None = None) -> dict[str, A
     * the verdict carries the review's authorship seal and its digest matches, so
       a file rewritten in place does not release the plan;
     * the row's status is ``met`` AND it carries non-empty evidence;
-    * the row is matched by a STABLE id — an explicit ``criterion_id`` wins, exact
-      text is tried next, and the row's position within the deliverable is the last
-      resort — so a verdict row that paraphrases the frozen criterion still answers
-      for it.
+    * the row is matched by an explicit ``criterion_id`` or by EXACT normalised
+      text. Position alone is never a match: a paraphrased row without its id
+      leaves the criterion ungraded and open.
 
     Anything else is open, which is the fail-closed direction. Four deliberate
     states additionally close criteria rather than reading them as open work:
@@ -978,7 +988,7 @@ def open_criteria(plan_id: str, verdict_file: Path | None = None) -> dict[str, A
             text = normalize_criterion(raw)
             if _authorization(snapshot, number, text):
                 continue
-            status = _graded_status(graded, text, index)
+            status = _graded_status(graded, text, index, number)
             if status == 'met':
                 continue
             rows.append(
@@ -1043,22 +1053,26 @@ def criterion_id_parts(criterion_id: Any) -> tuple[int | None, int | None]:
     return deliverable, int(match.group(2))
 
 
-def verdict_row_matches(row: Any, criterion: str, index: int) -> bool:
+def verdict_row_matches(row: Any, criterion: str, index: int, deliverable: Any = None) -> bool:
     """Whether a verdict row answers the frozen criterion at ``index``.
 
     The stable id is tried first, then the exact normalised text. Position alone is
     never a match: the positional fallback released a criterion the reviewer had
-    graded something else, which is the failure this predicate exists to close.
+    graded something else, which is the failure this predicate exists to close. A
+    deliverable-qualified id (``D2.C1``) answers only inside deliverable 2 when
+    ``deliverable`` is supplied.
     """
     if not isinstance(row, dict):
         return False
-    _, named_position = criterion_id_parts(row.get('criterion_id'))
+    named_deliverable, named_position = criterion_id_parts(row.get('criterion_id'))
+    if named_deliverable is not None and deliverable is not None and named_deliverable != deliverable:
+        return False
     if named_position == index:
         return True
     return normalize_criterion(row.get('criterion')) == normalize_criterion(criterion)
 
 
-def _graded_status(criteria: list[Any], criterion: str, index: int) -> str:
+def _graded_status(criteria: list[Any], criterion: str, index: int, deliverable: Any = None) -> str:
     """Status a sealed verdict gives one frozen criterion, matched by stable id or text.
 
     A row carrying an explicit ``criterion_id`` wins; exact text is tried next;
@@ -1070,7 +1084,11 @@ def _graded_status(criteria: list[Any], criterion: str, index: int) -> str:
     wanted = normalize_criterion(criterion)
     row: dict[str, Any] | None = None
     for candidate in criteria:
-        if isinstance(candidate, dict) and criterion_id_parts(candidate.get('criterion_id'))[1] == index:
+        if (
+            isinstance(candidate, dict)
+            and criterion_id_parts(candidate.get('criterion_id'))[1] == index
+            and verdict_row_matches(candidate, criterion, index, deliverable)
+        ):
             row = candidate
             break
     if row is None:

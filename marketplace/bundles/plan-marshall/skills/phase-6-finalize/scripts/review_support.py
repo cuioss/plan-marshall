@@ -280,7 +280,7 @@ def run_validate(plan_id: str, kind: str, verdict_file: str, verifier_file: str 
         facts = validate_functional(verdict, deliverables, grading, plan_id, evidence_root)
         if snapshot is not None:
             grade_frozen_criteria(grading, criteria_drift(plan_id, deliverables))
-            report_unmatched_rows(grading, verdict, snapshot)
+            report_unmatched_rows(grading, verdict, snapshot, deliverables)
             # Prove the citation check ran, or say why it did not: an unrun check
             # that renders identically to a passed one is a green nothing produced.
             if evidence_root is None:
@@ -352,7 +352,7 @@ def _unknown_criterion_ids(verdict: dict[str, Any], plan_id: str) -> list[str]:
     frozen: dict[Any, int] = {}
     for row in snapshot.get('deliverables') or []:
         if isinstance(row, dict):
-            frozen[row.get('number')] = len(row.get('criteria') or [])
+            frozen[deliverable_number(row.get('number'))] = len(row.get('criteria') or [])
     unknown: list[str] = []
     for row in verdict.get('deliverables') or []:
         if not isinstance(row, dict):

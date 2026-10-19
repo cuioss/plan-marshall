@@ -330,8 +330,9 @@ def _record_override_head(plan_id: str, step: str, head: str) -> bool:
 
     The read, the append and the commit are one ``rmw_json`` critical section on the
     guard every ``status.json`` writer commits through, so a concurrent status write
-    is either carried forward or waits. An unchanged list leaves the file untouched;
-    an unreadable document reads as empty and therefore writes nothing.
+    is either carried forward or waits. An unchanged list leaves the file untouched.
+    ``require_status`` has already refused a missing or unreadable document before
+    this runs, so ``rmw_json``'s read-as-empty interpretation never overwrites one.
     """
 
     def _apply(current: dict[str, Any]) -> dict[str, Any]:
