@@ -373,4 +373,3 @@ def test_read_resolves_adr_in_subdirectory(adr_dir):
 
     assert result['status'] == 'success'
     assert 'Nested Read' in result['content']
-

@@ -43,7 +43,6 @@ MODULE_STATUS_RESOLVED = 'resolved'
 MODULE_STATUS_UNREADABLE = 'unreadable'
 
 
-
 def _leading_frontmatter(content: str) -> str:
     """Return the leading ``---``...``---`` YAML frontmatter block, or ''.
 
@@ -295,7 +294,7 @@ def _resolve_profile_domain_skills(profile: str, domain: str, module: str = '') 
     module_data, module_status = _resolve_module_data(module)
 
     qualified: set[str] = set()
-    if module_status == MODULE_STATUS_RESOLVED:
+    if module_status == MODULE_STATUS_RESOLVED and module_data is not None:
         computed = _module_qualified_skills(domain, profile, module_data)
         if computed is None:
             module_status = MODULE_STATUS_UNREADABLE
