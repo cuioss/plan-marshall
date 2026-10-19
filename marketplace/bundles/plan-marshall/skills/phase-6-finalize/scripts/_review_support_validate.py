@@ -265,7 +265,7 @@ def missing_evidence(evidence_root: Path, evidence: list[str]) -> list[str]:
             if not resolved.is_relative_to(root):
                 missing.append(raw)
                 continue
-            present, content = _graded_head_file(root, str(resolved.relative_to(root)))
+            present, content = _graded_head_file(root, resolved.relative_to(root).as_posix())
             if not present:
                 missing.append(raw)
                 continue

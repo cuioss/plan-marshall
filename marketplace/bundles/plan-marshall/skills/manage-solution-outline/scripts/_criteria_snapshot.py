@@ -544,8 +544,14 @@ def write_snapshot(plan_id: str) -> dict[str, Any]:
     permits, so one decision authorizes exactly one re-freeze.
     """
     existing = read_snapshot(plan_id)
-    authorized = bool(integrity_record(plan_id).get('refreeze_authorized'))
-    if existing is not None and not authorized:
+    info = integrity_record(plan_id)
+    authorized = bool(info.get('refreeze_authorized'))
+    # The status record is the gate, not the file: deleting or corrupting the
+    # snapshot file makes read_snapshot return None, and `existing is not None`
+    # would then treat the call as a first freeze and leak a re-freeze without a
+    # decision. `snapshot_frozen` lives outside the file, so it still says "frozen".
+    previously_frozen = existing is not None or bool(info.get('snapshot_frozen'))
+    if previously_frozen and not authorized:
         return {
             'status': 'error',
             'plan_id': plan_id,
@@ -569,7 +575,7 @@ def write_snapshot(plan_id: str) -> dict[str, Any]:
     # file) holds the digest, so editing or deleting the snapshot
     # afterwards is detectable rather than silently read as the legacy shape.
     record_snapshot_digest(plan_id)
-    if existing is not None and authorized:
+    if previously_frozen and authorized:
         # One decision authorizes one re-freeze: consume it so the next write is
         # gated again.
         record_integrity(plan_id, refreeze_authorized=False)
@@ -742,6 +748,15 @@ def authorize_change(
             'plan_id': plan_id,
             'error': 'snapshot_absent',
             'message': f'{SNAPSHOT_FILE} does not exist; nothing can be authorized against it',
+        }
+    if snapshot_state(plan_id) == 'tampered':
+        # Authorizing against an edited snapshot would record the edited bytes as
+        # the new frozen baseline and silently retire the tamper detection.
+        return {
+            'status': 'error',
+            'plan_id': plan_id,
+            'error': 'snapshot_tampered',
+            'message': f'{SNAPSHOT_FILE} no longer matches its recorded digest; nothing can be authorized against it',
         }
     wanted = normalize_criterion(criterion)
     known = {

@@ -97,10 +97,12 @@ def _markers(text: str) -> set[str]:
     return {marker for marker in SKIP_MARKERS if marker in text}
 
 
-#: A test-function header: a Python ``def`` (any indentation) or a JS
-#: ``it``/``test``/``describe`` call. Used to count assertions PER function, which
-#: is what closes net-count evasion.
-_FUNCTION_HEADER_RE = re.compile(r'(?m)^[ \t]*(?:def\s+(\w+)|(?:it|test|describe)\s*\(\s*[\'"]([^\'"]+)[\'"])')
+#: A test-function header: a TOP-LEVEL Python ``def`` or an ``it``/``test``/
+#: ``describe`` call. The Python arm is anchored at column 0 so a nested helper is
+#: not read as its own function (its assertions stay in the enclosing test), and a
+#: method indented inside a class is not mistaken for a top-level test. Counts are
+#: per function, which is what closes net-count evasion.
+_FUNCTION_HEADER_RE = re.compile(r'(?m)^def\s+(\w+)|^[ \t]*(?:it|test|describe)\s*\(\s*[\'"]([^\'"]+)[\'"]')
 
 
 def _function_assertion_counts(text: str) -> dict[str, int]:
@@ -164,12 +166,20 @@ def compute_test_integrity(plan_id: str, base_ref: str | None = None) -> dict[st
                 after = target.read_text(encoding='utf-8')
             except OSError:
                 continue
-        removed = max(0, _count(before, ASSERTION_PATTERNS) - _count(after, ASSERTION_PATTERNS))
+        file_loss = _count(before, ASSERTION_PATTERNS) - _count(after, ASSERTION_PATTERNS)
         before_fns = _function_assertion_counts(before)
         after_fns = _function_assertion_counts(after)
-        weakened_functions = sorted(name for name, count in before_fns.items() if after_fns.get(name, 0) < count)
-        per_function_removed = sum(max(0, count - after_fns.get(name, 0)) for name, count in before_fns.items())
-        removed = max(removed, per_function_removed)
+        # A function present in BOTH trees whose count dropped. A function absent
+        # from the after tree is a rename or a deletion, not a per-function loss —
+        # counting it would report a renamed test as weakened — so those are left to
+        # the file-level count.
+        weakened_functions = sorted(
+            name for name, count in before_fns.items() if name in after_fns and after_fns[name] < count
+        )
+        per_function_removed = sum(
+            max(0, count - after_fns[name]) for name, count in before_fns.items() if name in after_fns
+        )
+        removed = max(max(0, file_loss), per_function_removed)
         added_markers = sorted(_markers(after) - _markers(before))
         if removed:
             finding: dict[str, Any] = {
@@ -180,10 +190,10 @@ def compute_test_integrity(plan_id: str, base_ref: str | None = None) -> dict[st
             }
             if weakened_functions:
                 finding['weakened_functions'] = weakened_functions
-                if per_function_removed > _count(before, ASSERTION_PATTERNS) - _count(after, ASSERTION_PATTERNS):
+                if per_function_removed > max(0, file_loss):
                     finding['detail'] = (
                         f'{removed} assertion(s) present at {resolved_base} are gone from '
-                        f'{", ".join(weakened_functions)}, while the file total is unchanged'
+                        f'{", ".join(weakened_functions)}, while the file total is not reduced by the same amount'
                     )
             findings.append(finding)
         if added_markers:

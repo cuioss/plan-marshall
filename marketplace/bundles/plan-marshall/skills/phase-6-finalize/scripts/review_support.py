@@ -134,7 +134,7 @@ from _review_support_validate import (
     validate_functional,
     verifier_status,
 )
-from file_ops import atomic_write_file, base_path
+from file_ops import atomic_write_file, base_path, cwd_checkout_root
 from input_validation import require_valid_plan_id
 from toon_parser import serialize_toon
 
@@ -143,20 +143,32 @@ TARGET_FINALIZE = '6-finalize'
 TARGET_NONE = 'none'
 
 
+def _main_checkout_root() -> Path | None:
+    """The main checkout root, or ``None`` when it cannot be resolved."""
+    try:
+        root = Path(cwd_checkout_root())
+    except Exception:
+        return None
+    return root if root.is_dir() else None
+
+
 def _evidence_root(plan_id: str) -> Path | None:
     """Resolve the tree a verdict's evidence is checked against, or ``None``.
 
-    ``None`` disables the existence check, which is correct only when there is no
-    tree to check against; an unresolvable worktree must not read as "every
-    citation exists".
+    A worktree-bound plan is graded against its worktree. A plan that runs WITHOUT
+    a worktree (``use_worktree: false``) is graded against the MAIN CHECKOUT — the
+    tree the finalize contract assigns it — so its citations are still checked
+    rather than read as the not-run state (which is now a blocking finding).
+    ``None`` is returned only when no tree resolves at all, and ``None`` disables
+    the existence check rather than reading the absence as a pass.
     """
     try:
         worktree = _attr.resolve_live_worktree(plan_id)
     except Exception:
+        worktree = None
+    root = Path(worktree) if worktree is not None else _main_checkout_root()
+    if root is None:
         return None
-    if worktree is None:
-        return None
-    root = Path(worktree)
     return root if root.is_dir() else None
 
 

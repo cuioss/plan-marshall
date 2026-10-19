@@ -26,9 +26,17 @@ from typing import Any
 import _criteria_snapshot as _snap
 import _review_support_attribution as _attr
 import _review_support_validate as _validate
+import pytest
 import review_support
 
 PLAN_ID = 'lb70-criteria-parsing-d2'
+
+
+@pytest.fixture(autouse=True)
+def _no_main_checkout_fallback(monkeypatch):
+    """Keep the evidence root off unless a test deliberately supplies a repo."""
+    monkeypatch.setattr(review_support, '_main_checkout_root', lambda: None)
+
 
 #: A fixture copy of the PLAN-LB-52 spec's Deliverables section: deliverable 1's
 #: Done-when is WRAPPED prose with no bullet list, the shape the one-line capture
@@ -230,6 +238,21 @@ def test_plan_local_citation_cannot_escape_the_checkout(plan_context, tmp_path, 
 
     assert payload['valid'] is False
     assert any('does not exist at the graded head' in error for error in payload['errors'])
+
+
+def test_evidence_root_falls_back_to_the_main_checkout(plan_context, tmp_path, monkeypatch) -> None:
+    """A plan without a worktree is graded against the main checkout, not not-run."""
+    monkeypatch.setattr(_attr, 'resolve_live_worktree', lambda _plan_id: None)
+    monkeypatch.setattr(review_support, '_main_checkout_root', lambda: tmp_path)
+
+    assert review_support._evidence_root(PLAN_ID) == tmp_path
+
+
+def test_evidence_root_is_none_when_no_tree_resolves(plan_context, monkeypatch) -> None:
+    monkeypatch.setattr(_attr, 'resolve_live_worktree', lambda _plan_id: None)
+    monkeypatch.setattr(review_support, '_main_checkout_root', lambda: None)
+
+    assert review_support._evidence_root(PLAN_ID) is None
 
 
 # --- D2 (d): a test file absent at the graded head is refused -------------------------------

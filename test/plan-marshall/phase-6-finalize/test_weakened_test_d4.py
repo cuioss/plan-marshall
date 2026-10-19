@@ -125,7 +125,28 @@ def test_removed_assertion_reaches_the_validator(plan_context, tmp_path, monkeyp
 
     payload = review_support.run_validate(PLAN_ID, 'functional', _sealed(tmp_path, criteria), None)
 
-    assert any(finding['kind'] == 'weakened_test' for finding in payload['findings']), payload['findings']
+    finding = next((f for f in payload['findings'] if f['kind'] == 'weakened_test'), None)
+    assert finding is not None, payload['findings']
+    assert finding['severity'] == 'blocking'
+    assert payload['may_close'] is False
+
+
+def test_unchanged_test_file_yields_no_validator_finding(plan_context, tmp_path, monkeypatch) -> None:
+    """The positive control: an untouched test file raises no weakened-test finding."""
+    repo = _repo(tmp_path)
+    _commit(repo, {'README.md': 'readme\n'})
+    _commit(repo, {'test/sample_test.py': STRONG_TEST})
+    _git(repo, 'checkout', '--quiet', '-b', 'feature')
+    _commit(repo, {'src/other.py': 'x\n'})
+    monkeypatch.setattr(_integrity, 'resolve_live_worktree', lambda _plan_id: repo)
+    monkeypatch.setattr(_attr, 'resolve_live_worktree', lambda _plan_id: None)
+    criteria = ['parser accepts input']
+    _plan(plan_context, criteria)
+
+    payload = review_support.run_validate(PLAN_ID, 'functional', _sealed(tmp_path, criteria), None)
+
+    assert [f for f in payload['findings'] if f['kind'] == 'weakened_test'] == []
+    assert payload['valid'] is True
 
 
 # --- D4 (b): net-count evasion is still reported --------------------------------------------

@@ -23,12 +23,19 @@ from typing import Any, cast
 
 import _criteria_snapshot as _snap
 import _review_support_attribution as _attr
+import pytest
 import review_support
 
 from conftest import load_script_module
 
 PLAN_ID = 'lb70-criteria-binding-d3'
 _lifecycle = load_script_module('plan-marshall', 'manage-status', '_cmd_lifecycle.py', '_lb70_d3_lifecycle')
+
+
+@pytest.fixture(autouse=True)
+def _no_main_checkout_fallback(monkeypatch):
+    """Keep the evidence root off unless a test deliberately supplies a tree."""
+    monkeypatch.setattr(review_support, '_main_checkout_root', lambda: None)
 
 
 def _outline(criteria: list[str]) -> str:
