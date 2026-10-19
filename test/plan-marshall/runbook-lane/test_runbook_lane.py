@@ -1311,13 +1311,14 @@ def test_build_timeout_comes_from_the_architecture_stamp(tmp_path: Path, monkeyp
     The test drives ``cmd_resolve``, not the extracted seam, and replaces the
     DELEGATION TARGET — ``_cmd_client._augment_resolved`` — so a broken or
     raising delegation is caught: either one leaves the lane's 1800 fallback in
-    place, and the assertion below fails.
+    place, and the assertion below fails. The target is obtained through the
+    loader (never a plain ``import``) so it is the very object the lane's
+    deferred ``from _cmd_client import …`` resolves.
     """
-    import _cmd_client
-
+    client = load_script_module('plan-marshall', 'manage-architecture', '_cmd_client.py')
     spec = _seed_fixture(tmp_path, executable=_PYPROJECT_EXEC, required_bots='x')
     monkeypatch.setattr(
-        _cmd_client,
+        client,
         '_augment_resolved',
         lambda resolved, project_dir: {'bash_timeout_seconds': 1234},
     )
