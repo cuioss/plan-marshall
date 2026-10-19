@@ -197,25 +197,31 @@ def _skill_probe_paths(notation: str, lane_bundle: str) -> list[Path]:
 
     A bare name is qualified with ``lane_bundle`` first, so the lane's own skills
     resolve beside it without the caller spelling a bundle. The lane's own
-    ``skills/`` root is probed through the shared layout vocabulary
-    (:func:`deployed_layout.skill_roots` plus
+    ``skills/`` root is resolved through the shared layout resolver
+    (:func:`deployed_layout.resolve_skill_path`) and its candidates enumerated
+    from the same vocabulary (:func:`deployed_layout.skill_roots` plus
     :func:`deployed_layout.flat_skill_dir_name`), which knows both the nested
     shape and the flat ``{bundle}-{skill}`` shape. The nested bundle tree — and
     every version dir in it — is probed through
-    :func:`marketplace_bundles.resolve_bundle_path`. No path is assembled by
-    hand, so a name present in none of the layouts yields the paths that were
-    actually probed, not a guess.
+    :func:`marketplace_bundles.resolve_bundle_path`. The enumeration is what lets
+    a name present in none of the layouts report every path that was probed,
+    instead of a single guess.
     """
-    from deployed_layout import flat_skill_dir_name, skill_roots
+    from deployed_layout import flat_skill_dir_name, resolve_skill_path, skill_roots
 
     bundle, separator, skill = notation.partition(':')
     if not separator:
         bundle, skill = lane_bundle, notation
     subpath = f'skills/{skill}/SKILL.md'
 
-    candidates: list[Path] = [
-        root / flat_skill_dir_name(bundle, skill) / 'SKILL.md' for root in skill_roots(_lane_skills_root())
-    ]
+    candidates: list[Path] = []
+    resolved = resolve_skill_path(_lane_skills_root(), bundle, subpath)
+    if resolved is not None:
+        candidates.append(resolved)
+    for root in skill_roots(_lane_skills_root()):
+        candidate = root / flat_skill_dir_name(bundle, skill) / 'SKILL.md'
+        if candidate not in candidates:
+            candidates.append(candidate)
     try:
         from marketplace_bundles import resolve_bundle_path, resolve_bundles_root
 
@@ -334,11 +340,10 @@ def _resolve_deliverable_skills(spec: Path) -> dict[str, Any]:
     missing: list[str] = []
     probed: list[str] = []
     for name in [*declared, *personas]:
-        candidates = _skill_probe_paths(name, lane_bundle)
-        if any(candidate.is_file() for candidate in candidates):
+        if _skill_exists(name, lane_bundle):
             continue
         missing.append(name)
-        probed.extend(str(candidate) for candidate in candidates)
+        probed.extend(str(candidate) for candidate in _skill_probe_paths(name, lane_bundle))
     return {
         'deliverables': rows,
         'missing_skills': missing,
