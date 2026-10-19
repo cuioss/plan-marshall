@@ -1708,6 +1708,48 @@ def test_configure_drops_domain_inclusion_for_removed_domains(plan_context, monk
     assert 'javascript' not in updated['skill_domains']
 
 
+def test_configure_preserves_excluded_skills(plan_context, monkeypatch):
+    """configure preserves an operator-set excluded_skills list for a retained domain."""
+    config = _inclusion_marshal_config(
+        {
+            'system': {'defaults': []},
+            'java': {
+                'bundle': 'pm-dev-java',
+                'excluded_skills': ['pm-dev-java:java-cdi'],
+                'workflow_skill_extensions': {'triage': 'pm-dev-java:ext-triage-java'},
+            },
+        }
+    )
+    marshal_path = plan_context.fixture_dir / 'marshal.json'
+    marshal_path.write_text(json.dumps(config, indent=2))
+
+    result = cmd_skill_domains(Namespace(verb='configure', domains='java'))
+    assert result['status'] == 'success'
+
+    updated = json.loads(marshal_path.read_text())
+    assert updated['skill_domains']['java']['excluded_skills'] == ['pm-dev-java:java-cdi']
+
+
+def test_set_inclusion_writes_and_get_reads_excluded_skills(plan_context, monkeypatch):
+    """set-inclusion writes excluded_skills and get surfaces it."""
+    create_nested_marshal_json(plan_context.fixture_dir)
+
+    result = cmd_skill_domains(
+        Namespace(
+            verb='set-inclusion',
+            domain='java',
+            always_on=None,
+            file_globs=None,
+            excluded_skills='pm-dev-java:java-cdi, java-lombok',
+        )
+    )
+
+    assert result['status'] == 'success'
+    assert result['excluded_skills'] == ['pm-dev-java:java-cdi', 'java-lombok']
+    got = cmd_skill_domains(Namespace(verb='get', domain='java'))
+    assert got['excluded_skills'] == ['pm-dev-java:java-cdi', 'java-lombok']
+
+
 def test_cli_set_inclusion_round_trip(plan_context):
     """CLI plumbing: set-inclusion writes always_on / file_globs via argparse; get reads them back.
 
