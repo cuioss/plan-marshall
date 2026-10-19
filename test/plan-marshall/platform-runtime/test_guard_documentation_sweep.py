@@ -271,6 +271,11 @@ def _substitute_placeholder(command: str, name: str, replacement: str) -> str | 
     return None
 
 
+def _resolved_pair(command: str, unresolved: str | None) -> list[tuple[str, str | None]]:
+    """Return a one-element ``(command, unresolved_name)`` result, typed narrowly."""
+    return [(command, unresolved)]
+
+
 def _resolve_script_template(command: str) -> list[tuple[str, str | None]]:
     """Return the ``(command_to_check, unresolved_name)`` pair(s) for a line.
 
@@ -285,19 +290,21 @@ def _resolve_script_template(command: str) -> list[tuple[str, str | None]]:
     """
     name = _script_placeholder_name(command)
     if name is None:
-        return [(command, None)]
+        return _resolved_pair(command, None)
     if name in _GENERIC_SCRIPT_PLACEHOLDERS:
-        resolved = [
-            (substituted, None)
-            for entry in _HOOK._r5_allowlist_entries()
-            if (substituted := _substitute_placeholder(command, name, entry)) is not None
-        ]
-        return resolved or [(command, name)]
+        resolved: list[tuple[str, str | None]] = []
+        for entry in _HOOK._r5_allowlist_entries():
+            substituted = _substitute_placeholder(command, name, entry)
+            if substituted is not None:
+                resolved.append((substituted, None))
+        if resolved:
+            return resolved
+        return _resolved_pair(command, name)
     mapped = _RESOLVED_PATH_TEMPLATES.get(name)
     if mapped is None:
-        return [(command, name)]
+        return _resolved_pair(command, name)
     substituted = _substitute_placeholder(command, name, mapped)
-    return [(substituted, None)] if substituted is not None else [(command, name)]
+    return _resolved_pair(substituted, None) if substituted is not None else _resolved_pair(command, name)
 
 
 def _exclusion_for(candidate: Candidate) -> str | None:
