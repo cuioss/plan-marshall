@@ -670,9 +670,10 @@ def test_spec_without_skill_or_persona_lines_says_none_named(tmp_path: Path) -> 
 # D5 — a docs-only change skips the full local build
 # =============================================================================
 
-#: This repository's own footprint opt-in, READ from the real workflow file so the
-#: matching cases are exercised against the project's actual rule rather than
-#: against a hand-copied stand-in.
+#: This repository's own footprint opt-in, READ from the real workflow file so the opt-in and the
+#: ``extra-buildable`` matching cases run against the project's actual file. This repository's
+#: workflow holds NO readable non-building class (it delegates via ``uses:``), so the cases that
+#: exercise the architecture fallback are driven by the fixture's documentation module.
 _VERIFY_WORKFLOW_FILE = PROJECT_ROOT / '.github' / 'workflows' / 'python-verify.yml'
 
 
@@ -1226,6 +1227,8 @@ def test_classifier_source_holds_no_workflow_name_or_suffix_list() -> None:
     source = (get_scripts_dir('plan-marshall', _SKILL_NAME) / 'runbook_lane.py').read_text(encoding='utf-8')
 
     assert 'python-verify.yml' not in source, 'the classifier names this repository workflow'
+    assert '_NON_BUILDING_SUFFIXES' not in source, 'the classifier hard-codes non-building suffixes'
+    assert "'.adoc'" not in source, 'the classifier hard-codes a document extension'
     suffix_lists = _document_suffix_lists(source)
     assert not suffix_lists, f'the classifier hard-codes a document-suffix collection at lines {suffix_lists}'
 
@@ -1286,6 +1289,16 @@ def test_self_review_clear_is_not_permitted_with_an_open_finding() -> None:
     review = _section('## 5. Self-review before the PR')
 
     assert '`self-review: clear` is never permitted while any finding is open' in review
+
+
+def test_a_done_when_without_failing_evidence_is_reported_not_met() -> None:
+    """The `order` vocabulary is coupled to the met/not-met verdict."""
+    rules = _section('## 1. Rules (every one binds; breaking one fails the run)')
+    landing = _section('## 8. Landing message (the last step, after the merge)')
+
+    for name, section in (('§1', rules), ('§8', landing)):
+        assert 'not met as written' in section, f'{name} does not require a not-met verdict without failing evidence'
+    assert 'excluded from `deliverables_done`' in rules, 'the not-met verdict is not tied to the done count'
 
 
 def test_unknown_verb_rule_names_its_landing_record() -> None:

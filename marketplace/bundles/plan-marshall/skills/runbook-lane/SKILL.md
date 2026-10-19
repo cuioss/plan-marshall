@@ -93,10 +93,11 @@ The branch row is derived from the project's configuration rather than returned 
 other row names a field of the resolve result.
 
 The verb **fails closed**: a spec outside `.plan/orchestrator/{slug}/plans/`, an unreadable
-configuration, a missing automatic-review step, an empty required-reviewer list, or a build command
-the project's architecture cannot resolve is an error carrying a specific code. There is never a
-fall-back to a default reviewer list or a default build. Stop and report a resolve error; do not
-substitute a value.
+configuration, a missing automatic-review step, an empty required-reviewer list, a build command
+the project's architecture cannot resolve, or a bare `Skills:`/`Persona:` name in a flat install
+whose `SKILL.md` records no bundle identity (`flat_skill_identity_missing`) is an error carrying a
+specific code. There is never a fall-back to a default reviewer list or a default build. Stop and
+report a resolve error; do not substitute a value.
 
 **How to read the spec:**
 
@@ -160,6 +161,9 @@ so git alone shows which deliverables are committed.
   - A test that a Done-when says "fails at `{sha}`" must be **seen failing**. Write it first, run it
     against the unfixed code, and record the failing output. Then fix, and see it pass.
   - A green run at HEAD is never evidence that a test fails without the fix.
+  - A Done-when whose "fails at `{sha}`" clause was not seen failing is reported **not met as
+    written**, with the reason, and is excluded from `deliverables_done`, even when its behaviour
+    holds.
   - Never cite a test, file or log you have not just read or run.
 - **Executor only.**
   - Every script: `python3 .plan/execute-script.py {bundle}:{skill}:{script} …`.
@@ -260,7 +264,9 @@ All commands run from the main checkout (the repository root).
    `bundle:skill` notation (comma-separated for several); a `Persona:` entry is the persona kind
    (`implementer`) or its full skill name. Every named skill and persona must
    exist in the installed bundles; `resolve` reports a name that does not as a
-   `named_skill_not_found` error, and the run then **stops and asks the operator**. A missing skill
+   `named_skill_not_found` error, and the run then **stops and asks the operator**. A bare name in a
+   flat install whose `SKILL.md` records no bundle identity is the
+   `flat_skill_identity_missing` error for the same reason. A missing skill
    is never skipped silently. Load the declared skills and persona as standards before working on
    their deliverable, and list them per deliverable in the progress file.
    - **Surface drift.** If a deliverable ends up touching a module the spec's Expected Surface did
@@ -509,8 +515,10 @@ steps=setup:done,implement:done,build-gate:done,self-review:{clear|budget-exhaus
      one of `test-first`, `mutation-after` or `none`; the failing run's commit and output identifier
      that the order names; and the commit. The words "fail-first" and "observed failing before the
      fix" are reserved for `test-first` — `mutation-after` means the failing output came from
-     mutating or reverting the committed fix, and `none` means no failing output was captured. Also
-     report the sha of every `test-compile` run against a pushed head.
+     mutating or reverting the committed fix, and `none` means no failing output was captured. A
+     Done-when whose "fails at `{sha}`" clause was not seen failing is reported **not met as
+     written**, with the reason, and is excluded from `deliverables_done`. Also report the sha of
+     every `test-compile` run against a pushed head.
   2. **Personas and skills** — per step, which persona was applied (section 1's table, or the
      deliverable's own `Persona:` line); per deliverable, the domain skills it named — or
      `skills: none named` when the spec declares none — and any skill added for surface drift as

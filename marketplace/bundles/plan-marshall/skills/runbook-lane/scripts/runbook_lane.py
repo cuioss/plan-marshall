@@ -185,8 +185,10 @@ def _lane_bundle() -> str | None:
 
     Returns ``None`` for a FLAT deployment whose ``SKILL.md`` records no
     identity: the directory name cannot attribute it to a bundle, so every bare
-    name would silently miss. The caller turns that into a named refusal instead
-    of probing a bundle that does not exist.
+    name would silently miss. The caller turns that — for a spec that names a
+    bare skill or persona, and only then — into a named refusal instead of
+    probing a bundle that does not exist; a fully qualified name carries its own
+    bundle and needs this one not at all.
     """
     from deployed_layout import is_flat_root, read_flat_skill_identity
     from marketplace_bundles import extract_bundle_name
@@ -684,12 +686,11 @@ def _paths_ignore_globs(lines: list[str]) -> list[str] | None:
     as "nothing is skipped". An EMPTY list is a readable rule that names
     nothing, which correctly skips nothing.
 
-    Only the block form (``paths-ignore:`` followed by ``- glob`` items) is read;
-    a YAML flow sequence is not, and a rule the reader cannot parse is
-    fail-closed only when it falls back to the architecture. The block's
-    enclosing key is consulted so a ``push``-only filter is not applied to a PR
-    diff, and a leading ``!`` (a re-include, which has no meaning in
-    ``paths-ignore``) is dropped rather than matched literally.
+    Only the block form (``paths-ignore:`` followed by ``- glob`` items) and a plain inline scalar
+    are read. A YAML flow sequence is tokenized rather than parsed, so it degrades to tokens that
+    match no path — the fail-closed direction. The block's enclosing key is consulted so a
+    ``push``-only filter is not applied to a PR diff, and a leading ``!`` (a re-include, which has
+    no meaning in ``paths-ignore``) is dropped rather than matched literally.
     """
     for index, line in enumerate(lines):
         stripped = line.strip()
