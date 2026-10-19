@@ -105,6 +105,7 @@ from typing import Any
 import _review_support_attribution as _attr
 from _criteria_snapshot import (
     FUNCTIONAL_VERDICT_FILE,
+    STATUS_FILE,
     criteria_drift,
     criterion_id_parts,
     open_criteria,
@@ -414,7 +415,21 @@ def run_author_verdict(plan_id: str, kind: str, verdict_file: str) -> dict[str, 
     # checks compare against, so recomputing the in-file digest after an edit does
     # not reproduce it. A plan with no status record keeps the legacy in-file check
     # (the digest is still written into the marker either way).
-    record_verdict_digest(plan_id, kind, verdict_file)
+    if not record_verdict_digest(plan_id, kind, verdict_file) and base_path('plans', plan_id, STATUS_FILE).is_file():
+        # A status record exists, so it is authoritative — leaving it without this
+        # seal's digest would make a correctly sealed verdict read as edited on the
+        # next round. Report the half-binding instead of a success.
+        return {
+            'status': 'error',
+            'plan_id': plan_id,
+            'kind': kind,
+            'verdict_file': verdict_file,
+            'error': 'verdict_integrity_unrecorded',
+            'message': (
+                'the verdict was sealed but its digest could not be recorded in the plan status '
+                'record; re-run author-verdict once the status record is writable'
+            ),
+        }
     return {
         'status': 'success',
         'plan_id': plan_id,

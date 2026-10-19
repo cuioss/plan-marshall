@@ -65,6 +65,7 @@ import re
 from typing import Any
 
 from _cmd_mark_step import cmd_mark_step_done, find_step_record, write_refire_waiver
+from _criteria_snapshot import OVERRIDE_HEADS_KEY
 from _locks_core import rmw_json
 from _status_core import get_status_path, require_status, write_status
 from _step_key_canonical import canonicalize_step_key
@@ -77,9 +78,9 @@ GRANTED_KEY = 'granted'
 GRANTS_KEY = 'grants'
 
 #: The plan-metadata list of heads at which an operator closed the functional review.
-#: ``loop-back close`` is this field's owning verb; a generic ``metadata --set`` /
+#: ``loop-back close`` is this field's owning verb; the name is defined once in
+#: ``_criteria_snapshot`` (which reads it) and a generic ``metadata --set`` /
 #: ``--append`` naming it is refused (``manage-status``'s protected-key list).
-OVERRIDE_HEADS_KEY = 'functional_review_override_heads'
 #: The one step whose operator close is recorded in ``OVERRIDE_HEADS_KEY``.
 FUNCTIONAL_REVIEW_STEP = 'functional-review'
 
@@ -319,8 +320,14 @@ class _NoOverrideHead(Exception):
     """Raised inside the override-head critical section so the document is not committed."""
 
 
-def _record_override_head(plan_id: str, step: str, head: str) -> bool:
-    """Append ``head`` to the plan's override-closed heads; return whether it changed.
+def _record_override_head(plan_id: str, step: str, head: str) -> tuple[bool, str | None]:
+    """Append ``head`` to the plan's override-closed heads.
+
+    Returns ``(changed, error)``. ``(False, None)`` is the benign non-change: a
+    step other than the functional review, or a head already on the list. A write
+    that could not land returns ``(False, <reason>)`` so the close reports an
+    incomplete close rather than a silent success — the workflow reads this list as
+    its only source of override-closed heads, so a lost append is not a duplicate.
 
     Only a close of the FUNCTIONAL REVIEW step is recorded: the key answers "which
     heads did an operator ship with the review closed", and a close of any other
@@ -350,12 +357,15 @@ def _record_override_head(plan_id: str, step: str, head: str) -> bool:
         return current
 
     if step != FUNCTIONAL_REVIEW_STEP:
-        return False
+        return False, None
     try:
         rmw_json(get_status_path(plan_id), _apply)
-    except (_NoOverrideHead, TimeoutError):
-        return False
-    return True
+    except _NoOverrideHead:
+        return False, None
+    except OSError as exc:
+        # rmw_json's guard timeout is a TimeoutError, an OSError subclass.
+        return False, f'the override-closed head {head!r} was not recorded ({exc})'
+    return True, None
 
 
 def _load_findings_core() -> Any:
@@ -532,7 +542,7 @@ def cmd_loop_back_close(args: argparse.Namespace) -> dict | None:
     # The close is the owning writer of the plan's override-closed heads. Recorded
     # before the finding resolutions below so an incomplete close still leaves the
     # fact that the operator shipped this head with the review closed.
-    override_head_recorded = _record_override_head(plan_id, step, closing_head)
+    override_head_recorded, override_head_error = _record_override_head(plan_id, step, closing_head)
 
     # From here on the step IS recorded done, so a failure below is reported as
     # an incomplete close naming what did and did not land — never as a refusal.
@@ -577,7 +587,9 @@ def cmd_loop_back_close(args: argparse.Namespace) -> dict | None:
         'waived_steps': waived_steps,
         'override_head_recorded': override_head_recorded,
     }
-    if not_accepted or not state_resolved or waiver_refusals:
+    if override_head_error:
+        result['override_head_error'] = override_head_error
+    if not_accepted or not state_resolved or waiver_refusals or override_head_error:
         result['status'] = 'error'
         result['error'] = 'close_incomplete'
         result['not_accepted'] = not_accepted
@@ -585,6 +597,6 @@ def cmd_loop_back_close(args: argparse.Namespace) -> dict | None:
         result['waiver_refusals'] = waiver_refusals
         result['message'] = (
             f'Step {step!r} was recorded done at {closing_head}, but the close did not complete: '
-            'see not_accepted, state_error and waiver_refusals for what did not land.'
+            'see not_accepted, state_error, waiver_refusals and override_head_error for what did not land.'
         )
     return result

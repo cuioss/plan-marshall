@@ -503,7 +503,10 @@ def report_unmatched_rows(
     for frozen_row in snapshot.get('deliverables') or []:
         if not isinstance(frozen_row, dict):
             continue
-        frozen_by_number[frozen_row.get('number')] = [str(text) for text in frozen_row.get('criteria') or []]
+        frozen_by_number[deliverable_number(frozen_row.get('number'))] = [
+            str(text.get('text', '')) if isinstance(text, dict) else str(text)
+            for text in frozen_row.get('criteria') or []
+        ]
     current_by_number: dict[Any, set[str]] = {}
     for current_row in current:
         if isinstance(current_row, dict):

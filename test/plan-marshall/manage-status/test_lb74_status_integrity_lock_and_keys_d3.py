@@ -29,7 +29,11 @@ PLAN_ID = 'lb74-status-integrity-d3'
 _lifecycle = load_script_module('plan-marshall', 'manage-status', '_cmd_lifecycle.py', '_lb74_d3_lifecycle')
 _query = load_script_module('plan-marshall', 'manage-status', '_status_query.py', '_lb74_d3_query')
 
-PROTECTED = ('criteria_integrity', 'snapshot_frozen', 'functional_review_override_heads')
+PROTECTED = (_snap.INTEGRITY_KEY, _snap.SNAPSHOT_FROZEN_KEY, _snap.OVERRIDE_HEADS_KEY)
+
+
+def test_the_protected_set_is_derived_from_the_owning_definitions() -> None:
+    assert _query.PROTECTED_METADATA_FIELDS == frozenset(PROTECTED)
 
 
 def _plan(plan_context) -> Path:

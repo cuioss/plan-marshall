@@ -459,6 +459,24 @@ def test_a_close_of_another_step_records_no_override_head(plan_context, tmp_path
     assert 'functional_review_override_heads' not in read_status(plan_id)['metadata']
 
 
+def test_a_close_reports_an_incomplete_close_when_the_override_head_cannot_be_written(plan_context, monkeypatch):
+    plan_id = 'loop-back-close-override-head-failed'
+    _make_plan(plan_id)
+    head = _real_head()
+
+    def _busy(*_args, **_kwargs):
+        raise TimeoutError('the status guard is held')
+
+    monkeypatch.setattr(_loop_back, 'rmw_json', _busy)
+
+    result = _close(plan_id, head)
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'close_incomplete'
+    assert result['override_head_recorded'] is False
+    assert 'override_head_error' in result
+
+
 def test_a_close_whose_every_waiver_is_refused_stamps_no_waiver(plan_context, tmp_path, monkeypatch):
     """With no waiver stamped no waiver lands, and the earlier commit is carried forward.
 

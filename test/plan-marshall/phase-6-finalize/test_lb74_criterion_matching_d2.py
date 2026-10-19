@@ -216,6 +216,31 @@ def test_a_qualified_id_answers_only_inside_its_own_deliverable() -> None:
     assert _snap.verdict_row_matches(row, 'frozen text', 1, 2) is True
 
 
+def test_a_string_typed_snapshot_number_still_reports_an_unmatched_row(plan_context, tmp_path) -> None:
+    plan_dir = _plan(plan_context)
+    snapshot_file = plan_dir / 'work' / 'criteria-snapshot.json'
+    snapshot = json.loads(snapshot_file.read_text(encoding='utf-8'))
+    snapshot['deliverables'] = [{'number': '1', 'title': 'fixture', 'criteria': [FROZEN[0]]}]
+    snapshot_file.write_text(json.dumps(snapshot), encoding='utf-8')
+    assert _snap.record_snapshot_digest(PLAN_ID) is True
+    _seal_into_plan(
+        plan_dir,
+        tmp_path,
+        _document(
+            [
+                {'criterion': 'an unrelated row', 'status': 'met', 'evidence': ['src/parser.py:3']},
+                {'criterion': FROZEN[1], 'status': 'met', 'evidence': ['src/parser.py:1']},
+            ]
+        ),
+    )
+
+    payload = review_support.run_validate(
+        PLAN_ID, 'functional', str(plan_dir / 'work' / 'functional-review-verdict.json'), None
+    )
+
+    assert [item for item in payload['findings'] if item['kind'] == 'unmatched_criterion']
+
+
 def test_a_paraphrased_row_carrying_the_id_grades_its_criterion(plan_context, tmp_path) -> None:
     plan_dir = _plan(plan_context)
     _seal_into_plan(

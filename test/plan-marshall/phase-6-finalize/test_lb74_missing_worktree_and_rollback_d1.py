@@ -90,6 +90,18 @@ def test_a_plan_without_a_worktree_keeps_the_exemption(plan_context, tmp_path, m
     assert [item for item in payload['findings'] if item['kind'] == 'test_integrity_not_run'] == []
 
 
+def test_author_verdict_reports_a_failed_digest_record(plan_context, tmp_path, monkeypatch) -> None:
+    _plan(plan_context, use_worktree=False)
+    monkeypatch.setattr(review_support, 'record_verdict_digest', lambda *_args, **_kwargs: False)
+    path = tmp_path / 'verdict.json'
+    path.write_text(json.dumps({'deliverables': []}), encoding='utf-8')
+
+    result = review_support.run_author_verdict(PLAN_ID, 'functional', str(path))
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'verdict_integrity_unrecorded'
+
+
 def test_an_authorization_is_rolled_back_when_its_digest_is_not_recorded(plan_context, monkeypatch) -> None:
     plan_dir = _plan(plan_context, use_worktree=False)
     assert _snap.write_snapshot(PLAN_ID)['status'] == 'success'

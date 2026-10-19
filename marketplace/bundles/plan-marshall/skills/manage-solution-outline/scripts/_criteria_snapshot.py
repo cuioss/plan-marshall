@@ -105,6 +105,13 @@ AUTHORSHIP_VERB = 'review_support author-verdict'
 STATUS_FILE = 'status.json'
 #: The status-record metadata key holding those digests.
 INTEGRITY_KEY = 'criteria_integrity'
+#: The key INSIDE the integrity block that marks the snapshot as frozen.
+SNAPSHOT_FROZEN_KEY = 'snapshot_frozen'
+#: The status-record metadata list of heads at which an operator closed the
+#: functional review. Its owning writer is ``manage-status loop-back close``; the
+#: reader here and the protected-key guard in ``manage-status`` derive the name
+#: from this one definition.
+OVERRIDE_HEADS_KEY = 'functional_review_override_heads'
 
 
 def _status_doc(plan_id: str) -> dict[str, Any] | None:
@@ -208,7 +215,7 @@ def snapshot_state(plan_id: str) -> str:
     * ``absent`` — never frozen and no file (the legacy shape, no bindings).
     """
     info = integrity_record(plan_id)
-    frozen = bool(info.get('snapshot_frozen'))
+    frozen = bool(info.get(SNAPSHOT_FROZEN_KEY))
     path = snapshot_path(plan_id)
     if path.is_file():
         recorded = info.get('snapshot_digest')
@@ -223,7 +230,7 @@ def record_snapshot_digest(plan_id: str) -> bool:
     path = snapshot_path(plan_id)
     if not path.is_file():
         return False
-    return record_integrity(plan_id, snapshot_frozen=True, snapshot_digest=path_digest(path))
+    return record_integrity(plan_id, **{SNAPSHOT_FROZEN_KEY: True, 'snapshot_digest': path_digest(path)})
 
 
 def record_verdict_digest(plan_id: str, kind: str, verdict_file: str | Path) -> bool:
@@ -333,7 +340,7 @@ def _review_closed_reason(plan_id: str) -> str | None:
     metadata = status.get('metadata')
     if not isinstance(metadata, dict):
         return None
-    heads = metadata.get('functional_review_override_heads')
+    heads = metadata.get(OVERRIDE_HEADS_KEY)
     if isinstance(heads, list) and [head for head in heads if str(head).strip()]:
         return 'the operator closed the functional review past its round cap'
     phase_steps = metadata.get('phase_steps')
@@ -617,7 +624,7 @@ def write_snapshot(plan_id: str) -> dict[str, Any]:
     # snapshot file makes read_snapshot return None, and `existing is not None`
     # would then treat the call as a first freeze and leak a re-freeze without a
     # decision. `snapshot_frozen` lives outside the file, so it still says "frozen".
-    previously_frozen = existing is not None or bool(info.get('snapshot_frozen'))
+    previously_frozen = existing is not None or bool(info.get(SNAPSHOT_FROZEN_KEY))
     if previously_frozen and not authorized:
         return {
             'status': 'error',
@@ -1112,10 +1119,12 @@ __all__ = [
     'DELETED',
     'FUNCTIONAL_VERDICT_FILE',
     'INTEGRITY_KEY',
+    'OVERRIDE_HEADS_KEY',
     'REQUEST_FILE',
     'REWRITTEN',
     'SCHEMA',
     'SNAPSHOT_FILE',
+    'SNAPSHOT_FROZEN_KEY',
     'SPEC_MISSING',
     'STATUS_FILE',
     'SUPERSEDED',

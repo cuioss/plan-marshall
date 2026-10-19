@@ -999,7 +999,8 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status loop-b
 | `state_rule` | The rule key the step's state findings were resolved by |
 | `state_findings_resolved` | How many pending state findings that key reached |
 | `waived_steps` | The steps whose `done` record now carries the waiver |
-| `override_head_recorded` | Whether this close appended its head to `functional_review_override_heads` (`false` for a non-functional-review step, an already-present head, or an unavailable status lock) |
+| `override_head_recorded` | Whether this close appended its head to `functional_review_override_heads` (`false` for a non-functional-review step or an already-present head) |
+| `override_head_error` | Present when the append could not be written: the close is reported `close_incomplete` rather than a silent success |
 
 **Output** (TOON):
 ```toon
@@ -1999,7 +2000,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status loop-b
   [--accept HASH_ID]... [--waive-refire STEP_ID]...
 ```
 
-Records the `6-finalize` step `done` at `FULL_SHA` as an operator override (facts `may_close=operator_override`, `acceptance=operator_override`, `work_performed=true`), appends the head to `metadata.functional_review_override_heads` when the step is `functional-review`, resolves exactly the `--accept` findings `accepted` with the rationale, resolves the step's pending state findings by the rule key `{STEP_ID}-state`, and stamps `refire_waiver = {head, basis}` on each `--waive-refire` step's `done` record. Everything is validated before the first write. Returns `step`, `outcome`, `head`, `may_close`, `acceptance`, `rationale`, `accepted_count`, `accepted[]`, `state_rule`, `state_findings_resolved`, `waived_steps[]` and `override_head_recorded`. See § [loop-back close](#loop-back-close) under Operations.
+Records the `6-finalize` step `done` at `FULL_SHA` as an operator override (facts `may_close=operator_override`, `acceptance=operator_override`, `work_performed=true`), appends the head to `metadata.functional_review_override_heads` when the step is `functional-review`, resolves exactly the `--accept` findings `accepted` with the rationale, resolves the step's pending state findings by the rule key `{STEP_ID}-state`, and stamps `refire_waiver = {head, basis}` on each `--waive-refire` step's `done` record. Everything is validated before the first write. Returns `step`, `outcome`, `head`, `may_close`, `acceptance`, `rationale`, `accepted_count`, `accepted[]`, `state_rule`, `state_findings_resolved`, `waived_steps[]`, `override_head_recorded` and — when the override-head write failed — `override_head_error` with the close reported `close_incomplete`. See § [loop-back close](#loop-back-close) under Operations.
 
 ### change-type-heuristic
 
