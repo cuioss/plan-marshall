@@ -29,6 +29,7 @@ staged spec. They never read this repository's own ``.plan/`` state.
 
 from __future__ import annotations
 
+import ast
 import json
 import re
 import shutil
@@ -248,6 +249,8 @@ def _seed_fixture(
     spec_text: str = '# staged spec\n',
     base_branch: str | None = None,
     module_path: str = '.',
+    documentation_path: str = 'doc',
+    documentation_files: tuple[str, ...] = ('doc/developer/build.adoc', 'doc/user/usage.md'),
 ) -> Path:
     """Seed a project fixture and return the staged spec path.
 
@@ -312,8 +315,8 @@ def _seed_fixture(
             {
                 'name': 'documentation',
                 'build_systems': ['documentation'],
-                'paths': {'module': 'doc'},
-                'files': {'doc': ['doc/developer/build.adoc', 'doc/user/usage.md']},
+                'paths': {'module': documentation_path},
+                'files': {'doc': list(documentation_files)},
             }
         ),
     )
@@ -672,13 +675,51 @@ def test_spec_without_skill_or_persona_lines_says_none_named(tmp_path: Path) -> 
 _VERIFY_WORKFLOW_FILE = PROJECT_ROOT / '.github' / 'workflows' / 'python-verify.yml'
 
 
-def _seed_footprint(tmp_path: Path, *, opt_in: bool = True, module_path: str = '.') -> Path:
-    _seed_fixture(tmp_path, executable=_PYPROJECT_EXEC, required_bots='x', module_path=module_path)
+def _seed_footprint(
+    tmp_path: Path,
+    *,
+    opt_in: bool = True,
+    module_path: str = '.',
+    documentation_path: str = 'doc',
+    documentation_files: tuple[str, ...] = ('doc/developer/build.adoc', 'doc/user/usage.md'),
+) -> Path:
+    _seed_fixture(
+        tmp_path,
+        executable=_PYPROJECT_EXEC,
+        required_bots='x',
+        module_path=module_path,
+        documentation_path=documentation_path,
+        documentation_files=documentation_files,
+    )
     _write(
         tmp_path / '.github' / 'workflows' / 'python-verify.yml',
         _VERIFY_WORKFLOW_FILE.read_text(encoding='utf-8') if opt_in else 'name: Other\n',
     )
     return tmp_path
+
+
+def _seed_local_ci_rule(root: Path, paths_ignore: list[str]) -> Path:
+    """Write a self-contained CI workflow whose non-building rule the repository HOLDS.
+
+    ``paths-ignore`` is the CI's own declaration of the paths it does not build.
+    A workflow that carries it is READABLE — unlike this repository's, whose rule
+    lives in a reusable workflow the checkout does not hold — and the classifier
+    must prefer it to the architecture's hint.
+    """
+    body = [
+        'name: Verify',
+        'on:',
+        '  pull_request:',
+        '    paths-ignore:',
+        *[f"      - '{glob}'" for glob in paths_ignore],
+        'jobs:',
+        '  verify:',
+        '    uses: example/reusable.yml@0123456789abcdef',
+        '    with:',
+        '      skip-on-docs-only: true',
+    ]
+    _write(root / '.github' / 'workflows' / 'local-verify.yml', '\n'.join(body) + '\n')
+    return root
 
 
 def _build_classify(project_dir: Path, paths: str) -> dict:
@@ -738,10 +779,72 @@ def test_build_classify_keeps_an_unlisted_build_file_buildable(tmp_path: Path) -
 
 
 def test_build_classify_keeps_an_unlisted_document_docs_only(tmp_path: Path) -> None:
-    """The same silence still lets a genuine document be classified docs-only."""
+    """Architecture silence outside the documentation module must build.
+
+    The old rule let ANY document suffix classify a path docs-only even when the
+    architecture named no documentation module for it — the fail-open shape
+    deliverable 1 closes. Prose is now admitted only inside the documentation
+    module the architecture reports, so this path builds.
+    """
     project = _seed_footprint(tmp_path, opt_in=False, module_path='core')
     data = _build_classify(project, 'notes/readme.md')
-    assert data['kind'] == 'docs-only'
+    assert data['kind'] == 'buildable'
+
+
+# -----------------------------------------------------------------------------
+# PLAN-LB-72 D1 — the classifier never skips what the project's CI would build
+# -----------------------------------------------------------------------------
+
+
+def test_build_classify_reads_the_ci_skip_rule_when_the_repository_holds_it(tmp_path: Path) -> None:
+    """A readable CI rule wins over the architecture's documentation module.
+
+    The fixture's architecture says ``docs/`` is the documentation module, but
+    the CI rule it holds names only ``doc/**``. The CI would build
+    ``docs/guide.md``, so the classifier must too: the architecture is a hint
+    that can only make a change BUILD, never skip one.
+    """
+    project = _seed_footprint(tmp_path, opt_in=False, documentation_path='docs')
+    _seed_local_ci_rule(project, ['doc/**'])
+
+    data = _build_classify(project, 'docs/guide.md')
+
+    assert data['source'] == 'ci-workflow'
+    assert data['kind'] == 'buildable'
+
+
+def test_build_classify_matches_document_suffixes_case_sensitively(tmp_path: Path) -> None:
+    """``.MD`` is not ``.md``: the CI's path filter is case-sensitive."""
+    project = _seed_footprint(tmp_path)
+
+    assert _build_classify(project, 'README.MD')['kind'] == 'buildable'
+    assert _build_classify(project, 'doc/guide.MD')['kind'] == 'buildable'
+
+
+def test_build_classify_builds_asciidoc_unless_the_ci_rule_names_it(tmp_path: Path) -> None:
+    """An extension the architecture files as prose still builds by itself.
+
+    Only the project's CI rule may make ``.asciidoc`` non-building; the
+    architecture's own doc-extension list may not, because another project's CI
+    can build it.
+    """
+    unnamed = _seed_footprint(
+        tmp_path / 'unnamed',
+        documentation_path='docs',
+        documentation_files=('docs/guide.asciidoc',),
+    )
+
+    assert _build_classify(unnamed, 'guide.asciidoc')['kind'] == 'buildable'
+
+    named = _seed_footprint(
+        tmp_path / 'named',
+        opt_in=False,
+        documentation_path='docs',
+        documentation_files=('docs/guide.asciidoc',),
+    )
+    _seed_local_ci_rule(named, ['**/*.asciidoc'])
+
+    assert _build_classify(named, 'guide.asciidoc')['kind'] == 'docs-only'
 
 
 # =============================================================================
@@ -983,12 +1086,52 @@ def test_extra_buildable_globs_drops_a_block_indicator_and_unwraps_quotes() -> N
     assert quoted == ['test/**/*.md']
 
 
+#: The written-as-a-suffix shapes a document-suffix list carries. Listed here,
+#: in the TEST, so the classifier itself need not spell one — which is the
+#: property under test.
+_DOCUMENT_SUFFIX_LITERALS = frozenset({'.md', '.adoc', '.asciidoc', '.rst', '.txt'})
+
+
+def _module_level_document_suffix_lists(source: str) -> list[str]:
+    """Return the names of module-level constants holding a document-suffix list.
+
+    Detected STRUCTURALLY rather than by name: a renamed list
+    (``_DOC_SUFFIXES``) must fail exactly as ``_NON_BUILDING_SUFFIXES`` would,
+    which a name grep cannot catch. The check accepts every collection spelling
+    a constant can use — a tuple/list/set literal, or one wrapped in
+    ``frozenset``/``set``/``tuple``/``list``.
+    """
+    offenders: list[str] = []
+    for node in ast.parse(source).body:
+        if isinstance(node, ast.Assign):
+            targets, value = node.targets, node.value
+        elif isinstance(node, ast.AnnAssign) and node.value is not None:
+            targets, value = [node.target], node.value
+        else:
+            continue
+        if (
+            isinstance(value, ast.Call)
+            and isinstance(value.func, ast.Name)
+            and value.func.id in {'frozenset', 'set', 'tuple', 'list'}
+            and len(value.args) == 1
+        ):
+            value = value.args[0]
+        if not isinstance(value, (ast.Tuple, ast.List, ast.Set)):
+            continue
+        literals = [element.value for element in value.elts if isinstance(element, ast.Constant)]
+        if not literals or len(literals) != len(value.elts):
+            continue
+        if any(literal in _DOCUMENT_SUFFIX_LITERALS for literal in literals if isinstance(literal, str)):
+            offenders.extend(target.id for target in targets if isinstance(target, ast.Name))
+    return offenders
+
+
 def test_classifier_source_holds_no_workflow_name_or_suffix_list() -> None:
     source = (get_scripts_dir('plan-marshall', _SKILL_NAME) / 'runbook_lane.py').read_text(encoding='utf-8')
 
     assert 'python-verify.yml' not in source, 'the classifier names this repository workflow'
-    assert '_NON_BUILDING_SUFFIXES' not in source, 'the classifier hard-codes non-building suffixes'
-    assert "'.adoc'" not in source, 'the classifier hard-codes a document extension'
+    suffix_lists = _module_level_document_suffix_lists(source)
+    assert not suffix_lists, f'the classifier hard-codes a document-suffix list: {suffix_lists}'
 
 
 # =============================================================================

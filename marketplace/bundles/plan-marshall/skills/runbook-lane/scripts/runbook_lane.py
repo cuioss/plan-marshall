@@ -543,10 +543,12 @@ _CI_WORKFLOW_DIR = ('.github', 'workflows')
 #: The extensions a workflow file may carry.
 _WORKFLOW_SUFFIXES = ('.yml', '.yaml')
 
-#: The workflow input that opts a project in to the footprint gate, and the input
-#: that lists the build overrides.
+#: The workflow input that opts a project in to the footprint gate, the input
+#: that lists the build overrides, and the trigger filter that names the paths
+#: the project's CI does not build.
 _FOOTPRINT_OPT_IN_KEY = 'skip-on-docs-only'
 _EXTRA_BUILDABLE_KEY = 'extra-buildable'
+_PATHS_IGNORE_KEY = 'paths-ignore'
 
 #: The architecture file category whose extensions are the project's prose classes,
 #: and the ``build_systems`` marker the documentation extension writes on a
@@ -627,25 +629,67 @@ def _extra_buildable_globs(lines: list[str]) -> list[str]:
     return extra
 
 
-def _read_footprint_rule(project_dir: Path) -> tuple[list[str] | None, str]:
-    """Return ``(extra_buildable, reason)`` for the project's own footprint rule.
+def _read_footprint_rule(project_dir: Path) -> tuple[list[str] | None, list[str] | None, str]:
+    """Return ``(extra_buildable, ci_skip_globs, reason)`` for the footprint rule.
 
     ``extra_buildable`` is ``None`` when no workflow opts in — the architecture
     then decides — and a list when one does. A workflow that cannot be decoded
     yields an EMPTY list and a non-empty ``reason``: the caller then builds every
     path, the fail-closed direction, because an unreadable rule must never become
     a skipped build.
+
+    ``ci_skip_globs`` is the project's own non-building class when the checkout
+    HOLDS it (a ``paths-ignore`` declaration in the opting-in workflow), and
+    ``None`` when it does not — the rule then lives in a reusable workflow the
+    repository does not hold, and the caller falls back to the architecture's
+    narrowly-scoped prose class instead of guessing a skip set.
     """
     for workflow in _iter_workflow_files(project_dir):
         try:
             text = workflow.read_text(encoding='utf-8')
         except (OSError, UnicodeDecodeError) as exc:
-            return [], f'{workflow.name}: {type(exc).__name__}'
+            return [], None, f'{workflow.name}: {type(exc).__name__}'
         lines = text.splitlines()
         if not _footprint_opt_in(lines):
             continue
-        return _extra_buildable_globs(lines), ''
-    return None, ''
+        return _extra_buildable_globs(lines), _paths_ignore_globs(lines), ''
+    return None, None, ''
+
+
+def _paths_ignore_globs(lines: list[str]) -> list[str] | None:
+    """Return the workflow's declared non-building globs, or ``None``.
+
+    ``None`` is the load-bearing answer: it says the project's CI rule is NOT in
+    this file — the usual cause being a ``uses:`` delegation to a reusable
+    workflow the checkout does not hold — so the caller must fall back to the
+    architecture's narrowly-scoped prose class rather than read "no globs here"
+    as "nothing is skipped". An EMPTY list is a readable rule that names
+    nothing, which correctly skips nothing.
+
+    The block form (``paths-ignore:`` followed by ``- glob`` items) and the
+    scalar forms a workflow may use are both read, through the same scalar
+    tokenizer the ``extra-buildable`` reader uses.
+    """
+    for index, line in enumerate(lines):
+        stripped = line.strip()
+        if not stripped.startswith(f'{_PATHS_IGNORE_KEY}:'):
+            continue
+        base_indent = len(line) - len(line.lstrip(' '))
+        inline = stripped.split(':', 1)[1].strip()
+        globs: list[str] = []
+        if inline and not inline.startswith(('>', '|')):
+            globs.extend(_scalar_tokens(inline))
+        for candidate in lines[index + 1 :]:
+            if not candidate.strip():
+                continue
+            if len(candidate) - len(candidate.lstrip(' ')) <= base_indent:
+                break
+            item = candidate.strip()
+            if item.startswith('- '):
+                item = item[2:].strip()
+            globs.extend(_scalar_tokens(item))
+        return globs
+    return None
 
 
 def _architecture_documentation_surfaces(project_dir: Path) -> tuple[list[str], set[str]]:
@@ -675,7 +719,9 @@ def _architecture_documentation_surfaces(project_dir: Path) -> tuple[list[str], 
             if module_path and module_path != '.':
                 prefixes.append(f'{module_path}/')
             for rel in (derived.get('files') or {}).get(_ARCHITECTURE_DOC_CATEGORY) or []:
-                suffix = Path(str(rel)).suffix.lower()
+                # Deliberately NOT lower-cased: a CI path filter matches a suffix
+                # case-sensitively, so ``.MD`` is not ``.md``.
+                suffix = Path(str(rel)).suffix
                 if suffix:
                     extensions.add(suffix)
     except Exception:
@@ -708,55 +754,48 @@ def _architecture_module_prefixes(project_dir: Path) -> list[str] | None:
         return None
 
 
-def _glob_to_regex(pattern: str) -> str:
-    """Translate a glob pattern to a regex with ``**`` as a globstar.
+def _glob_to_regex(pattern: str) -> re.Pattern[str]:
+    """Compile *pattern* as a ROOT-ANCHORED path glob.
 
-    ``*`` stays inside one path segment; ``**/`` matches zero or more whole
-    segments, so ``test/**/*.md`` matches a file directly under ``test/`` as well
-    as one nested deeper. ``fnmatch`` treats ``**`` as two ordinary wildcards and
-    misses the direct case, which is the fail-open defect this replaces.
+    The translation is not re-spelled here: it is ``manage-architecture``'s
+    ``_gitignore_pattern_to_regex``, which already implements ``**`` as a
+    globstar over whole segments (``test/**/*.md`` matches a file directly under
+    ``test/`` as well as one nested deeper — the ``fnmatch`` defect this gate
+    replaced). The pattern is handed over with a leading ``/``, the helper's
+    ANCHORED form, because a CI path filter matches a repository-relative path as
+    a whole: ``*.md`` is root-only and ``**/*.md`` is any depth. The helper's
+    unanchored form applies gitignore's "match at any depth" rule to a slash-less
+    pattern, and over-matching is the fail-OPEN direction for a skip rule.
     """
-    out: list[str] = []
-    index = 0
-    length = len(pattern)
-    while index < length:
-        char = pattern[index]
-        if char == '*':
-            if index + 1 < length and pattern[index + 1] == '*':
-                if index + 2 < length and pattern[index + 2] == '/':
-                    out.append('(?:.*/)?')
-                    index += 3
-                else:
-                    out.append('.*')
-                    index += 2
-                continue
-            out.append('[^/]*')
-            index += 1
-            continue
-        if char == '?':
-            out.append('[^/]')
-            index += 1
-            continue
-        out.append(re.escape(char))
-        index += 1
-    return ''.join(out)
+    from _cmd_manage import _gitignore_pattern_to_regex
+
+    return _gitignore_pattern_to_regex(f'/{pattern}')
 
 
 def _matches_glob(path: str, pattern: str) -> bool:
     """Whether *path* matches *pattern*, with ``**`` as a globstar."""
-    return re.fullmatch(_glob_to_regex(pattern), path) is not None
+    return _glob_to_regex(pattern).match(path) is not None
 
 
 def _is_project_doc(path: str, doc_prefixes: list[str], doc_extensions: set[str]) -> bool:
-    """Whether the architecture reports *path* as prose (a non-building class)."""
-    if any(path.startswith(prefix) for prefix in doc_prefixes):
-        return True
-    return Path(path).suffix.lower() in doc_extensions
+    """Whether *path* belongs to the architecture's documentation surface.
+
+    BOTH conditions are required, and the suffix comparison is CASE-SENSITIVE:
+    the documentation module prefix alone is not a licence to skip, and
+    ``README.MD`` is not ``README.md`` to a CI path filter. This is the narrow,
+    closed fallback for a project whose CI rule the checkout does not hold; it
+    can only ever ADD a skip inside prose the project itself declared, and every
+    other path builds.
+    """
+    if not any(path.startswith(prefix) for prefix in doc_prefixes):
+        return False
+    return Path(path).suffix in doc_extensions
 
 
 def _classify_path(
     path: str,
     extra: list[str],
+    skip: list[str] | None,
     module_prefixes: list[str],
     doc_prefixes: list[str],
     doc_extensions: set[str],
@@ -766,20 +805,23 @@ def _classify_path(
 
     ``extra-buildable`` is an OVERRIDE that forces a build, so it is tested first:
     this repository lists ``marketplace/**/*.md`` there precisely because those
-    Markdown files are test input, and the prose classes below would otherwise
-    call them docs-only.
+    Markdown files are test input, and the skip classes would otherwise call
+    them docs-only.
 
-    Under the CI rule a path is docs-only only when the project's architecture
-    reports it as prose; a path in NEITHER class is buildable — the gate's own
-    direction, since its opt-in names what to SKIP, not what to build. The
-    architecture fallback keeps that same fail-closed bias: a path inside a module
-    builds, and a path outside every module builds unless the architecture
-    reports it as prose, because the module list is not an inventory of
-    everything that can affect a build.
+    Under a READABLE CI rule (``skip`` is a list) that rule IS the non-building
+    class, and the architecture is only a hint: a path the rule does not name
+    builds, even when the architecture files a documentation module over it.
+    When the checkout does not hold the rule (``skip`` is ``None``) the narrow
+    architecture fallback applies. A path in NEITHER class is buildable — the
+    gate's own direction, since its opt-in names what to SKIP, not what to
+    build; the architecture fallback keeps the same fail-closed bias, because
+    the module list is not an inventory of everything that can affect a build.
     """
     if any(_matches_glob(path, pattern) for pattern in extra):
         return 'buildable'
     if source == 'ci-workflow':
+        if skip is not None:
+            return 'docs-only' if any(_matches_glob(path, pattern) for pattern in skip) else 'buildable'
         return 'docs-only' if _is_project_doc(path, doc_prefixes, doc_extensions) else 'buildable'
     if any(path.startswith(prefix) for prefix in module_prefixes):
         return 'buildable'
@@ -799,7 +841,7 @@ def cmd_build_classify(args: argparse.Namespace) -> dict[str, Any]:
     if not paths:
         return {'status': 'error', 'error': 'no_paths', 'message': 'no changed paths to classify'}
 
-    extra, reason = _read_footprint_rule(project_dir)
+    extra, skip, reason = _read_footprint_rule(project_dir)
     if extra is not None:
         source = 'ci-workflow'
         module_prefixes: list[str] = []
@@ -816,7 +858,7 @@ def cmd_build_classify(args: argparse.Namespace) -> dict[str, Any]:
         rows = [
             {
                 'path': path,
-                'kind': _classify_path(path, extra or [], module_prefixes, doc_prefixes, doc_extensions, source),
+                'kind': _classify_path(path, extra or [], skip, module_prefixes, doc_prefixes, doc_extensions, source),
             }
             for path in paths
         ]
