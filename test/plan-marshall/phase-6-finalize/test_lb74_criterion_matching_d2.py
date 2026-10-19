@@ -197,6 +197,25 @@ def test_a_superseded_deliverables_rows_are_not_reported_unmatched(plan_context,
     assert [item for item in payload['findings'] if item['kind'] == 'unmatched_criterion'] == []
 
 
+def test_author_verdict_refuses_a_qualified_id_for_another_deliverable(plan_context, tmp_path) -> None:
+    _plan(plan_context)
+
+    _, result = _seal(
+        tmp_path,
+        _document([{'criterion': 'parser accepts input', 'criterion_id': 'D2.C1', 'status': 'met', 'evidence': []}]),
+    )
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'unknown_criterion_id'
+
+
+def test_a_qualified_id_answers_only_inside_its_own_deliverable() -> None:
+    row = {'criterion': 'anything', 'criterion_id': 'D2.C1'}
+
+    assert _snap.verdict_row_matches(row, 'frozen text', 1, 1) is False
+    assert _snap.verdict_row_matches(row, 'frozen text', 1, 2) is True
+
+
 def test_a_paraphrased_row_carrying_the_id_grades_its_criterion(plan_context, tmp_path) -> None:
     plan_dir = _plan(plan_context)
     _seal_into_plan(

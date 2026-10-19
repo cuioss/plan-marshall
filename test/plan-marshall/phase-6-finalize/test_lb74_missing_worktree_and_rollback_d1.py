@@ -90,6 +90,20 @@ def test_a_plan_without_a_worktree_keeps_the_exemption(plan_context, tmp_path, m
     assert [item for item in payload['findings'] if item['kind'] == 'test_integrity_not_run'] == []
 
 
+def test_an_authorization_is_rolled_back_when_its_digest_is_not_recorded(plan_context, monkeypatch) -> None:
+    plan_dir = _plan(plan_context, use_worktree=False)
+    assert _snap.write_snapshot(PLAN_ID)['status'] == 'success'
+    snapshot_file = plan_dir / 'work' / 'criteria-snapshot.json'
+    before = snapshot_file.read_text(encoding='utf-8')
+    monkeypatch.setattr(_snap, 'record_integrity', lambda *_args, **_kwargs: False)
+
+    result = _snap.authorize_change(PLAN_ID, 1, 'parser accepts input', 'operator: approve the wording')
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'snapshot_integrity_unrecorded'
+    assert snapshot_file.read_text(encoding='utf-8') == before
+
+
 def test_a_scored_snapshot_is_rolled_back_when_the_digest_is_not_recorded(plan_context, monkeypatch) -> None:
     plan_dir = _plan(plan_context, use_worktree=False)
     monkeypatch.setattr(_snap, 'record_integrity', lambda *_args, **_kwargs: False)

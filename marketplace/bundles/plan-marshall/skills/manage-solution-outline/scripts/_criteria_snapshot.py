@@ -169,7 +169,7 @@ def _merge_integrity(plan_id: str, merge: Callable[[dict[str, Any]], None]) -> b
                 atomic_write_file(path, json.dumps(status, indent=2, sort_keys=True) + '\n')
             except OSError:
                 return False
-    except (TimeoutError, OSError):
+    except OSError:
         return False
     return True
 
@@ -895,12 +895,15 @@ def authorize_change(
     # When it cannot be recorded the authorization is rolled back — the same
     # no-snapshot-without-its-binding rule write_snapshot applies.
     if not record_snapshot_digest(plan_id):
-        _roll_back_snapshot(path, previous)
+        rolled_back = _roll_back_snapshot(path, previous)
         return {
             'status': 'error',
             'plan_id': plan_id,
             'error': 'snapshot_integrity_unrecorded',
-            'message': 'the rewritten snapshot digest could not be recorded, so the authorization was rolled back',
+            'message': (
+                'the rewritten snapshot digest could not be recorded, so the authorization was '
+                + ('rolled back' if rolled_back else 'NOT fully rolled back; the snapshot may hold the edit')
+            ),
         }
     return {
         'status': 'success',
