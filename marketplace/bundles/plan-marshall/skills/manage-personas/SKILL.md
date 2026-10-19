@@ -31,6 +31,8 @@ Given `--persona-key {bundle:persona}` and optional `--domains a,b,c`, the resol
 3. **Recursive composition** — for each composed `persona-*`, the transitive closure of *its* `composes:` and `profiles:` resolution (DAG walk; cycles rejected).
 4. **Profile × domain** — for **each** profile in the persona's `profiles:` frontmatter list, the `profile × {domains}` domain skills resolved via the Extension API (`manage-config resolve-domain-skills --domain {domain} --profile {profile}`), for every domain in `--domains`. When `--domains` is omitted, no profile×domain skills are merged (the resolver emits base + composition only).
 
+**Module qualification of optionals.** A cell's `defaults` are always kept. An `optional` is merged only when `--module` names a module the domain extension qualifies for that skill through its existing module-level applicability (`applies_to_module`; for Java, the CDI/Lombok dependency demotion) — not merely because the cell lists it. A repository-level exclusion in `skill_domains.{domain}.excluded_skills` (``bundle:skill`` or bare skill name) always removes a skill, even one the module qualifies for. When `--module` is omitted, or the module's frameworks cannot be read, the resolver keeps defaults only and reports `module_status: not_requested` / `unreadable`; it never falls back to every optional.
+
 The persona's frontmatter (`profiles:` + `composes:`) is the sole binding source of truth — there is no hardcoded table anywhere in the resolver.
 
 ## Output
@@ -38,11 +40,15 @@ The persona's frontmatter (`profiles:` + `composes:`) is the sole binding source
 ```toon
 status: success
 persona_key: plan-marshall:persona-implementer
+module: my-module
+module_status: resolved
 skills[N]:
   - plan-marshall:persona-plan-marshall-agent
   - plan-marshall:ref-code-quality
   - ...
 ```
+
+`module` echoes the `--module` value (empty when omitted). `module_status` is `resolved` (the module was read), `not_requested` (no `--module` supplied), or `unreadable` (the module's frameworks could not be read, so defaults only were admitted).
 
 On error: `status: error` with an `error` discriminator (`persona_not_found`, `not_a_persona`, `composition_cycle`, `composed_persona_not_found`).
 
@@ -54,7 +60,7 @@ The canonical argparse surface for `manage_personas.py`. The plugin-doctor `miss
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-personas:manage_personas resolve \
-  --persona-key PERSONA_KEY [--domains DOMAINS]
+  --persona-key PERSONA_KEY [--domains DOMAINS] [--module MODULE]
 ```
 
-`--persona-key` is the `bundle:skill` notation of the persona to resolve (e.g. `plan-marshall:persona-implementer`). `--domains` is an optional comma-separated list of domain names whose `profile × domain` skills are merged.
+`--persona-key` is the `bundle:skill` notation of the persona to resolve (e.g. `plan-marshall:persona-implementer`). `--domains` is an optional comma-separated list of domain names whose `profile × domain` skills are merged. `--module` is the task's module name; profile×domain optionals are admitted only when that module qualifies for them, and omitting it admits defaults only.

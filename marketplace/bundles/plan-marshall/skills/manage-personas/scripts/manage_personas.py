@@ -35,6 +35,14 @@ from toon_parser import serialize_toon
 
 BASE_PERSONA = 'plan-marshall:persona-plan-marshall-agent'
 
+# Module-resolution states carried into the resolve payload. ``not_requested`` is
+# the no-module case (no qualification evidence exists), ``unreadable`` is the
+# fail-closed state where the module's frameworks could not be read.
+MODULE_STATUS_NOT_REQUESTED = 'not_requested'
+MODULE_STATUS_RESOLVED = 'resolved'
+MODULE_STATUS_UNREADABLE = 'unreadable'
+
+
 
 def _leading_frontmatter(content: str) -> str:
     """Return the leading ``---``...``---`` YAML frontmatter block, or ''.
@@ -125,35 +133,186 @@ def _read_persona_frontmatter(bundles_root: Path, persona_key: str) -> dict | No
     }
 
 
-def _resolve_profile_domain_skills(profile: str, domain: str) -> list[str]:
-    """Resolve a single ``profile x domain`` cell via the Extension API.
+def _skill_name(entry: object) -> str:
+    """Return the ``bundle:skill`` notation of a domain skill entry."""
+    if isinstance(entry, dict):
+        return str(entry.get('skill') or '')
+    return str(entry)
+
+
+def _excluded_skills(domain: str) -> set[str]:
+    """Return the repository-level skill exclusions for ``domain``.
+
+    The exclusion list lives in ``marshal.json`` under
+    ``skill_domains.{domain}.excluded_skills`` and names skills in either the
+    full ``bundle:skill`` notation or the bare skill name. An exclusion always
+    wins: it removes a skill the module itself would qualify for.
+    """
+    try:
+        from _config_core import load_config
+    except Exception:
+        return set()
+    try:
+        config = load_config()
+    except Exception:
+        return set()
+    skill_domains = config.get('skill_domains') if isinstance(config, dict) else None
+    entry = skill_domains.get(domain) if isinstance(skill_domains, dict) else None
+    raw = entry.get('excluded_skills') if isinstance(entry, dict) else None
+    if not isinstance(raw, list):
+        return set()
+    return {str(item).strip() for item in raw if str(item).strip()}
+
+
+def _is_excluded(skill: str, exclusions: set[str]) -> bool:
+    """True when ``skill`` matches an exclusion in full or bare-name form."""
+    if not exclusions:
+        return False
+    return skill in exclusions or skill.split(':', 1)[-1] in exclusions
+
+
+def _resolve_module_data(module: str) -> tuple[dict | None, str]:
+    """Resolve one module's discovery data and its readable state.
+
+    Returns ``(module_data, MODULE_STATUS_RESOLVED)`` on success and
+    ``(None, MODULE_STATUS_UNREADABLE)`` whenever discovery cannot supply the
+    module — an unreadable module never degrades into "every optional is
+    applicable".
+    """
+    if not module:
+        return None, MODULE_STATUS_NOT_REQUESTED
+    try:
+        from extension_discovery import discover_project_modules
+        from resolve_project_dir import resolve_project_dir
+    except Exception:
+        return None, MODULE_STATUS_UNREADABLE
+    try:
+        project_root = Path(resolve_project_dir(None, None))
+        discovered = discover_project_modules(project_root)
+    except Exception:
+        return None, MODULE_STATUS_UNREADABLE
+    modules = discovered.get('modules') if isinstance(discovered, dict) else None
+    if not isinstance(modules, dict):
+        return None, MODULE_STATUS_UNREADABLE
+    module_data = modules.get(module)
+    if not isinstance(module_data, dict):
+        return None, MODULE_STATUS_UNREADABLE
+    return module_data, MODULE_STATUS_RESOLVED
+
+
+def _find_domain_extension(domain: str):
+    """Return the extension module that owns ``domain``, or None."""
+    try:
+        from extension_discovery import discover_all_extensions
+    except Exception:
+        return None
+    try:
+        extensions = discover_all_extensions()
+    except Exception:
+        return None
+    for ext in extensions:
+        ext_module = ext.get('module')
+        if ext_module is None or not hasattr(ext_module, 'applies_to_module'):
+            continue
+        if not hasattr(ext_module, 'get_skill_domains'):
+            continue
+        try:
+            keys = [
+                str(info.get('domain', {}).get('key', ''))
+                for info in ext_module.get_skill_domains()
+                if isinstance(info, dict)
+            ]
+        except Exception:
+            continue
+        if domain in keys:
+            return ext_module
+    return None
+
+
+def _module_qualified_skills(domain: str, profile: str, module_data: dict) -> set[str] | None:
+    """Return the skills the domain extension qualifies for this module/profile.
+
+    The qualification source is the extension's existing module-level
+    applicability (``applies_to_module``): the java extension, for example,
+    promotes ``java-cdi`` to the profile's defaults only when the module carries
+    a CDI dependency, so a module without one does not qualify. ``None`` means
+    applicability could not be computed and the caller must fail closed.
+    """
+    extension = _find_domain_extension(domain)
+    if extension is None:
+        return None
+    try:
+        result = extension.applies_to_module(module_data)
+    except Exception:
+        return None
+    if not isinstance(result, dict) or not result.get('applicable'):
+        return set()
+    cell = (result.get('skills_by_profile') or {}).get(profile)
+    defaults = cell.get('defaults') if isinstance(cell, dict) else None
+    if not isinstance(defaults, list):
+        return set()
+    return {_skill_name(entry) for entry in defaults if _skill_name(entry)}
+
+
+def _resolve_profile_domain_skills(profile: str, domain: str, module: str = '') -> dict:
+    """Resolve a single ``profile x domain`` cell for the task's module.
 
     Mirrors ``architecture resolve`` / ``resolve-recipe``: delegates to
-    ``manage-config resolve-domain-skills``. Degrades gracefully to an empty
-    list when the domain/profile is not resolvable in the active config (e.g. a
-    profile with no domain wiring yet, or an unknown domain), so persona
-    resolution still emits base + composition.
+    ``manage-config resolve-domain-skills``. The cell's ``defaults`` are always
+    kept; an ``optional`` is admitted only when the task's module qualifies for
+    it through the domain extension's module-level applicability, and never when
+    a repository-level exclusion names it. A module that cannot be read — or a
+    missing module argument — admits defaults only and reports the state instead
+    of falling back to every optional. Degrades gracefully to an empty skill
+    list when the domain/profile is not resolvable in the active config.
     """
+    module_status = MODULE_STATUS_NOT_REQUESTED if not module else MODULE_STATUS_UNREADABLE
+    empty = {'skills': [], 'module_status': module_status}
+
     try:
         from _cmd_skill_resolution import cmd_resolve_domain_skills
     except Exception:
-        return []
+        return empty
 
     ns = argparse.Namespace(domain=domain, profile=profile)
     try:
         result = cmd_resolve_domain_skills(ns)
     except Exception:
-        return []
+        return empty
     if not isinstance(result, dict) or result.get('status') != 'success':
-        return []
-    skills: list[str] = []
-    for key in ('defaults', 'optionals'):
+        return empty
+
+    defaults: list[str] = []
+    optionals: list[str] = []
+    for key, target in (('defaults', defaults), ('optionals', optionals)):
         block = result.get(key) or {}
         if isinstance(block, dict):
-            skills.extend(block.keys())
+            target.extend(_skill_name(entry) for entry in block)
         elif isinstance(block, list):
-            skills.extend(str(s) for s in block)
-    return skills
+            target.extend(_skill_name(entry) for entry in block)
+
+    exclusions = _excluded_skills(domain)
+    module_data, module_status = _resolve_module_data(module)
+
+    qualified: set[str] = set()
+    if module_status == MODULE_STATUS_RESOLVED:
+        computed = _module_qualified_skills(domain, profile, module_data)
+        if computed is None:
+            module_status = MODULE_STATUS_UNREADABLE
+        else:
+            qualified = computed
+
+    skills: list[str] = []
+    for skill in defaults:
+        if skill and not _is_excluded(skill, exclusions) and skill not in skills:
+            skills.append(skill)
+    for skill in optionals:
+        if not skill or _is_excluded(skill, exclusions) or skill in skills:
+            continue
+        if skill in qualified:
+            skills.append(skill)
+
+    return {'skills': skills, 'module_status': module_status}
 
 
 def _flatten(
@@ -164,6 +323,8 @@ def _flatten(
     seen: set[str],
     visiting: set[str],
     include_self_composition: bool,
+    module: str = '',
+    module_statuses: list[str] | None = None,
 ) -> str | None:
     """Walk a persona's composition DAG, appending resolved skills in order.
 
@@ -172,6 +333,11 @@ def _flatten(
     top-level persona's identity skill (which is not itself a loadable skill in
     the resolved list — only its composition and profiles are), and True for
     composed personas (whose own identity skill IS merged as a lens).
+
+    ``module`` is the task's module: profile x domain optionals are admitted
+    only when that module qualifies for them. ``module_statuses`` collects each
+    cell's resolution state so the top-level payload can report an unreadable
+    module.
     """
     if persona_key in visiting:
         return 'composition_cycle'
@@ -186,7 +352,17 @@ def _flatten(
         bare_skill = edge.split(':', 1)[1] if ':' in edge else edge
         if bare_skill.startswith('persona-'):
             # Recurse into composed personas; their identity skill IS merged.
-            err = _flatten(bundles_root, edge, domains, ordered, seen, visiting, include_self_composition=True)
+            err = _flatten(
+                bundles_root,
+                edge,
+                domains,
+                ordered,
+                seen,
+                visiting,
+                include_self_composition=True,
+                module=module,
+                module_statuses=module_statuses,
+            )
             if err is not None:
                 visiting.discard(persona_key)
                 return err
@@ -199,7 +375,10 @@ def _flatten(
     # Merge profile x domain skills for each declared profile x each domain.
     for profile in fm['profiles']:
         for domain in domains:
-            for skill in _resolve_profile_domain_skills(profile, domain):
+            resolution = _resolve_profile_domain_skills(profile, domain, module)
+            if module_statuses is not None:
+                module_statuses.append(resolution['module_status'])
+            for skill in resolution['skills']:
                 if skill not in seen:
                     seen.add(skill)
                     ordered.append(skill)
@@ -218,6 +397,7 @@ def cmd_resolve(args) -> dict:
     persona_key = args.persona_key
     domains = [d.strip() for d in args.domains.split(',')] if args.domains else []
     domains = [d for d in domains if d]
+    module = (getattr(args, 'module', '') or '').strip()
 
     try:
         bundles_root = resolve_bundles_root(Path(__file__))
@@ -232,6 +412,7 @@ def cmd_resolve(args) -> dict:
 
     ordered: list[str] = []
     seen: set[str] = set()
+    module_statuses: list[str] = []
 
     # (1) Base is always included, unconditionally.
     seen.add(BASE_PERSONA)
@@ -247,11 +428,26 @@ def cmd_resolve(args) -> dict:
         seen,
         visiting=set(),
         include_self_composition=False,
+        module=module,
+        module_statuses=module_statuses,
     )
     if err is not None:
         return {'status': 'error', 'error': err, 'persona_key': persona_key}
 
-    return {'status': 'success', 'persona_key': persona_key, 'skills': ordered}
+    if not module:
+        module_status = MODULE_STATUS_NOT_REQUESTED
+    elif any(status == MODULE_STATUS_UNREADABLE for status in module_statuses):
+        module_status = MODULE_STATUS_UNREADABLE
+    else:
+        module_status = MODULE_STATUS_RESOLVED
+
+    return {
+        'status': 'success',
+        'persona_key': persona_key,
+        'module': module,
+        'module_status': module_status,
+        'skills': ordered,
+    }
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -277,6 +473,14 @@ def build_parser() -> argparse.ArgumentParser:
         '--domains',
         default='',
         help='Comma-separated domain names whose profile x domain skills are merged',
+    )
+    p_resolve.add_argument(
+        '--module',
+        default='',
+        help=(
+            "Task's module name. Profile x domain optionals are admitted only when "
+            'this module qualifies for them; omit it to admit defaults only.'
+        ),
     )
 
     return parser

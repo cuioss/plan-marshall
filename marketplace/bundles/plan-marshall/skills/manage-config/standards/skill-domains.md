@@ -335,6 +335,12 @@ These keys are reserved in domain configuration and cannot be used as profile na
 - `optionals` - Top-level optionals (flat structure compatibility)
 - `always_on` - Domain-inclusion flag (see Domain Inclusion below)
 - `file_globs` - Domain-inclusion globs (see Domain Inclusion below)
+- `excluded_skills` - Repository-level skill exclusions (see Skill Exclusions below)
+
+## Skill Exclusions (excluded_skills)
+
+`skill_domains.{domain}.excluded_skills` is a list of skills the repository forbids for that domain. An entry may be a full `bundle:skill` notation or a bare skill name; both forms match. The exclusion binds everywhere a domain cell is expanded for a module — it removes the skill even when the module qualifies for it — so it is the repository-level veto over module-level applicability. It is read by `manage-personas` when resolving a persona's `profile × domain` skills; an absent key means no exclusions.
+
 
 ## Domain Inclusion (always_on / file_globs)
 

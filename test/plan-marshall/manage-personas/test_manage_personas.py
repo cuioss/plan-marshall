@@ -29,7 +29,7 @@ from pathlib import Path
 
 import pytest
 
-from conftest import get_script_path, load_script_module
+from conftest import get_script_path, load_script_module, load_skill_module
 
 # In-process module under test — coverage attributes executed lines here.
 _mp = load_script_module('plan-marshall', 'manage-personas', 'manage_personas.py', 'manage_personas_under_test')
@@ -215,7 +215,14 @@ def _install_fake_skill_resolution(monkeypatch, func):
 def test_resolve_profile_domain_skills_import_error_returns_empty(monkeypatch):
     # sys.modules[name] = None forces ``import`` to raise ImportError.
     monkeypatch.setitem(sys.modules, '_cmd_skill_resolution', None)
-    assert _mp._resolve_profile_domain_skills('implementation', 'java') == []
+    assert _mp._resolve_profile_domain_skills('implementation', 'java')['skills'] == []
+
+
+def _qualify_for(monkeypatch, qualified: set[str]) -> None:
+    """Make a resolved module qualify exactly ``qualified`` for every cell."""
+    monkeypatch.setattr(_mp, '_resolve_module_data', lambda module: ({'name': module}, 'resolved'))
+    monkeypatch.setattr(_mp, '_module_qualified_skills', lambda domain, profile, data: set(qualified))
+    monkeypatch.setattr(_mp, '_excluded_skills', lambda domain: set())
 
 
 def test_resolve_profile_domain_skills_merges_defaults_dict_and_optionals_list(monkeypatch):
@@ -229,8 +236,9 @@ def test_resolve_profile_domain_skills_merges_defaults_dict_and_optionals_list(m
         }
 
     _install_fake_skill_resolution(monkeypatch, fake)
-    result = _mp._resolve_profile_domain_skills('security', 'java')
-    assert result == ['pm-dev-java:java-security', 'pm-dev-java:java-core']
+    _qualify_for(monkeypatch, {'pm-dev-java:java-core'})
+    result = _mp._resolve_profile_domain_skills('security', 'java', module='sample-module')
+    assert result['skills'] == ['pm-dev-java:java-security', 'pm-dev-java:java-core']
 
 
 def test_resolve_profile_domain_skills_merges_defaults_list_and_optionals_dict(monkeypatch):
@@ -242,18 +250,19 @@ def test_resolve_profile_domain_skills_merges_defaults_list_and_optionals_dict(m
         }
 
     _install_fake_skill_resolution(monkeypatch, fake)
-    result = _mp._resolve_profile_domain_skills('quality', 'python')
-    assert result == ['pm-dev-python:python-core', 'pm-dev-python:pytest-testing']
+    _qualify_for(monkeypatch, {'pm-dev-python:pytest-testing'})
+    result = _mp._resolve_profile_domain_skills('quality', 'python', module='sample-module')
+    assert result['skills'] == ['pm-dev-python:python-core', 'pm-dev-python:pytest-testing']
 
 
 def test_resolve_profile_domain_skills_non_success_returns_empty(monkeypatch):
     _install_fake_skill_resolution(monkeypatch, lambda ns: {'status': 'error'})
-    assert _mp._resolve_profile_domain_skills('implementation', 'java') == []
+    assert _mp._resolve_profile_domain_skills('implementation', 'java')['skills'] == []
 
 
 def test_resolve_profile_domain_skills_non_dict_result_returns_empty(monkeypatch):
     _install_fake_skill_resolution(monkeypatch, lambda ns: ['not', 'a', 'dict'])
-    assert _mp._resolve_profile_domain_skills('implementation', 'java') == []
+    assert _mp._resolve_profile_domain_skills('implementation', 'java')['skills'] == []
 
 
 def test_resolve_profile_domain_skills_exception_returns_empty(monkeypatch):
@@ -261,7 +270,153 @@ def test_resolve_profile_domain_skills_exception_returns_empty(monkeypatch):
         raise RuntimeError('resolution blew up')
 
     _install_fake_skill_resolution(monkeypatch, boom)
-    assert _mp._resolve_profile_domain_skills('implementation', 'java') == []
+    assert _mp._resolve_profile_domain_skills('implementation', 'java')['skills'] == []
+
+
+# =============================================================================
+# module-aware profile x domain resolution
+# =============================================================================
+
+
+def _resolve_ns_module(persona_key: str, domains: str, module: str):
+    """Build a Namespace carrying the task's module for the resolver."""
+    return types.SimpleNamespace(persona_key=persona_key, domains=domains, module=module)
+
+
+def _java_extension():
+    """Load the real pm-dev-java extension — its CDI demotion is the behaviour under test."""
+    return load_skill_module(
+        'pm-dev-java',
+        'plan-marshall-plugin',
+        'extension.py',
+        'extension_pm_dev_java_rb59',
+        register=False,
+    ).Extension()
+
+
+def _java_module(*dependencies: str) -> dict:
+    """Build the minimal module dict the java extension's applicability reads."""
+    return {'name': 'sample-module', 'build_systems': ['maven'], 'dependencies': list(dependencies)}
+
+
+def _install_java_domain_cell(monkeypatch, *, defaults, optionals):
+    """Install a fake resolve-domain-skills cell and the real java extension."""
+
+    def fake(ns):
+        return {
+            'status': 'success',
+            'defaults': {skill: {} for skill in defaults},
+            'optionals': {skill: {} for skill in optionals},
+        }
+
+    _install_fake_skill_resolution(monkeypatch, fake)
+    monkeypatch.setattr(_mp, '_find_domain_extension', lambda domain: _java_extension())
+    monkeypatch.setattr(_mp, '_excluded_skills', lambda domain: set())
+
+
+def _resolution(cell: dict) -> list[str]:
+    """Return the skill list from a module-aware resolver result."""
+    return cell['skills']
+
+
+def test_resolve_without_module_admits_defaults_only(monkeypatch):
+    """No module cannot qualify an optional, so only defaults are admitted."""
+    _install_java_domain_cell(
+        monkeypatch,
+        defaults=['pm-dev-java:java-core'],
+        optionals=['pm-dev-java:java-cdi', 'pm-dev-java:java-quarkus'],
+    )
+
+    result = _mp._resolve_profile_domain_skills('implementation', 'java')
+
+    assert _resolution(result) == ['pm-dev-java:java-core']
+    assert result['module_status'] == 'not_requested'
+
+
+def test_java_module_without_cdi_admits_no_cdi_optionals(monkeypatch):
+    """A module with no CDI dependency admits none of the CDI-dependent optionals."""
+    _install_java_domain_cell(
+        monkeypatch,
+        defaults=['pm-dev-java:java-core'],
+        optionals=[
+            'pm-dev-java:java-cdi',
+            'pm-dev-java:java-quarkus',
+            'pm-dev-java:junit-weld-testing',
+        ],
+    )
+    monkeypatch.setattr(_mp, '_resolve_module_data', lambda module: (_java_module(), 'resolved'))
+
+    result = _mp._resolve_profile_domain_skills('implementation', 'java', module='sample-module')
+
+    assert _resolution(result) == ['pm-dev-java:java-core']
+    assert result['module_status'] == 'resolved'
+
+
+def test_java_module_with_cdi_admits_java_cdi(monkeypatch):
+    """The java extension promotes java-cdi for a module carrying a CDI dependency."""
+    _install_java_domain_cell(
+        monkeypatch,
+        defaults=['pm-dev-java:java-core'],
+        optionals=['pm-dev-java:java-cdi', 'pm-dev-java:java-quarkus'],
+    )
+    cdi_module = _java_module('jakarta.enterprise:jakarta.enterprise.cdi-api:4.0')
+    monkeypatch.setattr(_mp, '_resolve_module_data', lambda module: (cdi_module, 'resolved'))
+
+    result = _mp._resolve_profile_domain_skills('implementation', 'java', module='sample-module')
+
+    assert 'pm-dev-java:java-cdi' in _resolution(result)
+    assert 'pm-dev-java:java-quarkus' not in _resolution(result)
+
+
+@pytest.mark.parametrize('excluded', ['pm-dev-java:java-cdi', 'java-cdi'])
+def test_repository_exclusion_removes_skill_the_module_would_get(monkeypatch, excluded):
+    """A repository-level exclusion wins over module qualification, in either notation."""
+    _install_java_domain_cell(
+        monkeypatch,
+        defaults=['pm-dev-java:java-core'],
+        optionals=['pm-dev-java:java-cdi'],
+    )
+    cdi_module = _java_module('jakarta.enterprise:jakarta.enterprise.cdi-api:4.0')
+    monkeypatch.setattr(_mp, '_resolve_module_data', lambda module: (cdi_module, 'resolved'))
+    monkeypatch.setattr(_mp, '_excluded_skills', lambda domain: {excluded})
+
+    result = _mp._resolve_profile_domain_skills('implementation', 'java', module='sample-module')
+
+    assert 'pm-dev-java:java-cdi' not in _resolution(result)
+
+
+def test_unreadable_module_admits_defaults_only_and_reports_it(monkeypatch):
+    """An unreadable module admits defaults only and reports the state, never all optionals."""
+    _install_java_domain_cell(
+        monkeypatch,
+        defaults=['pm-dev-java:java-core'],
+        optionals=['pm-dev-java:java-cdi'],
+    )
+    monkeypatch.setattr(_mp, '_resolve_module_data', lambda module: (None, 'unreadable'))
+
+    result = _mp._resolve_profile_domain_skills('implementation', 'java', module='ghost-module')
+
+    assert _resolution(result) == ['pm-dev-java:java-core']
+    assert result['module_status'] == 'unreadable'
+
+
+def test_cmd_resolve_reports_unreadable_module(monkeypatch, synthetic_root):
+    """The resolve payload carries the module and its unreadable state."""
+    _write_skill(synthetic_root, 'plan-marshall:persona-x', profiles=['implementation'])
+    _install_java_domain_cell(
+        monkeypatch,
+        defaults=['pm-dev-java:java-core'],
+        optionals=['pm-dev-java:java-cdi'],
+    )
+    monkeypatch.setattr(_mp, '_resolve_module_data', lambda module: (None, 'unreadable'))
+
+    result = _mp.cmd_resolve(_resolve_ns_module('plan-marshall:persona-x', 'java', 'ghost-module'))
+
+    assert result['status'] == 'success'
+    assert result['module'] == 'ghost-module'
+    assert result['module_status'] == 'unreadable'
+    assert 'pm-dev-java:java-cdi' not in result['skills']
+    assert 'pm-dev-java:java-core' in result['skills']
 
 
 # =============================================================================
