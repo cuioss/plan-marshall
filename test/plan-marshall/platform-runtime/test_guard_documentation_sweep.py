@@ -23,9 +23,10 @@ Population and dispositions
 * **Allowed.** Neither guard refuses the line — the healthy case.
 * **Resolved.** A line whose script token is a path placeholder (``{NAME}``,
   ``${NAME}`` or a brace-less ``$NAME`` such as ``"$DOCTOR_SCRIPT"``) is not
-  skipped: the placeholder is RESOLVED to the documented path it stands for and
-  the resolved command is checked. An unmapped placeholder is an OFFENDER, so a
-  placeholder can never dodge the sweep.* **Template.** A line carrying optional-argument usage notation
+  skipped: a NAMED placeholder is RESOLVED to the documented path it stands for,
+  and a GENERIC one (``{SCRIPT_FILE}``) is resolved against the AUTHORITATIVE
+  shared allow-list (once per entry), then the resolved command is checked. An
+  unmapped placeholder is an OFFENDER, so a placeholder can never dodge the sweep.* **Template.** A line carrying optional-argument usage notation
   (``[--scope global|project|all]``) is reported apart and never folded into the
   pass: no path is hidden behind an argument bracket.
 * **Excluded.** A curated ``(path, line-fragment, reason)`` entry that still
@@ -130,14 +131,15 @@ _RESOLVED_PATH_TEMPLATES: dict[str, str] = {
     'BOOTSTRAP': 'marketplace/bundles/plan-marshall/skills/marshall-steward/scripts/bootstrap_plugin.py',
     'BOOTSTRAP_PLUGIN': 'marketplace/bundles/plan-marshall/skills/marshall-steward/scripts/bootstrap_plugin.py',
     'DOCTOR_SCRIPT': 'marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/doctor-marketplace.py',
-    # A GENERIC placeholder standing for "the script resolved above". It maps to
-    # the canonical allow-listed steward script, so the sweep checks that the
-    # placeholder's resolved path is an ADMITTED one. A doc that used a generic
-    # placeholder for a script R5 refuses still passes on this mapped path — the
-    # residual cost of mapping a generic name; the alternative (skipping the
-    # line) is the dodge this rule exists to remove.
-    'SCRIPT_FILE': 'marketplace/bundles/plan-marshall/skills/marshall-steward/scripts/determine_mode.py',
 }
+
+#: GENERIC placeholders — a name standing for "whatever path the preceding step
+#: resolved", used by exactly one documented bootstrap example. A generic
+#: placeholder is NOT mapped to a fixed script: it is resolved against the
+#: AUTHORITATIVE shared allow-list data, once per repository-relative entry, so
+#: the documented generic direct call is checked for EVERY allow-listed script
+#: and the placeholder can never become a second, drifting admission list.
+_GENERIC_SCRIPT_PLACEHOLDERS: frozenset[str] = frozenset({'SCRIPT_FILE'})
 
 #: A path placeholder as the WHOLE script token: ``{NAME}``, ``${NAME}`` or a
 #: brace-less ``$NAME``. All three are RESOLVED via :data:`_RESOLVED_PATH_TEMPLATES`
@@ -257,30 +259,45 @@ def _script_placeholder_name(command: str) -> str | None:
     return match.group(1) if match else None
 
 
-def _resolve_script_template(command: str) -> tuple[str, str | None]:
-    """Return ``(command_to_check, unresolved_name)`` for a documented line.
-
-    When the script token is a path placeholder (``{NAME}`` / ``${NAME}`` /
-    ``$NAME``), it is substituted with the documented resolved path and the
-    RESOLVED command is returned for checking. An UNMAPPED placeholder returns the
-    original command with its name as ``unresolved_name`` — the caller reports it
-    as an unresolved template, which FAILS, so a placeholder can never dodge the
-    check. A line with no script placeholder is returned unchanged with ``None``.
-    """
-    name = _script_placeholder_name(command)
-    if name is None:
-        return command, None
-    mapped = _RESOLVED_PATH_TEMPLATES.get(name)
-    if mapped is None:
-        return command, name
+def _substitute_placeholder(command: str, name: str, replacement: str) -> str | None:
+    """Substitute the ``{name}`` / ``${name}`` / ``$name`` placeholder, or ``None``."""
     for pattern in (
         re.compile(r'\$\{' + re.escape(name) + r'\}'),
         re.compile(r'\{' + re.escape(name) + r'\}'),
         re.compile(r'\$' + re.escape(name) + r'\b'),
     ):
         if pattern.search(command):
-            return pattern.sub(mapped, command, count=1), None
-    return command, name
+            return pattern.sub(replacement, command, count=1)
+    return None
+
+
+def _resolve_script_template(command: str) -> list[tuple[str, str | None]]:
+    """Return the ``(command_to_check, unresolved_name)`` pair(s) for a line.
+
+    A line with no script placeholder yields itself. A line whose script token is
+    a NAMED resolved-path placeholder yields the command with the documented path
+    substituted. A line whose script token is a GENERIC placeholder yields one
+    command per repository-relative entry of the AUTHORITATIVE shared allow-list,
+    so a generic "the path resolved above" call is checked against the real data
+    rather than a fixed surrogate. An UNMAPPED placeholder yields the original
+    command with its name as ``unresolved_name`` — the caller reports it as an
+    unresolved template, which FAILS, so a placeholder can never dodge the check.
+    """
+    name = _script_placeholder_name(command)
+    if name is None:
+        return [(command, None)]
+    if name in _GENERIC_SCRIPT_PLACEHOLDERS:
+        resolved = [
+            (substituted, None)
+            for entry in _HOOK._r5_allowlist_entries()
+            if (substituted := _substitute_placeholder(command, name, entry)) is not None
+        ]
+        return resolved or [(command, name)]
+    mapped = _RESOLVED_PATH_TEMPLATES.get(name)
+    if mapped is None:
+        return [(command, name)]
+    substituted = _substitute_placeholder(command, name, mapped)
+    return [(substituted, None)] if substituted is not None else [(command, name)]
 
 
 def _exclusion_for(candidate: Candidate) -> str | None:
@@ -311,16 +328,21 @@ def test_no_documented_invocation_is_refused(tmp_path_factory: pytest.TempPathFa
 
     scratch = tmp_path_factory.mktemp('guard-sweep')
     harness = build_harness(scratch)
-    checked = [_resolve_script_template(candidate.command) for candidate in candidates]
-    events = [shell_event(command, agent=SUB_AGENT_AGENT) for command, _unresolved in checked]
-    outcomes = harness.run(events)
+    # One candidate expands to one or more checks (a GENERIC placeholder resolves
+    # once per allow-list entry), so the checks carry their candidate along.
+    checks: list[tuple[Candidate, str, str | None]] = [
+        (candidate, command, unresolved)
+        for candidate in candidates
+        for command, unresolved in _resolve_script_template(candidate.command)
+    ]
+    outcomes = harness.run([shell_event(command, agent=SUB_AGENT_AGENT) for _c, command, _u in checks])
 
     offenders: list[str] = []
     templates: list[str] = []
     excused: list[str] = []
     matched_exclusions: set[int] = set()
 
-    for candidate, (check_command, unresolved), outcome in zip(candidates, checked, outcomes, strict=True):
+    for (candidate, check_command, unresolved), outcome in zip(checks, outcomes, strict=True):
         payload = {'agent_type': SUB_AGENT_AGENT, 'tool_name': 'Bash', 'tool_input': {'command': check_command}}
         hook_reason = _HOOK.evaluate(payload)
         refused = outcome.blocked or hook_reason is not None
@@ -366,14 +388,17 @@ def test_no_documented_invocation_is_refused(tmp_path_factory: pytest.TempPathFa
 
 
 def test_a_resolved_path_template_is_checked_not_skipped(tmp_path_factory: pytest.TempPathFactory) -> None:
-    """Done-when (D1): a brace-delimited path template is RESOLVED and CHECKED.
+    """Done-when (D1): a path template is RESOLVED from data and CHECKED.
 
-    The sweep no longer skips a ``{PLACEHOLDER}`` script token: it resolves the
-    placeholder to the documented path and feeds the RESOLVED command through both
-    guards, so a documented template cannot dodge the check. An UNMAPPED
-    placeholder is reported unresolved rather than skipped.
+    The sweep no longer skips a ``{PLACEHOLDER}`` script token: a NAMED placeholder
+    resolves to the documented path it stands for, and a GENERIC one resolves
+    against the AUTHORITATIVE shared allow-list (one command per entry) rather than
+    a fixed surrogate — so neither can become a second, drifting admission list. An
+    UNMAPPED placeholder is reported unresolved rather than skipped.
     """
-    resolved, unresolved = _resolve_script_template('python3 "{GENERATE_EXECUTOR}" generate')
+    named = _resolve_script_template('python3 "{GENERATE_EXECUTOR}" generate')
+    assert len(named) == 1, 'a named placeholder resolves to exactly one command'
+    resolved, unresolved = named[0]
     assert unresolved is None, 'a mapped placeholder must resolve, never be reported unresolved'
     assert 'marketplace/bundles/plan-marshall/skills/tools-script-executor/scripts/generate_executor.py' in resolved
 
@@ -386,5 +411,17 @@ def test_a_resolved_path_template_is_checked_not_skipped(tmp_path_factory: pytes
     blocked, message = harness.blocks(shell_event(resolved, agent=SUB_AGENT_AGENT))
     assert not blocked, f'the resolved command must be admitted by the guard; message={message!r}'
 
-    _command, name = _resolve_script_template('python3 "{NOT_A_KNOWN_PATH}" run')
-    assert name == 'NOT_A_KNOWN_PATH', 'an unmapped placeholder must be reported unresolved, never skipped'
+    entries = _HOOK._r5_allowlist_entries()
+    assert entries, 'the shared allow-list must carry entries for the generic resolution to be substantive'
+    generic = _resolve_script_template('python3 "{SCRIPT_FILE}" mode')
+    assert len(generic) == len(entries), 'a generic placeholder resolves once per allow-list entry'
+    assert all(one_unresolved is None for _command, one_unresolved in generic)
+    for command, _one_unresolved in generic:
+        assert command != 'python3 "{SCRIPT_FILE}" mode', f'the placeholder must be substituted: {command!r}'
+        assert (
+            _HOOK.evaluate({'agent_type': SUB_AGENT_AGENT, 'tool_name': 'Bash', 'tool_input': {'command': command}})
+            is None
+        ), f'every allow-listed resolution must be admitted; command={command!r}'
+
+    unmapped = _resolve_script_template('python3 "{NOT_A_KNOWN_PATH}" run')
+    assert unmapped == [('python3 "{NOT_A_KNOWN_PATH}" run', 'NOT_A_KNOWN_PATH')]
