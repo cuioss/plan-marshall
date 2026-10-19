@@ -155,15 +155,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status read \
   --plan-id {plan_id}
 ```
 
-Locate `metadata.phase_steps.6-finalize.functional-review`. When its `facts.may_close` is `operator_override`, the operator closed the review past its round cap at that record's `head_at_completion` (see [`review-rubric.md`](../standards/review-rubric.md) § 8). Add that head to the plan's list of override-closed heads — the call is idempotent, so a head already on the list is not added twice:
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \
-  --plan-id {plan_id} --set --append --field functional_review_override_heads \
-  --value {head_at_completion}
-```
-
-Then read the list back and capture it comma-joined as `{override_heads}` (empty when the field is absent):
+Locate `metadata.phase_steps.6-finalize.functional-review`. When its `facts.may_close` is `operator_override`, the operator closed the review past its round cap at that record's `head_at_completion` (see [`review-rubric.md`](../standards/review-rubric.md) § 8). That head is already in the plan's list of override-closed heads: `manage-status loop-back close` is the list's owning writer and records the head when the override is made, so this step records nothing. A generic `metadata --set` or `--set --append` naming `functional_review_override_heads` is refused — do not reintroduce one. Read the list back and capture it comma-joined as `{override_heads}` (empty when the field is absent):
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \
@@ -332,6 +324,7 @@ The verdict file is the schema `review_support validate --kind functional` check
       "criteria": [
         {
           "criterion": "the success-criterion text",
+          "criterion_id": "C1 — optional; D1.C1 is also accepted",
           "status": "met | unevidenced | not_met",
           "evidence": ["path/to/file.py:42", "test/module/test_file.py::test_name"],
           "fix_kind": "implementation | correction"
@@ -355,6 +348,8 @@ The verdict file is the schema `review_support validate --kind functional` check
 ```
 
 `deliverables` carries exactly one row per outline deliverable. `residuals` belongs on a `met_with_residuals` row and `superseded_by` on a `superseded` row. `fix_kind` is required on every item that grades `blocking`; a `not_met` deliverable and an `unevidenced` criterion default to `implementation` when it is omitted.
+
+A criterion row answers its frozen criterion by `criterion_id` first, then by exact normalised text. Position is never a match. When the row's `criterion` text is a paraphrase rather than the frozen wording, carry the criterion's id (`C1`, or `D1.C1` when quoting another deliverable's number would otherwise be ambiguous); a paraphrased row without the id leaves the criterion ungraded and the validator reports the row as `unmatched_criterion`.
 
 ## Author return
 

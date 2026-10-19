@@ -76,6 +76,13 @@ SPENT_KEY = 'spent'
 GRANTED_KEY = 'granted'
 GRANTS_KEY = 'grants'
 
+#: The plan-metadata list of heads at which an operator closed the functional review.
+#: ``loop-back close`` is this field's owning verb; a generic ``metadata --set`` /
+#: ``--append`` naming it is refused (``manage-status``'s protected-key list).
+OVERRIDE_HEADS_KEY = 'functional_review_override_heads'
+#: The one step whose operator close is recorded in ``OVERRIDE_HEADS_KEY``.
+FUNCTIONAL_REVIEW_STEP = 'functional-review'
+
 #: The phase whose steps ``close`` closes and whose Q-Gate store it resolves in.
 CLOSE_PHASE = '6-finalize'
 
@@ -308,6 +315,48 @@ def _unique(values: list[str] | None) -> list[str]:
     return list(dict.fromkeys(values or []))
 
 
+class _NoOverrideHead(Exception):
+    """Raised inside the override-head critical section so the document is not committed."""
+
+
+def _record_override_head(plan_id: str, step: str, head: str) -> bool:
+    """Append ``head`` to the plan's override-closed heads; return whether it changed.
+
+    Only a close of the FUNCTIONAL REVIEW step is recorded: the key answers "which
+    heads did an operator ship with the review closed", and a close of any other
+    step says nothing about the review. The list lives in the plan's status
+    metadata because the close writes a fresh step record each time, so a head kept
+    only there would be lost at the next override.
+
+    The read, the append and the commit are one ``rmw_json`` critical section on the
+    guard every ``status.json`` writer commits through, so a concurrent status write
+    is either carried forward or waits. An unchanged list leaves the file untouched;
+    an unreadable document reads as empty and therefore writes nothing.
+    """
+
+    def _apply(current: dict[str, Any]) -> dict[str, Any]:
+        metadata = current.get('metadata')
+        if not isinstance(metadata, dict):
+            metadata = {}
+            current['metadata'] = metadata
+        heads = metadata.get(OVERRIDE_HEADS_KEY)
+        values = list(heads) if isinstance(heads, list) else []
+        if head in values:
+            raise _NoOverrideHead
+        values.append(head)
+        metadata[OVERRIDE_HEADS_KEY] = values
+        current['updated'] = now_utc_iso()
+        return current
+
+    if step != FUNCTIONAL_REVIEW_STEP:
+        return False
+    try:
+        rmw_json(get_status_path(plan_id), _apply)
+    except (_NoOverrideHead, TimeoutError):
+        return False
+    return True
+
+
 def _load_findings_core() -> Any:
     """Return the findings storage module, or ``None`` when it cannot be imported.
 
@@ -479,6 +528,11 @@ def cmd_loop_back_close(args: argparse.Namespace) -> dict | None:
         )
     closing_head = str(marked.get('head_at_completion') or head)
 
+    # The close is the owning writer of the plan's override-closed heads. Recorded
+    # before the finding resolutions below so an incomplete close still leaves the
+    # fact that the operator shipped this head with the review closed.
+    override_head_recorded = _record_override_head(plan_id, step, closing_head)
+
     # From here on the step IS recorded done, so a failure below is reported as
     # an incomplete close naming what did and did not land — never as a refusal.
     accepted: list[str] = []
@@ -520,6 +574,7 @@ def cmd_loop_back_close(args: argparse.Namespace) -> dict | None:
         'state_rule': rule,
         'state_findings_resolved': len(state.get('resolved', [])) if state_resolved else 0,
         'waived_steps': waived_steps,
+        'override_head_recorded': override_head_recorded,
     }
     if not_accepted or not state_resolved or waiver_refusals:
         result['status'] = 'error'

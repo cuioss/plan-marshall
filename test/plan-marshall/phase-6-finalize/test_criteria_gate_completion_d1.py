@@ -39,6 +39,8 @@ def _outline(criteria: list[str]) -> str:
 
 def _plan(plan_context: Any, criteria: list[str], *, freeze_from: list[str] | None = None) -> Path:
     plan_dir = Path(plan_context.plan_dir_for(PLAN_ID))
+    # The freeze binds its digest in the status record, so the plan must have one.
+    _status(plan_dir)
     (plan_dir / 'references.json').write_text(json.dumps({'base_branch': 'main'}), encoding='utf-8')
     (plan_dir / 'solution_outline.md').write_text(_outline(criteria), encoding='utf-8')
     if freeze_from is not None:
@@ -228,6 +230,7 @@ def test_paraphrased_verdict_row_grades_its_criterion(plan_context, tmp_path) ->
                     'criteria': [
                         {
                             'criterion': 'junk input is refused by the reader',
+                            'criterion_id': 'C1',
                             'status': 'met',
                             'evidence': ['src/parser.py:1'],
                         }
