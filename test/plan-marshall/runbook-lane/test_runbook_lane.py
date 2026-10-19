@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
 from pathlib import Path
 from typing import Any
 
@@ -282,7 +283,7 @@ def _seed_fixture(
                 'description': '',
                 'description_reasoning': '',
                 'extensions_used': [],
-                'modules': {'root-mod': {}},
+                'modules': {'root-mod': {}, 'documentation': {}},
             }
         ),
     )
@@ -300,6 +301,23 @@ def _seed_fixture(
                 },
             }
         ),
+    )
+    # The project's prose surface: the architecture's own non-building classes, so
+    # the classifier derives them from project data rather than from a literal.
+    _write(
+        arch / 'documentation' / 'derived.json',
+        json.dumps(
+            {
+                'name': 'documentation',
+                'build_systems': [],
+                'paths': {'module': 'doc'},
+                'files': {'doc': ['doc/developer/build.adoc', 'doc/user/usage.md']},
+            }
+        ),
+    )
+    _write(
+        arch / 'documentation' / 'enriched.json',
+        json.dumps({'name': 'documentation', 'type': 'module', 'purpose': 'documentation'}),
     )
     spec = root / '.plan' / 'orchestrator' / slug / 'plans' / spec_name
     _write(spec, spec_text)
@@ -650,30 +668,17 @@ def test_spec_without_skill_or_persona_lines_says_none_named(tmp_path: Path) -> 
 # D5 — a docs-only change skips the full local build
 # =============================================================================
 
-#: This repository's own footprint opt-in, as `.github/workflows/python-verify.yml`
-#: declares it. Seeded into a fixture so the classifier is exercised against the
-#: repository's real rule rather than against the repository tree.
-_VERIFY_WORKFLOW = (
-    'name: Python Verify\n'
-    '\n'
-    'jobs:\n'
-    '  verify:\n'
-    '    with:\n'
-    '      skip-on-docs-only: true\n'
-    '      extra-buildable: >-\n'
-    '        .plan/marshal.json\n'
-    '        .claude/**\n'
-    '        marketplace/**/*.md\n'
-    '        test/**/*.md\n'
-    '      pre-verify-goals: generate\n'
-)
+#: This repository's own footprint opt-in, READ from the real workflow file so the
+#: matching cases are exercised against the project's actual rule rather than
+#: against a hand-copied stand-in.
+_VERIFY_WORKFLOW_FILE = PROJECT_ROOT / '.github' / 'workflows' / 'python-verify.yml'
 
 
 def _seed_footprint(tmp_path: Path, *, opt_in: bool = True, module_path: str = '.') -> Path:
     _seed_fixture(tmp_path, executable=_PYPROJECT_EXEC, required_bots='x', module_path=module_path)
     _write(
         tmp_path / '.github' / 'workflows' / 'python-verify.yml',
-        _VERIFY_WORKFLOW if opt_in else 'name: Other\n',
+        _VERIFY_WORKFLOW_FILE.read_text(encoding='utf-8') if opt_in else 'name: Other\n',
     )
     return tmp_path
 
@@ -759,7 +764,7 @@ _RULE_PARITY: tuple[tuple[str, tuple[str, ...]], ...] = (
     ('## 5. Self-review before the PR', ('{base_branch}', '`Task`')),
     (
         '## 6. Pull request and reviews',
-        ('ci pr comments', 'ci pr reviews', 'ci pr thread-reply', 'ci pr resolve-thread', '`sleep`'),
+        ('ci pr comments', 'ci pr reviews', 'ci pr thread-reply', 'ci pr resolve-thread', 'never `sleep`'),
     ),
     ('## 7. Merge gate', ('`verify`', 'origin/{base_branch}', 'pending', 'qualifying review')),
     ('## 8. Landing message (the last step, after the merge)', ('{guard_log}', '```landing-facts')),
@@ -816,3 +821,204 @@ def test_resolve_returns_the_base_branch_and_build_timeout(tmp_path: Path) -> No
     assert isinstance(data['build_timeout_seconds'], int)
     assert data['build_timeout_seconds'] > 0
     assert data['guard_log'] == '.plan/temp/guard.log'
+
+
+# =============================================================================
+# D1 — the skill-existence check in every deployed layout
+# =============================================================================
+
+#: A flat-deployed lane records its ``{bundle}-{skill}`` identity in the skill's
+#: own frontmatter (the flat emitters write it), which is the only way a
+#: dash-joined directory can be attributed back to a bundle.
+_FLAT_LANE_SKILL = (
+    '---\nname: runbook-lane\nmetadata:\n  bundle: plan-marshall\n  skill: runbook-lane\n---\n\n# Runbook Lane\n'
+)
+
+
+def _flat_persona_skill(name: str) -> str:
+    return f'---\nname: {name}\nmetadata:\n  bundle: plan-marshall\n  skill: {name}\n---\n\n# {name}\n'
+
+
+def _install_lane(install_root: Path, *, layout: str) -> Path:
+    """Copy the lane script into a fixture install and return the copied script.
+
+    ``flat`` lays the lane at ``{root}/skills/plan-marshall-runbook-lane/``
+    (OpenCode and Antigravity); ``nested`` lays it in a versioned bundle cache
+    (``{root}/plan-marshall/0.1.0/skills/runbook-lane/``). Either way the script
+    is copied, because ``_lane_skills_root`` is derived from the script's own
+    path.
+    """
+    source = get_scripts_dir('plan-marshall', _SKILL_NAME) / 'runbook_lane.py'
+    if layout == 'flat':
+        skill_dir = install_root / 'skills' / 'plan-marshall-runbook-lane'
+        _write(skill_dir / 'SKILL.md', _FLAT_LANE_SKILL)
+    else:
+        skill_dir = install_root / 'plan-marshall' / '0.1.0' / 'skills' / 'runbook-lane'
+        _write(install_root / 'plan-marshall' / '0.1.0' / '.claude-plugin' / 'plugin.json', '{}\n')
+    scripts = skill_dir / 'scripts'
+    scripts.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(source, scripts / 'runbook_lane.py')
+    return scripts / 'runbook_lane.py'
+
+
+#: A spec naming a bundle-qualified persona AND its bare form — both must resolve.
+_TWO_BUNDLE_PERSONA_SPEC = (
+    '## Deliverables\n\n'
+    '1. **First**\n   - Persona: plan-marshall:persona-implementer\n'
+    '2. **Second**\n   - Persona: persona-implementer\n'
+)
+
+
+def test_resolve_resolves_bundle_and_bare_persona_in_a_flat_install(tmp_path: Path) -> None:
+    install = tmp_path / 'install'
+    script = _install_lane(install, layout='flat')
+    _write(
+        install / 'skills' / 'plan-marshall-persona-implementer' / 'SKILL.md',
+        _flat_persona_skill('persona-implementer'),
+    )
+    spec = _seed_fixture(tmp_path, executable=_PYPROJECT_EXEC, required_bots='x', spec_text=_TWO_BUNDLE_PERSONA_SPEC)
+
+    result = run_script(script, 'resolve', '--spec', str(spec), '--project-dir', str(tmp_path))
+
+    assert result.success, result.stderr
+    data = result.toon()
+    assert data['status'] == 'success', data
+    assert [row['persona'] for row in data['deliverables']] == [
+        'plan-marshall:persona-implementer',
+        'persona-implementer',
+    ]
+
+
+def test_resolve_resolves_a_cross_bundle_skill_in_a_nested_cache(tmp_path: Path) -> None:
+    cache = tmp_path / 'cache'
+    script = _install_lane(cache, layout='nested')
+    _write(cache / 'pm-dev-python' / '0.1.0' / '.claude-plugin' / 'plugin.json', '{}\n')
+    _write(cache / 'pm-dev-python' / '0.1.0' / 'skills' / 'python-core' / 'SKILL.md', '---\nname: python-core\n---\n')
+    spec_text = '## Deliverables\n\n1. **First**\n   - Skills: pm-dev-python:python-core\n'
+    spec = _seed_fixture(tmp_path, executable=_PYPROJECT_EXEC, required_bots='x', spec_text=spec_text)
+
+    result = run_script(script, 'resolve', '--spec', str(spec), '--project-dir', str(tmp_path))
+
+    assert result.success, result.stderr
+    assert result.toon()['status'] == 'success', result.toon()
+
+
+def test_skill_exists_resolves_the_source_tree_across_two_bundles() -> None:
+    module = load_script_module('plan-marshall', _SKILL_NAME, 'runbook_lane.py', register=False)
+
+    assert module._skill_exists('plan-marshall:persona-implementer', 'plan-marshall')
+    assert module._skill_exists('persona-implementer', 'plan-marshall')
+    assert module._skill_exists('pm-dev-python:python-core', 'plan-marshall')
+
+
+def test_resolve_passes_with_skills_from_two_bundles(tmp_path: Path) -> None:
+    spec_text = '## Deliverables\n\n1. **First**\n   - Skills: plan-marshall:runbook-lane, pm-dev-python:python-core\n'
+    spec = _seed_fixture(tmp_path, executable=_PYPROJECT_EXEC, required_bots='x', spec_text=spec_text)
+
+    data = _run_resolve(spec, tmp_path)
+
+    assert data['status'] == 'success', data
+
+
+def test_resolve_missing_skill_names_every_probed_path(tmp_path: Path) -> None:
+    spec_text = '## Deliverables\n\n1. **First**\n   - Skills: plan-marshall:no-such-skill\n'
+    spec = _seed_fixture(tmp_path, executable=_PYPROJECT_EXEC, required_bots='x', spec_text=spec_text)
+
+    data = _run_resolve(spec, tmp_path)
+
+    assert data['status'] == 'error'
+    assert data['error'] == 'named_skill_not_found'
+    assert 'no-such-skill' in data['missing']
+    assert 'skills/no-such-skill/SKILL.md' in data['probed']
+
+
+# =============================================================================
+# D2 — the docs-only classifier derives its rule from the project
+# =============================================================================
+
+
+def test_build_classify_globstar_matches_a_direct_child(tmp_path: Path) -> None:
+    data = _build_classify(_seed_footprint(tmp_path), 'test/README.md')
+    assert data['kind'] == 'buildable'
+
+
+def test_build_classify_globstar_matches_a_marketplace_root_markdown(tmp_path: Path) -> None:
+    data = _build_classify(_seed_footprint(tmp_path), 'marketplace/README.md')
+    assert data['kind'] == 'buildable'
+
+
+def test_build_classify_keeps_a_doc_as_docs_only(tmp_path: Path) -> None:
+    data = _build_classify(_seed_footprint(tmp_path), 'doc/developer/build.adoc')
+    assert data['kind'] == 'docs-only'
+    assert data['source'] == 'ci-workflow'
+
+
+def test_build_classify_treats_an_unreadable_rule_as_buildable(tmp_path: Path) -> None:
+    project = _seed_footprint(tmp_path)
+    # The opt-in is present with a value that is not a boolean, so the rule cannot
+    # be read: every path must build rather than a skip being guessed.
+    _write(
+        project / '.github' / 'workflows' / 'python-verify.yml',
+        'name: X\njobs:\n  verify:\n    with:\n      skip-on-docs-only: maybe\n',
+    )
+
+    data = _build_classify(project, 'doc/developer/build.adoc')
+
+    assert data['kind'] == 'buildable'
+    assert 'skip-on-docs-only' in data['reason']
+
+
+def test_classifier_source_holds_no_workflow_name_or_suffix_list() -> None:
+    source = (get_scripts_dir('plan-marshall', _SKILL_NAME) / 'runbook_lane.py').read_text(encoding='utf-8')
+
+    assert 'python-verify.yml' not in source, 'the classifier names this repository workflow'
+    assert '_NON_BUILDING_SUFFIXES' not in source, 'the classifier hard-codes non-building suffixes'
+    assert "'.adoc'" not in source, 'the classifier hard-codes a document extension'
+
+
+# =============================================================================
+# D3 — the restored rules read the same everywhere and the parity tests can fail
+# =============================================================================
+
+
+def test_guard_state_has_one_location_in_rules_and_landing() -> None:
+    rules = _section('## 1. Rules (every one binds; breaking one fails the run)')
+    landing = _section('## 8. Landing message (the last step, after the merge)')
+
+    assert 'prose beside the fence' in rules
+    assert 'prose beside the fence' in landing
+    assert 'facts block' not in rules, 'the rules section still places the guard state in the facts block'
+
+
+def test_branch_rule_states_the_canonical_prefix_set_as_closed() -> None:
+    section = _section('## 0. Input')
+
+    for prefix in ('feature/', 'fix/', 'chore/'):
+        assert prefix in section
+    assert 'only extension' in section
+    assert 'own set wins' not in section, 'the branch rule lets the project set replace the canonical prefixes'
+
+
+def test_quota_policy_step_names_the_no_qualifying_review_condition() -> None:
+    reviews = _section('## 6. Pull request and reviews')
+
+    assert 'no qualifying review exists' in reviews
+
+
+def test_sleep_parity_keyword_is_the_qualifier_free_sentence() -> None:
+    keywords = {heading: set(entries) for heading, entries in _RULE_PARITY}
+    reviews_keywords = keywords['## 6. Pull request and reviews']
+
+    assert 'never `sleep`' in reviews_keywords, 'the sleep parity keyword is not the qualifier-free sentence'
+    reviews = _section('## 6. Pull request and reviews')
+    assert 'never `sleep`' in reviews
+    assert 'bare `sleep`' not in reviews
+
+
+def test_build_timeout_comes_from_the_architecture_stamp(tmp_path: Path, monkeypatch) -> None:
+    module = load_script_module('plan-marshall', _SKILL_NAME, 'runbook_lane.py', register=False)
+    import _cmd_client
+
+    monkeypatch.setattr(_cmd_client, '_augment_resolved', lambda resolved, project_dir: {'bash_timeout_seconds': 1234})
+
+    assert module._resolve_build_timeout({}, tmp_path) == 1234
