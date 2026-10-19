@@ -148,9 +148,19 @@ gives it a sanctioned, read-only session-store reader.
    - `next` refuses to emit a spec whose named skills or persona do not exist in the installed
      bundles. That catches names that went stale while the spec waited.
    - `cleanup` (corpus review) flags staged specs that are missing the lines.
+   - **Done-when authoring rule (folded from `landings/PLAN-LB-72.md`).** A Done-when may say
+     "fails at `{sha}`" only for behaviour that is new at that sha. A preservation clause ("still
+     docs-only") or a coverage clause ("a flat fixture resolves X", where X already resolves) says
+     "holds at `{sha}`", so a run is never asked to observe a failure that cannot exist. The rule
+     lives in `templates/plan-spec.md` and in `workflow/decompose.md`, and `cleanup` flags a staged
+     Done-when that carries a "fails at" clause beside the words "still", "keeps" or "unchanged".
+     Two Done-whens of PLAN-LB-72 were unmeetable by construction, and its run reported them
+     "not met as written".
 
    *Done when:*
    - template and workflow doc tests assert the two lines and the script-filled staging step;
+   - template and workflow doc tests assert the "fails at" / "holds at" rule, and a `cleanup`
+     fixture test flags a Done-when that says "fails at … still …";
    - `spec-skills` fixture tests show a pyproject spec yields this repository's Python domain
      skills, a Maven spec touching a Java module yields the Java domain skills, and an unmapped
      path yields `unmapped`;
