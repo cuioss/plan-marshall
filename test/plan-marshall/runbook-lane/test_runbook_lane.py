@@ -1226,6 +1226,50 @@ def test_classifier_source_holds_no_workflow_name_or_suffix_list() -> None:
 # =============================================================================
 
 
+def test_evidence_order_field_is_closed_and_reserved() -> None:
+    """Both evidence surfaces name a closed ``order``, and reserve "fail-first".
+
+    A run that produced its failing output by mutating or reverting the fix must
+    have a label that says so; the words "fail-first" and "observed failing
+    before the fix" are truthful only for ``test-first``.
+    """
+    landing = _section('## 8. Landing message (the last step, after the merge)')
+    pr_body = _section('## 6. Pull request and reviews')
+
+    for name, section in (('§8', landing), ('the PR-body rule', pr_body)):
+        assert '`order`' in section, f'{name} does not require an order field'
+        for value in ('`test-first`', '`mutation-after`', '`none`'):
+            assert value in section, f'{name} does not name the order value {value}'
+        assert 'reserved' in section, f'{name} does not reserve the fail-first wording'
+        assert 'observed failing before the fix' in section, f'{name} does not name the reserved phrase'
+        assert 'failing run' in section, f'{name} does not require the failing run evidence'
+        assert 'output identifier' in section, f'{name} does not require an output identifier'
+
+
+def test_test_compile_runs_at_every_pushed_head_and_is_reported() -> None:
+    gate = _section('## 4. Build gate')
+    landing = _section('## 8. Landing message (the last step, after the merge)')
+
+    assert 'every head pushed to a PR' in gate, 'the gate still lets a pushed head skip test-compile'
+    assert 'test-compile' in landing, 'the landing does not report the test-compile runs'
+    assert 'sha' in landing, 'the landing does not report the sha of each test-compile run'
+
+
+def test_self_review_clear_is_not_permitted_with_an_open_finding() -> None:
+    review = _section('## 5. Self-review before the PR')
+
+    assert '`self-review: clear` is never permitted while any finding is open' in review
+
+
+def test_unknown_verb_rule_names_its_landing_record() -> None:
+    gate = _section('## 4. Build gate')
+    landing = _section('## 8. Landing message (the last step, after the merge)')
+
+    assert 'unknown subcommand' in gate, 'the unknown-verb rule is gone'
+    assert 'question tool' in gate, 'the unknown-verb rule does not name the question tool'
+    assert 'no question tool was available' in landing, 'the landing cannot report a harness without a question tool'
+
+
 def test_guard_state_has_one_location_in_rules_and_landing() -> None:
     rules = _section('## 1. Rules (every one binds; breaking one fails the run)')
     landing = _section('## 8. Landing message (the last step, after the merge)')

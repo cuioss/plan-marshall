@@ -326,6 +326,8 @@ resolve result supplies:
   is unchanged.
 - **When to run what:** run `{build.quality-gate}` before each commit that touches `*.py`, and
   `{build.verify}` once before the PR. Scope the tests to one module while iterating.
+- **Every pushed head:** `test-compile` runs at every head pushed to a PR — not once for the run.
+  Record the sha of each run; a head whose `test-compile` did not run is not a green head.
 - **Shell timeout:** in-process builds hold the shell call for their whole duration. Give each call
   the shell tool's `timeout` parameter, set at or above the build's own timeout.
   - If the tool cannot wait that long, run `{build.verify}`'s three parts as separate calls, in the
@@ -339,7 +341,9 @@ resolve result supplies:
   project's local module-tests run. They are not yours. Only a failure in a module you touched, or
   one the base branch does not show, is yours.
 - **Surface/naming errors** such as "unknown subcommand": suspect a stale executor first and ask the
-  operator. Do not change source to silence them.
+  operator with the question tool — do not change source to silence them. The landing records that
+  the question was asked and the answer it got, or, where the harness offered no question tool, says
+  `no question tool was available`.
 
 ## 5. Self-review before the PR
 
@@ -359,8 +363,10 @@ and to the run's own Done-when verdicts. Give it:
   - every doc or comment the change made false;
   - every changed file the spec does not explain.
 
-Fix what it finds, then dispatch it again. Stop when it reports nothing open, or after 3 rounds. At
-the round limit, ask the operator whether to continue. Record every finding and its disposition.
+Fix what it finds, then dispatch it again. Stop when a round reports nothing open, or after 3 rounds.
+At the round limit the still-open items are reported AS open, and `self-review: clear` is never
+permitted while any finding is open — that state is reported as `budget-exhausted`. Ask the operator
+whether to continue at the limit. Record every finding and its disposition.
 
 ## 6. Pull request and reviews
 
@@ -368,7 +374,10 @@ the round limit, ask the operator whether to continue. Record every finding and 
    - `python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr prepare-body --plan-id NO_PLAN`
      returns a path.
    - Write the body there: Summary; Changes, grouped per deliverable; Test evidence, naming the
-     failing-then-passing tests. No footer.
+     failing-then-passing tests. The evidence carries, per Done-when, an `order` field with exactly
+     one of `test-first`, `mutation-after` or `none`, plus the failing run's commit and output
+     identifier. The words "fail-first" and "observed failing before the fix" are reserved for
+     `test-first`; a `mutation-after` or `none` order says so instead. No footer.
    - Then: `python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr create --plan-id NO_PLAN --head {branch} --base {base_branch} --title "{conventional title}"`
 2. **Trigger each reviewer** with a PR comment (`ci pr prepare-comment` + `ci pr reply`), posting
    its resolved `trigger_comment`.
@@ -497,8 +506,12 @@ steps=setup:done,implement:done,build-gate:done,self-review:{clear|budget-exhaus
   says `guard: none on this harness (unenforced)`. Never report "all kept" or "no guard-log line"
   for a harness with no guard.
 - **The report follows the facts block,** one short section each:
-  1. **Deliverables** — per Done-when: met or not met; the test name and its fail-then-pass evidence;
-     the commit.
+  1. **Deliverables** — per Done-when: met or not met; the test name; an `order` field with exactly
+     one of `test-first`, `mutation-after` or `none`; the failing run's commit and output identifier
+     that the order names; and the commit. The words "fail-first" and "observed failing before the
+     fix" are reserved for `test-first` — `mutation-after` means the failing output came from
+     mutating or reverting the committed fix, and `none` means no failing output was captured. Also
+     report the sha of every `test-compile` run against a pushed head.
   2. **Personas and skills** — per step, which persona was applied (section 1's table, or the
      deliverable's own `Persona:` line); per deliverable, the domain skills it named — or
      `skills: none named` when the spec declares none — and any skill added for surface drift as
@@ -510,8 +523,10 @@ steps=setup:done,implement:done,build-gate:done,self-review:{clear|budget-exhaus
      authorization:** per quota-limited reviewer, the head it reviewed, the current head, and each
      finding with how it was handled.
   6. **Operator questions** — **every** question-tool call in the run, in order: its text, its
-     options, and the option selected. List free-text operator messages separately, as free text.
-     If no question-tool call was made, write "none asked".
+     options, and the option selected. List free-text operator messages separately, as free text. A
+     surface/naming error that prompted a question is recorded here with the answer it got; when the
+     harness offered no question tool, say `no question tool was available` rather than
+     "none asked". If no question-tool call was made, write "none asked".
   7. **Rule check** — every section 1 rule that you or a sub-agent did not keep, and every guard
      refusal: read `{guard_log}` (the path `resolve` returns) for this run's sessions and list each
      line. "All kept" is allowed only when that log has no line for the run — and never on a harness
