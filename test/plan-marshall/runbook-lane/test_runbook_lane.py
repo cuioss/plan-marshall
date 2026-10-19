@@ -779,7 +779,7 @@ def test_build_classify_keeps_an_unlisted_build_file_buildable(tmp_path: Path) -
     assert data['kind'] == 'buildable'
 
 
-def test_build_classify_keeps_an_unlisted_document_docs_only(tmp_path: Path) -> None:
+def test_build_classify_builds_a_document_outside_the_doc_module(tmp_path: Path) -> None:
     """Architecture silence outside the documentation module must build.
 
     The old rule let ANY document suffix classify a path docs-only even when the
@@ -815,7 +815,12 @@ def test_build_classify_reads_the_ci_skip_rule_when_the_repository_holds_it(tmp_
 
 
 def test_build_classify_matches_document_suffixes_case_sensitively(tmp_path: Path) -> None:
-    """``.MD`` is not ``.md``: the CI's path filter is case-sensitive."""
+    """``.MD`` is not ``.md``: the CI's path filter is case-sensitive.
+
+    ``README.MD`` builds because it lies outside the documentation module;
+    ``doc/guide.MD`` is the assertion that pins CASE, since it lies inside the
+    module and would be docs-only if the suffix were folded.
+    """
     project = _seed_footprint(tmp_path)
 
     assert _build_classify(project, 'README.MD')['kind'] == 'buildable'
@@ -823,11 +828,11 @@ def test_build_classify_matches_document_suffixes_case_sensitively(tmp_path: Pat
 
 
 def test_build_classify_builds_asciidoc_unless_the_ci_rule_names_it(tmp_path: Path) -> None:
-    """An extension the architecture files as prose still builds by itself.
+    """A prose extension does not, by itself, make a path docs-only.
 
-    Only the project's CI rule may make ``.asciidoc`` non-building; the
-    architecture's own doc-extension list may not, because another project's CI
-    can build it.
+    The architecture's prose class is consulted only INSIDE the documentation
+    module it belongs to, so a root-level ``guide.asciidoc`` builds; the CI rule
+    is the only thing that can name it non-building.
     """
     unnamed = _seed_footprint(
         tmp_path / 'unnamed',
@@ -846,6 +851,22 @@ def test_build_classify_builds_asciidoc_unless_the_ci_rule_names_it(tmp_path: Pa
     _seed_local_ci_rule(named, ['**/*.asciidoc'])
 
     assert _build_classify(named, 'guide.asciidoc')['kind'] == 'docs-only'
+
+
+def test_paths_ignore_reads_the_pull_request_block_not_a_push_only_one() -> None:
+    """A push-only filter must not drive the classification of a PR diff."""
+    module = load_script_module('plan-marshall', _SKILL_NAME, 'runbook_lane.py', register=False)
+    lines = [
+        'on:',
+        '  push:',
+        '    paths-ignore:',
+        "      - 'push-only/**'",
+        '  pull_request:',
+        '    paths-ignore:',
+        "      - 'pr-only/**'",
+    ]
+
+    assert module._paths_ignore_globs(lines) == ['pr-only/**']
 
 
 # =============================================================================
@@ -1051,8 +1072,9 @@ def test_resolve_missing_skill_names_every_probed_layout(tmp_path: Path) -> None
 
     The fixture carries both deployed shapes (the flat ``skills/`` root and a
     versioned nested cache), and the name exists in neither; the source-tree
-    layout is read from the real module. Dropping any one layout's probe from the
-    error fails this test.
+    layout is read from the real module. Dropping either deployed layout's probe
+    from the error — or the source-tree candidate from the enumeration — fails
+    this test.
     """
     install = tmp_path / 'install'
     script = _install_lane(install, layout='flat')
@@ -1179,37 +1201,24 @@ def test_extra_buildable_globs_drops_a_block_indicator_and_unwraps_quotes() -> N
 _DOCUMENT_SUFFIX_LITERALS = frozenset({'.md', '.adoc', '.asciidoc', '.rst', '.txt'})
 
 
-def _module_level_document_suffix_lists(source: str) -> list[str]:
-    """Return the names of module-level constants holding a document-suffix list.
+def _document_suffix_lists(source: str) -> list[int]:
+    """Return the lines of document-suffix collections in the module, if any.
 
-    Detected STRUCTURALLY rather than by name: a renamed list
-    (``_DOC_SUFFIXES``) must fail exactly as ``_NON_BUILDING_SUFFIXES`` would,
-    which a name grep cannot catch. The check accepts every collection spelling
-    a constant can use — a tuple/list/set literal, or one wrapped in
-    ``frozenset``/``set``/``tuple``/``list``.
+    Detected STRUCTURALLY and anywhere in the module — a module-level constant, a
+    renamed list (``_DOC_SUFFIXES``), or an inline ``{'.md', '.adoc'}`` — because
+    a name grep cannot catch any of those. The membership test is
+    case-insensitive, so ``('.MD',)`` is caught too: case-folding is exactly the
+    fail-open shape deliverable 1 closes.
     """
-    offenders: list[str] = []
-    for node in ast.parse(source).body:
-        if isinstance(node, ast.Assign):
-            targets, value = node.targets, node.value
-        elif isinstance(node, ast.AnnAssign) and node.value is not None:
-            targets, value = [node.target], node.value
-        else:
+    offenders: list[int] = []
+    for node in ast.walk(ast.parse(source)):
+        if not isinstance(node, (ast.Tuple, ast.List, ast.Set)):
             continue
-        if (
-            isinstance(value, ast.Call)
-            and isinstance(value.func, ast.Name)
-            and value.func.id in {'frozenset', 'set', 'tuple', 'list'}
-            and len(value.args) == 1
-        ):
-            value = value.args[0]
-        if not isinstance(value, (ast.Tuple, ast.List, ast.Set)):
+        literals = [element.value for element in node.elts if isinstance(element, ast.Constant)]
+        if not literals or len(literals) != len(node.elts):
             continue
-        literals = [element.value for element in value.elts if isinstance(element, ast.Constant)]
-        if not literals or len(literals) != len(value.elts):
-            continue
-        if any(literal in _DOCUMENT_SUFFIX_LITERALS for literal in literals if isinstance(literal, str)):
-            offenders.extend(target.id for target in targets if isinstance(target, ast.Name))
+        if any(isinstance(literal, str) and literal.lower() in _DOCUMENT_SUFFIX_LITERALS for literal in literals):
+            offenders.append(node.lineno)
     return offenders
 
 
@@ -1217,8 +1226,26 @@ def test_classifier_source_holds_no_workflow_name_or_suffix_list() -> None:
     source = (get_scripts_dir('plan-marshall', _SKILL_NAME) / 'runbook_lane.py').read_text(encoding='utf-8')
 
     assert 'python-verify.yml' not in source, 'the classifier names this repository workflow'
-    suffix_lists = _module_level_document_suffix_lists(source)
-    assert not suffix_lists, f'the classifier hard-codes a document-suffix list: {suffix_lists}'
+    suffix_lists = _document_suffix_lists(source)
+    assert not suffix_lists, f'the classifier hard-codes a document-suffix collection at lines {suffix_lists}'
+
+
+def test_glob_matching_does_not_treat_a_pattern_as_a_directory_prefix() -> None:
+    """A CI path filter matches a FILE path; a matched directory does not cover its contents."""
+    module = load_script_module('plan-marshall', _SKILL_NAME, 'runbook_lane.py', register=False)
+
+    assert module._matches_glob('docs/a.md', 'docs/*')
+    assert not module._matches_glob('docs/a/b.md', 'docs/*'), 'the gitignore directory tail was not removed'
+
+
+def test_prose_extensions_do_not_leak_across_documentation_modules() -> None:
+    """A suffix one documentation module files as prose must not skip in another's prefix."""
+    module = load_script_module('plan-marshall', _SKILL_NAME, 'runbook_lane.py', register=False)
+    surfaces = [('docs/', {'.md'}), ('site/', {'.html'})]
+
+    assert module._is_project_doc('docs/a.md', surfaces)
+    assert module._is_project_doc('site/a.html', surfaces)
+    assert not module._is_project_doc('docs/a.html', surfaces), "site/'s extension leaked into docs/"
 
 
 # =============================================================================
@@ -1267,6 +1294,7 @@ def test_unknown_verb_rule_names_its_landing_record() -> None:
 
     assert 'unknown subcommand' in gate, 'the unknown-verb rule is gone'
     assert 'question tool' in gate, 'the unknown-verb rule does not name the question tool'
+    assert 'the answer it got' in gate, 'the unknown-verb rule does not require the answer to be recorded'
     assert 'no question tool was available' in landing, 'the landing cannot report a harness without a question tool'
 
 
@@ -1285,7 +1313,9 @@ def test_branch_rule_states_the_canonical_prefix_set_as_closed() -> None:
     for prefix in ('feature/', 'fix/', 'chore/'):
         assert prefix in section
     assert 'prefix set is closed' in section, 'the branch rule no longer calls the canonical prefix set closed'
-    assert 'working_prefixes' in section, 'the branch rule does not name the set the prefix must come from'
+    assert "the project's configured `working_prefixes`" in section, (
+        'the branch rule does not say WHICH set the prefix must come from'
+    )
     assert 'only extension' in section
     assert 'own set wins' not in section, 'the branch rule lets the project set replace the canonical prefixes'
 

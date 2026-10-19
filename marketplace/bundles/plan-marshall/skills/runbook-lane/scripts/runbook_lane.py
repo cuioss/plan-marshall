@@ -667,8 +667,15 @@ def _read_footprint_rule(project_dir: Path) -> tuple[list[str] | None, list[str]
     return None, None, ''
 
 
+#: The gitignore directory-prefix tail the reused helper appends to every
+#: pattern. A CI path filter matches a FILE path as a whole, so the tail is
+#: removed before use: leaving it in would let ``docs/*`` match ``docs/a/b.md``
+#: and skip a build the CI runs.
+_GITIGNORE_DIR_TAIL = '(?:/.*)?$'
+
+
 def _paths_ignore_globs(lines: list[str]) -> list[str] | None:
-    """Return the workflow's declared non-building globs, or ``None``.
+    """Return the workflow's PR non-building globs, or ``None``.
 
     ``None`` is the load-bearing answer: it says the project's CI rule is NOT in
     this file — the usual cause being a ``uses:`` delegation to a reusable
@@ -677,19 +684,24 @@ def _paths_ignore_globs(lines: list[str]) -> list[str] | None:
     as "nothing is skipped". An EMPTY list is a readable rule that names
     nothing, which correctly skips nothing.
 
-    The block form (``paths-ignore:`` followed by ``- glob`` items) and the
-    scalar forms a workflow may use are both read, through the same scalar
-    tokenizer the ``extra-buildable`` reader uses.
+    Only the block form (``paths-ignore:`` followed by ``- glob`` items) is read;
+    a YAML flow sequence is not, and a rule the reader cannot parse is
+    fail-closed only when it falls back to the architecture. The block's
+    enclosing key is consulted so a ``push``-only filter is not applied to a PR
+    diff, and a leading ``!`` (a re-include, which has no meaning in
+    ``paths-ignore``) is dropped rather than matched literally.
     """
     for index, line in enumerate(lines):
         stripped = line.strip()
         if not stripped.startswith(f'{_PATHS_IGNORE_KEY}:'):
             continue
+        if _enclosing_event(lines, index) not in (None, 'pull_request'):
+            continue
         base_indent = len(line) - len(line.lstrip(' '))
         inline = stripped.split(':', 1)[1].strip()
         globs: list[str] = []
         if inline and not inline.startswith(('>', '|')):
-            globs.extend(_scalar_tokens(inline))
+            globs.extend(token for token in _scalar_tokens(inline) if not token.startswith('!'))
         for candidate in lines[index + 1 :]:
             if not candidate.strip():
                 continue
@@ -698,24 +710,41 @@ def _paths_ignore_globs(lines: list[str]) -> list[str] | None:
             item = candidate.strip()
             if item.startswith('- '):
                 item = item[2:].strip()
-            globs.extend(_scalar_tokens(item))
+            globs.extend(token for token in _scalar_tokens(item) if not token.startswith('!'))
         return globs
     return None
 
 
-def _architecture_documentation_surfaces(project_dir: Path) -> tuple[list[str], set[str]]:
-    """Return the project's prose surfaces: ``(directory prefixes, extensions)``.
+def _enclosing_event(lines: list[str], index: int) -> str | None:
+    """Return the shallower YAML key enclosing ``lines[index]``, or ``None``.
+
+    The nearest preceding line that is LESS indented and ends with ``:`` is the
+    mapping key the block lives under — on a workflow trigger that is the event
+    name (``push``, ``pull_request``, ``merge_group``). A line-level reader has
+    no YAML parser here; the indentation scan answers the only question the
+    caller has, which is whether a filter belongs to the PR event.
+    """
+    base_indent = len(lines[index]) - len(lines[index].lstrip(' '))
+    for candidate in reversed(lines[:index]):
+        if not candidate.strip():
+            continue
+        indent = len(candidate) - len(candidate.lstrip(' '))
+        if indent < base_indent and candidate.strip().endswith(':'):
+            return candidate.strip()[:-1].strip()
+    return None
+
+
+def _architecture_documentation_surfaces(project_dir: Path) -> list[tuple[str, set[str]]]:
+    """Return one ``(prefix, extensions)`` pair per documentation-surface module.
 
     A documentation-surface module is one whose architecture ``build_systems``
     carries the documentation marker the documentation extension writes on a
-    prose-only module. Its ``paths.module`` directory and the extensions of its
-    ``doc``-categorized files are the project's own non-building classes, read
-    here rather than spelled into this module. An empty result means the
-    architecture reports no such surface, and no path is then classified
-    docs-only by it.
+    prose-only module. Each surface keeps its OWN extensions: a suffix that
+    module B files as ``doc`` must not license a skip inside module A's
+    directory. An empty result means the architecture reports no such surface,
+    and no path is then classified docs-only by it.
     """
-    prefixes: list[str] = []
-    extensions: set[str] = set()
+    surfaces: list[tuple[str, set[str]]] = []
     try:
         from _architecture_core import iter_modules, load_module_derived
 
@@ -727,17 +756,19 @@ def _architecture_documentation_surfaces(project_dir: Path) -> tuple[list[str], 
             if _ARCHITECTURE_DOC_BUILD_SYSTEM not in (derived.get('build_systems') or []):
                 continue
             module_path = str((derived.get('paths') or {}).get('module') or '').strip('/')
-            if module_path and module_path != '.':
-                prefixes.append(f'{module_path}/')
+            if not module_path or module_path == '.':
+                continue
+            extensions: set[str] = set()
             for rel in (derived.get('files') or {}).get(_ARCHITECTURE_DOC_CATEGORY) or []:
                 # Deliberately NOT lower-cased: a CI path filter matches a suffix
                 # case-sensitively, so ``.MD`` is not ``.md``.
                 suffix = Path(str(rel)).suffix
                 if suffix:
                     extensions.add(suffix)
+            surfaces.append((f'{module_path}/', extensions))
     except Exception:
-        return [], set()
-    return prefixes, extensions
+        return []
+    return surfaces
 
 
 def _architecture_module_prefixes(project_dir: Path) -> list[str] | None:
@@ -777,10 +808,17 @@ def _glob_to_regex(pattern: str) -> re.Pattern[str]:
     a whole: ``*.md`` is root-only and ``**/*.md`` is any depth. The helper's
     unanchored form applies gitignore's "match at any depth" rule to a slash-less
     pattern, and over-matching is the fail-OPEN direction for a skip rule.
+
+    The helper's trailing directory-prefix group is removed: it is gitignore
+    semantics (a matched DIRECTORY covers its contents), and it would let
+    ``docs/*`` match ``docs/a/b.md`` and skip a build the CI runs.
     """
     from _cmd_manage import _gitignore_pattern_to_regex
 
-    return _gitignore_pattern_to_regex(f'/{pattern}')
+    translated = _gitignore_pattern_to_regex(f'/{pattern}').pattern
+    if translated.endswith(_GITIGNORE_DIR_TAIL):
+        translated = translated[: -len(_GITIGNORE_DIR_TAIL)]
+    return re.compile(f'{translated}$')
 
 
 def _matches_glob(path: str, pattern: str) -> bool:
@@ -788,19 +826,21 @@ def _matches_glob(path: str, pattern: str) -> bool:
     return _glob_to_regex(pattern).match(path) is not None
 
 
-def _is_project_doc(path: str, doc_prefixes: list[str], doc_extensions: set[str]) -> bool:
-    """Whether *path* belongs to the architecture's documentation surface.
+def _is_project_doc(path: str, doc_surfaces: list[tuple[str, set[str]]]) -> bool:
+    """Whether *path* belongs to one of the architecture's documentation surfaces.
 
-    BOTH conditions are required, and the suffix comparison is CASE-SENSITIVE:
-    the documentation module prefix alone is not a licence to skip, and
-    ``README.MD`` is not ``README.md`` to a CI path filter. This is the narrow,
-    closed fallback for a project whose CI rule the checkout does not hold; it
-    can only ever ADD a skip inside prose the project itself declared, and every
-    other path builds.
+    A path is prose only when it lies inside a documentation module's prefix AND
+    carries a suffix THAT module files as ``doc``. The suffix comparison is
+    CASE-SENSITIVE (``README.MD`` is not ``README.md`` to a CI path filter), and
+    each surface keeps its own extensions, so one module's prose vocabulary
+    never licenses a skip inside another's directory. This is the narrow, closed
+    fallback for a project whose CI rule the checkout does not hold; every other
+    path builds.
     """
-    if not any(path.startswith(prefix) for prefix in doc_prefixes):
-        return False
-    return Path(path).suffix in doc_extensions
+    for prefix, extensions in doc_surfaces:
+        if path.startswith(prefix) and Path(path).suffix in extensions:
+            return True
+    return False
 
 
 def _classify_path(
@@ -808,8 +848,7 @@ def _classify_path(
     extra: list[str],
     skip: list[str] | None,
     module_prefixes: list[str],
-    doc_prefixes: list[str],
-    doc_extensions: set[str],
+    doc_surfaces: list[tuple[str, set[str]]],
     source: str,
 ) -> str:
     """Classify ONE changed path as ``buildable`` or ``docs-only``.
@@ -833,10 +872,10 @@ def _classify_path(
     if source == 'ci-workflow':
         if skip is not None:
             return 'docs-only' if any(_matches_glob(path, pattern) for pattern in skip) else 'buildable'
-        return 'docs-only' if _is_project_doc(path, doc_prefixes, doc_extensions) else 'buildable'
+        return 'docs-only' if _is_project_doc(path, doc_surfaces) else 'buildable'
     if any(path.startswith(prefix) for prefix in module_prefixes):
         return 'buildable'
-    return 'docs-only' if _is_project_doc(path, doc_prefixes, doc_extensions) else 'buildable'
+    return 'docs-only' if _is_project_doc(path, doc_surfaces) else 'buildable'
 
 
 def cmd_build_classify(args: argparse.Namespace) -> dict[str, Any]:
@@ -859,20 +898,27 @@ def cmd_build_classify(args: argparse.Namespace) -> dict[str, Any]:
     else:
         source = 'architecture'
         module_prefixes = _architecture_module_prefixes(project_dir) or ['']
-    doc_prefixes, doc_extensions = _architecture_documentation_surfaces(project_dir)
+    doc_surfaces = _architecture_documentation_surfaces(project_dir)
 
     if reason:
         # The opt-in was found but its rule could not be read: skip nothing, so
         # the unknown rule costs a local build rather than a skipped CI one.
         rows = [{'path': path, 'kind': 'buildable'} for path in paths]
     else:
-        rows = [
-            {
-                'path': path,
-                'kind': _classify_path(path, extra or [], skip, module_prefixes, doc_prefixes, doc_extensions, source),
-            }
-            for path in paths
-        ]
+        try:
+            rows = [
+                {
+                    'path': path,
+                    'kind': _classify_path(path, extra or [], skip, module_prefixes, doc_surfaces, source),
+                }
+                for path in paths
+            ]
+        except ImportError as exc:
+            # The shared glob translator is unavailable (a partial install).
+            # Build everything and name the cause: a broken translator must never
+            # be read as "no path matches", which for a skip rule would skip.
+            rows = [{'path': path, 'kind': 'buildable'} for path in paths]
+            reason = f'glob helper unavailable: {type(exc).__name__}'
     buildable = any(row['kind'] == 'buildable' for row in rows)
     result: dict[str, Any] = {
         'status': 'success',

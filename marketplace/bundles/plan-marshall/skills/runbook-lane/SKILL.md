@@ -76,7 +76,7 @@ The result supplies, and nothing below is spelled from anywhere else:
 | epic slug | `slug` |
 | `{plan}` | `plan` |
 | worktree | `worktree` |
-| branch | `{branch} = {prefix}{plan}`; the canonical prefix set is closed — `feature/` (a new capability), `fix/` (a bug fix), `chore/` (docs or maintenance) — and the project's configured `working_prefixes` is its only extension, never a replacement: the chosen prefix must be one the project's resolved `working_prefixes` set declares |
+| branch | `{branch} = {prefix}{plan}`; the canonical prefix set is closed — `feature/` (a new capability), `fix/` (a bug fix), `chore/` (docs or maintenance) — and the project's configured `working_prefixes` is its only extension, never a replacement: the chosen prefix must be one the project's configured `working_prefixes` declares |
 | base branch | `base_branch` (the project's own base branch, never a spelling of it) |
 | inbox sender id | `sender_id` |
 | progress file | `progress_file` |
@@ -314,16 +314,15 @@ resolve result supplies:
   `verify`: check the changed docs instead (format, internal links and references, and a
   `git status` showing only doc files) and record `build-gate: docs-only` in the progress file and
   the landing message. `kind: buildable` runs the gate below as usual. The classifier applies the
-  PROJECT's own footprint rule — its CI opt-in when it has one (a `skip-on-docs-only` declaration
-  discovered in the workflow that carries it, plus the `extra-buildable` paths that force a build
-  even for a document extension), otherwise the architecture's module directories — rather than
-  assuming a `.py` file is the only thing that builds. It names no workflow and no class itself: the
-  non-building classes are the prose surfaces the architecture reports (a module marked
-  `documentation`, and the extensions the architecture files as `doc`). A path the classifier cannot
-  place, and any rule it could not read (reported as `reason`), builds — the fail-closed direction,
-  so a wrong answer costs a local build and never skips one the CI would run. Pass the same
-  `--project-dir` the build gate uses. Required CI checks still have to be green, so the merge gate
-  is unchanged.
+  PROJECT's own footprint rule rather than assuming a `.py` file is the only thing that builds. Its
+  non-building class is the project's CI rule where the checkout HOLDS it: a `paths-ignore` block in
+  the workflow that carries the `skip-on-docs-only` opt-in. Where it does not — the rule lives in a
+  reusable workflow the checkout does not hold — the narrow fallback is the architecture's
+  documentation module prefix AND that module's own `doc` extensions, matched case-sensitively.
+  `extra-buildable` globs force a build ahead of either. A path the classifier cannot place, and any
+  rule it could not read (reported as `reason`), builds — the fail-closed direction, so a wrong
+  answer costs a local build and never skips one the CI would run. Pass the same `--project-dir`
+  the build gate uses. Required CI checks still have to be green, so the merge gate is unchanged.
 - **When to run what:** run `{build.quality-gate}` before each commit that touches `*.py`, and
   `{build.verify}` once before the PR. Scope the tests to one module while iterating.
 - **Every pushed head:** `test-compile` runs at every head pushed to a PR — not once for the run.
