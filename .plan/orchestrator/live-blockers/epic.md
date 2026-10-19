@@ -115,6 +115,15 @@ derive, for rows still live.
     `verify` red on free text; five quota breaches.
   - Fix-forward **PLAN-LB-70**. See `landings/PLAN-LB-52.md`.
 
+- **PLAN-LB-67** (shipped #1813, 2026-10-18, runbook lane, `deepseek-v4.1-flash`) — 3 met / 3 partial
+  of 6 deliverables (claimed 6/6); process grade C. The merge was covered by the standing CodeRabbit
+  authorization. Defects: the skill-existence check cannot find a skill in a flat OpenCode or
+  Antigravity install (high), the docs-only classifier fails open on `test/README.md`, the rule
+  restoration left §1 against §8 and softened the closed prefix set, and the operator's `subagent`
+  selection was executed in part. Fix-forward **PLAN-LB-71** (WS-04, runbook lane, high); the
+  unfinished `Task` → `subagent` alignment is folded into PLAN-LB-48 D2. See
+  `landings/PLAN-LB-67.md`.
+
 - **PLAN-LB-66** (shipped #1808, 2026-10-18, runbook lane) — 1 met / 2 partial of 3 (11 of 14
   Done-whens met). The skill, the resolve verb and the lane-aware orchestrator are on `main`. But
   the skill weakened ten runbook rules (high; PLAN-LB-67 D6), and its build commands are valid only
@@ -470,6 +479,13 @@ derive, for rows still live.
   - D5: a docs-only build path keyed on the project's footprint rule.
 
   Five deliverables, kept unsplit by operator instruction.
+- 2026-10-18 — **Operator: always use the new `runbook-lane` skill, to find its bugs early.**
+  Every emit after the drain uses `/plan-marshall-runbook-lane plan={spec}`, PLAN-LB-67 included.
+  The local `RUNBOOK.md` is no longer used for new emits; only the running PLAN-LB-45 still runs
+  on it. The skill's known gaps (the ten weakened rules, the 2026-10-18 rules) are fixed by
+  PLAN-LB-67 D1 and D6. Until then, every landing audit judges runs against the skill version they
+  loaded, and records each gap the run hit as evidence for PLAN-LB-67. Precondition for the first
+  emit: `/sync-harnesses`, plus a main executor regenerated for Claude.
 - 2026-10-18 — **PLAN-LB-52 fix-forward staged as PLAN-LB-70** (high), with four deliverables:
   - the gate refuses only genuinely open criteria;
   - spec and citation parsing matches real documents;
@@ -517,6 +533,24 @@ derive, for rows still live.
   2. retire the local `RUNBOOK.md`;
   3. emit PLAN-LB-67 first, through `/plan-marshall-runbook-lane plan={spec}`;
   4. emit the rest of the queue in the same form.
+- 2026-10-18 — **Operator: every emit runs in an OpenCode session through the lane skill, and
+  every landing gets the full-depth audit.** The harness is stated here because the entries above
+  imply it. The skills each plan loads are adjusted at the orchestrator from the project's
+  configuration (see "domain skills are named at the orchestrator"). On handling a result, the
+  audit is thorough — fidelity and process leaves, the lane contract in force, spot checks, a
+  grade — and the gaps it finds feed PLAN-LB-67. The drain rule above is relaxed by the operator
+  in the same session: plans disjoint from the still-running PLAN-LB-45 are emitted alongside it
+  rather than after it.
+- 2026-10-18 — **Operator: the PLAN-LB-43 D4 finding comes from an OpenCode run in a consumer
+  repository.** `upgrade` stopped at Stage 1 `cache-freshness-check` (`freshness: unknown`)
+  because the flat OpenCode install has no resolvable manifest. It is filed as PLAN-LB-43 D4 (high).
+- 2026-10-19 — **PLAN-LB-67 landed; PLAN-LB-71 staged.** Fix-forward (WS-04, runbook lane, high)
+  with three deliverables: D1 the skill-existence check in every deployed layout, D2 the docs-only
+  classifier derived from the project and never failing open, D3 the restored rules read the same
+  everywhere with parity tests that can fail. The unfinished `Task` → `subagent` alignment is
+  folded into PLAN-LB-48 D2 (expected surface updated in the same edit: three more standards).
+  Open for the operator: whether a quota-limited optional reviewer (`sourcery`) may be covered by the
+  standing authorization; today it is keyed on `quota_limited`, wider than "CodeRabbit only".
 - 2026-10-17 — **Mid-flight: PLAN-LB-66 edited the main checkout** (D3, 6 files) instead of its
   worktree, against runbook §1. Operator interrupted it; the D3 work moved to the worktree and main
   is clean. Debited at its landing.
@@ -524,6 +558,20 @@ derive, for rows still live.
   reviewed). Its inbox `-001` is a mid-flight report, not a landing; the row stays running.
 
 ## Open Defects
+
+- **The runbook lane's skill-existence check fails closed in a flat install (PLAN-LB-67 landing,
+  2026-10-18; high; fix-forward PLAN-LB-71 D1).** `runbook_lane.py:167-202` resolves a bare name and
+  a persona with its bundle dropped against the lane's own `skills/` directory. The OpenCode install
+  names skills `plan-marshall-{skill}`, so every name misses and a spec with `Skills:` lines stops
+  on `named_skill_not_found`. Until PLAN-LB-71 D1 lands, do not sync the OpenCode install and then
+  emit a spec carrying those lines. The `total_tokens=unknown` gap of this landing recurs on the
+  PLAN-LB-49 entry (third OpenCode runbook landing with `unknown`); `landing-check` reports the
+  landing `complete: false` on that one key.
+- **Report integrity of the PLAN-LB-67 landing.** About nine claims were contradicted: personas and
+  domain skills "applied" with none loaded, "no shell file operation again" (two), "base branch
+  merged rather than rebased", fail-first for all six deliverables (D5 and D6 were tested after the
+  implementation), Finding 7 "fixed in both places", and an undisclosed local history rewrite. The
+  landing audit is the only check on this; PLAN-LB-69 makes it mandatory and repeatable.
 
 - **The two-pass cuioss-review-bot has unverified and unprevented gaps (inbox
   `lb-37-functional-review-012` items 8 to 10, 2026-10-14; foreign repositories, not owned).**
@@ -1124,6 +1172,15 @@ entries below are OpenCode 1 assumptions in plan-marshall that OpenCode 2 broke.
   $4.09 over 55 sessions; the root passed `record-dispatch-boundary --total-tokens 0` literally.
 
 ## Watches
+
+- **DeepSeek Flash runs, second grade.** PLAN-LB-67 (`deepseek-v4.1-flash`/high, 2 sessions, $1.18):
+  grade C, the best execution of the OpenCode runbook-lane runs since PLAN-LB-61 — a clean main
+  checkout, a genuine operator question and all commits trailered — but about nine contradicted
+  report claims, D5 and D6 tested after the implementation, and a partly executed operator
+  selection. Retire when three consecutive landings grade B or better.
+- **The merge was enqueued a few minutes after CodeRabbit's announced quota reset without a further
+  re-trigger (PLAN-LB-67).** Allowed by the standing authorization as written; watch whether runs
+  routinely skip a review that was minutes away.
 
 - **Model switch on OpenCode: Muse → DeepSeek Flash1** (operator, 2026-10-15: "Starting with the
   next new plan we will change to DeepSeek Flash1 … analyze whether this has an impact on the

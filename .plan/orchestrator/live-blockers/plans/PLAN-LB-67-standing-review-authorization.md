@@ -35,6 +35,8 @@ product skill, in repository-neutral form.
 ## Deliverables
 
 1. **The skill's merge gate carries the standing authorization, scoped to quota-limited reviewers.**
+   - Skills: pm-plugin-development:plugin-architecture, pm-plugin-development:plugin-script-architecture, pm-dev-python:python-core, plan-marshall:ref-code-quality, pm-dev-python:pytest-testing, plan-marshall:persona-module-tester, pm-documents:ref-asciidoc, pm-documents:ref-documentation
+   - Persona: plan-marshall:persona-implementer
    - `runbook-lane/SKILL.md` § merge gate. For a required reviewer that the project marks as
      quota-limited (see D2), "reviewed the current head" may be replaced by all of these:
      1. **a qualifying review exists**: a formal review by that reviewer on one of this PR's heads,
@@ -67,6 +69,8 @@ product skill, in repository-neutral form.
 
 2. **`runbook_lane resolve` reports which required reviewers are quota-limited, from project
    configuration.**
+   - Skills: pm-plugin-development:plugin-architecture, pm-plugin-development:plugin-script-architecture, pm-dev-python:python-core, plan-marshall:ref-code-quality, pm-dev-python:pytest-testing, plan-marshall:persona-module-tester
+   - Persona: plan-marshall:persona-implementer
    - Each required and optional bot in the resolve payload gains `quota_limited: true|false`.
    - It is read from the bot's standard (`automatic-review/standards/{bot}.md`, the source the verb
      already reads `trigger_comment` from) or from `marshal.json`. Choose at outline and record why.
@@ -85,6 +89,8 @@ product skill, in repository-neutral form.
 3. **The lane applies the engineering personas as standards, and the reviewer persona refutes
    adversarially.** Added 2026-10-18 by operator instruction, from the pm-mcp-clients Antigravity
    runbook (`~/git/pm-mcp-clients/doc/agy/runbook.md` § 1.3, § 2 Steps 2–3 and 6).
+   - Skills: pm-plugin-development:plugin-architecture, pm-plugin-development:plugin-script-architecture, pm-dev-python:python-core, plan-marshall:ref-code-quality, pm-dev-python:pytest-testing, plan-marshall:persona-module-tester, pm-documents:ref-asciidoc, pm-documents:ref-documentation
+   - Persona: plan-marshall:persona-implementer
    - The skill names one persona per kind of work and tells the run to load it at that step:
      - implementer for production code;
      - module-tester for unit and module tests;
@@ -116,6 +122,8 @@ product skill, in repository-neutral form.
    Operator decision (2026-10-18): domain skills are decided **at the orchestrator**, when the spec
    is staged, not resolved inside the run. PLAN-LB-69 D4 makes the orchestrator write them into the
    spec.
+   - Skills: pm-plugin-development:plugin-architecture, pm-plugin-development:plugin-script-architecture, pm-dev-python:python-core, plan-marshall:ref-code-quality, pm-dev-python:pytest-testing, plan-marshall:persona-module-tester
+   - Persona: plan-marshall:persona-implementer
    - Each spec deliverable carries a `Skills:` line (domain skills) and a `Persona:` line. The
      lane reads both, loads them as standards before working on that deliverable, and lists them
      per deliverable in the progress file and the landing report.
@@ -140,6 +148,8 @@ product skill, in repository-neutral form.
    Each fails against PLAN-LB-66's merged skill and verb.
 
 5. **A docs-only change skips the full local build.**
+   - Skills: pm-plugin-development:plugin-architecture, pm-plugin-development:plugin-script-architecture, pm-dev-python:python-core, plan-marshall:ref-code-quality, pm-dev-python:pytest-testing, plan-marshall:persona-module-tester, pm-documents:ref-asciidoc
+   - Persona: plan-marshall:persona-implementer
    - The build gate checks the worktree diff against the base. If no buildable source changed, it
      runs no full `verify`: it checks the changed docs (format, internal links and references,
      `git status` showing only doc files) and records `build-gate: docs-only` in the progress
@@ -163,6 +173,8 @@ product skill, in repository-neutral form.
 
 6. **The skill restores every runbook rule PLAN-LB-66 weakened, so the local `RUNBOOK.md` can be
    retired.** Added 2026-10-18 from the PLAN-LB-66 landing (`landings/PLAN-LB-66.md`), high.
+   - Skills: pm-plugin-development:plugin-architecture, pm-plugin-development:plugin-script-architecture, pm-dev-python:python-core, plan-marshall:ref-code-quality, pm-dev-python:pytest-testing, plan-marshall:persona-module-tester
+   - Persona: plan-marshall:persona-implementer
    - The ten weakened or dropped rules are restored in repository-neutral form:
      1. "never `sleep`", with no "bare" qualifier;
      2. the merge gate names `verify` (the full build) green on the current head, not "the build

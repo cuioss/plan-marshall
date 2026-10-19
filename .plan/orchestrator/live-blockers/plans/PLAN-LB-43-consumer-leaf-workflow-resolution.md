@@ -83,6 +83,28 @@ This plan gives the leaf one script verb that returns the verified absolute path
    - **Warning precedence.** An import failure combined with a post-regeneration version split reports both warnings.
    - **Probe environment.** A probe started from a process whose `PYTHONPATH` makes the import succeed still reports the failure of the on-disk executor.
 
+4. **An OpenCode install in a consumer repository reaches a cache-freshness verdict, so `upgrade` can proceed past Stage 1.** Added 2026-10-18 by operator instruction, graded **high**, from an `upgrade` run on OpenCode in another (consumer) repository.
+
+   **The defect.** The run stopped at Stage 1 `cache-freshness-check` with `freshness: unknown`, `refuses_upgrade: true`, because the clone-root `dist-manifest.json` could not be resolved. The refusal is deliberate and terminal (`cache_freshness.py:229-234`); the lookup behind it is not:
+   - `find_installed_manifest_path` (`generate_executor.py:2610-2703`) probes `$PM_DIST_MANIFEST`, the `target/{target}/` tree of a bundles checkout, `base_path` and its parent, and the Claude-shaped mapping `…/plugins/cache/<m>` to `…/plugins/marketplaces/<m>`. A flat OpenCode install matches none of them.
+   - `newest_cache_version` already has a flat-install fallback (`cache_freshness.py:157-170`), so the cache version resolves while the manifest version does not: one check is flat-aware and the other is not.
+   - Stage 2 (`reconcile-marshal-json`, which runs `sync-defaults`) is never reached, so `system.provisioned_version` and `config_seed_fingerprint` stay at their old values (observed: `0.1.1938` against executor `0.1.1953` and installed plugin `0.1.1961`).
+   - The staleness preflight (`determine_mode check-staleness`) reports `marshal_status: unknown` rather than stale, so nothing flags the drift, and `executor_action` reads fresh.
+
+   **Requirements.**
+   - **Resolve the manifest for a flat OpenCode install.** Choose at outline between:
+     - extending the lookup with the location where an OpenCode install keeps or can be given its manifest; or
+     - having the OpenCode sync publish the manifest there.
+     - Record why.
+   - **A lookup that still finds nothing names what it probed.** The `unknown` verdict carries the probed paths in its `warning`, so a could-not-look result is distinguishable from a missing install (ADR-019).
+   - **The staleness preflight does not read `unknown` where drift is measurable.** With `marshal_version` and `executor_version` both readable and `installed_version` unresolvable, `marshal_status` is derived from the readable pair.
+
+   *Done when:* every test below fails at `55208ca7c`.
+   - **Flat OpenCode install, manifest present.** A fixture flat install with its manifest at the chosen location reports `fresh` or `stale` from `check_freshness`, never `unknown`.
+   - **Flat OpenCode install, manifest absent.** The fixture without the manifest reports `unknown` and names every probed path.
+   - **Staleness with no installed version.** `check-staleness` with `marshal_version` 0.1.1938, `executor_version` 0.1.1953 and no resolvable installed version reports `marshal_status: stale`, not `unknown`.
+   - **Upgrade proceeds.** In the fixture where the manifest resolves, `upgrade` passes Stage 1 and Stage 2 re-stamps `provisioned_version`.
+
 ## Claim Labels
 
 - OBSERVED: Step 4 maps `{bundle}:{skill}/SKILL.md` and `{bundle}:{skill}/workflow/{file}.md` only to `marketplace/bundles/{bundle}/skills/{skill}/…` and otherwise returns `workflow_not_found` — `marketplace/bundles/plan-marshall/agents/execution-context.md` L107-122.
@@ -96,6 +118,12 @@ This plan gives the leaf one script verb that returns the verified absolute path
 - HYPOTHESIS: the leaf can run the verb before Step 4 in a consumer repository, because the consumer's executor maps `plan-marshall:extension-api:extension_api` to the installed cache (verify-at-outline).
 - Verify-first clause: choose the host verb. The candidates are `extension_api` (the owner of the notation standard; recommended), a platform-runtime `layout` operation (which would collide with the running PLAN-LB-39 on `platform-runtime/standards/contract.md`), or `generate_executor`. Record why.
 - Verify-first clause: confirm that in-repository first, installed second is right for this repository — worktree source edits must stay visible to leaves — and for consumers, where the in-repository probe misses.
+- OBSERVED: `check_freshness` returns `freshness: unknown`, `refuses_upgrade: true` whenever `find_installed_manifest_path` returns `None` or the manifest carries no version — `marketplace/bundles/plan-marshall/skills/marshall-steward/scripts/cache_freshness.py` L226-234.
+- OBSERVED: `find_installed_manifest_path` has no candidate for a flat OpenCode install outside a `marketplace/bundles` checkout, an explicit `$PM_DIST_MANIFEST`, or the Claude `/plugins/cache/<m>` layout — `marketplace/bundles/plan-marshall/skills/tools-script-executor/scripts/generate_executor.py` L2610-2703.
+- OBSERVED: `newest_cache_version` has a flat-install fallback for Antigravity and OpenCode that the manifest lookup lacks — `cache_freshness.py` L157-170.
+- OBSERVED: an operator run on OpenCode in a consumer repository stopped at Stage 1 with `freshness: unknown`, left `system.provisioned_version` at `0.1.1938` (executor `0.1.1953`, installed plugin `0.1.1961`), and read `marshal_status: unknown` in `determine_mode check-staleness` (operator paste; the run is in another repository and is not re-run here).
+- HYPOTHESIS: `determine_mode check-staleness` resolves `installed_version` through the same manifest lookup, which is why it reads `unknown` — confirm at `marketplace/bundles/plan-marshall/skills/marshall-steward/scripts/determine_mode.py` (verify-at-outline).
+- Verify-first clause: find where an OpenCode install keeps, or can be given, a version manifest, before choosing between extending the lookup and publishing the manifest from the OpenCode sync.
 
 ## Expected Surface
 
@@ -108,15 +136,22 @@ This plan gives the leaf one script verb that returns the verified absolute path
 - OBSERVED: `marketplace/bundles/plan-marshall/skills/marshall-steward/scripts/upgrade.py` — probe environment, re-probe, warning precedence, direct-path entry (D3)
 - OBSERVED: `marketplace/bundles/plan-marshall/skills/tools-script-executor/templates/execute-script.py.template` — the failure output names the recovery command (D3)
 - OBSERVED: `marketplace/bundles/plan-marshall/skills/marshall-steward/references/upgrade-flow.md` — Step 0 calls the command (D3)
-- HYPOTHESIS: `marketplace/bundles/plan-marshall/skills/tools-script-executor/scripts/generate_executor.py` and its `SKILL.md` — only if the entry is hosted there (verify-at-outline) (D3)
+- OBSERVED: `marketplace/bundles/plan-marshall/skills/tools-script-executor/scripts/generate_executor.py` — the manifest lookup `find_installed_manifest_path` (D4); also hosts the D3 entry if chosen there (verify-at-outline for D3)
+- HYPOTHESIS: `marketplace/bundles/plan-marshall/skills/tools-script-executor/SKILL.md` — only if the D3 entry is hosted in `generate_executor.py` (verify-at-outline) (D3)
+- OBSERVED: `marketplace/bundles/plan-marshall/skills/marshall-steward/scripts/cache_freshness.py` — the `unknown` warning names the probed paths (D4)
+- HYPOTHESIS: `marketplace/bundles/plan-marshall/skills/marshall-steward/scripts/determine_mode.py` — `check-staleness` derives `marshal_status` from the readable pair (verify-at-outline) (D4)
+- HYPOTHESIS: `marketplace/targets/opencode/emitter.py` — only if the OpenCode sync publishes the manifest (verify-at-outline) (D4)
 - HYPOTHESIS: `marketplace/bundles/plan-marshall/skills/marshall-steward/SKILL.md` — canonical invocation of the entry (verify-at-outline) (D3)
 - OBSERVED: `test/plan-marshall/marshall-steward/` and `test/plan-marshall/tools-script-executor/` — the subprocess end-to-end tests (D3)
 
 ## Dependencies and Sequencing
 
 - Depends on: none. D3 builds on PLAN-LB-63 (shipped, `b90e8a25f`).
-- Split guard: three deliverables, each its own outline deliverable; each Done-when is its own
+- Split guard: four deliverables, each its own outline deliverable; each Done-when is its own
   success criterion. Do not merge them.
+- D4 overlap: the staged PLAN-LB-48 declares `marketplace/targets/opencode/emitter.py` and
+  `test/plan-marshall/script-shared/test_target_context.py`. If D4 publishes the manifest from
+  the OpenCode sync, sequence D4 after PLAN-LB-48. The emit gate decides.
 - D3 overlap: the running PLAN-LB-65 edits `marshall-steward/references/upgrade-flow.md` and
   `tools-script-executor/SKILL.md`. The emit gate decides.
 - Overlaps with:
