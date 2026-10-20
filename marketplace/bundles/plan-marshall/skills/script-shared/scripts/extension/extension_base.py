@@ -853,7 +853,8 @@ def filter_skill_map(skills_by_profile: dict, exclusions: set[str]) -> dict:
         exclusions: The exclusion set to apply.
 
     Returns:
-        A new map; the input is never mutated.
+        The input unchanged when there is nothing to filter, otherwise a new
+        map. The input is never mutated.
     """
     if not exclusions or not isinstance(skills_by_profile, dict):
         return skills_by_profile

@@ -13,13 +13,12 @@ CDI-positive path cannot pass by monkeypatching the very signal it claims to
 prove.
 """
 
-import json
 import os
 import sys
 import types
 from pathlib import Path
 
-from conftest import load_script_module, load_skill_module
+from conftest import create_marshal_json, load_script_module, load_skill_module
 
 # In-process module under test — a distinct load from the manage-personas suite
 # so the discovery cache here is not shared with those tests.
@@ -42,11 +41,7 @@ JAVA_QUARKUS = 'pm-dev-java:java-quarkus'
 
 def _write_marshal(config: dict) -> Path:
     """Write a real marshal.json where the project config reader resolves it."""
-    base = Path(os.environ['PLAN_BASE_DIR'])
-    base.mkdir(parents=True, exist_ok=True)
-    path = base / 'marshal.json'
-    path.write_text(json.dumps(config), encoding='utf-8')
-    return path
+    return create_marshal_json(Path(os.environ['PLAN_BASE_DIR']), config=config, nest_in_plan_dir=False)
 
 
 def _exclusions(*skills: str) -> dict:
@@ -208,6 +203,17 @@ def test_cmd_resolve_drops_an_excluded_composed_skill(tmp_path, monkeypatch):
 
     assert 'plan-marshall:ref-code-quality' not in result['skills']
     assert _mp.BASE_PERSONA in result['skills']
+
+
+def test_cmd_resolve_drops_an_excluded_base_persona(tmp_path, monkeypatch):
+    """The base skill is subject to the repository veto like every other skill."""
+    _write_persona(tmp_path, 'plan-marshall:persona-x', composes=[])
+    monkeypatch.setattr(_mp, 'resolve_bundles_root', lambda _script: tmp_path)
+    _write_marshal(_exclusions(_mp.BASE_PERSONA))
+
+    result = _mp.cmd_resolve(types.SimpleNamespace(persona_key='plan-marshall:persona-x', domains='java', module=''))
+
+    assert _mp.BASE_PERSONA not in result['skills']
 
 
 def test_cmd_resolve_keeps_a_composed_skill_without_an_exclusion(tmp_path, monkeypatch):

@@ -366,7 +366,7 @@ skills_by_profile:
 The persona / ref / profile identity model binds each work-activity profile to a persona shell whose `composes:` frontmatter declares the cross-cutting `ref-*` and `persona-*` concerns that profile carries. Phase-4-plan resolves that persona's flattened skill set and unions it into the task's resolved `skills[]` so every task carries its persona-declared concerns (e.g. an `implementation` task carries `ref-code-quality` via `persona-implementer`).
 
 1. **Derive the persona from the task's primary profile** via a reverse-lookup over persona frontmatter: scan the `profiles:` frontmatter of each `persona-*` skill and select the persona whose **first** `profiles:` entry (the primary identity profile) equals the task's profile `P`. The first-entry rule makes the binding unambiguous when a profile appears in multiple personas' lists. When no persona's primary profile matches `P`, skip augmentation for the task (the architecture-resolved defaults/optionals are the complete skill set).
-2. **Resolve the persona** and union its flattened skills into `task.skills`:
+2. **Run the resolver as an executed step** (not a description of one) and union its flattened skills into `task.skills`:
 
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-personas:manage_personas resolve \

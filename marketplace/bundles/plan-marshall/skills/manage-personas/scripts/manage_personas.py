@@ -5,7 +5,9 @@
 The ``resolve`` verb computes the transitive closure of a persona's composition
 DAG and emits one flat, deduped ``skills[]``:
 
-1. always the base ``plan-marshall:persona-plan-marshall-agent``;
+1. always the base ``plan-marshall:persona-plan-marshall-agent`` — assembled
+   unconditionally, then subject to the repository veto like every other skill
+   (see :func:`cmd_resolve`);
 2. the persona's direct ``composes:`` frontmatter edges (ref-* and persona-*);
 3. recursively, any composed persona's own composes/profiles (DAG, cycle-rejected);
 4. for each profile in the persona's ``profiles:`` frontmatter, the

@@ -12,21 +12,16 @@ Tier 2 (direct import): loads the bundle extension.py and inspects the
 applies_to_module() return value directly.
 """
 
-import json
 import os
 from pathlib import Path
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH for extension_base).
-from conftest import load_skill_module
+from conftest import create_marshal_json, load_skill_module
 
 
 def _write_marshal(config):
     """Write a real marshal.json where the project config reader resolves it."""
-    base = Path(os.environ['PLAN_BASE_DIR'])
-    base.mkdir(parents=True, exist_ok=True)
-    path = base / 'marshal.json'
-    path.write_text(json.dumps(config), encoding='utf-8')
-    return path
+    return create_marshal_json(Path(os.environ['PLAN_BASE_DIR']), config=config, nest_in_plan_dir=False)
 
 
 def _load_extension():
