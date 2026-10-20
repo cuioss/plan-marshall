@@ -192,13 +192,12 @@ class TestVerbTargetPropagationMatrix:
         [
             ('ANTIGRAVITY_AGENT', 'antigravity'),
             ('OPENCODE', 'opencode'),
-            ('OPENCODE_PID', 'opencode'),
             ('CLAUDE_CODE_SESSION_ID', 'claude'),
         ],
-        ids=['antigravity-signal', 'opencode-signal', 'opencode-pid-signal', 'claude-signal'],
+        ids=['antigravity-signal', 'opencode-signal', 'claude-signal'],
     )
     def test_every_env_signal_reaches_every_verb(self, no_platform_signal, monkeypatch, env_signal, expected):
-        """The tier is not one signal's privilege — all four reach all six verbs.
+        """The tier is not one signal's privilege — all three reach all six verbs.
 
         Without this row the matrix above would pass on a resolver that read only
         ``OPENCODE``, which is the exact config-only-plus-one-signal shape the

@@ -109,10 +109,9 @@ def _load_template_module() -> types.ModuleType:
     [
         ('ANTIGRAVITY_AGENT', 'antigravity', 'env'),
         ('OPENCODE', 'opencode', 'env'),
-        ('OPENCODE_PID', 'opencode', 'env'),
         ('CLAUDE_CODE_SESSION_ID', 'claude', 'env'),
     ],
-    ids=['antigravity-signal', 'opencode-signal', 'opencode-pid-signal', 'claude-signal'],
+    ids=['antigravity-signal', 'opencode-signal', 'claude-signal'],
 )
 def test_env_tier_outranks_local_config(monkeypatch, tmp_path, env_signal, expected_target, expected_source):
     """A platform env signal decides the target even when local harness config disagrees.
@@ -122,7 +121,7 @@ def test_env_tier_outranks_local_config(monkeypatch, tmp_path, env_signal, expec
     what its runtime injected. Each row writes a CONTRADICTING local harness config
     so a reader that consulted config first would answer wrongly.
     """
-    for name in ('ANTIGRAVITY_AGENT', 'OPENCODE', 'OPENCODE_PID', 'CLAUDE_CODE_SESSION_ID'):
+    for name in ('ANTIGRAVITY_AGENT', 'OPENCODE', 'CLAUDE_CODE_SESSION_ID'):
         monkeypatch.delenv(name, raising=False)
     harness_dir = tmp_path / '.plan' / 'local' / 'harness'
     harness_dir.mkdir(parents=True)
@@ -194,7 +193,7 @@ def test_config_tier_reports_its_own_fall_through_reason(
     dropped the mapping check and returned the scalar verbatim would pass every
     value-only assertion in this file.
     """
-    for name in ('ANTIGRAVITY_AGENT', 'OPENCODE', 'OPENCODE_PID', 'CLAUDE_CODE_SESSION_ID'):
+    for name in ('ANTIGRAVITY_AGENT', 'OPENCODE', 'CLAUDE_CODE_SESSION_ID'):
         monkeypatch.delenv(name, raising=False)
     root = outside_repo_dir / 'project'
     root.mkdir()

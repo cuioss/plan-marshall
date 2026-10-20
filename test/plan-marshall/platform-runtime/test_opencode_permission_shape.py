@@ -45,7 +45,8 @@ def list_settings(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pa
 
 
 def _load(path: pathlib.Path) -> dict:
-    return json.loads(path.read_text(encoding='utf-8'))
+    data: dict = json.loads(path.read_text(encoding='utf-8'))
+    return data
 
 
 def _exact_index(rules: list[dict], action: str, resource: str, effect: str) -> int | None:
