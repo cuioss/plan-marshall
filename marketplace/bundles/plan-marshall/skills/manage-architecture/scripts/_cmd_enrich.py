@@ -403,6 +403,23 @@ def enrich_add_domain(
         enriched['skills_by_profile'] = {}
 
     current = enriched['skills_by_profile']
+    # The merge below is add-only, so a skill persisted before the repository
+    # excluded it would survive every re-enrichment. Prune this domain's veto
+    # from the stored map first; the read seam applies the repository-wide
+    # union, this write path keeps the store honest for the domain it owns.
+    try:
+        from extension_base import excluded_skills, filter_skill_map
+
+        exclusions = excluded_skills(domain_key, project_dir)
+        if exclusions:
+            current = filter_skill_map(current, exclusions)
+            enriched['skills_by_profile'] = current
+            # The incoming map is filtered too: an extension that overrides
+            # applies_to_module and builds skills_by_profile itself never passes
+            # through ExtensionBase._build_applicable_result.
+            skills_by_profile = filter_skill_map(skills_by_profile, exclusions)
+    except Exception:
+        pass
     profiles_updated = []
 
     for profile_name, profile_data in skills_by_profile.items():

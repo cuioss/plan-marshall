@@ -27,8 +27,10 @@ ModuleBase, ModulePaths) are available via direct import from _build_discover.
 
 import fnmatch
 import functools
+import json
 import subprocess
 from abc import ABC, abstractmethod
+from pathlib import Path
 from posixpath import basename
 
 # Re-export build vocabulary constants from private implementation.
@@ -759,6 +761,183 @@ def should_execute_build(
     }
 
 
+def _entry_skill_notation(entry: object) -> str:
+    """Return the ``bundle:skill`` notation of a defaults/optionals entry."""
+    if isinstance(entry, dict):
+        return str(entry.get('skill') or '')
+    return str(entry)
+
+
+def _load_config_mapping(project_dir: str | None) -> dict:
+    """Read ``marshal.json`` from ``project_dir`` or from the execution context.
+
+    A caller that already knows its project directory (architecture enrich,
+    query and render) passes it, so its exclusion read cannot drift onto a
+    different project's configuration. A caller without one (the extension API's
+    ``applies_to_module``, the persona resolver) falls back to the project's
+    single config reader, which resolves the marshal path from the execution
+    context exactly as every other ``manage-config`` consumer does.
+
+    Every failure degrades to an empty mapping rather than raising.
+    """
+    if project_dir is not None:
+        path = Path(project_dir) / '.plan' / 'marshal.json'
+        try:
+            config = json.loads(path.read_text(encoding='utf-8'))
+        except (OSError, ValueError):
+            return {}
+        return config if isinstance(config, dict) else {}
+    try:
+        from _config_core import load_config
+    except Exception:
+        return {}
+    try:
+        config = load_config()
+    except Exception:
+        return {}
+    return config if isinstance(config, dict) else {}
+
+
+def _skill_domain_exclusions(project_dir: str | None = None) -> dict[str, set[str]]:
+    """Read every domain's ``excluded_skills`` set from ``marshal.json``.
+
+    The single reader behind :func:`excluded_skills` and
+    :func:`all_excluded_skills`, so the resolver, the architecture path and the
+    architecture read seam cannot drift onto different definitions of the veto.
+
+    Every read failure — an absent config, a malformed value or a config loader
+    that is not importable — degrades to an empty mapping ("no exclusions
+    declared") rather than raising, so no caller is aborted by a repository that
+    simply has not configured any exclusions.
+    """
+    config = _load_config_mapping(project_dir)
+    skill_domains = config.get('skill_domains') if isinstance(config, dict) else None
+    if not isinstance(skill_domains, dict):
+        return {}
+    exclusions: dict[str, set[str]] = {}
+    for domain, entry in skill_domains.items():
+        raw = entry.get('excluded_skills') if isinstance(entry, dict) else None
+        if not isinstance(raw, list):
+            continue
+        configured = {str(item).strip() for item in raw if str(item).strip()}
+        if configured:
+            exclusions[str(domain)] = configured
+    return exclusions
+
+
+def excluded_skills(domain: str, project_dir: str | None = None) -> set[str]:
+    """Return the repository-level skill exclusions for ``domain``.
+
+    The exclusion list lives in ``marshal.json`` under
+    ``skill_domains.{domain}.excluded_skills`` and names skills in either the
+    full ``bundle:skill`` notation or the bare skill name. An exclusion always
+    wins: it removes a skill the module itself would qualify for, whichever
+    producer surfaced it.
+
+    Args:
+        domain: The skill-domain key whose exclusion list to read.
+        project_dir: The project whose ``.plan/marshal.json`` to read. Omit to
+            read the execution-context configuration.
+
+    Returns:
+        The configured exclusions, stripped and without empty entries.
+    """
+    if not domain:
+        return set()
+    return _skill_domain_exclusions(project_dir).get(domain, set())
+
+
+def all_excluded_skills(project_dir: str | None = None) -> set[str]:
+    """Return the union of every domain's configured exclusions.
+
+    Used at read seams that carry no domain attribution — a module's persisted
+    ``skills_by_profile`` map is one flat map, so the veto there is the
+    repository-level one: a skill any domain forbids does not reach a task.
+
+    Args:
+        project_dir: The project whose ``.plan/marshal.json`` to read. Omit to
+            read the execution-context configuration.
+    """
+    union: set[str] = set()
+    for configured in _skill_domain_exclusions(project_dir).values():
+        union |= configured
+    return union
+
+
+def filter_skill_map(skills_by_profile: dict, exclusions: set[str]) -> dict:
+    """Return a copy of a ``skills_by_profile`` map with excluded skills removed.
+
+    The single implementation of "apply the veto to a map", shared by the three
+    seams that can otherwise disagree: the architecture path that builds the map
+    (``ExtensionBase._build_applicable_result``), the enrichment merge that
+    persists it, and the read seam phase-4 consumes. Keeping one implementation
+    is what makes the exclusion bind a persisted, stale map rather than only a
+    freshly built one.
+
+    A profile the veto empties is marked ``"minimal": true``. That is the
+    existing declared-empty signal: the repository forbade the remaining skills,
+    which is a deliberate empty, not an unresolved profile that needs another
+    enrichment run.
+
+    Args:
+        skills_by_profile: A profile-keyed map of ``{defaults, optionals}``.
+        exclusions: The exclusion set to apply.
+
+    Returns:
+        The input unchanged when there is nothing to filter, otherwise a new
+        map. The input is never mutated.
+    """
+    if not exclusions or not isinstance(skills_by_profile, dict):
+        return skills_by_profile
+
+    filtered: dict = {}
+    for profile_name, profile_data in skills_by_profile.items():
+        if not isinstance(profile_data, dict):
+            filtered[profile_name] = profile_data
+            continue
+        kept = dict(profile_data)
+        had_entries = False
+        for key in ('defaults', 'optionals'):
+            entries = profile_data.get(key)
+            if not isinstance(entries, list):
+                continue
+            if entries:
+                had_entries = True
+            kept[key] = [entry for entry in entries if not is_excluded(_entry_skill_notation(entry), exclusions)]
+        if had_entries and not kept.get('defaults') and not kept.get('optionals'):
+            kept['minimal'] = True
+        filtered[profile_name] = kept
+    return filtered
+
+
+def is_excluded(skill: str, exclusions: set[str]) -> bool:
+    """True when ``skill`` matches an exclusion in full or bare-name form.
+
+    Matching is symmetric across notations: a bare-name exclusion removes the
+    full-notation skill and a full-notation exclusion removes the skill a cell
+    carries bare. A bundle-qualified exclusion against a bundle-qualified skill
+    is an exact comparison, so it narrows to that bundle instead of removing
+    every same-named skill.
+
+    Args:
+        skill: The skill notation to test (``bundle:skill`` or bare).
+        exclusions: The domain's configured exclusion set.
+
+    Returns:
+        ``True`` when the skill is excluded, ``False`` otherwise.
+    """
+    if not exclusions:
+        return False
+    if skill in exclusions:
+        return True
+    if ':' in skill:
+        # A qualified skill is narrowed by a bare exclusion only; another
+        # bundle's qualified entry must not remove it.
+        bare_skill = skill.split(':', 1)[-1]
+        return any(':' not in exclusion and exclusion == bare_skill for exclusion in exclusions)
+    return any(exclusion.split(':', 1)[-1] == skill for exclusion in exclusions)
+
+
 class ExtensionBase(ABC):
     """Abstract base class for domain bundle extensions (Axis-A: skill-loading).
 
@@ -1233,6 +1412,10 @@ class ExtensionBase(ABC):
         core = profiles.get('core', {})
         core_defaults = core.get('defaults', [])
         core_optionals = core.get('optionals', [])
+        # A repository-level exclusion binds this path exactly as it binds the
+        # persona resolver: the persisted skills_by_profile a later phase reads
+        # must never carry a skill the repository forbids.
+        exclusions = excluded_skills(str(domains.get('domain', {}).get('key') or ''))
 
         # Determine which profiles are active (three-layer resolution)
         profile_filter: set[str] | None
@@ -1260,7 +1443,7 @@ class ExtensionBase(ABC):
             'confidence': confidence,
             'signals': signals,
             'additive_to': additive_to,
-            'skills_by_profile': skills_by_profile,
+            'skills_by_profile': filter_skill_map(skills_by_profile, exclusions),
         }
 
 
