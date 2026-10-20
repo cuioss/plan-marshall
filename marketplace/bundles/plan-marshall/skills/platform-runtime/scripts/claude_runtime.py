@@ -369,8 +369,9 @@ _STATUSLINE_COMMAND = (
 # PreToolUse enforcement hook command. Installed (opt-in) as a
 # matcher-less ``hooks.PreToolUse`` entry, ORTHOGONAL to the terminal-title
 # render wiring: it invokes the enforcement leaf that blocks six hard-rule
-# violation families. R1-R4 and R6 apply inside a plan-marshall plan context
-# (fail-open elsewhere); R5 applies in every session. Keyed on its own command
+# violation families. R1-R4 apply inside a plan-marshall plan context
+# (fail-open elsewhere); R5 binds inside a plan context AND in every session of
+# this repository; R6 is not context-gated. Keyed on its own command
 # string so its present/divergence/MISSING
 # detection is independent of the render-entry detection.
 _ENFORCEMENT_HOOK_COMMAND = (

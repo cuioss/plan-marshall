@@ -1,9 +1,10 @@
 # PreToolUse Enforcement Hook
 
 The PreToolUse enforcement hook deterministically blocks six
-mechanically-checkable hard-rule violation families. Rules **R1–R4 and R6** apply
-ONLY when the call originates inside a plan-marshall plan context; **R5 applies in
-EVERY session, root sessions included** (it is not context-gated). This document
+mechanically-checkable hard-rule violation families. Rules **R1–R4** apply
+ONLY when the call originates inside a plan-marshall plan context; **R5 binds
+inside a plan context AND in every session of the plan-marshall source
+repository**; **R6 is not context-gated at all**. This document
 is the canonical reference for the hook's context gate, rule families, fail-open
 contract, the capture-validates-the-gate dependency chain, and the on-demand
 registration model.
@@ -28,10 +29,12 @@ the two leaves — all of it lives in `pretooluse_gate.py`.
 ## Context gate — `Signal1 OR Signal2` (fail-open)
 
 `pretooluse_gate.context_gate(payload)` is the single-sourced decision for
-whether a call is eligible for the GATED rules (R1–R4 and R6). It returns the OR
+whether a call is eligible for the GATED rules (R1–R4). It returns the OR
 of two stateless signals and is fail-open (False when neither fires, so calls
-outside a plan context are never enforced for those rules). R5 is NOT gated: the
-enforcement leaf runs it unconditionally, in every session.
+outside a plan context are never enforced for those rules). R5 is not covered by
+this predicate alone: it binds when the gate is satisfied OR this project IS the
+plan-marshall source repository, so a consumer repository's ordinary Python work
+is untouched outside a plan context. R6 is not gated at all.
 
 - **Signal 1 — sub-agent identity.** The sub-agent identity field carries the
   `:execution-context` marker (the call runs inside a dispatched
@@ -49,20 +52,21 @@ An absent Signal-1 field still lets Signal 2 satisfy the gate, and vice versa.
 
 The R1–R6 matchers are enforcement-only — they live solely in the enforcement
 leaf, layered on top of the shared gate, and run against the shared gate's
-`tool_name(payload)` / `tool_input(payload)` accessors. The leaf runs the R5
-matcher in EVERY session (no gate); when the gate is satisfied it also runs
-R1–R4 and R6. On the first matching rule the leaf appends one `guard.log` audit
+`tool_name(payload)` / `tool_input(payload)` accessors. When the gate is satisfied
+the leaf runs R1–R4; R5 runs when the gate is satisfied OR this project IS the
+plan-marshall source repository; R6 runs unconditionally. On the first matching
+rule the leaf appends one `guard.log` audit
 line (best-effort) and emits a `permissionDecision: deny` envelope carrying a
 one-line `permissionDecisionReason`; on no match it emits nothing.
 
 | Rule | Fires on | Redirect reason (substance) |
 |------|----------|-----------------------------|
 | **R1 shell-construct compound** | A Bash command containing an **unquoted, unescaped** `&&`, `;`, `&`, newline, `for`/`while` loop, `$(...)` command substitution, or leading `VAR=val cmd` inline env-var assignment. Quoting and backslash escapes are resolved first, so an operator confined to a quoted argument is data and does not fire — but a `$(...)` or backtick substitution still fires inside **double** quotes, where the shell still executes it | One command per Bash call — use separate Bash calls or dedicated tools |
-| **R2 Bash file-ops** | A Bash command whose program is `cat` / `grep` / `head` / `tail` / `find` / `ls`, **or** `git` whose subcommand (after any global options) is `grep` | Use the Read/Glob/Grep tools, not Bash, for file operations; for a content sweep run `architecture search --content --pattern P` |
+| **R2 Bash file-ops** | A Bash command whose program is `cat` / `grep` / `head` / `tail` / `find` / `ls`, a shell spawn (`sh` / `bash` / `source`), **or** `git` whose subcommand (after any global options) is `grep` | Use the Read/Glob/Grep tools, not Bash, for file operations; for a content sweep run `architecture search --content --pattern P` |
 | **R3 generated-executor edit** | An Edit/Write whose path is the generated `.plan/execute-script.py` | Regenerate the executor via `/sync-harnesses` + `/marshall-steward`; never edit it |
-| **R4 hard-coded build** | A Bash command invoking `./pw` or a bare `mvn` / `npm` / `gradle` | Resolve build commands via `plan-marshall:manage-architecture:architecture resolve` |
-| **R5 direct interpreter call** | A Bash command invoking an interpreter (`python` / `python3` / a versioned spelling such as `python3.12`, case-insensitively) as `-c`, a script path, or `-m` with any module — except the `python3 .plan/execute-script.py` executor permit (which may be an absolute path) and the shared allow-list of documented non-executor invocations. **R5 is not context-gated: it applies in every session, root sessions included.** Wrapper prefixes (`command` / `env` / `sudo` / `timeout` / `nice` / `nohup` / `time` / `xargs`, including `env -S`) are stripped first, so a wrapper cannot hide the interpreter | Route builds and checks via `python3 .plan/execute-script.py`; `.plan` state via `manage-*` verbs or the Read/Edit/Write tools |
-| **R6 raw finalize commit** | A raw `git commit` while the enclosing plan — NAMED by the worktree path, its `status.json` field `current_phase` read from the WORKTREE-RESIDENT record first (the live one during phase 5+) and the main-anchored record otherwise, never "the first plan found" — is in phase `6-finalize`. Every plan commit must pass through the gate-bearing `git-workflow commit` verb, which sanctions an open loop-back fix task, a review-rubric section-6 record, or a step id of the plan's composed phase-6 manifest | Commit via `python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow commit` |
+| **R4 hard-coded build** | A Bash command invoking `./pw` or a bare `mvn` / `npm` / `gradle` / `uv` (the program is read un-stripped and after R5 wrapper stripping, so `env uv run python -c ...` is refused) | Resolve build commands via `plan-marshall:manage-architecture:architecture resolve` |
+| **R5 direct interpreter call** | A Bash command invoking an interpreter (`python` / `python3` / a versioned spelling such as `python3.12`, case-insensitively) as `-c`, a script path, a bare `-` (STDIN) or a `-<`/`->` redirection, or `-m` with any module — except the executor permit (the relative `python3 .plan/execute-script.py`, or an absolute form resolving to `{repository root}/.plan/execute-script.py`) and the shared allow-list of documented non-executor invocations. **R5 binds inside a plan context AND in every session of the plan-marshall source repository.** Wrapper prefixes (`command` / `env` / `sudo` / `timeout` / `nice` / `nohup` / `time` / `xargs` / `exec` / `stdbuf` / `setsid`, including `env -S`) are stripped first, so a wrapper cannot hide the interpreter | Route builds and checks via `python3 .plan/execute-script.py`; `.plan` state via `manage-*` verbs or the Read/Edit/Write tools |
+| **R6 raw finalize commit** | A raw `git commit` while the enclosing plan — NAMED from the `git -C` target, then the shell workdir, then the project root, its `status.json` field `current_phase` read from the WORKTREE-RESIDENT record first (the live one during phase 5+) and the main-anchored record otherwise, never "the first plan found" — is in phase `6-finalize`. **R6 is not context-gated.** Every plan commit must pass through the gate-bearing `git-workflow commit` verb, which sanctions an open loop-back fix task, a review-rubric section-6 record, or a step id of the plan's composed phase-6 manifest | Commit via `python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow commit` |
 
 ### R5 — allow-list, wrappers, and the audit line
 
@@ -73,10 +77,14 @@ documented workflows runnable. Three things make that split explicit:
   [`r5-allowlist.json`](r5-allowlist.json), names the documented non-executor
   invocations R5 permits (the harness sync engine, the stewards' bootstrap
   scripts, and the executor generator). The Claude hook and the OpenCode guard
-  plugin read the SAME file, so the two decision tables agree. An entry is a
-  REPOSITORY-RELATIVE path, matched EXACTLY against the invocation's script path
-  resolved against the repository root — never a basename and never a suffix, so a
-  copy of an allow-listed script outside the repository never matches. A RELATIVE
+  plugin read the SAME file, so the two decision tables agree. Its `entries` are
+  REPOSITORY-RELATIVE paths, matched EXACTLY against the invocation's script path
+  resolved against the repository root; its `bundle_entries` are BUNDLE-RELATIVE
+  paths, matched EXACTLY against `{deployed bundle root}/{entry}` for the
+  platform-runtime bundle-cache layout (the nested Claude plugin cache and the
+  flat OpenCode / Antigravity skill roots). Neither form is ever a basename and
+  never a suffix, so a copy of an allow-listed script outside the repository, or
+  under a non-deployed directory, never matches. A RELATIVE
   token is joined with the shell's working directory FIRST, so a same-named script
   under a different cwd resolves outside the repository and is refused; the root
   is the project directory (the guard's `ctx.location.directory`; the hook's
@@ -188,12 +196,14 @@ The enforcement leaf fails OPEN on every path outside a matched rule, so a hook
 bug can never block the user:
 
 - Empty or malformed stdin → emit nothing, exit 0.
-- R5: run in every session; a match → deny, no match → fall through.
-- R1–R4/R6 context gate unsatisfied → emit nothing, exit 0.
+- R5: run when the gate is satisfied OR this project IS the plan-marshall source
+  repository; a match → deny, no match → fall through.
+- R1–R4 context gate unsatisfied → emit nothing, exit 0.
+- R6: run unconditionally; a match → deny, no match → fall through.
 - Gate satisfied but no rule matches → emit nothing, exit 0.
 - Any internal error → emit nothing, exit 0.
 
-Only R5 (unconditional) or a satisfied gate plus a first-matching R1–R4/R6 rule
+Only an R5 or R6 match, or a satisfied gate plus a first-matching R1–R4 rule,
 produces a deny. Every accessor in the shared gate is best-effort and degrades to
 a safe default rather than raising.
 

@@ -52,35 +52,38 @@
  *   R5 — direct interpreter calls bypassing the executor (bash): block when the
  *   first token is an interpreter (python/python3 or a versioned spelling such
  *   as python3.12) and the invocation is -c, a script path (any second token not
- *   starting with -), or -m with any module — the allow set is executor-only, so
- *   every -m form refuses. R5 applies in EVERY session in this repository, root
- *   sessions included, matching the Claude hook — there is no plan-context gate.
- *   Two exemptions apply: the executor permit, and the SHARED allow-list of
- *   documented non-executor invocations read from `r5-allowlist.json`. An
- *   allow-list entry is a REPOSITORY-RELATIVE path matched EXACTLY against the
- *   invocation's path resolved against the repository root — never a basename
- *   and never a suffix — so a copy of an allow-listed script outside the
- *   repository never matches.
+ *   starting with -), a bare - (STDIN), a -</- redirection, or -m with any
+ *   module — the allow set is executor-only, so every -m form refuses. R5 BINDS
+ *   inside a plan context (Signal 1 or Signal 2) and in EVERY session of THIS
+ *   repository; in a consumer repository outside a plan context it does not
+ *   refuse a consumer's ordinary Python work (python3 x.py, python3 -m venv,
+ *   python3 -m pip). Three admissions apply: the executor permit, the SHARED
+ *   repository-relative allow-list, and the SHARED bundle-relative allow-list
+ *   (matched EXACTLY against a resolved deployed bundle root); neither
+ *   allow-list form is ever a basename or a suffix — so a copy of an
+ *   allow-listed script outside the repository, or under a non-deployed
+ *   directory, never matches.
  *
  *   R6 — a raw `git commit` while the enclosing plan is in phase `6-finalize`
- *   => block. The plan is NAMED by the worktree path
- *   (`.../.plan/local/worktrees/{plan_id}`) and its phase is read from that
- *   plan's own `status.json` field `current_phase` — the worktree-resident
- *   record first (the live one during phase 5+), then the main-anchored record
- *   (git's common dir, or a `PLAN_BASE_DIR` override). Never "the first plan
- *   found" by a directory scan. Every plan commit must pass through the
- *   gate-bearing `git-workflow commit` verb, which sanctions an open loop-back
- *   fix task, a review-rubric section-6 record, or a composed phase-6 manifest
- *   step. Outside `6-finalize`, or with no plan state present, a raw commit is
- *   untouched.
+ *   => block. The plan is NAMED from the `git -C` TARGET (the persona-mandated
+ *   `git -C {WORKTREE} commit` form), then the `workdir`, then the project root;
+ *   its phase is read from that plan's own `status.json` field `current_phase` —
+ *   the worktree-resident record first (the live one during phase 5+), then the
+ *   main-anchored record (git's common dir, or a `PLAN_BASE_DIR` override). Never
+ *   "the first plan found" by a directory scan. Every plan commit must pass
+ *   through the gate-bearing `git-workflow commit` verb, which sanctions an open
+ *   loop-back fix task, a review-rubric section-6 record, or a composed phase-6
+ *   manifest step. Outside `6-finalize`, or with no plan state present, a raw
+ *   commit is untouched.
  *
  * TOKENISATION PARITY: the R5 branch tokenises with a quoting-aware splitter
  * (`shellSplit`) matching the Python hook's `shlex.split`, strips the SAME
  * wrapper set, and lowercases the program token for the interpreter check, so
  * the two decision tables agree on the interpreter surface.
  */
-import { appendFileSync, mkdirSync, readFileSync } from "node:fs"
+import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync } from "node:fs"
 import { execFileSync } from "node:child_process"
+import { homedir } from "node:os"
 import path from "node:path"
 import { Plugin } from "@opencode/plugin"
 
@@ -151,7 +154,21 @@ const R5_ALWAYS_REFUSE_FLAGS = new Set(["-c", "-m"])
 // before the first-token checks so a blocked invocation cannot be reached by
 // prefixing a wrapper. Options a wrapper does not itself consume are skipped
 // structurally; `timeout` additionally consumes its mandatory DURATION value.
-const SHELL_WRAPPERS = new Set(["command", "env", "sudo", "timeout", "nice", "nohup", "time", "xargs"])
+// This is an EXPLICIT list of known prefix programs — extended in one place and
+// mirrored by the Claude hook's `_R5_SHELL_WRAPPERS` — never guessed from shape.
+const SHELL_WRAPPERS = new Set([
+  "command",
+  "env",
+  "sudo",
+  "timeout",
+  "nice",
+  "nohup",
+  "time",
+  "xargs",
+  "exec",
+  "stdbuf",
+  "setsid",
+])
 
 // Per-wrapper options that consume a FOLLOWING value token. Kept PER WRAPPER on
 // purpose: `sudo -n` is a flag (non-interactive), so a single shared value set
@@ -165,6 +182,9 @@ const WRAPPER_VALUE_OPTS = {
   nice: new Set(["-n", "--adjustment"]),
   nohup: new Set([]),
   time: new Set([]),
+  exec: new Set(["-a"]),
+  stdbuf: new Set(["-i", "-o", "-e", "--input", "--output", "--error"]),
+  setsid: new Set([]),
   xargs: new Set([
     "-I", "-n", "-P", "-s", "-d", "-a", "-E", "-L", "-o", "-R", "-S",
     "--max-args", "--max-lines", "--max-chars", "--delimiter", "--arg-file",
@@ -177,6 +197,21 @@ const WRAPPER_VALUE_OPTS = {
 // even a missing data file, because it is the harness's own deploy step. An
 // entry is a REPOSITORY-RELATIVE path (see `repoRelativePath`).
 const R5_ALLOWLIST_BASE = ["marketplace/targets/sync.py"]
+
+// The ONE repository-relative marker that says "this project IS the plan-marshall
+// source repository". It is the project-local copy of the shared allow-list data
+// file, so the check is a statement about the same substrate R5 reads and needs
+// no second convention. In this repository R5 binds in EVERY session; in a
+// consumer repository it binds only inside a plan context (see `contextGate`).
+const R5_REPO_MARKER = "marketplace/bundles/plan-marshall/skills/platform-runtime/standards/r5-allowlist.json"
+
+// The sub-agent identity carries this marker when the call originates inside a
+// dispatched execution-context sub-agent (the Claude hook's Signal 1, shared
+// verbatim so the two harnesses agree).
+const EXECUTION_CONTEXT_MARKER = ":execution-context"
+
+// Path segment marking a plan worktree (the Claude hook's Signal 2).
+const WORKTREE_PATH_SEGMENT = "/.plan/local/worktrees/"
 
 const ASSIGNMENT_RE = /^[A-Za-z_][A-Za-z0-9_]*=/
 const VERSIONED_PYTHON_RE = /^python(\d+(\.\d+)*)?$/
@@ -379,12 +414,22 @@ function isPythonInterpreter(raw) {
   return VERSIONED_PYTHON_RE.test(t)
 }
 
-function isExecutorPermit(command) {
+// The executor permit — the ONE direct interpreter call R5 admits without an
+// allow-list entry. The relative form `.plan/execute-script.py` is the canonical
+// documented invocation (run from the repository root) and is admitted as-is.
+// An ABSOLUTE form is admitted only when it RESOLVES to
+// `{repository root}/.plan/execute-script.py` — so `python3
+// /tmp/x/.plan/execute-script.py` is refused, never admitted by suffix.
+function isExecutorPermit(command, root, cwd) {
   const tokens = commandTokens(command)
   if (tokens.length < 2) return false
   if (basenameOf(tokens[0]).toLowerCase() !== "python3") return false
   const second = stripMatchedQuotes(tokens[1]).replace(/\\/g, "/")
-  return second === ".plan/execute-script.py" || second.endsWith("/.plan/execute-script.py")
+  if (second === ".plan/execute-script.py") return true
+  if (!second.startsWith("/")) return false
+  const repoRoot = (root || cwd || "").replace(/\\/g, "/").replace(/\/+$/, "")
+  if (!repoRoot) return false
+  return normalizePosixPath(second) === `${repoRoot}/.plan/execute-script.py`
 }
 
 // Collapse a posix path to its normal form (`..` applied, no empty segments),
@@ -447,21 +492,124 @@ function isAllowListed(command, entries, root, cwd) {
   return entries.includes(relative)
 }
 
+// Resolve a script token to its absolute posix path, or "". A relative token is
+// joined with the shell `cwd` (falling back to the project `root`), so the
+// deployed-form comparison below sees the same absolute path the shell would
+// execute.
+function resolvedScriptPath(raw, root, cwd) {
+  const token = stripMatchedQuotes(raw).replace(/\\/g, "/")
+  if (!token) return ""
+  if (token.startsWith("/")) return normalizePosixPath(token)
+  const base = (cwd || root || "").replace(/\\/g, "/").replace(/\/+$/, "")
+  if (!base.startsWith("/")) return ""
+  return normalizePosixPath(base + "/" + token)
+}
+
+// The candidate deployed bundle roots, from the platform-runtime bundle-cache
+// layout: the OpenCode / Antigravity FLAT skill roots (deployed under
+// `{root}/plan-marshall-{skill}/`) plus the Claude plugin-cache NESTED root
+// (deployed under `{root}/plan-marshall/{version}/`). Read from the environment
+// so a fixture can place a deployed tree where the guard looks. Deduplicated.
+function deployedBundleRoots() {
+  const home = process.env.HOME || homedir() || ""
+  const configDir = process.env.XDG_CONFIG_HOME || (home ? path.join(home, ".config") : "")
+  const roots = []
+  if (process.env.OPENCODE_CONFIG_DIR) roots.push(path.join(process.env.OPENCODE_CONFIG_DIR, "skills"))
+  if (configDir) {
+    roots.push(path.join(configDir, "opencode", "skills"), path.join(configDir, "opencode", "skill"))
+  }
+  if (home) {
+    roots.push(
+      path.join(home, ".config", "opencode", "skills"),
+      path.join(home, ".claude", "skills"),
+      path.join(home, ".claude", "plugins", "cache", "plan-marshall"),
+      path.join(home, ".agents", "skills"),
+      path.join(home, ".gemini", "config", "plugins", "plan-marshall", "skills"),
+      path.join(home, ".gemini", "config", "skills"),
+      path.join(home, ".gemini", "antigravity", "skills"),
+    )
+  }
+  return [...new Set(roots)]
+}
+
+// Every absolute path a BUNDLE-RELATIVE allow-list entry (`skills/{skill}/{rest}`)
+// can be deployed at, across the nested and flat shapes, for every candidate
+// root. The nested shape is `{root}/plan-marshall/{entry}` (and each versioned
+// `{root}/plan-marshall/{version}/{entry}`); the flat shape reconstructs the
+// skill's dash-namespaced directory name as `{root}/plan-marshall-{skill}/{rest}`.
+function bundleEntryCandidates(entry, roots) {
+  const parts = String(entry).split("/")
+  if (parts.length < 2 || parts[0] !== "skills") return []
+  const skill = parts[1]
+  const rest = parts.slice(2).join("/")
+  const flatName = `plan-marshall-${skill}`
+  const candidates = new Set()
+  for (const root of roots) {
+    candidates.add(rest ? path.join(root, flatName, rest) : path.join(root, flatName))
+    const nested = path.join(root, "plan-marshall")
+    candidates.add(path.join(nested, entry))
+    try {
+      for (const name of readdirSync(nested)) {
+        const versionDir = path.join(nested, name)
+        try {
+          if (statSync(versionDir).isDirectory()) candidates.add(path.join(versionDir, entry))
+        } catch {
+          // An unreadable version entry is skipped; never guessed at.
+        }
+      }
+    } catch {
+      // No nested bundle directory under this root — the flat shape may still
+      // match above, and a root with neither shape contributes no candidate.
+    }
+  }
+  return [...candidates]
+}
+
+// Whether an absolute script path is a DEPLOYED bundle script on the shared
+// bundle-relative allow-list. Matched EXACTLY against
+// `{deployed bundle root}/{entry}` for every candidate root, so a same-named
+// script under a NON-deployed directory (`/tmp/x/skills/...`) never matches.
+function isDeployedAllowListed(absolutePath, bundleEntries, roots) {
+  if (!absolutePath || !absolutePath.startsWith("/")) return false
+  const normalized = normalizePosixPath(absolutePath)
+  for (const entry of bundleEntries) {
+    for (const candidate of bundleEntryCandidates(entry, roots)) {
+      if (normalizePosixPath(candidate) === normalized) return true
+    }
+  }
+  return false
+}
+
+// Whether this project IS the plan-marshall source repository (its project-local
+// copy of the shared allow-list data file is present).
+function isThisRepository(root) {
+  if (!root) return false
+  return existsSync(path.join(root, ...R5_REPO_MARKER.split("/")))
+}
+
+// The plan-context predicate: Signal 1 (the sub-agent identity carries the
+// execution-context marker) OR Signal 2 (the shell workdir, or the project root,
+// resolves under a plan-worktree path segment). Mirrors the Claude hook's
+// `gate.context_gate`.
+function contextGate(agent, workdir, root) {
+  if (typeof agent === "string" && agent.includes(EXECUTION_CONTEXT_MARKER)) return true
+  for (const candidate of [workdir, root]) {
+    if (typeof candidate !== "string" || !candidate) continue
+    const normalized = candidate.replace(/\\/g, "/").replace(/\/+$/, "") + "/"
+    if (normalized.includes(WORKTREE_PATH_SEGMENT)) return true
+  }
+  return false
+}
+
 // Read the shared allow-list. Project first, then the deployed OpenCode config
-// directory; absent (or empty) falls back to the built-in base table.
+// directory; absent (or empty) falls back to the built-in base table. Returns
+// BOTH forms — the repository-relative `entries` and the `bundleEntries` matched
+// against a deployed bundle root.
 function loadAllowList(root) {
-  const configRoot = process.env.XDG_CONFIG_HOME || path.join(process.env.HOME || "", ".config")
+  const home = process.env.HOME || homedir() || ""
+  const configRoot = process.env.XDG_CONFIG_HOME || (home ? path.join(home, ".config") : "")
   const candidates = [
-    path.join(
-      root,
-      "marketplace",
-      "bundles",
-      "plan-marshall",
-      "skills",
-      "platform-runtime",
-      "standards",
-      "r5-allowlist.json",
-    ),
+    path.join(root, ...R5_REPO_MARKER.split("/")),
     path.join(
       configRoot,
       "opencode",
@@ -483,15 +631,21 @@ function loadAllowList(root) {
     try {
       const data = JSON.parse(readFileSync(candidate, "utf8"))
       const entries = data && data.entries
+      const bundleEntries = data && data.bundle_entries
       if (entries && typeof entries === "object") {
         const keys = Object.keys(entries)
-        if (keys.length) return keys
+        if (keys.length) {
+          return {
+            entries: keys,
+            bundleEntries: bundleEntries && typeof bundleEntries === "object" ? Object.keys(bundleEntries) : [],
+          }
+        }
       }
     } catch {
       // Try the next candidate.
     }
   }
-  return [...R5_ALLOWLIST_BASE]
+  return { entries: [...R5_ALLOWLIST_BASE], bundleEntries: [] }
 }
 
 const R5_VALUE_TAKING_SINGLE = new Set(["c", "m", "W", "X"])
@@ -518,6 +672,10 @@ function isInterpreterBypass(secondRaw) {
   if (!t) return false
   if (R5_ALWAYS_REFUSE_FLAGS.has(t)) return true
   if (isCMCluster(t)) return true
+  // A bare `-` reads the program from STDIN, and a `-<`/`->` token is a
+  // redirection into it (`python3 - < x.py`, `python3 -<<<x`) — all bypass the
+  // executor exactly as `-c` does.
+  if (t === "-" || t.startsWith("-<") || t.startsWith("->")) return true
   if (t.startsWith("-")) return false
   return true
 }
@@ -535,6 +693,7 @@ function hasFlagPrefixedBypass(command) {
     const t = stripMatchedQuotes(toks[i])
     if (!t) continue
     if (t === "-c" || t === "-m" || t === "-" || t === "--") return true
+    if (t.startsWith("-<") || t.startsWith("->")) return true
     if (isCMCluster(t)) return true
     if (!t.startsWith("-")) return true
   }
@@ -578,13 +737,32 @@ function patchTextTargetsExecutor(patchText) {
 }
 
 // Whether the command is a plain `git commit` invocation — `git` as the
-// program, `commit` as the subcommand after any global options.
-function isGitCommit(command) {
-  if (normalizeToken(tokenAt(command, 0)).toLowerCase() !== "git") return false
+// program, `commit` as the subcommand after any global options — together with
+// the `-C` TARGET the commit is aimed at. R6 names the plan from that target
+// (when it lies under a plan worktree), so the persona-mandated
+// `git -C {WORKTREE} commit` form from the main checkout is judged by the
+// worktree's own plan. Successive `-C` values COMPOSE (git applies each in
+// order, resolving a relative value against the running target), so
+// `git -C . -C .plan/local/worktrees/plan-a commit` names the worktree too.
+function gitCommitTarget(command) {
+  if (normalizeToken(tokenAt(command, 0)).toLowerCase() !== "git") return { isCommit: false, target: null }
   const tokens = commandTokens(command)
   let i = 1
+  let target = null
   while (i < tokens.length) {
     const t = stripMatchedQuotes(tokens[i])
+    if (t === "-C") {
+      const value = stripMatchedQuotes(tokens[i + 1] ?? "")
+      target = target === null || value.startsWith("/") ? value : `${target}/${value}`
+      i += 2
+      continue
+    }
+    if (t.startsWith("-C") && !t.startsWith("--") && t.length > 2) {
+      const value = t.slice(2)
+      target = target === null || value.startsWith("/") ? value : `${target}/${value}`
+      i += 1
+      continue
+    }
     if (GIT_VALUE_OPTIONS.has(t)) {
       i += 2
       continue
@@ -593,9 +771,9 @@ function isGitCommit(command) {
       i++
       continue
     }
-    return t.toLowerCase() === "commit"
+    return { isCommit: t.toLowerCase() === "commit", target }
   }
-  return false
+  return { isCommit: false, target }
 }
 
 // The plan worktree a path names: `{ root, planId }` for a path carrying
@@ -644,22 +822,33 @@ function mainPlanLocalDir(root) {
   }
 }
 
+// Resolve a possibly-relative target path against a base directory, returning a
+// normalized posix path, or "" when no base is available for a relative target.
+function resolveTargetPath(target, base) {
+  if (typeof target !== "string" || !target) return ""
+  const normalized = target.replace(/\\/g, "/")
+  if (normalized.startsWith("/")) return normalizePosixPath(normalized)
+  const normalizedBase = (base || "").replace(/\\/g, "/").replace(/\/+$/, "")
+  if (!normalizedBase.startsWith("/")) return ""
+  return normalizePosixPath(normalizedBase + "/" + normalized)
+}
+
 // The enclosing plan's phase, read from the plan's own status.json field
-// `current_phase`. The plan is NAMED by the worktree path (never "the first plan
-// found"); the record is the WORKTREE-RESIDENT one first — the live record during
-// phase 5+, where prepare_execute moves the plan directory — then the
-// main-anchored live record. Empty when no plan worktree is named, or no readable
-// record resolves.
-function planPhase(workdir, root) {
-  const planId = worktreeInfoFromPath(workdir)?.planId || worktreeInfoFromPath(root)?.planId || ""
-  if (!planId) return ""
-  const candidates = []
-  const worktree = worktreeInfoFromPath(workdir) || worktreeInfoFromPath(root)
-  if (worktree !== null) {
-    candidates.push(path.join(worktree.root, ".plan", "local", "plans", planId, "status.json"))
-  }
+// `current_phase`. The plan is NAMED, in priority order, by the `git -C` target
+// (the persona-mandated `git -C {WORKTREE} commit` form), then the shell
+// `workdir`, then the project `root` — never "the first plan found". The record
+// is the WORKTREE-RESIDENT one first (the live one during phase 5+), then the
+// main-anchored live record. Empty when no plan worktree is named, or no
+// readable record resolves.
+function planPhase(workdir, root, gitTarget) {
+  const named =
+    worktreeInfoFromPath(resolveTargetPath(gitTarget, workdir || root)) ||
+    worktreeInfoFromPath(workdir) ||
+    worktreeInfoFromPath(root)
+  if (named === null) return ""
+  const candidates = [path.join(named.root, ".plan", "local", "plans", named.planId, "status.json")]
   const base = mainPlanLocalDir(root)
-  if (base !== null) candidates.push(path.join(base, "plans", planId, "status.json"))
+  if (base !== null) candidates.push(path.join(base, "plans", named.planId, "status.json"))
   for (const candidate of candidates) {
     let data
     try {
@@ -676,9 +865,12 @@ function planPhase(workdir, root) {
 
 // R6 — a raw `git commit` in phase 6-finalize is refused: every plan commit
 // must pass through the gate-bearing `git-workflow commit` verb. The plan is
-// named by the worktree path and its phase read from `current_phase`.
+// named from the `git -C` target (then the worktree path) and its phase read
+// from `current_phase`.
 function isRawFinalizeCommit(command, workdir, root) {
-  return isGitCommit(command) && planPhase(workdir, root) === SOURCE_COMMIT_GATE_PHASE
+  const info = gitCommitTarget(command)
+  if (!info.isCommit) return false
+  return planPhase(workdir, root, info.target) === SOURCE_COMMIT_GATE_PHASE
 }
 
 function auditLine(rule, tool, sessionID, callID, detail) {
@@ -691,6 +883,7 @@ export default Plugin.define({
     const root = ctx.location?.directory || "."
     const logPath = path.join(root, ".plan", "temp", "guard.log")
     const allowList = loadAllowList(root)
+    const deployedRoots = deployedBundleRoots()
 
     function audit(entry) {
       try {
@@ -744,7 +937,7 @@ export default Plugin.define({
         )
       }
 
-      if (isExecutorPermit(command)) return
+      if (isExecutorPermit(command, root, workdir)) return
       if (token === "./pw" || basenameOf(tokenAt(command, 0)) === "pw") {
         const verb = tokenAt(command, 1)
         const passes = Boolean(verb && (verb.startsWith("generate") || verb.startsWith("--")))
@@ -780,14 +973,23 @@ export default Plugin.define({
             "[plan-marshall-guard] R4: hard-coded build command bypassing python3 .plan/execute-script.py is forbidden",
           )
         }
-        // R5 applies in EVERY session — root sessions included — with no
-        // plan-context gate. The allow-list is matched on the repo-relative path.
-        if (isAllowListed(command, allowList, root, workdir || root)) return
-        if (isInterpreterBypass(tokenAt(command, 1)) || hasFlagPrefixedBypass(command)) {
-          audit(auditLine("R5", tool, sessionID, callID, command))
-          throw new Error(
-            "[plan-marshall-guard] R5: direct python interpreter calls (python -c, script paths, python -m) bypassing the executor are forbidden; route builds and checks via python3 .plan/execute-script.py and .plan state via manage-* verbs or the Read/Edit/Write tools",
-          )
+        // R5 binds inside a plan context and in EVERY session of THIS repository;
+        // in a consumer repository outside a plan context it does not refuse a
+        // consumer's ordinary Python work (python3 x.py, python3 -m venv,
+        // python3 -m pip). Inside one it refuses every non-executor form.
+        if (contextGate(event?.agent, workdir, root) || isThisRepository(root)) {
+          // Two admissions, both EXACT: the repository-relative allow-list, and
+          // the deployed bundle-relative allow-list matched against a resolved
+          // bundle-cache root.
+          if (isAllowListed(command, allowList.entries, root, workdir || root)) return
+          const scriptPath = resolvedScriptPath(tokenAt(command, 1), root, workdir || root)
+          if (isDeployedAllowListed(scriptPath, allowList.bundleEntries, deployedRoots)) return
+          if (isInterpreterBypass(tokenAt(command, 1)) || hasFlagPrefixedBypass(command)) {
+            audit(auditLine("R5", tool, sessionID, callID, command))
+            throw new Error(
+              "[plan-marshall-guard] R5: direct python interpreter calls (python -c, script paths, python -m) bypassing the executor are forbidden; route builds and checks via python3 .plan/execute-script.py and .plan state via manage-* verbs or the Read/Edit/Write tools",
+            )
+          }
         }
         return
       }
