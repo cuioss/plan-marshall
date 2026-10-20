@@ -17,6 +17,7 @@ sandboxed plan directory.
 from __future__ import annotations
 
 import json
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -108,6 +109,39 @@ def test_a_permitted_refreeze_consumes_its_authorization(plan_context) -> None:
     assert _snap.write_snapshot(PLAN_ID)['status'] == 'success'
     assert _snap.integrity_record(PLAN_ID)['refreeze_authorized'] is False
     assert _snap.write_snapshot(PLAN_ID)['error'] == 'refreeze_requires_decision'
+
+
+def test_one_authorization_admits_exactly_one_concurrent_refreeze(plan_context, monkeypatch) -> None:
+    _plan(plan_context, use_worktree=False)
+    assert _snap.write_snapshot(PLAN_ID)['status'] == 'success'
+    assert _snap.authorize_refreeze(PLAN_ID, 'operator: approve the refined criteria')['status'] == 'success'
+    real_build = _snap.build_snapshot
+    first_entered = threading.Event()
+    release = threading.Event()
+
+    def _slow_build(plan_id: str) -> dict[str, Any]:
+        if not first_entered.is_set():
+            first_entered.set()
+            release.wait(10)
+        return real_build(plan_id)
+
+    monkeypatch.setattr(_snap, 'build_snapshot', _slow_build)
+    results: list[dict[str, Any]] = []
+
+    def _run() -> None:
+        results.append(_snap.write_snapshot(PLAN_ID))
+
+    first = threading.Thread(target=_run)
+    first.start()
+    assert first_entered.wait(5)
+    second = threading.Thread(target=_run)
+    second.start()
+    release.set()
+    first.join(10)
+    second.join(10)
+
+    assert [result['status'] for result in results].count('success') == 1
+    assert [result.get('error') for result in results].count('refreeze_requires_decision') == 1
 
 
 def test_a_failed_refreeze_restores_the_prior_snapshot_bytes(plan_context, monkeypatch) -> None:

@@ -48,7 +48,8 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
@@ -627,7 +628,42 @@ def _roll_back_snapshot(path: Path, previous: bytes | None) -> bool:
     return True
 
 
+@contextmanager
+def _snapshot_guard(plan_id: str) -> Iterator[None]:
+    """Serialize every rewrite of one plan's snapshot artifact.
+
+    The status guard protects the digest merge, but the authorization check and
+    the snapshot write happen BEFORE it. Two concurrent re-freezes could both read
+    ``refreeze_authorized: true`` and each write a snapshot on one decision. This
+    plan-scoped guard covers the whole check-write-record sequence; the status
+    guard is still taken inside it for the integrity record, so the lock order is
+    always snapshot guard → status guard.
+    """
+    path = snapshot_path(plan_id)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with held_guard(path.with_name(f'{path.name}{_GUARD_SUFFIX}')):
+        yield
+
+
 def write_snapshot(plan_id: str) -> dict[str, Any]:
+    """Freeze the current outline as the plan's criteria snapshot.
+
+    Serialized per plan against every other snapshot rewrite, so a single
+    re-freeze authorization admits exactly one re-freeze.
+    """
+    try:
+        with _snapshot_guard(plan_id):
+            return _write_snapshot_locked(plan_id)
+    except TimeoutError:
+        return {
+            'status': 'error',
+            'plan_id': plan_id,
+            'error': 'snapshot_busy',
+            'message': 'another writer holds the criteria snapshot; nothing was written',
+        }
+
+
+def _write_snapshot_locked(plan_id: str) -> dict[str, Any]:
     """Freeze the current outline as the plan's criteria snapshot.
 
     The FIRST freeze is unconditional: there is nothing to replace. A RE-freeze
@@ -902,6 +938,28 @@ def authorize_change(
             'error': 'decision_log_unavailable',
             'message': f'the operator decision could not be logged ({logged.get("error", "unknown")})',
         }
+    try:
+        with _snapshot_guard(plan_id):
+            return _commit_authorization(plan_id, snapshot, number, criterion, decision, phase)
+    except TimeoutError:
+        return {
+            'status': 'error',
+            'plan_id': plan_id,
+            'error': 'snapshot_busy',
+            'message': 'another writer holds the criteria snapshot; the authorization was not recorded',
+        }
+
+
+def _commit_authorization(
+    plan_id: str,
+    snapshot: dict[str, Any],
+    number: int,
+    criterion: str,
+    decision: str,
+    phase: str,
+) -> dict[str, Any]:
+    """Rewrite the snapshot with one authorization and re-record its digest."""
+    wanted = normalize_criterion(criterion)
     entries = [
         entry
         for entry in snapshot.get('authorized_changes') or []
