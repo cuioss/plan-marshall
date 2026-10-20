@@ -175,3 +175,40 @@ def test_a_raising_decision_log_withdraws_the_refreeze_authorization(plan_contex
     assert result['error'] == 'decision_log_unavailable'
     assert 'withdrawn' in result['message']
     assert 'refreeze_authorized' not in _snap.integrity_record(PLAN_ID)
+
+
+def test_a_consumed_authorization_is_not_resurrected_by_a_failed_log(plan_context, monkeypatch) -> None:
+    """A re-freeze that consumed the authorization before the log failed wins."""
+    _plan(plan_context)
+
+    def _consume_then_fail(*args: Any, **kwargs: Any) -> dict[str, Any]:
+        assert _snap.write_snapshot(PLAN_ID)['status'] == 'success'
+        return {'status': 'error', 'error': 'injected'}
+
+    monkeypatch.setattr(plan_logging, 'log_decision', _consume_then_fail)
+
+    result = _snap.authorize_refreeze(PLAN_ID, 'operator: approve the refined criteria')
+
+    assert result['status'] == 'error', result
+    assert 'already consumed' in result['message']
+    assert _snap.integrity_record(PLAN_ID)['refreeze_authorized'] is False
+
+
+def test_a_raising_decision_log_rolls_the_change_authorization_back(plan_context, monkeypatch) -> None:
+    """The change path treats a raising log like a refused one and rolls back."""
+    plan_dir = _plan(plan_context)
+    before = _snapshot_file(plan_dir).read_bytes()
+
+    def _raise(*args: Any, **kwargs: Any) -> dict[str, Any]:
+        raise RuntimeError('injected log failure')
+
+    monkeypatch.setattr(plan_logging, 'log_decision', _raise)
+
+    result = _snap.authorize_change(PLAN_ID, 1, FROZEN[0], 'operator: approve the wording')
+
+    assert result['status'] == 'error', result
+    assert result['error'] == 'decision_log_unavailable'
+    assert 'injected log failure' in result['message']
+    assert 'rolled back' in result['message']
+    assert _snapshot_file(plan_dir).read_bytes() == before
+    assert _snap.snapshot_state(PLAN_ID) == 'frozen'

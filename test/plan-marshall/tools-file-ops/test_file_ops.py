@@ -136,9 +136,9 @@ def test_atomic_write_file_writes_exactly_one_terminating_newline(tmp_path, rela
 
 
 def test_atomic_write_bytes_writes_the_exact_bytes(tmp_path):
-    """Bytes are written verbatim: no encoding, decoding or newline is applied."""
+    """Bytes are written verbatim: no encoding, decoding, newline or terminator."""
     path = tmp_path / 'snapshot.bin'
-    payload = b'\xff\xfe not utf-8\n'
+    payload = b'\xff\xfe\r\n not utf-8'
 
     file_ops.atomic_write_bytes(path, payload)
 
@@ -146,7 +146,7 @@ def test_atomic_write_bytes_writes_the_exact_bytes(tmp_path):
 
 
 def test_a_failed_replace_leaves_the_prior_bytes_untouched(tmp_path, monkeypatch):
-    """A failure before the rename leaves the target holding its prior contents."""
+    """A failure before the rename leaves the target intact and removes the temp file."""
     path = tmp_path / 'snapshot.bin'
     path.write_bytes(b'prior bytes\n')
 
@@ -159,6 +159,7 @@ def test_a_failed_replace_leaves_the_prior_bytes_untouched(tmp_path, monkeypatch
         file_ops.atomic_write_bytes(path, b'replacement')
 
     assert path.read_bytes() == b'prior bytes\n'
+    assert list(tmp_path.glob('.tmp_*')) == []
 
 
 # =============================================================================

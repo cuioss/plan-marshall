@@ -288,6 +288,11 @@ def record_verdict_digest(plan_id: str, kind: str, verdict_file: str | Path) -> 
     return _merge_integrity(plan_id, _merge)
 
 
+def _log_failure_reason(logged: dict[str, Any]) -> str:
+    """The most informative field of a failed decision-log result."""
+    return str(logged.get('message') or logged.get('error') or 'unknown')
+
+
 def authorize_refreeze(plan_id: str, decision: str, phase: str = '3-outline') -> dict[str, Any]:
     """Record an operator decision authorizing a re-freeze of the snapshot.
 
@@ -341,30 +346,41 @@ def authorize_refreeze(plan_id: str, decision: str, phase: str = '3-outline') ->
     except Exception as exc:  # a log call that raised is a failed log, not a reason to skip the withdrawal
         logged = {'status': 'error', 'error': type(exc).__name__, 'message': str(exc)}
     if logged.get('status') != 'success':
+        outcome: dict[str, str] = {}
 
         def _withdraw(block: dict[str, Any]) -> None:
             # Best-effort undo, conditioned on the value this call set: a
             # concurrent write_snapshot may already have consumed the
             # authorization, and that decision must win. A newer authorization
-            # that also reads True is indistinguishable here; the withdrawal is
-            # therefore reported rather than claimed as an exact restore.
+            # that also reads True is indistinguishable here; the result names
+            # which state was observed rather than claiming an exact restore.
             if block.get('refreeze_authorized') is not True:
+                outcome['state'] = 'already_consumed'
                 return
             previous = already_authorized.get('previous')
             if previous is None:
                 block.pop('refreeze_authorized', None)
+                outcome['state'] = 'withdrawn'
             else:
                 block['refreeze_authorized'] = previous
+                outcome['state'] = 'restored' if previous else 'withdrawn'
 
         withdrawn = _merge_integrity(plan_id, _withdraw)
+        if not withdrawn:
+            effect = 'NOT withdrawn; the status record may still authorize it'
+        elif outcome.get('state') == 'already_consumed':
+            effect = 'not withdrawn: a concurrent re-freeze already consumed it'
+        elif outcome.get('state') == 'restored':
+            effect = 'withdrawn back to its prior authorization, so a re-freeze remains authorized'
+        else:
+            effect = 'withdrawn'
         return {
             'status': 'error',
             'plan_id': plan_id,
             'error': 'decision_log_unavailable',
             'message': (
-                f'the operator decision could not be logged ({logged.get("error", "unknown")}), so the '
-                'authorization was '
-                + ('withdrawn' if withdrawn else 'NOT withdrawn; the status record may still authorize it')
+                f'the operator decision could not be logged ({_log_failure_reason(logged)}), so the '
+                'authorization was ' + effect
             ),
         }
     return {'status': 'success', 'plan_id': plan_id, 'refreeze_authorized': True}
@@ -1047,7 +1063,7 @@ def _commit_authorization(
             'plan_id': plan_id,
             'error': 'decision_log_unavailable',
             'message': (
-                f'the operator decision could not be logged ({logged.get("error", "unknown")}), so the '
+                f'the operator decision could not be logged ({_log_failure_reason(logged)}), so the '
                 'authorization was '
                 + (
                     'rolled back'
