@@ -43,6 +43,7 @@ All methods return a serialized TOON string via the helpers in runtime_base.
 from __future__ import annotations
 
 import fnmatch
+import hashlib
 import json
 import os
 import re
@@ -107,6 +108,98 @@ INSTALLED_RULES_FILENAME = 'plan-marshall-target-rules.md'
 #: never false-positive a clobber report.
 _BRIDGE_MARKER_PATTERN = re.compile(r'bridge-version\s*:\s*\d')
 
+#: The content hash the bridge records for the baseline it was generated from.
+#: Drift is decided by comparing this hash to the CURRENT baseline, never by
+#: mtime: a checkout, a rebase or a ``touch`` moves mtime without changing a
+#: rule, and a mtime-only verdict would flag drift on every one of them.
+_SOURCE_HASH_PATTERN = re.compile(r'^source-sha256:\s*([0-9a-f]{64})$', re.MULTILINE)
+
+
+def _baseline_text(project_dir: Path) -> str | None:
+    """Return the standing-rules baseline's text, or ``None`` when unreadable."""
+    try:
+        return (project_dir / STANDING_RULES_BASELINE).read_text(encoding='utf-8')
+    except OSError:
+        return None
+
+
+def _bridge_body(baseline_text: str | None) -> str:
+    """Render the bridge file for *baseline_text*.
+
+    The bridge CARRIES the baseline's rules — it is generated from ``CLAUDE.md``,
+    so an OpenCode agent reads them without a second source of truth — and
+    records the baseline's SHA-256 so drift is a content comparison. With no
+    readable baseline there is nothing to carry and the bridge stays a marker
+    plus a pointer, which is still an honest statement of what was bridged.
+    """
+    if baseline_text is None:
+        return (
+            f'# Plan Marshall standing rules (OpenCode bridge {STANDING_RULES_BRIDGE_MARKER})\n\n'
+            f'Standing rules bridged from {STANDING_RULES_BASELINE} at project setup. '
+            'No readable baseline was present, so this file carries no rules yet; '
+            're-run setup once the baseline exists.\n'
+        )
+    digest = hashlib.sha256(baseline_text.encode('utf-8')).hexdigest()
+    return (
+        f'# Plan Marshall standing rules (OpenCode bridge {STANDING_RULES_BRIDGE_MARKER})\n\n'
+        f'source: {STANDING_RULES_BASELINE}\n'
+        f'source-sha256: {digest}\n\n'
+        f'<!-- Generated from {STANDING_RULES_BASELINE}; edit the baseline, not this file. -->\n\n'
+        f'{baseline_text}'
+    )
+
+
+def _write_rules_bridge(project_dir: Path) -> bool:
+    """Write the bridge file that carries the baseline's standing rules.
+
+    Returns whether the file was (re)written. The bridge owns its own file; the
+    installed target rules shipped by ``install.sh --emit-rules`` are never
+    written here, so a setup can no longer replace the full rules with a stub.
+    """
+    bridge = _bridge_rules_path(project_dir)
+    desired = _bridge_body(_baseline_text(project_dir))
+    try:
+        if bridge.is_file() and bridge.read_text(encoding='utf-8') == desired:
+            return False
+        bridge.parent.mkdir(parents=True, exist_ok=True)
+        bridge.write_text(desired, encoding='utf-8')
+        return True
+    except OSError:
+        return False
+
+
+def standing_rules_drift_status(project_dir: str) -> dict[str, Any]:
+    """Detect drift of the OpenCode standing-rules bridge against its baseline.
+
+    Drift is decided by CONTENT: the ``source-sha256`` the bridge recorded is
+    compared with the current baseline's hash. ``baseline_changed`` means the
+    rules moved; a mtime change alone is ``in_sync``. A bridge with the marker
+    but no recorded hash predates content tracking and is reported as
+    ``source_hash_missing`` rather than assumed current.
+    """
+    proj = Path(project_dir).resolve()
+    baseline = proj / STANDING_RULES_BASELINE
+    bridge = _bridge_rules_path(proj)
+    if not baseline.is_file():
+        return {'drift': False, 'needs_bridge': not bridge.is_file(), 'reason': 'baseline_missing'}
+    if not bridge.is_file():
+        return {'drift': False, 'needs_bridge': True, 'reason': 'bridge_missing'}
+    try:
+        text = bridge.read_text(encoding='utf-8')
+    except OSError:
+        return {'drift': True, 'needs_bridge': False, 'reason': 'bridge_unreadable'}
+    if STANDING_RULES_BRIDGE_MARKER not in text:
+        return {'drift': True, 'needs_bridge': False, 'reason': 'marker_mismatch'}
+    baseline_text = _baseline_text(proj)
+    if baseline_text is None:
+        return {'drift': True, 'needs_bridge': False, 'reason': 'baseline_unreadable'}
+    recorded = _SOURCE_HASH_PATTERN.search(text)
+    if recorded is None:
+        return {'drift': True, 'needs_bridge': False, 'reason': 'source_hash_missing'}
+    if recorded.group(1) != hashlib.sha256(baseline_text.encode('utf-8')).hexdigest():
+        return {'drift': True, 'needs_bridge': False, 'reason': 'baseline_changed'}
+    return {'drift': False, 'needs_bridge': False, 'reason': 'in_sync'}
+
 
 def _rules_dir(project_dir: Path) -> Path:
     """Return the OpenCode workspace rules directory."""
@@ -137,66 +230,6 @@ def installed_rules_clobbered(project_dir: Path) -> bool:
     except OSError:
         return False
     return _BRIDGE_MARKER_PATTERN.search(text) is not None
-
-
-def _write_rules_bridge(project_dir: Path) -> bool:
-    """Copy the bridged standing-rules header into the bridge-owned file.
-
-    The bridge owns its own file; the installed target rules shipped by
-    ``install.sh --emit-rules`` are never written here, so a setup can no
-    longer replace the full rules with a stub.
-    """
-    bridge = _bridge_rules_path(project_dir)
-    body = (
-        f'# Plan Marshall standing rules (OpenCode bridge {STANDING_RULES_BRIDGE_MARKER})\n\n'
-        f'Standing rules bridged from {STANDING_RULES_BASELINE} at project setup. '
-        'This file is a bridge, not a fork: the baseline stays authoritative, '
-        'and re-setup flags drift when this marker no longer matches the source.\n'
-    )
-    try:
-        if bridge.is_file() and STANDING_RULES_BRIDGE_MARKER in bridge.read_text(encoding='utf-8'):
-            try:
-                baseline = project_dir / STANDING_RULES_BASELINE
-                baseline_newer = baseline.is_file() and baseline.stat().st_mtime > bridge.stat().st_mtime
-            except OSError:
-                return False
-            if not baseline_newer:
-                # Bridge is current (baseline older, same age, or absent):
-                # nothing to re-affirm.
-                return False
-            # Baseline newer than the bridge: fall through to the rewrite
-            # below, which re-affirms the bridge and clears the
-            # baseline_newer drift verdict on re-setup. The bridge carries
-            # only the version marker plus a baseline pointer (no copied
-            # prose), so re-affirmation is a rewrite, not a content merge.
-        bridge.parent.mkdir(parents=True, exist_ok=True)
-        bridge.write_text(body, encoding='utf-8')
-        return True
-    except OSError:
-        return False
-
-
-def standing_rules_drift_status(project_dir: str) -> dict[str, Any]:
-    """Detect drift of the OpenCode standing-rules bridge against its baseline."""
-    proj = Path(project_dir).resolve()
-    baseline = proj / STANDING_RULES_BASELINE
-    bridge = _bridge_rules_path(proj)
-    if not baseline.is_file():
-        return {'drift': False, 'needs_bridge': not bridge.is_file(), 'reason': 'baseline_missing'}
-    if not bridge.is_file():
-        return {'drift': False, 'needs_bridge': True, 'reason': 'bridge_missing'}
-    try:
-        text = bridge.read_text(encoding='utf-8')
-    except OSError:
-        return {'drift': True, 'needs_bridge': False, 'reason': 'bridge_unreadable'}
-    if STANDING_RULES_BRIDGE_MARKER not in text:
-        return {'drift': True, 'needs_bridge': False, 'reason': 'marker_mismatch'}
-    try:
-        if baseline.stat().st_mtime > bridge.stat().st_mtime:
-            return {'drift': True, 'needs_bridge': False, 'reason': 'baseline_newer'}
-    except OSError:
-        return {'drift': True, 'needs_bridge': False, 'reason': 'stat_failed'}
-    return {'drift': False, 'needs_bridge': False, 'reason': 'in_sync'}
 
 
 #: Grant action wrappers ``to_opencode_grant`` peels before the tool grammar.
@@ -883,8 +916,11 @@ class OpenCodeRuntime(Runtime):
         self.permission_ensure_defaults(settings, settings_path, dry_run=False)
 
         resolved = pathlib.Path(project_dir).resolve()
-        bridge_written = _write_rules_bridge(resolved)
+        # The verdict is taken BEFORE the heal: a setup that rewrites the
+        # bridge has just found it drifted, and reporting the post-write
+        # ``in_sync`` would tell the operator nothing needed attention.
         drift = standing_rules_drift_status(str(resolved))
+        bridge_written = _write_rules_bridge(resolved)
 
         persisted_checkable = False
         persisted_warnings: list[dict[str, Any]] = []

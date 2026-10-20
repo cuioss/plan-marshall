@@ -1179,8 +1179,8 @@ def test_standing_rules_drift_in_sync_after_setup(runtime: OpenCodeRuntime, tmp_
     }
 
 
-def test_standing_rules_drift_baseline_newer(runtime: OpenCodeRuntime, tmp_path: pathlib.Path) -> None:
-    """A baseline modified after the bridge was written reports baseline_newer drift."""
+def test_standing_rules_drift_mtime_only_change_is_not_drift(runtime: OpenCodeRuntime, tmp_path: pathlib.Path) -> None:
+    """Touching the baseline without changing its content is NOT drift."""
     import os
 
     from opencode_runtime import _bridge_rules_path, standing_rules_drift_status
@@ -1193,10 +1193,78 @@ def test_standing_rules_drift_baseline_newer(runtime: OpenCodeRuntime, tmp_path:
     os.utime(tmp_path / 'CLAUDE.md', (past + 60, past + 60))
 
     assert standing_rules_drift_status(str(tmp_path)) == {
-        'drift': True,
+        'drift': False,
         'needs_bridge': False,
-        'reason': 'baseline_newer',
+        'reason': 'in_sync',
     }
+
+
+# =============================================================================
+# Standing-rules bridge carries CLAUDE.md's rules (D5)
+# =============================================================================
+
+
+def test_setup_bridge_carries_a_claude_md_sentinel_line(runtime: OpenCodeRuntime, tmp_path: pathlib.Path) -> None:
+    """A fresh setup over a CLAUDE.md carries its rules into the bridge file."""
+    sentinel = 'SENTINEL-RULE: never retry a missing plugin under another prefix'
+    (tmp_path / 'CLAUDE.md').write_text(f'# Project rules\n\n{sentinel}\n', encoding='utf-8')
+
+    result = _parse(runtime.project_initial_setup(str(tmp_path), 'opencode'))
+
+    assert result['bridge_written'] is True
+    bridge = tmp_path / '.opencode' / 'rules' / 'plan-marshall-standing-rules.md'
+    assert bridge.is_file()
+    text = bridge.read_text(encoding='utf-8')
+    assert sentinel in text, 'the bridge must carry the rules of the baseline, not a stub'
+    assert 'source-sha256:' in text, 'the bridge must record the content hash it was generated from'
+
+
+def test_editing_claude_md_makes_setup_report_drift(runtime: OpenCodeRuntime, tmp_path: pathlib.Path) -> None:
+    """Setup reports drift BEFORE it heals, and never reports no-drift for a rewrite."""
+    baseline = tmp_path / 'CLAUDE.md'
+    baseline.write_text('# Project rules\n\nfirst rule\n', encoding='utf-8')
+    _parse(runtime.project_initial_setup(str(tmp_path), 'opencode'))
+
+    baseline.write_text('# Project rules\n\nsecond rule\n', encoding='utf-8')
+    result = _parse(runtime.project_initial_setup(str(tmp_path), 'opencode'))
+
+    assert result['bridge_written'] is True, 'the second setup must heal the bridge'
+    assert result['bridge_drift'] is True, 'a setup that rewrote the bridge must not report no-drift'
+    bridge = tmp_path / '.opencode' / 'rules' / 'plan-marshall-standing-rules.md'
+    assert 'second rule' in bridge.read_text(encoding='utf-8')
+
+    third = _parse(runtime.project_initial_setup(str(tmp_path), 'opencode'))
+    assert third['bridge_written'] is False
+    assert third['bridge_drift'] is False
+
+
+def test_doc_surfaces_carry_the_missing_plugin_rule() -> None:
+    """Rule (b) and the resolver rule live in the persona and the OpenCode target rules."""
+    persona = (
+        pathlib.Path(__file__).resolve().parents[3]
+        / 'marketplace'
+        / 'bundles'
+        / 'plan-marshall'
+        / 'skills'
+        / 'persona-plan-marshall-agent'
+        / 'standards'
+        / 'agent-behavior-rules.md'
+    )
+    target_rules = (
+        pathlib.Path(__file__).resolve().parents[3]
+        / 'marketplace'
+        / 'bundles'
+        / 'plan-marshall-opencode'
+        / 'skills'
+        / 'target-rules'
+        / 'standards'
+        / 'opencode-rules.md'
+    )
+
+    for path in (persona, target_rules):
+        text = path.read_text(encoding='utf-8')
+        assert 'No plugin found for prefix' in text, f'{path} does not carry rule (b)'
+        assert 'architecture resolve' in text, f'{path} does not carry the build-resolution rule'
 
 
 def test_project_initial_setup_resestup_is_idempotent(runtime: OpenCodeRuntime, tmp_path: pathlib.Path) -> None:
@@ -1239,23 +1307,22 @@ def test_resestup_heals_drifted_bridge(runtime: OpenCodeRuntime, tmp_path: pathl
     assert standing_rules_drift_status(str(tmp_path))['reason'] == 'in_sync'
 
 
-def test_resestup_clears_baseline_newer_drift(runtime: OpenCodeRuntime, tmp_path: pathlib.Path) -> None:
-    """Re-setup re-affirms the bridge and clears a baseline_newer drift verdict."""
-    import os
-
+def test_resestup_clears_baseline_changed_drift(runtime: OpenCodeRuntime, tmp_path: pathlib.Path) -> None:
+    """Re-setup rewrites a bridge whose baseline content changed, and clears the drift."""
     from opencode_runtime import _bridge_rules_path, standing_rules_drift_status
 
-    (tmp_path / 'CLAUDE.md').write_text('# baseline\n', encoding='utf-8')
+    baseline = tmp_path / 'CLAUDE.md'
+    baseline.write_text('# baseline\n', encoding='utf-8')
     _parse(runtime.project_initial_setup(str(tmp_path), 'opencode'))
 
-    past = 1_000_000_000
-    os.utime(_bridge_rules_path(tmp_path), (past, past))
-    os.utime(tmp_path / 'CLAUDE.md', (past + 60, past + 60))
-    assert standing_rules_drift_status(str(tmp_path))['reason'] == 'baseline_newer'
+    baseline.write_text('# baseline\n\nnew rule\n', encoding='utf-8')
+    assert standing_rules_drift_status(str(tmp_path))['reason'] == 'baseline_changed'
 
     result = _parse(runtime.project_initial_setup(str(tmp_path), 'opencode'))
 
     assert result['bridge_written'] is True
+    assert result['bridge_drift'] is True, 'the pre-heal verdict is what the operator is told'
+    assert 'new rule' in _bridge_rules_path(tmp_path).read_text(encoding='utf-8')
     assert standing_rules_drift_status(str(tmp_path))['reason'] == 'in_sync'
 
 
