@@ -27,7 +27,7 @@ The target is registered in `TARGET_REGISTRY` (`marketplace/targets/__init__.py`
 
 === Output Layout
 
-OpenCode adheres to a distinct **singular** directory structure (`skill/`, `agent/`, `command/`), in contrast to Claude Code or Antigravity's plural conventions:
+The emitted tree keeps OpenCode's **singular** source directory names (`skill/`, `agent/`, `command/`), in contrast to Claude Code or Antigravity's plural conventions. The installer maps them onto the plural directories OpenCode reads (`skills/`, `agents/`, `commands/`), and the emitted `opencode.json` names the installed skill root in its OpenCode 2 `skills` list:
 
 [source,text]
 ----
@@ -46,7 +46,7 @@ target/opencode/
 ├── command/
 │   ├── plan-marshall-plan-marshall.md
 │   └── ...
-├── opencode.json
+├── opencode.json          # {"skills": ["./skills"], "agents": {...}}
 └── dist-manifest.json
 ----
 
@@ -73,14 +73,14 @@ OpenCode operates with a native set of agent tools. The mappings are declared in
 [cols="1,1,2", options="header"]
 |===
 | Claude Code Tool | OpenCode Tool | Operational Semantics
-| `Bash` | `bash` | Execute shell commands in POSIX runtime.
+| `Bash` | `shell` | Execute shell commands in POSIX runtime (OpenCode 2 action `shell`).
 | `Read` | `read` | Read local file contents.
 | `Write` | `edit` | Create or overwrite files.
 | `Edit` | `edit` | Precision contiguous edits on files.
 | `Glob` | `glob` | Filename search using pattern matching.
 | `Grep` | `grep` | Content regex and literal searching.
 | `AskUserQuestion` | `question` | Interactive user prompts and clarification questions.
-| `Task` | `task` | Spawns subagent execution tasks.
+| `Task` | `subagent` | Spawns subagent execution tasks (OpenCode 2 tool `subagent`).
 | `NotebookEdit` | _None (null)_ | Target-absent sentinel: OpenCode provides no native notebook editing tool; fail-closed omit.
 | `WebFetch` | `webfetch` | Web content retrieval.
 | `WebSearch` | `websearch` | Web search querying.
@@ -112,7 +112,7 @@ Skill and agent markdown bodies undergo deterministic transformation before emis
 
 1. **Skill Directives**:
    `Skill: {bundle}:{skill}` is rewritten to:
-   `Call the \`read\` tool on \`{bundle}-{skill}/SKILL.md\` before continuing.`
+   `Call the \`skill\` tool with \`{ id: "{bundle}-{skill}" }\` before continuing.`
 2. **Read Directives**:
    `Read: {path}` is rewritten to:
    `Call the \`read\` tool with \`{ path: "{path}" }\` before continuing.`
@@ -121,7 +121,7 @@ Skill and agent markdown bodies undergo deterministic transformation before emis
 
 == Permission Architecture & Enforcement
 
-OpenCode enforces tool-execution permissions from a **two-tier map**: a project-level `permission` block in `opencode.json` (host grant resolution) and a `tool.execute.before` guard plugin under `.opencode/plugin/` (hard-rule enforcement that throws to block). The two tiers are complementary: the map decides *which commands may run at all* per agent, and the guard blocks the six plan-marshall hard-rule bypass classes regardless of what the map permits.
+OpenCode 2 enforces tool-execution permissions from a **two-tier model**: an ordered `permissions` list in `opencode.json` (host grant resolution) and a `tool.execute.before` guard plugin under `.opencode/plugin/` (hard-rule enforcement that throws to block). The two tiers are complementary: the list decides *which commands may run at all* per agent, and the guard blocks the six plan-marshall hard-rule bypass classes regardless of what the list permits.
 
 === Configuration Locations & Precedence
 
@@ -131,33 +131,24 @@ OpenCode resolves configuration from three tiered locations:
 2. **Project Subdirectory (`<project_dir>/.opencode/opencode.json`)**: Alternative project-local configuration folder.
 3. **Global User Configuration (`~/.config/opencode/opencode.json`)**: User-global configuration. Can be overridden via the `OPENCODE_CONFIG_DIR` environment variable.
 
-The per-agent `permission` rows override the global `permission` block for that agent; an agent row's `"*"` fallback governs everything the row does not name.
+The per-agent `permissions` list is appended to the global one for that agent; OpenCode 2 applies the **last** matching rule, so a catch-all belongs at the front of each list and every specific rule after it.
 
 === Permission Schema
 
-OpenCode permissions are declared under the `"permission"` object conforming to `https://opencode.ai/config.json`. The `"bash"` property may be a blanket action (`"allow"`, `"ask"`, `"deny"`) or an explicit dictionary of command prefix patterns mapped to actions. The landed plan-marshall `opencode.json` combines both: the global block keeps the harness's default `"*": "allow"` and narrows it with never-legitimate deny rows plus rare-legitimate ask rows, and every agent row re-bases on `"*": "ask"` with explicit allow/deny overrides.
+OpenCode 2 permissions are declared under the `"permissions"` key as an ordered list of `{action, resource, effect}` rules conforming to `https://opencode.ai/config.json`. `action` is the tool name (`shell` for command execution), `resource` is a glob over the tool's input, and `effect` is `allow`, `ask` or `deny`. No match means `ask`. The landed plan-marshall `opencode.json` keeps the shell catch-all as the first rule and follows it with the never-legitimate deny rows, the rare-legitimate ask rows, and the final allow rows, so last-match-wins yields the intended effect. The OpenCode 1 `"permission"` map is not emitted; the normalizer would concatenate it *before* the list, where its catch-all could be overridden by the list's.
 
-=== Global Bash Permission Block
+=== Global Shell Permission List
 
 [source,json]
 ----
-"permission": {
-  "bash": {
-    "*": "allow",
-    "gh *": "deny", "glab *": "deny",
-    "rm *": "deny", "find *": "deny", "grep *": "deny", "cat *": "deny",
-    "head *": "deny", "tail *": "deny", "git grep *": "deny",
-    "pytest *": "deny", "python3 -m pytest *": "deny",
-    "mvn *": "deny", "mvnw *": "deny", "gradle *": "deny", "gradlew *": "deny",
-    "npm test *": "deny", "npm run *": "deny",
-    "git restore *": "deny", "git checkout -- *": "deny",
-    "git stash *": "deny", "git clean *": "deny",
-    "git push *": "ask", "git fetch *": "ask", "git pull *": "ask",
-    "git merge *": "ask", "git rebase *": "ask", "git reset *": "ask",
-    "python3 -m pip *": "ask", "pip install *": "ask",
-    "npm install *": "ask", "docker *": "ask"
-  }
-}
+"permissions": [
+  { "action": "shell", "resource": "*", "effect": "allow" },
+  { "action": "shell", "resource": "gh *", "effect": "deny" },
+  { "action": "shell", "resource": "glab *", "effect": "deny" },
+  { "action": "shell", "resource": "rm *", "effect": "deny" },
+  { "action": "shell", "resource": "git push *", "effect": "ask" },
+  { "action": "shell", "resource": "python3 .plan/execute-script.py *", "effect": "allow" }
+]
 ----
 
 The deny rows encode the never-legitimate classes: CI abstraction bypasses (`gh`, `glab`), shell file operations (`rm`), read-side probes treated as hard-rule violators at the global tier (`find`, `grep`, `cat`, `head`, `tail`, `git grep`), hard-coded build tools (`pytest`, `python3 -m pytest`, `mvn`, `mvnw`, `gradle`, `gradlew`, `npm test`, `npm run`), and destructive git recovery commands (`git restore`, `git checkout --`, `git stash`, `git clean`). The ask rows preserve rare legitimate escapes — network git operations, package installation, and container runs — behind operator confirmation.
@@ -177,19 +168,19 @@ The plugin is exercised by the Python test harness: `test/plan-marshall/platform
 
 === Role × Surface × Path Matrix
 
-The matrix below resolves every relevant (role, surface, path) cell. Rows are verified against the landed `opencode.json` permission block (D1) and the guard rules (D2) as implemented — the `Source` column names the exact row in the landed artifacts. Roles map to agents: **orchestrator** = `build`, **executor** = `execution-context` (and its level variants), **reader** = `execution-context-reader` (and its level variants).
+The matrix below resolves every relevant (role, surface, path) cell. Rows are verified against the landed `opencode.json` permission list (D1) and the guard rules (D2) as implemented — the `Source` column names the exact row in the landed artifacts. Roles map to agents: **orchestrator** = `build`, **executor** = `execution-context` (and its level variants), **reader** = `execution-context-reader` (and its level variants).
 
 ==== Orchestrator (`build` agent) — small-ops carve-out preserved under ask
 
 [cols="2,4,2,3", options="header"]
 |===
 | Surface | Path | Resolution | Source (landed artifact)
-| Executor | `python3 .plan/execute-script.py *` | allow | `agent.build.permission.bash` allow row; guard R4 exempts the permit
-| Build wrapper | `./pw *` | allow, narrowed by guard | `agent.build.permission.bash` allow row; guard R4 blocks build verbs, `./pw generate*` / `./pw --*` pass
-| Sync engine | `python3 marketplace/targets/sync.py *` | allow | `agent.build.permission.bash` allow row
-| Git read | `git status/log/diff/show/branch *` | ask | `agent.build.permission.bash` ask rows — information lookups stay available under operator confirmation
-| Read probes | `ls/cat/head/tail/grep/find *` | ask | `agent.build.permission.bash` ask rows — override the global deny for the orchestrator (carve-out as implemented)
-| Git write | `git add/commit *` and other unwritten git verbs | ask | `agent.build.permission.bash` `"*": "ask"` fallback
+| Executor | `python3 .plan/execute-script.py *` | allow | `agents.build.permissions` allow row; guard R4 exempts the permit
+| Build wrapper | `./pw *` | allow, narrowed by guard | `agents.build.permissions` allow row; guard R4 blocks build verbs, `./pw generate*` / `./pw --*` pass
+| Sync engine | `python3 marketplace/targets/sync.py *` | allow | `agents.build.permissions` allow row
+| Git read | `git status/log/diff/show/branch *` | ask | `agents.build.permissions` ask rows — information lookups stay available under operator confirmation
+| Read probes | `ls/cat/head/tail/grep/find *` | ask | `agents.build.permissions` ask rows — override the global deny for the orchestrator (carve-out as implemented)
+| Git write | `git add/commit *` and other unwritten git verbs | ask | `agents.build.permissions` `"*": "ask"` fallback
 | Network git | `git push/fetch/pull/merge/rebase/reset *` | ask | global ask rows (no build override)
 | Package install | `npm install *`, `pip install *`, `python3 -m pip *` | ask | global ask rows
 | Containers | `docker *` | ask | global ask row
@@ -245,9 +236,9 @@ The `OpenCodeRuntime` subclass implements target operations:
   ** `layout_bundle_cache_root()`: Probes global cache roots.
 * **Harness Ceiling**: Resolves 120 seconds as OpenCode's bash timeout ceiling.
 * **Permission Management**:
-  ** `permission_settings_path(scope, write, project_dir)`: Resolves global or project settings paths. When `write=True` and the target file is absent, initializes a valid `opencode.json` skeleton with schema and baseline grants.
+  ** `permission_settings_path(scope, write, project_dir)`: Resolves global or project settings paths. When `write=True` and the target file is absent, initializes an OpenCode 2 `opencode.json` skeleton with schema and a `permissions` list whose shell catch-all comes first.
   ** `permission_load_settings(path)` / `permission_save_settings(path, settings)`: Safe JSON I/O.
-  ** `permission_ensure_defaults(settings, settings_path, dry_run)`: Ensures baseline command patterns exist under `permission.bash`.
+  ** `permission_ensure_defaults(settings, settings_path, dry_run)`: Ensures baseline command patterns exist in the `permissions` list, after its catch-all, adding a `permission` map only when the file being edited already carries that OpenCode 1 shape.
   ** `permission_configure(scope, grants)`: Appends or updates grants translated via `to_opencode_grant()` — the mapping domain spans `allow`, `ask`, and `deny` actions.
   ** `permission_fix(scope, operation, arguments, dry_run)`: Supports `ensure`, `add`, `remove`, `consolidate`, `normalize`, and `protect-path` (a writing deny that emits guard-path entries as `deny`).
 * **Health Check**: Inspects presence of `opencode.json` (or global config) and verifies that `python3 .plan/execute-script.py *` is permitted.

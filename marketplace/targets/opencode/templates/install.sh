@@ -497,7 +497,14 @@ def tailor_config(
         if opencode_path.is_file():
             try:
                 data = json.loads(opencode_path.read_text(encoding='utf-8'))
-                if 'agent' in data and isinstance(data['agent'], dict):
+                # OpenCode 2 names the per-agent map ``agents``; the singular
+                # ``agent`` is the OpenCode 1 key kept readable so an older
+                # config that reaches this path is still pruned rather than
+                # silently left with agents for uninstalled bundles.
+                for key in ('agents', 'agent'):
+                    agents_map = data.get(key)
+                    if not isinstance(agents_map, dict):
+                        continue
                     allowed_stems = set()
                     for b in installed_bundles:
                         for a in bundle_components.get(b, {}).get('agents', []):
@@ -507,11 +514,11 @@ def tailor_config(
                         for comp in bundle_components.values()
                         for a in comp.get('agents', [])
                     }
-                    data['agent'] = {
-                        k: v for k, v in data['agent'].items()
+                    data[key] = {
+                        k: v for k, v in agents_map.items()
                         if k not in all_pm_stems or k in allowed_stems
                     }
-                    opencode_path.write_text(json.dumps(data, indent=2) + '\n', encoding='utf-8')
+                opencode_path.write_text(json.dumps(data, indent=2) + '\n', encoding='utf-8')
             except Exception:
                 pass
 

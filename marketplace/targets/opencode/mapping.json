@@ -5,7 +5,7 @@
     "Edit": "edit",
     "Glob": "glob",
     "Grep": "grep",
-    "Bash": "bash",
+    "Bash": "shell",
     "WebFetch": "webfetch",
     "WebSearch": "websearch",
     "AskUserQuestion": "question",
