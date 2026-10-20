@@ -369,10 +369,10 @@ The persona / ref / profile identity model binds each work-activity profile to a
 
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-personas:manage_personas resolve \
-     --persona-key {persona_key} --domains {D.domain}
+     --persona-key {persona_key} --domains {D.domain} --module {D.module}
    ```
 
-   Parse the returned `skills[]` and add each entry to `task.skills` that is not already present (dedup is idempotent — the base `persona-plan-marshall-agent` and any already-resolved skill are not duplicated). On `status: error` (e.g. `composition_cycle`, `composed_persona_not_found`), log a WARNING and continue with the architecture-resolved skills only — persona augmentation is additive and never plan-blocking.
+   Parse the returned `skills[]` and add each entry to `task.skills` that is not already present (dedup is idempotent — the base `persona-plan-marshall-agent` and any already-resolved skill are not duplicated). `--module {D.module}` is the task's module: the resolver admits a domain cell's optionals only when that module qualifies for them through the domain extension's module-level applicability, and removes any skill a repository-level exclusion names. When `module_status` is `unreadable`, log a WARNING naming the module and keep each affected cell's defaults-only result — never substitute the cell's full optional list. On `status: error` (e.g. `composition_cycle`, `composed_persona_not_found`), log a WARNING and continue with the architecture-resolved skills only — persona augmentation is additive and never plan-blocking.
 
 **Example Reasoning** (for JSON→TOON migration task):
 ```text

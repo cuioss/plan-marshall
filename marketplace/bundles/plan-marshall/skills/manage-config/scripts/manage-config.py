@@ -203,7 +203,7 @@ def main() -> int:
 
     sd_set_incl = sd_sub.add_parser(
         'set-inclusion',
-        help='Set the per-domain always_on / file_globs inclusion keys',
+        help='Set the per-domain always_on / file_globs / excluded_skills keys',
         allow_abbrev=False,
     )
     add_domain_arg(sd_set_incl)
@@ -219,6 +219,12 @@ def main() -> int:
         '--file-globs',
         dest='file_globs',
         help='Comma-separated file globs; a plan whose affected files match any glob includes this domain',
+    )
+    sd_set_incl.add_argument(
+        '--excluded-skills',
+        dest='excluded_skills',
+        help='Comma-separated bundle:skill (or bare skill) names the repository forbids for this domain; '
+        'an empty value clears the list; omit to leave it untouched',
     )
 
     sd_get_ext = sd_sub.add_parser(

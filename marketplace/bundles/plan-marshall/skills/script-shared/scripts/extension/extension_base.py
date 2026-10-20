@@ -1100,6 +1100,29 @@ class ExtensionBase(ABC):
         """
         return []
 
+    def qualifies_optional(self, profile: str, skill: str, module_data: dict) -> bool:
+        """Decide whether an optional skill is applicable to a specific module.
+
+        Profile x domain cells list optionals that MAY apply to a module. A
+        resolver that expands a cell for a concrete module asks this hook per
+        optional, so a domain can exclude optionals its module-level signals
+        disqualify — the Java extension, for example, excludes its CDI-dependent
+        optionals for a module with no CDI dependency.
+
+        The default returns ``True``: a domain that does not override this hook
+        has no module-level optional signal, so its optionals stay eligible.
+        Override in extensions that DO carry such a signal.
+
+        Args:
+            profile: The profile whose cell is being expanded.
+            skill: The ``bundle:skill`` notation of the optional.
+            module_data: Module dict from the module's derived data.
+
+        Returns:
+            ``True`` when the optional applies to the module, ``False`` otherwise.
+        """
+        return True
+
     def applies_to_module(self, module_data: dict, active_profiles: set[str] | None = None) -> dict:
         """Check if this domain applies to a specific module and return resolved skills.
 

@@ -336,6 +336,7 @@ def _build_module(
     # Description and parent from the same POM parse.
     description = pom_data.get('description')
     parent = pom_data.get('parent')
+    declared_dependencies = pom_data.get('dependencies') or []
 
     # Source directories (shared multi-language discovery)
     sources = discover_sources(module_path)
@@ -394,6 +395,11 @@ def _build_module(
         # Resolved dependency tree is an enrich-path concern; the cheap crawl
         # leaves this empty. ``enrich_maven_module`` fills it on demand.
         'dependencies': [],
+        # The module's OWN declared dependencies, parsed from the same cheap POM
+        # read. Unlike ``dependencies`` (the resolved tree, enrich-only), this is
+        # always available and is what module-level skill applicability reads
+        # (e.g. the Java extension's CDI/Lombok qualification).
+        'declared_dependencies': declared_dependencies,
         'stats': {'source_files': source_files, 'test_files': test_files},
         'commands': commands,
     }
