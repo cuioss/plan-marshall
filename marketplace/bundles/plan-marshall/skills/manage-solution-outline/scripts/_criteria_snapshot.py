@@ -219,18 +219,36 @@ def snapshot_state(plan_id: str) -> str:
     path = snapshot_path(plan_id)
     if path.is_file():
         recorded = info.get('snapshot_digest')
-        if frozen and isinstance(recorded, str) and path_digest(path) != recorded:
+        if frozen and (not isinstance(recorded, str) or path_digest(path) != recorded):
+            # A freeze with no digest string is not a binding: the record says the
+            # snapshot is frozen but nothing can verify it, so it is treated as
+            # tampered rather than trusted as 'frozen'.
             return 'tampered'
         return 'frozen' if frozen else 'present'
     return 'deleted' if frozen else 'absent'
 
 
-def record_snapshot_digest(plan_id: str) -> bool:
-    """Record the frozen snapshot's digest in the status record, outside the file."""
+def record_snapshot_digest(plan_id: str, *, consume_refreeze: bool = False) -> bool:
+    """Record the frozen snapshot's digest in the status record, outside the file.
+
+    ``consume_refreeze`` adds ``refreeze_authorized=False`` to the SAME guarded
+    update. A re-freeze must consume its authorization atomically with the digest
+    it authorizes: two writes would let a failed consumption leave the decision
+    active, so the next call could re-freeze without a new decision.
+    """
     path = snapshot_path(plan_id)
     if not path.is_file():
         return False
-    return record_integrity(plan_id, **{SNAPSHOT_FROZEN_KEY: True, 'snapshot_digest': path_digest(path)})
+    try:
+        digest = path_digest(path)
+    except OSError:
+        # The file existed a moment ago; a concurrent delete or a permission change
+        # must report "not recorded" so the caller rolls its write back.
+        return False
+    fields: dict[str, Any] = {SNAPSHOT_FROZEN_KEY: True, 'snapshot_digest': digest}
+    if consume_refreeze:
+        fields['refreeze_authorized'] = False
+    return record_integrity(plan_id, **fields)
 
 
 def record_verdict_digest(plan_id: str, kind: str, verdict_file: str | Path) -> bool:
@@ -590,17 +608,20 @@ def read_snapshot(plan_id: str) -> dict[str, Any] | None:
     return parsed
 
 
-def _roll_back_snapshot(path: Path, previous: str | None) -> bool:
+def _roll_back_snapshot(path: Path, previous: bytes | None) -> bool:
     """Undo one snapshot write: restore the prior bytes, or remove a first freeze.
 
-    Returns ``False`` when the rollback itself failed, so the caller reports that
-    the artifact may still be on disk rather than claiming it was removed.
+    The prior content is carried as BYTES, not text: a corrupt snapshot that does
+    not decode must still be restorable, and decoding it would fail before the
+    digest is even recorded. Returns ``False`` when the rollback itself failed, so
+    the caller reports that the artifact may still be on disk rather than claiming
+    it was removed.
     """
     try:
         if previous is None:
             path.unlink(missing_ok=True)
         else:
-            atomic_write_file(path, previous)
+            path.write_bytes(previous)
     except OSError:
         return False
     return True
@@ -644,12 +665,14 @@ def write_snapshot(plan_id: str) -> dict[str, Any]:
         snapshot['authorized_changes'] = list(existing.get('authorized_changes') or [])
     path = snapshot_path(plan_id)
     path.parent.mkdir(parents=True, exist_ok=True)
-    previous = path.read_text(encoding='utf-8') if path.is_file() else None
+    previous = path.read_bytes() if path.is_file() else None
     atomic_write_file(path, json.dumps(snapshot, indent=2, sort_keys=True) + '\n')
     # Bind the freeze OUTSIDE the file it protects: the status record (a different
     # file) holds the digest, so editing or deleting the snapshot
     # afterwards is detectable rather than silently read as the legacy shape.
-    if not record_snapshot_digest(plan_id):
+    # A permitted re-freeze consumes its authorization in the SAME guarded update.
+    consume_refreeze = previously_frozen and authorized
+    if not record_snapshot_digest(plan_id, consume_refreeze=consume_refreeze):
         # No record, no freeze. A snapshot left behind here would be read as the
         # legacy "present" shape and its digest could never be checked again, so
         # the write is rolled back: the prior bytes when this was a re-freeze, and
@@ -664,10 +687,6 @@ def write_snapshot(plan_id: str) -> dict[str, Any]:
                 'snapshot was kept' + ('' if rolled_back else ' (the partial snapshot could not be removed)')
             ),
         }
-    if previously_frozen and authorized:
-        # One decision authorizes one re-freeze: consume it so the next write is
-        # gated again.
-        record_integrity(plan_id, refreeze_authorized=False)
     return {
         'status': 'success',
         'plan_id': plan_id,
@@ -895,7 +914,7 @@ def authorize_change(
     entries.append({'deliverable': number, 'criterion': criterion, 'decision': decision, 'phase': phase})
     snapshot['authorized_changes'] = entries
     path = snapshot_path(plan_id)
-    previous = path.read_text(encoding='utf-8') if path.is_file() else None
+    previous = path.read_bytes() if path.is_file() else None
     atomic_write_file(path, json.dumps(snapshot, indent=2, sort_keys=True) + '\n')
     # Re-record the digest: the authorization rewrites the snapshot file, and a
     # recorded digest left on the pre-authorization bytes would read as tampering.

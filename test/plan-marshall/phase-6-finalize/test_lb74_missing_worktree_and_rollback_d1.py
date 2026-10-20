@@ -90,6 +90,41 @@ def test_a_plan_without_a_worktree_keeps_the_exemption(plan_context, tmp_path, m
     assert [item for item in payload['findings'] if item['kind'] == 'test_integrity_not_run'] == []
 
 
+def test_a_frozen_marker_without_a_digest_reads_as_tampered(plan_context) -> None:
+    plan_dir = _plan(plan_context, use_worktree=False)
+    assert _snap.write_snapshot(PLAN_ID)['status'] == 'success'
+    status = json.loads((plan_dir / 'status.json').read_text(encoding='utf-8'))
+    status['metadata']['criteria_integrity'] = {_snap.SNAPSHOT_FROZEN_KEY: True}
+    (plan_dir / 'status.json').write_text(json.dumps(status), encoding='utf-8')
+
+    assert _snap.snapshot_state(PLAN_ID) == 'tampered'
+
+
+def test_a_permitted_refreeze_consumes_its_authorization(plan_context) -> None:
+    _plan(plan_context, use_worktree=False)
+    assert _snap.write_snapshot(PLAN_ID)['status'] == 'success'
+    assert _snap.authorize_refreeze(PLAN_ID, 'operator: approve the refined criteria')['status'] == 'success'
+
+    assert _snap.write_snapshot(PLAN_ID)['status'] == 'success'
+    assert _snap.integrity_record(PLAN_ID)['refreeze_authorized'] is False
+    assert _snap.write_snapshot(PLAN_ID)['error'] == 'refreeze_requires_decision'
+
+
+def test_a_failed_refreeze_restores_the_prior_snapshot_bytes(plan_context, monkeypatch) -> None:
+    plan_dir = _plan(plan_context, use_worktree=False)
+    assert _snap.write_snapshot(PLAN_ID)['status'] == 'success'
+    snapshot_file = plan_dir / 'work' / 'criteria-snapshot.json'
+    corrupt = b'\xff\xfe not utf-8\n'
+    snapshot_file.write_bytes(corrupt)
+    assert _snap.authorize_refreeze(PLAN_ID, 'operator: approve the refined criteria')['status'] == 'success'
+    monkeypatch.setattr(_snap, 'record_integrity', lambda *_args, **_kwargs: False)
+
+    result = _snap.write_snapshot(PLAN_ID)
+
+    assert result['status'] == 'error'
+    assert snapshot_file.read_bytes() == corrupt
+
+
 def test_author_verdict_reports_a_failed_digest_record(plan_context, tmp_path, monkeypatch) -> None:
     _plan(plan_context, use_worktree=False)
     monkeypatch.setattr(review_support, 'record_verdict_digest', lambda *_args, **_kwargs: False)
