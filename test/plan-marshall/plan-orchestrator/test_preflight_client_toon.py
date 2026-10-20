@@ -325,6 +325,38 @@ def test_refresh_clears_a_stale_omission_reason(tmp_path: Path, monkeypatch: pyt
     assert 'model_omission_reason' not in _status_metadata(plan_dir)
 
 
+def test_refresh_keeps_a_self_reported_effort_on_a_mixed_tree(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A mixed re-read leaves a self-reported effort tagged self_reported."""
+    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+    monkeypatch.chdir(_router_project(tmp_path))
+    monkeypatch.setenv('OPENCODE', '1')
+    monkeypatch.delenv('OPENCODE_SESSION_ID', raising=False)
+    monkeypatch.delenv('OPENCODE_DB_PATH', raising=False)
+    plan_dir = _plan_with_status(tmp_path, 'my-plan')
+    _runtime_info_via_router(monkeypatch)
+    assert cmd_preflight(_ns('my-plan', effort='low'))['metadata_stamped'] is True
+    assert _status_metadata(plan_dir)['effort_source'] == 'self_reported'
+
+    db_path = tmp_path / 'opencode.db'
+    _write_session_db(
+        db_path,
+        [
+            ('ses-root', None, _opencode_model_json('deepseek-v4.1-flash', 'high')),
+            ('ses-child', 'ses-root', _opencode_model_json('gpt-5', 'low')),
+        ],
+    )
+    monkeypatch.setenv('OPENCODE_SESSION_ID', 'ses-root')
+    monkeypatch.setenv('OPENCODE_DB_PATH', str(db_path))
+
+    result = _orch.cmd_refresh_runtime_stamp(_refresh_ns('my-plan'))
+
+    assert result['refreshed'] is True
+    metadata = _status_metadata(plan_dir)
+    assert metadata['model'] == 'mixed'
+    assert metadata['effort'] == 'low'
+    assert metadata['effort_source'] == 'self_reported'
+
+
 def test_refresh_over_an_unchanged_tree_keeps_the_value(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """A tree unchanged since the start refreshes to the same measured value."""
     db_path = tmp_path / 'opencode.db'

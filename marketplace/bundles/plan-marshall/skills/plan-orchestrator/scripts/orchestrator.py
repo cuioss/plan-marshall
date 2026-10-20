@@ -6409,9 +6409,10 @@ _PREFLIGHT_METADATA_FIELDS: tuple[str, ...] = (
 SOURCE_MEASURED_AT_START = 'measured_at_start'
 
 #: Runtime fields a landing-time refresh rewrites when the measured payload
-#: carries them. ``models``, ``variant`` and ``provider`` are CLEARED when the
-#: re-read no longer reports them: a tree that collapsed back to one model must
-#: not keep the earlier mixed labels or a stale variant.
+#: carries them. They are CLEARED when the re-read no longer reports them: a
+#: tree that collapsed back to one model must not keep the earlier mixed labels
+#: or a stale variant, and a readable re-read must not keep the start-time
+#: ``model_omission_reason`` beside a model it just measured.
 _REFRESH_CLEARING_FIELDS: tuple[str, ...] = ('models', 'variant', 'provider', 'model_omission_reason')
 
 #: Runtime fields a refresh writes only when the measured payload carries them —
@@ -6910,9 +6911,10 @@ def cmd_refresh_runtime_stamp(args: argparse.Namespace) -> dict[str, Any]:
     if info.get('effort') is not None and str(info['effort']).strip():
         metadata['effort'] = str(info['effort'])
         metadata['effort_source'] = str(info.get('effort_source') or 'measured')
-    elif metadata.get('effort'):
+    elif metadata.get('effort') and metadata.get('effort_source') == 'measured':
         # The tree no longer reports a single variant (for example it is mixed),
-        # so the start-time effort is the only measured value in hand.
+        # so the start-time effort is the only measured value in hand. A
+        # SELF-REPORTED effort keeps its own tag — this verb measured nothing.
         metadata['effort_source'] = SOURCE_MEASURED_AT_START
 
     try:
