@@ -27,7 +27,8 @@ OpenCode-specific behaviour:
   success carrying the count would be a silently lost measurement).
 - metrics normalized-tokens and chat extract-signal return ``no-op`` with
   ``transcript_not_found`` (no session transcript exists to walk or reduce).
-- subagent dispatch succeeds, mapping the ``Task`` tool to OpenCode's ``task``.
+- subagent dispatch succeeds, mapping the ``Task`` tool to OpenCode 2's
+  ``subagent``.
 - health-check succeeds; the ``display`` check always reports unhealthy on
   OpenCode because no hook file is present.
 - wait for returns ``no-op``: OpenCode's runtime holds no wait channel, so the
@@ -256,7 +257,19 @@ def to_opencode_grant(perm: str) -> tuple[str, str, str]:
         inner = perm[perm.index('(') + 1 : -1].strip()
         return ('edit', inner, action)
 
-    if perm in ('read', 'edit', 'glob', 'grep', 'bash', 'webfetch', 'websearch', 'question', 'task', 'skill'):
+    if perm in (
+        'read',
+        'edit',
+        'glob',
+        'grep',
+        'bash',
+        'webfetch',
+        'websearch',
+        'question',
+        'task',
+        'subagent',
+        'skill',
+    ):
         return (perm, '*', action)
 
     return ('bash', perm, action)
@@ -1765,13 +1778,15 @@ class OpenCodeRuntime(Runtime):
         prompt_file: str | None,
         context: dict[str, Any] | None,
     ) -> str:
-        """Return OpenCode subagent invocation parameters.
+        """Return OpenCode 2 subagent invocation parameters.
 
-        Uses ``task`` (lowercase) as the OpenCode native tool name, and echoes
-        the REQUESTED *agent* back as ``subagent_type`` so the caller's
-        selection reaches the invocation instead of being discarded.
+        Uses ``subagent`` as the OpenCode 2 native tool name, and echoes the
+        REQUESTED *agent* back under the tool's own ``agent`` parameter so the
+        caller's selection reaches the invocation instead of being discarded.
+        OpenCode 2's sub-agent tool takes ``{agent, description, prompt}``;
+        OpenCode 1's ``task``/``subagent_type`` pair is not emitted.
 
-        Verify-first clause 1: the ``task``-tool dispatch fires only when the
+        Verify-first clause 1: the ``subagent``-tool dispatch fires only when the
         tool is available in this envelope. A caller that knows the tool is
         absent passes ``task_tool_available: False`` (legacy) or the
         target-neutral ``spawning_tool_available: False`` inside *context*;
@@ -1841,10 +1856,15 @@ class OpenCodeRuntime(Runtime):
                 'platform': 'opencode',
                 'usage': 'unknown',
                 'invocation': {
-                    'tool': 'task',
-                    'description': f'Run {agent}',
+                    'tool': 'subagent',
+                    'agent': agent,
+                    # ``prompt`` is NOT the last field: a block scalar that ends
+                    # the document loses its final newline to the document
+                    # terminator, and the prompt must cross the TOON boundary
+                    # byte-identical. ``description`` is single-line, so it is
+                    # safe in the trailing position.
                     'prompt': BlockScalar(prompt_body),
-                    'subagent_type': agent,
+                    'description': f'Run {agent}',
                 },
             },
         )

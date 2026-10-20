@@ -8,14 +8,14 @@ In OpenCode environments, use OpenCode's native tool capabilities:
 
 | Action / Capability | Native OpenCode Tool | Operational Constraints |
 |---------------------|----------------------|-------------------------|
-| Shell execution | `bash` | Single command per call. Never chain commands. |
+| Shell execution | `shell` | Single command per call. Never chain commands. |
 | View file contents | `read` | Read file contents directly; do not use `cat`, `head`, or `tail`. |
 | Write / overwrite files | `write` | Create or overwrite files; do not use shell redirection or `touch`. |
 | Edit existing files | `edit` | Surgical edits to existing file content. |
 | Find files by pattern | `glob` | Find files matching pattern within workspace. |
 | Search file content | `grep` | Search file content across workspace paths. |
 | Solicit user input | `question` | Interactive user prompt. |
-| Background tasks | `task` | Run subtasks asynchronously. |
+| Background tasks | `subagent` | Run subtasks asynchronously. |
 | Invoke skill | `skill` | Load or invoke a skill into current context. |
 | Fetch URL content | `webfetch` | Retrieve web pages or external resources. |
 
@@ -35,7 +35,7 @@ OpenCode deploys skills in a flat directory namespace to support single-level lo
 
 ## 3. Command & `.plan/` Discipline
 
-- **Single command per call**: Every `bash` invocation must execute exactly one command. Never use `&&`, `;`, `|`, trailing `&`, newlines, loops, subshells (`$()`), or heredocs.
+- **Single command per call**: Every `shell` invocation must execute exactly one command. Never use `&&`, `;`, `|`, trailing `&`, newlines, loops, subshells (`$()`), or heredocs.
 - **Working directory**: Execute commands from the workspace root. Do not propose `cd` commands.
 - **No shell file inspection**: Use native tools (`read`, `glob`, `grep`) instead of `ls`, `cat`, or shell grep.
 - **Script-only access to `.plan/`**: Never read, write, or modify `.plan/` files directly. All `.plan/` operations route through the executor:
@@ -58,4 +58,4 @@ OpenCode automatically discovers and loads workspace rules into assistant contex
 - **Bridge source**: the bridge file is written at project setup from the `CLAUDE.md` baseline (`bridge-version` marker embedded); the baseline stays authoritative.
 - **Drift signal**: re-setup compares the marker and modification times — a marker mismatch or a baseline newer than the bridge reports drift (`marker_mismatch`, `baseline_newer`).
 - **Reconcile path**: re-setup re-runs the bridge writer, which heals a drifted or missing bridge in the bridge file only and leaves a current bridge untouched. A bridge stub found in the deployed specification file is a clobber by an older setup — restore it by re-running `./install.sh --emit-rules`.
-- **Dispatch conditional**: the `task`-tool subagent dispatch fires only when the tool is available in the envelope; otherwise take the explicit logged inline branch with usage unknown.
+- **Dispatch conditional**: the `subagent`-tool subagent dispatch fires only when the tool is available in the envelope; otherwise take the explicit logged inline branch with usage unknown.

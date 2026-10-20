@@ -490,6 +490,14 @@ def test_to_opencode_grant_bare_form_defaults_to_allow() -> None:
     assert action == 'allow'
 
 
+def test_to_opencode_grant_accepts_the_opencode2_subagent_key() -> None:
+    """OpenCode 2's sub-agent tool name is recognised as a tool key, not a shell pattern."""
+    category, pattern, action = to_opencode_grant('subagent')
+    assert category == 'subagent'
+    assert pattern == '*'
+    assert action == 'allow'
+
+
 def test_permission_fix_ensure_persists_deny_action(
     runtime: OpenCodeRuntime, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -727,11 +735,11 @@ def test_metrics_capture_zero_tokens_is_honest_noop(runtime: OpenCodeRuntime) ->
 
 
 def test_subagent_dispatch_without_prompt_file(runtime: OpenCodeRuntime) -> None:
-    """subagent_dispatch without prompt_file succeeds and uses 'task' as OpenCode tool."""
+    """subagent_dispatch without prompt_file succeeds and uses 'subagent' as OpenCode tool."""
     result = _parse(runtime.subagent_dispatch('execution-context-level-3', None, None))
     assert result['status'] == 'success'
     assert result['operation'] == 'subagent dispatch'
-    assert result['invocation']['tool'] == 'task'
+    assert result['invocation']['tool'] == 'subagent'
     assert result['platform'] == 'opencode'
 
 
@@ -782,15 +790,18 @@ def test_subagent_dispatch_missing_prompt_file_returns_error(runtime: OpenCodeRu
     ids=['level-2', 'level-5'],
 )
 def test_subagent_dispatch_echoes_requested_agent(runtime: OpenCodeRuntime, agent: str) -> None:
-    """subagent_dispatch returns the REQUESTED agent as subagent_type.
+    """subagent_dispatch returns the REQUESTED agent under OpenCode 2's `agent`.
 
     The caller's level selection reaches the payload rather than being
     discarded in favour of a fixed level, mirroring the Claude passthrough.
+    OpenCode 2's sub-agent tool takes ``{agent, description, prompt}``; the
+    OpenCode 1 ``subagent_type`` key is gone.
     """
     result = _parse(runtime.subagent_dispatch(agent, None, None))
 
     assert result['status'] == 'success'
-    assert result['invocation']['subagent_type'] == agent
+    assert result['invocation']['agent'] == agent
+    assert 'subagent_type' not in result['invocation']
 
 
 def test_subagent_dispatch_prompt_crosses_toon_boundary_inert(runtime: OpenCodeRuntime, tmp_path: pathlib.Path) -> None:
@@ -896,7 +907,7 @@ def test_subagent_dispatch_mapped_agent_tools_succeed(
 
     result = _parse(runtime.subagent_dispatch('good-agent', None, None))
     assert result['status'] == 'success'
-    assert result['invocation']['tool'] == 'task'
+    assert result['invocation']['tool'] == 'subagent'
 
 
 def test_subagent_dispatch_unresolvable_agent_file_proceeds(runtime: OpenCodeRuntime) -> None:

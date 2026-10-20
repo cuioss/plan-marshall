@@ -246,4 +246,3 @@ def test_install_prunes_the_opencode2_agents_map(tmp_path: Path, opencode_config
     assert 'core-agent' in agents, 'the installed bundle agent must survive'
     assert 'java-agent' not in agents, 'an uninstalled bundle agent must be pruned'
     assert 'user-agent' in agents, 'a user-defined agent must be preserved'
-

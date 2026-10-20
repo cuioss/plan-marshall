@@ -397,7 +397,7 @@ def test_make_body_transformer_applies_transform_1():
     transform = make_body_transformer({}, _opencode_rules())
     body = 'Skill: foo:bar\n'
     result = transform(body, 'demo', 'skill')
-    assert 'Call the `skill` tool with `{ name: "foo-bar" }`' in result
+    assert 'Call the `skill` tool with `{ id: "foo-bar" }`' in result
 
 
 def test_make_body_transformer_applies_transform_2():
@@ -411,7 +411,7 @@ def test_make_body_transformer_applies_both_in_one_pass():
     body = 'Skill: demo:foo\nThen run /foo to continue.\n'
     transform = make_body_transformer({'foo': 'demo-foo'}, _opencode_rules())
     result = transform(body, 'demo', 'skill')
-    assert 'Call the `skill` tool with `{ name: "demo-foo" }`' in result
+    assert 'Call the `skill` tool with `{ id: "demo-foo" }`' in result
     assert '/demo-foo' in result
 
 
@@ -469,7 +469,7 @@ def test_integration_fixture_skill_body_both_transforms(tmp_path: Path):
     result = transform(body, 'demo', 'skill')
 
     # Transform 1: full-line directive rewritten
-    assert 'Call the `skill` tool with `{ name: "demo-helper" }`' in result
+    assert 'Call the `skill` tool with `{ id: "demo-helper" }`' in result
     # Transform 1: full-line Read: directive rewritten
     assert 'Call the `read` tool with `{ filePath: "standards/demo-rules.md" }`' in result
     # Transform 2: standalone slash-command rewritten
