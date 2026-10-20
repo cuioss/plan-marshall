@@ -139,5 +139,7 @@ def test_a_snapshot_busy_refusal_writes_no_decision_log_line(plan_context, monke
     assert result['status'] == 'error', result
     assert result['error'] == 'snapshot_busy'
     assert logged == []
-    assert _snap.read_snapshot(PLAN_ID)['authorized_changes'] == []
+    snapshot = _snap.read_snapshot(PLAN_ID)
+    assert snapshot is not None
+    assert snapshot['authorized_changes'] == []
     assert _snapshot_file(plan_dir).is_file()
