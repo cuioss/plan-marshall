@@ -212,3 +212,49 @@ def test_a_raising_decision_log_rolls_the_change_authorization_back(plan_context
     assert 'rolled back' in result['message']
     assert _snapshot_file(plan_dir).read_bytes() == before
     assert _snap.snapshot_state(PLAN_ID) == 'frozen'
+
+
+def test_a_rollback_does_not_erase_a_newer_commit(plan_context, monkeypatch) -> None:
+    """A writer that committed behind the failed one survives the rollback."""
+    plan_dir = _plan(plan_context)
+    snapshot_file = _snapshot_file(plan_dir)
+
+    def _commit_newer_then_fail(*args: Any, **kwargs: Any) -> dict[str, Any]:
+        current = json.loads(snapshot_file.read_text(encoding='utf-8'))
+        current['authorized_changes'] = [{'deliverable': 1, 'criterion': 'a newer authorization'}]
+        snapshot_file.write_text(json.dumps(current, indent=2, sort_keys=True) + '\n', encoding='utf-8')
+        assert _snap.record_snapshot_digest(PLAN_ID)
+        return {'status': 'error', 'error': 'injected'}
+
+    monkeypatch.setattr(plan_logging, 'log_decision', _commit_newer_then_fail)
+
+    result = _snap.authorize_change(PLAN_ID, 1, FROZEN[0], 'operator: approve the wording')
+
+    assert result['status'] == 'error', result
+    assert 'NOT fully rolled back' in result['message']
+    stored = json.loads(snapshot_file.read_text(encoding='utf-8'))
+    assert stored['authorized_changes'] == [{'deliverable': 1, 'criterion': 'a newer authorization'}]
+    assert _snap.snapshot_state(PLAN_ID) == 'frozen'
+
+
+def test_a_failed_digest_withdrawal_keeps_the_committed_snapshot(plan_context, monkeypatch) -> None:
+    """When the prior digest cannot be restored, the bytes the record binds stay."""
+    plan_dir = _plan(plan_context)
+    snapshot_file = _snapshot_file(plan_dir)
+    real_record = _snap.record_snapshot_digest
+    calls = {'count': 0}
+
+    def _only_the_first(*args: Any, **kwargs: Any) -> bool:
+        calls['count'] += 1
+        return real_record(*args, **kwargs) if calls['count'] == 1 else False
+
+    monkeypatch.setattr(_snap, 'record_snapshot_digest', _only_the_first)
+    monkeypatch.setattr(plan_logging, 'log_decision', lambda *args, **kwargs: {'status': 'error', 'error': 'injected'})
+
+    result = _snap.authorize_change(PLAN_ID, 1, FROZEN[0], 'operator: approve the wording')
+
+    assert result['status'] == 'error', result
+    assert 'kept' in result['message']
+    stored = json.loads(snapshot_file.read_text(encoding='utf-8'))
+    assert [entry['criterion'] for entry in stored['authorized_changes']] == [FROZEN[0]]
+    assert _snap.snapshot_state(PLAN_ID) == 'frozen'

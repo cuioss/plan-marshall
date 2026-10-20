@@ -672,18 +672,28 @@ def read_snapshot(plan_id: str) -> dict[str, Any] | None:
     return parsed
 
 
-def _roll_back_snapshot(path: Path, previous: bytes | None) -> bool:
+def _roll_back_snapshot(path: Path, previous: bytes | None, *, expected: bytes | None = None) -> bool:
     """Undo one snapshot write: restore the prior bytes, or remove a first freeze.
 
     The prior content is carried as BYTES, not text: a corrupt snapshot that does
     not decode must still be restorable, and decoding it would fail before the
     digest is even recorded. Restoring goes through an atomic write-and-replace,
     so a failure injected during the restore leaves the target holding its prior
-    contents rather than a truncated prefix. Returns ``False`` when the rollback
-    itself failed, so the caller reports that the artifact may still be on disk
-    rather than claiming it was removed.
+    contents rather than a truncated prefix.
+
+    ``expected`` makes the restore CONDITIONAL: it proceeds only when the target
+    still holds exactly those bytes. A writer whose log call outlived the guard's
+    stale threshold can find another writer has committed behind it; an
+    unconditional restore would then erase that newer authorization. A mismatch
+    returns ``False`` and changes nothing.
+
+    Returns ``False`` when the rollback itself failed or was refused, so the
+    caller reports that the artifact may still be on disk or hold another
+    writer's commit rather than claiming it was removed.
     """
     try:
+        if expected is not None and (not path.is_file() or path.read_bytes() != expected):
+            return False
         if previous is None:
             path.unlink(missing_ok=True)
         else:
@@ -767,7 +777,8 @@ def _write_snapshot_locked(plan_id: str) -> dict[str, Any]:
     path = snapshot_path(plan_id)
     path.parent.mkdir(parents=True, exist_ok=True)
     previous = path.read_bytes() if path.is_file() else None
-    atomic_write_file(path, json.dumps(snapshot, indent=2, sort_keys=True) + '\n')
+    written_text = json.dumps(snapshot, indent=2, sort_keys=True) + '\n'
+    atomic_write_file(path, written_text)
     # Bind the freeze OUTSIDE the file it protects: the status record (a different
     # file) holds the digest, so editing or deleting the snapshot
     # afterwards is detectable rather than silently read as the legacy shape.
@@ -778,7 +789,7 @@ def _write_snapshot_locked(plan_id: str) -> dict[str, Any]:
         # legacy "present" shape and its digest could never be checked again, so
         # the write is rolled back: the prior bytes when this was a re-freeze, and
         # nothing at all on a first freeze.
-        rolled_back = _roll_back_snapshot(path, previous)
+        rolled_back = _roll_back_snapshot(path, previous, expected=written_text.encode('utf-8'))
         return {
             'status': 'error',
             'plan_id': plan_id,
@@ -1035,13 +1046,18 @@ def _commit_authorization(
     snapshot['authorized_changes'] = entries
     path = snapshot_path(plan_id)
     previous = path.read_bytes() if path.is_file() else None
-    atomic_write_file(path, json.dumps(snapshot, indent=2, sort_keys=True) + '\n')
+    committed_text = json.dumps(snapshot, indent=2, sort_keys=True) + '\n'
+    committed = committed_text.encode('utf-8')
+    atomic_write_file(path, committed_text)
     # Re-record the digest: the authorization rewrites the snapshot file, and a
     # recorded digest left on the pre-authorization bytes would read as tampering.
     # When it cannot be recorded the authorization is rolled back — the same
-    # no-snapshot-without-its-binding rule write_snapshot applies.
+    # no-snapshot-without-its-binding rule write_snapshot applies. The rollback is
+    # conditional on the file still holding THIS commit: a log call that outlived
+    # the guard's stale threshold can let another writer commit behind us, and
+    # restoring our prior bytes would erase that newer authorization.
     if not record_snapshot_digest(plan_id):
-        rolled_back = _roll_back_snapshot(path, previous)
+        rolled_back = _roll_back_snapshot(path, previous, expected=committed)
         return {
             'status': 'error',
             'plan_id': plan_id,
@@ -1063,21 +1079,26 @@ def _commit_authorization(
     except Exception as exc:  # a log call that raised is a failed log, not a reason to skip the withdrawal
         logged = {'status': 'error', 'error': type(exc).__name__, 'message': str(exc)}
     if logged.get('status') != 'success':
-        rolled_back = _roll_back_snapshot(path, previous)
-        digest_restored = record_snapshot_digest(plan_id) if rolled_back else False
+        rolled_back = _roll_back_snapshot(path, previous, expected=committed)
+        outcome = 'inconsistent'
+        if rolled_back:
+            if record_snapshot_digest(plan_id):
+                outcome = 'rolled_back'
+            elif _roll_back_snapshot(path, committed, expected=previous):
+                # The status record still binds the COMMITTED bytes (their digest
+                # was recorded above), so leaving the prior bytes in place would
+                # read as tampering. Keep the bytes the record names and report it.
+                outcome = 'kept'
+        message = {
+            'rolled_back': 'the authorization was rolled back',
+            'kept': 'the authorization was kept: its digest could not be withdrawn, so the snapshot still holds it',
+            'inconsistent': 'the authorization was NOT fully rolled back; the snapshot or its record may hold the edit',
+        }[outcome]
         return {
             'status': 'error',
             'plan_id': plan_id,
             'error': 'decision_log_unavailable',
-            'message': (
-                f'the operator decision could not be logged ({_log_failure_reason(logged)}), so the '
-                'authorization was '
-                + (
-                    'rolled back'
-                    if rolled_back and digest_restored
-                    else 'NOT fully rolled back; the snapshot or its record may hold the edit'
-                )
-            ),
+            'message': (f'the operator decision could not be logged ({_log_failure_reason(logged)}), so {message}'),
         }
     return {
         'status': 'success',
