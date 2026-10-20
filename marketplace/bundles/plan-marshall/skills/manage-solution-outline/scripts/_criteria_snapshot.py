@@ -113,6 +113,13 @@ SNAPSHOT_FROZEN_KEY = 'snapshot_frozen'
 #: reader here and the protected-key guard in ``manage-status`` derive the name
 #: from this one definition.
 OVERRIDE_HEADS_KEY = 'functional_review_override_heads'
+#: The status-record metadata keys whose only writers commit through their own
+#: guarded read-modify-write. ``_status_core.write_status`` must carry them
+#: forward from the live document, and a generic ``metadata --set`` must refuse
+#: them. The MEMBERSHIP is defined here once, so the carry set and the protected
+#: set cannot drift into covering different keys as a third owner-written key is
+#: added.
+PROTECTED_STATUS_METADATA_KEYS: tuple[str, ...] = (INTEGRITY_KEY, OVERRIDE_HEADS_KEY)
 
 
 def _status_doc(plan_id: str) -> dict[str, Any] | None:
@@ -1292,6 +1299,7 @@ __all__ = [
     'FUNCTIONAL_VERDICT_FILE',
     'INTEGRITY_KEY',
     'OVERRIDE_HEADS_KEY',
+    'PROTECTED_STATUS_METADATA_KEYS',
     'REQUEST_FILE',
     'REWRITTEN',
     'SCHEMA',

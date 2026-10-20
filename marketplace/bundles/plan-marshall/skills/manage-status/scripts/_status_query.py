@@ -10,7 +10,7 @@ import stat
 from pathlib import Path
 from typing import Any, NamedTuple
 
-from _criteria_snapshot import INTEGRITY_KEY, OVERRIDE_HEADS_KEY
+from _criteria_snapshot import PROTECTED_STATUS_METADATA_KEYS
 from _locks_core import rmw_json
 from _status_core import (
     TITLE_TOKEN_OWNER_CLI,
@@ -75,7 +75,7 @@ BOOLEAN_METADATA_FIELDS = frozenset({'use_worktree'})
 # Protecting the name would guard a write that never happens, while leaving the
 # real key (its parent block) fully guarded — a ``metadata --set snapshot_frozen``
 # lands as an inert sibling of the block and cannot forge the recorded freeze.
-PROTECTED_METADATA_FIELDS = frozenset({INTEGRITY_KEY, OVERRIDE_HEADS_KEY})
+PROTECTED_METADATA_FIELDS = frozenset(PROTECTED_STATUS_METADATA_KEYS)
 
 
 def _coerce_metadata_value(field: str, raw_value: Any) -> Any:

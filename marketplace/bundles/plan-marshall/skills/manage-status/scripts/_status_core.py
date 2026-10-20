@@ -14,7 +14,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, NamedTuple, NotRequired, TypedDict, cast
 
-from _criteria_snapshot import INTEGRITY_KEY, OVERRIDE_HEADS_KEY
+from _criteria_snapshot import PROTECTED_STATUS_METADATA_KEYS
 from _locks_core import rmw_json
 from _orchestrator_ledger import (
     LEDGER_ABSENT,
@@ -212,10 +212,10 @@ def write_status(plan_id: str, status: dict[Any, Any], *, preserve_title_token: 
 
 #: The status-record keys whose only writers commit through their own guarded
 #: read-modify-write, so a whole-document ``write_status`` caller must never
-#: restore a stale copy of them. Imported from ``_criteria_snapshot``, which
-#: defines each name once and is the module both the owning writers and
-#: ``manage-status``'s protected-key guard derive it from.
-_PROTECTED_CARRIED_KEYS = (INTEGRITY_KEY, OVERRIDE_HEADS_KEY)
+#: restore a stale copy of them. The membership is imported from
+#: ``_criteria_snapshot``, which defines it once for this carry set and for
+#: ``manage-status``'s protected-key guard, so the two cannot drift apart.
+_PROTECTED_CARRIED_KEYS = PROTECTED_STATUS_METADATA_KEYS
 
 
 def _carry_protected_keys(live: dict[Any, Any], status: dict[Any, Any]) -> None:
