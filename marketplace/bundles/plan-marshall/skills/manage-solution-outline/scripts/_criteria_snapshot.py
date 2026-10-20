@@ -59,7 +59,7 @@ from _plan_parsing import (
     parse_document_sections,
     split_deliverable_blocks,
 )
-from file_ops import atomic_write_file, base_path, cwd_checkout_root
+from file_ops import atomic_write_bytes, atomic_write_file, base_path, cwd_checkout_root
 
 #: Plan-relative path of the frozen snapshot artifact.
 SNAPSHOT_FILE = 'work/criteria-snapshot.json'
@@ -113,6 +113,13 @@ SNAPSHOT_FROZEN_KEY = 'snapshot_frozen'
 #: reader here and the protected-key guard in ``manage-status`` derive the name
 #: from this one definition.
 OVERRIDE_HEADS_KEY = 'functional_review_override_heads'
+#: The status-record metadata keys whose only writers commit through their own
+#: guarded read-modify-write. ``_status_core.write_status`` must carry them
+#: forward from the live document, and a generic ``metadata --set`` must refuse
+#: them. The MEMBERSHIP is defined here once, so the carry set and the protected
+#: set cannot drift into covering different keys as a third owner-written key is
+#: added.
+PROTECTED_STATUS_METADATA_KEYS: tuple[str, ...] = (INTEGRITY_KEY, OVERRIDE_HEADS_KEY)
 
 
 def _status_doc(plan_id: str) -> dict[str, Any] | None:
@@ -150,9 +157,14 @@ def _merge_integrity(plan_id: str, merge: Callable[[dict[str, Any]], None]) -> b
     The guard is the SAME file-level ``O_EXCL`` guard ``manage-status`` commits
     ``status.json`` through (``_locks_core.rmw_json`` names it
     ``{status.json}.lock``), so this read-modify-write cannot interleave with a
-    status writer's: one of the two waits. The shared coordination module is
-    imported sideways, never the status writer upward, so the layering rule in
-    this module's docstring still holds.
+    status writer's critical section: one of the two waits.
+
+    Serialization alone does not make the block survive, because a status writer
+    commits a WHOLE document assembled from a snapshot it read before the guard.
+    The other half of the contract is on that side: ``_status_core.write_status``
+    carries ``criteria_integrity`` forward from the document it reads inside the
+    guard, so a writer holding a pre-merge snapshot cannot restore its stale copy
+    over this merge. Neither half is sufficient alone.
 
     A plan with no readable status record is left untouched and reports ``False``;
     so does a guard that cannot be taken within its budget (``TimeoutError``) and
@@ -283,14 +295,23 @@ def record_verdict_digest(plan_id: str, kind: str, verdict_file: str | Path) -> 
     return _merge_integrity(plan_id, _merge)
 
 
+def _log_failure_reason(logged: dict[str, Any]) -> str:
+    """The most informative field of a failed decision-log result."""
+    return str(logged.get('message') or logged.get('error') or 'unknown')
+
+
 def authorize_refreeze(plan_id: str, decision: str, phase: str = '3-outline') -> dict[str, Any]:
     """Record an operator decision authorizing a re-freeze of the snapshot.
 
-    The decision is logged through the same decision-log path ``criteria-authorize``
-    uses, and the authorization is recorded in the plan's status record so the next
-    ``write_snapshot`` sees it. Logging and recording are one operation: an
-    authorization that reached only one of the two is not a decision the record can
-    stand behind, so a failure of either refuses.
+    The authorization is recorded in the plan's status record and logged through
+    the same decision-log path ``criteria-authorize`` uses. The record commits
+    FIRST — its prior value captured in the same guarded merge — and the decision
+    line is written only for an authorization that landed: the line used to be
+    written before the record, so a record failure left a log line for an
+    authorization the status record does not carry. When the line cannot be
+    written after a successful record, the authorization is withdrawn back to its
+    prior value, conditioned on the value this call set; the result reports
+    whether the withdrawal landed rather than claiming an exact restore.
     """
     if not str(decision or '').strip():
         return {
@@ -308,24 +329,66 @@ def authorize_refreeze(plan_id: str, decision: str, phase: str = '3-outline') ->
             'error': 'decision_log_unavailable',
             'message': f'plan_logging could not be imported ({exc}); the authorization was not recorded',
         }
-    logged = plan_logging.log_decision(
-        plan_id,
-        f'(criteria-integrity) Operator decision authorizes re-freezing the criteria snapshot — {decision}',
-        phase=phase,
-    )
-    if logged.get('status') != 'success':
-        return {
-            'status': 'error',
-            'plan_id': plan_id,
-            'error': 'decision_log_unavailable',
-            'message': f'the operator decision could not be logged ({logged.get("error", "unknown")})',
-        }
-    if not record_integrity(plan_id, refreeze_authorized=True):
+    already_authorized: dict[str, Any] = {}
+
+    def _set_authorized(block: dict[str, Any]) -> None:
+        # Capture the prior value in the SAME guarded merge that sets it, so a
+        # withdrawal cannot restore a value read from an older document.
+        already_authorized['previous'] = block.get('refreeze_authorized')
+        block['refreeze_authorized'] = True
+
+    if not _merge_integrity(plan_id, _set_authorized):
         return {
             'status': 'error',
             'plan_id': plan_id,
             'error': 'status_record_unavailable',
             'message': 'the plan status record could not be written, so the authorization was not recorded',
+        }
+    try:
+        logged = plan_logging.log_decision(
+            plan_id,
+            f'(criteria-integrity) Operator decision authorizes re-freezing the criteria snapshot — {decision}',
+            phase=phase,
+        )
+    except Exception as exc:  # a log call that raised is a failed log, not a reason to skip the withdrawal
+        logged = {'status': 'error', 'error': type(exc).__name__, 'message': str(exc)}
+    if logged.get('status') != 'success':
+        outcome: dict[str, str] = {}
+
+        def _withdraw(block: dict[str, Any]) -> None:
+            # Best-effort undo, conditioned on the value this call set: a
+            # concurrent write_snapshot may already have consumed the
+            # authorization, and that decision must win. A newer authorization
+            # that also reads True is indistinguishable here; the result names
+            # which state was observed rather than claiming an exact restore.
+            if block.get('refreeze_authorized') is not True:
+                outcome['state'] = 'already_consumed'
+                return
+            previous = already_authorized.get('previous')
+            if previous is None:
+                block.pop('refreeze_authorized', None)
+                outcome['state'] = 'withdrawn'
+            else:
+                block['refreeze_authorized'] = previous
+                outcome['state'] = 'restored' if previous else 'withdrawn'
+
+        withdrawn = _merge_integrity(plan_id, _withdraw)
+        if not withdrawn:
+            effect = 'NOT withdrawn; the status record may still authorize it'
+        elif outcome.get('state') == 'already_consumed':
+            effect = 'not withdrawn: a concurrent re-freeze already consumed it'
+        elif outcome.get('state') == 'restored':
+            effect = 'withdrawn back to its prior authorization, so a re-freeze remains authorized'
+        else:
+            effect = 'withdrawn'
+        return {
+            'status': 'error',
+            'plan_id': plan_id,
+            'error': 'decision_log_unavailable',
+            'message': (
+                f'the operator decision could not be logged ({_log_failure_reason(logged)}), so the '
+                'authorization was ' + effect
+            ),
         }
     return {'status': 'success', 'plan_id': plan_id, 'refreeze_authorized': True}
 
@@ -609,20 +672,32 @@ def read_snapshot(plan_id: str) -> dict[str, Any] | None:
     return parsed
 
 
-def _roll_back_snapshot(path: Path, previous: bytes | None) -> bool:
+def _roll_back_snapshot(path: Path, previous: bytes | None, *, expected: bytes | None = None) -> bool:
     """Undo one snapshot write: restore the prior bytes, or remove a first freeze.
 
     The prior content is carried as BYTES, not text: a corrupt snapshot that does
     not decode must still be restorable, and decoding it would fail before the
-    digest is even recorded. Returns ``False`` when the rollback itself failed, so
-    the caller reports that the artifact may still be on disk rather than claiming
-    it was removed.
+    digest is even recorded. Restoring goes through an atomic write-and-replace,
+    so a failure injected during the restore leaves the target holding its prior
+    contents rather than a truncated prefix.
+
+    ``expected`` makes the restore CONDITIONAL: it proceeds only when the target
+    still holds exactly those bytes. A writer whose log call outlived the guard's
+    stale threshold can find another writer has committed behind it; an
+    unconditional restore would then erase that newer authorization. A mismatch
+    returns ``False`` and changes nothing.
+
+    Returns ``False`` when the rollback itself failed or was refused, so the
+    caller reports that the artifact may still be on disk or hold another
+    writer's commit rather than claiming it was removed.
     """
     try:
+        if expected is not None and (not path.is_file() or path.read_bytes() != expected):
+            return False
         if previous is None:
             path.unlink(missing_ok=True)
         else:
-            path.write_bytes(previous)
+            atomic_write_bytes(path, previous)
     except OSError:
         return False
     return True
@@ -702,7 +777,8 @@ def _write_snapshot_locked(plan_id: str) -> dict[str, Any]:
     path = snapshot_path(plan_id)
     path.parent.mkdir(parents=True, exist_ok=True)
     previous = path.read_bytes() if path.is_file() else None
-    atomic_write_file(path, json.dumps(snapshot, indent=2, sort_keys=True) + '\n')
+    written_text = json.dumps(snapshot, indent=2, sort_keys=True) + '\n'
+    atomic_write_file(path, written_text)
     # Bind the freeze OUTSIDE the file it protects: the status record (a different
     # file) holds the digest, so editing or deleting the snapshot
     # afterwards is detectable rather than silently read as the legacy shape.
@@ -713,7 +789,7 @@ def _write_snapshot_locked(plan_id: str) -> dict[str, Any]:
         # legacy "present" shape and its digest could never be checked again, so
         # the write is rolled back: the prior bytes when this was a re-freeze, and
         # nothing at all on a first freeze.
-        rolled_back = _roll_back_snapshot(path, previous)
+        rolled_back = _roll_back_snapshot(path, previous, expected=written_text.encode('utf-8'))
         return {
             'status': 'error',
             'plan_id': plan_id,
@@ -872,11 +948,15 @@ def authorize_change(
     """Record an operator decision authorizing one criterion change.
 
     The authorization is written into the snapshot AND to the plan's decision
-    log, because "requires a logged operator decision" is the rule: an
-    authorization that reached only the snapshot would be an unlogged edit. When
-    the decision log cannot be written the authorization is NOT recorded and the
-    verb refuses, so a comparison can never be satisfied by a record no operator
-    decision stands behind.
+    log, because "requires a logged operator decision" is the rule. The read, the
+    tamper check, the commit and the log line run under ONE plan-scoped snapshot
+    guard: a re-freeze that commits in the window would otherwise be rewritten
+    from the stale copy this function read before it took the guard, silently
+    reverting it. The decision line is written only after the commit succeeds, so
+    a ``snapshot_busy`` refusal — which is taken at the guard, before any read —
+    writes no line for an authorization that never happened. When the line still
+    cannot be written after a successful commit, the authorization is rolled back
+    rather than left as an unlogged edit.
     """
     if not str(decision or '').strip():
         return {
@@ -885,6 +965,20 @@ def authorize_change(
             'error': 'decision_required',
             'message': 'a criterion change is authorized only by a named operator decision',
         }
+    try:
+        with _snapshot_guard(plan_id):
+            return _authorize_change_locked(plan_id, number, criterion, decision, phase)
+    except TimeoutError:
+        return {
+            'status': 'error',
+            'plan_id': plan_id,
+            'error': 'snapshot_busy',
+            'message': 'another writer holds the criteria snapshot; the authorization was not recorded',
+        }
+
+
+def _authorize_change_locked(plan_id: str, number: int, criterion: str, decision: str, phase: str) -> dict[str, Any]:
+    """Read, check and commit one authorization inside the caller's snapshot guard."""
     snapshot = read_snapshot(plan_id)
     if snapshot is None:
         return {
@@ -925,29 +1019,7 @@ def authorize_change(
             'error': 'decision_log_unavailable',
             'message': f'plan_logging could not be imported ({exc}); the authorization was not recorded',
         }
-    logged = plan_logging.log_decision(
-        plan_id,
-        f'(criteria-integrity) Operator decision authorizes changing frozen criterion '
-        f'D{number}: {criterion!r} — {decision}',
-        phase=phase,
-    )
-    if logged.get('status') != 'success':
-        return {
-            'status': 'error',
-            'plan_id': plan_id,
-            'error': 'decision_log_unavailable',
-            'message': f'the operator decision could not be logged ({logged.get("error", "unknown")})',
-        }
-    try:
-        with _snapshot_guard(plan_id):
-            return _commit_authorization(plan_id, snapshot, number, criterion, decision, phase)
-    except TimeoutError:
-        return {
-            'status': 'error',
-            'plan_id': plan_id,
-            'error': 'snapshot_busy',
-            'message': 'another writer holds the criteria snapshot; the authorization was not recorded',
-        }
+    return _commit_authorization(plan_id, snapshot, number, criterion, decision, phase, plan_logging.log_decision)
 
 
 def _commit_authorization(
@@ -957,8 +1029,9 @@ def _commit_authorization(
     criterion: str,
     decision: str,
     phase: str,
+    log_decision: Callable[..., dict[str, Any]],
 ) -> dict[str, Any]:
-    """Rewrite the snapshot with one authorization and re-record its digest."""
+    """Rewrite the snapshot with one authorization, re-record its digest, then log it."""
     wanted = normalize_criterion(criterion)
     entries = [
         entry
@@ -973,13 +1046,18 @@ def _commit_authorization(
     snapshot['authorized_changes'] = entries
     path = snapshot_path(plan_id)
     previous = path.read_bytes() if path.is_file() else None
-    atomic_write_file(path, json.dumps(snapshot, indent=2, sort_keys=True) + '\n')
+    committed_text = json.dumps(snapshot, indent=2, sort_keys=True) + '\n'
+    committed = committed_text.encode('utf-8')
+    atomic_write_file(path, committed_text)
     # Re-record the digest: the authorization rewrites the snapshot file, and a
     # recorded digest left on the pre-authorization bytes would read as tampering.
     # When it cannot be recorded the authorization is rolled back — the same
-    # no-snapshot-without-its-binding rule write_snapshot applies.
+    # no-snapshot-without-its-binding rule write_snapshot applies. The rollback is
+    # conditional on the file still holding THIS commit: a log call that outlived
+    # the guard's stale threshold can let another writer commit behind us, and
+    # restoring our prior bytes would erase that newer authorization.
     if not record_snapshot_digest(plan_id):
-        rolled_back = _roll_back_snapshot(path, previous)
+        rolled_back = _roll_back_snapshot(path, previous, expected=committed)
         return {
             'status': 'error',
             'plan_id': plan_id,
@@ -988,6 +1066,39 @@ def _commit_authorization(
                 'the rewritten snapshot digest could not be recorded, so the authorization was '
                 + ('rolled back' if rolled_back else 'NOT fully rolled back; the snapshot may hold the edit')
             ),
+        }
+    # Only an authorization that LANDED gets a decision line. A line written
+    # before the commit claimed an authorization a later refusal had discarded.
+    try:
+        logged = log_decision(
+            plan_id,
+            f'(criteria-integrity) Operator decision authorizes changing frozen criterion '
+            f'D{number}: {criterion!r} — {decision}',
+            phase=phase,
+        )
+    except Exception as exc:  # a log call that raised is a failed log, not a reason to skip the withdrawal
+        logged = {'status': 'error', 'error': type(exc).__name__, 'message': str(exc)}
+    if logged.get('status') != 'success':
+        rolled_back = _roll_back_snapshot(path, previous, expected=committed)
+        outcome = 'inconsistent'
+        if rolled_back:
+            if record_snapshot_digest(plan_id):
+                outcome = 'rolled_back'
+            elif _roll_back_snapshot(path, committed, expected=previous):
+                # The status record still binds the COMMITTED bytes (their digest
+                # was recorded above), so leaving the prior bytes in place would
+                # read as tampering. Keep the bytes the record names and report it.
+                outcome = 'kept'
+        message = {
+            'rolled_back': 'the authorization was rolled back',
+            'kept': 'the authorization was kept: its digest could not be withdrawn, so the snapshot still holds it',
+            'inconsistent': 'the authorization was NOT fully rolled back; the snapshot or its record may hold the edit',
+        }[outcome]
+        return {
+            'status': 'error',
+            'plan_id': plan_id,
+            'error': 'decision_log_unavailable',
+            'message': (f'the operator decision could not be logged ({_log_failure_reason(logged)}), so {message}'),
         }
     return {
         'status': 'success',
@@ -1162,11 +1273,14 @@ def verdict_row_matches(row: Any, criterion: str, index: int, deliverable: Any =
 def _graded_status(criteria: list[Any], criterion: str, index: int, deliverable: Any = None) -> str:
     """Status a sealed verdict gives one frozen criterion, matched by stable id or text.
 
-    A row carrying an explicit ``criterion_id`` wins; exact text is tried next;
-    otherwise the criterion is ``ungraded``. There is no positional fallback: a
-    verdict row that answers something else is not evidence for this criterion, and
-    its position mere adjacency. A ``met`` row with no evidence is ``unevidenced``
-    here for the same reason the validator treats it so.
+    A row carrying a parseable ``criterion_id`` wins and answers ONLY the criterion
+    that id names. Exact text is tried next, but only for rows that name no
+    criterion by a parseable id: a row graded ``C2`` whose text happens to equal
+    criterion 1's frozen text does not grade criterion 1. Otherwise the criterion
+    is ``ungraded``. There is no positional fallback: a verdict row that answers
+    something else is not evidence for this criterion, and its position mere
+    adjacency. A ``met`` row with no evidence is ``unevidenced`` here for the same
+    reason the validator treats it so.
     """
     wanted = normalize_criterion(criterion)
     row: dict[str, Any] | None = None
@@ -1180,9 +1294,18 @@ def _graded_status(criteria: list[Any], criterion: str, index: int, deliverable:
             break
     if row is None:
         for candidate in criteria:
-            if isinstance(candidate, dict) and normalize_criterion(candidate.get('criterion')) == wanted:
+            if not isinstance(candidate, dict):
+                continue
+            if criterion_id_parts(candidate.get('criterion_id'))[1] is not None:
+                # An explicit id is the row's whole claim to a criterion. Matching
+                # it by text after the id arm refused it (another position, or a
+                # qualified id for another deliverable) would let a row graded
+                # against one criterion close a different one.
+                continue
+            if normalize_criterion(candidate.get('criterion')) == wanted:
                 row = candidate
                 break
+
     if row is None:
         return 'ungraded'
     status = str(row.get('status') or 'ungraded')
@@ -1197,6 +1320,7 @@ __all__ = [
     'FUNCTIONAL_VERDICT_FILE',
     'INTEGRITY_KEY',
     'OVERRIDE_HEADS_KEY',
+    'PROTECTED_STATUS_METADATA_KEYS',
     'REQUEST_FILE',
     'REWRITTEN',
     'SCHEMA',

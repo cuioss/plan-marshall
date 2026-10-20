@@ -1544,7 +1544,11 @@ def write_json(path: str | Path, data: Any) -> None:
 
 
 def atomic_write_file(path: str | Path, content: str) -> None:
-    """Write file atomically using temp file + rename pattern.
+    """Write text file atomically using temp file + rename pattern.
+
+    The payload is encoded as UTF-8 with LF terminators explicitly rather than
+    through text mode, so the bytes written do not vary with the host's newline
+    convention.
 
     Args:
         path: Target file path
@@ -1553,19 +1557,34 @@ def atomic_write_file(path: str | Path, content: str) -> None:
     Raises:
         OSError: If write or rename fails
     """
+    payload = content.encode('utf-8')
+    if content and not content.endswith('\n'):
+        payload += b'\n'
+    atomic_write_bytes(path, payload)
+
+
+def atomic_write_bytes(path: str | Path, content: bytes) -> None:
+    """Write bytes atomically using a temp file + rename in the target directory.
+
+    The byte counterpart of :func:`atomic_write_file`, for a caller restoring
+    content it captured with ``read_bytes`` — a corrupt artifact that does not
+    decode is still restorable. The rename is atomic on the same filesystem, so a
+    reader sees either the prior contents or the new ones; a failure before the
+    rename leaves the target untouched and removes the temp file.
+
+    Args:
+        path: Target file path
+        content: Exact bytes to write
+
+    Raises:
+        OSError: If write or rename fails
+    """
     path = Path(path)
-
-    # Ensure parent directory exists
     path.parent.mkdir(parents=True, exist_ok=True)
-
-    # Write to temp file first, then rename (atomic on most systems)
     fd, temp_path = tempfile.mkstemp(suffix=path.suffix, prefix='.tmp_', dir=path.parent)
     try:
-        with os.fdopen(fd, 'w', encoding='utf-8') as f:
+        with os.fdopen(fd, 'wb') as f:
             f.write(content)
-            # Ensure content ends with newline
-            if content and not content.endswith('\n'):
-                f.write('\n')
         os.replace(temp_path, path)
     except Exception:
         if Path(temp_path).exists():

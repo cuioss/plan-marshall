@@ -6,7 +6,7 @@ Three behaviours:
 
 * ``record_integrity`` waits for the status writer's critical section instead of
   writing straight through it;
-* ``manage-status metadata --set`` / ``--set --append`` refuses the three keys
+* ``manage-status metadata --set`` / ``--set --append`` refuses the two keys
   only their owning verb may write;
 * the owning verbs still write them: the criteria freeze records
   ``snapshot_frozen`` and ``loop-back close`` records the override head.
@@ -29,7 +29,7 @@ PLAN_ID = 'lb74-status-integrity-d3'
 _lifecycle = load_script_module('plan-marshall', 'manage-status', '_cmd_lifecycle.py', '_lb74_d3_lifecycle')
 _query = load_script_module('plan-marshall', 'manage-status', '_status_query.py', '_lb74_d3_query')
 
-PROTECTED = (_snap.INTEGRITY_KEY, _snap.SNAPSHOT_FROZEN_KEY, _snap.OVERRIDE_HEADS_KEY)
+PROTECTED = (_snap.INTEGRITY_KEY, _snap.OVERRIDE_HEADS_KEY)
 
 
 def test_the_protected_set_is_derived_from_the_owning_definitions() -> None:

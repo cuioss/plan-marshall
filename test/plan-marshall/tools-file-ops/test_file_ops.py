@@ -135,6 +135,33 @@ def test_atomic_write_file_writes_exactly_one_terminating_newline(tmp_path, rela
     assert path.read_text() == expected_text
 
 
+def test_atomic_write_bytes_writes_the_exact_bytes(tmp_path):
+    """Bytes are written verbatim: no encoding, decoding, newline or terminator."""
+    path = tmp_path / 'snapshot.bin'
+    payload = b'\xff\xfe\r\n not utf-8'
+
+    file_ops.atomic_write_bytes(path, payload)
+
+    assert path.read_bytes() == payload
+
+
+def test_a_failed_replace_leaves_the_prior_bytes_untouched(tmp_path, monkeypatch):
+    """A failure before the rename leaves the target intact and removes the temp file."""
+    path = tmp_path / 'snapshot.bin'
+    path.write_bytes(b'prior bytes\n')
+
+    def _refuse_replace(*args, **kwargs):
+        raise OSError('injected replace failure')
+
+    monkeypatch.setattr(os, 'replace', _refuse_replace)
+
+    with pytest.raises(OSError):
+        file_ops.atomic_write_bytes(path, b'replacement')
+
+    assert path.read_bytes() == b'prior bytes\n'
+    assert list(tmp_path.glob('.tmp_*')) == []
+
+
 # =============================================================================
 # ensure_directory tests
 # =============================================================================

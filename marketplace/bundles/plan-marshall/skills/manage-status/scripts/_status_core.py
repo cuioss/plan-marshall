@@ -14,6 +14,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, NamedTuple, NotRequired, TypedDict, cast
 
+from _criteria_snapshot import PROTECTED_STATUS_METADATA_KEYS
 from _locks_core import rmw_json
 from _orchestrator_ledger import (
     LEDGER_ABSENT,
@@ -143,33 +144,56 @@ def write_status(plan_id: str, status: dict[Any, Any], *, preserve_title_token: 
     """Write status.json for a plan inside the serialized ``rmw_json`` critical section.
 
     Every caller commits a WHOLE document assembled from a snapshot read taken
-    before its own mutation. ``title_token`` is the one field four independent
-    writers (the build-hook render assist, merge_lock's two lock surfaces, and
-    merge_lock's clear) mutate from separate executor subprocesses, so a plain
-    full-document overwrite carries a last-writer-wins window: a ``title-token
-    set`` committing between a caller's snapshot read and its write is silently
-    clobbered by the stale snapshot value. Committing here closes that window on
-    both counts — the O_EXCL guard serializes against ``cmd_title_token``'s own
-    critical section (same guard file, because both resolve the path through
-    ``get_status_path``), and the ``title_token`` carried into the committed
-    document is the one read INSIDE the guard rather than the caller's snapshot.
+    before its own mutation. Three fields are owned by other writers, each
+    committing through the same guard, so a plain full-document overwrite carries
+    a last-writer-wins window: a commit landing between a caller's snapshot read
+    and its write is silently clobbered by the stale snapshot value.
+
+    - ``title_token`` — four independent writers (the build-hook render assist,
+      merge_lock's two lock surfaces, and merge_lock's clear).
+    - ``metadata.criteria_integrity`` — the criteria writers'
+      ``record_integrity``, which carries the snapshot and verdict digests.
+    - ``metadata.functional_review_override_heads`` — ``loop-back close``.
+
+    Committing here closes the windows for all three: the O_EXCL guard serializes
+    against the owning verbs' own critical sections — the status writer and the
+    owning verbs resolve the same plan status file (``get_status_path`` here,
+    ``base_path('plans', id, 'status.json')`` in ``_merge_integrity``), so
+    ``rmw_json`` names the same guard file — and the value carried into the
+    committed document is the one read INSIDE the guard rather than the caller's
+    snapshot. The carry is deliberately narrow rather than a whole-document
+    re-read-and-merge: a merge cannot tell the caller's intended mutation from
+    the on-disk state, while each carried key has exactly one owning writer whose
+    value is authoritative. The key names are imported from
+    ``_criteria_snapshot`` so the owning definitions stay single-sourced.
 
     Guarding at this single seam rather than at individual phase-write call
     sites is deliberate: every full-document writer in this skill shares the
     hazard, so a per-call-site guard would be one call site short by
-    construction the moment a new writer is added.
+    construction the moment a new writer is added. The full-document writers this
+    covers include ``_status_query`` (``set-phase``, ``update-phase``,
+    ``metadata --set``), ``_cmd_lifecycle`` (the create seed, ``transition``,
+    loop-back marker writes, ``archive``), ``_cmd_planning_lane``,
+    ``_cmd_change_type_heuristic``, ``_cmd_loop_back`` (admit/grant),
+    ``_cmd_aggregate_confidence``, ``_cmd_mark_step`` (``mark-step-done``) and
+    ``_cmd_merge_authorization``. Most reach the seam through ``require_status``;
+    the create seed writes a document this call creates, and the internal
+    recompute writers read it themselves, so the seam — not the ``require_status``
+    gate — is what covers them.
 
     Args:
         plan_id: Plan whose ``status.json`` is written.
         status: The whole document to commit. Mutated in place with the
-            refreshed ``updated`` stamp and the live ``title_token`` so the
-            caller's in-memory view matches what was committed.
+            refreshed ``updated`` stamp, the live ``title_token`` and the live
+            protected keys so the caller's in-memory view matches what was
+            committed.
         preserve_title_token: When False the caller's own ``title_token`` value
             — including its absence — wins over the live record. ``cmd_archive``
             is the sole intended user: its unconditional full clear is a
             deliberate design decision (an archived plan holds no live
             coordination state worth arbitrating over), not an instance of the
-            race above.
+            race above. The protected keys are carried regardless: their
+            absence is never an intentional clear.
     """
 
     def _apply(current: dict[str, Any]) -> dict[str, Any]:
@@ -179,10 +203,43 @@ def write_status(plan_id: str, status: dict[Any, Any], *, preserve_title_token: 
                 status.pop('title_token', None)
             else:
                 status['title_token'] = live
+        _carry_protected_keys(current, status)
         status['updated'] = now_utc_iso()
         return cast(dict[str, Any], status)
 
     rmw_json(get_status_path(plan_id), _apply)
+
+
+#: The status-record keys whose only writers commit through their own guarded
+#: read-modify-write, so a whole-document ``write_status`` caller must never
+#: restore a stale copy of them. The membership is imported from
+#: ``_criteria_snapshot``, which defines it once for this carry set and for
+#: ``manage-status``'s protected-key guard, so the two cannot drift apart.
+_PROTECTED_CARRIED_KEYS = PROTECTED_STATUS_METADATA_KEYS
+
+
+def _carry_protected_keys(live: dict[Any, Any], status: dict[Any, Any]) -> None:
+    """Make the on-disk protected keys authoritative in the document being committed.
+
+    The live value wins, including its absence: a key the document on disk no
+    longer carries is removed from the caller's stale copy rather than being
+    resurrected by the write. Any other key of the caller's ``metadata`` is left
+    untouched, so the caller's own mutation still commits.
+    """
+    live_metadata = live.get('metadata')
+    if not isinstance(live_metadata, dict):
+        live_metadata = {}
+    metadata = status.get('metadata')
+    if not isinstance(metadata, dict):
+        if not live_metadata:
+            return
+        metadata = {}
+        status['metadata'] = metadata
+    for key in _PROTECTED_CARRIED_KEYS:
+        if key in live_metadata:
+            metadata[key] = live_metadata[key]
+        else:
+            metadata.pop(key, None)
 
 
 def normalize_metadata(status: dict[Any, Any]) -> dict[Any, Any]:

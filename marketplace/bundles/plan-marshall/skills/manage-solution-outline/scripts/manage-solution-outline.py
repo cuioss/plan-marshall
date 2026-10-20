@@ -1273,8 +1273,10 @@ def cmd_criteria_authorize(args: argparse.Namespace) -> dict[str, Any]:
 
     A frozen criterion that the current outline no longer carries verbatim is a
     blocking finding at the functional review. This verb is the single way that
-    change is authorized: it logs the decision AND records it against the
-    snapshot, and it writes neither when the decision log cannot be written.
+    change is authorized: it records the decision against the snapshot and then
+    writes the decision-log line. A log that cannot be written withdraws the
+    authorization; a withdrawal that itself fails is reported in the error
+    message rather than claimed.
     """
     require_valid_plan_id(args)
 
