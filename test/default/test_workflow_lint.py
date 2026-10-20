@@ -260,20 +260,12 @@ def _write_scopes(scopes: dict[str, str]) -> set[str]:
 
 #: TOP-LEVEL write scopes that are deliberate, keyed ``(filename, scope)`` so the
 #: population is countable and each entry carries its own justification. Derived
-#: at execute time from a walk of .github/workflows/: eight workflows, of which
-#: seven declare a top-level block that is entirely read (python-verify.yml carries
+#: at execute time from a walk of .github/workflows/: seven workflows, each of which
+#: declares a top-level block that is entirely read (python-verify.yml carries
 #: `pull-requests: read` beside `contents: read`, still a read scope).
-#: cuioss-review-bot.yml is the sole top-level write-bearing workflow, with these three.
-_TOP_LEVEL_WRITE_ALLOWLIST = {
-    (
-        'cuioss-review-bot.yml',
-        'pull-requests',
-    ): 'The reviewer publishes its review as a PR review body and inline comments.',
-    ('cuioss-review-bot.yml', 'issues'): 'On-demand commands (/review, /ask, /improve) arrive as issue_comment '
-    'events and are answered on the issue/PR thread.',
-    ('cuioss-review-bot.yml', 'id-token'): 'Mints the OIDC token Workload Identity Federation exchanges for the '
-    'short-lived GCP credentials the reviewer uses to reach Gemini on Vertex AI.',
-}
+#: No workflow holds a top-level write scope since cuioss-review-bot.yml was removed,
+#: so the allowlist is empty.
+_TOP_LEVEL_WRITE_ALLOWLIST: dict[tuple[str, str], str] = {}
 
 #: JOB-LEVEL write scopes. Kept in a SEPARATE allowlist from the top-level one on
 #: purpose: a job-level grant narrows a read-only top-level default to the one job
@@ -355,19 +347,16 @@ def test_every_top_level_permission_scope_is_read_only_or_allowlisted() -> None:
     )
 
 
-def test_the_top_level_allowlist_holds_exactly_the_three_cuioss_review_bot_scopes() -> None:
-    """The allowlist is a closed, countable set — a fourth entry must fail here.
+def test_the_top_level_allowlist_is_empty() -> None:
+    """The allowlist is a closed, countable set — any entry must fail here.
 
-    An allowlist that can absorb a new entry silently is not a control. Three
-    entries, all cuioss-review-bot.yml, is the derived state of the tree; anything
-    else is a change that has to be argued for rather than merged into the guard.
+    An allowlist that can absorb a new entry silently is not a control. No workflow
+    holds a top-level write scope, which is the derived state of the tree; a first
+    entry is a change that has to be argued for rather than merged into the guard.
     """
     keys = sorted(_TOP_LEVEL_WRITE_ALLOWLIST)
 
-    assert len(keys) == 3, f'expected exactly three allowlisted top-level scopes, got {keys}'
-    assert {name for name, _ in keys} == {'cuioss-review-bot.yml'}, (
-        f'cuioss-review-bot.yml is the sole top-level write-bearing workflow; got {keys}'
-    )
+    assert not keys, f'expected no allowlisted top-level scopes, got {keys}'
 
 
 @pytest.mark.parametrize(
@@ -404,9 +393,9 @@ def test_every_job_level_write_scope_is_allowlisted() -> None:
 def test_a_top_level_read_only_block_is_not_a_whole_workflow_claim() -> None:
     """The top-level verdict's scope limit is asserted, not assumed.
 
-    Reading only the top-level block finds ONE write-bearing workflow in this
-    tree; three more grant a write at job level. A guard that reported "seven of
-    eight are read-only" would be describing its own reach as if it were the
+    Reading only the top-level block finds NO write-bearing workflow in this
+    tree; three grant a write at job level. A guard that reported "seven of
+    seven are read-only" would be describing its own reach as if it were the
     repository's state — the overstatement this module exists to refuse. Pinning
     the strict subset keeps the two counts from ever being read as one.
     """
@@ -419,7 +408,7 @@ def test_a_top_level_read_only_block_is_not_a_whole_workflow_claim() -> None:
         f'now the whole story and this test should say so.\n  top-level: '
         f'{sorted(top_level)}\n  anywhere: {sorted(anywhere)}'
     )
-    assert len(anywhere) > len(top_level) >= 1
+    assert len(anywhere) > len(top_level)
 
 
 def test_the_permission_scan_is_not_vacuous() -> None:

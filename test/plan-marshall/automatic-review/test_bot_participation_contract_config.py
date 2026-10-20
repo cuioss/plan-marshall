@@ -665,10 +665,11 @@ class TestThisRepositorysSettledConfiguration:
     """This repo's own step params, as settled by the operator."""
 
     def test_required_and_optional_lists_are_the_settled_two_list_split(self):
-        """cuioss-review-bot and CodeRabbit are required; Sourcery is optional.
+        """CodeRabbit is required; Sourcery is optional.
 
-        Operator decision, on **review value**: CodeRabbit finds defects the
-        cuioss-review-bot pass misses, so its silence is a real coverage gap and
+        cuioss-review-bot was removed from this roster when its Google Cloud billing
+        was disabled. Operator decision, on **review value**: CodeRabbit finds
+        defects other reviewers miss, so its silence is a real coverage gap and
         is treated as one — it gates the quorum rather than being reported for
         visibility only. Its rolling per-developer quota is the price of that, and
         the remedies for a quota-blocked merge are splitting the diff or granting
@@ -697,7 +698,7 @@ class TestThisRepositorysSettledConfiguration:
         """
         params = _live_step_params()
 
-        assert params['required_bots'] == 'cuioss-review-bot,coderabbit'
+        assert params['required_bots'] == 'coderabbit'
         assert params['optional_bots'] == 'sourcery'
 
     def test_the_retired_single_list_key_does_not_survive(self):
