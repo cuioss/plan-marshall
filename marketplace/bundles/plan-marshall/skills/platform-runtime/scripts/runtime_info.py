@@ -302,6 +302,23 @@ def _format_model_key(fields: Mapping[str, str]) -> str:
     return f'{fields["id"]}/{variant}' if variant else fields['id']
 
 
+def _mixed_model_labels(distinct: Mapping[tuple[str, str, str], Mapping[str, str]]) -> list[str]:
+    """Render the distinct models of a MIXED tree as one label each, sorted.
+
+    The plain ``id/variant`` form is what the payload spec documents, so it is
+    used whenever the labels are distinct. Two DIFFERENT models — same id and
+    variant, different provider — would render the same label, which would make
+    the recorded list claim one model where the tree ran two; in that case the
+    provider is appended to every label (``id/variant/provider``) so the list
+    identifies both, consistently within the entry.
+    """
+    rendered = {key: _format_model_key(fields) for key, fields in distinct.items()}
+    labels = list(rendered.values())
+    if len(set(labels)) != len(labels):
+        labels = [f'{rendered[key]}/{key[1]}' if key[1] else rendered[key] for key in distinct]
+    return sorted(labels)
+
+
 def measure_opencode_model(
     db_path: Path | None,
     session_id: str | None,
@@ -313,7 +330,9 @@ def measure_opencode_model(
     that ran exactly one model/variant records that model, its variant and its
     provider as :data:`SOURCE_MEASURED`. A tree that ran more than one records
     ``model: mixed`` with the distinct ``id/variant`` values listed — never
-    averaged and never reduced to the root's value.
+    averaged and never reduced to the root's value; :func:`_mixed_model_labels`
+    appends the provider when two providers would otherwise render the same
+    label.
 
     Args:
         db_path: The ``opencode.db`` to read, or ``None``.
@@ -353,7 +372,7 @@ def measure_opencode_model(
         if 'provider' in only:
             measured['provider'] = only['provider']
         return measured
-    listed = ', '.join(sorted(_format_model_key(fields) for fields in distinct.values()))
+    listed = ', '.join(_mixed_model_labels(distinct))
     return {'model': MODEL_MIXED, 'models': listed, 'model_source': SOURCE_MEASURED}
 
 

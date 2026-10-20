@@ -408,6 +408,29 @@ def test_opencode_split_model_tree_is_mixed(tmp_path: Path) -> None:
     assert 'gpt-5/low' in listed
 
 
+def test_opencode_split_providers_disambiguate_the_mixed_labels(tmp_path: Path) -> None:
+    """Same id+variant on two providers lists BOTH models, not one label twice."""
+    db_path = tmp_path / 'opencode.db'
+    _write_session_db(
+        db_path,
+        [
+            ('ses-root', None, _model_json('shared-model', 'high', provider='provider-a')),
+            ('ses-child-a', 'ses-root', _model_json('shared-model', 'high', provider='provider-b')),
+        ],
+    )
+
+    info = runtime_info.collect_runtime_info(
+        'opencode',
+        env={},
+        opencode_db_path=db_path,
+        opencode_session_id='ses-root',
+    )
+
+    assert info['model'] == 'mixed'
+    listed = info['models'].split(', ')
+    assert listed == ['shared-model/high/provider-a', 'shared-model/high/provider-b']
+
+
 def test_opencode_missing_database_records_unknown(tmp_path: Path) -> None:
     """An absent database records the model as unknown, never the flag value."""
     info = runtime_info.collect_runtime_info(
