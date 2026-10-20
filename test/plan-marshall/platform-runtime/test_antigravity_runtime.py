@@ -52,7 +52,7 @@ def test_runtime_info_picks_up_model_env(runtime: AntigravityRuntime, monkeypatc
     info = _parse(runtime.runtime_info())
     assert info['status'] == 'success'
     assert info['harness'] == 'antigravity'
-    assert info.get('model_name') == 'test-model-from-env'
+    assert info.get('model') == 'test-model-from-env'
 
 
 def test_antigravity_in_supported_harnesses():

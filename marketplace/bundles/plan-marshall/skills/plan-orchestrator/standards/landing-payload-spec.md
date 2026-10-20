@@ -97,32 +97,40 @@ the drain consumes. These keys are **required** — a landing missing any of the
 | `deliverables_done` | Completed deliverable count | run |
 | `total_tokens` | The measured-subset total (raw integer sum over the measured phases, with its measured-phase count), or `unknown` when zero phases measured — never `0`. A partly measured run carries the measured sum; only the nothing-measured run carries `unknown`. `unknown` asserts only that nothing was observed and never collapses into `0`; it reads as a gap exactly as `merge_state=unknown` does (see the could-not-read class below) | `record-metrics` facts |
 | `steps` | Comma-joined `{step}:{outcome}` for every finalize step in composed order. **A consumer splits each element on its LAST colon**, never its first: a namespaced step id contains a colon itself (`project:finalize-step-plugin-doctor:done`, `plan-marshall:plan-retrospective:done`), so a first-colon split yields the bare namespace as the step and the rest as the outcome. The split is APPLIED by the one consumer of this key, [`../workflow/analyze.md`](../workflow/analyze.md) § Step 4, which carries the worked example — this row states the rule, that step is its mechanism | `manage-status read` phase_steps |
+| `harness` | The harness the plan ran on (`claude` / `opencode` / `antigravity`), or `unknown` when the stamp is absent. It answers WHO ran the plan, without which a cross-model comparison cannot be attempted | `status.metadata.harness` (phase-1-init Step 8a.6) |
+| `model` | The model identifier the plan ran under, or `unknown` when it could not be read. On OpenCode it is measured from the session tree; a tree that ran more than one model or variant is stamped `mixed` and the distinct `{model}/{variant}` labels are carried in `status.metadata.models`, which the producer writes as this fact's list form | `status.metadata.model` |
+| `effort` | The effort level the plan ran under, or `unknown` when it could not be read | `status.metadata.effort` |
+| `plugin_version` | The plan-marshall BUNDLE version the plan ran under (the `version` in the bundle's `.claude-plugin/plugin.json`), or `unknown` when it could not be read. The executor's `MARSHALL_VERSION` rides the OPTIONAL `executor_version` beside it | `status.metadata.bundle_version` |
 
 Optional keys a landing MAY carry (not required, so their absence is not incompleteness): `epic`,
-`total_wall_seconds`, `harness`, `model`, and any per-step typed fact transcribed as
+`total_wall_seconds`, `executor_version`, and any per-step typed fact transcribed as
 `step.{name}.{fact_key}={value}`. The functional review's verdict facts and the code review's counts
 are the named instances of the last kind — see § "Functional verdict facts" and § "Code-review
 counts" below.
+
+The four runtime-stamp keys — `harness`, `model`, `effort` and `plugin_version` —
+are read from the plan's runtime metadata, which phase-1-init Step 8a.6 stamps
+through the orchestrator preflight hook. They are REQUIRED: a landing that cannot
+say which harness, model, effort and plan-marshall version produced the run cannot
+support the cross-model comparison they exist for. Every landing emitted before
+they were required is INCOMPLETE — that is accepted deliberately, and no
+grandfather rule exempts one. `executor_version` follows the same record but stays
+OPTIONAL.
 
 `model` names the model — or models — the run used. It is a comma-separated list, because a run may
 switch models: a plan that starts on one model and continues on another records
 `deepseek-v4.1-flash/max,deepseek-v4.1-flash/high`, one `{model}/{variant}` element per model used.
 A single-model run carries one element and reads exactly as a scalar would. The runbook lane writes
 this key with every model and variant it used (`unknown` when the harness reports none), so a
-consumer reads the whole list rather than assuming one model per landing.
+consumer reads the whole list rather than assuming one model per landing. On OpenCode the measured
+session tree may itself be `mixed`, with the distinct `id/variant` values listed.
 
-`harness` names the harness the plan ran on (`claude` / `opencode` /
-`antigravity`), read from `status.metadata.harness` (stamped at phase-1-init
-Step 8a.6), or `unknown` when the stamp is absent. It stays optional — not
-required — so landings written before the stamp existed stay complete; the
-producer (`emit-landing.md`) always emits it, with the `unknown` fallback
-asserting only that nothing was observed. A landing written by the RUNBOOK lane
-has no `status.json` and no phase-1-init: that lane reads the same value from
-its own resolve result, which resolves the harness through the platform-runtime
-runtime-info seam, so the fact means the same thing on either producer. The
-`transcripts` capability that explains the run's token figures (`full` vs
-`none`) rides the same `runtime-info` record — see
-`platform-runtime/standards/runtime-info.md`.
+A landing written by the RUNBOOK lane has no `status.json` and no phase-1-init: that lane reads the
+same runtime-stamp values from its own resolve result, which resolves the harness through the
+platform-runtime runtime-info seam, so each fact means the same thing on either producer. The
+`transcripts` capability that
+explains the run's token figures (`full` vs `none`) rides the same
+`runtime-info` record — see `platform-runtime/standards/runtime-info.md`.
 
 **A degraded value is not a fact.** A degraded value comes in TWO classes, and they are rejected on
 different terms because they assert different things.
@@ -131,8 +139,8 @@ The **answered-degraded** class is `n/a`. `emit-landing.md` sanctions writing it
 no value for — no PR was ever created, the step legitimately did not run — so it asserts an ABSENCE THE
 RUN OBSERVED. For `pr`, `merge_state` and `cleanup_owed` that IS an answer — "no PR exists" and "no
 cleanup step ran" are real end states, which is why all three rows above name `n/a` as a legal value.
-For the remaining required keys — `plan_id`,
-`deliverables_total`, `deliverables_done`, `total_tokens`, `steps` — it is not: each names something a
+For the remaining required keys — `plan_id`, `deliverables_total`, `deliverables_done`, `total_tokens`,
+`harness`, `model`, `effort`, `plugin_version`, `steps` — it is not: each names something a
 landed plan always has, so an absence there is a producer gap, not an answer.
 `check_landing_completeness` treats those as MISSING and names them, so a landing whose token total,
 step list and deliverable counts all degraded is INCOMPLETE rather than silently accepted.

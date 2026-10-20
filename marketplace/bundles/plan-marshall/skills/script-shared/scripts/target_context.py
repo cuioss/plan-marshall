@@ -142,6 +142,19 @@ def default_target() -> str:
     return _target
 
 
+#: The environment signals the platform tier reads, as ``(name, target)`` pairs
+#: in precedence order. The ONE declaration of the ambient-target contract:
+#: :func:`detect_target_from_env` drives from it, and a consumer that must scrub
+#: or otherwise account for the signals derives its list from here rather than
+#: restating the names.
+TARGET_ENV_SIGNALS: Final[tuple[tuple[str, str], ...]] = (
+    ('ANTIGRAVITY_AGENT', 'antigravity'),
+    ('OPENCODE', 'opencode'),
+    ('OPENCODE_PID', 'opencode'),
+    ('CLAUDE_CODE_SESSION_ID', 'claude'),
+)
+
+
 def detect_target_from_env() -> str | None:
     """Detect the runtime target from platform-injected environment variables.
 
@@ -151,7 +164,8 @@ def detect_target_from_env() -> str | None:
     ``OPENCODE=1`` (or ``OPENCODE_PID``); Claude Code injects
     ``CLAUDE_CODE_SESSION_ID``. These ambient signals resolve the target before
     any config or filesystem probe, eliminating the chicken-and-egg problem on
-    first run.
+    first run. The signal names and their targets are declared once, in
+    :data:`TARGET_ENV_SIGNALS`.
 
     ``marketplace_paths.detect_target_from_env`` delegates here and
     ``marketplace_paths._detect_target_from_env`` delegates to that, so the
@@ -162,12 +176,9 @@ def detect_target_from_env() -> str | None:
         Target string (``'antigravity'``, ``'opencode'`` or ``'claude'``), or
         ``None`` when no platform env signal is present.
     """
-    if os.environ.get('ANTIGRAVITY_AGENT'):
-        return 'antigravity'
-    if os.environ.get('OPENCODE') or os.environ.get('OPENCODE_PID'):
-        return 'opencode'
-    if os.environ.get('CLAUDE_CODE_SESSION_ID'):
-        return 'claude'
+    for name, target in TARGET_ENV_SIGNALS:
+        if os.environ.get(name):
+            return target
     return None
 
 
@@ -243,6 +254,33 @@ def _read_local_target(candidate: Path) -> tuple[str | None, str]:
         return target.strip(), ''
 
     return None, REASON_TARGET_ABSENT
+
+
+def read_configured_target(cwd: Path | None = None) -> str | None:
+    """Return the target the machine-local configuration names, or ``None``.
+
+    The config tier read IN ISOLATION from the cascade — what the machine-local
+    harness/run configuration FILE says, whether or not an ambient environment
+    signal outranks it. That isolation is what makes a mismatch between the two
+    lower tiers reportable: :func:`resolve_target` collapses the config tier
+    away the moment an env signal is present, so a caller comparing the two
+    tiers needs this separate read.
+
+    Args:
+        cwd: Directory the upward walk starts from. Defaults to
+            ``Path.cwd()``.
+
+    Returns:
+        The configured target, or ``None`` when no config file exists, it
+        cannot be read or parsed, or it names no target — the same four
+        conditions :func:`resolve_target` distinguishes with its ``REASON_*``
+        values, collapsed here to the one answer this reader is asked for.
+    """
+    candidate = find_local_config(cwd)
+    if candidate is None:
+        return None
+    target, _reason = _read_local_target(candidate)
+    return target
 
 
 def resolve_target(cwd: Path | None = None) -> ResolvedTarget:

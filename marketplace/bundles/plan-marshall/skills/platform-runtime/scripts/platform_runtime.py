@@ -2,7 +2,9 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """
 Platform router for plan-marshall — dispatches 27 operations to the correct
-target implementation based on ``runtime.target`` in ``.plan/marshal.json``.
+target implementation based on the target ``target_context.resolve_target``
+resolves (an ambient environment signal, then the machine-local harness/run
+configuration, then the ``claude`` fallback).
 
 Usage:
     python3 .plan/execute-script.py plan-marshall:platform-runtime:platform_runtime \\
@@ -36,10 +38,12 @@ Operations:
     subagent dispatch       --agent <name>  [--prompt-file <path>]  [--context <json>]
     wait for                --observable <kind>  --reference <id>  --bound-seconds <n>
     health-check            --checks all|permissions|display|mcp-diagnostics
-    runtime-info            (no arguments)
+    runtime-info            [--model <id>] [--effort <level>]
 
 The router resolves ``PLAN_DIR_NAME`` (default ``.plan``) from the environment,
-reads ``marshal.json``, looks up ``runtime.target``, and dispatches to the
+reads ``marshal.json`` as an existence check, resolves the active target through
+``target_context.resolve_target`` (ambient env signal, then machine-local
+harness/run configuration, then the ``claude`` fallback), and dispatches to the
 ``Runtime`` subclass the registration block registers for that target.
 
 Exit codes:
@@ -147,7 +151,7 @@ def _bootstrap_glob_discover(target: str | None = None) -> Path | None:
 
 # Run the common bootstrap immediately (before imports that depend on it).
 # The target-specific libs are added in main() once the target is resolved
-# from marshal.json.  This two-phase approach ensures the router's own
+# through target_context.  This two-phase approach ensures the router's own
 # imports (claude_runtime, opencode_runtime, runtime_base) work correctly
 # while keeping target-specific paths out of the global sys.path when only
 # the common libs are needed.
@@ -405,7 +409,7 @@ def _dispatch(runtime: Runtime, operation: str, remaining: list[str]) -> str:
     # ------------------------------------------------------------------
     if operation == 'project install-hook':
         p = argparse.ArgumentParser(allow_abbrev=False, prog='platform_runtime project install-hook')
-        p.add_argument('--target', required=True, help='Platform target identifier, as in marshal.json runtime.target')
+        p.add_argument('--target', required=True, help='Platform target identifier (one of the registered targets)')
         p.add_argument(
             '--overwrite',
             action='append',
@@ -803,8 +807,18 @@ def _dispatch(runtime: Runtime, operation: str, remaining: list[str]) -> str:
     # ------------------------------------------------------------------
     if operation == 'runtime-info':
         p = argparse.ArgumentParser(allow_abbrev=False, prog='platform_runtime runtime-info')
-        p.parse_args(remaining)
-        return runtime.runtime_info()
+        p.add_argument(
+            '--model',
+            default=None,
+            help='Self-reported model identifier the executing LLM ran under; recorded with model_source: self_reported',
+        )
+        p.add_argument(
+            '--effort',
+            default=None,
+            help='Self-reported effort level the executing LLM ran under; recorded with effort_source: self_reported',
+        )
+        ns = p.parse_args(remaining)
+        return runtime.runtime_info(ns.model, ns.effort)
 
     # Unrecognized operation.
     return toon_error(

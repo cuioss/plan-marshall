@@ -497,9 +497,9 @@ class Runtime(ABC):
     """Abstract base for platform-runtime target implementations.
 
     Subclasses must implement every abstract method.  The router
-    (platform_runtime.py) instantiates the correct subclass based on
-    ``runtime.target`` in ``.plan/marshal.json`` and dispatches the requested
-    operation.
+    (platform_runtime.py) resolves the active target through
+    ``target_context.resolve_target``, instantiates the correct subclass, and
+    dispatches the requested operation.
 
     Methods return a serialized TOON string ready for ``print()``.  Use the
     ``toon_success``, ``toon_error``, and ``toon_noop`` helpers from this module
@@ -1562,12 +1562,20 @@ class Runtime(ABC):
         """
 
     @abstractmethod
-    def runtime_info(self) -> str:
+    def runtime_info(self, model: str | None = None, effort: str | None = None) -> str:
         """Collect runtime information for the client.toon artifact.
 
         Returns the harness/client identifier, model name/type/version, effort
-        level, and build-version on a best-effort basis — attributes that
-        scripts cannot read are dropped rather than estimated.
+        level, harness source, and the bundle/executor version on a best-effort
+        basis — attributes that scripts cannot read are dropped rather than
+        estimated.
+
+        Args:
+            model: Self-reported model identifier the executing LLM ran under,
+                or ``None``. Recorded with ``model_source: self_reported``
+                (except on OpenCode, whose session database is authoritative).
+            effort: Self-reported effort level, or ``None``. Recorded with
+                ``effort_source: self_reported``.
 
         A target that cannot collect runtime information returns ``no-op``
         with a ``reason`` and an ``alternative`` rather than fabricating

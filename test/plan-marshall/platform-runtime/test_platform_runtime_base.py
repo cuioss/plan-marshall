@@ -219,7 +219,7 @@ class _ConcreteRuntime(Runtime):
     def health_check(self, checks: str) -> str:
         return toon_success('health-check')
 
-    def runtime_info(self) -> str:
+    def runtime_info(self, model: str | None = None, effort: str | None = None) -> str:
         return toon_success('runtime-info')
 
     def permission_settings_path(self, scope: str, write: bool = False, project_dir: str | None = None) -> str:
