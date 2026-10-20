@@ -422,15 +422,27 @@ def _permission_action(category: str) -> str:
     return _CATEGORY_TO_ACTION.get(category, category)
 
 
-def _permission_rules(settings: dict[str, Any]) -> list[Any] | None:
+def _permission_rules(settings: dict[str, Any], *, create: bool = False) -> list[Any] | None:
     """Return the ``permissions`` list when the settings carry one, else ``None``.
 
-    ``None`` means the file is in the OpenCode 1 map shape (or carries no
-    permission block at all); callers then keep writing the map shape they
-    found rather than converting the operator's file as a side effect.
+    ``None`` means the file carries the OpenCode 1 ``permission`` map, which
+    callers keep writing in place rather than converting behind the operator's
+    back. A file carrying NEITHER shape has nothing to preserve, so a writer
+    passes ``create=True`` and gets a fresh list: a config that only names its
+    schema must not gain the OpenCode 1 map from a producer. Readers leave
+    ``create`` off, so an empty config reports no shape instead of being
+    silently given one.
     """
     rules = settings.get('permissions')
-    return rules if isinstance(rules, list) else None
+    if isinstance(rules, list):
+        return rules
+    if 'permission' in settings:
+        return None
+    if create:
+        created: list[Any] = []
+        settings['permissions'] = created
+        return created
+    return None
 
 
 def _resource_matches(pattern: Any, resource: str) -> bool:
@@ -1174,7 +1186,7 @@ class OpenCodeRuntime(Runtime):
                 'load_error',
                 f'Failed to load settings from {settings_path}: {settings["error"]}',
             )
-        rules = _permission_rules(settings)
+        rules = _permission_rules(settings, create=True)
         if rules is not None:
             added = 0
             for g in grants:
@@ -1352,7 +1364,7 @@ class OpenCodeRuntime(Runtime):
 
         settings_path = self.permission_settings_path(scope, write=not dry_run)
         settings = self.permission_load_settings(settings_path)
-        rules = _permission_rules(settings)
+        rules = _permission_rules(settings, create=True)
 
         if rules is not None and operation in ('ensure', 'add'):
             added = 0
@@ -1537,7 +1549,7 @@ class OpenCodeRuntime(Runtime):
 
         changes_applied = 0
         proposed_count = 0
-        rules = _permission_rules(settings)
+        rules = _permission_rules(settings, create=True)
         if rules is not None:
             for tool, tool_entries in rendered.items():
                 action = _permission_action(tool)
@@ -1687,7 +1699,7 @@ class OpenCodeRuntime(Runtime):
                 'load_error',
                 f'Failed to load settings from {settings_path}: {settings["error"]}',
             )
-        rules = _permission_rules(settings)
+        rules = _permission_rules(settings, create=True)
         changed = False
         if rules is not None:
             current = _effective_rule_effect(rules, 'webfetch', '*')
@@ -1937,7 +1949,7 @@ class OpenCodeRuntime(Runtime):
                 'error': settings['error'],
             }
 
-        rules = _permission_rules(settings)
+        rules = _permission_rules(settings, create=True)
         if rules is not None:
             list_added: list[str] = []
             for cmd in OPENCODE_DEFAULT_PERMISSIONS:

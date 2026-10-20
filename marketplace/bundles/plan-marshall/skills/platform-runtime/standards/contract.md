@@ -432,6 +432,8 @@ summary:
 
 `findings[]` and `summary` are emitted whether or not anything was found — a zero here is a measured zero, not an absent field.
 
+**OpenCode payload**: the findings model above is the Claude one. OpenCode has no redundant/suspicious rule model to audit, so it reports per-scope coverage instead: `analysis.<scope>` carries `settings_path`, `permission_shape` (`permissions` for the OpenCode 2 list, `permission` for the OpenCode 1 map, `none` when the file carries neither), `has_executor`, `missing_defaults`, and `deny_rules` — each `{action, resource, effect}`. The deny set is read from the `permissions` list when present and from the `permission` map otherwise, so the audit reports the rules the file actually has.
+
 **Error**:
 ```toon
 status: error

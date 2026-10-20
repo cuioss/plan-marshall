@@ -413,3 +413,24 @@ class TestOpenCodePermissionWritesUseTheListShape:
             rule['action'] == 'shell' and rule['resource'] == 'git push *' and rule['effect'] == 'deny'
             for rule in rules
         )
+
+    def test_ensure_writes_the_list_into_a_config_with_neither_shape(self, monkeypatch, tmp_path, in_tmp_cwd):
+        config = tmp_path / 'opencode.json'
+        config.write_text(json.dumps({'$schema': 'https://opencode.ai/config.json'}), encoding='utf-8')
+        force_opencode(monkeypatch)
+
+        pf.cmd_ensure(
+            parse_ns(
+                'plan-marshall',
+                'tools-permission-fix',
+                'permission_fix.py',
+                'ensure',
+                '--permissions',
+                'read',
+                '--target',
+                'project',
+            )
+        )
+
+        rules = self._rules(config)
+        assert any(rule['action'] == 'read' and rule['effect'] == 'allow' for rule in rules)

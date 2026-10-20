@@ -392,7 +392,7 @@ def cmd_ensure(args: argparse.Namespace) -> dict:
             to_opencode_grant,
         )
 
-        rules = _permission_rules(settings)
+        rules = _permission_rules(settings, create=True)
         if rules is not None:
             added = []
             already_exists = []
@@ -787,7 +787,7 @@ def cmd_ensure_wildcards(args: argparse.Namespace) -> dict:
         if error:
             return {'status': 'error', 'error': error}
 
-        rules = _permission_rules(settings)
+        rules = _permission_rules(settings, create=True)
         if rules is not None:
             added = []
             already_exists = []
@@ -1406,7 +1406,7 @@ def cmd_ensure_executor(args: argparse.Namespace) -> dict:
             'dry_run': args.dry_run,
         }
 
-        rules = _permission_rules(settings)
+        rules = _permission_rules(settings, create=True)
         if rules is not None:
             already = _effective_rule_effect(rules, 'shell', opencode_executor) == 'allow'
             if already:

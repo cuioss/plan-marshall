@@ -142,6 +142,21 @@ def test_configure_adds_into_the_permissions_list(runtime: OpenCodeRuntime, list
     assert _exact_index(data['permissions'], 'shell', 'git push *', 'deny') is not None
 
 
+def test_a_config_with_neither_shape_gains_the_list_not_the_map(
+    runtime: OpenCodeRuntime, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+):
+    """A config naming only its schema must not gain the OpenCode 1 map from a producer."""
+    monkeypatch.chdir(tmp_path)
+    config = tmp_path / 'opencode.json'
+    config.write_text(json.dumps({'$schema': 'https://opencode.ai/config.json'}), encoding='utf-8')
+
+    runtime.permission_configure('project', [{'rule': 'read'}])
+
+    data = _load(config)
+    _assert_no_legacy_map(data)
+    assert _exact_index(data['permissions'], 'read', '*', 'allow') is not None
+
+
 def test_the_opencode1_task_alias_is_written_as_the_opencode2_tool(
     runtime: OpenCodeRuntime, list_settings: pathlib.Path
 ):
