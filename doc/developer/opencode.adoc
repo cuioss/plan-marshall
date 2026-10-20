@@ -241,7 +241,7 @@ The `OpenCodeRuntime` subclass implements target operations:
   ** `permission_ensure_defaults(settings, settings_path, dry_run)`: Ensures baseline command patterns exist in the `permissions` list, after its catch-all, adding a `permission` map only when the file being edited already carries that OpenCode 1 shape.
   ** `permission_configure(scope, grants)`: Appends or updates grants translated via `to_opencode_grant()` — the mapping domain spans `allow`, `ask`, and `deny` actions.
   ** `permission_fix(scope, operation, arguments, dry_run)`: Supports `ensure`, `add`, `remove`, `consolidate`, `normalize`, and `protect-path` (a writing deny that emits guard-path entries as `deny`).
-* **Health Check**: Inspects presence of `opencode.json` (or global config) and verifies that `python3 .plan/execute-script.py *` is permitted.
+* **Health Check**: Inspects presence of `opencode.json` (or global config), verifies that `python3 .plan/execute-script.py *` is permitted, and compares the installed `opencode --version` major against the schema major the emitter targets — a 1.x install reports a mismatch, an absent binary reports *not checkable*, never ok.
 * **Project Initial Setup**:
   ** Scaffolds `.plan/` and `.plan/temp/`.
   ** Writes `runtime.target: opencode` to `.plan/marshal.json`.

@@ -46,7 +46,7 @@ from conftest import PROJECT_ROOT
 #: Every env signal the cascade reads. Each is cleared before a test so a signal
 #: the DEVELOPER's shell happens to carry (this suite is routinely run on a
 #: Claude machine AND on an OpenCode one) cannot decide the outcome.
-PLATFORM_ENV_SIGNALS = ('ANTIGRAVITY_AGENT', 'OPENCODE', 'OPENCODE_PID', 'CLAUDE_CODE_SESSION_ID')
+PLATFORM_ENV_SIGNALS = ('ANTIGRAVITY_AGENT', 'OPENCODE', 'CLAUDE_CODE_SESSION_ID')
 
 
 @pytest.fixture(autouse=True)
@@ -101,7 +101,6 @@ class TestCascadeTiers:
         expected = {
             'ANTIGRAVITY_AGENT': 'antigravity',
             'OPENCODE': 'opencode',
-            'OPENCODE_PID': 'opencode',
             'CLAUDE_CODE_SESSION_ID': 'claude',
         }
         for signal, target in expected.items():
@@ -111,6 +110,16 @@ class TestCascadeTiers:
             assert resolved['target_source'] == SOURCE_ENV, f'{signal} must be reported as the env tier'
             assert resolved['reason'] == '', 'a tier that found a target has nothing to explain'
             monkeypatch.delenv(signal)
+
+    def test_opencode_pid_alone_does_not_resolve(self, monkeypatch, project):
+        """``OPENCODE_PID`` is not a signal OpenCode 2 sets, so it must not name the target."""
+        monkeypatch.setenv('OPENCODE_PID', '4242')
+        resolved = resolve_target(cwd=project)
+        assert resolved['target_source'] != SOURCE_ENV
+
+    def test_opencode_pid_is_not_a_declared_signal(self):
+        """The ambient-signal table carries no ``OPENCODE_PID`` probe."""
+        assert all(name != 'OPENCODE_PID' for name, _target in target_context.TARGET_ENV_SIGNALS)
 
     def test_local_config_tier_resolves_a_declared_harness(self, tmp_path):
         """Harness state in .plan/local/harness/{harness}.json names the target."""

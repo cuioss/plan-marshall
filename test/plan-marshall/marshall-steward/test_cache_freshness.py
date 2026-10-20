@@ -390,7 +390,7 @@ class TestTargetResolution:
     @pytest.fixture(autouse=True)
     def _no_platform_signal(self, monkeypatch: pytest.MonkeyPatch):
         """Clear every platform env signal so a tier case is decided by what it sets."""
-        for name in ('ANTIGRAVITY_AGENT', 'OPENCODE', 'OPENCODE_PID', 'CLAUDE_CODE_SESSION_ID'):
+        for name in ('ANTIGRAVITY_AGENT', 'OPENCODE', 'CLAUDE_CODE_SESSION_ID'):
             monkeypatch.delenv(name, raising=False)
 
     def _record_manifest_lookup(self, monkeypatch: pytest.MonkeyPatch) -> list[str]:
@@ -410,10 +410,9 @@ class TestTargetResolution:
         [
             ('ANTIGRAVITY_AGENT', 'antigravity'),
             ('OPENCODE', 'opencode'),
-            ('OPENCODE_PID', 'opencode'),
             ('CLAUDE_CODE_SESSION_ID', 'claude'),
         ],
-        ids=['antigravity-signal', 'opencode-signal', 'opencode-pid-signal', 'claude-signal'],
+        ids=['antigravity-signal', 'opencode-signal', 'claude-signal'],
     )
     def test_env_signal_reaches_the_manifest_lookup(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, signal, expected_target

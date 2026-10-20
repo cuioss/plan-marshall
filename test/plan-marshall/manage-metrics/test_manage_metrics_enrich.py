@@ -314,7 +314,6 @@ def _clear_target_env(monkeypatch):
     """Remove every platform-detection signal so each test sets its own."""
     monkeypatch.delenv('ANTIGRAVITY_AGENT', raising=False)
     monkeypatch.delenv('OPENCODE', raising=False)
-    monkeypatch.delenv('OPENCODE_PID', raising=False)
     monkeypatch.delenv('CLAUDE_CODE_SESSION_ID', raising=False)
 
 
@@ -346,7 +345,7 @@ def test_enrich_detected_opencode_skips_despite_claude_marshal(plan_context, mon
     """Detected opencode + claude-declaring marshal still takes the skip branch.
 
     The fake project dir carries a marshal that declares ``claude``; the
-    ambient ``OPENCODE_PID`` signal must outrank it, so the enrich lands on
+    ambient ``OPENCODE`` signal must outrank it, so the enrich lands on
     the transcript-less skip with the gap flag and the unenriched population.
     """
     plan_id = 'enrich-detect-01'
@@ -355,7 +354,7 @@ def test_enrich_detected_opencode_skips_despite_claude_marshal(plan_context, mon
     _write_claude_marshal(proj)
     monkeypatch.chdir(proj)
     _clear_target_env(monkeypatch)
-    monkeypatch.setenv('OPENCODE_PID', '4242')
+    monkeypatch.setenv('OPENCODE', '1')
 
     assert manage_metrics._resolve_runtime_target() == 'opencode'
 

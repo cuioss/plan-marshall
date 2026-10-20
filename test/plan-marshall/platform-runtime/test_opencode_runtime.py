@@ -1031,16 +1031,17 @@ def test_health_check_hook_always_unhealthy(runtime: OpenCodeRuntime) -> None:
     assert hook_result['healthy'] is False
 
 
-def test_health_check_all_includes_four_checks(runtime: OpenCodeRuntime) -> None:
-    """health_check with 'all' runs permissions, display, mcp-diagnostics, and hook."""
+def test_health_check_all_includes_the_version_check(runtime: OpenCodeRuntime) -> None:
+    """health_check with 'all' runs permissions, version, display, mcp-diagnostics, and hook."""
     result = _parse(runtime.health_check('all'))
     assert result['status'] == 'success'
     checks_run = result['checks_run']
     assert 'permissions' in checks_run
+    assert 'version' in checks_run
     assert 'display' in checks_run
     assert 'mcp-diagnostics' in checks_run
     assert 'hook' in checks_run
-    assert len(result['results']) == 4
+    assert len(result['results']) == 5
 
 
 def test_health_check_permissions_check_present(runtime: OpenCodeRuntime) -> None:
@@ -1069,6 +1070,59 @@ def test_health_check_all_healthy_false_when_display_or_hook(runtime: OpenCodeRu
 
     result2 = _parse(runtime.health_check('hook'))
     assert result2['all_healthy'] is False
+
+
+# =============================================================================
+# Installed-version check against the emitted schema major (D4)
+# =============================================================================
+
+
+def _stub_opencode_version(monkeypatch: pytest.MonkeyPatch, output: str | None) -> None:
+    """Stub ``opencode --version``; ``None`` stubs an absent executable."""
+    import opencode_runtime
+
+    monkeypatch.setattr(
+        opencode_runtime.shutil,
+        'which',
+        (lambda _name: None) if output is None else (lambda _name: '/usr/bin/opencode'),
+    )
+
+    class _Completed:
+        stdout = output or ''
+        stderr = ''
+        returncode = 0
+
+    monkeypatch.setattr(opencode_runtime.subprocess, 'run', lambda *args, **kwargs: _Completed())
+
+
+def test_health_version_reports_a_major_mismatch(runtime: OpenCodeRuntime, monkeypatch: pytest.MonkeyPatch) -> None:
+    """An installed 1.x reports a mismatch with the emitted config's major."""
+    _stub_opencode_version(monkeypatch, '1.9.4\n')
+    result = _parse(runtime.health_check('version'))
+    check = next(item for item in result['results'] if item['check'] == 'version')
+    assert check['healthy'] is False
+    assert '1.9.4' in check['detail']
+    assert 'mismatch' in check['detail'].lower()
+
+
+def test_health_version_accepts_a_matching_major(runtime: OpenCodeRuntime, monkeypatch: pytest.MonkeyPatch) -> None:
+    """An installed 2.x reports no mismatch."""
+    _stub_opencode_version(monkeypatch, '2.0.28\n')
+    result = _parse(runtime.health_check('version'))
+    check = next(item for item in result['results'] if item['check'] == 'version')
+    assert check['healthy'] is True
+    assert 'mismatch' not in check['detail'].lower()
+
+
+def test_health_version_absent_binary_is_not_checkable(
+    runtime: OpenCodeRuntime, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An absent binary reports 'not checkable', never ok."""
+    _stub_opencode_version(monkeypatch, None)
+    result = _parse(runtime.health_check('version'))
+    check = next(item for item in result['results'] if item['check'] == 'version')
+    assert check['healthy'] is False
+    assert 'not checkable' in check['detail'].lower()
 
 
 # =============================================================================

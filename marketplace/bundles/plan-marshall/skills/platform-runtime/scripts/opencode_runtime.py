@@ -46,7 +46,9 @@ import fnmatch
 import json
 import os
 import re
+import shutil
 import sqlite3
+import subprocess
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
@@ -71,6 +73,12 @@ OPENCODE_DEFAULT_PERMISSIONS: tuple[str, ...] = (
     './pw *',
     'python3 marketplace/targets/sync.py *',
 )
+
+#: OpenCode MAJOR whose configuration schema the emitter targets. The health
+#: ``version`` check compares the installed binary's major against this, so a
+#: future OpenCode major surfaces as a reported mismatch instead of an emit
+#: that silently lands in a schema the client no longer reads the same way.
+OPENCODE_CONFIG_SCHEMA_MAJOR = 2
 
 DEFAULT_OPENCODE_COMMANDS = OPENCODE_DEFAULT_PERMISSIONS
 
@@ -459,6 +467,29 @@ def _remove_permission_rule(rules: list[Any], action: str, resource: str) -> boo
             del rules[index]
             return True
     return False
+
+
+def installed_opencode_version() -> tuple[int | None, str]:
+    """Read the installed OpenCode version and return ``(major, raw)``.
+
+    ``major`` is ``None`` when the version cannot be checked — an absent
+    binary, a failed invocation, or unparseable output — and the second
+    element then explains why. A caller must never read ``None`` as "ok":
+    not-checkable is its own state, and reporting it as healthy would tell an
+    operator the emitted schema was verified when nothing was read.
+    """
+    executable = shutil.which('opencode')
+    if not executable:
+        return None, 'opencode executable not found on PATH'
+    try:
+        completed = subprocess.run([executable, '--version'], capture_output=True, text=True, timeout=10)
+    except (OSError, subprocess.SubprocessError) as exc:
+        return None, f'opencode --version failed: {exc}'
+    output = (completed.stdout or completed.stderr or '').strip()
+    match = re.search(r'(\d+)\.\d+', output)
+    if match is None:
+        return None, f'unparseable opencode version output: {output!r}'
+    return int(match.group(1)), output
 
 
 def _opencode2_skeleton() -> dict[str, Any]:
@@ -2203,7 +2234,7 @@ class OpenCodeRuntime(Runtime):
         """
         check_list = [c.strip() for c in checks.split(',')]
         if 'all' in check_list:
-            check_list = ['permissions', 'display', 'mcp-diagnostics', 'hook']
+            check_list = ['permissions', 'version', 'display', 'mcp-diagnostics', 'hook']
 
         results: list[dict[str, Any]] = []
         all_healthy = True
@@ -2253,6 +2284,24 @@ class OpenCodeRuntime(Runtime):
                         'detail': detail,
                     }
                 )
+                if not healthy:
+                    all_healthy = False
+
+            elif check == 'version':
+                major, raw = installed_opencode_version()
+                if major is None:
+                    healthy = False
+                    detail = f'not checkable: {raw}'
+                elif major != OPENCODE_CONFIG_SCHEMA_MAJOR:
+                    healthy = False
+                    detail = (
+                        f'version mismatch: installed OpenCode {raw} is major {major}; '
+                        f'the emitted configuration targets major {OPENCODE_CONFIG_SCHEMA_MAJOR}'
+                    )
+                else:
+                    healthy = True
+                    detail = f'installed OpenCode {raw} matches the emitted schema major {OPENCODE_CONFIG_SCHEMA_MAJOR}'
+                results.append({'check': check, 'healthy': healthy, 'detail': detail})
                 if not healthy:
                     all_healthy = False
 
