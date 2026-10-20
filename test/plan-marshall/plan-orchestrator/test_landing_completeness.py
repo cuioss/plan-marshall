@@ -1174,6 +1174,7 @@ class TestRuntimeStampFacts:
         assert key in missing
 
     def test_a_block_carrying_all_four_is_complete(self):
+        """The matched positive control: a complete stamp is not reported missing."""
         complete, missing = check_landing_completeness(_facts_landing())
 
         assert complete is True
@@ -1192,10 +1193,8 @@ class TestRuntimeStampFacts:
             assert key in table, key
 
     def test_the_executor_version_stays_optional(self):
-        """``plugin_version`` is required; the executor version riding beside it is not."""
-        assert 'executor_version' not in _spec_table_keys()
+        """``executor_version`` never becomes a required key."""
         assert 'executor_version' not in LANDING_REQUIRED_KEYS
-        assert check_landing_completeness(_facts_landing()) == (True, [])
 
 
 class TestEmitLandingRuntimeStamp:

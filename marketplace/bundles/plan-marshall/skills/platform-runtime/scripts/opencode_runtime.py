@@ -352,13 +352,17 @@ _DECISION_COLUMNS = ('effect', 'decision', 'status', 'approval')
 def _default_opencode_db_path() -> Path:
     """Return the default persisted-approval database path.
 
-    Overridable by ``OPENCODE_DB_PATH`` for tests; otherwise the XDG data
-    home value ``~/.local/share/opencode/opencode.db``.
+    Overridable by ``OPENCODE_DB_PATH`` for tests. Otherwise the XDG data home
+    decides: ``$XDG_DATA_HOME/opencode/opencode.db`` when that variable is set
+    (the XDG base-directory spec), and ``~/.local/share/opencode/opencode.db``
+    when it is not.
     """
     env = os.environ.get('OPENCODE_DB_PATH')
     if env:
         return Path(env).expanduser()
-    return Path.home() / '.local' / 'share' / 'opencode' / 'opencode.db'
+    data_home = os.environ.get('XDG_DATA_HOME')
+    base = Path(data_home).expanduser() if data_home else Path.home() / '.local' / 'share'
+    return base / 'opencode' / 'opencode.db'
 
 
 def _normalize_persisted_tool(tool: str) -> str:

@@ -54,7 +54,7 @@ One required attribute pair (`harness`, `transcripts`), one further always-prese
 | `model_version` | Model version as reported by script-accessible sources | No |
 | `effort` | Effort level as reported by a script-accessible source or self-reported through `--effort`; on OpenCode it is the measured session-tree variant, which a flag never overrides | No |
 | `effort_source` | `self_reported` (an `--effort` flag) or `measured` (a script-readable source, including the OpenCode variant) | No |
-| `bundle_version` | The `version` in `.claude-plugin/plugin.json` of the bundle the collector runs from | No |
+| `bundle_version` | The `version` in the bundle manifest the collector runs from — `.claude-plugin/plugin.json` in a bundle tree, `plugin.json` in a flat deployed tree | No |
 | `executor_version` | The `MARSHALL_VERSION` of the executor (`plugin_registry.read_executor_version`) | No |
 
 `harness_source` is what keeps a fallback `claude` distinguishable from a
@@ -68,9 +68,12 @@ configuration is a fact worth reporting, not a silent loss.
 
 `bundle_version` is the INSTALLED bundle's own manifest version — not the
 marketplace manifest's `metadata.version`, which describes the aggregate project
-rather than the bundle that is loaded. `executor_version` is read through the
-shared `plugin_registry` reader, so the assignment's grammar has one definition;
-an absent or unreadable executor omits the key rather than substituting a version.
+rather than the bundle that is loaded. Both deployed manifest shapes are read:
+`.claude-plugin/plugin.json` in a bundle tree (source checkout or versioned
+plugin cache) and a root `plugin.json` in a flat deployed tree. `executor_version`
+is read through the shared `plugin_registry` reader, so the assignment's grammar
+has one definition; an absent or unreadable executor omits the key rather than
+substituting a version.
 
 `transcripts: none` is the capability flag a transcript-less harness carries:
 its token figures report `unknown` rather than zero (see
@@ -87,10 +90,17 @@ On OpenCode the model comes from the session record, not from a flag: the
 collector reads `session_v2.model` (id, provider, variant) from `opencode.db`
 opened read-only, for the plan's root session (`OPENCODE_SESSION_ID` resolved to
 its root through `parent_id`) and for every descendant, and records it as
-`measured`. A flag never stands in for the record. A tree that ran more than one
+`measured`. A flag never stands in for the record. The read is BOUNDED to that
+tree: the root is reached by an upward recursive query and the descendants by a
+downward one, so another project's sessions are never scanned. The database URI
+is built from `Path.as_uri()`, so a path containing `?`, `#` or `%` is opened
+rather than truncated at the first metacharacter; the default path follows
+`XDG_DATA_HOME`. A tree that ran more than one
 model or variant is recorded as `model: mixed` with the distinct values listed —
 never averaged and never reduced to the root's value. An absent database, an
-unreadable schema or an unresolvable session records `model: unknown`.
+unreadable schema or an unresolvable session records `model: unknown`. With no
+session id in scope the model is omitted WITH `model_omission_reason:
+no_session_id`, so the omission is traceable.
 
 `model` names the id; a single-model OpenCode tree also records `variant` (and,
 when the record carries one, `provider`), and the landing writes the two as the

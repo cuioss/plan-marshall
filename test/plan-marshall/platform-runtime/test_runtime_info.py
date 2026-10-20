@@ -8,13 +8,17 @@ and opencode provider dispatch, and the router unknown-target error path.
 
 from __future__ import annotations
 
+import importlib.util
 import json
+import shutil
 import sqlite3
+import uuid
 from datetime import UTC, datetime, timezone
 from pathlib import Path
 from typing import Any
 
 import platform_runtime
+import pytest
 import runtime_info
 import target_context
 from antigravity_runtime import AntigravityRuntime
@@ -463,6 +467,110 @@ def test_opencode_missing_database_records_unknown(tmp_path: Path) -> None:
     assert info['model'] != 'some-flag-value'
 
 
+def test_database_path_with_uri_metacharacters_is_read(tmp_path: Path) -> None:
+    """A path containing ``?`` or ``%`` is opened, not mis-parsed by the URI."""
+    db_path = tmp_path / 'open?code%20store.db'
+    _write_session_db(db_path, [('ses-root', None, _model_json('deepseek-v4.1-flash', 'high'))])
+
+    info = runtime_info.collect_runtime_info(
+        'opencode',
+        env={},
+        opencode_db_path=db_path,
+        opencode_session_id='ses-root',
+    )
+
+    assert info['model'] == 'deepseek-v4.1-flash'
+    assert info['variant'] == 'high'
+
+
+def test_measurement_is_bounded_to_the_session_tree(tmp_path: Path) -> None:
+    """An unrelated session tree in the same database does not enter the measurement."""
+    db_path = tmp_path / 'opencode.db'
+    _write_session_db(
+        db_path,
+        [
+            ('ses-root', None, _model_json('deepseek-v4.1-flash', 'high')),
+            ('ses-child', 'ses-root', _model_json('deepseek-v4.1-flash', 'high')),
+            ('other-root', None, _model_json('gpt-5', 'low')),
+            ('other-child', 'other-root', _model_json('gpt-5', 'low')),
+        ],
+    )
+
+    info = runtime_info.collect_runtime_info(
+        'opencode',
+        env={},
+        opencode_db_path=db_path,
+        opencode_session_id='ses-child',
+    )
+
+    assert info['model'] == 'deepseek-v4.1-flash'
+    assert info['variant'] == 'high'
+
+
+def test_default_opencode_db_path_follows_xdg_data_home(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """``XDG_DATA_HOME`` relocates the default database path."""
+    from opencode_runtime import _default_opencode_db_path
+
+    monkeypatch.delenv('OPENCODE_DB_PATH', raising=False)
+    monkeypatch.setenv('XDG_DATA_HOME', str(tmp_path / 'xdg'))
+
+    assert _default_opencode_db_path() == tmp_path / 'xdg' / 'opencode' / 'opencode.db'
+
+
+def test_default_opencode_db_path_falls_back_to_the_home_data_dir(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """With no ``XDG_DATA_HOME`` the documented home data directory is used."""
+    from opencode_runtime import _default_opencode_db_path
+
+    monkeypatch.delenv('OPENCODE_DB_PATH', raising=False)
+    monkeypatch.delenv('XDG_DATA_HOME', raising=False)
+    monkeypatch.setenv('HOME', str(tmp_path / 'home'))
+
+    assert _default_opencode_db_path() == tmp_path / 'home' / '.local' / 'share' / 'opencode' / 'opencode.db'
+
+
+def _copy_collector_into(root: Path, *, dotted_manifest: bool, version: str) -> Path:
+    """Copy the collector into a deployed layout and write its manifest."""
+    scripts = root / 'skills' / 'platform-runtime' / 'scripts'
+    scripts.mkdir(parents=True)
+    script = scripts / 'runtime_info.py'
+    shutil.copy2(Path(runtime_info.__file__), script)
+    manifest = root / '.claude-plugin' / 'plugin.json' if dotted_manifest else root / 'plugin.json'
+    manifest.parent.mkdir(parents=True, exist_ok=True)
+    manifest.write_text(json.dumps({'name': 'plan-marshall', 'version': version}), encoding='utf-8')
+    return script
+
+
+def _load_module_at(script: Path) -> Any:
+    """Execute a copied collector in place so its ancestor walk sees the fixture."""
+    name = f'deployed_runtime_info_{uuid.uuid4().hex}'
+    spec = importlib.util.spec_from_file_location(name, script)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_flat_deployed_tree_reads_its_root_manifest(tmp_path: Path) -> None:
+    """A flat deployed tree carries its manifest at the install root."""
+    script = _copy_collector_into(tmp_path / 'flat-install', dotted_manifest=False, version='0.1.1921')
+
+    deployed = _load_module_at(script)
+
+    assert deployed.read_bundle_version() == '0.1.1921'
+
+
+def test_bundle_cache_tree_reads_the_deployed_manifest(tmp_path: Path) -> None:
+    """A versioned plugin-cache tree reads the deployed manifest, not the source placeholder."""
+    root = tmp_path / 'cache' / 'plan-marshall' / 'plan-marshall' / '0.1.1922'
+    script = _copy_collector_into(root, dotted_manifest=True, version='0.1.1922')
+
+    deployed = _load_module_at(script)
+
+    assert deployed.read_bundle_version() == '0.1.1922'
+
+
 # =============================================================================
 # D2 — the version is the installed bundle and executor, not the marketplace manifest
 # =============================================================================
@@ -498,7 +606,7 @@ def test_bundle_and_executor_versions_come_from_their_fixtures(tmp_path: Path) -
 
 
 def test_unreadable_executor_yields_no_executor_version(tmp_path: Path) -> None:
-    """An unreadable executor omits executor_version — never the manifest's 0.1."""
+    """An unreadable executor omits executor_version, while the bundle version still reads."""
     bundle = _fixture_bundle(tmp_path, '0.1.1919')
 
     info = runtime_info.collect_runtime_info(
@@ -508,15 +616,17 @@ def test_unreadable_executor_yields_no_executor_version(tmp_path: Path) -> None:
         executor_path=tmp_path / 'absent-executor.py',
     )
 
+    assert info['bundle_version'] == '0.1.1919'
     assert 'executor_version' not in info
-    assert info.get('executor_version') != '0.1'
 
 
-def test_the_marketplace_manifest_build_version_is_replaced() -> None:
-    """A default collection reports bundle_version and no marketplace build_version."""
-    info = runtime_info.collect_runtime_info('claude', env={})
+def test_no_marketplace_build_version_is_reported(tmp_path: Path) -> None:
+    """A collection reports the bundle's version and never a marketplace build version."""
+    bundle = _fixture_bundle(tmp_path, '0.1.1919')
 
-    assert 'bundle_version' in info
+    info = runtime_info.collect_runtime_info('claude', env={}, bundle_root=bundle)
+
+    assert info['bundle_version'] == '0.1.1919'
     assert 'build_version' not in info
 
 

@@ -245,61 +245,87 @@ def _parse_opencode_model(raw: object) -> dict[str, str] | None:
     return fields
 
 
-def _read_session_rows(db_path: Path) -> dict[str, tuple[str | None, object]]:
-    """Read ``session_v2`` (id, parent_id, model) into a mapping, read-only.
+def _connect_read_only(db_path: Path) -> sqlite3.Connection:
+    """Open *db_path* read-only through a percent-encoded ``file:`` URI.
 
-    The database is opened with ``mode=ro`` so this reader can never write to
-    the developer's session store. A missing file, an unreadable schema or a
-    non-``session_v2`` database all surface as an exception the caller maps to
-    :data:`VALUE_UNKNOWN`.
-
-    The table is read DIRECTLY here (PLAN-LB-49 D1 has not landed): when that
-    plan ships its shared reader, this function is the seam to absorb it.
+    ``Path.as_uri()`` encodes the characters that would otherwise split the
+    URI — a path containing ``?``, ``#`` or ``%`` used to truncate at the first
+    one, so the reader silently opened the wrong file (or none) and reported
+    ``unknown``. ``mode=ro`` still guarantees this reader can never write to the
+    developer's session store.
     """
-    conn = sqlite3.connect(f'file:{db_path}?mode=ro', uri=True)
-    try:
-        cursor = conn.execute('SELECT id, parent_id, model FROM session_v2')
-        return {str(row[0]): (row[1], row[2]) for row in cursor.fetchall()}
-    finally:
-        conn.close()
+    return sqlite3.connect(f'{Path(db_path).resolve().as_uri()}?mode=ro', uri=True)
 
 
-def _session_root(session_id: str, rows: Mapping[str, tuple[str | None, object]]) -> str | None:
+def _session_ancestry(conn: sqlite3.Connection, session_id: str) -> dict[str, str | None]:
+    """Read *session_id*'s ancestors through ``parent_id``, bounded to that chain.
+
+    The upward walk is a recursive CTE, so it reads the chain only instead of
+    scanning every project's sessions. ``UNION`` (not ``UNION ALL``) dedupes a
+    malformed cycle, which is what terminates it.
+    """
+    cursor = conn.execute(
+        'WITH RECURSIVE ancestors(id, parent_id) AS ('
+        ' SELECT id, parent_id FROM session_v2 WHERE id = ?'
+        ' UNION'
+        ' SELECT s.id, s.parent_id FROM session_v2 s'
+        ' JOIN ancestors a ON s.id = a.parent_id'
+        ') SELECT id, parent_id FROM ancestors',
+        (session_id,),
+    )
+    return {str(row[0]): row[1] for row in cursor.fetchall()}
+
+
+def _session_root(session_id: str, ancestry: Mapping[str, str | None]) -> str | None:
     """Resolve *session_id* to its root through ``parent_id``, or ``None``.
 
     ``None`` means the id names no row in the tree — there is nothing to
     measure. A cycle in a malformed tree terminates at the last unvisited id.
     """
-    if session_id not in rows:
+    if session_id not in ancestry:
         return None
     current = session_id
     seen: set[str] = set()
     while current not in seen:
         seen.add(current)
-        parent = rows[current][0]
-        if not isinstance(parent, str) or not parent or parent not in rows:
+        parent = ancestry[current]
+        if not isinstance(parent, str) or not parent or parent not in ancestry:
             return current
         current = parent
     return current
 
 
-def _session_tree(root: str, rows: Mapping[str, tuple[str | None, object]]) -> list[str]:
-    """Return *root* plus every descendant reachable through ``parent_id``."""
-    children: dict[str, list[str]] = {}
-    for session_id, (parent, _model) in rows.items():
-        if isinstance(parent, str) and parent:
-            children.setdefault(parent, []).append(session_id)
-    ordered: list[str] = []
-    stack = [root]
-    seen: set[str] = set()
-    while stack:
-        current = stack.pop()
-        if current in seen or current not in rows:
-            continue
-        seen.add(current)
-        ordered.append(current)
-        stack.extend(children.get(current, ()))
-    return ordered
+def _read_session_tree(db_path: Path, session_id: str) -> dict[str, object]:
+    """Read the model cells of *session_id*'s tree, read-only and BOUNDED.
+
+    The root is resolved through the ancestor chain, then a recursive CTE walks
+    ``parent_id`` DOWN from that root. The query is bounded to the tree instead
+    of scanning every project's sessions: another project's sessions are never
+    read, so the measurement cannot be contaminated by them. A missing file, an
+    unreadable schema or a non-``session_v2`` database surfaces as an exception
+    the caller maps to :data:`VALUE_UNKNOWN`.
+
+    The table is read DIRECTLY here (PLAN-LB-49 D1 has not landed): when that
+    plan ships its shared reader, this function is the seam to absorb it.
+    """
+    conn = _connect_read_only(db_path)
+    try:
+        ancestry = _session_ancestry(conn, session_id)
+        root = _session_root(session_id, ancestry)
+        if root is None:
+            return {}
+        cursor = conn.execute(
+            'WITH RECURSIVE tree(id, parent_id, model) AS ('
+            ' SELECT id, parent_id, model FROM session_v2 WHERE id = ?'
+            ' UNION'
+            ' SELECT s.id, s.parent_id, s.model FROM session_v2 s'
+            ' JOIN tree t ON s.parent_id = t.id'
+            ') SELECT id, model FROM tree',
+            (root,),
+        )
+        return {str(row[0]): row[1] for row in cursor.fetchall()}
+    finally:
+        conn.close()
 
 
 def _format_model_key(fields: Mapping[str, str]) -> str:
@@ -356,15 +382,14 @@ def measure_opencode_model(
     if db_path is None or not Path(db_path).is_file():
         return dict(unknown)
     try:
-        rows = _read_session_rows(Path(db_path))
+        models = _read_session_tree(Path(db_path), session_id)
     except (sqlite3.Error, OSError, ValueError):
         return dict(unknown)
-    root = _session_root(session_id, rows)
-    if root is None:
+    if not models:
         return dict(unknown)
     distinct: dict[tuple[str, str, str], dict[str, str]] = {}
-    for member in _session_tree(root, rows):
-        fields = _parse_opencode_model(rows[member][1])
+    for raw in models.values():
+        fields = _parse_opencode_model(raw)
         if fields is None:
             continue
         distinct[(fields['id'], fields.get('provider', ''), fields.get('variant', ''))] = fields
@@ -443,15 +468,32 @@ def _resolve_effort_fields(
     return {}
 
 
+def _bundle_manifest(root: Path) -> Path | None:
+    """Return the bundle manifest under *root*, or None.
+
+    A bundle tree carries its manifest at ``.claude-plugin/plugin.json``. A
+    FLAT deployed tree (the OpenCode/Antigravity install root) carries it at
+    ``plugin.json`` in the install root instead, because it has no bundle
+    directory to nest it under. Both shapes name the same thing, so both are
+    accepted — a reader that only knew the nested form reported no version at
+    all on a flat install.
+    """
+    for candidate in (root / '.claude-plugin' / 'plugin.json', root / 'plugin.json'):
+        if candidate.is_file():
+            return candidate
+    return None
+
+
 def _find_bundle_root() -> Path | None:
     """Locate the bundle this module runs from via the ancestor walk.
 
-    The root is the first ancestor holding ``.claude-plugin/plugin.json`` — the
-    bundle manifest, so an INSTALLED bundle (whose ancestor chain carries no
+    The root is the first ancestor holding a bundle manifest — either
+    ``.claude-plugin/plugin.json`` (a bundle tree) or a root ``plugin.json`` (a
+    flat deployed tree), so an INSTALLED bundle (whose ancestor chain carries no
     marketplace manifest) resolves its own version.
     """
     for ancestor in Path(__file__).resolve().parents:
-        if (ancestor / '.claude-plugin' / 'plugin.json').is_file():
+        if _bundle_manifest(ancestor) is not None:
             return ancestor
     return None
 
@@ -459,15 +501,16 @@ def _find_bundle_root() -> Path | None:
 def read_bundle_version(bundle_root: Path | None = None) -> str | None:
     """Read the ``version`` of the bundle manifest the collector runs from.
 
-    The value is the ``version`` in ``.claude-plugin/plugin.json`` of the bundle
-    at *bundle_root* (default: the bundle this module runs from). It replaces the
-    marketplace manifest's ``metadata.version``: the marketplace manifest
-    describes the aggregate project, not the bundle that is loaded. Never
-    estimated.
+    The value is the ``version`` in the bundle's manifest — ``.claude-plugin/
+    plugin.json`` in a bundle tree, ``plugin.json`` in a flat deployed tree — of
+    the bundle at *bundle_root* (default: the bundle this module runs from). It
+    replaces the marketplace manifest's ``metadata.version``: the marketplace
+    manifest describes the aggregate project, not the bundle that is loaded.
+    Never estimated.
 
     Args:
-        bundle_root: Directory holding ``.claude-plugin/plugin.json``. When
-            None, the ancestor walk from this file locates it.
+        bundle_root: Directory holding the bundle manifest. When None, the
+            ancestor walk from this file locates it.
 
     Returns:
         The bundle version string, or None when unreadable.
@@ -475,7 +518,9 @@ def read_bundle_version(bundle_root: Path | None = None) -> str | None:
     root = bundle_root if bundle_root is not None else _find_bundle_root()
     if root is None:
         return None
-    manifest = root / '.claude-plugin' / 'plugin.json'
+    manifest = _bundle_manifest(root)
+    if manifest is None:
+        return None
     try:
         data = json.loads(manifest.read_text(encoding='utf-8'))
     except (OSError, json.JSONDecodeError):
