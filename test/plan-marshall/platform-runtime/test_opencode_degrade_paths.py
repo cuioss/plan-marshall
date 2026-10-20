@@ -1,12 +1,22 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Degrade-path pins for opencode runtime gaps and the sentinel convention.
+"""Degrade-path pins for the OpenCode runtime and the sentinel convention.
 
-Asserts no-op status with reason and alternative on every input for no
-session id, no transcript, and hook_not_configured absence, that no manual
-count returns success, and the sentinel meaning guard over the surrounding
-evidence.
+The identity-bearing operations decline on exactly THREE genuine grounds —
+``OPENCODE_SESSION_ID`` unset, the session database absent, and the database
+schema unsupported — and each carries its NAMED reason plus the alternative. The
+metrics primitive keeps its own decline ground, the absent token-persistence
+boundary, and no manual count is ever reported as success.
+
+The ``hook_not_configured`` absence guard and the sentinel-meaning guard are
+unchanged by the move to a measured identity: ``hook_not_configured`` still names
+Claude wiring OpenCode does not have, and absent identity still reads as the
+sentinel through the shared guard.
 """
+
+import sqlite3
+from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -22,23 +32,80 @@ def runtime() -> OpenCodeRuntime:
     return OpenCodeRuntime()
 
 
-def _parse(toon_str: str) -> dict:
+def _parse(toon_str: str) -> dict[str, Any]:
     """Parse a TOON string and assert it is non-empty."""
     result = parse_toon(toon_str)
     assert isinstance(result, dict)
     return result
 
 
-def test_session_capture_noop_on_every_input(runtime: OpenCodeRuntime) -> None:
-    """Session capture degrades visibly with reason and alternative."""
+def _point_at_db(monkeypatch: pytest.MonkeyPatch, db_path: Path) -> None:
+    """Point the runtime's session store at *db_path*, ahead of ambient overrides."""
+    monkeypatch.delenv('OPENCODE_DB', raising=False)
+    monkeypatch.setenv('OPENCODE_DB_PATH', str(db_path))
+
+
+def test_session_capture_unset_environment_declines(runtime: OpenCodeRuntime, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Ground 1 — the identity variable is unset."""
+    monkeypatch.delenv('OPENCODE_SESSION_ID', raising=False)
+
     result = _parse(runtime.session_capture('my-plan'))
+
     assert result['status'] == 'no-op'
-    assert result['reason']
+    assert 'OPENCODE_SESSION_ID' in result['reason']
+    assert result['alternative']
+
+
+def test_session_capture_absent_database_declines(
+    runtime: OpenCodeRuntime, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Ground 2 — the variable is set but the session database is absent."""
+    monkeypatch.setenv('OPENCODE_SESSION_ID', 'ses-root')
+    _point_at_db(monkeypatch, tmp_path / 'absent.db')
+
+    result = _parse(runtime.session_capture('my-plan'))
+
+    assert result['status'] == 'no-op'
+    assert result['reason'] == 'db_not_found'
+    assert result['alternative']
+
+
+def test_session_capture_unsupported_schema_declines(
+    runtime: OpenCodeRuntime, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Ground 3 — the database carries no schema this reader understands."""
+    db_path = tmp_path / 'opencode.db'
+    connection = sqlite3.connect(str(db_path))
+    try:
+        connection.execute('CREATE TABLE unrelated (id TEXT)')
+        connection.commit()
+    finally:
+        connection.close()
+    monkeypatch.setenv('OPENCODE_SESSION_ID', 'ses-root')
+    _point_at_db(monkeypatch, db_path)
+
+    result = _parse(runtime.session_capture('my-plan'))
+
+    assert result['status'] == 'no-op'
+    assert result['reason'] == 'schema_unsupported'
+
+
+def test_metrics_normalized_tokens_absent_database_declines(
+    runtime: OpenCodeRuntime, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The same absent-store ground declines the metrics primitive by name."""
+    _point_at_db(monkeypatch, tmp_path / 'absent.db')
+    windows = [('5-execute', '2026-10-20T10:00:00+00:00', '2026-10-20T10:30:00+00:00')]
+
+    result = _parse(runtime.metrics_normalized_tokens('ses-root', windows, str(tmp_path / 'out.json')))
+
+    assert result['status'] == 'no-op'
+    assert result['reason'] == 'db_not_found'
     assert result['alternative']
 
 
 def test_metrics_capture_manual_count_never_succeeds(runtime: OpenCodeRuntime) -> None:
-    """No manual token count is reported as success."""
+    """No manual token count is reported as success — the persistence boundary is absent."""
     for total in (None, 0, 1, 42000):
         result = _parse(runtime.metrics_capture('my-plan', '5-execute', total))
         assert result['status'] == 'no-op'
@@ -47,21 +114,22 @@ def test_metrics_capture_manual_count_never_succeeds(runtime: OpenCodeRuntime) -
         assert result.get('tokens_captured') is None
 
 
-def test_transcript_paths_return_transcript_not_found(runtime: OpenCodeRuntime) -> None:
-    """No-transcript paths decline with transcript_not_found."""
-    normalized = _parse(runtime.metrics_normalized_tokens('sid', [], '/tmp/out.json'))
-    assert normalized['status'] == 'no-op'
-    assert normalized['reason'] == 'transcript_not_found'
-    assert normalized['alternative']
+def test_chat_extract_signal_declines_with_transcript_not_found(runtime: OpenCodeRuntime) -> None:
+    """chat extract-signal still declines: there is no transcript to reduce."""
+    result = _parse(runtime.chat_extract_signal('sid'))
 
-    signal = _parse(runtime.chat_extract_signal('sid'))
-    assert signal['status'] == 'no-op'
-    assert signal['reason'] == 'transcript_not_found'
-    assert signal['alternative']
+    assert result['status'] == 'no-op'
+    assert result['reason'] == 'transcript_not_found'
+    assert result['alternative']
 
 
-def test_opencode_never_returns_hook_not_configured(runtime: OpenCodeRuntime) -> None:
+def test_opencode_never_returns_hook_not_configured(
+    runtime: OpenCodeRuntime, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     """The hook_not_configured error names Claude wiring; opencode answers no-op."""
+    monkeypatch.delenv('OPENCODE_DB', raising=False)
+    monkeypatch.setenv('OPENCODE_DB_PATH', str(tmp_path / 'absent.db'))
+    monkeypatch.setenv('OPENCODE_SESSION_ID', 'ses-root')
     for payload in (
         runtime.session_capture('my-plan'),
         runtime.metrics_capture('my-plan', '5-execute', None),

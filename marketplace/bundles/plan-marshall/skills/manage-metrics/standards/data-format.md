@@ -182,7 +182,7 @@ totals_tokens_spans_populations: true
 
 The ten `*_tool_calls` / `*_result_bytes` counters above are the inputs to the cross-plan auditor's `exploration-share` check (in the `plan-marshall-telemetry` repository). Each observed tool call is classified by its tool name into one of five buckets, and both the call itself (turn share) and its result payload's byte length (payload-byte share) are accumulated into the phase window containing the call's timestamp. `exploration + work + execute` is the share denominator; `orchestration` and `unclassified` are emitted so the five buckets partition the observed population and the exclusion from the ratio stays auditable.
 
-**A counter is written only when the runtime supplied it.** An absent counter is NEVER persisted as `0`, and a *measured* zero IS persisted as `0`. The two are different facts: absent means the target declined the transcript primitive and measured nothing (OpenCode exposes no transcript, so it emits no bucket at all); zero means the walk ran and found no calls in that bucket. Collapsing them would let an unmeasured plan enter the `exploration-share` corpus as a maximally-efficient one. For the same reason `generate` renders these bullets on a **presence** test rather than the truthiness test the four-field bullets use — see the render-guard divergence comment at the per-phase render in `manage-metrics.py`.
+**A counter is written only when the runtime supplied it.** An absent counter is NEVER persisted as `0`, and a *measured* zero IS persisted as `0`. The two are different facts: absent means the runtime supplied no count for that bucket, whose grounds are a declined measurement primitive or a source that was absent, unreadable or schema-unsupported; zero means the walk ran and found no calls in that bucket. OpenCode answers the four usage fields and the sub-agent totals from its session database, but its absent tool-call walk supplies none of the ten exploration-share counters — the same absence, from the same missing surface. Collapsing absent into zero would let an unmeasured plan enter the `exploration-share` corpus as a maximally-efficient one. For the same reason `generate` renders these bullets on a **presence** test rather than the truthiness test the four-field bullets use — see the render-guard divergence comment at the per-phase render in `manage-metrics.py`.
 
 #### Exploration sub-sources (index-answerable vs doc-residency)
 
@@ -445,21 +445,23 @@ must not infer a population from the field's name, which states a total.
 
 ### Unknown token figures (`unknown`)
 
-A phase that ran on a `transcripts: none` harness (see
+A phase that no measured source could supply (see
 `platform-runtime/standards/runtime-info.md`) carries no measured token figure
-at all: no transcript was walked, no `<usage>` envelope was reaped, and no
-inline fold applied. Such a phase reports its token figures as the literal
-`unknown` — never `0`, never absent:
+at all: no transcript was walked, no `<usage>` envelope was reaped, no
+database-backed session store answered, and no inline fold applied. Such a phase
+reports its token figures as the literal `unknown` — never `0`, never absent:
 
 - `total_tokens: unknown` on every phase row with no measurement, propagated
   through `enrich`, `generate`, and `record` without ever collapsing into a
   measured zero. A measured zero stays `0`; only never-measured reads as
   `unknown`. Absent is not zero, and `unknown` is not zero either — it is the
   stated form of absence for a field the row shape cannot drop.
-- `transcripts: none` is the capability flag that explains WHY the figure is
-  `unknown`: the run's `runtime-info` record carries it, and the landing
-  payload repeats it beside the figure so a reader never has to guess whether
-  `unknown` means "not measured" (it always does).
+- The `transcripts` capability flag explains WHICH surface is missing, not
+  whether a measurement happened: the run's `runtime-info` record carries
+  `transcripts: none` when the harness exposes no WALKABLE transcript, while
+  OpenCode names its session database as a source that answers despite that
+  flag. A phase is `unknown` because no measured source supplied a figure —
+  never because the capability flag was `none`.
 - The dispatch-boundary `unmeasured` token (§ Per-Dispatch Context-Load
   Attribution) and the phase-level `unknown` are the same rule at two grains:
   per-dispatch columns carry `unmeasured`, phase figures carry `unknown`. A

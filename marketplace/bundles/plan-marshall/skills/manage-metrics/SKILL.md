@@ -592,15 +592,23 @@ the same agent dispatches the on-disk totals are independent of `enrich`'s
 per-phase subagent fields, so double-counting does not occur in the closed-phase
 row (`total_tokens`), which is filled from the accumulator at `end-phase` time.
 
-**Unknown reporting contract.** On a `transcripts: none` run the runtime op
-declines with `transcript_not_found` and `enrich` measures nothing: every phase
-row with no measured figure reports `total_tokens: unknown` — the literal
-`unknown`, never `0` and never absent. `generate` and `record` propagate the
-literal unchanged; a Total fed by an `unknown` row is itself `unknown`, never a
-number with a hole in it. A measured zero stays `0` — only never-measured reads
-as `unknown`. The run's `runtime-info` record carries `transcripts: none` as
-the capability flag explaining why. See [data-format.md](standards/data-format.md)
-§ "Unknown token figures (`unknown`)".
+**Unknown reporting contract.** The `transcripts` capability flag and the measured
+answer are two separate facts. `transcripts: none` states only that the harness
+exposes no WALKABLE transcript; it does not itself imply that the runtime op
+declines, because a database-backed source can answer without one — OpenCode
+reports `transcripts: none` and still returns the four usage fields and the
+sub-agent totals from its session database, so `enrich` measures and the row
+carries measured figures. The op declines only on a target that exposes NEITHER
+a walkable transcript NOR a database-backed source, or when the database-backed
+source itself cannot answer (absent, unreadable, or schema-unsupported, each with
+its named reason). On such a decline `enrich` measures nothing: every phase row
+with no measured figure reports `total_tokens: unknown` — the literal `unknown`,
+never `0` and never absent. `generate` and `record` propagate the literal
+unchanged; a Total fed by an `unknown` row is itself `unknown`, never a number
+with a hole in it. A measured zero stays `0` — only never-measured reads as
+`unknown`. The run's `runtime-info` record carries `transcripts: none` as the
+capability flag explaining which transcript surface is missing. See
+[data-format.md](standards/data-format.md) § "Unknown token figures (`unknown`)".
 
 ### reconcile-ledgers
 

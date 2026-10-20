@@ -4,14 +4,20 @@
 OpenCode implementation of every platform-runtime operation.
 
 OpenCode-specific behaviour:
-- Operations requiring a platform session id (session capture, session
-  render-title) return ``no-op`` because OpenCode does not expose a session id
-  to the shell environment (upstream issue #9292). Absent identity is the
-  ``NO_SESSION_IDENTITY`` sentinel from runtime_base, never null; callers log
-  the returned reason at INFO and apply the verbatim alternative per the
-  no-op policy.
-- project initial-setup succeeds but reports ``hook_installed: false`` for the
-  same reason.
+- The session identity is MEASURED, not self-reported: ``session capture`` reads
+  ``$OPENCODE_SESSION_ID``, resolves it to its ROOT session through the shared
+  read-only session reader (``_opencode_sessions``) and appends that root to the
+  plan's ``session_ids`` metadata. Every unavailable ground declines with the
+  reader's NAMED reason (``db_not_found`` / ``db_unreadable`` /
+  ``schema_unsupported`` / ``session_not_found``) and stores nothing — never the
+  raw, unresolved id. ``session bind`` and ``session resolve-plan`` delegate to
+  the shared ``session_binding`` policy. Absent identity is the
+  ``NO_SESSION_IDENTITY`` sentinel from runtime_base, never null; callers log the
+  returned reason at INFO and apply the verbatim alternative per the no-op policy.
+- session render-title is a ``no-op``: OpenCode has no plugin-driven
+  terminal-title render channel.
+- project initial-setup succeeds but reports ``hook_installed: false`` because
+  OpenCode exposes no SessionStart-hook channel.
 - permission operations are REAL writing operations against OpenCode's
   ``permission`` settings block: configure writes grants into the per-tool
   pattern maps, fix ensure/add/remove add and delete them (carrying
@@ -25,16 +31,21 @@ OpenCode-specific behaviour:
 - metrics capture declines on every input, manual count included, returning
   ``no-op`` (no token-persistence boundary is reachable from this target, so a
   success carrying the count would be a silently lost measurement).
-- metrics normalized-tokens and chat extract-signal return ``no-op`` with
-  ``transcript_not_found`` (no session transcript exists to walk or reduce).
+- metrics normalized-tokens serves the normalized per-phase buckets, the
+  sub-agent totals and the run counters from measured rows in the session
+  database, through the shared reader. An absent, unreadable or
+  schema-unsupported store declines with its named reason. chat extract-signal
+  returns ``no-op`` with ``transcript_not_found`` (no transcript exists to
+  reduce).
 - subagent dispatch succeeds, mapping the ``Task`` tool to OpenCode's ``task``.
 - health-check succeeds; the ``display`` check always reports unhealthy on
   OpenCode because no hook file is present.
 - wait for returns ``no-op``: OpenCode's runtime holds no wait channel, so the
   caller runs the observable's own bounded-wait verb in-turn instead.
 - OpenCode never returns ``hook_not_configured``: that error names wiring that
-  ought to be reachable but is not, while this target exposes no session
-  identifier at all, so the honest answer is always ``no-op``.
+  ought to be reachable but is not, while every identity source this target has
+  is either absent or unreadable — a state the honest answer reports as
+  ``no-op`` carrying its named reason.
 
 All methods return a serialized TOON string via the helpers in runtime_base.
 """
@@ -46,11 +57,14 @@ import json
 import os
 import re
 import sqlite3
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
+import _opencode_sessions
+import claude_runtime
 import runtime_info
+import session_binding
 from marketplace_paths import resolve_home
 from runtime_base import (
     PERMISSION_FIX_OPERATIONS,
@@ -350,15 +364,15 @@ _DECISION_COLUMNS = ('effect', 'decision', 'status', 'approval')
 
 
 def _default_opencode_db_path() -> Path:
-    """Return the default persisted-approval database path.
+    """Return the OpenCode session database path via the reader's resolver.
 
-    Overridable by ``OPENCODE_DB_PATH`` for tests; otherwise the XDG data
-    home value ``~/.local/share/opencode/opencode.db``.
+    The reader owns path resolution — ``OPENCODE_DB`` ahead of the retained
+    ``OPENCODE_DB_PATH`` test override, then ``$XDG_DATA_HOME``, then the
+    home-directory fallback — so this target never re-derives it. Keeping the
+    retained override honoured is what keeps the existing fixture call sites
+    isolated from a developer's real session store.
     """
-    env = os.environ.get('OPENCODE_DB_PATH')
-    if env:
-        return Path(env).expanduser()
-    return Path.home() / '.local' / 'share' / 'opencode' / 'opencode.db'
+    return _opencode_sessions.db_path()
 
 
 def _normalize_persisted_tool(tool: str) -> str:
@@ -622,6 +636,62 @@ def _list_persisted_allow_rows(
     return rows, 'recognised' if recognised else 'schema_unrecognised'
 
 
+def _per_phase_buckets(
+    windows: Sequence[Mapping[str, Any]],
+) -> tuple[dict[str, dict[str, int]], int, int]:
+    """Compose per-phase buckets from the reader's window buckets.
+
+    Only windows that carried at least one usage-bearing message produce a
+    bucket — an absent bucket states "nothing was measured here", which is what
+    keeps a fabricated zero out of the corpus.
+
+    Args:
+        windows: The reader's per-window records, each carrying ``phase`` plus a
+            ``main`` and a ``subagent`` usage bucket.
+
+    Returns:
+        ``(per_phase, message_count, subagent_phases)`` where ``per_phase`` maps
+        a phase name to its normalized bucket, ``message_count`` counts the
+        usage-bearing messages attributed to a window, and ``subagent_phases``
+        counts the windows that carried sub-agent usage.
+    """
+    per_phase: dict[str, dict[str, int]] = {}
+    message_count = 0
+    subagent_phases = 0
+    for window in windows:
+        main = window.get('main') or {}
+        subagent = window.get('subagent') or {}
+        main_messages = int(main.get('message_count', 0))
+        subagent_messages = int(subagent.get('message_count', 0))
+        if not main_messages and not subagent_messages:
+            continue
+        four: dict[str, int] = {
+            'input_tokens': int(main.get('input_tokens', 0)),
+            'output_tokens': int(main.get('output_tokens', 0)),
+            'cache_read_input_tokens': int(main.get('cache_read_input_tokens', 0)),
+            'cache_creation_input_tokens': int(main.get('cache_creation_input_tokens', 0)),
+        }
+        # The dispatched population's total mirrors the `<usage>` definition the
+        # rest of the metrics boundary uses: cache reads are EXCLUDED.
+        subagent_total = (
+            int(subagent.get('input_tokens', 0))
+            + int(subagent.get('output_tokens', 0))
+            + int(subagent.get('cache_creation_input_tokens', 0))
+        )
+        per_phase[str(window.get('phase'))] = {
+            **four,
+            'billing_weighted_total': claude_runtime._billing_weighted_total(four),
+            'subagent_total_tokens': subagent_total,
+            'subagent_samples': int(subagent.get('sessions', 0)),
+            'subagent_tool_uses': int(subagent.get('tool_uses', 0)),
+            'subagent_duration_ms': int(subagent.get('duration_ms', 0)),
+        }
+        message_count += main_messages + subagent_messages
+        if subagent_messages:
+            subagent_phases += 1
+    return per_phase, message_count, subagent_phases
+
+
 class OpenCodeRuntime(Runtime):
     """OpenCode concrete implementation of the Runtime ABC.
 
@@ -714,7 +784,9 @@ class OpenCodeRuntime(Runtime):
                 'bridge_reason': drift['reason'],
                 'settings_path': settings_path,
                 'hook_installed': False,
-                'hook_skip_reason': ('OpenCode does not support a SessionStart hook equivalent (issue #9292)'),
+                'hook_skip_reason': (
+                    'OpenCode exposes no SessionStart-hook channel (issue anomalyco/opencode#8619)'
+                ),
                 'persisted_approval_checkable': persisted_checkable,
                 'persisted_approval_warnings': persisted_warnings,
             },
@@ -831,17 +903,51 @@ class OpenCodeRuntime(Runtime):
     # ------------------------------------------------------------------
 
     def session_capture(self, plan_id: str) -> str:
-        """No-op: OpenCode does not expose a platform session id.
+        """Measure the OpenCode session identity and append it via manage-status.
 
-        This is the ABC's "exposes no session identifier at all" case, not its
-        "ought to be reachable but is not" case: there is no wiring that could
-        supply one (upstream issue #9292), so the decline is ``no-op`` rather
-        than ``hook_not_configured``.
+        ``$OPENCODE_SESSION_ID`` names the running session. It is resolved to its
+        ROOT through ``session_v2.parent_id`` by the shared reader, because the
+        measurement a plan wants covers the whole session tree rather than the
+        leaf the process happens to run under.
+
+        The identity is a list, so a session captured here never displaces the
+        identity of a session that captured earlier against the same plan.
+
+        Every unavailable ground declines with the reader's NAMED reason and
+        stores nothing — never the raw, unresolved id, and never an error: an
+        unset variable, an absent/unreadable/schema-unsupported store, and an id
+        that names no row are all states the caller degrades from.
         """
-        return toon_noop(
+        raw_session_id = os.environ.get(runtime_info.OPENCODE_SESSION_ID_ENV)
+        if not raw_session_id:
+            return toon_noop(
+                'session capture',
+                f'${runtime_info.OPENCODE_SESSION_ID_ENV} is unset, so no OpenCode session'
+                ' identity can be measured this run',
+                'pass --total-tokens manually to metrics capture',
+            )
+        reading = _opencode_sessions.read_session_rows(_default_opencode_db_path())
+        if not reading['ok']:
+            return toon_noop(
+                'session capture',
+                str(reading['reason']),
+                'pass --total-tokens manually to metrics capture',
+            )
+        root = _opencode_sessions.session_root(raw_session_id, reading['rows'])
+        if root is None:
+            return toon_noop(
+                'session capture',
+                str(_opencode_sessions.REASON_SESSION_NOT_FOUND),
+                'pass --total-tokens manually to metrics capture',
+            )
+        stored = claude_runtime._manage_status_store_session(plan_id, root)
+        return toon_success(
             'session capture',
-            'OpenCode does not expose a platform-provided session id to the shell; tracked upstream at issue #9292',
-            'pass --total-tokens manually to metrics capture',
+            {
+                'plan_id': plan_id,
+                'session_id': root,
+                'stored': stored,
+            },
         )
 
     def session_render_title(self, statusline: bool = False) -> str:
@@ -859,48 +965,89 @@ class OpenCodeRuntime(Runtime):
         store: str = 'plans',
         slug: str | None = None,
     ) -> str:
-        """No-op: OpenCode has neither a session id to bind nor a render channel."""
+        """No-op: OpenCode has no plugin-driven terminal-title render channel."""
         return toon_noop(
             'session push-title-token',
-            'OpenCode exposes no platform-provided session id to bind'
-            ' (issue #9292) and has no plugin-driven terminal-title render channel'
+            'OpenCode has no plugin-driven terminal-title render channel'
             ' for a later event to deliver on (issue anomalyco/opencode#8619)',
             "Use OpenCode's built-in TUI status surface for plan visibility",
         )
 
     def session_bind(self, plan_id: str, session_id: str | None = None) -> str:
-        """No-op: OpenCode does not expose a platform session id to bind."""
-        return toon_noop(
-            'session bind',
-            'OpenCode does not expose a platform-provided session id to the shell,'
-            ' so there is no per-session slot to bind (issue #9292)',
-            "Use OpenCode's built-in session mechanism for plan visibility",
-        )
+        """Bind the running session to *plan_id* through the shared policy.
+
+        Resolves ``session_id`` from the argument or, when absent, from
+        ``$OPENCODE_SESSION_ID``, then delegates to :func:`session_binding.bind`
+        — an unconditional write of the caller's own slot (no protect-active, no
+        stale reclaim, no plan-dir-exists check). Best-effort: never raises.
+
+        Returns a success TOON carrying ``bound`` (whether the slot was written);
+        a validation or I/O failure leaves ``bound: False`` with a ``reason``.
+        A missing session id keeps the historical ``no-op``.
+        """
+        sid = session_id or os.environ.get(runtime_info.OPENCODE_SESSION_ID_ENV)
+        if not sid:
+            return toon_noop(
+                'session bind',
+                'no OpenCode session id to bind: pass --session-id or set'
+                f' ${runtime_info.OPENCODE_SESSION_ID_ENV}',
+                "Use OpenCode's built-in session mechanism for plan visibility",
+            )
+        bound = session_binding.bind(sid, plan_id)
+        result: dict[str, Any] = {'plan_id': plan_id, 'session_id': sid, 'bound': bound}
+        if not bound:
+            result['reason'] = 'invalid_or_io_error'
+        return toon_success('session bind', result)
 
     def session_resolve_plan(self, session_id: str | None = None) -> str:
-        """No-op: OpenCode does not expose a platform session id to resolve."""
-        return toon_noop(
+        """Resolve the running session's bound plan_id through the shared policy.
+
+        Resolves ``session_id`` from the argument or, when absent, from
+        ``$OPENCODE_SESSION_ID``, then reads the binding through
+        :func:`session_binding.resolve_plan`. Best-effort: never raises.
+
+        Returns a success TOON carrying ``resolved`` and the resolved ``plan_id``
+        (empty string when unbound). A missing session id keeps the historical
+        ``no-op``.
+        """
+        sid = session_id or os.environ.get(runtime_info.OPENCODE_SESSION_ID_ENV)
+        if not sid:
+            return toon_noop(
+                'session resolve-plan',
+                'no OpenCode session id to resolve: pass --session-id or set'
+                f' ${runtime_info.OPENCODE_SESSION_ID_ENV}',
+                "Use OpenCode's built-in session mechanism for plan visibility",
+            )
+        plan_id = session_binding.resolve_plan(sid)
+        return toon_success(
             'session resolve-plan',
-            'OpenCode does not expose a platform-provided session id to the shell,'
-            ' so there is no per-session binding to resolve (issue #9292)',
-            "Use OpenCode's built-in session mechanism for plan visibility",
+            {
+                'session_id': sid,
+                'resolved': bool(plan_id),
+                'plan_id': plan_id or '',
+            },
         )
 
     def session_doctor(self, fix: bool = False) -> str:
-        """No-op: OpenCode keeps no per-session active-plan cache to scan."""
+        """No-op: OpenCode has no lifecycle hook driving the per-session cache.
+
+        The binding policy itself is real (see :meth:`session_bind`); what is
+        absent is the lifecycle hook that would keep a session's cache slot in
+        step with plan archival, which is the only thing ``doctor`` scans for.
+        """
         return toon_noop(
             'session doctor',
-            'OpenCode does not expose a platform-provided session id, so there is'
-            ' no per-session active-plan cache to scan (issue #9292)',
+            'OpenCode exposes no lifecycle hook that maintains a per-session'
+            ' active-plan cache (issue anomalyco/opencode#8619)',
             "Use OpenCode's built-in session mechanism for plan visibility",
         )
 
     def session_teardown(self) -> str:
-        """No-op: OpenCode exposes no session binding to release."""
+        """No-op: OpenCode exposes no lifecycle hook to release at teardown."""
         return toon_noop(
             'session teardown',
-            'OpenCode does not expose a platform-provided session id to the shell,'
-            ' so there is no per-session binding to release (issue #9292)',
+            'OpenCode exposes no session-lifecycle hook, so there is no binding'
+            ' to release at teardown (issue anomalyco/opencode#8619)',
             "Use OpenCode's built-in session mechanism for plan visibility",
         )
 
@@ -1663,14 +1810,13 @@ class OpenCodeRuntime(Runtime):
         This operation is an honest ``no-op`` on OpenCode — on EVERY input,
         manual count included.
 
-        OpenCode exposes no session transcript, so auto-capture has nothing to
-        sum. And this target reaches no persistence boundary: the token-cursor
-        write and the ``manage-metrics end-phase`` call live in the Claude
-        runtime, so even an explicit ``--total-tokens`` cannot be stored here.
-        The Runtime contract therefore forbids returning ``success`` for a
-        manual count — a success the caller cannot distinguish from a stored one
-        turns a declined measurement into a silently lost one. The target
-        declines instead, naming the reason and the alternative.
+        The ground is the absent token-PERSISTENCE boundary, not the identity:
+        the token-cursor write and the ``manage-metrics end-phase`` call live in
+        the Claude runtime, so even an explicit ``--total-tokens`` cannot be
+        stored here. The Runtime contract therefore forbids returning ``success``
+        for a manual count — a success the caller cannot distinguish from a
+        stored one turns a declined measurement into a silently lost one. The
+        target declines instead, naming the reason and the alternative.
 
         Do NOT "helpfully" return a success carrying the count: that was the
         fabricate-success defect this no-op exists to close. The recommended
@@ -1680,25 +1826,18 @@ class OpenCodeRuntime(Runtime):
         """
         if total_tokens is None:
             reason = (
-                'automatic token capture requires a platform-provided session id,'
-                ' which OpenCode does not expose (issue #9292)'
-            )
-            alternative = (
-                'run metrics capture on the Claude target, or wire a shared'
-                ' metrics-persistence boundary OpenCode can reach'
+                'automatic token capture on OpenCode needs this target to reach the'
+                ' shared metrics-persistence boundary, which it does not'
             )
         else:
             reason = (
-                'OpenCode reaches no token-persistence boundary, so an explicit count cannot be stored (issue #9292)'
-            )
-            alternative = (
-                'run metrics capture on the Claude target, or wire a shared'
-                ' metrics-persistence boundary OpenCode can reach'
+                'OpenCode reaches no token-persistence boundary, so an explicit count cannot be stored'
             )
         return toon_noop(
             'metrics capture',
             reason,
-            alternative,
+            'run metrics capture on the Claude target, or wire a shared'
+            ' metrics-persistence boundary OpenCode can reach',
         )
 
     def metrics_normalized_tokens(
@@ -1707,27 +1846,59 @@ class OpenCodeRuntime(Runtime):
         windows: list[tuple[str, str, str]],
         output_file: str,
     ) -> str:
-        """Honest no-op: OpenCode exposes no session transcript to normalize.
+        """Serve per-phase normalized tokens from the OpenCode session database.
 
-        OpenCode does not provide a session transcript, so there is nothing to
-        walk or normalize. Returns ``transcript_not_found`` so the
-        finalize/retrospective enrich steps degrade gracefully (skip enrichment).
+        Every assistant-message usage record in *session_id*'s session tree is
+        attributed to the half-open ``[start, end)`` window containing it, and
+        the reader splits the root session's usage from its descendants'. The
+        per-phase buckets carry the four canonical usage fields (with
+        ``cache_creation_input_tokens`` sourced from ``tokens.cache.write``), the
+        billing-weighted total, and the measured sub-agent group
+        (``subagent_total_tokens`` / ``subagent_samples`` /
+        ``subagent_tool_uses`` / ``subagent_duration_ms``).
 
-        **Counters are ABSENT here, never zero.** This method constructs no
-        per-phase bucket, writes no *output_file*, and returns no counters, which
-        is exactly the required shape: OpenCode declines the primitive rather than
-        reporting a measurement it never took. Do NOT "helpfully" add a
-        zero-initialized bucket carrying the exploration-share counters — a zero
-        asserts "measured, and it was none", which would make an unmeasured target
-        indistinguishable from a target that genuinely explored nothing and would
-        silently pollute the corpus the ``exploration-share`` audit check reads.
-        This is the declinable-primitive posture of ADR-011 and the
-        explicit-unknown rule of ADR-009.
+        Buckets are written to *output_file* as JSON for ``manage-metrics
+        enrich`` to persist, and the run counters are returned:
+        ``message_count`` (usage-bearing messages attributed to a window),
+        ``subagent_calls_attributed`` (distinct sub-agent sessions observed) and
+        ``subagent_phases_attributed`` (how many windows carried sub-agent
+        usage). A phase with no attributable message produces no bucket at all,
+        so an absent bucket means "nothing was measured here" and never a
+        fabricated zero.
+
+        An absent, unreadable or schema-unsupported store declines with the
+        reader's NAMED reason instead of the blanket ``transcript_not_found``.
         """
-        return toon_noop(
+        usage = _opencode_sessions.window_usage(_default_opencode_db_path(), session_id, windows)
+        if not usage['ok']:
+            return toon_noop(
+                'metrics normalized-tokens',
+                str(usage['reason']),
+                'pass --total-tokens manually to metrics capture',
+            )
+
+        per_phase, message_count, subagent_phases = _per_phase_buckets(usage['windows'])
+        try:
+            out_path = Path(output_file)
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            out_path.write_text(json.dumps(per_phase), encoding='utf-8')
+        except OSError as exc:
+            return toon_error(
+                'metrics normalized-tokens',
+                'io_error',
+                f'Failed to write normalized-token result to {output_file}: {exc}',
+            )
+
+        return toon_success(
             'metrics normalized-tokens',
-            'transcript_not_found',
-            'pass --total-tokens manually to metrics capture',
+            {
+                'session_id': session_id,
+                'output_file': output_file,
+                'phases_attributed': len(per_phase),
+                'message_count': message_count,
+                'subagent_calls_attributed': int(usage.get('subagent_sessions', 0)),
+                'subagent_phases_attributed': subagent_phases,
+            },
         )
 
     def chat_extract_signal(self, session_id: str) -> str:
@@ -1857,11 +2028,10 @@ class OpenCodeRuntime(Runtime):
         """No-op: OpenCode's runtime holds no wait channel.
 
         The decline is not hollow. Every liveness surface a runtime-held wait
-        would need is already absent on this target — no platform-provided
-        session id (issue #9292), no hook channel (issue anomalyco/opencode#8619)
-        — and the OpenCode runtime bootstraps none of the shared build layer the
-        observables are inspected through. A wait held here would be an
-        unobservable block with no re-attach path.
+        would need is already absent on this target — no hook channel (issue
+        anomalyco/opencode#8619) — and the OpenCode runtime bootstraps none of the
+        shared build layer the observables are inspected through. A wait held
+        here would be an unobservable block with no re-attach path.
 
         The alternative is real, shipped behaviour on this target, not a
         weaker stand-in for a capability OpenCode lacks entirely: the
@@ -1870,9 +2040,8 @@ class OpenCodeRuntime(Runtime):
         """
         return toon_noop(
             'wait for',
-            "OpenCode's runtime holds no wait channel — it has no platform-provided"
-            ' session id (issue #9292), no hook channel'
-            ' (issue anomalyco/opencode#8619), and no shared build layer to inspect'
+            "OpenCode's runtime holds no wait channel — it has no hook channel"
+            ' (issue anomalyco/opencode#8619) and no shared build layer to inspect'
             ' an observable through, so a wait held here would be unobservable and'
             ' could not be re-attached',
             "Invoke the observable's own bounded-wait verb synchronously in-turn"
@@ -1971,7 +2140,9 @@ class OpenCodeRuntime(Runtime):
                     {
                         'check': check,
                         'healthy': False,
-                        'detail': ('SessionStart hook not applicable on OpenCode (issue #9292)'),
+                        'detail': (
+                            'OpenCode exposes no SessionStart-hook channel (issue anomalyco/opencode#8619)'
+                        ),
                     }
                 )
                 all_healthy = False

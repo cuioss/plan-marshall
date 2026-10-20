@@ -32,20 +32,37 @@ The `alternative` field is advisory — it names what the caller can do instead.
 
 ### `session capture` on OpenCode
 
-OpenCode does not expose a platform-provided session id to the shell environment. The operation always returns:
+OpenCode MEASURES its session identity from its session store: `$OPENCODE_SESSION_ID`
+names the running session, which is resolved to its ROOT through `session_v2.parent_id`
+and appended to the plan's `session_ids` metadata. The operation declines on exactly
+THREE genuine grounds, each carrying its own `reason`:
+
+| Ground | `reason` |
+|--------|----------|
+| `$OPENCODE_SESSION_ID` unset | `$OPENCODE_SESSION_ID is unset, so no OpenCode session identity can be measured this run` |
+| Session database absent / unreadable / schema unsupported | `db_not_found` / `db_unreadable` / `schema_unsupported` — the reader's named reason, verbatim |
+| The id names no row in the tree | `session_not_found` |
 
 ```toon
 status: no-op
 operation: session capture
-reason: OpenCode does not expose a platform-provided session id to the shell; tracked upstream at issue #9292
+reason: "$OPENCODE_SESSION_ID is unset, so no OpenCode session identity can be measured this run"
 alternative: pass --total-tokens manually to metrics capture
 ```
 
-The calling skill MUST continue. Where automatic token capture was expected, the caller falls back to accepting a `--total-tokens` argument from the user.
+Nothing is stored on any of these paths — never the raw, unresolved id. The
+calling skill MUST continue. Where automatic token capture was expected, the
+caller falls back to accepting a `--total-tokens` argument from the user.
+
+`session bind` and `session resolve-plan` decline only when no id is available at
+all (`no_session_id`-shaped no-op); otherwise they delegate to the shared
+`session_binding` policy and answer with `success`, so a session can bind and
+resolve its plan on this target exactly as on Claude.
 
 ### `session render-title` on OpenCode
 
-The terminal-title renderer requires a platform-provided session id to locate the active plan. On OpenCode the session id is unavailable:
+The terminal-title renderer requires a plugin-driven render channel. OpenCode has
+none:
 
 ```toon
 status: no-op
@@ -74,7 +91,7 @@ simply absent.
 
 ### `metrics capture` when session data is missing
 
-`metrics capture` returns `no-op` on OpenCode (no session id available) and may return `no-op` on Claude Code when the session id is present but the transcript contains no usage data for the requested phase:
+`metrics capture` returns `no-op` on OpenCode (no token-persistence boundary is reachable from that target) and may return `no-op` on Claude Code when the session id is present but the transcript contains no usage data for the requested phase:
 
 ```toon
 status: no-op
@@ -92,7 +109,9 @@ The calling skill MUST continue. Metrics are recorded on a best-effort basis —
 | Situation | Status |
 |-----------|--------|
 | OpenCode returns for a Claude-only operation | `no-op` |
-| `session capture` cannot find the env var (hook not installed) | `error` (code: `hook_not_configured`) |
+| `session capture` cannot find `$CLAUDE_CODE_SESSION_ID` (Claude hook not installed) | `error` (code: `hook_not_configured`) |
+| `session capture` cannot find `$OPENCODE_SESSION_ID` (OpenCode) | `no-op` — OpenCode has no hook to install, so this is a genuine ground, not a wiring defect |
+| `session capture` on OpenCode whose session store is absent / unreadable / schema-unsupported | `no-op` — the reader's named reason |
 | `marshal.json` is missing | `error` (code: `marshal_not_found`) |
 | Agent uses unmapped tool (e.g., `SendMessage`) | `no-op` |
 | `platform_runtime.py` cannot parse CLI arguments | `error` |

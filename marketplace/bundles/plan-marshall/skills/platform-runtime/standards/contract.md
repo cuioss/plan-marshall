@@ -93,7 +93,7 @@ target: opencode
 project_dir: /path/to/project
 marshal_written: false
 hook_installed: false
-hook_skip_reason: OpenCode does not support a SessionStart hook equivalent (issue #9292)
+hook_skip_reason: OpenCode exposes no SessionStart-hook channel (issue anomalyco/opencode#8619)
 ```
 
 **Error**:
@@ -333,6 +333,20 @@ session_id: abc123def456
 stored: true
 ```
 
+**Success (OpenCode — root session measured from the session store)**:
+```toon
+status: success
+operation: session capture
+plan_id: my-plan
+session_id: ses_root_abc123
+stored: true
+```
+
+On OpenCode the identity is MEASURED, not self-reported: `$OPENCODE_SESSION_ID`
+names the running session, and the runtime resolves it to its ROOT through
+`session_v2.parent_id` in `opencode.db`, then appends that root to the plan's
+`session_ids` metadata. The raw, unresolved id is never stored.
+
 **Error (Claude — hook not configured)**:
 ```toon
 status: error
@@ -341,13 +355,27 @@ error: hook_not_configured
 message: $CLAUDE_CODE_SESSION_ID is unset; run marshall-steward to install the SessionStart hook
 ```
 
-**No-op (OpenCode)**:
+**No-op (OpenCode — the variable is unset)**:
 ```toon
 status: no-op
 operation: session capture
-reason: OpenCode does not expose a platform-provided session id to the shell; tracked upstream at issue #9292
+reason: "$OPENCODE_SESSION_ID is unset, so no OpenCode session identity can be measured this run"
 alternative: pass --total-tokens manually to metrics capture
 ```
+
+**No-op (OpenCode — the session store is unavailable)**: the `reason` is the
+reader's own named reason, verbatim — one of `db_not_found`, `db_unreadable`,
+`schema_unsupported`, or `session_not_found` when the id names no row:
+
+```toon
+status: no-op
+operation: session capture
+reason: db_not_found
+alternative: pass --total-tokens manually to metrics capture
+```
+
+Every unavailable ground declines and stores NOTHING — never the raw id, and
+never an error: these are states the caller degrades from, not wiring defects.
 
 Absent identity is the `NO_SESSION_IDENTITY` sentinel from `runtime_base`
 (never null); callers test it with the `has_session_identity` meaning guard
@@ -824,7 +852,7 @@ reason: feature_inactive
 ```toon
 status: no-op
 operation: session push-title-token
-reason: OpenCode exposes no platform-provided session id to bind (issue #9292) and has no plugin-driven terminal-title render channel for a later event to deliver on (issue anomalyco/opencode#8619)
+reason: OpenCode has no plugin-driven terminal-title render channel for a later event to deliver on (issue anomalyco/opencode#8619)
 alternative: Use OpenCode's built-in TUI status surface for plan visibility
 ```
 
@@ -832,9 +860,9 @@ alternative: Use OpenCode's built-in TUI status surface for plan visibility
 
 ### `session bind`
 
-Bind the running session to `--plan-id` (last-driven-wins) so `session render-title` and `session resolve-plan` resolve the session to that plan. The caller's own `active-plan` cache slot is written unconditionally — no protect-active, no stale-slot reclaim, no plan-dir-exists check — so a session that switches to drive a different live plan rebinds cleanly. No-op on OpenCode (no platform-provided session id).
+Bind the running session to `--plan-id` (last-driven-wins) so `session render-title` and `session resolve-plan` resolve the session to that plan. The caller's own `active-plan` cache slot is written unconditionally — no protect-active, no stale-slot reclaim, no plan-dir-exists check — so a session that switches to drive a different live plan rebinds cleanly. OpenCode resolves its identity from `$OPENCODE_SESSION_ID` and delegates to the shared `session_binding` policy, so the binding is real there too; only a run with no id available is a `no-op`.
 
-**Arguments**: `--plan-id <id>` (required), `--session-id <id>` (optional — falls back to whatever session identifier the active target exposes; on Claude that is `$CLAUDE_CODE_SESSION_ID`, and a target that exposes none returns `no-op`)
+**Arguments**: `--plan-id <id>` (required), `--session-id <id>` (optional — falls back to whatever session identifier the active target exposes; on Claude that is `$CLAUDE_CODE_SESSION_ID`, on OpenCode `$OPENCODE_SESSION_ID`, and a target that exposes none returns `no-op`)
 
 **Success (Claude — slot bound)**:
 ```toon
@@ -845,21 +873,30 @@ session_id: abc123def456
 bound: true
 ```
 
-**No-op (OpenCode)**:
+**Success (OpenCode — slot bound)**:
+```toon
+status: success
+operation: session bind
+plan_id: my-plan
+session_id: ses_root_abc123
+bound: true
+```
+
+**No-op (OpenCode — no id available)**:
 ```toon
 status: no-op
 operation: session bind
-reason: OpenCode does not expose a platform-provided session id to the shell
-alternative: Use OpenCode's built-in TUI status surface for plan visibility
+reason: "no OpenCode session id to bind: pass --session-id or set $OPENCODE_SESSION_ID"
+alternative: Use OpenCode's built-in session mechanism for plan visibility
 ```
 
 ---
 
 ### `session resolve-plan`
 
-Read the running session's bound plan id — the read side of `session bind`. `session render-title` resolves the session→plan binding through the same read path. No-op on OpenCode (no platform-provided session id).
+Read the running session's bound plan id — the read side of `session bind`. `session render-title` resolves the session→plan binding through the same read path. OpenCode reads the same per-session slot through the shared `session_binding` policy; only a run with no id available is a `no-op`.
 
-**Arguments**: `--session-id <id>` (optional — falls back to whatever session identifier the active target exposes; on Claude that is `$CLAUDE_CODE_SESSION_ID`, and a target that exposes none returns `no-op`)
+**Arguments**: `--session-id <id>` (optional — falls back to whatever session identifier the active target exposes; on Claude that is `$CLAUDE_CODE_SESSION_ID`, on OpenCode `$OPENCODE_SESSION_ID`, and a target that exposes none returns `no-op`)
 
 **Success (Claude — bound)**:
 ```toon
@@ -879,12 +916,12 @@ resolved: false
 plan_id: ""
 ```
 
-**No-op (OpenCode)**:
+**No-op (OpenCode — no id available)**:
 ```toon
 status: no-op
 operation: session resolve-plan
-reason: OpenCode does not expose a platform-provided session id to the shell
-alternative: Use OpenCode's built-in TUI status surface for plan visibility
+reason: "no OpenCode session id to resolve: pass --session-id or set $OPENCODE_SESSION_ID"
+alternative: Use OpenCode's built-in session mechanism for plan visibility
 ```
 
 ---
@@ -931,7 +968,7 @@ reason: feature_inactive
 ```toon
 status: no-op
 operation: session teardown
-reason: "OpenCode does not expose a platform-provided session id to the shell, so there is no per-session binding to release (issue #9292)"
+reason: "OpenCode exposes no session-lifecycle hook, so there is no binding to release at teardown (issue anomalyco/opencode#8619)"
 alternative: Use OpenCode's built-in session mechanism for plan visibility
 ```
 
@@ -939,7 +976,7 @@ alternative: Use OpenCode's built-in session mechanism for plan visibility
 
 ### `session doctor`
 
-Visit **every directory under the session-cache root** — not just the ones that yield a readable slot — build a plan→sessions reverse index from the live slots, flag any plan bound by more than one live session (a conflict), identify slots whose plan is archived/deleted (stale), and identify orphan directories that carry no binding at all (an absent, empty, or unreadable `active-plan` file). An archived plan whose terminal title has not been delivered yet is EXEMPT from the stale classification — its binding is the pending render's only route to the plan — and becomes collectable once that state is delivered; the exemption is state-driven, never an elapsed-time grace period. With `--fix`, GC each stale slot and prune each orphan directory. Keeps NO shared mutable index — the scan-then-GC is per-file and idempotent. `scanned` counts the live slots only and does NOT include orphan directories. `orphans_removed` counts orphan directories actually deleted, read from the filesystem after the prune ran: the prune removes only an EMPTY directory, so a non-empty orphan directory it leaves behind stays listed in `orphans` but is not counted. A recognised non-session index directory under the root (`by-cwd`) carries no session binding and is neither a slot nor an orphan. No-op on OpenCode (no platform-provided session id).
+Visit **every directory under the session-cache root** — not just the ones that yield a readable slot — build a plan→sessions reverse index from the live slots, flag any plan bound by more than one live session (a conflict), identify slots whose plan is archived/deleted (stale), and identify orphan directories that carry no binding at all (an absent, empty, or unreadable `active-plan` file). An archived plan whose terminal title has not been delivered yet is EXEMPT from the stale classification — its binding is the pending render's only route to the plan — and becomes collectable once that state is delivered; the exemption is state-driven, never an elapsed-time grace period. With `--fix`, GC each stale slot and prune each orphan directory. Keeps NO shared mutable index — the scan-then-GC is per-file and idempotent. `scanned` counts the live slots only and does NOT include orphan directories. `orphans_removed` counts orphan directories actually deleted, read from the filesystem after the prune ran: the prune removes only an EMPTY directory, so a non-empty orphan directory it leaves behind stays listed in `orphans` but is not counted. A recognised non-session index directory under the root (`by-cwd`) carries no session binding and is neither a slot nor an orphan. No-op on OpenCode: the binding policy itself is real, but no lifecycle hook maintains a per-session cache to scan.
 
 **Arguments**: `--fix` (optional — GC stale slots whose plan is archived/deleted, and prune orphan directories)
 
@@ -966,8 +1003,8 @@ orphans_removed: 0
 ```toon
 status: no-op
 operation: session doctor
-reason: OpenCode does not expose a platform-provided session id to the shell
-alternative: Use OpenCode's built-in TUI status surface for plan visibility
+reason: OpenCode exposes no lifecycle hook that maintains a per-session active-plan cache (issue anomalyco/opencode#8619)
+alternative: Use OpenCode's built-in session mechanism for plan visibility
 ```
 
 ---
@@ -1021,36 +1058,40 @@ reason: Session ID found but transcript/DB query returned no usage data for this
 alternative: Pass --total-tokens manually
 ```
 
-**No-op (OpenCode — no session transcript)**:
+**No-op (OpenCode — automatic capture unavailable)**:
 ```toon
 status: no-op
 operation: metrics capture
-reason: "automatic token capture requires a platform-provided session id, which OpenCode does not expose (issue #9292)"
-alternative: pass --total-tokens manually
+reason: "automatic token capture on OpenCode needs this target to reach the shared metrics-persistence boundary, which it does not"
+alternative: "run metrics capture on the Claude target, or wire a shared metrics-persistence boundary OpenCode can reach"
 ```
 
 **No-op (OpenCode — manual tokens)**:
 ```toon
 status: no-op
 operation: metrics capture
-reason: "OpenCode reaches no token-persistence boundary, so an explicit count cannot be stored (issue #9292)"
+reason: "OpenCode reaches no token-persistence boundary, so an explicit count cannot be stored"
 alternative: "run metrics capture on the Claude target, or wire a shared metrics-persistence boundary OpenCode can reach"
 ```
 
-OpenCode declines with a `no-op` on **every** input, manual count included. It reaches no persistence boundary — the token-cursor write and the `manage-metrics end-phase` call live in the Claude runtime — so a `success` carrying a manual count would be a report of work that did not happen: a measurement the caller could not distinguish from a stored one, silently lost. `Runtime.metrics_capture` requires an explicit count to be persisted before `success`, or declined with `no-op`; OpenCode chooses the honest decline. The recommended remediation is to relocate the (target-neutral) metrics persistence boundary to a shared home both runtimes reach; until then OpenCode declines rather than lying about a write it cannot perform.
+OpenCode declines with a `no-op` on **every** input, manual count included. The ground is the absent token-PERSISTENCE boundary, not the session identity (OpenCode measures its identity from its session store — see `session capture`): the token-cursor write and the `manage-metrics end-phase` call live in the Claude runtime, so a `success` carrying a manual count would be a report of work that did not happen: a measurement the caller could not distinguish from a stored one, silently lost. `Runtime.metrics_capture` requires an explicit count to be persisted before `success`, or declined with `no-op`; OpenCode chooses the honest decline. The recommended remediation is to relocate the (target-neutral) metrics persistence boundary to a shared home both runtimes reach; until then OpenCode declines rather than lying about a write it cannot perform.
 
-**Unknown vocabulary.** A phase that ran on a `transcripts: none` harness carries no
+**Unknown vocabulary.** A phase that no measured source could supply carries no
 measured token figure at all, so downstream `manage-metrics` rows report
 `total_tokens: unknown` — the literal `unknown`, never `0`. A measured zero
 stays `0`; only never-measured reads as `unknown`. The `transcripts`
-capability on the run's `runtime-info` record (`full` vs `none`) is what tells
-a reader which of the two a figure is.
+capability on the run's `runtime-info` record (`full` vs `none`) states whether
+the harness exposes a WALKABLE transcript; it is not by itself evidence that the
+runtime declines, because a database-backed source (OpenCode's session store)
+answers despite `transcripts: none`.
 
 ---
 
 ### `metrics normalized-tokens`
 
-Resolve normalized transcript token totals for the active target. Walks the session transcript, writes the per-phase `{input, output, cache_read, cache_creation, total, billing_weighted_total, subagent_*}` view plus the exploration-share counters, the cache-read attribution group, and the exploration sub-source split to `--output-file` as JSON, and returns the attribution counters. `total` is the canonical four-field sum (`input + output + cache_read + cache_creation`); `billing_weighted_total` is reported separately.
+Resolve normalized transcript token totals for the active target. On a transcript-walking target it walks the session transcript; on OpenCode it reads the session database through the shared read-only reader and sums the assistant-message usage per half-open `[start, end)` window, splitting the root session's usage (the main context) from its descendants' (the dispatched sub-agents). Either way it writes the per-phase `{input, output, cache_read, cache_creation, total, billing_weighted_total, subagent_*}` view plus, where the target walks a transcript, the exploration-share counters, the cache-read attribution group, and the exploration sub-source split to `--output-file` as JSON, and returns the attribution counters. `total` is the canonical four-field sum (`input + output + cache_read + cache_creation`); `billing_weighted_total` is reported separately.
+
+On OpenCode the four canonical categories come from the measured message usage: `input_tokens` from `tokens.input`, `output_tokens` from `tokens.output`, `cache_read_input_tokens` from `tokens.cache.read` and `cache_creation_input_tokens` from `tokens.cache.write`. The sub-agent group is measured from the descendant sessions' messages: `subagent_total_tokens` is their `input + output + cache_creation` (cache reads excluded, matching the dispatched-total definition used everywhere else), `subagent_samples` counts the sub-agent sessions observed, and `subagent_tool_uses` / `subagent_duration_ms` come from the same message rows.
 
 **Arguments**: `--session-id <id>` (required), `--window <phase> <start> <end>` (repeatable), `--output-file <path>` (required)
 
@@ -1065,6 +1106,8 @@ Resolve normalized transcript token totals for the active target. Walks the sess
 | Exploration-share payload bytes | `exploration_result_bytes`, `work_result_bytes`, `execute_result_bytes`, `orchestration_result_bytes`, `unclassified_result_bytes` |
 | Cache-read attribution | `cache_read_attributed_exploration`, `cache_read_attributed_work`, `cache_read_attributed_execute`, `cache_read_attributed_orchestration`, `cache_read_attributed_unclassified`, `cache_read_unattributed` |
 | Exploration sub-sources | `exploration_index_answerable_bytes`, `exploration_doc_residency_bytes`, `exploration_unattributed_bytes` |
+
+The last three groups are a TRANSCRIPT-walk product. A database-backed target (OpenCode) emits the three token groups and omits the exploration counters, cache-read attribution and sub-source split — absent, never zero-filled.
 
 Each observed tool call is classified by its tool name into one of five buckets; the call is counted into `{bucket}_tool_calls` and its result payload's UTF-8 byte length into `{bucket}_result_bytes`, both attributed to the phase window containing the call's timestamp. `exploration + work + execute` is the exploration-share denominator; `orchestration` (control-plane calls, which scale with the workflow rather than the change) and `unclassified` are emitted but excluded from the ratio, so the five buckets partition the observed population and the exclusion stays auditable.
 
@@ -1084,19 +1127,23 @@ Each observed tool call is classified by its tool name into one of five buckets;
 
 **Partition invariant.** The three sub-sources sum EXACTLY to `exploration_result_bytes`. They re-cut bytes already counted there and add none. They carry the `_bytes` suffix rather than `_result_bytes` deliberately: they are a byte-only sub-split of ONE bucket and are **not** members of the `{bucket}_{measure}` exploration-counter family, so a consumer deriving that family's key set must not pick them up. There is no matching `_tool_calls` sub-split.
 
-**Absent is not zero.** A target that emits a per-phase bucket at all MUST populate the full counter key set — exploration-share counters, cache-read attribution, and exploration sub-sources alike — so a `0` there is a *measured* zero. A phase recording no `cache_read` still carries all five attributed keys and the residual at a measured zero, and a phase that ran no exploration call still carries all three sub-source keys at a measured zero. A target that declines the primitive — OpenCode, which exposes no transcript — emits no bucket, and its counters are *absent*. Consumers MUST preserve the distinction and MUST NOT substitute `0` for a target that never measured; a zero-initialized bucket on a declining target would make "did not explore" indistinguishable from "was never measured". This is the declinable-primitive posture of ADR-011 and the explicit-unknown rule of ADR-009.
+**Absent is not zero.** A target that emits a per-phase bucket at all MUST populate every counter family it CAN measure, so a `0` there is a *measured* zero: a transcript-walking target emits the full counter key set — exploration-share counters, cache-read attribution, and exploration sub-sources alike — so a phase recording no `cache_read` still carries all five attributed keys and the residual at a measured zero, and a phase that ran no exploration call still carries all three sub-source keys at a measured zero. A database-backed target (OpenCode) emits the token groups, whose zeros are measured, and OMITS the transcript-only groups rather than zero-filling them. A target that declines the primitive entirely emits no bucket at all, and its counters are *absent*. Consumers MUST preserve the distinction and MUST NOT substitute `0` for a target that never measured; a zero-initialized bucket on a declining target would make "did not explore" indistinguishable from "was never measured". This is the declinable-primitive posture of ADR-011 and the explicit-unknown rule of ADR-009.
 
-**Unknown outcome vocabulary.** The no-op above is a transcript-availability
-statement, not a token figure: a `transcripts: none` run reports its phase
-token total as the literal `unknown` (see
-`manage-metrics/standards/data-format.md` § unknown vocabulary), and its
-`runtime-info` record carries `transcripts: none` as the capability flag that
-explains why. `unknown` propagates through `enrich`, `generate`, and `record`
-without ever collapsing into a measured zero — a reader that sees `unknown`
-knows no measurement happened, while a reader that sees `0` knows a
-measurement happened and found nothing.
+**Unknown outcome vocabulary.** A no-op above is an AVAILABILITY statement, not a
+token figure: `transcript_not_found` means no walkable transcript exists, and
+`db_not_found` / `db_unreadable` / `schema_unsupported` / `session_not_found`
+mean the session store could not answer. On either decline the phase's token
+total reports as the literal `unknown` (see
+`manage-metrics/standards/data-format.md` § unknown vocabulary). The
+`runtime-info` `transcripts` capability (`full` vs `none`) explains only whether
+a WALKABLE transcript exists; it does not predict the answer, because OpenCode
+reports `transcripts: none` and still answers from its session database.
+`unknown` propagates through `enrich`, `generate`, and `record` without ever
+collapsing into a measured zero — a reader that sees `unknown` knows no
+measurement happened, while a reader that sees `0` knows a measurement happened
+and found nothing.
 
-**Success**:
+**Success (transcript-walking target)**:
 ```toon
 status: success
 operation: metrics normalized-tokens
@@ -1113,11 +1160,33 @@ unclassified_tool_calls: 0
 
 `unclassified_tool_calls` is the run-level count of tool names outside the classifier's population-derived domain. A non-zero value is the signal that a new tool name has appeared and the classifier needs extending — the name was counted, not dropped.
 
+**Success (OpenCode — measured from the session database)**:
+```toon
+status: success
+operation: metrics normalized-tokens
+session_id: ses_root_abc123
+output_file: .plan/local/plans/my-plan/work/normalized-tokens.json
+phases_attributed: 6
+message_count: 412
+subagent_calls_attributed: 11
+subagent_phases_attributed: 4
+```
+
 **No-op (no transcript located)**:
 ```toon
 status: no-op
 operation: metrics normalized-tokens
 reason: transcript_not_found
+alternative: pass --total-tokens manually to metrics capture
+```
+
+**No-op (OpenCode — the session store cannot answer)**: the `reason` is the
+reader's own named reason, verbatim:
+
+```toon
+status: no-op
+operation: metrics normalized-tokens
+reason: schema_unsupported
 alternative: pass --total-tokens manually to metrics capture
 ```
 
@@ -1129,7 +1198,7 @@ error: io_error
 message: "Failed to write normalized-token result to <path>: <reason>"
 ```
 
-**Gate input signal (finalize session routing).** The finalize entry resolver gates its late-capture-failure abort on transcript availability read from the live runtime target at the point of use: a `session capture` no-op plus a `metrics normalized-tokens` `transcript_not_found` no-op marks a transcript-less target (proceed unenriched with a logged decision, `enrich` skipped carrying the gap flag); a transcript-capable target keeps the hard block on absent identity. No new operation — the existing no-op answers above ARE the signal.
+**Gate input signal (finalize session routing).** The finalize entry resolver gates its late-capture-failure abort on whether the target's session identity could be RESOLVED this run, read from the live runtime target at the point of use: a `session capture` `no-op` (variable unset, or the store absent / unreadable / schema-unsupported, each carrying its named reason) means the identity could not be resolved, so finalize proceeds unenriched with the population-carrying gap flag; a target that resolved an identity keeps the hard block on absent identity. `metrics normalized-tokens` answering `transcript_not_found` or a named store reason is a consequence of the same condition, not a second signal. No new operation — the existing answers ARE the signal.
 
 ---
 
@@ -1173,7 +1242,7 @@ reason: transcript_not_found
 alternative: "run on a target that exposes a session transcript, or record the session with session capture first"
 ```
 
-A target that exposes no transcript at all (OpenCode) declines the primitive: it performs no reduction and carries none of the record's signal fields, which are ABSENT rather than zero — an unmeasured target must not be indistinguishable from a target whose transcript genuinely carried no operator signal. This is the declinable-primitive posture of ADR-011 and the explicit-unknown rule of ADR-009.
+A target that exposes no walkable transcript (OpenCode) declines the primitive: it performs no reduction and carries none of the record's signal fields, which are ABSENT rather than zero — an unmeasured target must not be indistinguishable from a target whose transcript genuinely carried no operator signal. This is the declinable-primitive posture of ADR-011 and the explicit-unknown rule of ADR-009.
 
 **Error (transcript read failed)**:
 ```toon
@@ -1368,7 +1437,7 @@ message: the build-job inspection channel could not be reached (socket_absent); 
 ```toon
 status: no-op
 operation: wait for
-reason: "OpenCode's runtime holds no wait channel — it has no platform-provided session id (issue #9292), no hook channel (issue anomalyco/opencode#8619), and no shared build layer to inspect an observable through, so a wait held here would be unobservable and could not be re-attached"
+reason: "OpenCode's runtime holds no wait channel — it has no hook channel (issue anomalyco/opencode#8619) and no shared build layer to inspect an observable through, so a wait held here would be unobservable and could not be re-attached"
 alternative: "Invoke the observable's own bounded-wait verb synchronously in-turn (build-server-client wait, ci checks wait), or checkpoint and re-dispatch to re-establish the wait from persisted state"
 ```
 

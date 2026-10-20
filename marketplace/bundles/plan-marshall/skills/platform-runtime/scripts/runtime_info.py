@@ -16,9 +16,11 @@ this module never estimates.
 Every value that CAN come from more than one place carries its source: `model`
 and `effort` are tagged `self_reported` when a caller-supplied flag supplied
 them and `measured` when a script-readable source did. On OpenCode the model is
-measured rather than self-reported: it is read from the `session_v2` table of
-`opencode.db` (read-only) for the plan's root session and its descendants, so a
-flag never stands in for the record. See :func:`measure_opencode_model`.
+measured rather than self-reported: it is read from the plan's session tree in
+`opencode.db`, through the shared read-only session reader
+(``_opencode_sessions``), which owns the database path, the schema gate and the
+``parent_id`` walk — this module opens no database of its own. See
+:func:`measure_opencode_model`.
 
 Scope: concrete implementations exist for ``claude``, ``opencode``, and
 ``antigravity``.
@@ -28,12 +30,12 @@ from __future__ import annotations
 
 import json
 import os
-import sqlite3
 from collections.abc import Mapping
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+import _opencode_sessions
 from toon_parser import serialize_toon
 
 #: Schema version stamped into every client.toon payload this module renders.
@@ -239,63 +241,6 @@ def _parse_opencode_model(raw: object) -> dict[str, str] | None:
     return fields
 
 
-def _read_session_rows(db_path: Path) -> dict[str, tuple[str | None, object]]:
-    """Read ``session_v2`` (id, parent_id, model) into a mapping, read-only.
-
-    The database is opened with ``mode=ro`` so this reader can never write to
-    the developer's session store. A missing file, an unreadable schema or a
-    non-``session_v2`` database all surface as an exception the caller maps to
-    :data:`VALUE_UNKNOWN`.
-
-    The table is read DIRECTLY here (PLAN-LB-49 D1 has not landed): when that
-    plan ships its shared reader, this function is the seam to absorb it.
-    """
-    conn = sqlite3.connect(f'file:{db_path}?mode=ro', uri=True)
-    try:
-        cursor = conn.execute('SELECT id, parent_id, model FROM session_v2')
-        return {str(row[0]): (row[1], row[2]) for row in cursor.fetchall()}
-    finally:
-        conn.close()
-
-
-def _session_root(session_id: str, rows: Mapping[str, tuple[str | None, object]]) -> str | None:
-    """Resolve *session_id* to its root through ``parent_id``, or ``None``.
-
-    ``None`` means the id names no row in the tree — there is nothing to
-    measure. A cycle in a malformed tree terminates at the last unvisited id.
-    """
-    if session_id not in rows:
-        return None
-    current = session_id
-    seen: set[str] = set()
-    while current not in seen:
-        seen.add(current)
-        parent = rows[current][0]
-        if not isinstance(parent, str) or not parent or parent not in rows:
-            return current
-        current = parent
-    return current
-
-
-def _session_tree(root: str, rows: Mapping[str, tuple[str | None, object]]) -> list[str]:
-    """Return *root* plus every descendant reachable through ``parent_id``."""
-    children: dict[str, list[str]] = {}
-    for session_id, (parent, _model) in rows.items():
-        if isinstance(parent, str) and parent:
-            children.setdefault(parent, []).append(session_id)
-    ordered: list[str] = []
-    stack = [root]
-    seen: set[str] = set()
-    while stack:
-        current = stack.pop()
-        if current in seen or current not in rows:
-            continue
-        seen.add(current)
-        ordered.append(current)
-        stack.extend(children.get(current, ()))
-    return ordered
-
-
 def _format_model_key(fields: Mapping[str, str]) -> str:
     """Render one measured model as ``id`` or ``id/variant`` for the mixed list."""
     variant = fields.get('variant')
@@ -325,14 +270,18 @@ def measure_opencode_model(
 ) -> dict[str, Any] | None:
     """Measure the model the OpenCode session tree ran under.
 
-    Reads ``session_v2.model`` from *db_path* (opened read-only) for *session_id*
-    resolved to its root through ``parent_id``, plus every descendant. A tree
-    that ran exactly one model/variant records that model, its variant and its
-    provider as :data:`SOURCE_MEASURED`. A tree that ran more than one records
-    ``model: mixed`` with the distinct ``id/variant`` values listed — never
-    averaged and never reduced to the root's value; :func:`_mixed_model_labels`
-    appends the provider when two providers would otherwise render the same
-    label.
+    Resolves *session_id* to its root and walks the tree through the shared
+    read-only session reader (``_opencode_sessions``), which owns the database
+    path resolution, the schema gate and the ``parent_id`` walk. The measurement
+    needs tier 1 only — ``session_v2(id, parent_id, model)`` — so a database
+    carrying no message table or token columns still measures its model.
+
+    A tree that ran exactly one model/variant records that model, its variant
+    and its provider as :data:`SOURCE_MEASURED`. A tree that ran more than one
+    records ``model: mixed`` with the distinct ``id/variant`` values listed —
+    never averaged and never reduced to the root's value;
+    :func:`_mixed_model_labels` appends the provider when two providers would
+    otherwise render the same label.
 
     Args:
         db_path: The ``opencode.db`` to read, or ``None``.
@@ -347,17 +296,17 @@ def measure_opencode_model(
     if not session_id:
         return None
     unknown = {'model': VALUE_UNKNOWN, 'model_source': SOURCE_MEASURED}
-    if db_path is None or not Path(db_path).is_file():
+    if db_path is None:
         return dict(unknown)
-    try:
-        rows = _read_session_rows(Path(db_path))
-    except (sqlite3.Error, OSError, ValueError):
+    reading = _opencode_sessions.read_session_rows(db_path)
+    if not reading['ok']:
         return dict(unknown)
-    root = _session_root(session_id, rows)
+    rows = reading['rows']
+    root = _opencode_sessions.session_root(session_id, rows)
     if root is None:
         return dict(unknown)
     distinct: dict[tuple[str, str, str], dict[str, str]] = {}
-    for member in _session_tree(root, rows):
+    for member in _opencode_sessions.session_tree(root, rows):
         fields = _parse_opencode_model(rows[member][1])
         if fields is None:
             continue
