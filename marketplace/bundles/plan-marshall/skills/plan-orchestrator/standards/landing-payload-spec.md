@@ -110,12 +110,15 @@ counts" below.
 
 The four runtime-stamp keys — `harness`, `model`, `effort` and `plugin_version` —
 are read from the plan's runtime metadata, which phase-1-init Step 8a.6 stamps
-through the orchestrator preflight hook. They are REQUIRED: a landing that cannot
+through the orchestrator preflight hook and `emit-landing` refreshes at landing
+time (`refresh-runtime-stamp`). They are REQUIRED: a landing that cannot
 say which harness, model, effort and plan-marshall version produced the run cannot
 support the cross-model comparison they exist for. Every landing emitted before
 they were required is INCOMPLETE — that is accepted deliberately, and no
 grandfather rule exempts one. `executor_version` follows the same record but stays
-OPTIONAL.
+OPTIONAL. A landing-time re-read that cannot reach its source keeps the start-time
+value and records its provenance as `measured_at_start`, never as a fabricated
+`unknown` over a value the run did measure.
 
 `model` names the model — or models — the run used. It is a comma-separated list, because a run may
 switch models: a plan that starts on one model and continues on another records

@@ -68,6 +68,26 @@ The hook is best-effort by contract: a collector failure degrades to
 `status: success`. A pre-flight probe never blocks plan start — continue
 with plan start whether or not the artifact was written.
 
+The stamp itself is cleared BEFORE the collector runs. The stamper owns those
+keys, so a failed collector leaves them ABSENT rather than carrying a previous
+attempt's model or effort into this run's landing. On OpenCode with no
+`OPENCODE_SESSION_ID` in scope the collector omits the model and records why
+(`model_omission_reason: no_session_id`) rather than omitting it silently.
+
+## Landing-time refresh
+
+The stamp is taken at plan start, so a model switch during the run is invisible
+to it. The terminal `emit-landing` step calls the sibling verb
+
+```bash
+python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator refresh-runtime-stamp \
+  --plan-id {plan_id}
+```
+
+before it reads the stamp. That verb re-runs the measured read and merges it
+into the metadata; a re-read that cannot reach its source keeps the start-time
+value and records `measured_at_start` as its provenance.
+
 ## Output
 
 ```toon

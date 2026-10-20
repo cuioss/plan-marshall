@@ -856,13 +856,18 @@ best-effort: absent `--model` / `--effort` values simply omit those keys. See
 `plan-orchestrator/workflow/preflight.md` for the full contract and
 `platform-runtime/standards/runtime-info.md` for what each value means.
 
-On `degraded: true` the preflight call failed and no stamp was written: emit a
-`[WARNING]` work-log entry noting the gap — an absent `harness` reads as "not
-stamped", never as a default harness:
+On `degraded: true` OR `metadata_stamped: false` the runtime stamp is
+incomplete and the landing's runtime facts will read `unknown`. They are two
+different failures — the call degraded, or the status document could not be
+written — so emit a `[WARNING]` work-log entry naming WHICH one it was and its
+reason (`degrade_reason` when the call degraded; `metadata_stamped: false` with
+no degradation means the collector returned a payload the status writer could
+not store). An absent `harness` reads as "not stamped", never as a default
+harness:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  work --plan-id {plan_id} --level WARNING --message "[WARNING] (plan-marshall:phase-1-init) runtime stamp not written at plan-init — downstream readers treat an absent harness as not stamped"
+  work --plan-id {plan_id} --level WARNING --message "[WARNING] (plan-marshall:phase-1-init) runtime stamp not written at plan-init ({degrade_reason|metadata_stamped: false}) — downstream readers treat an absent harness as not stamped"
 ```
 
 Continue to Step 8a.5 either way. See `manage-status/SKILL.md` for the metadata

@@ -1217,6 +1217,13 @@ class TestEmitLandingRuntimeStamp:
 
         assert 'metadata.models' in text
 
+    def test_emit_landing_refreshes_the_stamp_first(self):
+        """The producer re-reads the measured stamp at landing time."""
+        text = self._text()
+
+        assert 'refresh-runtime-stamp' in text
+        assert 'measured_at_start' in text
+
 
 # =============================================================================
 # The payload spec (D3) derives the delta and classifies the seven findings

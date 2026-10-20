@@ -69,6 +69,11 @@ OPENCODE_HARNESS = 'opencode'
 #: Resolved to its root through ``session_v2.parent_id`` before measurement.
 OPENCODE_SESSION_ID_ENV = 'OPENCODE_SESSION_ID'
 
+#: Omission reason recorded when there is nothing to measure on OpenCode: no
+#: session id is in scope, so the model is omitted WITH a reason instead of
+#: silently — the landing's ``unknown`` then has a trace.
+OMISSION_NO_SESSION_ID = 'no_session_id'
+
 #: Human-readable UTC timestamp shape for entry keys. Colons are deliberately
 #: absent: a TOON key ends at its first colon, so a ``HH:MM:SS`` stamp would
 #: split the key during parsing.
@@ -404,7 +409,7 @@ def _resolve_model_fields(
         from_env = read_model_name(env)
         if from_env:
             return {'model': from_env, 'model_source': SOURCE_MEASURED}
-        return {}
+        return {'model_omission_reason': OMISSION_NO_SESSION_ID}
 
     if model_name:
         return {'model': model_name, 'model_source': SOURCE_SELF_REPORTED}

@@ -46,6 +46,7 @@ One required attribute pair (`harness`, `transcripts`), one further always-prese
 | `harness_mismatch` | `true` when the ambient tier and the machine-local configuration name different targets | No |
 | `model` | Model identifier as reported by a script-accessible source or self-reported through `--model`; `mixed` when an OpenCode session tree ran more than one, `unknown` when the OpenCode session database could not be read | No |
 | `model_source` | `self_reported` (a `--model` flag) or `measured` (a script-readable source) | No |
+| `model_omission_reason` | Why the model is omitted rather than measured: `no_session_id` when OpenCode has no `OPENCODE_SESSION_ID` in scope (and no script-readable model) | No |
 | `variant` | The OpenCode session tree's variant (e.g. `high`) | No |
 | `provider` | The OpenCode session tree's provider id | No |
 | `models` | Distinct `id/variant` values of an OpenCode session tree recorded as `mixed` | No |
