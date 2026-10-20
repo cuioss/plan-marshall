@@ -26,6 +26,7 @@ _cmd_client_render = load_script_module(
 
 get_module_info = _cmd_client_query.get_module_info
 render_overview = _cmd_client_render.render_overview
+render_module_markdown = _cmd_client_render.render_module_markdown
 
 #: A notation that really resolves in this repository, so the read guard's
 #: stale-notation message never stands in for the condition under test.
@@ -143,6 +144,17 @@ def test_overview_renders_the_effective_skill_count():
         _write_marshal('java-quarkus')
 
         rendered = render_overview(project_dir)
+
+    assert '- implementation: 1 skill' in rendered
+
+
+def test_module_deep_dive_renders_the_effective_skill_count():
+    """The deep-dive render agrees with the TOON read of the same module."""
+    with tempfile.TemporaryDirectory() as project_dir:
+        _seed_module(project_dir, {'implementation': _profile(defaults=[_LIVE], optionals=[_EXCLUDED])})
+        _write_marshal('java-quarkus')
+
+        rendered = render_module_markdown('mod', project_dir, 400)
 
     assert '- implementation: 1 skill' in rendered
 

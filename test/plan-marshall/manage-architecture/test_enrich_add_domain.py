@@ -8,12 +8,14 @@ via ``_project.json``'s index and writes only the touched module's
 this surface.
 """
 
+import os
 import tempfile
+from pathlib import Path
 
 import pytest
 from _arch_fixtures import setup_test_project
 
-from conftest import load_script_module
+from conftest import create_marshal_json, load_script_module
 
 _architecture_core = load_script_module(
     'plan-marshall', 'manage-architecture', '_architecture_core.py', '_architecture_core'
@@ -22,6 +24,8 @@ _cmd_enrich = load_script_module('plan-marshall', 'manage-architecture', '_cmd_e
 
 ModuleNotFoundInProjectError = _architecture_core.ModuleNotFoundInProjectError
 load_module_enriched = _architecture_core.load_module_enriched
+load_module_enriched_or_empty = _architecture_core.load_module_enriched_or_empty
+save_module_enriched = _architecture_core.save_module_enriched
 enrich_add_domain = _cmd_enrich.enrich_add_domain
 
 
@@ -100,6 +104,36 @@ def test_add_domain_additive_merge():
         assert len(general_skills) > 0, (
             'Should have general-dev skills (persona-plan-marshall-agent, ref-code-quality, persona-module-tester)'
         )
+
+
+def test_add_domain_prunes_a_skill_the_repository_now_excludes():
+    """Re-enrichment removes a skill persisted before the exclusion existed."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        setup_test_project(tmpdir)
+        enriched = load_module_enriched_or_empty('module-a', tmpdir)
+        enriched['skills_by_profile'] = {
+            'implementation': {
+                'defaults': [{'skill': 'pm-dev-java:java-core', 'description': 'd'}],
+                'optionals': [{'skill': 'pm-dev-java:java-quarkus', 'description': 'd'}],
+            }
+        }
+        save_module_enriched('module-a', enriched, tmpdir)
+        create_marshal_json(
+            Path(os.environ['PLAN_BASE_DIR']),
+            config={'skill_domains': {'java': {'excluded_skills': ['java-quarkus']}}},
+            nest_in_plan_dir=False,
+        )
+
+        result = enrich_add_domain('module-a', 'java', tmpdir)
+
+    implementation = result['skills_by_profile']['implementation']
+    notations = [
+        entry.get('skill', entry) if isinstance(entry, dict) else entry
+        for key in ('defaults', 'optionals')
+        for entry in implementation.get(key, [])
+    ]
+    assert 'pm-dev-java:java-quarkus' not in notations
+    assert 'pm-dev-java:java-core' in notations
 
 
 def test_add_domain_preserves_existing():

@@ -368,7 +368,7 @@ def render_module_markdown(
         packages_section.append('')
 
     skills_section: list[str] = []
-    skills_by_profile = merged.get('skills_by_profile', {})
+    skills_by_profile = _effective_skills_by_profile(merged)
     if skills_by_profile:
         skills_section = ['## Skills by Profile', '']
         for profile in sorted(skills_by_profile.keys()):
