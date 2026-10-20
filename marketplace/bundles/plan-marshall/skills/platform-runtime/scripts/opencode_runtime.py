@@ -350,6 +350,160 @@ def _protect_path_deny_entries(protected_dir: str) -> dict[str, dict[str, str]]:
     return entries
 
 
+# ----------------------------------------------------------------------
+# OpenCode 2 permission-rule accessors
+# ----------------------------------------------------------------------
+#
+# OpenCode 2 stores permissions as an ordered ``permissions`` list of
+# ``{action, resource, effect}`` rules evaluated last-match-wins, with no match
+# meaning ``ask``. The OpenCode 1 ``permission`` map is still READ so an
+# operator's existing file is not rewritten behind their back, but nothing is
+# ever written into a map beside a list: the normalizer concatenates the map
+# BEFORE the list, so a rule added there is overridden by the list's catch-all.
+#
+# ``to_opencode_grant`` keeps its internal ``bash`` category; the OpenCode 2
+# action for that category is ``shell``. Keeping the rename in ONE place means
+# the legacy map path and the list path cannot disagree about which tool a
+# grant names.
+
+#: Internal grant category -> OpenCode 2 rule action. Only the shell rename
+#: exists; every other category is already the OpenCode tool name.
+_CATEGORY_TO_ACTION = {'bash': 'shell'}
+
+
+def _permission_action(category: str) -> str:
+    """Return the OpenCode 2 rule action for an internal grant category."""
+    return _CATEGORY_TO_ACTION.get(category, category)
+
+
+def _permission_rules(settings: dict[str, Any]) -> list[Any] | None:
+    """Return the ``permissions`` list when the settings carry one, else ``None``.
+
+    ``None`` means the file is in the OpenCode 1 map shape (or carries no
+    permission block at all); callers then keep writing the map shape they
+    found rather than converting the operator's file as a side effect.
+    """
+    rules = settings.get('permissions')
+    return rules if isinstance(rules, list) else None
+
+
+def _resource_matches(pattern: Any, resource: str) -> bool:
+    """Match a rule's ``resource`` glob against a concrete resource."""
+    text = pattern if isinstance(pattern, str) else ''
+    regex = '^' + re.escape(text).replace(r'\*', '.*') + '$'
+    return re.match(regex, resource, re.S) is not None
+
+
+def _rule_effect(rule: dict[str, Any]) -> str:
+    return str(rule.get('effect', '')).strip().lower()
+
+
+def _matching_rules(rules: list[Any], action: str, resource: str) -> list[dict[str, Any]]:
+    return [
+        rule
+        for rule in rules
+        if isinstance(rule, dict) and rule.get('action') == action and _resource_matches(rule.get('resource'), resource)
+    ]
+
+
+def _effective_rule_effect(rules: list[Any], action: str, resource: str) -> str | None:
+    """Evaluate *action*/*resource* the way OpenCode 2 does: last match wins."""
+    hits = _matching_rules(rules, action, resource)
+    return _rule_effect(hits[-1]) if hits else None
+
+
+def _rule_exists(rules: list[Any], action: str, resource: str, effect: str) -> bool:
+    """True when an exact (action, resource, effect) rule is already present."""
+    return any(
+        isinstance(rule, dict)
+        and rule.get('action') == action
+        and rule.get('resource') == resource
+        and _rule_effect(rule) == effect
+        for rule in rules
+    )
+
+
+def _upsert_permission_rule(rules: list[Any], action: str, resource: str, effect: str) -> bool:
+    """Add or update one rule in an OpenCode 2 ``permissions`` list.
+
+    An exact ``(action, resource)`` rule is updated in place. A new specific
+    rule is inserted AFTER that action's catch-all (``resource == "*"``), so
+    last-match-wins lets the specific rule override it. A new catch-all is
+    inserted at the FRONT, where it cannot override anything. Returns whether
+    anything changed.
+    """
+    for rule in rules:
+        if isinstance(rule, dict) and rule.get('action') == action and rule.get('resource') == resource:
+            if _rule_effect(rule) == effect:
+                return False
+            rule['effect'] = effect
+            return True
+
+    new_rule = {'action': action, 'resource': resource, 'effect': effect}
+    if resource == '*':
+        rules.insert(0, new_rule)
+        return True
+
+    insert_at = 0
+    for index, rule in enumerate(rules):
+        if isinstance(rule, dict) and rule.get('action') == action and rule.get('resource') == '*':
+            insert_at = index + 1
+    rules.insert(insert_at, new_rule)
+    return True
+
+
+def _remove_permission_rule(rules: list[Any], action: str, resource: str) -> bool:
+    """Remove the exact ``(action, resource)`` rule; returns whether one was removed."""
+    for index, rule in enumerate(list(rules)):
+        if isinstance(rule, dict) and rule.get('action') == action and rule.get('resource') == resource:
+            del rules[index]
+            return True
+    return False
+
+
+def _opencode2_skeleton() -> dict[str, Any]:
+    """Return a fresh OpenCode 2 ``opencode.json`` skeleton.
+
+    The shell catch-all comes FIRST because OpenCode 2 evaluates the list
+    last-match-wins: the executor and build-wrapper allows follow it, so they
+    override it while everything else keeps the ``ask`` default the client
+    would apply anyway. No ``permission`` map is written — the normalizer
+    concatenates that map ahead of the list, which is what turned written
+    deny rules into dead letters in the OpenCode 1 shape.
+    """
+    rules: list[dict[str, str]] = [{'action': 'shell', 'resource': '*', 'effect': 'ask'}]
+    rules.extend({'action': 'shell', 'resource': cmd, 'effect': 'allow'} for cmd in OPENCODE_DEFAULT_PERMISSIONS)
+    return {'$schema': 'https://opencode.ai/config.json', 'permissions': rules}
+
+
+def _deny_rules(settings: dict[str, Any]) -> list[dict[str, str]]:
+    """Return the settings' deny rules as ``{action, resource, effect}`` objects.
+
+    Reads the OpenCode 2 list when present and the OpenCode 1 map otherwise, so
+    the analysis surface reports the same rule set whichever shape the file has.
+    """
+    rules = _permission_rules(settings)
+    if rules is not None:
+        return [
+            {'action': str(rule.get('action', '')), 'resource': str(rule.get('resource', '')), 'effect': 'deny'}
+            for rule in rules
+            if isinstance(rule, dict) and _rule_effect(rule) == 'deny'
+        ]
+
+    denies: list[dict[str, str]] = []
+    perm = settings.get('permission')
+    if not isinstance(perm, dict):
+        return denies
+    for tool, value in perm.items():
+        if isinstance(value, dict):
+            for pattern, action in value.items():
+                if str(action).lower() == 'deny':
+                    denies.append({'action': str(tool), 'resource': str(pattern), 'effect': 'deny'})
+        elif isinstance(value, str) and value.lower() == 'deny':
+            denies.append({'action': str(tool), 'resource': '*', 'effect': 'deny'})
+    return denies
+
+
 #: Operation name the persisted-approval reporter answers under.
 PERSISTED_CONTRADICTION_OPERATION = 'permission report-persisted-contradictions'
 
@@ -948,6 +1102,31 @@ class OpenCodeRuntime(Runtime):
                 'load_error',
                 f'Failed to load settings from {settings_path}: {settings["error"]}',
             )
+        rules = _permission_rules(settings)
+        if rules is not None:
+            added = 0
+            for g in grants:
+                rule = g.get('rule') or g.get('command') or str(g)
+                cat, pat, act = to_opencode_grant(str(rule))
+                if _upsert_permission_rule(rules, _permission_action(cat), pat, act):
+                    added += 1
+            if added:
+                if not self.permission_save_settings(settings_path, settings):
+                    return toon_error(
+                        'permission configure',
+                        'save_error',
+                        f'Failed to write settings to {settings_path}',
+                    )
+            return toon_success(
+                'permission configure',
+                {
+                    'scope': scope,
+                    'settings_path': settings_path,
+                    'grants_added': added,
+                    'permission_shape': 'permissions',
+                },
+            )
+
         perm = settings.setdefault('permission', {})
         if not isinstance(perm, dict):
             perm = {}
@@ -1030,27 +1209,41 @@ class OpenCodeRuntime(Runtime):
         for sc in scopes_to_check:
             spath = self.permission_settings_path(sc, write=False)
             settings = self.permission_load_settings(spath)
-            perm = settings.get('permission', {})
-            bash_map = perm.get('bash', {}) if isinstance(perm, dict) else {}
-            has_executor = False
-            if isinstance(bash_map, dict):
-                has_executor = any(
-                    k in ('python3 .plan/execute-script.py *', 'python3 .plan/execute-script.py') and v == 'allow'
-                    for k, v in bash_map.items()
-                )
-            elif bash_map == 'allow':
-                has_executor = True
+            rules = _permission_rules(settings)
+            executor_patterns = ('python3 .plan/execute-script.py *', 'python3 .plan/execute-script.py')
 
-            missing_defaults = []
-            if isinstance(bash_map, dict):
-                for d in OPENCODE_DEFAULT_PERMISSIONS:
-                    if bash_map.get(d) != 'allow':
-                        missing_defaults.append(d)
+            if rules is not None:
+                has_executor = any(
+                    _effective_rule_effect(rules, 'shell', pattern) == 'allow' for pattern in executor_patterns
+                )
+                missing_defaults = [
+                    default
+                    for default in OPENCODE_DEFAULT_PERMISSIONS
+                    if _effective_rule_effect(rules, 'shell', default) != 'allow'
+                ]
+                shape = 'permissions'
+            else:
+                perm = settings.get('permission', {})
+                bash_map = perm.get('bash', {}) if isinstance(perm, dict) else {}
+                has_executor = False
+                if isinstance(bash_map, dict):
+                    has_executor = any(key in executor_patterns and value == 'allow' for key, value in bash_map.items())
+                elif bash_map == 'allow':
+                    has_executor = True
+
+                missing_defaults = []
+                if isinstance(bash_map, dict):
+                    missing_defaults = [
+                        default for default in OPENCODE_DEFAULT_PERMISSIONS if bash_map.get(default) != 'allow'
+                    ]
+                shape = 'permission' if isinstance(perm, dict) and perm else 'none'
 
             results[sc] = {
                 'settings_path': spath,
+                'permission_shape': shape,
                 'has_executor': has_executor,
                 'missing_defaults': missing_defaults,
+                'deny_rules': _deny_rules(settings),
             }
 
         return toon_success('permission analyze', {'scope': scope, 'analysis': results})
@@ -1087,6 +1280,57 @@ class OpenCodeRuntime(Runtime):
 
         settings_path = self.permission_settings_path(scope, write=not dry_run)
         settings = self.permission_load_settings(settings_path)
+        rules = _permission_rules(settings)
+
+        if rules is not None and operation in ('ensure', 'add'):
+            added = 0
+            for item in arguments:
+                cat, pat, act = to_opencode_grant(str(item))
+                action = _permission_action(cat)
+                if dry_run:
+                    if not _rule_exists(rules, action, pat, act):
+                        added += 1
+                elif _upsert_permission_rule(rules, action, pat, act):
+                    added += 1
+            if added and not dry_run:
+                self.permission_save_settings(settings_path, settings)
+            return toon_success(
+                'permission fix',
+                {
+                    'fix_operation': operation,
+                    'scope': scope,
+                    'added': added,
+                    'dry_run': dry_run,
+                    'permission_shape': 'permissions',
+                },
+            )
+
+        if rules is not None and operation == 'remove':
+            removed = 0
+            for item in arguments:
+                cat, pat, _ = to_opencode_grant(str(item))
+                action = _permission_action(cat)
+                if dry_run:
+                    if any(
+                        isinstance(rule, dict) and rule.get('action') == action and rule.get('resource') == pat
+                        for rule in rules
+                    ):
+                        removed += 1
+                elif _remove_permission_rule(rules, action, pat):
+                    removed += 1
+            if removed and not dry_run:
+                self.permission_save_settings(settings_path, settings)
+            return toon_success(
+                'permission fix',
+                {
+                    'fix_operation': operation,
+                    'scope': scope,
+                    'removed': removed,
+                    'dry_run': dry_run,
+                    'permission_shape': 'permissions',
+                },
+            )
+
         perm = settings.setdefault('permission', {})
         if not isinstance(perm, dict):
             perm = {}
@@ -1096,8 +1340,6 @@ class OpenCodeRuntime(Runtime):
         if not isinstance(bash_map, dict):
             bash_map = {}
             perm['bash'] = bash_map
-
-        if operation in ('ensure', 'add'):
             added = 0
             for item in arguments:
                 cat, pat, act = to_opencode_grant(str(item))
@@ -1172,7 +1414,7 @@ class OpenCodeRuntime(Runtime):
         """Write deny entries guarding each named directory (goal-based).
 
         The caller names DIRECTORIES; the deny patterns are rendered here as
-        native OpenCode permission-map entries and never cross back — counts
+        native OpenCode permission rules and never cross back — counts
         only. Mirrors the Claude runtime's protect-path contract: validation
         happens before ANY settings are loaded, a failed write is an
         ``io_error`` never a reported success, and a re-run that changes
@@ -1207,10 +1449,6 @@ class OpenCodeRuntime(Runtime):
                 'invalid_settings',
                 settings['error'],
             )
-        perm = settings.setdefault('permission', {})
-        if not isinstance(perm, dict):
-            perm = {}
-            settings['permission'] = perm
 
         # De-duplicate ACROSS the named paths, not only within each: two paths
         # can render the same entry (the same directory twice, or two spellings
@@ -1225,27 +1463,44 @@ class OpenCodeRuntime(Runtime):
 
         changes_applied = 0
         proposed_count = 0
-        for tool, tool_entries in rendered.items():
-            # A blanket string action (``'allow'``) is OpenCode's catch-all; a
-            # pattern map with last-match-wins must keep it as the map's ``*``
-            # row BEFORE the deny rows so the specific denies win.
-            current = perm.get(tool)
-            if isinstance(current, dict):
-                target = current
-            elif isinstance(current, str):
-                target = {'*': current}
-                perm[tool] = target
-            else:
-                target = {}
-                perm[tool] = target
-            for pattern, action in tool_entries.items():
-                if target.get(pattern) == action:
-                    continue
-                if dry_run:
-                    proposed_count += 1
+        rules = _permission_rules(settings)
+        if rules is not None:
+            for tool, tool_entries in rendered.items():
+                action = _permission_action(tool)
+                for pattern, effect in tool_entries.items():
+                    if _rule_exists(rules, action, pattern, effect):
+                        continue
+                    if dry_run:
+                        proposed_count += 1
+                    elif _upsert_permission_rule(rules, action, pattern, effect):
+                        changes_applied += 1
+        else:
+            perm = settings.setdefault('permission', {})
+            if not isinstance(perm, dict):
+                perm = {}
+                settings['permission'] = perm
+
+            for tool, tool_entries in rendered.items():
+                # A blanket string action (``'allow'``) is OpenCode's catch-all; a
+                # pattern map with last-match-wins must keep it as the map's ``*``
+                # row BEFORE the deny rows so the specific denies win.
+                current = perm.get(tool)
+                if isinstance(current, dict):
+                    target = current
+                elif isinstance(current, str):
+                    target = {'*': current}
+                    perm[tool] = target
                 else:
-                    target[pattern] = action
-                    changes_applied += 1
+                    target = {}
+                    perm[tool] = target
+                for pattern, action in tool_entries.items():
+                    if target.get(pattern) == action:
+                        continue
+                    if dry_run:
+                        proposed_count += 1
+                    else:
+                        target[pattern] = action
+                        changes_applied += 1
 
         # Write only when a row was actually added: this operation is meant to
         # be re-run for its idempotence, and re-serializing an operator's
@@ -1322,8 +1577,12 @@ class OpenCodeRuntime(Runtime):
             )
         spath = self.permission_settings_path('project' if scope == 'project' else 'global', write=False)
         settings = self.permission_load_settings(spath)
-        perm = settings.get('permission', {})
-        webfetch = perm.get('webfetch') if isinstance(perm, dict) else None
+        rules = _permission_rules(settings)
+        if rules is not None:
+            webfetch = _effective_rule_effect(rules, 'webfetch', '*')
+        else:
+            perm = settings.get('permission', {})
+            webfetch = perm.get('webfetch') if isinstance(perm, dict) else None
         return toon_success(
             'permission web-analyze',
             {
@@ -1354,20 +1613,32 @@ class OpenCodeRuntime(Runtime):
                 'load_error',
                 f'Failed to load settings from {settings_path}: {settings["error"]}',
             )
-        perm = settings.setdefault('permission', {})
-        if not isinstance(perm, dict):
-            perm = {}
-            settings['permission'] = perm
-
+        rules = _permission_rules(settings)
         changed = False
-        if add and perm.get('webfetch') != 'allow':
-            if not dry_run:
-                perm['webfetch'] = 'allow'
-            changed = True
-        elif remove and perm.get('webfetch') == 'allow':
-            if not dry_run:
-                del perm['webfetch']
-            changed = True
+        if rules is not None:
+            current = _effective_rule_effect(rules, 'webfetch', '*')
+            if add and current != 'allow':
+                if not dry_run:
+                    _upsert_permission_rule(rules, 'webfetch', '*', 'allow')
+                changed = True
+            elif remove and current == 'allow':
+                if not dry_run:
+                    _remove_permission_rule(rules, 'webfetch', '*')
+                changed = True
+        else:
+            perm = settings.setdefault('permission', {})
+            if not isinstance(perm, dict):
+                perm = {}
+                settings['permission'] = perm
+
+            if add and perm.get('webfetch') != 'allow':
+                if not dry_run:
+                    perm['webfetch'] = 'allow'
+                changed = True
+            elif remove and perm.get('webfetch') == 'allow':
+                if not dry_run:
+                    del perm['webfetch']
+                changed = True
 
         if changed and not dry_run:
             if not self.permission_save_settings(settings_path, settings):
@@ -1517,12 +1788,7 @@ class OpenCodeRuntime(Runtime):
             g_path = _opencode_config_dir() / 'opencode.json'
             if write and not g_path.is_file():
                 g_path.parent.mkdir(parents=True, exist_ok=True)
-                skeleton = {
-                    '$schema': 'https://opencode.ai/config.json',
-                    'permission': {
-                        'bash': dict.fromkeys(OPENCODE_DEFAULT_PERMISSIONS, 'allow'),
-                    },
-                }
+                skeleton = _opencode2_skeleton()
                 try:
                     g_path.write_text(json.dumps(skeleton, indent=2) + '\n', encoding='utf-8')
                 except OSError:
@@ -1544,12 +1810,7 @@ class OpenCodeRuntime(Runtime):
 
             if write and not target_cfg.is_file():
                 target_cfg.parent.mkdir(parents=True, exist_ok=True)
-                skeleton = {
-                    '$schema': 'https://opencode.ai/config.json',
-                    'permission': {
-                        'bash': dict.fromkeys(OPENCODE_DEFAULT_PERMISSIONS, 'allow'),
-                    },
-                }
+                skeleton = _opencode2_skeleton()
                 try:
                     target_cfg.write_text(json.dumps(skeleton, indent=2) + '\n', encoding='utf-8')
                 except OSError:
@@ -1585,7 +1846,13 @@ class OpenCodeRuntime(Runtime):
         settings_path: str,
         dry_run: bool = False,
     ) -> dict[str, Any]:
-        """Ensure default Plan Marshall executor permissions exist in OpenCode settings."""
+        """Ensure default Plan Marshall executor permissions exist in OpenCode settings.
+
+        A file in the OpenCode 2 shape gains ``allow`` rules inside its
+        ``permissions`` list, after the catch-all, and never a ``permission``
+        map beside it — the normalizer would concatenate that map ahead of the
+        list, where the list's catch-all overrides it.
+        """
         if 'error' in settings:
             return {
                 'defaults_added': [],
@@ -1595,6 +1862,30 @@ class OpenCodeRuntime(Runtime):
                 'applied': False,
                 'error': settings['error'],
             }
+
+        rules = _permission_rules(settings)
+        if rules is not None:
+            list_added: list[str] = []
+            for cmd in OPENCODE_DEFAULT_PERMISSIONS:
+                if _effective_rule_effect(rules, 'shell', cmd) == 'allow':
+                    continue
+                list_added.append(cmd)
+                if not dry_run:
+                    _upsert_permission_rule(rules, 'shell', cmd, 'allow')
+
+            saved = False
+            if list_added and not dry_run:
+                saved = self.permission_save_settings(settings_path, settings)
+
+            return {
+                'defaults_added': list_added,
+                'defaults_added_count': len(list_added),
+                'defaults_removed': [],
+                'defaults_removed_count': 0,
+                'applied': bool(list_added and not dry_run and saved),
+                'permission_shape': 'permissions',
+            }
+
         perm = settings.setdefault('permission', {})
         if not isinstance(perm, dict):
             perm = {}
@@ -1926,6 +2217,12 @@ class OpenCodeRuntime(Runtime):
                 p_settings = self.permission_load_settings(project_path)
 
                 def _has_exec(s: dict[str, Any]) -> bool:
+                    rules = _permission_rules(s)
+                    if rules is not None:
+                        return any(
+                            _effective_rule_effect(rules, 'shell', pattern) == 'allow'
+                            for pattern in ('python3 .plan/execute-script.py *', 'python3 .plan/execute-script.py')
+                        )
                     perm = s.get('permission', {})
                     if not isinstance(perm, dict):
                         return False

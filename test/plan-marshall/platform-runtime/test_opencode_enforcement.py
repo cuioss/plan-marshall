@@ -86,8 +86,11 @@ def test_deny_class_protect_path_emits_real_deny(tmp_path: pathlib.Path, monkeyp
     assert result['changes_applied'] >= 1
 
     written = json.loads((tmp_path / 'opencode.json').read_text(encoding='utf-8'))
+    assert 'permission' not in written, 'a `permission` map must never be added beside a `permissions` list'
     entries = {
-        pattern: action for tool in ('read', 'bash') for pattern, action in written['permission'].get(tool, {}).items()
+        rule['resource']: rule['effect']
+        for rule in written['permissions']
+        if rule['action'] in ('read', 'shell') and isinstance(rule.get('resource'), str)
     }
     guarded = {pattern: action for pattern, action in entries.items() if 'creds' in pattern}
     assert guarded, 'protect-path wrote no guard entries for the protected directory'
@@ -108,12 +111,13 @@ def test_deny_wrapper_action_survives_grant_translation() -> None:
 
 
 def test_ask_class_surfaces_as_ask(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Ask-class operations persist as ask grants in the bash map."""
+    """Ask-class operations persist as ask rules in the permissions list."""
     monkeypatch.chdir(tmp_path)
     result = _parse(OpenCodeRuntime().permission_fix('project', 'ensure', ['ask(docker *)'], False))
     assert result['status'] == 'success'
     settings = json.loads((tmp_path / 'opencode.json').read_text(encoding='utf-8'))
-    assert settings['permission']['bash']['docker *'] == 'ask'
+    rules = [rule for rule in settings['permissions'] if rule['action'] == 'shell' and rule['resource'] == 'docker *']
+    assert rules and rules[-1]['effect'] == 'ask'
 
 
 def test_ask_wrapper_action_survives_grant_translation() -> None:
@@ -138,7 +142,10 @@ def test_carve_out_executor_permit_passes(tmp_path: pathlib.Path, monkeypatch: p
     result = _parse(OpenCodeRuntime().permission_fix('project', 'ensure', [permit], False))
     assert result['status'] == 'success'
     settings = json.loads((tmp_path / 'opencode.json').read_text(encoding='utf-8'))
-    assert settings['permission']['bash'][permit] == 'allow'
+    assert any(
+        rule['action'] == 'shell' and rule['resource'] == permit and rule['effect'] == 'allow'
+        for rule in settings['permissions']
+    )
 
 
 # =============================================================================

@@ -336,8 +336,9 @@ def test_permission_settings_path_project_creates_when_writing(
     target_path = runtime.permission_settings_path('project', write=True, project_dir=str(tmp_path))
     assert pathlib.Path(target_path).is_file()
     data = json.loads(pathlib.Path(target_path).read_text(encoding='utf-8'))
-    assert 'permission' in data
-    assert 'bash' in data['permission']
+    assert 'permission' not in data, 'a new file must be created in the OpenCode 2 shape'
+    assert data['permissions'][0]['action'] == 'shell'
+    assert data['permissions'][0]['resource'] == '*'
 
 
 def test_permission_load_and_save_settings(runtime: OpenCodeRuntime, tmp_path: pathlib.Path) -> None:
@@ -501,25 +502,31 @@ def test_to_opencode_grant_accepts_the_opencode2_subagent_key() -> None:
 def test_permission_fix_ensure_persists_deny_action(
     runtime: OpenCodeRuntime, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """permission_fix ensure persists a deny grant into the bash map."""
+    """permission_fix ensure persists a deny rule into the permissions list."""
     monkeypatch.chdir(tmp_path)
     result = _parse(runtime.permission_fix('project', 'ensure', ['deny(git push *)'], False))
     assert result['status'] == 'success'
     assert result['added'] == 1
     settings = json.loads((tmp_path / 'opencode.json').read_text(encoding='utf-8'))
-    assert settings['permission']['bash']['git push *'] == 'deny'
+    assert any(
+        rule['action'] == 'shell' and rule['resource'] == 'git push *' and rule['effect'] == 'deny'
+        for rule in settings['permissions']
+    )
 
 
 def test_permission_fix_ensure_persists_ask_action(
     runtime: OpenCodeRuntime, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """permission_fix ensure persists an ask grant into the bash map."""
+    """permission_fix ensure persists an ask rule into the permissions list."""
     monkeypatch.chdir(tmp_path)
     result = _parse(runtime.permission_fix('project', 'ensure', ['ask(git fetch *)'], False))
     assert result['status'] == 'success'
     assert result['added'] == 1
     settings = json.loads((tmp_path / 'opencode.json').read_text(encoding='utf-8'))
-    assert settings['permission']['bash']['git fetch *'] == 'ask'
+    assert any(
+        rule['action'] == 'shell' and rule['resource'] == 'git fetch *' and rule['effect'] == 'ask'
+        for rule in settings['permissions']
+    )
 
 
 def test_the_permission_fix_operation_population_is_not_empty() -> None:
