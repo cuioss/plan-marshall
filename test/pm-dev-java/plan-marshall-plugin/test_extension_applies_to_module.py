@@ -21,7 +21,7 @@ from conftest import create_marshal_json, load_skill_module
 
 def _write_marshal(config):
     """Write a real marshal.json where the project config reader resolves it."""
-    return create_marshal_json(Path(os.environ['PLAN_BASE_DIR']), config=config, nest_in_plan_dir=False)
+    return Path(create_marshal_json(Path(os.environ['PLAN_BASE_DIR']), config=config, nest_in_plan_dir=False))
 
 
 def _load_extension():

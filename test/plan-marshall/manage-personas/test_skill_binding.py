@@ -41,7 +41,7 @@ JAVA_QUARKUS = 'pm-dev-java:java-quarkus'
 
 def _write_marshal(config: dict) -> Path:
     """Write a real marshal.json where the project config reader resolves it."""
-    return create_marshal_json(Path(os.environ['PLAN_BASE_DIR']), config=config, nest_in_plan_dir=False)
+    return Path(create_marshal_json(Path(os.environ['PLAN_BASE_DIR']), config=config, nest_in_plan_dir=False))
 
 
 def _exclusions(*skills: str) -> dict:

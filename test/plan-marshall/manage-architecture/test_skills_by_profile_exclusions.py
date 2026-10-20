@@ -43,10 +43,12 @@ def _write_marshal(*excluded_skills: str) -> Path:
 
 def _write_skill_domains(skill_domains: dict) -> Path:
     """Write a marshal.json carrying the given ``skill_domains`` block."""
-    return create_marshal_json(
-        Path(os.environ['PLAN_BASE_DIR']),
-        config={'skill_domains': skill_domains},
-        nest_in_plan_dir=False,
+    return Path(
+        create_marshal_json(
+            Path(os.environ['PLAN_BASE_DIR']),
+            config={'skill_domains': skill_domains},
+            nest_in_plan_dir=False,
+        )
     )
 
 

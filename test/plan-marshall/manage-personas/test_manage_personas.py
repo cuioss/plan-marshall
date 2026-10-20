@@ -453,7 +453,7 @@ def test_excluded_skills_malformed_value_is_ignored(monkeypatch):
 
 def _write_real_marshal(config):
     """Write a real marshal.json where the project config reader resolves it."""
-    return create_marshal_json(Path(os.environ['PLAN_BASE_DIR']), config=config, nest_in_plan_dir=False)
+    return Path(create_marshal_json(Path(os.environ['PLAN_BASE_DIR']), config=config, nest_in_plan_dir=False))
 
 
 def test_repository_exclusion_reads_the_real_config_reader(monkeypatch):
