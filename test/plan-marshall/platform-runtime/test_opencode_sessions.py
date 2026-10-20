@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-# ruff: noqa: I001, E402
 # SPDX-License-Identifier: FSL-1.1-ALv2
+# ruff: noqa: I001, E402
 """Tests for the shared OpenCode session reader.
 
 Drive ``_opencode_sessions`` directly against tmp databases for both schema
@@ -29,7 +29,7 @@ SCRIPTS_DIR = SCRIPT_PATH.parent
 if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 
-import _opencode_sessions as opencode_sessions  # noqa: E402
+import _opencode_sessions as opencode_sessions
 
 #: Fixed clock so a window boundary is never a function of the wall clock.
 _BASE = datetime(2026, 10, 20, 10, 0, tzinfo=UTC)
@@ -94,9 +94,7 @@ def _create_tier2_db(
                 for session_id, parent_id, *usage in sessions
             ],
         )
-        connection.execute(
-            'CREATE TABLE session_message (session_id TEXT, type TEXT, time_created INTEGER, data TEXT)'
-        )
+        connection.execute('CREATE TABLE session_message (session_id TEXT, type TEXT, time_created INTEGER, data TEXT)')
         connection.executemany(
             'INSERT INTO session_message (session_id, type, time_created, data) VALUES (?, ?, ?, ?)',
             [

@@ -280,9 +280,7 @@ def _write_usage_db(
             ' VALUES (?, ?, NULL, NULL, ?, ?, ?, ?, 0.0)',
             sessions,
         )
-        connection.execute(
-            'CREATE TABLE session_message (session_id TEXT, type TEXT, time_created INTEGER, data TEXT)'
-        )
+        connection.execute('CREATE TABLE session_message (session_id TEXT, type TEXT, time_created INTEGER, data TEXT)')
         connection.executemany(
             'INSERT INTO session_message (session_id, type, time_created, data) VALUES (?, ?, ?, ?)',
             [
@@ -990,9 +988,7 @@ def test_metrics_normalized_tokens_writes_measured_buckets(
     _isolate_store(monkeypatch, db_path)
     output_file = tmp_path / 'normalized.json'
 
-    result = _parse(
-        runtime.metrics_normalized_tokens('ses-root', [('5-execute', _iso(0), _iso(30))], str(output_file))
-    )
+    result = _parse(runtime.metrics_normalized_tokens('ses-root', [('5-execute', _iso(0), _iso(30))], str(output_file)))
 
     assert result['status'] == 'success'
     assert result['operation'] == 'metrics normalized-tokens'
@@ -1046,9 +1042,7 @@ def test_metrics_normalized_tokens_unavailable_store_names_its_reason(
     _isolate_store(monkeypatch, tmp_path / 'absent.db')
     output_file = tmp_path / 'normalized.json'
 
-    result = _parse(
-        runtime.metrics_normalized_tokens('ses-root', [('5-execute', _iso(0), _iso(30))], str(output_file))
-    )
+    result = _parse(runtime.metrics_normalized_tokens('ses-root', [('5-execute', _iso(0), _iso(30))], str(output_file)))
 
     assert result['status'] == 'no-op'
     assert result['reason'] == 'db_not_found'
@@ -1066,9 +1060,7 @@ def test_metrics_normalized_tokens_tier1_store_is_schema_unsupported(
     _isolate_store(monkeypatch, db_path)
     output_file = tmp_path / 'normalized.json'
 
-    result = _parse(
-        runtime.metrics_normalized_tokens('ses-root', [('5-execute', _iso(0), _iso(30))], str(output_file))
-    )
+    result = _parse(runtime.metrics_normalized_tokens('ses-root', [('5-execute', _iso(0), _iso(30))], str(output_file)))
 
     assert result['status'] == 'no-op'
     assert result['reason'] == 'schema_unsupported'

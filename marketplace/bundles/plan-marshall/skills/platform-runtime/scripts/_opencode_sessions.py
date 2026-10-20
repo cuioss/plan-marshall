@@ -355,9 +355,7 @@ def session_tree(root: str, rows: Mapping[str, tuple[str | None, object]]) -> li
     return ordered
 
 
-def _resolve_tree(
-    connection: sqlite3.Connection, session_id: str | None
-) -> tuple[str | None, list[str], str | None]:
+def _resolve_tree(connection: sqlite3.Connection, session_id: str | None) -> tuple[str | None, list[str], str | None]:
     """Resolve ``(root, tree, reason)`` for *session_id* on an open connection.
 
     ``reason`` is ``None`` when a tree was resolved; otherwise it names why none

@@ -784,9 +784,7 @@ class OpenCodeRuntime(Runtime):
                 'bridge_reason': drift['reason'],
                 'settings_path': settings_path,
                 'hook_installed': False,
-                'hook_skip_reason': (
-                    'OpenCode exposes no SessionStart-hook channel (issue anomalyco/opencode#8619)'
-                ),
+                'hook_skip_reason': ('OpenCode exposes no SessionStart-hook channel (issue anomalyco/opencode#8619)'),
                 'persisted_approval_checkable': persisted_checkable,
                 'persisted_approval_warnings': persisted_warnings,
             },
@@ -989,8 +987,7 @@ class OpenCodeRuntime(Runtime):
         if not sid:
             return toon_noop(
                 'session bind',
-                'no OpenCode session id to bind: pass --session-id or set'
-                f' ${runtime_info.OPENCODE_SESSION_ID_ENV}',
+                f'no OpenCode session id to bind: pass --session-id or set ${runtime_info.OPENCODE_SESSION_ID_ENV}',
                 "Use OpenCode's built-in session mechanism for plan visibility",
             )
         bound = session_binding.bind(sid, plan_id)
@@ -1014,8 +1011,7 @@ class OpenCodeRuntime(Runtime):
         if not sid:
             return toon_noop(
                 'session resolve-plan',
-                'no OpenCode session id to resolve: pass --session-id or set'
-                f' ${runtime_info.OPENCODE_SESSION_ID_ENV}',
+                f'no OpenCode session id to resolve: pass --session-id or set ${runtime_info.OPENCODE_SESSION_ID_ENV}',
                 "Use OpenCode's built-in session mechanism for plan visibility",
             )
         plan_id = session_binding.resolve_plan(sid)
@@ -1830,9 +1826,7 @@ class OpenCodeRuntime(Runtime):
                 ' shared metrics-persistence boundary, which it does not'
             )
         else:
-            reason = (
-                'OpenCode reaches no token-persistence boundary, so an explicit count cannot be stored'
-            )
+            reason = 'OpenCode reaches no token-persistence boundary, so an explicit count cannot be stored'
         return toon_noop(
             'metrics capture',
             reason,
@@ -2140,9 +2134,7 @@ class OpenCodeRuntime(Runtime):
                     {
                         'check': check,
                         'healthy': False,
-                        'detail': (
-                            'OpenCode exposes no SessionStart-hook channel (issue anomalyco/opencode#8619)'
-                        ),
+                        'detail': ('OpenCode exposes no SessionStart-hook channel (issue anomalyco/opencode#8619)'),
                     }
                 )
                 all_healthy = False
