@@ -288,6 +288,43 @@ def test_refresh_keeps_the_start_value_when_the_database_is_unreachable(
     assert metadata['effort_source'] == 'measured_at_start'
 
 
+def test_refresh_keeps_a_self_reported_source_when_nothing_is_measured(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A self-reported value is never relabelled as measured at start."""
+    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+    plan_dir = _plan_with_status(tmp_path, 'my-plan')
+    _capture_runtime_info_argv([_SELF_REPORTED_PAYLOAD], monkeypatch)
+    assert cmd_preflight(_ns('my-plan', model='claude-opus-5-5', effort='high'))['metadata_stamped'] is True
+    assert _status_metadata(plan_dir)['model_source'] == 'self_reported'
+
+    _capture_runtime_info_argv([_BARE_PAYLOAD], monkeypatch)
+
+    result = _orch.cmd_refresh_runtime_stamp(_refresh_ns('my-plan'))
+
+    assert result['refreshed'] is False
+    metadata = _status_metadata(plan_dir)
+    assert metadata['model'] == 'claude-opus-5-5'
+    assert metadata['model_source'] == 'self_reported'
+    assert metadata['effort_source'] == 'self_reported'
+
+
+def test_refresh_clears_a_stale_omission_reason(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A readable landing-time re-read removes the start-time omission reason."""
+    db_path = tmp_path / 'opencode.db'
+    plan_dir = _preflight_opencode(
+        tmp_path, monkeypatch, db_path, [('ses-root', None, _opencode_model_json('deepseek-v4.1-flash', 'high'))]
+    )
+    status_path = plan_dir / 'status.json'
+    document = json.loads(status_path.read_text(encoding='utf-8'))
+    document['metadata']['model_omission_reason'] = runtime_info.OMISSION_NO_SESSION_ID
+    status_path.write_text(json.dumps(document), encoding='utf-8')
+
+    _orch.cmd_refresh_runtime_stamp(_refresh_ns('my-plan'))
+
+    assert 'model_omission_reason' not in _status_metadata(plan_dir)
+
+
 def test_refresh_over_an_unchanged_tree_keeps_the_value(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """A tree unchanged since the start refreshes to the same measured value."""
     db_path = tmp_path / 'opencode.db'
@@ -329,7 +366,7 @@ def test_failed_collector_clears_a_previous_runtime_stamp(tmp_path: Path, monkey
 
     assert result['degraded'] is True
     metadata = _status_metadata(plan_dir)
-    for key in ('harness', 'harness_source', 'model', 'models', 'variant', 'provider', 'model_source'):
+    for key in _orch._PREFLIGHT_METADATA_FIELDS:
         assert key not in metadata, key
 
 

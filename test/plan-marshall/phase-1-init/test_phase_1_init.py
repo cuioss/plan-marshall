@@ -213,7 +213,7 @@ class TestPhase1InitRuntimeStampBranch:
         text = self._skill_md_text()
 
         section = text.split('On `degraded: true`', 1)[1]
-        assert 'degrade_reason' in section or 'unstamped' in section
+        assert 'degrade_reason' in section
         assert '[WARNING]' in section
 
 

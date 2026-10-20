@@ -6412,7 +6412,7 @@ SOURCE_MEASURED_AT_START = 'measured_at_start'
 #: carries them. ``models``, ``variant`` and ``provider`` are CLEARED when the
 #: re-read no longer reports them: a tree that collapsed back to one model must
 #: not keep the earlier mixed labels or a stale variant.
-_REFRESH_CLEARING_FIELDS: tuple[str, ...] = ('models', 'variant', 'provider')
+_REFRESH_CLEARING_FIELDS: tuple[str, ...] = ('models', 'variant', 'provider', 'model_omission_reason')
 
 #: Runtime fields a refresh writes only when the measured payload carries them —
 #: the versions do not change mid-run, so an unreadable re-read keeps the start
@@ -6811,9 +6811,11 @@ def cmd_refresh_runtime_stamp(args: argparse.Namespace) -> dict[str, Any]:
       tree that gained a second model lands as ``mixed`` and a tree that
       collapsed back to one loses the stale mixed labels.
     * A model that could NOT be read (``unknown``, a degraded collector, or no
-      session id) keeps the start-time value and marks its provenance
-      ``measured_at_start``. It never writes ``unknown`` over a value the run
-      actually measured.
+      session id) keeps the start-time value and, when that value's own source
+      was ``measured``, marks its provenance ``measured_at_start``. It never
+      writes ``unknown`` over a value the run actually measured, and it never
+      relabels a SELF-REPORTED value as measured — this verb forwards no
+      ``--model``/``--effort``, so it measured nothing.
     * The harness and version fields are written only when the re-read carries
       them; they cannot change mid-run, so an unreadable re-read keeps what was
       already established.
@@ -6862,16 +6864,20 @@ def cmd_refresh_runtime_stamp(args: argparse.Namespace) -> dict[str, Any]:
         return {**base, 'refreshed': False, 'reason': 'no status document resolves for this plan'}
     metadata = status.get('metadata')
     if not isinstance(metadata, dict):
-        return {**base, 'refreshed': False, 'reason': 'status carries no metadata map'}
+        metadata = {}
+        status['metadata'] = metadata
 
     measured_model = info.get('model')
     readable = isinstance(measured_model, str) and measured_model.strip() and measured_model != 'unknown'
     if not readable:
         provenance_kept = False
-        if metadata.get('model'):
+        # Never relabel a SELF-REPORTED value as measured: this verb supplies no
+        # --model/--effort, so a value it could not measure was measured at
+        # plan start only if its own source says so.
+        if metadata.get('model') and metadata.get('model_source') == 'measured':
             metadata['model_source'] = SOURCE_MEASURED_AT_START
             provenance_kept = True
-        if metadata.get('effort'):
+        if metadata.get('effort') and metadata.get('effort_source') == 'measured':
             metadata['effort_source'] = SOURCE_MEASURED_AT_START
             provenance_kept = True
         if provenance_kept:

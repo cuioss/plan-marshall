@@ -46,7 +46,8 @@ worktree-resident when the plan runs in a worktree). Each run appends a new
 timestamp-keyed entry and never overwrites prior entries.
 
 The same run stamps the plan's runtime metadata into `status.json` — `harness`,
-`harness_source`, `model`, `models`, `model_source`, `effort`, `effort_source`,
+`harness_source`, `model`, `models`, `variant`, `provider`, `model_source`,
+`model_omission_reason`, `effort`, `effort_source`,
 `bundle_version` and `executor_version` — through manage-status's shared status
 writer. Only the fields the collected payload carried are written, and those
 the stamper manages but the payload did NOT carry are REMOVED: the stamper owns

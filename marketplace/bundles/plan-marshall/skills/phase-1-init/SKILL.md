@@ -850,20 +850,21 @@ python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator pre
 ```
 
 The hook writes the plan's `client.toon` pre-flight artifact AND stamps
-`harness`, `harness_source`, `model`, `model_source`, `effort`, `effort_source`,
+`harness`, `harness_source`, `model`, `models`, `variant`, `provider`,
+`model_source`, `model_omission_reason`, `effort`, `effort_source`,
 `bundle_version` and `executor_version` into `status.metadata`. It is
 best-effort: absent `--model` / `--effort` values simply omit those keys. See
 `plan-orchestrator/workflow/preflight.md` for the full contract and
 `platform-runtime/standards/runtime-info.md` for what each value means.
 
 On `degraded: true` OR `metadata_stamped: false` the runtime stamp is
-incomplete and the landing's runtime facts will read `unknown`. They are two
-different failures — the call degraded, or the status document could not be
-written — so emit a `[WARNING]` work-log entry naming WHICH one it was and its
-reason (`degrade_reason` when the call degraded; `metadata_stamped: false` with
-no degradation means the collector returned a payload the status writer could
-not store). An absent `harness` reads as "not stamped", never as a default
-harness:
+incomplete, and the landing reads `unknown` for those facts unless its
+landing-time refresh repairs them. The two are different failures — the call
+degraded, or the status document could not be written — so emit a `[WARNING]`
+work-log entry naming WHICH one it was and its reason (`degrade_reason` when the
+call degraded; `metadata_stamped: false` with no degradation means the collector
+returned a payload the status writer could not store). An absent `harness` reads
+as "not stamped", never as a default harness:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
