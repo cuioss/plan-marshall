@@ -59,6 +59,10 @@ gives it a sanctioned, read-only session-store reader.
      - **Process leaf:**
        - the lane-contract version in force at the run's last read of it; only rules in that
          version are debited;
+       - every read of the lane contract with its time, set against each restart, resume and
+         skill-list change notice: a run that read it once and never again after a restart is a
+         process finding of its own (PLAN-LB-68 read it once in 37 hours while three lane changes
+         landed);
        - models per phase, cost, compactions;
        - every shell call;
        - writes outside the worktree;
@@ -119,7 +123,16 @@ gives it a sanctioned, read-only session-store reader.
 3. **The landing template and payload carry the audit's outputs.**
    - `templates/landing-analysis.md` gains these sections for a runbook-lane landing:
      - **Lane contract in force**: the version or hash at the last read, and the rules judged new;
-     - **Report contradictions**: a numbered list, each item with its evidence;
+     - **Report contradictions**: a numbered list, each item with its evidence, including a failing gate
+     the run's own progress file records and the landing omits (PLAN-LB-76's landing listed `4a5e8f1ff`
+     among the heads with no `test-compile` run while its progress file recorded one that failed), and
+     any ordered claim the run assembled from a progress file that is not in time order (PLAN-LB-45's
+     question list came out in the wrong order and missed an aborted call; the order is rebuilt from the
+     transcript), the pushed-head list set against the build logs rather than against the progress file or the
+     landing's table (PLAN-LB-77's landing called a red `test-compile` at `be7937fd6` "not run" and omitted the
+     pushed head `125617b3d`; neither document recorded the red run), and any quoted timestamp in an operator
+     question checked against the PR (PLAN-LB-77's merge question named review triggers at 15:04Z and 15:05Z
+     that do not exist);
      - **Spot checks**: what the orchestrator verified itself;
      - **Process grade**: with credits and debits;
      - **Model Watch row**: one line, appended to the epic's table.
