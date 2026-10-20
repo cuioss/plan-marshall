@@ -23,6 +23,8 @@ exit codes; those do not contribute to coverage (separate process) and are kept
 minimal — the behavioral coverage comes from the in-process ``main`` calls.
 """
 
+import json
+import os
 import sys
 import types
 from pathlib import Path
@@ -357,7 +359,7 @@ def test_java_module_without_cdi_admits_no_cdi_optionals(monkeypatch):
 
 
 def test_java_module_with_cdi_admits_java_cdi(monkeypatch):
-    """The java extension promotes java-cdi for a module carrying a CDI dependency."""
+    """A CDI module admits java-cdi; a repository exclusion still removes java-quarkus."""
     _install_java_domain_cell(
         monkeypatch,
         defaults=['pm-dev-java:java-core'],
@@ -365,10 +367,13 @@ def test_java_module_with_cdi_admits_java_cdi(monkeypatch):
     )
     cdi_module = _java_module('jakarta.enterprise:jakarta.enterprise.cdi-api:4.0')
     monkeypatch.setattr(_mp, '_resolve_module_data', lambda module: (cdi_module, 'resolved'))
+    monkeypatch.setattr(_mp, '_excluded_skills', lambda domain: {'pm-dev-java:java-quarkus'})
 
     result = _mp._resolve_profile_domain_skills('implementation', 'java', module='sample-module')
 
     assert 'pm-dev-java:java-cdi' in _resolution(result)
+    # The CDI signal qualifies java-quarkus too; only the exclusion removes it.
+    assert 'pm-dev-java:java-quarkus' not in _resolution(result)
 
 
 def test_non_java_domain_keeps_optionals_the_hook_qualifies(monkeypatch):
@@ -447,8 +452,17 @@ def test_excluded_skills_malformed_value_is_ignored(monkeypatch):
     assert _mp._excluded_skills('java') == set()
 
 
+def _write_real_marshal(config):
+    """Write a real marshal.json where the project config reader resolves it."""
+    base = Path(os.environ['PLAN_BASE_DIR'])
+    base.mkdir(parents=True, exist_ok=True)
+    path = base / 'marshal.json'
+    path.write_text(json.dumps(config), encoding='utf-8')
+    return path
+
+
 def test_repository_exclusion_reads_the_real_config_reader(monkeypatch):
-    """A bare-name exclusion from marshal.json removes a module-qualified skill end to end."""
+    """A bare-name exclusion from a real marshal.json removes a module-qualified skill end to end."""
     _install_fake_skill_resolution(
         monkeypatch,
         lambda ns: {
@@ -460,7 +474,7 @@ def test_repository_exclusion_reads_the_real_config_reader(monkeypatch):
     monkeypatch.setattr(_mp, '_find_domain_extension', lambda domain: _java_extension())
     cdi_module = _java_module('jakarta.enterprise:jakarta.enterprise.cdi-api:4.0')
     monkeypatch.setattr(_mp, '_resolve_module_data', lambda module: (cdi_module, 'resolved'))
-    _install_config(monkeypatch, {'skill_domains': {'java': {'excluded_skills': ['java-cdi']}}})
+    _write_real_marshal({'skill_domains': {'java': {'excluded_skills': ['java-cdi']}}})
 
     result = _mp._resolve_profile_domain_skills('implementation', 'java', module='sample-module')
 
