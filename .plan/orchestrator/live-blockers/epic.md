@@ -621,6 +621,20 @@ derive, for rows still live.
 
 ## Open Defects
 
+- **Every runbook-lane landing is now `complete: false` on `effort` and `plugin_version` (PLAN-LB-45 landing,
+  2026-10-20; high; fix-forward PLAN-LB-78 D3).** #1802 made `harness`, `model`, `effort` and `plugin_version`
+  required, sentinel-rejecting landing keys and changed nothing in the runbook lane: the section 8 fence
+  (`runbook-lane/SKILL.md` L490-503) writes no `effort` or `plugin_version`, `resolve` returns `harness` only,
+  and `landing-payload-spec.md` L128-130 says the opposite. PLAN-LB-77's landing will arrive incomplete for
+  this reason; record it as this defect's recurrence, not a new one. **Recurrence 1 (PLAN-LB-77, 2026-10-20):**
+  `inbox landing-check` reports `complete: false`, `missing_keys` = `total_tokens`, `effort`,
+  `plugin_version`; the model fact also lacks the variant (the database says `high`). Retire with PLAN-LB-78.
+- **The stamp PLAN-LB-45 shipped drops the measured variant, is taken once at plan start, and survives a
+  failed preflight from an earlier run (PLAN-LB-45 landing; medium; PLAN-LB-81).** `_PREFLIGHT_METADATA_FIELDS`
+  omits `variant`; `effort` on OpenCode is the model's self-report; `cmd_preflight` returns before the stamp
+  clearing on a collector failure; `phase-1-init` is silent on `metadata_stamped: false`; the database read
+  is unencoded, unbounded and ignores `XDG_DATA_HOME`. The OpenCode 2 detection signal is PLAN-LB-48 D4's
+  (second evidence: `TARGET_ENV_SIGNALS` still lacks `OPENCODE_SESSION_ID`). Retire with PLAN-LB-81.
 - **PLAN-LB-70 is on `main` with two unhandled Major CodeRabbit findings (2026-10-19; high;
   fix-forward PLAN-LB-74 D1).** (1) `review_support.py` ignores `worktree_unresolved` even when the plan
   declares a worktree, so a code review can report `may_close: true` without grading the branch's
@@ -1288,11 +1302,39 @@ entries below are OpenCode 1 assumptions in plan-marshall that OpenCode 2 broke.
 - **Model comparison round (operator, 2026-10-19).** The next four runs after the four in flight
   stay on `deepseek-v4.1-flash`; the round after that runs on Muse, through the same runbook lane,
   so the two can be compared. DeepSeek so far under the runbook lane: LB-61 C+, LB-66 F, LB-67 C,
-  LB-71 C−, LB-72 B−, LB-70 F, LB-59 C, LB-74 C; LB-45 and LB-68 are still to be graded. Note the
+  LB-71 C−, LB-72 B−, LB-70 F, LB-59 C, LB-74 C, LB-68 C−, LB-76 C+, LB-45 C−, LB-77 B−. Note the
   caveat that the lane skill itself changed between runs (PLAN-LB-67, PLAN-LB-71 and PLAN-LB-72
   landed), so record the lane version each run loaded: **LB-59 and LB-74 both loaded the
   PLAN-LB-71 text**, not PLAN-LB-72's, because the OpenCode install was not re-synced. Retire when
   the Muse round has been graded and the comparison is written up.
+- **DeepSeek Flash runs, eighth grade (2026-10-20).** PLAN-LB-68 (`landings/PLAN-LB-68.md`, 4 sessions,
+  $2.44, 37h14m of which 30.6 h waiting): **C−**; 1 met / 2 partial of 3 deliverables, claimed 3/3. It
+  loaded the PLAN-LB-66 lane text once and never re-read it across two restarts and three lane changes, so
+  §7 (standing review authorization) was not in its text and the CodeRabbit gap became an operator question;
+  it then merged on a head (`208b60f8c`) the operator's selection (`239895d32`) did not name. Credit: red
+  evidence honestly reconstructed against base, most rule breaks disclosed, a steward defect really fixed on
+  OpenCode. Debit: shipped enforcement still bypassable (PLAN-LB-79), `self-review: clear` over an open
+  round 3, four re-triggers under the 90-minute floor, the most expensive run so far. Grades so far: LB-61
+  C+, LB-66 F, LB-67 C, LB-71 C−, LB-72 B−, LB-70 F, LB-59 C, LB-74 C, LB-68 C−. LB-45 is the last of the
+  four in flight to grade, and it too started before the harness sync.
+- **The R5/R6 enforcement shipped by PLAN-LB-65 and PLAN-LB-68 is still bypassable, owned by PLAN-LB-79
+  (2026-10-20).** A path-qualified `env`, option clusters, unlisted wrappers and shells, the relative
+  executor from another directory, a planted script under a broad deployed root, the unbound consumer lane
+  run, a Claude root session that skips the gated checks, and R6 `--git-dir` forms are admitted by code
+  reading (not yet executed); two were spot-checked in `guard.js`. Until PLAN-LB-79 lands, treat the guard as
+  a tripwire for honest mistakes, not as a boundary against a deliberate side door. Retire with PLAN-LB-79.
+- **A CodeRabbit-livelocked PR now runs under a standing authorization, and the lane that never saw it
+  still asked (2026-10-20).** PLAN-LB-68 spent 17 triggers and 12 refusals over 37 hours before the operator
+  question. With §7 in the installed lane (post-sync) this case is covered. PLAN-LB-76, the first post-sync
+  run, used it as written: a formal review on `ffa210dae`, one re-trigger after the last push (refused,
+  "next included review in 16 minutes"), merge without a question. The cost: the last commit, which
+  changed `is_excluded`, merged unreviewed by CodeRabbit. **PLAN-LB-77 repeated it:** two formal reviews
+  (`ca205b0b9`, `06610bd7`), both findings handled in `171f9c359`, one re-trigger refused 16:25:09Z, merge
+  without a question. `171f9c359` carries new logic (`expected=`, `kept`) that neither CodeRabbit nor the
+  run's self-review ever saw, and two of the small defects PLAN-LB-82 owns (DF5, DF7) sit in it. Operator
+  ruling still wanted: whether a fix commit that changes semantics after the qualifying review should wait
+  for the next window; and whether a "merge without reviewer X" selection made at one head covers the
+  heads pushed after it (LB-77's was made at `0905b2082`, the merge was `171f9c359`).
 - **DeepSeek Flash runs, sixth and seventh grade (2026-10-20).** PLAN-LB-59 (`landings/PLAN-LB-59.md`,
   3 sessions, $0.62, 3h12m): **C**; 1 met / 1 partial of 2 deliverables, claimed 2/2. PLAN-LB-74
   (`landings/PLAN-LB-74.md`, 3 sessions, $0.80, 8h31m): **C**; 3 met / 1 partial of 4, claimed 3/4.
@@ -1302,25 +1344,85 @@ entries below are OpenCode 1 assumptions in plan-marshall that OpenCode 2 broke.
   loaded the domain skills the spec names beyond one block at the start. The lane text they loaded
   lacks PLAN-LB-72's rules, so their evidence labels and `test-compile` shas are not comparable with
   LB-72's. Grades so far: LB-61 C+, LB-66 F, LB-67 C, LB-71 C−, LB-72 B−, LB-70 F, LB-59 C, LB-74 C.
-- **Harness install lags the source: the OpenCode runbook lane was one plan behind on both runs
-  (2026-10-20).** PLAN-LB-72 merged two hours before PLAN-LB-59 started and the install still carried the
-  PLAN-LB-71 text. — trigger: before emitting any further runbook-lane plan, `/sync-harnesses --target
-  opencode` and read the installed lane against `main`; PLAN-LB-45 and PLAN-LB-68 started on whatever was
-  installed, so record the loaded version at their landings. Retire when an emitted plan loads the
-  lane text of its PR base.
+- **Harness install lags the source: the OpenCode runbook lane was one plan behind on LB-59, LB-74 and
+  LB-68 (2026-10-20).** PLAN-LB-72 merged two hours before PLAN-LB-59 started and the install still carried
+  the PLAN-LB-71 text. — trigger: before emitting any further runbook-lane plan, `/sync-harnesses --target
+  opencode` and read the installed lane against `main`. The first run after the sync, PLAN-LB-76, loaded
+  exactly PLAN-LB-72's text and re-read it 16 seconds after a server restart; PLAN-LB-45, started three
+  days earlier on the machine-local RUNBOOK.md v1, re-read it once and not after four restarts or the
+  compaction (landing analysis). PLAN-LB-77 loaded exactly PLAN-LB-72's text (the installed copy's content
+  equals `cf28a05db`; its mtime is the sync, 06:39Z) and, like LB-45, did not re-read it after its server
+  restart. **Source has moved again (#1802, #1824, #1826): sync before PLAN-LB-78 is emitted.** Retire when
+  `/sync-harnesses --target opencode` has run and the installed lane has been read against `main`.
 - **A spec edited in the ledger worktree reaches a runbook run only through a ledger land (2026-10-20).**
   PLAN-LB-59 read the main-checkout copy of its spec, which had no `Skills:`/`Persona:` lines; the lines
-  arrived with the ledger land mid-run and nobody re-read the spec. PLAN-LB-74's precursor session handled
-  the other face correctly (spec not on main: asked, landed, restarted). — trigger: land the ledger before
-  emitting a plan whose spec changed since the last land; folded into PLAN-LB-69's scope as a `next`
-  precondition to consider. Retire when PLAN-LB-69 lands or the precondition is decided.
-- **Defects shipped in PLAN-LB-59 and PLAN-LB-74, owned by fix-forward plans (2026-10-20).** PLAN-LB-59:
-  the repository exclusion and module qualification do not bind the architecture path phase-4 loads
-  first, the `--module` call is documentation only, an extension without the hook admits every optional,
-  and the tests that should prove the production path cannot fail for their stated reason — PLAN-LB-76.
-  PLAN-LB-74: a status writer that read before `record_integrity` still overwrites the integrity block,
-  and `authorize_change` reads and checks outside its guard in a fix CodeRabbit never reviewed —
-  PLAN-LB-77. Retire each with its plan.
+  arrived with the ledger land mid-run and nobody re-read the spec. PLAN-LB-74's precursor session and
+  PLAN-LB-76 handled the other face correctly (spec not on main: asked, operator landed the ledger, run
+  resumed), at the cost of an operator question each time. — trigger: land the ledger before emitting a
+  plan whose spec changed since the last land; folded into PLAN-LB-69's scope as a `next` precondition
+  (D5). Retire when PLAN-LB-69 lands or the precondition is decided.
+- **Defects shipped in PLAN-LB-59, PLAN-LB-74 and PLAN-LB-76, owned by fix-forward plans (2026-10-20).**
+  PLAN-LB-59: the exclusion did not bind the architecture path, the `--module` call was documentation
+  only, an extension without the hook admitted every optional, and the tests could not fail for their stated
+  reason — PLAN-LB-76 (shipped, #1824, partly delivered). PLAN-LB-74: a status writer that read before
+  `record_integrity` still overwrites the integrity block, and `authorize_change` reads and checks outside
+  its guard in a fix CodeRabbit never reviewed — PLAN-LB-77 (shipped #1826, all Done-whens met; residue
+  below). **PLAN-LB-77's own residue, owned by PLAN-LB-82:** a failed in-guard read makes the carry pop the
+  integrity keys (`_status_core.py:229-242`, fail-open); `create --force` inherits the overwritten plan's
+  override heads; `authorize_refreeze` takes no snapshot guard; its withdrawal can remove a newer logged
+  authorization; the `kept` outcome leaves an authorization with no decision-log line standing; the
+  validator still matches id-bearing rows by text where the gate does not; `atomic_write_bytes` has no
+  fsync and replaces the file mode; `manage-config/scripts/_cmd_finalize_steps.py:301` still writes the
+  whole status document unguarded; and four of the new tests cannot fail for the reason they name.
+  **PLAN-LB-76's own residue,
+  owned by PLAN-LB-80:** the repository skill veto fails open on every unreadable-configuration path
+  (`extension_base.py:783-798`, `_cmd_enrich.py:410-422`); a bundle-qualified exclusion removes another
+  bundle's bare skill (`extension_base.py:938`); module qualification still does not bind the architecture
+  path (`:1418-1446`) and the `--module` step is still documentation; `enrich_skills_by_profile`,
+  `get-module-context`, `resolve-domain-skills` and `get-skills-by-profile` bypass the veto (reported by
+  the corroboration, not re-read); and the last commit `b7aefb68e`, which changed `is_excluded`, was never
+  self-reviewed or formally reviewed by CodeRabbit. Retire each with its plan.
+- **DeepSeek Flash runs, ninth grade (2026-10-20).** PLAN-LB-76 (`landings/PLAN-LB-76.md`, 1 session plus
+  four self-review children, about 5h15m to green checks): **C+**; every written Done-when met, the
+  Objective half-met (qualification not bound), claimed 3/3. **First run on the post-PLAN-LB-72 install:**
+  it loaded the PLAN-LB-72 lane text, re-read it after a restart, labelled evidence orders with real failing
+  logs, reported `self-review: budget-exhausted` rather than `clear`, and counted its two operator
+  questions exactly. Still over-claimed: it hid a red pushed head (`4a5e8f1ff`, `test-compile`, recorded in
+  its own progress file), never loaded `persona-code-reviewer` for triage although it says it did, mislabelled
+  one `mutation-after` row and two commit attributions, and left fourteen daemon builds and three `git grep`
+  calls undisclosed in its sub-agents. Grades so far: LB-61 C+, LB-66 F, LB-67 C, LB-71 C−, LB-72 B−, LB-70 F,
+  LB-59 C, LB-74 C, LB-68 C−, LB-76 C+. The step change from LB-59/LB-74 coincides with the lane text, not
+  necessarily the model; keep the lane version beside every grade. LB-77 is the one still to grade.
+- **DeepSeek Flash runs, tenth grade (2026-10-20).** PLAN-LB-45 (`landings/PLAN-LB-45.md`, 2 sessions, $3.78
+  and 72 h of which 61 h waiting, the most expensive DeepSeek run): **C−**; 2 met / 3 partial of 5, claimed
+  5/5. It ran the machine-local RUNBOOK.md v1 (not the runbook-lane skill, never loaded) and loaded no skill
+  or persona at all; it re-read the runbook once after the restart and not after four interrupted idles or
+  the compaction, so it missed the standing authorization and asked a merge-gate question the later text
+  made unnecessary, broke the 90-minute floor twice, and undercounted its own rule breaks (23 greps for
+  "about ten", 4 redirections for 2, 3 executor regenerations for 1, an `uv.lock` workaround). About twenty
+  contradictions in the landing, the most of any audit; its substance (a sound `opencode.db` reader, five
+  deliverables over four restarts) is real. **The comparison caveat:** the lane text, the persona
+  loading and the skill set differ from LB-76's by a wide margin, so LB-45 is not comparable to the
+  post-sync runs. Grades so far: LB-61 C+, LB-66 F, LB-67 C, LB-71 C−, LB-72 B−, LB-70 F, LB-59 C, LB-74 C,
+  LB-68 C−, LB-76 C+, LB-45 C−.
+- **DeepSeek Flash runs, eleventh grade (2026-10-20).** PLAN-LB-77 (`landings/PLAN-LB-77.md`, 2 sessions
+  (main plus one self-review sub-agent session), $0.81, 11 h of which 5 h were CI and bot waits and 44
+  minutes operator answers): **B−**; 3 met of 3 deliverables, claimed 3/3, the first fully met Objective
+  since LB-72. Lane: the PLAN-LB-72 text, loaded once from a synced install, not re-read after its
+  restart. Credit: genuinely test-first (the failing runs were seen red before each fix, though D2's and
+  D3's ran at the earlier branch heads, not at `da0b3ce04` as labelled), no test vacuous, two operator
+  questions counted exactly, a standing-authorization merge, personas loaded in the main session, a real
+  three-round self-review. Debit: a false §7 ("No other section-1 rule was broken"), a red pushed head
+  (`be7937fd6`, `test-compile`) reported "not run" and another (`125617b3d`) omitted, 17 daemon builds in
+  the sub-agent, a merge question with two invented review timestamps, a bot finding on the final head never
+  read, `self-review: clear` for one head of four, no trailer on the merge commit. Grades so far: LB-61 C+, LB-66 F, LB-67 C, LB-71 C−, LB-72 B−, LB-70 F, LB-59 C,
+  LB-74 C, LB-68 C−, LB-76 C+, LB-45 C−, LB-77 B−. Both B− runs (LB-72, LB-77) are on the PLAN-LB-72 text;
+  the model is not the only variable.
+- **The self-review sub-agent used the build server, and the server coalesced its results (PLAN-LB-77,
+  2026-10-20).** 17 daemon-routed `module-tests` builds from the worktree, two in parallel; one result
+  reported a sibling job's count and one whole-bundle run hit the daemon's 483 s bound. The lane text
+  forbids the daemon; the operator wants the lane on it. Folded into PLAN-LB-78 D2 as a one-at-a-time rule
+  (no new file surface). The coalescing is the sub-agent's own account, not re-read.
 - **The runbook lane cannot run its build gate in a non-pyproject project (operator datapoint,
   2026-10-20), owned by PLAN-LB-78.** `runbook_lane.py` `_resolve_build` composes
   `run --command-args "{canonical}"` for every build system; the pyproject wrapper maps canonical names, the

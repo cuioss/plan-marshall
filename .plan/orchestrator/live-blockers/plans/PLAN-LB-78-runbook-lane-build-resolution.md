@@ -30,7 +30,9 @@ canonical and module (`quality-gate` → `verify -Ppre-commit …`, `test-compil
 bypasses it. Separately, the lane forbids the build server and forces every build in-process, on the stated
 ground that the worktree has no executor; the operator states that every worktree has its own
 `execute-script`, so that ground is wrong. This plan makes `resolve` return the architecture's own
-resolution, and makes the lane build through the build server with a recorded in-process fallback.
+resolution, and makes the lane build through the build server with a recorded in-process fallback. It also
+makes the lane's landing carry the `effort` and `plugin_version` keys PLAN-LB-45 made required, which the
+lane does not write today.
 
 ## Deliverables
 
@@ -72,6 +74,10 @@ resolution, and makes the lane build through the build server with a recorded in
      the lane reads it from the resolve result rather than guessing. An unenrolled project is `disabled`,
      not an error: enrolment stays an operator action in `manage-build-server`.
    - The shell-timeout paragraph and the split form stay for the in-process fallback only.
+   - The lane runs at most one daemon-routed build against a worktree at a time, sub-agents included: the
+     PLAN-LB-77 self-review sub-agent ran two builds in parallel, one result reported "the sibling job's 57"
+     tests, and one whole-bundle run hit the daemon's 483 s bound. Decide at outline whether the lane text
+     states the one-at-a-time rule and the bound, or the build server's client enforces them, and record why.
 
    *Done when:* doc and resolve tests assert, each failing at `e1481166c`:
    - `SKILL.md` no longer contains "never use the daemon" or the claim that the worktree has no executor,
@@ -80,13 +86,46 @@ resolution, and makes the lane build through the build server with a recorded in
    - `resolve` returns `build_server` with the preflight outcome for a fixture project that is
      unenrolled (`disabled`), enrolled and reachable (`ready`) and enrolled with the daemon down (`down`).
 
+3. **The lane's landing carries the four runtime-stamp keys the consumer requires.** (Folded from `landings/PLAN-LB-45.md`.)
+   - Skills: pm-plugin-development:plugin-architecture, pm-plugin-development:plugin-script-architecture, pm-dev-python:python-core, plan-marshall:ref-code-quality, pm-dev-python:pytest-testing, plan-marshall:persona-module-tester, pm-documents:ref-documentation
+   - Persona: plan-marshall:persona-implementer
+   - PLAN-LB-45 (#1802) made `harness`, `model`, `effort` and `plugin_version` required landing keys
+     (`LANDING_REQUIRED_KEYS`, sentinel-rejecting) and changed nothing in the runbook lane. The lane's
+     section 8 fence writes `harness` and `model` and no `effort` or `plugin_version`; `resolve` returns
+     `harness` only. Every runbook-lane landing is therefore `complete: false` on those two keys as well as on
+     `total_tokens`, and `landing-payload-spec.md` says the lane "reads the same runtime-stamp values from its
+     own resolve result", which it does not.
+   - `resolve` returns `harness`, `model`, `effort`, `plugin_version` and the optional `executor_version`
+     from the platform-runtime `runtime-info` seam (measured on OpenCode, `unknown` where nothing could be
+     read, never a guess). The section 8 fence writes `effort=` and `plugin_version=` (and
+     `executor_version=` when known) beside the existing keys, and `model` keeps its `{model}/{variant}` list
+     form. Decide at outline whether the lane re-reads the model at landing time (so a mid-run switch shows) or
+     only at setup, and record why. `total_tokens` stays PLAN-LB-49's.
+   - The sentence in `landing-payload-spec.md` about the runbook lane is made true or rewritten to what the
+     lane does.
+
+   *Done when:* each of these fails at `137986c61`:
+   - the section 8 fence names `effort` and `plugin_version`, and a doc-contract test parses the fence and
+     asserts that every key of `LANDING_REQUIRED_KEYS` except `total_tokens` is present, so the lane cannot drift
+     from its consumer again;
+   - `resolve` returns the four values for fixture `runtime-info` payloads (measured, mixed, absent), `unknown`
+     where absent;
+   - `inbox landing-check` on a message built from the section 8 template with real values reports only
+     `total_tokens` missing.
+
 ## Claim Labels
 
+- OBSERVED: the section 8 fence writes `schema`, `plan_id`, `epic`, `pr`, `merge_state`, `cleanup_owed`, `deliverables_total`, `deliverables_done`, `total_tokens=unknown`, `harness`, `model` and `steps`, with no `effort` or `plugin_version` — `marketplace/bundles/plan-marshall/skills/runbook-lane/SKILL.md` L490-503 at `137986c61` (read by the orchestrator).
+- OBSERVED: `landing-payload-spec.md` L128-130 says the runbook lane reads the runtime-stamp values from its own resolve result; `resolve` returns only `harness` (`runbook_lane.py` L531-548, L975, L1003; landing analysis of PLAN-LB-45, read by the corroboration).
+- OBSERVED: PLAN-LB-45's own first filing was incomplete for exactly this reason; the run fixed its message and recorded no residue for the lane (landing analysis of PLAN-LB-45).
+
+- OBSERVED: the PLAN-LB-77 sub-agent ran 17 daemon-routed `module-tests` builds from the worktree and three `build_server wait` calls (09:12:54-10:56:07Z), two in parallel; one result carried a sibling job's count and one hit the 483 s bound (landing analysis of PLAN-LB-77, from the OpenCode session store; the coalescing is the sub-agent's own account, not re-read).
 - OBSERVED: `_resolve_build` composes `{prefix} {notation} run --command-args "{canon}"` for `quality-gate`, `module-tests`, `verify` and `test-compile`, probing only `verify` at module level — `marketplace/bundles/plan-marshall/skills/runbook-lane/scripts/runbook_lane.py` L407-439.
 - OBSERVED: the Maven wrapper's `--command-args` is "Complete Maven command arguments (e.g., 'verify -Ppre-commit -pl my-module')" — `maven run --help`.
 - OBSERVED: discovery emits `quality-gate` as `verify -Ppre-commit -pl {module}`, `module-tests` as `test -pl {module} -am` and `test-compile` as `test-compile -pl {module} -am` for a module with tests — `marketplace/bundles/plan-marshall/skills/extension-api/standards/canonical-commands.md` § Extension Implementation and `build-maven/standards/maven-impl.md` § Test ladder.
 - OBSERVED: the lane forbids the daemon and states "the worktree has no executor of its own" — `marketplace/bundles/plan-marshall/skills/runbook-lane/SKILL.md` L281-285 and L343.
 - OBSERVED: the operator states that every worktree has its own `execute-script` (operator, 2026-10-20), and a PLAN-LB-59 reviewer session built through the daemon from a worktree cwd with the worktree's executor (`mechanism=daemon_longpoll`; landing analysis of PLAN-LB-59).
+- OBSERVED: the PLAN-LB-76 self-review sub-agents ran fourteen builds from the worktree cwd without `--execution-mode in_process --project-dir` and they were routed to the daemon (`mechanism=daemon_longpoll`), `quality-gate plan-marshall` included; the tree stayed clean, the lane text forbade it, and no run noticed (landing analysis of PLAN-LB-76). The lane's rule and the harness's behaviour disagree today.
 - OBSERVED: the build-server client's `submit` takes `--exec-path` separately from `--project-path`, is fail-soft (`degraded` → in-process), and prohibits backgrounding a daemon-routed build — `marketplace/bundles/plan-marshall/skills/build-server-client/SKILL.md`.
 - OBSERVED: the Maven wrapper's `--execution-mode` defaults to `auto` — `maven run --help`.
 - OBSERVED: the datapoint — a runbook-lane run in a Maven consumer repository received `quality-gate`, `module-tests`, `verify` and `test-compile` from `resolve` and failed with `Unknown lifecycle phase "quality-gate"` (operator, 2026-10-20; the run's resolve output was not read by the orchestrator).
@@ -96,9 +135,10 @@ resolution, and makes the lane build through the build server with a recorded in
 
 ## Expected Surface
 
-- OBSERVED: `marketplace/bundles/plan-marshall/skills/runbook-lane/scripts/runbook_lane.py` — `_resolve_build`, the `resolve` payload (D1, D2)
-- OBSERVED: `marketplace/bundles/plan-marshall/skills/runbook-lane/SKILL.md` — sections 0, 2 and 4, the canonical invocations (D1, D2)
-- OBSERVED: `test/plan-marshall/runbook-lane/test_runbook_lane.py` — the resolve and doc-contract tests (D1, D2)
+- OBSERVED: `marketplace/bundles/plan-marshall/skills/runbook-lane/scripts/runbook_lane.py` — `_resolve_build`, the `resolve` payload (D1, D2, D3)
+- OBSERVED: `marketplace/bundles/plan-marshall/skills/runbook-lane/SKILL.md` — sections 0, 2, 4 and 8, the canonical invocations (D1, D2, D3)
+- OBSERVED: `marketplace/bundles/plan-marshall/skills/plan-orchestrator/standards/landing-payload-spec.md` — the sentence on the runbook lane's runtime-stamp source (D3)
+- OBSERVED: `test/plan-marshall/runbook-lane/test_runbook_lane.py` — the resolve and doc-contract tests (D1, D2, D3)
 
 ## Dependencies and Sequencing
 
