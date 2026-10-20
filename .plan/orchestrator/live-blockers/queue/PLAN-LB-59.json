@@ -2,9 +2,10 @@
   "id": "PLAN-LB-59",
   "slug": "skill-and-adr-resolution",
   "workstream": "WS-01",
-  "status": "running",
-  "plan_marshall_plan_id": "",
-  "pr": "",
-  "landing": "",
+  "status": "shipped",
+  "lane": "runbook",
+  "plan_marshall_plan_id": "lb-59-skill-and-adr-resolution",
+  "pr": "1821",
+  "landing": "landings/PLAN-LB-59.md",
   "seq": 59
 }
