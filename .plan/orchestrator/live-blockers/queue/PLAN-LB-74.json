@@ -2,10 +2,10 @@
   "id": "PLAN-LB-74",
   "slug": "lb-70-integrity-fixes",
   "workstream": "WS-03",
-  "status": "launched",
+  "status": "shipped",
   "lane": "runbook",
-  "plan_marshall_plan_id": "",
-  "pr": "",
-  "landing": "",
+  "plan_marshall_plan_id": "lb-74-lb-70-integrity-fixes",
+  "pr": "1822",
+  "landing": "landings/PLAN-LB-74.md",
   "seq": 74
 }
