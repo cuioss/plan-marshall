@@ -2240,22 +2240,25 @@ class ClaudeRuntime(Runtime):
             'PLAN_MARSHALL_EFFORT',
             'MARSHALL_EFFORT',
             'EFFORT_LEVEL',
-            'PLAN_MARSHALL_BUILD_VERSION',
-            'BUILD_VERSION',
         }
     )
 
-    def runtime_info(self) -> str:
+    def runtime_info(self, model: str | None = None, effort: str | None = None) -> str:
         """Collect runtime information for the claude target.
 
-        Reads harness, model, effort, and build-version from
+        Reads harness, model, effort, the harness source, and the bundle/executor
+        version from
         script-accessible sources via the shared collector; unreadable
         attributes are dropped rather than estimated. Model resolution is
         target-scoped here (never in the shared collector): only
         Claude-specific and generic variables are visible, so OpenCode
         metadata leaking into a shared environment can never be attributed
         to a Claude entry.
+
+        Args:
+            model: Self-reported model identifier, tagged ``self_reported``.
+            effort: Self-reported effort level, tagged ``self_reported``.
         """
         env = {key: value for key, value in os.environ.items() if key in self._CLAUDE_MODEL_ENV}
-        info = runtime_info.collect_runtime_info('claude', env=env)
+        info = runtime_info.collect_runtime_info('claude', env=env, model_name=model, effort=effort)
         return toon_success(runtime_info.RUNTIME_INFO_OPERATION, info)

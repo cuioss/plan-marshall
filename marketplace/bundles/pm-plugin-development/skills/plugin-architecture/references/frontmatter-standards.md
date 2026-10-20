@@ -305,7 +305,7 @@ priming_preamble: "Adopt a reviewer's stance: read for correctness and intent, n
 Declares the **machine-readable composition edges** of a `persona-*` skill — the `bundle:skill` notations (`ref-*` concerns and, for meta/evaluator personas, other `persona-*` skills) that the persona DIRECTLY composes. It is the data source the persona resolver (`manage-personas resolve`) reads to walk the composition DAG; the prose `## Composition` section remains as human-facing documentation, but `composes:` is the resolver's binding source of truth — no nested skill loading and no hardcoded composition table.
 
 - **Field name**: `composes`
-- **Format**: a YAML list of `bundle:skill` notations. Each entry names a `ref-*` skill the persona applies or a `persona-*` skill the persona composes as a lens. The base `persona-plan-marshall-agent` is NOT listed — the resolver always includes the base unconditionally.
+- **Format**: a YAML list of `bundle:skill` notations. Each entry names a `ref-*` skill the persona applies or a `persona-*` skill the persona composes as a lens. The base `persona-plan-marshall-agent` is NOT listed — the resolver always assembles the base itself (a repository exclusion may still veto it).
 - **Scope**: only on `persona-*` skills. Omit the field entirely when a persona composes nothing directly (it resolves via its `profiles:` alone, or it is the base). A `ref-*` skill never carries it.
 - **DAG**: composition edges must form a directed acyclic graph (base is a leaf composed by all; meta personas compose work personas; no cycles). The resolver detects and rejects cycles.
 

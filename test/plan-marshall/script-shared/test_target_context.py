@@ -35,6 +35,7 @@ from target_context import (
     default_target,
     detect_target_from_env,
     find_local_config,
+    read_configured_target,
     resolve_context,
     resolve_marketplace_root,
     resolve_target,
@@ -319,6 +320,33 @@ class TestFallbackReasonsAreDistinguishable:
         # added without an implementing leg fails here.
         exported = {value for name, value in vars(target_context).items() if name.startswith('REASON_')}
         assert exported == seen | {REASON_LOCAL_CONFIG_UNREADABLE}
+
+
+class TestReadConfiguredTarget:
+    """The config tier read in isolation, which is what the mismatch probe needs."""
+
+    def test_reports_the_configured_target_even_when_env_outranks_it(self, tmp_path, monkeypatch):
+        """The two lower tiers stay separately observable.
+
+        ``resolve_target`` collapses the config tier away the moment an env
+        signal is present, so a mismatch between the two could not be seen
+        without a read that ignores the cascade.
+        """
+        _write_local_harness_config(tmp_path, 'claude')
+        monkeypatch.setenv('OPENCODE', '1')
+
+        assert read_configured_target(cwd=tmp_path) == 'claude'
+        assert resolve_target(cwd=tmp_path)['target'] == 'opencode'
+
+    def test_returns_none_when_the_config_names_no_target(self, tmp_path):
+        """A config that parses but names nothing configures no target."""
+        _write_run_config(tmp_path, json.dumps({}))
+
+        assert read_configured_target(cwd=tmp_path) is None
+
+    def test_returns_none_when_no_config_exists(self, outside_repo_dir):
+        """No machine-local config at all means nothing is configured."""
+        assert read_configured_target(cwd=outside_repo_dir) is None
 
 
 class TestDefaultTarget:

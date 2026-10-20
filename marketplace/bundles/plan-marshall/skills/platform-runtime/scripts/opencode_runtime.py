@@ -645,8 +645,6 @@ class OpenCodeRuntime(Runtime):
             'PLAN_MARSHALL_EFFORT',
             'MARSHALL_EFFORT',
             'EFFORT_LEVEL',
-            'PLAN_MARSHALL_BUILD_VERSION',
-            'BUILD_VERSION',
         }
     )
 
@@ -1987,19 +1985,37 @@ class OpenCodeRuntime(Runtime):
             },
         )
 
-    def runtime_info(self) -> str:
+    def runtime_info(self, model: str | None = None, effort: str | None = None) -> str:
         """Collect runtime information for the opencode target.
 
-        Reads harness, model, effort, and build-version from
+        Reads harness, model, effort, the harness source, and the bundle/executor
+        version from
         script-accessible sources via the shared collector; unreadable
         attributes are dropped rather than estimated. Model resolution is
         target-scoped here (never in the shared collector): only
         OpenCode-specific and generic variables are visible, so Claude
         metadata leaking into a shared environment can never be attributed
         to an OpenCode entry.
+
+        The model is MEASURED, not self-reported: the collector reads the
+        plan's session tree (root resolved through ``parent_id``, plus every
+        descendant) from ``opencode.db`` and records it as ``measured``. The
+        self-reported *model* is therefore not forwarded — the database is
+        authoritative — while *effort* is.
+
+        Args:
+            model: Self-reported model identifier; superseded by the measured
+                session value on this target.
+            effort: Self-reported effort level, tagged ``self_reported``.
         """
         import os
 
         env = {key: value for key, value in os.environ.items() if key in self._OPENCODE_MODEL_ENV}
-        info = runtime_info.collect_runtime_info('opencode', env=env)
+        info = runtime_info.collect_runtime_info(
+            'opencode',
+            env=env,
+            effort=effort,
+            opencode_db_path=_default_opencode_db_path(),
+            opencode_session_id=os.environ.get(runtime_info.OPENCODE_SESSION_ID_ENV),
+        )
         return toon_success(runtime_info.RUNTIME_INFO_OPERATION, info)

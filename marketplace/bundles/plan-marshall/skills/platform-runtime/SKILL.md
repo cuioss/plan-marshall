@@ -7,7 +7,7 @@ mode: script-executor
 
 # Platform Runtime Skill
 
-Script-based platform abstraction that routes 27 goal-based operations to the correct target implementation. Follows the `tools-integration-ci` pattern: one router script, target-specific provider classes, static routing via `marshal.json`.
+Script-based platform abstraction that routes 27 goal-based operations to the correct target implementation. Follows the `tools-integration-ci` pattern: one router script, target-specific provider classes, target resolution through `target_context`.
 
 ## Enforcement
 
@@ -16,7 +16,7 @@ Script-based platform abstraction that routes 27 goal-based operations to the co
 **Prohibited actions:**
 - Do not call provider-specific scripts directly; all operations go through `platform_runtime.py`
 - Do not invent script arguments not listed in the operations table
-- Do not hard-code the target platform; routing is config-driven via `runtime.target` in `marshal.json`
+- Do not hard-code the target platform; routing is resolved by `target_context` (ambient environment signal, then machine-local harness/run configuration, then the `claude` fallback)
 - Do not implement ad-hoc TOON parsing; use the `ref-toon-format` parser module
 
 **Constraints:**
@@ -61,7 +61,7 @@ Twenty-seven operations covering the full platform lifecycle:
 | `subagent dispatch` | Return platform-specific subagent invocation parameters |
 | `wait for` | Hold a bounded wait until a concrete, pollable observable (`--observable` names a kind from a closed set; `build-job` today) reaches a terminal state, and return a normalized `succeeded`/`failed`/`timed_out`/`killed`/`pending` outcome. The observable is never an opaque condition descriptor — a runtime subprocess cannot evaluate one. Bound exhaustion yields `outcome: pending` with `terminal: false`, never an implicit pass |
 | `health-check` | Verify platform integration |
-| `runtime-info` | Collect harness, model, effort, and build-version for the `client.toon` pre-flight artifact; best-effort with drop-not-estimate semantics on `claude`, `opencode`, and `antigravity` |
+| `runtime-info` | Collect harness, transcripts, harness source, model, effort, and the bundle/executor version for the `client.toon` pre-flight artifact; best-effort with drop-not-estimate semantics on `claude`, `opencode`, and `antigravity` |
 
 See `standards/contract.md` for per-operation TOON schemas (success, error, no-op paths).
 
@@ -117,16 +117,16 @@ lives in `doc/developer/opencode.adoc`.
 
 ## Architecture
 
-**Static Routing Pattern**: `marshal.json` stores `runtime.target`; router dispatches to target class.
+**Resolved-Target Pattern**: `target_context.resolve_target` resolves the active target; the router dispatches to its class.
 
 ```text
-marshal.json                                Scripts
-runtime.target: claude  ──────────────────► claude_runtime.py
-runtime.target: opencode ─────────────────► opencode_runtime.py
-runtime.target: antigravity ──────────────► antigravity_runtime.py
+Target cascade                               Scripts
+env signal / local harness config / fallback ─► claude_runtime.py
+                              opencode       ─► opencode_runtime.py
+                              antigravity    ─► antigravity_runtime.py
 ```
 
-Router (`platform_runtime.py`) reads `runtime.target`, looks up target class in registry, and dispatches. Registry is extensible — adding a new target adds a class and a registry entry.
+Router (`platform_runtime.py`) resolves the target through `target_context`, looks up its class in the registry, and dispatches. Registry is extensible — adding a new target adds a class and a registry entry.
 
 ## Invocation
 

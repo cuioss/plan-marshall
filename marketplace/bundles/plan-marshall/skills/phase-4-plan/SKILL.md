@@ -359,13 +359,14 @@ skills_by_profile:
 4. Log reasoning for each optional skill decision
 5. Before finalizing optionals, apply the **Security-Skill Attachment Sub-pattern** (below): when the deliverable context matches an untrusted-inbound-input signal, deterministically force the mapped security skill(s) into `task.skills` regardless of the LLM optional-relevance verdict.
 6. After defaults + optionals + security skills are resolved, apply the **Persona-Skill Augmentation** (below): derive the task's persona from its primary profile and merge the persona resolver's flattened `skills[]` into `task.skills`.
+7. The repository's `skill_domains.{domain}.excluded_skills` binds every producer. The architecture path filters `defaults` and `optionals` through the domain extension before they are persisted and again when the module is served, so a map stored before the exclusion was configured cannot leak it; the persona resolver reads the same list on its `--module` call (below) and drops a matching composed or profile skill from its flattened `skills[]`; and the Security-Skill Attachment Sub-pattern below never forces an excluded skill. Applying the veto in the architecture path rather than re-resolving every cell here is deliberate: phase-4 consumes the persisted `skills_by_profile` map, including its `minimal` declaration, and a second resolution would have to reproduce the extension's per-module promotion to stay equivalent.
 
 **Persona-Skill Augmentation** (deterministic; runs once per non-`verification` task):
 
 The persona / ref / profile identity model binds each work-activity profile to a persona shell whose `composes:` frontmatter declares the cross-cutting `ref-*` and `persona-*` concerns that profile carries. Phase-4-plan resolves that persona's flattened skill set and unions it into the task's resolved `skills[]` so every task carries its persona-declared concerns (e.g. an `implementation` task carries `ref-code-quality` via `persona-implementer`).
 
 1. **Derive the persona from the task's primary profile** via a reverse-lookup over persona frontmatter: scan the `profiles:` frontmatter of each `persona-*` skill and select the persona whose **first** `profiles:` entry (the primary identity profile) equals the task's profile `P`. The first-entry rule makes the binding unambiguous when a profile appears in multiple personas' lists. When no persona's primary profile matches `P`, skip augmentation for the task (the architecture-resolved defaults/optionals are the complete skill set).
-2. **Resolve the persona** and union its flattened skills into `task.skills`:
+2. **Run the resolver as an executed step** (not a description of one) and union its flattened skills into `task.skills`:
 
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-personas:manage_personas resolve \
@@ -1180,7 +1181,7 @@ When all four conditions hold, **auto-decompose** the deliverable into the canon
 |--------|------------------------------------------|------------------------------------------------|
 | `java-cui` (`pm-dev-java-cui`) | `pm-dev-java-cui:cui-http` | `pm-dev-java-cui:cui-http-testing` |
 
-**Mechanism (deterministic forced-inclusion)**: when the trigger predicate fires for a task whose domain has a mapping row, add the mapped skill(s) to `task.skills` regardless of the LLM optional-relevance verdict — the `implementation`-profile skill on the implementation task and the paired `module_testing`-profile skill on its paired test task. A task whose domain has no mapping row is unaffected (the trigger is a no-op for it). When the same skill is already present (declared as a default, or already matched as an optional), forced-inclusion is idempotent — do not duplicate the entry.
+**Mechanism (deterministic forced-inclusion)**: when the trigger predicate fires for a task whose domain has a mapping row, add the mapped skill(s) to `task.skills` regardless of the LLM optional-relevance verdict — the `implementation`-profile skill on the implementation task and the paired `module_testing`-profile skill on its paired test task. A task whose domain has no mapping row is unaffected (the trigger is a no-op for it). When the same skill is already present (declared as a default, or already matched as an optional), forced-inclusion is idempotent — do not duplicate the entry. A mapped skill the repository's `skill_domains.{domain}.excluded_skills` names is NOT forced: the exclusion veto outranks this trigger.
 
 **Boundary respected**: this trigger operates at phase-4-plan **task-assembly** time by forcing the OPTIONAL into `task.skills`. It does NOT promote these skills to bundle-profile `defaults` — the defaults/optionals split is bundle-owned (`pm-dev-java-cui/extension.py`) and is not overridable from here. The forced-inclusion is per-task and does not mutate any bundle profile.
 

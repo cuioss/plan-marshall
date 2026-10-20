@@ -20,13 +20,13 @@ Persona resolution for the persona / ref / profile identity model. The `resolve`
 
 **Constraints:**
 - The composition graph MUST be a DAG; the resolver detects and rejects cycles (`status: error`, `error: composition_cycle`).
-- The base `persona-plan-marshall-agent` is always included, unconditionally — it is never read from `composes:`.
+- The base `persona-plan-marshall-agent` is always assembled, unconditionally — it is never read from `composes:` — and is then subject to the exclusion lists configured for the requested `--domains`, like every other skill.
 
 ## What `resolve` does
 
 Given `--persona-key {bundle:persona}` and optional `--domains a,b,c`, the resolver reads the persona's `SKILL.md` frontmatter and produces a flat, deduped `skills[]` by unioning, in deterministic order:
 
-1. **Base** — always `plan-marshall:persona-plan-marshall-agent` (unconditional; same guarantee as the current foundational base load).
+1. **Base** — always `plan-marshall:persona-plan-marshall-agent` at assembly time (unconditional; same guarantee as the current foundational base load), then subject to the exclusion lists configured for the requested `--domains`.
 2. **Direct composition** — every `bundle:skill` notation in the persona's `composes:` frontmatter list (`ref-*` concerns and, for meta personas, other `persona-*` skills).
 3. **Recursive composition** — for each composed `persona-*`, the transitive closure of *its* `composes:` and `profiles:` resolution (DAG walk; cycles rejected).
 4. **Profile × domain** — for **each** profile in the persona's `profiles:` frontmatter list, the `profile × {domains}` domain skills resolved via the Extension API (`manage-config resolve-domain-skills --domain {domain} --profile {profile}`), for every domain in `--domains`. When `--domains` is omitted, no profile×domain skills are merged (the resolver emits base + composition only).

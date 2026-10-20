@@ -1363,6 +1363,15 @@ LANDING_FACTS_SCHEMA = 'landing-facts/1'
 #: it such a landing reads complete and clean while cleanup is still owed. Like
 #: ``pr`` and ``merge_state`` it sits OUTSIDE
 #: :data:`LANDING_SENTINEL_REJECTING_KEYS` — see that set for why.
+#:
+#: ``harness``, ``model``, ``effort`` and ``plugin_version`` (the bundle version;
+#: the executor version rides an OPTIONAL ``executor_version`` beside them) are the
+#: WHO-ran-the-plan stamp, read from the plan's runtime metadata by ``emit-landing``.
+#: They are required because a landing that cannot say which harness, model, effort
+#: and plan-marshall version produced the run cannot support a cross-model
+#: comparison, which is the whole reason they are recorded. Every landing emitted
+#: before they were required is INCOMPLETE — accepted deliberately, with no
+#: grandfather rule.
 LANDING_REQUIRED_KEYS: tuple[str, ...] = (
     'schema',
     'plan_id',
@@ -1372,6 +1381,10 @@ LANDING_REQUIRED_KEYS: tuple[str, ...] = (
     'deliverables_total',
     'deliverables_done',
     'total_tokens',
+    'harness',
+    'model',
+    'effort',
+    'plugin_version',
     'steps',
 )
 
@@ -1433,6 +1446,10 @@ LANDING_SENTINEL_REJECTING_KEYS: frozenset[str] = frozenset(
         'deliverables_total',
         'deliverables_done',
         'total_tokens',
+        'harness',
+        'model',
+        'effort',
+        'plugin_version',
         'steps',
     }
 )
