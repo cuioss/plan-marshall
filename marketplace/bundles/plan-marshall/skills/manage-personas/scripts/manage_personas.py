@@ -143,32 +143,24 @@ def _skill_name(entry: object) -> str:
 def _excluded_skills(domain: str) -> set[str]:
     """Return the repository-level skill exclusions for ``domain``.
 
-    The exclusion list lives in ``marshal.json`` under
-    ``skill_domains.{domain}.excluded_skills`` and names skills in either the
-    full ``bundle:skill`` notation or the bare skill name. An exclusion always
-    wins: it removes a skill the module itself would qualify for.
+    Delegates to the shared reader in ``extension_base`` so the resolver and the
+    architecture path consult ONE exclusion definition rather than two copies
+    that can drift.
     """
-    try:
-        from _config_core import load_config
-    except Exception:
-        return set()
-    try:
-        config = load_config()
-    except Exception:
-        return set()
-    skill_domains = config.get('skill_domains') if isinstance(config, dict) else None
-    entry = skill_domains.get(domain) if isinstance(skill_domains, dict) else None
-    raw = entry.get('excluded_skills') if isinstance(entry, dict) else None
-    if not isinstance(raw, list):
-        return set()
-    return {str(item).strip() for item in raw if str(item).strip()}
+    from extension_base import excluded_skills
+
+    return excluded_skills(domain)
 
 
 def _is_excluded(skill: str, exclusions: set[str]) -> bool:
-    """True when ``skill`` matches an exclusion in full or bare-name form."""
-    if not exclusions:
-        return False
-    return skill in exclusions or skill.split(':', 1)[-1] in exclusions
+    """True when ``skill`` matches an exclusion in full or bare-name form.
+
+    Delegates to the shared matcher in ``extension_base`` for the same
+    single-definition reason as :func:`_excluded_skills`.
+    """
+    from extension_base import is_excluded
+
+    return is_excluded(skill, exclusions)
 
 
 @lru_cache(maxsize=1)
@@ -269,8 +261,11 @@ def _module_qualified_skills(
 
     qualifies = getattr(extension, 'qualifies_optional', None)
     if qualifies is None:
-        # An extension predating the hook carries no optional signal.
-        return set(optionals)
+        # An extension predating the hook carries no optional signal, and a
+        # missing signal can never prove an optional applies. Fail closed to the
+        # cell's defaults; ``ExtensionBase``'s own ``True`` default is what keeps
+        # optionals for a domain that derives it without overriding the hook.
+        return set()
 
     qualified: set[str] = set()
     for skill in optionals:

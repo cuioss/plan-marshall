@@ -759,6 +759,66 @@ def should_execute_build(
     }
 
 
+def _entry_skill_notation(entry: object) -> str:
+    """Return the ``bundle:skill`` notation of a defaults/optionals entry."""
+    if isinstance(entry, dict):
+        return str(entry.get('skill') or '')
+    return str(entry)
+
+
+def excluded_skills(domain: str) -> set[str]:
+    """Return the repository-level skill exclusions for ``domain``.
+
+    The exclusion list lives in ``marshal.json`` under
+    ``skill_domains.{domain}.excluded_skills`` and names skills in either the
+    full ``bundle:skill`` notation or the bare skill name. An exclusion always
+    wins: it removes a skill the module itself would qualify for, whichever
+    producer surfaced it.
+
+    Every read failure — an absent config, an absent domain, a malformed value
+    or a config loader that is not importable — degrades to an empty set ("no
+    exclusions declared") rather than raising, so enrichment is never aborted
+    by a repository that simply has not configured any exclusions.
+
+    Args:
+        domain: The skill-domain key whose exclusion list to read.
+
+    Returns:
+        The configured exclusions, stripped and without empty entries.
+    """
+    if not domain:
+        return set()
+    try:
+        from _config_core import load_config
+    except Exception:
+        return set()
+    try:
+        config = load_config()
+    except Exception:
+        return set()
+    skill_domains = config.get('skill_domains') if isinstance(config, dict) else None
+    entry = skill_domains.get(domain) if isinstance(skill_domains, dict) else None
+    raw = entry.get('excluded_skills') if isinstance(entry, dict) else None
+    if not isinstance(raw, list):
+        return set()
+    return {str(item).strip() for item in raw if str(item).strip()}
+
+
+def is_excluded(skill: str, exclusions: set[str]) -> bool:
+    """True when ``skill`` matches an exclusion in full or bare-name form.
+
+    Args:
+        skill: The ``bundle:skill`` notation to test.
+        exclusions: The domain's configured exclusion set.
+
+    Returns:
+        ``True`` when the skill is excluded, ``False`` otherwise.
+    """
+    if not exclusions:
+        return False
+    return skill in exclusions or skill.split(':', 1)[-1] in exclusions
+
+
 class ExtensionBase(ABC):
     """Abstract base class for domain bundle extensions (Axis-A: skill-loading).
 
@@ -1233,6 +1293,10 @@ class ExtensionBase(ABC):
         core = profiles.get('core', {})
         core_defaults = core.get('defaults', [])
         core_optionals = core.get('optionals', [])
+        # A repository-level exclusion binds this path exactly as it binds the
+        # persona resolver: the persisted skills_by_profile a later phase reads
+        # must never carry a skill the repository forbids.
+        exclusions = excluded_skills(str(domains.get('domain', {}).get('key') or ''))
 
         # Determine which profiles are active (three-layer resolution)
         profile_filter: set[str] | None
@@ -1248,12 +1312,23 @@ class ExtensionBase(ABC):
             if profile_filter is not None and profile_name not in profile_filter:
                 continue
             profile = profiles[profile_name]
-            merged_defaults = list(core_defaults) + list(profile.get('defaults', []))
-            merged_optionals = list(core_optionals) + list(profile.get('optionals', []))
-            if merged_defaults or merged_optionals:
+            declared_defaults = list(core_defaults) + list(profile.get('defaults', []))
+            declared_optionals = list(core_optionals) + list(profile.get('optionals', []))
+            if declared_defaults or declared_optionals:
+                # The profile stays present even when filtering removes every
+                # entry: an empty cell is the declared outcome, not a missing
+                # resolution.
                 skills_by_profile[profile_name] = {
-                    'defaults': merged_defaults,
-                    'optionals': merged_optionals,
+                    'defaults': [
+                        entry
+                        for entry in declared_defaults
+                        if not is_excluded(_entry_skill_notation(entry), exclusions)
+                    ],
+                    'optionals': [
+                        entry
+                        for entry in declared_optionals
+                        if not is_excluded(_entry_skill_notation(entry), exclusions)
+                    ],
                 }
         return {
             'applicable': True,

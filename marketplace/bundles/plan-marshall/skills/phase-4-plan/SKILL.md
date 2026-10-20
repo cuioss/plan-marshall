@@ -359,6 +359,7 @@ skills_by_profile:
 4. Log reasoning for each optional skill decision
 5. Before finalizing optionals, apply the **Security-Skill Attachment Sub-pattern** (below): when the deliverable context matches an untrusted-inbound-input signal, deterministically force the mapped security skill(s) into `task.skills` regardless of the LLM optional-relevance verdict.
 6. After defaults + optionals + security skills are resolved, apply the **Persona-Skill Augmentation** (below): derive the task's persona from its primary profile and merge the persona resolver's flattened `skills[]` into `task.skills`.
+7. The repository's `skill_domains.{domain}.excluded_skills` binds BOTH producers. The architecture path filters `defaults` and `optionals` through the domain extension before they are persisted, and the persona augmentation passes the same exclusion list through the resolver's `--module` call (below). A task therefore never carries a skill the repository excludes, whichever path surfaced it.
 
 **Persona-Skill Augmentation** (deterministic; runs once per non-`verification` task):
 

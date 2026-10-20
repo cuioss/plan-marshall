@@ -12,8 +12,21 @@ Tier 2 (direct import): loads the bundle extension.py and inspects the
 applies_to_module() return value directly.
 """
 
+import json
+import os
+from pathlib import Path
+
 # Import shared infrastructure (conftest.py sets up PYTHONPATH for extension_base).
 from conftest import load_skill_module
+
+
+def _write_marshal(config):
+    """Write a real marshal.json where the project config reader resolves it."""
+    base = Path(os.environ['PLAN_BASE_DIR'])
+    base.mkdir(parents=True, exist_ok=True)
+    path = base / 'marshal.json'
+    path.write_text(json.dumps(config), encoding='utf-8')
+    return path
 
 
 def _load_extension():
@@ -84,6 +97,46 @@ def test_java_lombok_promoted_to_defaults_when_lombok_dep_present():
     impl = result['skills_by_profile']['implementation']
     assert _skill_in(impl['defaults'], 'java-lombok')
     assert not _skill_in(impl['optionals'], 'java-lombok')
+
+
+def _all_entries(result):
+    """Flatten every defaults/optionals entry the architecture path surfaced."""
+    return [
+        entry
+        for profile in result['skills_by_profile'].values()
+        for key in ('defaults', 'optionals')
+        for entry in profile[key]
+    ]
+
+
+def test_repository_exclusion_removes_skill_from_the_architecture_path():
+    """A repository exclusion binds the defaults and optionals enrichment persists."""
+    # Arrange
+    _write_marshal({'skill_domains': {'java': {'excluded_skills': ['pm-dev-java:java-quarkus']}}})
+    extension = _load_extension()
+    module_data = _module_data(['jakarta.enterprise.cdi-api:4.0.1'])
+
+    # Act
+    result = extension.applies_to_module(module_data)
+
+    # Assert
+    assert not _skill_in(_all_entries(result), 'java-quarkus')
+    # The exclusion is skill-specific: the CDI skill the module qualifies for stays.
+    assert _skill_in(result['skills_by_profile']['implementation']['defaults'], 'java-cdi')
+
+
+def test_architecture_path_surfaces_skill_without_an_exclusion():
+    """Negative control: absent the exclusion, the same skill is still surfaced."""
+    # Arrange
+    _write_marshal({'skill_domains': {'java': {'excluded_skills': []}}})
+    extension = _load_extension()
+    module_data = _module_data(['jakarta.enterprise.cdi-api:4.0.1'])
+
+    # Act
+    result = extension.applies_to_module(module_data)
+
+    # Assert
+    assert _skill_in(_all_entries(result), 'java-quarkus')
 
 
 def test_java_lombok_remains_optional_when_lombok_dep_absent():
