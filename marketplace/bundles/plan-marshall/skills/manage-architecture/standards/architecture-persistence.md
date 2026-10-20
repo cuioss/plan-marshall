@@ -864,7 +864,7 @@ Sources for understanding overall project structure and purpose.
 | 1 | Project README | `README.md`, `README.adoc` | Project overview, getting started |
 | 2 | Architecture docs | `doc/architecture/*.adoc` | Architectural decisions, design |
 | 3 | Module overview | `doc/modules.adoc` | Module relationships |
-| 4 | ADR documents | `doc/adr/*.adoc` | Design decisions |
+| 4 | ADR documents | `doc/adr/**/*.adoc` | Design decisions |
 
 ### Module-Level Sources
 

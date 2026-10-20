@@ -16,6 +16,23 @@ Bot participation is classified by two config knobs on the `plan-marshall:automa
 | **Optional** | listed in `optional_bots` | **Not a failure.** The bot is a bonus reviewer; its absence is tolerable. | **No** — an optional bot never blocks mark-done. |
 | **Unclassified** | listed in NEITHER | Nothing is expected of it. | **No** — but its comments are **still ingested** and the run records a warning. |
 
+### The quota-limited declaration
+
+Each bot's registry record may declare `quota_limited: true` when that reviewer works under a
+finite review allowance — a plan- or account-level quota it spends per review, so a later head can
+be refused outright until the allowance resets or is topped up. The flag is a property of the
+**reviewer**, not of the repository that configures it, which is why it lives in the bot's own
+standards record beside `trigger_comment` rather than in project configuration.
+
+It is read by the runbook lane's merge gate, and by nothing in the `automatic-review` step: a
+quota-limited required reviewer may satisfy "reviewed the current head" with a *qualifying earlier
+review* once every finding from it is handled, while a reviewer that is not quota-limited may not.
+The lane's contract owns that rule; this record only states the fact.
+
+The field is **fail-closed to `false`**: an absent, empty or non-boolean declaration resolves
+"not quota-limited", so the standing authorization stays off for every reviewer a project has not
+positively marked. An omission must never switch an authorization on.
+
 ### The warn-but-ingest rule
 
 A bot in neither list is **not** dropped. Its comments flow into the findings store exactly as a

@@ -867,6 +867,30 @@ class BotRegistry:
         value = self._by_kind.get(bot_kind, {}).get('rate_limit_class', '')
         return value if isinstance(value, str) and value else 'unknown'
 
+    def quota_limited(self, bot_kind: str) -> bool:
+        """Whether ``bot_kind`` reviews under a quota the caller may stand behind.
+
+        True when the bot's record declares ``quota_limited: true`` — the reviewer
+        refuses further reviews once an allowance is spent, so a later head cannot
+        obtain a fresh review no matter how long the caller waits or how often it
+        re-triggers. The runbook lane reads this flag to decide whether a
+        QUALIFYING EARLIER REVIEW may stand in for "reviewed the current head";
+        see ``runbook-lane/SKILL.md`` § merge gate.
+
+        False (the default) for a bot whose record omits the field, declares it
+        empty, or declares a non-boolean. Fail-closed in that direction on
+        purpose: the standing authorization must stay OFF for any reviewer the
+        project has not positively marked, never switched on by an omission. A
+        reviewer without a quota is fully capable of reviewing a later head, so
+        crediting an older review there would be a fabrication.
+
+        The declaration belongs in the bot's own record rather than in project
+        configuration because a quota is a property of the REVIEWER, not of the
+        repository that configures it: the same bot carries the same allowance
+        everywhere it is asked.
+        """
+        return self._by_kind.get(bot_kind, {}).get('quota_limited') is True
+
     def rate_limit_eta_patterns(self, bot_kind: str) -> list[str]:
         """Return the per-bot ETA-extraction regexes (``[]`` if unknown/absent).
 
@@ -1032,6 +1056,11 @@ def participation_requires_update(bot_kind: str) -> bool:
 def rate_limit_class(bot_kind: str) -> str:
     """The rate-limit class for ``bot_kind``, fail-closed to ``'unknown'``."""
     return REGISTRY.rate_limit_class(bot_kind)
+
+
+def quota_limited(bot_kind: str) -> bool:
+    """Whether ``bot_kind`` declares a review quota (``False`` when undeclared)."""
+    return REGISTRY.quota_limited(bot_kind)
 
 
 def rate_limit_eta_patterns(bot_kind: str) -> list[str]:

@@ -87,10 +87,10 @@ The recorded SHA is also what the next firing's delta round is measured from: `r
 
 The judgment criteria are frozen at outline approval, and the round judges the change against the frozen criteria — never against a later rewrite of them. The frozen record is the criteria snapshot the outline phase writes at its 3-outline approval step (`work/criteria-snapshot.json`, through the outline skill's `snapshot-criteria` verb): the request's Done-when text, each outline deliverable's success-criteria text in outline order, and each spec deliverable's OWN Done-when clause. Step 3a reads the same success criteria through `manage-solution-outline read`, and Step 4's validator compares that reading with the frozen record before it grades: a plan that predates the freeze carries no snapshot, and there is then nothing to compare against.
 
-- **Criteria rewrites and deletions are blocking.** A success-criterion text the frozen record holds that the current outline no longer carries verbatim — reworded, narrowed, dropped or replaced after approval — is graded by the validator as a blocking finding, one per criterion (`criterion_rewritten` when its place is taken by different text, `criterion_deleted` when it is gone). The finding cites the frozen sentence and the current sentence so the loop-back re-authoring restores the approved wording. Deleting a specified check requires a logged operator decision, recorded through the outline skill's `criteria-authorize` verb, which writes the decision and the authorization together and neither without the other; the verify-first "drop a refuted gap" clause does not cover it.
+- **Criteria rewrites and deletions are blocking.** A success-criterion text the frozen record holds that the current outline no longer carries verbatim — reworded, narrowed, dropped or replaced after approval — is graded by the validator as a blocking finding, one per criterion (`criterion_rewritten` when its place is taken by different text, `criterion_deleted` when it is gone). The finding cites the frozen sentence and the current sentence so the loop-back re-authoring restores the approved wording. Deleting a specified check requires a logged operator decision. The decision and the authorization are written together, and neither without the other, through the outline skill's `criteria-authorize` verb — invoked as `python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-solution-outline criteria-authorize --plan-id {plan_id} --deliverable-number {n} --criterion "{frozen criterion text}" --decision "{operator decision}"`. The verb refuses an empty decision (nothing is authorized without one) and a criterion the snapshot did not freeze; once it returns `status: success`, the next `run_validate` no longer reports that criterion as `criterion_deleted` or `criterion_rewritten`, while a criterion deleted with no such record stays a blocking finding.
 - **An uncovered spec Done-when is blocking too.** Each spec deliverable's own Done-when is frozen as its OWN clause, so a later pass that merges several spec deliverables into one outline deliverable cannot collapse two clauses into one criterion. A clause no current outline criterion covers is graded `spec_criterion_missing` — the PLAN-LB-42 shape, where four spec deliverables merged into one outline deliverable, three generic criteria were graded and the fourth clause's Done-when never was. The outline answers it by carrying the clause.
 - **Infeasible verdicts name the work-order sentence.** A deliverable graded `not_met` on the grounds that it cannot be built as written is blocking only when its entry names the work-order sentence that makes it infeasible — the frozen criterion sentence plus the tree fact that blocks it. A bare infeasible claim with no cited sentence is graded `unevidenced`.
-- **Weakened existing tests are blocking.** A recorded test that passed before the change and now asserts less — a removed assertion, a narrowed check, a dropped negative case, an added filter or skip — is a blocking finding, one per weakened test, and the entry names the test and what it no longer checks. Step 3e enumerates the removed and filtered cases through the review's own `test-integrity` verb; a RELAXED assertion that keeps its count (`assert x == 5` rewritten to `assert x is not None`) is the author's reading of the change, reported the same way.
+- **Weakened existing tests are blocking.** A recorded test that passed before the change and now asserts less — a removed assertion, a narrowed check, a dropped negative case, an added filter or skip — is a blocking finding, one per weakened test, and the entry names the test and what it no longer checks. Step 3e enumerates the removed and filtered cases through the review's own `test-integrity` verb, and the verb also catches a net-count evasion (an assertion removed from one test and added to another). A RELAXED assertion that keeps its count (`assert x == 5` rewritten to `assert x is not None`) and a FIXTURE changed in the same commit as the rule it exercises are the author's reading of the change, reported the same way: the fixture case stays a reviewer-judgement clause, never a mechanical detection (operator decision on PLAN-LB-70 D4c).
 - **Head capture at step start with compare-and-rerun.** The dispatcher captures `git -C {worktree_path} rev-parse HEAD` at Step 1 alongside the attribution call and holds that SHA as the round's start head. Immediately before every terminal `mark-step-done` call of Step 6 it resolves HEAD again through the same call and compares: on equality it records with the re-resolved SHA; on mismatch the tree moved under the round, so it discards the verdict and re-runs the round from Step 1 against the new HEAD instead of recording a verdict about a tree it never examined.
 
 ## Inputs of the dispatched author
@@ -148,22 +148,14 @@ Capture each returned `path` as `{verdict_file}` and `{verifier_file}`, and the 
 
 **A delta round needs the previous verdict.** On `round_kind: delta` the author carries forward the rows of the deliverables outside the delta, so it needs the previous round's verdict file. When `{verdict_exists}` is `false` on a delta round, re-run the attribution call above WITHOUT `--delta-step` and use that full-round TOON instead.
 
-**Record an operator-closed head before anything else.** Read this step's previous record:
+**Read the operator-closed heads before anything else.** Read this step's previous record:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status read \
   --plan-id {plan_id}
 ```
 
-Locate `metadata.phase_steps.6-finalize.functional-review`. When its `facts.may_close` is `operator_override`, the operator closed the review past its round cap at that record's `head_at_completion` (see [`review-rubric.md`](../standards/review-rubric.md) § 8). Add that head to the plan's list of override-closed heads — the call is idempotent, so a head already on the list is not added twice:
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \
-  --plan-id {plan_id} --set --append --field functional_review_override_heads \
-  --value {head_at_completion}
-```
-
-Then read the list back and capture it comma-joined as `{override_heads}` (empty when the field is absent):
+Locate `metadata.phase_steps.6-finalize.functional-review`. When its `facts.may_close` is `operator_override`, the operator closed the review past its round cap at that record's `head_at_completion` (see [`review-rubric.md`](../standards/review-rubric.md) § 8). That head is already in the plan's list of override-closed heads: `manage-status loop-back close` is the list's owning writer and records the head when the override is made, so this step records nothing. A generic `metadata --set` or `--set --append` naming `functional_review_override_heads` is refused — do not reintroduce one. Read the list back and capture it comma-joined as `{override_heads}` (empty when the field is absent):
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \
@@ -306,14 +298,7 @@ python3 .plan/execute-script.py plan-marshall:phase-6-finalize:review_support te
   --plan-id {plan_id}
 ```
 
-Every row it returns is one weakened test — a changed test whose assertions the branch removed, relaxed or filtered, or one that gained a skip marker. The verb's own count catches a removed assertion and an added filter; a RELAXED assertion that keeps the count is what the author finds while reading the change. Report each row as the blocking finding it is, in the field that carries it: an `unrequested_changes` entry naming the changed test path with `consequential: true` and a `fix_kind`, or — when a deliverable asked for the change — as the justification that retires it. A deliverable that asks for the change is what justifies the row; nothing else does.
-
-```bash
-python3 .plan/execute-script.py plan-marshall:phase-6-finalize:review_support verify-first \
-  --plan-id {plan_id} --gate {gate} --check --commit {commit}
-```
-
-Run that once per verify-first gate the plan declares, with the commit the gate gates. A `status: error` return with `verify_first_evidence_postdates_commit` or `verify_first_evidence_missing` means the gate's evidence was recorded at or after the action it gated, or was never recorded at all — either way the gate did not run before the thing it licenses, and the round reports it as a blocking finding naming the gate. The other two errors (`worktree_unresolved`, `unknown_commit`) mean the check could not run at all: nothing was evaluated, so the round reports that instead, never a gate finding. A `status: success` return means every recorded evidence entry predates the commit. When the plan declares no verify-first gate, run nothing.
+Every row it returns is one weakened test — a changed test whose assertions the branch removed, relaxed or filtered, or one that gained a skip marker. The verb's own count catches a removed assertion, a dropped net (an assertion removed from one test and added to another), and an added filter; a RELAXED assertion that keeps its count is what the author finds while reading the change. The step's own `validate` verb consumes these rows and raises each as a `weakened_test` blocking finding, so a removed assertion blocks even when the author never mentions it. The finding stands until the assertion is restored or an operator override closes the step; a deliverable that asked for the change is the justification the author states, not an automatic retirement.
 
 ### 3f. Write the verdict file — and seal it
 
@@ -339,6 +324,7 @@ The verdict file is the schema `review_support validate --kind functional` check
       "criteria": [
         {
           "criterion": "the success-criterion text",
+          "criterion_id": "C1 — optional; D1.C1 is also accepted",
           "status": "met | unevidenced | not_met",
           "evidence": ["path/to/file.py:42", "test/module/test_file.py::test_name"],
           "fix_kind": "implementation | correction"
@@ -362,6 +348,8 @@ The verdict file is the schema `review_support validate --kind functional` check
 ```
 
 `deliverables` carries exactly one row per outline deliverable. `residuals` belongs on a `met_with_residuals` row and `superseded_by` on a `superseded` row. `fix_kind` is required on every item that grades `blocking`; a `not_met` deliverable and an `unevidenced` criterion default to `implementation` when it is omitted.
+
+A criterion row answers its frozen criterion by `criterion_id` first, then by exact normalised text. Position is never a match. When the row's `criterion` text is a paraphrase rather than the frozen wording, carry the criterion's id (`C1`; the deliverable-qualified `D1.C1` is also accepted and is checked against the row's own deliverable). A paraphrased row without the id leaves the criterion ungraded and the validator reports the row as `unmatched_criterion` — unless the row's text is a criterion the current outline carries, which is the author grading the outline as it now reads (an operator-authorized rewrite lands there). A verdict sealed before `criterion_id` existed whose row paraphrases a frozen criterion is therefore reported unmatched and cannot close: re-run the round and include the id.
 
 ## Author return
 
@@ -678,7 +666,7 @@ When `rev-parse` itself failed, omit `--head-at-completion` rather than forwardi
 When this step's round budget is spent, the operator either grants another round or closes the review with `manage-status loop-back close --step functional-review`, which records `may_close=operator_override` at the head the operator judged and resolves this step's `functional-review-state` findings. The override closes ONLY that head ([`review-rubric.md`](../standards/review-rubric.md) § 8):
 
 - A later fix commit advances HEAD past the override-closed record, so the dispatcher's HEAD-dependency check re-fires this step, and `attribution` scopes the firing as a delta round over the files the commit touched. The re-fire comes from the HEAD advance, not from a loop-back admission, so it spends no round from this step's budget.
-- Step 1 adds every override-closed head to `functional_review_override_heads`, and every later record carries the list as `override_closed_heads`.
+- Step 1 READS the override-closed heads that `manage-status loop-back close` records when the operator closes the review; the close is the list's owning writer, and every later record carries the list as `override_closed_heads`.
 
 ## Round-loop termination
 

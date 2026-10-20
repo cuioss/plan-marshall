@@ -62,10 +62,22 @@ OpenCode major cannot drift silently again.
      `skill_directive` template becomes `{ id: "{bundle}-{skill}" }`.
    - `OpenCodeRuntime.subagent_dispatch` returns `tool: subagent` with `agent`, `description` and
      `prompt`.
+   - **Finish what PLAN-LB-67 left half-done (folded from `landings/PLAN-LB-67.md`).**
+     PLAN-LB-67 (#1813) changed `tool_permissions.Task` in `mapping.json` to `subagent` after an
+     operator selection that also said to reword the remaining shipped bodies and to update any
+     test that pins `Task → task`. It left the runtime and the standards on `task`:
+     - the permission-key recognition (`opencode_runtime.py:259`) lists `task`, not `subagent`;
+     - the mapping's own `Task:` note still says it "MUST NOT be blanket-rewritten to `task`";
+     - four standards still name the OpenCode tool `task`: `phase-5-execute/standards/operations.md`,
+       `extension-api/standards/dispatch-granularity.md`, `plan-marshall/workflow/execution.md` and
+       `plan-marshall-opencode/skills/target-rules/standards/opencode-rules.md`.
 
    *Done when:* the emitted body for a `Skill: a:b` line reads `{ id: "a-b" }`; a test reads
    `tool: subagent` and `agent: execution-context-level-5` from `subagent dispatch`. At
-   `501aeb313` the output is `{ name: … }`, `task` and `subagent_type`.
+   `501aeb313` the output is `{ name: … }`, `task` and `subagent_type`. Also, each of these fails at
+   `f4b4ebd59`: the permission parser accepts a `subagent` key and maps it to the OpenCode 2 rule;
+   no bundle standard names OpenCode's sub-agent tool as `task`; the mapping note and the mapping
+   agree.
 
 3. **The permission tooling reads and writes the shape the file has.**
    - Every `opencode_runtime.py` operation that reads or writes permissions (configure, analyze,
@@ -149,6 +161,9 @@ durable instrument moved to PLAN-LB-57. The measurement half of the OpenCode wor
 - HYPOTHESIS: `doc/developer/opencode.adoc` — OpenCode 2 shape (verify-at-outline) (D1)
 - OBSERVED: `marketplace/bundles/plan-marshall-opencode/skills/target-rules/standards/opencode-rules.md` — rules (a) and (b); tool names only if it names `task` / `bash` (D2, D5)
 - OBSERVED: `marketplace/bundles/plan-marshall/skills/persona-plan-marshall-agent/standards/agent-behavior-rules.md` — rule (b) (D5)
+- OBSERVED: `marketplace/bundles/plan-marshall/skills/phase-5-execute/standards/operations.md` — L49 names OpenCode `task` (D2)
+- OBSERVED: `marketplace/bundles/plan-marshall/skills/extension-api/standards/dispatch-granularity.md` — L5 names OpenCode `task` (D2)
+- OBSERVED: `marketplace/bundles/plan-marshall/skills/plan-marshall/workflow/execution.md` — L178 names OpenCode `task` (D2)
 
 ## Dependencies and Sequencing
 

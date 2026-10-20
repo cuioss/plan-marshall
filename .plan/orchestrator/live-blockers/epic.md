@@ -115,6 +115,43 @@ derive, for rows still live.
     `verify` red on free text; five quota breaches.
   - Fix-forward **PLAN-LB-70**. See `landings/PLAN-LB-52.md`.
 
+- **PLAN-LB-70** (shipped #1815, 2026-10-19, runbook lane, `deepseek-v4.1-flash`, PLAN-LB-66 lane text)
+  — 0 met / 4 partial of 4 deliverables (claimed 4/4); process grade **F** (about B− on execution).
+  Best fail-first of the series (14 of 14 Done-whens test-first) and 13 real, discriminating tests; but
+  it **merged with an unresolved Major CodeRabbit thread and an unhandled outside-diff Major on the
+  merged head**, after a merge-gate question that was false when asked ("CodeRabbit never reviewed the
+  head"; the review had landed 64 seconds earlier). The gate it repaired can be bypassed: positional
+  matching can release an unmet criterion, the digest record is unserialised and its keys unprotected,
+  and several mechanisms never reach production. Fix-forward **PLAN-LB-74** (WS-03, high) and
+  **PLAN-LB-75** (medium); see `landings/PLAN-LB-70.md`.
+
+- **PLAN-LB-72** (shipped #1819, 2026-10-19, runbook lane, `deepseek-v4.1-flash`) — 1 met / 2 partial
+  of 3 deliverables, 11 of 14 Done-whens; process grade B−. 8 of 14 Done-whens genuinely test-first
+  (PLAN-LB-71: 0 of 15); honest `order` labels; both required bots reviewed the merge head. Two
+  "not met as written" items are flaws of the spec, not of the run. Defects: the lane text still
+  contradicts itself in four places, the §7 qualifying-review signal cannot be satisfied by a clean
+  CodeRabbit review, three tests cannot fail for the reason they name, a main-checkout edit episode
+  (disclosed, reverted exactly), and about ten undisclosed small rule breaks. Fix-forward
+  **PLAN-LB-73** (low); the spec-authoring lesson is folded into PLAN-LB-69 D4. See
+  `landings/PLAN-LB-72.md`.
+
+- **PLAN-LB-71** (shipped #1817, 2026-10-19, runbook lane, `deepseek-v4.1-flash`) — 1 met / 2 partial
+  of 3 deliverables, 10 of 15 Done-when bullets (claimed 3/3); process grade C−. The flat-layout fix
+  is real and correct by trace; the classifier is right for this repository. Defects: no Done-when
+  was seen failing test-first (0 of 15) and the PR body and `main`'s squash message say they were;
+  `persona-code-reviewer` claimed and never loaded; `test-compile` omitted at the PR heads. The
+  cheapest run so far ($0.54, 2h44m) and the first without a history rewrite or an undisclosed shell
+  file operation in the run. Fix-forward **PLAN-LB-72** (medium). See `landings/PLAN-LB-71.md`.
+
+- **PLAN-LB-67** (shipped #1813, 2026-10-18, runbook lane, `deepseek-v4.1-flash`) — 3 met / 3 partial
+  of 6 deliverables (claimed 6/6); process grade C. The merge was covered by the standing CodeRabbit
+  authorization. Defects: the skill-existence check cannot find a skill in a flat OpenCode or
+  Antigravity install (high), the docs-only classifier fails open on `test/README.md`, the rule
+  restoration left §1 against §8 and softened the closed prefix set, and the operator's `subagent`
+  selection was executed in part. Fix-forward **PLAN-LB-71** (WS-04, runbook lane, high); the
+  unfinished `Task` → `subagent` alignment is folded into PLAN-LB-48 D2. See
+  `landings/PLAN-LB-67.md`.
+
 - **PLAN-LB-66** (shipped #1808, 2026-10-18, runbook lane) — 1 met / 2 partial of 3 (11 of 14
   Done-whens met). The skill, the resolve verb and the lane-aware orchestrator are on `main`. But
   the skill weakened ten runbook rules (high; PLAN-LB-67 D6), and its build commands are valid only
@@ -470,6 +507,13 @@ derive, for rows still live.
   - D5: a docs-only build path keyed on the project's footprint rule.
 
   Five deliverables, kept unsplit by operator instruction.
+- 2026-10-18 — **Operator: always use the new `runbook-lane` skill, to find its bugs early.**
+  Every emit after the drain uses `/plan-marshall-runbook-lane plan={spec}`, PLAN-LB-67 included.
+  The local `RUNBOOK.md` is no longer used for new emits; only the running PLAN-LB-45 still runs
+  on it. The skill's known gaps (the ten weakened rules, the 2026-10-18 rules) are fixed by
+  PLAN-LB-67 D1 and D6. Until then, every landing audit judges runs against the skill version they
+  loaded, and records each gap the run hit as evidence for PLAN-LB-67. Precondition for the first
+  emit: `/sync-harnesses`, plus a main executor regenerated for Claude.
 - 2026-10-18 — **PLAN-LB-52 fix-forward staged as PLAN-LB-70** (high), with four deliverables:
   - the gate refuses only genuinely open criteria;
   - spec and citation parsing matches real documents;
@@ -517,6 +561,58 @@ derive, for rows still live.
   2. retire the local `RUNBOOK.md`;
   3. emit PLAN-LB-67 first, through `/plan-marshall-runbook-lane plan={spec}`;
   4. emit the rest of the queue in the same form.
+- 2026-10-18 — **Operator: every emit runs in an OpenCode session through the lane skill, and
+  every landing gets the full-depth audit.** The harness is stated here because the entries above
+  imply it. The skills each plan loads are adjusted at the orchestrator from the project's
+  configuration (see "domain skills are named at the orchestrator"). On handling a result, the
+  audit is thorough — fidelity and process leaves, the lane contract in force, spot checks, a
+  grade — and the gaps it finds feed PLAN-LB-67. The drain rule above is relaxed by the operator
+  in the same session: plans disjoint from the still-running PLAN-LB-45 are emitted alongside it
+  rather than after it.
+- 2026-10-18 — **Operator: the PLAN-LB-43 D4 finding comes from an OpenCode run in a consumer
+  repository.** `upgrade` stopped at Stage 1 `cache-freshness-check` (`freshness: unknown`)
+  because the flat OpenCode install has no resolvable manifest. It is filed as PLAN-LB-43 D4 (high).
+- 2026-10-19 — **PLAN-LB-70 landed; PLAN-LB-74 and PLAN-LB-75 staged.** PLAN-LB-74 (WS-03, runbook
+  lane, **high**, four deliverables): D1 the two Major findings left unhandled on #1815, D2 a verdict row
+  answers a criterion only by id or exact text, D3 the integrity record under the status writer's lock
+  with protected keys, D4 the `.plan/` citation escape. PLAN-LB-75 (medium, four deliverables): the
+  triage source and `criteria_gate`, the re-freeze routing and the stale standards, the test-integrity
+  reach, and the sticky override heads. Emit PLAN-LB-74 before the staged PLAN-LB-53 and PLAN-LB-55:
+  they overlap its files and run through the gate it repairs. The false-merge-question rule is folded
+  into PLAN-LB-73 D1 (no new file surface). **An operator selection made on a false premise is not an
+  authorization:** the merge of #1815 stays on `main` and its findings are carried by PLAN-LB-74.
+- 2026-10-19 — **PLAN-LB-72 landed; PLAN-LB-73 staged** (WS-04, runbook lane, low): D1 the lane text
+  states each rule once (branch row, §0a template, the grading by order, §6 identifiers, §4 docs-only
+  `test-compile`) and §7's qualifying-review signal counts CodeRabbit's marker-bearing summary
+  comment; D2 the tests of the timeout, the probed layout, the `test-compile` evidence and the glob
+  helper import can fail for the reason they name. The Done-when authoring rule was folded into
+  PLAN-LB-69 D4; the fold adds no file surface (its declared surface already holds
+  `templates/plan-spec.md`, `workflow/decompose.md` and `workflow/cleanup.md`).
+- 2026-10-19 — **Operator: stay on OpenCode with `deepseek-v4.1-flash` for the next four runs,
+  then switch back to Muse for a comparison.** "Four" counts the runs emitted AFTER the four now in
+  flight (PLAN-LB-45, PLAN-LB-68, PLAN-LB-70, PLAN-LB-72, all on DeepSeek Flash). The comparison round
+  that follows runs on Muse (`muse-spark-1.3-contributor`). Protocol, so the model is the only
+  variable:
+  - Muse runs also go through the `runbook-lane` skill (the eight earlier Muse runs ran under the
+    plan lifecycle and the local runbook, so they are history, not a baseline for this round).
+  - Plans of comparable size and surface type, and the same landing audit at full depth.
+  - Compare the same fields every time: process grade, deliverables met against claimed, test-first
+    share of the Done-whens, report contradictions, rule breaks, cost, wall clock, sessions.
+  - Which plans go to Muse is chosen when the round starts, not now.
+- 2026-10-19 — **PLAN-LB-71 landed; PLAN-LB-72 staged** (WS-04, runbook lane, medium): D1 the
+  classifier never says `docs-only` for a path the project's CI builds (the skip class came from the
+  architecture; a `docs/` module, `.asciidoc` and `README.MD` can fail open in other projects),
+  D2 the existence-check and rule tests can fail for the reason they name, D3 structured evidence
+  labels (`order`) and the `test-compile`-per-pushed-head, self-review and unknown-verb rules. The
+  chain PLAN-LB-67 → 71 → 72 is a fix-forward of the lane skill itself; park PLAN-LB-72 if the
+  operator prefers to harvest the lane's gaps through PLAN-LB-69 instead.
+- 2026-10-19 — **PLAN-LB-67 landed; PLAN-LB-71 staged.** Fix-forward (WS-04, runbook lane, high)
+  with three deliverables: D1 the skill-existence check in every deployed layout, D2 the docs-only
+  classifier derived from the project and never failing open, D3 the restored rules read the same
+  everywhere with parity tests that can fail. The unfinished `Task` → `subagent` alignment is
+  folded into PLAN-LB-48 D2 (expected surface updated in the same edit: three more standards).
+  Open for the operator: whether a quota-limited optional reviewer (`sourcery`) may be covered by the
+  standing authorization; today it is keyed on `quota_limited`, wider than "CodeRabbit only".
 - 2026-10-17 — **Mid-flight: PLAN-LB-66 edited the main checkout** (D3, 6 files) instead of its
   worktree, against runbook §1. Operator interrupted it; the D3 work moved to the worktree and main
   is clean. Debited at its landing.
@@ -524,6 +620,70 @@ derive, for rows still live.
   reviewed). Its inbox `-001` is a mid-flight report, not a landing; the row stays running.
 
 ## Open Defects
+
+- **PLAN-LB-70 is on `main` with two unhandled Major CodeRabbit findings (2026-10-19; high;
+  fix-forward PLAN-LB-74 D1).** (1) `review_support.py` ignores `worktree_unresolved` even when the plan
+  declares a worktree, so a code review can report `may_close: true` without grading the branch's
+  test changes (thread `PRRT_kwDOQ3xasM6uAyYk`, unresolved at merge); (2) a failed snapshot-digest
+  record leaves a frozen snapshot with no outside-the-file binding (`_criteria_snapshot.py:588-595`,
+  outside-diff, never handled).
+- **The criteria gate can release an unmet criterion and can be bypassed (PLAN-LB-70 landing; high;
+  PLAN-LB-74 D2, D3, D4).** The positional fallback in `_graded_status` answers a criterion with
+  the wrong verdict row; `record_integrity` writes `status.json` without the status writer's lock;
+  `manage-status metadata --set` can wipe `criteria_integrity` or append an override head; a
+  `.plan/../` citation escapes the graded-head rule.
+- **PLAN-LB-70 mechanisms that never reach production (medium; PLAN-LB-75).** The triage source is
+  not drop-aware, `criteria_gate` is not persisted, `criteria-refreeze-authorize` is wired into no
+  workflow, `worktree_unresolved` hides every plan without a worktree, per-function matching misses
+  class methods and delete-and-compensate moves, and `triage.md` and `review-rubric.md` contradict the
+  code.
+- **A merge-gate question stated that a head had not been reviewed 64 seconds after its review landed
+  (PLAN-LB-70 run; operator authorization obtained on a false premise).** Folded into PLAN-LB-73 D1
+  (re-read the review surfaces in the same step as the question and before the enqueue). The
+  operator's selection is treated as no authorization for that merge.
+- **The runbook lane's §7 "qualifying review" cannot be satisfied by a clean CodeRabbit review
+  (PLAN-LB-72 landing, 2026-10-19; low; fix-forward PLAN-LB-73 D1).** §7 excludes a summary comment,
+  while CodeRabbit publishes a clean review only as a marker-bearing summary comment. The standing
+  authorization therefore keys on reviews that had findings, and `ci pr reviews` was empty on #1819
+  although both bots reviewed the merge head. The run asked the operator a question the contract does
+  not define (91 minutes). The main condition ("reviewed the current head") held.
+- **Done-whens unmeetable by construction (PLAN-LB-72 landing; orchestrator-side).** A preservation or
+  coverage clause carried "fails at {sha}", so the run reported two Done-whens "not met as written".
+  Folded into PLAN-LB-69 D4 as an authoring rule ("fails at" for new behaviour, "holds at" otherwise).
+  The spec also named the wrong path for the glob helper (`manage-architecture`, not `script-shared`).
+- **The classifier's architecture fallback can still say `docs-only` for a path a reusable CI workflow
+  would build (`docs/x.asciidoc`; PLAN-LB-72 landing).** Only the local build is skipped and the PR's
+  CI backstops it. Operator ruling wanted: accept, or fail closed (which defeats the docs-only path in
+  this repository, whose rule lives in a reusable workflow).
+- **Undisclosed rule breaks of the PLAN-LB-72 run:** `git config --get-regexp .` (dumps user and global
+  git config), the unknown verb `ci bot completion` neither asked about nor recorded (§4), a third
+  `tail`, three argparse rejections, two rejected sub-agent shell attempts, a sub-agent read outside
+  the repo, and no base re-fetch before the enqueue. The guard does not cover read-side probes by
+  design, so none was logged.
+- **Fail-first is reported, not checkable (PLAN-LB-67 and PLAN-LB-71 landings; operator ruling
+  wanted).** Two runs in a row labelled mutation or revert evidence "fail-first"; PLAN-LB-71 put
+  "each observed failing before the fix" into the PR body and `main`'s squash message with 0 of 15
+  Done-whens test-first. PLAN-LB-72 D3 makes the label structured (`order`: `test-first` /
+  `mutation-after` / `none`); the full-depth audit (PLAN-LB-69) is the only check. Decide whether a
+  lane verb should record the failing run's output and commit before the fix commit.
+- **The main executor does not know `build-classify` (2026-10-19).** `.plan/execute-script.py`
+  lists only the `resolve` child for the lane (digest `2caadbf…`); the installed OpenCode lane text
+  is still pre-PLAN-LB-67. Operator action: regenerate the executor (`marshall-steward`), then
+  `/sync-harnesses`.
+- **FIXED IN SOURCE 2026-10-19 (PLAN-LB-71 D1, #1817; deployed after the sync above).** The runbook
+  lane's skill-existence check fails closed in a flat install (PLAN-LB-67 landing,
+  2026-10-18; high). `runbook_lane.py:167-202` resolves a bare name and
+  a persona with its bundle dropped against the lane's own `skills/` directory. The OpenCode install
+  names skills `plan-marshall-{skill}`, so every name misses and a spec with `Skills:` lines stops
+  on `named_skill_not_found`. Until PLAN-LB-71 D1 lands, do not sync the OpenCode install and then
+  emit a spec carrying those lines. The `total_tokens=unknown` gap of this landing recurs on the
+  PLAN-LB-49 entry (third OpenCode runbook landing with `unknown`); `landing-check` reports the
+  landing `complete: false` on that one key.
+- **Report integrity of the PLAN-LB-67 landing.** About nine claims were contradicted: personas and
+  domain skills "applied" with none loaded, "no shell file operation again" (two), "base branch
+  merged rather than rebased", fail-first for all six deliverables (D5 and D6 were tested after the
+  implementation), Finding 7 "fixed in both places", and an undisclosed local history rewrite. The
+  landing audit is the only check on this; PLAN-LB-69 makes it mandatory and repeatable.
 
 - **The two-pass cuioss-review-bot has unverified and unprevented gaps (inbox
   `lb-37-functional-review-012` items 8 to 10, 2026-10-14; foreign repositories, not owned).**
@@ -1124,6 +1284,38 @@ entries below are OpenCode 1 assumptions in plan-marshall that OpenCode 2 broke.
   $4.09 over 55 sessions; the root passed `record-dispatch-boundary --total-tokens 0` literally.
 
 ## Watches
+
+- **Model comparison round (operator, 2026-10-19).** The next four runs after the four in flight
+  stay on `deepseek-v4.1-flash`; the round after that runs on Muse, through the same runbook lane,
+  so the two can be compared. DeepSeek so far under the runbook lane: LB-61 C+, LB-66 F, LB-67 C,
+  LB-71 C−; LB-70, LB-45, LB-68 and LB-72 are still to be graded. Note the caveat that the lane
+  skill itself changed between runs (PLAN-LB-67 and PLAN-LB-71 landed), so record the lane version
+  each run loaded. Retire when the Muse round has been graded and the comparison is written up.
+- **DeepSeek Flash runs, fifth grade.** PLAN-LB-70 (`deepseek-v4.1-flash`/high, 2 sessions, $1.83,
+  24h): **F** on the process rule (a false merge-gate question), about B− on execution, 14 of 14
+  Done-whens test-first. It ran on the PLAN-LB-66 lane text, so it predates the standing authorization
+  and the evidence labels; the merge failure is the lane's old "ask the operator" path, not a
+  misreading of the newer text. Grades so far: LB-61 C+, LB-66 F, LB-67 C, LB-71 C−, LB-72 B−, LB-70 F.
+  Note for the comparison round: grade the **same lane version** for both models.
+- **DeepSeek Flash runs, fourth grade.** PLAN-LB-72 (`deepseek-v4.1-flash`/high, 4 sessions, $0.80,
+  6h35m of which 107 minutes were operator answers): B−, the best since the runbook lane started. The
+  step change coincides with the lane text of PLAN-LB-67 and PLAN-LB-71 and with a spec that asked for
+  structured evidence labels, so do not attribute it to the model alone; record it as a data point for
+  the Muse comparison round (same lane version, same audit). Grades so far: LB-61 C+, LB-66 F, LB-67 C,
+  LB-71 C−, LB-72 B−.
+- **DeepSeek Flash runs, third grade.** PLAN-LB-71 (`deepseek-v4.1-flash`/high, 3 sessions, $0.54,
+  2h44m): C−. Execution hygiene improved (no history rewrite, no undisclosed shell file operation in
+  the run, no operator question, every commit trailered); evidence integrity did not (0 of 15
+  test-first, labelled fail-first). Retire with the second grade when three consecutive landings
+  grade B or better.
+- **DeepSeek Flash runs, second grade.** PLAN-LB-67 (`deepseek-v4.1-flash`/high, 2 sessions, $1.18):
+  grade C, the best execution of the OpenCode runbook-lane runs since PLAN-LB-61 — a clean main
+  checkout, a genuine operator question and all commits trailered — but about nine contradicted
+  report claims, D5 and D6 tested after the implementation, and a partly executed operator
+  selection. Retire when three consecutive landings grade B or better.
+- **The merge was enqueued a few minutes after CodeRabbit's announced quota reset without a further
+  re-trigger (PLAN-LB-67).** Allowed by the standing authorization as written; watch whether runs
+  routinely skip a review that was minutes away.
 
 - **Model switch on OpenCode: Muse → DeepSeek Flash1** (operator, 2026-10-15: "Starting with the
   next new plan we will change to DeepSeek Flash1 … analyze whether this has an impact on the

@@ -12,7 +12,7 @@ import subprocess
 from pathlib import Path
 from typing import Any, NamedTuple
 
-from _criteria_snapshot import open_criteria
+from _criteria_snapshot import open_criteria, read_snapshot
 from _handshake_commands import cmd_capture, cmd_verify
 from _invariants import (
     _BLOCKING_BOUNDARIES,
@@ -124,6 +124,10 @@ BRANCH_RANGE_UNRESOLVABLE_ERROR = 'branch_range_unresolvable'
 # relationship — so the two are separate constants and neither is derived from
 # the other.
 _COMPLETION_GUARD_PHASES: frozenset[str] = frozenset({'6-finalize'})
+
+#: The creation date on/after which a plan MUST freeze its criteria before leaving
+#: ``3-outline``. A plan created before it predates the freeze and is exempt.
+SNAPSHOT_REQUIRED_AFTER = '2026-10-18'
 
 #: ``archive --reason`` values that ASSERT the plan completed. An archive carrying one
 #: of these takes the same gated path as an archive with no reason at all — the
@@ -893,6 +897,97 @@ def verify_blocks_transition(verify_result: dict[str, Any]) -> bool:
     return verify_result.get('error') in VERIFY_REFUSAL_ERRORS
 
 
+def _phase_6_manifest_steps(plan_id: str) -> set[str] | None:
+    """The plan's composed phase-6 step ids, or ``None`` when unreadable/absent.
+
+    Reads ``execution.toon`` (TOON ``phase_6.steps``) — the ONE composed manifest
+    the phase-6 dispatcher writes. An absent or unreadable manifest yields
+    ``None``, so the caller keeps today's behaviour rather than inventing a drop.
+    """
+    try:
+        path = get_plan_dir(plan_id) / 'execution.toon'
+        if not path.is_file():
+            return None
+        from toon_parser import parse_toon
+
+        data = parse_toon(path.read_text(encoding='utf-8'))
+    except Exception:
+        return None
+    if not isinstance(data, dict):
+        return None
+    phase_6 = data.get('phase_6')
+    if not isinstance(phase_6, dict):
+        return None
+    steps = phase_6.get('steps')
+    if not isinstance(steps, list):
+        return None
+    return {str(step) for step in steps if isinstance(step, str) and step}
+
+
+def _functional_review_scheduled(plan_id: str) -> bool | None:
+    """Whether the composed phase-6 manifest schedules the functional review.
+
+    ``None`` when the manifest cannot be read. The comparison accepts the bare and
+    the ``*:functional-review`` spellings the candidate list may carry.
+    """
+    steps = _phase_6_manifest_steps(plan_id)
+    if steps is None:
+        return None
+    return any(step == 'functional-review' or step.endswith(':functional-review') for step in steps)
+
+
+def _outline_snapshot_refusal(plan_id: str, status: dict[str, Any]) -> dict[str, Any] | None:
+    """Refuse leaving ``3-outline`` for ``4-plan`` without a frozen snapshot.
+
+    The freeze is a transition requirement: a plan created on or after
+    :data:`SNAPSHOT_REQUIRED_AFTER` must freeze its success criteria before
+    planning. Legacy plans (created before that date) predate the freeze and are
+    exempt, so the requirement cannot strand an in-flight plan.
+    """
+    created = status.get('created') if isinstance(status, dict) else None
+    if isinstance(created, str) and created.strip() and created.strip()[:10] < SNAPSHOT_REQUIRED_AFTER:
+        return None
+    if read_snapshot(plan_id) is not None:
+        return None
+    return {
+        'status': 'error',
+        'plan_id': plan_id,
+        'error': 'outline_snapshot_missing',
+        'phase': '3-outline',
+        'message': (
+            'Refusing to leave 3-outline without a frozen criteria snapshot: run '
+            'manage-solution-outline snapshot-criteria at outline approval, then retry.'
+        ),
+    }
+
+
+def _functional_review_drop_reason(plan_id: str, status: dict[str, Any]) -> str | None:
+    """Why the manifest dropped the functional review, or ``None`` when it did not.
+
+    The mandate is the composed manifest: a surgical scope, a disabled
+    commit-push or a ``functional_review: off`` lane all subtract the step, and
+    any of them leaves the plan with no verdict to grade its criteria. The
+    completion gate must not read that absence as outstanding work.
+    """
+    scheduled = _functional_review_scheduled(plan_id)
+    if scheduled is None or scheduled:
+        return None
+    metadata = normalize_metadata(status) if isinstance(status, dict) else {}
+    recorded = metadata.get('functional_review_drop_reason')
+    if isinstance(recorded, str) and recorded.strip():
+        return recorded.strip()
+    scope = metadata.get('scope_estimate')
+    if isinstance(scope, str) and scope.strip().lower() in ('surgical', 'single_module', 'micro', 'single-module'):
+        return 'surgical scope'
+    return 'not scheduled in the phase-6 manifest'
+
+
+def _criteria_gate_note(plan_id: str, status: dict[str, Any]) -> str | None:
+    """The ``criteria_gate`` note recorded when the review was dropped, else ``None``."""
+    reason = _functional_review_drop_reason(plan_id, status)
+    return f'not_applicable (review dropped: {reason})' if reason is not None else None
+
+
 def _finalize_findings_refusal(plan_id: str, status: dict[str, Any]) -> dict[str, Any] | None:
     """Finalize completion boundary: assert the blocking-findings STATE.
 
@@ -970,7 +1065,12 @@ def _finalize_findings_refusal(plan_id: str, status: dict[str, Any]) -> dict[str
     # that is silent. Read AFTER the findings refusal, so a plan with both is
     # reported with its findings first.
     criteria = open_criteria(plan_id)
-    if criteria.get('open_count'):
+    # A frozen record the status record says exists but which is now deleted or
+    # edited is refused REGARDLESS of whether the review was dropped: the freeze is
+    # independent of the review, and reading its absence as "not applicable" would
+    # let deleting the snapshot disable the check the freeze exists for.
+    frozen_record_broken = str(criteria.get('source') or '').startswith('frozen_')
+    if criteria.get('open_count') and (frozen_record_broken or _functional_review_drop_reason(plan_id, status) is None):
         open_rows = criteria['open']
         log_entry(
             'decision',
@@ -1175,6 +1275,14 @@ def cmd_transition(args: argparse.Namespace) -> dict[str, Any] | None:
     else:
         next_phase = None
 
+    # Freeze transition requirement: leaving 3-outline for 4-plan requires a
+    # frozen criteria snapshot on a plan created after the freeze was introduced.
+    # Legacy plans are exempt by creation date.
+    if args.completed == '3-outline' and next_phase == '4-plan':
+        snapshot_refusal = _outline_snapshot_refusal(args.plan_id, status)
+        if snapshot_refusal is not None:
+            return snapshot_refusal
+
     # Finalize completion boundary (D2): completing ``6-finalize`` asserts the
     # blocking-findings STATE — the merge boundary asserts a state that must
     # hold rather than trusting an optional ``capture --phase 6-finalize`` call.
@@ -1286,6 +1394,15 @@ def cmd_transition(args: argparse.Namespace) -> dict[str, Any] | None:
         result['next_phase'] = next_phase
     else:
         result['message'] = 'All phases completed'
+
+    # Record the criteria-gate outcome on the completion payload: when the plan's
+    # composed manifest dropped the functional review there is nothing to grade,
+    # and the exit says so (`criteria_gate: not_applicable (review dropped: …)`)
+    # rather than reading the ungraded criteria as outstanding work.
+    if args.completed in _COMPLETION_GUARD_PHASES:
+        gate = _criteria_gate_note(args.plan_id, status)
+        if gate is not None:
+            result['criteria_gate'] = gate
 
     # Mailbox check-point (roster key ``phase-transition``). Placed AFTER the
     # phase write and on the success payload alone: a refusal above is not a

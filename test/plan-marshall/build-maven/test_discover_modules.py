@@ -878,6 +878,34 @@ def test_discover_dependencies_empty_on_cheap_path():
     assert module['dependencies'] == []
 
 
+_CDI_POM = """<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>com.example</groupId>
+  <artifactId>cdi-app</artifactId>
+  <version>1.0.0</version>
+  <packaging>jar</packaging>
+  <dependencies>
+    <dependency>
+      <groupId>jakarta.enterprise</groupId>
+      <artifactId>jakarta.enterprise.cdi-api</artifactId>
+      <scope>provided</scope>
+    </dependency>
+  </dependencies>
+</project>
+"""
+
+
+def test_discover_declared_dependencies_carry_the_cheap_pom_dependencies():
+    """declared_dependencies exposes the POM's own deps while dependencies stays empty."""
+    root = _make_module_tree({'.': _CDI_POM})
+    module = discover_maven_modules(str(root))[0]
+
+    assert module['dependencies'] == []
+    assert [dep['group_id'] for dep in module['declared_dependencies']] == ['jakarta.enterprise']
+    assert module['declared_dependencies'][0]['artifact_id'] == 'jakarta.enterprise.cdi-api'
+
+
 def test_discover_does_not_invoke_get_maven_metadata(monkeypatch):
     """The default discovery path never calls _get_maven_metadata / enrich.
 

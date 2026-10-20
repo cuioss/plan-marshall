@@ -25,9 +25,8 @@ instead of re-deriving it in prose:
   ``met`` (the standing finalize triage source, and what the finalize completion
   gate reads).
 * ``test-integrity`` — every changed test whose assertions the branch removed or
-  filtered (a relaxed assertion that keeps its count stays the author's reading).
-* ``verify-first`` — record a verify-first gate's evidence, or check that it
-  predates the commit it gates.
+  filtered (a relaxed assertion that keeps its count stays the author's reading;
+  a net-count evasion is still caught, by matching per test function).
 
 The blocking line, the evidence forms, the citation forms and the loop-back
 targets are stated once, in ``phase-6-finalize/standards/review-rubric.md``;
@@ -48,6 +47,7 @@ Verdict file schemas (JSON — the rows nest criteria and evidence lists)::
       {"deliverables": [{"number": 1,
                          "verdict": "met|met_with_residuals|not_met|superseded",
                          "criteria": [{"criterion": str,
+                                       "criterion_id": "C1 (optional; D1.C1 also accepted)",
                                        "status": "met|unevidenced|not_met",
                                        "evidence": [str, ...],
                                        "fix_kind": "implementation|correction"}],
@@ -92,7 +92,6 @@ Usage::
     review_support.py author-verdict --plan-id P --kind functional|code --verdict-file F
     review_support.py open-criteria --plan-id P
     review_support.py test-integrity --plan-id P [--base-ref R]
-    review_support.py verify-first --plan-id P --gate G (--record --evidence TEXT | --check --commit SHA)
 """
 
 from __future__ import annotations
@@ -104,7 +103,17 @@ from pathlib import Path
 from typing import Any
 
 import _review_support_attribution as _attr
-from _criteria_snapshot import FUNCTIONAL_VERDICT_FILE, criteria_drift, open_criteria, read_snapshot
+from _criteria_snapshot import (
+    FUNCTIONAL_VERDICT_FILE,
+    STATUS_FILE,
+    criteria_drift,
+    criterion_id_parts,
+    open_criteria,
+    plan_uses_worktree,
+    read_snapshot,
+    record_verdict_digest,
+    snapshot_state,
+)
 from _review_support_attribution import (
     SOLUTION_FILE,
     compute_attribution,
@@ -112,8 +121,9 @@ from _review_support_attribution import (
     error_payload,
     load_outline_deliverables,
 )
-from _review_support_integrity import check_verify_first, compute_test_integrity, record_verify_first
+from _review_support_integrity import compute_test_integrity
 from _review_support_validate import (
+    FIX_KIND_CORRECTION,
     FIX_KIND_IMPLEMENTATION,
     KIND_CODE,
     KIND_FUNCTIONAL,
@@ -121,14 +131,16 @@ from _review_support_validate import (
     VERIFIER_ACCEPTED,
     Grading,
     authorship_problem,
+    deliverable_number,
     grade_frozen_criteria,
     read_json_object,
+    report_unmatched_rows,
     seal_verdict,
     validate_code,
     validate_functional,
     verifier_status,
 )
-from file_ops import atomic_write_file, base_path
+from file_ops import atomic_write_file, base_path, cwd_checkout_root
 from input_validation import require_valid_plan_id
 from toon_parser import serialize_toon
 
@@ -137,20 +149,41 @@ TARGET_FINALIZE = '6-finalize'
 TARGET_NONE = 'none'
 
 
+def _main_checkout_root() -> Path | None:
+    """The main checkout root, or ``None`` when it cannot be resolved."""
+    try:
+        root = Path(cwd_checkout_root())
+    except Exception:
+        return None
+    return root if root.is_dir() else None
+
+
 def _evidence_root(plan_id: str) -> Path | None:
     """Resolve the tree a verdict's evidence is checked against, or ``None``.
 
-    ``None`` disables the existence check, which is correct only when there is no
-    tree to check against; an unresolvable worktree must not read as "every
-    citation exists".
+    A worktree-bound plan is graded against its worktree. A plan that runs WITHOUT
+    a worktree (``use_worktree: false``) is graded against the MAIN CHECKOUT — the
+    tree the finalize contract assigns it — so its citations are still checked
+    rather than read as the not-run state (which is a blocking finding).
+
+    A plan that DECLARED a materialized worktree which does not resolve now is
+    different again: falling back to the main checkout would check citations
+    against a tree other than the graded head. That case returns ``None``, so the
+    not-run finding stands. ``None`` disables the existence check rather than
+    reading the absence as a pass.
     """
     try:
         worktree = _attr.resolve_live_worktree(plan_id)
     except Exception:
+        worktree = None
+    if worktree is not None:
+        root: Path | None = Path(worktree)
+    elif plan_uses_worktree(plan_id):
         return None
-    if worktree is None:
+    else:
+        root = _main_checkout_root()
+    if root is None:
         return None
-    root = Path(worktree)
     return root if root.is_dir() else None
 
 
@@ -167,6 +200,42 @@ def loop_back_target(findings: list[dict[str, Any]]) -> str:
     if any(finding['fix_kind'] == FIX_KIND_IMPLEMENTATION for finding in blocking):
         return TARGET_EXECUTE
     return TARGET_FINALIZE
+
+
+def _grade_test_integrity(grading: Grading, plan_id: str) -> None:
+    """Consume the plan's ``test-integrity`` rows as blocking findings (rubric § 2).
+
+    One finding per changed test whose assertions the branch removed or filtered.
+    A failed computation is NOT read as an empty report: when the worktree resolves
+    but the base diff cannot be read (``diff_unavailable``), the check did not run,
+    so a blocking ``test_integrity_not_run`` finding blocks closure. A missing
+    worktree is the same not-run state UNLESS the plan never declared one: a plan
+    with ``use_worktree: false`` has no branch diff to grade, while a plan that
+    declared a worktree which no longer resolves must not be graded against a tree
+    it never used.
+    """
+    report = compute_test_integrity(plan_id)
+    if not isinstance(report, dict):
+        return
+    if report.get('status') != 'success':
+        error = str(report.get('error') or 'unknown')
+        non_applicable = error == 'worktree_unresolved' and not plan_uses_worktree(plan_id)
+        if not non_applicable:
+            grading.add(
+                'test_integrity_not_run',
+                '-',
+                f'the test-integrity check could not run: {error}',
+                True,
+                FIX_KIND_CORRECTION,
+                'test-integrity',
+            )
+        return
+    for row in report.get('findings') or []:
+        if not isinstance(row, dict):
+            continue
+        path = str(row.get('path') or '-')
+        detail = str(row.get('detail') or row.get('kind') or 'weakened test')
+        grading.add('weakened_test', path, detail, True, FIX_KIND_CORRECTION, f'test-integrity {path}')
 
 
 def run_validate(plan_id: str, kind: str, verdict_file: str, verifier_file: str | None) -> dict[str, Any]:
@@ -191,9 +260,17 @@ def run_validate(plan_id: str, kind: str, verdict_file: str, verifier_file: str 
         return error_payload(plan_id, 'verdict_file_unreadable', f'{verdict_file}: {problem}')
     grading = Grading()
     payload_evidence_check = 'not_run'
+    state = snapshot_state(plan_id)
+    if state in ('deleted', 'tampered'):
+        return error_payload(
+            plan_id,
+            f'frozen_snapshot_{state}',
+            f'the status record froze a criteria snapshot that is now {state}; '
+            f'nothing can be graded against a record that is no longer there',
+        )
     snapshot = read_snapshot(plan_id)
     if snapshot is not None and kind == KIND_FUNCTIONAL:
-        authorship = authorship_problem(verdict)
+        authorship = authorship_problem(verdict, plan_id)
         if authorship:
             grading.errors.append(f'{verdict_file}: {authorship}')
     if kind == KIND_FUNCTIONAL:
@@ -201,18 +278,37 @@ def run_validate(plan_id: str, kind: str, verdict_file: str, verifier_file: str 
         if deliverables is None:
             return error_payload(plan_id, 'outline_not_found', f'{SOLUTION_FILE} not found for plan {plan_id!r}')
         evidence_root = _evidence_root(plan_id) if snapshot is not None else None
-        facts = validate_functional(verdict, deliverables, grading, evidence_root)
+        facts = validate_functional(verdict, deliverables, grading, plan_id, evidence_root)
         if snapshot is not None:
             grade_frozen_criteria(grading, criteria_drift(plan_id, deliverables))
+            report_unmatched_rows(grading, verdict, snapshot, deliverables)
             # Prove the citation check ran, or say why it did not: an unrun check
             # that renders identically to a passed one is a green nothing produced.
             if evidence_root is None:
                 payload_evidence_check = 'not_run'
+                # Rubric § 4: a citation the reviewer cannot evaluate is never
+                # silently accepted. The not-run state is a FINDING, not a quiet
+                # field a reader may overlook — a verdict graded with no tree to
+                # check its citations against cannot be closed on.
+                grading.add(
+                    'evidence_check_not_run',
+                    '-',
+                    'the citation-existence check could not run: no tree resolved for the graded head',
+                    True,
+                    FIX_KIND_IMPLEMENTATION,
+                    'evidence check',
+                )
             else:
                 payload_evidence_check = 'run'
     else:
         facts = validate_code(verdict, grading)
         payload_evidence_check = 'not_run'
+
+    # Consume the plan's own ``test-integrity`` rows: a weakened pre-existing test
+    # is a blocking finding (rubric § 2), and before this the rows were produced by
+    # a verb no validator read, so a removed assertion blocked nothing unless the
+    # author remembered to copy it into prose. One finding per weakened test.
+    _grade_test_integrity(grading, plan_id)
 
     blocking_count = sum(1 for finding in grading.findings if finding['severity'] == SEVERITY_BLOCKING)
     verifier = verifier_status(verifier_file, blocking_count > 0)
@@ -241,6 +337,47 @@ def run_validate(plan_id: str, kind: str, verdict_file: str, verifier_file: str 
     return payload
 
 
+def _unknown_criterion_ids(verdict: dict[str, Any], plan_id: str) -> list[str]:
+    """Return every ``criterion_id`` that names no frozen criterion of its deliverable.
+
+    A row may carry an id instead of quoting the criterion verbatim, which is what
+    lets a reviewer paraphrase without orphaning the criterion. The id must name a
+    criterion that actually exists: a malformed id, a position past the frozen
+    list, a deliverable-qualified id naming another deliverable, or any id at all
+    on a deliverable the freeze does not carry is refused. A plan with no snapshot
+    is the legacy shape — there is no frozen set to name, so nothing is refused.
+    """
+    snapshot = read_snapshot(plan_id)
+    if snapshot is None:
+        return []
+    frozen: dict[Any, int] = {}
+    for row in snapshot.get('deliverables') or []:
+        if isinstance(row, dict):
+            frozen[deliverable_number(row.get('number'))] = len(row.get('criteria') or [])
+    unknown: list[str] = []
+    for row in verdict.get('deliverables') or []:
+        if not isinstance(row, dict):
+            continue
+        number = deliverable_number(row.get('number'))
+        for criterion in row.get('criteria') or []:
+            if not isinstance(criterion, dict):
+                continue
+            raw = str(criterion.get('criterion_id') or '').strip()
+            if not raw:
+                continue
+            named_deliverable, position = criterion_id_parts(raw)
+            known_count = frozen.get(number)
+            if (
+                known_count is None
+                or position is None
+                or position < 1
+                or position > known_count
+                or (named_deliverable is not None and named_deliverable != number)
+            ):
+                unknown.append(raw)
+    return unknown
+
+
 def run_author_verdict(plan_id: str, kind: str, verdict_file: str) -> dict[str, Any]:
     """Seal a review verdict with the marker only the review's own verb can write.
 
@@ -248,12 +385,51 @@ def run_author_verdict(plan_id: str, kind: str, verdict_file: str) -> dict[str, 
     the file's content is bound to the reviewer's recorded output: any later edit
     — the ``python3 -c`` rewrite that turned three OpenCode verdicts to "met" —
     no longer matches the recorded digest, and ``validate`` refuses it.
+
+    A functional verdict's ``criterion_id`` values are checked against the frozen
+    criteria BEFORE the seal is written. An id the freeze does not carry would
+    otherwise seal a row that answers nothing, and the reviewer would have no way
+    to tell a typo from a criterion that changed.
     """
     verdict, problem = read_json_object(verdict_file)
     if verdict is None:
         return error_payload(plan_id, 'verdict_file_unreadable', f'{verdict_file}: {problem}')
+    if kind == KIND_FUNCTIONAL:
+        unknown = _unknown_criterion_ids(verdict, plan_id)
+        if unknown:
+            return {
+                'status': 'error',
+                'plan_id': plan_id,
+                'kind': kind,
+                'verdict_file': verdict_file,
+                'error': 'unknown_criterion_id',
+                'message': (
+                    'each criterion_id must name a frozen criterion of its own deliverable; '
+                    f'these name none: {", ".join(unknown)}'
+                ),
+                'unknown_criterion_ids': unknown,
+            }
     sealed = seal_verdict(verdict, kind)
     atomic_write_file(verdict_file, json.dumps(sealed, indent=2, sort_keys=True) + '\n')
+    # Bind the seal OUTSIDE the file: the plan's status record holds the digest the
+    # checks compare against, so recomputing the in-file digest after an edit does
+    # not reproduce it. A plan with no status record keeps the legacy in-file check
+    # (the digest is still written into the marker either way).
+    if not record_verdict_digest(plan_id, kind, verdict_file) and base_path('plans', plan_id, STATUS_FILE).is_file():
+        # A status record exists, so it is authoritative — leaving it without this
+        # seal's digest would make a correctly sealed verdict read as edited on the
+        # next round. Report the half-binding instead of a success.
+        return {
+            'status': 'error',
+            'plan_id': plan_id,
+            'kind': kind,
+            'verdict_file': verdict_file,
+            'error': 'verdict_integrity_unrecorded',
+            'message': (
+                'the verdict was sealed but its digest could not be recorded in the plan status '
+                'record; re-run author-verdict once the status record is writable'
+            ),
+        }
     return {
         'status': 'success',
         'plan_id': plan_id,
@@ -308,22 +484,6 @@ def cmd_test_integrity(args: argparse.Namespace) -> int:
     """CLI wrapper for :func:`compute_test_integrity` — emits TOON, returns 0."""
     require_valid_plan_id(args)
     print(serialize_toon(compute_test_integrity(args.plan_id, args.base_ref)))
-    return 0
-
-
-def cmd_verify_first(args: argparse.Namespace) -> int:
-    """CLI wrapper for the verify-first record and check modes — emits TOON, returns 0."""
-    require_valid_plan_id(args)
-    if getattr(args, 'check', False):
-        if not str(args.commit or '').strip():
-            print(serialize_toon(error_payload(args.plan_id, 'invalid_arguments', '--check requires --commit')))
-            return 0
-        print(serialize_toon(check_verify_first(args.plan_id, args.gate, args.commit)))
-        return 0
-    if not str(args.evidence or '').strip():
-        print(serialize_toon(error_payload(args.plan_id, 'invalid_arguments', '--record requires --evidence')))
-        return 0
-    print(serialize_toon(record_verify_first(args.plan_id, args.gate, args.evidence)))
     return 0
 
 
@@ -419,28 +579,6 @@ def build_parser() -> argparse.ArgumentParser:
         '--base-ref', default=None, dest='base_ref', help='Base ref for the branch diff (default: resolved).'
     )
     integrity.set_defaults(func=cmd_test_integrity)
-
-    verify_first = sub.add_parser(
-        'verify-first',
-        help="Record a verify-first gate's evidence, or check that it predates the commit it gates",
-        allow_abbrev=False,
-    )
-    verify_first.add_argument('--plan-id', required=True, dest='plan_id', help='Plan identifier.')
-    verify_first.add_argument('--gate', required=True, help='Name of the verify-first gate.')
-    verify_first_mode = verify_first.add_mutually_exclusive_group(required=True)
-    verify_first_mode.add_argument(
-        '--record',
-        action='store_true',
-        help='Append an evidence record, stamped with the moment it is written.',
-    )
-    verify_first_mode.add_argument(
-        '--check',
-        action='store_true',
-        help='Refuse when the gate has no record, or one written at or after --commit.',
-    )
-    verify_first.add_argument('--evidence', default=None, help='With --record: what the gate actually ran.')
-    verify_first.add_argument('--commit', default=None, help='With --check: the commit the gate gates.')
-    verify_first.set_defaults(func=cmd_verify_first)
     return parser
 
 

@@ -13,7 +13,7 @@ Sourcery comment is ingested even when the bot appears in neither list, with a w
 
 The fenced-YAML block below is the machine-readable per-bot record. It is data, not frontmatter.
 Consumers read `bot_kind`, `author_login`, `trigger_comment`, `completion_check_name`,
-`honors_skip_label`, `participation_evidence`, `participation_requires_update`, `ignore_patterns`,
+`honors_skip_label`, `quota_limited`, `participation_evidence`, `participation_requires_update`, `ignore_patterns`,
 `review_body_summary_patterns`, `refusal_patterns`, `refusal_size_patterns`,
 `refusal_size_cap_patterns`, `contentless_review_markers`, `actionable_content_markers`,
 `rate_limit_class`, `rate_limit_eta_patterns`, and `severity_map`
@@ -29,6 +29,7 @@ bot_kind: sourcery
 author_login: sourcery-ai
 trigger_comment: "@sourcery-ai review"
 trigger_semantics: requires_explicit_trigger   # the trigger comment above must be posted
+quota_limited: true              # reviews under a finite allowance: a later head can be refused for the quota
 completion_check_name: ""        # no completion check-run — falls back to the review_bot_buffer_seconds wait
 honors_skip_label: false         # no central label; per-repo .sourcery.yaml github.ignore_labels only
 participation_evidence:          # the publish shapes that prove THIS bot reviewed

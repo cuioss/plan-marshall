@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import re
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -23,10 +24,14 @@ from _criteria_snapshot import (
     AUTHORSHIP_SCHEMA,
     REQUEST_MISSING,
     SPEC_MISSING,
+    SUPERSEDED,
     authorship_problem,
     canonical_digest,
+    normalize_criterion,
     seal_verdict,
+    verdict_row_matches,
 )
+from file_ops import cwd_checkout_root, get_build_results_dir
 
 KIND_FUNCTIONAL = 'functional'
 KIND_CODE = 'code'
@@ -47,11 +52,16 @@ SEVERITY_BLOCKING = 'blocking'
 SEVERITY_ADVISORY = 'advisory'
 
 #: A criterion whose Done-when is a run against the PRE-fix tree.
+#:
+#: ``pre[-_ ]fix`` requires a separator between the halves. The retired ``pre-?fix``
+#: made the separator optional, so it also matched the ordinary word "prefix" — a
+#: criterion naming "the canonical prefix set" was read as a pre-fix run and
+#: downgraded from ``met`` to ``unevidenced``, a blocking finding.
 PRE_FIX_CRITERION_RE = re.compile(
-    r'(?i)(pre-?fix|fails?\s+(?:at|on|against)\s+(?:the\s+)?`?[0-9a-f]{7,40}`?|fails?\s+before\s+the\s+fix)'
+    r'(?i)(?:\bpre[-_ ]fix\b|fails?\s+(?:at|on|against)\s+(?:the\s+)?`?[0-9a-f]{7,40}`?|fails?\s+before\s+the\s+fix)'
 )
 #: Evidence that names a failing run against the pre-fix tree (a SHA-bearing failure).
-PRE_FIX_EVIDENCE_RE = re.compile(r'(?i)(pre-?fix|before\s+the\s+fix)')
+PRE_FIX_EVIDENCE_RE = re.compile(r'(?i)(?:\bpre[-_ ]fix\b|before\s+the\s+fix)')
 FAILURE_TOKEN_RE = re.compile(r'(?i)\bfail(?:s|ed|ing)?\b')
 SHA_RE = re.compile(r'[0-9a-f]{7,40}')
 #: Mention of HEAD disqualifies an entry as pre-fix-run evidence: it names the wrong tree.
@@ -144,11 +154,15 @@ def cited_evidence_path(entry: Any) -> str | None:
     ``test/x.py::test_a fails at 8442a5e33`` — and anchoring on the whole entry
     would let that prose hide a citation from the existence check. A free-form
     first token that is not a path (``module-tests``, ``green``) yields ``None``.
+
+    A token wrapped in backticks — the normal markdown citation form,
+    ```test/x.py::test_a``` — has its backticks stripped before the match, so a
+    real citation is not refused for its formatting.
     """
     tokens = str(entry or '').strip().split(maxsplit=1)
     if not tokens:
         return None
-    match = EVIDENCE_PATH_RE.match(tokens[0])
+    match = EVIDENCE_PATH_RE.match(tokens[0].strip('`'))
     if not match:
         return None
     return match.group(1)
@@ -159,44 +173,110 @@ def _cited_name(entry: Any) -> str:
     tokens = str(entry or '').strip().split(maxsplit=1)
     if not tokens:
         return ''
-    _, _, name = tokens[0].partition('::')
+    _, _, name = tokens[0].strip('`').partition('::')
     return name.strip()
 
 
-def missing_evidence(evidence_root: Path, evidence: list[str]) -> list[str]:
+def _read_text(path: Path) -> str | None:
+    """Read a file as UTF-8, or ``None`` when it cannot be read."""
+    try:
+        return path.read_text(encoding='utf-8')
+    except OSError:
+        return None
+
+
+def _is_git_checkout(root: Path) -> bool:
+    """Whether ``root`` is inside a git work tree (so a graded HEAD exists)."""
+    proc = subprocess.run(
+        ['git', '-C', str(root), 'rev-parse', '--git-dir'],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+    )
+    return proc.returncode == 0
+
+
+def _graded_head_file(root: Path, relative: str) -> tuple[bool, str]:
+    """Return ``(present, content)`` for a path AT THE GRADED HEAD (``HEAD:{path}``).
+
+    Existence is judged against the committed tree, never the working tree: a test
+    the change cites but never committed is cited of something the graded change
+    does not contain, and reading the working tree would accept it. A root that is
+    not a git checkout has no graded head, so the working tree is read instead
+    (the honest fallback for a non-repository root).
+    """
+    if _is_git_checkout(root):
+        proc = subprocess.run(
+            ['git', '-C', str(root), 'show', f'HEAD:{relative}'],
+            capture_output=True,
+            text=True,
+            timeout=60,
+            check=False,
+        )
+        if proc.returncode != 0:
+            return False, ''
+        return True, proc.stdout
+    target = root / relative
+    content = _read_text(target) if target.is_file() else None
+    return (content is not None), (content or '')
+
+
+def missing_evidence(evidence_root: Path, evidence: list[str], plan_id: str) -> list[str]:
     """Return every cited path, or cited test name, absent from ``evidence_root``.
 
-    A path that does not exist at the graded head is a citation of something the
+    A path that does not exist AT THE GRADED HEAD is a citation of something the
     change never had; a ``path::name`` whose name appears nowhere in the file is
     the PLAN-LB-40 fabrication — a cited test that exists nowhere. A dotted name
     is checked segment by segment, so a class-scoped citation counts when the
     file holds its class and its method.
 
-    Every citation is constrained to the graded tree. A verdict is author-written
-    text, so an absolute path or a ``..`` traversal would otherwise make this
-    reader open a file outside the tree it is grading — ``Path('/tree') /
-    '/elsewhere'`` is ``/elsewhere``. A citation that resolves outside the tree is
-    reported as absent, which is what it is: something the graded change does not
-    contain.
+    Every repository citation is constrained to the graded tree. A verdict is
+    author-written text, so an absolute path or a ``..`` traversal would otherwise
+    make this reader open a file outside the tree it is grading — ``Path('/tree')
+    / '/elsewhere'`` is ``/elsewhere``. A citation that resolves outside the tree
+    is reported as absent, which is what it is: something the graded change does
+    not contain.
+
+    A PLAN-LOCAL citation (a path under ``.plan/``) is exempt from the graded-head
+    rule — it is a recorded artifact of the run, not a graded source file — but it
+    is NOT exempt from scope. The citation is resolved first, then required to sit
+    under THIS plan's own ``build-results`` tree. Resolving first is what refuses
+    ``.plan/../src/x.py`` (it resolves into the source tree) and the self-written
+    ``.plan/temp/*`` scratch area; neither is evidence of the graded change.
     """
     root = evidence_root.resolve()
+    results_dir = get_build_results_dir(plan_id).resolve()
     missing: list[str] = []
     for entry in evidence:
         raw = str(entry).strip()
         path = cited_evidence_path(raw)
         if path is None:
             continue
-        resolved = (evidence_root / path).resolve()
-        if not resolved.is_relative_to(root) or not resolved.is_file():
-            missing.append(raw)
-            continue
-        name = _cited_name(raw)
-        if name:
-            try:
-                content = resolved.read_text(encoding='utf-8')
-            except OSError:
+        if path.startswith('.plan/'):
+            checkout = Path(cwd_checkout_root()).resolve()
+            # Resolve BEFORE deciding scope: a ``..`` segment or a symlink can move
+            # the citation out of ``.plan/`` entirely, so a prefix test alone would
+            # accept a path that only looks plan-local.
+            candidate = (checkout / path).resolve()
+            if not candidate.is_relative_to(checkout) or not candidate.is_relative_to(results_dir):
                 missing.append(raw)
                 continue
+            content = _read_text(candidate) if candidate.is_file() else None
+            if content is None:
+                missing.append(raw)
+                continue
+        else:
+            resolved = (evidence_root / path).resolve()
+            if not resolved.is_relative_to(root):
+                missing.append(raw)
+                continue
+            present, content = _graded_head_file(root, resolved.relative_to(root).as_posix())
+            if not present:
+                missing.append(raw)
+                continue
+        name = _cited_name(raw)
+        if name:
             # A dotted name is checked SEGMENT by SEGMENT: a class-scoped citation
             # names a class and a method the file holds separately, so requiring
             # the literal dotted string would refuse a real test.
@@ -298,6 +378,7 @@ def _grade_criteria(
     row: dict[str, Any],
     expected: dict[str, Any],
     facts: dict[str, int],
+    plan_id: str,
     evidence_root: Path | None = None,
 ) -> None:
     number, verdict = expected['number'], row['verdict']
@@ -329,7 +410,7 @@ def _grade_criteria(
             # Every path and test name a criterion cites must exist at the graded
             # head: a citation of something the change never had is not evidence,
             # and grading it met is how a fabricated test name passes a review.
-            for raw in missing_evidence(evidence_root, evidence):
+            for raw in missing_evidence(evidence_root, evidence, plan_id):
                 grading.errors.append(f'{where} criterion {index}: evidence {raw!r} does not exist at the graded head')
         if status == 'not_met' and verdict == 'met':
             grading.errors.append(f'{where} criterion {index}: a met deliverable carries a not_met criterion')
@@ -345,6 +426,7 @@ def _grade_row(
     row: dict[str, Any],
     expected: dict[str, Any],
     facts: dict[str, int],
+    plan_id: str,
     evidence_root: Path | None = None,
 ) -> None:
     number = expected['number']
@@ -359,7 +441,7 @@ def _grade_row(
         if not str(row.get('superseded_by') or '').strip():
             grading.errors.append(f'{where}: superseded without a cited operator decision or refutation')
         return
-    _grade_criteria(grading, row, expected, facts, evidence_root)
+    _grade_criteria(grading, row, expected, facts, plan_id, evidence_root)
     if verdict == 'not_met':
         fix_kind = row.get('fix_kind') or FIX_KIND_IMPLEMENTATION
         grading.add('deliverable_not_met', f'D{number}', str(expected.get('title', '')), True, fix_kind, where)
@@ -401,10 +483,76 @@ def grade_frozen_criteria(grading: Grading, drift: list[dict[str, Any]]) -> int:
     return len(drift)
 
 
+def report_unmatched_rows(
+    grading: Grading, verdict: dict[str, Any], snapshot: dict[str, Any], current: list[dict[str, Any]]
+) -> int:
+    """Report every verdict row that answers no frozen criterion by id or exact text.
+
+    A row matched only by position is not an answer: it released the criterion that
+    happened to sit at its index. The row is reported so the author sees which
+    verdict entry the freeze could not bind — the criterion it was meant to grade
+    stays ``ungraded`` and open.
+
+    Two cases are not reported. A ``superseded`` deliverable's criteria are not
+    graded at all. And a row whose text is a CURRENT outline criterion is the author
+    grading the outline as it now reads: an operator-authorized change lands there
+    (and an unauthorized one is already a blocking criterion-drift finding), so the
+    row is not surplus.
+    """
+    frozen_by_number: dict[Any, list[str]] = {}
+    for frozen_row in snapshot.get('deliverables') or []:
+        if not isinstance(frozen_row, dict):
+            continue
+        frozen_by_number[deliverable_number(frozen_row.get('number'))] = [
+            str(text.get('text', '')) if isinstance(text, dict) else str(text)
+            for text in frozen_row.get('criteria') or []
+        ]
+    current_by_number: dict[Any, set[str]] = {}
+    for current_row in current:
+        if isinstance(current_row, dict):
+            number = deliverable_number(current_row.get('number'))
+            current_by_number[number] = {
+                normalize_criterion(text) for text in current_row.get('success_criteria') or []
+            }
+    reported = 0
+    for row in verdict.get('deliverables') or []:
+        if not isinstance(row, dict):
+            continue
+        if str(row.get('verdict') or '') == SUPERSEDED:
+            continue
+        number = deliverable_number(row.get('number'))
+        frozen = frozen_by_number.get(number)
+        if frozen is None:
+            continue
+        current_texts = current_by_number.get(number, set())
+        for index, criterion in enumerate(row.get('criteria') or [], start=1):
+            if not isinstance(criterion, dict):
+                continue
+            text = str(criterion.get('criterion') or '')
+            if normalize_criterion(text) in current_texts:
+                continue
+            if any(
+                verdict_row_matches(criterion, frozen_text, position, number)
+                for position, frozen_text in enumerate(frozen, start=1)
+            ):
+                continue
+            grading.add(
+                'unmatched_criterion',
+                f'D{number}.C{index}',
+                f'{text!r} matches no frozen criterion by criterion_id or exact text',
+                True,
+                FIX_KIND_CORRECTION,
+                f'deliverable {number} criterion {index}',
+            )
+            reported += 1
+    return reported
+
+
 def validate_functional(
     verdict: dict[str, Any],
     deliverables: list[dict[str, Any]],
     grading: Grading,
+    plan_id: str,
     evidence_root: Path | None = None,
 ) -> dict[str, int]:
     """Grade a functional verdict against the outline; return its facts (meaningful only when valid).
@@ -413,7 +561,8 @@ def validate_functional(
     entry of ``deliverables`` carries ``number``, ``title`` and
     ``success_criteria`` (the outline's criterion bullets). When
     ``evidence_root`` is given, every path and test name a ``met`` criterion
-    cites is checked against the tree at the graded head.
+    cites is checked against the tree at the graded head; ``plan_id`` names the
+    plan whose own ``build-results`` tree a ``.plan/`` citation is confined to.
     """
     facts = dict.fromkeys(FUNCTIONAL_FACT_KEYS, 0)
     by_number: dict[int, dict[str, Any]] = {}
@@ -429,7 +578,7 @@ def validate_functional(
     for number in sorted(set(by_number) - set(expected)):
         grading.errors.append(f'deliverable {number}: not an outline deliverable')
     for number in sorted(set(expected) & set(by_number)):
-        _grade_row(grading, by_number[number], expected[number], facts, evidence_root)
+        _grade_row(grading, by_number[number], expected[number], facts, plan_id, evidence_root)
 
     for index, change in enumerate(_list_field(verdict, 'unrequested_changes', grading, False), start=1):
         path = str(change.get('path') or '').strip() if isinstance(change, dict) else ''
@@ -518,6 +667,7 @@ __all__ = [
     'missing_evidence',
     'names_pre_fix_run',
     'read_json_object',
+    'report_unmatched_rows',
     'seal_verdict',
     'validate_code',
     'validate_functional',

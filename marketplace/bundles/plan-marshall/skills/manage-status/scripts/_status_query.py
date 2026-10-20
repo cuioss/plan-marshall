@@ -10,6 +10,7 @@ import stat
 from pathlib import Path
 from typing import Any, NamedTuple
 
+from _criteria_snapshot import INTEGRITY_KEY, OVERRIDE_HEADS_KEY, SNAPSHOT_FROZEN_KEY
 from _locks_core import rmw_json
 from _status_core import (
     TITLE_TOKEN_OWNER_CLI,
@@ -61,6 +62,14 @@ from marketplace_paths import (
 # than the string ``"true"``/``"false"``. Non-allowlisted fields keep
 # verbatim string storage.
 BOOLEAN_METADATA_FIELDS = frozenset({'use_worktree'})
+
+# Metadata keys written only by their owning verb. A generic ``metadata --set`` /
+# ``--set --append`` would race or forge the outside-the-file binding the criteria
+# verbs record, so it is refused instead of silently accepted. ``criteria_integrity``
+# (which carries ``snapshot_frozen``) is written by the criteria writers through
+# ``_criteria_snapshot.record_integrity``; ``functional_review_override_heads`` is
+# written by ``loop-back close``.
+PROTECTED_METADATA_FIELDS = frozenset({INTEGRITY_KEY, SNAPSHOT_FROZEN_KEY, OVERRIDE_HEADS_KEY})
 
 
 def _coerce_metadata_value(field: str, raw_value: Any) -> Any:
@@ -306,7 +315,23 @@ def cmd_metadata(args: argparse.Namespace) -> dict[str, Any] | None:
     ``get_status_path``, which resolves LOCALLY: reading a sibling plan and then
     writing it into the local tree would be strictly worse than the absence this
     deliverable fixes. They keep the strict gate.
+
+    A ``--set`` (with or without ``--append``) naming one of
+    ``PROTECTED_METADATA_FIELDS`` is refused before anything is written: those
+    keys are the outside-the-file bindings and must go through their owning verb.
     """
+    if args.set and args.field in PROTECTED_METADATA_FIELDS:
+        return {
+            'status': 'error',
+            'plan_id': args.plan_id,
+            'field': args.field,
+            'error': 'protected_metadata_key',
+            'message': (
+                f"Metadata field '{args.field}' is written only by its owning verb; "
+                f'a generic metadata write is refused. Nothing was written.'
+            ),
+        }
+
     if args.set and getattr(args, 'append', False):
         if args.value is None:
             return {

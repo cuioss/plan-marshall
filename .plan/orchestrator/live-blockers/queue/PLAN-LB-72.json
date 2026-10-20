@@ -1,0 +1,11 @@
+{
+  "id": "PLAN-LB-72",
+  "slug": "lb-71-completion",
+  "workstream": "WS-04",
+  "status": "shipped",
+  "lane": "runbook",
+  "plan_marshall_plan_id": "lb-72-lb-71-completion",
+  "pr": "1819",
+  "landing": "landings/PLAN-LB-72.md",
+  "seq": 72
+}

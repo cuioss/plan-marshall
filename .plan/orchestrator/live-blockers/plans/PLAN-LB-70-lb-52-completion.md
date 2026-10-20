@@ -33,6 +33,8 @@ Its tamper protection is a digest stored inside the file it protects.
 ## Deliverables
 
 1. **The finalize gate refuses only genuinely open criteria.**
+   - Skills: pm-plugin-development:plugin-architecture, pm-plugin-development:plugin-script-architecture, pm-dev-python:python-core, plan-marshall:ref-code-quality, pm-dev-python:pytest-testing, plan-marshall:persona-module-tester
+   - Persona: plan-marshall:persona-implementer
    - A plan whose manifest dropped functional review is not refused for `ungraded` criteria. That
      covers surgical scope, commit-push disabled, and `functional_review` off. Instead:
      - the gate reports `criteria_gate: not_applicable (review dropped: {reason})`;
@@ -56,6 +58,8 @@ Its tamper protection is a digest stored inside the file it protects.
    A plan with one genuinely unmet criterion is still refused: that is the negative control.
 
 2. **Spec and citation parsing match real documents.**
+   - Skills: pm-plugin-development:plugin-architecture, pm-plugin-development:plugin-script-architecture, pm-dev-python:python-core, plan-marshall:ref-code-quality, pm-dev-python:pytest-testing, plan-marshall:persona-module-tester
+   - Persona: plan-marshall:persona-implementer
    - `_SPEC_DONE_WHEN_RE` extraction reads the whole Done-when, including its wrapped lines and
      bullet list, up to the next deliverable or section.
    - `PRE_FIX_CRITERION_RE` no longer matches "prefix" or other words merely containing "prefix".
@@ -75,6 +79,8 @@ Its tamper protection is a digest stored inside the file it protects.
    - a `not_run` evidence check produces a finding.
 
 3. **The seal and the snapshot are bound outside the files they protect.**
+   - Skills: pm-plugin-development:plugin-architecture, pm-plugin-development:plugin-script-architecture, pm-dev-python:python-core, plan-marshall:ref-code-quality, pm-dev-python:pytest-testing, plan-marshall:persona-module-tester
+   - Persona: plan-marshall:persona-implementer
    - The verdict digest and the snapshot digest are recorded through `manage-status`, in the
      plan's status record, by the verb that writes the file. The checks compare against that
      record.
@@ -94,6 +100,8 @@ Its tamper protection is a digest stored inside the file it protects.
    - a new plan cannot leave `3-outline` without a snapshot.
 
 4. **The deleted-assertion rows reach the validator.**
+   - Skills: pm-plugin-development:plugin-architecture, pm-plugin-development:plugin-script-architecture, pm-dev-python:python-core, plan-marshall:ref-code-quality, pm-dev-python:pytest-testing, plan-marshall:persona-module-tester
+   - Persona: plan-marshall:persona-implementer
    - `test-integrity` rows are consumed by `run_validate` (and by code review, if in scope at
      outline) as findings.
    - Net-count evasion is closed: an assertion removed from one test and added to another is

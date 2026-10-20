@@ -68,7 +68,7 @@ assertions as the security Guide's.
 
 The fenced-YAML block below is the machine-readable per-bot record. It is data, not frontmatter.
 Consumers read `bot_kind`, `author_login`, `trigger_comment`, `completion_check_name`,
-`honors_skip_label`, `participation_evidence`, `participation_requires_update`, `ignore_patterns`,
+`honors_skip_label`, `quota_limited`, `participation_evidence`, `participation_requires_update`, `ignore_patterns`,
 `review_body_summary_patterns`, `refusal_patterns`, `contentless_review_markers`,
 `contentless_review_headings`, `actionable_content_markers`, `rate_limit_class`, `rate_limit_eta_patterns`, and `severity_map`
 from it; the prose sections carry the rationale. This bot declares no
@@ -85,6 +85,7 @@ author_login: cuioss-review-bot   # CONFIRMED on #103 — the provider reports t
                                   # itself — see "Why its own identity" for why that is the point
 trigger_comment: "/review"        # CONFIRMED on #103 — human /review at 09:25:47 -> publish 09:27:15
 trigger_semantics: requires_explicit_trigger   # the /review command above must be posted
+quota_limited: false             # no review allowance is spent: every /review is answered on its own
 completion_check_name: ""         # CONFIRMED on #103 — absent from `ci pr reviews`, no check-run;
                                   # falls back to the review_bot_buffer_seconds wait
 honors_skip_label: true           # UNVERIFIED — #103 carried no skip label, so this was not

@@ -2,13 +2,12 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """PLAN-LB-52 D2 — what the review grades cannot be weakened on the way.
 
-Five behaviours, each with the nearest input that must NOT produce a finding or a
+Behaviours, each with the nearest input that must NOT produce a finding or a
 refusal:
 
 * a branch that DELETES an assertion from an existing test yields a finding;
 * a "fails pre-fix" criterion evidenced only by a HEAD run is graded ``unevidenced``;
 * a verdict citing a test name absent at the graded head is refused;
-* a verify-first record timestamped after the gated commit is refused;
 * finalize with an EMPTY bot queue and one unmet Done-when does not exit.
 
 The tree-dependent behaviours run against a REAL temporary git repository; only
@@ -20,7 +19,6 @@ from __future__ import annotations
 import json
 import os
 import subprocess
-from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -52,6 +50,10 @@ def _outline(criteria: list[str]) -> str:
 
 def _plan(plan_context: Any, criteria: list[str] | None = None, *, freeze: bool = False) -> Path:
     plan_dir = Path(plan_context.plan_dir_for(PLAN_ID))
+    (plan_dir / 'status.json').write_text(
+        json.dumps({'title': 'fixture', 'phases': [], 'current_phase': '6-finalize', 'metadata': {}}),
+        encoding='utf-8',
+    )
     (plan_dir / 'solution_outline.md').write_text(_outline(criteria or CRITERIA), encoding='utf-8')
     (plan_dir / 'references.json').write_text(json.dumps({'base_branch': 'main'}), encoding='utf-8')
     if freeze:
@@ -320,40 +322,6 @@ def test_branch_deleting_a_test_file_yields_a_finding(tmp_path, monkeypatch) -> 
     assert [(row['path'], row['kind'], row['removed_assertions']) for row in payload['findings']] == [
         ('test/sample_test.py', 'assertion_removed', 2)
     ]
-
-
-# --- D2 (d): a verify-first record timestamped after the gated commit is refused ------------
-
-
-def test_verify_first_record_after_the_gated_commit_is_refused(plan_context, tmp_path, monkeypatch) -> None:
-    repo = _repo(tmp_path)
-    _commit(repo, {'README.md': 'readme\n'})
-    sha = _commit(repo, {'src/migration.py': 'x\n'}, committer_date='2020-01-01T00:00:00+00:00')
-    monkeypatch.setattr(_integrity, 'resolve_live_worktree', lambda _plan_id: repo)
-    _plan(plan_context)
-    assert _integrity.record_verify_first(PLAN_ID, 'nine-consumer gate', 'read local files only')['status'] == 'success'
-
-    payload = _integrity.check_verify_first(PLAN_ID, 'nine-consumer gate', sha)
-
-    assert (payload['status'], payload['error']) == ('error', 'verify_first_evidence_postdates_commit')
-    assert len(payload['postdating']) == 1
-
-
-def test_verify_first_record_before_the_gated_commit_passes(plan_context, tmp_path, monkeypatch) -> None:
-    repo = _repo(tmp_path)
-    _commit(repo, {'README.md': 'readme\n'})
-    monkeypatch.setattr(_integrity, 'resolve_live_worktree', lambda _plan_id: repo)
-    _plan(plan_context)
-    assert (
-        _integrity.record_verify_first(PLAN_ID, 'nine-consumer gate', 'checked all 9 consumers')['status'] == 'success'
-    )
-    future = (datetime.now(UTC) + timedelta(days=1)).isoformat()
-    sha = _commit(repo, {'src/migration.py': 'x\n'}, committer_date=future)
-
-    payload = _integrity.check_verify_first(PLAN_ID, 'nine-consumer gate', sha)
-
-    assert payload['status'] == 'success'
-    assert payload['records'] == 1
 
 
 # --- D2 (e): finalize with an empty bot queue and one unmet Done-when does not exit --------
