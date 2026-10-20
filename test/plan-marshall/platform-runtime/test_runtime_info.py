@@ -382,6 +382,24 @@ def test_opencode_model_is_measured_from_the_session_tree(tmp_path: Path) -> Non
     assert info['model_source'] == runtime_info.SOURCE_MEASURED
 
 
+def test_opencode_effort_is_the_measured_variant(tmp_path: Path) -> None:
+    """On OpenCode the measured variant is the effort, and a flag cannot override it."""
+    db_path = tmp_path / 'opencode.db'
+    _write_session_db(db_path, [('ses-root', None, _model_json('deepseek-v4.1-flash', 'high'))])
+
+    info = runtime_info.collect_runtime_info(
+        'opencode',
+        env={},
+        effort='low',
+        opencode_db_path=db_path,
+        opencode_session_id='ses-root',
+    )
+
+    assert info['effort'] == 'high'
+    assert info['effort_source'] == runtime_info.SOURCE_MEASURED
+    assert info['variant'] == 'high'
+
+
 def test_opencode_split_model_tree_is_mixed(tmp_path: Path) -> None:
     """A tree that ran more than one model lists both rather than reducing to the root."""
     db_path = tmp_path / 'opencode.db'

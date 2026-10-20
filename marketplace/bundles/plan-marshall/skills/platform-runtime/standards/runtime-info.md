@@ -51,8 +51,8 @@ One required attribute pair (`harness`, `transcripts`), one further always-prese
 | `models` | Distinct `id/variant` values of an OpenCode session tree recorded as `mixed` | No |
 | `model_type` | Model type as reported by script-accessible sources | No |
 | `model_version` | Model version as reported by script-accessible sources | No |
-| `effort` | Effort level as reported by a script-accessible source or self-reported through `--effort` | No |
-| `effort_source` | `self_reported` (an `--effort` flag) or `measured` (a script-readable source) | No |
+| `effort` | Effort level as reported by a script-accessible source or self-reported through `--effort`; on OpenCode it is the measured session-tree variant, which a flag never overrides | No |
+| `effort_source` | `self_reported` (an `--effort` flag) or `measured` (a script-readable source, including the OpenCode variant) | No |
 | `bundle_version` | The `version` in `.claude-plugin/plugin.json` of the bundle the collector runs from | No |
 | `executor_version` | The `MARSHALL_VERSION` of the executor (`plugin_registry.read_executor_version`) | No |
 
@@ -90,6 +90,12 @@ its root through `parent_id`) and for every descendant, and records it as
 model or variant is recorded as `model: mixed` with the distinct values listed —
 never averaged and never reduced to the root's value. An absent database, an
 unreadable schema or an unresolvable session records `model: unknown`.
+
+`model` names the id; a single-model OpenCode tree also records `variant` (and,
+when the record carries one, `provider`), and the landing writes the two as the
+`{model}/{variant}` form its payload spec defines. The measured variant IS the
+effort on OpenCode: `effort` carries it with `effort_source: measured`, and a
+`--effort` flag never overrides it.
 
 Entries are keyed by human-readable UTC datetime stamp
 (`YYYY-MM-DD HH-MM-SS UTC`, no colons so the key survives TOON parsing).

@@ -6384,12 +6384,17 @@ def _best_effort_plan_title(plan_id: str) -> None:
 #: being recorded as the flag value or as a default. ``models`` rides beside
 #: ``model`` because a MIXED OpenCode session tree records ``model: mixed`` and
 #: keeps the distinct ``id/variant`` labels there — dropping it would leave the
-#: landing unable to name which models the run actually used.
+#: landing unable to name which models the run actually used. ``variant`` (and
+#: the ``provider`` when the collector reports one) rides beside a single-model
+#: ``model`` so the landing can write the ``{model}/{variant}`` list form
+#: ``landing-payload-spec.md`` specifies instead of a bare model id.
 _PREFLIGHT_METADATA_FIELDS: tuple[str, ...] = (
     'harness',
     'harness_source',
     'model',
     'models',
+    'variant',
+    'provider',
     'model_source',
     'effort',
     'effort_source',

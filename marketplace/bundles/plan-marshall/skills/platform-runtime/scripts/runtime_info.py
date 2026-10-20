@@ -18,7 +18,8 @@ and `effort` are tagged `self_reported` when a caller-supplied flag supplied
 them and `measured` when a script-readable source did. On OpenCode the model is
 measured rather than self-reported: it is read from the `session_v2` table of
 `opencode.db` (read-only) for the plan's root session and its descendants, so a
-flag never stands in for the record. See :func:`measure_opencode_model`.
+flag never stands in for the record. The measured variant IS the effort there,
+so a `--effort` flag never overrides it. See :func:`measure_opencode_model`.
 
 Scope: concrete implementations exist for ``claude``, ``opencode``, and
 ``antigravity``.
@@ -416,13 +417,19 @@ def _resolve_model_fields(
 def _resolve_effort_fields(
     env: Mapping[str, str] | None,
     effort: str | None,
+    measured_effort: str | None = None,
 ) -> dict[str, Any]:
     """Resolve the ``effort`` / ``effort_source`` pair for one collection.
 
-    A caller-supplied flag wins and is tagged :data:`SOURCE_SELF_REPORTED`;
-    otherwise the environment lists are measured. A value with no readable
-    source is omitted entirely. Nothing is ever estimated.
+    A MEASURED effort wins over everything: on OpenCode the session tree's
+    variant IS the effort the run used, so a caller flag cannot override it and
+    the pair is tagged :data:`SOURCE_MEASURED`. Elsewhere a caller-supplied flag
+    wins and is tagged :data:`SOURCE_SELF_REPORTED`; otherwise the environment
+    lists are measured. A value with no readable source is omitted entirely.
+    Nothing is ever estimated.
     """
+    if measured_effort:
+        return {'effort': measured_effort, 'effort_source': SOURCE_MEASURED}
     if effort:
         return {'effort': effort, 'effort_source': SOURCE_SELF_REPORTED}
     from_env = read_effort(env)
@@ -537,7 +544,8 @@ def collect_runtime_info(
     script-accessible sources; attributes with no readable value are dropped
     rather than estimated. ``model`` and ``effort`` additionally carry their
     source tag, and on OpenCode the model is measured from the session database
-    rather than taken from a flag (see :func:`_resolve_model_fields`).
+    rather than taken from a flag (see :func:`_resolve_model_fields`); its
+    measured variant is the effort, so a flag does not stand in for that either.
 
     Args:
         harness: Harness identifier — ``claude``, ``opencode``, or ``antigravity``.
@@ -584,7 +592,8 @@ def collect_runtime_info(
     resolved_version = model_version if model_version else read_model_version(env)
     if resolved_version:
         info['model_version'] = resolved_version
-    info.update(_resolve_effort_fields(env, effort))
+    measured_effort = info.get('variant') if harness == OPENCODE_HARNESS else None
+    info.update(_resolve_effort_fields(env, effort, measured_effort))
     resolved_bundle = bundle_version if bundle_version else read_bundle_version(bundle_root)
     if resolved_bundle:
         info['bundle_version'] = resolved_bundle

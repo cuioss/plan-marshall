@@ -9,11 +9,15 @@ degradation where a collector failure never blocks plan start.
 from __future__ import annotations
 
 import argparse
+import contextlib
+import io
 import json
+import sqlite3
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
 
+import platform_runtime
 import pytest
 import runtime_info
 from runtime_base import toon_success
@@ -276,6 +280,84 @@ def _capture_runtime_info_argv(payloads: list[str], monkeypatch: pytest.MonkeyPa
 def _status_metadata(plan_dir: Path) -> dict[str, Any]:
     document = json.loads((plan_dir / 'status.json').read_text(encoding='utf-8'))
     return cast('dict[str, Any]', document['metadata'])
+
+
+# =============================================================================
+# D1 — the measured variant, and effort measured where the harness measures it
+# =============================================================================
+
+
+def _router_project(tmp_path: Path) -> Path:
+    """A cwd the runtime-info router accepts: a ``.plan/marshal.json``."""
+    project = tmp_path / 'project'
+    (project / '.plan').mkdir(parents=True)
+    (project / '.plan' / 'marshal.json').write_text(json.dumps({'runtime': {'target': 'opencode'}}), encoding='utf-8')
+    return project
+
+
+def _write_session_db(db_path: Path, rows: list[tuple[str, str | None, str]]) -> None:
+    """Create a fixture ``session_v2`` table with ``(id, parent_id, model_json)`` rows."""
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute('CREATE TABLE session_v2 (id TEXT, parent_id TEXT, model TEXT)')
+        conn.executemany('INSERT INTO session_v2 (id, parent_id, model) VALUES (?, ?, ?)', rows)
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _opencode_model_json(model_id: str, variant: str) -> str:
+    return json.dumps({'id': model_id, 'providerID': 'opencode-go', 'variant': variant})
+
+
+def _runtime_info_via_router(monkeypatch: pytest.MonkeyPatch) -> list[list[str]]:
+    """Dispatch the preflight's runtime-info argv into the REAL router in-process.
+
+    The argv is the exact list ``cmd_preflight`` built, and the router parses it
+    with its own argparse before the collector runs, so a renamed flag, a wrong
+    position or a drifted payload key fails here instead of passing a canned
+    string through a monkeypatched ``subprocess.run``.
+    """
+    real_run = _orch.subprocess.run
+    seen: list[list[str]] = []
+
+    def _fake_run(*args: Any, **kwargs: Any) -> Any:
+        cmd = [str(part) for part in (args[0] if args else [])]
+        if 'runtime-info' not in cmd:
+            return real_run(*args, **kwargs)
+        seen.append(cmd)
+        remaining = cmd[3:]
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer):
+            code = platform_runtime.main(remaining)
+        return SimpleNamespace(returncode=code, stdout=buffer.getvalue())
+
+    monkeypatch.setattr(_orch.subprocess, 'run', _fake_run)
+    return seen
+
+
+def test_preflight_stamps_variant_and_measured_effort(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A single-model OpenCode tree stamps its variant and measures effort from it."""
+    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+    monkeypatch.chdir(_router_project(tmp_path))
+    monkeypatch.setenv('OPENCODE', '1')
+    monkeypatch.setenv('OPENCODE_SESSION_ID', 'ses-root')
+    db_path = tmp_path / 'opencode.db'
+    _write_session_db(db_path, [('ses-root', None, _opencode_model_json('deepseek-v4.1-flash', 'high'))])
+    monkeypatch.setenv('OPENCODE_DB_PATH', str(db_path))
+    plan_dir = _plan_with_status(tmp_path, 'my-plan')
+    seen = _runtime_info_via_router(monkeypatch)
+
+    result: dict[str, Any] = cmd_preflight(_ns('my-plan', effort='low'))
+
+    assert seen, 'the preflight built no runtime-info argv'
+    assert result['metadata_stamped'] is True
+    metadata = _status_metadata(plan_dir)
+    assert metadata['model'] == 'deepseek-v4.1-flash'
+    assert metadata['variant'] == 'high'
+    assert metadata['provider'] == 'opencode-go'
+    assert metadata['effort'] == 'high'
+    assert metadata['effort_source'] == 'measured'
 
 
 def test_preflight_forwards_the_self_report_and_stamps_metadata(

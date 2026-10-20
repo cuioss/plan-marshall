@@ -213,6 +213,11 @@ below.
    - When the stamped `model` is `mixed`, the distinct `{model}/{variant}` labels are in
      `metadata.models`: write THOSE as the `model` fact rather than the bare `mixed`, so the landing
      names the models the run actually used (the payload spec's `model` row defines the list form).
+   - When the stamp carries `metadata.variant` beside a single-model `metadata.model`, write `model`
+     as `{metadata.model}/{metadata.variant}` (for example `deepseek-v4.1-flash/high`) — the
+     `{model}/{variant}` form the payload spec's `model` row defines. A stamp with no `variant`
+     leaves the bare model. This is what makes the measured effort attributable: on OpenCode
+     `metadata.effort` is that same measured variant, so the two values must agree.
    - `executor_version` ← `metadata.executor_version` — OPTIONAL; omit the key when the stamp carries
      none rather than writing a degraded value.
    - A field whose stamp is ABSENT or unreadable is written as `unknown`. These four are REQUIRED, so an

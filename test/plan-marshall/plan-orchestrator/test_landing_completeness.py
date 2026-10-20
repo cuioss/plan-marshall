@@ -1198,6 +1198,26 @@ class TestRuntimeStampFacts:
         assert check_landing_completeness(_facts_landing()) == (True, [])
 
 
+class TestEmitLandingRuntimeStamp:
+    """The producer writes the measured model form the payload spec defines."""
+
+    def _text(self) -> str:
+        return _EMIT_LANDING_DOC.read_text(encoding='utf-8')
+
+    def test_emit_landing_writes_the_variant_form(self):
+        """A stamped variant rides into the landing as ``{model}/{variant}``."""
+        text = self._text()
+
+        assert 'metadata.variant' in text
+        assert '{model}/{variant}' in text
+
+    def test_emit_landing_writes_the_mixed_list(self):
+        """A mixed stamp writes the distinct labels, never the bare ``mixed``."""
+        text = self._text()
+
+        assert 'metadata.models' in text
+
+
 # =============================================================================
 # The payload spec (D3) derives the delta and classifies the seven findings
 # =============================================================================
