@@ -520,21 +520,20 @@ ignored whenever a target is declared (`--target`, a platform env signal, or
 
 ```bash
 # Option A — CLI flag (preferred, single-call discipline)
-python3 "{GENERATE_EXECUTOR}" generate --marketplace --marketplace-root /abs/path/to/checkout
-python3 "{GENERATE_EXECUTOR}" drift    --marketplace --marketplace-root /abs/path/to/checkout
+python3 marketplace/bundles/plan-marshall/skills/tools-script-executor/scripts/generate_executor.py generate --marketplace --marketplace-root /abs/path/to/checkout
+python3 marketplace/bundles/plan-marshall/skills/tools-script-executor/scripts/generate_executor.py drift    --marketplace --marketplace-root /abs/path/to/checkout
 
 # Option B — env var as a SINGLE-COMMAND inline assignment. The assignment and
 # the command MUST be one call; never a `cd`+`export` compound (an `export`
 # does not persist across separate Bash calls, and the compound trips the Bash
 # one-command-per-call / no-shell-constructs safety rules).
-PM_MARKETPLACE_ROOT=/abs/path/to/checkout python3 /abs/path/to/checkout/.plan/execute-script.py <notation> ...
+PM_MARKETPLACE_ROOT=/abs/path/to/checkout python3 .plan/execute-script.py <notation> ...
 ```
 
-`{GENERATE_EXECUTOR}` stands for the generator script's path — the
-cache-relative `skills/tools-script-executor/scripts/generate_executor.py` under
-the deployed plugin cache, or
-`marketplace/bundles/plan-marshall/skills/tools-script-executor/scripts/generate_executor.py`
-under the checkout root.
+The generator script is invoked by its **admitted** path — the
+repository-relative `marketplace/bundles/plan-marshall/skills/tools-script-executor/scripts/generate_executor.py`
+in the checkout, or the same script's bundle-relative path under the deployed
+plugin cache. Both forms are on the shared R5 allow-list.
 
 The path passed to `--marketplace-root` (and `PM_MARKETPLACE_ROOT`) is the
 checkout root that contains `marketplace/bundles`, not the bundles directory
@@ -580,10 +579,19 @@ source	detected|cached
 
 ### Step 2: Execute Scripts Directly
 
-Use the plugin root with a glob pattern for the version segment. Resolve the script path with the `Glob` tool against the pattern `${PLUGIN_ROOT}/plan-marshall/*/skills/<skill>/scr*ts/<script>.py` and capture the first match as `{SCRIPT_FILE}`. Then invoke it directly:
+Use the plugin root with a glob pattern for the version segment. Resolve the script path with the `Glob` tool against the pattern `${PLUGIN_ROOT}/plan-marshall/*/skills/<skill>/scr*ts/<script>.py` and capture the first match as the resolved deployed path:
 
 ```bash
-python3 "{SCRIPT_FILE}" <args>
+# Consumer / deployed install (the bootstrap form, no executor yet): invoke the
+# allow-listed script by the path the Glob above resolved. ONLY an allow-listed
+# script (standards/r5-allowlist.json) may run directly.
+python3 "{SCRIPT_FILE}" mode
+
+# Source checkout: the same allow-listed script, repository-relative.
+python3 marketplace/bundles/plan-marshall/skills/marshall-steward/scripts/determine_mode.py mode
+
+# Once the executor exists, route every other script through it:
+python3 .plan/execute-script.py <bundle>:<skill>:<script> <args>
 ```
 
 (Replace `<skill>`, `<script>`, and `<args>` with literal values. The `scr*ts` glob refers to the skill's `scripts` subdirectory; it is written with a wildcard to avoid scanner false positives on this standards document.)

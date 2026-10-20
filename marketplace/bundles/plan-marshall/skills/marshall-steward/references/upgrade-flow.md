@@ -68,19 +68,21 @@ Step 0 does **not** require a working `.plan/execute-script.py`.
 is absent, or invoking it fails with a `ModuleNotFoundError` (the executor still
 points at a pruned or partial cache), do NOT hand-repair it and do NOT stop.
 Restore it from the newest plugin-cache version by running the generator
-**directly, by its newest-cache script path** — the same direct-path surface
-Stage 1's `regenerate-executor` uses, which needs no working executor:
+**directly, by its admitted script path** — the same direct-path surface
+Stage 1's `regenerate-executor` uses, which needs no working executor. The
+generator script is on the shared R5 allow-list in BOTH its repository-relative
+and its deployed bundle-relative form:
 
 ```bash
-python3 "{GENERATE_EXECUTOR}" generate
-# `{GENERATE_EXECUTOR}` stands for the newest-cache script path, i.e.
-#   python3 {newest_cache}/skills/tools-script-executor/scripts/generate_executor.py generate
+python3 marketplace/bundles/plan-marshall/skills/tools-script-executor/scripts/generate_executor.py generate
 ```
 
-`{newest_cache}` is the newest version directory under the deployed plan-marshall
-plugin cache. Once the executor is restored, continue with the normal call below
-— restoring it first is what makes every downstream stage resolve current-version
-scripts.
+In a consumer checkout that lacks the `marketplace/` tree, invoke the same
+script by its deployed bundle-relative path — the newest version directory under
+the deployed plan-marshall plugin cache, `{newest_cache}/skills/tools-script-executor/scripts/generate_executor.py`
+— which the shared allow-list admits equally. Once the executor is restored,
+continue with the normal call below — restoring it first is what makes every
+downstream stage resolve current-version scripts.
 
 **Normal — the executor resolves.** Validate the serving executor against the
 newest plugin-cache version and report its currency BEFORE requesting the stage

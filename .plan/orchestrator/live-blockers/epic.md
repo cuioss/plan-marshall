@@ -1288,9 +1288,48 @@ entries below are OpenCode 1 assumptions in plan-marshall that OpenCode 2 broke.
 - **Model comparison round (operator, 2026-10-19).** The next four runs after the four in flight
   stay on `deepseek-v4.1-flash`; the round after that runs on Muse, through the same runbook lane,
   so the two can be compared. DeepSeek so far under the runbook lane: LB-61 C+, LB-66 F, LB-67 C,
-  LB-71 C−; LB-70, LB-45, LB-68 and LB-72 are still to be graded. Note the caveat that the lane
-  skill itself changed between runs (PLAN-LB-67 and PLAN-LB-71 landed), so record the lane version
-  each run loaded. Retire when the Muse round has been graded and the comparison is written up.
+  LB-71 C−, LB-72 B−, LB-70 F, LB-59 C, LB-74 C; LB-45 and LB-68 are still to be graded. Note the
+  caveat that the lane skill itself changed between runs (PLAN-LB-67, PLAN-LB-71 and PLAN-LB-72
+  landed), so record the lane version each run loaded: **LB-59 and LB-74 both loaded the
+  PLAN-LB-71 text**, not PLAN-LB-72's, because the OpenCode install was not re-synced. Retire when
+  the Muse round has been graded and the comparison is written up.
+- **DeepSeek Flash runs, sixth and seventh grade (2026-10-20).** PLAN-LB-59 (`landings/PLAN-LB-59.md`,
+  3 sessions, $0.62, 3h12m): **C**; 1 met / 1 partial of 2 deliverables, claimed 2/2. PLAN-LB-74
+  (`landings/PLAN-LB-74.md`, 3 sessions, $0.80, 8h31m): **C**; 3 met / 1 partial of 4, claimed 3/4.
+  Both: genuinely test-first on the core Done-whens, real self-review with the persona loaded, a merge
+  covered by the standing authorization, clean trailers; both over-claimed (`self-review: clear` over
+  nine open items on LB-59; "no operator question" and "all tests seen failing" on LB-74), and neither
+  loaded the domain skills the spec names beyond one block at the start. The lane text they loaded
+  lacks PLAN-LB-72's rules, so their evidence labels and `test-compile` shas are not comparable with
+  LB-72's. Grades so far: LB-61 C+, LB-66 F, LB-67 C, LB-71 C−, LB-72 B−, LB-70 F, LB-59 C, LB-74 C.
+- **Harness install lags the source: the OpenCode runbook lane was one plan behind on both runs
+  (2026-10-20).** PLAN-LB-72 merged two hours before PLAN-LB-59 started and the install still carried the
+  PLAN-LB-71 text. — trigger: before emitting any further runbook-lane plan, `/sync-harnesses --target
+  opencode` and read the installed lane against `main`; PLAN-LB-45 and PLAN-LB-68 started on whatever was
+  installed, so record the loaded version at their landings. Retire when an emitted plan loads the
+  lane text of its PR base.
+- **A spec edited in the ledger worktree reaches a runbook run only through a ledger land (2026-10-20).**
+  PLAN-LB-59 read the main-checkout copy of its spec, which had no `Skills:`/`Persona:` lines; the lines
+  arrived with the ledger land mid-run and nobody re-read the spec. PLAN-LB-74's precursor session handled
+  the other face correctly (spec not on main: asked, landed, restarted). — trigger: land the ledger before
+  emitting a plan whose spec changed since the last land; folded into PLAN-LB-69's scope as a `next`
+  precondition to consider. Retire when PLAN-LB-69 lands or the precondition is decided.
+- **Defects shipped in PLAN-LB-59 and PLAN-LB-74, owned by fix-forward plans (2026-10-20).** PLAN-LB-59:
+  the repository exclusion and module qualification do not bind the architecture path phase-4 loads
+  first, the `--module` call is documentation only, an extension without the hook admits every optional,
+  and the tests that should prove the production path cannot fail for their stated reason — PLAN-LB-76.
+  PLAN-LB-74: a status writer that read before `record_integrity` still overwrites the integrity block,
+  and `authorize_change` reads and checks outside its guard in a fix CodeRabbit never reviewed —
+  PLAN-LB-77. Retire each with its plan.
+- **The runbook lane cannot run its build gate in a non-pyproject project (operator datapoint,
+  2026-10-20), owned by PLAN-LB-78.** `runbook_lane.py` `_resolve_build` composes
+  `run --command-args "{canonical}"` for every build system; the pyproject wrapper maps canonical names, the
+  Maven wrapper takes complete Maven arguments, so a Maven consumer run failed with `Unknown lifecycle phase
+  "quality-gate"` and asked the operator (correctly, by the lane's own rule). The lane also forbids the
+  build server on the stated ground that a worktree has no executor; the operator states every worktree has
+  its own `execute-script`, so that ground is wrong. **Operator decision: the lane uses the build server.**
+  The run's own resolve output was not read by the orchestrator; the symptom matches the code exactly.
+  Retire with PLAN-LB-78.
 - **DeepSeek Flash runs, fifth grade.** PLAN-LB-70 (`deepseek-v4.1-flash`/high, 2 sessions, $1.83,
   24h): **F** on the process rule (a false merge-gate question), about B− on execution, 14 of 14
   Done-whens test-first. It ran on the PLAN-LB-66 lane text, so it predates the standing authorization

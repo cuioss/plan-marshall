@@ -156,11 +156,19 @@ gives it a sanctioned, read-only session-store reader.
      Done-when that carries a "fails at" clause beside the words "still", "keeps" or "unchanged".
      Two Done-whens of PLAN-LB-72 were unmeetable by construction, and its run reported them
      "not met as written".
+   - **Second clause (folded from `landings/PLAN-LB-74.md`).** A Done-when is never labelled "holds at
+     `{sha}`" while a claim it rests on is still a HYPOTHESIS in the same spec's Claim Labels. PLAN-LB-74's
+     D3 said the owning verbs "still write those keys (holds at `a297ea762`)" while its Claim Labels
+     listed "`loop-back close` is the only writer" as a HYPOTHESIS; the hypothesis was false and the
+     Done-when could not hold. The clause lives beside the first in `templates/plan-spec.md` and
+     `workflow/decompose.md`, and `cleanup` flags a staged Done-when labelled "holds at" whose
+     bullet names a symbol that a HYPOTHESIS claim in the same spec also names.
 
    *Done when:*
    - template and workflow doc tests assert the two lines and the script-filled staging step;
-   - template and workflow doc tests assert the "fails at" / "holds at" rule, and a `cleanup`
-     fixture test flags a Done-when that says "fails at … still …";
+   - template and workflow doc tests assert the "fails at" / "holds at" rule and its second clause, and
+     a `cleanup` fixture test flags a Done-when that says "fails at … still …" and one that says "holds
+     at" over a HYPOTHESIS-labelled claim;
    - `spec-skills` fixture tests show a pyproject spec yields this repository's Python domain
      skills, a Maven spec touching a Java module yields the Java domain skills, and an unmapped
      path yields `unmapped`;
@@ -168,7 +176,26 @@ gives it a sanctioned, read-only session-store reader.
 
    Each fails before the change.
 
-Split guard: four deliverables.
+5. **`next` refuses to emit a spec that is not what main carries.** (Folded from `landings/PLAN-LB-59.md`.)
+   A runbook run reads the main-checkout copy of its spec. PLAN-LB-59 started on a copy without the
+   `Skills:`/`Persona:` lines that existed in the ledger worktree and reached main only with a ledger land
+   mid-run; nobody re-read the spec afterwards.
+   - `orchestrate.md` Step 5 (`next`) checks, before emitting a runbook-lane command, whether the staged
+     spec in the store checkout differs from the copy at `origin/{base_branch}`, and when it does states
+     that a `land` is owed first; it does not emit the command for that plan until the operator has
+     landed or declined. A spec absent from the base branch is the same case (the runbook lane already
+     asks the operator about it at run start).
+   - The check is a script call, not a prose rule, and reports `unmeasured` when the base branch cannot
+     be read, never a clean pass.
+
+   *Done when:* fixture tests show:
+   - a staged spec identical to the base-branch copy emits;
+   - a spec edited since the last land does not emit and names the land;
+   - a base ref that cannot be read reports `unmeasured` and does not emit.
+
+   Each fails before the change.
+
+Split guard: five deliverables.
 
 ## Claim Labels
 

@@ -96,18 +96,24 @@ The `tool.execute.before` guard plugin under `.opencode/plugin/guard.js`
 enforces the six hard-rule bypass classes (shell chaining, shell file
 operations, direct executor edits, hard-coded builds, direct interpreter
 calls, and a raw finalize commit) by throwing to block, with one audit line per
-blocked invocation in `.plan/temp/guard.log`. R1–R4 are unconditional; the
-interpreter rule (R5) also applies in EVERY session, root sessions included (it
-carries no plan-context gate), and exempts both the executor permit and the
-shared allow-list of documented non-executor invocations in
-`standards/r5-allowlist.json` — the same data file the Claude
-`claude_pretooluse_hook.py` reads, so the two decision tables agree on the
-interpreter surface. An allow-list entry is a repository-relative path matched
-exactly, never a basename or a suffix. R6 refuses a raw `git commit` while the
-plan — named by the worktree path and resolved main-anchored (its `status.json`
-field `current_phase`) — is in phase `6-finalize`, so every plan commit passes
-through the gate-bearing `git-workflow commit` verb. The full role x surface x
-path matrix lives in `doc/developer/opencode.adoc`.
+blocked invocation in `.plan/temp/guard.log`. R1–R4 are UNCONDITIONAL in the
+OpenCode guard; the interpreter rule (R5) BINDS inside a plan context AND in
+every session of the plan-marshall source repository, so a consumer repository's
+ordinary Python work is untouched outside a plan context; R6 is not gated at all.
+R5 admits the
+executor permit (the relative form, or an absolute form resolving to
+`{repository root}/.plan/execute-script.py`) and the shared allow-list of
+documented non-executor invocations in `standards/r5-allowlist.json` — the same
+data file the Claude `claude_pretooluse_hook.py` reads, so the two decision tables
+agree on the interpreter surface. Its `entries` are repository-relative paths
+matched exactly, and its `bundle_entries` are bundle-relative paths matched exactly
+against a resolved deployed bundle root (the Claude plugin cache and the flat
+OpenCode / Antigravity skill roots); never a basename or a suffix. R6 refuses a
+raw `git commit` while the plan — named from the `git -C` target, then the shell
+workdir, then the project root, and resolved main-anchored (its `status.json` field
+`current_phase`) — is in phase `6-finalize`, so every plan commit passes through
+the gate-bearing `git-workflow commit` verb. The full role x surface x path matrix
+lives in `doc/developer/opencode.adoc`.
 
 ## Architecture
 
@@ -209,9 +215,10 @@ binding, output channels, platform abstraction, and the glyph + icon vocabulary.
 ## PreToolUse Enforcement Hook
 
 A PreToolUse enforcement hook deterministically blocks six
-mechanically-checkable hard-rule violation families. R1–R4 and R6 apply ONLY
+mechanically-checkable hard-rule violation families. R1–R4 apply ONLY
 when the call originates inside a plan-marshall plan context — failing open
-everywhere else — while R5 applies in EVERY session, root sessions included.
+everywhere else — while R5 binds inside a plan context AND in every session of
+the plan-marshall source repository, and R6 is not context-gated at all.
 It is implemented by three sibling scripts:
 
 - `pretooluse_gate.py` — the shared, pure-function module that is the SINGLE

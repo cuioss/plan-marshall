@@ -15,7 +15,7 @@ Central reference for all extension-related configuration paths in `marshal.json
 | `skill_domains.{key}.workflow_skill_extensions.marker-detect` | `provides_domain_verb()` | Marker-gate callers (resolved null-on-absent) | [ext-point-domain-verb.md](ext-point-domain-verb.md) |
 | `skill_domains.{key}.always_on` | User (`skill-domains set-inclusion`) | phase-1-init domain-detect, phase-2-refine | Core |
 | `skill_domains.{key}.file_globs` | `provides_file_globs()` (seeded when the key is absent); User override via `skill-domains set-inclusion` wins | phase-1-init domain-detect, phase-2-refine | Core |
-| `skill_domains.{key}.excluded_skills` | User (`skill-domains set-inclusion --excluded-skills`) | manage-personas `profile × domain` resolution | Core |
+| `skill_domains.{key}.excluded_skills` | User (`skill-domains set-inclusion --excluded-skills`) | manage-personas `profile × domain` resolution; architecture enrichment and its read seam (`skills_by_profile`) | Core |
 | `build.map` | `classify_globs()` + `classify_build_class()` (seeded, write-once, required + always seeded) | architecture derive-verification; phase-6-finalize pre-push-quality-gate activation | Core |
 | `extension_defaults.*` | `config_defaults()` | Various (write-once semantics) | Core |
 

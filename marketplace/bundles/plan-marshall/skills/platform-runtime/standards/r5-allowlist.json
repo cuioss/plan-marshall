@@ -1,14 +1,22 @@
 {
   "schema": "r5-allowlist/1",
-  "description": "Documented non-executor interpreter invocations the R5 rule permits. One shared data file, read by both the OpenCode guard plugin (.opencode/plugin/guard.js) and the Claude PreToolUse hook (claude_pretooluse_hook.py). An entry is a REPOSITORY-RELATIVE path, matched EXACTLY against the invocation's script path resolved against the repository root — never a basename and never a suffix, so a copy of an allow-listed script outside the repository never matches. Each entry cites the documenting line.",
+  "description": "Documented non-executor interpreter invocations the R5 rule permits. One shared data file, read by both the OpenCode guard plugin (.opencode/plugin/guard.js) and the Claude PreToolUse hook (claude_pretooluse_hook.py). 'entries' are REPOSITORY-RELATIVE paths, matched EXACTLY against the invocation's script path resolved against the repository root. 'bundle_entries' are BUNDLE-RELATIVE paths (nested-layout spelling, e.g. skills/{skill}/scripts/x.py): an invocation is admitted when its RESOLVED script path equals '{deployed bundle root}/{bundle-relative entry}', where the deployed bundle root comes from the platform-runtime bundle-cache layout (the Claude plugin cache nested layout and the flat OpenCode / Antigravity skill roots). Both forms are matched EXACTLY: never a basename, never a suffix, never a bare cache prefix, so a copy of an allow-listed script outside the repository or outside a deployed bundle never matches. Each entry cites its documenting line.",
   "entries": {
     "marketplace/targets/sync.py": "marketplace/targets/README.md:379",
     "marketplace/targets/claude/reconcile_daemon.py": "marketplace/targets/claude/reconcile_daemon.py:51",
     "marketplace/targets/claude/registry_pin.py": "doc/developer/marketplace-build.adoc:196",
-    "marketplace/bundles/plan-marshall/skills/tools-script-executor/scripts/generate_executor.py": "marketplace/bundles/plan-marshall/skills/tools-script-executor/SKILL.md:522",
+    "marketplace/bundles/plan-marshall/skills/tools-script-executor/scripts/generate_executor.py": "marketplace/bundles/plan-marshall/skills/tools-script-executor/SKILL.md:523",
     "marketplace/bundles/plan-marshall/skills/marshall-steward/scripts/bootstrap_plugin.py": "marketplace/bundles/plan-marshall/skills/marshall-steward/references/wizard-flow.md:24",
     "marketplace/bundles/plan-marshall/skills/marshall-steward/scripts/determine_mode.py": "marketplace/bundles/plan-marshall/skills/marshall-steward/references/wizard-flow.md:80",
     "marketplace/bundles/plan-marshall/skills/marshall-steward/scripts/gitignore_setup.py": "marketplace/bundles/plan-marshall/skills/marshall-steward/references/wizard-flow.md:30",
-    "marketplace/bundles/plan-marshall/skills/tools-permission-fix/scripts/permission_fix.py": "marketplace/bundles/plan-marshall/skills/marshall-steward/references/wizard-flow.md:102"
+    "marketplace/bundles/plan-marshall/skills/tools-permission-fix/scripts/permission_fix.py": "marketplace/bundles/plan-marshall/skills/marshall-steward/references/wizard-flow.md:102",
+    "marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/doctor-marketplace.py": "marketplace/bundles/pm-plugin-development/skills/plugin-doctor/standards/doctor-marketplace.md:26"
+  },
+  "bundle_entries": {
+    "skills/tools-script-executor/scripts/generate_executor.py": "marketplace/bundles/plan-marshall/skills/tools-script-executor/SKILL.md:523",
+    "skills/marshall-steward/scripts/bootstrap_plugin.py": "marketplace/bundles/plan-marshall/skills/marshall-steward/SKILL.md:99",
+    "skills/marshall-steward/scripts/determine_mode.py": "marketplace/bundles/plan-marshall/skills/marshall-steward/references/wizard-flow.md:80",
+    "skills/marshall-steward/scripts/gitignore_setup.py": "marketplace/bundles/plan-marshall/skills/marshall-steward/references/wizard-flow.md:30",
+    "skills/tools-permission-fix/scripts/permission_fix.py": "marketplace/bundles/plan-marshall/skills/marshall-steward/references/wizard-flow.md:102"
   }
 }

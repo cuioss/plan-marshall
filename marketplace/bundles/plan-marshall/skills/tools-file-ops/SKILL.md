@@ -358,7 +358,7 @@ def copy_lesson_to_plan(lesson_id: str, plan_dir: Path) -> dict:
 # WRONG: Orchestrator constructs path and passes it to script
 
 # In orchestrator (phase-management SKILL.md):
-python3 {script} --lesson-file {lesson.file}  # BAD: orchestrator builds path
+# python3 {script} --lesson-file {lesson.file}  # BAD: orchestrator builds path
 
 # In script:
 def copy_lesson_to_plan(lesson_file: Path, plan_dir: Path):  # BAD: accepts path
