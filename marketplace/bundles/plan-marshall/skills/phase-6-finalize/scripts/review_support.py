@@ -47,6 +47,7 @@ Verdict file schemas (JSON — the rows nest criteria and evidence lists)::
       {"deliverables": [{"number": 1,
                          "verdict": "met|met_with_residuals|not_met|superseded",
                          "criteria": [{"criterion": str,
+                                       "criterion_id": "C1 (optional; D1.C1 also accepted)",
                                        "status": "met|unevidenced|not_met",
                                        "evidence": [str, ...],
                                        "fix_kind": "implementation|correction"}],
@@ -104,7 +105,9 @@ from typing import Any
 import _review_support_attribution as _attr
 from _criteria_snapshot import (
     FUNCTIONAL_VERDICT_FILE,
+    STATUS_FILE,
     criteria_drift,
+    criterion_id_parts,
     open_criteria,
     plan_uses_worktree,
     read_snapshot,
@@ -128,8 +131,10 @@ from _review_support_validate import (
     VERIFIER_ACCEPTED,
     Grading,
     authorship_problem,
+    deliverable_number,
     grade_frozen_criteria,
     read_json_object,
+    report_unmatched_rows,
     seal_verdict,
     validate_code,
     validate_functional,
@@ -203,16 +208,19 @@ def _grade_test_integrity(grading: Grading, plan_id: str) -> None:
     One finding per changed test whose assertions the branch removed or filtered.
     A failed computation is NOT read as an empty report: when the worktree resolves
     but the base diff cannot be read (``diff_unavailable``), the check did not run,
-    so a blocking ``test_integrity_not_run`` finding blocks closure. The one
-    non-applicable state is ``worktree_unresolved`` — a plan with no worktree has
-    no branch diff to grade.
+    so a blocking ``test_integrity_not_run`` finding blocks closure. A missing
+    worktree is the same not-run state UNLESS the plan never declared one: a plan
+    with ``use_worktree: false`` has no branch diff to grade, while a plan that
+    declared a worktree which no longer resolves must not be graded against a tree
+    it never used.
     """
     report = compute_test_integrity(plan_id)
     if not isinstance(report, dict):
         return
     if report.get('status') != 'success':
         error = str(report.get('error') or 'unknown')
-        if error != 'worktree_unresolved':
+        non_applicable = error == 'worktree_unresolved' and not plan_uses_worktree(plan_id)
+        if not non_applicable:
             grading.add(
                 'test_integrity_not_run',
                 '-',
@@ -270,9 +278,10 @@ def run_validate(plan_id: str, kind: str, verdict_file: str, verifier_file: str 
         if deliverables is None:
             return error_payload(plan_id, 'outline_not_found', f'{SOLUTION_FILE} not found for plan {plan_id!r}')
         evidence_root = _evidence_root(plan_id) if snapshot is not None else None
-        facts = validate_functional(verdict, deliverables, grading, evidence_root)
+        facts = validate_functional(verdict, deliverables, grading, plan_id, evidence_root)
         if snapshot is not None:
             grade_frozen_criteria(grading, criteria_drift(plan_id, deliverables))
+            report_unmatched_rows(grading, verdict, snapshot, deliverables)
             # Prove the citation check ran, or say why it did not: an unrun check
             # that renders identically to a passed one is a green nothing produced.
             if evidence_root is None:
@@ -328,6 +337,47 @@ def run_validate(plan_id: str, kind: str, verdict_file: str, verifier_file: str 
     return payload
 
 
+def _unknown_criterion_ids(verdict: dict[str, Any], plan_id: str) -> list[str]:
+    """Return every ``criterion_id`` that names no frozen criterion of its deliverable.
+
+    A row may carry an id instead of quoting the criterion verbatim, which is what
+    lets a reviewer paraphrase without orphaning the criterion. The id must name a
+    criterion that actually exists: a malformed id, a position past the frozen
+    list, a deliverable-qualified id naming another deliverable, or any id at all
+    on a deliverable the freeze does not carry is refused. A plan with no snapshot
+    is the legacy shape — there is no frozen set to name, so nothing is refused.
+    """
+    snapshot = read_snapshot(plan_id)
+    if snapshot is None:
+        return []
+    frozen: dict[Any, int] = {}
+    for row in snapshot.get('deliverables') or []:
+        if isinstance(row, dict):
+            frozen[deliverable_number(row.get('number'))] = len(row.get('criteria') or [])
+    unknown: list[str] = []
+    for row in verdict.get('deliverables') or []:
+        if not isinstance(row, dict):
+            continue
+        number = deliverable_number(row.get('number'))
+        for criterion in row.get('criteria') or []:
+            if not isinstance(criterion, dict):
+                continue
+            raw = str(criterion.get('criterion_id') or '').strip()
+            if not raw:
+                continue
+            named_deliverable, position = criterion_id_parts(raw)
+            known_count = frozen.get(number)
+            if (
+                known_count is None
+                or position is None
+                or position < 1
+                or position > known_count
+                or (named_deliverable is not None and named_deliverable != number)
+            ):
+                unknown.append(raw)
+    return unknown
+
+
 def run_author_verdict(plan_id: str, kind: str, verdict_file: str) -> dict[str, Any]:
     """Seal a review verdict with the marker only the review's own verb can write.
 
@@ -335,17 +385,51 @@ def run_author_verdict(plan_id: str, kind: str, verdict_file: str) -> dict[str, 
     the file's content is bound to the reviewer's recorded output: any later edit
     — the ``python3 -c`` rewrite that turned three OpenCode verdicts to "met" —
     no longer matches the recorded digest, and ``validate`` refuses it.
+
+    A functional verdict's ``criterion_id`` values are checked against the frozen
+    criteria BEFORE the seal is written. An id the freeze does not carry would
+    otherwise seal a row that answers nothing, and the reviewer would have no way
+    to tell a typo from a criterion that changed.
     """
     verdict, problem = read_json_object(verdict_file)
     if verdict is None:
         return error_payload(plan_id, 'verdict_file_unreadable', f'{verdict_file}: {problem}')
+    if kind == KIND_FUNCTIONAL:
+        unknown = _unknown_criterion_ids(verdict, plan_id)
+        if unknown:
+            return {
+                'status': 'error',
+                'plan_id': plan_id,
+                'kind': kind,
+                'verdict_file': verdict_file,
+                'error': 'unknown_criterion_id',
+                'message': (
+                    'each criterion_id must name a frozen criterion of its own deliverable; '
+                    f'these name none: {", ".join(unknown)}'
+                ),
+                'unknown_criterion_ids': unknown,
+            }
     sealed = seal_verdict(verdict, kind)
     atomic_write_file(verdict_file, json.dumps(sealed, indent=2, sort_keys=True) + '\n')
     # Bind the seal OUTSIDE the file: the plan's status record holds the digest the
     # checks compare against, so recomputing the in-file digest after an edit does
     # not reproduce it. A plan with no status record keeps the legacy in-file check
     # (the digest is still written into the marker either way).
-    record_verdict_digest(plan_id, kind, verdict_file)
+    if not record_verdict_digest(plan_id, kind, verdict_file) and base_path('plans', plan_id, STATUS_FILE).is_file():
+        # A status record exists, so it is authoritative — leaving it without this
+        # seal's digest would make a correctly sealed verdict read as edited on the
+        # next round. Report the half-binding instead of a success.
+        return {
+            'status': 'error',
+            'plan_id': plan_id,
+            'kind': kind,
+            'verdict_file': verdict_file,
+            'error': 'verdict_integrity_unrecorded',
+            'message': (
+                'the verdict was sealed but its digest could not be recorded in the plan status '
+                'record; re-run author-verdict once the status record is writable'
+            ),
+        }
     return {
         'status': 'success',
         'plan_id': plan_id,

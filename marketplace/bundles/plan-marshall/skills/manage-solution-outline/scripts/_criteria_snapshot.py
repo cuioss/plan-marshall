@@ -33,7 +33,10 @@ Layering
 --------
 This module lives with ``_plan_parsing`` and is imported BY the phase-6-finalize
 scripts and by ``manage-status`` (the finalize completion gate). Nothing here
-imports from those higher layers, so there is no import cycle.
+imports from those higher layers, so there is no import cycle. The status record's
+integrity block is written through ``_locks_core``'s guard — the SAME shared
+coordination primitive ``manage-status`` commits ``status.json`` through — rather
+than by importing the status writer upward.
 
 Nothing in this module judges a plan. It reads documents, writes one JSON
 artifact and reports named differences; the grading that consumes its output
@@ -45,9 +48,12 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
+from _locks_core import _GUARD_SUFFIX, held_guard
 from _plan_parsing import (
     extract_deliverables,
     parse_document_sections,
@@ -100,6 +106,13 @@ AUTHORSHIP_VERB = 'review_support author-verdict'
 STATUS_FILE = 'status.json'
 #: The status-record metadata key holding those digests.
 INTEGRITY_KEY = 'criteria_integrity'
+#: The key INSIDE the integrity block that marks the snapshot as frozen.
+SNAPSHOT_FROZEN_KEY = 'snapshot_frozen'
+#: The status-record metadata list of heads at which an operator closed the
+#: functional review. Its owning writer is ``manage-status loop-back close``; the
+#: reader here and the protected-key guard in ``manage-status`` derive the name
+#: from this one definition.
+OVERRIDE_HEADS_KEY = 'functional_review_override_heads'
 
 
 def _status_doc(plan_id: str) -> dict[str, Any] | None:
@@ -131,34 +144,58 @@ def integrity_record(plan_id: str) -> dict[str, Any]:
     return block if isinstance(block, dict) else {}
 
 
-def record_integrity(plan_id: str, **fields: Any) -> bool:
-    """Merge ``fields`` into the status record's integrity block; return success.
+def _merge_integrity(plan_id: str, merge: Callable[[dict[str, Any]], None]) -> bool:
+    """Merge into the status record's integrity block inside the status writers' guard.
 
-    Written by re-reading the live status document immediately before the write, so
-    the merge carries the sibling fields it reads. The write is not serialized
-    against another writer's critical section, so a concurrent status write can
-    still race it — a narrow window the callers accept rather than importing the
-    status writer upward. A plan with no readable status record is left untouched
-    and reports ``False``; the caller's artifact is still written, it is simply not
-    bound outside itself.
+    The guard is the SAME file-level ``O_EXCL`` guard ``manage-status`` commits
+    ``status.json`` through (``_locks_core.rmw_json`` names it
+    ``{status.json}.lock``), so this read-modify-write cannot interleave with a
+    status writer's: one of the two waits. The shared coordination module is
+    imported sideways, never the status writer upward, so the layering rule in
+    this module's docstring still holds.
+
+    A plan with no readable status record is left untouched and reports ``False``;
+    so does a guard that cannot be taken within its budget (``TimeoutError``) and
+    a commit that fails. The caller never reads such a ``False`` as "recorded".
     """
-    status = _status_doc(plan_id)
-    if status is None:
-        return False
-    metadata = status.get('metadata')
-    if not isinstance(metadata, dict):
-        metadata = {}
-        status['metadata'] = metadata
-    block = metadata.get(INTEGRITY_KEY)
-    if not isinstance(block, dict):
-        block = {}
-        metadata[INTEGRITY_KEY] = block
-    block.update(fields)
+    path = base_path('plans', plan_id, STATUS_FILE)
     try:
-        atomic_write_file(base_path('plans', plan_id, STATUS_FILE), json.dumps(status, indent=2, sort_keys=True) + '\n')
+        with held_guard(path.with_name(f'{path.name}{_GUARD_SUFFIX}')):
+            status = _status_doc(plan_id)
+            if status is None:
+                return False
+            metadata = status.get('metadata')
+            if not isinstance(metadata, dict):
+                metadata = {}
+                status['metadata'] = metadata
+            block = metadata.get(INTEGRITY_KEY)
+            if not isinstance(block, dict):
+                block = {}
+                metadata[INTEGRITY_KEY] = block
+            merge(block)
+            try:
+                atomic_write_file(path, json.dumps(status, indent=2, sort_keys=True) + '\n')
+            except OSError:
+                return False
     except OSError:
         return False
     return True
+
+
+def record_integrity(plan_id: str, **fields: Any) -> bool:
+    """Merge ``fields`` into the status record's integrity block; return success.
+
+    The read, the merge and the write are one critical section on the guard the
+    ``manage-status`` writers commit through, so a concurrent status write either
+    lands before this merge (and is carried forward) or waits for it. The earlier
+    design read the document and rewrote it outside any lock, so a status writer
+    committing in that window lost the digest — the frozen artifact then had
+    nothing binding it.
+
+    A plan with no readable status record is left untouched and reports ``False``;
+    the caller's artifact is rolled back rather than left only half-bound.
+    """
+    return _merge_integrity(plan_id, lambda block: block.update(fields))
 
 
 def path_digest(path: Path) -> str:
@@ -179,22 +216,40 @@ def snapshot_state(plan_id: str) -> str:
     * ``absent`` — never frozen and no file (the legacy shape, no bindings).
     """
     info = integrity_record(plan_id)
-    frozen = bool(info.get('snapshot_frozen'))
+    frozen = bool(info.get(SNAPSHOT_FROZEN_KEY))
     path = snapshot_path(plan_id)
     if path.is_file():
         recorded = info.get('snapshot_digest')
-        if frozen and isinstance(recorded, str) and path_digest(path) != recorded:
+        if frozen and (not isinstance(recorded, str) or path_digest(path) != recorded):
+            # A freeze with no digest string is not a binding: the record says the
+            # snapshot is frozen but nothing can verify it, so it is treated as
+            # tampered rather than trusted as 'frozen'.
             return 'tampered'
         return 'frozen' if frozen else 'present'
     return 'deleted' if frozen else 'absent'
 
 
-def record_snapshot_digest(plan_id: str) -> bool:
-    """Record the frozen snapshot's digest in the status record, outside the file."""
+def record_snapshot_digest(plan_id: str, *, consume_refreeze: bool = False) -> bool:
+    """Record the frozen snapshot's digest in the status record, outside the file.
+
+    ``consume_refreeze`` adds ``refreeze_authorized=False`` to the SAME guarded
+    update. A re-freeze must consume its authorization atomically with the digest
+    it authorizes: two writes would let a failed consumption leave the decision
+    active, so the next call could re-freeze without a new decision.
+    """
     path = snapshot_path(plan_id)
     if not path.is_file():
         return False
-    return record_integrity(plan_id, snapshot_frozen=True, snapshot_digest=path_digest(path))
+    try:
+        digest = path_digest(path)
+    except OSError:
+        # The file existed a moment ago; a concurrent delete or a permission change
+        # must report "not recorded" so the caller rolls its write back.
+        return False
+    fields: dict[str, Any] = {SNAPSHOT_FROZEN_KEY: True, 'snapshot_digest': digest}
+    if consume_refreeze:
+        fields['refreeze_authorized'] = False
+    return record_integrity(plan_id, **fields)
 
 
 def record_verdict_digest(plan_id: str, kind: str, verdict_file: str | Path) -> bool:
@@ -214,10 +269,18 @@ def record_verdict_digest(plan_id: str, kind: str, verdict_file: str | Path) -> 
         return False
     if not isinstance(parsed, dict):
         return False
-    existing = integrity_record(plan_id).get('verdicts')
-    verdicts = dict(existing) if isinstance(existing, dict) else {}
-    verdicts[kind] = {'digest': canonical_digest(parsed), 'path': str(path)}
-    return record_integrity(plan_id, verdicts=verdicts)
+    digest = canonical_digest(parsed)
+
+    def _merge(block: dict[str, Any]) -> None:
+        # The existing-verdicts read happens inside the critical section too, so a
+        # functional and a code seal committed at the same time cannot each write
+        # the other's entry away.
+        existing = block.get('verdicts')
+        verdicts = dict(existing) if isinstance(existing, dict) else {}
+        verdicts[kind] = {'digest': digest, 'path': str(path)}
+        block['verdicts'] = verdicts
+
+    return _merge_integrity(plan_id, _merge)
 
 
 def authorize_refreeze(plan_id: str, decision: str, phase: str = '3-outline') -> dict[str, Any]:
@@ -296,7 +359,7 @@ def _review_closed_reason(plan_id: str) -> str | None:
     metadata = status.get('metadata')
     if not isinstance(metadata, dict):
         return None
-    heads = metadata.get('functional_review_override_heads')
+    heads = metadata.get(OVERRIDE_HEADS_KEY)
     if isinstance(heads, list) and [head for head in heads if str(head).strip()]:
         return 'the operator closed the functional review past its round cap'
     phase_steps = metadata.get('phase_steps')
@@ -546,7 +609,61 @@ def read_snapshot(plan_id: str) -> dict[str, Any] | None:
     return parsed
 
 
+def _roll_back_snapshot(path: Path, previous: bytes | None) -> bool:
+    """Undo one snapshot write: restore the prior bytes, or remove a first freeze.
+
+    The prior content is carried as BYTES, not text: a corrupt snapshot that does
+    not decode must still be restorable, and decoding it would fail before the
+    digest is even recorded. Returns ``False`` when the rollback itself failed, so
+    the caller reports that the artifact may still be on disk rather than claiming
+    it was removed.
+    """
+    try:
+        if previous is None:
+            path.unlink(missing_ok=True)
+        else:
+            path.write_bytes(previous)
+    except OSError:
+        return False
+    return True
+
+
+@contextmanager
+def _snapshot_guard(plan_id: str) -> Iterator[None]:
+    """Serialize every rewrite of one plan's snapshot artifact.
+
+    The status guard protects the digest merge, but the authorization check and
+    the snapshot write happen BEFORE it. Two concurrent re-freezes could both read
+    ``refreeze_authorized: true`` and each write a snapshot on one decision. This
+    plan-scoped guard covers the whole check-write-record sequence; the status
+    guard is still taken inside it for the integrity record, so the lock order is
+    always snapshot guard → status guard.
+    """
+    path = snapshot_path(plan_id)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with held_guard(path.with_name(f'{path.name}{_GUARD_SUFFIX}')):
+        yield
+
+
 def write_snapshot(plan_id: str) -> dict[str, Any]:
+    """Freeze the current outline as the plan's criteria snapshot.
+
+    Serialized per plan against every other snapshot rewrite, so a single
+    re-freeze authorization admits exactly one re-freeze.
+    """
+    try:
+        with _snapshot_guard(plan_id):
+            return _write_snapshot_locked(plan_id)
+    except TimeoutError:
+        return {
+            'status': 'error',
+            'plan_id': plan_id,
+            'error': 'snapshot_busy',
+            'message': 'another writer holds the criteria snapshot; nothing was written',
+        }
+
+
+def _write_snapshot_locked(plan_id: str) -> dict[str, Any]:
     """Freeze the current outline as the plan's criteria snapshot.
 
     The FIRST freeze is unconditional: there is nothing to replace. A RE-freeze
@@ -564,7 +681,7 @@ def write_snapshot(plan_id: str) -> dict[str, Any]:
     # snapshot file makes read_snapshot return None, and `existing is not None`
     # would then treat the call as a first freeze and leak a re-freeze without a
     # decision. `snapshot_frozen` lives outside the file, so it still says "frozen".
-    previously_frozen = existing is not None or bool(info.get('snapshot_frozen'))
+    previously_frozen = existing is not None or bool(info.get(SNAPSHOT_FROZEN_KEY))
     if previously_frozen and not authorized:
         return {
             'status': 'error',
@@ -584,15 +701,28 @@ def write_snapshot(plan_id: str) -> dict[str, Any]:
         snapshot['authorized_changes'] = list(existing.get('authorized_changes') or [])
     path = snapshot_path(plan_id)
     path.parent.mkdir(parents=True, exist_ok=True)
+    previous = path.read_bytes() if path.is_file() else None
     atomic_write_file(path, json.dumps(snapshot, indent=2, sort_keys=True) + '\n')
     # Bind the freeze OUTSIDE the file it protects: the status record (a different
     # file) holds the digest, so editing or deleting the snapshot
     # afterwards is detectable rather than silently read as the legacy shape.
-    record_snapshot_digest(plan_id)
-    if previously_frozen and authorized:
-        # One decision authorizes one re-freeze: consume it so the next write is
-        # gated again.
-        record_integrity(plan_id, refreeze_authorized=False)
+    # A permitted re-freeze consumes its authorization in the SAME guarded update.
+    consume_refreeze = previously_frozen and authorized
+    if not record_snapshot_digest(plan_id, consume_refreeze=consume_refreeze):
+        # No record, no freeze. A snapshot left behind here would be read as the
+        # legacy "present" shape and its digest could never be checked again, so
+        # the write is rolled back: the prior bytes when this was a re-freeze, and
+        # nothing at all on a first freeze.
+        rolled_back = _roll_back_snapshot(path, previous)
+        return {
+            'status': 'error',
+            'plan_id': plan_id,
+            'error': 'snapshot_integrity_unrecorded',
+            'message': (
+                'the snapshot digest could not be recorded in the plan status record, so no frozen '
+                'snapshot was kept' + ('' if rolled_back else ' (the partial snapshot could not be removed)')
+            ),
+        }
     return {
         'status': 'success',
         'plan_id': plan_id,
@@ -808,6 +938,28 @@ def authorize_change(
             'error': 'decision_log_unavailable',
             'message': f'the operator decision could not be logged ({logged.get("error", "unknown")})',
         }
+    try:
+        with _snapshot_guard(plan_id):
+            return _commit_authorization(plan_id, snapshot, number, criterion, decision, phase)
+    except TimeoutError:
+        return {
+            'status': 'error',
+            'plan_id': plan_id,
+            'error': 'snapshot_busy',
+            'message': 'another writer holds the criteria snapshot; the authorization was not recorded',
+        }
+
+
+def _commit_authorization(
+    plan_id: str,
+    snapshot: dict[str, Any],
+    number: int,
+    criterion: str,
+    decision: str,
+    phase: str,
+) -> dict[str, Any]:
+    """Rewrite the snapshot with one authorization and re-record its digest."""
+    wanted = normalize_criterion(criterion)
     entries = [
         entry
         for entry in snapshot.get('authorized_changes') or []
@@ -819,10 +971,24 @@ def authorize_change(
     ]
     entries.append({'deliverable': number, 'criterion': criterion, 'decision': decision, 'phase': phase})
     snapshot['authorized_changes'] = entries
-    atomic_write_file(snapshot_path(plan_id), json.dumps(snapshot, indent=2, sort_keys=True) + '\n')
+    path = snapshot_path(plan_id)
+    previous = path.read_bytes() if path.is_file() else None
+    atomic_write_file(path, json.dumps(snapshot, indent=2, sort_keys=True) + '\n')
     # Re-record the digest: the authorization rewrites the snapshot file, and a
     # recorded digest left on the pre-authorization bytes would read as tampering.
-    record_snapshot_digest(plan_id)
+    # When it cannot be recorded the authorization is rolled back — the same
+    # no-snapshot-without-its-binding rule write_snapshot applies.
+    if not record_snapshot_digest(plan_id):
+        rolled_back = _roll_back_snapshot(path, previous)
+        return {
+            'status': 'error',
+            'plan_id': plan_id,
+            'error': 'snapshot_integrity_unrecorded',
+            'message': (
+                'the rewritten snapshot digest could not be recorded, so the authorization was '
+                + ('rolled back' if rolled_back else 'NOT fully rolled back; the snapshot may hold the edit')
+            ),
+        }
     return {
         'status': 'success',
         'plan_id': plan_id,
@@ -854,10 +1020,9 @@ def open_criteria(plan_id: str, verdict_file: Path | None = None) -> dict[str, A
     * the verdict carries the review's authorship seal and its digest matches, so
       a file rewritten in place does not release the plan;
     * the row's status is ``met`` AND it carries non-empty evidence;
-    * the row is matched by a STABLE id — an explicit ``criterion_id`` wins, exact
-      text is tried next, and the row's position within the deliverable is the last
-      resort — so a verdict row that paraphrases the frozen criterion still answers
-      for it.
+    * the row is matched by an explicit ``criterion_id`` or by EXACT normalised
+      text. Position alone is never a match: a paraphrased row without its id
+      leaves the criterion ungraded and open.
 
     Anything else is open, which is the fail-closed direction. Four deliberate
     states additionally close criteria rather than reading them as open work:
@@ -910,7 +1075,7 @@ def open_criteria(plan_id: str, verdict_file: Path | None = None) -> dict[str, A
             text = normalize_criterion(raw)
             if _authorization(snapshot, number, text):
                 continue
-            status = _graded_status(graded, text, index)
+            status = _graded_status(graded, text, index, number)
             if status == 'met':
                 continue
             rows.append(
@@ -958,24 +1123,59 @@ def _checked_verdict(path: Path, plan_id: str | None = None) -> tuple[dict[Any, 
     return result, 'sealed'
 
 
-def _graded_status(criteria: list[Any], criterion: str, index: int) -> str:
-    """Status a sealed verdict gives one frozen criterion, matched by stable id.
+_CRITERION_ID_RE = re.compile(r'(?:[Dd](\d+)\.)?[Cc](\d+)')
 
-    A row carrying an explicit ``criterion_id`` wins; exact text is tried next; and
-    the frozen criterion's own position (the stable id ``C{index}``) is the last
-    resort, so a verdict row that paraphrases the criterion still answers for it.
-    Every row is stored under its deliverable, so its position is the criterion
-    index the author graded. A ``met`` row with no evidence is ``unevidenced`` here
-    for the same reason the validator treats it so.
+
+def criterion_id_parts(criterion_id: Any) -> tuple[int | None, int | None]:
+    """Return ``(deliverable number, criterion position)`` named by a verdict id.
+
+    Both the bare ``C3`` and the deliverable-qualified ``D2.C3`` spellings are
+    accepted. ``(None, None)`` means the value names no frozen criterion at all —
+    a malformed id is not a match, and the caller reports it rather than guessing.
+    """
+    match = _CRITERION_ID_RE.fullmatch(str(criterion_id or '').strip())
+    if match is None:
+        return None, None
+    deliverable = int(match.group(1)) if match.group(1) else None
+    return deliverable, int(match.group(2))
+
+
+def verdict_row_matches(row: Any, criterion: str, index: int, deliverable: Any = None) -> bool:
+    """Whether a verdict row answers the frozen criterion at ``index``.
+
+    The stable id is tried first, then the exact normalised text. Position alone is
+    never a match: the positional fallback released a criterion the reviewer had
+    graded something else, which is the failure this predicate exists to close. A
+    deliverable-qualified id (``D2.C1``) answers only inside deliverable 2 when
+    ``deliverable`` is supplied.
+    """
+    if not isinstance(row, dict):
+        return False
+    named_deliverable, named_position = criterion_id_parts(row.get('criterion_id'))
+    if named_deliverable is not None and deliverable is not None and named_deliverable != deliverable:
+        return False
+    if named_position == index:
+        return True
+    return normalize_criterion(row.get('criterion')) == normalize_criterion(criterion)
+
+
+def _graded_status(criteria: list[Any], criterion: str, index: int, deliverable: Any = None) -> str:
+    """Status a sealed verdict gives one frozen criterion, matched by stable id or text.
+
+    A row carrying an explicit ``criterion_id`` wins; exact text is tried next;
+    otherwise the criterion is ``ungraded``. There is no positional fallback: a
+    verdict row that answers something else is not evidence for this criterion, and
+    its position mere adjacency. A ``met`` row with no evidence is ``unevidenced``
+    here for the same reason the validator treats it so.
     """
     wanted = normalize_criterion(criterion)
-    stable = f'C{index}'
     row: dict[str, Any] | None = None
     for candidate in criteria:
-        if not isinstance(candidate, dict):
-            continue
-        cid = str(candidate.get('criterion_id') or '')
-        if cid and cid.split('.')[-1] == stable:
+        if (
+            isinstance(candidate, dict)
+            and criterion_id_parts(candidate.get('criterion_id'))[1] == index
+            and verdict_row_matches(candidate, criterion, index, deliverable)
+        ):
             row = candidate
             break
     if row is None:
@@ -983,8 +1183,6 @@ def _graded_status(criteria: list[Any], criterion: str, index: int) -> str:
             if isinstance(candidate, dict) and normalize_criterion(candidate.get('criterion')) == wanted:
                 row = candidate
                 break
-    if row is None and 0 <= index - 1 < len(criteria) and isinstance(criteria[index - 1], dict):
-        row = criteria[index - 1]
     if row is None:
         return 'ungraded'
     status = str(row.get('status') or 'ungraded')
@@ -998,16 +1196,19 @@ __all__ = [
     'DELETED',
     'FUNCTIONAL_VERDICT_FILE',
     'INTEGRITY_KEY',
+    'OVERRIDE_HEADS_KEY',
     'REQUEST_FILE',
     'REWRITTEN',
     'SCHEMA',
     'SNAPSHOT_FILE',
+    'SNAPSHOT_FROZEN_KEY',
     'SPEC_MISSING',
     'STATUS_FILE',
     'SUPERSEDED',
     'authorize_change',
     'authorize_refreeze',
     'build_snapshot',
+    'criterion_id_parts',
     'criteria_drift',
     'integrity_record',
     'normalize_criterion',
@@ -1022,5 +1223,6 @@ __all__ = [
     'request_done_when',
     'snapshot_path',
     'snapshot_state',
+    'verdict_row_matches',
     'write_snapshot',
 ]

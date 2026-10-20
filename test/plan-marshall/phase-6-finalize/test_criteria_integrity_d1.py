@@ -61,6 +61,10 @@ def _verdict(criteria: list[str]) -> dict[str, Any]:
 def _plan(plan_context: Any, criteria: list[str], *, freeze_from: list[str] | None = None) -> Path:
     """Write the outline (and, when frozen, the snapshot taken at approval)."""
     plan_dir = Path(plan_context.plan_dir_for(PLAN_ID))
+    (plan_dir / 'status.json').write_text(
+        json.dumps({'title': 'fixture', 'phases': [], 'current_phase': '6-finalize', 'metadata': {}}),
+        encoding='utf-8',
+    )
     (plan_dir / 'solution_outline.md').write_text(_outline(criteria), encoding='utf-8')
     (plan_dir / 'references.json').write_text(json.dumps({'base_branch': 'main'}), encoding='utf-8')
     if freeze_from is not None:

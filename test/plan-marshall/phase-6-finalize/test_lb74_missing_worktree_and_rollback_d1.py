@@ -1,0 +1,196 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
+"""A missing declared worktree blocks a code review, and a lost digest rolls the snapshot back.
+
+Two behaviours:
+
+* a code review of a plan that DECLARES a worktree which no longer resolves gets a
+  blocking ``test_integrity_not_run`` finding and ``may_close: false``, while a
+  plan with no worktree keeps the exemption;
+* a snapshot whose digest cannot be recorded in the status record is removed
+  again, so no frozen snapshot exists without its outside-the-file binding.
+
+Every test drives the real ``run_validate`` / ``write_snapshot`` code paths over a
+sandboxed plan directory.
+"""
+
+from __future__ import annotations
+
+import json
+import threading
+from pathlib import Path
+from typing import Any
+
+import _criteria_snapshot as _snap
+import review_support
+
+PLAN_ID = 'lb74-integrity-d1'
+TITLE = 'Freeze the criteria'
+
+
+def _outline(criteria: list[str]) -> str:
+    body = '\n'.join(f'- {text}' for text in criteria)
+    return (
+        '# Solution: integrity fixes\n\n## Deliverables\n\n'
+        f'### 1. {TITLE}\n\n**Affected files:**\n- `src/parser.py` (write-new)\n\n'
+        f'**Success Criteria:**\n{body}\n'
+    )
+
+
+def _plan(plan_context: Any, *, use_worktree: bool) -> Path:
+    plan_dir = Path(plan_context.plan_dir_for(PLAN_ID))
+    status = {
+        'title': 'fixture',
+        'phases': [{'name': '6-finalize', 'status': 'in_progress'}],
+        'current_phase': '6-finalize',
+        'metadata': {'use_worktree': use_worktree},
+    }
+    (plan_dir / 'status.json').write_text(json.dumps(status), encoding='utf-8')
+    (plan_dir / 'solution_outline.md').write_text(_outline(['parser accepts input']), encoding='utf-8')
+    return plan_dir
+
+
+def _code_verdict(tmp_path: Path) -> str:
+    path = tmp_path / 'code-verdict.json'
+    path.write_text(
+        json.dumps({'findings': [], 'domains_reviewed': ['python'], 'files_read': ['src/parser.py']}),
+        encoding='utf-8',
+    )
+    return str(path)
+
+
+def _missing_worktree(plan_id: str) -> dict[str, Any]:
+    return {'status': 'error', 'error': 'worktree_unresolved'}
+
+
+def _verifier(tmp_path: Path) -> str:
+    """A verifier answer that WOULD permit closure without a blocking finding."""
+    path = tmp_path / 'verifier.json'
+    path.write_text(json.dumps({'grading_supported': True, 'may_close': True}), encoding='utf-8')
+    return str(path)
+
+
+def test_a_missing_declared_worktree_blocks_the_code_review(plan_context, tmp_path, monkeypatch) -> None:
+    _plan(plan_context, use_worktree=True)
+    monkeypatch.setattr(review_support, 'compute_test_integrity', _missing_worktree)
+
+    payload = review_support.run_validate(PLAN_ID, 'code', _code_verdict(tmp_path), _verifier(tmp_path))
+
+    finding = next((item for item in payload['findings'] if item['kind'] == 'test_integrity_not_run'), None)
+    assert finding is not None, payload['findings']
+    assert finding['severity'] == 'blocking'
+    assert payload['may_close'] is False
+
+
+def test_a_plan_without_a_worktree_keeps_the_exemption(plan_context, tmp_path, monkeypatch) -> None:
+    _plan(plan_context, use_worktree=False)
+    monkeypatch.setattr(review_support, 'compute_test_integrity', _missing_worktree)
+
+    payload = review_support.run_validate(PLAN_ID, 'code', _code_verdict(tmp_path), None)
+
+    assert [item for item in payload['findings'] if item['kind'] == 'test_integrity_not_run'] == []
+
+
+def test_a_frozen_marker_without_a_digest_reads_as_tampered(plan_context) -> None:
+    plan_dir = _plan(plan_context, use_worktree=False)
+    assert _snap.write_snapshot(PLAN_ID)['status'] == 'success'
+    status = json.loads((plan_dir / 'status.json').read_text(encoding='utf-8'))
+    status['metadata']['criteria_integrity'] = {_snap.SNAPSHOT_FROZEN_KEY: True}
+    (plan_dir / 'status.json').write_text(json.dumps(status), encoding='utf-8')
+
+    assert _snap.snapshot_state(PLAN_ID) == 'tampered'
+
+
+def test_a_permitted_refreeze_consumes_its_authorization(plan_context) -> None:
+    _plan(plan_context, use_worktree=False)
+    assert _snap.write_snapshot(PLAN_ID)['status'] == 'success'
+    assert _snap.authorize_refreeze(PLAN_ID, 'operator: approve the refined criteria')['status'] == 'success'
+
+    assert _snap.write_snapshot(PLAN_ID)['status'] == 'success'
+    assert _snap.integrity_record(PLAN_ID)['refreeze_authorized'] is False
+    assert _snap.write_snapshot(PLAN_ID)['error'] == 'refreeze_requires_decision'
+
+
+def test_one_authorization_admits_exactly_one_concurrent_refreeze(plan_context, monkeypatch) -> None:
+    _plan(plan_context, use_worktree=False)
+    assert _snap.write_snapshot(PLAN_ID)['status'] == 'success'
+    assert _snap.authorize_refreeze(PLAN_ID, 'operator: approve the refined criteria')['status'] == 'success'
+    real_build = _snap.build_snapshot
+    first_entered = threading.Event()
+    release = threading.Event()
+
+    def _slow_build(plan_id: str) -> dict[str, Any]:
+        if not first_entered.is_set():
+            first_entered.set()
+            release.wait(10)
+        return real_build(plan_id)
+
+    monkeypatch.setattr(_snap, 'build_snapshot', _slow_build)
+    results: list[dict[str, Any]] = []
+
+    def _run() -> None:
+        results.append(_snap.write_snapshot(PLAN_ID))
+
+    first = threading.Thread(target=_run)
+    first.start()
+    assert first_entered.wait(5)
+    second = threading.Thread(target=_run)
+    second.start()
+    release.set()
+    first.join(10)
+    second.join(10)
+
+    assert [result['status'] for result in results].count('success') == 1
+    assert [result.get('error') for result in results].count('refreeze_requires_decision') == 1
+
+
+def test_a_failed_refreeze_restores_the_prior_snapshot_bytes(plan_context, monkeypatch) -> None:
+    plan_dir = _plan(plan_context, use_worktree=False)
+    assert _snap.write_snapshot(PLAN_ID)['status'] == 'success'
+    snapshot_file = plan_dir / 'work' / 'criteria-snapshot.json'
+    corrupt = b'\xff\xfe not utf-8\n'
+    snapshot_file.write_bytes(corrupt)
+    assert _snap.authorize_refreeze(PLAN_ID, 'operator: approve the refined criteria')['status'] == 'success'
+    monkeypatch.setattr(_snap, 'record_integrity', lambda *_args, **_kwargs: False)
+
+    result = _snap.write_snapshot(PLAN_ID)
+
+    assert result['status'] == 'error'
+    assert snapshot_file.read_bytes() == corrupt
+
+
+def test_author_verdict_reports_a_failed_digest_record(plan_context, tmp_path, monkeypatch) -> None:
+    _plan(plan_context, use_worktree=False)
+    monkeypatch.setattr(review_support, 'record_verdict_digest', lambda *_args, **_kwargs: False)
+    path = tmp_path / 'verdict.json'
+    path.write_text(json.dumps({'deliverables': []}), encoding='utf-8')
+
+    result = review_support.run_author_verdict(PLAN_ID, 'functional', str(path))
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'verdict_integrity_unrecorded'
+
+
+def test_an_authorization_is_rolled_back_when_its_digest_is_not_recorded(plan_context, monkeypatch) -> None:
+    plan_dir = _plan(plan_context, use_worktree=False)
+    assert _snap.write_snapshot(PLAN_ID)['status'] == 'success'
+    snapshot_file = plan_dir / 'work' / 'criteria-snapshot.json'
+    before = snapshot_file.read_text(encoding='utf-8')
+    monkeypatch.setattr(_snap, 'record_integrity', lambda *_args, **_kwargs: False)
+
+    result = _snap.authorize_change(PLAN_ID, 1, 'parser accepts input', 'operator: approve the wording')
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'snapshot_integrity_unrecorded'
+    assert snapshot_file.read_text(encoding='utf-8') == before
+
+
+def test_a_scored_snapshot_is_rolled_back_when_the_digest_is_not_recorded(plan_context, monkeypatch) -> None:
+    plan_dir = _plan(plan_context, use_worktree=False)
+    monkeypatch.setattr(_snap, 'record_integrity', lambda *_args, **_kwargs: False)
+
+    result = _snap.write_snapshot(PLAN_ID)
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'snapshot_integrity_unrecorded'
+    assert not (plan_dir / 'work' / 'criteria-snapshot.json').exists()

@@ -50,6 +50,10 @@ def _outline(criteria: list[str]) -> str:
 
 def _plan(plan_context: Any, criteria: list[str] | None = None, *, freeze: bool = False) -> Path:
     plan_dir = Path(plan_context.plan_dir_for(PLAN_ID))
+    (plan_dir / 'status.json').write_text(
+        json.dumps({'title': 'fixture', 'phases': [], 'current_phase': '6-finalize', 'metadata': {}}),
+        encoding='utf-8',
+    )
     (plan_dir / 'solution_outline.md').write_text(_outline(criteria or CRITERIA), encoding='utf-8')
     (plan_dir / 'references.json').write_text(json.dumps({'base_branch': 'main'}), encoding='utf-8')
     if freeze:

@@ -361,6 +361,8 @@ Use this for any identity a plan can legitimately hold more than one of — the 
 
 Semantics: an absent field becomes `[value]`; an existing list gains `value` unless it is already present (so a repeated capture is idempotent); a field already holding a NON-list returns `error: metadata_field_not_a_list` and leaves the document **byte-identical** — the scalar is never silently coerced into a container. The read-modify-write runs inside the same `rmw_json` critical section every other `status.json` writer commits through, so a concurrent append cannot be lost.
 
+**Protected keys.** `--set` and `--set --append` refuse `criteria_integrity`, `snapshot_frozen` and `functional_review_override_heads` with `error: protected_metadata_key`, writing nothing. Each is the outside-the-file binding of an owning verb: the criteria freeze and the verdict seal record `criteria_integrity` (which carries `snapshot_frozen`), and `loop-back close` records the override-closed heads. A generic metadata write would race or forge those records, so it is not a supported edit surface.
+
 **Get metadata**:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \
@@ -979,9 +981,10 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status loop-b
 **Order of work**, once validation has passed:
 
 1. The step is recorded `done` through the same write `mark-step-done` performs, with `--head` as its `head_at_completion`, the display detail `operator close: {N} finding(s) accepted`, and the facts `may_close=operator_override`, `acceptance=operator_override`, `work_performed=true`. No `--force` is applied: a step whose stored outcome is `skipped` is refused by the transition table, and the refusal is returned as `step_not_recorded` with nothing written.
-2. Exactly the named findings are resolved `accepted`, each with the rationale as its resolution detail. No other finding is touched.
-3. The step's own pending **state findings** are resolved `accepted`, citing the closing HEAD. They are selected by rule key through `manage-findings qgate resolve-by-rule`, and the key is derived from the step name as `{step}-state` — the state findings of `code-review` carry `code-review-state`. A step that files no state findings has none under that key, and the resolution reaches nothing.
-4. Each `--waive-refire` step's `done` record gains `refire_waiver = {head, basis}` — see "Re-fire waiver (`refire_waiver`)" under [mark-step-done](#mark-step-done).
+2. When the closed step is `functional-review`, the closing HEAD is appended to `metadata.functional_review_override_heads`. The close is that key's owning writer (a generic `metadata --set` / `--set --append` naming it is refused); the append is idempotent, so a head already on the list is not added twice.
+3. Exactly the named findings are resolved `accepted`, each with the rationale as its resolution detail. No other finding is touched.
+4. The step's own pending **state findings** are resolved `accepted`, citing the closing HEAD. They are selected by rule key through `manage-findings qgate resolve-by-rule`, and the key is derived from the step name as `{step}-state` — the state findings of `code-review` carry `code-review-state`. A step that files no state findings has none under that key, and the resolution reaches nothing.
+5. Each `--waive-refire` step's `done` record gains `refire_waiver = {head, basis}` — see "Re-fire waiver (`refire_waiver`)" under [mark-step-done](#mark-step-done).
 
 **Return fields**:
 
@@ -996,6 +999,8 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status loop-b
 | `state_rule` | The rule key the step's state findings were resolved by |
 | `state_findings_resolved` | How many pending state findings that key reached |
 | `waived_steps` | The steps whose `done` record now carries the waiver |
+| `override_head_recorded` | Whether this close appended its head to `functional_review_override_heads` (`false` for a non-functional-review step or an already-present head) |
+| `override_head_error` | Present when the append could not be written: the close is reported `close_incomplete` rather than a silent success |
 
 **Output** (TOON):
 ```toon
@@ -1995,7 +2000,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status loop-b
   [--accept HASH_ID]... [--waive-refire STEP_ID]...
 ```
 
-Records the `6-finalize` step `done` at `FULL_SHA` as an operator override (facts `may_close=operator_override`, `acceptance=operator_override`, `work_performed=true`), resolves exactly the `--accept` findings `accepted` with the rationale, resolves the step's pending state findings by the rule key `{STEP_ID}-state`, and stamps `refire_waiver = {head, basis}` on each `--waive-refire` step's `done` record. Everything is validated before the first write. Returns `step`, `outcome`, `head`, `may_close`, `acceptance`, `rationale`, `accepted_count`, `accepted[]`, `state_rule`, `state_findings_resolved` and `waived_steps[]`. See § [loop-back close](#loop-back-close) under Operations.
+Records the `6-finalize` step `done` at `FULL_SHA` as an operator override (facts `may_close=operator_override`, `acceptance=operator_override`, `work_performed=true`), appends the head to `metadata.functional_review_override_heads` when the step is `functional-review`, resolves exactly the `--accept` findings `accepted` with the rationale, resolves the step's pending state findings by the rule key `{STEP_ID}-state`, and stamps `refire_waiver = {head, basis}` on each `--waive-refire` step's `done` record. Everything is validated before the first write. Returns `step`, `outcome`, `head`, `may_close`, `acceptance`, `rationale`, `accepted_count`, `accepted[]`, `state_rule`, `state_findings_resolved`, `waived_steps[]`, `override_head_recorded` and — when the override-head write failed — `override_head_error` with the close reported `close_incomplete`. See § [loop-back close](#loop-back-close) under Operations.
 
 ### change-type-heuristic
 

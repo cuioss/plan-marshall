@@ -14,8 +14,8 @@ exact and recognisable afterwards:
   call writes nothing: no step record, no resolution, no waiver;
 * a waived step keeps its ``done`` outcome and the anchor it completed at, and
   gains the waiver beside them;
-* the waivers are stamped onto the status document as last committed, and a
-  close that stamps none does not rewrite it;
+* the waivers are stamped onto the status document as last committed, and a close
+  that stamps no waiver adds only the override-closed head it owns;
 * a blank or missing rationale is refused.
 
 Each test uses its own ``plan_id`` so no test reads another's status document or
@@ -24,6 +24,7 @@ finding store.
 
 from __future__ import annotations
 
+import json
 import sys
 from argparse import Namespace
 from typing import Any, cast
@@ -422,10 +423,66 @@ def test_a_real_re_fire_of_a_waived_step_drops_the_waiver(plan_context, tmp_path
     assert record['head_at_completion'] == closing_head
 
 
-def test_a_close_whose_every_waiver_is_refused_does_not_rewrite_the_status_document(
-    plan_context, tmp_path, monkeypatch
-):
-    """With no waiver stamped there is nothing to commit, so the file is left as it was."""
+def test_a_close_on_the_functional_review_records_the_override_head(plan_context):
+    """The close is the owning writer of the plan's override-closed heads."""
+    plan_id = 'loop-back-close-override-head'
+    _make_plan(plan_id)
+    head = _real_head()
+
+    result = _close(plan_id, head)
+
+    assert result['status'] == 'success', result
+    assert read_status(plan_id)['metadata']['functional_review_override_heads'] == [head]
+
+
+def test_a_second_close_for_the_same_head_does_not_duplicate_the_override_head(plan_context):
+    plan_id = 'loop-back-close-override-head-idempotent'
+    _make_plan(plan_id)
+    head = _real_head()
+
+    _close(plan_id, head)
+    _close(plan_id, head)
+
+    assert read_status(plan_id)['metadata']['functional_review_override_heads'] == [head]
+
+
+def test_a_close_of_another_step_records_no_override_head(plan_context, tmp_path, monkeypatch):
+    plan_id = 'loop-back-close-other-step-no-override'
+    _make_plan(plan_id)
+    head, completed_at = _tmp_repo_two_heads(tmp_path, monkeypatch)
+    _mark(plan_id, _WAIVED_STEP, 'done', completed_at, 'quality gate green')
+
+    result = _close(plan_id, head, step=_WAIVED_STEP)
+
+    assert result['status'] == 'success', result
+    assert result['override_head_recorded'] is False
+    assert 'functional_review_override_heads' not in read_status(plan_id)['metadata']
+
+
+def test_a_close_reports_an_incomplete_close_when_the_override_head_cannot_be_written(plan_context, monkeypatch):
+    plan_id = 'loop-back-close-override-head-failed'
+    _make_plan(plan_id)
+    head = _real_head()
+
+    def _busy(*_args, **_kwargs):
+        raise TimeoutError('the status guard is held')
+
+    monkeypatch.setattr(_loop_back, 'rmw_json', _busy)
+
+    result = _close(plan_id, head)
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'close_incomplete'
+    assert result['override_head_recorded'] is False
+    assert 'override_head_error' in result
+
+
+def test_a_close_whose_every_waiver_is_refused_stamps_no_waiver(plan_context, tmp_path, monkeypatch):
+    """With no waiver stamped no waiver lands, and the earlier commit is carried forward.
+
+    The close still records the override-closed head it owns, so the document is
+    compared with that one key removed.
+    """
     plan_id = 'loop-back-close-waiver-all-refused'
     _make_plan(plan_id)
     closing_head, completed_at = _tmp_repo_two_heads(tmp_path, monkeypatch)
@@ -438,7 +495,7 @@ def test_a_close_whose_every_waiver_is_refused_does_not_rewrite_the_status_docum
         # Another writer re-fires the waived step once the close has validated it.
         result = real_mark(args)
         _mark(plan_id, _WAIVED_STEP, 'loop_back', completed_at, 'quality gate re-fired', loop_back_target=_PHASE)
-        after_mark.update(content=status_path.read_bytes(), inode=status_path.stat().st_ino)
+        after_mark.update(parsed=json.loads(status_path.read_text(encoding='utf-8')))
         return result
 
     monkeypatch.setattr(_loop_back, 'cmd_mark_step_done', _mark_then_loop_the_waived_step_back)
@@ -450,9 +507,15 @@ def test_a_close_whose_every_waiver_is_refused_does_not_rewrite_the_status_docum
     assert result['waived_steps'] == []
     assert len(result['waiver_refusals']) == 1
     assert _WAIVED_STEP in result['waiver_refusals'][0]
-    assert status_path.read_bytes() == after_mark['content']
-    # A commit replaces the file, so an unchanged inode means none happened.
-    assert status_path.stat().st_ino == after_mark['inode']
+    committed = json.loads(status_path.read_text(encoding='utf-8'))
+    assert 'refire_waiver' not in committed['metadata']['phase_steps'][_PHASE][_WAIVED_STEP]
+    assert committed['metadata']['functional_review_override_heads'] == [closing_head]
+    # The other writer's commit survives: nothing but the override head and the
+    # timestamp differs from the document the close read after its mark.
+    for document in (committed, after_mark['parsed']):
+        document.pop('updated', None)
+        document['metadata'].pop('functional_review_override_heads', None)
+    assert committed == after_mark['parsed']
 
 
 def test_a_change_committed_before_the_waiver_stamp_survives_it(plan_context, tmp_path, monkeypatch):

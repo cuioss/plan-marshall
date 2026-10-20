@@ -4,9 +4,10 @@
 
 PLAN-LB-52 gated the 6-finalize exit on the frozen criteria, but the gate
 refused legitimate work: a plan whose functional review the manifest dropped can
-never finalize, an operator-authorized deletion stays open forever, a superseded
-deliverable blocks, and a verdict that paraphrases its criterion is orphaned by
-an exact-text match.
+never finalize, an operator-authorized deletion stays open forever, and a
+superseded deliverable blocks. A verdict row answers its criterion by
+``criterion_id`` or exact text; a paraphrase that carries neither is the author's
+to correct, not a positional guess.
 
 Each Done-when here is driven over a real sandboxed plan directory and the real
 ``open_criteria`` / ``_finalize_findings_refusal`` code paths.
@@ -39,6 +40,8 @@ def _outline(criteria: list[str]) -> str:
 
 def _plan(plan_context: Any, criteria: list[str], *, freeze_from: list[str] | None = None) -> Path:
     plan_dir = Path(plan_context.plan_dir_for(PLAN_ID))
+    # The freeze binds its digest in the status record, so the plan must have one.
+    _status(plan_dir)
     (plan_dir / 'references.json').write_text(json.dumps({'base_branch': 'main'}), encoding='utf-8')
     (plan_dir / 'solution_outline.md').write_text(_outline(criteria), encoding='utf-8')
     if freeze_from is not None:
@@ -228,6 +231,7 @@ def test_paraphrased_verdict_row_grades_its_criterion(plan_context, tmp_path) ->
                     'criteria': [
                         {
                             'criterion': 'junk input is refused by the reader',
+                            'criterion_id': 'C1',
                             'status': 'met',
                             'evidence': ['src/parser.py:1'],
                         }
