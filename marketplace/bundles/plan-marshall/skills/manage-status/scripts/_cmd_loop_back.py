@@ -77,11 +77,11 @@ SPENT_KEY = 'spent'
 GRANTED_KEY = 'granted'
 GRANTS_KEY = 'grants'
 
-#: The plan-metadata list of heads at which an operator closed the functional review.
-#: ``loop-back close`` is this field's owning verb; the name is defined once in
-#: ``_criteria_snapshot`` (which reads it) and a generic ``metadata --set`` /
-#: ``--append`` naming it is refused (``manage-status``'s protected-key list).
-#: The one step whose operator close is recorded in ``OVERRIDE_HEADS_KEY``.
+#: The one step whose operator close is appended to ``OVERRIDE_HEADS_KEY``: a close
+#: of any other step says nothing about the functional review. The key's name and
+#: owning-verb contract live once in ``_criteria_snapshot`` (see
+#: ``OVERRIDE_HEADS_KEY``); ``loop-back close`` is the writer and a generic
+#: ``metadata --set`` / ``--append`` naming it is refused by the protected-key list.
 FUNCTIONAL_REVIEW_STEP = 'functional-review'
 
 #: The phase whose steps ``close`` closes and whose Q-Gate store it resolves in.

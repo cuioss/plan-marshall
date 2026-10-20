@@ -59,7 +59,7 @@ from _plan_parsing import (
     parse_document_sections,
     split_deliverable_blocks,
 )
-from file_ops import atomic_write_file, base_path, cwd_checkout_root
+from file_ops import atomic_write_bytes, atomic_write_file, base_path, cwd_checkout_root
 
 #: Plan-relative path of the frozen snapshot artifact.
 SNAPSHOT_FILE = 'work/criteria-snapshot.json'
@@ -150,9 +150,14 @@ def _merge_integrity(plan_id: str, merge: Callable[[dict[str, Any]], None]) -> b
     The guard is the SAME file-level ``O_EXCL`` guard ``manage-status`` commits
     ``status.json`` through (``_locks_core.rmw_json`` names it
     ``{status.json}.lock``), so this read-modify-write cannot interleave with a
-    status writer's: one of the two waits. The shared coordination module is
-    imported sideways, never the status writer upward, so the layering rule in
-    this module's docstring still holds.
+    status writer's critical section: one of the two waits.
+
+    Serialization alone does not make the block survive, because a status writer
+    commits a WHOLE document assembled from a snapshot it read before the guard.
+    The other half of the contract is on that side: ``_status_core.write_status``
+    carries ``criteria_integrity`` forward from the document it reads inside the
+    guard, so a writer holding a pre-merge snapshot cannot restore its stale copy
+    over this merge. Neither half is sufficient alone.
 
     A plan with no readable status record is left untouched and reports ``False``;
     so does a guard that cannot be taken within its budget (``TimeoutError``) and
@@ -622,15 +627,17 @@ def _roll_back_snapshot(path: Path, previous: bytes | None) -> bool:
 
     The prior content is carried as BYTES, not text: a corrupt snapshot that does
     not decode must still be restorable, and decoding it would fail before the
-    digest is even recorded. Returns ``False`` when the rollback itself failed, so
-    the caller reports that the artifact may still be on disk rather than claiming
-    it was removed.
+    digest is even recorded. Restoring goes through an atomic write-and-replace,
+    so a failure injected during the restore leaves the target holding its prior
+    contents rather than a truncated prefix. Returns ``False`` when the rollback
+    itself failed, so the caller reports that the artifact may still be on disk
+    rather than claiming it was removed.
     """
     try:
         if previous is None:
             path.unlink(missing_ok=True)
         else:
-            path.write_bytes(previous)
+            atomic_write_bytes(path, previous)
     except OSError:
         return False
     return True
@@ -1192,11 +1199,14 @@ def verdict_row_matches(row: Any, criterion: str, index: int, deliverable: Any =
 def _graded_status(criteria: list[Any], criterion: str, index: int, deliverable: Any = None) -> str:
     """Status a sealed verdict gives one frozen criterion, matched by stable id or text.
 
-    A row carrying an explicit ``criterion_id`` wins; exact text is tried next;
-    otherwise the criterion is ``ungraded``. There is no positional fallback: a
-    verdict row that answers something else is not evidence for this criterion, and
-    its position mere adjacency. A ``met`` row with no evidence is ``unevidenced``
-    here for the same reason the validator treats it so.
+    A row carrying an explicit ``criterion_id`` wins and answers ONLY the criterion
+    that id names. Exact text is tried next, but only for rows that name no
+    criterion by id: a row graded ``C2`` whose text happens to equal criterion 1's
+    frozen text does not grade criterion 1. Otherwise the criterion is
+    ``ungraded``. There is no positional fallback: a verdict row that answers
+    something else is not evidence for this criterion, and its position mere
+    adjacency. A ``met`` row with no evidence is ``unevidenced`` here for the same
+    reason the validator treats it so.
     """
     wanted = normalize_criterion(criterion)
     row: dict[str, Any] | None = None
@@ -1210,9 +1220,18 @@ def _graded_status(criteria: list[Any], criterion: str, index: int, deliverable:
             break
     if row is None:
         for candidate in criteria:
-            if isinstance(candidate, dict) and normalize_criterion(candidate.get('criterion')) == wanted:
+            if not isinstance(candidate, dict):
+                continue
+            if criterion_id_parts(candidate.get('criterion_id'))[1] is not None:
+                # An explicit id is the row's whole claim to a criterion. Matching
+                # it by text after the id arm refused it (another position, or a
+                # qualified id for another deliverable) would let a row graded
+                # against one criterion close a different one.
+                continue
+            if normalize_criterion(candidate.get('criterion')) == wanted:
                 row = candidate
                 break
+
     if row is None:
         return 'ungraded'
     status = str(row.get('status') or 'ungraded')

@@ -10,7 +10,7 @@ import stat
 from pathlib import Path
 from typing import Any, NamedTuple
 
-from _criteria_snapshot import INTEGRITY_KEY, OVERRIDE_HEADS_KEY, SNAPSHOT_FROZEN_KEY
+from _criteria_snapshot import INTEGRITY_KEY, OVERRIDE_HEADS_KEY
 from _locks_core import rmw_json
 from _status_core import (
     TITLE_TOKEN_OWNER_CLI,
@@ -66,10 +66,16 @@ BOOLEAN_METADATA_FIELDS = frozenset({'use_worktree'})
 # Metadata keys written only by their owning verb. A generic ``metadata --set`` /
 # ``--set --append`` would race or forge the outside-the-file binding the criteria
 # verbs record, so it is refused instead of silently accepted. ``criteria_integrity``
-# (which carries ``snapshot_frozen``) is written by the criteria writers through
+# is written at the top level of ``status.metadata`` by the criteria writers through
 # ``_criteria_snapshot.record_integrity``; ``functional_review_override_heads`` is
-# written by ``loop-back close``.
-PROTECTED_METADATA_FIELDS = frozenset({INTEGRITY_KEY, SNAPSHOT_FROZEN_KEY, OVERRIDE_HEADS_KEY})
+# written there by ``loop-back close``.
+#
+# Deliberately NOT protected: ``snapshot_frozen``. It is an inner key of the
+# ``criteria_integrity`` block, so no verb writes it at the top level. Protecting
+# the name would guard a write that never happens, while leaving the real key
+# (its parent block) fully guarded — a ``metadata --set snapshot_frozen`` lands as
+# an inert sibling of the block and cannot forge the recorded freeze.
+PROTECTED_METADATA_FIELDS = frozenset({INTEGRITY_KEY, OVERRIDE_HEADS_KEY})
 
 
 def _coerce_metadata_value(field: str, raw_value: Any) -> Any:

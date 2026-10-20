@@ -361,7 +361,7 @@ Use this for any identity a plan can legitimately hold more than one of — the 
 
 Semantics: an absent field becomes `[value]`; an existing list gains `value` unless it is already present (so a repeated capture is idempotent); a field already holding a NON-list returns `error: metadata_field_not_a_list` and leaves the document **byte-identical** — the scalar is never silently coerced into a container. The read-modify-write runs inside the same `rmw_json` critical section every other `status.json` writer commits through, so a concurrent append cannot be lost.
 
-**Protected keys.** `--set` and `--set --append` refuse `criteria_integrity`, `snapshot_frozen` and `functional_review_override_heads` with `error: protected_metadata_key`, writing nothing. Each is the outside-the-file binding of an owning verb: the criteria freeze and the verdict seal record `criteria_integrity` (which carries `snapshot_frozen`), and `loop-back close` records the override-closed heads. A generic metadata write would race or forge those records, so it is not a supported edit surface.
+**Protected keys.** `--set` and `--set --append` refuse `criteria_integrity` and `functional_review_override_heads` with `error: protected_metadata_key`, writing nothing. Each is the outside-the-file binding of an owning verb: the criteria freeze and the verdict seal record `criteria_integrity`, and `loop-back close` records the override-closed heads. A generic metadata write would race or forge those records, so it is not a supported edit surface. `snapshot_frozen` is NOT protected: it is an inner key of the `criteria_integrity` block, no verb writes it at the top level, and a top-level write of that name is an inert sibling that cannot forge the recorded freeze.
 
 **Get metadata**:
 ```bash
