@@ -77,6 +77,10 @@ def _outline(criteria: list[str]) -> str:
 
 def _plan(plan_context: Any, criteria: list[str], *, freeze: bool = False) -> Path:
     plan_dir = Path(plan_context.plan_dir_for(PLAN_ID))
+    (plan_dir / 'status.json').write_text(
+        json.dumps({'title': 'fixture', 'phases': [], 'current_phase': '6-finalize', 'metadata': {}}),
+        encoding='utf-8',
+    )
     (plan_dir / 'references.json').write_text(json.dumps({'base_branch': 'main'}), encoding='utf-8')
     (plan_dir / 'solution_outline.md').write_text(_outline(criteria), encoding='utf-8')
     if freeze:
@@ -202,17 +206,19 @@ def test_build_log_citation_is_accepted(plan_context, tmp_path, monkeypatch) -> 
     _commit(repo, {'README.md': 'readme\n'})
     monkeypatch.setattr(_attr, 'resolve_live_worktree', lambda _plan_id: repo)
     root = tmp_path / 'checkout'
-    log = root / '.plan' / 'local' / 'plans' / 'x' / 'build-results' / 'python-1.log'
+    plan_results = root / '.plan' / 'local' / 'plans' / PLAN_ID / 'build-results'
+    log = plan_results / 'python-1.log'
     log.parent.mkdir(parents=True)
     log.write_text('collected 3 items\n', encoding='utf-8')
     monkeypatch.setattr(_validate, 'cwd_checkout_root', lambda: str(root), raising=False)
+    monkeypatch.setattr(_validate, 'get_build_results_dir', lambda _plan_id: plan_results, raising=False)
     criteria = ['parser accepts input']
     _plan(plan_context, criteria, freeze=True)
 
     payload = review_support.run_validate(
         PLAN_ID,
         'functional',
-        _sealed(tmp_path, _verdict(criteria, [['.plan/local/plans/x/build-results/python-1.log']])),
+        _sealed(tmp_path, _verdict(criteria, [[f'.plan/local/plans/{PLAN_ID}/build-results/python-1.log']])),
         None,
     )
 

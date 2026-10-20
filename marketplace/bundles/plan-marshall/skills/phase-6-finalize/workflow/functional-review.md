@@ -148,22 +148,14 @@ Capture each returned `path` as `{verdict_file}` and `{verifier_file}`, and the 
 
 **A delta round needs the previous verdict.** On `round_kind: delta` the author carries forward the rows of the deliverables outside the delta, so it needs the previous round's verdict file. When `{verdict_exists}` is `false` on a delta round, re-run the attribution call above WITHOUT `--delta-step` and use that full-round TOON instead.
 
-**Record an operator-closed head before anything else.** Read this step's previous record:
+**Read the operator-closed heads before anything else.** Read this step's previous record:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status read \
   --plan-id {plan_id}
 ```
 
-Locate `metadata.phase_steps.6-finalize.functional-review`. When its `facts.may_close` is `operator_override`, the operator closed the review past its round cap at that record's `head_at_completion` (see [`review-rubric.md`](../standards/review-rubric.md) § 8). Add that head to the plan's list of override-closed heads — the call is idempotent, so a head already on the list is not added twice:
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \
-  --plan-id {plan_id} --set --append --field functional_review_override_heads \
-  --value {head_at_completion}
-```
-
-Then read the list back and capture it comma-joined as `{override_heads}` (empty when the field is absent):
+Locate `metadata.phase_steps.6-finalize.functional-review`. When its `facts.may_close` is `operator_override`, the operator closed the review past its round cap at that record's `head_at_completion` (see [`review-rubric.md`](../standards/review-rubric.md) § 8). That head is already in the plan's list of override-closed heads: `manage-status loop-back close` is the list's owning writer and records the head when the override is made, so this step records nothing. A generic `metadata --set` or `--set --append` naming `functional_review_override_heads` is refused — do not reintroduce one. Read the list back and capture it comma-joined as `{override_heads}` (empty when the field is absent):
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \
@@ -332,6 +324,7 @@ The verdict file is the schema `review_support validate --kind functional` check
       "criteria": [
         {
           "criterion": "the success-criterion text",
+          "criterion_id": "C1 — optional; D1.C1 is also accepted",
           "status": "met | unevidenced | not_met",
           "evidence": ["path/to/file.py:42", "test/module/test_file.py::test_name"],
           "fix_kind": "implementation | correction"
@@ -355,6 +348,8 @@ The verdict file is the schema `review_support validate --kind functional` check
 ```
 
 `deliverables` carries exactly one row per outline deliverable. `residuals` belongs on a `met_with_residuals` row and `superseded_by` on a `superseded` row. `fix_kind` is required on every item that grades `blocking`; a `not_met` deliverable and an `unevidenced` criterion default to `implementation` when it is omitted.
+
+A criterion row answers its frozen criterion by `criterion_id` first, then by exact normalised text. Position is never a match. When the row's `criterion` text is a paraphrase rather than the frozen wording, carry the criterion's id (`C1`; the deliverable-qualified `D1.C1` is also accepted and is checked against the row's own deliverable). A paraphrased row without the id leaves the criterion ungraded and the validator reports the row as `unmatched_criterion` — unless the row's text is a criterion the current outline carries, which is the author grading the outline as it now reads (an operator-authorized rewrite lands there). A verdict sealed before `criterion_id` existed whose row paraphrases a frozen criterion is therefore reported unmatched and cannot close: re-run the round and include the id.
 
 ## Author return
 
@@ -671,7 +666,7 @@ When `rev-parse` itself failed, omit `--head-at-completion` rather than forwardi
 When this step's round budget is spent, the operator either grants another round or closes the review with `manage-status loop-back close --step functional-review`, which records `may_close=operator_override` at the head the operator judged and resolves this step's `functional-review-state` findings. The override closes ONLY that head ([`review-rubric.md`](../standards/review-rubric.md) § 8):
 
 - A later fix commit advances HEAD past the override-closed record, so the dispatcher's HEAD-dependency check re-fires this step, and `attribution` scopes the firing as a delta round over the files the commit touched. The re-fire comes from the HEAD advance, not from a loop-back admission, so it spends no round from this step's budget.
-- Step 1 adds every override-closed head to `functional_review_override_heads`, and every later record carries the list as `override_closed_heads`.
+- Step 1 READS the override-closed heads that `manage-status loop-back close` records when the operator closes the review; the close is the list's owning writer, and every later record carries the list as `override_closed_heads`.
 
 ## Round-loop termination
 
