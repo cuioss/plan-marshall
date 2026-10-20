@@ -87,16 +87,29 @@ def test_a_deliverable_qualified_id_refused_by_the_id_arm_does_not_match_by_text
 
 
 def test_a_failure_injected_during_the_rollback_write_keeps_the_prior_bytes(plan_context, monkeypatch) -> None:
+    """A rollback that fails at the write leaves valid prior bytes, never a truncation.
+
+    The injection sabotages the non-atomic ``Path`` write primitives a regression
+    would reach for, truncating the file before raising. The atomic write path
+    does not use them, so it completes and the target holds the prior bytes; a
+    ``Path.write_bytes``/``write_text`` rollback would leave ``b'{ truncated'``.
+    """
     plan_dir = _plan(plan_context)
     snapshot_file = plan_dir / 'work' / 'criteria-snapshot.json'
     before = snapshot_file.read_bytes()
 
-    def _truncate_then_fail(self: Path, data: bytes) -> int:
+    def _truncate_bytes_then_fail(self: Path, data: bytes) -> int:
         with self.open('wb') as handle:
             handle.write(b'{ truncated')
         raise OSError('injected write failure')
 
-    monkeypatch.setattr(Path, 'write_bytes', _truncate_then_fail)
+    def _truncate_text_then_fail(self: Path, data: str, *args: Any, **kwargs: Any) -> int:
+        with self.open('w', encoding='utf-8') as handle:
+            handle.write('{ truncated')
+        raise OSError('injected write failure')
+
+    monkeypatch.setattr(Path, 'write_bytes', _truncate_bytes_then_fail)
+    monkeypatch.setattr(Path, 'write_text', _truncate_text_then_fail)
     monkeypatch.setattr(_snap, 'record_integrity', lambda *_args, **_kwargs: False)
 
     result = _snap.authorize_change(PLAN_ID, 1, FROZEN[0], 'operator: approve the wording')

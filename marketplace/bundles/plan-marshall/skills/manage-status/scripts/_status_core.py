@@ -156,8 +156,10 @@ def write_status(plan_id: str, status: dict[Any, Any], *, preserve_title_token: 
     - ``metadata.functional_review_override_heads`` — ``loop-back close``.
 
     Committing here closes the windows for all three: the O_EXCL guard serializes
-    against the owning verbs' own critical sections (same guard file, because all
-    resolve the path through ``get_status_path``), and the value carried into the
+    against the owning verbs' own critical sections — the status writer and the
+    owning verbs resolve the same plan status file (``get_status_path`` here,
+    ``base_path('plans', id, 'status.json')`` in ``_merge_integrity``), so
+    ``rmw_json`` names the same guard file — and the value carried into the
     committed document is the one read INSIDE the guard rather than the caller's
     snapshot. The carry is deliberately narrow rather than a whole-document
     re-read-and-merge: a merge cannot tell the caller's intended mutation from
@@ -168,13 +170,16 @@ def write_status(plan_id: str, status: dict[Any, Any], *, preserve_title_token: 
     Guarding at this single seam rather than at individual phase-write call
     sites is deliberate: every full-document writer in this skill shares the
     hazard, so a per-call-site guard would be one call site short by
-    construction the moment a new writer is added. The callers this covers are
-    the ``require_status`` → ``write_status`` writers in ``_status_query``
-    (``set-phase``, ``update-phase``, ``metadata --set``), ``_cmd_lifecycle``
-    (create seed, transition, loop-back marker writes, archive),
-    ``_cmd_planning_lane``, ``_cmd_change_type_heuristic``, ``_cmd_loop_back``
-    (admit/grant), ``_cmd_aggregate_confidence``, ``_cmd_mark_step``
-    (``mark-step-done``) and ``_cmd_merge_authorization``.
+    construction the moment a new writer is added. The full-document writers this
+    covers include ``_status_query`` (``set-phase``, ``update-phase``,
+    ``metadata --set``), ``_cmd_lifecycle`` (the create seed, ``transition``,
+    loop-back marker writes, ``archive``), ``_cmd_planning_lane``,
+    ``_cmd_change_type_heuristic``, ``_cmd_loop_back`` (admit/grant),
+    ``_cmd_aggregate_confidence``, ``_cmd_mark_step`` (``mark-step-done``) and
+    ``_cmd_merge_authorization``. Most reach the seam through ``require_status``;
+    the create seed writes a document this call creates, and the internal
+    recompute writers read it themselves, so the seam — not the ``require_status``
+    gate — is what covers them.
 
     Args:
         plan_id: Plan whose ``status.json`` is written.

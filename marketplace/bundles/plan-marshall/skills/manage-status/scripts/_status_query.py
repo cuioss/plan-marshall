@@ -71,10 +71,10 @@ BOOLEAN_METADATA_FIELDS = frozenset({'use_worktree'})
 # written there by ``loop-back close``.
 #
 # Deliberately NOT protected: ``snapshot_frozen``. It is an inner key of the
-# ``criteria_integrity`` block, so no verb writes it at the top level. Protecting
-# the name would guard a write that never happens, while leaving the real key
-# (its parent block) fully guarded — a ``metadata --set snapshot_frozen`` lands as
-# an inert sibling of the block and cannot forge the recorded freeze.
+# ``criteria_integrity`` block, so no OWNING verb writes it at the top level.
+# Protecting the name would guard a write that never happens, while leaving the
+# real key (its parent block) fully guarded — a ``metadata --set snapshot_frozen``
+# lands as an inert sibling of the block and cannot forge the recorded freeze.
 PROTECTED_METADATA_FIELDS = frozenset({INTEGRITY_KEY, OVERRIDE_HEADS_KEY})
 
 

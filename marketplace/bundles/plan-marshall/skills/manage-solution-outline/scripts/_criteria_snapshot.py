@@ -293,11 +293,13 @@ def authorize_refreeze(plan_id: str, decision: str, phase: str = '3-outline') ->
 
     The authorization is recorded in the plan's status record and logged through
     the same decision-log path ``criteria-authorize`` uses. The record commits
-    FIRST and the decision line is written only for an authorization that landed:
-    the line used to be written before the record, so a record failure left a log
-    line for an authorization the status record does not carry. When the line
-    cannot be written after a successful record, the authorization is withdrawn
-    back to its prior value rather than left as an unlogged edit.
+    FIRST — its prior value captured in the same guarded merge — and the decision
+    line is written only for an authorization that landed: the line used to be
+    written before the record, so a record failure left a log line for an
+    authorization the status record does not carry. When the line cannot be
+    written after a successful record, the authorization is withdrawn back to its
+    prior value, conditioned on the value this call set; the result reports
+    whether the withdrawal landed rather than claiming an exact restore.
     """
     if not str(decision or '').strip():
         return {
@@ -315,21 +317,46 @@ def authorize_refreeze(plan_id: str, decision: str, phase: str = '3-outline') ->
             'error': 'decision_log_unavailable',
             'message': f'plan_logging could not be imported ({exc}); the authorization was not recorded',
         }
-    already_authorized = bool(integrity_record(plan_id).get('refreeze_authorized'))
-    if not record_integrity(plan_id, refreeze_authorized=True):
+    already_authorized: dict[str, Any] = {}
+
+    def _set_authorized(block: dict[str, Any]) -> None:
+        # Capture the prior value in the SAME guarded merge that sets it, so a
+        # withdrawal cannot restore a value read from an older document.
+        already_authorized['previous'] = block.get('refreeze_authorized')
+        block['refreeze_authorized'] = True
+
+    if not _merge_integrity(plan_id, _set_authorized):
         return {
             'status': 'error',
             'plan_id': plan_id,
             'error': 'status_record_unavailable',
             'message': 'the plan status record could not be written, so the authorization was not recorded',
         }
-    logged = plan_logging.log_decision(
-        plan_id,
-        f'(criteria-integrity) Operator decision authorizes re-freezing the criteria snapshot — {decision}',
-        phase=phase,
-    )
+    try:
+        logged = plan_logging.log_decision(
+            plan_id,
+            f'(criteria-integrity) Operator decision authorizes re-freezing the criteria snapshot — {decision}',
+            phase=phase,
+        )
+    except Exception as exc:  # a log call that raised is a failed log, not a reason to skip the withdrawal
+        logged = {'status': 'error', 'error': type(exc).__name__, 'message': str(exc)}
     if logged.get('status') != 'success':
-        withdrawn = record_integrity(plan_id, refreeze_authorized=already_authorized)
+
+        def _withdraw(block: dict[str, Any]) -> None:
+            # Best-effort undo, conditioned on the value this call set: a
+            # concurrent write_snapshot may already have consumed the
+            # authorization, and that decision must win. A newer authorization
+            # that also reads True is indistinguishable here; the withdrawal is
+            # therefore reported rather than claimed as an exact restore.
+            if block.get('refreeze_authorized') is not True:
+                return
+            previous = already_authorized.get('previous')
+            if previous is None:
+                block.pop('refreeze_authorized', None)
+            else:
+                block['refreeze_authorized'] = previous
+
+        withdrawn = _merge_integrity(plan_id, _withdraw)
         return {
             'status': 'error',
             'plan_id': plan_id,
@@ -1003,12 +1030,15 @@ def _commit_authorization(
         }
     # Only an authorization that LANDED gets a decision line. A line written
     # before the commit claimed an authorization a later refusal had discarded.
-    logged = log_decision(
-        plan_id,
-        f'(criteria-integrity) Operator decision authorizes changing frozen criterion '
-        f'D{number}: {criterion!r} — {decision}',
-        phase=phase,
-    )
+    try:
+        logged = log_decision(
+            plan_id,
+            f'(criteria-integrity) Operator decision authorizes changing frozen criterion '
+            f'D{number}: {criterion!r} — {decision}',
+            phase=phase,
+        )
+    except Exception as exc:  # a log call that raised is a failed log, not a reason to skip the withdrawal
+        logged = {'status': 'error', 'error': type(exc).__name__, 'message': str(exc)}
     if logged.get('status') != 'success':
         rolled_back = _roll_back_snapshot(path, previous)
         digest_restored = record_snapshot_digest(plan_id) if rolled_back else False
@@ -1199,11 +1229,11 @@ def verdict_row_matches(row: Any, criterion: str, index: int, deliverable: Any =
 def _graded_status(criteria: list[Any], criterion: str, index: int, deliverable: Any = None) -> str:
     """Status a sealed verdict gives one frozen criterion, matched by stable id or text.
 
-    A row carrying an explicit ``criterion_id`` wins and answers ONLY the criterion
+    A row carrying a parseable ``criterion_id`` wins and answers ONLY the criterion
     that id names. Exact text is tried next, but only for rows that name no
-    criterion by id: a row graded ``C2`` whose text happens to equal criterion 1's
-    frozen text does not grade criterion 1. Otherwise the criterion is
-    ``ungraded``. There is no positional fallback: a verdict row that answers
+    criterion by a parseable id: a row graded ``C2`` whose text happens to equal
+    criterion 1's frozen text does not grade criterion 1. Otherwise the criterion
+    is ``ungraded``. There is no positional fallback: a verdict row that answers
     something else is not evidence for this criterion, and its position mere
     adjacency. A ``met`` row with no evidence is ``unevidenced`` here for the same
     reason the validator treats it so.

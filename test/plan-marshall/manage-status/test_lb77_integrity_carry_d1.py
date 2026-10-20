@@ -8,6 +8,11 @@ taken before it takes the status guard. The outside-the-file keys
 their own owning verbs through that same guard, so a writer that read before such
 a commit and writes after it would otherwise restore its stale copy and drop the
 record. These tests reproduce that ordering directly.
+
+The tests drive the seam the fix lives in — ``write_status`` — rather than the
+CLI verbs: ``loop-back close`` and ``mark-step-done`` are two of the sixteen
+full-document writers that commit through this one seam, and the seam is what
+covers every one of them.
 """
 
 from __future__ import annotations
@@ -83,3 +88,28 @@ def test_a_writer_cannot_drop_an_override_head_appended_meanwhile(plan_context) 
     _core.write_status(PLAN_ID, stale)
 
     assert _metadata(plan_dir)[_snap.OVERRIDE_HEADS_KEY] == [HEAD]
+
+
+def test_a_key_absent_on_disk_is_removed_from_the_callers_stale_copy(plan_context) -> None:
+    """Live absence wins: a write cannot resurrect a key the document no longer holds."""
+    plan_dir = _plan(plan_context)
+    stale = _core.read_status(PLAN_ID)
+    stale['metadata'][_snap.INTEGRITY_KEY] = {'snapshot_frozen': True}
+    stale['metadata'][_snap.OVERRIDE_HEADS_KEY] = [HEAD]
+
+    _core.write_status(PLAN_ID, stale)
+
+    stored = _metadata(plan_dir)
+    assert _snap.INTEGRITY_KEY not in stored
+    assert _snap.OVERRIDE_HEADS_KEY not in stored
+
+
+def test_an_archive_style_write_still_carries_the_integrity_record(plan_context) -> None:
+    """Dropping the title token does not authorise dropping the integrity record."""
+    plan_dir = _plan(plan_context)
+    stale = _core.read_status(PLAN_ID)
+    assert _snap.record_integrity(PLAN_ID, snapshot_frozen=True)
+
+    _core.write_status(PLAN_ID, stale, preserve_title_token=False)
+
+    assert _metadata(plan_dir)[_snap.INTEGRITY_KEY]['snapshot_frozen'] is True

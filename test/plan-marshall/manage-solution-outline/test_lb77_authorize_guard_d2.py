@@ -143,3 +143,35 @@ def test_a_snapshot_busy_refusal_writes_no_decision_log_line(plan_context, monke
     assert snapshot is not None
     assert snapshot['authorized_changes'] == []
     assert _snapshot_file(plan_dir).is_file()
+
+
+def test_a_failed_decision_log_rolls_the_authorization_back(plan_context, monkeypatch) -> None:
+    """A committed authorization is withdrawn when its line cannot be written."""
+    plan_dir = _plan(plan_context)
+    before = _snapshot_file(plan_dir).read_bytes()
+    monkeypatch.setattr(plan_logging, 'log_decision', lambda *args, **kwargs: {'status': 'error', 'error': 'injected'})
+
+    result = _snap.authorize_change(PLAN_ID, 1, FROZEN[0], 'operator: approve the wording')
+
+    assert result['status'] == 'error', result
+    assert result['error'] == 'decision_log_unavailable'
+    assert 'rolled back' in result['message']
+    assert _snapshot_file(plan_dir).read_bytes() == before
+    assert _snap.snapshot_state(PLAN_ID) == 'frozen'
+
+
+def test_a_raising_decision_log_withdraws_the_refreeze_authorization(plan_context, monkeypatch) -> None:
+    """A log call that raises is a failed log, and the authorization is withdrawn."""
+    _plan(plan_context)
+
+    def _raise(*args: Any, **kwargs: Any) -> dict[str, Any]:
+        raise RuntimeError('injected log failure')
+
+    monkeypatch.setattr(plan_logging, 'log_decision', _raise)
+
+    result = _snap.authorize_refreeze(PLAN_ID, 'operator: approve the refined criteria')
+
+    assert result['status'] == 'error', result
+    assert result['error'] == 'decision_log_unavailable'
+    assert 'withdrawn' in result['message']
+    assert 'refreeze_authorized' not in _snap.integrity_record(PLAN_ID)

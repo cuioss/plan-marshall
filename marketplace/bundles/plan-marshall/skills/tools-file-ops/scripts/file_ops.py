@@ -1546,6 +1546,10 @@ def write_json(path: str | Path, data: Any) -> None:
 def atomic_write_file(path: str | Path, content: str) -> None:
     """Write text file atomically using temp file + rename pattern.
 
+    The payload is encoded as UTF-8 with LF terminators explicitly rather than
+    through text mode, so the bytes written do not vary with the host's newline
+    convention.
+
     Args:
         path: Target file path
         content: Content to write
