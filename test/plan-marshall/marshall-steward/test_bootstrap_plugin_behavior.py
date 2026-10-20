@@ -112,7 +112,7 @@ def test_read_runtime_target_ignores_opencode_pid(tmp_path: Path, monkeypatch):
     monkeypatch.delenv('CLAUDE_CODE_SESSION_ID', raising=False)
     monkeypatch.delenv('OPENCODE', raising=False)
     monkeypatch.setenv('OPENCODE_PID', '12345')
-    assert bp.read_runtime_target(cwd=str(tmp_path)) != 'opencode'
+    assert bp.read_runtime_target(cwd=str(tmp_path)) == 'claude'
 
 
 def test_read_runtime_target_antigravity_precedence_over_opencode(tmp_path: Path, monkeypatch):

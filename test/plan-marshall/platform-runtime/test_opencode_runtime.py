@@ -499,6 +499,39 @@ def test_to_opencode_grant_accepts_the_opencode2_subagent_key() -> None:
     assert action == 'allow'
 
 
+def test_permission_fix_ensure_still_writes_the_legacy_map(
+    runtime: OpenCodeRuntime, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An OpenCode 1 map-shaped file keeps being written as a map (no silent no-op)."""
+    monkeypatch.chdir(tmp_path)
+    config = tmp_path / 'opencode.json'
+    config.write_text(json.dumps({'permission': {'bash': {}}}), encoding='utf-8')
+
+    result = _parse(runtime.permission_fix('project', 'ensure', ['deny(git push *)'], False))
+
+    assert result['status'] == 'success'
+    assert result['added'] == 1, 'ensure must write the rule, not report a no-op'
+    settings = json.loads(config.read_text(encoding='utf-8'))
+    assert 'permissions' not in settings, 'the map shape the file has must be kept'
+    assert settings['permission']['bash']['git push *'] == 'deny'
+
+
+def test_permission_fix_remove_still_writes_the_legacy_map(
+    runtime: OpenCodeRuntime, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Remove on a map-shaped file deletes the rule from the map."""
+    monkeypatch.chdir(tmp_path)
+    config = tmp_path / 'opencode.json'
+    config.write_text(json.dumps({'permission': {'bash': {'git push *': 'deny'}}}), encoding='utf-8')
+
+    result = _parse(runtime.permission_fix('project', 'remove', ['deny(git push *)'], False))
+
+    assert result['status'] == 'success'
+    assert result['removed'] == 1
+    settings = json.loads(config.read_text(encoding='utf-8'))
+    assert 'git push *' not in settings['permission']['bash']
+
+
 def test_permission_fix_ensure_persists_deny_action(
     runtime: OpenCodeRuntime, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

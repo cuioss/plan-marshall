@@ -1471,7 +1471,7 @@ class Runtime(ABC):
 
         The four implementors this contract migrates together are
         ``_claude_runtime_impl`` (``Task``), ``claude_runtime`` (``Task`` via
-        the shared impl), ``opencode_runtime`` (``task``, conditional on tool
+        the shared impl), ``opencode_runtime`` (``subagent``, conditional on tool
         availability), and ``antigravity_runtime`` (``invoke_subagent``).
 
         Returns ``no-op`` when the agent requires tools the target has no

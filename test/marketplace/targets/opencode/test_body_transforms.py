@@ -34,7 +34,7 @@ from marketplace.targets.body_transform_engine import (
 
 # The OpenCode rewrite templates, mirrored from mapping.json for direct-applier
 # tests. Integration/composition tests load them from the real mapping.json.
-OPENCODE_DIRECTIVE_TEMPLATE = 'Call the `skill` tool with `{ name: "{bundle}-{skill}" }` before continuing.'
+OPENCODE_DIRECTIVE_TEMPLATE = 'Call the `skill` tool with `{ id: "{bundle}-{skill}" }` before continuing.'
 OPENCODE_READ_TEMPLATE = 'Call the `read` tool with `{ filePath: "{path}" }` before continuing.'
 OPENCODE_SLASH_TEMPLATE = '/{name}'
 
@@ -79,13 +79,13 @@ def test_rewrite_skill_directives_full_line_match():
     the line's terminating newline as part of the match."""
     body = 'Skill: foo:bar\n'
     result = rewrite_skill_directives(body, OPENCODE_DIRECTIVE_TEMPLATE)
-    assert result == 'Call the `skill` tool with `{ name: "foo-bar" }` before continuing.'
+    assert result == 'Call the `skill` tool with `{ id: "foo-bar" }` before continuing.'
 
 
 def test_rewrite_skill_directives_full_line_with_extra_spacing():
     body = 'Skill:   plan-marshall:phase-5-execute\n'
     result = rewrite_skill_directives(body, OPENCODE_DIRECTIVE_TEMPLATE)
-    assert result == 'Call the `skill` tool with `{ name: "plan-marshall-phase-5-execute" }` before continuing.'
+    assert result == 'Call the `skill` tool with `{ id: "plan-marshall-phase-5-execute" }` before continuing.'
 
 
 def test_rewrite_skill_directives_inline_backtick_left_alone():
@@ -111,8 +111,8 @@ def test_rewrite_skill_directives_idempotent():
 def test_rewrite_skill_directives_multiple_directives():
     body = 'Skill: alpha:one\nmiddle prose\nSkill: beta:two\n'
     result = rewrite_skill_directives(body, OPENCODE_DIRECTIVE_TEMPLATE)
-    assert 'Call the `skill` tool with `{ name: "alpha-one" }` before continuing.' in result
-    assert 'Call the `skill` tool with `{ name: "beta-two" }` before continuing.' in result
+    assert 'Call the `skill` tool with `{ id: "alpha-one" }` before continuing.' in result
+    assert 'Call the `skill` tool with `{ id: "beta-two" }` before continuing.' in result
     assert 'middle prose' in result
 
 

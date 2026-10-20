@@ -13,15 +13,18 @@ OpenCode-specific behaviour:
 - project initial-setup succeeds but reports ``hook_installed: false`` for the
   same reason.
 - permission operations are REAL writing operations against OpenCode's
-  ``permission`` settings block: configure writes grants into the per-tool
-  pattern maps, fix ensure/add/remove add and delete them (carrying
+  settings. A file in the OpenCode 2 shape is read and written through its
+  ordered ``permissions`` list of ``{action, resource, effect}`` rules;
+  a file still in the OpenCode 1 shape is read and written through its
+  ``permission`` pattern maps, so the operator's file keeps the shape it has.
+  configure writes grants, fix ensure/add/remove add and delete them (carrying
   ``allow``/``ask``/``deny`` actions via ``to_opencode_grant``), and fix
   protect-path renders deny entries guarding a named directory in BOTH the
   tilde and the absolute spelling — counts only ever cross back, exactly as on
   the Claude target. The maintenance operations consolidate and normalize
   report a ``success`` no-op, mirroring the Claude target's contract split.
 - web-analyze and web-apply are real too: they read and write the ``webfetch``
-  permission key in the same settings block.
+  permission in whichever shape the settings file carries.
 - metrics capture declines on every input, manual count included, returning
   ``no-op`` (no token-persistence boundary is reachable from this target, so a
   success carrying the count would be a silently lost measurement).
@@ -407,9 +410,11 @@ def _protect_path_deny_entries(protected_dir: str) -> dict[str, dict[str, str]]:
 # the legacy map path and the list path cannot disagree about which tool a
 # grant names.
 
-#: Internal grant category -> OpenCode 2 rule action. Only the shell rename
-#: exists; every other category is already the OpenCode tool name.
-_CATEGORY_TO_ACTION = {'bash': 'shell'}
+#: Internal grant category -> OpenCode 2 rule action. ``bash`` is the shell
+#: rename; ``task`` is the OpenCode 1 name a caller may still hand us, and it is
+#: normalized to the OpenCode 2 tool on WRITE so the list never carries an
+#: action no OpenCode 2 tool matches. Every other category is already the tool.
+_CATEGORY_TO_ACTION = {'bash': 'shell', 'task': 'subagent'}
 
 
 def _permission_action(category: str) -> str:
@@ -1407,6 +1412,8 @@ class OpenCodeRuntime(Runtime):
         if not isinstance(bash_map, dict):
             bash_map = {}
             perm['bash'] = bash_map
+
+        if operation in ('ensure', 'add'):
             added = 0
             for item in arguments:
                 cat, pat, act = to_opencode_grant(str(item))
@@ -2265,8 +2272,10 @@ class OpenCodeRuntime(Runtime):
     def health_check(self, checks: str) -> str:
         """Verify OpenCode platform integration.
 
-        The ``display`` check always reports unhealthy because no hook file is
-        installed.  All other checks report healthy.
+        The ``display`` and ``hook`` checks always report unhealthy because
+        OpenCode exposes no hook channel. ``version`` compares the installed
+        major with the schema major the emitter targets and reports a mismatch
+        — or *not checkable* for an absent or unreadable binary — never ok.
         """
         check_list = [c.strip() for c in checks.split(',')]
         if 'all' in check_list:

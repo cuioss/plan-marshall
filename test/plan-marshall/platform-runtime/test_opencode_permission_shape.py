@@ -142,6 +142,17 @@ def test_configure_adds_into_the_permissions_list(runtime: OpenCodeRuntime, list
     assert _exact_index(data['permissions'], 'shell', 'git push *', 'deny') is not None
 
 
+def test_the_opencode1_task_alias_is_written_as_the_opencode2_tool(
+    runtime: OpenCodeRuntime, list_settings: pathlib.Path
+):
+    """A ``task`` grant is normalized to ``subagent`` on write, never written as a dead action."""
+    runtime.permission_configure('project', [{'rule': 'task'}])
+    data = _load(list_settings)
+    actions = [rule['action'] for rule in data['permissions']]
+    assert 'subagent' in actions
+    assert 'task' not in actions
+
+
 def test_fix_ensure_and_remove_use_the_permissions_list(runtime: OpenCodeRuntime, list_settings: pathlib.Path):
     runtime.permission_fix('project', 'ensure', ['ask(git fetch *)'], False)
     data = _load(list_settings)

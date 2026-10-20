@@ -131,7 +131,7 @@ OpenCode resolves configuration from three tiered locations:
 2. **Project Subdirectory (`<project_dir>/.opencode/opencode.json`)**: Alternative project-local configuration folder.
 3. **Global User Configuration (`~/.config/opencode/opencode.json`)**: User-global configuration. Can be overridden via the `OPENCODE_CONFIG_DIR` environment variable.
 
-The per-agent `permissions` list is appended to the global one for that agent; OpenCode 2 applies the **last** matching rule, so a catch-all belongs at the front of each list and every specific rule after it.
+OpenCode 2 applies the **last** matching rule in a list and defaults to `ask` when nothing matches, so every list — global or per-agent — keeps its catch-all first and its specific rules after it. (The repository's root-config test `test/plan-marshall/platform-runtime/test_opencode_root_config.py` models the global-then-agent evaluation.)
 
 === Permission Schema
 
