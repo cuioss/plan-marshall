@@ -286,11 +286,13 @@ def record_verdict_digest(plan_id: str, kind: str, verdict_file: str | Path) -> 
 def authorize_refreeze(plan_id: str, decision: str, phase: str = '3-outline') -> dict[str, Any]:
     """Record an operator decision authorizing a re-freeze of the snapshot.
 
-    The decision is logged through the same decision-log path ``criteria-authorize``
-    uses, and the authorization is recorded in the plan's status record so the next
-    ``write_snapshot`` sees it. Logging and recording are one operation: an
-    authorization that reached only one of the two is not a decision the record can
-    stand behind, so a failure of either refuses.
+    The authorization is recorded in the plan's status record and logged through
+    the same decision-log path ``criteria-authorize`` uses. The record commits
+    FIRST and the decision line is written only for an authorization that landed:
+    the line used to be written before the record, so a record failure left a log
+    line for an authorization the status record does not carry. When the line
+    cannot be written after a successful record, the authorization is withdrawn
+    back to its prior value rather than left as an unlogged edit.
     """
     if not str(decision or '').strip():
         return {
@@ -308,24 +310,30 @@ def authorize_refreeze(plan_id: str, decision: str, phase: str = '3-outline') ->
             'error': 'decision_log_unavailable',
             'message': f'plan_logging could not be imported ({exc}); the authorization was not recorded',
         }
-    logged = plan_logging.log_decision(
-        plan_id,
-        f'(criteria-integrity) Operator decision authorizes re-freezing the criteria snapshot — {decision}',
-        phase=phase,
-    )
-    if logged.get('status') != 'success':
-        return {
-            'status': 'error',
-            'plan_id': plan_id,
-            'error': 'decision_log_unavailable',
-            'message': f'the operator decision could not be logged ({logged.get("error", "unknown")})',
-        }
+    already_authorized = bool(integrity_record(plan_id).get('refreeze_authorized'))
     if not record_integrity(plan_id, refreeze_authorized=True):
         return {
             'status': 'error',
             'plan_id': plan_id,
             'error': 'status_record_unavailable',
             'message': 'the plan status record could not be written, so the authorization was not recorded',
+        }
+    logged = plan_logging.log_decision(
+        plan_id,
+        f'(criteria-integrity) Operator decision authorizes re-freezing the criteria snapshot — {decision}',
+        phase=phase,
+    )
+    if logged.get('status') != 'success':
+        withdrawn = record_integrity(plan_id, refreeze_authorized=already_authorized)
+        return {
+            'status': 'error',
+            'plan_id': plan_id,
+            'error': 'decision_log_unavailable',
+            'message': (
+                f'the operator decision could not be logged ({logged.get("error", "unknown")}), so the '
+                'authorization was '
+                + ('withdrawn' if withdrawn else 'NOT withdrawn; the status record may still authorize it')
+            ),
         }
     return {'status': 'success', 'plan_id': plan_id, 'refreeze_authorized': True}
 
@@ -872,11 +880,15 @@ def authorize_change(
     """Record an operator decision authorizing one criterion change.
 
     The authorization is written into the snapshot AND to the plan's decision
-    log, because "requires a logged operator decision" is the rule: an
-    authorization that reached only the snapshot would be an unlogged edit. When
-    the decision log cannot be written the authorization is NOT recorded and the
-    verb refuses, so a comparison can never be satisfied by a record no operator
-    decision stands behind.
+    log, because "requires a logged operator decision" is the rule. The read, the
+    tamper check, the commit and the log line run under ONE plan-scoped snapshot
+    guard: a re-freeze that commits in the window would otherwise be rewritten
+    from the stale copy this function read before it took the guard, silently
+    reverting it. The decision line is written only after the commit succeeds, so
+    a ``snapshot_busy`` refusal — which is taken at the guard, before any read —
+    writes no line for an authorization that never happened. When the line still
+    cannot be written after a successful commit, the authorization is rolled back
+    rather than left as an unlogged edit.
     """
     if not str(decision or '').strip():
         return {
@@ -885,6 +897,20 @@ def authorize_change(
             'error': 'decision_required',
             'message': 'a criterion change is authorized only by a named operator decision',
         }
+    try:
+        with _snapshot_guard(plan_id):
+            return _authorize_change_locked(plan_id, number, criterion, decision, phase)
+    except TimeoutError:
+        return {
+            'status': 'error',
+            'plan_id': plan_id,
+            'error': 'snapshot_busy',
+            'message': 'another writer holds the criteria snapshot; the authorization was not recorded',
+        }
+
+
+def _authorize_change_locked(plan_id: str, number: int, criterion: str, decision: str, phase: str) -> dict[str, Any]:
+    """Read, check and commit one authorization inside the caller's snapshot guard."""
     snapshot = read_snapshot(plan_id)
     if snapshot is None:
         return {
@@ -925,29 +951,7 @@ def authorize_change(
             'error': 'decision_log_unavailable',
             'message': f'plan_logging could not be imported ({exc}); the authorization was not recorded',
         }
-    logged = plan_logging.log_decision(
-        plan_id,
-        f'(criteria-integrity) Operator decision authorizes changing frozen criterion '
-        f'D{number}: {criterion!r} — {decision}',
-        phase=phase,
-    )
-    if logged.get('status') != 'success':
-        return {
-            'status': 'error',
-            'plan_id': plan_id,
-            'error': 'decision_log_unavailable',
-            'message': f'the operator decision could not be logged ({logged.get("error", "unknown")})',
-        }
-    try:
-        with _snapshot_guard(plan_id):
-            return _commit_authorization(plan_id, snapshot, number, criterion, decision, phase)
-    except TimeoutError:
-        return {
-            'status': 'error',
-            'plan_id': plan_id,
-            'error': 'snapshot_busy',
-            'message': 'another writer holds the criteria snapshot; the authorization was not recorded',
-        }
+    return _commit_authorization(plan_id, snapshot, number, criterion, decision, phase, plan_logging.log_decision)
 
 
 def _commit_authorization(
@@ -957,8 +961,9 @@ def _commit_authorization(
     criterion: str,
     decision: str,
     phase: str,
+    log_decision: Callable[..., dict[str, Any]],
 ) -> dict[str, Any]:
-    """Rewrite the snapshot with one authorization and re-record its digest."""
+    """Rewrite the snapshot with one authorization, re-record its digest, then log it."""
     wanted = normalize_criterion(criterion)
     entries = [
         entry
@@ -987,6 +992,31 @@ def _commit_authorization(
             'message': (
                 'the rewritten snapshot digest could not be recorded, so the authorization was '
                 + ('rolled back' if rolled_back else 'NOT fully rolled back; the snapshot may hold the edit')
+            ),
+        }
+    # Only an authorization that LANDED gets a decision line. A line written
+    # before the commit claimed an authorization a later refusal had discarded.
+    logged = log_decision(
+        plan_id,
+        f'(criteria-integrity) Operator decision authorizes changing frozen criterion '
+        f'D{number}: {criterion!r} — {decision}',
+        phase=phase,
+    )
+    if logged.get('status') != 'success':
+        rolled_back = _roll_back_snapshot(path, previous)
+        digest_restored = record_snapshot_digest(plan_id) if rolled_back else False
+        return {
+            'status': 'error',
+            'plan_id': plan_id,
+            'error': 'decision_log_unavailable',
+            'message': (
+                f'the operator decision could not be logged ({logged.get("error", "unknown")}), so the '
+                'authorization was '
+                + (
+                    'rolled back'
+                    if rolled_back and digest_restored
+                    else 'NOT fully rolled back; the snapshot or its record may hold the edit'
+                )
             ),
         }
     return {
