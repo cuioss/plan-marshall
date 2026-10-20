@@ -46,6 +46,7 @@ One required attribute pair (`harness`, `transcripts`), one further always-prese
 | `harness_mismatch` | `true` when the ambient tier and the machine-local configuration name different targets | No |
 | `model` | Model identifier as reported by a script-accessible source or self-reported through `--model`; `mixed` when an OpenCode session tree ran more than one, `unknown` when the OpenCode session database could not be read | No |
 | `model_source` | `self_reported` (a `--model` flag) or `measured` (a script-readable source) | No |
+| `model_origin` | On OpenCode, `session_tree` when the model came from the session database or `environment` when it came from a configured environment value | No |
 | `model_omission_reason` | Why the model is omitted rather than measured: `no_session_id` when OpenCode has no `OPENCODE_SESSION_ID` in scope (and no script-readable model) | No |
 | `variant` | The OpenCode session tree's variant (e.g. `high`) | No |
 | `provider` | The OpenCode session tree's provider id | No |
@@ -97,10 +98,15 @@ is built from `Path.as_uri()`, so a path containing `?`, `#` or `%` is opened
 rather than truncated at the first metacharacter; the default path follows
 `XDG_DATA_HOME`. A tree that ran more than one
 model or variant is recorded as `model: mixed` with the distinct values listed —
-never averaged and never reduced to the root's value. An absent database, an
-unreadable schema or an unresolvable session records `model: unknown`. With no
-session id in scope the model is omitted WITH `model_omission_reason:
-no_session_id`, so the omission is traceable.
+never averaged and never reduced to the root's value. When every entry in a
+mixed tree shares one variant, that variant IS the measured effort and is
+recorded; when the variants differ there is no single effort, and neither a flag
+nor an environment value is substituted. The model also carries `model_origin`:
+`session_tree` for a measurement, `environment` for a configured fallback, so a
+landing-time refresh never lets the latter displace the former. An absent
+database, an unreadable schema or an unresolvable session records `model:
+unknown`. With no session id in scope the model is omitted WITH
+`model_omission_reason: no_session_id`, so the omission is traceable.
 
 `model` names the id; a single-model OpenCode tree also records `variant` (and,
 when the record carries one, `provider`), and the landing writes the two as the

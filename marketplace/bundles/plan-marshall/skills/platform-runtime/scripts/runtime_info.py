@@ -74,6 +74,16 @@ OPENCODE_SESSION_ID_ENV = 'OPENCODE_SESSION_ID'
 #: silently — the landing's ``unknown`` then has a trace.
 OMISSION_NO_SESSION_ID = 'no_session_id'
 
+#: Origin tag for a model MEASURED from the OpenCode session tree — the run's
+#: own record, which a landing-time refresh must not replace with a configured
+#: value.
+MODEL_ORIGIN_SESSION_TREE = 'session_tree'
+
+#: Origin tag for an OpenCode model read from the environment (a configured
+#: value, not the session record). It is script-readable but is NOT the run's
+#: measured model, so a refresh never lets it overwrite a session measurement.
+MODEL_ORIGIN_ENVIRONMENT = 'environment'
+
 #: Human-readable UTC timestamp shape for entry keys. Colons are deliberately
 #: absent: a TOON key ends at its first colon, so a ``HH:MM:SS`` stamp would
 #: split the key during parsing.
@@ -397,14 +407,30 @@ def measure_opencode_model(
         return dict(unknown)
     if len(distinct) == 1:
         only = next(iter(distinct.values()))
-        measured: dict[str, Any] = {'model': only['id'], 'model_source': SOURCE_MEASURED}
+        measured: dict[str, Any] = {
+            'model': only['id'],
+            'model_source': SOURCE_MEASURED,
+            'model_origin': MODEL_ORIGIN_SESSION_TREE,
+        }
         if 'variant' in only:
             measured['variant'] = only['variant']
         if 'provider' in only:
             measured['provider'] = only['provider']
         return measured
     listed = ', '.join(_mixed_model_labels(distinct))
-    return {'model': MODEL_MIXED, 'models': listed, 'model_source': SOURCE_MEASURED}
+    mixed: dict[str, Any] = {
+        'model': MODEL_MIXED,
+        'models': listed,
+        'model_source': SOURCE_MEASURED,
+        'model_origin': MODEL_ORIGIN_SESSION_TREE,
+    }
+    # A mixed tree may still have run a single variant throughout — the model id
+    # changed, the effort did not. Recording it keeps the measured effort rather
+    # than falling back to a flag or an environment default.
+    variants = {fields.get('variant') for fields in distinct.values()}
+    if len(variants) == 1 and None not in variants:
+        mixed['variant'] = next(iter(variants))
+    return mixed
 
 
 def _resolve_model_fields(
@@ -433,7 +459,11 @@ def _resolve_model_fields(
             return measured
         from_env = read_model_name(env)
         if from_env:
-            return {'model': from_env, 'model_source': SOURCE_MEASURED}
+            return {
+                'model': from_env,
+                'model_source': SOURCE_MEASURED,
+                'model_origin': MODEL_ORIGIN_ENVIRONMENT,
+            }
         return {'model_omission_reason': OMISSION_NO_SESSION_ID}
 
     if model_name:
@@ -643,7 +673,13 @@ def collect_runtime_info(
     if resolved_version:
         info['model_version'] = resolved_version
     measured_effort = info.get('variant') if harness == OPENCODE_HARNESS else None
-    info.update(_resolve_effort_fields(env, effort, measured_effort))
+    if harness == OPENCODE_HARNESS and info.get('model') == MODEL_MIXED and not measured_effort:
+        # A mixed tree whose variants differ has NO single measured effort. A
+        # flag or an environment value is not this run's effort, so neither is
+        # substituted; the landing keeps the start-time value with its source.
+        pass
+    else:
+        info.update(_resolve_effort_fields(env, effort, measured_effort))
     resolved_bundle = bundle_version if bundle_version else read_bundle_version(bundle_root)
     if resolved_bundle:
         info['bundle_version'] = resolved_bundle

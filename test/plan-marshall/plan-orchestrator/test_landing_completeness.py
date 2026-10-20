@@ -1207,14 +1207,14 @@ class TestEmitLandingRuntimeStamp:
         """A stamped variant rides into the landing as ``{model}/{variant}``."""
         text = self._text()
 
-        assert 'metadata.variant' in text
-        assert '{model}/{variant}' in text
+        assert '`{metadata.model}/{metadata.variant}`' in text
+        assert text.index('refresh-runtime-stamp') < text.index('Then read the fields')
 
     def test_emit_landing_writes_the_mixed_list(self):
         """A mixed stamp writes the distinct labels, never the bare ``mixed``."""
         text = self._text()
 
-        assert 'metadata.models' in text
+        assert 'write THOSE as the `model` fact rather than the bare `mixed`' in text
 
     def test_emit_landing_refreshes_the_stamp_first(self):
         """The producer re-reads the measured stamp at landing time."""

@@ -6396,6 +6396,7 @@ _PREFLIGHT_METADATA_FIELDS: tuple[str, ...] = (
     'variant',
     'provider',
     'model_source',
+    'model_origin',
     'model_omission_reason',
     'effort',
     'effort_source',
@@ -6811,12 +6812,13 @@ def cmd_refresh_runtime_stamp(args: argparse.Namespace) -> dict[str, Any]:
       ``model``, ``models``, ``variant``, ``provider`` and their sources — so a
       tree that gained a second model lands as ``mixed`` and a tree that
       collapsed back to one loses the stale mixed labels.
-    * A model that could NOT be read (``unknown``, a degraded collector, or no
-      session id) keeps the start-time value and, when that value's own source
-      was ``measured``, marks its provenance ``measured_at_start``. It never
-      writes ``unknown`` over a value the run actually measured, and it never
-      relabels a SELF-REPORTED value as measured — this verb forwards no
-      ``--model``/``--effort``, so it measured nothing.
+    * A model that could NOT be read (``unknown``, a degraded collector, no
+      session id, or an OpenCode environment fallback where the start value was
+      measured from the session tree) keeps the start-time value and, when that
+      value's own source was ``measured``, marks its provenance
+      ``measured_at_start``. It never writes ``unknown`` over a value the run
+      actually measured, never relabels a SELF-REPORTED value as measured, and
+      never lets a configured environment model displace the session record.
     * The harness and version fields are written only when the re-read carries
       them; they cannot change mid-run, so an unreadable re-read keeps what was
       already established.
@@ -6869,7 +6871,20 @@ def cmd_refresh_runtime_stamp(args: argparse.Namespace) -> dict[str, Any]:
         status['metadata'] = metadata
 
     measured_model = info.get('model')
-    readable = isinstance(measured_model, str) and measured_model.strip() and measured_model != 'unknown'
+    harness = info.get('harness')
+    # A session-tree measurement must not be replaced by an environment fallback:
+    # with no session id in scope OpenCode falls back to OPENCODE_MODEL, which is
+    # a configured value, not the run's record.
+    origin = info.get('model_origin')
+    preserves_session = not (
+        harness == 'opencode' and metadata.get('model_origin') == 'session_tree' and origin != 'session_tree'
+    )
+    readable = (
+        isinstance(measured_model, str)
+        and bool(measured_model.strip())
+        and measured_model != 'unknown'
+        and preserves_session
+    )
     if not readable:
         provenance_kept = False
         # Never relabel a SELF-REPORTED value as measured: this verb supplies no
@@ -6894,7 +6909,7 @@ def cmd_refresh_runtime_stamp(args: argparse.Namespace) -> dict[str, Any]:
             'reason': reason if isinstance(reason, str) and reason else 'model_unknown',
         }
 
-    for key in ('model', 'model_source'):
+    for key in ('model', 'model_source', 'model_origin'):
         value = info.get(key)
         if value is not None and str(value).strip():
             metadata[key] = str(value)

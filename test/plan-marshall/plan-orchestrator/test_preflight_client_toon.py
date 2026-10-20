@@ -357,6 +357,30 @@ def test_refresh_keeps_a_self_reported_effort_on_a_mixed_tree(tmp_path: Path, mo
     assert metadata['effort_source'] == 'self_reported'
 
 
+def test_refresh_keeps_a_session_measurement_over_an_environment_fallback(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A refresh with no session id must not replace a measured model with a configured one."""
+    db_path = tmp_path / 'opencode.db'
+    plan_dir = _preflight_opencode(
+        tmp_path, monkeypatch, db_path, [('ses-root', None, _opencode_model_json('deepseek-v4.1-flash', 'high'))]
+    )
+    assert _status_metadata(plan_dir)['model'] == 'deepseek-v4.1-flash'
+
+    monkeypatch.delenv('OPENCODE_SESSION_ID', raising=False)
+    monkeypatch.setenv('OPENCODE_MODEL', 'configured-model')
+    _runtime_info_via_router(monkeypatch)
+
+    result = _orch.cmd_refresh_runtime_stamp(_refresh_ns('my-plan'))
+
+    assert result['refreshed'] is False
+    metadata = _status_metadata(plan_dir)
+    assert metadata['model'] == 'deepseek-v4.1-flash'
+    assert metadata['variant'] == 'high'
+    assert metadata['model_source'] == 'measured_at_start'
+    assert metadata['model_origin'] == 'session_tree'
+
+
 def test_refresh_over_an_unchanged_tree_keeps_the_value(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """A tree unchanged since the start refreshes to the same measured value."""
     db_path = tmp_path / 'opencode.db'

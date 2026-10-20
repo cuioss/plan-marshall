@@ -404,6 +404,81 @@ def test_opencode_effort_is_the_measured_variant(tmp_path: Path) -> None:
     assert info['variant'] == 'high'
 
 
+def test_mixed_tree_with_one_variant_keeps_the_measured_effort(tmp_path: Path) -> None:
+    """A mixed tree whose models share one variant still measures that effort."""
+    db_path = tmp_path / 'opencode.db'
+    _write_session_db(
+        db_path,
+        [
+            ('ses-root', None, _model_json('deepseek-v4.1-flash', 'high')),
+            ('ses-child', 'ses-root', _model_json('gpt-5', 'high')),
+        ],
+    )
+
+    info = runtime_info.collect_runtime_info(
+        'opencode',
+        env={'PLAN_MARSHALL_EFFORT': 'low'},
+        effort='low',
+        opencode_db_path=db_path,
+        opencode_session_id='ses-root',
+    )
+
+    assert info['model'] == 'mixed'
+    assert info['variant'] == 'high'
+    assert info['effort'] == 'high'
+    assert info['effort_source'] == runtime_info.SOURCE_MEASURED
+
+
+def test_mixed_tree_with_differing_variants_omits_the_effort(tmp_path: Path) -> None:
+    """No single measured effort exists, so a flag or env value is not substituted."""
+    db_path = tmp_path / 'opencode.db'
+    _write_session_db(
+        db_path,
+        [
+            ('ses-root', None, _model_json('deepseek-v4.1-flash', 'high')),
+            ('ses-child', 'ses-root', _model_json('gpt-5', 'low')),
+        ],
+    )
+
+    info = runtime_info.collect_runtime_info(
+        'opencode',
+        env={'PLAN_MARSHALL_EFFORT': 'low'},
+        effort='low',
+        opencode_db_path=db_path,
+        opencode_session_id='ses-root',
+    )
+
+    assert 'effort' not in info
+    assert 'effort_source' not in info
+
+
+def test_opencode_session_measurement_carries_its_origin(tmp_path: Path) -> None:
+    """A session-tree measurement is marked as such, not as an environment fallback."""
+    db_path = tmp_path / 'opencode.db'
+    _write_session_db(db_path, [('ses-root', None, _model_json('deepseek-v4.1-flash', 'high'))])
+
+    info = runtime_info.collect_runtime_info(
+        'opencode',
+        env={},
+        opencode_db_path=db_path,
+        opencode_session_id='ses-root',
+    )
+
+    assert info['model_origin'] == runtime_info.MODEL_ORIGIN_SESSION_TREE
+
+
+def test_opencode_environment_model_carries_its_origin() -> None:
+    """An environment fallback is marked as an environment value, not a measurement."""
+    info = runtime_info.collect_runtime_info(
+        'opencode',
+        env={'OPENCODE_MODEL': 'configured-model'},
+        opencode_session_id=None,
+    )
+
+    assert info['model'] == 'configured-model'
+    assert info['model_origin'] == runtime_info.MODEL_ORIGIN_ENVIRONMENT
+
+
 def test_opencode_split_model_tree_is_mixed(tmp_path: Path) -> None:
     """A tree that ran more than one model lists both rather than reducing to the root."""
     db_path = tmp_path / 'opencode.db'

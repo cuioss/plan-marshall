@@ -205,8 +205,7 @@ class TestPhase1InitRuntimeStampBranch:
         """``metadata_stamped: false`` is a warning trigger alongside ``degraded``."""
         text = self._skill_md_text()
 
-        assert 'metadata_stamped' in text
-        assert 'metadata_stamped: false' in text
+        assert 'On `degraded: true` OR `metadata_stamped: false`' in text
 
     def test_warning_names_the_reason(self):
         """The warning names WHY the stamp is missing rather than only that it is."""
