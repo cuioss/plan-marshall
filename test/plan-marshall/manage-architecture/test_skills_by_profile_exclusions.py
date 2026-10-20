@@ -8,7 +8,6 @@ tests pin the read seam that serves phase-4, so "the repository forbids it" hold
 for the task a later phase reads and not only for a fresh enrichment.
 """
 
-import os
 import tempfile
 from pathlib import Path
 
@@ -36,18 +35,18 @@ _LIVE = 'plan-marshall:persona-plan-marshall-agent'
 _EXCLUDED = 'pm-dev-java:java-quarkus'
 
 
-def _write_marshal(*excluded_skills: str) -> Path:
-    """Write a real marshal.json where the project config reader resolves it."""
-    return _write_skill_domains({'java': {'excluded_skills': list(excluded_skills)}})
+def _write_marshal(project_dir: str, *excluded_skills: str) -> Path:
+    """Write the project's marshal.json with java exclusions."""
+    return _write_skill_domains(project_dir, {'java': {'excluded_skills': list(excluded_skills)}})
 
 
-def _write_skill_domains(skill_domains: dict) -> Path:
+def _write_skill_domains(project_dir: str, skill_domains: dict) -> Path:
     """Write a marshal.json carrying the given ``skill_domains`` block."""
     return Path(
         create_marshal_json(
-            Path(os.environ['PLAN_BASE_DIR']),
+            Path(project_dir),
             config={'skill_domains': skill_domains},
-            nest_in_plan_dir=False,
+            nest_in_plan_dir=True,
         )
     )
 
@@ -93,7 +92,7 @@ def test_read_seam_drops_a_skill_excluded_after_enrichment():
     """A stored optional the repository now excludes never reaches the served map."""
     with tempfile.TemporaryDirectory() as project_dir:
         _seed_module(project_dir, {'implementation': _profile(defaults=[_LIVE], optionals=[_EXCLUDED])})
-        _write_marshal('java-quarkus')
+        _write_marshal(project_dir, 'java-quarkus')
 
         payload = get_module_info('mod', project_dir=project_dir)
 
@@ -106,7 +105,7 @@ def test_read_seam_keeps_the_skill_without_an_exclusion():
     """Matched negative control: the same stored map keeps the skill unexcluded."""
     with tempfile.TemporaryDirectory() as project_dir:
         _seed_module(project_dir, {'implementation': _profile(defaults=[_LIVE], optionals=[_EXCLUDED])})
-        _write_marshal()
+        _write_marshal(project_dir)
 
         payload = get_module_info('mod', project_dir=project_dir)
 
@@ -126,10 +125,11 @@ def test_read_seam_applies_the_union_of_domain_exclusions():
             },
         )
         _write_skill_domains(
+            project_dir,
             {
                 'java': {'excluded_skills': ['java-quarkus']},
                 'python': {'excluded_skills': ['pytest-testing']},
-            }
+            },
         )
 
         payload = get_module_info('mod', project_dir=project_dir)
@@ -143,7 +143,7 @@ def test_overview_renders_the_effective_skill_count():
     """The display surface counts what the served map shows, not the raw store."""
     with tempfile.TemporaryDirectory() as project_dir:
         _seed_module(project_dir, {'implementation': _profile(defaults=[_LIVE], optionals=[_EXCLUDED])})
-        _write_marshal('java-quarkus')
+        _write_marshal(project_dir, 'java-quarkus')
 
         rendered = render_overview(project_dir)
 
@@ -154,7 +154,7 @@ def test_module_deep_dive_renders_the_effective_skill_count():
     """The deep-dive render agrees with the TOON read of the same module."""
     with tempfile.TemporaryDirectory() as project_dir:
         _seed_module(project_dir, {'implementation': _profile(defaults=[_LIVE], optionals=[_EXCLUDED])})
-        _write_marshal('java-quarkus')
+        _write_marshal(project_dir, 'java-quarkus')
 
         rendered = render_module_markdown('mod', project_dir, 400)
 
@@ -165,7 +165,7 @@ def test_overview_counts_the_stored_skill_without_an_exclusion():
     """Matched negative control: the same store renders its second skill."""
     with tempfile.TemporaryDirectory() as project_dir:
         _seed_module(project_dir, {'implementation': _profile(defaults=[_LIVE], optionals=[_EXCLUDED])})
-        _write_marshal()
+        _write_marshal(project_dir)
 
         rendered = render_overview(project_dir)
 
@@ -176,7 +176,7 @@ def test_read_seam_marks_an_exclusion_emptied_profile_minimal():
     """A profile the veto empties is a deliberate empty, not an unresolved one."""
     with tempfile.TemporaryDirectory() as project_dir:
         _seed_module(project_dir, {'implementation': _profile(optionals=[_EXCLUDED])})
-        _write_marshal('java-quarkus')
+        _write_marshal(project_dir, 'java-quarkus')
 
         payload = get_module_info('mod', project_dir=project_dir)
 

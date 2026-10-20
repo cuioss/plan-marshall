@@ -410,10 +410,14 @@ def enrich_add_domain(
     try:
         from extension_base import excluded_skills, filter_skill_map
 
-        exclusions = excluded_skills(domain_key)
+        exclusions = excluded_skills(domain_key, project_dir)
         if exclusions:
             current = filter_skill_map(current, exclusions)
             enriched['skills_by_profile'] = current
+            # The incoming map is filtered too: an extension that overrides
+            # applies_to_module and builds skills_by_profile itself never passes
+            # through ExtensionBase._build_applicable_result.
+            skills_by_profile = filter_skill_map(skills_by_profile, exclusions)
     except Exception:
         pass
     profiles_updated = []

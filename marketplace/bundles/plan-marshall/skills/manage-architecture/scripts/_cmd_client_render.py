@@ -182,7 +182,7 @@ def _profile_skills_line(profile: str, profile_data: Any) -> str:
     return f'- {profile}: unresolved (no skills, not declared minimal)'
 
 
-def _effective_skills_by_profile(enriched: dict[str, Any]) -> dict[str, Any]:
+def _effective_skills_by_profile(enriched: dict[str, Any], project_dir: str = '.') -> dict[str, Any]:
     """Return the map the repository lets through, for a rendered surface.
 
     The render reads the persisted enriched document directly, so without this
@@ -196,16 +196,16 @@ def _effective_skills_by_profile(enriched: dict[str, Any]) -> dict[str, Any]:
         from extension_base import all_excluded_skills, filter_skill_map
     except Exception:
         return skills_by_profile
-    exclusions = all_excluded_skills()
+    exclusions = all_excluded_skills(project_dir)
     if not exclusions:
         return skills_by_profile
     return filter_skill_map(skills_by_profile, exclusions)
 
 
-def _render_skills_by_profile_section(enriched_by_name: dict[str, dict[str, Any]]) -> list[str]:
+def _render_skills_by_profile_section(enriched_by_name: dict[str, dict[str, Any]], project_dir: str = '.') -> list[str]:
     rows: list[tuple[str, dict[str, Any]]] = []
     for name in sorted(enriched_by_name.keys()):
-        skills_by_profile = _effective_skills_by_profile(enriched_by_name[name])
+        skills_by_profile = _effective_skills_by_profile(enriched_by_name[name], project_dir)
         if skills_by_profile:
             rows.append((name, skills_by_profile))
     if not rows:
@@ -284,7 +284,7 @@ def render_overview(project_dir: str = '.', budget: int = DEFAULT_OVERVIEW_BUDGE
         _render_project_section(meta),
         _render_modules_section(enriched_by_name),
         _render_adjacency_section(deps_map, resolver_reports),
-        _render_skills_by_profile_section(enriched_by_name),
+        _render_skills_by_profile_section(enriched_by_name, project_dir),
     ]
     sections = [s for s in sections if s]
 
@@ -368,7 +368,7 @@ def render_module_markdown(
         packages_section.append('')
 
     skills_section: list[str] = []
-    skills_by_profile = _effective_skills_by_profile(merged)
+    skills_by_profile = _effective_skills_by_profile(merged, project_dir)
     if skills_by_profile:
         skills_section = ['## Skills by Profile', '']
         for profile in sorted(skills_by_profile.keys()):

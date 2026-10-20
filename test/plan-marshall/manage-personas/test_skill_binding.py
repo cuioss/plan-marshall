@@ -288,3 +288,13 @@ def test_bare_name_exclusion_removes_a_full_notation_skill():
 def test_unrelated_exclusion_leaves_a_skill_alone():
     """The matched negative control: a different bare name removes nothing."""
     assert _mp._is_excluded('pm-dev-java:java-cdi', {'pm-dev-java:java-quarkus'}) is False
+
+
+def test_bundle_qualified_exclusion_does_not_remove_another_bundle_skill():
+    """A qualified exclusion narrows to its bundle; it is not a bare-name match."""
+    assert _mp._is_excluded('other-bundle:java-quarkus', {'pm-dev-java:java-quarkus'}) is False
+
+
+def test_bundle_qualified_exclusion_removes_its_own_bundle_skill():
+    """The matched positive control for the narrowing case."""
+    assert _mp._is_excluded('pm-dev-java:java-quarkus', {'pm-dev-java:java-quarkus'}) is True

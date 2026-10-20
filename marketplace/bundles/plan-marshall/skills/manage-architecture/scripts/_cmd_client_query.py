@@ -699,7 +699,7 @@ def _emit_skills_by_profile_staleness_warning(
     return messages
 
 
-def _apply_repository_skill_exclusions(module: dict[str, Any]) -> dict[str, Any]:
+def _apply_repository_skill_exclusions(module: dict[str, Any], project_dir: str = '.') -> dict[str, Any]:
     """Drop repository-excluded skills from a module's persisted skills_by_profile.
 
     The architecture store is a cache: a module enriched before an exclusion was
@@ -718,7 +718,7 @@ def _apply_repository_skill_exclusions(module: dict[str, Any]) -> dict[str, Any]
         from extension_base import all_excluded_skills, filter_skill_map
     except Exception:
         return module
-    exclusions = all_excluded_skills()
+    exclusions = all_excluded_skills(project_dir)
     if not exclusions:
         return module
     return {**module, 'skills_by_profile': filter_skill_map(skills_by_profile, exclusions)}
@@ -740,7 +740,7 @@ def get_module_info(module_name: str | None = None, full: bool = False, project_
     # The repository veto outranks a stale stored map: apply it before the
     # staleness guard so an exclusion-emptied profile reads as declared-minimal
     # rather than as an unresolved one.
-    merged = _apply_repository_skill_exclusions(merged)
+    merged = _apply_repository_skill_exclusions(merged, project_dir)
 
     # Read-path staleness guard: non-blocking WARNING when skills_by_profile is
     # stale (retired notations), missing entirely, carries an unresolved

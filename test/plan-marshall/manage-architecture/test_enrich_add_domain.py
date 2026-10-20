@@ -8,7 +8,6 @@ via ``_project.json``'s index and writes only the touched module's
 this surface.
 """
 
-import os
 import tempfile
 from pathlib import Path
 
@@ -119,9 +118,9 @@ def test_add_domain_prunes_a_skill_the_repository_now_excludes():
         }
         save_module_enriched('module-a', enriched, tmpdir)
         create_marshal_json(
-            Path(os.environ['PLAN_BASE_DIR']),
+            Path(tmpdir),
             config={'skill_domains': {'java': {'excluded_skills': ['java-quarkus']}}},
-            nest_in_plan_dir=False,
+            nest_in_plan_dir=True,
         )
 
         result = enrich_add_domain('module-a', 'java', tmpdir)
