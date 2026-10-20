@@ -312,9 +312,10 @@ def test_enrich_absent_session_id_antigravity_skips_with_gap_flag(plan_context, 
 
 def _clear_target_env(monkeypatch):
     """Remove every platform-detection signal so each test sets its own."""
-    monkeypatch.delenv('ANTIGRAVITY_AGENT', raising=False)
-    monkeypatch.delenv('OPENCODE', raising=False)
-    monkeypatch.delenv('CLAUDE_CODE_SESSION_ID', raising=False)
+    import target_context
+
+    for signal, _target in target_context.TARGET_ENV_SIGNALS:
+        monkeypatch.delenv(signal, raising=False)
 
 
 def _write_claude_marshal(proj_dir):

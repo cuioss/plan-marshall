@@ -471,14 +471,27 @@ def _effective_rule_effect(rules: list[Any], action: str, resource: str) -> str 
 
 
 def _rule_exists(rules: list[Any], action: str, resource: str, effect: str) -> bool:
-    """True when an exact (action, resource, effect) rule is already present."""
-    return any(
+    """True when an exact (action, resource, effect) rule is present AND effective.
+
+    Presence alone is not enough: a later, broader rule can override it under
+    last-match-wins, in which case the requested effect does not hold and the
+    rule still has to be moved to the end.
+    """
+    present = any(
         isinstance(rule, dict)
         and rule.get('action') == action
         and rule.get('resource') == resource
         and _rule_effect(rule) == effect
         for rule in rules
     )
+    return present and _effective_rule_effect(rules, action, resource) == effect
+
+
+def _move_rule_to_end(rules: list[Any], rule: dict[str, Any], index: int) -> None:
+    """Move ``rule`` (known to sit at ``index``) to the end of the list."""
+    if index < len(rules) and rules[index] is rule:
+        del rules[index]
+        rules.append(rule)
 
 
 def _upsert_permission_rule(rules: list[Any], action: str, resource: str, effect: str) -> bool:
@@ -487,15 +500,23 @@ def _upsert_permission_rule(rules: list[Any], action: str, resource: str, effect
     An exact ``(action, resource)`` rule is updated in place. A new specific
     rule is inserted AFTER that action's catch-all (``resource == "*"``), so
     last-match-wins lets the specific rule override it. A new catch-all is
-    inserted at the FRONT, where it cannot override anything. Returns whether
+    inserted at the FRONT, where it cannot override anything.
+
+    Inserting after the catch-all is necessary but not sufficient: an existing
+    later rule can still match the same resource and win. When the requested
+    effect is not the one last-match-wins produces, the rule is moved to the
+    end — a caller asking to ensure a deny must not be told it was added while
+    a broader earlier-granted allow still decides the outcome. Returns whether
     anything changed.
     """
-    for rule in rules:
+    for index, rule in enumerate(rules):
         if isinstance(rule, dict) and rule.get('action') == action and rule.get('resource') == resource:
-            if _rule_effect(rule) == effect:
-                return False
+            changed = _rule_effect(rule) != effect
             rule['effect'] = effect
-            return True
+            if _effective_rule_effect(rules, action, resource) != effect:
+                _move_rule_to_end(rules, rule, index)
+                changed = True
+            return changed
 
     new_rule = {'action': action, 'resource': resource, 'effect': effect}
     if resource == '*':
@@ -507,6 +528,8 @@ def _upsert_permission_rule(rules: list[Any], action: str, resource: str, effect
         if isinstance(rule, dict) and rule.get('action') == action and rule.get('resource') == '*':
             insert_at = index + 1
     rules.insert(insert_at, new_rule)
+    if _effective_rule_effect(rules, action, resource) != effect:
+        _move_rule_to_end(rules, new_rule, insert_at)
     return True
 
 
@@ -1377,7 +1400,12 @@ class OpenCodeRuntime(Runtime):
                 elif _upsert_permission_rule(rules, action, pat, act):
                     added += 1
             if added and not dry_run:
-                self.permission_save_settings(settings_path, settings)
+                if not self.permission_save_settings(settings_path, settings):
+                    return toon_error(
+                        'permission fix',
+                        'io_error',
+                        f'Failed to write settings to {settings_path}',
+                    )
             return toon_success(
                 'permission fix',
                 {
@@ -1403,7 +1431,12 @@ class OpenCodeRuntime(Runtime):
                 elif _remove_permission_rule(rules, action, pat):
                     removed += 1
             if removed and not dry_run:
-                self.permission_save_settings(settings_path, settings)
+                if not self.permission_save_settings(settings_path, settings):
+                    return toon_error(
+                        'permission fix',
+                        'io_error',
+                        f'Failed to write settings to {settings_path}',
+                    )
             return toon_success(
                 'permission fix',
                 {

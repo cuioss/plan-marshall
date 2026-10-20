@@ -33,6 +33,7 @@ import os
 from pathlib import Path
 
 import pytest
+import target_context
 from toon_parser import parse_toon
 
 from conftest import load_script_module
@@ -390,7 +391,7 @@ class TestTargetResolution:
     @pytest.fixture(autouse=True)
     def _no_platform_signal(self, monkeypatch: pytest.MonkeyPatch):
         """Clear every platform env signal so a tier case is decided by what it sets."""
-        for name in ('ANTIGRAVITY_AGENT', 'OPENCODE', 'CLAUDE_CODE_SESSION_ID'):
+        for name in (signal for signal, _target in target_context.TARGET_ENV_SIGNALS):
             monkeypatch.delenv(name, raising=False)
 
     def _record_manifest_lookup(self, monkeypatch: pytest.MonkeyPatch) -> list[str]:

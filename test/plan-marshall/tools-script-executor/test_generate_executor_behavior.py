@@ -121,7 +121,7 @@ def test_env_tier_outranks_local_config(monkeypatch, tmp_path, env_signal, expec
     what its runtime injected. Each row writes a CONTRADICTING local harness config
     so a reader that consulted config first would answer wrongly.
     """
-    for name in ('ANTIGRAVITY_AGENT', 'OPENCODE', 'CLAUDE_CODE_SESSION_ID'):
+    for name in (signal for signal, _target in target_context.TARGET_ENV_SIGNALS):
         monkeypatch.delenv(name, raising=False)
     harness_dir = tmp_path / '.plan' / 'local' / 'harness'
     harness_dir.mkdir(parents=True)
@@ -193,7 +193,7 @@ def test_config_tier_reports_its_own_fall_through_reason(
     dropped the mapping check and returned the scalar verbatim would pass every
     value-only assertion in this file.
     """
-    for name in ('ANTIGRAVITY_AGENT', 'OPENCODE', 'CLAUDE_CODE_SESSION_ID'):
+    for name in (signal for signal, _target in target_context.TARGET_ENV_SIGNALS):
         monkeypatch.delenv(name, raising=False)
     root = outside_repo_dir / 'project'
     root.mkdir()

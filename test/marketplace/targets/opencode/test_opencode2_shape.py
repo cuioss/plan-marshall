@@ -18,6 +18,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
+import yaml
 
 from conftest import PROJECT_ROOT
 from marketplace.targets.opencode.emitter import emit_bundles
@@ -88,29 +89,15 @@ def _frontmatter_block(path: Path) -> str:
 
 
 def _permissions(path: Path) -> list[dict[str, str]]:
-    """Parse the emitted ``permissions`` list from an agent frontmatter block."""
-    rules: list[dict[str, str]] = []
-    current: dict[str, str] | None = None
-    in_block = False
-    for raw in _frontmatter_block(path).splitlines():
-        line = raw.rstrip()
-        if line == 'permissions:':
-            in_block = True
-            continue
-        if not in_block:
-            continue
-        stripped = line.strip()
-        if stripped.startswith('- '):
-            if current is not None:
-                rules.append(current)
-            current = {}
-            stripped = stripped[2:]
-        if current is None or ':' not in stripped:
-            continue
-        key, _, value = stripped.partition(':')
-        current[key.strip()] = value.strip().strip('"')
-    if current is not None:
-        rules.append(current)
+    """Parse the emitted ``permissions`` list from an agent frontmatter block.
+
+    Parsed as YAML, not by line matching: the document OpenCode consumes is a
+    mapping, and a line matcher would accept a block that is not one.
+    """
+    parsed = yaml.safe_load(_frontmatter_block(path))
+    assert isinstance(parsed, dict), f'{path} frontmatter is not a mapping'
+    rules = parsed.get('permissions')
+    assert isinstance(rules, list), f'{path} carries no permissions list'
     return rules
 
 

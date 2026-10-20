@@ -46,7 +46,7 @@ from conftest import PROJECT_ROOT
 #: Every env signal the cascade reads. Each is cleared before a test so a signal
 #: the DEVELOPER's shell happens to carry (this suite is routinely run on a
 #: Claude machine AND on an OpenCode one) cannot decide the outcome.
-PLATFORM_ENV_SIGNALS = ('ANTIGRAVITY_AGENT', 'OPENCODE', 'CLAUDE_CODE_SESSION_ID')
+PLATFORM_ENV_SIGNALS = tuple(name for name, _target in target_context.TARGET_ENV_SIGNALS)
 
 
 @pytest.fixture(autouse=True)

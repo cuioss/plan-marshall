@@ -56,6 +56,17 @@ def _exact_index(rules: list[dict], action: str, resource: str, effect: str) -> 
     return None
 
 
+def _matches(pattern: str, resource: str) -> bool:
+    import re
+
+    return re.match('^' + re.escape(pattern).replace(r'\*', '.*') + '$', resource, re.S) is not None
+
+
+def _effective_effect(rules: list[dict], action: str, resource: str) -> str | None:
+    hits = [rule for rule in rules if rule.get('action') == action and _matches(rule.get('resource', ''), resource)]
+    return hits[-1]['effect'] if hits else None
+
+
 def _assert_no_legacy_map(data: dict) -> None:
     assert 'permission' not in data, 'a `permission` map must never be added beside a `permissions` list'
 
@@ -177,6 +188,32 @@ def test_fix_ensure_and_remove_use_the_permissions_list(runtime: OpenCodeRuntime
     runtime.permission_fix('project', 'remove', ['ask(git fetch *)'], False)
     data = _load(list_settings)
     assert _exact_index(data['permissions'], 'shell', 'git fetch *', 'ask') is None
+
+
+def test_a_requested_deny_outranks_a_broader_earlier_allow(runtime: OpenCodeRuntime, list_settings: pathlib.Path):
+    """Under last-match-wins an inserted deny must actually decide the (action, resource)."""
+    settings = _load(list_settings)
+    settings['permissions'].append({'action': 'shell', 'resource': 'git *', 'effect': 'allow'})
+    list_settings.write_text(json.dumps(settings, indent=2) + '\n', encoding='utf-8')
+
+    result = runtime.permission_fix('project', 'ensure', ['deny(git push *)'], False)
+
+    assert parse_toon(result)['added'] == 1
+    rules = _load(list_settings)['permissions']
+    assert _effective_effect(rules, 'shell', 'git push origin') == 'deny'
+    assert _effective_effect(rules, 'shell', 'git status') == 'allow'
+
+
+def test_fix_reports_io_error_when_the_list_write_fails(
+    runtime: OpenCodeRuntime, list_settings: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+):
+    """A write that never reached disk must not be reported as a success."""
+    monkeypatch.setattr(runtime, 'permission_save_settings', lambda *_args, **_kwargs: False)
+
+    result = parse_toon(runtime.permission_fix('project', 'ensure', ['deny(git push *)'], False))
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'io_error'
 
 
 def test_protect_path_writes_denies_into_the_permissions_list(

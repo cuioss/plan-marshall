@@ -106,13 +106,15 @@ def test_read_runtime_target_detects_opencode_from_env(tmp_path: Path, monkeypat
     assert bp.read_runtime_target(cwd=str(tmp_path)) == 'opencode'
 
 
-def test_read_runtime_target_ignores_opencode_pid(tmp_path: Path, monkeypatch):
+def test_read_runtime_target_ignores_opencode_pid(outside_repo_dir, monkeypatch):
     """``OPENCODE_PID`` is not a signal OpenCode 2 sets, so it names no target."""
     monkeypatch.delenv('ANTIGRAVITY_AGENT', raising=False)
     monkeypatch.delenv('CLAUDE_CODE_SESSION_ID', raising=False)
     monkeypatch.delenv('OPENCODE', raising=False)
     monkeypatch.setenv('OPENCODE_PID', '12345')
-    assert bp.read_runtime_target(cwd=str(tmp_path)) == 'claude'
+    bare = outside_repo_dir / 'bare'
+    bare.mkdir()
+    assert bp.read_runtime_target(cwd=str(bare)) == 'claude'
 
 
 def test_read_runtime_target_antigravity_precedence_over_opencode(tmp_path: Path, monkeypatch):

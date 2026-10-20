@@ -35,7 +35,7 @@ TARGET_RESOLVING_VERBS = ('generate', 'verify', 'bootstrap', 'drift', 'preflight
 
 #: Every platform env signal the cascade reads. Cleared before each tier case so
 #: the developer's own runtime cannot decide the outcome.
-PLATFORM_ENV_SIGNALS = ('ANTIGRAVITY_AGENT', 'OPENCODE', 'OPENCODE_PID', 'CLAUDE_CODE_SESSION_ID')
+PLATFORM_ENV_SIGNALS = tuple(name for name, _target in target_context.TARGET_ENV_SIGNALS)
 
 
 @pytest.fixture()
