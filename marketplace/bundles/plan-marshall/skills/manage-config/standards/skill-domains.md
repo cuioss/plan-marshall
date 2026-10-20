@@ -339,7 +339,7 @@ These keys are reserved in domain configuration and cannot be used as profile na
 
 ## Skill Exclusions (excluded_skills)
 
-`skill_domains.{domain}.excluded_skills` is a list of skills the repository forbids for that domain. An entry may be a full `bundle:skill` notation or a bare skill name; both forms match. It is the repository-level veto over module-level applicability: `manage-personas` removes a matching skill even when the module itself qualifies for it, and keeps the key across a `skill-domains configure` reconfigure. The architecture-enrichment `skills_by_profile` path is unchanged — the veto is applied where a persona's `profile × domain` cell is expanded. An absent key means no exclusions.
+`skill_domains.{domain}.excluded_skills` is a list of skills the repository forbids for that domain. An entry may be a full `bundle:skill` notation or a bare skill name, and the match is symmetric: either form removes the other. It is the repository-level veto over module-level applicability: `manage-personas` removes a matching skill even when the module itself qualifies for it, and keeps the key across a `skill-domains configure` reconfigure. The architecture-enrichment `skills_by_profile` path applies the same veto when it builds each profile's `defaults` and `optionals`, so an excluded skill is never persisted there either. An absent key means no exclusions.
 
 
 ## Domain Inclusion (always_on / file_globs)

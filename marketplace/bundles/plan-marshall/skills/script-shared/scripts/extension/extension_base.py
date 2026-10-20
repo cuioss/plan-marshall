@@ -807,8 +807,12 @@ def excluded_skills(domain: str) -> set[str]:
 def is_excluded(skill: str, exclusions: set[str]) -> bool:
     """True when ``skill`` matches an exclusion in full or bare-name form.
 
+    Matching is symmetric in both directions: a bare-name exclusion removes the
+    full-notation skill and a full-notation exclusion removes the skill a cell
+    carries bare. An exclusion names a SKILL, not one spelling of it.
+
     Args:
-        skill: The ``bundle:skill`` notation to test.
+        skill: The skill notation to test (``bundle:skill`` or bare).
         exclusions: The domain's configured exclusion set.
 
     Returns:
@@ -816,7 +820,10 @@ def is_excluded(skill: str, exclusions: set[str]) -> bool:
     """
     if not exclusions:
         return False
-    return skill in exclusions or skill.split(':', 1)[-1] in exclusions
+    if skill in exclusions:
+        return True
+    bare_skill = skill.split(':', 1)[-1]
+    return any(exclusion.split(':', 1)[-1] == bare_skill for exclusion in exclusions)
 
 
 class ExtensionBase(ABC):
