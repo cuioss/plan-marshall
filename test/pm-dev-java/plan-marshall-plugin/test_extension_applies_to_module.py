@@ -125,6 +125,21 @@ def test_repository_exclusion_removes_skill_from_the_architecture_path():
     assert _skill_in(result['skills_by_profile']['implementation']['defaults'], 'java-cdi')
 
 
+def test_repository_exclusion_removes_a_default_from_the_architecture_path():
+    """The veto filters the defaults arm too, not only the optionals."""
+    # Arrange
+    _write_marshal({'skill_domains': {'java': {'excluded_skills': ['pm-dev-java:java-core']}}})
+    extension = _load_extension()
+    module_data = _module_data(['jakarta.enterprise.cdi-api:4.0.1'])
+
+    # Act
+    result = extension.applies_to_module(module_data)
+
+    # Assert
+    assert not _skill_in(_all_entries(result), 'java-core')
+    assert _skill_in(result['skills_by_profile']['implementation']['defaults'], 'java-cdi')
+
+
 def test_architecture_path_surfaces_skill_without_an_exclusion():
     """Negative control: absent the exclusion, the same skill is still surfaced."""
     # Arrange

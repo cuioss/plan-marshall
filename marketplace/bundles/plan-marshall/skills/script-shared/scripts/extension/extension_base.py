@@ -766,6 +766,40 @@ def _entry_skill_notation(entry: object) -> str:
     return str(entry)
 
 
+def _skill_domain_exclusions() -> dict[str, set[str]]:
+    """Read every domain's ``excluded_skills`` set from ``marshal.json``.
+
+    The single reader behind :func:`excluded_skills` and
+    :func:`all_excluded_skills`, so the resolver, the architecture path and the
+    architecture read seam cannot drift onto different definitions of the veto.
+
+    Every read failure — an absent config, a malformed value or a config loader
+    that is not importable — degrades to an empty mapping ("no exclusions
+    declared") rather than raising, so no caller is aborted by a repository that
+    simply has not configured any exclusions.
+    """
+    try:
+        from _config_core import load_config
+    except Exception:
+        return {}
+    try:
+        config = load_config()
+    except Exception:
+        return {}
+    skill_domains = config.get('skill_domains') if isinstance(config, dict) else None
+    if not isinstance(skill_domains, dict):
+        return {}
+    exclusions: dict[str, set[str]] = {}
+    for domain, entry in skill_domains.items():
+        raw = entry.get('excluded_skills') if isinstance(entry, dict) else None
+        if not isinstance(raw, list):
+            continue
+        configured = {str(item).strip() for item in raw if str(item).strip()}
+        if configured:
+            exclusions[str(domain)] = configured
+    return exclusions
+
+
 def excluded_skills(domain: str) -> set[str]:
     """Return the repository-level skill exclusions for ``domain``.
 
@@ -775,11 +809,6 @@ def excluded_skills(domain: str) -> set[str]:
     wins: it removes a skill the module itself would qualify for, whichever
     producer surfaced it.
 
-    Every read failure — an absent config, an absent domain, a malformed value
-    or a config loader that is not importable — degrades to an empty set ("no
-    exclusions declared") rather than raising, so enrichment is never aborted
-    by a repository that simply has not configured any exclusions.
-
     Args:
         domain: The skill-domain key whose exclusion list to read.
 
@@ -788,20 +817,65 @@ def excluded_skills(domain: str) -> set[str]:
     """
     if not domain:
         return set()
-    try:
-        from _config_core import load_config
-    except Exception:
-        return set()
-    try:
-        config = load_config()
-    except Exception:
-        return set()
-    skill_domains = config.get('skill_domains') if isinstance(config, dict) else None
-    entry = skill_domains.get(domain) if isinstance(skill_domains, dict) else None
-    raw = entry.get('excluded_skills') if isinstance(entry, dict) else None
-    if not isinstance(raw, list):
-        return set()
-    return {str(item).strip() for item in raw if str(item).strip()}
+    return _skill_domain_exclusions().get(domain, set())
+
+
+def all_excluded_skills() -> set[str]:
+    """Return the union of every domain's configured exclusions.
+
+    Used at read seams that carry no domain attribution — a module's persisted
+    ``skills_by_profile`` map is one flat map, so the veto there is the
+    repository-level one: a skill any domain forbids does not reach a task.
+    """
+    union: set[str] = set()
+    for configured in _skill_domain_exclusions().values():
+        union |= configured
+    return union
+
+
+def filter_skill_map(skills_by_profile: dict, exclusions: set[str]) -> dict:
+    """Return a copy of a ``skills_by_profile`` map with excluded skills removed.
+
+    The single implementation of "apply the veto to a map", shared by the three
+    seams that can otherwise disagree: the architecture path that builds the map
+    (``ExtensionBase._build_applicable_result``), the enrichment merge that
+    persists it, and the read seam phase-4 consumes. Keeping one implementation
+    is what makes the exclusion bind a persisted, stale map rather than only a
+    freshly built one.
+
+    A profile the veto empties is marked ``"minimal": true``. That is the
+    existing declared-empty signal: the repository forbade the remaining skills,
+    which is a deliberate empty, not an unresolved profile that needs another
+    enrichment run.
+
+    Args:
+        skills_by_profile: A profile-keyed map of ``{defaults, optionals}``.
+        exclusions: The exclusion set to apply.
+
+    Returns:
+        A new map; the input is never mutated.
+    """
+    if not exclusions or not isinstance(skills_by_profile, dict):
+        return skills_by_profile
+
+    filtered: dict = {}
+    for profile_name, profile_data in skills_by_profile.items():
+        if not isinstance(profile_data, dict):
+            filtered[profile_name] = profile_data
+            continue
+        kept = dict(profile_data)
+        had_entries = False
+        for key in ('defaults', 'optionals'):
+            entries = profile_data.get(key)
+            if not isinstance(entries, list):
+                continue
+            if entries:
+                had_entries = True
+            kept[key] = [entry for entry in entries if not is_excluded(_entry_skill_notation(entry), exclusions)]
+        if had_entries and not kept.get('defaults') and not kept.get('optionals'):
+            kept['minimal'] = True
+        filtered[profile_name] = kept
+    return filtered
 
 
 def is_excluded(skill: str, exclusions: set[str]) -> bool:
@@ -1319,30 +1393,19 @@ class ExtensionBase(ABC):
             if profile_filter is not None and profile_name not in profile_filter:
                 continue
             profile = profiles[profile_name]
-            declared_defaults = list(core_defaults) + list(profile.get('defaults', []))
-            declared_optionals = list(core_optionals) + list(profile.get('optionals', []))
-            if declared_defaults or declared_optionals:
-                # The profile stays present even when filtering removes every
-                # entry: an empty cell is the declared outcome, not a missing
-                # resolution.
+            merged_defaults = list(core_defaults) + list(profile.get('defaults', []))
+            merged_optionals = list(core_optionals) + list(profile.get('optionals', []))
+            if merged_defaults or merged_optionals:
                 skills_by_profile[profile_name] = {
-                    'defaults': [
-                        entry
-                        for entry in declared_defaults
-                        if not is_excluded(_entry_skill_notation(entry), exclusions)
-                    ],
-                    'optionals': [
-                        entry
-                        for entry in declared_optionals
-                        if not is_excluded(_entry_skill_notation(entry), exclusions)
-                    ],
+                    'defaults': merged_defaults,
+                    'optionals': merged_optionals,
                 }
         return {
             'applicable': True,
             'confidence': confidence,
             'signals': signals,
             'additive_to': additive_to,
-            'skills_by_profile': skills_by_profile,
+            'skills_by_profile': filter_skill_map(skills_by_profile, exclusions),
         }
 
 

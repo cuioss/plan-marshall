@@ -145,9 +145,13 @@ def _excluded_skills(domain: str) -> set[str]:
 
     Delegates to the shared reader in ``extension_base`` so the resolver and the
     architecture path consult ONE exclusion definition rather than two copies
-    that can drift.
+    that can drift. An unimportable shared module degrades to "no exclusions"
+    exactly as an unreadable config does — resolution never aborts on it.
     """
-    from extension_base import excluded_skills
+    try:
+        from extension_base import excluded_skills
+    except Exception:
+        return set()
 
     return excluded_skills(domain)
 
@@ -158,7 +162,10 @@ def _is_excluded(skill: str, exclusions: set[str]) -> bool:
     Delegates to the shared matcher in ``extension_base`` for the same
     single-definition reason as :func:`_excluded_skills`.
     """
-    from extension_base import is_excluded
+    try:
+        from extension_base import is_excluded
+    except Exception:
+        return False
 
     return is_excluded(skill, exclusions)
 
@@ -466,6 +473,15 @@ def cmd_resolve(args) -> dict:
     )
     if err is not None:
         return {'status': 'error', 'error': err, 'persona_key': persona_key}
+
+    # The veto binds the flattened result too, not only the profile x domain
+    # cells: a composed ref or the always-added base can name a skill the
+    # repository excludes for one of the requested domains.
+    exclusions: set[str] = set()
+    for domain in domains:
+        exclusions |= _excluded_skills(domain)
+    if exclusions:
+        ordered = [skill for skill in ordered if not _is_excluded(skill, exclusions)]
 
     if not module:
         module_status = MODULE_STATUS_NOT_REQUESTED

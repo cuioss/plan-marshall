@@ -699,6 +699,31 @@ def _emit_skills_by_profile_staleness_warning(
     return messages
 
 
+def _apply_repository_skill_exclusions(module: dict[str, Any]) -> dict[str, Any]:
+    """Drop repository-excluded skills from a module's persisted skills_by_profile.
+
+    The architecture store is a cache: a module enriched before an exclusion was
+    configured still carries the skill, and the enrichment merge is add-only.
+    Applying the veto at read time is what makes the exclusion bind the task a
+    later phase reads, not only a fresh enrichment.
+
+    The persisted map carries no domain attribution, so this seam applies the
+    repository-level union (see ``extension_base.all_excluded_skills``). Every
+    read failure leaves the module untouched rather than blanking its skills.
+    """
+    skills_by_profile = module.get('skills_by_profile')
+    if not isinstance(skills_by_profile, dict) or not skills_by_profile:
+        return module
+    try:
+        from extension_base import all_excluded_skills, filter_skill_map
+    except Exception:
+        return module
+    exclusions = all_excluded_skills()
+    if not exclusions:
+        return module
+    return {**module, 'skills_by_profile': filter_skill_map(skills_by_profile, exclusions)}
+
+
 def get_module_info(module_name: str | None = None, full: bool = False, project_dir: str = '.') -> dict[str, Any]:
     """Get module information merged from derived + enriched data."""
     if not module_name:
@@ -712,6 +737,10 @@ def get_module_info(module_name: str | None = None, full: bool = False, project_
         raise ModuleNotFoundInProjectError(f'Module not found: {module_name}', available)
 
     merged = merge_module_data(module_name, project_dir)
+    # The repository veto outranks a stale stored map: apply it before the
+    # staleness guard so an exclusion-emptied profile reads as declared-minimal
+    # rather than as an unresolved one.
+    merged = _apply_repository_skill_exclusions(merged)
 
     # Read-path staleness guard: non-blocking WARNING when skills_by_profile is
     # stale (retired notations), missing entirely, carries an unresolved

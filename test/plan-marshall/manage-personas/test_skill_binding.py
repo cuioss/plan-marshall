@@ -103,6 +103,19 @@ def _architecture_skills(module_data: dict) -> set[str]:
     }
 
 
+def _write_persona(bundles_root: Path, key: str, composes: list[str]) -> Path:
+    """Write a synthetic persona whose composition edges are ``composes``."""
+    bundle, skill = key.split(':', 1)
+    skill_dir = bundles_root / bundle / 'skills' / skill
+    skill_dir.mkdir(parents=True, exist_ok=True)
+    path = skill_dir / 'SKILL.md'
+    path.write_text(
+        '---\nimplements: persona\nprofiles: []\ncomposes: [' + ', '.join(composes) + ']\n---\n',
+        encoding='utf-8',
+    )
+    return path
+
+
 def _write_pom(root: Path, *, dependencies: list[tuple[str, str]]) -> Path:
     """Write a minimal Maven POM declaring ``(groupId, artifactId)`` dependencies."""
     dep_xml = '\n'.join(
@@ -183,6 +196,29 @@ def test_extensionbase_default_hook_keeps_optionals(monkeypatch):
     result = _mp._resolve_profile_domain_skills('module_testing', 'python', module='sample-module')
 
     assert result['skills'] == [JAVA_CORE, *optionals]
+
+
+def test_cmd_resolve_drops_an_excluded_composed_skill(tmp_path, monkeypatch):
+    """A composed ref the repository excludes never reaches the flattened skills[]."""
+    _write_persona(tmp_path, 'plan-marshall:persona-x', composes=['plan-marshall:ref-code-quality'])
+    monkeypatch.setattr(_mp, 'resolve_bundles_root', lambda _script: tmp_path)
+    _write_marshal(_exclusions('plan-marshall:ref-code-quality'))
+
+    result = _mp.cmd_resolve(types.SimpleNamespace(persona_key='plan-marshall:persona-x', domains='java', module=''))
+
+    assert 'plan-marshall:ref-code-quality' not in result['skills']
+    assert _mp.BASE_PERSONA in result['skills']
+
+
+def test_cmd_resolve_keeps_a_composed_skill_without_an_exclusion(tmp_path, monkeypatch):
+    """Matched negative control: the same composition keeps its ref unexcluded."""
+    _write_persona(tmp_path, 'plan-marshall:persona-x', composes=['plan-marshall:ref-code-quality'])
+    monkeypatch.setattr(_mp, 'resolve_bundles_root', lambda _script: tmp_path)
+    _write_marshal(_exclusions())
+
+    result = _mp.cmd_resolve(types.SimpleNamespace(persona_key='plan-marshall:persona-x', domains='java', module=''))
+
+    assert 'plan-marshall:ref-code-quality' in result['skills']
 
 
 # =============================================================================
