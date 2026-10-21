@@ -696,11 +696,12 @@ The `ensure` subcommand is idempotent — re-running the wizard does not duplica
 ## Step 14b: OpenCode Enforcement Apply (Optional, opencode-only, singular)
 
 On opencode-target projects only, apply enforcement once per project:
-copy the two-tier permission block (D1) into the project's `opencode.json`
+copy the permission rules (D1) into the project's `opencode.json`
 and place the guard plugin (D2) under `.opencode/plugin/guard.js`. The
 sources are the shipped artifacts documented in
-`doc/developer/opencode.adoc` — the landed `opencode.json` permission map
-(global deny/ask rows plus per-agent overrides) and the
+`doc/developer/opencode.adoc` — the landed `opencode.json` `permissions`
+list (shell catch-all first, then deny/ask/allow rows, with per-agent
+overrides in `agents.*.permissions`) and the
 `tool.execute.before` guard plugin.
 
 **Gate.** This step runs only when the project's configured runtime target
@@ -745,7 +746,9 @@ runtime (config-driven via `runtime.target` in `.plan/marshal.json`):
    a STEWARD skip audit entry and continues to Step 15.
 
 2. **Check applied state.** Read the project's `opencode.json` for the
-two-tier `permission` block and compare `.opencode/plugin/guard.js` with
+two-tier permission rules (the OpenCode 2 `permissions` list, or the OpenCode 1
+`permission` map in a file that still carries it) and compare
+`.opencode/plugin/guard.js` with
 the shipped D2 plugin. When both checks pass, the step is already
 applied — record a single auto-decision STEWARD audit entry and continue
 to Step 15 without prompting. When the guard file is present but differs

@@ -376,7 +376,6 @@ def cmd_ensure(args: argparse.Namespace) -> dict:
     """Handle ensure subcommand."""
     settings_path = get_settings_path(args.target)
     settings = load_settings_path(settings_path)
-    allow_list = get_settings_allow_list(settings)
 
     permissions = [p.strip() for p in args.permissions.split(',')]
     if is_antigravity_target():
@@ -385,7 +384,44 @@ def cmd_ensure(args: argparse.Namespace) -> dict:
         permissions = [to_antigravity_grant(p) for p in permissions]
 
     if is_opencode_target():
-        from opencode_runtime import to_opencode_grant
+        from opencode_runtime import (
+            _permission_action,
+            _permission_rules,
+            _rule_exists,
+            _upsert_permission_rule,
+            to_opencode_grant,
+        )
+
+        rules = _permission_rules(settings, create=True)
+        if rules is not None:
+            added = []
+            already_exists = []
+            for p in permissions:
+                cat, pat, act = to_opencode_grant(p)
+                action = _permission_action(cat)
+                label = f'{action}({pat})' if pat != '*' else action
+                if _rule_exists(rules, action, pat, act):
+                    already_exists.append(label)
+                else:
+                    _upsert_permission_rule(rules, action, pat, act)
+                    added.append(label)
+
+            result = {
+                'settings_file': str(settings_path),
+                'permission_shape': 'permissions',
+                'added': added,
+                'already_exists': already_exists,
+                'added_count': len(added),
+                'total_permissions': len([rule for rule in rules if isinstance(rule, dict)]),
+            }
+            if added:
+                result['success'] = save_settings(str(settings_path), settings)
+                if not result['success']:
+                    result['error'] = 'Failed to save settings'
+            else:
+                result['success'] = True
+            result['status'] = 'success' if result.get('success', True) else 'error'
+            return result
 
         perm = settings.setdefault('permission', {})
         if not isinstance(perm, dict):
@@ -453,6 +489,7 @@ def cmd_ensure(args: argparse.Namespace) -> dict:
 
     added = []
     already_exists = []
+    allow_list = get_settings_allow_list(settings)
 
     for perm in permissions:
         if perm in allow_list:
@@ -738,12 +775,42 @@ def cmd_ensure_wildcards(args: argparse.Namespace) -> dict:
         }
 
     if is_opencode_target():
-        from opencode_runtime import OPENCODE_DEFAULT_PERMISSIONS
+        from opencode_runtime import (
+            OPENCODE_DEFAULT_PERMISSIONS,
+            _effective_rule_effect,
+            _permission_rules,
+            _upsert_permission_rule,
+        )
 
         settings_path = resolve_settings_arg(args)
         settings, error = load_settings(settings_path)
         if error:
             return {'status': 'error', 'error': error}
+
+        rules = _permission_rules(settings, create=True)
+        if rules is not None:
+            added = []
+            already_exists = []
+            for grant in OPENCODE_DEFAULT_PERMISSIONS:
+                if _effective_rule_effect(rules, 'shell', grant) == 'allow':
+                    already_exists.append(grant)
+                else:
+                    added.append(grant)
+                    if not args.dry_run:
+                        _upsert_permission_rule(rules, 'shell', grant, 'allow')
+            if added and not args.dry_run:
+                if not save_settings(settings_path, settings):
+                    return {'status': 'error', 'error': f'Failed to write settings to {settings_path}'}
+            return {
+                'status': 'success',
+                'settings_file': settings_path,
+                'permission_shape': 'permissions',
+                'added': added,
+                'already_exists': already_exists,
+                'added_count': len(added),
+                'dry_run': args.dry_run,
+            }
+
         perm = settings.setdefault('permission', {})
         if not isinstance(perm, dict):
             perm = {}
@@ -1323,9 +1390,43 @@ def cmd_ensure_executor(args: argparse.Namespace) -> dict:
         return result
 
     if is_opencode_target():
+        from opencode_runtime import (
+            _effective_rule_effect,
+            _permission_rules,
+            _upsert_permission_rule,
+        )
+
         opencode_executor = 'python3 .plan/execute-script.py *'
         settings_path = get_settings_path(args.target)
         settings = load_settings_path(settings_path)
+
+        result = {
+            'executor_permission': f'shell({opencode_executor})',
+            'settings_file': str(settings_path),
+            'dry_run': args.dry_run,
+        }
+
+        rules = _permission_rules(settings, create=True)
+        if rules is not None:
+            already = _effective_rule_effect(rules, 'shell', opencode_executor) == 'allow'
+            if already:
+                result['action'] = 'already_exists'
+                result['success'] = True
+            elif not args.dry_run:
+                _upsert_permission_rule(rules, 'shell', opencode_executor, 'allow')
+                if save_settings(str(settings_path), settings):
+                    result['action'] = 'added'
+                    result['success'] = True
+                else:
+                    result['error'] = 'Failed to save settings'
+                    result['success'] = False
+            else:
+                result['action'] = 'would_add'
+                result['success'] = True
+            result['permission_shape'] = 'permissions'
+            result['status'] = 'success' if result.get('success', True) else 'error'
+            return result
+
         perm = settings.setdefault('permission', {})
         if not isinstance(perm, dict):
             perm = {}

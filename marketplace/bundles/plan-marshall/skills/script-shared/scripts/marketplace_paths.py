@@ -225,7 +225,7 @@ def detect_target_from_env() -> str | None:
     Public shared entry point for the platform-env target contract, delegating
     to :func:`target_context.detect_target_from_env` so the env tier has one
     implementation. Antigravity injects ``ANTIGRAVITY_AGENT=1`` into every
-    subprocess; OpenCode injects ``OPENCODE=1`` (or ``OPENCODE_PID``); Claude
+    subprocess; OpenCode injects ``OPENCODE=1`` (its only ambient signal); Claude
     Code injects ``CLAUDE_CODE_SESSION_ID``. These ambient signals resolve the
     target before any config or filesystem probe, eliminating the
     chicken-and-egg problem on first run.
@@ -256,7 +256,7 @@ def _read_runtime_target() -> str:
     whole cascade:
 
     1. **Env signal** — ``ANTIGRAVITY_AGENT`` → ``'antigravity'``,
-       ``OPENCODE`` / ``OPENCODE_PID`` → ``'opencode'``,
+       ``OPENCODE`` → ``'opencode'``,
        ``CLAUDE_CODE_SESSION_ID`` → ``'claude'``.
     2. **Config** — ``runtime.target`` from the nearest ``.plan/marshal.json``.
     3. **Default** — :func:`default_target` (``'claude'``).

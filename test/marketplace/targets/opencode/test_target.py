@@ -107,10 +107,11 @@ def test_generate_writes_valid_opencode_json(fixture_marketplace: Path, tmp_path
     assert config_path.is_file()
     config = json.loads(config_path.read_text(encoding='utf-8'))
     assert config['$schema'] == 'https://opencode.ai/config.json'
-    assert config['skills']['paths'] == ['./skill']
-    # Agent index records emitted agents
-    assert 'agent' in config
-    assert 'demo-agent' in config['agent']
+    assert config['skills'] == ['./skills']
+    # Agent index records emitted agents under OpenCode 2's `agents` key
+    assert 'agent' not in config
+    assert 'agents' in config
+    assert 'demo-agent' in config['agents']
 
 
 def test_generate_filters_by_bundle_list(fixture_marketplace: Path, tmp_path: Path):

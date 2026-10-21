@@ -1034,12 +1034,12 @@ class TestDetectTargetFromEnv:
         assert marketplace_paths._detect_target_from_env() == 'opencode'
 
     def test_opencode_pid_env(self, monkeypatch):
-        """_detect_target_from_env returns 'opencode' when OPENCODE_PID is set."""
+        """OPENCODE_PID is not a signal OpenCode 2 sets, so it names no target."""
         monkeypatch.delenv('ANTIGRAVITY_AGENT', raising=False)
         monkeypatch.delenv('CLAUDE_CODE_SESSION_ID', raising=False)
         monkeypatch.delenv('OPENCODE', raising=False)
         monkeypatch.setenv('OPENCODE_PID', '12345')
-        assert marketplace_paths._detect_target_from_env() == 'opencode'
+        assert marketplace_paths._detect_target_from_env() is None
 
     def test_antigravity_precedence_over_opencode(self, monkeypatch):
         """ANTIGRAVITY_AGENT wins over OPENCODE signals."""

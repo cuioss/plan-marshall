@@ -336,8 +336,9 @@ def test_permission_settings_path_project_creates_when_writing(
     target_path = runtime.permission_settings_path('project', write=True, project_dir=str(tmp_path))
     assert pathlib.Path(target_path).is_file()
     data = json.loads(pathlib.Path(target_path).read_text(encoding='utf-8'))
-    assert 'permission' in data
-    assert 'bash' in data['permission']
+    assert 'permission' not in data, 'a new file must be created in the OpenCode 2 shape'
+    assert data['permissions'][0]['action'] == 'shell'
+    assert data['permissions'][0]['resource'] == '*'
 
 
 def test_permission_load_and_save_settings(runtime: OpenCodeRuntime, tmp_path: pathlib.Path) -> None:
@@ -490,28 +491,75 @@ def test_to_opencode_grant_bare_form_defaults_to_allow() -> None:
     assert action == 'allow'
 
 
+def test_to_opencode_grant_accepts_the_opencode2_subagent_key() -> None:
+    """OpenCode 2's sub-agent tool name is recognised as a tool key, not a shell pattern."""
+    category, pattern, action = to_opencode_grant('subagent')
+    assert category == 'subagent'
+    assert pattern == '*'
+    assert action == 'allow'
+
+
+def test_permission_fix_ensure_still_writes_the_legacy_map(
+    runtime: OpenCodeRuntime, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An OpenCode 1 map-shaped file keeps being written as a map (no silent no-op)."""
+    monkeypatch.chdir(tmp_path)
+    config = tmp_path / 'opencode.json'
+    config.write_text(json.dumps({'permission': {'bash': {}}}), encoding='utf-8')
+
+    result = _parse(runtime.permission_fix('project', 'ensure', ['deny(git push *)'], False))
+
+    assert result['status'] == 'success'
+    assert result['added'] == 1, 'ensure must write the rule, not report a no-op'
+    settings = json.loads(config.read_text(encoding='utf-8'))
+    assert 'permissions' not in settings, 'the map shape the file has must be kept'
+    assert settings['permission']['bash']['git push *'] == 'deny'
+
+
+def test_permission_fix_remove_still_writes_the_legacy_map(
+    runtime: OpenCodeRuntime, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Remove on a map-shaped file deletes the rule from the map."""
+    monkeypatch.chdir(tmp_path)
+    config = tmp_path / 'opencode.json'
+    config.write_text(json.dumps({'permission': {'bash': {'git push *': 'deny'}}}), encoding='utf-8')
+
+    result = _parse(runtime.permission_fix('project', 'remove', ['deny(git push *)'], False))
+
+    assert result['status'] == 'success'
+    assert result['removed'] == 1
+    settings = json.loads(config.read_text(encoding='utf-8'))
+    assert 'git push *' not in settings['permission']['bash']
+
+
 def test_permission_fix_ensure_persists_deny_action(
     runtime: OpenCodeRuntime, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """permission_fix ensure persists a deny grant into the bash map."""
+    """permission_fix ensure persists a deny rule into the permissions list."""
     monkeypatch.chdir(tmp_path)
     result = _parse(runtime.permission_fix('project', 'ensure', ['deny(git push *)'], False))
     assert result['status'] == 'success'
     assert result['added'] == 1
     settings = json.loads((tmp_path / 'opencode.json').read_text(encoding='utf-8'))
-    assert settings['permission']['bash']['git push *'] == 'deny'
+    assert any(
+        rule['action'] == 'shell' and rule['resource'] == 'git push *' and rule['effect'] == 'deny'
+        for rule in settings['permissions']
+    )
 
 
 def test_permission_fix_ensure_persists_ask_action(
     runtime: OpenCodeRuntime, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """permission_fix ensure persists an ask grant into the bash map."""
+    """permission_fix ensure persists an ask rule into the permissions list."""
     monkeypatch.chdir(tmp_path)
     result = _parse(runtime.permission_fix('project', 'ensure', ['ask(git fetch *)'], False))
     assert result['status'] == 'success'
     assert result['added'] == 1
     settings = json.loads((tmp_path / 'opencode.json').read_text(encoding='utf-8'))
-    assert settings['permission']['bash']['git fetch *'] == 'ask'
+    assert any(
+        rule['action'] == 'shell' and rule['resource'] == 'git fetch *' and rule['effect'] == 'ask'
+        for rule in settings['permissions']
+    )
 
 
 def test_the_permission_fix_operation_population_is_not_empty() -> None:
@@ -727,11 +775,11 @@ def test_metrics_capture_zero_tokens_is_honest_noop(runtime: OpenCodeRuntime) ->
 
 
 def test_subagent_dispatch_without_prompt_file(runtime: OpenCodeRuntime) -> None:
-    """subagent_dispatch without prompt_file succeeds and uses 'task' as OpenCode tool."""
+    """subagent_dispatch without prompt_file succeeds and uses 'subagent' as OpenCode tool."""
     result = _parse(runtime.subagent_dispatch('execution-context-level-3', None, None))
     assert result['status'] == 'success'
     assert result['operation'] == 'subagent dispatch'
-    assert result['invocation']['tool'] == 'task'
+    assert result['invocation']['tool'] == 'subagent'
     assert result['platform'] == 'opencode'
 
 
@@ -782,15 +830,18 @@ def test_subagent_dispatch_missing_prompt_file_returns_error(runtime: OpenCodeRu
     ids=['level-2', 'level-5'],
 )
 def test_subagent_dispatch_echoes_requested_agent(runtime: OpenCodeRuntime, agent: str) -> None:
-    """subagent_dispatch returns the REQUESTED agent as subagent_type.
+    """subagent_dispatch returns the REQUESTED agent under OpenCode 2's `agent`.
 
     The caller's level selection reaches the payload rather than being
     discarded in favour of a fixed level, mirroring the Claude passthrough.
+    OpenCode 2's sub-agent tool takes ``{agent, description, prompt}``; the
+    OpenCode 1 ``subagent_type`` key is gone.
     """
     result = _parse(runtime.subagent_dispatch(agent, None, None))
 
     assert result['status'] == 'success'
-    assert result['invocation']['subagent_type'] == agent
+    assert result['invocation']['agent'] == agent
+    assert 'subagent_type' not in result['invocation']
 
 
 def test_subagent_dispatch_prompt_crosses_toon_boundary_inert(runtime: OpenCodeRuntime, tmp_path: pathlib.Path) -> None:
@@ -827,6 +878,7 @@ def test_subagent_dispatch_task_tool_unavailable_takes_inline_branch(runtime: Op
     assert result['status'] == 'no-op'
     assert result['operation'] == 'subagent dispatch'
     assert result['reason']
+    assert "'subagent' tool" in result['reason']
     assert result['alternative']
 
 
@@ -896,7 +948,7 @@ def test_subagent_dispatch_mapped_agent_tools_succeed(
 
     result = _parse(runtime.subagent_dispatch('good-agent', None, None))
     assert result['status'] == 'success'
-    assert result['invocation']['tool'] == 'task'
+    assert result['invocation']['tool'] == 'subagent'
 
 
 def test_subagent_dispatch_unresolvable_agent_file_proceeds(runtime: OpenCodeRuntime) -> None:
@@ -1013,16 +1065,17 @@ def test_health_check_hook_always_unhealthy(runtime: OpenCodeRuntime) -> None:
     assert hook_result['healthy'] is False
 
 
-def test_health_check_all_includes_four_checks(runtime: OpenCodeRuntime) -> None:
-    """health_check with 'all' runs permissions, display, mcp-diagnostics, and hook."""
+def test_health_check_all_includes_the_version_check(runtime: OpenCodeRuntime) -> None:
+    """health_check with 'all' runs permissions, version, display, mcp-diagnostics, and hook."""
     result = _parse(runtime.health_check('all'))
     assert result['status'] == 'success'
     checks_run = result['checks_run']
     assert 'permissions' in checks_run
+    assert 'version' in checks_run
     assert 'display' in checks_run
     assert 'mcp-diagnostics' in checks_run
     assert 'hook' in checks_run
-    assert len(result['results']) == 4
+    assert len(result['results']) == 5
 
 
 def test_health_check_permissions_check_present(runtime: OpenCodeRuntime) -> None:
@@ -1051,6 +1104,59 @@ def test_health_check_all_healthy_false_when_display_or_hook(runtime: OpenCodeRu
 
     result2 = _parse(runtime.health_check('hook'))
     assert result2['all_healthy'] is False
+
+
+# =============================================================================
+# Installed-version check against the emitted schema major (D4)
+# =============================================================================
+
+
+def _stub_opencode_version(monkeypatch: pytest.MonkeyPatch, output: str | None) -> None:
+    """Stub ``opencode --version``; ``None`` stubs an absent executable."""
+    import opencode_runtime
+
+    monkeypatch.setattr(
+        opencode_runtime.shutil,
+        'which',
+        (lambda _name: None) if output is None else (lambda _name: '/usr/bin/opencode'),
+    )
+
+    class _Completed:
+        stdout = output or ''
+        stderr = ''
+        returncode = 0
+
+    monkeypatch.setattr(opencode_runtime.subprocess, 'run', lambda *args, **kwargs: _Completed())
+
+
+def test_health_version_reports_a_major_mismatch(runtime: OpenCodeRuntime, monkeypatch: pytest.MonkeyPatch) -> None:
+    """An installed 1.x reports a mismatch with the emitted config's major."""
+    _stub_opencode_version(monkeypatch, '1.9.4\n')
+    result = _parse(runtime.health_check('version'))
+    check = next(item for item in result['results'] if item['check'] == 'version')
+    assert check['healthy'] is False
+    assert '1.9.4' in check['detail']
+    assert 'mismatch' in check['detail'].lower()
+
+
+def test_health_version_accepts_a_matching_major(runtime: OpenCodeRuntime, monkeypatch: pytest.MonkeyPatch) -> None:
+    """An installed 2.x reports no mismatch."""
+    _stub_opencode_version(monkeypatch, '2.0.28\n')
+    result = _parse(runtime.health_check('version'))
+    check = next(item for item in result['results'] if item['check'] == 'version')
+    assert check['healthy'] is True
+    assert 'mismatch' not in check['detail'].lower()
+
+
+def test_health_version_absent_binary_is_not_checkable(
+    runtime: OpenCodeRuntime, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An absent binary reports 'not checkable', never ok."""
+    _stub_opencode_version(monkeypatch, None)
+    result = _parse(runtime.health_check('version'))
+    check = next(item for item in result['results'] if item['check'] == 'version')
+    assert check['healthy'] is False
+    assert 'not checkable' in check['detail'].lower()
 
 
 # =============================================================================
@@ -1107,8 +1213,8 @@ def test_standing_rules_drift_in_sync_after_setup(runtime: OpenCodeRuntime, tmp_
     }
 
 
-def test_standing_rules_drift_baseline_newer(runtime: OpenCodeRuntime, tmp_path: pathlib.Path) -> None:
-    """A baseline modified after the bridge was written reports baseline_newer drift."""
+def test_standing_rules_drift_mtime_only_change_is_not_drift(runtime: OpenCodeRuntime, tmp_path: pathlib.Path) -> None:
+    """Touching the baseline without changing its content is NOT drift."""
     import os
 
     from opencode_runtime import _bridge_rules_path, standing_rules_drift_status
@@ -1121,10 +1227,115 @@ def test_standing_rules_drift_baseline_newer(runtime: OpenCodeRuntime, tmp_path:
     os.utime(tmp_path / 'CLAUDE.md', (past + 60, past + 60))
 
     assert standing_rules_drift_status(str(tmp_path)) == {
-        'drift': True,
+        'drift': False,
         'needs_bridge': False,
-        'reason': 'baseline_newer',
+        'reason': 'in_sync',
     }
+
+
+# =============================================================================
+# Standing-rules bridge carries CLAUDE.md's rules (D5)
+# =============================================================================
+
+
+def test_setup_bridge_carries_a_claude_md_sentinel_line(runtime: OpenCodeRuntime, tmp_path: pathlib.Path) -> None:
+    """A fresh setup over a CLAUDE.md carries its rules into the bridge file."""
+    sentinel = 'SENTINEL-RULE: never retry a missing plugin under another prefix'
+    (tmp_path / 'CLAUDE.md').write_text(f'# Project rules\n\n{sentinel}\n', encoding='utf-8')
+
+    result = _parse(runtime.project_initial_setup(str(tmp_path), 'opencode'))
+
+    assert result['bridge_written'] is True
+    bridge = tmp_path / '.opencode' / 'rules' / 'plan-marshall-standing-rules.md'
+    assert bridge.is_file()
+    text = bridge.read_text(encoding='utf-8')
+    assert sentinel in text, 'the bridge must carry the rules of the baseline, not a stub'
+    assert 'source-sha256:' in text, 'the bridge must record the content hash it was generated from'
+
+
+def test_editing_claude_md_makes_setup_report_drift(runtime: OpenCodeRuntime, tmp_path: pathlib.Path) -> None:
+    """Setup reports drift BEFORE it heals, and never reports no-drift for a rewrite."""
+    baseline = tmp_path / 'CLAUDE.md'
+    baseline.write_text('# Project rules\n\nfirst rule\n', encoding='utf-8')
+    _parse(runtime.project_initial_setup(str(tmp_path), 'opencode'))
+
+    baseline.write_text('# Project rules\n\nsecond rule\n', encoding='utf-8')
+    result = _parse(runtime.project_initial_setup(str(tmp_path), 'opencode'))
+
+    assert result['bridge_written'] is True, 'the second setup must heal the bridge'
+    assert result['bridge_drift'] is True, 'a setup that rewrote the bridge must not report no-drift'
+    bridge = tmp_path / '.opencode' / 'rules' / 'plan-marshall-standing-rules.md'
+    assert 'second rule' in bridge.read_text(encoding='utf-8')
+
+    third = _parse(runtime.project_initial_setup(str(tmp_path), 'opencode'))
+    assert third['bridge_written'] is False
+    assert third['bridge_drift'] is False
+
+
+def test_an_unreadable_baseline_never_overwrites_the_bridge(
+    runtime: OpenCodeRuntime, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Setup must not replace carried rules with the marker-only stub."""
+    import opencode_runtime
+
+    (tmp_path / 'CLAUDE.md').write_text('# Project rules\n\nkeep me\n', encoding='utf-8')
+    _parse(runtime.project_initial_setup(str(tmp_path), 'opencode'))
+    bridge = tmp_path / '.opencode' / 'rules' / 'plan-marshall-standing-rules.md'
+    before = bridge.read_text(encoding='utf-8')
+    assert 'keep me' in before
+
+    monkeypatch.setattr(opencode_runtime, '_baseline_text', lambda _project_dir: None)
+    result = _parse(runtime.project_initial_setup(str(tmp_path), 'opencode'))
+
+    assert result['bridge_written'] is False
+    assert result['bridge_drift'] is True
+    assert result['bridge_reason'] == 'baseline_unreadable'
+    assert bridge.read_text(encoding='utf-8') == before
+
+
+def test_a_deleted_baseline_replaces_the_bridge_with_the_stub(runtime: OpenCodeRuntime, tmp_path: pathlib.Path) -> None:
+    """A deleted baseline must not leave its rules presented as current."""
+    baseline = tmp_path / 'CLAUDE.md'
+    baseline.write_text('# Project rules\n\nstale rule\n', encoding='utf-8')
+    _parse(runtime.project_initial_setup(str(tmp_path), 'opencode'))
+    bridge = tmp_path / '.opencode' / 'rules' / 'plan-marshall-standing-rules.md'
+    assert 'stale rule' in bridge.read_text(encoding='utf-8')
+
+    baseline.unlink()
+    result = _parse(runtime.project_initial_setup(str(tmp_path), 'opencode'))
+
+    assert result['bridge_written'] is True
+    assert result['bridge_reason'] == 'baseline_missing'
+    assert 'stale rule' not in bridge.read_text(encoding='utf-8')
+
+
+def test_doc_surfaces_carry_the_missing_plugin_rule() -> None:
+    """Rule (b) and the resolver rule live in the persona and the OpenCode target rules."""
+    persona = (
+        pathlib.Path(__file__).resolve().parents[3]
+        / 'marketplace'
+        / 'bundles'
+        / 'plan-marshall'
+        / 'skills'
+        / 'persona-plan-marshall-agent'
+        / 'standards'
+        / 'agent-behavior-rules.md'
+    )
+    target_rules = (
+        pathlib.Path(__file__).resolve().parents[3]
+        / 'marketplace'
+        / 'bundles'
+        / 'plan-marshall-opencode'
+        / 'skills'
+        / 'target-rules'
+        / 'standards'
+        / 'opencode-rules.md'
+    )
+
+    for path in (persona, target_rules):
+        text = path.read_text(encoding='utf-8')
+        assert 'No plugin found for prefix' in text, f'{path} does not carry rule (b)'
+        assert 'architecture resolve' in text, f'{path} does not carry the build-resolution rule'
 
 
 def test_project_initial_setup_resestup_is_idempotent(runtime: OpenCodeRuntime, tmp_path: pathlib.Path) -> None:
@@ -1167,23 +1378,22 @@ def test_resestup_heals_drifted_bridge(runtime: OpenCodeRuntime, tmp_path: pathl
     assert standing_rules_drift_status(str(tmp_path))['reason'] == 'in_sync'
 
 
-def test_resestup_clears_baseline_newer_drift(runtime: OpenCodeRuntime, tmp_path: pathlib.Path) -> None:
-    """Re-setup re-affirms the bridge and clears a baseline_newer drift verdict."""
-    import os
-
+def test_resestup_clears_baseline_changed_drift(runtime: OpenCodeRuntime, tmp_path: pathlib.Path) -> None:
+    """Re-setup rewrites a bridge whose baseline content changed, and clears the drift."""
     from opencode_runtime import _bridge_rules_path, standing_rules_drift_status
 
-    (tmp_path / 'CLAUDE.md').write_text('# baseline\n', encoding='utf-8')
+    baseline = tmp_path / 'CLAUDE.md'
+    baseline.write_text('# baseline\n', encoding='utf-8')
     _parse(runtime.project_initial_setup(str(tmp_path), 'opencode'))
 
-    past = 1_000_000_000
-    os.utime(_bridge_rules_path(tmp_path), (past, past))
-    os.utime(tmp_path / 'CLAUDE.md', (past + 60, past + 60))
-    assert standing_rules_drift_status(str(tmp_path))['reason'] == 'baseline_newer'
+    baseline.write_text('# baseline\n\nnew rule\n', encoding='utf-8')
+    assert standing_rules_drift_status(str(tmp_path))['reason'] == 'baseline_changed'
 
     result = _parse(runtime.project_initial_setup(str(tmp_path), 'opencode'))
 
     assert result['bridge_written'] is True
+    assert result['bridge_drift'] is True, 'the pre-heal verdict is what the operator is told'
+    assert 'new rule' in _bridge_rules_path(tmp_path).read_text(encoding='utf-8')
     assert standing_rules_drift_status(str(tmp_path))['reason'] == 'in_sync'
 
 

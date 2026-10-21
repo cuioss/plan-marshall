@@ -319,3 +319,118 @@ class TestPermissionDslDeclinesOnNonClaude:
 
         assert result.get('status') == 'skipped'
         assert 'Could not resolve' not in str(result)
+
+
+class TestOpenCodePermissionWritesUseTheListShape:
+    """The OpenCode branches read and write the ``permissions`` list, never a map beside it."""
+
+    CATCH_ALL = {'action': 'shell', 'resource': '*', 'effect': 'ask'}
+
+    def _list_settings(self, tmp_path):
+        config = tmp_path / 'opencode.json'
+        config.write_text(
+            json.dumps({'$schema': 'https://opencode.ai/config.json', 'permissions': [dict(self.CATCH_ALL)]}, indent=2)
+            + '\n'
+        )
+        return config
+
+    @staticmethod
+    def _rules(config):
+        data = json.loads(config.read_text())
+        assert 'permission' not in data, 'a `permission` map must never be added beside a `permissions` list'
+        return data['permissions']
+
+    def test_ensure_wildcards_writes_into_the_list(self, monkeypatch, tmp_path):
+        config = self._list_settings(tmp_path)
+        marketplace_file = tmp_path / 'marketplace.json'
+        marketplace_file.write_text(json.dumps({'bundles': {}}))
+        force_opencode(monkeypatch)
+
+        result = pf.cmd_ensure_wildcards(
+            parse_ns(
+                'plan-marshall',
+                'tools-permission-fix',
+                'permission_fix.py',
+                'ensure-wildcards',
+                '--settings',
+                str(config),
+                '--marketplace-json',
+                str(marketplace_file),
+            )
+        )
+
+        assert result['status'] == 'success'
+        rules = self._rules(config)
+        assert rules[0] == self.CATCH_ALL, 'the catch-all must stay first'
+        executors = [
+            index
+            for index, rule in enumerate(rules)
+            if rule['action'] == 'shell'
+            and rule['resource'] == 'python3 .plan/execute-script.py *'
+            and rule['effect'] == 'allow'
+        ]
+        assert executors and executors[0] > 0, 'the executor allow must land after the catch-all'
+
+    def test_ensure_executor_writes_into_the_list(self, monkeypatch, tmp_path, in_tmp_cwd):
+        config = self._list_settings(tmp_path)
+        force_opencode(monkeypatch)
+
+        result = pf.cmd_ensure_executor(
+            parse_ns(
+                'plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'ensure-executor', '--target', 'project'
+            )
+        )
+
+        assert result['action'] == 'added'
+        rules = self._rules(config)
+        assert any(
+            rule['action'] == 'shell'
+            and rule['resource'] == 'python3 .plan/execute-script.py *'
+            and rule['effect'] == 'allow'
+            for rule in rules
+        )
+
+    def test_ensure_writes_into_the_list(self, monkeypatch, tmp_path, in_tmp_cwd):
+        config = self._list_settings(tmp_path)
+        force_opencode(monkeypatch)
+
+        result = pf.cmd_ensure(
+            parse_ns(
+                'plan-marshall',
+                'tools-permission-fix',
+                'permission_fix.py',
+                'ensure',
+                '--permissions',
+                'deny(git push *)',
+                '--target',
+                'project',
+            )
+        )
+
+        assert result['status'] == 'success'
+        rules = self._rules(config)
+        assert any(
+            rule['action'] == 'shell' and rule['resource'] == 'git push *' and rule['effect'] == 'deny'
+            for rule in rules
+        )
+
+    def test_ensure_writes_the_list_into_a_config_with_neither_shape(self, monkeypatch, tmp_path, in_tmp_cwd):
+        config = tmp_path / 'opencode.json'
+        config.write_text(json.dumps({'$schema': 'https://opencode.ai/config.json'}), encoding='utf-8')
+        force_opencode(monkeypatch)
+
+        pf.cmd_ensure(
+            parse_ns(
+                'plan-marshall',
+                'tools-permission-fix',
+                'permission_fix.py',
+                'ensure',
+                '--permissions',
+                'read',
+                '--target',
+                'project',
+            )
+        )
+
+        rules = self._rules(config)
+        assert any(rule['action'] == 'read' and rule['effect'] == 'allow' for rule in rules)

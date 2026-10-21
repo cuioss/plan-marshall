@@ -4,8 +4,8 @@ The single target/context resolver for every marketplace verb.
 
 The active runtime target is resolved across three distinct tiers:
 
-1. Ambient environment variables (``ANTIGRAVITY_AGENT``, ``OPENCODE`` /
-   ``OPENCODE_PID``, ``CLAUDE_CODE_SESSION_ID``) — zero git footprint.
+1. Ambient environment variables (``ANTIGRAVITY_AGENT``, ``OPENCODE``,
+   ``CLAUDE_CODE_SESSION_ID``) — zero git footprint.
 2. Machine-local configuration (``.plan/local/harness/{target}.json`` or
    ``.plan/run-configuration.json``) — unversioned machine-local settings.
 3. Fallback sentinel (``default_target()``, typically ``'claude'``).
@@ -150,7 +150,6 @@ def default_target() -> str:
 TARGET_ENV_SIGNALS: Final[tuple[tuple[str, str], ...]] = (
     ('ANTIGRAVITY_AGENT', 'antigravity'),
     ('OPENCODE', 'opencode'),
-    ('OPENCODE_PID', 'opencode'),
     ('CLAUDE_CODE_SESSION_ID', 'claude'),
 )
 
@@ -161,7 +160,8 @@ def detect_target_from_env() -> str | None:
     The single implementation of the platform-env target contract, and the
     first tier of :func:`resolve_target`. Antigravity injects
     ``ANTIGRAVITY_AGENT=1`` into every subprocess; OpenCode injects
-    ``OPENCODE=1`` (or ``OPENCODE_PID``); Claude Code injects
+    ``OPENCODE=1`` (its only ambient signal — OpenCode 2 sets no
+    ``OPENCODE_PID``); Claude Code injects
     ``CLAUDE_CODE_SESSION_ID``. These ambient signals resolve the target before
     any config or filesystem probe, eliminating the chicken-and-egg problem on
     first run. The signal names and their targets are declared once, in
@@ -288,8 +288,8 @@ def resolve_target(cwd: Path | None = None) -> ResolvedTarget:
 
     The cascade, in order:
 
-    1. **Env** — ``ANTIGRAVITY_AGENT`` → ``'antigravity'``, ``OPENCODE`` /
-       ``OPENCODE_PID`` → ``'opencode'``, ``CLAUDE_CODE_SESSION_ID`` →
+    1. **Env** — ``ANTIGRAVITY_AGENT`` → ``'antigravity'``, ``OPENCODE`` →
+       ``'opencode'``, ``CLAUDE_CODE_SESSION_ID`` →
        ``'claude'`` (``target_source: env``).
     2. **Local Config** — machine-local harness state in
        ``<ancestor>/.plan/local/harness/{target}.json`` or

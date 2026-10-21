@@ -18,7 +18,7 @@ def _task_prohibition_binds() -> bool:
 
     The rule is a Claude rule-pack member: on Claude the host restricts Task
     from sub-agents, so declaring it in an agent's ``tools:`` is an error. On
-    OpenCode the ``task`` tool exists and subagent dispatch is supported, so
+    OpenCode the ``subagent`` tool exists and subagent dispatch is supported, so
     the prohibition does not bind there. An unrecognised target defaults to the
     Claude rule-pack (every runtime-less environment is a Claude checkout).
     """

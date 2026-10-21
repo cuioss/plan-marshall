@@ -35,7 +35,12 @@ TARGET_RESOLVING_VERBS = ('generate', 'verify', 'bootstrap', 'drift', 'preflight
 
 #: Every platform env signal the cascade reads. Cleared before each tier case so
 #: the developer's own runtime cannot decide the outcome.
-PLATFORM_ENV_SIGNALS = ('ANTIGRAVITY_AGENT', 'OPENCODE', 'OPENCODE_PID', 'CLAUDE_CODE_SESSION_ID')
+PLATFORM_ENV_SIGNALS = tuple(name for name, _target in target_context.TARGET_ENV_SIGNALS)
+
+#: The (signal, target) matrix, derived from the registry so a new signal is
+#: exercised here instead of silently escaping the sweep.
+SIGNAL_CASES = list(target_context.TARGET_ENV_SIGNALS)
+assert SIGNAL_CASES, 'the ambient-signal registry must not be empty'
 
 
 @pytest.fixture()
@@ -189,16 +194,11 @@ class TestVerbTargetPropagationMatrix:
 
     @pytest.mark.parametrize(
         ('env_signal', 'expected'),
-        [
-            ('ANTIGRAVITY_AGENT', 'antigravity'),
-            ('OPENCODE', 'opencode'),
-            ('OPENCODE_PID', 'opencode'),
-            ('CLAUDE_CODE_SESSION_ID', 'claude'),
-        ],
-        ids=['antigravity-signal', 'opencode-signal', 'opencode-pid-signal', 'claude-signal'],
+        SIGNAL_CASES,
+        ids=[name for name, _target in SIGNAL_CASES],
     )
     def test_every_env_signal_reaches_every_verb(self, no_platform_signal, monkeypatch, env_signal, expected):
-        """The tier is not one signal's privilege — all four reach all six verbs.
+        """The tier is not one signal's privilege — all three reach all six verbs.
 
         Without this row the matrix above would pass on a resolver that read only
         ``OPENCODE``, which is the exact config-only-plus-one-signal shape the

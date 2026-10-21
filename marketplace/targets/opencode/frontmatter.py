@@ -291,13 +291,20 @@ def transform_agent_frontmatter(
     *,
     source_label: str,
 ) -> str:
-    """Transform Claude agent frontmatter into OpenCode form.
+    """Transform Claude agent frontmatter into OpenCode 2 form.
 
-    Maps Claude ``tools`` declarations into an OpenCode ``permission``
-    block via ``mapping['tool_permissions']``. A tool with no key there
-    raises ``UnmappedToolError`` so the CLI exits with code 2; a key
-    present with ``null`` is the target-absent sentinel (the Claude tool
-    has no OpenCode analog) and contributes no permission entry.
+    Maps Claude ``tools`` declarations into an OpenCode 2 ``permissions``
+    LIST of ``{action, resource, effect}`` rules via
+    ``mapping['tool_permissions']``. OpenCode 2 evaluates that list
+    last-match-wins, so the rules are written specific-after-any-catch-all:
+    this transform emits no catch-all of its own (a tool the source does not
+    grant matches nothing and falls through to OpenCode's ``ask`` default),
+    and every emitted grant is a specific rule that must come after one.
+
+    A tool with no key in ``tool_permissions`` raises ``UnmappedToolError``
+    so the CLI exits with code 2; a key present with ``null`` is the
+    target-absent sentinel (the Claude tool has no OpenCode analog) and
+    contributes no rule.
     """
     _ensure_required(fm, rules, source_label)
 
@@ -312,7 +319,7 @@ def transform_agent_frontmatter(
 
     tools_raw = fm.get('tools', '')
     if tools_raw:
-        permissions: list[str] = []
+        actions: list[str] = []
         unknown: list[str] = []
         seen: set[str] = set()
         for tool in _split_tools(tools_raw):
@@ -321,18 +328,20 @@ def transform_agent_frontmatter(
                 unknown.append(tool)
                 continue
             if mapped is None:
-                # Target-absent sentinel: no OpenCode analog, no permission.
+                # Target-absent sentinel: no OpenCode analog, no rule.
                 continue
             if mapped in seen:
                 continue
             seen.add(mapped)
-            permissions.append(mapped)
+            actions.append(mapped)
         if unknown:
             raise UnmappedToolError(f'{source_label}: unmapped tool(s) in frontmatter: {", ".join(unknown)}')
-        if permissions:
-            lines.append('permission:')
-            for perm in sorted(permissions):
-                lines.append(f'  {perm}: allow')
+        if actions:
+            lines.append('permissions:')
+            for action in sorted(actions):
+                lines.append(f'  - action: {action}')
+                lines.append('    resource: "*"')
+                lines.append('    effect: allow')
 
     lines.append('---')
     return '\n'.join(lines)

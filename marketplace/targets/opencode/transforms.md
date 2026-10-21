@@ -47,7 +47,7 @@ Fail-closed below).
 
 | Match in source body (engine-owned matcher) | Rewrite template (`mapping.json::directive_rewrites`) |
 |----------------------------------------------|-------------------------------------------------------|
-| `^Skill:\s+{bundle}:{skill}\s*$` (full line) | `` Call the `skill` tool with `{ name: "{bundle}-{skill}" }` before continuing. `` |
+| `^Skill:\s+{bundle}:{skill}\s*$` (full line) | `` Call the `skill` tool with `{ id: "{bundle}-{skill}" }` before continuing. `` |
 
 The regex is anchored to a full line (`^...$`, MULTILINE) so inline
 backtick references like `` `Skill: foo:bar` `` in prose are
@@ -167,7 +167,7 @@ that backtick span.
 | Idiom | Disposition | Rationale |
 |-------|-------------|-----------|
 | `AskUserQuestion` (313× across bodies) | `rewrite_inline_code` → `` `question` `` | OpenCode's escalation tool is `question`/`ask`. Only the backtick-wrapped tool reference is rewritten; bare prose mentions of the escalation *mechanism* stay as the concept name (a blanket rewrite would corrupt prose). |
-| `Task:` | `preserve` | **Leaf-aware** (doc 06 item 3). The dispatcher's leaf-constraint prose — "no `Task:` dispatch", "every plan-marshall `Task:` invocation" — is descriptive, and a blanket `Task:` → `task` rewrite corrupts it. The divergence is real terminology drift, dispositioned here as a deliberate non-rewrite rather than a naive substitution. |
+| `Task:` | `preserve` | **Leaf-aware** (doc 06 item 3). The dispatcher's leaf-constraint prose — "no `Task:` dispatch", "every plan-marshall `Task:` invocation" — is descriptive, and a blanket `Task:` → `subagent` rewrite corrupts it. The divergence is real terminology drift, dispositioned here as a deliberate non-rewrite rather than a naive substitution. |
 | `Skill: <entry>` | `source_fix` | The `<entry>` is a runtime placeholder, not an identifier (doc 06 item 2). The one true source change — the placeholder-loop prose (the step-3 skill-load loop in `agents/execution-context.md`) is reworded target-neutrally, so no emit-time rewrite is needed. |
 
 ## What is *not* transformed

@@ -366,7 +366,7 @@ materialize-then-sort sequencing.
 ## OpenCode Enforcement Apply (wizard Step 14b)
 
 On opencode-target projects the wizard applies enforcement once per
-project: the two-tier permission block (D1) into the project's
+project: the two-tier permission rules (D1) into the project's
 `opencode.json` and the guard plugin (D2) under `.opencode/plugin/`. The
 step is gated on `runtime.target == opencode` and applies at most once —
 a re-entry that finds both artifacts in place skips silently with a
