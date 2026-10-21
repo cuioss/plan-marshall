@@ -528,7 +528,7 @@ def _window_pre_filter(windows: Sequence[tuple[str, datetime, datetime]]) -> tup
     ends = [end.timestamp() for _phase, _start, end in windows]
     low, high = min(starts), max(ends)
     fragment = (
-        " AND (typeof(\"time_created\") = 'text'"
+        ' AND (typeof("time_created") = \'text\''
         ' OR ("time_created" > ? AND "time_created" >= ? AND "time_created" < ?)'
         ' OR ("time_created" <= ? AND "time_created" >= ? AND "time_created" < ?))'
     )

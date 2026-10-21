@@ -338,9 +338,7 @@ def test_session_totals_refuses_a_tier1_store_rather_than_an_empty_bucket(tmp_pa
     assert totals == {'ok': False, 'reason': 'schema_unsupported'}
 
 
-def test_session_totals_covers_every_tree_member_across_chunk_boundaries(
-    tmp_path: Path, monkeypatch: Any
-) -> None:
+def test_session_totals_covers_every_tree_member_across_chunk_boundaries(tmp_path: Path, monkeypatch: Any) -> None:
     """A tree split over several ``IN`` statements still sums every member once."""
     monkeypatch.setattr(opencode_sessions, '_SQL_VARIABLE_BUDGET', 2)
     db_path = tmp_path / 'opencode.db'
