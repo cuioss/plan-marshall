@@ -1007,6 +1007,9 @@ def test_metrics_normalized_tokens_writes_measured_buckets(
     assert bucket['subagent_tool_uses'] == 1
     assert bucket['subagent_duration_ms'] > 0
     assert bucket['billing_weighted_total'] == 10 + 20 + round(3 * 0.1) + round(4 * 1.25)
+    # Parity with the transcript-walking target: `total` is the canonical
+    # four-field sum, so a consumer reading it is not target-dependent.
+    assert bucket['total'] == 10 + 20 + 3 + 4
     # No-zero control: the exploration counters come from a tool-call walk this
     # target does not run, so they are ABSENT rather than fabricated as zeros.
     assert 'exploration_tool_calls' not in bucket

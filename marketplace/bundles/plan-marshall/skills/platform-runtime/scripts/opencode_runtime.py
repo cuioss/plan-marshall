@@ -680,6 +680,7 @@ def _per_phase_buckets(
         )
         per_phase[str(window.get('phase'))] = {
             **four,
+            'total': sum(four.values()),
             'billing_weighted_total': claude_runtime._billing_weighted_total(four),
             'subagent_total_tokens': subagent_total,
             'subagent_samples': int(subagent.get('sessions', 0)),
