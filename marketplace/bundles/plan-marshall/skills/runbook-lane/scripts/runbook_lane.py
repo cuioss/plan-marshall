@@ -587,6 +587,68 @@ def _resolve_harness_guard(project_dir: Path) -> tuple[str, str]:
     return harness, 'present' if _claude_guard_installed(project_dir) else 'none'
 
 
+#: The runtime-info vocabulary the landing's stamp is written in. ``unknown`` is
+#: its could-not-read value; ``mixed`` is a session tree that ran more than one
+#: model or variant, whose distinct labels ride ``models``.
+_RUNTIME_UNKNOWN = 'unknown'
+_RUNTIME_MIXED = 'mixed'
+
+
+def _stamp_value(value: Any) -> str:
+    """Return a runtime-stamp value, or ``unknown`` when nothing was read."""
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    return _RUNTIME_UNKNOWN
+
+
+def _render_model(info: dict[str, Any]) -> str:
+    """Render the runtime ``model`` fact as its comma-separated list form.
+
+    A mixed session tree already carries its distinct labels in ``models``; a
+    single-model tree renders ``{model}/{variant}`` when a variant was measured
+    and the bare model otherwise. Nothing is averaged, reduced to the root's
+    value, or guessed: an unreadable model is ``unknown``.
+    """
+    model = _stamp_value(info.get('model'))
+    if model == _RUNTIME_MIXED:
+        labels = [label.strip() for label in str(info.get('models') or '').split(',') if label.strip()]
+        return ','.join(labels) if labels else _RUNTIME_UNKNOWN
+    if model == _RUNTIME_UNKNOWN:
+        return model
+    variant = info.get('variant')
+    if isinstance(variant, str) and variant.strip():
+        return f'{model}/{variant.strip()}'
+    return model
+
+
+def _resolve_runtime_stamp(harness: str) -> dict[str, str]:
+    """Resolve the landing's runtime stamp from the platform-runtime seam.
+
+    ``harness``, ``model``, ``effort`` and ``plugin_version`` are the four facts
+    the landing's consumer requires; ``plugin_version`` is the BUNDLE version
+    (``runtime-info``'s ``bundle_version``), and the executor's own version rides
+    the OPTIONAL ``executor_version`` — present only when it was read. The lane
+    re-runs this at landing time rather than reusing its setup-time answer, so a
+    model or effort switch during the run is stamped.
+
+    Values are MEASURED by ``runtime_info.collect_runtime_info`` — on OpenCode
+    from the session tree — and an attribute with no readable source is
+    ``unknown`` rather than an estimate.
+    """
+    from runtime_info import collect_runtime_info
+
+    info = collect_runtime_info(harness)
+    stamp = {
+        'model': _render_model(info),
+        'effort': _stamp_value(info.get('effort')),
+        'plugin_version': _stamp_value(info.get('bundle_version')),
+    }
+    executor_version = info.get('executor_version')
+    if isinstance(executor_version, str) and executor_version.strip():
+        stamp['executor_version'] = executor_version.strip()
+    return stamp
+
+
 #: The CI directory a workflow lives under, relative to the project root. A
 #: DIRECTORY, never a filename: the workflow that carries the opt-in is
 #: discovered, so no workflow name appears in this module.
@@ -1023,6 +1085,7 @@ def cmd_resolve(args: argparse.Namespace) -> dict[str, Any]:
     trailer = run_config.read_commit_trailer()['trailer']
     harness, guard = _resolve_harness_guard(project_dir)
     build_server, build_server_reason = _resolve_build_server(project_dir)
+    runtime_stamp = _resolve_runtime_stamp(harness)
 
     worktree = f'.plan/local/worktrees/{plan_id}'
     progress_file = f'.plan/temp/rb-{plan_id}/progress.md'
@@ -1051,11 +1114,18 @@ def cmd_resolve(args: argparse.Namespace) -> dict[str, Any]:
         'optional_bots': optional,
         'commit_trailer': trailer,
         'harness': harness,
+        'model': runtime_stamp['model'],
+        'effort': runtime_stamp['effort'],
+        'plugin_version': runtime_stamp['plugin_version'],
         'guard': guard,
         'guard_log': '/'.join(_GUARD_LOG_PARTS),
         'build_server': build_server,
         'skills_note': deliverable_state['skills_note'],
     }
+    # The executor version is OPTIONAL in the landing, so it is present only when
+    # the seam actually read one — never an `unknown` line the template must drop.
+    if 'executor_version' in runtime_stamp:
+        resolved['executor_version'] = runtime_stamp['executor_version']
     # A reason only exists for ``down``: the other two states are their own
     # explanation, and an empty row would read like a parsed-but-empty answer.
     if build_server_reason is not None:

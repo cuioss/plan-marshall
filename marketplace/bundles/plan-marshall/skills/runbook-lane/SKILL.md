@@ -88,7 +88,7 @@ The result supplies, and nothing below is spelled from anywhere else:
 | required and optional reviewers, with their trigger comments | `required_bots`, `optional_bots` |
 | commit trailer | `commit_trailer` |
 | `inbox write` command | `inbox_write_command` |
-| harness and guard state | `harness`, `guard` |
+| harness, guard and the landing's runtime stamp | `harness`, `guard`, `model`, `effort`, `plugin_version`, and `executor_version` when it was read |
 | guard-log path | `guard_log` |
 | build server state | `build_server`, plus `build_server_reason` when the state is `down` |
 
@@ -534,11 +534,19 @@ deliverables_done={deliverables whose every Done-when is met}
 total_tokens=unknown
 harness={harness}
 model={every model and variant used, comma-separated, e.g. deepseek-v4.1-flash/max,deepseek-v4.1-flash/high; record each switch in the progress file}
+effort={the effort level measured with the model}
+plugin_version={the plan-marshall bundle version}
+executor_version={the executor version when resolve returned one; drop this line when it did not (optional)}
 steps=setup:done,implement:done,build-gate:done,self-review:{clear|budget-exhausted},pr:done,reviews:done,merge:done
 ```
 
 - **Values:** write `unknown` for anything you could not read, never `n/a` and never a guess.
   `deliverables_done` counts only fully met deliverables.
+- **Runtime stamp:** `harness`, `model`, `effort`, `plugin_version` and the optional `executor_version` are
+  the resolve result's fields of those names, resolved from the platform-runtime `runtime-info` seam.
+  Read the stamp from a `resolve` **re-run at landing time**, not from the setup-time result, so a model
+  or effort switch during the run is stamped; record every switch in the progress file. `model` keeps
+  its `{model}/{variant}` list form — one element per model and variant used.
 - **Every line inside the facts fence is a `key=value` pair** — no line is dropped by the consumer's
   parser. The guard state travels as prose beside the fence rather than as a fence line:
   `guard: none on this harness (unenforced)` when the resolve result reported `guard: none`, and

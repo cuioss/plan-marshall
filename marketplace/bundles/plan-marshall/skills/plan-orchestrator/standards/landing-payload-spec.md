@@ -129,9 +129,11 @@ consumer reads the whole list rather than assuming one model per landing. On Ope
 session tree may itself be `mixed`, with the distinct `id/variant` values listed.
 
 A landing written by the RUNBOOK lane has no `status.json` and no phase-1-init: that lane reads the
-same runtime-stamp values from its own resolve result, which resolves the harness through the
-platform-runtime runtime-info seam, so each fact means the same thing on either producer. The
-`transcripts` capability that
+same runtime-stamp values from its own `resolve` result, which resolves `harness`, `model`, `effort`,
+`plugin_version` and the optional `executor_version` through the platform-runtime runtime-info seam,
+and it re-runs that resolution at landing time so a model or effort switch during the run is stamped
+in the list form above — each fact means the same thing on either producer. The `transcripts`
+capability that
 explains the run's token figures (`full` vs `none`) rides the same
 `runtime-info` record — see `platform-runtime/standards/runtime-info.md`.
 

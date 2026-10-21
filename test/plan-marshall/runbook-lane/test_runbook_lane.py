@@ -44,6 +44,7 @@ from typing import Any
 from conftest import (
     MARKETPLACE_ROOT,
     PROJECT_ROOT,
+    get_script_path,
     get_scripts_dir,
     load_script_module,
     run_script,
@@ -1634,3 +1635,192 @@ def test_build_timeout_comes_from_the_architecture_stamp(tmp_path: Path, monkeyp
 
     assert data['status'] == 'success', data
     assert data['build_timeout_seconds'] == 1234
+
+
+# =============================================================================
+# D3 — the landing carries the runtime stamp
+# =============================================================================
+
+#: The landing's consumer. The required-key set is READ from it rather than
+#: restated, so the fence contract below cannot drift from the drain.
+_inbox = load_script_module(
+    'plan-marshall', 'plan-orchestrator', '_orchestrator_inbox.py', 'rb_lb78_orchestrator_inbox'
+)
+
+
+def _landing_fence_keys() -> list[str]:
+    """Return the keys of the section 8 ``landing-facts`` fence, in order."""
+    section = _raw_section('## 8. Landing message (the last step, after the merge)')
+    fences = [block for block in _fenced_blocks(section) if 'schema=landing-facts/1' in block]
+    assert len(fences) == 1, 'section 8 does not carry exactly one landing-facts fence'
+    return [line.partition('=')[0].strip() for line in fences[0].splitlines() if line.strip()]
+
+
+def test_landing_facts_fence_carries_every_required_key_except_total_tokens() -> None:
+    """The lane's own template supplies what its consumer requires.
+
+    Parsed from the fence as written, so a key the fence drops is a red test
+    here rather than an INCOMPLETE landing discovered by the drain.
+    """
+    keys = set(_landing_fence_keys())
+
+    assert {'effort', 'plugin_version'} <= keys, 'the section 8 fence names no effort or plugin_version'
+    required = set(_inbox.LANDING_REQUIRED_KEYS) - {'total_tokens'}
+    assert required <= keys, f'the section 8 fence omits {sorted(required - keys)}'
+
+
+#: Runtime-info payloads in the shape ``collect_runtime_info`` returns: one
+#: measured single-model tree, one mixed tree carrying its distinct labels, and
+#: one read that produced no stamp at all.
+_MEASURED_RUNTIME_INFO: dict[str, Any] = {
+    'harness': 'opencode',
+    'transcripts': 'full',
+    'model': 'deepseek-v4.1-flash',
+    'variant': 'high',
+    'model_source': 'measured',
+    'effort': 'high',
+    'effort_source': 'measured',
+    'bundle_version': '0.1.1919',
+    'executor_version': '0.1.1919',
+}
+_MIXED_RUNTIME_INFO: dict[str, Any] = {
+    'harness': 'opencode',
+    'transcripts': 'full',
+    'model': 'mixed',
+    'models': 'deepseek-v4.1-flash/high,claude-opus-5-5/max',
+    'model_source': 'measured',
+    'effort': 'high',
+    'bundle_version': '0.1.1919',
+}
+_ABSENT_RUNTIME_INFO: dict[str, Any] = {'harness': 'opencode', 'transcripts': 'none'}
+
+
+def _resolve_with_runtime_info(tmp_path: Path, monkeypatch, info: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
+    """Run ``cmd_resolve`` in-process against a fixture runtime-info payload.
+
+    ``collect_runtime_info`` is replaced on the REAL ``runtime_info`` module —
+    the object the lane's deferred ``from runtime_info import …`` binds — so the
+    test exercises ``cmd_resolve`` rather than an extracted seam. The harnesses
+    it was asked to stamp are collected, so the test can assert the stamp was
+    resolved for the harness ``resolve`` reported.
+    """
+    import runtime_info
+
+    spec = _seed_fixture(tmp_path, executable=_PYPROJECT_EXEC, required_bots='x')
+    monkeypatch.setenv('PLAN_MARSHALL_HOME', str(tmp_path / '.machine-home'))
+    stamped: list[str] = []
+
+    def _collect(harness: str) -> dict[str, Any]:
+        stamped.append(harness)
+        return dict(info)
+
+    monkeypatch.setattr(runtime_info, 'collect_runtime_info', _collect)
+    module = load_script_module('plan-marshall', _SKILL_NAME, 'runbook_lane.py', register=False)
+
+    return module.cmd_resolve(argparse.Namespace(spec=str(spec), project_dir=str(tmp_path))), stamped
+
+
+def test_resolve_returns_the_measured_runtime_stamp(tmp_path: Path, monkeypatch) -> None:
+    data, stamped = _resolve_with_runtime_info(tmp_path, monkeypatch, _MEASURED_RUNTIME_INFO)
+
+    assert data['status'] == 'success', data
+    assert stamped == [data['harness']], 'the stamp was not read for the harness resolve reported'
+    assert data['model'] == 'deepseek-v4.1-flash/high'
+    assert data['effort'] == 'high'
+    assert data['plugin_version'] == '0.1.1919'
+    assert data['executor_version'] == '0.1.1919'
+
+
+def test_resolve_returns_the_mixed_model_as_its_list_form(tmp_path: Path, monkeypatch) -> None:
+    data, _ = _resolve_with_runtime_info(tmp_path, monkeypatch, _MIXED_RUNTIME_INFO)
+
+    assert data['status'] == 'success', data
+    assert data['model'] == 'deepseek-v4.1-flash/high,claude-opus-5-5/max'
+    assert data['effort'] == 'high'
+    assert data['plugin_version'] == '0.1.1919'
+
+
+def test_resolve_returns_unknown_when_the_runtime_stamp_is_absent(tmp_path: Path, monkeypatch) -> None:
+    data, _ = _resolve_with_runtime_info(tmp_path, monkeypatch, _ABSENT_RUNTIME_INFO)
+
+    assert data['status'] == 'success', data
+    assert data['model'] == 'unknown'
+    assert data['effort'] == 'unknown'
+    assert data['plugin_version'] == 'unknown'
+    assert 'executor_version' not in data, 'an unread executor version was stamped anyway'
+
+
+#: A real value for every key of the section 8 template. A key with no entry
+#: fails the test, so a fence line cannot enter the template without the test
+#: saying what a real value for it is.
+_TEMPLATE_FACT_VALUES: dict[str, str] = {
+    'schema': 'landing-facts/1',
+    'plan_id': 'rb-lb-78-runbook-lane-build-resolution',
+    'epic': 'demo-epic',
+    'pr': '#78',
+    'merge_state': 'merged',
+    'cleanup_owed': 'false',
+    'deliverables_total': '3',
+    'deliverables_done': '3',
+    'total_tokens': 'unknown',
+    'harness': 'opencode',
+    'model': 'deepseek-v4.1-flash/high',
+    'effort': 'high',
+    'plugin_version': '0.1.1919',
+    'executor_version': '0.1.1919',
+    'steps': 'setup:done,implement:done,build-gate:done,self-review:clear,pr:done,reviews:done,merge:done',
+}
+
+
+def _landing_from_the_section_8_template() -> str:
+    """Fill the section 8 fence with real values, as a landing writes it."""
+    keys = _landing_fence_keys()
+    unmapped = [key for key in keys if key not in _TEMPLATE_FACT_VALUES]
+    assert not unmapped, f'the section 8 fence carries {unmapped}, for which this test has no real value'
+    facts = '\n'.join(f'{key}={_TEMPLATE_FACT_VALUES[key]}' for key in keys)
+    return f'```landing-facts\n{facts}\n```\n\n## Deliverables\n\nEvery Done-when met.\n'
+
+
+def test_a_landing_from_the_section_8_template_is_complete_except_total_tokens(plan_context, tmp_path: Path) -> None:
+    """The lane's own template drains as complete on every fact it can measure.
+
+    Only ``total_tokens`` stays open: it is PLAN-LB-49's, and no runbook-lane
+    run measures it today.
+    """
+    env = {'PLAN_BASE_DIR': str(plan_context.fixture_dir)}
+    script = get_script_path('plan-marshall', 'plan-orchestrator', 'orchestrator.py')
+    run_script(script, 'scaffold', '--slug', 'demo-epic', env_overrides=env)
+    payload = tmp_path / 'landing.md'
+    payload.write_text(_landing_from_the_section_8_template(), encoding='utf-8')
+    run_script(
+        script,
+        'inbox',
+        'write',
+        '--slug',
+        'demo-epic',
+        '--sender-type',
+        'plan',
+        '--sender-id',
+        'rb-lb-78-runbook-lane-build-resolution',
+        '--kind',
+        'landing',
+        '--payload-file',
+        str(payload),
+        env_overrides=env,
+    )
+
+    result = run_script(
+        script,
+        'inbox',
+        'landing-check',
+        '--slug',
+        'demo-epic',
+        '--message',
+        'rb-lb-78-runbook-lane-build-resolution-001.md',
+        env_overrides=env,
+    )
+
+    assert result.returncode == 0, result.stderr
+    data = result.toon()
+    assert data['complete'] is False
+    assert data['missing_keys'] == ['total_tokens']
