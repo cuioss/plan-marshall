@@ -1174,6 +1174,7 @@ class TestRuntimeStampFacts:
         assert key in missing
 
     def test_a_block_carrying_all_four_is_complete(self):
+        """The matched positive control: a complete stamp is not reported missing."""
         complete, missing = check_landing_completeness(_facts_landing())
 
         assert complete is True
@@ -1192,10 +1193,35 @@ class TestRuntimeStampFacts:
             assert key in table, key
 
     def test_the_executor_version_stays_optional(self):
-        """``plugin_version`` is required; the executor version riding beside it is not."""
-        assert 'executor_version' not in _spec_table_keys()
+        """``executor_version`` never becomes a required key."""
         assert 'executor_version' not in LANDING_REQUIRED_KEYS
-        assert check_landing_completeness(_facts_landing()) == (True, [])
+
+
+class TestEmitLandingRuntimeStamp:
+    """The producer writes the measured model form the payload spec defines."""
+
+    def _text(self) -> str:
+        return _EMIT_LANDING_DOC.read_text(encoding='utf-8')
+
+    def test_emit_landing_writes_the_variant_form(self):
+        """A stamped variant rides into the landing as ``{model}/{variant}``."""
+        text = self._text()
+
+        assert '`{metadata.model}/{metadata.variant}`' in text
+        assert text.index('refresh-runtime-stamp') < text.index('Then read the fields')
+
+    def test_emit_landing_writes_the_mixed_list(self):
+        """A mixed stamp writes the distinct labels, never the bare ``mixed``."""
+        text = self._text()
+
+        assert 'write THOSE as the `model` fact rather than the bare `mixed`' in text
+
+    def test_emit_landing_refreshes_the_stamp_first(self):
+        """The producer re-reads the measured stamp at landing time."""
+        text = self._text()
+
+        assert 'refresh-runtime-stamp' in text
+        assert 'measured_at_start' in text
 
 
 # =============================================================================

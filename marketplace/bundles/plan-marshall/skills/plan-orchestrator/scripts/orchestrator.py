@@ -6384,18 +6384,99 @@ def _best_effort_plan_title(plan_id: str) -> None:
 #: being recorded as the flag value or as a default. ``models`` rides beside
 #: ``model`` because a MIXED OpenCode session tree records ``model: mixed`` and
 #: keeps the distinct ``id/variant`` labels there — dropping it would leave the
-#: landing unable to name which models the run actually used.
+#: landing unable to name which models the run actually used. ``variant`` (and
+#: the ``provider`` when the collector reports one) rides beside a single-model
+#: ``model`` so the landing can write the ``{model}/{variant}`` list form
+#: ``landing-payload-spec.md`` specifies instead of a bare model id.
 _PREFLIGHT_METADATA_FIELDS: tuple[str, ...] = (
     'harness',
     'harness_source',
     'model',
     'models',
+    'variant',
+    'provider',
     'model_source',
+    'model_origin',
+    'model_omission_reason',
     'effort',
     'effort_source',
     'bundle_version',
     'executor_version',
 )
+
+#: Source tag recording a value that was measured at plan start and KEPT because
+#: the landing-time re-read could not reach its source. It keeps the provenance
+#: honest: the value is still the measured one, just not the landing-time one.
+SOURCE_MEASURED_AT_START = 'measured_at_start'
+
+#: Runtime fields a landing-time refresh rewrites when the measured payload
+#: carries them. They are CLEARED when the re-read no longer reports them: a
+#: tree that collapsed back to one model must not keep the earlier mixed labels
+#: or a stale variant, and a readable re-read must not keep the start-time
+#: ``model_omission_reason`` beside a model it just measured.
+_REFRESH_CLEARING_FIELDS: tuple[str, ...] = ('models', 'variant', 'provider', 'model_omission_reason')
+
+#: Runtime fields a refresh writes only when the measured payload carries them —
+#: the versions do not change mid-run, so an unreadable re-read keeps the start
+#: value instead of dropping a fact that was already established.
+_REFRESH_KEEPING_FIELDS: tuple[str, ...] = ('harness', 'harness_source', 'bundle_version', 'executor_version')
+
+#: The model family a refresh rewrites wholesale — value and provenance move
+#: together, so no reader can pair a fresh model with a stale origin.
+_REFRESH_MODEL_FIELDS: tuple[str, ...] = ('model', 'model_source', 'model_origin')
+
+#: The effort family a refresh rewrites when the measured tree supplies one.
+_REFRESH_EFFORT_FIELDS: tuple[str, ...] = ('effort', 'effort_source')
+
+#: The four rule sets are a PARTITION of the stamped fields: every field a
+#: preflight can write has exactly one refresh rule, so a field added to the
+#: stamp cannot silently escape the refresh. A failure here is a programming
+#: error, not a runtime condition.
+assert set(_PREFLIGHT_METADATA_FIELDS) == {
+    *_REFRESH_MODEL_FIELDS,
+    *_REFRESH_EFFORT_FIELDS,
+    *_REFRESH_CLEARING_FIELDS,
+    *_REFRESH_KEEPING_FIELDS,
+}, 'every stamped runtime field must have exactly one refresh rule'
+
+
+def _clear_runtime_metadata(plan_id: str) -> bool:
+    """Remove the runtime stamp from a plan's metadata BEFORE a collector runs.
+
+    The stamper owns these keys, so a collector that fails later must not leave
+    a PREVIOUS run's or attempt's value in place — the landing would attribute
+    this run to the earlier one's model or effort. Clearing is best-effort: a
+    plan with no readable status reports False and plan start is never blocked.
+
+    Args:
+        plan_id: Plan whose runtime metadata keys are removed.
+
+    Returns:
+        True when the keys are absent afterwards, False when the status could
+        not be read or written.
+    """
+    try:
+        from _status_core import read_status, write_status
+    except Exception:
+        return False
+    try:
+        status = read_status(plan_id)
+    except Exception:
+        return False
+    if not isinstance(status, dict) or not status:
+        return False
+    metadata = status.get('metadata')
+    if not isinstance(metadata, dict):
+        return True
+    if not any(key in metadata for key in _PREFLIGHT_METADATA_FIELDS):
+        return True
+    for key in _PREFLIGHT_METADATA_FIELDS:
+        metadata.pop(key, None)
+    try:
+        write_status(plan_id, status)
+    except Exception:
+        return False
+    return True
 
 
 def _best_effort_runtime_metadata(plan_id: str, payload: str) -> bool:
@@ -6621,7 +6702,8 @@ def cmd_preflight(args: argparse.Namespace) -> dict[str, Any]:
     The same collected attributes are stamped into the plan's ``status.json``
     metadata — the plan-start record of the harness, model, effort and
     plan-marshall version the plan ran under — through manage-status's shared
-    status writer.
+    status writer. The runtime keys are CLEARED before the collector runs, so a
+    collector that fails cannot leave a previous attempt's values in place.
 
     Best-effort by contract: any collector, resolution, or write failure
     degrades to ``degraded: true`` with ``artifact_written: false`` and still
@@ -6652,6 +6734,10 @@ def cmd_preflight(args: argparse.Namespace) -> dict[str, Any]:
             'degrade_reason': f'plan directory unresolvable: {exc}',
             'artifact_written': False,
         }
+    # The stamp is cleared BEFORE the collector runs so a failure below cannot
+    # leave a previous attempt's model or effort in place for the landing to
+    # attribute to this run. A later successful stamp rewrites what it can read.
+    _clear_runtime_metadata(args.plan_id)
     runtime_info_argv = [
         sys.executable,
         '.plan/execute-script.py',
@@ -6726,6 +6812,166 @@ def cmd_preflight(args: argparse.Namespace) -> dict[str, Any]:
         'artifact': 'client.toon',
         'metadata_stamped': metadata_stamped,
         'persisted_approval': _persisted_approval_report(),
+    }
+
+
+def cmd_refresh_runtime_stamp(args: argparse.Namespace) -> dict[str, Any]:
+    """Re-read the measured runtime attributes and merge them into the stamp.
+
+    A plan's runtime stamp is written once at ``phase-1-init`` 8a.6, so a
+    session that starts or switches model after plan start is invisible to it.
+    The landing is the last moment the run can be measured, so the terminal
+    ``emit-landing`` step calls this verb first.
+
+    The merge is deliberately conservative in one direction and strict in the
+    other:
+
+    * A MEASURED model (anything but ``unknown``) rewrites the model family —
+      ``model``, ``models``, ``variant``, ``provider`` and their sources — so a
+      tree that gained a second model lands as ``mixed`` and a tree that
+      collapsed back to one loses the stale mixed labels.
+    * A model that could NOT be read (``unknown``, a degraded collector, no
+      session id, or an OpenCode environment fallback where the start value was
+      measured from the session tree) keeps the start-time value and, when that
+      value's own source was ``measured``, marks its provenance
+      ``measured_at_start``. It never writes ``unknown`` over a value the run
+      actually measured, never relabels a SELF-REPORTED value as measured, and
+      never lets a configured environment model displace the session record.
+    * The harness and version fields are written only when the re-read carries
+      them; they cannot change mid-run, so an unreadable re-read keeps what was
+      already established.
+
+    Best-effort by contract like the preflight: any failure returns
+    ``status: success`` with ``refreshed: false`` and a reason, never blocking
+    the landing.
+    """
+    base: dict[str, Any] = {
+        'status': 'success',
+        'operation': 'refresh-runtime-stamp',
+        'plan_id': args.plan_id,
+    }
+    try:
+        from runtime_info import (
+            MODEL_ORIGIN_SESSION_TREE,
+            OPENCODE_HARNESS,
+            SOURCE_MEASURED,
+            VALUE_UNKNOWN,
+        )
+    except Exception as exc:
+        return {**base, 'refreshed': False, 'reason': f'runtime tokens unavailable: {exc}'}
+    try:
+        validate_plan_id(args.plan_id)
+    except ValueError as exc:
+        return {**base, 'refreshed': False, 'reason': f'invalid plan id: {exc}'}
+    runtime_info_argv = [
+        sys.executable,
+        '.plan/execute-script.py',
+        'plan-marshall:platform-runtime:platform_runtime',
+        'runtime-info',
+    ]
+    try:
+        completed = subprocess.run(runtime_info_argv, capture_output=True, text=True, timeout=60)
+    except Exception as exc:
+        return {**base, 'refreshed': False, 'reason': f'runtime-info invocation failed: {exc}'}
+    payload = completed.stdout.strip()
+    if completed.returncode != 0 or not payload or 'status: success' not in payload.splitlines()[0]:
+        return {**base, 'refreshed': False, 'reason': 'runtime-info returned no success payload'}
+    try:
+        info = parse_toon(payload)
+    except Exception:
+        return {**base, 'refreshed': False, 'reason': 'runtime-info payload unparseable'}
+    if not isinstance(info, dict):
+        return {**base, 'refreshed': False, 'reason': 'runtime-info payload wrong-shaped'}
+    try:
+        from _status_core import read_status, write_status
+    except Exception:
+        return {**base, 'refreshed': False, 'reason': 'status reader unavailable'}
+    try:
+        status = read_status(args.plan_id)
+    except Exception as exc:
+        return {**base, 'refreshed': False, 'reason': f'status unreadable: {exc}'}
+    if not isinstance(status, dict) or not status:
+        return {**base, 'refreshed': False, 'reason': 'no status document resolves for this plan'}
+    metadata = status.get('metadata')
+    if not isinstance(metadata, dict):
+        metadata = {}
+        status['metadata'] = metadata
+
+    measured_model = info.get('model')
+    harness = info.get('harness')
+    # A session-tree measurement must not be replaced by an environment fallback:
+    # with no session id in scope OpenCode falls back to OPENCODE_MODEL, which is
+    # a configured value, not the run's record.
+    origin = info.get('model_origin')
+    preserves_session = not (
+        harness == OPENCODE_HARNESS
+        and metadata.get('model_origin') == MODEL_ORIGIN_SESSION_TREE
+        and origin != MODEL_ORIGIN_SESSION_TREE
+    )
+    readable = (
+        isinstance(measured_model, str)
+        and bool(measured_model.strip())
+        and measured_model != VALUE_UNKNOWN
+        and preserves_session
+    )
+    if not readable:
+        provenance_kept = False
+        # Never relabel a SELF-REPORTED value as measured: this verb supplies no
+        # --model/--effort, so a value it could not measure was measured at
+        # plan start only if its own source says so.
+        if metadata.get('model') and metadata.get('model_source') == SOURCE_MEASURED:
+            metadata['model_source'] = SOURCE_MEASURED_AT_START
+            provenance_kept = True
+        if metadata.get('effort') and metadata.get('effort_source') == SOURCE_MEASURED:
+            metadata['effort_source'] = SOURCE_MEASURED_AT_START
+            provenance_kept = True
+        if provenance_kept:
+            try:
+                write_status(args.plan_id, status)
+            except Exception as exc:
+                return {**base, 'refreshed': False, 'reason': f'status unwritable: {exc}'}
+        reason = info.get('model_omission_reason')
+        return {
+            **base,
+            'refreshed': False,
+            'model_source': metadata.get('model_source'),
+            'reason': reason if isinstance(reason, str) and reason else 'model_unknown',
+        }
+
+    for key in _REFRESH_MODEL_FIELDS:
+        value = info.get(key)
+        if value is not None and str(value).strip():
+            metadata[key] = str(value)
+    for key in _REFRESH_CLEARING_FIELDS:
+        value = info.get(key)
+        if value is None or not str(value).strip():
+            metadata.pop(key, None)
+        else:
+            metadata[key] = str(value)
+    for key in _REFRESH_KEEPING_FIELDS:
+        value = info.get(key)
+        if value is not None and str(value).strip():
+            metadata[key] = str(value)
+    if info.get('effort') is not None and str(info['effort']).strip():
+        metadata['effort'] = str(info['effort'])
+        metadata['effort_source'] = str(info.get('effort_source') or SOURCE_MEASURED)
+    elif metadata.get('effort') and metadata.get('effort_source') == SOURCE_MEASURED:
+        # The tree no longer reports a single variant (for example it is mixed),
+        # so the start-time effort is the only measured value in hand. A
+        # SELF-REPORTED effort keeps its own tag — this verb measured nothing.
+        metadata['effort_source'] = SOURCE_MEASURED_AT_START
+
+    try:
+        write_status(args.plan_id, status)
+    except Exception as exc:
+        return {**base, 'refreshed': False, 'reason': f'status unwritable: {exc}'}
+    return {
+        **base,
+        'refreshed': True,
+        'model': metadata.get('model'),
+        'model_source': metadata.get('model_source'),
+        'effort': metadata.get('effort'),
+        'effort_source': metadata.get('effort_source'),
     }
 
 
@@ -6919,6 +7165,18 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         help="Self-reported effort level, forwarded to runtime-info and stamped into the plan's runtime metadata",
     )
     preflight.set_defaults(handler=cmd_preflight)
+
+    refresh_stamp = subparsers.add_parser(
+        'refresh-runtime-stamp',
+        help='Re-read the measured runtime attributes and merge them into the plan metadata (best-effort, never blocks).',
+        allow_abbrev=False,
+    )
+    refresh_stamp.add_argument(
+        '--plan-id',
+        required=True,
+        help='Plan identifier whose runtime metadata is refreshed before the landing is emitted.',
+    )
+    refresh_stamp.set_defaults(handler=cmd_refresh_runtime_stamp)
 
     _add_corpus_group(subparsers)
     _add_cleanup_group(subparsers)

@@ -206,13 +206,37 @@ below.
 
 5. **The runtime stamp** — which harness, model, effort and plan-marshall version produced the run,
    read from the plan's `status.json` metadata that phase-1-init Step 8a.6 stamped through the
-   orchestrator preflight hook (`manage-status` `metadata --get`, one field per key):
+   orchestrator preflight hook. The start-time stamp cannot see a model switch that happened after
+   plan start, so FIRST refresh the measured attributes at the landing (the last moment the run can
+   be measured):
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator refresh-runtime-stamp \
+     --plan-id {plan_id}
+   ```
+
+   The verb re-runs the measured read and merges it into the stamp: a tree that gained a second
+   model becomes `model: mixed` with both labels, and a tree that collapsed back to one loses the
+   stale `models`/`variant`. A re-read that CANNOT reach its source keeps the start-time value; when
+   that value was itself measured its provenance is recorded as `model_source: measured_at_start`
+   (`effort_source` likewise), while a SELF-REPORTED value keeps `self_reported` — never `unknown`
+   over a value the run actually measured, and never a measurement tag on a value that was
+   self-reported. Then read the fields
+   (`manage-status` `metadata --get`, one field per key):
 
    - `harness` ← `metadata.harness`, `model` ← `metadata.model`, `effort` ← `metadata.effort`, and
      `plugin_version` ← `metadata.bundle_version`.
    - When the stamped `model` is `mixed`, the distinct `{model}/{variant}` labels are in
      `metadata.models`: write THOSE as the `model` fact rather than the bare `mixed`, so the landing
      names the models the run actually used (the payload spec's `model` row defines the list form).
+   - When the stamp carries `metadata.variant` beside a single-model `metadata.model`, write `model`
+     as `{metadata.model}/{metadata.variant}` (for example `deepseek-v4.1-flash/high`) — the
+     `{model}/{variant}` form the payload spec's `model` row defines. A stamp with no `variant`
+     leaves the bare model. For a SINGLE-MODEL OpenCode stamp `metadata.effort` is that same measured
+     variant, so the two values agree. A `mixed` tree whose models share one variant still measures
+     that variant as `effort`; only a `mixed` tree whose variants DIFFER has no single variant, so
+     `effort` keeps its start-time value and tag (`measured_at_start` when it was measured,
+     `self_reported` when the LLM reported it) and the model list carries the variants.
    - `executor_version` ← `metadata.executor_version` — OPTIONAL; omit the key when the stamp carries
      none rather than writing a degraded value.
    - A field whose stamp is ABSENT or unreadable is written as `unknown`. These four are REQUIRED, so an

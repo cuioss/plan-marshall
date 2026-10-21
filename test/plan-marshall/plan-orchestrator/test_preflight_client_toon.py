@@ -9,14 +9,17 @@ degradation where a collector failure never blocks plan start.
 from __future__ import annotations
 
 import argparse
+import contextlib
+import io
 import json
+import sqlite3
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
 
+import platform_runtime
 import pytest
 import runtime_info
-from runtime_base import toon_success
 from toon_parser import parse_toon
 
 from conftest import load_script_module
@@ -212,7 +215,244 @@ def test_preflight_degrades_without_overwriting_wrong_shaped_entries(
 
 
 # =============================================================================
-# D4 — the plan start path records all four values
+# D2 — the stamp is refreshed at landing time
+# =============================================================================
+
+
+def _refresh_ns(plan_id: str) -> argparse.Namespace:
+    return argparse.Namespace(plan_id=plan_id)
+
+
+def _preflight_opencode(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, db_path: Path, rows: list[tuple[str, str | None, str]]
+) -> Path:
+    """Run a real OpenCode preflight over a fixture session tree, returning the plan dir."""
+    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+    monkeypatch.chdir(_router_project(tmp_path))
+    monkeypatch.setenv('OPENCODE', '1')
+    monkeypatch.setenv('OPENCODE_SESSION_ID', 'ses-root')
+    _write_session_db(db_path, rows)
+    monkeypatch.setenv('OPENCODE_DB_PATH', str(db_path))
+    plan_dir = _plan_with_status(tmp_path, 'my-plan')
+    _runtime_info_via_router(monkeypatch)
+    assert cmd_preflight(_ns('my-plan'))['metadata_stamped'] is True
+    return plan_dir
+
+
+def test_refresh_stamps_a_mixed_tree_after_a_model_switch(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A session that gained a second model after plan start refresh to ``mixed``."""
+    db_path = tmp_path / 'opencode.db'
+    plan_dir = _preflight_opencode(
+        tmp_path, monkeypatch, db_path, [('ses-root', None, _opencode_model_json('deepseek-v4.1-flash', 'high'))]
+    )
+    assert _status_metadata(plan_dir)['model'] == 'deepseek-v4.1-flash'
+
+    _write_session_db(
+        db_path,
+        [
+            ('ses-root', None, _opencode_model_json('deepseek-v4.1-flash', 'high')),
+            ('ses-child', 'ses-root', _opencode_model_json('gpt-5', 'low')),
+        ],
+    )
+
+    result = _orch.cmd_refresh_runtime_stamp(_refresh_ns('my-plan'))
+
+    assert result['status'] == 'success'
+    assert result['refreshed'] is True
+    metadata = _status_metadata(plan_dir)
+    assert metadata['model'] == 'mixed'
+    assert 'deepseek-v4.1-flash/high' in metadata['models']
+    assert 'gpt-5/low' in metadata['models']
+    assert 'variant' not in metadata
+
+
+def test_refresh_keeps_the_start_value_when_the_database_is_unreachable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A landing-time read that cannot reach the database marks the value start-time."""
+    db_path = tmp_path / 'opencode.db'
+    plan_dir = _preflight_opencode(
+        tmp_path, monkeypatch, db_path, [('ses-root', None, _opencode_model_json('deepseek-v4.1-flash', 'high'))]
+    )
+    db_path.unlink()
+
+    result = _orch.cmd_refresh_runtime_stamp(_refresh_ns('my-plan'))
+
+    assert result['status'] == 'success'
+    assert result['refreshed'] is False
+    metadata = _status_metadata(plan_dir)
+    assert metadata['model'] == 'deepseek-v4.1-flash'
+    assert metadata['variant'] == 'high'
+    assert metadata['model_source'] == 'measured_at_start'
+    assert metadata['effort'] == 'high'
+    assert metadata['effort_source'] == 'measured_at_start'
+
+
+def test_refresh_keeps_a_self_reported_source_when_nothing_is_measured(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A self-reported value is never relabelled as measured at start."""
+    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+    plan_dir = _plan_with_status(tmp_path, 'my-plan')
+    _capture_runtime_info_argv([_SELF_REPORTED_PAYLOAD], monkeypatch)
+    assert cmd_preflight(_ns('my-plan', model='claude-opus-5-5', effort='high'))['metadata_stamped'] is True
+    assert _status_metadata(plan_dir)['model_source'] == 'self_reported'
+
+    _capture_runtime_info_argv([_BARE_PAYLOAD], monkeypatch)
+
+    result = _orch.cmd_refresh_runtime_stamp(_refresh_ns('my-plan'))
+
+    assert result['refreshed'] is False
+    metadata = _status_metadata(plan_dir)
+    assert metadata['model'] == 'claude-opus-5-5'
+    assert metadata['model_source'] == 'self_reported'
+    assert metadata['effort_source'] == 'self_reported'
+
+
+def test_refresh_clears_a_stale_omission_reason(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A readable landing-time re-read removes the start-time omission reason."""
+    db_path = tmp_path / 'opencode.db'
+    plan_dir = _preflight_opencode(
+        tmp_path, monkeypatch, db_path, [('ses-root', None, _opencode_model_json('deepseek-v4.1-flash', 'high'))]
+    )
+    status_path = plan_dir / 'status.json'
+    document = json.loads(status_path.read_text(encoding='utf-8'))
+    document['metadata']['model_omission_reason'] = runtime_info.OMISSION_NO_SESSION_ID
+    status_path.write_text(json.dumps(document), encoding='utf-8')
+
+    _orch.cmd_refresh_runtime_stamp(_refresh_ns('my-plan'))
+
+    assert 'model_omission_reason' not in _status_metadata(plan_dir)
+
+
+def test_refresh_keeps_a_self_reported_effort_on_a_mixed_tree(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A mixed re-read leaves a self-reported effort tagged self_reported."""
+    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+    monkeypatch.chdir(_router_project(tmp_path))
+    monkeypatch.setenv('OPENCODE', '1')
+    monkeypatch.delenv('OPENCODE_SESSION_ID', raising=False)
+    monkeypatch.delenv('OPENCODE_DB_PATH', raising=False)
+    plan_dir = _plan_with_status(tmp_path, 'my-plan')
+    _runtime_info_via_router(monkeypatch)
+    assert cmd_preflight(_ns('my-plan', effort='low'))['metadata_stamped'] is True
+    assert _status_metadata(plan_dir)['effort_source'] == 'self_reported'
+
+    db_path = tmp_path / 'opencode.db'
+    _write_session_db(
+        db_path,
+        [
+            ('ses-root', None, _opencode_model_json('deepseek-v4.1-flash', 'high')),
+            ('ses-child', 'ses-root', _opencode_model_json('gpt-5', 'low')),
+        ],
+    )
+    monkeypatch.setenv('OPENCODE_SESSION_ID', 'ses-root')
+    monkeypatch.setenv('OPENCODE_DB_PATH', str(db_path))
+
+    result = _orch.cmd_refresh_runtime_stamp(_refresh_ns('my-plan'))
+
+    assert result['refreshed'] is True
+    metadata = _status_metadata(plan_dir)
+    assert metadata['model'] == 'mixed'
+    assert metadata['effort'] == 'low'
+    assert metadata['effort_source'] == 'self_reported'
+
+
+def test_refresh_keeps_a_session_measurement_over_an_environment_fallback(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A refresh with no session id must not replace a measured model with a configured one."""
+    db_path = tmp_path / 'opencode.db'
+    plan_dir = _preflight_opencode(
+        tmp_path, monkeypatch, db_path, [('ses-root', None, _opencode_model_json('deepseek-v4.1-flash', 'high'))]
+    )
+    assert _status_metadata(plan_dir)['model'] == 'deepseek-v4.1-flash'
+
+    monkeypatch.delenv('OPENCODE_SESSION_ID', raising=False)
+    monkeypatch.setenv('OPENCODE_MODEL', 'configured-model')
+    _runtime_info_via_router(monkeypatch)
+
+    result = _orch.cmd_refresh_runtime_stamp(_refresh_ns('my-plan'))
+
+    assert result['refreshed'] is False
+    metadata = _status_metadata(plan_dir)
+    assert metadata['model'] == 'deepseek-v4.1-flash'
+    assert metadata['variant'] == 'high'
+    assert metadata['model_source'] == 'measured_at_start'
+    assert metadata['model_origin'] == 'session_tree'
+
+
+def test_refresh_over_an_unchanged_tree_keeps_the_value(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A tree unchanged since the start refreshes to the same measured value."""
+    db_path = tmp_path / 'opencode.db'
+    plan_dir = _preflight_opencode(
+        tmp_path, monkeypatch, db_path, [('ses-root', None, _opencode_model_json('deepseek-v4.1-flash', 'high'))]
+    )
+
+    result = _orch.cmd_refresh_runtime_stamp(_refresh_ns('my-plan'))
+
+    assert result['refreshed'] is True
+    metadata = _status_metadata(plan_dir)
+    assert metadata['model'] == 'deepseek-v4.1-flash'
+    assert metadata['variant'] == 'high'
+    assert metadata['model_source'] == 'measured'
+
+
+# =============================================================================
+# D3 — a failed preflight leaves no stale stamp, and a failed stamp is visible
+# =============================================================================
+
+
+def test_failed_collector_clears_a_previous_runtime_stamp(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A collector failure leaves the runtime keys absent, not the earlier run's values."""
+    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+    plan_dir = _plan_with_status(tmp_path, 'my-plan')
+    _capture_runtime_info_argv([_SELF_REPORTED_PAYLOAD], monkeypatch)
+    assert cmd_preflight(_ns('my-plan', model='claude-opus-5-5', effort='high'))['metadata_stamped'] is True
+    assert _status_metadata(plan_dir)['model'] == 'claude-opus-5-5'
+
+    def _failed(*args: Any, **kwargs: Any) -> Any:
+        cmd = [str(part) for part in (args[0] if args else [])]
+        if 'runtime-info' in cmd:
+            return SimpleNamespace(returncode=1, stdout='')
+        return _orch.subprocess.run(*args, **kwargs)
+
+    monkeypatch.setattr(_orch.subprocess, 'run', _failed)
+
+    result: dict[str, Any] = cmd_preflight(_ns('my-plan'))
+
+    assert result['degraded'] is True
+    metadata = _status_metadata(plan_dir)
+    for key in _orch._PREFLIGHT_METADATA_FIELDS:
+        assert key not in metadata, key
+
+
+def test_unstamped_metadata_without_degradation_is_reported(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """``metadata_stamped: false`` is visible even when nothing degraded."""
+    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+    monkeypatch.setattr(_orch, 'get_store_dir', lambda store, plan_id: tmp_path / 'plans' / plan_id)
+    _capture_runtime_info_argv([_SELF_REPORTED_PAYLOAD], monkeypatch)
+
+    result: dict[str, Any] = cmd_preflight(_ns('my-plan', model='claude-opus-5-5'))
+
+    assert result['degraded'] is False
+    assert result['metadata_stamped'] is False
+
+
+def test_opencode_without_a_session_reports_the_omission_reason() -> None:
+    """No session id is reported as a reason, not a silent omission."""
+    info = runtime_info.collect_runtime_info(
+        'opencode',
+        env={},
+        opencode_db_path=None,
+        opencode_session_id=None,
+    )
+
+    assert 'model' not in info
+    assert info['model_omission_reason'] == runtime_info.OMISSION_NO_SESSION_ID
+
+
+# =============================================================================
+# D4 — the database reader is robust, and the tests that guard the stamp can fail
 # =============================================================================
 
 
@@ -276,6 +516,85 @@ def _capture_runtime_info_argv(payloads: list[str], monkeypatch: pytest.MonkeyPa
 def _status_metadata(plan_dir: Path) -> dict[str, Any]:
     document = json.loads((plan_dir / 'status.json').read_text(encoding='utf-8'))
     return cast('dict[str, Any]', document['metadata'])
+
+
+# =============================================================================
+# D1 — the measured variant, and effort measured where the harness measures it
+# =============================================================================
+
+
+def _router_project(tmp_path: Path) -> Path:
+    """A cwd the runtime-info router accepts: a ``.plan/marshal.json``."""
+    project = tmp_path / 'project'
+    (project / '.plan').mkdir(parents=True)
+    (project / '.plan' / 'marshal.json').write_text(json.dumps({'runtime': {'target': 'opencode'}}), encoding='utf-8')
+    return project
+
+
+def _write_session_db(db_path: Path, rows: list[tuple[str, str | None, str]]) -> None:
+    """Create a fixture ``session_v2`` table with ``(id, parent_id, model_json)`` rows."""
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute('DROP TABLE IF EXISTS session_v2')
+        conn.execute('CREATE TABLE session_v2 (id TEXT, parent_id TEXT, model TEXT)')
+        conn.executemany('INSERT INTO session_v2 (id, parent_id, model) VALUES (?, ?, ?)', rows)
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _opencode_model_json(model_id: str, variant: str) -> str:
+    return json.dumps({'id': model_id, 'providerID': 'opencode-go', 'variant': variant})
+
+
+def _runtime_info_via_router(monkeypatch: pytest.MonkeyPatch) -> list[list[str]]:
+    """Dispatch the preflight's runtime-info argv into the REAL router in-process.
+
+    The argv is the exact list ``cmd_preflight`` built, and the router parses it
+    with its own argparse before the collector runs, so a renamed flag, a wrong
+    position or a drifted payload key fails here instead of passing a canned
+    string through a monkeypatched ``subprocess.run``.
+    """
+    real_run = _orch.subprocess.run
+    seen: list[list[str]] = []
+
+    def _fake_run(*args: Any, **kwargs: Any) -> Any:
+        cmd = [str(part) for part in (args[0] if args else [])]
+        if 'runtime-info' not in cmd:
+            return real_run(*args, **kwargs)
+        seen.append(cmd)
+        remaining = cmd[3:]
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer):
+            code = platform_runtime.main(remaining)
+        return SimpleNamespace(returncode=code, stdout=buffer.getvalue())
+
+    monkeypatch.setattr(_orch.subprocess, 'run', _fake_run)
+    return seen
+
+
+def test_preflight_stamps_variant_and_measured_effort(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A single-model OpenCode tree stamps its variant and measures effort from it."""
+    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+    monkeypatch.chdir(_router_project(tmp_path))
+    monkeypatch.setenv('OPENCODE', '1')
+    monkeypatch.setenv('OPENCODE_SESSION_ID', 'ses-root')
+    db_path = tmp_path / 'opencode.db'
+    _write_session_db(db_path, [('ses-root', None, _opencode_model_json('deepseek-v4.1-flash', 'high'))])
+    monkeypatch.setenv('OPENCODE_DB_PATH', str(db_path))
+    plan_dir = _plan_with_status(tmp_path, 'my-plan')
+    seen = _runtime_info_via_router(monkeypatch)
+
+    result: dict[str, Any] = cmd_preflight(_ns('my-plan', effort='low'))
+
+    assert seen, 'the preflight built no runtime-info argv'
+    assert result['metadata_stamped'] is True
+    metadata = _status_metadata(plan_dir)
+    assert metadata['model'] == 'deepseek-v4.1-flash'
+    assert metadata['variant'] == 'high'
+    assert metadata['provider'] == 'opencode-go'
+    assert metadata['effort'] == 'high'
+    assert metadata['effort_source'] == 'measured'
 
 
 def test_preflight_forwards_the_self_report_and_stamps_metadata(
@@ -396,31 +715,6 @@ def test_preflight_stamps_metadata_even_when_the_artifact_write_fails(
     assert _status_metadata(plan_dir)['model'] == 'claude-opus-5-5'
 
 
-def _real_collector_payload(tmp_path: Path) -> str:
-    """A runtime-info payload produced by the REAL collector, not a fixture string.
-
-    The metadata stamp reads keys the collector emits; building the payload here
-    from :func:`runtime_info.collect_runtime_info` is what proves the two ends
-    agree, rather than asserting against a hand-written block that could carry
-    keys the collector never produces.
-    """
-    bundle = tmp_path / 'bundle'
-    (bundle / '.claude-plugin').mkdir(parents=True)
-    (bundle / '.claude-plugin' / 'plugin.json').write_text(json.dumps({'version': '0.1.1919'}), encoding='utf-8')
-    executor = tmp_path / 'execute-script.py'
-    executor.write_text("MARSHALL_VERSION = '0.1.1916'\n", encoding='utf-8')
-    info = runtime_info.collect_runtime_info(
-        'claude',
-        env={},
-        bundle_root=bundle,
-        executor_path=executor,
-        model_name='claude-opus-5-5',
-        effort='high',
-        harness_attribution={'harness': 'claude', 'harness_source': 'env'},
-    )
-    return toon_success(runtime_info.RUNTIME_INFO_OPERATION, info)
-
-
 def test_preflight_clears_a_stale_runtime_stamp(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """A later unreadable field does NOT keep the earlier run's value."""
     monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
@@ -437,23 +731,3 @@ def test_preflight_clears_a_stale_runtime_stamp(tmp_path: Path, monkeypatch: pyt
     assert 'model' not in metadata
     assert 'effort' not in metadata
     assert metadata['harness'] == 'opencode'
-
-
-def test_preflight_stamps_the_real_collector_payload(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """The collector's own output is what the plan metadata ends up carrying."""
-    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
-    plan_dir = _plan_with_status(tmp_path, 'my-plan')
-    _capture_runtime_info_argv([_real_collector_payload(tmp_path)], monkeypatch)
-
-    result: dict[str, Any] = cmd_preflight(_ns('my-plan', model='claude-opus-5-5', effort='high'))
-
-    assert result['metadata_stamped'] is True
-    metadata = _status_metadata(plan_dir)
-    assert metadata['harness'] == 'claude'
-    assert metadata['harness_source'] == 'env'
-    assert metadata['model'] == 'claude-opus-5-5'
-    assert metadata['model_source'] == 'self_reported'
-    assert metadata['effort'] == 'high'
-    assert metadata['effort_source'] == 'self_reported'
-    assert metadata['bundle_version'] == '0.1.1919'
-    assert metadata['executor_version'] == '0.1.1916'
