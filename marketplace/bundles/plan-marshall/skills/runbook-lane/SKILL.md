@@ -337,7 +337,10 @@ supplies and the default routing:
 - **Routing.** `auto` submits the job to the build daemon when the setup preflight found it `ready`,
   and runs in-process otherwise. A routed job re-runs the worktree's own executor; the
   `executor_absent_from_worktree` fallback from setup applies only when that executor is genuinely
-  missing, and is recorded with its reason.
+  missing, and is recorded with its reason. The daemon applies its OWN supervisory bound, which
+  `--timeout` can only raise; a bound expiry comes back as `timeout` naming `timeout_used_seconds`
+  and `timeout_source`, and the client's rules for it are cited, not restated. Record a bound
+  expiry and continue with the split form below rather than re-submitting the same bound.
 - **Read the routing outcome** from the build result's own fields (`requested`, `resolved`, `reason`,
   `mechanism`). A `degraded` result has already fallen back in-process: record the degradation and
   its `reason` in the progress file and the landing message.
@@ -357,8 +360,10 @@ supplies and the default routing:
     publishes all three, each with the same worktree flags.
   - Run exactly the canonicals `split` names. `module-tests` and `test-compile` are test-conditional
     in the architecture's contract, so an absent one means the project publishes no such part — not
-    that a part was skipped. `quality-gate` and `verify` are the gate; a project that resolves
-    neither has already failed `resolve`.
+    that a part was skipped. `quality-gate` and `verify` are the gate, and each build system
+    publishes them conditionally, so the resolve result carries at least one; a project that
+    resolves neither has already failed `resolve`. Where `split` names nothing, run
+    `{build.verify}` itself: the project publishes no separable part.
   - A daemon-routed build is waited on in the same call, never moved to the background.
 - **Read the result, not the exit code.** The TOON must show `status: success` and an empty
   `errors[]`. Open the `log_file` it names for the test summary.
@@ -377,8 +382,9 @@ supplies and the default routing:
   rule it could not read (reported as `reason`), builds — the fail-closed direction, so a wrong
   answer costs a local build and never skips one the CI would run. Pass the same `--project-dir`
   the build gate uses. Required CI checks still have to be green, so the merge gate is unchanged.
-- **When to run what:** run `{build.quality-gate}` before each commit that touches `*.py`, and
-  `{build.verify}` once before the PR. Scope the tests to one module while iterating.
+- **When to run what:** run the gate canonical the project publishes (`{build.quality-gate}` where
+  the resolve result supplies it, otherwise `{build.verify}`) before each commit that touches
+  `*.py`, and `{build.verify}` once before the PR. Scope the tests to one module while iterating.
 - **Every pushed head:** a test run at every head pushed to a PR — not once for the run. Run
   `{build.module-tests}` where the resolve result supplies it, plus `{build.test-compile}` where the
   project publishes one; a project that supplies neither is gated by `{build.verify}`. Record the

@@ -132,7 +132,9 @@ A landing written by the RUNBOOK lane has no `status.json` and no phase-1-init: 
 same runtime-stamp values from its own `resolve` result, which resolves `harness`, `model`, `effort`,
 `plugin_version` and the optional `executor_version` through the platform-runtime runtime-info seam,
 and it re-runs that resolution at landing time so a model or effort switch during the run is stamped
-in the list form above — each fact means the same thing on either producer. The `transcripts`
+in the list form above. A fact means the same thing on either producer; the DEGRADED path differs,
+because the lane keeps no start-time stamp to fall back on: where its landing-time re-read reads
+nothing, it writes `unknown`, never `measured_at_start`. The `transcripts`
 capability that
 explains the run's token figures (`full` vs `none`) rides the same
 `runtime-info` record — see `platform-runtime/standards/runtime-info.md`.

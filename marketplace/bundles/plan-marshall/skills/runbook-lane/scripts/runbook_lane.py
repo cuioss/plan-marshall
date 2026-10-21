@@ -43,20 +43,23 @@ _REVIEW_STEP_ID = 'plan-marshall:automatic-review'
 #: The build canons the lane runs, each resolved on its own through the
 #: architecture: no composed ``--command-args "<canonical>"`` form exists, because
 #: the canonical name is only meaningful to a wrapper that maps canonical names
-#: and Maven's wrapper takes complete Maven arguments. ``quality-gate`` is
-#: required for all modules and ``verify`` for every non-pom module
-#: (extension-api's canonical-commands contract, § Required Commands), so a
-#: project resolving neither has no gate the lane could run and its absence fails
-#: closed.
-_REQUIRED_BUILD_CANONICALS = ('quality-gate', 'verify')
+#: and Maven's wrapper takes complete Maven arguments.
+#:
+#: The GATE canonicals: ``quality-gate`` is required for all modules and
+#: ``verify`` for every non-pom module (extension-api's canonical-commands
+#: contract, § Required Commands), but each build system publishes them
+#: CONDITIONALLY — npm emits ``quality-gate`` only for a ``lint``/``check``
+#: script and ``verify`` only for a ``test`` script — so at least ONE must
+#: resolve for the lane to have a gate at all, and both must be absent before
+#: ``resolve`` fails closed.
+_GATE_CANONICALS = ('quality-gate', 'verify')
 
-#: Canonicals the architecture publishes only when the module has the part they
-#: name: ``module-tests`` when it has test sources, ``test-compile`` only on a
-#: build system with a separate test-compile step (Maven, Gradle — pyproject and
-#: npm publish none). Their absence is the project's answer, not a resolution
-#: failure: a lane that required them could not run in a pyproject or npm
-#: project at all.
-_OPTIONAL_BUILD_CANONICALS = ('module-tests', 'test-compile')
+#: The test-conditional canonicals: ``module-tests`` only when the module has
+#: test sources, ``test-compile`` only on a build system with a separate
+#: test-compile step (Maven, Gradle — pyproject and npm publish none). Their
+#: absence is the project's answer, not a resolution failure: a lane that
+#: required them could not run in a pyproject or npm project at all.
+_TEST_CONDITIONAL_CANONICALS = ('module-tests', 'test-compile')
 
 #: The order the in-process fallback runs the gate's parts in. Filtered to the
 #: canonicals the project actually resolved, so the fallback never asks for a
@@ -437,12 +440,15 @@ def _resolve_build(project_dir: Path) -> tuple[dict[str, Any], dict[str, Any]]:
     is both knowable then and sufficient for every module the run touches.
 
     Required and optional canonicals are separated by the architecture's own
-    contract: ``quality-gate`` and ``verify`` are the gate every gated module
-    resolves, while ``module-tests`` and ``test-compile`` are test-conditional.
-    An absent optional canonical is omitted from the map and from the split
-    order; an absent REQUIRED one raises :class:`_BuildCommandUnresolvable`,
-    naming the canonical. There is no composed fall-back, no default build, and
-    no synthesized part.
+    contract: the GATE canonicals (``quality-gate``, ``verify``) are the pair
+    every gated module resolves, though each build system publishes them
+    conditionally (npm publishes ``quality-gate`` only for a lint script and
+    ``verify`` only for a test script), so at least one must resolve; the
+    test-conditional canonicals (``module-tests``, ``test-compile``) are omitted
+    when the project publishes none. An absent canonical is left out of the map
+    and of the split order, and a project with NO gate canonical raises
+    :class:`_BuildCommandUnresolvable`, naming the gate canonicals. There is no
+    composed fall-back, no default build, and no synthesized part.
 
     Returns ``(build, probed)``: the build command map, and the architecture's
     resolved ``verify`` record, so the caller can read the timeout stamp off the
@@ -468,23 +474,26 @@ def _resolve_build(project_dir: Path) -> tuple[dict[str, Any], dict[str, Any]]:
             return None
         return record
 
-    for canonical in _REQUIRED_BUILD_CANONICALS:
-        record = _lookup(canonical)
-        if record is None:
-            raise _BuildCommandUnresolvable(canonical)
-        resolved[canonical] = record
-
-    for canonical in _OPTIONAL_BUILD_CANONICALS:
+    for canonical in (*_GATE_CANONICALS, *_TEST_CONDITIONAL_CANONICALS):
         record = _lookup(canonical)
         if record is not None:
             resolved[canonical] = record
+
+    if not any(canonical in resolved for canonical in _GATE_CANONICALS):
+        # No gate at all: the lane has nothing it could run, so it refuses by
+        # name rather than building with a default. The name is the pair the
+        # architecture contract requires, because neither one resolved.
+        raise _BuildCommandUnresolvable(','.join(_GATE_CANONICALS))
 
     build: dict[str, Any] = {canonical: record['executable'] for canonical, record in resolved.items()}
     # The split form exists because ``verify`` may outlive the shell budget; its
     # parts are the architecture's own commands for the same build system, in a
     # fixed order, filtered to the ones this project publishes.
     build['split'] = [canonical for canonical in _SPLIT_FORM if canonical in resolved]
-    return build, resolved['verify']
+    # ``verify`` when published, else the gate canonical the project has. The
+    # caller reads the timeout stamp off it, so it must be a gate canonical.
+    probed = resolved.get('verify') or resolved[_GATE_CANONICALS[0]]
+    return build, probed
 
 
 def _augment_resolved(probed: dict[str, Any], project_dir: Path) -> dict[str, Any]:
@@ -566,7 +575,9 @@ def _resolve_build_server(project_dir: Path) -> tuple[str, str | None]:
     try:
         result = run_preflight(argparse.Namespace(project_path=str(project_dir)))
     except Exception as exc:
-        return 'down', f'preflight_failed: {type(exc).__name__}'
+        # The client's own message is kept beside the type: a client-side defect
+        # (a signature change, say) must not read as a daemon outage.
+        return 'down', f'preflight_failed: {type(exc).__name__}: {exc}'
     state = result.get('preflight')
     if state not in _BUILD_SERVER_STATES:
         return 'down', 'preflight_unreadable'
@@ -662,6 +673,37 @@ def _render_model(info: dict[str, Any]) -> str:
     return model
 
 
+def _collect_runtime_info(harness: str) -> dict[str, Any]:
+    """Call the platform-runtime collector with the inputs its own target passes.
+
+    On OpenCode the model is MEASURED from the session database for the session
+    the run is under, and the environment is scoped to the variables that target
+    may resolve — exactly as ``opencode_runtime``'s own collector call does, so
+    a Claude-specific variable leaking into the environment can never be
+    attributed to an OpenCode stamp. On the other harnesses the collector reads
+    the script-accessible sources itself.
+
+    A thin seam, so the wiring can be asserted without a live session database.
+    """
+    from runtime_info import OPENCODE_SESSION_ID_ENV, collect_runtime_info
+
+    measurement: dict[str, Any] = {}
+    if harness == 'opencode':
+        from opencode_runtime import OpenCodeRuntime, _default_opencode_db_path
+
+        measurement = {
+            'env': {key: value for key, value in os.environ.items() if key in OpenCodeRuntime._OPENCODE_MODEL_ENV},
+            'opencode_db_path': _default_opencode_db_path(),
+            'opencode_session_id': os.environ.get(OPENCODE_SESSION_ID_ENV),
+        }
+    return collect_runtime_info(harness, **measurement)
+
+
+def _unknown_stamp() -> dict[str, str]:
+    """The stamp for a runtime fact nothing could read."""
+    return {'model': _RUNTIME_UNKNOWN, 'effort': _RUNTIME_UNKNOWN, 'plugin_version': _RUNTIME_UNKNOWN}
+
+
 def _resolve_runtime_stamp(harness: str) -> dict[str, str]:
     """Resolve the landing's runtime stamp from the platform-runtime seam.
 
@@ -672,25 +714,16 @@ def _resolve_runtime_stamp(harness: str) -> dict[str, str]:
     re-runs this at landing time rather than reusing its setup-time answer, so a
     model or effort switch during the run is stamped.
 
-    Values are MEASURED by ``runtime_info.collect_runtime_info`` — on OpenCode
-    from the session tree — and an attribute with no readable source is
-    ``unknown`` rather than an estimate. The OpenCode measurement needs the
-    session database and the session id; both are handed over exactly as
-    ``opencode_runtime``'s own collector call does, because without them the
-    measured path is unreachable and every OpenCode stamp degrades to
-    ``unknown``.
+    Values are MEASURED by the collector — on OpenCode from the session tree —
+    and an attribute with no readable source is ``unknown`` rather than an
+    estimate. A seam that fails outright degrades to the same ``unknown``
+    vocabulary: a landing field must never abort ``resolve`` at setup, and an
+    unreadable stamp is an answer the landing already has wording for.
     """
-    from runtime_info import OPENCODE_SESSION_ID_ENV, collect_runtime_info
-
-    measurement: dict[str, Any] = {}
-    if harness == 'opencode':
-        from opencode_runtime import _default_opencode_db_path
-
-        measurement = {
-            'opencode_db_path': _default_opencode_db_path(),
-            'opencode_session_id': os.environ.get(OPENCODE_SESSION_ID_ENV),
-        }
-    info = collect_runtime_info(harness, **measurement)
+    try:
+        info = _collect_runtime_info(harness)
+    except Exception:
+        return _unknown_stamp()
     stamp = {
         'model': _render_model(info),
         'effort': _stamp_value(info.get('effort')),

@@ -89,7 +89,6 @@ _UNENFORCED_GUARD_WORDING = 'guard: none on this harness (unenforced)'
 _PYPROJECT_EXEC = (
     'python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run --command-args "{args}"'
 )
-_MAVEN_EXEC = 'python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args "{args}"'
 
 
 # =============================================================================
@@ -248,8 +247,8 @@ def _write(path: Path, text: str) -> None:
 def _seed_fixture(
     root: Path,
     *,
-    executable: str,
     required_bots: str,
+    executable: str = _PYPROJECT_EXEC,
     optional_bots: str = '',
     slug: str = 'demo-epic',
     spec_name: str = 'PLAN-LB-66-runbook-lane-skill.md',
@@ -259,6 +258,7 @@ def _seed_fixture(
     documentation_path: str = 'doc',
     documentation_files: tuple[str, ...] = ('doc/developer/build.adoc', 'doc/user/usage.md'),
     commands: dict[str, str] | None = None,
+    build_systems: tuple[str, ...] = ('pyproject',),
 ) -> Path:
     """Seed a project fixture and return the staged spec path.
 
@@ -268,9 +268,13 @@ def _seed_fixture(
     the command map a real crawl would hand it.
 
     ``commands`` overrides the root module's command map verbatim, so a test can
-    seed the per-canonical forms discovery writes for a real build system (Maven's
-    root ``verify -Ppre-commit``, pyproject's ``quality-gate``) instead of one
-    template applied to every canonical.
+    seed the per-canonical forms discovery writes for a real build system
+    (Maven's ``--command-args "verify -Ppre-commit"``, pyproject's
+    ``--command-args "quality-gate"``) instead of one template applied to every
+    canonical. ``executable`` is the template the DEFAULT map is built from; it
+    is unused when ``commands`` is supplied. ``build_systems`` carries the
+    marker the build system's own discovery writes, so a Maven fixture is not
+    labelled pyproject.
     """
     _write(
         root / '.plan' / 'marshal.json',
@@ -308,7 +312,7 @@ def _seed_fixture(
         json.dumps(
             {
                 'name': 'root-mod',
-                'build_systems': ['pyproject'],
+                'build_systems': list(build_systems),
                 'paths': {'module': module_path},
                 'commands': commands
                 if commands is not None
@@ -413,7 +417,9 @@ def test_resolve_pyproject_fixture(tmp_path: Path) -> None:
 
 
 def test_resolve_maven_fixture_emits_maven_commands(tmp_path: Path) -> None:
-    spec = _seed_fixture(tmp_path, executable=_MAVEN_EXEC, required_bots='some-bot')
+    spec = _seed_fixture(
+        tmp_path, build_systems=('maven',), required_bots='some-bot', commands=_maven_architecture_commands()
+    )
 
     data = _run_resolve(spec, tmp_path)
 
@@ -427,41 +433,44 @@ def _maven_architecture_commands() -> dict[str, str]:
     """The command map discovery writes for the ROOT Maven module with tests.
 
     Mirrors ``_maven_cmd_discover._build_commands`` for the root module
-    (``relative_path`` is empty, so ``pl_arg`` is empty): ``quality-gate`` is the
-    profile-overridden verify, ``module-tests`` is ``test`` and ``test-compile``
-    is ``test-compile``. The ``-pl {module} -am`` forms are the non-root module's
-    and never the root's, so seeding them here would be a fixture that no crawl
-    produces. The Maven wrapper takes complete Maven arguments, so these strings
-    are what the lane must return verbatim; a composed
-    ``--command-args "quality-gate"`` is an unknown lifecycle phase.
+    (``relative_path`` empty, so ``pl_arg`` is empty), rendered by the shared
+    ``build_canonical_commands``: the Maven wrapper takes the COMPLETE Maven
+    arguments inside ``--command-args``, and ``quality-gate`` is the
+    profile-overridden verify. The ``-pl {module} -am`` forms belong to non-root
+    modules and never to the root, so seeding them would be a fixture no crawl
+    produces.
     """
-    prefix = 'python3 .plan/execute-script.py plan-marshall:build-maven:maven run'
+    prefix = 'python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args'
     return {
-        'quality-gate': f'{prefix} verify -Ppre-commit',
-        'module-tests': f'{prefix} test',
-        'test-compile': f'{prefix} test-compile',
-        'verify': f'{prefix} verify',
+        'quality-gate': f'{prefix} "verify -Ppre-commit"',
+        'module-tests': f'{prefix} "test"',
+        'test-compile': f'{prefix} "test-compile"',
+        'verify': f'{prefix} "verify"',
     }
 
 
 def test_resolve_maven_quality_gate_is_the_architecture_command(tmp_path: Path) -> None:
     commands = _maven_architecture_commands()
-    spec = _seed_fixture(tmp_path, executable=_MAVEN_EXEC, required_bots='some-bot', commands=commands)
+    spec = _seed_fixture(tmp_path, build_systems=('maven',), required_bots='some-bot', commands=commands)
 
     data = _run_resolve(spec, tmp_path)
 
     assert data['status'] == 'success'
     assert data['build']['quality-gate'] == commands['quality-gate']
+    assert data['build']['verify'] == commands['verify']
     # The composed form is gone: a bare canonical handed to the Maven wrapper is
-    # read as an unknown lifecycle phase.
+    # read as an unknown lifecycle phase. Only the two canonicals whose Maven
+    # arguments DIFFER from their own name can witness that — for ``verify`` and
+    # ``test-compile`` the canonical name IS the Maven goal, so the composed and
+    # the architecture form coincide there by construction.
     blob = json.dumps(data)
-    for canonical in ('quality-gate', 'module-tests', 'verify', 'test-compile'):
+    for canonical in ('quality-gate', 'module-tests'):
         assert f'--command-args \\"{canonical}\\"' not in blob
 
 
 def test_resolve_maven_module_tests_and_test_compile_are_the_architecture_commands(tmp_path: Path) -> None:
     commands = _maven_architecture_commands()
-    spec = _seed_fixture(tmp_path, executable=_MAVEN_EXEC, required_bots='some-bot', commands=commands)
+    spec = _seed_fixture(tmp_path, build_systems=('maven',), required_bots='some-bot', commands=commands)
 
     data = _run_resolve(spec, tmp_path)
 
@@ -470,23 +479,46 @@ def test_resolve_maven_module_tests_and_test_compile_are_the_architecture_comman
     assert data['build']['split'] == ['quality-gate', 'test-compile', 'module-tests']
 
 
-def test_resolve_unresolvable_canonical_fails_closed_and_names_it(tmp_path: Path) -> None:
-    """A REQUIRED canonical the architecture cannot resolve is a named error.
+def test_resolve_unresolvable_gate_canonical_fails_closed_and_names_it(tmp_path: Path) -> None:
+    """A project with NO gate canonical is a named error, and no build map.
 
-    ``verify`` is required for every non-pom module, so a project that resolves
-    none has no build gate the lane could run. The error names the canonical and
-    returns no build map: there is no composed fall-back and no default build.
+    ``quality-gate`` and ``verify`` are the gate; each build system publishes
+    them conditionally, so the lane refuses only when BOTH are absent. The error
+    names the pair it could not resolve — there is no composed fall-back and no
+    default build.
     """
     commands = _maven_architecture_commands()
+    del commands['quality-gate']
     del commands['verify']
-    spec = _seed_fixture(tmp_path, executable=_MAVEN_EXEC, required_bots='some-bot', commands=commands)
+    spec = _seed_fixture(tmp_path, build_systems=('maven',), required_bots='some-bot', commands=commands)
 
     data = _run_resolve(spec, tmp_path)
 
     assert data['status'] == 'error'
     assert data['error'] == 'build_command_unresolvable'
-    assert data['canonical'] == 'verify'
+    assert data['canonical'] == 'quality-gate,verify'
     assert 'build' not in data
+
+
+def test_resolve_accepts_a_project_that_publishes_only_one_gate_canonical(tmp_path: Path) -> None:
+    """npm publishes ``quality-gate`` only for a lint script and ``verify`` only
+    for a test script, so a project with tests and no lint has one gate.
+
+    Failing closed here would make the lane unable to run in a real npm consumer
+    repository, which is the plan's whole objective; the lane gates with the one
+    canonical the project publishes.
+    """
+    commands = {
+        'verify': 'python3 .plan/execute-script.py plan-marshall:build-npm:npm run --command-args "run test"',
+        'module-tests': 'python3 .plan/execute-script.py plan-marshall:build-npm:npm run --command-args "run test"',
+    }
+    spec = _seed_fixture(tmp_path, build_systems=('npm',), required_bots='some-bot', commands=commands)
+
+    data = _run_resolve(spec, tmp_path)
+
+    assert data['status'] == 'success', data
+    assert set(data['build']) == {'verify', 'module-tests', 'split'}
+    assert data['build']['split'] == ['module-tests']
 
 
 def test_resolve_pyproject_commands_stay_on_the_pyproject_wrapper(tmp_path: Path) -> None:
@@ -503,7 +535,7 @@ def test_resolve_pyproject_commands_stay_on_the_pyproject_wrapper(tmp_path: Path
         canonical: _PYPROJECT_EXEC.format(args=canonical)
         for canonical in ('clean', 'compile', 'quality-gate', 'verify', 'module-tests', 'coverage')
     }
-    spec = _seed_fixture(tmp_path, executable=_PYPROJECT_EXEC, required_bots='some-bot', commands=commands)
+    spec = _seed_fixture(tmp_path, required_bots='some-bot', commands=commands)
 
     data = _run_resolve(spec, tmp_path)
 
@@ -515,14 +547,14 @@ def test_resolve_pyproject_commands_stay_on_the_pyproject_wrapper(tmp_path: Path
 
 
 def test_resolve_omits_a_test_conditional_canonical_the_project_does_not_publish(tmp_path: Path) -> None:
-    """A project without tests resolves; only the required canonicals are gates.
+    """A project that publishes no test entry still resolves and still gates.
 
     ``module-tests`` and ``test-compile`` are test-conditional in the
     architecture's contract, so their absence is an answer rather than a defect:
     the lane builds and gates with what the project actually publishes.
     """
     commands = {canonical: _PYPROJECT_EXEC.format(args=canonical) for canonical in ('quality-gate', 'verify')}
-    spec = _seed_fixture(tmp_path, executable=_PYPROJECT_EXEC, required_bots='some-bot', commands=commands)
+    spec = _seed_fixture(tmp_path, required_bots='some-bot', commands=commands)
 
     data = _run_resolve(spec, tmp_path)
 
@@ -652,6 +684,30 @@ def test_resolve_reports_build_server_down_with_its_reason(tmp_path: Path) -> No
     assert data['status'] == 'success'
     assert data['build_server'] == 'down'
     assert data['build_server_reason'] == 'socket_absent'
+
+
+def test_resolve_reports_a_preflight_failure_with_its_message(tmp_path: Path, monkeypatch) -> None:
+    """A preflight that cannot run is ``down`` with the client's OWN message.
+
+    The type alone would make a client-side defect (a changed signature, say)
+    indistinguishable from a daemon outage in the landing.
+    """
+    import build_server
+
+    def _boom(_namespace: argparse.Namespace) -> dict[str, Any]:
+        raise RuntimeError('client signature changed')
+
+    monkeypatch.setattr(build_server, 'run_preflight', _boom)
+    spec = _seed_fixture(tmp_path, required_bots='x')
+    monkeypatch.setenv('PLAN_MARSHALL_HOME', str(tmp_path / '.machine-home'))
+    module = load_script_module('plan-marshall', _SKILL_NAME, 'runbook_lane.py', register=False)
+
+    data = module.cmd_resolve(argparse.Namespace(spec=str(spec), project_dir=str(tmp_path)))
+
+    assert data['status'] == 'success', data
+    assert data['build_server'] == 'down'
+    assert 'RuntimeError' in data['build_server_reason']
+    assert 'client signature changed' in data['build_server_reason']
 
 
 def _raw_section(heading: str) -> str:
@@ -1731,8 +1787,11 @@ def test_landing_facts_fence_carries_every_required_key_except_total_tokens() ->
 
 
 #: Runtime-info payloads in the shape ``collect_runtime_info`` returns: one
-#: measured single-model tree, one mixed tree carrying its distinct labels, and
-#: one read that produced no stamp at all.
+#: measured single-model tree, one mixed tree whose models changed while the
+#: variant held (the collector records the measured effort there), one mixed tree
+#: whose variants DIFFER (the collector then carries no ``effort`` at all — a flag
+#: or an environment value is not this run's effort), and one read that produced
+#: no stamp at all.
 _MEASURED_RUNTIME_INFO: dict[str, Any] = {
     'harness': 'opencode',
     'transcripts': 'full',
@@ -1751,6 +1810,14 @@ _MIXED_RUNTIME_INFO: dict[str, Any] = {
     'models': 'deepseek-v4.1-flash/high,claude-opus-5-5/max',
     'model_source': 'measured',
     'effort': 'high',
+    'bundle_version': '0.1.1919',
+}
+_MIXED_VARIANTS_RUNTIME_INFO: dict[str, Any] = {
+    'harness': 'opencode',
+    'transcripts': 'full',
+    'model': 'mixed',
+    'models': 'deepseek-v4.1-flash/high,deepseek-v4.1-flash/max',
+    'model_source': 'measured',
     'bundle_version': '0.1.1919',
 }
 _ABSENT_RUNTIME_INFO: dict[str, Any] = {'harness': 'opencode', 'transcripts': 'none'}
@@ -1836,6 +1903,49 @@ def test_resolve_returns_the_measured_runtime_stamp(tmp_path: Path, monkeypatch)
     assert data['executor_version'] == '0.1.1919'
 
 
+def test_resolve_scopes_the_opencode_environment(tmp_path: Path, monkeypatch) -> None:
+    """The measurement is handed a target-scoped environment, not ``os.environ``.
+
+    A Claude-specific variable leaking into the environment must never be
+    attributed to an OpenCode stamp, which is why ``opencode_runtime``'s own
+    collector call passes only the variables that target may resolve.
+    """
+    monkeypatch.setenv('CLAUDE_CODE_MODEL', 'claude-opus-5-5')
+    monkeypatch.setenv('MODEL_NAME', 'generic-model')
+
+    data, stamped = _resolve_with_runtime_info(tmp_path, monkeypatch, _MEASURED_RUNTIME_INFO)
+
+    assert data['status'] == 'success', data
+    env = stamped[0][1].get('env')
+    assert isinstance(env, dict), 'the collector was handed no environment at all'
+    assert 'CLAUDE_CODE_MODEL' not in env, 'a Claude-only variable was handed to the OpenCode measurement'
+    assert env.get('MODEL_NAME') == 'generic-model', 'a variable the target may resolve was filtered out'
+
+
+def test_resolve_degrades_a_failing_runtime_seam_to_unknown(tmp_path: Path, monkeypatch) -> None:
+    """A landing field never aborts setup: a raising seam is ``unknown``.
+
+    ``resolve`` runs at setup, before any work; failing it over a landing field
+    would stop the run for a value the landing already has wording for.
+    """
+    import runtime_info
+
+    def _boom(harness: str, **_kwargs: Any) -> dict[str, Any]:
+        raise RuntimeError('seam exploded')
+
+    monkeypatch.setattr(runtime_info, 'collect_runtime_info', _boom)
+    spec = _seed_fixture(tmp_path, required_bots='x')
+    monkeypatch.setenv('PLAN_MARSHALL_HOME', str(tmp_path / '.machine-home'))
+    module = load_script_module('plan-marshall', _SKILL_NAME, 'runbook_lane.py', register=False)
+
+    data = module.cmd_resolve(argparse.Namespace(spec=str(spec), project_dir=str(tmp_path)))
+
+    assert data['status'] == 'success', data
+    assert data['model'] == 'unknown'
+    assert data['effort'] == 'unknown'
+    assert data['plugin_version'] == 'unknown'
+
+
 def test_resolve_measures_the_opencode_model_from_the_session_db(tmp_path: Path, monkeypatch) -> None:
     """The stamp is MEASURED over the session tree, not read from a flag.
 
@@ -1872,6 +1982,20 @@ def test_resolve_returns_the_mixed_model_as_its_list_form(tmp_path: Path, monkey
     assert data['model'] == 'deepseek-v4.1-flash/high,claude-opus-5-5/max'
     assert data['effort'] == 'high'
     assert data['plugin_version'] == '0.1.1919'
+
+
+def test_resolve_keeps_effort_unknown_when_a_mixed_tree_has_no_single_variant(tmp_path: Path, monkeypatch) -> None:
+    """A tree that ran more than one variant has no measured effort.
+
+    The collector then carries no ``effort`` at all — a flag or an environment
+    value is not this run's effort — so the stamp must say ``unknown`` rather
+    than pick one of the variants.
+    """
+    data, _ = _resolve_with_runtime_info(tmp_path, monkeypatch, _MIXED_VARIANTS_RUNTIME_INFO)
+
+    assert data['status'] == 'success', data
+    assert data['model'] == 'deepseek-v4.1-flash/high,deepseek-v4.1-flash/max'
+    assert data['effort'] == 'unknown'
 
 
 def test_resolve_returns_unknown_when_the_runtime_stamp_is_absent(tmp_path: Path, monkeypatch) -> None:
