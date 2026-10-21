@@ -2,11 +2,11 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Degrade-path pins for the OpenCode runtime and the sentinel convention.
 
-The identity-bearing operations decline on exactly THREE genuine grounds —
-``OPENCODE_SESSION_ID`` unset, the session database absent, and the database
-schema unsupported — and each carries its NAMED reason plus the alternative. The
-metrics primitive keeps its own decline ground, the absent token-persistence
-boundary, and no manual count is ever reported as success.
+The identity-bearing operations decline on the genuine grounds the reader names —
+``OPENCODE_SESSION_ID`` unset, the session database absent, unreadable, schema
+unsupported, or holding no such session — and each carries its NAMED reason plus
+the alternative. The metrics primitive keeps its own decline ground, the absent
+token-persistence boundary, and no manual count is ever reported as success.
 
 The ``hook_not_configured`` absence guard and the sentinel-meaning guard are
 unchanged by the move to a measured identity: ``hook_not_configured`` still names

@@ -2,19 +2,21 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Cross-cutting regression tests for finalize session routing.
 
-Pins the transcript-gated routing at the ``manage-metrics enrich`` script seam:
+Pins the identity-gated routing at the ``manage-metrics enrich`` script seam:
 
 * transcript-capable target (Claude) with absent session identity preserves the
   abort/error — the broken-hook signal survived the D1 fix.
-* transcript-less targets (opencode, antigravity) with absent session identity proceed
-  unenriched with the population-carrying gap flag and the logged-decision
-  message — the hard-block is closed there.
+* store-backed targets (opencode, antigravity) whose store carried no resolvable
+  identity proceed unenriched with the population-carrying gap flag and the
+  logged-decision message — the hard-block is closed there. Transcript-lessness
+  is not the ground: OpenCode answers measured buckets when an identity is
+  present.
 
 Fail-before / pass-after: before the D1 fix ``--session-id`` was a required
 argparse argument, so both cases below failed before reaching any routing
 (the parser exited instead of returning a verdict); after the fix the
 transcript-capable case returns the ``missing_session_id`` error and the
-transcript-less case returns the unenriched skip. No interference with the D1
+store-backed case returns the unenriched skip. No interference with the D1
 co-located unit cases in ``test_manage_metrics_enrich.py`` (disjoint plan ids,
 disjoint assertions).
 """

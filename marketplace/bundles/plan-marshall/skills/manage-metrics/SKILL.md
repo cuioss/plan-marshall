@@ -536,10 +536,20 @@ enriched: true
 message_count: 127
 subagent_phases_attributed: 3
 subagent_calls_attributed: 8
-main_phases_attributed: 6
 subagent_transcripts_walked: 4
 four_field_phases_attributed: 5
+sessions_requested: 2
+sessions_measured: 2
+roots_measured[2]:
+  - ses_root_abc123
+  - ses_root_def456
 ```
+
+`sessions_requested` / `sessions_measured` / `roots_measured` name the measured
+population: a plan that captured several roots (one per resume) reports every
+root it measured, so an enriched total is never read as one root's spend. A root
+that could not be read is reported under `sessions_unmeasured` with its named
+reason instead of being silently dropped.
 
 **Context-load view + billing-weighted total**: the normalized per-phase context-load
 figures — `input_tokens`, `output_tokens`, `cache_read_input_tokens`, and

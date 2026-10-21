@@ -6,6 +6,7 @@ Its sections, in order:
 
 * enrich (Tier 2 - direct import)
 * enrich delegates to the platform-runtime normalized-tokens op
+* enrich measures every captured root (multi-session population)
 * total_tokens population labelling
 * format_duration (via generate output) (Tier 2 - direct import)
 * CLI Plumbing Tests (Tier 3 - subprocess, retained for end-to-end coverage)

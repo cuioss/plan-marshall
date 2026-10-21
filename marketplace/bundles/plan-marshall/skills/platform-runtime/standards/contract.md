@@ -1095,7 +1095,7 @@ Resolve normalized transcript token totals for the active target. On a transcrip
 
 On OpenCode the four canonical categories come from the measured message usage: `input_tokens` from `tokens.input`, `output_tokens` from `tokens.output`, `cache_read_input_tokens` from `tokens.cache.read` and `cache_creation_input_tokens` from `tokens.cache.write`. The sub-agent group is measured from the descendant sessions' messages: `subagent_total_tokens` is their `input + output + cache_creation` (cache reads excluded, matching the dispatched-total definition used everywhere else), `subagent_samples` counts the sub-agent sessions observed, and `subagent_tool_uses` / `subagent_duration_ms` come from the same message rows.
 
-**Arguments**: `--session-id <id>` (required), `--window <phase> <start> <end>` (repeatable), `--output-file <path>` (required)
+**Arguments**: `--session-id <id>` (required), `--windows-file <path>` (required — a JSON array of `[phase, start_iso, end_iso]` triples), `--output-file <path>` (required)
 
 **Per-phase bucket keys**
 

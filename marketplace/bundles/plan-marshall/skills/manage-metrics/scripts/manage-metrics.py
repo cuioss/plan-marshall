@@ -4052,10 +4052,11 @@ def _inline_main_context_sum(phase_row: dict) -> int:
 
 
 # Targets whose session identity comes from their own store (OpenCode's
-# `opencode.db`) rather than from a transcript. On such a target an ABSENT
-# identity — the resolver could not resolve one, each a named reason
-# (`db_not_found` / `db_unreadable` / `schema_unsupported` / `session_not_found`)
-# — routes to the enrich-skip branch rather than the missing-identity error.
+# `opencode.db`, Antigravity's runtime database) rather than from a transcript.
+# On such a target an ABSENT identity — the target's own store carried nothing
+# resolvable, reported with that store's named reason (`db_not_found` /
+# `db_unreadable` / `schema_unsupported` / `session_not_found` on OpenCode) —
+# routes to the enrich-skip branch rather than the missing-identity error.
 # Transcript-lessness is NOT the ground: OpenCode answers measured buckets from
 # its database whenever an identity IS present. The set is read against the
 # live runtime target at the point of use — the platform-detected target

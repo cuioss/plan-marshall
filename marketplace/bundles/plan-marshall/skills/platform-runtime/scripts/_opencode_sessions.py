@@ -2,12 +2,14 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Read-only reader over the OpenCode session store (``opencode.db``).
 
-The single home of every read of the OpenCode session database: path resolution,
+The single home of every SESSION read of the OpenCode database: path resolution,
 the read-only connection, the two-tier schema gate, the ``parent_id`` walk, tree
 totals, per-window usage sums and the sub-agent listing. ``runtime_info``
 measures the model through it and ``opencode_runtime`` serves session identity
-and normalized tokens through it, so no other module opens or parses the
-database.
+and normalized tokens through it, so neither of them opens or parses the
+session tables itself. The one separate read is the persisted-permission scan in
+``opencode_runtime``, which inspects the operator's ``permission`` table — a
+governance surface with its own schema, not a session read.
 
 Two schema tiers, because the store evolves and a reader must answer from what a
 given installation actually carries:
