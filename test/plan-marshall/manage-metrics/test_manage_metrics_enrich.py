@@ -440,11 +440,11 @@ def test_enrich_absent_session_id_transcript_less_skips_with_gap_flag(plan_conte
     assert result['status'] == 'success'
     assert result.get('enriched') is False
     assert result.get('skipped') is True
-    assert result.get('gap') == manage_metrics.ENRICH_SKIP_REASON_NO_SESSION_TRANSCRIPT_LESS
+    assert result.get('gap') == manage_metrics.ENRICH_SKIP_REASON_NO_SESSION_IDENTITY
     assert result.get('population') == manage_metrics.ENRICH_SKIP_POPULATION_UNENRICHED
     stored = manage_metrics.read_metrics_raw(plan_id)
     assert str(stored.get('enrichment_skipped')).lower() == 'true'
-    assert stored.get('enrichment_gap_reason') == manage_metrics.ENRICH_SKIP_REASON_NO_SESSION_TRANSCRIPT_LESS
+    assert stored.get('enrichment_gap_reason') == manage_metrics.ENRICH_SKIP_REASON_NO_SESSION_IDENTITY
     assert stored.get('enrichment_gap_population') == manage_metrics.ENRICH_SKIP_POPULATION_UNENRICHED
 
 
@@ -471,11 +471,11 @@ def test_enrich_absent_session_id_antigravity_skips_with_gap_flag(plan_context, 
     assert result['status'] == 'success'
     assert result.get('enriched') is False
     assert result.get('skipped') is True
-    assert result.get('gap') == manage_metrics.ENRICH_SKIP_REASON_NO_SESSION_TRANSCRIPT_LESS
+    assert result.get('gap') == manage_metrics.ENRICH_SKIP_REASON_NO_SESSION_IDENTITY
     assert result.get('population') == manage_metrics.ENRICH_SKIP_POPULATION_UNENRICHED
     stored = manage_metrics.read_metrics_raw(plan_id)
     assert str(stored.get('enrichment_skipped')).lower() == 'true'
-    assert stored.get('enrichment_gap_reason') == manage_metrics.ENRICH_SKIP_REASON_NO_SESSION_TRANSCRIPT_LESS
+    assert stored.get('enrichment_gap_reason') == manage_metrics.ENRICH_SKIP_REASON_NO_SESSION_IDENTITY
     assert stored.get('enrichment_gap_population') == manage_metrics.ENRICH_SKIP_POPULATION_UNENRICHED
 
 
@@ -537,11 +537,11 @@ def test_enrich_detected_opencode_skips_despite_claude_marshal(plan_context, mon
     assert result['status'] == 'success'
     assert result.get('enriched') is False
     assert result.get('skipped') is True
-    assert result.get('gap') == manage_metrics.ENRICH_SKIP_REASON_NO_SESSION_TRANSCRIPT_LESS
+    assert result.get('gap') == manage_metrics.ENRICH_SKIP_REASON_NO_SESSION_IDENTITY
     assert result.get('population') == manage_metrics.ENRICH_SKIP_POPULATION_UNENRICHED
     stored = manage_metrics.read_metrics_raw(plan_id)
     assert str(stored.get('enrichment_skipped')).lower() == 'true'
-    assert stored.get('enrichment_gap_reason') == manage_metrics.ENRICH_SKIP_REASON_NO_SESSION_TRANSCRIPT_LESS
+    assert stored.get('enrichment_gap_reason') == manage_metrics.ENRICH_SKIP_REASON_NO_SESSION_IDENTITY
     assert stored.get('enrichment_gap_population') == manage_metrics.ENRICH_SKIP_POPULATION_UNENRICHED
 
 

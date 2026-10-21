@@ -51,7 +51,7 @@ def test_regression_transcript_less_absent_identity_proceeds_unenriched(plan_con
     assert result['status'] == 'success'
     assert result.get('enriched') is False
     assert result.get('skipped') is True
-    assert result.get('gap') == manage_metrics.ENRICH_SKIP_REASON_NO_SESSION_TRANSCRIPT_LESS
+    assert result.get('gap') == manage_metrics.ENRICH_SKIP_REASON_NO_SESSION_IDENTITY
     assert result.get('population') == manage_metrics.ENRICH_SKIP_POPULATION_UNENRICHED
     assert 'unenriched' in result.get('message', '')
     stored = manage_metrics.read_metrics_raw(plan_id)
@@ -70,7 +70,7 @@ def test_regression_antigravity_absent_identity_proceeds_unenriched(plan_context
     assert result['status'] == 'success'
     assert result.get('enriched') is False
     assert result.get('skipped') is True
-    assert result.get('gap') == manage_metrics.ENRICH_SKIP_REASON_NO_SESSION_TRANSCRIPT_LESS
+    assert result.get('gap') == manage_metrics.ENRICH_SKIP_REASON_NO_SESSION_IDENTITY
     assert result.get('population') == manage_metrics.ENRICH_SKIP_POPULATION_UNENRICHED
     assert 'unenriched' in result.get('message', '')
     stored = manage_metrics.read_metrics_raw(plan_id)
