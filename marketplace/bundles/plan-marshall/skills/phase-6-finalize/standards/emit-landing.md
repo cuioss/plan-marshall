@@ -233,9 +233,10 @@ below.
      as `{metadata.model}/{metadata.variant}` (for example `deepseek-v4.1-flash/high`) — the
      `{model}/{variant}` form the payload spec's `model` row defines. A stamp with no `variant`
      leaves the bare model. For a SINGLE-MODEL OpenCode stamp `metadata.effort` is that same measured
-     variant, so the two values agree; on a `mixed` tree there is no single variant, so `effort`
-     keeps its start-time value and tag (`measured_at_start` when it was measured, `self_reported`
-     when the LLM reported it) and the model list carries the variants.
+     variant, so the two values agree. A `mixed` tree whose models share one variant still measures
+     that variant as `effort`; only a `mixed` tree whose variants DIFFER has no single variant, so
+     `effort` keeps its start-time value and tag (`measured_at_start` when it was measured,
+     `self_reported` when the LLM reported it) and the model list carries the variants.
    - `executor_version` ← `metadata.executor_version` — OPTIONAL; omit the key when the stamp carries
      none rather than writing a degraded value.
    - A field whose stamp is ABSENT or unreadable is written as `unknown`. These four are REQUIRED, so an

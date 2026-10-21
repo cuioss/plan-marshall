@@ -851,7 +851,7 @@ python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator pre
 
 The hook writes the plan's `client.toon` pre-flight artifact AND stamps
 `harness`, `harness_source`, `model`, `models`, `variant`, `provider`,
-`model_source`, `model_omission_reason`, `effort`, `effort_source`,
+`model_source`, `model_origin`, `model_omission_reason`, `effort`, `effort_source`,
 `bundle_version` and `executor_version` into `status.metadata`. It is
 best-effort: absent `--model` / `--effort` values simply omit those keys. See
 `plan-orchestrator/workflow/preflight.md` for the full contract and

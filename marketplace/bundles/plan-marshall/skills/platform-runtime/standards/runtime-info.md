@@ -34,7 +34,7 @@ unregistered target yields the established `unknown_target` error path.
 
 ## Client.toon Schema
 
-One required attribute pair (`harness`, `transcripts`), one further always-present attribute (`harness_source`), and fourteen optional attributes per run entry. Unreadable attributes are absent rather than estimated.
+One required attribute pair (`harness`, `transcripts`), one further always-present attribute (`harness_source`), and the optional attributes in the table below. Unreadable attributes are absent rather than estimated.
 
 | Key | Meaning | Always present |
 |-----|---------|----------------|

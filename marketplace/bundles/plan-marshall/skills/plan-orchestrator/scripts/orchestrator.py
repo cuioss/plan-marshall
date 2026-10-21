@@ -6421,6 +6421,24 @@ _REFRESH_CLEARING_FIELDS: tuple[str, ...] = ('models', 'variant', 'provider', 'm
 #: value instead of dropping a fact that was already established.
 _REFRESH_KEEPING_FIELDS: tuple[str, ...] = ('harness', 'harness_source', 'bundle_version', 'executor_version')
 
+#: The model family a refresh rewrites wholesale — value and provenance move
+#: together, so no reader can pair a fresh model with a stale origin.
+_REFRESH_MODEL_FIELDS: tuple[str, ...] = ('model', 'model_source', 'model_origin')
+
+#: The effort family a refresh rewrites when the measured tree supplies one.
+_REFRESH_EFFORT_FIELDS: tuple[str, ...] = ('effort', 'effort_source')
+
+#: The four rule sets are a PARTITION of the stamped fields: every field a
+#: preflight can write has exactly one refresh rule, so a field added to the
+#: stamp cannot silently escape the refresh. A failure here is a programming
+#: error, not a runtime condition.
+assert set(_PREFLIGHT_METADATA_FIELDS) == {
+    *_REFRESH_MODEL_FIELDS,
+    *_REFRESH_EFFORT_FIELDS,
+    *_REFRESH_CLEARING_FIELDS,
+    *_REFRESH_KEEPING_FIELDS,
+}, 'every stamped runtime field must have exactly one refresh rule'
+
 
 def _clear_runtime_metadata(plan_id: str) -> bool:
     """Remove the runtime stamp from a plan's metadata BEFORE a collector runs.
@@ -6833,6 +6851,15 @@ def cmd_refresh_runtime_stamp(args: argparse.Namespace) -> dict[str, Any]:
         'plan_id': args.plan_id,
     }
     try:
+        from runtime_info import (
+            MODEL_ORIGIN_SESSION_TREE,
+            OPENCODE_HARNESS,
+            SOURCE_MEASURED,
+            VALUE_UNKNOWN,
+        )
+    except Exception as exc:
+        return {**base, 'refreshed': False, 'reason': f'runtime tokens unavailable: {exc}'}
+    try:
         validate_plan_id(args.plan_id)
     except ValueError as exc:
         return {**base, 'refreshed': False, 'reason': f'invalid plan id: {exc}'}
@@ -6877,12 +6904,14 @@ def cmd_refresh_runtime_stamp(args: argparse.Namespace) -> dict[str, Any]:
     # a configured value, not the run's record.
     origin = info.get('model_origin')
     preserves_session = not (
-        harness == 'opencode' and metadata.get('model_origin') == 'session_tree' and origin != 'session_tree'
+        harness == OPENCODE_HARNESS
+        and metadata.get('model_origin') == MODEL_ORIGIN_SESSION_TREE
+        and origin != MODEL_ORIGIN_SESSION_TREE
     )
     readable = (
         isinstance(measured_model, str)
         and bool(measured_model.strip())
-        and measured_model != 'unknown'
+        and measured_model != VALUE_UNKNOWN
         and preserves_session
     )
     if not readable:
@@ -6890,10 +6919,10 @@ def cmd_refresh_runtime_stamp(args: argparse.Namespace) -> dict[str, Any]:
         # Never relabel a SELF-REPORTED value as measured: this verb supplies no
         # --model/--effort, so a value it could not measure was measured at
         # plan start only if its own source says so.
-        if metadata.get('model') and metadata.get('model_source') == 'measured':
+        if metadata.get('model') and metadata.get('model_source') == SOURCE_MEASURED:
             metadata['model_source'] = SOURCE_MEASURED_AT_START
             provenance_kept = True
-        if metadata.get('effort') and metadata.get('effort_source') == 'measured':
+        if metadata.get('effort') and metadata.get('effort_source') == SOURCE_MEASURED:
             metadata['effort_source'] = SOURCE_MEASURED_AT_START
             provenance_kept = True
         if provenance_kept:
@@ -6909,7 +6938,7 @@ def cmd_refresh_runtime_stamp(args: argparse.Namespace) -> dict[str, Any]:
             'reason': reason if isinstance(reason, str) and reason else 'model_unknown',
         }
 
-    for key in ('model', 'model_source', 'model_origin'):
+    for key in _REFRESH_MODEL_FIELDS:
         value = info.get(key)
         if value is not None and str(value).strip():
             metadata[key] = str(value)
@@ -6925,8 +6954,8 @@ def cmd_refresh_runtime_stamp(args: argparse.Namespace) -> dict[str, Any]:
             metadata[key] = str(value)
     if info.get('effort') is not None and str(info['effort']).strip():
         metadata['effort'] = str(info['effort'])
-        metadata['effort_source'] = str(info.get('effort_source') or 'measured')
-    elif metadata.get('effort') and metadata.get('effort_source') == 'measured':
+        metadata['effort_source'] = str(info.get('effort_source') or SOURCE_MEASURED)
+    elif metadata.get('effort') and metadata.get('effort_source') == SOURCE_MEASURED:
         # The tree no longer reports a single variant (for example it is mixed),
         # so the start-time effort is the only measured value in hand. A
         # SELF-REPORTED effort keeps its own tag — this verb measured nothing.
