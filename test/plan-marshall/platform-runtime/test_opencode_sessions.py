@@ -338,6 +338,30 @@ def test_session_totals_refuses_a_tier1_store_rather_than_an_empty_bucket(tmp_pa
     assert totals == {'ok': False, 'reason': 'schema_unsupported'}
 
 
+def test_session_totals_covers_every_tree_member_across_chunk_boundaries(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    """A tree split over several ``IN`` statements still sums every member once."""
+    monkeypatch.setattr(opencode_sessions, '_SQL_VARIABLE_BUDGET', 2)
+    db_path = tmp_path / 'opencode.db'
+    _create_tier2_db(
+        db_path,
+        [
+            ('ses-root', None, 1, 1, 1, 1, 0.5),
+            ('ses-a', 'ses-root', 2, 2, 2, 2, 1.0),
+            ('ses-b', 'ses-a', 4, 4, 4, 4, 2.0),
+            ('ses-other', None, 64, 64, 64, 64, 64.0),
+        ],
+        [],
+    )
+
+    totals = opencode_sessions.session_totals(db_path, 'ses-root')
+
+    assert totals['sessions'] == 3
+    assert totals['input_tokens'] == 7
+    assert totals['cost'] == 3.5
+
+
 # =============================================================================
 # Per-window usage
 # =============================================================================
@@ -431,6 +455,68 @@ def test_window_usage_refuses_a_tier1_store_rather_than_an_empty_bucket(tmp_path
     usage = opencode_sessions.window_usage(db_path, 'ses-root', [('5-execute', _iso(0), _iso(30))])
 
     assert usage == {'ok': False, 'reason': 'schema_unsupported'}
+
+
+def test_window_usage_attributes_every_in_window_message_through_the_filtered_read(tmp_path: Path) -> None:
+    """Every in-window message is summed across the tree; its neighbours are not."""
+    db_path = tmp_path / 'opencode.db'
+    _create_tier2_db(
+        db_path,
+        [
+            ('ses-root', None, 0, 0, 0, 0, 0.0),
+            ('ses-child', 'ses-root', 0, 0, 0, 0, 0.0),
+        ],
+        [
+            ('ses-root', 'assistant', _at(0), {'tokens': {'input': 1}}),
+            ('ses-root', 'assistant', _at(29), {'tokens': {'input': 2}}),
+            ('ses-child', 'assistant', _at(15), {'tokens': {'input': 4}}),
+            ('ses-root', 'assistant', _at(30), {'tokens': {'input': 8}}),
+            ('ses-root', 'assistant', _at(-1), {'tokens': {'input': 16}}),
+        ],
+    )
+
+    usage = opencode_sessions.window_usage(db_path, 'ses-root', [('first', _iso(0), _iso(30))])
+
+    main = usage['windows'][0]['main']
+    assert main['input_tokens'] == 3
+    assert main['message_count'] == 2
+    assert usage['windows'][0]['subagent']['input_tokens'] == 4
+    assert usage['windows'][0]['subagent']['message_count'] == 1
+
+
+def test_window_usage_ignores_a_message_from_a_session_outside_the_member_set(tmp_path: Path) -> None:
+    """A same-instant message from a session outside the tree contributes nothing."""
+    db_path = tmp_path / 'opencode.db'
+    _create_tier2_db(
+        db_path,
+        [('ses-root', None, 0, 0, 0, 0, 0.0)],
+        [
+            ('ses-root', 'assistant', _at(5), {'tokens': {'input': 1}}),
+            ('ses-foreign', 'assistant', _at(5), {'tokens': {'input': 500}}),
+        ],
+    )
+
+    usage = opencode_sessions.window_usage(db_path, 'ses-root', [('first', _iso(0), _iso(30))])
+
+    assert usage['windows'][0]['main']['input_tokens'] == 1
+    assert usage['windows'][0]['main']['message_count'] == 1
+    assert usage['windows'][0]['subagent']['message_count'] == 0
+    assert usage['subagent_sessions'] == 0
+
+
+def test_window_usage_keeps_a_text_timestamp_for_the_parser(tmp_path: Path) -> None:
+    """An ISO-8601 stamp is still attributed — the pre-filter leaves TEXT to the parser."""
+    db_path = tmp_path / 'opencode.db'
+    _create_tier2_db(
+        db_path,
+        [('ses-root', None, 0, 0, 0, 0, 0.0)],
+        [('ses-root', 'assistant', _iso(5), {'tokens': {'input': 6}})],
+    )
+
+    usage = opencode_sessions.window_usage(db_path, 'ses-root', [('first', _iso(0), _iso(30))])
+
+    assert usage['windows'][0]['main']['input_tokens'] == 6
+    assert usage['windows'][0]['main']['message_count'] == 1
 
 
 # =============================================================================

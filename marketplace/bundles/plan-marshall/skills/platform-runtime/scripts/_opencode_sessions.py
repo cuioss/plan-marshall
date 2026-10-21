@@ -108,6 +108,9 @@ _TOOL_TYPE_MARKER = 'tool'
 #: Epoch values above this are milliseconds rather than seconds.
 _EPOCH_MS_THRESHOLD = 100_000_000_000
 
+#: Bound-variable budget per statement, below SQLite's historical 999 limit.
+_SQL_VARIABLE_BUDGET = 900
+
 
 # ---------------------------------------------------------------------------
 # Path resolution and connection
@@ -214,6 +217,27 @@ def _close(connection: sqlite3.Connection) -> None:
         connection.close()
     except sqlite3.Error:
         pass
+
+
+# ---------------------------------------------------------------------------
+# Statement budgeting
+# ---------------------------------------------------------------------------
+
+
+def _chunked(values: Sequence[str], size: int) -> list[list[str]]:
+    """Split *values* into consecutive chunks of at most *size* entries.
+
+    The caller derives *size* from :data:`_SQL_VARIABLE_BUDGET`, so a statement
+    built from one chunk stays below SQLite's bound-variable limit however many
+    sessions a tree carries.
+    """
+    return [list(values[index : index + size]) for index in range(0, len(values), size)]
+
+
+def _in_clause(column: str, entries: Sequence[str]) -> tuple[str, list[str]]:
+    """Return an ``"column" IN (?, ...)`` fragment and its bound values."""
+    placeholders = ', '.join('?' for _entry in entries)
+    return f'"{column}" IN ({placeholders})', list(entries)
 
 
 # ---------------------------------------------------------------------------
@@ -479,6 +503,46 @@ def _window_index(moment: datetime, windows: Sequence[tuple[str, datetime, datet
     return None
 
 
+def _window_pre_filter(windows: Sequence[tuple[str, datetime, datetime]]) -> tuple[str, list[Any]]:
+    """Return a SQL pre-filter and its bound values for the *windows* envelope.
+
+    The envelope is ``[earliest start, latest end)`` over every parsed window.
+    Every window is a sub-interval of it, so a row outside the envelope can fall
+    in no window and dropping it in SQL removes exactly the rows
+    :func:`_window_index` would have skipped — the per-window attribution itself
+    stays in Python, where first-match-wins and half-open edges are decided.
+
+    The numeric halves mirror :func:`_message_time`'s own rule: a cell above
+    :data:`_EPOCH_MS_THRESHOLD` is milliseconds, at or below it seconds. A TEXT
+    cell is always kept, because only the parser can read an ISO-8601 stamp —
+    the pre-filter must not decide a format it cannot decode.
+
+    Returns:
+        ``(fragment, params)`` where *fragment* is empty when there is no window
+        to bound (nothing is attributable, so no pre-filter is needed) and
+        otherwise starts with `` AND `` so it appends to a ``WHERE`` clause.
+    """
+    if not windows:
+        return '', []
+    starts = [start.timestamp() for _phase, start, _end in windows]
+    ends = [end.timestamp() for _phase, _start, end in windows]
+    low, high = min(starts), max(ends)
+    fragment = (
+        " AND (typeof(\"time_created\") = 'text'"
+        ' OR ("time_created" > ? AND "time_created" >= ? AND "time_created" < ?)'
+        ' OR ("time_created" <= ? AND "time_created" >= ? AND "time_created" < ?))'
+    )
+    params: list[Any] = [
+        _EPOCH_MS_THRESHOLD,
+        low * 1000.0,
+        high * 1000.0,
+        _EPOCH_MS_THRESHOLD,
+        low,
+        high,
+    ]
+    return fragment, params
+
+
 def _empty_bucket() -> dict[str, Any]:
     """Return a zeroed usage bucket for one window and one session scope."""
     bucket: dict[str, Any] = dict.fromkeys(USAGE_KEYS, 0)
@@ -567,6 +631,10 @@ def session_totals(path: Path | str | None, session_id: str | None) -> dict[str,
     Tier 2 only: the totals read needs the token and cost columns, so a
     tier-1 store answers ``schema_unsupported`` rather than an empty bucket.
 
+    The read names the tree's sessions in its ``WHERE`` clause — chunked to stay
+    below SQLite's bound-variable limit — so a store carrying every project's
+    sessions is never walked row by row in Python.
+
     Args:
         path: The database file to read.
         session_id: Any session in the tree — resolved to its root first.
@@ -585,18 +653,18 @@ def session_totals(path: Path | str | None, session_id: str | None) -> dict[str,
         root, tree, reason = _resolve_tree(connection, session_id)
         if root is None:
             return {'ok': False, 'reason': reason}
-        members = set(tree)
         columns = ', '.join(f'"{column}"' for column in TOKEN_COLUMNS)
         totals: dict[str, Any] = dict.fromkeys(USAGE_KEYS, 0)
         cost = 0.0
         sessions = 0
-        for row in connection.execute(f'SELECT "id", {columns}, "cost" FROM "session_v2"'):
-            if str(row[0]) not in members:
-                continue
-            sessions += 1
-            for index, key in enumerate(USAGE_KEYS):
-                totals[key] += _as_int(row[index + 1])
-            cost += _as_float(row[len(USAGE_KEYS) + 1])
+        for chunk in _chunked(tree, _SQL_VARIABLE_BUDGET):
+            clause, clause_params = _in_clause('id', chunk)
+            query = f'SELECT {columns}, "cost" FROM "session_v2" WHERE {clause}'
+            for row in connection.execute(query, clause_params):
+                sessions += 1
+                for index, key in enumerate(USAGE_KEYS):
+                    totals[key] += _as_int(row[index])
+                cost += _as_float(row[len(USAGE_KEYS)])
         totals['cost'] = cost
         return {'ok': True, 'root': root, 'sessions': sessions, **totals}
     except sqlite3.Error:
@@ -631,6 +699,12 @@ def window_usage(
     the bucket's earliest and latest message) and ``sessions`` (how many distinct
     sessions of that scope contributed).
 
+    The read is bounded by the two filters the attribution would apply anyway:
+    ``session_message.session_id`` is constrained to the tree (chunked to stay
+    below SQLite's bound-variable limit) and the window envelope of
+    :func:`_window_pre_filter` bounds ``time_created``, so the scan never walks
+    a store's rows from sessions outside the tree or messages outside the run.
+
     Args:
         path: The database file to read.
         session_id: Any session in the tree — resolved to its root first.
@@ -655,33 +729,40 @@ def window_usage(
         rows: list[dict[str, Any]] = [
             {'phase': phase, 'main': _empty_bucket(), 'subagent': _empty_bucket()} for phase, _s, _e in parsed
         ]
+        if not parsed:
+            return {'ok': True, 'root': root, 'windows': rows, 'subagent_sessions': 0}
         spans: dict[tuple[int, str], list[datetime]] = {}
         contributors: dict[tuple[int, str], set[str]] = {}
         subagent_sessions: set[str] = set()
-        members = set(tree)
-        for message_session, message_type, created, data in connection.execute(
-            'SELECT "session_id", "type", "time_created", "data" FROM "session_message"'
-        ):
-            owning = str(message_session)
-            if owning not in members:
-                continue
-            moment = _message_time(created)
-            if moment is None:
-                continue
-            index = _window_index(moment, parsed)
-            if index is None:
-                continue
-            scope = 'main' if owning == root else 'subagent'
-            bucket = rows[index][scope]
-            spans.setdefault((index, scope), []).append(moment)
-            contributors.setdefault((index, scope), set()).add(owning)
-            if scope == 'subagent':
-                subagent_sessions.add(owning)
-            kind = str(message_type).strip().lower()
-            if kind == 'assistant':
-                _add_message_usage(_message_data(data), bucket)
-            elif _TOOL_TYPE_MARKER in kind:
-                bucket['tool_uses'] += 1
+        window_clause, window_params = _window_pre_filter(parsed)
+        chunk_size = max(1, _SQL_VARIABLE_BUDGET - len(window_params))
+        for chunk in _chunked(tree, chunk_size):
+            member_clause, member_params = _in_clause('session_id', chunk)
+            query = (
+                'SELECT "session_id", "type", "time_created", "data" FROM "session_message"'
+                f' WHERE {member_clause}{window_clause}'
+            )
+            for message_session, message_type, created, data in connection.execute(
+                query, [*member_params, *window_params]
+            ):
+                owning = str(message_session)
+                moment = _message_time(created)
+                if moment is None:
+                    continue
+                index = _window_index(moment, parsed)
+                if index is None:
+                    continue
+                scope = 'main' if owning == root else 'subagent'
+                bucket = rows[index][scope]
+                spans.setdefault((index, scope), []).append(moment)
+                contributors.setdefault((index, scope), set()).add(owning)
+                if scope == 'subagent':
+                    subagent_sessions.add(owning)
+                kind = str(message_type).strip().lower()
+                if kind == 'assistant':
+                    _add_message_usage(_message_data(data), bucket)
+                elif _TOOL_TYPE_MARKER in kind:
+                    bucket['tool_uses'] += 1
         for (index, scope), moments in spans.items():
             rows[index][scope]['duration_ms'] = int((max(moments) - min(moments)).total_seconds() * 1000)
             rows[index][scope]['sessions'] = len(contributors.get((index, scope), ()))
