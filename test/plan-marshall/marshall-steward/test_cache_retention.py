@@ -32,11 +32,17 @@ import time
 from pathlib import Path
 
 import pytest
+import target_context
 from toon_parser import parse_toon
 
 from conftest import load_script_module
 
 cache_retention = load_script_module('plan-marshall', 'marshall-steward', 'cache_retention.py')
+
+#: The (signal, target) matrix, bound so the R5 shape guard can see the
+#: non-vacuity assertion that belongs to the parametrized population.
+SIGNAL_CASES = list(target_context.TARGET_ENV_SIGNALS)
+assert SIGNAL_CASES, 'the ambient-signal registry must not be empty'
 
 _BUNDLE = 'plan-marshall'
 
@@ -303,7 +309,7 @@ class TestTargetResolution:
     @pytest.fixture(autouse=True)
     def _no_platform_signal(self, monkeypatch: pytest.MonkeyPatch):
         """Clear every platform env signal so a tier case is decided by what it sets."""
-        for name in ('ANTIGRAVITY_AGENT', 'OPENCODE', 'OPENCODE_PID', 'CLAUDE_CODE_SESSION_ID'):
+        for name in (signal for signal, _target in target_context.TARGET_ENV_SIGNALS):
             monkeypatch.delenv(name, raising=False)
 
     def _record_manifest_lookup(self, monkeypatch: pytest.MonkeyPatch) -> list[str]:
@@ -319,13 +325,8 @@ class TestTargetResolution:
 
     @pytest.mark.parametrize(
         ('signal', 'expected_target'),
-        [
-            ('ANTIGRAVITY_AGENT', 'antigravity'),
-            ('OPENCODE', 'opencode'),
-            ('OPENCODE_PID', 'opencode'),
-            ('CLAUDE_CODE_SESSION_ID', 'claude'),
-        ],
-        ids=['antigravity-signal', 'opencode-signal', 'opencode-pid-signal', 'claude-signal'],
+        SIGNAL_CASES,
+        ids=[f'{name.lower()}-signal' for name, _target in SIGNAL_CASES],
     )
     def test_env_signal_reaches_the_manifest_lookup(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, signal, expected_target

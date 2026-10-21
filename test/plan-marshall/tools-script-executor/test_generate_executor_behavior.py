@@ -104,15 +104,16 @@ def _load_template_module() -> types.ModuleType:
 # would be the defect again.
 
 
+#: The (signal, target) matrix, bound so the R5 shape guard can see the
+#: non-vacuity assertion that belongs to the parametrized population.
+SIGNAL_CASES = list(target_context.TARGET_ENV_SIGNALS)
+assert SIGNAL_CASES, 'the ambient-signal registry must not be empty'
+
+
 @pytest.mark.parametrize(
     ('env_signal', 'expected_target', 'expected_source'),
-    [
-        ('ANTIGRAVITY_AGENT', 'antigravity', 'env'),
-        ('OPENCODE', 'opencode', 'env'),
-        ('OPENCODE_PID', 'opencode', 'env'),
-        ('CLAUDE_CODE_SESSION_ID', 'claude', 'env'),
-    ],
-    ids=['antigravity-signal', 'opencode-signal', 'opencode-pid-signal', 'claude-signal'],
+    [(name, target, 'env') for name, target in SIGNAL_CASES],
+    ids=[f'{name.lower()}-signal' for name, _target in SIGNAL_CASES],
 )
 def test_env_tier_outranks_local_config(monkeypatch, tmp_path, env_signal, expected_target, expected_source):
     """A platform env signal decides the target even when local harness config disagrees.
@@ -122,7 +123,7 @@ def test_env_tier_outranks_local_config(monkeypatch, tmp_path, env_signal, expec
     what its runtime injected. Each row writes a CONTRADICTING local harness config
     so a reader that consulted config first would answer wrongly.
     """
-    for name in ('ANTIGRAVITY_AGENT', 'OPENCODE', 'OPENCODE_PID', 'CLAUDE_CODE_SESSION_ID'):
+    for name in (signal for signal, _target in target_context.TARGET_ENV_SIGNALS):
         monkeypatch.delenv(name, raising=False)
     harness_dir = tmp_path / '.plan' / 'local' / 'harness'
     harness_dir.mkdir(parents=True)
@@ -194,7 +195,7 @@ def test_config_tier_reports_its_own_fall_through_reason(
     dropped the mapping check and returned the scalar verbatim would pass every
     value-only assertion in this file.
     """
-    for name in ('ANTIGRAVITY_AGENT', 'OPENCODE', 'OPENCODE_PID', 'CLAUDE_CODE_SESSION_ID'):
+    for name in (signal for signal, _target in target_context.TARGET_ENV_SIGNALS):
         monkeypatch.delenv(name, raising=False)
     root = outside_repo_dir / 'project'
     root.mkdir()

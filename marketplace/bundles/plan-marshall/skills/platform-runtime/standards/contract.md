@@ -432,6 +432,8 @@ summary:
 
 `findings[]` and `summary` are emitted whether or not anything was found — a zero here is a measured zero, not an absent field.
 
+**OpenCode payload**: the findings model above is the Claude one. OpenCode has no redundant/suspicious rule model to audit, so it reports per-scope coverage instead: `analysis.<scope>` carries `settings_path`, `permission_shape` (`permissions` for the OpenCode 2 list, `permission` for the OpenCode 1 map, `none` when the file carries neither), `has_executor`, `missing_defaults`, and `deny_rules` — each `{action, resource, effect}`. The deny set is read from the `permissions` list when present and from the `permission` map otherwise, so the audit reports the rules the file actually has.
+
 **Error**:
 ```toon
 status: error
@@ -1213,14 +1215,14 @@ Return the platform-specific invocation parameters for spawning a focused subage
 
 **Arguments**: `--agent <name>` (required), `--prompt-file <path>` (optional), `--context <json>` (optional)
 
-Every target echoes the requested `--agent` back as `invocation.subagent_type`; no target substitutes an agent of its own choosing, so a caller's selection always reaches the invocation.
+Every target echoes the requested `--agent` back inside its invocation: as `invocation.subagent_type` on Claude and Antigravity, and as `invocation.agent` on OpenCode 2 (whose sub-agent tool takes `{agent, description, prompt}`). No target substitutes an agent of its own choosing, so a caller's selection always reaches the invocation.
 
 The admitted registry is `antigravity, claude, opencode` — derived live from `platform_runtime._REGISTRY` via `describe_targets`, never a hard-coded literal.
 
 Per-harness dispatch outcomes:
 
 - **Claude** — `Task` tool with the agent frontmatter description; unmapped frontmatter tools decline as `no-op`.
-- **OpenCode** — `task` tool, conditional on verify-first clause 1 (tool available in the envelope) and clause 2 (the requested agent's frontmatter tools map onto the OpenCode tool set via `targets/opencode/mapping.json`). A caller passing `task_tool_available: False` (legacy) or the target-neutral `spawning_tool_available: False` in `--context` takes the explicit logged inline branch (`no-op` carrying the inline fallback) instead of a faux success; an agent requiring an unmapped tool takes the same inline branch. Both flags are consumed at this seam and never merged into the prompt.
+- **OpenCode** — `subagent` tool, conditional on verify-first clause 1 (tool available in the envelope) and clause 2 (the requested agent's frontmatter tools map onto the OpenCode tool set via `targets/opencode/mapping.json`). A caller passing `task_tool_available: False` (legacy) or the target-neutral `spawning_tool_available: False` in `--context` takes the explicit logged inline branch (`no-op` carrying the inline fallback) instead of a faux success; an agent requiring an unmapped tool takes the same inline branch. Both flags are consumed at this seam and never merged into the prompt.
 - **Antigravity** — `invoke_subagent` tool, keeping that mapping on every path, conditional on the same two verify-first clauses: `spawning_tool_available: False` in `--context` takes the explicit logged inline branch, and an agent requiring a tool outside `targets/antigravity/mapping.json` takes the same inline branch. When the agent file or the mapping is unreadable the clause-2 check is vacuous and the dispatch proceeds.
 
 Transcripts vocabulary: no dispatch has happened at this seam — the payload carries invocation parameters, not a run — so every success carries `usage: unknown` rather than a measured zero, and every inline-branch `no-op` propagates usage as unknown the same way. `unknown` here shares the manage-metrics unknown vocabulary: absent measurement is stated, never zero-filled.
@@ -1242,7 +1244,7 @@ invocation:
 ```toon
 status: no-op
 operation: subagent dispatch
-reason: OpenCode 'task' tool is not available in this envelope — take the explicit logged inline branch instead of dispatching
+reason: OpenCode 'subagent' tool is not available in this envelope — take the explicit logged inline branch instead of dispatching
 alternative: Inline the agent logic in-turn and propagate usage as unknown
 ```
 
@@ -1266,13 +1268,13 @@ operation: subagent dispatch
 platform: opencode
 usage: unknown
 invocation:
-  tool: task
-  description: Run execution-context-level-3
+  tool: subagent
+  agent: execution-context-level-3
   prompt: ...agent body with context merged...
-  subagent_type: execution-context-level-3
+  description: Run execution-context-level-3
 ```
 
-OpenCode composes its `description` as `Run {agent}`, so that field and `subagent_type` always name the same agent. Claude sources `description` from the agent's own frontmatter instead, which is why its example above shows a different string alongside the same `subagent_type`.
+OpenCode composes its `description` as `Run {agent}`, so that field and `agent` always name the same agent. Claude sources `description` from the agent's own frontmatter instead, which is why its example above shows a different string alongside the same `subagent_type`.
 
 **No-op (unmapped tools)**:
 ```toon

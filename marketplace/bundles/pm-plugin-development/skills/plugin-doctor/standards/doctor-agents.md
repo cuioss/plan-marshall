@@ -14,7 +14,7 @@ Follows the common workflow pattern (see SKILL.md). Reference guide: `agents-gui
 - Tool fit score >= 70% (good) or >= 90% (excellent)
 - No agent-task-tool-prohibited violations when the Claude rule-pack binds — the `Task` tool is
   denied to Claude sub-agents. `plugin-create:component validate` accepts a `Task` declaration on
-  the OpenCode target (the `task` tool exists and subagent dispatch is supported there), and the
+  the OpenCode target (the `subagent` tool exists and subagent dispatch is supported there), and the
   doctor reports this rule only when `resolve_runtime_target() != 'opencode'`, matching the
   validator's binding.
 - No agent-maven-restricted violations (only maven-builder can use Maven)

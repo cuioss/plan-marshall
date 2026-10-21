@@ -134,7 +134,7 @@ def test_opencode_json_indexes_variants(role_bundle: Path, tmp_path: Path) -> No
     out = tmp_path / 'out'
     emit_bundles(role_bundle, out, CONFIG_DIR)
     config = json.loads((out / 'opencode.json').read_text(encoding='utf-8'))
-    agents = config['agent']
+    agents = config['agents']
     assert 'execution-context' in agents
     for level in ALL_LEVELS:
         assert f'execution-context-{level}' in agents
@@ -272,7 +272,8 @@ def test_render_variant_frontmatter_unpinned_shape() -> None:
     assert 'model:' not in block
     assert 'reasoningEffort' not in block
     assert 'implements' not in block
-    assert 'permission:' in block
+    assert 'permissions:' in block
+    assert 'permission:' not in block.replace('permissions:', '')
 
 
 def test_selected_levels_defaults_to_all() -> None:

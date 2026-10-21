@@ -470,7 +470,7 @@ Non-secret per-provider configuration (committed, shared via git), written by `m
 
 The active runtime target is resolved dynamically via the cascade in `target_context.py` rather than being persisted in the shared `.plan/marshal.json`:
 
-1. **Ambient Environment** — platform-injected environment variables (`ANTIGRAVITY_AGENT=1` → `antigravity`, `OPENCODE=1` / `OPENCODE_PID` → `opencode`, `CLAUDE_CODE_SESSION_ID` → `claude`).
+1. **Ambient Environment** — platform-injected environment variables (`ANTIGRAVITY_AGENT=1` → `antigravity`, `OPENCODE=1` → `opencode`, `CLAUDE_CODE_SESSION_ID` → `claude`).
 2. **Machine-Local Harness State** — machine-local harness configuration in `.plan/local/harness/{target}.json` (written by `platform_runtime project initial-setup`) or `.plan/run-configuration.json`.
 3. **Fallback** — defaults to `claude`.
 
