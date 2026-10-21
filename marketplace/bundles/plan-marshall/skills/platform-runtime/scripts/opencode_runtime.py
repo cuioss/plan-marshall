@@ -1868,6 +1868,12 @@ class OpenCodeRuntime(Runtime):
         so an absent bucket means "nothing was measured here" and never a
         fabricated zero.
 
+        ``root_session_id`` names the ROOT this run measured, which is what lets a
+        caller measuring several captured identities tell two ids inside one tree
+        apart from two genuinely distinct trees. A plan that captured more than one
+        session measures each root once; a second id resolving to an
+        already-measured root would attribute the same messages twice.
+
         An absent, unreadable or schema-unsupported store declines with the
         reader's NAMED reason instead of the blanket ``transcript_not_found``.
         """
@@ -1895,6 +1901,7 @@ class OpenCodeRuntime(Runtime):
             'metrics normalized-tokens',
             {
                 'session_id': session_id,
+                'root_session_id': str(usage['root']),
                 'output_file': output_file,
                 'phases_attributed': len(per_phase),
                 'message_count': message_count,

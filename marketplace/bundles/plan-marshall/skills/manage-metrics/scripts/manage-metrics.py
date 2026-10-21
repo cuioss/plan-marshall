@@ -23,7 +23,10 @@ Usage:
             [--total-tokens N] [--tool-uses N] [--duration-ms N] [--retrospective-tokens N]
 
     Enrich from JSONL transcript (per-phase subagent <usage>):
-        python3 manage-metrics.py enrich --plan-id <id> [--session-id <sid>]
+        python3 manage-metrics.py enrich --plan-id <id> [--session-id <sid> ...]
+
+        --session-id is REPEATABLE: one occurrence per session identity the plan
+        captured, and every occurrence is measured into one summed per-phase view.
 
     Reconcile the row ledgers against each other (read-only):
         python3 manage-metrics.py reconcile-ledgers --plan-id <id> [--window-seconds N]
@@ -65,10 +68,10 @@ from file_ops import (
 from input_validation import (
     add_phase_arg,
     add_plan_id_arg,
-    add_session_id_arg,
     is_valid_relative_path,
     parse_args_with_toon_errors,
     require_valid_plan_id,
+    validate_session_id,
 )
 from marketplace_bundles import resolve_bundles_root
 from marketplace_paths import detect_target_from_env as _shared_detect_target_from_env
@@ -3795,11 +3798,53 @@ def _phase_window_lookup(plan_id: str) -> list[tuple[str, datetime, datetime]]:
     return windows
 
 
+# The runtime's attribution counters, carried through unchanged from the op's
+# payload. A counter that counts PHASES is summed across the measured sessions
+# rather than de-duplicated: each session is an independent measurement, so a
+# phase two sessions both attributed is two attributions of one phase, while the
+# merged bucket still holds ONE copy of the usage fields. Once more than one
+# session was measured these are therefore attribution counts, never
+# distinct-phase counts.
+_NORMALIZED_COUNTER_FIELDS = (
+    'message_count',
+    'subagent_phases_attributed',
+    'subagent_calls_attributed',
+    'subagent_transcripts_walked',
+    'four_field_phases_attributed',
+    # Run-level count of tool names outside the classifier's population-derived
+    # domain — non-zero means a new tool name was counted rather than dropped,
+    # and the classifier needs extending.
+    'unclassified_tool_calls',
+)
+
+
+def _merge_normalized_buckets(
+    target: dict[str, dict[str, int | float]],
+    measured: dict[str, Any],
+) -> None:
+    """Sum one measured session's per-phase buckets into *target*.
+
+    Every bucket field is an additive measurement (usage counts, byte counts,
+    durations), so a field two sessions both reported is summed and a field only
+    one reported keeps that one's value. A field NO session reported stays
+    absent — absence is the runtime's "never measured" statement and must not be
+    manufactured into a zero by the merge.
+    """
+    for phase_name, bucket in measured.items():
+        if not isinstance(bucket, dict):
+            continue
+        merged = target.setdefault(str(phase_name), {})
+        for field, value in bucket.items():
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                continue
+            merged[field] = merged.get(field, 0) + value
+
+
 def _run_normalized_tokens_op(
-    session_id: str,
+    session_ids: list[str],
     windows: list[tuple[str, datetime, datetime]],
-) -> tuple[dict[str, dict[str, int]] | None, dict[str, int], str | None]:
-    """Invoke the platform-runtime ``metrics normalized-tokens`` op.
+) -> tuple[dict[str, dict[str, int | float]] | None, dict[str, int], str | None, dict[str, Any]]:
+    """Invoke the platform-runtime ``metrics normalized-tokens`` op per session.
 
     The runtime owns the entire transcript engine (transcript discovery, JSONL
     parse, ``message.usage`` four-field parse, ``<usage>`` tag parse, cache-pricing
@@ -3807,75 +3852,104 @@ def _run_normalized_tokens_op(
     op the phase windows, lets the runtime write the per-phase normalized result
     to a JSON sidecar, then reads that file and persists the numbers.
 
-    Returns ``(per_phase, counters, status)`` where:
+    A plan legitimately captures MORE THAN ONE session identity — every resume
+    appends one — so the measured population is every id supplied, measured into
+    ONE summed per-phase view. Measuring only the newest id would drop every
+    earlier session's usage while still reporting a successful enrichment.
 
-    - ``per_phase`` maps each phase to its normalized bucket (or ``None`` on a
-      ``no-op`` — no transcript — or any failure), and
-    - ``counters`` carries the runtime's attribution counters (empty on no-op), and
-    - ``status`` is the runtime op's TOON ``status`` field (``success`` / ``no-op``
-      / ``error``) or ``None`` when the op could not be invoked.
+    Returns ``(per_phase, counters, status, population)`` where:
+
+    - ``per_phase`` maps each phase to its summed normalized bucket (``None``
+      when NO supplied session yielded a measurement), and
+    - ``counters`` carries the runtime's attribution counters, summed across the
+      measured sessions (empty when none was measured), and
+    - ``status`` is the LAST runtime op's TOON ``status`` field (``success`` /
+      ``no-op`` / ``error``) or ``None`` when the op could not be invoked, and
+    - ``population`` names what was and was not measured: the requested count,
+      the measured roots, and one row per unmeasured id with its reason.
     """
     serialized_windows = [[name, start.isoformat(), end.isoformat()] for name, start, end in windows]
+    per_phase: dict[str, dict[str, int | float]] = {}
+    counters: dict[str, int] = {}
+    measured_roots: list[str] = []
+    unmeasured: list[dict[str, str]] = []
+    status: str | None = None
 
     with tempfile.TemporaryDirectory(prefix='metrics-norm-tokens-') as tmpdir:
         windows_file = Path(tmpdir) / 'windows.json'
-        output_file = Path(tmpdir) / 'normalized.json'
         windows_file.write_text(json.dumps(serialized_windows), encoding='utf-8')
 
-        try:
-            result = subprocess.run(
-                [
-                    sys.executable,
-                    '.plan/execute-script.py',
-                    'plan-marshall:platform-runtime:platform_runtime',
-                    'metrics',
-                    'normalized-tokens',
-                    '--session-id',
-                    session_id,
-                    '--windows-file',
-                    str(windows_file),
-                    '--output-file',
-                    str(output_file),
-                ],
-                capture_output=True,
-                text=True,
-                timeout=120,
-            )
-        except (OSError, subprocess.SubprocessError):
-            return None, {}, None
+        for index, session_id in enumerate(session_ids):
+            output_file = Path(tmpdir) / f'normalized-{index}.json'
+            try:
+                result = subprocess.run(
+                    [
+                        sys.executable,
+                        '.plan/execute-script.py',
+                        'plan-marshall:platform-runtime:platform_runtime',
+                        'metrics',
+                        'normalized-tokens',
+                        '--session-id',
+                        session_id,
+                        '--windows-file',
+                        str(windows_file),
+                        '--output-file',
+                        str(output_file),
+                    ],
+                    capture_output=True,
+                    text=True,
+                    timeout=120,
+                )
+            except (OSError, subprocess.SubprocessError):
+                unmeasured.append({'session_id': session_id, 'reason': 'invocation_failed'})
+                continue
 
-        try:
-            parsed = parse_toon(result.stdout)
-        except (ValueError, KeyError):
-            parsed = {}
-        status = parsed.get('status')
+            try:
+                parsed = parse_toon(result.stdout)
+            except (ValueError, KeyError):
+                parsed = {}
+            status = parsed.get('status')
 
-        if status != 'success' or not output_file.is_file():
-            return None, {}, status
+            if status != 'success' or not output_file.is_file():
+                unmeasured.append(
+                    {'session_id': session_id, 'reason': str(parsed.get('reason') or status or 'unreadable_result')}
+                )
+                continue
 
-        try:
-            per_phase = json.loads(output_file.read_text(encoding='utf-8'))
-        except (OSError, json.JSONDecodeError):
-            return None, {}, status
-        if not isinstance(per_phase, dict):
-            return None, {}, status
+            try:
+                measured = json.loads(output_file.read_text(encoding='utf-8'))
+            except (OSError, json.JSONDecodeError):
+                unmeasured.append({'session_id': session_id, 'reason': 'unreadable_result'})
+                continue
+            if not isinstance(measured, dict):
+                unmeasured.append({'session_id': session_id, 'reason': 'unreadable_result'})
+                continue
 
-        counters = {
-            key: int(parsed[key])
-            for key in (
-                'message_count',
-                'subagent_phases_attributed',
-                'subagent_calls_attributed',
-                'subagent_transcripts_walked',
-                'four_field_phases_attributed',
-                # Run-level count of tool names outside the classifier's
-                # population-derived domain — non-zero means a new tool name was
-                # counted rather than dropped, and the classifier needs extending.
-                'unclassified_tool_calls',
-            )
-            if isinstance(parsed.get(key), (int, str)) and str(parsed.get(key)).isdigit()
-        }
-        return per_phase, counters, status
+            # The op reports the ROOT it measured, because the id handed in may
+            # name any session inside that tree. Two captured ids resolving to
+            # one root would attribute the same messages twice; the second is
+            # reported as unmeasured rather than summed in.
+            root = str(parsed.get('root_session_id') or session_id)
+            if root in measured_roots:
+                unmeasured.append({'session_id': session_id, 'reason': 'duplicate_root'})
+                continue
+
+            measured_roots.append(root)
+            _merge_normalized_buckets(per_phase, measured)
+            for field in _NORMALIZED_COUNTER_FIELDS:
+                raw = parsed.get(field)
+                if isinstance(raw, (int, str)) and str(raw).isdigit():
+                    counters[field] = counters.get(field, 0) + int(raw)
+
+    population = {
+        'sessions_requested': len(session_ids),
+        'sessions_measured': len(measured_roots),
+        'roots_measured': measured_roots,
+        'sessions_unmeasured': unmeasured,
+    }
+    if not measured_roots:
+        return None, {}, status, population
+    return per_phase, counters, status, population
 
 
 _INLINE_MAIN_CONTEXT_FIELDS = ('input_tokens', 'output_tokens', 'cache_creation_input_tokens')
@@ -4038,15 +4112,32 @@ def _resolve_runtime_target() -> str:
     return 'claude'
 
 
+def _population_result(population: dict[str, Any]) -> dict[str, Any]:
+    """Render the measured-population block for ``enrich``'s result TOON.
+
+    ``enriched: true`` alone says nothing about HOW MUCH of the plan's captured
+    identity was measured, so every enrich return names the requested count, the
+    count and roots actually measured, and one row per identity that produced no
+    measurement together with its reason. An empty ``sessions_unmeasured`` list is
+    a measured zero — every requested identity was measured.
+    """
+    return {
+        'sessions_requested': population.get('sessions_requested', 0),
+        'sessions_measured': population.get('sessions_measured', 0),
+        'roots_measured': population.get('roots_measured', []),
+        'sessions_unmeasured': population.get('sessions_unmeasured', []),
+    }
+
+
 def cmd_enrich(args: argparse.Namespace) -> dict:
     plan_id = require_valid_plan_id(args)
-    session_id = getattr(args, 'session_id', None)
+    session_ids = getattr(args, 'session_ids', None) or []
 
     guard_error = _guard_plan_exists(plan_id)
     if guard_error is not None:
         return guard_error
 
-    if not session_id:
+    if not session_ids:
         target = _resolve_runtime_target()
         if target in _TRANSCRIPT_LESS_TARGETS:
             data = read_metrics_raw(plan_id)
@@ -4085,7 +4176,7 @@ def cmd_enrich(args: argparse.Namespace) -> dict:
     # to the platform-runtime transcript engine, and persist the normalized numbers
     # it returns. manage-metrics never parses a transcript itself.
     windows = _phase_window_lookup(plan_id)
-    per_phase, counters, status = _run_normalized_tokens_op(session_id, windows)
+    per_phase, counters, status, population = _run_normalized_tokens_op(session_ids, windows)
 
     if per_phase is None:
         # no-op (no transcript on this target) or the op could not run — degrade
@@ -4099,7 +4190,11 @@ def cmd_enrich(args: argparse.Namespace) -> dict:
             'status': 'success',
             'plan_id': plan_id,
             'enriched': False,
-            'message': f'No normalized-token data for session {session_id} (runtime status: {status})',
+            **_population_result(population),
+            'message': (
+                f'No normalized-token data for any of the {len(session_ids)} requested '
+                f'session(s) (runtime status: {status})'
+            ),
         }
 
     # Persist the runtime-computed per-phase normalized view. The runtime returns
@@ -4230,6 +4325,7 @@ def cmd_enrich(args: argparse.Namespace) -> dict:
         'subagent_calls_attributed': counters.get('subagent_calls_attributed', 0),
         'subagent_transcripts_walked': counters.get('subagent_transcripts_walked', 0),
         'four_field_phases_attributed': counters.get('four_field_phases_attributed', 0),
+        **_population_result(population),
     }
 
 
@@ -4525,9 +4621,20 @@ def main() -> int:
     rdb.set_defaults(func=cmd_record_dispatch_boundary)
 
     # enrich
-    enr = subparsers.add_parser('enrich', help='Enrich metrics from JSONL transcript', allow_abbrev=False)
+    enr = subparsers.add_parser('enrich', help='Enrich metrics from the session store', allow_abbrev=False)
     add_plan_id_arg(enr)
-    add_session_id_arg(enr, required=False)
+    enr.add_argument(
+        '--session-id',
+        action='append',
+        dest='session_ids',
+        type=validate_session_id,
+        default=None,
+        help=(
+            'Session identity to measure. Repeatable — one occurrence per identity the plan '
+            'captured; every occurrence is measured and the per-phase buckets are summed into '
+            'one view. Omit entirely when no identity could be resolved.'
+        ),
+    )
     enr.set_defaults(func=cmd_enrich)
 
     args = parse_args_with_toon_errors(parser)

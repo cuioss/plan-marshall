@@ -1032,6 +1032,33 @@ def test_metrics_normalized_tokens_writes_measured_buckets(
     assert 'unclassified_tool_calls' not in bucket
 
 
+def test_metrics_normalized_tokens_reports_the_root_it_measured(
+    runtime: OpenCodeRuntime, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """The payload names the ROOT, so a multi-session caller can de-duplicate trees.
+
+    A plan that captured more than one session measures each root once; without
+    this field a caller forwarding two ids inside one tree could not tell them
+    from two genuinely distinct trees and would sum the same messages twice.
+    """
+    db_path = tmp_path / 'opencode.db'
+    _write_usage_db(
+        db_path,
+        [('ses-root', None, 10, 20, 3, 4), ('ses-child', 'ses-root', 100, 200, 30, 40)],
+        _usage_messages(),
+    )
+    _isolate_store(monkeypatch, db_path)
+    output_file = tmp_path / 'normalized.json'
+
+    result = _parse(
+        runtime.metrics_normalized_tokens('ses-child', [('5-execute', _iso(0), _iso(30))], str(output_file))
+    )
+
+    assert result['status'] == 'success'
+    assert result['session_id'] == 'ses-child'
+    assert result['root_session_id'] == 'ses-root'
+
+
 def test_metrics_normalized_tokens_omits_a_window_with_no_usage(
     runtime: OpenCodeRuntime, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
