@@ -19,7 +19,8 @@ them and `measured` when a script-readable source did. On OpenCode the model is
 measured rather than self-reported: it is read from the plan's session tree in
 `opencode.db`, through the shared read-only session reader
 (``_opencode_sessions``), which owns the database path, the schema gate and the
-``parent_id`` walk — this module opens no database of its own. See
+``parent_id`` walk — this module opens no database of its own. The measured
+variant IS the effort there, so a `--effort` flag never overrides it. See
 :func:`measure_opencode_model`.
 
 Scope: concrete implementations exist for ``claude``, ``opencode``, and
@@ -69,6 +70,21 @@ OPENCODE_HARNESS = 'opencode'
 #: Environment variable naming the OpenCode session the plan's LLM runs under.
 #: Resolved to its root through ``session_v2.parent_id`` before measurement.
 OPENCODE_SESSION_ID_ENV = 'OPENCODE_SESSION_ID'
+
+#: Omission reason recorded when there is nothing to measure on OpenCode: no
+#: session id is in scope, so the model is omitted WITH a reason instead of
+#: silently — the landing's ``unknown`` then has a trace.
+OMISSION_NO_SESSION_ID = 'no_session_id'
+
+#: Origin tag for a model MEASURED from the OpenCode session tree — the run's
+#: own record, which a landing-time refresh must not replace with a configured
+#: value.
+MODEL_ORIGIN_SESSION_TREE = 'session_tree'
+
+#: Origin tag for an OpenCode model read from the environment (a configured
+#: value, not the session record). It is script-readable but is NOT the run's
+#: measured model, so a refresh never lets it overwrite a session measurement.
+MODEL_ORIGIN_ENVIRONMENT = 'environment'
 
 #: Human-readable UTC timestamp shape for entry keys. Colons are deliberately
 #: absent: a TOON key ends at its first colon, so a ``HH:MM:SS`` stamp would
@@ -315,14 +331,30 @@ def measure_opencode_model(
         return dict(unknown)
     if len(distinct) == 1:
         only = next(iter(distinct.values()))
-        measured: dict[str, Any] = {'model': only['id'], 'model_source': SOURCE_MEASURED}
+        measured: dict[str, Any] = {
+            'model': only['id'],
+            'model_source': SOURCE_MEASURED,
+            'model_origin': MODEL_ORIGIN_SESSION_TREE,
+        }
         if 'variant' in only:
             measured['variant'] = only['variant']
         if 'provider' in only:
             measured['provider'] = only['provider']
         return measured
     listed = ', '.join(_mixed_model_labels(distinct))
-    return {'model': MODEL_MIXED, 'models': listed, 'model_source': SOURCE_MEASURED}
+    mixed: dict[str, Any] = {
+        'model': MODEL_MIXED,
+        'models': listed,
+        'model_source': SOURCE_MEASURED,
+        'model_origin': MODEL_ORIGIN_SESSION_TREE,
+    }
+    # A mixed tree may still have run a single variant throughout — the model id
+    # changed, the effort did not. Recording it keeps the measured effort rather
+    # than falling back to a flag or an environment default.
+    variants = {fields.get('variant') for fields in distinct.values()}
+    if len(variants) == 1 and None not in variants:
+        mixed['variant'] = next(iter(variants))
+    return mixed
 
 
 def _resolve_model_fields(
@@ -351,8 +383,12 @@ def _resolve_model_fields(
             return measured
         from_env = read_model_name(env)
         if from_env:
-            return {'model': from_env, 'model_source': SOURCE_MEASURED}
-        return {}
+            return {
+                'model': from_env,
+                'model_source': SOURCE_MEASURED,
+                'model_origin': MODEL_ORIGIN_ENVIRONMENT,
+            }
+        return {'model_omission_reason': OMISSION_NO_SESSION_ID}
 
     if model_name:
         return {'model': model_name, 'model_source': SOURCE_SELF_REPORTED}
@@ -365,13 +401,19 @@ def _resolve_model_fields(
 def _resolve_effort_fields(
     env: Mapping[str, str] | None,
     effort: str | None,
+    measured_effort: str | None = None,
 ) -> dict[str, Any]:
     """Resolve the ``effort`` / ``effort_source`` pair for one collection.
 
-    A caller-supplied flag wins and is tagged :data:`SOURCE_SELF_REPORTED`;
-    otherwise the environment lists are measured. A value with no readable
-    source is omitted entirely. Nothing is ever estimated.
+    A MEASURED effort wins over everything: on OpenCode the session tree's
+    variant IS the effort the run used, so a caller flag cannot override it and
+    the pair is tagged :data:`SOURCE_MEASURED`. Elsewhere a caller-supplied flag
+    wins and is tagged :data:`SOURCE_SELF_REPORTED`; otherwise the environment
+    lists are measured. A value with no readable source is omitted entirely.
+    Nothing is ever estimated.
     """
+    if measured_effort:
+        return {'effort': measured_effort, 'effort_source': SOURCE_MEASURED}
     if effort:
         return {'effort': effort, 'effort_source': SOURCE_SELF_REPORTED}
     from_env = read_effort(env)
@@ -380,15 +422,32 @@ def _resolve_effort_fields(
     return {}
 
 
+def _bundle_manifest(root: Path) -> Path | None:
+    """Return the bundle manifest under *root*, or None.
+
+    A bundle tree carries its manifest at ``.claude-plugin/plugin.json``. A
+    FLAT deployed tree (the OpenCode/Antigravity install root) carries it at
+    ``plugin.json`` in the install root instead, because it has no bundle
+    directory to nest it under. Both shapes name the same thing, so both are
+    accepted — a reader that only knew the nested form reported no version at
+    all on a flat install.
+    """
+    for candidate in (root / '.claude-plugin' / 'plugin.json', root / 'plugin.json'):
+        if candidate.is_file():
+            return candidate
+    return None
+
+
 def _find_bundle_root() -> Path | None:
     """Locate the bundle this module runs from via the ancestor walk.
 
-    The root is the first ancestor holding ``.claude-plugin/plugin.json`` — the
-    bundle manifest, so an INSTALLED bundle (whose ancestor chain carries no
+    The root is the first ancestor holding a bundle manifest — either
+    ``.claude-plugin/plugin.json`` (a bundle tree) or a root ``plugin.json`` (a
+    flat deployed tree), so an INSTALLED bundle (whose ancestor chain carries no
     marketplace manifest) resolves its own version.
     """
     for ancestor in Path(__file__).resolve().parents:
-        if (ancestor / '.claude-plugin' / 'plugin.json').is_file():
+        if _bundle_manifest(ancestor) is not None:
             return ancestor
     return None
 
@@ -396,15 +455,16 @@ def _find_bundle_root() -> Path | None:
 def read_bundle_version(bundle_root: Path | None = None) -> str | None:
     """Read the ``version`` of the bundle manifest the collector runs from.
 
-    The value is the ``version`` in ``.claude-plugin/plugin.json`` of the bundle
-    at *bundle_root* (default: the bundle this module runs from). It replaces the
-    marketplace manifest's ``metadata.version``: the marketplace manifest
-    describes the aggregate project, not the bundle that is loaded. Never
-    estimated.
+    The value is the ``version`` in the bundle's manifest — ``.claude-plugin/
+    plugin.json`` in a bundle tree, ``plugin.json`` in a flat deployed tree — of
+    the bundle at *bundle_root* (default: the bundle this module runs from). It
+    replaces the marketplace manifest's ``metadata.version``: the marketplace
+    manifest describes the aggregate project, not the bundle that is loaded.
+    Never estimated.
 
     Args:
-        bundle_root: Directory holding ``.claude-plugin/plugin.json``. When
-            None, the ancestor walk from this file locates it.
+        bundle_root: Directory holding the bundle manifest. When None, the
+            ancestor walk from this file locates it.
 
     Returns:
         The bundle version string, or None when unreadable.
@@ -412,7 +472,9 @@ def read_bundle_version(bundle_root: Path | None = None) -> str | None:
     root = bundle_root if bundle_root is not None else _find_bundle_root()
     if root is None:
         return None
-    manifest = root / '.claude-plugin' / 'plugin.json'
+    manifest = _bundle_manifest(root)
+    if manifest is None:
+        return None
     try:
         data = json.loads(manifest.read_text(encoding='utf-8'))
     except (OSError, json.JSONDecodeError):
@@ -486,7 +548,8 @@ def collect_runtime_info(
     script-accessible sources; attributes with no readable value are dropped
     rather than estimated. ``model`` and ``effort`` additionally carry their
     source tag, and on OpenCode the model is measured from the session database
-    rather than taken from a flag (see :func:`_resolve_model_fields`).
+    rather than taken from a flag (see :func:`_resolve_model_fields`); its
+    measured variant is the effort, so a flag does not stand in for that either.
 
     Args:
         harness: Harness identifier — ``claude``, ``opencode``, or ``antigravity``.
@@ -533,7 +596,14 @@ def collect_runtime_info(
     resolved_version = model_version if model_version else read_model_version(env)
     if resolved_version:
         info['model_version'] = resolved_version
-    info.update(_resolve_effort_fields(env, effort))
+    measured_effort = info.get('variant') if harness == OPENCODE_HARNESS else None
+    if harness == OPENCODE_HARNESS and info.get('model') == MODEL_MIXED and not measured_effort:
+        # A mixed tree whose variants differ has NO single measured effort. A
+        # flag or an environment value is not this run's effort, so neither is
+        # substituted; the landing keeps the start-time value with its source.
+        pass
+    else:
+        info.update(_resolve_effort_fields(env, effort, measured_effort))
     resolved_bundle = bundle_version if bundle_version else read_bundle_version(bundle_root)
     if resolved_bundle:
         info['bundle_version'] = resolved_bundle

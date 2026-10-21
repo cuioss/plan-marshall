@@ -189,5 +189,32 @@ class TestPhase1InitBaseBranchSeeding:
             )
 
 
+class TestPhase1InitRuntimeStampBranch:
+    """Pin the 8a.6 branch that makes a failed stamp visible in the plan log.
+
+    A preflight that degrades and a preflight that stamps nothing are two
+    different failures, and both leave the landing's runtime facts ``unknown``.
+    The step must branch on BOTH, so an absent stamp always has a trace.
+    """
+
+    def _skill_md_text(self) -> str:
+        skill_md = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'phase-1-init' / 'SKILL.md'
+        return str(skill_md.read_text(encoding='utf-8'))
+
+    def test_step_branches_on_an_unstamped_metadata(self):
+        """``metadata_stamped: false`` is a warning trigger alongside ``degraded``."""
+        text = self._skill_md_text()
+
+        assert 'On `degraded: true` OR `metadata_stamped: false`' in text
+
+    def test_warning_names_the_reason(self):
+        """The warning names WHY the stamp is missing rather than only that it is."""
+        text = self._skill_md_text()
+
+        section = text.split('On `degraded: true`', 1)[1]
+        assert 'degrade_reason' in section
+        assert '[WARNING]' in section
+
+
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])

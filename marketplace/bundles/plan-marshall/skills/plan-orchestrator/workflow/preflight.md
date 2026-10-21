@@ -46,7 +46,8 @@ worktree-resident when the plan runs in a worktree). Each run appends a new
 timestamp-keyed entry and never overwrites prior entries.
 
 The same run stamps the plan's runtime metadata into `status.json` — `harness`,
-`harness_source`, `model`, `models`, `model_source`, `effort`, `effort_source`,
+`harness_source`, `model`, `models`, `variant`, `provider`, `model_source`,
+`model_origin`, `model_omission_reason`, `effort`, `effort_source`,
 `bundle_version` and `executor_version` — through manage-status's shared status
 writer. Only the fields the collected payload carried are written, and those
 the stamper manages but the payload did NOT carry are REMOVED: the stamper owns
@@ -67,6 +68,26 @@ The hook is best-effort by contract: a collector failure degrades to
 `degraded: true` with `artifact_written: false` and still returns
 `status: success`. A pre-flight probe never blocks plan start — continue
 with plan start whether or not the artifact was written.
+
+The stamp itself is cleared BEFORE the collector runs. The stamper owns those
+keys, so a failed collector leaves them ABSENT rather than carrying a previous
+attempt's model or effort into this run's landing. On OpenCode with no
+`OPENCODE_SESSION_ID` in scope the collector omits the model and records why
+(`model_omission_reason: no_session_id`) rather than omitting it silently.
+
+## Landing-time refresh
+
+The stamp is taken at plan start, so a model switch during the run is invisible
+to it. The terminal `emit-landing` step calls the sibling verb
+
+```bash
+python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator refresh-runtime-stamp \
+  --plan-id {plan_id}
+```
+
+before it reads the stamp. That verb re-runs the measured read and merges it
+into the metadata; a re-read that cannot reach its source keeps the start-time
+value and records `measured_at_start` as its provenance.
 
 ## Output
 

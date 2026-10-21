@@ -107,7 +107,7 @@ Authoring templates for the ledger documents live in `templates/` and mirror the
 
 | Script | Notation | Purpose |
 |--------|----------|---------|
-| orchestrator | `plan-marshall:plan-orchestrator:orchestrator` | Thin scaffolding: `scaffold` (create the epic tree), `resolve-path` (publish where the store seam places the epic tree and which checkout holds the store — the one sanctioned source of the tree's physical location for a direct-file instruction; read-only, creates no epic tree), `queue` (read the plan queue, transition a plan's status, set one plan row's result field, or stage one new plan row file), `resume-summary` (render START HERE and the Ordered Queue from the ledger, read-only, with the START-HERE self-validation detectors and the `view_current` flag), `regenerate-view` (write the generated `queue-view.md`; the regenerate-on-conflict verb), `migrate-layout` (convert a monolithic-layout ledger into the per-concern files), `archive` (relocate a closed epic tree to `archived-orchestrators/`), `compact` (verify the ledger invariants and regenerate `queue-view.md`, making no `epic.md` write — the ledger-compaction stage `cleanup` Phase B calls; refuses a closed epic), `preflight` (invoke `platform_runtime runtime-info` and write the per-plan `client.toon` pre-flight artifact, best-effort), `corpus` (enumerate the epic population across both store homes, reconcile the staged spec corpus against the queue, cross-check it against sibling epics and live plans, publish every spec's declared Expected Surface with its derivation status and population — the read the disjointness gate decides on — and read or stamp the re-grounding verdict field), `cleanup` (report the restart-readiness verdict), `land` (the four deterministic steps of landing the shared ledger worktree: `status` reports where the tree stands in the cycle, `snapshot` records and pushes the pending ledger paths without force, `bind` records which PR carries the in-flight land, and `resync` replays the tree onto the base the PR merged into and closes the cycle — the PR, CI and merge-queue steps between them belong to `workflow/land.md`), `inbox` (append a message to the epic queue or deliver it to a running target plan's mailbox, amend/supersede/validate a filed message, close a sender's stream, list the queued messages with their lifecycle, read the messages delivered to one plan's mailbox, archive a consumed one under its per-sender subdirectory, migrate a flat archive into that layout, or detect orchestration context from a plan's `source_id`) |
+| orchestrator | `plan-marshall:plan-orchestrator:orchestrator` | Thin scaffolding: `scaffold` (create the epic tree), `resolve-path` (publish where the store seam places the epic tree and which checkout holds the store — the one sanctioned source of the tree's physical location for a direct-file instruction; read-only, creates no epic tree), `queue` (read the plan queue, transition a plan's status, set one plan row's result field, or stage one new plan row file), `resume-summary` (render START HERE and the Ordered Queue from the ledger, read-only, with the START-HERE self-validation detectors and the `view_current` flag), `regenerate-view` (write the generated `queue-view.md`; the regenerate-on-conflict verb), `migrate-layout` (convert a monolithic-layout ledger into the per-concern files), `archive` (relocate a closed epic tree to `archived-orchestrators/`), `compact` (verify the ledger invariants and regenerate `queue-view.md`, making no `epic.md` write — the ledger-compaction stage `cleanup` Phase B calls; refuses a closed epic), `preflight` (invoke `platform_runtime runtime-info` and write the per-plan `client.toon` pre-flight artifact, best-effort), `refresh-runtime-stamp` (re-read the measured runtime attributes at landing time and merge them into the stamp), `corpus` (enumerate the epic population across both store homes, reconcile the staged spec corpus against the queue, cross-check it against sibling epics and live plans, publish every spec's declared Expected Surface with its derivation status and population — the read the disjointness gate decides on — and read or stamp the re-grounding verdict field), `cleanup` (report the restart-readiness verdict), `land` (the four deterministic steps of landing the shared ledger worktree: `status` reports where the tree stands in the cycle, `snapshot` records and pushes the pending ledger paths without force, `bind` records which PR carries the in-flight land, and `resync` replays the tree onto the base the PR merged into and closes the cycle — the PR, CI and merge-queue steps between them belong to `workflow/land.md`), `inbox` (append a message to the epic queue or deliver it to a running target plan's mailbox, amend/supersede/validate a filed message, close a sender's stream, list the queued messages with their lifecycle, read the messages delivered to one plan's mailbox, archive a consumed one under its per-sender subdirectory, migrate a flat archive into that layout, or detect orchestration context from a plan's `source_id`) |
 
 ## Canonical invocations
 
@@ -245,6 +245,23 @@ all best-effort: a collector failure degrades to `degraded: true` with
 `artifact_written: false` and still returns `status: success`, and a metadata
 failure alone records `metadata_stamped: false`. The hook never blocks plan
 start. See `workflow/preflight.md` for the full contract.
+
+### refresh-runtime-stamp
+
+```bash
+python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator refresh-runtime-stamp \
+  --plan-id PLAN_ID
+```
+
+Re-runs the measured `runtime-info` read at landing time and merges it into the
+plan's runtime metadata, because the start-time stamp cannot see a model switch
+that happened after plan start. A tree that gained a second model becomes
+`model: mixed` with both labels; a tree that collapsed back to one loses the
+stale `models`/`variant`. A re-read that cannot reach its source keeps the
+start-time value and records `model_source: measured_at_start` (`effort_source`
+likewise) rather than overwriting a measured value with `unknown`. Best-effort:
+a failure returns `status: success` with `refreshed: false` and a reason, and
+never blocks the landing.
 
 ### corpus epics
 
