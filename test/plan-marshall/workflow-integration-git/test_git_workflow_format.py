@@ -624,12 +624,20 @@ class TestSourceCommitGate:
         assert is_source_commit([]) is False
 
     def test_cli_deny_with_neither(self, tmp_path):
-        """CLI plumbing: source change with no plan signals is refused, exit 0."""
+        """CLI plumbing: source change with no plan signals is refused, exit 0.
+
+        The plan id is pinned to a nonexistent value: ``tmp_path`` sits under the
+        repo-local ``--basetemp``, which inside a plan worktree carries
+        ``.../.plan/local/worktrees/{plan_id}`` and would otherwise resolve a
+        live plan's signals, making this control cwd-dependent.
+        """
         stdout, stderr, returncode = run_git_script(
             [
                 'source-commit-gate',
                 '--phase',
                 '6-finalize',
+                '--plan-id',
+                'no-such-plan-for-this-gate-test',
                 '--changed-paths',
                 'src/foo.py',
                 '--project-dir',
