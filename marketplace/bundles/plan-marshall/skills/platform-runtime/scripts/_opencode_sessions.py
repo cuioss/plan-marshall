@@ -171,7 +171,10 @@ def connect(path: Path | str | None) -> sqlite3.Connection | None:
     if target is None:
         return None
     try:
-        return sqlite3.connect(f'file:{target}?mode=ro', uri=True)
+        # ``as_uri()`` percent-encodes ``?``, ``#`` and ``%`` in the path, so a
+        # filename carrying a URI metacharacter is opened rather than truncated
+        # at that character (which would silently read the wrong file or none).
+        return sqlite3.connect(f'{Path(target).resolve().as_uri()}?mode=ro', uri=True)
     except (sqlite3.Error, OSError, ValueError):
         return None
 
