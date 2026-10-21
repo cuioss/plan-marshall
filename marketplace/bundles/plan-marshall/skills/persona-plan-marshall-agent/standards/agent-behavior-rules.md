@@ -198,6 +198,12 @@ architecture declares for the module. Formatting rides the resolved
 canonical in the resolver vocabulary, so do not invent
 `architecture resolve --command format`.
 
+A resolved command that fails with `No plugin found for prefix …` means the
+project does not use that plugin. Stop and report it: the miss is a statement
+about the project's configuration, not a resolution glitch, so never retry the
+same goal fully qualified (`./mvnw`, an absolute plugin path, a different
+wrapper) to get past it.
+
 For complete patterns including file operations, content search, Bash safety rules, and env-var dispatch (the `VAR=val cmd` anti-pattern and safe alternatives), see `tool-usage-patterns.md`. The env-var dispatch rule is documented in [`tool-usage-patterns.md` § Env-var dispatch in Bash](tool-usage-patterns.md#env-var-dispatch-in-bash).
 
 ### Principle 5: Don't Proliferate Documents

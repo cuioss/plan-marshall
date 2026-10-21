@@ -153,8 +153,12 @@ class TestEnsureDeniedCLI:
         assert 'status: no-op' not in reported
         opencode_cfg = claude_project / 'opencode.json'
         assert opencode_cfg.is_file()
-        permission = json.loads(opencode_cfg.read_text(encoding='utf-8'))['permission']
-        actions = [action for tool in ('read', 'bash') for action in permission.get(tool, {}).values()]
+        written = json.loads(opencode_cfg.read_text(encoding='utf-8'))
+        actions = [
+            rule['effect']
+            for rule in written['permissions']
+            if rule.get('action') in ('read', 'shell') and isinstance(rule.get('resource'), str)
+        ]
         assert any(action == 'deny' for action in actions)
 
     def test_ensure_denied_reports_an_unresolvable_runtime_as_error(self, claude_project, monkeypatch, capsys) -> None:

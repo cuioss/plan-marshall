@@ -1280,7 +1280,7 @@ class TestSeamRoutingOutcomes:
 
     _EXPECTED_TOOL = {
         'claude': 'Task',
-        'opencode': 'task',
+        'opencode': 'subagent',
         'antigravity': 'invoke_subagent',
     }
 
@@ -1292,7 +1292,16 @@ class TestSeamRoutingOutcomes:
         parsed = _parsed(runtime.subagent_dispatch('execution-context', None, None))
         assert parsed['status'] == 'success'
         assert parsed['invocation']['tool'] == self._EXPECTED_TOOL[target]
-        assert parsed['invocation']['subagent_type'] == 'execution-context'
+
+    @pytest.mark.parametrize('target', sorted(_EXPECTED_TOOL), ids=sorted(_EXPECTED_TOOL))
+    def test_each_target_names_the_requested_agent_in_its_own_key(self, target: str) -> None:
+        """OpenCode 2 names the sub-agent parameter ``agent``; the others keep ``subagent_type``."""
+        runtime = _make_runtime(target)
+        assert runtime is not None
+        parsed = _parsed(runtime.subagent_dispatch('execution-context', None, None))
+        assert parsed['status'] == 'success'
+        key = 'agent' if target == 'opencode' else 'subagent_type'
+        assert parsed['invocation'][key] == 'execution-context'
 
     @pytest.mark.parametrize('target', sorted(_EXPECTED_TOOL), ids=sorted(_EXPECTED_TOOL))
     def test_dispatch_params_carry_unknown_usage(self, target: str) -> None:
@@ -1323,4 +1332,4 @@ class TestSeamRoutingOutcomes:
         )
         assert parsed['status'] == 'success'
         assert 'task_tool_available' not in parsed['invocation']['prompt']
-        assert parsed['invocation']['subagent_type'] == 'execution-context'
+        assert parsed['invocation']['agent'] == 'execution-context'

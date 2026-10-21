@@ -486,10 +486,10 @@ def test_enrich_absent_session_id_antigravity_skips_with_gap_flag(plan_context, 
 
 def _clear_target_env(monkeypatch):
     """Remove every platform-detection signal so each test sets its own."""
-    monkeypatch.delenv('ANTIGRAVITY_AGENT', raising=False)
-    monkeypatch.delenv('OPENCODE', raising=False)
-    monkeypatch.delenv('OPENCODE_PID', raising=False)
-    monkeypatch.delenv('CLAUDE_CODE_SESSION_ID', raising=False)
+    import target_context
+
+    for signal, _target in target_context.TARGET_ENV_SIGNALS:
+        monkeypatch.delenv(signal, raising=False)
 
 
 def _write_claude_marshal(proj_dir):
@@ -502,25 +502,24 @@ def _write_claude_marshal(proj_dir):
 
 
 def test_detect_target_from_env_precedence(monkeypatch):
-    """Antigravity beats opencode beats claude when several signals are set."""
+    """The earliest signal in the registry wins when several are set."""
+    import target_context
+
     _clear_target_env(monkeypatch)
     assert manage_metrics._detect_target_from_env() is None
 
-    monkeypatch.setenv('CLAUDE_CODE_SESSION_ID', 'sess-1')
-    assert manage_metrics._detect_target_from_env() == 'claude'
-
-    monkeypatch.setenv('OPENCODE', '1')
-    assert manage_metrics._detect_target_from_env() == 'opencode'
-
-    monkeypatch.setenv('ANTIGRAVITY_AGENT', '1')
-    assert manage_metrics._detect_target_from_env() == 'antigravity'
+    # Lay the signals down in reverse registry order: each new one is earlier
+    # in the precedence chain, so each must take over.
+    for signal, target in reversed(target_context.TARGET_ENV_SIGNALS):
+        monkeypatch.setenv(signal, '1')
+        assert manage_metrics._detect_target_from_env() == target
 
 
 def test_enrich_detected_opencode_skips_despite_claude_marshal(plan_context, monkeypatch, tmp_path):
     """Detected opencode + claude-declaring marshal still takes the skip branch.
 
     The fake project dir carries a marshal that declares ``claude``; the
-    ambient ``OPENCODE_PID`` signal must outrank it, so the enrich lands on
+    ambient ``OPENCODE`` signal must outrank it, so the enrich lands on
     the transcript-less skip with the gap flag and the unenriched population.
     """
     plan_id = 'enrich-detect-01'
@@ -529,7 +528,7 @@ def test_enrich_detected_opencode_skips_despite_claude_marshal(plan_context, mon
     _write_claude_marshal(proj)
     monkeypatch.chdir(proj)
     _clear_target_env(monkeypatch)
-    monkeypatch.setenv('OPENCODE_PID', '4242')
+    monkeypatch.setenv('OPENCODE', '1')
 
     assert manage_metrics._resolve_runtime_target() == 'opencode'
 

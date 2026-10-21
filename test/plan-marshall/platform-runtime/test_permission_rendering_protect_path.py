@@ -373,8 +373,12 @@ class TestPermissionFixProtectPath:
         assert 'changes_applied' in result
 
         written = json.loads((tmp_path / 'opencode.json').read_text(encoding='utf-8'))
-        permission = written['permission']
-        entries = {pattern: action for tool in ('read', 'bash') for pattern, action in permission.get(tool, {}).items()}
+        assert 'permission' not in written, 'a `permission` map must never be added beside a `permissions` list'
+        entries = {
+            rule['resource']: rule['effect']
+            for rule in written['permissions']
+            if rule['action'] in ('read', 'shell') and isinstance(rule.get('resource'), str)
+        }
         guarded = {pattern: action for pattern, action in entries.items() if 'creds' in pattern}
         assert guarded, 'protect-path wrote no guard entries for the protected directory'
         assert all(action == 'deny' for action in guarded.values())

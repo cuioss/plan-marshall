@@ -123,7 +123,8 @@ The key distinction: **if the target decided not to act because the environment 
 `permission fix` on OpenCode is a writing surface, not a no-op surface:
 
 * `ensure`, `add`, `remove`, `configure`, and `web-apply` are real
-  writes against the `permission` settings block.
+  writes against the settings' permission shape — the `permissions` list
+  when the file carries one, the OpenCode 1 `permission` map otherwise.
 * `consolidate` and `normalize` remain no-ops: they report `success`
   without writing anything, mirroring the Claude target's contract
   split.

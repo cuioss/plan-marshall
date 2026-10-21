@@ -69,19 +69,21 @@ The `health-check --checks display` surface inspects each terminal-title render 
 
 The `runtime-info` operation serves the `client.toon` pre-flight artifact with best-effort drop-not-estimate semantics on `claude`, `opencode`, and `antigravity`. See `standards/runtime-info.md` for the schema and extension-point contract.
 
-## OpenCode Permissions (two-tier deny/ask)
+## OpenCode Permissions (OpenCode 2 rule lists)
 
-OpenCode permission operations are real writes against the `permission`
-settings block in `opencode.json`:
+OpenCode permission operations are real writes against the `permissions` list
+in `opencode.json` (OpenCode 2's ordered `{action, resource, effect}` rules,
+evaluated last-match-wins). A settings file still in the OpenCode 1 `permission`
+map shape keeps being read and written through that map, so an operator's file
+is never converted behind their back.
 
-* The project-level `permission.bash` map keeps the harness default
-  `"*": "allow"` and narrows it with never-legitimate deny rows plus
-  rare-legitimate ask rows; every agent row re-bases on `"*": "ask"`
-  with explicit allow/deny overrides. The executor agent is confined to
-  the `python3 .plan/execute-script.py *` permit plus deny on the hard
-  rules; the orchestrator agent preserves the small-ops carve-out
-  (read-only file ops, `git status/log` seen as information lookups)
-  under ask.
+* The project-level list keeps the shell catch-all (`resource "*"`) FIRST and
+  follows it with never-legitimate deny rows, rare-legitimate ask rows and the
+  final allow rows. Specific rules therefore override the catch-all; a catch-all
+  written last would override everything before it. The executor agent is
+  confined to the `python3 .plan/execute-script.py *` permit plus deny on the
+  hard rules; the orchestrator agent preserves the small-ops carve-out
+  (read-only file ops, `git status/log` seen as information lookups) under ask.
 * `to_opencode_grant` carries `allow`/`ask`/`deny` actions via the
   `allow(...)` / `ask(...)` / `deny(...)` wrapper grammar; bare forms
   default to `allow`, and the wrapper verb is peeled first so a deny

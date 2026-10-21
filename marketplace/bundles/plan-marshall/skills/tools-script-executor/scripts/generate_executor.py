@@ -80,7 +80,7 @@ Context Detection:
     its ``{target, marketplace-root}`` context through
     ``target_context.resolve_context``. There is no per-verb default and no
     verb-private reader of ``marshal.json``: the cascade is env signal first
-    (``ANTIGRAVITY_AGENT`` / ``OPENCODE`` / ``OPENCODE_PID`` /
+    (``ANTIGRAVITY_AGENT`` / ``OPENCODE`` /
     ``CLAUDE_CODE_SESSION_ID``), then ``runtime.target`` from the nearest
     ``marshal.json``, then a REPORTED fallback. The tier that produced the
     answer rides every payload that follows a resolution — the success

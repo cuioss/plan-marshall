@@ -46,7 +46,7 @@ Stale envelope references are step-owned-body defects, not envelope defects: whe
 
 ## Per-Task Subagent Seam Routing (execute flow)
 
-Every phase-5 task routes through the harness-native subagent seam before any inline work. Resolve `platform_runtime subagent dispatch --agent execution-context --context {"plan_id": "{plan_id}"}` for the active target and branch on the result: on `status: success` dispatch through the returned `invocation.tool` with the returned parameters (Claude `Task`, OpenCode `task` where available, Antigravity `invoke_subagent`); on `status: no-op` take the explicit logged inline branch inside the same envelope and log the returned `reason` at INFO, including the inline-branch logging obligation — no silent fallback. The decision is per task and is logged per task; usage propagates as `unknown` on every path where no dispatch happened.
+Every phase-5 task routes through the harness-native subagent seam before any inline work. Resolve `platform_runtime subagent dispatch --agent execution-context --context {"plan_id": "{plan_id}"}` for the active target and branch on the result: on `status: success` dispatch through the returned `invocation.tool` with the returned parameters (Claude `Task`, OpenCode `subagent` where available, Antigravity `invoke_subagent`); on `status: no-op` take the explicit logged inline branch inside the same envelope and log the returned `reason` at INFO, including the inline-branch logging obligation — no silent fallback. The decision is per task and is logged per task; usage propagates as `unknown` on every path where no dispatch happened.
 
 ## Verification-feedback loop-back returns (`loop_back_target`)
 

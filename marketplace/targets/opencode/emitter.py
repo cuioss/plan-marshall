@@ -505,9 +505,16 @@ def _generate_opencode_json(
     output_dir: Path,
     agent_index: dict[str, dict[str, str]],
 ) -> Path:
-    """Write ``opencode.json`` with the provider config and per-agent stubs.
+    """Write ``opencode.json`` in OpenCode 2's shape.
 
-    The agent block records each emitted agent so OpenCode can apply
+    ``skills`` is OpenCode 2's list of skill-root directories, and
+    ``./skills`` is the directory the sync really installs (the installer
+    maps the emitted ``skill/`` tree onto ``skills/``). ``agents`` is
+    OpenCode 2's name for the per-agent map; the OpenCode 1 keys
+    (``skills.paths`` and ``agent``) are not emitted at all, so no producer
+    can reintroduce the shape the normalizer used to silently reinterpret.
+
+    The agents block records each emitted agent so OpenCode can apply
     permission overrides at the project level. Per-agent permissions are
     already embedded in each ``agent/{name}.md`` frontmatter; the project
     config keeps the agent map populated for discovery.
@@ -519,12 +526,10 @@ def _generate_opencode_json(
     """
     config: dict = {
         '$schema': 'https://opencode.ai/config.json',
-        'skills': {
-            'paths': ['./skill'],
-        },
+        'skills': ['./skills'],
     }
     if agent_index:
-        config['agent'] = {agent_id: {} for agent_id in sorted(agent_index)}
+        config['agents'] = {agent_id: {} for agent_id in sorted(agent_index)}
     config_path = output_dir / 'opencode.json'
     config_path.parent.mkdir(parents=True, exist_ok=True)
     unlink_if_symlink(config_path)

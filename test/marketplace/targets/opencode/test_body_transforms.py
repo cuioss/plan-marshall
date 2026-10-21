@@ -34,7 +34,7 @@ from marketplace.targets.body_transform_engine import (
 
 # The OpenCode rewrite templates, mirrored from mapping.json for direct-applier
 # tests. Integration/composition tests load them from the real mapping.json.
-OPENCODE_DIRECTIVE_TEMPLATE = 'Call the `skill` tool with `{ name: "{bundle}-{skill}" }` before continuing.'
+OPENCODE_DIRECTIVE_TEMPLATE = 'Call the `skill` tool with `{ id: "{bundle}-{skill}" }` before continuing.'
 OPENCODE_READ_TEMPLATE = 'Call the `read` tool with `{ filePath: "{path}" }` before continuing.'
 OPENCODE_SLASH_TEMPLATE = '/{name}'
 
@@ -79,13 +79,13 @@ def test_rewrite_skill_directives_full_line_match():
     the line's terminating newline as part of the match."""
     body = 'Skill: foo:bar\n'
     result = rewrite_skill_directives(body, OPENCODE_DIRECTIVE_TEMPLATE)
-    assert result == 'Call the `skill` tool with `{ name: "foo-bar" }` before continuing.'
+    assert result == 'Call the `skill` tool with `{ id: "foo-bar" }` before continuing.'
 
 
 def test_rewrite_skill_directives_full_line_with_extra_spacing():
     body = 'Skill:   plan-marshall:phase-5-execute\n'
     result = rewrite_skill_directives(body, OPENCODE_DIRECTIVE_TEMPLATE)
-    assert result == 'Call the `skill` tool with `{ name: "plan-marshall-phase-5-execute" }` before continuing.'
+    assert result == 'Call the `skill` tool with `{ id: "plan-marshall-phase-5-execute" }` before continuing.'
 
 
 def test_rewrite_skill_directives_inline_backtick_left_alone():
@@ -111,8 +111,8 @@ def test_rewrite_skill_directives_idempotent():
 def test_rewrite_skill_directives_multiple_directives():
     body = 'Skill: alpha:one\nmiddle prose\nSkill: beta:two\n'
     result = rewrite_skill_directives(body, OPENCODE_DIRECTIVE_TEMPLATE)
-    assert 'Call the `skill` tool with `{ name: "alpha-one" }` before continuing.' in result
-    assert 'Call the `skill` tool with `{ name: "beta-two" }` before continuing.' in result
+    assert 'Call the `skill` tool with `{ id: "alpha-one" }` before continuing.' in result
+    assert 'Call the `skill` tool with `{ id: "beta-two" }` before continuing.' in result
     assert 'middle prose' in result
 
 
@@ -397,7 +397,7 @@ def test_make_body_transformer_applies_transform_1():
     transform = make_body_transformer({}, _opencode_rules())
     body = 'Skill: foo:bar\n'
     result = transform(body, 'demo', 'skill')
-    assert 'Call the `skill` tool with `{ name: "foo-bar" }`' in result
+    assert 'Call the `skill` tool with `{ id: "foo-bar" }`' in result
 
 
 def test_make_body_transformer_applies_transform_2():
@@ -411,7 +411,7 @@ def test_make_body_transformer_applies_both_in_one_pass():
     body = 'Skill: demo:foo\nThen run /foo to continue.\n'
     transform = make_body_transformer({'foo': 'demo-foo'}, _opencode_rules())
     result = transform(body, 'demo', 'skill')
-    assert 'Call the `skill` tool with `{ name: "demo-foo" }`' in result
+    assert 'Call the `skill` tool with `{ id: "demo-foo" }`' in result
     assert '/demo-foo' in result
 
 
@@ -469,7 +469,7 @@ def test_integration_fixture_skill_body_both_transforms(tmp_path: Path):
     result = transform(body, 'demo', 'skill')
 
     # Transform 1: full-line directive rewritten
-    assert 'Call the `skill` tool with `{ name: "demo-helper" }`' in result
+    assert 'Call the `skill` tool with `{ id: "demo-helper" }`' in result
     # Transform 1: full-line Read: directive rewritten
     assert 'Call the `read` tool with `{ filePath: "standards/demo-rules.md" }`' in result
     # Transform 2: standalone slash-command rewritten

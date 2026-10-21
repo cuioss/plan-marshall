@@ -186,7 +186,7 @@ Task: plan-marshall:{target}
 
 The `resolve-target` subcommand returns `execution-context` when the level is `inherit`/empty, and `execution-context-{level}` otherwise. The dispatched variant runs the caller-specified `workflow` doc against the resolved `(model, effort)` primitive baked into the variant's frontmatter.
 
-**Variant pinning on non-Claude envelopes.** Every target emits its own per-level variant set from the same canonical, so the `execution-context-{level}` name resolves on Claude, OpenCode, and Antigravity alike — only the model/effort pin and the spawning tool differ per target (Claude `Task`, OpenCode `task` where available, Antigravity `invoke_subagent`). A dispatch that names a level variant is therefore portable across harnesses: the level selects the effort tier, the target selects the pin and the tool.
+**Variant pinning on non-Claude envelopes.** Every target emits its own per-level variant set from the same canonical, so the `execution-context-{level}` name resolves on Claude, OpenCode, and Antigravity alike — only the model/effort pin and the spawning tool differ per target (Claude `Task`, OpenCode `subagent` where available, Antigravity `invoke_subagent`). A dispatch that names a level variant is therefore portable across harnesses: the level selects the effort tier, the target selects the pin and the tool.
 
 ## Cross-References
 
