@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 from pathlib import Path
 from typing import Any
@@ -40,11 +41,26 @@ from file_ops import output_toon, output_toon_error
 _REVIEW_STEP_ID = 'plan-marshall:automatic-review'
 
 #: The build canons the lane runs, each resolved on its own through the
-#: architecture. No composed ``--command-args "<canonical>"`` form exists: the
-#: canonical name is only meaningful to a wrapper that maps canonical names, and
-#: Maven's wrapper takes complete Maven arguments instead. ``split`` is the
-#: order the lane runs when it splits the verification.
-_BUILD_CANONICALS = ('quality-gate', 'test-compile', 'module-tests', 'verify')
+#: architecture: no composed ``--command-args "<canonical>"`` form exists, because
+#: the canonical name is only meaningful to a wrapper that maps canonical names
+#: and Maven's wrapper takes complete Maven arguments. ``quality-gate`` is
+#: required for all modules and ``verify`` for every non-pom module
+#: (extension-api's canonical-commands contract, § Required Commands), so a
+#: project resolving neither has no gate the lane could run and its absence fails
+#: closed.
+_REQUIRED_BUILD_CANONICALS = ('quality-gate', 'verify')
+
+#: Canonicals the architecture publishes only when the module has the part they
+#: name: ``module-tests`` when it has test sources, ``test-compile`` only on a
+#: build system with a separate test-compile step (Maven, Gradle — pyproject and
+#: npm publish none). Their absence is the project's answer, not a resolution
+#: failure: a lane that required them could not run in a pyproject or npm
+#: project at all.
+_OPTIONAL_BUILD_CANONICALS = ('module-tests', 'test-compile')
+
+#: The order the in-process fallback runs the gate's parts in. Filtered to the
+#: canonicals the project actually resolved, so the fallback never asks for a
+#: part the project does not publish.
 _SPLIT_FORM = ('quality-gate', 'test-compile', 'module-tests')
 
 
@@ -420,29 +436,54 @@ def _resolve_build(project_dir: Path) -> tuple[dict[str, Any], dict[str, Any]]:
     verifies the whole project, so the root module's command is the only one that
     is both knowable then and sufficient for every module the run touches.
 
+    Required and optional canonicals are separated by the architecture's own
+    contract: ``quality-gate`` and ``verify`` are the gate every gated module
+    resolves, while ``module-tests`` and ``test-compile`` are test-conditional.
+    An absent optional canonical is omitted from the map and from the split
+    order; an absent REQUIRED one raises :class:`_BuildCommandUnresolvable`,
+    naming the canonical. There is no composed fall-back, no default build, and
+    no synthesized part.
+
     Returns ``(build, probed)``: the build command map, and the architecture's
     resolved ``verify`` record, so the caller can read the timeout stamp off the
-    same resolution instead of re-deriving the build system. A canonical the
-    root cannot resolve raises :class:`_BuildCommandUnresolvable`; there is no
-    composed fall-back and no default build.
+    same resolution instead of re-deriving the build system.
     """
+    from _architecture_core import DataNotFoundError, ModuleNotFoundInProjectError
     from _cmd_client_query import resolve_command
 
+    # The exceptions ``resolve_command`` uses for "this project does not publish
+    # that canonical"; the same trio ``_cmd_client_handlers`` treats as absence.
+    # Anything else is a real architecture failure and propagates (``resolve``
+    # then reports ``resolve_failed``) instead of being read as "no such part".
+    _absent = (ValueError, ModuleNotFoundInProjectError, DataNotFoundError)
     resolved: dict[str, dict[str, Any]] = {}
-    for canonical in _BUILD_CANONICALS:
+
+    def _lookup(canonical: str) -> dict[str, Any] | None:
         try:
             record = resolve_command(canonical, None, str(project_dir))
-        except Exception as exc:
-            raise _BuildCommandUnresolvable(canonical) from exc
+        except _absent:
+            return None
         executable = record.get('executable')
         if not isinstance(executable, str) or not executable.strip():
+            return None
+        return record
+
+    for canonical in _REQUIRED_BUILD_CANONICALS:
+        record = _lookup(canonical)
+        if record is None:
             raise _BuildCommandUnresolvable(canonical)
         resolved[canonical] = record
 
+    for canonical in _OPTIONAL_BUILD_CANONICALS:
+        record = _lookup(canonical)
+        if record is not None:
+            resolved[canonical] = record
+
     build: dict[str, Any] = {canonical: record['executable'] for canonical, record in resolved.items()}
     # The split form exists because ``verify`` may outlive the shell budget; its
-    # parts are the architecture's own commands for the same build system.
-    build['split'] = list(_SPLIT_FORM)
+    # parts are the architecture's own commands for the same build system, in a
+    # fixed order, filtered to the ones this project publishes.
+    build['split'] = [canonical for canonical in _SPLIT_FORM if canonical in resolved]
     return build, resolved['verify']
 
 
@@ -633,11 +674,23 @@ def _resolve_runtime_stamp(harness: str) -> dict[str, str]:
 
     Values are MEASURED by ``runtime_info.collect_runtime_info`` — on OpenCode
     from the session tree — and an attribute with no readable source is
-    ``unknown`` rather than an estimate.
+    ``unknown`` rather than an estimate. The OpenCode measurement needs the
+    session database and the session id; both are handed over exactly as
+    ``opencode_runtime``'s own collector call does, because without them the
+    measured path is unreachable and every OpenCode stamp degrades to
+    ``unknown``.
     """
-    from runtime_info import collect_runtime_info
+    from runtime_info import OPENCODE_SESSION_ID_ENV, collect_runtime_info
 
-    info = collect_runtime_info(harness)
+    measurement: dict[str, Any] = {}
+    if harness == 'opencode':
+        from opencode_runtime import _default_opencode_db_path
+
+        measurement = {
+            'opencode_db_path': _default_opencode_db_path(),
+            'opencode_session_id': os.environ.get(OPENCODE_SESSION_ID_ENV),
+        }
+    info = collect_runtime_info(harness, **measurement)
     stamp = {
         'model': _render_model(info),
         'effort': _stamp_value(info.get('effort')),

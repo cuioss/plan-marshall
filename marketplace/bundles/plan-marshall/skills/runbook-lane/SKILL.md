@@ -297,12 +297,11 @@ is submitted to the build daemon.
      in `manage-build-server`, and every build runs in-process.
    - `down` — the daemon is unreachable. Every build runs in-process for this run; record the
      reason.
-   - `ready` — routing is available. A routed job runs the executor inside the worktree, so check
-     with the file tools that `.plan/execute-script.py` exists there before the first routed build.
-     Where it does not, run the builds with `--execution-mode in_process` and record
-     `executor_absent_from_worktree` as the fallback's reason in the progress file and the landing
-     message. That is a precondition of the worktree, not a rule against the daemon: where the
-     executor is present, the default routing is what the lane uses.
+   - `ready` — routing is available. A routed job re-runs the worktree's own `.plan/execute-script.py`,
+     which worktree creation supplies: that executor is what the daemon uses, never the main
+     checkout's. A missing executor is a worktree defect, not a routing reason — record
+     `executor_absent_from_worktree`, report it, and run that build in-process with
+     `--execution-mode in_process` so the gate still runs.
 
 ## 3. Implement, deliverable by deliverable
 
@@ -336,9 +335,9 @@ supplies and the default routing:
 ```
 
 - **Routing.** `auto` submits the job to the build daemon when the setup preflight found it `ready`,
-  and runs in-process otherwise. Where setup recorded `executor_absent_from_worktree`, add
-  `--execution-mode in_process` to every call in this section and record that fallback beside its
-  reason.
+  and runs in-process otherwise. A routed job re-runs the worktree's own executor; the
+  `executor_absent_from_worktree` fallback from setup applies only when that executor is genuinely
+  missing, and is recorded with its reason.
 - **Read the routing outcome** from the build result's own fields (`requested`, `resolved`, `reason`,
   `mechanism`). A `degraded` result has already fallen back in-process: record the degradation and
   its `reason` in the progress file and the landing message.
@@ -352,10 +351,14 @@ supplies and the default routing:
 - **Shell timeout, in-process fallback only:** an in-process build holds the shell call for its whole
   duration. Give each call the shell tool's `timeout` parameter, set at or above the build's own
   timeout.
-  - If the tool cannot wait that long, run `{build.verify}`'s three parts as separate calls, in the
-    order `{build.split}` states — for example `{build.quality-gate}`, `{build.test-compile}` and
-    `{build.module-tests}`, each with the same worktree flags.
-  - Never omit the test-compile part.
+  - If the tool cannot wait that long, run `{build.verify}`'s parts as separate calls, in the order
+    `{build.split}` states, running each canonical the resolve result supplies — for example
+    `{build.quality-gate}`, `{build.test-compile}` and `{build.module-tests}` where the project
+    publishes all three, each with the same worktree flags.
+  - Run exactly the canonicals `split` names. `module-tests` and `test-compile` are test-conditional
+    in the architecture's contract, so an absent one means the project publishes no such part — not
+    that a part was skipped. `quality-gate` and `verify` are the gate; a project that resolves
+    neither has already failed `resolve`.
   - A daemon-routed build is waited on in the same call, never moved to the background.
 - **Read the result, not the exit code.** The TOON must show `status: success` and an empty
   `errors[]`. Open the `log_file` it names for the test summary.
@@ -376,8 +379,10 @@ supplies and the default routing:
   the build gate uses. Required CI checks still have to be green, so the merge gate is unchanged.
 - **When to run what:** run `{build.quality-gate}` before each commit that touches `*.py`, and
   `{build.verify}` once before the PR. Scope the tests to one module while iterating.
-- **Every pushed head:** `test-compile` runs at every head pushed to a PR — not once for the run.
-  Record the sha of each run; a head whose `test-compile` did not run is not a green head.
+- **Every pushed head:** a test run at every head pushed to a PR — not once for the run. Run
+  `{build.module-tests}` where the resolve result supplies it, plus `{build.test-compile}` where the
+  project publishes one; a project that supplies neither is gated by `{build.verify}`. Record the
+  sha of each run; a head that was not tested is not a green head.
 - **Failures that already fail on the base branch:** environment-dependent tests can fail in a
   project's local module-tests run. They are not yours. Only a failure in a module you touched, or
   one the base branch does not show, is yours.
@@ -562,7 +567,8 @@ steps=setup:done,implement:done,build-gate:done,self-review:{clear|budget-exhaus
      fix" are reserved for `test-first` — `mutation-after` means the failing output came from
      mutating or reverting the committed fix, and `none` means no failing output was captured. A
      `not met as written` Done-when leaves its deliverable not fully met. Also report the sha of
-     every `test-compile` run against a pushed head.
+     every per-head test run (`module-tests`, and `test-compile` where the project publishes one)
+     against a pushed head.
   2. **Personas and skills** — per step, which persona was applied (section 1's table, or the
      deliverable's own `Persona:` line); per deliverable, the domain skills it named — or
      `skills: none named` when the spec declares none — and any skill added for surface drift as
