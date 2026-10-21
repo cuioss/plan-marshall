@@ -636,6 +636,26 @@ def _list_persisted_allow_rows(
     return rows, 'recognised' if recognised else 'schema_unrecognised'
 
 
+# The four canonical usage fields the normalized bucket carries, in report
+# order. The reader's main and sub-agent buckets use the same keys.
+_USAGE_FOUR_FIELDS = (
+    'input_tokens',
+    'output_tokens',
+    'cache_read_input_tokens',
+    'cache_creation_input_tokens',
+)
+
+# A phase measured no sub-agent usage still reports the group as a MEASURED zero:
+# the walk ran over its windows and found none. Only an absent phase has no bucket
+# at all.
+_EMPTY_SUBAGENT_USAGE = {
+    'subagent_total_tokens': 0,
+    'subagent_samples': 0,
+    'subagent_tool_uses': 0,
+    'subagent_duration_ms': 0,
+}
+
+
 def _per_phase_buckets(
     windows: Sequence[Mapping[str, Any]],
 ) -> tuple[dict[str, dict[str, int]], int, int]:
@@ -645,17 +665,24 @@ def _per_phase_buckets(
     bucket — an absent bucket states "nothing was measured here", which is what
     keeps a fabricated zero out of the corpus.
 
+    Windows that NAME THE SAME PHASE are summed rather than overwritten. A phase
+    split into two intervals by a resume reports each interval's messages from
+    its own window, so the phase's figure is the sum of every interval's; keeping
+    only the last window's numbers silently dropped the earlier interval while
+    the run still reported a successful attribution.
+
     Args:
         windows: The reader's per-window records, each carrying ``phase`` plus a
             ``main`` and a ``subagent`` usage bucket.
 
     Returns:
         ``(per_phase, message_count, subagent_phases)`` where ``per_phase`` maps
-        a phase name to its normalized bucket, ``message_count`` counts the
-        usage-bearing messages attributed to a window, and ``subagent_phases``
-        counts the windows that carried sub-agent usage.
+        a phase name to its summed normalized bucket, ``message_count`` counts
+        the usage-bearing messages attributed to a window, and
+        ``subagent_phases`` counts the windows that carried sub-agent usage.
     """
-    per_phase: dict[str, dict[str, int]] = {}
+    main_usage: dict[str, dict[str, int]] = {}
+    subagent_usage: dict[str, dict[str, int]] = {}
     message_count = 0
     subagent_phases = 0
     for window in windows:
@@ -665,20 +692,32 @@ def _per_phase_buckets(
         subagent_messages = int(subagent.get('message_count', 0))
         if not main_messages and not subagent_messages:
             continue
-        four: dict[str, int] = {
-            'input_tokens': int(main.get('input_tokens', 0)),
-            'output_tokens': int(main.get('output_tokens', 0)),
-            'cache_read_input_tokens': int(main.get('cache_read_input_tokens', 0)),
-            'cache_creation_input_tokens': int(main.get('cache_creation_input_tokens', 0)),
-        }
+        phase = str(window.get('phase'))
+        four = main_usage.setdefault(phase, dict.fromkeys(_USAGE_FOUR_FIELDS, 0))
+        for field in _USAGE_FOUR_FIELDS:
+            four[field] += int(main.get(field, 0))
+        sub = subagent_usage.setdefault(
+            phase,
+            {'subagent_total_tokens': 0, 'subagent_samples': 0, 'subagent_tool_uses': 0, 'subagent_duration_ms': 0},
+        )
         # The dispatched population's total mirrors the `<usage>` definition the
         # rest of the metrics boundary uses: cache reads are EXCLUDED.
-        subagent_total = (
+        sub['subagent_total_tokens'] += (
             int(subagent.get('input_tokens', 0))
             + int(subagent.get('output_tokens', 0))
             + int(subagent.get('cache_creation_input_tokens', 0))
         )
-        per_phase[str(window.get('phase'))] = {
+        sub['subagent_samples'] += int(subagent.get('sessions', 0))
+        sub['subagent_tool_uses'] += int(subagent.get('tool_uses', 0))
+        sub['subagent_duration_ms'] += int(subagent.get('duration_ms', 0))
+        message_count += main_messages + subagent_messages
+        if subagent_messages:
+            subagent_phases += 1
+
+    per_phase: dict[str, dict[str, int]] = {}
+    for phase in sorted(set(main_usage) | set(subagent_usage)):
+        four = main_usage.get(phase) or dict.fromkeys(_USAGE_FOUR_FIELDS, 0)
+        per_phase[phase] = {
             **four,
             # The contract's canonical four-field view (short keys) alongside the
             # long spellings, so a consumer written against either reads the same
@@ -689,14 +728,8 @@ def _per_phase_buckets(
             'cache_creation': four['cache_creation_input_tokens'],
             'total': sum(four.values()),
             'billing_weighted_total': claude_runtime._billing_weighted_total(four),
-            'subagent_total_tokens': subagent_total,
-            'subagent_samples': int(subagent.get('sessions', 0)),
-            'subagent_tool_uses': int(subagent.get('tool_uses', 0)),
-            'subagent_duration_ms': int(subagent.get('duration_ms', 0)),
+            **subagent_usage.get(phase, _EMPTY_SUBAGENT_USAGE),
         }
-        message_count += main_messages + subagent_messages
-        if subagent_messages:
-            subagent_phases += 1
     return per_phase, message_count, subagent_phases
 
 

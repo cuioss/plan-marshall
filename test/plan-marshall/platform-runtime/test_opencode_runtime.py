@@ -1081,6 +1081,57 @@ def test_metrics_normalized_tokens_omits_a_window_with_no_usage(
     assert set(json.loads(output_file.read_text(encoding='utf-8'))) == {'5-execute'}
 
 
+def test_metrics_normalized_tokens_sums_windows_sharing_a_phase(
+    runtime: OpenCodeRuntime, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """Two windows naming one phase aggregate into one bucket, not the last one.
+
+    A resume splits a phase into two intervals; each interval's messages fall in
+    its own window. Overwriting the bucket with the second window's numbers
+    dropped the first interval's measured tokens while the run still reported a
+    successful attribution.
+    """
+    db_path = tmp_path / 'opencode.db'
+    _write_usage_db(
+        db_path,
+        [('ses-root', None, 30, 40, 5, 6)],
+        [
+            (
+                'ses-root',
+                'assistant',
+                _at(5),
+                {'tokens': {'input': 10, 'output': 20, 'cache': {'read': 3, 'write': 4}}},
+            ),
+            (
+                'ses-root',
+                'assistant',
+                _at(35),
+                {'tokens': {'input': 100, 'output': 200, 'cache': {'read': 30, 'write': 40}}},
+            ),
+        ],
+    )
+    _isolate_store(monkeypatch, db_path)
+    output_file = tmp_path / 'normalized.json'
+
+    result = _parse(
+        runtime.metrics_normalized_tokens(
+            'ses-root',
+            [('5-execute', _iso(0), _iso(30)), ('5-execute', _iso(30), _iso(60))],
+            str(output_file),
+        )
+    )
+
+    assert result['status'] == 'success'
+    assert result['phases_attributed'] == 1
+    assert result['message_count'] == 2
+    bucket = json.loads(output_file.read_text(encoding='utf-8'))['5-execute']
+    assert bucket['input_tokens'] == 10 + 100
+    assert bucket['output_tokens'] == 20 + 200
+    assert bucket['cache_read_input_tokens'] == 3 + 30
+    assert bucket['cache_creation_input_tokens'] == 4 + 40
+    assert bucket['total'] == (10 + 20 + 3 + 4) + (100 + 200 + 30 + 40)
+
+
 def test_metrics_normalized_tokens_unavailable_store_names_its_reason(
     runtime: OpenCodeRuntime, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
