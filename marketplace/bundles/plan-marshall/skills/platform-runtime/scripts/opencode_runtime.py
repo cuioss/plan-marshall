@@ -158,9 +158,16 @@ def _write_rules_bridge(project_dir: Path) -> bool:
     Returns whether the file was (re)written. The bridge owns its own file; the
     installed target rules shipped by ``install.sh --emit-rules`` are never
     written here, so a setup can no longer replace the full rules with a stub.
+
+    An existing bridge is NEVER replaced when the baseline cannot be read: the
+    marker-only fallback exists for a MISSING baseline, and writing it over a
+    bridge that already carries rules would delete them on an unreadable file.
     """
     bridge = _bridge_rules_path(project_dir)
-    desired = _bridge_body(_baseline_text(project_dir))
+    baseline_text = _baseline_text(project_dir)
+    if baseline_text is None and bridge.is_file():
+        return False
+    desired = _bridge_body(baseline_text)
     try:
         if bridge.is_file() and bridge.read_text(encoding='utf-8') == desired:
             return False

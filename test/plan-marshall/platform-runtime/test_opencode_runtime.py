@@ -1272,6 +1272,27 @@ def test_editing_claude_md_makes_setup_report_drift(runtime: OpenCodeRuntime, tm
     assert third['bridge_drift'] is False
 
 
+def test_an_unreadable_baseline_never_overwrites_the_bridge(
+    runtime: OpenCodeRuntime, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Setup must not replace carried rules with the marker-only stub."""
+    import opencode_runtime
+
+    (tmp_path / 'CLAUDE.md').write_text('# Project rules\n\nkeep me\n', encoding='utf-8')
+    _parse(runtime.project_initial_setup(str(tmp_path), 'opencode'))
+    bridge = tmp_path / '.opencode' / 'rules' / 'plan-marshall-standing-rules.md'
+    before = bridge.read_text(encoding='utf-8')
+    assert 'keep me' in before
+
+    monkeypatch.setattr(opencode_runtime, '_baseline_text', lambda _project_dir: None)
+    result = _parse(runtime.project_initial_setup(str(tmp_path), 'opencode'))
+
+    assert result['bridge_written'] is False
+    assert result['bridge_drift'] is True
+    assert result['bridge_reason'] == 'baseline_unreadable'
+    assert bridge.read_text(encoding='utf-8') == before
+
+
 def test_doc_surfaces_carry_the_missing_plugin_rule() -> None:
     """Rule (b) and the resolver rule live in the persona and the OpenCode target rules."""
     persona = (
