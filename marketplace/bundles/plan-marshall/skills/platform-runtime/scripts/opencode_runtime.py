@@ -159,13 +159,19 @@ def _write_rules_bridge(project_dir: Path) -> bool:
     installed target rules shipped by ``install.sh --emit-rules`` are never
     written here, so a setup can no longer replace the full rules with a stub.
 
-    An existing bridge is NEVER replaced when the baseline cannot be read: the
-    marker-only fallback exists for a MISSING baseline, and writing it over a
-    bridge that already carries rules would delete them on an unreadable file.
+    The two "no text" cases are DIFFERENT and must not be collapsed:
+
+    * A MISSING baseline has nothing to carry, so the bridge becomes the
+      marker-only stub — a bridge that still carried rules from a deleted
+      baseline would present stale rules as current.
+    * A PRESENT but unreadable baseline leaves an existing bridge untouched:
+      replacing it with the stub would delete rules the operator still has on
+      disk for a transient read failure.
     """
     bridge = _bridge_rules_path(project_dir)
+    baseline = project_dir / STANDING_RULES_BASELINE
     baseline_text = _baseline_text(project_dir)
-    if baseline_text is None and bridge.is_file():
+    if baseline_text is None and baseline.is_file() and bridge.is_file():
         return False
     desired = _bridge_body(baseline_text)
     try:

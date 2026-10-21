@@ -1293,6 +1293,22 @@ def test_an_unreadable_baseline_never_overwrites_the_bridge(
     assert bridge.read_text(encoding='utf-8') == before
 
 
+def test_a_deleted_baseline_replaces_the_bridge_with_the_stub(runtime: OpenCodeRuntime, tmp_path: pathlib.Path) -> None:
+    """A deleted baseline must not leave its rules presented as current."""
+    baseline = tmp_path / 'CLAUDE.md'
+    baseline.write_text('# Project rules\n\nstale rule\n', encoding='utf-8')
+    _parse(runtime.project_initial_setup(str(tmp_path), 'opencode'))
+    bridge = tmp_path / '.opencode' / 'rules' / 'plan-marshall-standing-rules.md'
+    assert 'stale rule' in bridge.read_text(encoding='utf-8')
+
+    baseline.unlink()
+    result = _parse(runtime.project_initial_setup(str(tmp_path), 'opencode'))
+
+    assert result['bridge_written'] is True
+    assert result['bridge_reason'] == 'baseline_missing'
+    assert 'stale rule' not in bridge.read_text(encoding='utf-8')
+
+
 def test_doc_surfaces_carry_the_missing_plugin_rule() -> None:
     """Rule (b) and the resolver rule live in the persona and the OpenCode target rules."""
     persona = (
