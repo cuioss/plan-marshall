@@ -200,12 +200,20 @@ def connect(path: Path | str | None) -> sqlite3.Connection | None:
 
 
 def _resolve(path: Path | str | None) -> Path | None:
-    """Expand *path* into a ``Path``, or ``None`` when no usable path was given."""
+    """Expand *path* into a ``Path``, or ``None`` when no usable path was given.
+
+    ``Path.expanduser`` raises ``RuntimeError`` for an unresolvable ``~user``
+    prefix, and ``TypeError``/``ValueError``/``OSError`` for other malformed
+    inputs. All four are caught here so the module's never-raise boundary holds
+    for every entry point: an unexpandable path is unopenable, and
+    :func:`_open` names that as :data:`REASON_DB_NOT_FOUND` rather than letting
+    the exception escape the reader.
+    """
     if path is None:
         return None
     try:
         expanded = Path(path).expanduser()
-    except (TypeError, ValueError, OSError):
+    except (RuntimeError, TypeError, ValueError, OSError):
         return None
     return expanded if str(expanded) else None
 

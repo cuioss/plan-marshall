@@ -160,6 +160,25 @@ def test_db_path_expands_a_tilde_override(tmp_path: Path, monkeypatch: Any) -> N
     assert opencode_sessions.db_path({'OPENCODE_DB': '~/custom.db'}) == tmp_path / 'custom.db'
 
 
+def test_probe_names_db_not_found_for_an_unexpandable_tilde_path() -> None:
+    """An unresolvable ``~user`` prefix degrades to ``db_not_found``, never raises."""
+    result = opencode_sessions.probe('~nosuchuser/opencode.db')
+
+    assert result == {'ok': False, 'tier': 0, 'reason': 'db_not_found'}
+
+
+def test_connect_returns_none_for_an_unexpandable_tilde_path() -> None:
+    """``connect`` returns ``None`` for an unresolvable ``~user`` prefix, never raises."""
+    assert opencode_sessions.connect('~nosuchuser/opencode.db') is None
+
+
+def test_an_unexpandable_tilde_environment_override_is_never_raised() -> None:
+    """The env-reachable path ``OPENCODE_DB=~nosuchuser/...`` returns a named reason."""
+    resolved = opencode_sessions.db_path({'OPENCODE_DB': '~nosuchuser/opencode.db'})
+
+    assert opencode_sessions.probe(resolved) == {'ok': False, 'tier': 0, 'reason': 'db_not_found'}
+
+
 # =============================================================================
 # Read-only connection
 # =============================================================================
