@@ -252,6 +252,7 @@ def _seed_fixture(
     module_path: str = '.',
     documentation_path: str = 'doc',
     documentation_files: tuple[str, ...] = ('doc/developer/build.adoc', 'doc/user/usage.md'),
+    commands: dict[str, str] | None = None,
 ) -> Path:
     """Seed a project fixture and return the staged spec path.
 
@@ -259,6 +260,11 @@ def _seed_fixture(
     ``_architecture_core`` reads (``.plan/project-architecture/_project.json``
     plus one ``derived.json`` per module), so ``resolve_command`` sees exactly
     the command map a real crawl would hand it.
+
+    ``commands`` overrides the root module's command map verbatim, so a test can
+    seed the per-canonical forms discovery writes for a real build system (Maven's
+    ``verify -Ppre-commit``, ``test -pl … -am``) instead of one template applied
+    to every canonical.
     """
     _write(
         root / '.plan' / 'marshal.json',
@@ -298,10 +304,13 @@ def _seed_fixture(
                 'name': 'root-mod',
                 'build_systems': ['pyproject'],
                 'paths': {'module': module_path},
-                'commands': {
+                'commands': commands
+                if commands is not None
+                else {
                     'quality-gate': executable.format(args='quality-gate'),
                     'module-tests': executable.format(args='module-tests'),
                     'verify': executable.format(args='verify'),
+                    'test-compile': executable.format(args='test-compile'),
                 },
             }
         ),
@@ -393,6 +402,78 @@ def test_resolve_maven_fixture_emits_maven_commands(tmp_path: Path) -> None:
     assert 'build-maven' in blobs
     assert 'pyproject' not in blobs
     assert any(row['bot'] == 'some-bot' for row in data['required_bots'])
+
+
+def _maven_architecture_commands(module: str = 'root-mod') -> dict[str, str]:
+    """The command map discovery writes for a Maven module with tests.
+
+    Mirrors ``build-maven``'s canonical forms: ``quality-gate`` is the
+    profile-overridden verify, ``module-tests`` is ``test -pl … -am`` and
+    ``test-compile`` is ``test-compile -pl … -am``. The Maven wrapper takes
+    complete Maven arguments, so these strings are what the lane must return
+    verbatim; a composed ``--command-args "quality-gate"`` is an unknown
+    lifecycle phase.
+    """
+    prefix = 'python3 .plan/execute-script.py plan-marshall:build-maven:maven run'
+    return {
+        'quality-gate': f'{prefix} verify -Ppre-commit -pl {module}',
+        'module-tests': f'{prefix} test -pl {module} -am',
+        'test-compile': f'{prefix} test-compile -pl {module} -am',
+        'verify': f'{prefix} verify',
+    }
+
+
+def test_resolve_maven_quality_gate_is_the_architecture_command(tmp_path: Path) -> None:
+    commands = _maven_architecture_commands()
+    spec = _seed_fixture(tmp_path, executable=_MAVEN_EXEC, required_bots='some-bot', commands=commands)
+
+    data = _run_resolve(spec, tmp_path)
+
+    assert data['status'] == 'success'
+    assert data['build']['quality-gate'] == commands['quality-gate']
+    # The composed form is gone: a bare canonical handed to the Maven wrapper is
+    # read as an unknown lifecycle phase.
+    blob = json.dumps(data)
+    for canonical in ('quality-gate', 'module-tests', 'verify', 'test-compile'):
+        assert f'--command-args \\"{canonical}\\"' not in blob
+
+
+def test_resolve_maven_module_tests_and_test_compile_are_the_architecture_commands(tmp_path: Path) -> None:
+    commands = _maven_architecture_commands()
+    spec = _seed_fixture(tmp_path, executable=_MAVEN_EXEC, required_bots='some-bot', commands=commands)
+
+    data = _run_resolve(spec, tmp_path)
+
+    assert data['build']['module-tests'] == commands['module-tests']
+    assert data['build']['test-compile'] == commands['test-compile']
+    assert data['build']['split'] == ['quality-gate', 'test-compile', 'module-tests']
+
+
+def test_resolve_unresolvable_canonical_fails_closed_and_names_it(tmp_path: Path) -> None:
+    commands = _maven_architecture_commands()
+    del commands['test-compile']
+    spec = _seed_fixture(tmp_path, executable=_MAVEN_EXEC, required_bots='some-bot', commands=commands)
+
+    data = _run_resolve(spec, tmp_path)
+
+    assert data['status'] == 'error'
+    assert data['error'] == 'build_command_unresolvable'
+    assert data['canonical'] == 'test-compile'
+    assert 'build' not in data
+
+
+def test_resolve_pyproject_commands_stay_on_the_pyproject_wrapper(tmp_path: Path) -> None:
+    """Preservation guard: the pyproject wrapper maps canonical names already."""
+    commands = {
+        canonical: _PYPROJECT_EXEC.format(args=canonical)
+        for canonical in ('quality-gate', 'module-tests', 'verify', 'test-compile')
+    }
+    spec = _seed_fixture(tmp_path, executable=_PYPROJECT_EXEC, required_bots='some-bot', commands=commands)
+
+    data = _run_resolve(spec, tmp_path)
+
+    for canonical, expected in commands.items():
+        assert data['build'][canonical] == expected
 
 
 def test_resolve_empty_required_bots_is_an_error(tmp_path: Path) -> None:

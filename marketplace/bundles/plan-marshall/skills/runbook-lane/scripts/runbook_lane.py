@@ -39,16 +39,14 @@ from file_ops import output_toon, output_toon_error
 #: The step whose ``required_bots`` / ``optional_bots`` the lane drives.
 _REVIEW_STEP_ID = 'plan-marshall:automatic-review'
 
-#: The build canonical the lane resolves to learn the project's build tool, and
-#: the command set the lane runs. ``verify`` is the resolved probe; the other
-#: three are the lane's own canonical arguments, passed to whichever build
-#: wrapper the architecture resolved. ``test-compile`` is part of ``verify``'s
-#: split form and is not advertised as a resolvable canonical for every build
-#: system, so it is composed from the SAME notation ``verify`` resolved rather
-#: than resolved on its own.
-_BUILD_PROBE = 'verify'
-_BUILD_CANONICALS = ('quality-gate', 'module-tests', 'verify')
+#: The build canons the lane runs, each resolved on its own through the
+#: architecture. No composed ``--command-args "<canonical>"`` form exists: the
+#: canonical name is only meaningful to a wrapper that maps canonical names, and
+#: Maven's wrapper takes complete Maven arguments instead. ``split`` is the
+#: order the lane runs when it splits the verification.
+_BUILD_CANONICALS = ('quality-gate', 'test-compile', 'module-tests', 'verify')
 _SPLIT_FORM = ('quality-gate', 'test-compile', 'module-tests')
+
 
 #: A staged spec, ANCHORED to the project root: ``.plan/orchestrator/{slug}/plans/PLAN-*.md``.
 #: Matched with ``fullmatch`` against the project-relative path, so a same-shaped
@@ -56,11 +54,6 @@ _SPLIT_FORM = ('quality-gate', 'test-compile', 'module-tests')
 #: satisfy it — the lane runs a spec at the root of the orchestrator tree, not any
 #: file that happens to end the same way.
 _SPEC_RE = re.compile(r'\.plan/orchestrator/(?P<slug>[^/]+)/plans/(?P<name>PLAN-[^/]+)\.md')
-
-#: Lifts the executor prefix and the build notation out of a resolved
-#: executable, so the lane composes the rest of its command set from the build
-#: system the architecture resolved rather than from a hard-coded build skill.
-_NOTATION_RE = re.compile(r'^(?P<prefix>.*?execute-script\.py)\s+(?P<notation>[^\s]+)\s+run\b')
 
 #: Harness identifiers whose tool-call guard the lane can observe on disk.
 _GUARD_NONE_HARNESSES = frozenset({'antigravity'})
@@ -404,39 +397,53 @@ def _resolve_bots(marshal: dict[str, Any]) -> tuple[list[dict[str, Any]], list[d
     return _rows(required), _rows(_split_bots(step.get('optional_bots')))
 
 
+class _BuildCommandUnresolvable(Exception):
+    """A canonical the project's architecture resolves to no executable."""
+
+    def __init__(self, canonical: str) -> None:
+        super().__init__(canonical)
+        self.canonical = canonical
+
+
 def _resolve_build(project_dir: Path) -> tuple[dict[str, Any], dict[str, Any]]:
-    """Resolve the lane's build commands for this project's build system.
+    """Resolve the lane's build commands through the project architecture.
 
-    The build system is read from the project architecture through the same
-    resolution seam ``architecture resolve`` uses — never from a hard-coded
-    build skill. ``verify`` is the probe; the remaining canons are passed to the
-    notation it resolved.
+    Each canonical is resolved on its own through the same seam
+    ``architecture resolve`` uses, so the lane receives the COMPLETE command the
+    project's build wrapper accepts: ``verify -Ppre-commit`` on Maven, the
+    canonical-name form on pyproject. A canonical name is never composed onto a
+    probe, because the name is only meaningful to a wrapper that maps canonical
+    names — Maven's takes complete Maven arguments.
 
-    Returns ``(build, probed)``: the build command map, and the architecture's own
+    Resolution is scoped to the ROOT module on purpose: ``resolve`` runs at
+    setup, before the worktree's change surface exists, and the lane's build gate
+    verifies the whole project, so the root module's command is the only one that
+    is both knowable then and sufficient for every module the run touches.
+
+    Returns ``(build, probed)``: the build command map, and the architecture's
     resolved ``verify`` record, so the caller can read the timeout stamp off the
-    same resolution instead of re-deriving the build system.
+    same resolution instead of re-deriving the build system. A canonical the
+    root cannot resolve raises :class:`_BuildCommandUnresolvable`; there is no
+    composed fall-back and no default build.
     """
     from _cmd_client_query import resolve_command
 
-    try:
-        probed = resolve_command(_BUILD_PROBE, None, str(project_dir))
-    except Exception as exc:
-        raise ValueError('build_command_unresolvable') from exc
+    resolved: dict[str, dict[str, Any]] = {}
+    for canonical in _BUILD_CANONICALS:
+        try:
+            record = resolve_command(canonical, None, str(project_dir))
+        except Exception as exc:
+            raise _BuildCommandUnresolvable(canonical) from exc
+        executable = record.get('executable')
+        if not isinstance(executable, str) or not executable.strip():
+            raise _BuildCommandUnresolvable(canonical)
+        resolved[canonical] = record
 
-    executable = probed.get('executable')
-    if not isinstance(executable, str):
-        raise ValueError('build_command_unresolvable')
-    match = _NOTATION_RE.match(executable)
-    if match is None:
-        raise ValueError('build_command_unresolvable')
-    prefix, notation = match.group('prefix'), match.group('notation')
-
-    build: dict[str, Any] = {canon: f'{prefix} {notation} run --command-args "{canon}"' for canon in _BUILD_CANONICALS}
+    build: dict[str, Any] = {canonical: record['executable'] for canonical, record in resolved.items()}
     # The split form exists because ``verify`` may outlive the shell budget; its
-    # parts are the lane's own arguments on the SAME resolved build system.
-    build['test-compile'] = f'{prefix} {notation} run --command-args "test-compile"'
+    # parts are the architecture's own commands for the same build system.
     build['split'] = list(_SPLIT_FORM)
-    return build, probed
+    return build, resolved['verify']
 
 
 def _augment_resolved(probed: dict[str, Any], project_dir: Path) -> dict[str, Any]:
@@ -951,6 +958,16 @@ def cmd_resolve(args: argparse.Namespace) -> dict[str, Any]:
         build_timeout_seconds = _resolve_build_timeout(probed, project_dir)
         base_branch = _resolve_base_branch(marshal)
         deliverable_state = _resolve_deliverable_skills(spec)
+    except _BuildCommandUnresolvable as exc:
+        # Fail closed and name the canonical: the lane never falls back to a
+        # composed string or to a default build.
+        return {
+            'status': 'error',
+            'error': 'build_command_unresolvable',
+            'canonical': exc.canonical,
+            'spec': args.spec,
+            'plan': plan_id,
+        }
     except ValueError as exc:
         return {'status': 'error', 'error': str(exc), 'spec': args.spec, 'plan': plan_id}
     except Exception as exc:
