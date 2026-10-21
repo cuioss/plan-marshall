@@ -1446,9 +1446,11 @@ class Runtime(ABC):
 
         Two ``invocation`` fields are fixed across targets rather than
         target-defined, because the caller reads them: ``tool`` as above, and
-        ``subagent_type``, which echoes the requested *agent* back. No target
-        substitutes an agent of its own choosing, so a caller's selection always
-        reaches the invocation.
+        the agent echo, which names the requested *agent* back — as
+        ``invocation.subagent_type`` on Claude and Antigravity, and as
+        ``invocation.agent`` on OpenCode 2, whose sub-agent tool takes
+        ``{agent, description, prompt}``. No target substitutes an agent of its
+        own choosing, so a caller's selection always reaches the invocation.
 
         Verify-first dispatch contract: before returning a dispatch success the
         implementor verifies (1) the harness exposes the named spawning tool in
