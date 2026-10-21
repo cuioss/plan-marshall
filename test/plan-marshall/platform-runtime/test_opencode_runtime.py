@@ -310,10 +310,12 @@ def test_session_capture_resolves_a_child_id_to_the_root(
     _isolate_store(monkeypatch, db_path)
     monkeypatch.setenv('OPENCODE_SESSION_ID', 'ses-leaf')
     seen: list[tuple[str, str]] = []
-    monkeypatch.setattr(
-        'claude_runtime._manage_status_store_session',
-        lambda plan_id, session_id: seen.append((plan_id, session_id)) or True,
-    )
+
+    def _record(plan_id: str, session_id: str) -> bool:
+        seen.append((plan_id, session_id))
+        return True
+
+    monkeypatch.setattr('claude_runtime._manage_status_store_session', _record)
 
     result = _parse(runtime.session_capture('my-plan'))
 
