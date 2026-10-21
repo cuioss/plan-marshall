@@ -502,6 +502,38 @@ def _resolve_base_branch(marshal: dict[str, Any]) -> str:
     return _DEFAULT_BASE_BRANCH
 
 
+#: The build-server preflight states ``resolve`` reports, in the client's own
+#: vocabulary. ``disabled`` is an unenrolled project, not an error.
+_BUILD_SERVER_STATES = ('ready', 'disabled', 'down')
+
+
+def _resolve_build_server(project_dir: Path) -> tuple[str, str | None]:
+    """Return the build server's preflight state for *project_dir*, plus its reason.
+
+    Read from the build-server client's own one-call preflight, so the lane does
+    not guess from a socket path or a registry file: ``disabled`` when the
+    project is not enrolled (no daemon probe — enrolment is an operator action
+    and the lane runs in-process), ``ready`` when a verified handshake answers,
+    and ``down`` with the client's named reason otherwise.
+
+    A preflight that cannot run at all is reported as ``down`` with a named
+    reason rather than omitted: the lane still builds (in-process), and the
+    landing says why the daemon was not used.
+    """
+    from build_server import run_preflight
+
+    try:
+        result = run_preflight(argparse.Namespace(project_path=str(project_dir)))
+    except Exception as exc:
+        return 'down', f'preflight_failed: {type(exc).__name__}'
+    state = result.get('preflight')
+    if state not in _BUILD_SERVER_STATES:
+        return 'down', 'preflight_unreadable'
+    if state == 'down':
+        return state, str(result.get('reason') or 'unreachable')
+    return state, None
+
+
 def _claude_guard_installed(project_dir: Path) -> bool:
     """Whether a Claude install registers a REAL pre-tool-use hook.
 
@@ -990,6 +1022,7 @@ def cmd_resolve(args: argparse.Namespace) -> dict[str, Any]:
 
     trailer = run_config.read_commit_trailer()['trailer']
     harness, guard = _resolve_harness_guard(project_dir)
+    build_server, build_server_reason = _resolve_build_server(project_dir)
 
     worktree = f'.plan/local/worktrees/{plan_id}'
     progress_file = f'.plan/temp/rb-{plan_id}/progress.md'
@@ -1020,8 +1053,13 @@ def cmd_resolve(args: argparse.Namespace) -> dict[str, Any]:
         'harness': harness,
         'guard': guard,
         'guard_log': '/'.join(_GUARD_LOG_PARTS),
+        'build_server': build_server,
         'skills_note': deliverable_state['skills_note'],
     }
+    # A reason only exists for ``down``: the other two states are their own
+    # explanation, and an empty row would read like a parsed-but-empty answer.
+    if build_server_reason is not None:
+        resolved['build_server_reason'] = build_server_reason
     # Presence-gated: an empty population would render an empty row set that reads
     # like a parsed-but-empty answer, when the truth is that no spec declares one.
     if deliverable_state['deliverables']:

@@ -36,12 +36,13 @@ python3 .plan/execute-script.py plan-marshall:runbook-lane:runbook_lane resolve 
 ```
 
 Resolves the epic slug, the derived names, the build commands, the required and optional reviewers
-with their trigger comments, the commit trailer, the harness and guard state, and the `inbox write`
+with their trigger comments, the commit trailer, the harness and guard state, the build server's
+preflight state (`build_server`, plus `build_server_reason` when it is `down`) and the `inbox write`
 command. `--project-dir` defaults to the current directory and anchors every project-scoped read.
 Fails closed with a specific error code for a spec outside the orchestrator tree, an unreadable
 configuration, a missing automatic-review step, an empty required-reviewer list, an unresolvable
-build command, or a bare skill/persona name in a flat install with no recorded bundle identity
-(`flat_skill_identity_missing`).
+build command (naming the canonical), or a bare skill/persona name in a flat install with no
+recorded bundle identity (`flat_skill_identity_missing`).
 
 ### build-classify
 
@@ -89,6 +90,7 @@ The result supplies, and nothing below is spelled from anywhere else:
 | `inbox write` command | `inbox_write_command` |
 | harness and guard state | `harness`, `guard` |
 | guard-log path | `guard_log` |
+| build server state | `build_server`, plus `build_server_reason` when the state is `down` |
 
 The branch row is derived from the project's configuration rather than returned by `resolve`; every
 other row names a field of the resolve result.
@@ -135,6 +137,7 @@ item below and before starting the next. One line per entry, newest last:
 
 ```text
 setup: worktree {worktree}, branch {branch}, pushed
+build-server: {ready|disabled|down}{ (reason)}; fallback: {none|in_process|degraded}, {reason or none}
 D{n} hypothesis: {claim} — confirmed|refuted, {file:line}
 D{n} test: {test name} — failed before fix ({evidence}), passed after
 D{n} done: commit {sha}
@@ -280,9 +283,26 @@ checkout stays untouched.
 
 Every executor call runs with the shell in the **main checkout**, in exactly the form
 `python3 .plan/execute-script.py …`. The guard refuses any other form, including an absolute
-executor path. The worktree has no executor of its own, so every build passes
-`--execution-mode in_process --project-dir {worktree}`. The build daemon would need an executor
-inside the project directory; in-process runs need none.
+executor path. Builds run against the worktree with the resolved `build` commands (section 4) and
+the default routing (`auto`): the project's build wrapper decides whether the job runs in-process or
+is submitted to the build daemon.
+
+6. **Build-server preflight — once, here.**
+   `python3 .plan/execute-script.py plan-marshall:build-server-client:build_server preflight --project-path {worktree}`
+   answers `ready`, `disabled` or `down`. Record it in the progress file and the landing message as
+   `build_server: ready|disabled|down`, with `reason` when the state is `down`. The resolve result
+   carries the same field for the project root; this setup call is the one that describes the
+   worktree.
+   - `disabled` — the project is not enrolled. That is not an error: enrolment is an operator action
+     in `manage-build-server`, and every build runs in-process.
+   - `down` — the daemon is unreachable. Every build runs in-process for this run; record the
+     reason.
+   - `ready` — routing is available. A routed job runs the executor inside the worktree, so check
+     with the file tools that `.plan/execute-script.py` exists there before the first routed build.
+     Where it does not, run the builds with `--execution-mode in_process` and record
+     `executor_absent_from_worktree` as the fallback's reason in the progress file and the landing
+     message. That is a precondition of the worktree, not a rule against the daemon: where the
+     executor is present, the default routing is what the lane uses.
 
 ## 3. Implement, deliverable by deliverable
 
@@ -306,15 +326,39 @@ For each deliverable, in the spec's order:
 
 ## 4. Build gate
 
-Every build runs in-process from the main checkout against the worktree, using the commands the
-resolve result supplies:
+Every build runs from the main checkout against the worktree, using the commands the resolve result
+supplies and the default routing:
 
 ```bash
-{build.quality-gate} --execution-mode in_process --project-dir {worktree}
-{build.module-tests} --execution-mode in_process --project-dir {worktree}
-{build.verify} --execution-mode in_process --project-dir {worktree} --timeout {build_timeout_seconds}
+{build.quality-gate} --project-dir {worktree}
+{build.module-tests} --project-dir {worktree}
+{build.verify} --project-dir {worktree} --timeout {build_timeout_seconds}
 ```
 
+- **Routing.** `auto` submits the job to the build daemon when the setup preflight found it `ready`,
+  and runs in-process otherwise. Where setup recorded `executor_absent_from_worktree`, add
+  `--execution-mode in_process` to every call in this section and record that fallback beside its
+  reason.
+- **Read the routing outcome** from the build result's own fields (`requested`, `resolved`, `reason`,
+  `mechanism`). A `degraded` result has already fallen back in-process: record the degradation and
+  its `reason` in the progress file and the landing message.
+- **A `killed` job is never blind-retried.** Read its status and record it; whether to run it again
+  is the operator's decision, asked with the question tool.
+- **One daemon-routed build at a time per worktree**, sub-agents included. The build-server client's
+  prohibitions — a routed build is never backgrounded, and a `running` result is re-attached with a
+  bounded wait — are stated in `build-server-client/SKILL.md` and bind here as written, not
+  restated. A second concurrent submission is the case that client cannot see: two routed builds
+  from one worktree can interleave, and a result can carry its sibling job's counts.
+- **Shell timeout, in-process fallback only:** an in-process build holds the shell call for its whole
+  duration. Give each call the shell tool's `timeout` parameter, set at or above the build's own
+  timeout.
+  - If the tool cannot wait that long, run `{build.verify}`'s three parts as separate calls, in the
+    order `{build.split}` states — for example `{build.quality-gate}`, `{build.test-compile}` and
+    `{build.module-tests}`, each with the same worktree flags.
+  - Never omit the test-compile part.
+  - A daemon-routed build is waited on in the same call, never moved to the background.
+- **Read the result, not the exit code.** The TOON must show `status: success` and an empty
+  `errors[]`. Open the `log_file` it names for the test summary.
 - **Docs-only change.** Before running the full build, classify the worktree diff against the base:
   get the changed paths with `git -C {worktree} diff --name-only origin/{base_branch}...HEAD`, then
   pass them to the `build-classify` verb. When it answers `kind: docs-only`, run **no** full
@@ -334,15 +378,6 @@ resolve result supplies:
   `{build.verify}` once before the PR. Scope the tests to one module while iterating.
 - **Every pushed head:** `test-compile` runs at every head pushed to a PR — not once for the run.
   Record the sha of each run; a head whose `test-compile` did not run is not a green head.
-- **Shell timeout:** in-process builds hold the shell call for their whole duration. Give each call
-  the shell tool's `timeout` parameter, set at or above the build's own timeout.
-  - If the tool cannot wait that long, run `{build.verify}`'s three parts as separate calls, in the
-    order `{build.split}` states — for example `{build.quality-gate}`, `{build.test-compile}` and
-    `{build.module-tests}`, each with the same worktree flags.
-  - Never omit the test-compile part.
-- **Never use the daemon:** never drop `--execution-mode in_process`.
-- **Read the result, not the exit code.** The TOON must show `status: success` and an empty
-  `errors[]`. Open the `log_file` it names for the test summary.
 - **Failures that already fail on the base branch:** environment-dependent tests can fail in a
   project's local module-tests run. They are not yours. Only a failure in a module you touched, or
   one the base branch does not show, is yours.
@@ -539,7 +574,10 @@ steps=setup:done,implement:done,build-gate:done,self-review:{clear|budget-exhaus
      refusal: read `{guard_log}` (the path `resolve` returns) for this run's sessions and list each
      line. "All kept" is allowed only when that log has no line for the run — and never on a harness
      whose resolve result reported `guard: none`.
-  8. **Residue** — anything left open.
+  8. **Build server** — the setup preflight's state (`ready`, `disabled` or `down`, with its reason),
+     the fallback each build used and why (`degraded` with its `reason`, or
+     `executor_absent_from_worktree`), and any `killed` job with its disposition.
+  9. **Residue** — anything left open.
 
 Then tell the operator the PR number, the merge commit, and that the landing message was written.
 

@@ -34,6 +34,10 @@ import ast
 import json
 import re
 import shutil
+import socket
+import struct
+import tempfile
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -340,7 +344,15 @@ def _run_resolve(spec: Path, project_dir: Path, *, env_overrides: dict[str, str]
 
     The verb is exercised as a subprocess through its real argparse surface, so
     a renamed flag or a changed verb spelling is a red test.
+
+    ``PLAN_MARSHALL_HOME`` is isolated inside the fixture project by default: the
+    verb reports the build server's preflight state, and a test must decide that
+    state (see :class:`_BuildServerState`) rather than read the machine's real
+    registry and daemon.
     """
+    env = {'PLAN_MARSHALL_HOME': str(project_dir / '.machine-home')}
+    if env_overrides:
+        env.update(env_overrides)
     script = get_scripts_dir('plan-marshall', _SKILL_NAME) / 'runbook_lane.py'
     result = run_script(
         script,
@@ -349,7 +361,7 @@ def _run_resolve(spec: Path, project_dir: Path, *, env_overrides: dict[str, str]
         str(spec),
         '--project-dir',
         str(project_dir),
-        env_overrides=env_overrides,
+        env_overrides=env,
     )
     assert result.success, f'resolve crashed: {result.stderr}'
     data: dict[str, Any] = result.toon()
@@ -474,6 +486,176 @@ def test_resolve_pyproject_commands_stay_on_the_pyproject_wrapper(tmp_path: Path
 
     for canonical, expected in commands.items():
         assert data['build'][canonical] == expected
+
+
+# -----------------------------------------------------------------------------
+# D2 — resolve reports the build server state
+# -----------------------------------------------------------------------------
+
+#: The framed reply a protocol-1 daemon gives to the client's ``ping``. The
+#: frame is a 4-byte big-endian length prefix plus a UTF-8 JSON object; written
+#: out here so the stub does not import the client it is standing in for.
+_PING_REPLY = {'status': 'ok', 'version': '1', 'pid': 4242}
+
+
+class _BuildServerState:
+    """Seed the machine-global build-server state for a fixture project.
+
+    The state lives in a short-lived temp home of its own rather than under the
+    fixture project: the client's socket path is ``$PLAN_MARSHALL_HOME/marshalld/
+    socket`` and a pytest ``tmp_path`` already spends most of AF_UNIX's ~108-byte
+    path budget. A test decides the preflight outcome by what this seeds:
+    nothing (unenrolled), a registry entry without a socket (enrolled, daemon
+    down), or a registry entry plus a ping-answering socket (enrolled, reachable).
+    """
+
+    def __init__(self, project_dir: Path, *, registered: bool, daemon: bool = False) -> None:
+        self.project_dir = project_dir
+        self.registered = registered
+        self.daemon = daemon
+        self.home = Path(tempfile.mkdtemp(prefix='pm-bs-'))
+        self.state_dir = self.home / 'marshalld'
+        self._server: socket.socket | None = None
+        self._thread: threading.Thread | None = None
+
+    def __enter__(self) -> dict[str, str]:
+        self.state_dir.mkdir(parents=True, exist_ok=True)
+        if self.registered:
+            root = str(self.project_dir.resolve())
+            _write(
+                self.state_dir / 'registry.json',
+                json.dumps(
+                    {
+                        'version': 1,
+                        'projects': {root: {'canonical_root': root, 'worktree_containers': []}},
+                    }
+                ),
+            )
+        if self.daemon:
+            self._start()
+        return {'PLAN_MARSHALL_HOME': str(self.home)}
+
+    def __exit__(self, *_exc: object) -> None:
+        if self._server is not None:
+            self._server.close()
+            self._server = None
+        if self._thread is not None:
+            self._thread.join(timeout=5)
+            self._thread = None
+        shutil.rmtree(self.home, ignore_errors=True)
+
+    def _start(self) -> None:
+        server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        try:
+            server.bind(str(self.state_dir / 'socket'))
+        except OSError:
+            server.close()
+            raise
+        server.listen(4)
+        self._server = server
+        self._thread = threading.Thread(target=self._serve, args=(server,), daemon=True)
+        self._thread.start()
+
+    @staticmethod
+    def _serve(server: socket.socket) -> None:
+        while True:
+            try:
+                conn, _ = server.accept()
+            except OSError:
+                return
+            with conn:
+                header = conn.recv(4)
+                if len(header) != 4:
+                    continue
+                (length,) = struct.unpack('>I', header)
+                remaining = length
+                while remaining:
+                    chunk = conn.recv(remaining)
+                    if not chunk:
+                        break
+                    remaining -= len(chunk)
+                reply = json.dumps(_PING_REPLY).encode('utf-8')
+                conn.sendall(struct.pack('>I', len(reply)) + reply)
+
+
+def test_resolve_reports_build_server_disabled_for_an_unenrolled_project(tmp_path: Path) -> None:
+    spec = _seed_fixture(tmp_path, executable=_PYPROJECT_EXEC, required_bots='x')
+
+    with _BuildServerState(tmp_path, registered=False) as env:
+        data = _run_resolve(spec, tmp_path, env_overrides=env)
+
+    assert data['status'] == 'success'
+    assert data['build_server'] == 'disabled'
+    assert 'build_server_reason' not in data
+
+
+def test_resolve_reports_build_server_ready_for_a_reachable_daemon(tmp_path: Path) -> None:
+    spec = _seed_fixture(tmp_path, executable=_PYPROJECT_EXEC, required_bots='x')
+
+    with _BuildServerState(tmp_path, registered=True, daemon=True) as env:
+        data = _run_resolve(spec, tmp_path, env_overrides=env)
+
+    assert data['status'] == 'success'
+    assert data['build_server'] == 'ready'
+    assert 'build_server_reason' not in data
+
+
+def test_resolve_reports_build_server_down_with_its_reason(tmp_path: Path) -> None:
+    spec = _seed_fixture(tmp_path, executable=_PYPROJECT_EXEC, required_bots='x')
+
+    with _BuildServerState(tmp_path, registered=True) as env:
+        data = _run_resolve(spec, tmp_path, env_overrides=env)
+
+    assert data['status'] == 'success'
+    assert data['build_server'] == 'down'
+    assert data['build_server_reason'] == 'socket_absent'
+
+
+def _raw_section(heading: str) -> str:
+    """Return one ``## `` section verbatim, so a fenced block can be parsed."""
+    text = _skill_text()
+    start = text.index(heading)
+    rest = text[start + len(heading) :]
+    end = rest.find('\n## ')
+    return heading + (rest if end == -1 else rest[:end])
+
+
+def _fenced_blocks(section: str) -> list[str]:
+    return re.findall(r'```[a-z-]*\n(.*?)```', section, re.DOTALL)
+
+
+def test_skill_does_not_forbid_the_build_daemon() -> None:
+    """The old blanket prohibition and its wrong premise are gone."""
+    text = _skill_text()
+    assert 'Never use the daemon' not in text
+    assert 'never drop `--execution-mode in_process`' not in text
+    assert 'worktree has no executor' not in text.lower()
+
+
+def test_skill_build_gate_commands_use_the_default_routing() -> None:
+    gate = _raw_section('## 4. Build gate')
+    commands = [block for block in _fenced_blocks(gate) if '{build.' in block]
+    assert commands, 'section 4 carries no build-command fence'
+    for block in commands:
+        assert '--execution-mode' not in block, f'the build gate still forces a routing mode:\n{block}'
+
+
+def test_skill_states_the_preflight_degraded_and_killed_rules() -> None:
+    text = _skill_text()
+    for phrase in (
+        'build_server: ready|disabled|down',
+        '`degraded`',
+        '`killed`',
+        'never blind-retried',
+        '`running`',
+    ):
+        assert phrase in text, f'the skill does not state {phrase!r}'
+
+
+def test_skill_states_the_one_daemon_routed_build_rule() -> None:
+    lowered = _skill_text().lower()
+    assert 'one daemon-routed build at a time' in lowered
+    assert 'sub-agents included' in lowered
 
 
 def test_resolve_empty_required_bots_is_an_error(tmp_path: Path) -> None:
