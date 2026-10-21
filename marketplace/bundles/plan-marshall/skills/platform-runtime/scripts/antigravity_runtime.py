@@ -22,6 +22,7 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Any, cast
 
+import deployed_layout
 import runtime_info
 from runtime_base import (
     PERMISSION_FIX_OPERATIONS,
@@ -365,16 +366,17 @@ class AntigravityRuntime(Runtime):
         )
 
     def layout_bundle_cache_root(self) -> str:
-        """Return the Antigravity deployed-bundle cache roots."""
-        home = Path.home()
-        roots = [
-            str(home / '.gemini' / 'config' / 'plugins' / 'plan-marshall' / 'skills'),
-            str(home / '.gemini' / 'antigravity' / 'skills'),
-            str(home / '.gemini' / 'config' / 'skills'),
-        ]
+        """Return the Antigravity deployed-bundle cache root(s).
+
+        Read from the shared ``deployed-layout.json`` data file, the same one the
+        enforcement guards read. Antigravity deploys bundles to its plugin
+        directory (``~/.gemini/config/plugins/plan-marshall``), not to every
+        skill-discovery root it also reads.
+        """
+        standards_dir = Path(__file__).resolve().parent.parent / 'standards'
         return toon_success(
             'layout bundle-cache-root',
-            {'target': 'antigravity', 'roots': roots},
+            {'target': 'antigravity', 'roots': deployed_layout.bundle_cache_roots('antigravity', standards_dir)},
         )
 
     # ------------------------------------------------------------------

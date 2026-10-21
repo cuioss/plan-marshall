@@ -1425,6 +1425,23 @@ def _flat_deployed_script(home: Path, skill_dir: str, relative: str) -> Path:
     return script
 
 
+def _write_version_marker(script: Path) -> None:
+    """Mark the NESTED version directory holding *script* as a deployed bundle.
+
+    The guards select the resolver's VERSION directory — the newest sibling that
+    carries ``.claude-plugin/plugin.json`` — so a fixture that is meant to model a
+    deployed bundle must carry the marker. A directory without it is exactly the
+    stray-directory shape the resolver rejects.
+    """
+    for parent in script.parents:
+        if parent.parent.name == 'plan-marshall':
+            marker = parent / '.claude-plugin' / 'plugin.json'
+            marker.parent.mkdir(parents=True, exist_ok=True)
+            marker.write_text('{"name": "plan-marshall"}\n', encoding='utf-8')
+            return
+    raise AssertionError(f'no nested bundle version directory above {script}')
+
+
 def test_r5_admits_a_flat_deployed_bundle_script(tmp_path, monkeypatch) -> None:
     """Done-when (D1): the hook admits a steward script at its deployed flat path."""
     script = _flat_deployed_script(tmp_path, 'plan-marshall-marshall-steward', 'scripts/determine_mode.py')
@@ -1451,6 +1468,7 @@ def test_r5_admits_a_nested_cache_bundle_script(tmp_path, monkeypatch) -> None:
     )
     script.parent.mkdir(parents=True, exist_ok=True)
     script.write_text('# deployed\n', encoding='utf-8')
+    _write_version_marker(script)
     monkeypatch.setenv('HOME', str(tmp_path))
     monkeypatch.setenv('XDG_CONFIG_HOME', str(tmp_path / '.config'))
     command = f'python3 {script} generate'
@@ -1474,6 +1492,7 @@ def test_r5_admits_the_steward_script_at_its_nested_cache_path(tmp_path, monkeyp
     )
     script.parent.mkdir(parents=True, exist_ok=True)
     script.write_text('# deployed\n', encoding='utf-8')
+    _write_version_marker(script)
     monkeypatch.setenv('HOME', str(tmp_path))
     monkeypatch.setenv('XDG_CONFIG_HOME', str(tmp_path / '.config'))
     command = f'python3 {script} mode'

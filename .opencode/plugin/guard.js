@@ -84,7 +84,7 @@
  * wrapper set, and lowercases the program token for the interpreter check, so
  * the two decision tables agree on the interpreter surface.
  */
-import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync } from "node:fs"
+import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs"
 import { execFileSync } from "node:child_process"
 import { homedir } from "node:os"
 import path from "node:path"
@@ -164,6 +164,9 @@ const R5_ALWAYS_REFUSE_FLAGS = new Set(["-c", "-m"])
 // `/usr/bin/env` strips exactly like `env`.
 const R5_WRAPPER_TABLE_NAME = "r5-wrappers.json"
 const EMPTY_WRAPPER_SPEC = { values: [], value_letters: [], leading_positionals: 0, splice: [] }
+
+//: The deployed-layout data file the resolver and this guard both read.
+const R5_LAYOUT_NAME = "deployed-layout.json"
 
 //: The wrapper table in force for this process. Loaded in `setup` from the
 //: project/deployed data file; an EMPTY table with `missing: true` when no data
@@ -448,20 +451,65 @@ function isPythonInterpreter(raw) {
 
 // The executor permit — the ONE direct interpreter call R5 admits without an
 // allow-list entry. The relative form `.plan/execute-script.py` is the canonical
-// documented invocation (run from the repository root) and is admitted as-is.
-// An ABSOLUTE form is admitted only when it RESOLVES to
-// `{repository root}/.plan/execute-script.py` — so `python3
+// documented invocation, and it is admitted only when the command's EFFECTIVE
+// working directory IS the repository root: a leading `cd`, an `env -C` /
+// `--chdir` directory change and the shell's `workdir` are resolved first, so
+// the same relative path run from anywhere else is refused. (`git -C` is not a
+// shell directory change: it moves git's own working directory for that one
+// invocation and never the directory a following program runs in.) An ABSOLUTE
+// form is admitted only when it RESOLVES (realpath) to
+// `{repository root}/.plan/execute-script.py`, so `python3
 // /tmp/x/.plan/execute-script.py` is refused, never admitted by suffix.
 function isExecutorPermit(command, root, cwd) {
   const tokens = commandTokens(command)
   if (tokens.length < 2) return false
   if (basenameOf(tokens[0]).toLowerCase() !== "python3") return false
   const second = stripMatchedQuotes(tokens[1]).replace(/\\/g, "/")
-  if (second === ".plan/execute-script.py") return true
+  if (second === ".plan/execute-script.py") {
+    const effective = effectiveCwd(command, cwd || root)
+    if (!effective || !root) return false
+    return realPathOf(effective) === realPathOf(root)
+  }
   if (!second.startsWith("/")) return false
   const repoRoot = (root || cwd || "").replace(/\\/g, "/").replace(/\/+$/, "")
   if (!repoRoot) return false
   return normalizePosixPath(second) === `${repoRoot}/.plan/execute-script.py`
+}
+
+// The command's EFFECTIVE working directory: the shell's own cwd with a leading
+// `cd` / `env -C` / `--chdir` directory change applied in order. Returns "" when
+// no base is known, which no caller treats as "the repository root".
+function effectiveCwd(command, base) {
+  if (typeof base !== "string" || !base) return ""
+  let current = base.replace(/\\/g, "/").replace(/\/+$/, "")
+  if (!current.startsWith("/")) return ""
+  const tokens = rawCommandTokens(command)
+  for (let i = 0; i < tokens.length; i++) {
+    const token = stripMatchedQuotes(tokens[i])
+    if (isAssignment(token)) continue
+    if (token === "cd") {
+      const value = stripMatchedQuotes(tokens[i + 1] ?? "")
+      if (!value) return ""
+      current = value.startsWith("/") ? normalizePosixPath(value) : normalizePosixPath(`${current}/${value}`)
+      i++
+      continue
+    }
+    if (token === "env" || token === "sudo") {
+      for (let k = i + 1; k < tokens.length; k++) {
+        const option = stripMatchedQuotes(tokens[k])
+        if (!(option.startsWith("-") && option.length > 1)) break
+        let value = null
+        if (option === "-C" || option === "--chdir") value = stripMatchedQuotes(tokens[k + 1] ?? "")
+        else if (option.startsWith("--chdir=")) value = option.slice("--chdir=".length)
+        if (value !== null && value) {
+          current = value.startsWith("/") ? normalizePosixPath(value) : normalizePosixPath(`${current}/${value}`)
+        }
+      }
+      break
+    }
+    break
+  }
+  return current
 }
 
 // Collapse a posix path to its normal form (`..` applied, no empty segments),
@@ -537,75 +585,145 @@ function resolvedScriptPath(raw, root, cwd) {
   return normalizePosixPath(base + "/" + token)
 }
 
-// The candidate deployed bundle roots, from the platform-runtime bundle-cache
-// layout: the OpenCode / Antigravity FLAT skill roots (deployed under
-// `{root}/plan-marshall-{skill}/`) plus the Claude plugin-cache NESTED root
-// (deployed under `{root}/plan-marshall/{version}/`). Read from the environment
-// so a fixture can place a deployed tree where the guard looks. Deduplicated.
-function deployedBundleRoots() {
+// The deployed bundle-cache roots, read from the SHARED layout data file
+// (`standards/deployed-layout.json`) that the platform-runtime `layout
+// bundle-cache-root` resolver reads too — so the resolver and the guard cannot
+// disagree about which roots are DEPLOY roots. The union across targets is used
+// because a machine may carry more than one harness. Every root is realpath'd,
+// so a symlinked tree is never trusted lexically, and a root the layout does not
+// name is never a candidate. An unreadable layout yields NO roots (fail closed).
+function deployedBundleRoots(root) {
+  const data = loadLayoutData(root)
   const home = process.env.HOME || homedir() || ""
-  const configDir = process.env.XDG_CONFIG_HOME || (home ? path.join(home, ".config") : "")
+  const xdg = process.env.XDG_CONFIG_HOME || (home ? path.join(home, ".config") : "")
+  const targets = data && data.targets && typeof data.targets === "object" ? data.targets : {}
   const roots = []
-  if (process.env.OPENCODE_CONFIG_DIR) roots.push(path.join(process.env.OPENCODE_CONFIG_DIR, "skills"))
-  if (configDir) {
-    roots.push(path.join(configDir, "opencode", "skills"), path.join(configDir, "opencode", "skill"))
-  }
-  if (home) {
-    roots.push(
-      path.join(home, ".config", "opencode", "skills"),
-      path.join(home, ".claude", "skills"),
-      path.join(home, ".claude", "plugins", "cache", "plan-marshall"),
-      path.join(home, ".agents", "skills"),
-      path.join(home, ".gemini", "config", "plugins", "plan-marshall", "skills"),
-      path.join(home, ".gemini", "config", "skills"),
-      path.join(home, ".gemini", "antigravity", "skills"),
-    )
+  for (const name of Object.keys(targets)) {
+    const templates = Array.isArray(targets[name]) ? targets[name] : []
+    for (const template of templates) {
+      if (!template || typeof template !== "object") continue
+      let base = null
+      if (typeof template.env === "string") base = process.env[template.env] || null
+      else if (typeof template.xdg === "string") base = xdg || null
+      else if (typeof template.home === "string") base = home || null
+      if (!base) continue
+      const append = typeof template.append === "string" ? template.append : ""
+      roots.push(realPathOf(append ? path.join(base, append) : base))
+    }
   }
   return [...new Set(roots)]
 }
 
+// Resolve a path to its REAL path, falling back to a lexical absolute path when
+// the entry does not exist (a candidate that does not exist can never match a
+// script that does).
+function realPathOf(value) {
+  const absolute = path.resolve(String(value))
+  try {
+    return realpathSync(absolute)
+  } catch {
+    return absolute
+  }
+}
+
+// Read the shared deployed-layout data file, or null when it cannot be read.
+function loadLayoutData(root) {
+  for (const candidate of standardDataCandidates(root, R5_LAYOUT_NAME)) {
+    try {
+      const data = JSON.parse(readFileSync(candidate, "utf8"))
+      if (data && typeof data === "object") return data
+    } catch {
+      // Try the next candidate.
+    }
+  }
+  return null
+}
+
+// The newest version directory of a nested bundle directory that carries the
+// resolver's version marker. A stray directory under `{root}/plan-marshall/` is
+// never a candidate: the deployed version is the one the resolver would select.
+function newestVersionDir(nested, marker) {
+  let entries
+  try {
+    entries = readdirSync(nested)
+  } catch {
+    return null
+  }
+  let newest = null
+  let newestKey = null
+  for (const name of entries) {
+    const candidate = path.join(nested, name)
+    try {
+      if (!statSync(candidate).isDirectory()) continue
+      if (!existsSync(path.join(candidate, ...marker.split("/")))) continue
+    } catch {
+      continue
+    }
+    const key = versionSortKey(name)
+    if (newestKey === null || compareVersionKeys(key, newestKey) > 0) {
+      newest = candidate
+      newestKey = key
+    }
+  }
+  return newest
+}
+
+// Numeric-segment version ordering (`1.0.10` after `1.0.9`), mirroring the
+// resolver's `_version_sort_key`.
+function versionSortKey(name) {
+  return String(name)
+    .split(/[.-]/)
+    .map((part) => (/^\d+$/.test(part) ? Number(part) : part))
+}
+
+function compareVersionKeys(left, right) {
+  const length = Math.max(left.length, right.length)
+  for (let i = 0; i < length; i++) {
+    const a = left[i]
+    const b = right[i]
+    if (a === b) continue
+    if (typeof a === "number" && typeof b === "number") return a - b
+    return String(a) < String(b) ? -1 : 1
+  }
+  return 0
+}
+
 // Every absolute path a BUNDLE-RELATIVE allow-list entry (`skills/{skill}/{rest}`)
-// can be deployed at, across the nested and flat shapes, for every candidate
-// root. The nested shape is `{root}/plan-marshall/{entry}` (and each versioned
-// `{root}/plan-marshall/{version}/{entry}`); the flat shape reconstructs the
-// skill's dash-namespaced directory name as `{root}/plan-marshall-{skill}/{rest}`.
-function bundleEntryCandidates(entry, roots) {
+// can be deployed at, across the nested and flat shapes, for every root the
+// layout names. The nested shape is `{root}/{nested}/{version}/{entry}` for the
+// resolver's version directory (and the unversioned `{root}/{nested}/{entry}`);
+// the flat shape reconstructs the skill's dash-namespaced directory name.
+function bundleEntryCandidates(entry, roots, layout) {
   const parts = String(entry).split("/")
   if (parts.length < 2 || parts[0] !== "skills") return []
   const skill = parts[1]
   const rest = parts.slice(2).join("/")
-  const flatName = `plan-marshall-${skill}`
+  const prefix = (layout && layout.flat_skill_prefix) || "plan-marshall-"
+  const nestedName = (layout && layout.nested_bundle_dir) || "plan-marshall"
+  const marker = (layout && layout.version_marker) || ".claude-plugin/plugin.json"
+  const flatName = `${prefix}${skill}`
   const candidates = new Set()
   for (const root of roots) {
     candidates.add(rest ? path.join(root, flatName, rest) : path.join(root, flatName))
-    const nested = path.join(root, "plan-marshall")
+    const nested = path.join(root, nestedName)
     candidates.add(path.join(nested, entry))
-    try {
-      for (const name of readdirSync(nested)) {
-        const versionDir = path.join(nested, name)
-        try {
-          if (statSync(versionDir).isDirectory()) candidates.add(path.join(versionDir, entry))
-        } catch {
-          // An unreadable version entry is skipped; never guessed at.
-        }
-      }
-    } catch {
-      // No nested bundle directory under this root — the flat shape may still
-      // match above, and a root with neither shape contributes no candidate.
-    }
+    const versionDir = newestVersionDir(nested, marker)
+    if (versionDir) candidates.add(path.join(versionDir, entry))
   }
   return [...candidates]
 }
 
 // Whether an absolute script path is a DEPLOYED bundle script on the shared
-// bundle-relative allow-list. Matched EXACTLY against
-// `{deployed bundle root}/{entry}` for every candidate root, so a same-named
-// script under a NON-deployed directory (`/tmp/x/skills/...`) never matches.
-function isDeployedAllowListed(absolutePath, bundleEntries, roots) {
+// bundle-relative allow-list. The SCRIPT is realpath'd, while every candidate is
+// built lexically from an already-realpath'd root: a symlink pointing out of a
+// deployed root therefore resolves to its target and never equals the expected
+// deployed path, and a same-named script under a non-deployed directory never
+// matches at all.
+function isDeployedAllowListed(absolutePath, bundleEntries, roots, layout) {
   if (!absolutePath || !absolutePath.startsWith("/")) return false
-  const normalized = normalizePosixPath(absolutePath)
+  const normalized = realPathOf(absolutePath)
   for (const entry of bundleEntries) {
-    for (const candidate of bundleEntryCandidates(entry, roots)) {
+    for (const candidate of bundleEntryCandidates(entry, roots, layout)) {
       if (normalizePosixPath(candidate) === normalized) return true
     }
   }
@@ -620,9 +738,28 @@ function isThisRepository(root) {
 }
 
 // The plan-context predicate: Signal 1 (the sub-agent identity carries the
-// execution-context marker) OR Signal 2 (the shell workdir, or the project root,
-// resolves under a plan-worktree path segment). Mirrors the Claude hook's
-// `gate.context_gate`.
+// execution-context marker), Signal 2 (the shell workdir, or the project root,
+// resolves under a plan-worktree path segment), or Signal 3 (this checkout
+// carries a RUNBOOK-LANE marker: a `.plan/temp/rb-<plan>/progress.md` file.
+//
+// Signal 3 is the lane's own marker: a runbook-lane run issues every call with
+// `workdir` = the MAIN checkout, so neither Signal 1 (the lane runs in the main
+// context) nor Signal 2 (no worktree path in the cwd) fires, and a consumer
+// repository would be left unbound. The progress file is written by the lane
+// before any implementation work and lives for the run, which makes it a
+// cheaper and narrower signal than guessing from `git -C` targets.
+function isLaneRun(root) {
+  if (!root) return false
+  const tempDir = path.join(root, ".plan", "temp")
+  let entries
+  try {
+    entries = readdirSync(tempDir)
+  } catch {
+    return false
+  }
+  return entries.some((name) => name.startsWith("rb-") && existsSync(path.join(tempDir, name, "progress.md")))
+}
+
 function contextGate(agent, workdir, root) {
   if (typeof agent === "string" && agent.includes(EXECUTION_CONTEXT_MARKER)) return true
   for (const candidate of [workdir, root]) {
@@ -630,7 +767,7 @@ function contextGate(agent, workdir, root) {
     const normalized = candidate.replace(/\\/g, "/").replace(/\/+$/, "") + "/"
     if (normalized.includes(WORKTREE_PATH_SEGMENT)) return true
   }
-  return false
+  return isLaneRun(root)
 }
 
 // Every path a standards DATA FILE (`r5-allowlist.json`, `r5-wrappers.json`) is
@@ -933,7 +1070,8 @@ export default Plugin.define({
     const root = ctx.location?.directory || "."
     const logPath = path.join(root, ".plan", "temp", "guard.log")
     const allowList = loadAllowList(root)
-    const deployedRoots = deployedBundleRoots()
+    const deployedRoots = deployedBundleRoots(root)
+    const layoutData = loadLayoutData(root)
     WRAPPER_TABLE = loadWrapperTable(root)
 
     function audit(entry) {
@@ -1047,7 +1185,7 @@ export default Plugin.define({
           // bundle-cache root.
           if (isAllowListed(command, allowList.entries, root, workdir || root)) return
           const scriptPath = resolvedScriptPath(tokenAt(command, 1), root, workdir || root)
-          if (isDeployedAllowListed(scriptPath, allowList.bundleEntries, deployedRoots)) return
+          if (isDeployedAllowListed(scriptPath, allowList.bundleEntries, deployedRoots, layoutData)) return
           if (isInterpreterBypass(tokenAt(command, 1)) || hasFlagPrefixedBypass(command)) {
             audit(auditLine("R5", tool, sessionID, callID, command))
             throw new Error(

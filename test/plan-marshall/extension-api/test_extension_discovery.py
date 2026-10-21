@@ -738,18 +738,23 @@ def test_claude_bundle_cache_root_is_the_dot_claude_plugin_cache(
     assert roots[0].endswith('/.claude/plugins/cache/plan-marshall')
 
 
-def test_opencode_bundle_cache_roots_are_the_user_global_skill_roots(
+def test_opencode_bundle_cache_roots_are_the_deploy_roots_not_every_discovery_root(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """On OpenCode, the bundle-cache roots are the ~-anchored user-global skill roots."""
+    """On OpenCode, the bundle-cache roots are the DEPLOY roots only.
+
+    OpenCode deploys bundles under its config directory (``~/.config/opencode``,
+    or ``$OPENCODE_CONFIG_DIR`` / ``$XDG_CONFIG_HOME``). Its skill-DISCOVERY
+    roots also include ``~/.claude/skills`` and ``~/.agents/skills`` — roots this
+    marketplace never deploys a bundle to — so they are NOT bundle-cache roots and
+    the enforcement guards must not trust a script planted there.
+    """
     monkeypatch.delenv('OPENCODE_CONFIG_DIR', raising=False)
     monkeypatch.setattr(_marketplace_paths, '_read_runtime_target', lambda: 'opencode')
     roots = _marketplace_paths.get_bundle_cache_roots()
-    # OpenCode has no single plugin cache — discovery falls back to the user-global
-    # skill roots, in priority order.
     assert any(r.endswith('/.config/opencode/skills') for r in roots)
-    assert any(r.endswith('/.claude/skills') for r in roots)
-    assert any(r.endswith('/.agents/skills') for r in roots)
+    assert not any(r.endswith('/.claude/skills') for r in roots)
+    assert not any(r.endswith('/.agents/skills') for r in roots)
 
 
 def test_bundle_cache_roots_is_memoised(monkeypatch: pytest.MonkeyPatch) -> None:

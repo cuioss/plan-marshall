@@ -68,7 +68,9 @@ _PARITY_IDS = [command for command, _in, _out in _PARITY_CORPUS]
 
 
 def _hook_payload(command: str, *, in_context: bool) -> dict:
-    payload: dict = {'tool_name': 'Bash', 'tool_input': {'command': command}}
+    # Real PreToolUse payloads always carry `cwd`; the relative executor permit
+    # needs it to decide whether the call runs from the repository root.
+    payload: dict = {'tool_name': 'Bash', 'tool_input': {'command': command}, 'cwd': str(REPO_ROOT)}
     if in_context:
         payload['agent_type'] = SUB_AGENT_AGENT
     return payload

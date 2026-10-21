@@ -698,11 +698,16 @@ def _is_executor_permit(command: str, root: str | None, cwd: str | None) -> bool
     Compared after R5 wrapper stripping, so a wrapper-prefixed executor call
     (``env python3 .plan/execute-script.py ...``) stays exempt exactly as the
     guard exempts it. The RELATIVE form ``.plan/execute-script.py`` is the
-    canonical documented invocation and is admitted as-is; an ABSOLUTE form is
-    admitted only when it RESOLVES to ``{repository root}/.plan/execute-script.py``
-    (relative to the shell *cwd* when needed), so
-    ``python3 /tmp/x/.plan/execute-script.py`` is refused — never admitted by
-    suffix. Used only by the R5 matcher.
+    canonical documented invocation and is admitted only when the command's
+    EFFECTIVE working directory IS the repository root: a leading ``cd``, an
+    ``env -C`` / ``--chdir`` directory change and the payload ``cwd`` are
+    resolved first, so the same relative path run from anywhere else is refused.
+    (``git -C`` is not a shell directory change: it moves git's own working
+    directory for that one invocation, never the directory a following program
+    runs in.) An ABSOLUTE form is admitted only when it RESOLVES to
+    ``{repository root}/.plan/execute-script.py`` (relative to the shell *cwd*
+    when needed), so ``python3 /tmp/x/.plan/execute-script.py`` is refused —
+    never admitted by suffix. Used only by the R5 matcher.
     """
     stripped = _r5_stripped_tokens(command)
     if len(stripped) < 2:
@@ -712,13 +717,79 @@ def _is_executor_permit(command: str, root: str | None, cwd: str | None) -> bool
         return False
     second = _strip_matched_quotes(stripped[1]).replace('\\', '/')
     if second == '.plan/execute-script.py':
-        return True
+        effective = _effective_cwd(command, cwd or root)
+        if not effective or not root:
+            return False
+        return _real_path(effective) == _real_path(root)
     if not second.startswith('/'):
         return False
     repo_root = (root or cwd or '').replace('\\', '/').rstrip('/')
     if not repo_root:
         return False
     return posixpath.normpath(second) == repo_root + '/.plan/execute-script.py'
+
+
+def _real_path(value: str) -> str:
+    """Return *value* as a realpath, falling back to its normalized form."""
+    try:
+        return str(pathlib.Path(value).resolve())
+    except OSError:
+        return posixpath.normpath(value)
+
+
+def _effective_cwd(command: str, base: str | None) -> str:
+    """The command's EFFECTIVE working directory.
+
+    The shell's own cwd with a leading ``cd`` / ``env -C`` / ``--chdir``
+    directory change applied in order. Empty when no base is known, which no
+    caller treats as "the repository root".
+    """
+    if not base:
+        return ''
+    current = base.replace('\\', '/').rstrip('/')
+    if not current.startswith('/'):
+        return ''
+    try:
+        tokens = shlex.split(command)
+    except ValueError:
+        tokens = command.split()
+    index = 0
+    while index < len(tokens):
+        token = _strip_matched_quotes(tokens[index])
+        if _R5_ASSIGNMENT_RE.match(token):
+            index += 1
+            continue
+        if token == 'cd':
+            value = _strip_matched_quotes(tokens[index + 1]) if index + 1 < len(tokens) else ''
+            if not value:
+                return ''
+            current = _resolve_against(current, value)
+            index += 2
+            continue
+        if token in ('env', 'sudo'):
+            offset = index + 1
+            while offset < len(tokens):
+                option = _strip_matched_quotes(tokens[offset])
+                if not (option.startswith('-') and len(option) > 1):
+                    break
+                chdir_value: str | None = None
+                if option in ('-C', '--chdir'):
+                    chdir_value = _strip_matched_quotes(tokens[offset + 1]) if offset + 1 < len(tokens) else ''
+                elif option.startswith('--chdir='):
+                    chdir_value = option.split('=', 1)[1]
+                if chdir_value:
+                    current = _resolve_against(current, chdir_value)
+                offset += 1
+            break
+        break
+    return current
+
+
+def _resolve_against(base: str, value: str) -> str:
+    """Resolve *value* against *base* into a normalized posix path."""
+    if value.startswith('/'):
+        return posixpath.normpath(value)
+    return posixpath.normpath(f'{base}/{value}')
 
 
 #: Interpreter program name, including a versioned spelling (``python3.12``).
@@ -817,68 +888,139 @@ def _is_this_repository(payload: dict[str, Any]) -> bool:
 
 
 def _deployed_bundle_roots() -> tuple[str, ...]:
-    """The candidate deployed bundle roots from the platform-runtime cache layout.
+    """The deployed bundle-cache roots, from the SHARED layout resolver.
 
-    The OpenCode / Antigravity FLAT skill roots (``{root}/plan-marshall-{skill}/``)
-    plus the Claude plugin-cache NESTED root (``{root}/plan-marshall/{version}/``).
-    Read from the environment so a fixture can place a deployed tree where the
-    hook looks; deduplicated, in probe order.
+    The roots are not a hard-coded list here: they come from
+    ``deployed_layout.all_bundle_cache_roots`` — the same shared module the
+    ``platform_runtime layout bundle-cache-root`` verb delegates to, reading the
+    same ``standards/deployed-layout.json`` data file. A machine may carry more
+    than one harness, so the union across targets is used. Every root is
+    realpath'd, so a symlinked tree is never trusted lexically, and a root the
+    resolver does not name is never a candidate. When the shared module is
+    unreachable the data file is read directly (same data, no second list); when
+    neither can be read the result is EMPTY, which refuses every deployed script
+    rather than trusting an unknown tree.
     """
-    home = os.environ.get('HOME') or str(pathlib.Path.home())
-    config_dir = os.environ.get('XDG_CONFIG_HOME') or (str(pathlib.Path(home) / '.config') if home else '')
-    roots: list[str] = []
-    opencode_config = os.environ.get('OPENCODE_CONFIG_DIR', '')
-    if opencode_config:
-        roots.append(str(pathlib.Path(opencode_config) / 'skills'))
-    if config_dir:
-        roots.append(str(pathlib.Path(config_dir) / 'opencode' / 'skills'))
-        roots.append(str(pathlib.Path(config_dir) / 'opencode' / 'skill'))
-    if home:
-        roots.extend(
-            [
-                str(pathlib.Path(home) / '.config' / 'opencode' / 'skills'),
-                str(pathlib.Path(home) / '.claude' / 'skills'),
-                str(pathlib.Path(home) / '.claude' / 'plugins' / 'cache' / 'plan-marshall'),
-                str(pathlib.Path(home) / '.agents' / 'skills'),
-                str(pathlib.Path(home) / '.gemini' / 'config' / 'plugins' / 'plan-marshall' / 'skills'),
-                str(pathlib.Path(home) / '.gemini' / 'config' / 'skills'),
-                str(pathlib.Path(home) / '.gemini' / 'antigravity' / 'skills'),
-            ]
+    standards_dir = _standards_dir()
+    try:
+        import deployed_layout
+    except ImportError:
+        return _layout_roots_from_data()
+    try:
+        return tuple(
+            str(pathlib.Path(root).resolve()) for root in deployed_layout.all_bundle_cache_roots(standards_dir)
         )
-    seen: dict[str, None] = {}
-    for root in roots:
-        seen.setdefault(root, None)
-    return tuple(seen)
+    except Exception:
+        return ()
+
+
+def _layout_roots_from_data() -> tuple[str, ...]:
+    """Expand the shared layout data file without the shared module (fallback)."""
+    targets = _load_layout_data().get('targets')
+    if not isinstance(targets, dict):
+        return ()
+    roots: list[str] = []
+    for templates in targets.values():
+        for template in templates if isinstance(templates, list) else []:
+            if not isinstance(template, dict):
+                continue
+            append = str(template.get('append') or '')
+            home = os.environ.get('HOME') or str(pathlib.Path.home())
+            if 'env' in template:
+                base = os.environ.get(str(template['env']), '')
+            elif 'xdg' in template:
+                base = os.environ.get('XDG_CONFIG_HOME') or str(pathlib.Path(home) / '.config')
+            elif 'home' in template:
+                base = home
+            else:
+                continue
+            if not base:
+                continue
+            root = str(pathlib.Path(base).joinpath(*append.split('/'))) if append else str(pathlib.Path(base))
+            root = str(pathlib.Path(root).resolve())
+            if root not in roots:
+                roots.append(root)
+    return tuple(roots)
+
+
+def _standards_dir() -> pathlib.Path:
+    """The skill's ``standards/`` directory — where the shared data files live."""
+    return pathlib.Path(__file__).resolve().parent.parent / 'standards'
+
+
+#: The deployed-layout data file the resolver and both guards read (the
+#: allow-list's sibling).
+_LAYOUT_DATA_NAME = 'deployed-layout.json'
 
 
 def _bundle_entry_candidates(entry: str, roots: tuple[str, ...]) -> list[str]:
     """Every absolute path a bundle-relative *entry* can be deployed at.
 
-    The nested shape is ``{root}/plan-marshall/{entry}`` (plus each versioned
-    ``{root}/plan-marshall/{version}/{entry}``); the flat shape reconstructs the
-    skill's dash-namespaced directory name as
-    ``{root}/plan-marshall-{skill}/{rest}``.
+    The nested shape is ``{root}/plan-marshall/{version}/{entry}`` for the
+    resolver's VERSION directory — the newest sibling carrying the bundle marker,
+    never an arbitrary directory under the bundle — plus the unversioned
+    ``{root}/plan-marshall/{entry}``; the flat shape reconstructs the skill's
+    dash-namespaced directory name as ``{root}/plan-marshall-{skill}/{rest}``.
+    The three layout spellings come from the shared ``deployed-layout.json``.
     """
     parts = entry.split('/')
     if len(parts) < 2 or parts[0] != 'skills':
         return []
     skill = parts[1]
     rest = parts[2:]
-    flat_name = f'plan-marshall-{skill}'
+    flat_prefix, nested_dir, version_marker = _bundle_layout_spellings()
+    flat_name = f'{flat_prefix}{skill}'
     candidates: list[str] = []
     for root in roots:
         base = pathlib.Path(root.replace('\\', '/'))
         candidates.append(str(base.joinpath(flat_name, *rest)))
-        nested = base / 'plan-marshall'
+        nested = base / nested_dir
         candidates.append(str(nested.joinpath(*entry.split('/'))))
-        try:
-            children = sorted(nested.iterdir())
-        except OSError:
-            continue
-        for child in children:
-            if child.is_dir():
-                candidates.append(str(child.joinpath(*entry.split('/'))))
+        version_dir = _newest_version_dir(nested, version_marker)
+        if version_dir is not None:
+            candidates.append(str(version_dir.joinpath(*entry.split('/'))))
     return candidates
+
+
+def _bundle_layout_spellings() -> tuple[str, str, str]:
+    """``(flat_skill_prefix, nested_bundle_dir, version_marker)`` from the shared data."""
+    data = _load_layout_data()
+    return (
+        str(data.get('flat_skill_prefix') or 'plan-marshall-'),
+        str(data.get('nested_bundle_dir') or 'plan-marshall'),
+        str(data.get('version_marker') or '.claude-plugin/plugin.json'),
+    )
+
+
+def _load_layout_data() -> dict[str, Any]:
+    """Return the shared deployed-layout data file, or ``{}`` when unreadable."""
+    try:
+        data = json.loads((_standards_dir() / _LAYOUT_DATA_NAME).read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _newest_version_dir(nested: pathlib.Path, marker: str) -> pathlib.Path | None:
+    """The NEWEST version directory of *nested* carrying the bundle marker, or ``None``.
+
+    A stray directory under ``{root}/plan-marshall/`` (``.../evil/…``) is never a
+    candidate: the deployed version is the one the resolver would select.
+    """
+    if not nested.is_dir():
+        return None
+    candidates = [child for child in nested.iterdir() if child.is_dir() and (child / marker).is_file()]
+    if not candidates:
+        return None
+    return max(candidates, key=lambda child: _version_sort_key(child.name))
+
+
+def _version_sort_key(name: str) -> tuple[tuple[int, int | str], ...]:
+    """Numeric-segment version ordering (``1.0.10`` after ``1.0.9``)."""
+    key: list[tuple[int, int | str]] = []
+    for part in name.replace('-', '.').split('.'):
+        key.append((0, int(part)) if part.isdigit() else (1, part))
+    return tuple(key)
 
 
 def _resolved_script_path(raw: str, root: str | None, cwd: str | None) -> str:
@@ -902,12 +1044,21 @@ def _resolved_script_path(raw: str, root: str | None, cwd: str | None) -> str:
 def _is_deployed_allow_listed(absolute_path: str, entries: tuple[str, ...], roots: tuple[str, ...]) -> bool:
     """Whether *absolute_path* is a deployed bundle script on the bundle allow-list.
 
-    Matched EXACTLY against ``{deployed bundle root}/{entry}`` for every candidate
-    root, so a same-named script under a NON-deployed directory never matches.
+    Compared after ``realpath`` on BOTH sides: a symlink pointing out of a
+    deployed root resolves elsewhere and is refused, and a same-named script under
+    a NON-deployed directory never matches.
     """
     if not absolute_path or not absolute_path.startswith('/'):
         return False
-    normalized = posixpath.normpath(absolute_path)
+    try:
+        normalized = str(pathlib.Path(absolute_path).resolve())
+    except OSError:
+        return False
+    # The SCRIPT is realpath'd; every candidate is built lexically from an
+    # already-realpath'd root. A symlink pointing out of a deployed root
+    # therefore resolves to its target and never equals the expected deployed
+    # path, while a same-named script under a non-deployed directory never
+    # matches at all.
     for entry in entries:
         for candidate in _bundle_entry_candidates(entry, roots):
             if posixpath.normpath(candidate) == normalized:
@@ -1351,6 +1502,28 @@ def _refusal_detail(payload: dict[str, Any]) -> str:
     return ''
 
 
+def _is_lane_run(payload: dict[str, Any]) -> bool:
+    """Whether this checkout carries a RUNBOOK-LANE marker.
+
+    Signal 3 of the plan-context predicate: a runbook-lane run issues every call
+    with the MAIN checkout as its working directory, so neither Signal 1 (the
+    lane runs in the main context) nor Signal 2 (no worktree path in the cwd)
+    fires, and a consumer repository would be left unbound. The lane writes
+    ``.plan/temp/rb-<plan>/progress.md`` before any implementation work, which
+    makes it a narrower and more deterministic marker than guessing from a
+    ``git -C`` target.
+    """
+    root = _allow_list_root(payload) or gate.cwd(payload)
+    if not root:
+        return False
+    temp_dir = pathlib.Path(root) / '.plan' / 'temp'
+    try:
+        entries = list(temp_dir.iterdir())
+    except OSError:
+        return False
+    return any(entry.name.startswith('rb-') and (entry / 'progress.md').is_file() for entry in entries)
+
+
 def evaluate(payload: dict[str, Any]) -> str | None:
     """Return the deny reason for the first matched rule, or ``None``.
 
@@ -1372,7 +1545,7 @@ def evaluate(payload: dict[str, Any]) -> str | None:
     """
     tool_name = gate.tool_name(payload)
     tool_input = gate.tool_input(payload)
-    gated = gate.context_gate(payload)
+    gated = gate.context_gate(payload) or _is_lane_run(payload)
     if gated:
         for rule_name, rule in _RULES:
             reason = rule(tool_name, tool_input)

@@ -602,6 +602,9 @@ def test_guard_node_admits_a_nested_cache_bundle_script(tmp_path_factory: pytest
     """Done-when (D1): the guard admits the nested-cache steward and generator scripts."""
     home = tmp_path_factory.mktemp('home')
     base = home / '.claude' / 'plugins' / 'cache' / 'plan-marshall' / 'plan-marshall' / _NESTED_DEPLOYED_VERSION
+    marker = base / '.claude-plugin' / 'plugin.json'
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.write_text('{"name": "plan-marshall"}\n', encoding='utf-8')
     scripts = {
         'determine_mode.py': ('marshall-steward', 'mode'),
         'generate_executor.py': ('tools-script-executor', 'generate'),

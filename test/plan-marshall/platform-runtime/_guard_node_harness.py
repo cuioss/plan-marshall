@@ -59,6 +59,9 @@ _ALLOWLIST_REL = Path('marketplace/bundles/plan-marshall/skills/platform-runtime
 #: sibling). The scratch root must carry BOTH, or the guard fails closed.
 _WRAPPER_TABLE_REL = Path('marketplace/bundles/plan-marshall/skills/platform-runtime/standards/r5-wrappers.json')
 
+#: The deployed-layout data file the resolver and both guards read.
+_LAYOUT_REL = Path('marketplace/bundles/plan-marshall/skills/platform-runtime/standards/deployed-layout.json')
+
 
 def guard_plugin_path() -> Path:
     """Return the path to the real ``.opencode/plugin/guard.js`` under test."""
@@ -82,6 +85,20 @@ def wrapper_table_path() -> Path:
 def wrapper_table() -> dict[str, Any]:
     """Return the parsed shared wrapper table (empty dict when the file is absent)."""
     path = wrapper_table_path()
+    if not path.is_file():
+        return {}
+    data = json.loads(path.read_text(encoding='utf-8'))
+    return data if isinstance(data, dict) else {}
+
+
+def layout_data_path() -> Path:
+    """Return the path to the shared deployed-layout data file."""
+    return REPO_ROOT / _LAYOUT_REL
+
+
+def layout_data() -> dict[str, Any]:
+    """Return the parsed shared deployed-layout data (empty dict when absent)."""
+    path = layout_data_path()
     if not path.is_file():
         return {}
     data = json.loads(path.read_text(encoding='utf-8'))
@@ -267,10 +284,12 @@ def build_harness(
     _write(plugin_dir / 'index.js', 'export const Plugin = { define: (spec) => spec }\n')
     shutil.copyfile(guard_plugin_path(), scratch / 'guard.js')
     _write(scratch / 'driver.mjs', _DRIVER)
-    # The wrapper table is a SIBLING of the allow-list and is read from the same
-    # candidate list, so a scratch root that carries one must carry the other —
-    # otherwise the guard fails CLOSED on every interpreter call.
+    # The wrapper table and the deployed-layout data are SIBLINGS of the
+    # allow-list, read from the same candidate list, so a scratch root that
+    # carries one must carry all three — otherwise the guard fails CLOSED on
+    # every interpreter call (no table) or admits no deployed script (no layout).
     _write(scratch / _WRAPPER_TABLE_REL, json.dumps(wrapper_table()))
+    _write(scratch / _LAYOUT_REL, json.dumps(layout_data()))
     if include_allowlist:
         resolved = allowlist_entries() if entries is None else entries
         bundle_entries = allowlist_bundle_entries()

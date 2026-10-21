@@ -350,7 +350,12 @@ def test_no_documented_invocation_is_refused(tmp_path_factory: pytest.TempPathFa
     matched_exclusions: set[int] = set()
 
     for (candidate, check_command, unresolved), outcome in zip(checks, outcomes, strict=True):
-        payload = {'agent_type': SUB_AGENT_AGENT, 'tool_name': 'Bash', 'tool_input': {'command': check_command}}
+        payload = {
+            'agent_type': SUB_AGENT_AGENT,
+            'tool_name': 'Bash',
+            'tool_input': {'command': check_command},
+            'cwd': str(REPO_ROOT),
+        }
         hook_reason = _HOOK.evaluate(payload)
         refused = outcome.blocked or hook_reason is not None
         if not refused:
@@ -410,7 +415,7 @@ def test_a_resolved_path_template_is_checked_not_skipped(tmp_path_factory: pytes
     assert 'marketplace/bundles/plan-marshall/skills/tools-script-executor/scripts/generate_executor.py' in resolved
 
     hook_reason = _HOOK.evaluate(
-        {'agent_type': SUB_AGENT_AGENT, 'tool_name': 'Bash', 'tool_input': {'command': resolved}}
+        {'agent_type': SUB_AGENT_AGENT, 'tool_name': 'Bash', 'tool_input': {'command': resolved}, 'cwd': str(REPO_ROOT)}
     )
     assert hook_reason is None, f'the resolved command must be admitted by the hook; reason={hook_reason!r}'
 
@@ -426,7 +431,14 @@ def test_a_resolved_path_template_is_checked_not_skipped(tmp_path_factory: pytes
     for command, _one_unresolved in generic:
         assert command != 'python3 "{SCRIPT_FILE}" mode', f'the placeholder must be substituted: {command!r}'
         assert (
-            _HOOK.evaluate({'agent_type': SUB_AGENT_AGENT, 'tool_name': 'Bash', 'tool_input': {'command': command}})
+            _HOOK.evaluate(
+                {
+                    'agent_type': SUB_AGENT_AGENT,
+                    'tool_name': 'Bash',
+                    'tool_input': {'command': command},
+                    'cwd': str(REPO_ROOT),
+                }
+            )
             is None
         ), f'every allow-listed resolution must be admitted; command={command!r}'
 

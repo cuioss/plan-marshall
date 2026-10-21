@@ -51,6 +51,9 @@ because the fix teaches the readers to read the tree that ships.
 
 from __future__ import annotations
 
+import json
+import os
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Final, NamedTuple
 
@@ -77,6 +80,113 @@ FLAT_DIR_SEPARATOR: Final[str] = '-'
 #: carries plural ``skills/``, not singular ``skill/`` — see the module docstring
 #: for why the singular spelling is still probed.
 TARGET_MANIFEST_NAMES: Final[tuple[str, ...]] = ('plugin.json', 'opencode.json')
+
+
+# ---------------------------------------------------------------------------
+# Bundle-cache roots — where each target DEPLOYS bundles
+# ---------------------------------------------------------------------------
+# A skill can be DISCOVERED from many roots, but a bundle is DEPLOYED to exactly
+# one place per target (``marketplace/targets/sync.py``'s ``TargetSyncConfig``):
+# ``~/.config/opencode`` on OpenCode, ``~/.gemini/config/plugins/plan-marshall``
+# on Antigravity, and ``~/.claude/plugins/cache/plan-marshall`` on Claude. The
+# per-target root TEMPLATES therefore live in ONE data file —
+# ``platform-runtime/standards/deployed-layout.json`` — read here, by the
+# ``layout bundle-cache-root`` op and, through the same file, by both
+# enforcement guards. A discovery-only root (a directory another tool reads
+# skills from) is not a deploy root and is never a candidate.
+
+#: The deployed-layout data file's name, beside a skill's ``standards/``.
+BUNDLE_CACHE_LAYOUT_NAME: Final[str] = 'deployed-layout.json'
+
+
+def load_bundle_cache_layout(standards_dir: Path) -> dict[str, object]:
+    """Return the parsed deployed-layout data, or ``{}`` when it cannot be read."""
+    try:
+        data = json.loads((standards_dir / BUNDLE_CACHE_LAYOUT_NAME).read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _expand_deploy_root(template: Mapping[str, object], env: Mapping[str, str]) -> str | None:
+    """Expand one root template against *env*, or ``None`` when its base is unset."""
+    append = str(template.get('append') or '')
+    if 'env' in template:
+        base = env.get(str(template['env']), '')
+        if not base:
+            return None
+    elif 'xdg' in template:
+        home = env.get('HOME', '')
+        base = env.get('XDG_CONFIG_HOME') or (str(Path(home) / '.config') if home else '')
+        if not base:
+            return None
+    elif 'home' in template:
+        base = env.get('HOME', '')
+        if not base:
+            return None
+    else:
+        return None
+    return str(Path(base).joinpath(*append.split('/'))) if append else str(Path(base))
+
+
+def bundle_cache_roots(target: str, standards_dir: Path, env: Mapping[str, str] | None = None) -> list[str]:
+    """Return the bundle-cache root directories *target* deploys to, in probe order.
+
+    Reads the shared ``deployed-layout.json`` data file so the resolver and the
+    guards cannot disagree about a root. Absolute, expanded and deduplicated; an
+    unreadable data file yields an empty list, which the guards read as "nothing
+    is a deployed root" (fail closed) rather than as "trust everything".
+    """
+    environment = os.environ if env is None else env
+    layout = load_bundle_cache_layout(standards_dir)
+    targets = layout.get('targets') if isinstance(layout.get('targets'), dict) else {}
+    templates = targets.get(target) if isinstance(targets, dict) else None
+    if not isinstance(templates, list):
+        return []
+    roots: list[str] = []
+    for template in templates:
+        if not isinstance(template, dict):
+            continue
+        expanded = _expand_deploy_root(template, environment)
+        if expanded is None or expanded in roots:
+            continue
+        roots.append(str(Path(expanded).expanduser()))
+    return roots
+
+
+def all_bundle_cache_roots(standards_dir: Path, env: Mapping[str, str] | None = None) -> list[str]:
+    """Return every registered target's bundle-cache roots, deduplicated.
+
+    A machine may carry more than one harness, and a deployed script under any
+    of them is still a deployed script of this marketplace — so the guards, which
+    serve a session that can cross harnesses, admit the union of the roots the
+    resolver names for each target. A root no target names is never in the union.
+    """
+    layout = load_bundle_cache_layout(standards_dir)
+    targets = layout.get('targets') if isinstance(layout.get('targets'), dict) else {}
+    roots: list[str] = []
+    for target in targets if isinstance(targets, dict) else {}:
+        for root in bundle_cache_roots(str(target), standards_dir, env):
+            if root not in roots:
+                roots.append(root)
+    return roots
+
+
+def newest_version_dir(bundle_dir: Path, marker: str = '.claude-plugin/plugin.json') -> Path | None:
+    """Return the NEWEST version directory of *bundle_dir* carrying *marker*.
+
+    ``None`` when no child is a version directory with the marker, so a stray
+    directory under the bundle (``.../plan-marshall/evil/…``) is never a
+    candidate: the deployed version is the one the resolver would select.
+    """
+    from marketplace_bundles import _version_sort_key  # local import: avoids an import cycle
+
+    if not bundle_dir.is_dir():
+        return None
+    candidates = [child for child in bundle_dir.iterdir() if child.is_dir() and (child / marker).is_file()]
+    if not candidates:
+        return None
+    return max(candidates, key=lambda child: _version_sort_key(child.name))
 
 
 def flat_skill_dir_name(bundle: str, skill: str) -> str:
