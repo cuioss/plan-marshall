@@ -494,29 +494,38 @@ dispatch_boundary_file: work/metrics-dispatch-boundaries-5-execute.toon
 ### enrich
 
 Attribute token usage to phases through the host platform's runtime engine.
-`enrich` delegates the entire transcript walk to [`platform-runtime`](../platform-runtime/SKILL.md)'s
-`metrics normalized-tokens` op: it hands the op the `session_id` and the phase
-windows, and the runtime's engine walks the session transcript, normalizes every
-usage record into the **five canonical categories** `{input, output, cache_read,
+`enrich` delegates the entire measurement to [`platform-runtime`](../platform-runtime/SKILL.md)'s
+`metrics normalized-tokens` op: it hands the op the captured session identities
+and the phase windows, and the runtime's engine answers from whatever source the
+active target owns — on Claude it walks the session transcript and its subagent
+transcripts; on OpenCode it reads the plan's session tree from `opencode.db`
+through the shared read-only reader. Either way it normalizes every usage record
+into the **five canonical categories** `{input, output, cache_read,
 cache_creation, total}` per phase, and writes the per-phase result back.
-`manage-metrics` **never parses a transcript itself** — it reads and persists the
-runtime's normalized numbers:
+`manage-metrics` **never parses a transcript or a session database itself** — it
+reads and persists the runtime's normalized numbers:
 
-1. The op locates the parent JSONL session record for `session_id`.
-2. The op discovers subagent transcripts
+1. `--session-id` is repeatable: the caller forwards every root the plan
+   captured (a resume appends another), so one enrich run measures the union of
+   their trees.
+2. The op resolves each identity to its root and measures that root, reporting
+   which identities it measured and which it could not, with the named reason.
+3. On a transcript target the op also discovers the subagent transcripts
    (`{project_dir}/{parent_session_id}/subagents/agent-*.jsonl`) and every usage
-   record inside them.
+   record inside them; on a store-backed target the descendant sessions come
+   from the store's own parent chain.
 
 All attribution uses the `start_time` / `end_time` windows recorded in
 `work/metrics.toon`. Usage outside any recorded phase window is ignored. The
-per-target transcript vocabulary the engine recognises — on the Claude target,
+per-target usage vocabulary the engine recognises — on the Claude target,
 `message.usage` four-field entries, `<usage>` return tags, and
-`tool_use` / `tool_result` content items — is **the runtime's own concern**,
-stated in its engine, not restated here as the format.
+`tool_use` / `tool_result` content items; on OpenCode, assistant-message
+`tokens` / `cost` rows — is **the runtime's own concern**, stated in its engine,
+not restated here as the format.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics enrich \
-  --plan-id {plan_id} --session-id {session_id}
+  --plan-id {plan_id} --session-id {session_id} [--session-id {another_session_id}]
 ```
 
 **Output:**

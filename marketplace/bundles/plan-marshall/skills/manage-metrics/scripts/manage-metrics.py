@@ -4051,18 +4051,23 @@ def _inline_main_context_sum(phase_row: dict) -> int:
     )
 
 
-# Targets that expose no session transcript. Enrichment is structurally
-# impossible there, so an absent session identity routes to the enrich-skip
-# branch rather than the missing-identity error. The set is read against the
+# Targets whose session identity comes from their own store (OpenCode's
+# `opencode.db`) rather than from a transcript. On such a target an ABSENT
+# identity — the resolver could not resolve one, each a named reason
+# (`db_not_found` / `db_unreadable` / `schema_unsupported` / `session_not_found`)
+# — routes to the enrich-skip branch rather than the missing-identity error.
+# Transcript-lessness is NOT the ground: OpenCode answers measured buckets from
+# its database whenever an identity IS present. The set is read against the
 # live runtime target at the point of use — the platform-detected target
 # first (see ``_resolve_runtime_target``), then the marshal-declared
 # ``runtime.target`` — never from a documented default. ``claude`` (the
 # default target) is transcript-capable and is deliberately absent here.
-_TRANSCRIPT_LESS_TARGETS = frozenset({'opencode', 'antigravity'})
+_STORE_BACKED_TARGETS = frozenset({'opencode', 'antigravity'})
 
-# Gap flag persisted when enrichment is skipped on a transcript-less target.
-# It publishes the population so an unenriched total is never read as measured.
-ENRICH_SKIP_REASON_NO_SESSION_TRANSCRIPT_LESS = 'no_session_id_transcript_less'
+# Gap flag persisted when enrichment is skipped because no identity could be
+# resolved. It publishes the population so an unenriched total is never read as
+# measured.
+ENRICH_SKIP_REASON_NO_SESSION_IDENTITY = 'no_session_id_identity_unresolved'
 ENRICH_SKIP_POPULATION_UNENRICHED = 'unenriched'
 
 
@@ -4139,15 +4144,15 @@ def cmd_enrich(args: argparse.Namespace) -> dict:
 
     if not session_ids:
         target = _resolve_runtime_target()
-        if target in _TRANSCRIPT_LESS_TARGETS:
+        if target in _STORE_BACKED_TARGETS:
             data = read_metrics_raw(plan_id)
             data['enrichment_skipped'] = True
-            data['enrichment_gap_reason'] = ENRICH_SKIP_REASON_NO_SESSION_TRANSCRIPT_LESS
+            data['enrichment_gap_reason'] = ENRICH_SKIP_REASON_NO_SESSION_IDENTITY
             data['enrichment_gap_population'] = ENRICH_SKIP_POPULATION_UNENRICHED
             data['updated'] = now_utc_iso()
-            # No transcript was walked, so no phase carries a measurement from
-            # this run: stamp `unknown` on every row lacking a measured figure
-            # rather than leaving the absence to render as `-`.
+            # No store was read, so no phase carries a measurement from this run:
+            # stamp `unknown` on every row lacking a measured figure rather than
+            # leaving the absence to render as `-`.
             _stamp_unknown_totals(data.setdefault('phases', {}))
             write_metrics(plan_id, data)
             return {
@@ -4155,11 +4160,11 @@ def cmd_enrich(args: argparse.Namespace) -> dict:
                 'plan_id': plan_id,
                 'enriched': False,
                 'skipped': True,
-                'gap': ENRICH_SKIP_REASON_NO_SESSION_TRANSCRIPT_LESS,
+                'gap': ENRICH_SKIP_REASON_NO_SESSION_IDENTITY,
                 'population': ENRICH_SKIP_POPULATION_UNENRICHED,
                 'message': (
-                    'Skipped session enrichment: no session identity on '
-                    f'transcript-less target ({target}); proceeding unenriched'
+                    'Skipped session enrichment: no session identity could be '
+                    f'resolved on target ({target}); proceeding unenriched'
                 ),
             }
         return {

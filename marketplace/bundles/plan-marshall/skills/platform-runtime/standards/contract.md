@@ -1167,12 +1167,20 @@ unclassified_tool_calls: 0
 status: success
 operation: metrics normalized-tokens
 session_id: ses_root_abc123
+root_session_id: ses_root_abc123
 output_file: .plan/local/plans/my-plan/work/normalized-tokens.json
 phases_attributed: 6
+four_field_phases_attributed: 6
 message_count: 412
 subagent_calls_attributed: 11
 subagent_phases_attributed: 4
 ```
+
+`root_session_id` is the root the given identity resolved to, so a tree reached
+twice (two identities naming the same root) is summed once.
+`four_field_phases_attributed` is the phase count carrying the four-field view —
+the counter `manage-metrics enrich` echoes — and equals `phases_attributed`
+whenever every attributed phase carries usage.
 
 **No-op (no transcript located)**:
 ```toon

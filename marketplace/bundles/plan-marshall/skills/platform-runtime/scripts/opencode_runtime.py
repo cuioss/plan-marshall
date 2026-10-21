@@ -2020,7 +2020,7 @@ class OpenCodeRuntime(Runtime):
                 },
             )
         try:
-            conn = sqlite3.connect(f'file:{resolved_db}?mode=ro', uri=True)
+            conn = sqlite3.connect(f'{resolved_db.resolve().as_uri()}?mode=ro', uri=True)
         except (sqlite3.Error, OSError, ValueError):
             return toon_success(
                 PERSISTED_CONTRADICTION_OPERATION,
