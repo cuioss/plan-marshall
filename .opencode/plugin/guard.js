@@ -923,44 +923,125 @@ function patchTextTargetsExecutor(patchText) {
   return candidates.some(normalizedIsExecutorPath)
 }
 
-// Whether the command is a plain `git commit` invocation — `git` as the
-// program, `commit` as the subcommand after any global options — together with
-// the `-C` TARGET the commit is aimed at. R6 names the plan from that target
-// (when it lies under a plan worktree), so the persona-mandated
-// `git -C {WORKTREE} commit` form from the main checkout is judged by the
-// worktree's own plan. Successive `-C` values COMPOSE (git applies each in
-// order, resolving a relative value against the running target), so
-// `git -C . -C .plan/local/worktrees/plan-a commit` names the worktree too.
-function gitCommitTarget(command) {
-  if (normalizeToken(tokenAt(command, 0)).toLowerCase() !== "git") return { isCommit: false, target: null }
-  const tokens = commandTokens(command)
-  let i = 1
-  let target = null
-  while (i < tokens.length) {
-    const t = stripMatchedQuotes(tokens[i])
-    if (t === "-C") {
-      const value = stripMatchedQuotes(tokens[i + 1] ?? "")
-      target = target === null || value.startsWith("/") ? value : `${target}/${value}`
+// A directory value that still carries a shell expansion is UNRESOLVABLE: the
+// guard cannot know where the commit would land, so R6 refuses fail-closed.
+const UNRESOLVABLE_DIR_RE = /[$`]/
+
+function isUnresolvableDir(value) {
+  return typeof value === "string" && value.length > 0 && UNRESOLVABLE_DIR_RE.test(value)
+}
+
+// The plan id a git admin directory names (`.../.git/worktrees/{plan}`), or "".
+function planIdFromGitDir(value) {
+  const normalized = String(value).replace(/\\/g, "/").replace(/\/+$/, "")
+  const marker = "/worktrees/"
+  const at = normalized.lastIndexOf(marker)
+  if (at === -1) return ""
+  return normalized.slice(at + marker.length).split("/")[0]
+}
+
+// What a `git commit` command says about the plan it targets. The plan is named
+// from EVERY form the harness can express: git's `-C` global option (attached
+// form included; successive values COMPOSE, because git applies each in order
+// against the running target), the `--git-dir` / `--work-tree` options in both
+// detached and `=` form, and the `GIT_DIR` / `GIT_WORK_TREE` assignments that
+// precede the program. A `-c alias.NAME=…` subcommand is RESOLVED to its body's
+// first word; a shell-expansion body (`!…`) or a directory value carrying `$` or
+// a backtick is UNRESOLVABLE, so R6 refuses fail-closed rather than guessing.
+function gitCommitInfo(command) {
+  const raw = rawCommandTokens(command)
+  let gitAt = -1
+  for (let i = 0; i < raw.length; i++) {
+    if (basenameOf(raw[i]).toLowerCase() === "git") {
+      gitAt = i
+      break
+    }
+  }
+  if (gitAt === -1) return { isCommit: false, cwdTarget: null, workTree: null, gitDir: null, unresolvable: false }
+  const environment = {}
+  for (let i = 0; i < gitAt; i++) {
+    const token = stripMatchedQuotes(raw[i])
+    const eq = token.indexOf("=")
+    if (eq > 0 && /^[A-Za-z_][A-Za-z0-9_]*$/.test(token.slice(0, eq))) {
+      environment[token.slice(0, eq)] = token.slice(eq + 1)
+    }
+  }
+  let gitDir = environment.GIT_DIR ?? null
+  let workTree = environment.GIT_WORK_TREE ?? null
+  let unresolvable = isUnresolvableDir(gitDir) || isUnresolvableDir(workTree)
+  const aliases = {}
+  let cwdTarget = null
+  let subcommand = null
+  let i = gitAt + 1
+  while (i < raw.length) {
+    const token = stripMatchedQuotes(raw[i])
+    if (token === "-C") {
+      const value = stripMatchedQuotes(raw[i + 1] ?? "")
+      cwdTarget = cwdTarget === null || value.startsWith("/") ? value : `${cwdTarget}/${value}`
+      if (isUnresolvableDir(value)) unresolvable = true
       i += 2
       continue
     }
-    if (t.startsWith("-C") && !t.startsWith("--") && t.length > 2) {
-      const value = t.slice(2)
-      target = target === null || value.startsWith("/") ? value : `${target}/${value}`
+    if (token.startsWith("-C") && !token.startsWith("--") && token.length > 2) {
+      const value = token.slice(2)
+      cwdTarget = cwdTarget === null || value.startsWith("/") ? value : `${cwdTarget}/${value}`
+      if (isUnresolvableDir(value)) unresolvable = true
       i += 1
       continue
     }
-    if (GIT_VALUE_OPTIONS.has(t)) {
-      i += 2
+    let matchedTargetOption = false
+    for (const prefix of ["--git-dir", "--work-tree"]) {
+      if (token === prefix || token.startsWith(`${prefix}=`)) {
+        let value
+        if (token.includes("=")) {
+          value = token.slice(token.indexOf("=") + 1)
+          i += 1
+        } else {
+          value = stripMatchedQuotes(raw[i + 1] ?? "")
+          i += 2
+        }
+        if (prefix === "--git-dir") gitDir = value
+        else workTree = value
+        if (isUnresolvableDir(value)) unresolvable = true
+        matchedTargetOption = true
+        break
+      }
+    }
+    if (matchedTargetOption) continue
+    if (token === "-c" || (token.startsWith("-c") && !token.startsWith("--"))) {
+      let value
+      if (token === "-c") {
+        value = stripMatchedQuotes(raw[i + 1] ?? "")
+        i += 2
+      } else {
+        value = token.slice(2)
+        i += 1
+      }
+      const eq = value.indexOf("=")
+      if (eq > 0 && value.slice(0, eq).startsWith("alias.")) {
+        aliases[value.slice(0, eq).slice("alias.".length)] = value.slice(eq + 1)
+      }
       continue
     }
-    if (t.startsWith("-")) {
-      i++
+    if (token.startsWith("-")) {
+      i += GIT_VALUE_OPTIONS.has(token) ? 2 : 1
       continue
     }
-    return { isCommit: t.toLowerCase() === "commit", target }
+    subcommand = token.toLowerCase()
+    break
   }
-  return { isCommit: false, target }
+  if (subcommand !== null && aliases[subcommand]) {
+    const body = aliases[subcommand]
+    if (body.startsWith("!") || isUnresolvableDir(body)) {
+      // The alias body cannot be reduced to a plain subcommand, so whether this
+      // is a commit is unknown: refuse fail-closed.
+      return { isCommit: true, cwdTarget, workTree, gitDir, unresolvable: true }
+    }
+    const parts = shellSplit(body)
+    const resolved = parts === null ? whitespaceSplit(body) : parts
+    subcommand = (resolved[0] ?? "").toLowerCase()
+  }
+  return { isCommit: subcommand === "commit", cwdTarget, workTree, gitDir, unresolvable }
 }
 
 // The plan worktree a path names: `{ root, planId }` for a path carrying
@@ -1021,43 +1102,63 @@ function resolveTargetPath(target, base) {
 }
 
 // The enclosing plan's phase, read from the plan's own status.json field
-// `current_phase`. The plan is NAMED, in priority order, by the `git -C` target
-// (the persona-mandated `git -C {WORKTREE} commit` form), then the shell
+// `current_phase`. The plan is NAMED, in priority order, by the `--work-tree`
+// value, then the composed `git -C` target, then the plan a `--git-dir` /
+// `GIT_DIR` admin directory points at (`.../worktrees/{plan}`), then the shell
 // `workdir`, then the project `root` — never "the first plan found". The record
 // is the WORKTREE-RESIDENT one first (the live one during phase 5+), then the
 // main-anchored live record. Empty when no plan worktree is named, or no
 // readable record resolves.
-function planPhase(workdir, root, gitTarget) {
-  const named =
-    worktreeInfoFromPath(resolveTargetPath(gitTarget, workdir || root)) ||
-    worktreeInfoFromPath(workdir) ||
-    worktreeInfoFromPath(root)
-  if (named === null) return ""
-  const candidates = [path.join(named.root, ".plan", "local", "plans", named.planId, "status.json")]
+function planPhase(workdir, root, info) {
+  const candidates = []
+  const addTarget = (value) => {
+    if (!value) return
+    const named = worktreeInfoFromPath(resolveTargetPath(value, workdir || root))
+    if (named) candidates.push(named)
+  }
+  if (info) {
+    addTarget(info.workTree)
+    addTarget(info.cwdTarget)
+    if (info.gitDir) {
+      const planId = planIdFromGitDir(info.gitDir)
+      if (planId && root) {
+        candidates.push({ root: path.join(root, ".plan", "local", "worktrees", planId), planId })
+      }
+    }
+  }
+  const fromWorkdir = worktreeInfoFromPath(workdir)
+  if (fromWorkdir) candidates.push(fromWorkdir)
+  const fromRoot = worktreeInfoFromPath(root)
+  if (fromRoot) candidates.push(fromRoot)
   const base = mainPlanLocalDir(root)
-  if (base !== null) candidates.push(path.join(base, "plans", named.planId, "status.json"))
-  for (const candidate of candidates) {
-    let data
-    try {
-      data = JSON.parse(readFileSync(candidate, "utf8"))
-    } catch (error) {
-      if (error && error.code === "ENOENT") continue
+  for (const named of candidates) {
+    const statuses = [path.join(named.root, ".plan", "local", "plans", named.planId, "status.json")]
+    if (base !== null) statuses.push(path.join(base, "plans", named.planId, "status.json"))
+    for (const candidate of statuses) {
+      let data
+      try {
+        data = JSON.parse(readFileSync(candidate, "utf8"))
+      } catch (error) {
+        if (error && error.code === "ENOENT") continue
+        return ""
+      }
+      if (data && typeof data.current_phase === "string" && data.current_phase) return data.current_phase
       return ""
     }
-    if (data && typeof data.current_phase === "string" && data.current_phase) return data.current_phase
-    return ""
   }
   return ""
 }
 
 // R6 — a raw `git commit` in phase 6-finalize is refused: every plan commit
 // must pass through the gate-bearing `git-workflow commit` verb. The plan is
-// named from the `git -C` target (then the worktree path) and its phase read
-// from `current_phase`.
+// named from every commit form (see `gitCommitInfo`) and its phase read from
+// `current_phase`; an UNRESOLVABLE target (an unexpanded variable, an alias the
+// guard cannot reduce) is refused fail-closed.
 function isRawFinalizeCommit(command, workdir, root) {
-  const info = gitCommitTarget(command)
+  const info = gitCommitInfo(command)
   if (!info.isCommit) return false
-  return planPhase(workdir, root, info.target) === SOURCE_COMMIT_GATE_PHASE
+  if (info.unresolvable) return true
+  return planPhase(workdir, root, info) === SOURCE_COMMIT_GATE_PHASE
 }
 
 function auditLine(rule, tool, sessionID, callID, detail) {

@@ -106,8 +106,11 @@ def test_emits_nothing_when_neither_signal_fires() -> None:
     assert result.stdout == ''
 
 
-def test_evaluate_none_when_gate_unsatisfied_even_on_violation() -> None:
-    # A clear R2 violation but no signal -> fail OPEN, no deny.
+def test_evaluate_none_when_gate_unsatisfied_even_on_violation(monkeypatch) -> None:
+    # A clear R2 violation but no signal and no project directory -> fail OPEN.
+    # The hook-location arm is the FALLBACK for a payload that names no project
+    # directory; a consumer payload names one, so it is not bound by it.
+    monkeypatch.setattr(hook, '_repo_root_from_hook_location', lambda: None)
     payload = {'tool_name': 'Bash', 'tool_input': _bash('grep x file')}
     assert hook.evaluate(payload) is None
 
@@ -193,6 +196,7 @@ def test_r1_not_fired_on_plain_command() -> None:
 _R1_QUOTING_CONTROLS = (
     ('and_chain', 'a && b', 'git commit -m "fix && polish"'),
     ('semicolon', 'a; b', 'git commit -m "fix: a; then b"'),
+    ('pipe', 'echo hi | python3 -', 'echo "a | b"'),
     ('background', 'server &', 'echo "tom & jerry"'),
     ('newline', 'a\nb', 'printf "line one\nline two"'),
     ('substitution', 'echo $(date)', "echo 'cost is $(x)'"),
@@ -1333,9 +1337,15 @@ def test_r6_reads_the_resident_record_from_a_worktree_subdirectory(tmp_path) -> 
 
 
 def test_r5_refuses_a_relative_script_outside_the_pinned_root(tmp_path, monkeypatch) -> None:
-    """A relative allow-listed token run from another cwd resolves outside the repo."""
+    """A relative allow-listed token run from another cwd resolves outside the root.
+
+    Driven inside a plan context so R5 binds: the pinned root here is an empty
+    fixture, i.e. a CONSUMER repository, which is untouched outside a plan
+    context by design.
+    """
     monkeypatch.setenv('CLAUDE_PROJECT_DIR', str(tmp_path))
     payload = {
+        'agent_type': _SUB_AGENT_IDENTITY,
         'cwd': '/tmp/elsewhere',
         'tool_name': 'Bash',
         'tool_input': _bash('python3 marketplace/targets/sync.py --target opencode'),
@@ -1347,6 +1357,7 @@ def test_r5_allows_a_relative_script_under_the_pinned_root(tmp_path, monkeypatch
     """The matched negative: the same token under the pinned root is allowed."""
     monkeypatch.setenv('CLAUDE_PROJECT_DIR', str(tmp_path))
     payload = {
+        'agent_type': _SUB_AGENT_IDENTITY,
         'cwd': str(tmp_path),
         'tool_name': 'Bash',
         'tool_input': _bash('python3 marketplace/targets/sync.py --target opencode'),
@@ -1362,9 +1373,12 @@ def test_r5_allows_a_relative_script_under_the_pinned_root(tmp_path, monkeypatch
 #: script.
 _DOCUMENTED_PERMISSION_FIX = 'marketplace/bundles/plan-marshall/skills/tools-permission-fix/scripts/permission_fix.py'
 
-#: A cwd in the main checkout — deliberately NOT under ``.plan/local/worktrees/``,
-#: so Signal 2 is OFF and the payload exercises a genuine ROOT session.
-_MAIN_CHECKOUT_CWD = '/home/dev/project'
+#: A cwd in a main checkout — deliberately NOT under ``.plan/local/worktrees/``,
+#: so Signal 2 is OFF and the payload exercises a genuine ROOT session. It is
+#: THIS repository's root: R5's "every session of this repository" scope is
+#: decided by the session's project directory, so a synthetic path outside the
+#: tree would be a consumer session (correctly admitted).
+_MAIN_CHECKOUT_CWD = str(Path(__file__).resolve().parents[3])
 
 
 def _root_payload(command: str, cwd: str) -> dict:

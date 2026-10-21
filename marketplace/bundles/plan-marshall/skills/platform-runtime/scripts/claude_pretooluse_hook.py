@@ -93,7 +93,7 @@ import re
 import shlex
 import sys
 from collections.abc import Callable
-from typing import Any
+from typing import Any, NamedTuple
 
 import pretooluse_gate as gate
 from command_forms import STEWARD_COMMAND, SYNC_HARNESSES_COMMAND
@@ -166,6 +166,7 @@ def _r1_matches(pattern: re.Pattern[str]) -> Callable[[str], bool]:
 _R1_FAMILIES: tuple[tuple[str, str, Callable[[str], bool]], ...] = (
     ('and_chain', _R1_OPERATOR_VIEW, _r1_contains('&&')),
     ('semicolon', _R1_OPERATOR_VIEW, _r1_contains(';')),
+    ('pipe', _R1_OPERATOR_VIEW, _r1_contains('|')),
     ('background', _R1_OPERATOR_VIEW, _r1_contains('&')),
     ('newline', _R1_OPERATOR_VIEW, _r1_contains('\n')),
     ('substitution', _R1_SUBSTITUTION_VIEW, _r1_contains('$(')),
@@ -875,13 +876,17 @@ def _repo_root_from_hook_location() -> str | None:
 def _is_this_repository(payload: dict[str, Any]) -> bool:
     """Whether this call runs against the plan-marshall source repository.
 
-    True when EITHER the call's project directory (``CLAUDE_PROJECT_DIR`` then the
-    payload ``cwd``) OR the running hook's own location carries the repository
-    marker. The location arm keeps a hook dispatched from the repository tree —
-    as the test harness loads it, and as a developer checkout wires it — bound to
-    this repository's stricter scope.
+    The SESSION's project directory (``CLAUDE_PROJECT_DIR``, falling back to the
+    payload ``cwd``) decides when the payload names one; the running hook's own
+    location is only the FALLBACK for a payload that names no project directory.
+    A consumer session on a machine that also carries the source tree is judged
+    by its own project directory, never by where the hook file happens to live —
+    while a payload with no project directory at all (a bare test/probe call)
+    still inherits the location's stricter scope.
     """
-    for root in (_allow_list_root(payload), _repo_root_from_hook_location()):
+    project = _allow_list_root(payload)
+    roots = (project,) if project else (_repo_root_from_hook_location(),)
+    for root in roots:
         if root and pathlib.Path(root).joinpath(*_R5_REPO_MARKER.split('/')).is_file():
             return True
     return False
@@ -1328,45 +1333,97 @@ def _main_anchored_status_path(plan_id: str) -> pathlib.Path | None:
         return None
 
 
-def _plan_phase(payload: dict[str, Any], git_target: str | None = None) -> str | None:
+class _GitCommitInfo(NamedTuple):
+    """What a ``git commit`` command says about the plan it is aimed at.
+
+    ``cwd_target`` is git's composed ``-C`` target, ``work_tree`` and ``git_dir``
+    are the ``--work-tree`` / ``--git-dir`` (or ``GIT_WORK_TREE`` / ``GIT_DIR``)
+    values, and ``unresolvable`` is set when one of them cannot be resolved (an
+    unexpanded shell variable in a `-C` target) or when a subcommand alias cannot
+    be turned into a plain subcommand — both refuse fail-closed.
+    """
+
+    is_commit: bool
+    cwd_target: str | None
+    work_tree: str | None
+    git_dir: str | None
+    unresolvable: bool
+
+
+#: A directory value that still carries a shell expansion is UNRESOLVABLE: the
+#: guard cannot know where the commit would land, so R6 refuses fail-closed.
+_UNRESOLVABLE_DIR_RE = re.compile(r'[$`]')
+
+
+def _is_unresolvable_dir(value: str | None) -> bool:
+    """Whether a directory value still carries an unexpanded shell expansion."""
+    if not value:
+        return False
+    return _UNRESOLVABLE_DIR_RE.search(value) is not None
+
+
+def _plan_id_from_git_dir(value: str) -> str:
+    """The plan id a git admin directory names (``.git/worktrees/{plan}``), or ``''``."""
+    normalized = value.replace('\\', '/').rstrip('/')
+    marker = '/worktrees/'
+    at = normalized.rfind(marker)
+    if at == -1:
+        return ''
+    if normalized.endswith('/worktrees'):
+        return ''
+    return normalized[at + len(marker) :].split('/')[0]
+
+
+def _plan_phase(payload: dict[str, Any], commit_info: _GitCommitInfo | None = None) -> str | None:
     """Read the enclosing plan's phase from its own ``status.json``.
 
-    The plan is NAMED, in priority order, by the ``git -C`` TARGET (the
-    persona-mandated ``git -C {WORKTREE} commit`` form, resolved against the
-    shell cwd), then the payload ``cwd``, then the project root — never "the
-    first plan found". The record is the WORKTREE-RESIDENT one first — the live
-    record during phase 5+, where ``prepare_execute`` moves the plan directory
-    into the worktree — then the main-anchored live record. ``None`` when no
-    candidate names a plan worktree, or no readable record resolves — the
-    raw-commit rule then does not fire.
+    The plan is NAMED, in priority order, by the ``--work-tree`` value, then the
+    composed ``git -C`` target (the persona-mandated ``git -C {WORKTREE} commit``
+    form, resolved against the shell cwd), then the plan a ``--git-dir`` /
+    ``GIT_DIR`` admin directory points at (``.git/worktrees/{plan}``), then the
+    payload ``cwd``, then the project root — never "the first plan found". The
+    record is the WORKTREE-RESIDENT one first — the live one during phase 5+,
+    where ``prepare_execute`` moves the plan directory into the worktree — then
+    the main-anchored live record. ``None`` when no candidate names a plan
+    worktree, or no readable record resolves — the raw-commit rule then does not
+    fire.
     """
     cwd = gate.cwd(payload)
     project_root = _allow_list_root(payload)
-    worktree = (
-        _worktree_root_from_path(_resolve_target_path(git_target, cwd or project_root))
-        or _worktree_root_from_path(cwd)
-        or _worktree_root_from_path(project_root)
-    )
-    if worktree is None:
+    candidates: list[tuple[pathlib.Path, str]] = []
+    if commit_info is not None:
+        for value in (commit_info.work_tree, commit_info.cwd_target):
+            named = _worktree_root_from_path(_resolve_target_path(value, cwd or project_root))
+            if named is not None:
+                candidates.append(named)
+        if commit_info.git_dir:
+            plan_id = _plan_id_from_git_dir(commit_info.git_dir)
+            if plan_id and project_root:
+                candidates.append((pathlib.Path(project_root) / '.plan' / 'local' / 'worktrees' / plan_id, plan_id))
+    for value in (cwd, project_root):
+        named = _worktree_root_from_path(value)
+        if named is not None:
+            candidates.append(named)
+    if not candidates:
         return None
-    worktree_root, plan_id = worktree
-    candidates: list[pathlib.Path | None] = [
-        worktree_root / '.plan' / 'local' / 'plans' / plan_id / 'status.json',
-        _main_anchored_status_path(plan_id),
-    ]
-    for status_path in candidates:
-        if status_path is None:
-            continue
-        try:
-            data = json.loads(status_path.read_text(encoding='utf-8'))
-        except FileNotFoundError:
-            continue
-        except (OSError, ValueError):
+    for worktree_root, plan_id in candidates:
+        status_candidates: list[pathlib.Path | None] = [
+            worktree_root / '.plan' / 'local' / 'plans' / plan_id / 'status.json',
+            _main_anchored_status_path(plan_id),
+        ]
+        for status_path in status_candidates:
+            if status_path is None:
+                continue
+            try:
+                data = json.loads(status_path.read_text(encoding='utf-8'))
+            except FileNotFoundError:
+                continue
+            except (OSError, ValueError):
+                return None
+            phase = data.get('current_phase') if isinstance(data, dict) else None
+            if isinstance(phase, str) and phase:
+                return phase
             return None
-        phase = data.get('current_phase') if isinstance(data, dict) else None
-        if isinstance(phase, str) and phase:
-            return phase
-        return None
     return None
 
 
@@ -1383,44 +1440,108 @@ def _resolve_target_path(target: str | None, base: str | None) -> str | None:
     return posixpath.normpath(f'{normalized_base}/{normalized}')
 
 
-def _git_commit_target(command: str) -> tuple[bool, str | None]:
-    """Return ``(is_commit, target)`` for a ``git commit`` command.
+def _git_commit_target(command: str) -> _GitCommitInfo:
+    """Return what a ``git commit`` command says about the plan it targets.
 
-    ``target`` is the value of git's ``-C`` global option (attached ``-C.`` form
-    included), so R6 can name the plan the commit is AIMED at. Successive ``-C``
-    values COMPOSE — git applies each in order, resolving a relative value against
-    the running target — so ``git -C . -C .plan/local/worktrees/plan-a commit``
-    names the worktree too. Mirrors the guard's ``gitCommitTarget``: the R5
-    wrappers are stripped first, then git's global options are walked.
+    Names the plan from EVERY commit form the harness can express: git's ``-C``
+    global option (attached ``-C.`` form included; successive values COMPOSE,
+    because git applies each in order against the running target), the
+    ``--git-dir`` / ``--work-tree`` options in both detached and ``=`` form, and
+    the ``GIT_DIR`` / ``GIT_WORK_TREE`` environment assignments that precede the
+    program. A subcommand defined with ``-c alias.NAME=…`` is RESOLVED to its
+    body's first word; a shell-expansion body (``!…``) and any directory value
+    that still carries ``$``/a backtick are UNRESOLVABLE, so R6 refuses
+    fail-closed rather than guessing the plan.
     """
-    stripped = _r5_stripped_tokens(command)
-    if len(stripped) < 2:
-        return False, None
-    program = _strip_matched_quotes(stripped[0]).rsplit('/', 1)[-1].lower()
-    if program != 'git':
-        return False, None
-    index = 1
-    target: str | None = None
-    while index < len(stripped):
-        token = _strip_matched_quotes(stripped[index])
+    try:
+        raw = shlex.split(command)
+    except ValueError:
+        raw = command.split()
+    git_at = next(
+        (
+            position
+            for position, token in enumerate(raw)
+            if _strip_matched_quotes(token).replace('\\', '/').rsplit('/', 1)[-1].lower() == 'git'
+        ),
+        None,
+    )
+    if git_at is None:
+        return _GitCommitInfo(False, None, None, None, False)
+    environment: dict[str, str] = {}
+    for token in raw[:git_at]:
+        name, separator, value = _strip_matched_quotes(token).partition('=')
+        if separator and re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*', name):
+            environment[name] = value
+    git_dir = environment.get('GIT_DIR')
+    work_tree = environment.get('GIT_WORK_TREE')
+    unresolvable = _is_unresolvable_dir(git_dir) or _is_unresolvable_dir(work_tree)
+    aliases: dict[str, str] = {}
+    cwd_target: str | None = None
+    index = git_at + 1
+    subcommand: str | None = None
+    while index < len(raw):
+        token = _strip_matched_quotes(raw[index])
         if token == '-C':
-            value = _strip_matched_quotes(stripped[index + 1]) if index + 1 < len(stripped) else ''
-            target = value if target is None or value.startswith('/') else f'{target}/{value}'
+            value = _strip_matched_quotes(raw[index + 1]) if index + 1 < len(raw) else ''
+            cwd_target = value if cwd_target is None or value.startswith('/') else f'{cwd_target}/{value}'
+            unresolvable = unresolvable or _is_unresolvable_dir(value)
             index += 2
             continue
         if token.startswith('-C') and not token.startswith('--') and len(token) > 2:
             value = token[2:]
-            target = value if target is None or value.startswith('/') else f'{target}/{value}'
+            cwd_target = value if cwd_target is None or value.startswith('/') else f'{cwd_target}/{value}'
+            unresolvable = unresolvable or _is_unresolvable_dir(value)
             index += 1
             continue
-        if token in _R2_GIT_VALUE_OPTIONS:
-            index += 2
+        matched_target_option = False
+        for prefix in ('--git-dir', '--work-tree'):
+            if token == prefix or token.startswith(prefix + '='):
+                if '=' in token:
+                    value = token.split('=', 1)[1]
+                    index += 1
+                else:
+                    value = _strip_matched_quotes(raw[index + 1]) if index + 1 < len(raw) else ''
+                    index += 2
+                if prefix == '--git-dir':
+                    git_dir = value
+                else:
+                    work_tree = value
+                unresolvable = unresolvable or _is_unresolvable_dir(value)
+                matched_target_option = True
+                break
+        if matched_target_option:
+            continue
+        if token == '-c' or (token.startswith('-c') and not token.startswith('--')):
+            if token == '-c':
+                value = _strip_matched_quotes(raw[index + 1]) if index + 1 < len(raw) else ''
+                index += 2
+            else:
+                value = token[2:]
+                index += 1
+            alias_name, separator, body = value.partition('=')
+            if separator and alias_name.startswith('alias.'):
+                aliases[alias_name[len('alias.') :]] = body
             continue
         if token.startswith('-'):
-            index += 1
+            index += 2 if token in _R2_GIT_VALUE_OPTIONS else 1
             continue
-        return token.lower() == 'commit', target
-    return False, target
+        subcommand = token.lower()
+        break
+    if subcommand is None:
+        return _GitCommitInfo(False, cwd_target, work_tree, git_dir, unresolvable)
+    if subcommand in aliases:
+        body = aliases[subcommand]
+        if body.startswith('!') or _is_unresolvable_dir(body):
+            # The alias body cannot be reduced to a plain subcommand, so whether
+            # this is a commit is unknown: refuse fail-closed.
+            return _GitCommitInfo(True, cwd_target, work_tree, git_dir, True)
+        else:
+            try:
+                parts = shlex.split(body)
+            except ValueError:
+                parts = body.split()
+            subcommand = parts[0].lower() if parts else ''
+    return _GitCommitInfo(subcommand == 'commit', cwd_target, work_tree, git_dir, unresolvable)
 
 
 def _match_r6_raw_finalize_commit(
@@ -1437,10 +1558,12 @@ def _match_r6_raw_finalize_commit(
     command = _bash_command(tool_name, tool_input)
     if command is None:
         return None
-    is_commit, target = _git_commit_target(command)
-    if not is_commit:
+    info = _git_commit_target(command)
+    if not info.is_commit:
         return None
-    if _plan_phase(payload, target) != _SOURCE_COMMIT_GATE_PHASE:
+    if info.unresolvable:
+        return _R6_REASON
+    if _plan_phase(payload, info) != _SOURCE_COMMIT_GATE_PHASE:
         return None
     return _R6_REASON
 
@@ -1546,7 +1669,13 @@ def evaluate(payload: dict[str, Any]) -> str | None:
     tool_name = gate.tool_name(payload)
     tool_input = gate.tool_input(payload)
     gated = gate.context_gate(payload) or _is_lane_run(payload)
-    if gated:
+    # R1-R4 bind when the gate is satisfied OR this project IS the plan-marshall
+    # source repository. The OpenCode guard applies them unconditionally, so
+    # gating them here left a ROOT session of this repository admitted for forms
+    # the guard refuses — the parity divergence D3 closes. A consumer repository
+    # outside a plan context is still untouched (the two-tier permission map
+    # governs it).
+    if gated or _is_this_repository(payload):
         for rule_name, rule in _RULES:
             reason = rule(tool_name, tool_input)
             if reason is not None:
