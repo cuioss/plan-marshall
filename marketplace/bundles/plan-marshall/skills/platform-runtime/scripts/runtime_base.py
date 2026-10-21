@@ -1242,18 +1242,20 @@ class Runtime(ABC):
         windows: list[tuple[str, str, str]],
         output_file: str,
     ) -> str:
-        """Compute per-phase normalized token categories from the session transcript.
+        """Compute per-phase normalized token categories from the session store.
 
-        This is the platform-owned transcript engine. The runtime walks the
-        platform's session transcript (and any subagent transcripts), normalizes
-        every usage record into the five canonical categories
-        ``{input, output, cache_read, cache_creation, total}`` per phase, attributes
-        each record to the phase window that contains its timestamp, and writes the
-        per-phase result to *output_file* as JSON. ``manage-metrics`` reads that file
-        and persists the numbers — it never parses a transcript itself.
+        This is the platform-owned measurement engine. The runtime measures the
+        platform's session records for *session_id* — walking a transcript where
+        the target keeps one, reading the target's session database where it keeps
+        that instead — normalizes the usage records into the canonical categories,
+        attributes each record to the phase window that contains its timestamp, and
+        writes the per-phase result to *output_file* as JSON. ``manage-metrics``
+        reads that file and persists the numbers — it never parses a session store
+        itself.
 
         The JSON written to *output_file* is an object mapping each phase name to a
-        normalized bucket:
+        bucket. The block below is the full set a target MAY supply; which families
+        a given target actually supplies is stated after it:
 
         ``{phase_name: {input, output, cache_read, cache_creation, total,
         billing_weighted_total, subagent_total_tokens, subagent_tool_uses,
@@ -1267,6 +1269,25 @@ class Runtime(ABC):
         cache_read_attributed_unclassified, cache_read_unattributed,
         exploration_index_answerable_bytes, exploration_doc_residency_bytes,
         exploration_unattributed_bytes}}``
+
+        **The REQUIRED key set** is the four usage fields — ``input``, ``output``,
+        ``cache_read``, ``cache_creation`` — plus their derived ``total``. A target
+        that emits a bucket at all supplies those five; ``billing_weighted_total``
+        is derived from the same four and is emitted with them wherever the
+        cache-pricing weights are the target's own. Everything else in the block
+        above is a GROUP a target supplies only when it can measure it:
+
+        - the **sub-agent group** (``subagent_total_tokens`` /
+          ``subagent_tool_uses`` / ``subagent_duration_ms`` /
+          ``subagent_samples``) — supplied when the target can attribute
+          sub-agent work to the phase;
+        - the **exploration-share counters**, the **cache-read attribution**
+          group and the **exploration sub-sources** — supplied by a target whose
+          walk observes tool calls and the payloads they return.
+
+        A target that cannot measure a group OMITS its keys. It MUST NOT
+        zero-fill them, because a fabricated zero is indistinguishable from a
+        measured one.
 
         The ten ``*_tool_calls`` / ``*_result_bytes`` keys are the exploration-share
         counters: each tool call observed in the transcript is classified by its
@@ -1320,16 +1341,16 @@ class Runtime(ABC):
         consumer deriving that family's key set must not pick them up. There is
         no matching ``_tool_calls`` sub-split.
 
-        **Absent is not zero.** A target that emits a phase bucket at all MUST
-        carry the full counter key set — the exploration-share counters, the
-        cache-read attribution group, AND the exploration sub-sources alike — so
-        a zero there is a MEASURED zero. A phase whose recorded ``cache_read`` is
-        0 therefore still carries all five attributed keys and the residual, and
-        a phase that ran no exploration call still carries all three sub-source
-        keys, every one of them at a measured zero. A target that declines the
-        primitive emits no bucket, and its counters are ABSENT — consumers must
-        preserve that distinction rather than substituting zeros for a target
-        that never measured.
+        **Absent is not zero.** An absent counter means the target supplied no
+        count for that bucket — it declined the measurement primitive, or the
+        source behind that group was absent, unreadable or schema-unsupported. A
+        zero is a MEASURED zero: a target that can measure the exploration-share
+        group and observed no tool call in a phase reports that bucket at a
+        measured zero rather than omitting it. A target that emits a bucket but
+        omits a whole group therefore states two different things with the two
+        shapes, and consumers MUST preserve the distinction rather than
+        substituting zeros for a target that never measured. A target that
+        declines the primitive entirely emits no bucket at all.
 
         A target that exposes a session transcript walks it — the session's own
         records and any subagent records it keeps — normalizes every usage and
@@ -1337,12 +1358,17 @@ class Runtime(ABC):
         target cannot locate a transcript for *session_id* it returns ``no-op``
         carrying ``transcript_not_found`` as its ``reason``.
 
-        A target that exposes no transcript at all returns that same
-        ``transcript_not_found`` no-op: it writes no bucket, and its counters are
-        ABSENT rather than zero, per the rule above.
+        A target backed by a session store instead of a transcript reads that store
+        and writes the same per-phase JSON from it. When the store cannot answer it
+        returns ``no-op`` carrying ITS OWN named store reason — ``db_not_found``,
+        ``db_unreadable``, ``schema_unsupported``, or ``session_not_found`` — rather
+        than the transcript-shaped token, because the reason names which ground was
+        missing and a caller acting on it needs that ground. No bucket is written in
+        that case, and its counters are ABSENT rather than zero.
 
         Args:
-            session_id: Platform session identifier whose transcript is walked.
+            session_id: Platform session identifier to measure. A target whose ids
+                resolve into a session tree measures the tree's root.
             windows: Ordered ``[(phase_name, start_iso, end_iso), ...]`` phase
                 windows used to attribute each usage record to a phase.
             output_file: Path the per-phase normalized JSON result is written to.
@@ -1354,9 +1380,12 @@ class Runtime(ABC):
             ``four_field_phases_attributed``, ``unclassified_tool_calls`` — the
             run-level count of tool names outside the classifier's
             population-derived domain, non-zero when the classifier needs
-            extending). The no-op carries ``transcript_not_found`` as its
-            ``reason`` — a no-op never carries an ``error`` field, and
-            ``toon_noop`` cannot emit one.
+            extending). A target whose ids resolve into a session tree MAY also
+            report ``root_session_id``, the root the run measured, so a caller
+            measuring several captured identities can tell two ids inside one tree
+            from two distinct trees. The no-op carries the target's OWN ``reason``
+            — a no-op never carries an ``error`` field, and ``toon_noop`` cannot
+            emit one.
         """
 
     # ------------------------------------------------------------------
