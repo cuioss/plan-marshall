@@ -1907,6 +1907,13 @@ class OpenCodeRuntime(Runtime):
         session measures each root once; a second id resolving to an
         already-measured root would attribute the same messages twice.
 
+        ``four_field_phases_attributed`` is the documented four-field counter and
+        EQUALS ``phases_attributed`` here: every bucket this target emits carries
+        the four usage fields, a phase whose messages were all sub-agent work
+        included (its main fields are then measured zeros, not absent keys). The
+        counter is therefore an attribution count, never a count of phases that had
+        main-context usage.
+
         An absent, unreadable or schema-unsupported store declines with the
         reader's NAMED reason instead of the blanket ``transcript_not_found``.
         """
@@ -1937,6 +1944,14 @@ class OpenCodeRuntime(Runtime):
                 'root_session_id': str(usage['root']),
                 'output_file': output_file,
                 'phases_attributed': len(per_phase),
+                # Every bucket this target emits carries the four usage fields —
+                # a sub-agent-only phase reports them as measured zeros — so the
+                # documented four-field counter equals the attributed phase count.
+                # Omitting it made ``enrich`` echo 0 for a run that attributed
+                # phases, i.e. the enrich result stated no phase carried
+                # four-field usage while the sidecar it had just persisted
+                # carried N buckets.
+                'four_field_phases_attributed': len(per_phase),
                 'message_count': message_count,
                 'subagent_calls_attributed': int(usage.get('subagent_sessions', 0)),
                 'subagent_phases_attributed': subagent_phases,

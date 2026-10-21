@@ -1004,6 +1004,10 @@ def test_metrics_normalized_tokens_writes_measured_buckets(
     assert result['status'] == 'success'
     assert result['operation'] == 'metrics normalized-tokens'
     assert result['phases_attributed'] == 1
+    # The documented four-field counter is present and non-zero: enrich reads it
+    # straight into its own result, so an absent key made an attributed run
+    # report zero phases carrying four-field usage.
+    assert result['four_field_phases_attributed'] == 1
     assert result['message_count'] == 2
     assert result['subagent_calls_attributed'] == 1
     assert result['subagent_phases_attributed'] == 1
