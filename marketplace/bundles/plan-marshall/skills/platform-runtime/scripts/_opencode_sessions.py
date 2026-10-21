@@ -141,13 +141,28 @@ def db_path(env: Mapping[str, str] | None = None) -> Path:
     for name in (DB_ENV_PRIMARY, DB_ENV_OVERRIDE):
         value = source.get(name)
         if isinstance(value, str) and value.strip():
-            return Path(value.strip()).expanduser()
+            return _expand(value.strip())
 
     xdg_home = source.get('XDG_DATA_HOME')
     if isinstance(xdg_home, str) and xdg_home.strip():
-        return Path(xdg_home.strip()).expanduser() / DB_RELATIVE_PATH
+        return _expand(xdg_home.strip()) / DB_RELATIVE_PATH
 
     return _home_dir() / '.local' / 'share' / DB_RELATIVE_PATH
+
+
+def _expand(value: str) -> Path:
+    """``expanduser`` *value*, falling back to the literal path when it cannot.
+
+    ``Path.expanduser`` raises ``RuntimeError`` when a ``~`` cannot be resolved
+    (no ``HOME`` and no passwd entry), and ``ValueError``/``OSError`` for other
+    malformed inputs. ``db_path`` documents a never-raise boundary, so an
+    unexpandable override degrades to its literal spelling instead of
+    propagating out of the reader.
+    """
+    try:
+        return Path(value).expanduser()
+    except (RuntimeError, OSError, ValueError):
+        return Path(value)
 
 
 def _home_dir() -> Path:

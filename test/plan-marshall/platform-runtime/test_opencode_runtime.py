@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for opencode_runtime.py — OpenCode implementation of all 26 operations.
+"""Tests for opencode_runtime.py — OpenCode implementation of all 28 operations.
 
 Asserts the measured session-identity contract (capture resolves the root session
 through the session store and appends it; bind/resolve-plan round-trip through the
