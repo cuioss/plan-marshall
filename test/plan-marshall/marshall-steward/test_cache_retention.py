@@ -39,6 +39,11 @@ from conftest import load_script_module
 
 cache_retention = load_script_module('plan-marshall', 'marshall-steward', 'cache_retention.py')
 
+#: The (signal, target) matrix, bound so the R5 shape guard can see the
+#: non-vacuity assertion that belongs to the parametrized population.
+SIGNAL_CASES = list(target_context.TARGET_ENV_SIGNALS)
+assert SIGNAL_CASES, 'the ambient-signal registry must not be empty'
+
 _BUNDLE = 'plan-marshall'
 
 
@@ -320,8 +325,8 @@ class TestTargetResolution:
 
     @pytest.mark.parametrize(
         ('signal', 'expected_target'),
-        list(target_context.TARGET_ENV_SIGNALS),
-        ids=[f'{name.lower()}-signal' for name, _target in target_context.TARGET_ENV_SIGNALS],
+        SIGNAL_CASES,
+        ids=[f'{name.lower()}-signal' for name, _target in SIGNAL_CASES],
     )
     def test_env_signal_reaches_the_manifest_lookup(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, signal, expected_target
