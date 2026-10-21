@@ -56,7 +56,8 @@ def _hook_reason(command: str, *, cwd: str, in_context: bool = False) -> str | N
     payload: dict = {'tool_name': 'Bash', 'tool_input': {'command': command}, 'cwd': cwd}
     if in_context:
         payload['agent_type'] = SUB_AGENT_AGENT
-    return _HOOK.evaluate(payload)
+    reason = _HOOK.evaluate(payload)
+    return reason if isinstance(reason, str) else None
 
 
 #: The D3 side-door rows, run in a ROOT session (no plan context). Each is refused
