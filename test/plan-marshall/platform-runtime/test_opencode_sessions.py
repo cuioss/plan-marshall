@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 import sqlite3
 import sys
+from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -72,7 +73,7 @@ def _create_tier1_db(path: Path, rows: list[tuple[str, str | None, str]]) -> Non
 def _create_tier2_db(
     path: Path,
     sessions: list[tuple[str, str | None, int, int, int, int, float]],
-    messages: list[tuple[str, str, int, Any]],
+    messages: Sequence[tuple[str, str, int | str, Any]],
 ) -> None:
     """Create a tier-2 store with token columns and a ``session_message`` table.
 
@@ -80,7 +81,9 @@ def _create_tier2_db(
         path: Database file to create.
         sessions: ``(id, parent_id, input, output, cache_read, cache_write, cost)``
             rows; the model cell is fixed so a measurement assertion can read it.
-        messages: ``(session_id, type, time_created_ms, data)`` rows.
+        messages: ``(session_id, type, time_created, data)`` rows, where
+            ``time_created`` is either the millisecond integer the store uses or
+            an ISO-8601 TEXT stamp (both shapes exist in real stores).
     """
     connection = sqlite3.connect(path)
     try:
