@@ -328,18 +328,17 @@ def _write_claude_marshal(proj_dir):
 
 
 def test_detect_target_from_env_precedence(monkeypatch):
-    """Antigravity beats opencode beats claude when several signals are set."""
+    """The earliest signal in the registry wins when several are set."""
+    import target_context
+
     _clear_target_env(monkeypatch)
     assert manage_metrics._detect_target_from_env() is None
 
-    monkeypatch.setenv('CLAUDE_CODE_SESSION_ID', 'sess-1')
-    assert manage_metrics._detect_target_from_env() == 'claude'
-
-    monkeypatch.setenv('OPENCODE', '1')
-    assert manage_metrics._detect_target_from_env() == 'opencode'
-
-    monkeypatch.setenv('ANTIGRAVITY_AGENT', '1')
-    assert manage_metrics._detect_target_from_env() == 'antigravity'
+    # Lay the signals down in reverse registry order: each new one is earlier
+    # in the precedence chain, so each must take over.
+    for signal, target in reversed(target_context.TARGET_ENV_SIGNALS):
+        monkeypatch.setenv(signal, '1')
+        assert manage_metrics._detect_target_from_env() == target
 
 
 def test_enrich_detected_opencode_skips_despite_claude_marshal(plan_context, monkeypatch, tmp_path):

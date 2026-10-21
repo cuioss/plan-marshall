@@ -37,6 +37,11 @@ TARGET_RESOLVING_VERBS = ('generate', 'verify', 'bootstrap', 'drift', 'preflight
 #: the developer's own runtime cannot decide the outcome.
 PLATFORM_ENV_SIGNALS = tuple(name for name, _target in target_context.TARGET_ENV_SIGNALS)
 
+#: The (signal, target) matrix, derived from the registry so a new signal is
+#: exercised here instead of silently escaping the sweep.
+SIGNAL_CASES = list(target_context.TARGET_ENV_SIGNALS)
+assert SIGNAL_CASES, 'the ambient-signal registry must not be empty'
+
 
 @pytest.fixture()
 def no_platform_signal(monkeypatch):
@@ -189,12 +194,8 @@ class TestVerbTargetPropagationMatrix:
 
     @pytest.mark.parametrize(
         ('env_signal', 'expected'),
-        [
-            ('ANTIGRAVITY_AGENT', 'antigravity'),
-            ('OPENCODE', 'opencode'),
-            ('CLAUDE_CODE_SESSION_ID', 'claude'),
-        ],
-        ids=['antigravity-signal', 'opencode-signal', 'claude-signal'],
+        SIGNAL_CASES,
+        ids=[name for name, _target in SIGNAL_CASES],
     )
     def test_every_env_signal_reaches_every_verb(self, no_platform_signal, monkeypatch, env_signal, expected):
         """The tier is not one signal's privilege — all three reach all six verbs.

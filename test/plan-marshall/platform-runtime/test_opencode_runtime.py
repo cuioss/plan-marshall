@@ -878,6 +878,7 @@ def test_subagent_dispatch_task_tool_unavailable_takes_inline_branch(runtime: Op
     assert result['status'] == 'no-op'
     assert result['operation'] == 'subagent dispatch'
     assert result['reason']
+    assert "'subagent' tool" in result['reason']
     assert result['alternative']
 
 

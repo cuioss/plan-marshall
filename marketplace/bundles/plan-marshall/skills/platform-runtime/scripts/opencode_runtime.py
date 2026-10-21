@@ -1473,7 +1473,12 @@ class OpenCodeRuntime(Runtime):
                             perm[cat] = act
                         added += 1
             if added and not dry_run:
-                self.permission_save_settings(settings_path, settings)
+                if not self.permission_save_settings(settings_path, settings):
+                    return toon_error(
+                        'permission fix',
+                        'io_error',
+                        f'Failed to write settings to {settings_path}',
+                    )
             return toon_success(
                 'permission fix',
                 {
@@ -1497,7 +1502,12 @@ class OpenCodeRuntime(Runtime):
                         del perm[cat]
                     removed += 1
             if removed and not dry_run:
-                self.permission_save_settings(settings_path, settings)
+                if not self.permission_save_settings(settings_path, settings):
+                    return toon_error(
+                        'permission fix',
+                        'io_error',
+                        f'Failed to write settings to {settings_path}',
+                    )
             return toon_success(
                 'permission fix',
                 {
@@ -2224,7 +2234,7 @@ class OpenCodeRuntime(Runtime):
         if task_tool_available is False or spawning_tool_available is False:
             return toon_noop(
                 'subagent dispatch',
-                "OpenCode 'task' tool is not available in this envelope — "
+                "OpenCode 'subagent' tool is not available in this envelope — "
                 'take the explicit logged inline branch instead of dispatching',
                 'Inline the agent logic in-turn and propagate usage as unknown',
             )

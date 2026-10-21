@@ -216,6 +216,21 @@ def test_fix_reports_io_error_when_the_list_write_fails(
     assert result['error'] == 'io_error'
 
 
+def test_fix_reports_io_error_when_the_map_write_fails(
+    runtime: OpenCodeRuntime, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+):
+    """The legacy-map branch reports a failed write too, not a success with a count."""
+    monkeypatch.chdir(tmp_path)
+    config = tmp_path / 'opencode.json'
+    config.write_text(json.dumps({'permission': {'bash': {}}}), encoding='utf-8')
+    monkeypatch.setattr(runtime, 'permission_save_settings', lambda *_args, **_kwargs: False)
+
+    result = parse_toon(runtime.permission_fix('project', 'ensure', ['deny(git push *)'], False))
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'io_error'
+
+
 def test_protect_path_writes_denies_into_the_permissions_list(
     runtime: OpenCodeRuntime, list_settings: pathlib.Path, tmp_path: pathlib.Path
 ):

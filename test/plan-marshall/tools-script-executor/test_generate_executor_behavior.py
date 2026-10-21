@@ -104,14 +104,13 @@ def _load_template_module() -> types.ModuleType:
 # would be the defect again.
 
 
+assert target_context.TARGET_ENV_SIGNALS, 'the ambient-signal registry must not be empty'
+
+
 @pytest.mark.parametrize(
     ('env_signal', 'expected_target', 'expected_source'),
-    [
-        ('ANTIGRAVITY_AGENT', 'antigravity', 'env'),
-        ('OPENCODE', 'opencode', 'env'),
-        ('CLAUDE_CODE_SESSION_ID', 'claude', 'env'),
-    ],
-    ids=['antigravity-signal', 'opencode-signal', 'claude-signal'],
+    [(name, target, 'env') for name, target in target_context.TARGET_ENV_SIGNALS],
+    ids=[f'{name.lower()}-signal' for name, _target in target_context.TARGET_ENV_SIGNALS],
 )
 def test_env_tier_outranks_local_config(monkeypatch, tmp_path, env_signal, expected_target, expected_source):
     """A platform env signal decides the target even when local harness config disagrees.

@@ -320,12 +320,8 @@ class TestTargetResolution:
 
     @pytest.mark.parametrize(
         ('signal', 'expected_target'),
-        [
-            ('ANTIGRAVITY_AGENT', 'antigravity'),
-            ('OPENCODE', 'opencode'),
-            ('CLAUDE_CODE_SESSION_ID', 'claude'),
-        ],
-        ids=['antigravity-signal', 'opencode-signal', 'claude-signal'],
+        list(target_context.TARGET_ENV_SIGNALS),
+        ids=[f'{name.lower()}-signal' for name, _target in target_context.TARGET_ENV_SIGNALS],
     )
     def test_env_signal_reaches_the_manifest_lookup(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, signal, expected_target
