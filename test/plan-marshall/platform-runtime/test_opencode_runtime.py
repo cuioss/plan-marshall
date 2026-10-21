@@ -430,9 +430,7 @@ def test_session_bind_is_last_driven_wins(
     assert _parse(runtime.session_resolve_plan())['plan_id'] == 'second-plan'
 
 
-def test_session_bind_refusal_carries_its_reason(
-    runtime: OpenCodeRuntime, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_session_bind_refusal_carries_its_reason(runtime: OpenCodeRuntime, monkeypatch: pytest.MonkeyPatch) -> None:
     """A rejected id leaves bound false and names the reason, never a silent success."""
     monkeypatch.setenv('OPENCODE_SESSION_ID', 'ses/with-a-slash')
 
