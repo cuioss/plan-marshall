@@ -18,7 +18,7 @@ The mechanics an external (`project:` / fully-qualified `bundle:skill`) finalize
 2. Add the fully-qualified step name to the whitelist table above.
 3. Verify by running a finalize end-to-end and confirming the step does not hit a "session_id missing" code path.
 
-The orchestrator is responsible for resolving `session_id` (see the SKILL "How to obtain session_id" section). This skill receives the resolved value-or-absent via its Input Parameters and forwards it verbatim to whitelisted steps; it does not re-resolve. `session_id` is OPTIONAL: absent means proceed unenriched on transcript-less targets (the step skips session-scoped work carrying the gap flag), while on transcript-capable targets an absent identity keeps the hard block.
+The orchestrator is responsible for resolving `session_id` (see the SKILL "How to obtain session_id" section). This skill receives the resolved value-or-absent via its Input Parameters and forwards it verbatim to whitelisted steps; it does not re-resolve. `session_id` is OPTIONAL: absent means the target's session store could not resolve an identity (`db_not_found` / `db_unreadable` / `schema_unsupported` / `session_not_found`), so the step proceeds unenriched carrying the gap flag — transcript-less-ness alone is not an absence reason. On a transcript-capable target whose capture failed with `hook_not_configured`, an absent identity keeps the hard block.
 
 ## Required termination
 

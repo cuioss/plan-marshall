@@ -622,7 +622,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metada
 - **Late capture succeeded** (`status: success` and `value` now populated): use the captured value as the resolved `session_id` and proceed with the dispatch below.
 - **Late capture also failed** (`status: error` or `value` still empty): resolve the target's session identity from the live runtime target at the point of use — read `runtime.target` from `.plan/marshal.json` (absent means the target's own default resolution, never a documented unresolvable default) — then branch on whether that target could resolve an identity this run:
 
-  - **Identity unresolvable this run** (the target's identity variable is unset, or its session store is absent / unreadable / schema-unsupported — each surfacing a named reason: `db_not_found`, `db_unreadable`, `schema_unsupported`, `session_not_found`): do NOT abort. Log the decision naming the absent identity and the named reason, then dispatch finalize WITHOUT a `session_id`, and let `default:record-metrics` skip `enrich` carrying the population-carrying gap flag:
+  - **Identity unresolvable this run** (the target's session store is absent, unreadable or schema-unsupported, or holds no such session — each surfacing a named reason: `db_not_found`, `db_unreadable`, `schema_unsupported`, `session_not_found`): do NOT abort. Log the decision naming the absent identity and the named reason, then dispatch finalize WITHOUT a `session_id`, and let `default:record-metrics` skip `enrich` carrying the population-carrying gap flag:
 
     ```bash
     python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
@@ -630,7 +630,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metada
       --message "(plan-marshall:plan-marshall) Unresolved finalize identity: no session identity could be resolved on target {runtime_target}; proceeding unenriched without session_id"
     ```
 
-  - **Identity resolvable on a transcript-capable target but absent here**: abort the finalize phase with a clear message naming the missing identity, the blocked finalize dispatch, and the remedy (re-run session capture, check the SessionStart hook) — do **not** invent a filler value and do **not** reach for any `$VAR` expansion. See `phase-6-finalize/SKILL.md` → "How to obtain session_id" for the full resolver contract and forbidden patterns.
+  - **Identity resolvable on a transcript-capable target but absent here**: abort the finalize phase with a clear message naming the missing identity, the blocked finalize dispatch, and the remedy (re-run session capture, check the SessionStart hook) — do **not** invent a filler value and do **not** reach for any `$VAR` expansion. This branch is the home of a `session capture` error whose reason is `hook_not_configured`: an unset identity variable is the symptom there, not the `db_*` / `session_not_found` store reasons the branch above names. See `phase-6-finalize/SKILL.md` → "How to obtain session_id" for the full resolver contract and forbidden patterns.
 
 The retry runs at most once — never loop the capture call.
 

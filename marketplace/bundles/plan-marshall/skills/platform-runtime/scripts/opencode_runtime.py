@@ -680,6 +680,13 @@ def _per_phase_buckets(
         )
         per_phase[str(window.get('phase'))] = {
             **four,
+            # The contract's canonical four-field view (short keys) alongside the
+            # long spellings, so a consumer written against either reads the same
+            # number on every target.
+            'input': four['input_tokens'],
+            'output': four['output_tokens'],
+            'cache_read': four['cache_read_input_tokens'],
+            'cache_creation': four['cache_creation_input_tokens'],
             'total': sum(four.values()),
             'billing_weighted_total': claude_runtime._billing_weighted_total(four),
             'subagent_total_tokens': subagent_total,

@@ -430,6 +430,19 @@ def test_session_bind_is_last_driven_wins(
     assert _parse(runtime.session_resolve_plan())['plan_id'] == 'second-plan'
 
 
+def test_session_bind_refusal_carries_its_reason(
+    runtime: OpenCodeRuntime, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A rejected id leaves bound false and names the reason, never a silent success."""
+    monkeypatch.setenv('OPENCODE_SESSION_ID', 'ses/with-a-slash')
+
+    result = _parse(runtime.session_bind('my-plan'))
+
+    assert result['status'] == 'success'
+    assert result['bound'] is False
+    assert result['reason'] == 'invalid_or_io_error'
+
+
 def test_session_bind_without_an_id_is_a_noop(runtime: OpenCodeRuntime, monkeypatch: pytest.MonkeyPatch) -> None:
     """No session id keeps the historical no-op rather than binding a phantom slot."""
     monkeypatch.delenv('OPENCODE_SESSION_ID', raising=False)
@@ -1007,8 +1020,13 @@ def test_metrics_normalized_tokens_writes_measured_buckets(
     assert bucket['subagent_tool_uses'] == 1
     assert bucket['subagent_duration_ms'] > 0
     assert bucket['billing_weighted_total'] == 10 + 20 + round(3 * 0.1) + round(4 * 1.25)
-    # Parity with the transcript-walking target: `total` is the canonical
-    # four-field sum, so a consumer reading it is not target-dependent.
+    # Parity with the transcript-walking target: the canonical short keys and
+    # `total` are present alongside the long spellings, so a consumer reading
+    # either form is not target-dependent.
+    assert bucket['input'] == 10
+    assert bucket['output'] == 20
+    assert bucket['cache_read'] == 3
+    assert bucket['cache_creation'] == 4
     assert bucket['total'] == 10 + 20 + 3 + 4
     # No-zero control: the exploration counters come from a tool-call walk this
     # target does not run, so they are ABSENT rather than fabricated as zeros.
