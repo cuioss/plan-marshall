@@ -545,7 +545,7 @@ def _session_header(connection: sqlite3.Connection, session_id: str) -> dict[str
     except sqlite3.Error:
         return {}
     for row in rows:
-        header = _parse_header(_message_text(row[0]))
+        header = _parse_header(_message_text(_message_data(row[0])))
         if header:
             return header
     return {}
