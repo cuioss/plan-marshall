@@ -2,9 +2,9 @@
   "id": "PLAN-LB-45",
   "slug": "runtime-stamp",
   "workstream": "WS-04",
-  "status": "running",
-  "plan_marshall_plan_id": "",
-  "pr": "",
-  "landing": "",
+  "status": "shipped",
+  "plan_marshall_plan_id": "oc-lb-45-runtime-stamp",
+  "pr": "1802",
+  "landing": "landings/PLAN-LB-45.md",
   "seq": 45
 }

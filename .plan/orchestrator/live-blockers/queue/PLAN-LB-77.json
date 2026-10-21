@@ -2,10 +2,10 @@
   "id": "PLAN-LB-77",
   "slug": "lb-74-completion",
   "workstream": "WS-03",
-  "status": "running",
+  "status": "shipped",
   "lane": "runbook",
-  "plan_marshall_plan_id": "",
-  "pr": "",
-  "landing": "",
+  "plan_marshall_plan_id": "lb-77-lb-74-completion",
+  "pr": "1826",
+  "landing": "landings/PLAN-LB-77.md",
   "seq": 77
 }
