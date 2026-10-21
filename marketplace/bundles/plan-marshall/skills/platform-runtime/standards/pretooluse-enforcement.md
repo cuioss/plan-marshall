@@ -65,7 +65,7 @@ one-line `permissionDecisionReason`; on no match it emits nothing.
 | **R2 Bash file-ops** | A Bash command whose program is `cat` / `grep` / `head` / `tail` / `find` / `ls`, a shell spawn (`sh` / `bash` / `source`), **or** `git` whose subcommand (after any global options) is `grep` | Use the Read/Glob/Grep tools, not Bash, for file operations; for a content sweep run `architecture search --content --pattern P` |
 | **R3 generated-executor edit** | An Edit/Write whose path is the generated `.plan/execute-script.py` | Regenerate the executor via `/sync-harnesses` + `/marshall-steward`; never edit it |
 | **R4 hard-coded build** | A Bash command invoking `./pw` or a bare `mvn` / `npm` / `gradle` / `uv` (the program is read un-stripped and after R5 wrapper stripping, so `env uv run python -c ...` is refused) | Resolve build commands via `plan-marshall:manage-architecture:architecture resolve` |
-| **R5 direct interpreter call** | A Bash command invoking an interpreter (`python` / `python3` / a versioned spelling such as `python3.12`, case-insensitively) as `-c`, a script path, a bare `-` (STDIN) or a `-<`/`->` redirection, or `-m` with any module — except the executor permit (the relative `python3 .plan/execute-script.py`, or an absolute form resolving to `{repository root}/.plan/execute-script.py`) and the shared allow-list of documented non-executor invocations. **R5 binds inside a plan context AND in every session of the plan-marshall source repository.** Wrapper prefixes (`command` / `env` / `sudo` / `timeout` / `nice` / `nohup` / `time` / `xargs` / `exec` / `stdbuf` / `setsid`, including `env -S`) are stripped first, so a wrapper cannot hide the interpreter | Route builds and checks via `python3 .plan/execute-script.py`; `.plan` state via `manage-*` verbs or the Read/Edit/Write tools |
+| **R5 direct interpreter call** | A Bash command invoking an interpreter (`python` / `python3` / `pypy` / `pypy3` / a versioned spelling such as `python3.12`, case-insensitively) as `-c`, a script path, a bare `-` (STDIN) or a `-<`/`->` redirection, or `-m` with any module — except the executor permit (the relative `python3 .plan/execute-script.py` run from the repository root, or an absolute form resolving to `{repository root}/.plan/execute-script.py`) and the shared allow-list of documented non-executor invocations. **R5 binds inside a plan context AND in every session of the plan-marshall source repository.** The wrapper prefixes come from ONE shared data file, [`r5-wrappers.json`](r5-wrappers.json): a path-qualified `/usr/bin/env` strips like `env`, an option cluster like `env -iu FOO` is walked letter by letter, `timeout` / `flock` / `chrt` / `taskset` consume their leading positional, `env -S` and a shell's `-c` splice the command string back into the walk, and `find … -exec` is walked from the program it runs | Route builds and checks via `python3 .plan/execute-script.py`; `.plan` state via `manage-*` verbs or the Read/Edit/Write tools |
 | **R6 raw finalize commit** | A raw `git commit` while the enclosing plan — NAMED from the `git -C` target, then the shell workdir, then the project root, its `status.json` field `current_phase` read from the WORKTREE-RESIDENT record first (the live one during phase 5+) and the main-anchored record otherwise, never "the first plan found" — is in phase `6-finalize`. **R6 is not context-gated.** Every plan commit must pass through the gate-bearing `git-workflow commit` verb, which sanctions an open loop-back fix task, a review-rubric section-6 record, or a step id of the plan's composed phase-6 manifest | Commit via `python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow commit` |
 
 ### R5 — allow-list, wrappers, and the audit line
@@ -91,11 +91,22 @@ documented workflows runnable. Three things make that split explicit:
   `CLAUDE_PROJECT_DIR`, falling back to `cwd`). When the file is absent the hook
   uses a narrow built-in base table (`marketplace/targets/sync.py`); the executor
   permit is hardcoded separately.
-- **Wrappers and versioned interpreters.** A prefix cannot hide the interpreter:
-  the shell wrappers above (with their options and, for `timeout`, its mandatory
-  duration) are stripped before the interpreter check, `env -S` / `--split-string`
-  splices its string back into the command, and a versioned spelling
-  (`python3.12`) is recognised. The program token is matched case-insensitively.
+- **Wrappers and versioned interpreters.** A prefix cannot hide the interpreter.
+  The wrapper population is ONE shared data file,
+  [`r5-wrappers.json`](r5-wrappers.json), read by the Claude hook, the OpenCode
+  guard plugin and the enforcement pins — neither implementation carries a second
+  literal list. A wrapper is matched by BASENAME (`/usr/bin/env` strips like
+  `env`); its value-consuming options, its short-option clusters (`env -iu FOO`),
+  its leading positional arguments (`timeout`'s duration, `flock`'s lock file,
+  `chrt`'s priority, `taskset`'s mask) and its command-string options
+  (`env -S`/`--split-string`, a shell's `-c`, `script -c`) all come from that
+  file. The shells (`bash`/`sh`/`dash`/`zsh`/`ksh`/`$SHELL`), the runners
+  (`ionice`/`chrt`/`taskset`/`flock`/`watch`/`parallel`/`busybox`/`script`) and
+  `find … -exec` are all covered, and a versioned spelling (`python3.12`) or a
+  `pypy` interpreter is recognised. The program token is matched
+  case-insensitively. When the data file is unreadable the check fails CLOSED: a
+  command that names an interpreter anywhere is refused, because no wrapper can
+  be stripped without the table.
 - **Audit line.** On a refusal the hook appends one line to
   `<cwd>/.plan/temp/guard.log`, in the same shape the OpenCode guard writes:
   `<ISO-8601 millis> | tool=<tool> | rule=<Rn> | session=<session_id> | call=? | <detail>`.

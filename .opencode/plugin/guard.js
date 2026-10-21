@@ -50,19 +50,22 @@
  *   R4 is UNCONDITIONAL. The executor permit stays exempt under R4 and R5.
  *
  *   R5 — direct interpreter calls bypassing the executor (bash): block when the
- *   first token is an interpreter (python/python3 or a versioned spelling such
- *   as python3.12) and the invocation is -c, a script path (any second token not
- *   starting with -), a bare - (STDIN), a -</- redirection, or -m with any
- *   module — the allow set is executor-only, so every -m form refuses. R5 BINDS
- *   inside a plan context (Signal 1 or Signal 2) and in EVERY session of THIS
- *   repository; in a consumer repository outside a plan context it does not
- *   refuse a consumer's ordinary Python work (python3 x.py, python3 -m venv,
- *   python3 -m pip). Three admissions apply: the executor permit, the SHARED
- *   repository-relative allow-list, and the SHARED bundle-relative allow-list
- *   (matched EXACTLY against a resolved deployed bundle root); neither
- *   allow-list form is ever a basename or a suffix — so a copy of an
- *   allow-listed script outside the repository, or under a non-deployed
- *   directory, never matches.
+ *   first token, after stripping the SHARED wrapper table
+ *   (`standards/r5-wrappers.json`: matched by basename, with each wrapper's
+ *   value options, short-option clusters, leading positionals and command-string
+ *   splicing, plus `find … -exec`), is an interpreter (python/python3, pypy/
+ *   pypy3, or a versioned spelling such as python3.12) and the invocation is -c,
+ *   a script path (any second token not starting with -), a bare - (STDIN), a
+ *   -</- redirection, or -m with any module — the allow set is executor-only, so
+ *   every -m form refuses. R5 BINDS inside a plan context (Signal 1 or Signal 2)
+ *   and in EVERY session of THIS repository; in a consumer repository outside a
+ *   plan context it does not refuse a consumer's ordinary Python work
+ *   (python3 x.py, python3 -m venv, python3 -m pip). Three admissions apply: the
+ *   executor permit, the SHARED repository-relative allow-list, and the SHARED
+ *   bundle-relative allow-list (matched EXACTLY against a resolved deployed
+ *   bundle root); neither allow-list form is ever a basename or a suffix — so a
+ *   copy of an allow-listed script outside the repository, or under a
+ *   non-deployed directory, never matches.
  *
  *   R6 — a raw `git commit` while the enclosing plan is in phase `6-finalize`
  *   => block. The plan is NAMED from the `git -C` TARGET (the persona-mandated
@@ -145,52 +148,27 @@ const PYTHON_DIRECT_RUNNERS = new Set(["pytest", "mypy", "ruff"])
 // set exists to declare. The two sets below are the whole R5 population the
 // contract test parses: the interpreter names and the always-refuse flags.
 // A versioned spelling (python3.12) is recognised by `isPythonInterpreter`.
-const PYTHON_INTERPRETERS = new Set(["python", "python3"])
+const PYTHON_INTERPRETERS = new Set(["python", "python3", "pypy", "pypy3"])
 const R5_ALWAYS_REFUSE_FLAGS = new Set(["-c", "-m"])
 
-// Shell wrappers a prefix of which is transparent to the shell: `timeout 5 rm
-// file` still runs `rm`, `env python3 -c x` still runs the interpreter. Strip
-// them (with their options, option values and inline `NAME=value` assignments)
-// before the first-token checks so a blocked invocation cannot be reached by
-// prefixing a wrapper. Options a wrapper does not itself consume are skipped
-// structurally; `timeout` additionally consumes its mandatory DURATION value.
-// This is an EXPLICIT list of known prefix programs — extended in one place and
-// mirrored by the Claude hook's `_R5_SHELL_WRAPPERS` — never guessed from shape.
-const SHELL_WRAPPERS = new Set([
-  "command",
-  "env",
-  "sudo",
-  "timeout",
-  "nice",
-  "nohup",
-  "time",
-  "xargs",
-  "exec",
-  "stdbuf",
-  "setsid",
-])
+// ---- R5: the ONE shared wrapper table ----
+// Shell wrappers are prefix programs whose own invocation RUNS the command that
+// follows (`timeout 5 rm file` still runs `rm`, `env python3 -c x` still runs
+// the interpreter). The set, each wrapper's value-consuming options, its
+// leading positional arguments and its command-string splicing options live in
+// ONE data file — `standards/r5-wrappers.json`, the sibling of
+// `r5-allowlist.json` — read here, by the Claude hook and by the enforcement
+// pin tests. Neither implementation carries a second literal list: a wrapper
+// added to the data file is stripped on both harnesses and a wrapper removed
+// from it is stripped on neither. A wrapper is matched by BASENAME, so
+// `/usr/bin/env` strips exactly like `env`.
+const R5_WRAPPER_TABLE_NAME = "r5-wrappers.json"
+const EMPTY_WRAPPER_SPEC = { values: [], value_letters: [], leading_positionals: 0, splice: [] }
 
-// Per-wrapper options that consume a FOLLOWING value token. Kept PER WRAPPER on
-// purpose: `sudo -n` is a flag (non-interactive), so a single shared value set
-// would swallow the interpreter behind it, while `nice -n 5` and `xargs -n 5`
-// DO take a value.
-const WRAPPER_VALUE_OPTS = {
-  command: new Set([]),
-  env: new Set(["-u", "--unset", "-C", "--chdir"]),
-  sudo: new Set(["-u", "--user", "-g", "--group", "-U", "--other-user", "-C", "--chdir", "--directory"]),
-  timeout: new Set(["-s", "--signal", "-k", "--kill-after"]),
-  nice: new Set(["-n", "--adjustment"]),
-  nohup: new Set([]),
-  time: new Set([]),
-  exec: new Set(["-a"]),
-  stdbuf: new Set(["-i", "-o", "-e", "--input", "--output", "--error"]),
-  setsid: new Set([]),
-  xargs: new Set([
-    "-I", "-n", "-P", "-s", "-d", "-a", "-E", "-L", "-o", "-R", "-S",
-    "--max-args", "--max-lines", "--max-chars", "--delimiter", "--arg-file",
-    "--replace", "--max-procs", "--eof", "--arg-separator",
-  ]),
-}
+//: The wrapper table in force for this process. Loaded in `setup` from the
+//: project/deployed data file; an EMPTY table with `missing: true` when no data
+//: file resolves, which makes the R5 check fail CLOSED (see the R5 branch).
+let WRAPPER_TABLE = { wrappers: {}, findExec: new Set(), missing: true }
 
 // The base allow-list used when no shared data file can be read. Deliberately
 // narrow: the sync engine is the one non-executor invocation that must survive
@@ -214,7 +192,7 @@ const EXECUTION_CONTEXT_MARKER = ":execution-context"
 const WORKTREE_PATH_SEGMENT = "/.plan/local/worktrees/"
 
 const ASSIGNMENT_RE = /^[A-Za-z_][A-Za-z0-9_]*=/
-const VERSIONED_PYTHON_RE = /^python(\d+(\.\d+)*)?$/
+const VERSIONED_PYTHON_RE = /^(python|pypy)(\d+(\.\d+)*)?$/
 
 // Phase the raw-commit rule guards, mirroring git-workflow.py's
 // `_SOURCE_COMMIT_GATE_PHASE`. Outside it a raw `git commit` is untouched.
@@ -311,10 +289,54 @@ function isAssignment(token) {
   return ASSIGNMENT_RE.test(token)
 }
 
-// Strip leading wrapper/assignment prefixes, mirroring the hook's
-// `_r5_stripped_tokens`. `env -S <string>`/`--split-string[=]<string>` splices
-// the string back through the splitter, because `env -S` runs it as the command.
-function stripWrappers(tokens) {
+// Step over ONE option token of a wrapper, per the shared table.
+//
+// `consumed` is how many tokens the option takes (1 = the option alone, 2 = the
+// option plus its following value). `splice` is set when the option's value is a
+// COMMAND STRING that must be re-lexed and walked (a shell's `-c`, `env -S`,
+// `script -c`). A short CLUSTER (`-iu FOO`) is walked letter by letter, so the
+// value-taking letter is honoured wherever it sits in the cluster.
+function consumeWrapperOption(spec, token, tokens, index) {
+  const values = spec.values || []
+  const valueLetters = new Set(spec.value_letters || [])
+  const spliceOpts = spec.splice || []
+  const spliceLongs = new Set(spliceOpts.filter((option) => option.startsWith("--")))
+  const spliceLetters = new Set(
+    spliceOpts.filter((option) => option.length === 2 && option[0] === "-" && option[1] !== "-").map((option) => option[1]),
+  )
+  const nextValue = () => (index + 1 < tokens.length ? tokens[index + 1] : "")
+  if (token.startsWith("--")) {
+    const base = token.split("=")[0]
+    const attached = token.includes("=") ? token.slice(token.indexOf("=") + 1) : null
+    if (spliceLongs.has(base)) {
+      const value = attached !== null ? attached : nextValue()
+      return { splice: true, value, consumed: attached !== null ? 1 : 2 }
+    }
+    if (values.includes(base)) return { splice: false, value: null, consumed: attached !== null ? 1 : 2 }
+    return { splice: false, value: null, consumed: 1 }
+  }
+  const letters = token.slice(1)
+  for (let k = 0; k < letters.length; k++) {
+    const ch = letters[k]
+    if (spliceLetters.has(ch)) {
+      const rest = letters.slice(k + 1)
+      if (rest) return { splice: true, value: rest, consumed: 1 }
+      return { splice: true, value: nextValue(), consumed: 2 }
+    }
+    if (valueLetters.has(ch)) {
+      // A value-taking letter takes the REST of the cluster, else the next token.
+      return { splice: false, value: null, consumed: letters.slice(k + 1) ? 1 : 2 }
+    }
+  }
+  return { splice: false, value: null, consumed: values.includes(token) ? 2 : 1 }
+}
+
+// Strip leading wrapper/assignment prefixes, per the shared wrapper table.
+// `env -S <string>` and a shell's `-c <string>` SPLICE the string back through
+// the splitter, because the wrapper runs that string as the command. A wrapper's
+// `leading_positionals` (timeout's DURATION, flock's lock file, chrt's
+// priority, taskset's mask) are consumed before the walked command.
+function stripWrappers(tokens, table) {
   let i = 0
   while (i < tokens.length) {
     const token = tokens[i]
@@ -322,9 +344,9 @@ function stripWrappers(tokens) {
       i++
       continue
     }
-    if (!SHELL_WRAPPERS.has(token)) break
-    const wrapper = token
-    const valueOpts = WRAPPER_VALUE_OPTS[wrapper] || new Set()
+    const base = basenameOf(token)
+    const spec = table.wrappers[base] || table.wrappers[token] || EMPTY_WRAPPER_SPEC
+    if (spec === EMPTY_WRAPPER_SPEC) break
     i++
     let spliced = null
     while (i < tokens.length) {
@@ -334,41 +356,51 @@ function stripWrappers(tokens) {
         continue
       }
       if (!(option.startsWith("-") && option.length > 1)) break
-      if (wrapper === "env" && (option.startsWith("-S") || option.split("=")[0] === "--split-string")) {
-        let value
-        if (option.includes("=")) {
-          value = option.slice(option.indexOf("=") + 1)
-          i++
-        } else if (option === "-S" || option === "--split-string") {
-          i++
-          value = tokens[i] ?? ""
-          i++
-        } else {
-          value = option.slice(2)
-          i++
-        }
-        const parts = shellSplit(value)
-        spliced = parts === null ? whitespaceSplit(value) : parts
+      const step = consumeWrapperOption(spec, option, tokens, i)
+      i += step.consumed
+      if (step.splice) {
+        const parts = shellSplit(step.value)
+        spliced = parts === null ? whitespaceSplit(step.value) : parts
         break
       }
-      const base = option.split("=")[0]
-      i++
-      if (!option.includes("=") && valueOpts.has(base) && i < tokens.length && !tokens[i].startsWith("-")) {
-        i++
-      }
     }
-    if (spliced !== null) return stripWrappers(spliced.concat(tokens.slice(i)))
-    if (wrapper === "timeout" && i < tokens.length && !tokens[i].startsWith("-")) {
+    if (spliced !== null) return stripWrappers(spliced.concat(tokens.slice(i)), table)
+    let positionals = spec.leading_positionals || 0
+    while (positionals > 0 && i < tokens.length && !tokens[i].startsWith("-")) {
       i++
+      positionals--
     }
   }
   return tokens.slice(i)
 }
 
+// `find … -exec <program> … +` runs <program> exactly as a prefix wrapper does,
+// so the tokens after a find-exec option are walked as the real command. Only a
+// `find` program is spliced, and the option list is data
+// (`find_exec_options`), never a find-specific literal.
+function spliceFindExec(tokens, table) {
+  if (basenameOf(tokens[0] ?? "") !== "find") return null
+  for (let i = 0; i < tokens.length; i++) {
+    if (table.findExec.has(tokens[i])) return tokens.slice(i + 1)
+  }
+  return null
+}
+
+// The command's tokens after wrapper stripping — the population every
+// first-token check (R2, R4, R5, R6, the executor permit, the allow-lists) reads.
 function commandTokens(command) {
   const split = shellSplit(command)
   const tokens = split === null ? whitespaceSplit(command) : split
-  return stripWrappers(tokens)
+  const spliced = spliceFindExec(tokens, WRAPPER_TABLE)
+  return stripWrappers(spliced === null ? tokens : spliced, WRAPPER_TABLE)
+}
+
+// The command's tokens WITHOUT wrapper stripping — the raw first token, so R2's
+// shell-spawn class still names `bash` even though `bash` is also a transparent
+// wrapper whose `-c` string the interpreter walk descends into.
+function rawCommandTokens(command) {
+  const split = shellSplit(command)
+  return split === null ? whitespaceSplit(command) : split
 }
 
 function stripMatchedQuotes(raw) {
@@ -601,33 +633,51 @@ function contextGate(agent, workdir, root) {
   return false
 }
 
-// Read the shared allow-list. Project first, then the deployed OpenCode config
-// directory; absent (or empty) falls back to the built-in base table. Returns
-// BOTH forms — the repository-relative `entries` and the `bundleEntries` matched
-// against a deployed bundle root.
-function loadAllowList(root) {
+// Every path a standards DATA FILE (`r5-allowlist.json`, `r5-wrappers.json`) is
+// read from, in probe order: the project's own copy first, then every deployed
+// platform-runtime skill tree this harness can resolve — including the
+// `OPENCODE_CONFIG_DIR` override, which the wizard honours and which the
+// allow-list loader must honour identically.
+function standardDataCandidates(root, filename) {
   const home = process.env.HOME || homedir() || ""
   const configRoot = process.env.XDG_CONFIG_HOME || (home ? path.join(home, ".config") : "")
-  const candidates = [
-    path.join(root, ...R5_REPO_MARKER.split("/")),
-    path.join(
-      configRoot,
-      "opencode",
-      "skills",
-      "plan-marshall-platform-runtime",
-      "standards",
-      "r5-allowlist.json",
-    ),
-    path.join(
-      configRoot,
-      "opencode",
-      "skill",
-      "plan-marshall-platform-runtime",
-      "standards",
-      "r5-allowlist.json",
-    ),
-  ]
-  for (const candidate of candidates) {
+  const candidates = [path.join(root, "marketplace", "bundles", "plan-marshall", "skills", "platform-runtime", "standards", filename)]
+  const skillRoots = []
+  if (process.env.OPENCODE_CONFIG_DIR) skillRoots.push(process.env.OPENCODE_CONFIG_DIR)
+  if (configRoot) skillRoots.push(path.join(configRoot, "opencode"))
+  if (home) skillRoots.push(path.join(home, ".config", "opencode"), path.join(home, ".claude"), path.join(home, ".agents"))
+  for (const skillRoot of skillRoots) {
+    for (const name of ["skills", "skill"]) {
+      candidates.push(path.join(skillRoot, name, "plan-marshall-platform-runtime", "standards", filename))
+    }
+  }
+  return candidates
+}
+
+// Read the shared wrapper table. Absent (or unreadable, or shapeless) yields an
+// EMPTY table flagged `missing`, which makes the R5 check fail CLOSED rather
+// than silently admitting a wrapped interpreter call.
+function loadWrapperTable(root) {
+  for (const candidate of standardDataCandidates(root, R5_WRAPPER_TABLE_NAME)) {
+    try {
+      const data = JSON.parse(readFileSync(candidate, "utf8"))
+      if (data && typeof data === "object" && data.wrappers && typeof data.wrappers === "object") {
+        const findExec = new Set(Array.isArray(data.find_exec_options) ? data.find_exec_options : [])
+        return { wrappers: data.wrappers, findExec, missing: false }
+      }
+    } catch {
+      // Try the next candidate.
+    }
+  }
+  return { wrappers: {}, findExec: new Set(), missing: true }
+}
+
+// Read the shared allow-list from the same candidate list, so the wrapper table
+// and the allow-list can never be found at different roots. Returns BOTH forms —
+// the repository-relative `entries` and the `bundleEntries` matched against a
+// deployed bundle root.
+function loadAllowList(root) {
+  for (const candidate of standardDataCandidates(root, "r5-allowlist.json")) {
     try {
       const data = JSON.parse(readFileSync(candidate, "utf8"))
       const entries = data && data.entries
@@ -884,6 +934,7 @@ export default Plugin.define({
     const logPath = path.join(root, ".plan", "temp", "guard.log")
     const allowList = loadAllowList(root)
     const deployedRoots = deployedBundleRoots()
+    WRAPPER_TABLE = loadWrapperTable(root)
 
     function audit(entry) {
       try {
@@ -923,7 +974,8 @@ export default Plugin.define({
       }
 
       const token = normalizeToken(tokenAt(command, 0))
-      if (token && MUTATION_FILE_OPS.has(token)) {
+      const rawToken = normalizeToken(rawCommandTokens(command)[0] ?? "")
+      if ((token && MUTATION_FILE_OPS.has(token)) || (rawToken && MUTATION_FILE_OPS.has(rawToken))) {
         audit(auditLine("R2", tool, sessionID, callID, command))
         throw new Error(
           "[plan-marshall-guard] R2: shell file operations (mutation class) via Bash are forbidden; use the Read/Edit/Write tools or manage-* scripts",
@@ -962,6 +1014,18 @@ export default Plugin.define({
         throw new Error(
           "[plan-marshall-guard] R4: hard-coded build command bypassing python3 .plan/execute-script.py is forbidden",
         )
+      }
+
+      // Fail CLOSED when the shared wrapper table is unavailable: without it
+      // no wrapper can be stripped, so refuse any command that names an
+      // interpreter anywhere rather than letting a prefix hide the call.
+      if (WRAPPER_TABLE.missing && (contextGate(event?.agent, workdir, root) || isThisRepository(root))) {
+        if (rawCommandTokens(command).some((candidate) => isPythonInterpreter(candidate))) {
+          audit(auditLine("R5", tool, sessionID, callID, command))
+          throw new Error(
+            "[plan-marshall-guard] R5: the shared wrapper table (standards/r5-wrappers.json) is unavailable, so no wrapper can be stripped; the invocation is refused because it names an interpreter",
+          )
+        }
       }
 
       if (PYTHON_INTERPRETERS.has(token) || isPythonInterpreter(token)) {

@@ -526,73 +526,112 @@ def _match_r4_hardcoded_build(tool_name: str | None, tool_input: dict[str, Any])
     return None
 
 
-#: Shell wrappers (``command`` / ``env`` / ``sudo`` / ``timeout`` / ``nice`` /
-#: ``nohup`` / ``time`` / ``xargs`` / ``exec`` / ``stdbuf`` / ``setsid``) and
-#: leading ``NAME=value`` assignments used before the interpreter check. This is
-#: the EXPLICIT list of known prefix programs — extended in one place and
-#: mirrored by the OpenCode guard's ``SHELL_WRAPPERS`` — never guessed from shape.
-#: R5 strips these ahead of its program check; R2 strips them for its SHELL-SPAWN
-#: class only (a file-op keeps its un-stripped read), and R4 strips them so a
-#: wrapper-prefixed build tool is still seen. R1 keeps its unstripped scan.
-_R5_SHELL_WRAPPERS = frozenset(
-    {'command', 'env', 'sudo', 'timeout', 'nice', 'nohup', 'time', 'xargs', 'exec', 'stdbuf', 'setsid'}
-)
+#: The ONE shared wrapper table both harnesses read — the sibling of
+#: ``r5-allowlist.json``. A wrapper is a prefix program whose own invocation RUNS
+#: the command that follows it (``env python3 -c x`` still runs the interpreter),
+#: so R5 strips it (with its options, option values and inline ``NAME=value``
+#: assignments) before the program check. The table declares, per wrapper, the
+#: value-consuming options (``values`` for the full token, ``value_letters`` for a
+#: letter inside a short cluster such as ``-iu FOO``), the number of leading
+#: positional arguments the wrapper consumes (``leading_positionals``), and the
+#: options whose value is itself a COMMAND STRING to re-lex (``splice``). It is
+#: matched by BASENAME, so ``/usr/bin/env`` strips exactly like ``env``. Neither
+#: implementation carries a second literal list: a wrapper added to the data file
+#: is stripped on both harnesses and one removed from it is stripped on neither.
+_R5_WRAPPER_TABLE_NAME = 'r5-wrappers.json'
 
-#: Per-wrapper options that consume a following value token. Kept PER WRAPPER so
-#: ``sudo -n`` (a non-interactive FLAG) does not swallow the interpreter behind
-#: it, while ``nice -n 5`` and ``xargs -n 5`` do consume their value. Mirrors the
-#: guard's ``WRAPPER_VALUE_OPTS``.
-_R5_WRAPPER_VALUE_OPTS: dict[str, frozenset[str]] = {
-    'command': frozenset(),
-    'env': frozenset({'-u', '--unset', '-C', '--chdir'}),
-    'sudo': frozenset({'-u', '--user', '-g', '--group', '-U', '--other-user', '-C', '--chdir', '--directory'}),
-    'timeout': frozenset({'-s', '--signal', '-k', '--kill-after'}),
-    'nice': frozenset({'-n', '--adjustment'}),
-    'nohup': frozenset(),
-    'time': frozenset(),
-    'exec': frozenset({'-a'}),
-    'stdbuf': frozenset({'-i', '-o', '-e', '--input', '--output', '--error'}),
-    'setsid': frozenset(),
-    'xargs': frozenset(
-        {
-            '-I',
-            '-n',
-            '-P',
-            '-s',
-            '-d',
-            '-a',
-            '-E',
-            '-L',
-            '-o',
-            '-R',
-            '-S',
-            '--max-args',
-            '--max-lines',
-            '--max-chars',
-            '--delimiter',
-            '--arg-file',
-            '--replace',
-            '--max-procs',
-            '--eof',
-            '--arg-separator',
-        }
-    ),
-}
+#: The wrapper table's location relative to the skill root, resolved exactly like
+#: the allow-list's.
+_R5_WRAPPER_RELATIVE = ('standards', _R5_WRAPPER_TABLE_NAME)
 
 #: Leading ``NAME=value`` assignment, transparent to the shell.
 _R5_ASSIGNMENT_RE = re.compile(r'^[A-Za-z_][A-Za-z0-9_]*=')
 
 
+def _wrapper_table_path() -> pathlib.Path:
+    """Return the path to the shared R5 wrapper table data file.
+
+    Resolved relative to this script's own skill (``standards/`` beside
+    ``scripts/``), exactly as a deployed tree carries it — independent of the
+    allow-list override seam, so a fixture that redirects the allow-list still
+    reads the real wrapper table.
+    """
+    return pathlib.Path(__file__).resolve().parent.parent.joinpath(*_R5_WRAPPER_RELATIVE)
+
+
+def _wrapper_table() -> dict[str, Any]:
+    """Return the parsed shared wrapper table, or an EMPTY table flagged missing.
+
+    ``missing`` makes :func:`_match_r5_interpreter_call` fail CLOSED: without the
+    table no wrapper can be stripped, so a command that names an interpreter
+    anywhere is refused rather than admitted through a prefix.
+
+    Read on each call rather than cached, so a test can point the path at a
+    fixture table without an invalidation step.
+    """
+    try:
+        data = json.loads(_wrapper_table_path().read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return {'wrappers': {}, 'find_exec': (), 'missing': True}
+    wrappers = data.get('wrappers') if isinstance(data, dict) else None
+    if not isinstance(wrappers, dict) or not wrappers:
+        return {'wrappers': {}, 'find_exec': (), 'missing': True}
+    find_exec = data.get('find_exec_options')
+    return {
+        'wrappers': wrappers,
+        'find_exec': tuple(str(option) for option in find_exec) if isinstance(find_exec, list) else (),
+        'missing': False,
+    }
+
+
+def _wrapper_basename(token: str) -> str:
+    """Return a wrapper token's program name (quotes and path qualification gone)."""
+    return _strip_matched_quotes(token).replace('\\', '/').rsplit('/', 1)[-1]
+
+
+def _consume_wrapper_option(spec: dict[str, Any], token: str, tokens: list[str], index: int) -> tuple[bool, str, int]:
+    """Step over ONE wrapper option, per the shared table.
+
+    Returns ``(is_splice, value, consumed)``: ``consumed`` is how many tokens the
+    option takes (1 = the option alone, 2 = the option plus its following value),
+    and ``is_splice`` is set when the option's value is a COMMAND STRING that must
+    be re-lexed and walked (a shell's ``-c``, ``env -S``, ``script -c``). A short
+    CLUSTER (``-iu FOO``) is walked letter by letter, so a value-taking letter is
+    honoured wherever it sits in the cluster.
+    """
+    values = spec.get('values') or []
+    value_letters = set(spec.get('value_letters') or [])
+    splice_opts = spec.get('splice') or []
+    splice_longs = {option for option in splice_opts if option.startswith('--')}
+    splice_letters = {
+        option[1] for option in splice_opts if len(option) == 2 and option[0] == '-' and not option.startswith('--')
+    }
+    next_value = tokens[index + 1] if index + 1 < len(tokens) else ''
+    if token.startswith('--'):
+        base, separator, attached = token.partition('=')
+        if base in splice_longs:
+            return True, (attached if separator else next_value), (1 if separator else 2)
+        if base in values:
+            return False, '', (1 if separator else 2)
+        return False, '', 1
+    letters = token[1:]
+    for position, letter in enumerate(letters):
+        if letter in splice_letters:
+            rest = letters[position + 1 :]
+            if rest:
+                return True, rest, 1
+            return True, next_value, 2
+        if letter in value_letters:
+            return False, '', (1 if letters[position + 1 :] else 2)
+    return False, '', (2 if token in values else 1)
+
+
 def _r5_stripped_tokens(command: str) -> list[str]:
     """Return shell-lexical tokens of *command* minus R5-transparent prefixes.
 
-    Drops leading shell wrappers (each with its options, option values and
-    inline assignments) and leading ``NAME=value`` assignments, mirroring the
-    guard's ``commandTokens`` walk. ``timeout`` additionally consumes its
-    mandatory duration value; ``env -S``/``--split-string`` splices its string
-    back through the splitter, because ``env -S`` runs that string as the
-    command. Shell-lexical (``shlex``) like the other R5 helpers, falling back
-    to the whitespace split on malformed quoting rather than returning early.
+    Shell-lexical (``shlex``) like the other R5 helpers, falling back to the
+    whitespace split on malformed quoting rather than returning early, then
+    walked by :func:`_strip_wrapper_tokens`.
     """
     try:
         tokens = shlex.split(command)
@@ -604,9 +643,19 @@ def _r5_stripped_tokens(command: str) -> list[str]:
 def _strip_wrapper_tokens(tokens: list[str]) -> list[str]:
     """Strip leading wrappers/assignments from *tokens* (the R5 prefix walk).
 
-    Factored out so the ``env -S`` splice can recurse on the spliced head
-    without re-lexing the whole command.
+    ``env -S <string>`` and a shell's ``-c <string>`` SPLICE the string back
+    through the splitter, because the wrapper runs that string as the command. A
+    wrapper's ``leading_positionals`` (timeout's DURATION, flock's lock file,
+    chrt's priority, taskset's mask) are consumed before the walked command. A
+    ``find … -exec <program>`` invocation is walked from the program after the
+    find-exec option, sourced from the same table's ``find_exec_options``.
     """
+    table = _wrapper_table()
+    if tokens and _wrapper_basename(tokens[0]) == 'find':
+        for index, token in enumerate(tokens):
+            if token in table['find_exec']:
+                return _strip_wrapper_tokens(tokens[index + 1 :])
+    wrappers = table['wrappers']
     index = 0
     total = len(tokens)
     while index < total:
@@ -614,10 +663,9 @@ def _strip_wrapper_tokens(tokens: list[str]) -> list[str]:
         if _R5_ASSIGNMENT_RE.match(token):
             index += 1
             continue
-        if token not in _R5_SHELL_WRAPPERS:
+        spec = wrappers.get(_wrapper_basename(token))
+        if not isinstance(spec, dict):
             break
-        wrapper = token
-        value_opts = _R5_WRAPPER_VALUE_OPTS.get(wrapper, frozenset())
         index += 1
         spliced: list[str] | None = None
         while index < total:
@@ -627,30 +675,20 @@ def _strip_wrapper_tokens(tokens: list[str]) -> list[str]:
                 continue
             if not (option.startswith('-') and len(option) > 1):
                 break
-            if wrapper == 'env' and (option.startswith('-S') or option.split('=', 1)[0] == '--split-string'):
-                if '=' in option:
-                    value = option.split('=', 1)[1]
-                    index += 1
-                elif option in ('-S', '--split-string'):
-                    index += 1
-                    value = tokens[index] if index < total else ''
-                    index += 1
-                else:
-                    value = option[2:]
-                    index += 1
+            is_splice, value, consumed = _consume_wrapper_option(spec, option, tokens, index)
+            index += consumed
+            if is_splice:
                 try:
                     spliced = shlex.split(value)
                 except ValueError:
                     spliced = value.split()
                 break
-            base = option.split('=', 1)[0]
-            index += 1
-            if '=' not in option and base in value_opts and index < total and not tokens[index].startswith('-'):
-                index += 1
         if spliced is not None:
             return _strip_wrapper_tokens([*spliced, *tokens[index:]])
-        if wrapper == 'timeout' and index < total and not tokens[index].startswith('-'):
+        remaining = int(spec.get('leading_positionals') or 0)
+        while remaining > 0 and index < total and not tokens[index].startswith('-'):
             index += 1
+            remaining -= 1
     return tokens[index:]
 
 
@@ -685,7 +723,7 @@ def _is_executor_permit(command: str, root: str | None, cwd: str | None) -> bool
 
 #: Interpreter program name, including a versioned spelling (``python3.12``).
 #: Matched after lowercasing, mirroring the guard's ``isPythonInterpreter``.
-_PYTHON_PROGRAM_RE = re.compile(r'^python(\d+(\.\d+)*)?$')
+_PYTHON_PROGRAM_RE = re.compile(r'^(python|pypy)(\d+(\.\d+)*)?$')
 
 #: The shared allow-list data file both harnesses read. Resolved relative to the
 #: script so the deployed Claude hook finds the skill's ``standards/`` directory.
@@ -1021,6 +1059,15 @@ def _match_r5_interpreter_call(
     command = _bash_command(tool_name, tool_input)
     if command is None:
         return None
+    if _wrapper_table()['missing']:
+        # Fail CLOSED: without the shared wrapper table no wrapper can be
+        # stripped, so refuse any command that names an interpreter anywhere.
+        try:
+            raw = shlex.split(command)
+        except ValueError:
+            raw = command.split()
+        if any(_PYTHON_PROGRAM_RE.match(_wrapper_basename(token).lower()) for token in raw):
+            return _R5_REASON
     if _is_executor_permit(command, root, cwd):
         return None
     stripped = _r5_stripped_tokens(command)
