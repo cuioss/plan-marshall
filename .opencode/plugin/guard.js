@@ -52,32 +52,35 @@
  *   R5 — direct interpreter calls bypassing the executor (bash): block when the
  *   first token, after stripping the SHARED wrapper table
  *   (`standards/r5-wrappers.json`: matched by basename, with each wrapper's
- *   value options, short-option clusters, leading positionals and command-string
- *   splicing, plus `find … -exec`), is an interpreter (python/python3, pypy/
- *   pypy3, or a versioned spelling such as python3.12) and the invocation is -c,
- *   a script path (any second token not starting with -), a bare - (STDIN), a
- *   -</- redirection, or -m with any module — the allow set is executor-only, so
- *   every -m form refuses. R5 BINDS inside a plan context (Signal 1 or Signal 2)
- *   and in EVERY session of THIS repository; in a consumer repository outside a
- *   plan context it does not refuse a consumer's ordinary Python work
- *   (python3 x.py, python3 -m venv, python3 -m pip). Three admissions apply: the
- *   executor permit, the SHARED repository-relative allow-list, and the SHARED
- *   bundle-relative allow-list (matched EXACTLY against a resolved deployed
- *   bundle root); neither allow-list form is ever a basename or a suffix — so a
- *   copy of an allow-listed script outside the repository, or under a
- *   non-deployed directory, never matches.
+ *   value options, short-option clusters, leading positionals, command-string
+ *   splicing and watch/parallel positional splicing, plus `find … -exec`), is an
+ *   interpreter (python/python3, pypy/pypy3, or a versioned spelling such as
+ *   python3.12) and the invocation is -c, a script path (any second token not
+ *   starting with -), a bare - (STDIN), a -</- redirection, or -m with any module
+ *   — the allow set is executor-only, so every -m form refuses. R5 BINDS inside a
+ *   plan context (Signal 1, Signal 2, or the runbook-lane marker) and in EVERY
+ *   session of THIS repository; in a consumer repository outside a plan context
+ *   it does not refuse a consumer's ordinary Python work (python3 x.py, python3
+ *   -m venv, python3 -m pip). Three admissions apply: the executor permit, the
+ *   SHARED repository-relative allow-list, and the SHARED bundle-relative
+ *   allow-list (matched EXACTLY against the resolver's deployed path for the
+ *   entry); neither allow-list form is ever a basename or a suffix — so a copy of
+ *   an allow-listed script outside the repository, or under a non-deployed
+ *   directory, never matches.
  *
  *   R6 — a raw `git commit` while the enclosing plan is in phase `6-finalize`
- *   => block. The plan is NAMED from the `git -C` TARGET (the persona-mandated
- *   `git -C {WORKTREE} commit` form), then the `workdir`, then the project root;
- *   its phase is read from that plan's own `status.json` field `current_phase` —
- *   the worktree-resident record first (the live one during phase 5+), then the
- *   main-anchored record (git's common dir, or a `PLAN_BASE_DIR` override). Never
- *   "the first plan found" by a directory scan. Every plan commit must pass
- *   through the gate-bearing `git-workflow commit` verb, which sanctions an open
- *   loop-back fix task, a review-rubric section-6 record, or a composed phase-6
- *   manifest step. Outside `6-finalize`, or with no plan state present, a raw
- *   commit is untouched.
+ *   => block. The plan is NAMED from EVERY commit form: the `--work-tree` value,
+ *   the composed `git -C` TARGET (the persona-mandated `git -C {WORKTREE}
+ *   commit` form), the plan a `--git-dir` / `GIT_DIR` admin directory points at
+ *   (`…/worktrees/{plan}`), then the `workdir`, then the project root; its phase
+ *   is read from that plan's own `status.json` field `current_phase` — the
+ *   worktree-resident record first (the live one during phase 5+), then the
+ *   main-anchored record. Never "the first plan found" by a directory scan. A
+ *   `-c alias.NAME=…` subcommand is resolved to its body; an unresolvable target
+ *   (an unexpanded variable, a shell alias) is refused fail-closed inside the
+ *   enforced scope. Every plan commit must pass through the gate-bearing
+ *   `git-workflow commit` verb. Outside `6-finalize`, or with no plan state
+ *   present, a raw commit is untouched.
  *
  * TOKENISATION PARITY: the R5 branch tokenises with a quoting-aware splitter
  * (`shellSplit`) matching the Python hook's `shlex.split`, strips the SAME
@@ -368,6 +371,13 @@ function stripWrappers(tokens, table) {
       }
     }
     if (spliced !== null) return stripWrappers(spliced.concat(tokens.slice(i)), table)
+    if (spec.splice_positional && i < tokens.length) {
+      // `watch '<command>'` / `parallel '<command>'` run their first positional
+      // as a shell command, so it is spliced and walked like `env -S`.
+      const parts = shellSplit(stripMatchedQuotes(tokens[i]))
+      const splicedTokens = parts === null ? whitespaceSplit(tokens[i]) : parts
+      return stripWrappers(splicedTokens.concat(tokens.slice(i + 1)), table)
+    }
     let positionals = spec.leading_positionals || 0
     while (positionals > 0 && i < tokens.length && !tokens[i].startsWith("-")) {
       i++
@@ -394,8 +404,9 @@ function spliceFindExec(tokens, table) {
 function commandTokens(command) {
   const split = shellSplit(command)
   const tokens = split === null ? whitespaceSplit(command) : split
-  const spliced = spliceFindExec(tokens, WRAPPER_TABLE)
-  return stripWrappers(spliced === null ? tokens : spliced, WRAPPER_TABLE)
+  const stripped = stripWrappers(tokens, WRAPPER_TABLE)
+  const spliced = spliceFindExec(stripped, WRAPPER_TABLE)
+  return spliced === null ? stripped : stripWrappers(spliced, WRAPPER_TABLE)
 }
 
 // The command's tokens WITHOUT wrapper stripping — the raw first token, so R2's
@@ -453,13 +464,12 @@ function isPythonInterpreter(raw) {
 // allow-list entry. The relative form `.plan/execute-script.py` is the canonical
 // documented invocation, and it is admitted only when the command's EFFECTIVE
 // working directory IS the repository root: a leading `cd`, an `env -C` /
-// `--chdir` directory change and the shell's `workdir` are resolved first, so
-// the same relative path run from anywhere else is refused. (`git -C` is not a
-// shell directory change: it moves git's own working directory for that one
-// invocation and never the directory a following program runs in.) An ABSOLUTE
-// form is admitted only when it RESOLVES (realpath) to
-// `{repository root}/.plan/execute-script.py`, so `python3
-// /tmp/x/.plan/execute-script.py` is refused, never admitted by suffix.
+// `--chdir` / `sudo -D` directory change and the shell's `workdir` are resolved
+// first (see `effectiveCwd`), so the same relative path run from anywhere else
+// is refused. (`git -C` is not a shell directory change: it moves git's own
+// working directory for that one invocation and never the directory a following
+// program runs in.) An ABSOLUTE form is admitted only when it equals
+// `{repository root}/.plan/execute-script.py` after path normalization.
 function isExecutorPermit(command, root, cwd) {
   const tokens = commandTokens(command)
   if (tokens.length < 2) return false
@@ -477,37 +487,65 @@ function isExecutorPermit(command, root, cwd) {
 }
 
 // The command's EFFECTIVE working directory: the shell's own cwd with a leading
-// `cd` / `env -C` / `--chdir` directory change applied in order. Returns "" when
+// `cd` and every `env -C` / `--chdir` / `sudo -D` / `--directory` directory
+// change applied in order. The wrapper chain is walked with the SHARED table, so
+// the directory change is found wherever it sits among a wrapper's options
+// (`env -u FOO -C /tmp/x …`, `sudo -u bob -D /tmp/x …`) — an option-order scan
+// that stopped at the first non-option would miss exactly those. Returns "" when
 // no base is known, which no caller treats as "the repository root".
 function effectiveCwd(command, base) {
   if (typeof base !== "string" || !base) return ""
   let current = base.replace(/\\/g, "/").replace(/\/+$/, "")
   if (!current.startsWith("/")) return ""
   const tokens = rawCommandTokens(command)
-  for (let i = 0; i < tokens.length; i++) {
+  const apply = (value) => {
+    if (!value) return false
+    current = value.startsWith("/") ? normalizePosixPath(value) : normalizePosixPath(`${current}/${value}`)
+    return true
+  }
+  let i = 0
+  while (i < tokens.length) {
     const token = stripMatchedQuotes(tokens[i])
-    if (isAssignment(token)) continue
-    if (token === "cd") {
-      const value = stripMatchedQuotes(tokens[i + 1] ?? "")
-      if (!value) return ""
-      current = value.startsWith("/") ? normalizePosixPath(value) : normalizePosixPath(`${current}/${value}`)
+    if (isAssignment(token)) {
       i++
       continue
     }
-    if (token === "env" || token === "sudo") {
-      for (let k = i + 1; k < tokens.length; k++) {
-        const option = stripMatchedQuotes(tokens[k])
-        if (!(option.startsWith("-") && option.length > 1)) break
-        let value = null
-        if (option === "-C" || option === "--chdir") value = stripMatchedQuotes(tokens[k + 1] ?? "")
-        else if (option.startsWith("--chdir=")) value = option.slice("--chdir=".length)
-        if (value !== null && value) {
-          current = value.startsWith("/") ? normalizePosixPath(value) : normalizePosixPath(`${current}/${value}`)
-        }
-      }
-      break
+    if (token === "cd") {
+      const value = stripMatchedQuotes(tokens[i + 1] ?? "")
+      if (!value) return ""
+      apply(value)
+      i += 2
+      continue
     }
-    break
+    const spec = WRAPPER_TABLE.wrappers[basenameOf(token)]
+    if (!spec) break
+    const wrapper = basenameOf(token)
+    i++
+    while (i < tokens.length) {
+      const option = stripMatchedQuotes(tokens[i])
+      if (isAssignment(option)) {
+        i++
+        continue
+      }
+      if (!(option.startsWith("-") && option.length > 1)) break
+      const isDirectoryOption =
+        option === "-C" ||
+        option === "--chdir" ||
+        option.startsWith("--chdir=") ||
+        (wrapper === "sudo" && (option === "-D" || option === "--directory" || option.startsWith("--directory="))) ||
+        (wrapper === "env" && option.startsWith("-C") && option.length > 2)
+      if (isDirectoryOption) {
+        let value = option.includes("=") ? option.slice(option.indexOf("=") + 1) : null
+        if (value === null && option.startsWith("-C") && option.length > 2 && !option.startsWith("--")) {
+          value = option.slice(2)
+        }
+        if (value === null) value = stripMatchedQuotes(tokens[i + 1] ?? "")
+        apply(value)
+      }
+      const step = consumeWrapperOption(spec, option, tokens, i)
+      i += step.consumed
+      if (step.splice) break
+    }
   }
   return current
 }
@@ -782,7 +820,7 @@ function standardDataCandidates(root, filename) {
   const skillRoots = []
   if (process.env.OPENCODE_CONFIG_DIR) skillRoots.push(process.env.OPENCODE_CONFIG_DIR)
   if (configRoot) skillRoots.push(path.join(configRoot, "opencode"))
-  if (home) skillRoots.push(path.join(home, ".config", "opencode"), path.join(home, ".claude"), path.join(home, ".agents"))
+  if (home) skillRoots.push(path.join(home, ".config", "opencode"))
   for (const skillRoot of skillRoots) {
     for (const name of ["skills", "skill"]) {
       candidates.push(path.join(skillRoot, name, "plan-marshall-platform-runtime", "standards", filename))
@@ -950,6 +988,10 @@ function planIdFromGitDir(value) {
 // a backtick is UNRESOLVABLE, so R6 refuses fail-closed rather than guessing.
 function gitCommitInfo(command) {
   const raw = rawCommandTokens(command)
+  const stripped = commandTokens(command)
+  if (!stripped.length || basenameOf(stripped[0]).toLowerCase() !== "git") {
+    return { isCommit: false, cwdTarget: null, workTree: null, gitDir: null, unresolvable: false }
+  }
   let gitAt = -1
   for (let i = 0; i < raw.length; i++) {
     if (basenameOf(raw[i]).toLowerCase() === "git") {
@@ -1157,7 +1199,11 @@ function planPhase(workdir, root, info) {
 function isRawFinalizeCommit(command, workdir, root) {
   const info = gitCommitInfo(command)
   if (!info.isCommit) return false
-  if (info.unresolvable) return true
+  if (info.unresolvable) {
+    // Fail-closed ONLY inside the enforced scope: an unrelated consumer's
+    // `git -C "$dir" commit` is not this rule's business.
+    return contextGate(undefined, workdir, root) || isThisRepository(root)
+  }
   return planPhase(workdir, root, info) === SOURCE_COMMIT_GATE_PHASE
 }
 

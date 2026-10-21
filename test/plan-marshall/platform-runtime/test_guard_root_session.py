@@ -60,11 +60,11 @@ def _hook_reason(command: str, *, cwd: str, in_context: bool = False) -> str | N
     return reason if isinstance(reason, str) else None
 
 
-#: The D3 side-door rows, run in a ROOT session (no plan context). Each is refused
-#: by the OpenCode guard unconditionally; the hook must give the same verdict.
-#: The rule that fires is intentionally NOT pinned: `bash -c` and `env bash -c`
-#: are reachable as R2 (shell spawn) and as R5 (the spliced interpreter), and the
-#: contract is the refusal, not which of the two labels it carries.
+#: The D3 side-door rows, run in a ROOT session (no plan context) and again inside
+#: a plan context. Each is refused by the OpenCode guard in BOTH; the hook must
+#: give the same verdict in both. The rule that fires is intentionally NOT pinned:
+#: `bash -c` and `env bash -c` are reachable as R2 (shell spawn) and as R5 (the
+#: spliced interpreter), and the contract is the refusal.
 _ROOT_SESSION_SIDE_DOORS: tuple[str, ...] = (
     'true && python3 -c x',
     'echo hi | python3 -',
@@ -75,19 +75,24 @@ _ROOT_SESSION_SIDE_DOORS: tuple[str, ...] = (
 )
 
 
+@pytest.mark.parametrize('in_context', [False, True], ids=['root-session', 'plan-context'])
 @pytest.mark.parametrize('command', _ROOT_SESSION_SIDE_DOORS, ids=list(_ROOT_SESSION_SIDE_DOORS))
-def test_root_session_refuses_every_side_door(command: str, tmp_path_factory: pytest.TempPathFactory) -> None:
-    """A root session of this repository gets the guard's verdict (no plan context).
+def test_root_session_refuses_every_side_door(
+    command: str, in_context: bool, tmp_path_factory: pytest.TempPathFactory
+) -> None:
+    """A root session of this repository gets the guard's verdict, in both contexts.
 
-    The row set fails when the hook's gating is restored: with no ``agent_type``
-    and a cwd outside any worktree, a gated R1-R4 chain admits all six.
+    The root-session arm is the row set that fails when the hook's gating is
+    restored: with no ``agent_type`` and a cwd outside any worktree, a gated
+    R1-R4 chain admits all six.
     """
-    reason = _hook_reason(command, cwd=str(REPO_ROOT))
-    assert reason is not None, f'the hook must refuse {command!r} in a root session'
+    reason = _hook_reason(command, cwd=str(REPO_ROOT), in_context=in_context)
+    assert reason is not None, f'the hook must refuse {command!r} (in_context={in_context})'
 
     harness: GuardHarness = build_harness(tmp_path_factory.mktemp('d3-root'))
-    blocked, message = harness.blocks(shell_event(command))
-    assert blocked, f'guard.js must refuse {command!r} in a root session; message={message!r}'
+    event = shell_event(command, agent=SUB_AGENT_AGENT) if in_context else shell_event(command)
+    blocked, message = harness.blocks(event)
+    assert blocked, f'guard.js must refuse {command!r} (in_context={in_context}); message={message!r}'
 
 
 # =============================================================================

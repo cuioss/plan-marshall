@@ -50,6 +50,10 @@ R6 is not gated at all.
   `.plan/local/worktrees/` (the call runs inside a plan worktree).
 
 An absent Signal-1 field still lets Signal 2 satisfy the gate, and vice versa.
+The enforcement leaf ORs ONE more condition onto the gate: a RUNBOOK-LANE marker
+(``.plan/temp/rb-<plan>/progress.md`` in the project directory). A lane run issues
+every call with the main checkout as its working directory, so neither Signal
+fires there and a consumer repository would otherwise be left unbound.
 
 ## Rule families
 
@@ -64,7 +68,7 @@ one-line `permissionDecisionReason`; on no match it emits nothing.
 
 | Rule | Fires on | Redirect reason (substance) |
 |------|----------|-----------------------------|
-| **R1 shell-construct compound** | A Bash command containing an **unquoted, unescaped** `&&`, `;`, `&`, newline, `for`/`while` loop, `$(...)` command substitution, or leading `VAR=val cmd` inline env-var assignment. Quoting and backslash escapes are resolved first, so an operator confined to a quoted argument is data and does not fire — but a `$(...)` or backtick substitution still fires inside **double** quotes, where the shell still executes it | One command per Bash call — use separate Bash calls or dedicated tools |
+| **R1 shell-construct compound** | A Bash command containing an **unquoted, unescaped** `&&`, `;`, `|`, `&`, newline, `for`/`while` loop, `$(...)` command substitution, or leading `VAR=val cmd` inline env-var assignment. Quoting and backslash escapes are resolved first, so an operator confined to a quoted argument is data and does not fire — but a `$(...)` or backtick substitution still fires inside **double** quotes, where the shell still executes it | One command per Bash call — use separate Bash calls or dedicated tools |
 | **R2 Bash file-ops** | A Bash command whose program is `cat` / `grep` / `head` / `tail` / `find` / `ls`, a shell spawn (`sh` / `bash` / `source`), **or** `git` whose subcommand (after any global options) is `grep` | Use the Read/Glob/Grep tools, not Bash, for file operations; for a content sweep run `architecture search --content --pattern P` |
 | **R3 generated-executor edit** | An Edit/Write whose path is the generated `.plan/execute-script.py` | Regenerate the executor via `/sync-harnesses` + `/marshall-steward`; never edit it |
 | **R4 hard-coded build** | A Bash command invoking `./pw` or a bare `mvn` / `npm` / `gradle` / `uv` (the program is read un-stripped and after R5 wrapper stripping, so `env uv run python -c ...` is refused) | Resolve build commands via `plan-marshall:manage-architecture:architecture resolve` |

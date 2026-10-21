@@ -42,9 +42,11 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 #: produce these values. ``refused`` means the guard threw and the hook returned
 #: a deny reason. R5 binds inside a plan context AND in every session of THIS
 #: repository — which the node scratch root is (it carries the repository
-#: marker), and which the hook's own location is — so a refusal row is refused in
-#: context AND out of it; the two columns agree on every row and are kept
-#: separate so a future re-scoping shows up here.
+#: marker), and which the hook's ``cwd`` (the real repository root) is — so a
+#: refusal row is refused in context AND out of it; the two columns agree on every
+#: row and are kept separate so a future re-scoping shows up here. The OUT column
+#: is "no sub-agent identity" in this repository, not "a consumer repository":
+#: the consumer arm is covered by ``test_guard_exact_admissions``.
 _PARITY_CORPUS: tuple[tuple[str, bool, bool], ...] = (
     ('timeout 5 python3 -c "x"', True, True),
     ('python3.12 -c "x"', True, True),

@@ -3,13 +3,14 @@
 """Conditional PreToolUse enforcement leaf for Claude Code.
 
 Registered (opt-in) as a matcher-less ``hooks.PreToolUse`` entry. It blocks six
-mechanically-checkable hard-rule violation families. R1-R4 are enforced ONLY when
-the call originates inside a plan-marshall plan context; outside that context
-(and on every error path) those rules emit nothing and the hook exits 0 (fail
-OPEN). **R5** binds inside a plan context AND in every session of this repository
-(so a consumer repository's ordinary Python work is untouched outside a plan
-context). **R6 is not context-gated** — a raw ``git commit`` into a 6-finalize
-plan worktree is refused from any session, named from the ``git -C`` target.
+mechanically-checkable hard-rule violation families. R1-R5 are enforced when the
+call originates inside a plan-marshall plan context, when the checkout carries a
+runbook-lane marker, or in EVERY session of this repository; outside that scope
+(and on every error path) they emit nothing and the hook exits 0 (fail OPEN), so
+a consumer repository's ordinary Python work is untouched outside a plan context.
+**R6 is not context-gated** — a raw ``git commit`` into a 6-finalize plan worktree
+is refused from any session, named from every commit form (``-C``,
+``--git-dir``/``--work-tree``, ``GIT_DIR``, a resolved ``-c alias``).
 
 ALL payload parsing, field access, and the context-gate predicate are delegated
 to the shared ``pretooluse_gate`` module — this leaf adds NO field-name knowledge
@@ -17,7 +18,7 @@ of its own. The only logic it owns is the R1-R6 rule matchers and the
 ``permissionDecision: deny`` envelope layered on top:
 
 - **R1 shell-construct compound** — a Bash command containing an UNQUOTED and
-  UNESCAPED ``&&``, ``;``, ``&``, newline, ``for``/``while`` loop, ``$(...)``
+  UNESCAPED ``&&``, ``;``, ``|``, ``&``, newline, ``for``/``while`` loop, ``$(...)``
   command substitution, or a leading ``VAR=val cmd`` inline env-var assignment.
   The recognised families are enumerated by ``_R1_FAMILIES``. An operator
   confined to a quoted argument is data, not an operator, and does not trip the
@@ -31,47 +32,55 @@ of its own. The only logic it owns is the R1-R6 rule matchers and the
 - **R4 hard-coded build** — a Bash command invoking ``./pw`` or a bare ``mvn`` /
   ``npm`` / ``gradle``.
 - **R5 direct interpreter call** — a Bash command invoking an interpreter
-  (``python`` / ``python3`` / a versioned spelling such as ``python3.12``,
-  case-insensitively) as ``-c``, a script path, a bare ``-`` (STDIN) or a
-  ``-<``/``->`` redirection, or ``-m`` with any module. R5 BINDS inside a plan
-  context (Signal 1 or Signal 2) and in EVERY session of THIS repository; in a
-  consumer repository outside a plan context it does not refuse a consumer's
-  ordinary Python work. Admissions: the ``python3 .plan/execute-script.py``
-  executor permit (the RELATIVE form, or an ABSOLUTE form resolving to
-  ``{repository root}/.plan/execute-script.py``); the shared allow-list of
-  documented non-executor invocations read from ``standards/r5-allowlist.json``,
-  whose REPOSITORY-RELATIVE entries are matched EXACTLY against the invocation's
-  script path resolved against the repository root; and that file's
-  BUNDLE-RELATIVE entries, matched EXACTLY against
-  ``{deployed bundle root}/{entry}`` for the platform-runtime bundle-cache layout
-  (the Claude plugin cache nested layout and the flat OpenCode / Antigravity
-  skill roots). Neither form is ever a basename or a suffix, so a copy of an
-  allow-listed script outside the repository, or under a non-deployed directory,
-  never matches. Wrapper prefixes (``command``/``env``/``sudo``/``timeout``/
-  ``nice``/``nohup``/``time``/``xargs``/``exec``/``stdbuf``/``setsid``, including
-  ``env -S``) are stripped first, so a wrapper cannot hide the interpreter. The
-  allow set is otherwise executor-only, so every ``-m`` form refuses.
-- **R6 raw finalize commit** — a raw ``git commit`` while the enclosing plan is
-  in phase ``6-finalize``. The plan is NAMED from the ``git -C`` TARGET (the
-  persona-mandated ``git -C {WORKTREE} commit`` form), then the payload ``cwd``,
-  then the project root (never "the first plan found") and its phase is read from
-  that plan's own ``status.json`` field ``current_phase`` — the worktree-resident
-  record first (the live one during phase 5+), then the main-anchored record. R6
-  is NOT context-gated. Every plan commit must pass through the gate-bearing
-  ``git-workflow commit`` verb; outside ``6-finalize`` a raw commit is untouched.
+  (``python`` / ``python3`` / ``pypy`` / ``pypy3`` / a versioned spelling such as
+  ``python3.12``, case-insensitively) as ``-c``, a script path, a bare ``-``
+  (STDIN) or a ``-<``/``->`` redirection, or ``-m`` with any module. R5 BINDS
+  inside a plan context (Signal 1 or Signal 2) and in EVERY session of THIS
+  repository; in a consumer repository outside a plan context it does not refuse
+  a consumer's ordinary Python work. Admissions: the ``python3
+  .plan/execute-script.py`` executor permit (the RELATIVE form admitted only from
+  the repository root — a leading ``cd``, an ``env -C``/``--chdir``/``sudo -D``
+  directory change and the shell workdir are resolved first — or an ABSOLUTE form
+  resolving to ``{repository root}/.plan/execute-script.py``); the shared
+  allow-list of documented non-executor invocations read from
+  ``standards/r5-allowlist.json``, whose REPOSITORY-RELATIVE entries are matched
+  EXACTLY against the invocation's script path resolved against the repository
+  root; and that file's BUNDLE-RELATIVE entries, matched EXACTLY against the
+  resolver's deployed path for the entry. Neither form is ever a basename or a
+  suffix, so a copy of an allow-listed script outside the repository, or under a
+  non-deployed directory, never matches. The wrapper prefixes come from ONE
+  shared data file, [`r5-wrappers.json`](r5-wrappers.json): a path-qualified
+  ``/usr/bin/env`` strips like ``env``, an option cluster like ``env -iu FOO`` is
+  walked letter by letter, ``timeout`` / ``flock`` / ``chrt`` / ``taskset``
+  consume their leading positional, ``env -S``, a shell's ``-c`` and ``watch`` /
+  ``parallel`` splice their command string back into the walk, and
+  ``find … -exec`` is walked from the program it runs. The allow set is otherwise
+  executor-only, so every ``-m`` form refuses.
+- **R6 raw finalize commit** — a raw ``git commit`` while the enclosing plan, in
+  phase ``6-finalize``. The plan is NAMED from every commit form: the
+  ``--work-tree`` value, the composed ``git -C`` target, the plan a ``--git-dir``
+  / ``GIT_DIR`` admin directory points at (``…/worktrees/{plan}``), then the
+  payload ``cwd``, then the project root (never "the first plan found"); its
+  phase is read from that plan's own ``status.json`` field ``current_phase`` —
+  the worktree-resident record first (the live one during phase 5+), then the
+  main-anchored record. A subcommand defined with ``-c alias.NAME=…`` is resolved
+  to its body; a shell-expansion alias body and any directory value that still
+  carries an unexpanded variable are UNRESOLVABLE and refused fail-closed inside
+  the enforced scope. R6 is NOT context-gated. Every plan commit must pass
+  through the gate-bearing ``git-workflow commit`` verb; outside ``6-finalize`` a
+  raw commit is untouched.
 
 Control flow:
 
 1. Parse stdin via ``gate.parse`` (empty/malformed → emit nothing, exit 0).
-2. Apply ``gate.context_gate(payload)`` (``Signal1 OR Signal2``). When true, run
-   the R1-R4 matchers; on the FIRST match, append one ``guard.log`` audit line
-   (best-effort) and emit the deny envelope with a one-line redirect reason.
-3. Run the R5 matcher when the gate is satisfied OR this project IS the
-   plan-marshall source repository; on a match, append one ``guard.log`` audit
-   line (best-effort) and emit the deny envelope.
-4. Run the R6 raw-finalize-commit rule unconditionally — it is NOT
+2. Evaluate the scope: ``gate.context_gate(payload)`` (``Signal1 OR Signal2``) OR
+   the runbook-lane marker OR this project IS the plan-marshall source
+   repository. Inside it, run the R1-R5 matchers; on the FIRST match, append one
+   ``guard.log`` audit line (best-effort) and emit the deny envelope with a
+   one-line redirect reason.
+3. Run the R6 raw-finalize-commit rule unconditionally — it is NOT
    context-gated — and on a match audit and deny.
-5. No match → emit nothing, exit 0.
+4. No match → emit nothing, exit 0.
 
 The whole leaf is best-effort/no-raise: any internal error degrades to a silent
 no-op (emit nothing, exit 0).
@@ -632,13 +641,21 @@ def _r5_stripped_tokens(command: str) -> list[str]:
 
     Shell-lexical (``shlex``) like the other R5 helpers, falling back to the
     whitespace split on malformed quoting rather than returning early, then
-    walked by :func:`_strip_wrapper_tokens`.
+    walked by :func:`_strip_wrapper_tokens`. A ``find … -exec`` program hidden
+    behind a wrapper (``env find . -exec python3 -c x {} +``) is spliced AFTER the
+    wrapper walk, so the wrapper prefix cannot hide it.
     """
     try:
         tokens = shlex.split(command)
     except ValueError:
         tokens = command.split()
-    return _strip_wrapper_tokens(tokens)
+    stripped = _strip_wrapper_tokens(tokens)
+    if stripped and _wrapper_basename(stripped[0]) == 'find':
+        table = _wrapper_table()
+        for position, token in enumerate(stripped):
+            if token in table['find_exec']:
+                return _strip_wrapper_tokens(stripped[position + 1 :])
+    return stripped
 
 
 def _strip_wrapper_tokens(tokens: list[str]) -> list[str]:
@@ -686,6 +703,15 @@ def _strip_wrapper_tokens(tokens: list[str]) -> list[str]:
                 break
         if spliced is not None:
             return _strip_wrapper_tokens([*spliced, *tokens[index:]])
+        if spec.get('splice_positional') and index < total:
+            # `watch '<command>'` / `parallel '<command>'` run their first
+            # positional as a shell command, so it is spliced and walked.
+            value = _strip_matched_quotes(tokens[index])
+            try:
+                positional = shlex.split(value)
+            except ValueError:
+                positional = value.split()
+            return _strip_wrapper_tokens([*positional, *tokens[index + 1 :]])
         remaining = int(spec.get('leading_positionals') or 0)
         while remaining > 0 and index < total and not tokens[index].startswith('-'):
             index += 1
@@ -741,9 +767,12 @@ def _real_path(value: str) -> str:
 def _effective_cwd(command: str, base: str | None) -> str:
     """The command's EFFECTIVE working directory.
 
-    The shell's own cwd with a leading ``cd`` / ``env -C`` / ``--chdir``
-    directory change applied in order. Empty when no base is known, which no
-    caller treats as "the repository root".
+    The shell's own cwd with a leading ``cd`` and every ``env -C`` / ``--chdir`` /
+    ``sudo -D`` / ``--directory`` directory change applied in order. The wrapper
+    chain is walked with the SHARED table, so a directory change is found wherever
+    it sits among a wrapper's options (``env -u FOO -C /tmp/x …``,
+    ``sudo -u bob -D /tmp/x …``). Empty when no base is known, which no caller
+    treats as "the repository root".
     """
     if not base:
         return ''
@@ -767,22 +796,36 @@ def _effective_cwd(command: str, base: str | None) -> str:
             current = _resolve_against(current, value)
             index += 2
             continue
-        if token in ('env', 'sudo'):
-            offset = index + 1
-            while offset < len(tokens):
-                option = _strip_matched_quotes(tokens[offset])
-                if not (option.startswith('-') and len(option) > 1):
-                    break
-                chdir_value: str | None = None
-                if option in ('-C', '--chdir'):
-                    chdir_value = _strip_matched_quotes(tokens[offset + 1]) if offset + 1 < len(tokens) else ''
-                elif option.startswith('--chdir='):
-                    chdir_value = option.split('=', 1)[1]
-                if chdir_value:
-                    current = _resolve_against(current, chdir_value)
-                offset += 1
+        wrapper = _wrapper_basename(token)
+        spec = _wrapper_table()['wrappers'].get(wrapper)
+        if not isinstance(spec, dict):
             break
-        break
+        index += 1
+        while index < len(tokens):
+            option = _strip_matched_quotes(tokens[index])
+            if _R5_ASSIGNMENT_RE.match(option):
+                index += 1
+                continue
+            if not (option.startswith('-') and len(option) > 1):
+                break
+            is_directory_option = (
+                option in ('-C', '--chdir')
+                or option.startswith('--chdir=')
+                or (wrapper == 'sudo' and (option in ('-D', '--directory') or option.startswith('--directory=')))
+                or (wrapper == 'env' and option.startswith('-C') and len(option) > 2)
+            )
+            if is_directory_option:
+                value = option.split('=', 1)[1] if '=' in option else ''
+                if not value and option.startswith('-C') and len(option) > 2 and not option.startswith('--'):
+                    value = option[2:]
+                if not value:
+                    value = _strip_matched_quotes(tokens[index + 1]) if index + 1 < len(tokens) else ''
+                if value:
+                    current = _resolve_against(current, value)
+            _is_splice, _value, consumed = _consume_wrapper_option(spec, option, tokens, index)
+            index += consumed
+            if _is_splice:
+                break
     return current
 
 
@@ -1457,6 +1500,9 @@ def _git_commit_target(command: str) -> _GitCommitInfo:
         raw = shlex.split(command)
     except ValueError:
         raw = command.split()
+    stripped = _r5_stripped_tokens(command)
+    if not stripped or _strip_matched_quotes(stripped[0]).replace('\\', '/').rsplit('/', 1)[-1].lower() != 'git':
+        return _GitCommitInfo(False, None, None, None, False)
     git_at = next(
         (
             position
@@ -1562,7 +1608,11 @@ def _match_r6_raw_finalize_commit(
     if not info.is_commit:
         return None
     if info.unresolvable:
-        return _R6_REASON
+        # An unresolvable target is refused fail-closed ONLY inside the enforced
+        # scope; an unrelated consumer's `git -C "$dir" commit` is not this rule's
+        # business.
+        scoped = gate.context_gate(payload) or _is_lane_run(payload) or _is_this_repository(payload)
+        return _R6_REASON if scoped else None
     if _plan_phase(payload, info) != _SOURCE_COMMIT_GATE_PHASE:
         return None
     return _R6_REASON
@@ -1650,14 +1700,14 @@ def _is_lane_run(payload: dict[str, Any]) -> bool:
 def evaluate(payload: dict[str, Any]) -> str | None:
     """Return the deny reason for the first matched rule, or ``None``.
 
-    Runs the R1-R4 matchers inside the shared context gate (``Signal1 OR
-    Signal2``); when the gate is not satisfied those rules return ``None`` (fail
-    OPEN). **R5** binds when the gate is satisfied OR this project IS the
-    plan-marshall source repository, so a root session here is protected while a
-    consumer repository outside a plan context is not. **R6** is not
-    context-gated at all: the raw-finalize commit rule fires in every session,
-    named from the ``git -C`` target. A match also appends one ``guard.log`` audit
-    line (best-effort — logging never changes the verdict).
+    Scope: ``gate.context_gate(payload)`` (``Signal1 OR Signal2``) OR the
+    runbook-lane marker OR this project IS the plan-marshall source repository.
+    Inside that scope the R1-R5 matchers run in order; a consumer repository
+    outside a plan context is left untouched (fail OPEN), so its ordinary work is
+    never refused. **R6** is not context-gated: the raw-finalize commit rule fires
+    in every session, named from every commit form, and only its UNRESOLVABLE
+    fail-closed branch is limited to the enforced scope. A match also appends one
+    ``guard.log`` audit line (best-effort — logging never changes the verdict).
 
     Args:
         payload: The parsed PreToolUse payload.

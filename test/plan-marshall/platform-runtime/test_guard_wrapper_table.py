@@ -131,6 +131,9 @@ _D1_REFUSED: tuple[str, ...] = (
     'pypy3 -c x',
     'find . -exec python3 -c x {} +',
     'find . -execdir python3 -c x {} +',
+    'env find . -exec python3 -c x {} +',
+    "watch 'python3 -c x'",
+    "parallel 'python3 -c x'",
 )
 
 

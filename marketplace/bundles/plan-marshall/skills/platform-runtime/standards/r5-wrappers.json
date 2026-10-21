@@ -199,7 +199,8 @@
         "n"
       ],
       "leading_positionals": 0,
-      "splice": []
+      "splice": [],
+      "splice_positional": true
     },
     "parallel": {
       "values": [
@@ -233,7 +234,8 @@
         "P"
       ],
       "leading_positionals": 0,
-      "splice": []
+      "splice": [],
+      "splice_positional": true
     },
     "busybox": {
       "values": [],

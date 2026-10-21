@@ -17,6 +17,7 @@ plugin under ``node`` and the Claude hook's ``evaluate``.
 
 from __future__ import annotations
 
+import shutil
 import tempfile
 from pathlib import Path
 
@@ -117,12 +118,56 @@ def test_executor_after_an_env_chdir_is_refused(tmp_path_factory: pytest.TempPat
 
 
 def test_executor_after_a_leading_cd_is_refused(tmp_path_factory: pytest.TempPathFactory) -> None:
-    """A preceding ``cd /tmp/x`` followed by the relative executor is refused."""
+    """A preceding ``cd /tmp/x`` followed by the relative executor is refused.
+
+    At the base sha this form was ALREADY refused — by R1, because joining two
+    commands needs ``;``/``&&``/a newline. The clause is therefore a
+    preservation check, not new behaviour; the report records it as not-failing
+    at the base sha.
+    """
     command = 'cd /tmp/x; python3 .plan/execute-script.py a:b:c verb'
     harness = build_harness(tmp_path_factory.mktemp('exact-cd'))
     blocked, _message = harness.blocks(shell_event(command, agent=SUB_AGENT_AGENT))
     assert blocked, 'a leading cd must not leave the relative executor admitted'
     assert _hook_refused(command), 'the hook must refuse the leading-cd form too'
+
+
+@pytest.mark.parametrize(
+    'command',
+    [
+        'env -u FOO -C /tmp/x python3 .plan/execute-script.py a:b:c verb',
+        'sudo -u bob -D /tmp/x python3 .plan/execute-script.py a:b:c verb',
+        'sudo -D /tmp/x python3 .plan/execute-script.py a:b:c verb',
+        'env --chdir=/tmp/x python3 .plan/execute-script.py a:b:c verb',
+    ],
+    ids=['env-u-then-C', 'sudo-u-then-D', 'sudo-D', 'env-chdir-equals'],
+)
+def test_a_directory_option_behind_another_option_still_defeats_the_permit(
+    command: str, tmp_path_factory: pytest.TempPathFactory
+) -> None:
+    """The directory change is found wherever it sits in a wrapper's option list.
+
+    A scan that stopped at the first non-option token would resolve the repo root
+    and admit the relative executor — the option-order hole.
+    """
+    harness = build_harness(tmp_path_factory.mktemp('exact-option-order'))
+    blocked, message = harness.blocks(shell_event(command, agent=SUB_AGENT_AGENT))
+    assert blocked, f'{command!r} must be refused; message={message!r}'
+    assert 'R5' in message, f'the refusal must be rule R5; message={message!r}'
+    assert _hook_refused(command), f'the hook must refuse {command!r}'
+
+
+def test_a_wrapper_with_only_flags_keeps_the_executor_permit(tmp_path_factory: pytest.TempPathFactory) -> None:
+    """The matched positive control: a flag-only wrapper prefix still passes.
+
+    ``env -i python3 .plan/execute-script.py …`` from the repository root changes
+    no directory, so the documented invocation stays admitted.
+    """
+    command = 'env -i python3 .plan/execute-script.py a:b:c verb'
+    harness = build_harness(tmp_path_factory.mktemp('exact-flag-only'))
+    blocked, message = harness.blocks(shell_event(command, agent=SUB_AGENT_AGENT))
+    assert not blocked, f'a flag-only wrapper must keep the permit; message={message!r}'
+    assert not _hook_refused(command)
 
 
 # =============================================================================
@@ -198,25 +243,28 @@ def test_consumer_python_is_refused_inside_a_lane_run(
 ) -> None:
     """A consumer repository IS bound while a lane run carries its marker."""
     consumer = Path(tempfile.mkdtemp(prefix='pm-consumer-lane-'))
-    harness = build_harness(tmp_path_factory.mktemp('exact-lane-guard'), include_allowlist=False)
-    admitted, message = harness.blocks(shell_event('python3 x.py'))
-    assert not admitted, f'a consumer outside any plan context must be admitted; message={message!r}'
+    try:
+        harness = build_harness(tmp_path_factory.mktemp('exact-lane-guard'), include_allowlist=False)
+        admitted, message = harness.blocks(shell_event('python3 x.py'))
+        assert not admitted, f'a consumer outside any plan context must be admitted; message={message!r}'
 
-    marker = harness.root / '.plan' / 'temp' / 'rb-fixture' / 'progress.md'
-    marker.parent.mkdir(parents=True, exist_ok=True)
-    marker.write_text('setup: fixture\n', encoding='utf-8')
-    blocked, refused_message = harness.blocks(shell_event('python3 x.py'))
-    assert blocked, 'inside a lane run the consumer command must be refused'
-    assert 'R5' in refused_message, f'the refusal must be rule R5; message={refused_message!r}'
+        marker = harness.root / '.plan' / 'temp' / 'rb-fixture' / 'progress.md'
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        marker.write_text('setup: fixture\n', encoding='utf-8')
+        blocked, refused_message = harness.blocks(shell_event('python3 x.py'))
+        assert blocked, 'inside a lane run the consumer command must be refused'
+        assert 'R5' in refused_message, f'the refusal must be rule R5; message={refused_message!r}'
 
-    monkeypatch.setattr(_HOOK, '_repo_root_from_hook_location', lambda: None)
-    monkeypatch.setenv('CLAUDE_PROJECT_DIR', str(consumer))
-    lane_marker = consumer / '.plan' / 'temp' / 'rb-fixture' / 'progress.md'
-    lane_marker.parent.mkdir(parents=True, exist_ok=True)
-    lane_marker.write_text('setup: fixture\n', encoding='utf-8')
-    assert _hook_refused('python3 x.py', cwd=str(consumer), in_context=False) is True
-    lane_marker.unlink()
-    assert _hook_refused('python3 x.py', cwd=str(consumer), in_context=False) is False
+        monkeypatch.setattr(_HOOK, '_repo_root_from_hook_location', lambda: None)
+        monkeypatch.setenv('CLAUDE_PROJECT_DIR', str(consumer))
+        lane_marker = consumer / '.plan' / 'temp' / 'rb-fixture' / 'progress.md'
+        lane_marker.parent.mkdir(parents=True, exist_ok=True)
+        lane_marker.write_text('setup: fixture\n', encoding='utf-8')
+        assert _hook_refused('python3 x.py', cwd=str(consumer), in_context=False) is True
+        lane_marker.unlink()
+        assert _hook_refused('python3 x.py', cwd=str(consumer), in_context=False) is False
+    finally:
+        shutil.rmtree(consumer, ignore_errors=True)
 
 
 def test_the_layout_data_is_the_one_shared_file() -> None:

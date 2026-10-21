@@ -263,22 +263,17 @@ def _is_candidate(command: str) -> bool:
 _SHELL_FENCE_LANGUAGES = frozenset({'', 'bash', 'sh', 'shell', 'console', 'zsh', 'text'})
 
 
-def collect_candidates() -> tuple[list[Candidate], int]:
-    """Return ``(candidates, fenced lines examined)`` over the scanned corpus.
+def collect_candidates_from(named_paths: list[tuple[Path, str]]) -> tuple[list[Candidate], int]:
+    """Return ``(candidates, fenced lines examined)`` for explicit *named_paths*.
 
-    A COMMENT line of a SHELL fence is no longer skipped: a candidate-shaped
-    command sitting on a ``#`` line there is collected with ``commented=True`` and
-    reported unconditionally, because turning an invocation into a comment is
-    exactly how a documented command escapes this sweep. A comment inside a
-    ``python`` / ``javascript`` / ``json`` fence is that language's own code and
-    is left alone.
+    ``named_paths`` pairs a file with the name to report it under, so a test
+    fixture can be swept through the SAME extractor the corpus uses without
+    living inside the scanned roots.
     """
     candidates: list[Candidate] = []
     fenced_lines = 0
-    for path in _scan_files():
-        rel = str(path.relative_to(REPO_ROOT))
+    for path, rel in named_paths:
         text = path.read_text(encoding='utf-8')
-        shell_fence = False
         for block in iter_fenced_blocks(text):
             shell_fence = block.language.lower() in _SHELL_FENCE_LANGUAGES
             for offset, raw in enumerate(block.body.splitlines()):
@@ -305,6 +300,19 @@ def collect_candidates() -> tuple[list[Candidate], int]:
                 if _is_candidate(command):
                     candidates.append(Candidate(path=rel, line=block.line + offset, command=command))
     return candidates, fenced_lines
+
+
+def collect_candidates() -> tuple[list[Candidate], int]:
+    """Return ``(candidates, fenced lines examined)`` over the scanned corpus.
+
+    A COMMENT line of a SHELL fence is no longer skipped: a candidate-shaped
+    command sitting on a ``#`` line there is collected with ``commented=True`` and
+    reported when a guard refuses it, because turning a refused invocation into a
+    comment is exactly how a documented command escapes this sweep. A comment
+    inside a ``python`` / ``javascript`` / ``json`` fence is that language's own
+    code and is left alone.
+    """
+    return collect_candidates_from([(path, str(path.relative_to(REPO_ROOT))) for path in _scan_files()])
 
 
 #: Documents whose RECOVERY commands sit in PROSE rather than in a fenced block.
@@ -620,7 +628,8 @@ def _classify(
             guards.append(f'guard.js: {outcome.message}')
         if hook_reason is not None:
             guards.append(f'hook: {hook_reason}')
-        offenders.append(f'{candidate.site}: {candidate.command}\n    refused by ' + '; '.join(guards))
+        checked_as = '' if check_command == candidate.command else f'\n    checked as: {check_command}'
+        offenders.append(f'{candidate.site}: {candidate.command}{checked_as}\n    refused by ' + '; '.join(guards))
     return offenders, templates, excused, matched_exclusions, non_interpreter
 
 
@@ -769,40 +778,64 @@ def test_a_commented_command_is_flagged_not_skipped() -> None:
     assert 'COMMENT' in offenders[0]
 
 
-def test_a_deployed_form_command_is_checked(tmp_path_factory: pytest.TempPathFactory, monkeypatch) -> None:
-    """A named placeholder is ALSO checked in its DEPLOYED spelling.
+def test_a_fixture_doc_with_bash_c_and_uv_run_is_reported(
+    tmp_path_factory: pytest.TempPathFactory, tmp_path: Path
+) -> None:
+    """A fixture doc prescribing ``bash -c "python3 -c …"`` and ``uv run python -c …``.
 
-    The deployed path comes from the resolver; when it names a path under a
-    directory that is NOT a deploy root, R5 refuses it — and the sweep reports
-    that refusal instead of accepting the repository-relative spelling alone.
+    Both lines are collected by the REAL extractor and land in the offender list
+    through the REAL guard/hook run — not at the ``_is_candidate`` level.
     """
-    from _guard_node_harness import GuardOutcome
-
-    deployed = '/tmp/not-a-deployed-root/skills/tools-script-executor/scripts/generate_executor.py'
-    monkeypatch.setattr(
-        'test_guard_documentation_sweep._deployed_paths', lambda repo_relative: [deployed], raising=True
+    fixture = tmp_path / 'fixture.md'
+    fixture.write_text(
+        '# Fixture\n\n```bash\nbash -c "python3 -c x"\nuv run python -c x\n```\n',
+        encoding='utf-8',
     )
-    pairs = _resolve_script_template('python3 "{GENERATE_EXECUTOR}" generate')
-    assert any(deployed in command for command, _unresolved in pairs), (
-        f'the deployed spelling must be checked; pairs={pairs!r}'
-    )
+    candidates, _fenced = collect_candidates_from([(fixture, 'fixture.md')])
+    assert len(candidates) == 2, f'both forms must be collected; got {[c.command for c in candidates]!r}'
 
-    candidate = Candidate(path='fixture.md', line=7, command='python3 {GENERATE_EXECUTOR} generate')
-    checks = [(candidate, command, unresolved) for command, unresolved in pairs if deployed in command]
-    assert (
-        _HOOK.evaluate(
-            {
-                'agent_type': SUB_AGENT_AGENT,
-                'tool_name': 'Bash',
-                'tool_input': {'command': checks[0][1]},
-                'cwd': str(REPO_ROOT),
-            }
-        )
-        is not None
-    ), 'the hook must refuse a deployed-form command under a non-deploy root'
-    outcomes = [GuardOutcome(True, '[plan-marshall-guard] R5: refused')] * len(checks)
+    harness = build_harness(tmp_path_factory.mktemp('sweep-fixture'))
+    checks = _expand(candidates)
+    outcomes = harness.run([shell_event(command, agent=SUB_AGENT_AGENT) for _c, command, _u in checks])
     offenders, _templates, _excused, _matched, _non = _classify(checks, outcomes)
-    assert offenders, 'the refused deployed form must be reported as an offender'
+    assert len(offenders) == 2, f'both lines must be reported; offenders={offenders!r}'
+
+
+def test_a_deployed_form_doc_line_is_reported_end_to_end(
+    tmp_path_factory: pytest.TempPathFactory, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A doc line prescribing a deployed-form command R5 refuses is reported.
+
+    The line is collected by the real extractor, expanded to BOTH its
+    repository-relative and its deployed spelling, and classified after a real
+    guard/hook run: the repository-relative spelling passes, the deployed one
+    (under a directory that is not a deploy root) is reported.
+    """
+    deployed = (
+        tmp_path / 'not-a-deployed-root' / 'skills' / 'tools-script-executor' / 'scripts' / 'generate_executor.py'
+    )
+    deployed.parent.mkdir(parents=True)
+    deployed.write_text('# planted\n', encoding='utf-8')
+    fixture = tmp_path / 'fixture.md'
+    fixture.write_text('# Fixture\n\n```bash\npython3 "{GENERATE_EXECUTOR}" generate\n```\n', encoding='utf-8')
+    monkeypatch.setattr(
+        'test_guard_documentation_sweep._deployed_paths',
+        lambda repo_relative: [str(deployed)],
+        raising=True,
+    )
+
+    candidates, _fenced = collect_candidates_from([(fixture, 'fixture.md')])
+    checks = _expand(candidates)
+    assert any(str(deployed) in command for _c, command, _u in checks), 'the deployed spelling must be checked'
+    harness = build_harness(tmp_path_factory.mktemp('sweep-deployed'))
+    outcomes = harness.run([shell_event(command, agent=SUB_AGENT_AGENT) for _c, command, _u in checks])
+    offenders, _templates, _excused, _matched, _non = _classify(checks, outcomes)
+    assert any(str(deployed) in offender for offender in offenders), (
+        f'the refused deployed form must be reported; offenders={offenders!r}'
+    )
+    assert not any('marketplace/bundles' in offender for offender in offenders), (
+        'the repository-relative spelling is admitted and must not be reported'
+    )
 
 
 def test_upgrade_flow_prose_recovery_is_swept(
