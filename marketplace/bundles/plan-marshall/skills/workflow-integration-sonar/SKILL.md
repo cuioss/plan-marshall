@@ -13,7 +13,7 @@ Sonar provider for the findings-pipeline `sonar-issue` producer. The provider su
 - **`post_responses`** — apply already-decided triage dispositions back to Sonar (a `do_transition` dismissal: `wontfix` for `suppressed`, `falsepositive` for `rejected`), keyed by each finding's own `hash_id`.
 - **`read_open_issues`** — the plan-less read: given a project key and a pull request, return that pull request's open new-code issues (count, rules, files, and the same `count_status` discriminator) and persist nothing. It takes no plan id and reads no manifest, because its caller — the runbook lane — has no plan directory. The untrusted Sonar `message` is not part of its contract.
 
-All three verbs FAIL LOUD when Sonar is not configured (a typed `unconfigured` status). Consumer dispatch lives in [`phase-6-finalize/workflow/sonar-roundtrip.md`](../phase-6-finalize/workflow/sonar-roundtrip.md).
+All three verbs FAIL LOUD when Sonar is not configured (a typed `unconfigured` status). Consumer dispatch lives in [`phase-6-finalize/workflow/sonar-roundtrip.md`](../phase-6-finalize/workflow/sonar-roundtrip.md) for the two plan-scoped verbs, and in [`runbook-lane/SKILL.md`](../runbook-lane/SKILL.md) § 6 for the plan-less read.
 
 > **Architectural context**: This SKILL.md owns the producer-side CLI surface. For the producer→store→consumer→gate flow that connects this producer to the unified store, the per-domain `ext-triage` consumer dispatch, and the invariant gate, see [`ref-workflow-architecture/standards/findings-pipeline.md`](../ref-workflow-architecture/standards/findings-pipeline.md).
 
@@ -191,7 +191,7 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-sonar:sonar f
 
 ### sonar.py read_open_issues
 
-**Purpose:** The plan-less read the runbook lane calls before it reports a pull request ready. Given a project key and a pull request it performs the same bounded CE-readiness wait and PR-scoped new-code enumeration `fetch_findings` performs, then RETURNS the enumeration: the count, each issue's rule and file (plus key, type, severity, line and component), and the `count_status` discriminator. It files no finding, writes no scan-summary marker and reads no manifest — it has no plan id to take.
+**Purpose:** The plan-less read the runbook lane calls before it reports a pull request ready. Given a project key and a pull request it performs the same bounded CE-readiness wait and PR-scoped new-code enumeration `fetch_findings` performs, then RETURNS the enumeration: the count, each issue's rule and file (plus key, type, severity, line and component), and the `count_status` discriminator. The scope is the pull request's analysis (the `inNewCodePeriod` issue set), so the count is "open issues the analysis found on this head", not a whole-project total. It files no finding, writes no scan-summary marker and reads no manifest — it has no plan id to take.
 
 **Usage:**
 ```bash

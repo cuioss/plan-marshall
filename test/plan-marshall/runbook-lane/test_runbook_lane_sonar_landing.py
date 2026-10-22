@@ -16,6 +16,7 @@ adding it must leave every earlier landing complete.
 from __future__ import annotations
 
 import pytest
+from test_runbook_lane import _PYPROJECT_EXEC, _run_resolve, _seed_fixture
 
 from conftest import get_scripts_dir, load_script_module, parse_ns, run_script
 
@@ -65,6 +66,24 @@ def _landing(fact_lines: list[str]) -> str:
     return f'```landing-facts\n{body}\n```\n\n## Residue\n\nnone\n'
 
 
+def test_the_facts_follow_the_resolve_state_for_a_configured_project(tmp_path) -> None:
+    """The lane's own chain: resolve says configured, and the landing renders that state."""
+    spec = _seed_fixture(
+        tmp_path,
+        executable=_PYPROJECT_EXEC,
+        required_bots='x',
+        credentials_config={'workflow-integration-sonar': {'project_key': 'com.example:proj'}},
+    )
+    resolved = _run_resolve(spec, tmp_path)
+
+    facts = cmd_sonar_facts(
+        _facts_args(state=resolved['sonar'], count_status='confirmed', open_count='0'),
+    )
+
+    assert resolved['sonar'] == 'configured'
+    assert facts['open_issue_count'] == '0'
+
+
 def test_a_confirmed_count_carries_the_measured_figure() -> None:
     facts = cmd_sonar_facts(_facts_args(open_count='3', rules='java:S1234,java:S5678'))
 
@@ -80,7 +99,7 @@ def test_a_confirmed_zero_carries_a_measured_zero() -> None:
     facts = cmd_sonar_facts(_facts_args(open_count='0'))
 
     assert facts['open_issue_count'] == '0'
-    assert facts['open_issue_rules'] == 'none'
+    assert facts['open_issue_rules'] == 'none', 'no rule is left open, which is not the same as unknown'
 
 
 def test_an_undecidable_read_carries_unknown_and_never_zero() -> None:
@@ -88,6 +107,14 @@ def test_an_undecidable_read_carries_unknown_and_never_zero() -> None:
 
     assert facts['open_issue_count'] == 'unknown'
     assert facts['open_issue_count'] != '0'
+    assert facts['open_issue_rules'] == 'unknown'
+
+
+def test_an_unconfigured_read_carries_unknown_not_zero() -> None:
+    """A read that could not authenticate is a failed read, same class as undecidable."""
+    facts = cmd_sonar_facts(_facts_args(count_status='unconfigured'))
+
+    assert facts['open_issue_count'] == 'unknown'
     assert facts['open_issue_rules'] == 'unknown'
 
 

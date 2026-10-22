@@ -216,3 +216,45 @@ class TestUnconfigured:
         assert result['provider'] == 'sonar'
         assert 'open_issue_count' not in result
         assert 'count_status' not in result
+
+
+class TestPlanlessDismissal:
+    """A dismissal is transmitted from a caller with no plan, keyed by the issue key."""
+
+    def test_transition_posts_the_dismissal_for_a_bare_issue_key(self):
+        """The plan-less transmitter posts ``do_transition`` with no plan id anywhere."""
+        sonar_rest = load_script_module(
+            'plan-marshall', 'workflow-integration-sonar', 'sonar_rest.py', 'sonar_rest_dismiss_mod'
+        )
+        fake = _RecordingClient()
+
+        with patch.object(sonar_rest, 'get_authenticated_client', return_value=fake):
+            exit_code = sonar_rest.cmd_transition(
+                parse_ns(
+                    'plan-marshall',
+                    'workflow-integration-sonar',
+                    'sonar_rest.py',
+                    'transition',
+                    '--issue-key',
+                    'ISSUE-77',
+                    '--transition',
+                    'falsepositive',
+                )
+            )
+
+        assert exit_code == 0
+        assert fake.posts == [('/api/issues/do_transition', {'issue': 'ISSUE-77', 'transition': 'falsepositive'})]
+
+
+class _RecordingClient:
+    """Records ``do_transition`` POSTs and tolerates ``close``."""
+
+    def __init__(self):
+        self.posts = []
+
+    def post(self, path, body=None):
+        self.posts.append((path, body))
+        return {}
+
+    def close(self):
+        pass

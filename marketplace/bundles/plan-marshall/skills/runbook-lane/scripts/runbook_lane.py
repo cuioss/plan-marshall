@@ -411,11 +411,15 @@ def _resolve_sonar(marshal: dict[str, Any]) -> dict[str, Any]:
     resolve stays offline: no REST call, no credential-file read.
 
     Fails closed on a configuration it cannot read: a ``credentials_config``
-    section or provider block that is not an object is ``sonar_config_unreadable``
-    rather than a silent ``not_configured``. A corrupt Sonar block must not drain
-    as "this project does not use Sonar".
+    section or provider block that is not an object is ``sonar_config_unreadable``,
+    and a provider block that carries no usable ``project_key`` is
+    ``sonar_config_incomplete`` — never a silent ``not_configured``. A corrupt or
+    half-written Sonar block must not drain as "this project does not use Sonar",
+    which is the one state in which the open-issue read is skipped.
     """
-    credentials = marshal.get('credentials_config') or {}
+    credentials = marshal.get('credentials_config')
+    if credentials is None:
+        credentials = {}
     if not isinstance(credentials, dict):
         raise ValueError('sonar_config_unreadable')
     block = credentials.get(_SONAR_CONFIG_KEY)
@@ -429,9 +433,11 @@ def _resolve_sonar(marshal: dict[str, Any]) -> dict[str, Any]:
         raise ValueError('sonar_config_unreadable')
     project_key = block.get('project_key')
     if not isinstance(project_key, str) or not project_key.strip():
-        # A block without a project key names no analysable project, so there is
-        # no pull request to read issues from.
-        return {'state': 'not_configured'}
+        # The block exists, so this project INTENDS to analyse with Sonar; a
+        # missing project key is a configuration defect, and skipping the read on
+        # it would silently disable the merge gate on exactly the project that
+        # asked for it. Fail closed instead.
+        raise ValueError('sonar_config_incomplete')
     return {'state': 'configured', 'project_key': project_key.strip()}
 
 
@@ -1339,15 +1345,18 @@ def cmd_sonar_facts(args: argparse.Namespace) -> dict[str, Any]:
         count, rules = 'n/a', 'n/a'
     else:
         count_status = getattr(args, 'count_status', None)
-        if count_status not in ('confirmed', 'undecidable'):
+        if count_status not in _SONAR_COUNT_STATUSES:
             return {
                 'status': 'error',
                 'error': 'invalid_count_status',
                 'message': (
-                    f'--count-status must be confirmed or undecidable when --state configured; got {count_status!r}'
+                    f'--count-status must be one of {", ".join(_SONAR_COUNT_STATUSES)} when --state configured; '
+                    f'got {count_status!r}'
                 ),
             }
-        if count_status == 'undecidable':
+        if count_status in ('undecidable', 'unconfigured'):
+            # Both are failed reads: nothing was observed, so the figure is
+            # `unknown` — never `0`, which is a measured clean answer.
             count, rules = 'unknown', 'unknown'
         else:
             open_count = getattr(args, 'open_count', None)
@@ -1549,7 +1558,7 @@ def main() -> int:
         '--count-status',
         dest='count_status',
         default=None,
-        help="The read's count_status: confirmed, or undecidable (required when configured)",
+        help="The read's count_status: confirmed, undecidable, or unconfigured (required when configured)",
     )
     facts_parser.add_argument(
         '--open-count',

@@ -70,8 +70,13 @@ def test_resolve_reports_not_configured_without_a_sonar_block(tmp_path: Path) ->
     assert 'sonar_project_key' not in data
 
 
-def test_resolve_reports_not_configured_for_a_block_without_a_project_key(tmp_path: Path) -> None:
-    """An organization alone names no analysable project, so there is nothing to read."""
+def test_resolve_fails_closed_on_a_sonar_block_without_a_project_key(tmp_path: Path) -> None:
+    """A block with no project key is a half-written Sonar config, not "no Sonar".
+
+    The block's presence says the project intends to analyse with Sonar, so
+    skipping the read on it would silently disable the merge gate on exactly the
+    project that asked for it.
+    """
     spec = _seed_fixture(
         tmp_path,
         executable=_PYPROJECT_EXEC,
@@ -81,8 +86,9 @@ def test_resolve_reports_not_configured_for_a_block_without_a_project_key(tmp_pa
 
     data = _run_resolve(spec, tmp_path)
 
-    assert data['sonar'] == 'not_configured'
-    assert 'sonar_project_key' not in data
+    assert data['status'] == 'error'
+    assert data['error'] == 'sonar_config_incomplete'
+    assert 'sonar' not in data
 
 
 @pytest.mark.parametrize('block', ['not-an-object', ['not', 'an', 'object']])

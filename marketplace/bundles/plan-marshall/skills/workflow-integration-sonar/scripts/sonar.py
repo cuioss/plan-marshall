@@ -381,7 +381,7 @@ def _write_scan_summary(
 
 
 # ============================================================================
-# FAIL-LOUD CONFIG GUARD (shared by fetch_findings + post_responses)
+# FAIL-LOUD CONFIG GUARD (shared by fetch_findings + post_responses + read_open_issues)
 # ============================================================================
 
 
