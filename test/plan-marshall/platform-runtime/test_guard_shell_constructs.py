@@ -265,6 +265,10 @@ def test_a_clustered_wrapper_directory_option_defeats_the_permit(tmp_path_factor
         'sudo -D/tmp/x env -S "python3 .plan/execute-script.py a:b:c verb"',
         'env -C/tmp/x -S "python3 .plan/execute-script.py a:b:c verb"',
         'sudo -D /tmp/x env -S "python3 .plan/execute-script.py a:b:c verb"',
+        'env --chdir=/tmp/x -S "python3 .plan/execute-script.py a:b:c verb"',
+        'sudo --chdir=/tmp/x env -S "python3 .plan/execute-script.py a:b:c verb"',
+        'sudo --chdir /tmp/x env -S "python3 .plan/execute-script.py a:b:c verb"',
+        'sudo --directory=/tmp/x env -S "python3 .plan/execute-script.py a:b:c verb"',
     ]
     harness = build_harness(tmp_path_factory.mktemp('guard-clustered-dir'))
     outcomes = harness.run([shell_event(row, agent=SUB_AGENT_AGENT) for row in rows])

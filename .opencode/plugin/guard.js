@@ -199,9 +199,9 @@ let WRAPPER_TABLE = {
 }
 
 // Whether a token names a shell SPAWN (R2): a table shell, or the `source`
-// builtin. Derived from the shared table so neither implementation carries a
-// second literal shell list; a missing table yields no spawns, exactly as it
-// yields no wrappers.
+// builtin. The table's shell list is the derivation source, so neither
+// implementation carries a second literal list; the `source` builtin is the one
+// literal the set adds, and it is refused even when the table is missing.
 function isShellSpawn(token) {
   const base = normalizeToken(token).toLowerCase()
   if (!base) return false
@@ -751,10 +751,13 @@ function readTextIfFile(value, cwd) {
 // `sudo -D/tmp/x` are read exactly like their detached spellings. This is the
 // ONE rule `effectiveCwd` and the floor both use.
 function wrapperDirectoryValue(wrapper, option, tokens, i) {
-  const longForm = wrapper === "env" ? "--chdir" : wrapper === "sudo" ? "--directory" : null
-  if (longForm && (option === longForm || option.startsWith(`${longForm}=`))) {
-    const value = option.includes("=") ? option.slice(option.indexOf("=") + 1) : stripMatchedQuotes(tokens[i + 1] ?? "")
-    return value || null
+  const longForms =
+    wrapper === "env" ? ["--chdir"] : wrapper === "sudo" ? ["--chdir", "--directory"] : []
+  for (const form of longForms) {
+    if (option === form || option.startsWith(`${form}=`)) {
+      const value = option.includes("=") ? option.slice(option.indexOf("=") + 1) : stripMatchedQuotes(tokens[i + 1] ?? "")
+      return value || null
+    }
   }
   if (!option.startsWith("-") || option.startsWith("--") || option.length < 2) return null
   const spec = WRAPPER_TABLE.wrappers[wrapper] || EMPTY_WRAPPER_SPEC
@@ -918,14 +921,14 @@ function executedTextVerdict(command, root, cwd) {
 // Whether a command names an interpreter ANYWHERE, including inside a token that
 // is really a quoted command string (`zsh -c "python3 -c x"` yields the single
 // token `python3 -c x`). Used by the MISSING-TABLE branch, where no wrapper can
-// be stripped, so a raw-token check alone is blind to exactly that shape.
-function commandNamesInterpreterDeep(command, depth = 0) {
+// be stripped, and by the fail-closed floor for a segment that names none at
+// token level. The recursion is bounded by the token count, not by a depth cap.
+function commandNamesInterpreterDeep(command) {
   for (const candidate of rawCommandTokens(command)) {
     if (isPythonInterpreter(candidate)) return true
-    if (depth >= 3) continue
     const parts = shellSplit(candidate)
     const tokens = parts === null ? whitespaceSplit(candidate) : parts
-    if (tokens.length > 1 && commandNamesInterpreterDeep(tokens.join(" "), depth + 1)) return true
+    if (tokens.length > 1 && commandNamesInterpreterDeep(tokens.join(" "))) return true
   }
   return false
 }
@@ -968,10 +971,17 @@ function repoRelativePath(raw, root, cwd) {
     if (token.startsWith(worktreePrefix)) {
       // A plan worktree is the same checkout through the worktree's `.plan`
       // symlink, so a relative allow-listed token run from there resolves to the
-      // SAME repository-relative path. Anything else must be under the root.
+      // SAME repository-relative path — but only when the worktree directory
+      // really resolves inside this root's own worktrees. A symlink pointing out
+      // of the tree is refused, exactly as `isRepositoryRootOrPlanWorktree`
+      // refuses it for the executor permit.
       const rest = token.slice(worktreePrefix.length)
       const slash = rest.indexOf("/")
       if (slash === -1) return null
+      const planName = rest.slice(0, slash)
+      const resolvedBase = `${normalizePosixPath(realPathOf(normalizedRoot) + "/.plan/local/worktrees")}/`
+      const resolvedPlan = realPathOf(worktreePrefix + planName)
+      if (!resolvedPlan.startsWith(resolvedBase) || resolvedPlan === resolvedBase.replace(/\/$/, "")) return null
       token = rest.slice(slash + 1)
     } else if (token.startsWith(prefix)) {
       token = token.slice(prefix.length)

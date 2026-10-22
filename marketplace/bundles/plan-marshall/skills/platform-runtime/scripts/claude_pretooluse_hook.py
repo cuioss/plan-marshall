@@ -790,12 +790,13 @@ def _wrapper_directory_value(wrapper: str, option: str, tokens: list[str], index
     are read exactly like their detached spellings. This is the ONE rule
     :func:`_effective_cwd` and the floor both use.
     """
-    long_form = '--chdir' if wrapper == 'env' else '--directory' if wrapper == 'sudo' else None
-    if long_form and (option == long_form or option.startswith(f'{long_form}=')):
-        value = option.split('=', 1)[1] if '=' in option else ''
-        if not value:
-            value = _strip_matched_quotes(tokens[index + 1]) if index + 1 < len(tokens) else ''
-        return value or None
+    long_forms = ('--chdir',) if wrapper == 'env' else ('--chdir', '--directory') if wrapper == 'sudo' else ()
+    for form in long_forms:
+        if option == form or option.startswith(f'{form}='):
+            value = option.split('=', 1)[1] if '=' in option else ''
+            if not value:
+                value = _strip_matched_quotes(tokens[index + 1]) if index + 1 < len(tokens) else ''
+            return value or None
     if not option.startswith('-') or option.startswith('--') or len(option) < 2:
         return None
     spec = _wrapper_table()['wrappers'].get(wrapper) or {}
@@ -945,12 +946,14 @@ def _executed_text_verdict(command: str, root: str | None, cwd: str | None) -> s
     return 'admitted' if admitted else 'clear'
 
 
-def _command_names_interpreter_deep(command: str, depth: int = 0) -> bool:
+def _command_names_interpreter_deep(command: str) -> bool:
     """Whether a command names an interpreter ANYWHERE, including inside a token.
 
     ``zsh -c "python3 -c x"`` shlex-splits to the single token ``python3 -c x``,
     so a raw-token check is blind to it. Used by the MISSING-TABLE branch, where
-    no wrapper can be stripped and the string must be read instead.
+    no wrapper can be stripped, and by the fail-closed floor for a segment that
+    names no interpreter at token level. The recursion is bounded by the token
+    count, not by a depth cap.
     """
     try:
         raw = shlex.split(command)
@@ -959,13 +962,11 @@ def _command_names_interpreter_deep(command: str, depth: int = 0) -> bool:
     for token in raw:
         if _PYTHON_PROGRAM_RE.match(_wrapper_basename(token).lower()):
             return True
-        if depth >= 3:
-            continue
         try:
             inner = shlex.split(token)
         except ValueError:
             inner = token.split()
-        if len(inner) > 1 and _command_names_interpreter_deep(' '.join(inner), depth + 1):
+        if len(inner) > 1 and _command_names_interpreter_deep(' '.join(inner)):
             return True
     return False
 
@@ -1559,10 +1560,17 @@ def _repo_relative_path(raw: str, root: str | None, cwd: str | None = None) -> s
         if token.startswith(worktree_prefix):
             # A plan worktree is the same checkout through the worktree's `.plan`
             # symlink, so a relative allow-listed token run from there resolves to
-            # the SAME repository-relative path. Anything else must be under root.
+            # the SAME repository-relative path — but only when the worktree
+            # directory really resolves inside this root's own worktrees. A
+            # symlink pointing out of the tree is refused, exactly as
+            # `_is_repository_root_or_plan_worktree` refuses it for the executor.
             rest = token[len(worktree_prefix) :]
             head, separator, tail = rest.partition('/')
             if not separator or not head:
+                return None
+            resolved_base = posixpath.normpath(_real_path(normalized_root) + '/.plan/local/worktrees') + '/'
+            resolved_plan = _real_path(f'{worktree_prefix}{head}')
+            if not resolved_plan.startswith(resolved_base) or resolved_plan == resolved_base.rstrip('/'):
                 return None
             token = tail
         elif token.startswith(prefix):

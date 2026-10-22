@@ -123,21 +123,58 @@ def test_the_hook_never_takes_the_payload_cwd_as_its_allow_list_root(tmp_path, m
     assert _HOOK.evaluate(payload) == _HOOK._R5_REASON
 
 
-def test_a_relative_allow_listed_script_resolves_from_a_plan_worktree(monkeypatch) -> None:
+def test_a_relative_allow_listed_script_resolves_from_a_plan_worktree(
+    tmp_path_factory: pytest.TempPathFactory,
+) -> None:
     """A worktree is the same checkout: the relative token still resolves.
 
-    The allow-list root is the project directory, so a relative MUTATING read of
-    ``{root}/.plan/local/worktrees/{plan}/marketplace/…`` must strip the worktree
-    prefix before the exact-entry comparison.
+    The allow-list root is the project directory, so a relative token run from
+    ``{root}/.plan/local/worktrees/{plan}`` must strip the worktree prefix before
+    the exact-entry comparison — on BOTH harnesses.
     """
-    monkeypatch.setenv('CLAUDE_PROJECT_DIR', str(REPO_ROOT))
-    payload = {
-        'agent_type': SUB_AGENT_AGENT,
-        'tool_name': 'Bash',
-        'tool_input': {'command': 'python3 marketplace/targets/sync.py --target opencode'},
-        'cwd': f'{REPO_ROOT}/.plan/local/worktrees/plan-a',
-    }
-    assert _HOOK.evaluate(payload) is None
+    harness = build_harness(tmp_path_factory.mktemp('guard-allowlist-worktree'))
+    worktree = harness.root / '.plan' / 'local' / 'worktrees' / 'plan-a'
+    worktree.mkdir(parents=True, exist_ok=True)
+    command = 'python3 marketplace/targets/sync.py --target opencode'
+    admitted, message = harness.blocks(shell_event(command, agent=SUB_AGENT_AGENT, workdir=str(worktree)))
+    assert not admitted, f'the allow-list must resolve a relative token from a plan worktree; message={message!r}'
+
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setenv('CLAUDE_PROJECT_DIR', str(harness.root))
+        payload = {
+            'agent_type': SUB_AGENT_AGENT,
+            'tool_name': 'Bash',
+            'tool_input': {'command': command},
+            'cwd': str(worktree),
+        }
+        assert _HOOK.evaluate(payload) is None
+
+
+def test_a_worktree_symlink_out_of_the_tree_does_not_match_the_allow_list(
+    tmp_path_factory: pytest.TempPathFactory,
+) -> None:
+    """The worktree prefix is realpath'd — a symlink out of the tree never matches."""
+    harness = build_harness(tmp_path_factory.mktemp('guard-allowlist-symlink'))
+    worktrees = harness.root / '.plan' / 'local' / 'worktrees'
+    worktrees.mkdir(parents=True, exist_ok=True)
+    outside = tmp_path_factory.mktemp('guard-allowlist-outside')
+    (outside / 'marketplace' / 'targets').mkdir(parents=True)
+    (outside / 'marketplace' / 'targets' / 'sync.py').write_text('# planted\n', encoding='utf-8')
+    (worktrees / 'evil').symlink_to(outside)
+    command = 'python3 marketplace/targets/sync.py --target opencode'
+    blocked, message = harness.blocks(shell_event(command, agent=SUB_AGENT_AGENT, workdir=str(worktrees / 'evil')))
+    assert blocked, 'guard.js must refuse the allow-list match through a symlinked worktree'
+    assert 'R5' in message, f'the refusal must be R5; message={message!r}'
+
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setenv('CLAUDE_PROJECT_DIR', str(harness.root))
+        payload = {
+            'agent_type': SUB_AGENT_AGENT,
+            'tool_name': 'Bash',
+            'tool_input': {'command': command},
+            'cwd': str(worktrees / 'evil'),
+        }
+        assert _HOOK.evaluate(payload) == _HOOK._R5_REASON
 
 
 def test_the_plan_worktree_exemption_is_exactly_one_level(tmp_path_factory: pytest.TempPathFactory) -> None:
