@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 from pathlib import Path
 from typing import Any
@@ -39,16 +40,32 @@ from file_ops import output_toon, output_toon_error
 #: The step whose ``required_bots`` / ``optional_bots`` the lane drives.
 _REVIEW_STEP_ID = 'plan-marshall:automatic-review'
 
-#: The build canonical the lane resolves to learn the project's build tool, and
-#: the command set the lane runs. ``verify`` is the resolved probe; the other
-#: three are the lane's own canonical arguments, passed to whichever build
-#: wrapper the architecture resolved. ``test-compile`` is part of ``verify``'s
-#: split form and is not advertised as a resolvable canonical for every build
-#: system, so it is composed from the SAME notation ``verify`` resolved rather
-#: than resolved on its own.
-_BUILD_PROBE = 'verify'
-_BUILD_CANONICALS = ('quality-gate', 'module-tests', 'verify')
+#: The build canons the lane runs, each resolved on its own through the
+#: architecture: no composed ``--command-args "<canonical>"`` form exists, because
+#: the canonical name is only meaningful to a wrapper that maps canonical names
+#: and Maven's wrapper takes complete Maven arguments.
+#:
+#: The GATE canonicals: ``quality-gate`` is required for all modules and
+#: ``verify`` for every non-pom module (extension-api's canonical-commands
+#: contract, § Required Commands), but each build system publishes them
+#: CONDITIONALLY — npm emits ``quality-gate`` only for a ``lint``/``check``
+#: script and ``verify`` only for a ``test`` script — so at least ONE must
+#: resolve for the lane to have a gate at all, and both must be absent before
+#: ``resolve`` fails closed.
+_GATE_CANONICALS = ('quality-gate', 'verify')
+
+#: The test-conditional canonicals: ``module-tests`` only when the module has
+#: test sources, ``test-compile`` only on a build system with a separate
+#: test-compile step (Maven, Gradle — pyproject and npm publish none). Their
+#: absence is the project's answer, not a resolution failure: a lane that
+#: required them could not run in a pyproject or npm project at all.
+_TEST_CONDITIONAL_CANONICALS = ('module-tests', 'test-compile')
+
+#: The order the in-process fallback runs the gate's parts in. Filtered to the
+#: canonicals the project actually resolved, so the fallback never asks for a
+#: part the project does not publish.
 _SPLIT_FORM = ('quality-gate', 'test-compile', 'module-tests')
+
 
 #: A staged spec, ANCHORED to the project root: ``.plan/orchestrator/{slug}/plans/PLAN-*.md``.
 #: Matched with ``fullmatch`` against the project-relative path, so a same-shaped
@@ -56,11 +73,6 @@ _SPLIT_FORM = ('quality-gate', 'test-compile', 'module-tests')
 #: satisfy it — the lane runs a spec at the root of the orchestrator tree, not any
 #: file that happens to end the same way.
 _SPEC_RE = re.compile(r'\.plan/orchestrator/(?P<slug>[^/]+)/plans/(?P<name>PLAN-[^/]+)\.md')
-
-#: Lifts the executor prefix and the build notation out of a resolved
-#: executable, so the lane composes the rest of its command set from the build
-#: system the architecture resolved rather than from a hard-coded build skill.
-_NOTATION_RE = re.compile(r'^(?P<prefix>.*?execute-script\.py)\s+(?P<notation>[^\s]+)\s+run\b')
 
 #: Harness identifiers whose tool-call guard the lane can observe on disk.
 _GUARD_NONE_HARNESSES = frozenset({'antigravity'})
@@ -404,38 +416,88 @@ def _resolve_bots(marshal: dict[str, Any]) -> tuple[list[dict[str, Any]], list[d
     return _rows(required), _rows(_split_bots(step.get('optional_bots')))
 
 
+class _BuildCommandUnresolvable(Exception):
+    """The gate canonicals the project's architecture resolves to no executable.
+
+    The field is plural by construction: the gate fails closed only when NEITHER
+    ``quality-gate`` nor ``verify`` resolves, so there is never a single
+    canonical to name here.
+    """
+
+    def __init__(self, canonicals: tuple[str, ...]) -> None:
+        super().__init__(','.join(canonicals))
+        self.canonicals = canonicals
+
+
 def _resolve_build(project_dir: Path) -> tuple[dict[str, Any], dict[str, Any]]:
-    """Resolve the lane's build commands for this project's build system.
+    """Resolve the lane's build commands through the project architecture.
 
-    The build system is read from the project architecture through the same
-    resolution seam ``architecture resolve`` uses — never from a hard-coded
-    build skill. ``verify`` is the probe; the remaining canons are passed to the
-    notation it resolved.
+    Each canonical is resolved on its own through the same seam
+    ``architecture resolve`` uses, so the lane receives the COMPLETE command the
+    project's build wrapper accepts: ``verify -Ppre-commit`` on Maven, the
+    canonical-name form on pyproject. A canonical name is never composed onto a
+    probe, because the name is only meaningful to a wrapper that maps canonical
+    names — Maven's takes complete Maven arguments.
 
-    Returns ``(build, probed)``: the build command map, and the architecture's own
+    Resolution is scoped to the ROOT module on purpose: ``resolve`` runs at
+    setup, before the worktree's change surface exists, and the lane's build gate
+    verifies the whole project, so the root module's command is the only one that
+    is both knowable then and sufficient for every module the run touches.
+
+    Required and optional canonicals are separated by the architecture's own
+    contract: the GATE canonicals (``quality-gate``, ``verify``) are the pair
+    every gated module resolves, though each build system publishes them
+    conditionally (npm publishes ``quality-gate`` only for a lint script and
+    ``verify`` only for a test script), so at least one must resolve; the
+    test-conditional canonicals (``module-tests``, ``test-compile``) are omitted
+    when the project publishes none. An absent canonical is left out of the map
+    and of the split order, and a project with NO gate canonical raises
+    :class:`_BuildCommandUnresolvable`, naming the gate canonicals. There is no
+    composed fall-back, no default build, and no synthesized part.
+
+    Returns ``(build, probed)``: the build command map, and the architecture's
     resolved ``verify`` record, so the caller can read the timeout stamp off the
     same resolution instead of re-deriving the build system.
     """
+    from _architecture_core import DataNotFoundError, ModuleNotFoundInProjectError
     from _cmd_client_query import resolve_command
 
-    try:
-        probed = resolve_command(_BUILD_PROBE, None, str(project_dir))
-    except Exception as exc:
-        raise ValueError('build_command_unresolvable') from exc
+    # The exceptions ``resolve_command`` uses for "this project does not publish
+    # that canonical"; the same trio ``_cmd_client_handlers`` treats as absence.
+    # Anything else is a real architecture failure and propagates (``resolve``
+    # then reports ``resolve_failed``) instead of being read as "no such part".
+    _absent = (ValueError, ModuleNotFoundInProjectError, DataNotFoundError)
+    resolved: dict[str, dict[str, Any]] = {}
 
-    executable = probed.get('executable')
-    if not isinstance(executable, str):
-        raise ValueError('build_command_unresolvable')
-    match = _NOTATION_RE.match(executable)
-    if match is None:
-        raise ValueError('build_command_unresolvable')
-    prefix, notation = match.group('prefix'), match.group('notation')
+    def _lookup(canonical: str) -> dict[str, Any] | None:
+        try:
+            record = resolve_command(canonical, None, str(project_dir))
+        except _absent:
+            return None
+        executable = record.get('executable')
+        if not isinstance(executable, str) or not executable.strip():
+            return None
+        return record
 
-    build: dict[str, Any] = {canon: f'{prefix} {notation} run --command-args "{canon}"' for canon in _BUILD_CANONICALS}
+    for canonical in (*_GATE_CANONICALS, *_TEST_CONDITIONAL_CANONICALS):
+        record = _lookup(canonical)
+        if record is not None:
+            resolved[canonical] = record
+
+    if not any(canonical in resolved for canonical in _GATE_CANONICALS):
+        # No gate at all: the lane has nothing it could run, so it refuses by
+        # name rather than building with a default. Both names travel, because
+        # neither resolved.
+        raise _BuildCommandUnresolvable(_GATE_CANONICALS)
+
+    build: dict[str, Any] = {canonical: record['executable'] for canonical, record in resolved.items()}
     # The split form exists because ``verify`` may outlive the shell budget; its
-    # parts are the lane's own arguments on the SAME resolved build system.
-    build['test-compile'] = f'{prefix} {notation} run --command-args "test-compile"'
-    build['split'] = list(_SPLIT_FORM)
+    # parts are the architecture's own commands for the same build system, in a
+    # fixed order, filtered to the ones this project publishes.
+    build['split'] = [canonical for canonical in _SPLIT_FORM if canonical in resolved]
+    # ``verify`` when published, else the gate canonical the project has. The
+    # caller reads the timeout stamp off it, so it must be a gate canonical.
+    probed = resolved.get('verify') or resolved[_GATE_CANONICALS[0]]
     return build, probed
 
 
@@ -495,6 +557,44 @@ def _resolve_base_branch(marshal: dict[str, Any]) -> str:
     return _DEFAULT_BASE_BRANCH
 
 
+#: The build-server preflight states ``resolve`` reports, in the client's own
+#: vocabulary. ``disabled`` is an unenrolled project, not an error. Kept here
+#: because the client exposes no state constant and this plan CONSUMES the client
+#: without changing it; an unrecognised state is reported as ``down`` — the
+#: fail-closed direction, since the lane then runs in-process rather than
+#: claiming a daemon that may not be there.
+_BUILD_SERVER_STATES = ('ready', 'disabled', 'down')
+
+
+def _resolve_build_server(project_dir: Path) -> tuple[str, str | None]:
+    """Return the build server's preflight state for *project_dir*, plus its reason.
+
+    Read from the build-server client's own one-call preflight, so the lane does
+    not guess from a socket path or a registry file: ``disabled`` when the
+    project is not enrolled (no daemon probe — enrolment is an operator action
+    and the lane runs in-process), ``ready`` when a verified handshake answers,
+    and ``down`` with the client's named reason otherwise.
+
+    A preflight that cannot run at all is reported as ``down`` with a named
+    reason rather than omitted: the lane still builds (in-process), and the
+    landing says why the daemon was not used.
+    """
+    from build_server import run_preflight
+
+    try:
+        result = run_preflight(argparse.Namespace(project_path=str(project_dir)))
+    except Exception as exc:
+        # The client's own message is kept beside the type: a client-side defect
+        # (a signature change, say) must not read as a daemon outage.
+        return 'down', f'preflight_failed: {type(exc).__name__}: {exc}'
+    state = result.get('preflight')
+    if state not in _BUILD_SERVER_STATES:
+        return 'down', 'preflight_unreadable'
+    if state == 'down':
+        return state, str(result.get('reason') or 'unreachable')
+    return state, None
+
+
 def _claude_guard_installed(project_dir: Path) -> bool:
     """Whether a Claude install registers a REAL pre-tool-use hook.
 
@@ -546,6 +646,102 @@ def _resolve_harness_guard(project_dir: Path) -> tuple[str, str]:
     if harness == 'opencode':
         return harness, 'present' if project_dir.joinpath(*_OPENCODE_GUARD).is_file() else 'none'
     return harness, 'present' if _claude_guard_installed(project_dir) else 'none'
+
+
+#: The runtime-info vocabulary the landing's stamp is written in. ``unknown`` is
+#: its could-not-read value; ``mixed`` is a session tree that ran more than one
+#: model or variant, whose distinct labels ride ``models``.
+_RUNTIME_UNKNOWN = 'unknown'
+_RUNTIME_MIXED = 'mixed'
+
+
+def _stamp_value(value: Any) -> str:
+    """Return a runtime-stamp value, or ``unknown`` when nothing was read."""
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    return _RUNTIME_UNKNOWN
+
+
+def _render_model(info: dict[str, Any]) -> str:
+    """Render the runtime ``model`` fact as its comma-separated list form.
+
+    A mixed session tree already carries its distinct labels in ``models``; a
+    single-model tree renders ``{model}/{variant}`` when a variant was measured
+    and the bare model otherwise. Nothing is averaged, reduced to the root's
+    value, or guessed: an unreadable model is ``unknown``.
+    """
+    model = _stamp_value(info.get('model'))
+    if model == _RUNTIME_MIXED:
+        labels = [label.strip() for label in str(info.get('models') or '').split(',') if label.strip()]
+        return ','.join(labels) if labels else _RUNTIME_UNKNOWN
+    if model == _RUNTIME_UNKNOWN:
+        return model
+    variant = info.get('variant')
+    if isinstance(variant, str) and variant.strip():
+        return f'{model}/{variant.strip()}'
+    return model
+
+
+def _collect_runtime_info(harness: str) -> dict[str, Any]:
+    """Call the platform-runtime collector with the inputs its own target passes.
+
+    On OpenCode the model is MEASURED from the session database for the session
+    the run is under, and the environment is scoped to the variables that target
+    may resolve — exactly as ``opencode_runtime``'s own collector call does, so
+    a Claude-specific variable leaking into the environment can never be
+    attributed to an OpenCode stamp. On the other harnesses the collector reads
+    the script-accessible sources itself.
+
+    A thin seam, so the wiring can be asserted without a live session database.
+    """
+    from runtime_info import OPENCODE_SESSION_ID_ENV, collect_runtime_info
+
+    measurement: dict[str, Any] = {}
+    if harness == 'opencode':
+        from opencode_runtime import OpenCodeRuntime, _default_opencode_db_path
+
+        measurement = {
+            'env': {key: value for key, value in os.environ.items() if key in OpenCodeRuntime._OPENCODE_MODEL_ENV},
+            'opencode_db_path': _default_opencode_db_path(),
+            'opencode_session_id': os.environ.get(OPENCODE_SESSION_ID_ENV),
+        }
+    return collect_runtime_info(harness, **measurement)
+
+
+def _unknown_stamp() -> dict[str, str]:
+    """The stamp for a runtime fact nothing could read."""
+    return {'model': _RUNTIME_UNKNOWN, 'effort': _RUNTIME_UNKNOWN, 'plugin_version': _RUNTIME_UNKNOWN}
+
+
+def _resolve_runtime_stamp(harness: str) -> tuple[dict[str, str], str | None]:
+    """Resolve the landing's runtime stamp from the platform-runtime seam.
+
+    ``harness``, ``model``, ``effort`` and ``plugin_version`` are the four facts
+    the landing's consumer requires; ``plugin_version`` is the BUNDLE version
+    (``runtime-info``'s ``bundle_version``), and the executor's own version rides
+    the OPTIONAL ``executor_version`` — present only when it was read. The lane
+    re-runs this at landing time rather than reusing its setup-time answer, so a
+    model or effort switch during the run is stamped.
+
+    Values are MEASURED by the collector — on OpenCode from the session tree —
+    and an attribute with no readable source is ``unknown`` rather than an
+    estimate. A seam that fails outright degrades to the same ``unknown``
+    vocabulary and returns a reason naming the failure: a landing field must
+    never abort ``resolve`` at setup, and the degradation must not be silent.
+    """
+    try:
+        info = _collect_runtime_info(harness)
+    except Exception as exc:
+        return _unknown_stamp(), f'runtime_info_unreadable: {type(exc).__name__}: {exc}'
+    stamp = {
+        'model': _render_model(info),
+        'effort': _stamp_value(info.get('effort')),
+        'plugin_version': _stamp_value(info.get('bundle_version')),
+    }
+    executor_version = info.get('executor_version')
+    if isinstance(executor_version, str) and executor_version.strip():
+        stamp['executor_version'] = executor_version.strip()
+    return stamp, None
 
 
 #: The CI directory a workflow lives under, relative to the project root. A
@@ -951,6 +1147,16 @@ def cmd_resolve(args: argparse.Namespace) -> dict[str, Any]:
         build_timeout_seconds = _resolve_build_timeout(probed, project_dir)
         base_branch = _resolve_base_branch(marshal)
         deliverable_state = _resolve_deliverable_skills(spec)
+    except _BuildCommandUnresolvable as exc:
+        # Fail closed and name the gate canonicals that could not be resolved:
+        # the lane never falls back to a composed string or to a default build.
+        return {
+            'status': 'error',
+            'error': 'build_command_unresolvable',
+            'canonicals': ', '.join(exc.canonicals),
+            'spec': args.spec,
+            'plan': plan_id,
+        }
     except ValueError as exc:
         return {'status': 'error', 'error': str(exc), 'spec': args.spec, 'plan': plan_id}
     except Exception as exc:
@@ -973,6 +1179,8 @@ def cmd_resolve(args: argparse.Namespace) -> dict[str, Any]:
 
     trailer = run_config.read_commit_trailer()['trailer']
     harness, guard = _resolve_harness_guard(project_dir)
+    build_server, build_server_reason = _resolve_build_server(project_dir)
+    runtime_stamp, runtime_stamp_reason = _resolve_runtime_stamp(harness)
 
     worktree = f'.plan/local/worktrees/{plan_id}'
     progress_file = f'.plan/temp/rb-{plan_id}/progress.md'
@@ -1001,10 +1209,26 @@ def cmd_resolve(args: argparse.Namespace) -> dict[str, Any]:
         'optional_bots': optional,
         'commit_trailer': trailer,
         'harness': harness,
+        'model': runtime_stamp['model'],
+        'effort': runtime_stamp['effort'],
+        'plugin_version': runtime_stamp['plugin_version'],
         'guard': guard,
         'guard_log': '/'.join(_GUARD_LOG_PARTS),
+        'build_server': build_server,
         'skills_note': deliverable_state['skills_note'],
     }
+    # The executor version is OPTIONAL in the landing, so it is present only when
+    # the seam actually read one — never an `unknown` line the template must drop.
+    if 'executor_version' in runtime_stamp:
+        resolved['executor_version'] = runtime_stamp['executor_version']
+    # A reason only exists for ``down``: the other two states are their own
+    # explanation, and an empty row would read like a parsed-but-empty answer.
+    if build_server_reason is not None:
+        resolved['build_server_reason'] = build_server_reason
+    # Likewise for a runtime seam that failed: the stamp degrades to ``unknown``
+    # so setup is never aborted, and the reason keeps that from being silent.
+    if runtime_stamp_reason is not None:
+        resolved['runtime_stamp_reason'] = runtime_stamp_reason
     # Presence-gated: an empty population would render an empty row set that reads
     # like a parsed-but-empty answer, when the truth is that no spec declares one.
     if deliverable_state['deliverables']:

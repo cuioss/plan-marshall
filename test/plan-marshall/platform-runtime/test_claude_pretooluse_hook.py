@@ -1292,8 +1292,15 @@ def test_r6_ignores_non_commit_git_subcommands(tmp_path, monkeypatch) -> None:
         assert hook.evaluate(payload) is None, command
 
 
-def test_r6_needs_plan_state(tmp_path) -> None:
-    """With no status.json the raw-commit rule does not fire."""
+def test_r6_needs_plan_state(tmp_path, monkeypatch) -> None:
+    """With no status.json the raw-commit rule does not fire.
+
+    The worktree-root resolution is pinned to ``None``: this repository's
+    repo-local ``--basetemp`` sits inside a live plan worktree, whose
+    ``status.json`` would otherwise supply exactly the state this control
+    asserts is absent.
+    """
+    monkeypatch.setattr(hook, '_worktree_root_from_path', lambda candidate: None)
     worktree = tmp_path / 'plain'
     worktree.mkdir()
     payload = {'cwd': str(worktree), 'tool_name': 'Bash', 'tool_input': _bash('git commit -m "fix: x"')}

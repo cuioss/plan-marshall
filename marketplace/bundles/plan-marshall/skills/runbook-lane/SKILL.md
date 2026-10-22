@@ -36,11 +36,13 @@ python3 .plan/execute-script.py plan-marshall:runbook-lane:runbook_lane resolve 
 ```
 
 Resolves the epic slug, the derived names, the build commands, the required and optional reviewers
-with their trigger comments, the commit trailer, the harness and guard state, and the `inbox write`
+with their trigger comments, the commit trailer, the harness and guard state, the build server's
+preflight state (`build_server`, plus `build_server_reason` when it is `down`) and the `inbox write`
 command. `--project-dir` defaults to the current directory and anchors every project-scoped read.
 Fails closed with a specific error code for a spec outside the orchestrator tree, an unreadable
-configuration, a missing automatic-review step, an empty required-reviewer list, an unresolvable
-build command, or a bare skill/persona name in a flat install with no recorded bundle identity
+configuration, a missing automatic-review step, an empty required-reviewer list, a project that
+resolves no gate build command (naming the gate canonicals it could not resolve), or a bare
+skill/persona name in a flat install with no recorded bundle identity
 (`flat_skill_identity_missing`).
 
 ### build-classify
@@ -87,18 +89,20 @@ The result supplies, and nothing below is spelled from anywhere else:
 | required and optional reviewers, with their trigger comments | `required_bots`, `optional_bots` |
 | commit trailer | `commit_trailer` |
 | `inbox write` command | `inbox_write_command` |
-| harness and guard state | `harness`, `guard` |
+| harness, guard and the landing's runtime stamp | `harness`, `guard`, `model`, `effort`, `plugin_version`, and `executor_version` when it was read |
 | guard-log path | `guard_log` |
+| build server state | `build_server`, plus `build_server_reason` when the state is `down` |
 
 The branch row is derived from the project's configuration rather than returned by `resolve`; every
 other row names a field of the resolve result.
 
 The verb **fails closed**: a spec outside `.plan/orchestrator/{slug}/plans/`, an unreadable
-configuration, a missing automatic-review step, an empty required-reviewer list, a build command
-the project's architecture cannot resolve, or a bare `Skills:`/`Persona:` name in a flat install
-whose `SKILL.md` records no bundle identity (`flat_skill_identity_missing`) is an error carrying a
-specific code. There is never a fall-back to a default reviewer list or a default build. Stop and
-report a resolve error; do not substitute a value.
+configuration, a missing automatic-review step, an empty required-reviewer list, no gate build
+command (`quality-gate` or `verify`) the project's architecture can resolve, or a bare
+`Skills:`/`Persona:` name in a flat install whose `SKILL.md` records no bundle identity
+(`flat_skill_identity_missing`) is an error carrying a specific code. There is never a fall-back to
+a default reviewer list or a default build. Stop and report a resolve error; do not substitute a
+value.
 
 **How to read the spec:**
 
@@ -135,6 +139,7 @@ item below and before starting the next. One line per entry, newest last:
 
 ```text
 setup: worktree {worktree}, branch {branch}, pushed
+build-server: {ready|disabled|down}{ (reason)}; fallback: {none|in_process|degraded}, {reason or none}
 D{n} hypothesis: {claim} — confirmed|refuted, {file:line}
 D{n} test: {test name} — failed before fix ({evidence}), passed after
 D{n} done: commit {sha}
@@ -280,9 +285,27 @@ checkout stays untouched.
 
 Every executor call runs with the shell in the **main checkout**, in exactly the form
 `python3 .plan/execute-script.py …`. The guard refuses any other form, including an absolute
-executor path. The worktree has no executor of its own, so every build passes
-`--execution-mode in_process --project-dir {worktree}`. The build daemon would need an executor
-inside the project directory; in-process runs need none.
+executor path. Builds run against the worktree with the resolved `build` commands (section 4) and
+the default routing (`auto`): the project's build wrapper decides whether the job runs in-process or
+is submitted to the build daemon.
+
+6. **Build-server preflight — once, here.**
+   `python3 .plan/execute-script.py plan-marshall:build-server-client:build_server preflight --project-path {worktree}`
+   answers `ready`, `disabled` or `down`. Record it in the progress file and the landing message as
+   `build_server: ready|disabled|down`, with `reason` when the state is `down`. The resolve result
+   carries the same field for the project root; this setup call is the one that describes the
+   worktree.
+   - `disabled` — the project is not enrolled at setup. That is not an error: enrolment is an
+     operator action in `manage-build-server`, and the default routing's own preflight answers
+     `disabled` for an unenrolled project, so the builds run in-process.
+   - `down` — the daemon was unreachable at setup. Record the reason. The builds still run with the
+     default routing, which preflights again per build, so the `mechanism` a build result reports is
+     the authority for how THAT build ran — record it (a daemon that recovered mid-run can route).
+   - `ready` — routing is available. A routed job re-runs the worktree's own `.plan/execute-script.py`,
+     which worktree creation supplies: that executor is what the daemon uses, never the main
+     checkout's. A missing executor is a worktree defect, not a routing reason — record
+     `executor_absent_from_worktree`, report it, and run that build in-process with
+     `--execution-mode in_process` so the gate still runs.
 
 ## 3. Implement, deliverable by deliverable
 
@@ -306,15 +329,51 @@ For each deliverable, in the spec's order:
 
 ## 4. Build gate
 
-Every build runs in-process from the main checkout against the worktree, using the commands the
-resolve result supplies:
+Every build runs from the main checkout against the worktree, using the commands the resolve result
+supplies and the default routing. Each line below applies only where the resolve result supplies
+that canonical — a project with a single gate canonical supplies no `{build.verify}`, and one that
+publishes no test part supplies no `{build.module-tests}`:
 
 ```bash
-{build.quality-gate} --execution-mode in_process --project-dir {worktree}
-{build.module-tests} --execution-mode in_process --project-dir {worktree}
-{build.verify} --execution-mode in_process --project-dir {worktree} --timeout {build_timeout_seconds}
+{build.quality-gate} --project-dir {worktree}
+{build.module-tests} --project-dir {worktree}
+{build.verify} --project-dir {worktree} --timeout {build_timeout_seconds}
 ```
 
+- **Routing.** `auto` submits the job to the build daemon when the setup preflight found it `ready`,
+  and runs in-process otherwise. A routed job re-runs the worktree's own executor; the
+  `executor_absent_from_worktree` fallback from setup applies only when that executor is genuinely
+  missing, and is recorded with its reason. The daemon applies its OWN supervisory bound, which
+  `--timeout` can only raise; a bound expiry comes back as `timeout` naming `timeout_used_seconds`
+  and `timeout_source`, and the client's rules for it are cited, not restated. Record a bound
+  expiry and continue with the split form below rather than re-submitting the same bound.
+- **Read the routing outcome** from the build result's own fields (`requested`, `resolved`, `reason`,
+  `mechanism`). A `degraded` result has already fallen back in-process: record the degradation and
+  its `reason` in the progress file and the landing message.
+- **A `killed` job is never blind-retried.** Read its status and record it; whether to run it again
+  is the operator's decision, asked with the question tool.
+- **One daemon-routed build at a time per worktree**, sub-agents included. The build-server client's
+  prohibitions — a routed build is never backgrounded, and a `running` result is re-attached with a
+  bounded wait — are stated in `build-server-client/SKILL.md` and bind here as written, not
+  restated. A second concurrent submission is the case that client cannot see: two routed builds
+  from one worktree can interleave, and a result can carry its sibling job's counts.
+- **Shell timeout, in-process fallback only:** an in-process build holds the shell call for its whole
+  duration. Give each call the shell tool's `timeout` parameter, set at or above the build's own
+  timeout.
+  - If the tool cannot wait that long, run the gate's parts as separate calls, in the order
+    `{build.split}` states, running each canonical the resolve result supplies — for example
+    `{build.quality-gate}`, `{build.test-compile}` and `{build.module-tests}` where the project
+    publishes all three, each with the same worktree flags.
+  - Run exactly the canonicals `split` names. `module-tests` and `test-compile` are test-conditional
+    in the architecture's contract, so an absent one means the project publishes no such part — not
+    that a part was skipped. `quality-gate` and `verify` are the gate, and each build system
+    publishes them conditionally, so the resolve result carries at least one; a project that
+    resolves neither has already failed `resolve`. Where `split` names nothing, run the gate
+    canonical the resolve result supplies — `{build.quality-gate}` where supplied, otherwise
+    `{build.verify}` — because the project publishes no separable part.
+  - A daemon-routed build is waited on in the same call, never moved to the background.
+- **Read the result, not the exit code.** The TOON must show `status: success` and an empty
+  `errors[]`. Open the `log_file` it names for the test summary.
 - **Docs-only change.** Before running the full build, classify the worktree diff against the base:
   get the changed paths with `git -C {worktree} diff --name-only origin/{base_branch}...HEAD`, then
   pass them to the `build-classify` verb. When it answers `kind: docs-only`, run **no** full
@@ -330,19 +389,14 @@ resolve result supplies:
   rule it could not read (reported as `reason`), builds — the fail-closed direction, so a wrong
   answer costs a local build and never skips one the CI would run. Pass the same `--project-dir`
   the build gate uses. Required CI checks still have to be green, so the merge gate is unchanged.
-- **When to run what:** run `{build.quality-gate}` before each commit that touches `*.py`, and
-  `{build.verify}` once before the PR. Scope the tests to one module while iterating.
-- **Every pushed head:** `test-compile` runs at every head pushed to a PR — not once for the run.
-  Record the sha of each run; a head whose `test-compile` did not run is not a green head.
-- **Shell timeout:** in-process builds hold the shell call for their whole duration. Give each call
-  the shell tool's `timeout` parameter, set at or above the build's own timeout.
-  - If the tool cannot wait that long, run `{build.verify}`'s three parts as separate calls, in the
-    order `{build.split}` states — for example `{build.quality-gate}`, `{build.test-compile}` and
-    `{build.module-tests}`, each with the same worktree flags.
-  - Never omit the test-compile part.
-- **Never use the daemon:** never drop `--execution-mode in_process`.
-- **Read the result, not the exit code.** The TOON must show `status: success` and an empty
-  `errors[]`. Open the `log_file` it names for the test summary.
+- **When to run what:** run the gate canonical the project publishes (`{build.quality-gate}` where
+  the resolve result supplies it, otherwise `{build.verify}`) before each commit that touches
+  `*.py`, and the same gate canonical once before the PR. Scope the tests to one module while
+  iterating.
+- **Every pushed head:** a test run at every head pushed to a PR — not once for the run. Run
+  `{build.module-tests}` where the resolve result supplies it, plus `{build.test-compile}` where the
+  project publishes one; a project that supplies neither is gated by the gate canonical it
+  publishes. Record the sha of each run; a head that was not tested is not a green head.
 - **Failures that already fail on the base branch:** environment-dependent tests can fail in a
   project's local module-tests run. They are not yours. Only a failure in a module you touched, or
   one the base branch does not show, is yours.
@@ -499,11 +553,19 @@ deliverables_done={deliverables whose every Done-when is met}
 total_tokens=unknown
 harness={harness}
 model={every model and variant used, comma-separated, e.g. deepseek-v4.1-flash/max,deepseek-v4.1-flash/high; record each switch in the progress file}
+effort={the effort level measured with the model}
+plugin_version={the plan-marshall bundle version}
+executor_version={the executor version when resolve returned one; drop this line when it did not (optional)}
 steps=setup:done,implement:done,build-gate:done,self-review:{clear|budget-exhausted},pr:done,reviews:done,merge:done
 ```
 
 - **Values:** write `unknown` for anything you could not read, never `n/a` and never a guess.
   `deliverables_done` counts only fully met deliverables.
+- **Runtime stamp:** `harness`, `model`, `effort`, `plugin_version` and the optional `executor_version` are
+  the resolve result's fields of those names, resolved from the platform-runtime `runtime-info` seam.
+  Read the stamp from a `resolve` **re-run at landing time**, not from the setup-time result, so a model
+  or effort switch during the run is stamped; record every switch in the progress file. `model` keeps
+  its `{model}/{variant}` list form — one element per model and variant used.
 - **Every line inside the facts fence is a `key=value` pair** — no line is dropped by the consumer's
   parser. The guard state travels as prose beside the fence rather than as a fence line:
   `guard: none on this harness (unenforced)` when the resolve result reported `guard: none`, and
@@ -519,7 +581,8 @@ steps=setup:done,implement:done,build-gate:done,self-review:{clear|budget-exhaus
      fix" are reserved for `test-first` — `mutation-after` means the failing output came from
      mutating or reverting the committed fix, and `none` means no failing output was captured. A
      `not met as written` Done-when leaves its deliverable not fully met. Also report the sha of
-     every `test-compile` run against a pushed head.
+     every per-head test run (`module-tests`, and `test-compile` where the project publishes one)
+     against a pushed head.
   2. **Personas and skills** — per step, which persona was applied (section 1's table, or the
      deliverable's own `Persona:` line); per deliverable, the domain skills it named — or
      `skills: none named` when the spec declares none — and any skill added for surface drift as
@@ -539,7 +602,12 @@ steps=setup:done,implement:done,build-gate:done,self-review:{clear|budget-exhaus
      refusal: read `{guard_log}` (the path `resolve` returns) for this run's sessions and list each
      line. "All kept" is allowed only when that log has no line for the run — and never on a harness
      whose resolve result reported `guard: none`.
-  8. **Residue** — anything left open.
+  8. **Build server** — the setup preflight's state (`ready`, `disabled` or `down`, with its reason),
+     the fallback each build used and why (`degraded` with its `reason`, or
+     `executor_absent_from_worktree`), and any `killed` job with its disposition. Add any
+     `runtime_stamp_reason` the resolve result carried: it names a runtime-info seam that failed
+     and left the stamp at `unknown`.
+  9. **Residue** — anything left open.
 
 Then tell the operator the PR number, the merge commit, and that the landing message was written.
 

@@ -76,8 +76,12 @@ is read through the shared `plugin_registry` reader, so the assignment's grammar
 has one definition; an absent or unreadable executor omits the key rather than
 substituting a version.
 
-`transcripts: none` is the capability flag a transcript-less harness carries:
-its token figures report `unknown` rather than zero (see
+`transcripts: none` is the capability flag a harness with no WALKABLE transcript
+carries. It states which transcript surface is missing — it does not state that
+no measurement is possible, because a database-backed source can answer without
+a transcript: OpenCode reports `transcripts: none` and still measures its token
+figures from its session database. A phase whose figures no measured source
+could supply reports `unknown` rather than zero (see
 `manage-metrics/standards/data-format.md` § unknown vocabulary). The value is
 derived from the harness identifier alone — never estimated, and never absent.
 
@@ -88,31 +92,23 @@ fallback may fill the gap upstream; the collector itself never estimates.
 ### The OpenCode model is measured, not self-reported
 
 On OpenCode the model comes from the session record, not from a flag: the
-collector reads `session_v2.model` (id, provider, variant) from `opencode.db`
-opened read-only, for the plan's root session (`OPENCODE_SESSION_ID` resolved to
-its root through `parent_id`) and for every descendant, and records it as
-`measured`. A flag never stands in for the record. The read is BOUNDED to that
-tree: the root is reached by an upward recursive query and the descendants by a
-downward one, so another project's sessions are never scanned. The database URI
-is built from `Path.as_uri()`, so a path containing `?`, `#` or `%` is opened
-rather than truncated at the first metacharacter; the default path follows
-`XDG_DATA_HOME`. A tree that ran more than one
-model or variant is recorded as `model: mixed` with the distinct values listed —
-never averaged and never reduced to the root's value. When every entry in a
-mixed tree shares one variant, that variant IS the measured effort and is
-recorded; when the variants differ there is no single effort, and neither a flag
-nor an environment value is substituted. The model also carries `model_origin`:
-`session_tree` for a measurement, `environment` for a configured fallback, so a
-landing-time refresh never lets the latter displace the former. An absent
-database, an unreadable schema or an unresolvable session records `model:
-unknown`. With no session id in scope the model is omitted WITH
+collector reads `session_v2.model` (id, provider, variant) for the plan's root
+session (`OPENCODE_SESSION_ID` resolved to its root through `parent_id`) and for
+every descendant, and records it as `measured`. Every read goes through the
+shared read-only session reader (`_opencode_sessions`), which owns the database
+path, the read-only connection, the schema gate and the tree walk, so the
+collector opens no database of its own and needs only the tier-1
+`session_v2(id, parent_id, model)` schema. A flag never stands in for the record.
+A tree that ran more than one model or variant is recorded as `model: mixed` with
+the distinct values listed — never averaged and never reduced to the root's
+value. When every entry in a mixed tree shares one variant, that variant IS the
+measured effort and is recorded; when the variants differ there is no single
+effort, and neither a flag nor an environment value is substituted. The model
+also carries `model_origin`: `session_tree` for a measurement, `environment` for
+a configured fallback, so a landing-time refresh never lets the latter displace
+the former. An absent database, an unreadable schema or an unresolvable session
+records `model: unknown`. With no session id in scope the model is omitted WITH
 `model_omission_reason: no_session_id`, so the omission is traceable.
-
-`model` names the id; a single-model OpenCode tree also records `variant` (and,
-when the record carries one, `provider`), and the landing writes the two as the
-`{model}/{variant}` form its payload spec defines. The measured variant IS the
-effort on OpenCode: `effort` carries it with `effort_source: measured`, and a
-`--effort` flag never overrides it.
 
 Entries are keyed by human-readable UTC datetime stamp
 (`YYYY-MM-DD HH-MM-SS UTC`, no colons so the key survives TOON parsing).

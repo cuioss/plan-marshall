@@ -665,8 +665,14 @@ def _run_enrich_with_buckets(plan_id: str, monkeypatch, buckets: dict) -> dict:
 
     counters = {'message_count': 7, 'four_field_phases_attributed': len(buckets)}
 
-    def _fake_op(session_id, windows):
-        return dict(buckets), counters, 'success'
+    def _fake_op(session_ids, windows):
+        population = {
+            'sessions_requested': len(session_ids),
+            'sessions_measured': len(session_ids),
+            'roots_measured': list(session_ids),
+            'sessions_unmeasured': [],
+        }
+        return dict(buckets), counters, 'success', population
 
     monkeypatch.setattr(manage_metrics, '_run_normalized_tokens_op', _fake_op)
     result: dict = cmd_enrich(ns_enrich(plan_id, 'sess-population'))

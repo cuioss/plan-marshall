@@ -6,10 +6,14 @@ Its sections, in order:
 
 * enrich (Tier 2 - direct import)
 * enrich delegates to the platform-runtime normalized-tokens op
+* enrich measures every captured root (multi-session population)
 * total_tokens population labelling
 * format_duration (via generate output) (Tier 2 - direct import)
 * CLI Plumbing Tests (Tier 3 - subprocess, retained for end-to-end coverage)
 """
+
+import json
+from pathlib import Path
 
 from _manage_metrics_fixtures import (
     ns,
@@ -24,6 +28,7 @@ from _manage_metrics_module_fixtures import (
     _INLINE_SUM,
     _UNSEEDED_PLAN_IDS,
     SCRIPT_PATH,
+    _FakeCompleted,
     _patch_runtime_op,
     _phase_row,
     _run_enrich_with_buckets,
@@ -192,6 +197,176 @@ class TestEnrichDelegatesToRuntimeOp:
 
 
 # =============================================================================
+# enrich measures every captured session (multi-root population)
+# =============================================================================
+#
+# A plan legitimately captures more than one session identity — every resume
+# appends one rather than replacing one — so the measured population is every
+# `--session-id` occurrence, summed into ONE per-phase view. Reading only the
+# newest identity dropped every earlier session's usage while enrich still
+# reported a successful run.
+
+
+def _patch_multi_root_op(monkeypatch, responses: dict) -> list:
+    """Patch the runtime op so each session id answers with its own measured run.
+
+    ``responses`` maps a session id to a dict carrying ``status``, and optionally
+    ``per_phase``, ``counters``, ``root`` and ``reason``. The fake records every
+    id it was asked about, in order, so a test can assert the whole population
+    reached the op.
+    """
+    asked: list = []
+
+    def _fake_run(argv, *args, **kwargs):  # deliberately unannotated: mirrors subprocess.run
+        session_id = argv[argv.index('--session-id') + 1]
+        asked.append(session_id)
+        response = responses[session_id]
+        output_file = Path(argv[argv.index('--output-file') + 1])
+        if response['status'] == 'success' and response.get('per_phase') is not None:
+            output_file.write_text(json.dumps(response['per_phase']), encoding='utf-8')
+        lines = [f'status: {response["status"]}', 'operation: metrics normalized-tokens']
+        for key, value in (response.get('counters') or {}).items():
+            lines.append(f'{key}: {value}')
+        if response.get('root'):
+            lines.append(f'root_session_id: {response["root"]}')
+        if response.get('reason'):
+            lines.append(f'reason: {response["reason"]}')
+        return _FakeCompleted('\n'.join(lines) + '\n')
+
+    monkeypatch.setattr(manage_metrics.subprocess, 'run', _fake_run)
+    return asked
+
+
+def _seed_enrich_window(plan_context, plan_id: str) -> None:
+    """Seed the plan's metrics.toon with the 5-execute window the op is handed."""
+    manage_metrics.write_metrics(plan_id, {'plan_id': plan_id})
+    plan_dir = plan_context.plan_dir_for(plan_id)
+    (plan_dir / 'work').mkdir(parents=True, exist_ok=True)
+    (plan_dir / 'work' / 'metrics.toon').write_text(_ENRICH_TWO_PHASE_METRICS.format(plan_id=plan_id), encoding='utf-8')
+
+
+def test_enrich_sums_every_captured_session_into_one_phase_row(plan_context, monkeypatch):
+    """Two captured sessions are both measured, and their buckets are summed.
+
+    The summed figure is strictly larger than either session alone — the property
+    the D3 done-when names — and both identities reach the op.
+    """
+    plan_id = 'enrich-multi-root'
+    _seed_enrich_window(plan_context, plan_id)
+    asked = _patch_multi_root_op(
+        monkeypatch,
+        {
+            'root-a': {
+                'status': 'success',
+                'root': 'root-a',
+                'per_phase': {'5-execute': {'input_tokens': 100, 'total': 100}},
+                'counters': {'message_count': 2},
+            },
+            'root-b': {
+                'status': 'success',
+                'root': 'root-b',
+                'per_phase': {'5-execute': {'input_tokens': 7, 'total': 7}},
+                'counters': {'message_count': 1},
+            },
+        },
+    )
+
+    result = cmd_enrich(ns_enrich(plan_id, 'root-a', 'root-b'))
+
+    assert asked == ['root-a', 'root-b'], 'every captured identity must reach the op'
+    assert result['enriched'] is True
+    assert result['sessions_requested'] == 2
+    assert result['sessions_measured'] == 2
+    assert result['sessions_unmeasured'] == []
+    assert result['message_count'] == 3
+
+    five = manage_metrics.read_metrics_raw(plan_id)['phases']['5-execute']
+    assert five['input_tokens'] == 100 + 7
+    assert five['total_tokens'] == 100 + 7
+    assert five['total_tokens'] > 100 and five['total_tokens'] > 7
+
+
+def test_enrich_does_not_double_count_a_tree_reached_twice(plan_context, monkeypatch):
+    """Two ids resolving to one root are measured once, and the second is named.
+
+    The op reports the root it measured, so a captured id that names a session
+    inside an already-measured tree is reported as unmeasured instead of summing
+    the same messages twice.
+    """
+    plan_id = 'enrich-shared-root'
+    _seed_enrich_window(plan_context, plan_id)
+    _patch_multi_root_op(
+        monkeypatch,
+        {
+            'root-a': {
+                'status': 'success',
+                'root': 'root-a',
+                'per_phase': {'5-execute': {'input_tokens': 100}},
+                'counters': {'message_count': 2},
+            },
+            'child-a': {
+                'status': 'success',
+                'root': 'root-a',
+                'per_phase': {'5-execute': {'input_tokens': 100}},
+                'counters': {'message_count': 2},
+            },
+        },
+    )
+
+    result = cmd_enrich(ns_enrich(plan_id, 'root-a', 'child-a'))
+
+    assert result['sessions_measured'] == 1
+    assert result['sessions_unmeasured'] == [{'session_id': 'child-a', 'reason': 'duplicate_root'}]
+    assert manage_metrics.read_metrics_raw(plan_id)['phases']['5-execute']['input_tokens'] == 100
+
+
+def test_enrich_names_an_unmeasured_session_with_its_reason(plan_context, monkeypatch):
+    """A session whose store cannot answer is named, and the rest is still measured."""
+    plan_id = 'enrich-partial-population'
+    _seed_enrich_window(plan_context, plan_id)
+    _patch_multi_root_op(
+        monkeypatch,
+        {
+            'root-a': {
+                'status': 'success',
+                'root': 'root-a',
+                'per_phase': {'5-execute': {'input_tokens': 100}},
+                'counters': {'message_count': 2},
+            },
+            'root-gone': {'status': 'no-op', 'reason': 'db_not_found'},
+        },
+    )
+
+    result = cmd_enrich(ns_enrich(plan_id, 'root-a', 'root-gone'))
+
+    assert result['enriched'] is True
+    assert result['sessions_measured'] == 1
+    assert result['sessions_unmeasured'] == [{'session_id': 'root-gone', 'reason': 'db_not_found'}]
+    assert manage_metrics.read_metrics_raw(plan_id)['phases']['5-execute']['input_tokens'] == 100
+
+
+def test_enrich_reports_no_measurement_when_every_session_declines(plan_context, monkeypatch):
+    """No measured session yields enriched=False, and the population says so."""
+    plan_id = 'enrich-no-population'
+    _seed_enrich_window(plan_context, plan_id)
+    _patch_multi_root_op(
+        monkeypatch,
+        {
+            'root-a': {'status': 'no-op', 'reason': 'session_not_found'},
+            'root-b': {'status': 'no-op', 'reason': 'db_not_found'},
+        },
+    )
+
+    result = cmd_enrich(ns_enrich(plan_id, 'root-a', 'root-b'))
+
+    assert result['enriched'] is False
+    assert result['sessions_requested'] == 2
+    assert result['sessions_measured'] == 0
+    assert [row['reason'] for row in result['sessions_unmeasured']] == ['session_not_found', 'db_not_found']
+    assert 'input_tokens' not in manage_metrics.read_metrics_raw(plan_id)['phases'].get('5-execute', {})
+
+
+# =============================================================================
 # total_tokens population labelling
 # =============================================================================
 
@@ -266,11 +441,11 @@ def test_enrich_absent_session_id_transcript_less_skips_with_gap_flag(plan_conte
     assert result['status'] == 'success'
     assert result.get('enriched') is False
     assert result.get('skipped') is True
-    assert result.get('gap') == manage_metrics.ENRICH_SKIP_REASON_NO_SESSION_TRANSCRIPT_LESS
+    assert result.get('gap') == manage_metrics.ENRICH_SKIP_REASON_NO_SESSION_IDENTITY
     assert result.get('population') == manage_metrics.ENRICH_SKIP_POPULATION_UNENRICHED
     stored = manage_metrics.read_metrics_raw(plan_id)
     assert str(stored.get('enrichment_skipped')).lower() == 'true'
-    assert stored.get('enrichment_gap_reason') == manage_metrics.ENRICH_SKIP_REASON_NO_SESSION_TRANSCRIPT_LESS
+    assert stored.get('enrichment_gap_reason') == manage_metrics.ENRICH_SKIP_REASON_NO_SESSION_IDENTITY
     assert stored.get('enrichment_gap_population') == manage_metrics.ENRICH_SKIP_POPULATION_UNENRICHED
 
 
@@ -297,12 +472,58 @@ def test_enrich_absent_session_id_antigravity_skips_with_gap_flag(plan_context, 
     assert result['status'] == 'success'
     assert result.get('enriched') is False
     assert result.get('skipped') is True
-    assert result.get('gap') == manage_metrics.ENRICH_SKIP_REASON_NO_SESSION_TRANSCRIPT_LESS
+    assert result.get('gap') == manage_metrics.ENRICH_SKIP_REASON_NO_SESSION_IDENTITY
     assert result.get('population') == manage_metrics.ENRICH_SKIP_POPULATION_UNENRICHED
     stored = manage_metrics.read_metrics_raw(plan_id)
     assert str(stored.get('enrichment_skipped')).lower() == 'true'
-    assert stored.get('enrichment_gap_reason') == manage_metrics.ENRICH_SKIP_REASON_NO_SESSION_TRANSCRIPT_LESS
+    assert stored.get('enrichment_gap_reason') == manage_metrics.ENRICH_SKIP_REASON_NO_SESSION_IDENTITY
     assert stored.get('enrichment_gap_population') == manage_metrics.ENRICH_SKIP_POPULATION_UNENRICHED
+
+
+# =============================================================================
+# Test: a measured / degraded ID-based run clears an earlier skip's gap flags
+# =============================================================================
+
+
+def _seed_skip_gap(plan_id, monkeypatch):
+    """Drive the identity-less skip so the three gap flags are persisted."""
+    manage_metrics.write_metrics(plan_id, {'plan_id': plan_id})
+    monkeypatch.setattr(manage_metrics, '_resolve_runtime_target', lambda: 'opencode')
+    result = cmd_enrich(ns('enrich', '--plan-id', plan_id))
+    assert result.get('skipped') is True
+    stored = manage_metrics.read_metrics_raw(plan_id)
+    assert str(stored.get('enrichment_skipped')).lower() == 'true'
+
+
+def _assert_gap_cleared(plan_id):
+    """A run that attempted measurement leaves none of the gap keys behind."""
+    stored = manage_metrics.read_metrics_raw(plan_id)
+    assert 'enrichment_skipped' not in stored
+    assert 'enrichment_gap_reason' not in stored
+    assert 'enrichment_gap_population' not in stored
+
+
+def test_enrich_measured_pass_clears_an_earlier_skip_gap(plan_context, monkeypatch):
+    """A measured ID-based run replaces the gap flags written by an earlier skip."""
+    plan_id = 'enrich-gap-clear-01'
+    _seed_skip_gap(plan_id, monkeypatch)
+
+    _run_enrich_with_buckets(plan_id, monkeypatch, {'5-execute': {'input_tokens': 100}})
+
+    _assert_gap_cleared(plan_id)
+
+
+def test_enrich_degraded_pass_clears_an_earlier_skip_gap(plan_context, monkeypatch):
+    """A no-op/unavailable degrade run still clears the earlier skip's gap flags."""
+    plan_id = 'enrich-gap-clear-02'
+    _seed_skip_gap(plan_id, monkeypatch)
+    _patch_runtime_op(monkeypatch, status='no-op', per_phase=None, counters={})
+
+    result = cmd_enrich(ns_enrich(plan_id, 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'))
+
+    assert result['status'] == 'success'
+    assert result['enriched'] is False
+    _assert_gap_cleared(plan_id)
 
 
 # =============================================================================
@@ -363,11 +584,11 @@ def test_enrich_detected_opencode_skips_despite_claude_marshal(plan_context, mon
     assert result['status'] == 'success'
     assert result.get('enriched') is False
     assert result.get('skipped') is True
-    assert result.get('gap') == manage_metrics.ENRICH_SKIP_REASON_NO_SESSION_TRANSCRIPT_LESS
+    assert result.get('gap') == manage_metrics.ENRICH_SKIP_REASON_NO_SESSION_IDENTITY
     assert result.get('population') == manage_metrics.ENRICH_SKIP_POPULATION_UNENRICHED
     stored = manage_metrics.read_metrics_raw(plan_id)
     assert str(stored.get('enrichment_skipped')).lower() == 'true'
-    assert stored.get('enrichment_gap_reason') == manage_metrics.ENRICH_SKIP_REASON_NO_SESSION_TRANSCRIPT_LESS
+    assert stored.get('enrichment_gap_reason') == manage_metrics.ENRICH_SKIP_REASON_NO_SESSION_IDENTITY
     assert stored.get('enrichment_gap_population') == manage_metrics.ENRICH_SKIP_POPULATION_UNENRICHED
 
 

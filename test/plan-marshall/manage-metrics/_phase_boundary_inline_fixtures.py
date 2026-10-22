@@ -90,9 +90,15 @@ def _run_inline_enrich(plan_id: str, monkeypatch, buckets: dict | None = None) -
     """
     resolved = _INLINE_ENRICH_BUCKETS if buckets is None else buckets
 
-    def _fake_op(session_id, windows):
+    def _fake_op(session_ids, windows):
         counters = {'message_count': 42, 'four_field_phases_attributed': len(resolved)}
-        return dict(resolved), counters, 'success'
+        population = {
+            'sessions_requested': len(session_ids),
+            'sessions_measured': len(session_ids),
+            'roots_measured': list(session_ids),
+            'sessions_unmeasured': [],
+        }
+        return dict(resolved), counters, 'success', population
 
     monkeypatch.setattr(manage_metrics, '_run_normalized_tokens_op', _fake_op)
     result: dict = cmd_enrich(ns_enrich(plan_id, 'sess-inline'))
