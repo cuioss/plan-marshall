@@ -254,7 +254,7 @@ _R1_REASON = (
 )
 _R2_REASON = (
     'plan-marshall: use the Read/Glob/Grep tools, not Bash, for file '
-    'operations (cat/grep/head/tail/find/ls, sh/bash/source, git grep). For a '
+    'operations (cat/grep/head/tail/find/ls, a shell spawn, git grep). For a '
     'content sweep run: architecture search --content --pattern P.'
 )
 _R3_REASON = (
@@ -781,14 +781,38 @@ def _read_text_if_file(value: str, cwd: str | None) -> str:
         return ''
 
 
-def _executed_texts(command: str, cwd: str | None) -> list[str]:
-    """Every text a wrapper in PROGRAM POSITION is asked to execute.
+def _wrapper_directory_value(wrapper: str, option: str, tokens: list[str], index: int) -> str | None:
+    """The directory a wrapper OPTION changes to, or ``None``.
+
+    Mirrors the directory-option rule in :func:`_effective_cwd`, so the floor
+    judges a spliced command string from the directory the wrapper really put it
+    in (``env -C /tmp/x -S "python3 …"``).
+    """
+    is_directory_option = (
+        option in ('-C', '--chdir')
+        or option.startswith('--chdir=')
+        or (wrapper == 'sudo' and (option in ('-D', '--directory') or option.startswith('--directory=')))
+        or (wrapper == 'env' and option.startswith('-C') and len(option) > 2)
+    )
+    if not is_directory_option:
+        return None
+    value = option.split('=', 1)[1] if '=' in option else ''
+    if not value and option.startswith('-C') and len(option) > 2 and not option.startswith('--'):
+        value = option[2:]
+    if not value:
+        value = _strip_matched_quotes(tokens[index + 1]) if index + 1 < len(tokens) else ''
+    return value or None
+
+
+def _executed_texts(command: str, cwd: str | None) -> list[tuple[str, str | None]]:
+    """Every ``(text, cwd)`` a wrapper in PROGRAM POSITION is asked to execute.
 
     The wrapper chain is walked so ``env -i zsh -c '…'`` is reached; a shell
     contributes its ``-c`` string (wherever it sits among its options, so ``zsh
     -o pipefail -c '…'`` is read), a here-string / here-document operand and every
     readable script file it is handed; a splice wrapper (``env -S``, ``script
-    -c``, ``watch``, ``parallel``) contributes its command string. A non-wrapper
+    -c``, ``watch``, ``parallel``) contributes its command string. A wrapper's
+    directory option moves the directory the later texts run from. A non-wrapper
     program position ends the walk.
     """
     try:
@@ -798,7 +822,8 @@ def _executed_texts(command: str, cwd: str | None) -> list[str]:
     table = _wrapper_table()
     wrappers = table['wrappers']
     shells = set(table['shells'])
-    texts: list[str] = []
+    texts: list[tuple[str, str | None]] = []
+    current_cwd = cwd
     index = 0
     total = len(tokens)
     while index < total:
@@ -810,7 +835,7 @@ def _executed_texts(command: str, cwd: str | None) -> list[str]:
         spec = wrappers.get(wrapper)
         if not isinstance(spec, dict):
             return texts
-        is_shell = wrapper in shells
+        is_shell = wrapper.lower() in {shell.lower() for shell in shells}
         index += 1
         spliced: str | None = None
         positionals = int(spec.get('leading_positionals') or 0)
@@ -822,18 +847,18 @@ def _executed_texts(command: str, cwd: str | None) -> list[str]:
             if option.startswith('<<'):
                 operand = _strip_matched_quotes(tokens[index + 1]) if index + 1 < total else ''
                 if operand:
-                    texts.append(operand)
+                    texts.append((operand, current_cwd))
                 rest = ' '.join(_strip_matched_quotes(candidate) for candidate in tokens[index + 1 :])
                 if rest:
-                    texts.append(rest)
+                    texts.append((rest, current_cwd))
                 return texts
             if is_shell:
                 if option == '-c':
                     if index + 1 < total:
-                        texts.append(_strip_matched_quotes(tokens[index + 1]))
+                        texts.append((_strip_matched_quotes(tokens[index + 1]), current_cwd))
                     return texts
                 if option.startswith('-c') and len(option) > 2 and not option.startswith('--'):
-                    texts.append(_strip_matched_quotes(option[2:]))
+                    texts.append((_strip_matched_quotes(option[2:]), current_cwd))
                     return texts
                 if option == '--':
                     index += 1
@@ -841,9 +866,9 @@ def _executed_texts(command: str, cwd: str | None) -> list[str]:
                 if option.startswith('-') and len(option) > 1:
                     index += 1
                     continue
-                content = _read_text_if_file(option, cwd)
+                content = _read_text_if_file(option, current_cwd)
                 if content:
-                    texts.append(content)
+                    texts.append((content, current_cwd))
                 index += 1
                 continue
             if not (option.startswith('-') and len(option) > 1):
@@ -856,6 +881,9 @@ def _executed_texts(command: str, cwd: str | None) -> list[str]:
                     positionals -= 1
                     continue
                 break
+            directory_value = _wrapper_directory_value(wrapper, option, tokens, index)
+            if directory_value is not None and current_cwd:
+                current_cwd = _resolve_against(current_cwd, directory_value)
             is_splice, value, consumed = _consume_wrapper_option(spec, option, tokens, index)
             index += consumed
             if is_splice:
@@ -863,10 +891,10 @@ def _executed_texts(command: str, cwd: str | None) -> list[str]:
                 break
         if spliced is not None:
             if spliced:
-                texts.append(spliced)
+                texts.append((spliced, current_cwd))
             return texts
         if spec.get('splice_positional') and index < total:
-            texts.append(_strip_matched_quotes(tokens[index]))
+            texts.append((_strip_matched_quotes(tokens[index]), current_cwd))
             return texts
     return texts
 
@@ -893,8 +921,8 @@ def _text_interpreter_verdict(text: str, root: str | None, base_cwd: str | None)
 def _executed_text_verdict(command: str, root: str | None, cwd: str | None) -> str:
     """The whole-command floor verdict over every executed text."""
     admitted = False
-    for text in _executed_texts(command, cwd):
-        verdict = _text_interpreter_verdict(text, root, cwd)
+    for text, text_cwd in _executed_texts(command, cwd):
+        verdict = _text_interpreter_verdict(text, root, text_cwd)
         if verdict == 'refused':
             return 'refused'
         if verdict == 'admitted':
@@ -1017,17 +1045,19 @@ def _is_executor_permit(command: str, root: str | None, cwd: str | None) -> bool
     guard exempts it. The RELATIVE form ``.plan/execute-script.py`` is the
     canonical documented invocation and is admitted only when the command's
     EFFECTIVE working directory IS a repository root: the repository itself, or
-    one of ITS plan worktrees under ``.plan/local/worktrees/`` (phase-5+ pins the
-    shell cwd to the worktree, where ``.plan`` is the same executor through the
-    worktree's symlink). A leading ``cd``, an ``env -C`` / ``--chdir`` /
-    ``sudo -D`` directory change and the payload ``cwd`` are resolved first, so
-    the same relative path run from anywhere else — ``/tmp/x``, another checkout
-    — is refused.
-    (``git -C`` is not a shell directory change: it moves git's own working
-    directory for that one invocation, never the directory a following program
-    runs in.) An ABSOLUTE form is admitted only when it equals
-    ``{repository root}/.plan/execute-script.py`` after path normalization.
-    Used only by the R5 matcher.
+    one of ITS plan worktrees under ``.plan/local/worktrees/{plan}`` (one level,
+    and not the orchestrator's ``_orchestrator`` ledger worktree). A leading
+    ``cd`` (including one inside a spliced command string), an ``env -C`` /
+    ``--chdir`` / ``sudo -D`` directory change and the payload ``cwd`` are
+    resolved first, so the same relative path run from anywhere else — ``/tmp/x``,
+    another checkout — is refused. *root* here is the EXECUTOR root
+    (:func:`_executor_root`), never the payload ``cwd``: the cwd is the directory
+    the executor would run from, so using it as the root made the admission
+    vacuous. (``git -C`` is not a shell directory change: it moves git's own
+    working directory for that one invocation, never the directory a following
+    program runs in.) An ABSOLUTE form is admitted only when it equals
+    ``{executor root}/.plan/execute-script.py`` after path normalization — never
+    when it merely matches the payload cwd. Used only by the R5 matcher.
     """
     stripped = _r5_stripped_tokens(command)
     if len(stripped) < 2:
@@ -1043,7 +1073,10 @@ def _is_executor_permit(command: str, root: str | None, cwd: str | None) -> bool
         return _is_repository_root_or_plan_worktree(effective, root)
     if not second.startswith('/'):
         return False
-    repo_root = (root or cwd or '').replace('\\', '/').rstrip('/')
+    # The ABSOLUTE arm resolves against the EXECUTOR root only: a payload cwd used
+    # as the root would admit `{cwd}/.plan/execute-script.py` from anywhere, the
+    # same vacuity the relative arm closed.
+    repo_root = (root or '').replace('\\', '/').rstrip('/')
     if not repo_root:
         return False
     return posixpath.normpath(second) == repo_root + '/.plan/execute-script.py'

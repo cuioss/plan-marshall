@@ -57,7 +57,9 @@ _CMD = 'python3 -c x'
 #: The population floors. They are the reason a table wrapper or a construct
 #: REMOVED from the data source fails this suite instead of silently shrinking it.
 _MIN_SHELLS = 9
-_MIN_CONSTRUCTS = 8
+_MIN_CONSTRUCTS = 9
+_MIN_WRAPPERS = 28
+_MIN_SPLICE_WRAPPERS = 5
 
 
 def _hook_refused(command: str, *, cwd: str | None = None) -> bool:
@@ -124,6 +126,13 @@ def test_the_table_declares_the_population_the_cross_product_needs() -> None:
     assert len(_SHELLS) >= _MIN_SHELLS, f'the shared table declares only {len(_SHELLS)} shells: {_SHELLS!r}'
     assert len(_CONSTRUCTS) >= _MIN_CONSTRUCTS, (
         f'the shared table declares only {len(_CONSTRUCTS)} shell constructs: {_CONSTRUCTS!r}'
+    )
+    assert len(_WRAPPERS) >= _MIN_WRAPPERS, (
+        f'the shared table declares only {len(_WRAPPERS)} wrappers — a wrapper removed from the data '
+        f'source must fail here: {sorted(_WRAPPERS)!r}'
+    )
+    assert len(_splice_wrappers()) >= _MIN_SPLICE_WRAPPERS, (
+        f'the shared table declares only {len(_splice_wrappers())} non-shell splice wrappers: {_splice_wrappers()!r}'
     )
     for shell in ('bash', 'sh', 'dash', 'zsh', 'ksh', 'fish', 'csh', 'tcsh', '$SHELL'):
         assert shell in _SHELLS, f'the shared table lost the shell {shell!r}'
@@ -194,12 +203,21 @@ def test_a_table_shell_given_a_script_file_names_its_interpreter(tmp_path_factor
     assert _hook_refused(row, cwd=str(hook_dir)), 'the hook must refuse the same script file'
 
 
-def test_r2_spawn_set_is_derived_from_the_shared_table() -> None:
+def test_r2_spawn_set_is_derived_from_the_shared_table(tmp_path_factory) -> None:
     """Neither implementation carries a second literal shell list."""
     table_shells = set(_SHELLS)
     assert set(_HOOK._r2_shell_spawns()) == table_shells | {'source'}, (
         'the hook R2 spawn set must be the table shells plus the `source` builtin'
     )
+
+    # `source` is not a program in the table (it is a shell builtin), so it is the
+    # ONE literal the spawn set adds; both harnesses must still refuse it.
+    source_command = 'source ./env.sh'
+    harness = build_harness(tmp_path_factory.mktemp('guard-source-builtin'))
+    blocked, message = harness.blocks(shell_event(source_command, agent=SUB_AGENT_AGENT))
+    assert blocked, 'guard.js must refuse the `source` builtin as an R2 spawn'
+    assert 'R2' in message, f'the refusal must be rule R2; message={message!r}'
+    assert _hook_refused(source_command), 'the hook must refuse the `source` builtin as an R2 spawn'
 
     guard_source = guard_plugin_path().read_text(encoding='utf-8')
     assert 'WRAPPER_TABLE.shells' in guard_source, 'guard.js must derive its shell spawn set from the shared table'
@@ -212,3 +230,18 @@ def test_r2_spawn_set_is_derived_from_the_shared_table() -> None:
     ).read_text(encoding='utf-8')
     assert '_R2_SHELL_SPAWNS = (' not in hook_source, 'the hook still carries a literal shell-spawn tuple'
     assert "get('shells')" in hook_source, 'the hook must derive its shell spawn set from the shared table'
+
+
+def test_a_wrapper_directory_option_moves_the_floor_cwd(tmp_path_factory) -> None:
+    """``env -C /tmp/x -S "python3 .plan/execute-script.py …"`` runs from /tmp/x.
+
+    The floor must judge a spliced command string from the directory the wrapper
+    really put it in; otherwise the wrapper one level up is the same vacuity D2
+    closed for a leading ``cd``.
+    """
+    command = 'env -C /tmp/x -S "python3 .plan/execute-script.py a:b:c verb"'
+    harness = build_harness(tmp_path_factory.mktemp('guard-env-c-splice'))
+    blocked, message = harness.blocks(shell_event(command, agent=SUB_AGENT_AGENT))
+    assert blocked, 'guard.js must refuse the executor spliced out of the repository by env -C'
+    assert 'R5' in message, f'the refusal must be rule R5; message={message!r}'
+    assert _hook_refused(command), 'the hook must refuse the same env -C splice'

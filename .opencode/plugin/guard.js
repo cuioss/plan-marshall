@@ -28,7 +28,7 @@
  *   after stripping the shell wrappers (with options), leading `NAME=value`
  *   assignments, quotes, and path qualification, is one of
  *   {rm mv cp touch mkdir rmdir truncate tee chmod chown ln dd} => block.
- *   Read-side probes (ls cat head grep find) are NOT in this guard class:
+ *   Read-side probes (ls cat head tail grep find) are NOT in this guard class:
  *   the two-tier permission map governs them (global deny, orchestrator
  *   small-ops carve-out under ask). A SHELL SPAWN also blocks: the spawn set is
  *   the shared wrapper table's `shells` plus the `source` builtin, never a
@@ -203,7 +203,7 @@ let WRAPPER_TABLE = {
 // second literal shell list; a missing table yields no spawns, exactly as it
 // yields no wrappers.
 function isShellSpawn(token) {
-  const base = normalizeToken(token)
+  const base = normalizeToken(token).toLowerCase()
   if (!base) return false
   if (base === R2_SOURCE_BUILTIN) return true
   return WRAPPER_TABLE.shells.has(base)
@@ -756,15 +756,38 @@ function readTextIfFile(value, cwd) {
   }
 }
 
-// Every text a wrapper in PROGRAM POSITION is asked to execute. The wrapper chain
-// is walked so `env -i zsh -c '…'` is reached; a shell contributes its `-c`
-// string (wherever it sits among its options, so `zsh -o pipefail -c '…'` is
-// read), a here-string / here-document operand and every readable script file it
-// is handed; a splice wrapper (`env -S`, `script -c`, `watch`, `parallel`)
-// contributes its command string. A non-wrapper program position ends the walk.
+// The directory a wrapper OPTION changes to, or null when the option is not a
+// directory change. Mirrors the directory-option rule in `effectiveCwd`, so the
+// floor judges a spliced command string from the directory the wrapper really
+// put it in (`env -C /tmp/x -S "python3 …"`).
+function wrapperDirectoryValue(wrapper, option, tokens, i) {
+  const isDirectoryOption =
+    option === "-C" ||
+    option === "--chdir" ||
+    option.startsWith("--chdir=") ||
+    (wrapper === "sudo" && (option === "-D" || option === "--directory" || option.startsWith("--directory="))) ||
+    (wrapper === "env" && option.startsWith("-C") && option.length > 2)
+  if (!isDirectoryOption) return null
+  let value = option.includes("=") ? option.slice(option.indexOf("=") + 1) : null
+  if (value === null && option.startsWith("-C") && option.length > 2 && !option.startsWith("--")) {
+    value = option.slice(2)
+  }
+  if (value === null) value = stripMatchedQuotes(tokens[i + 1] ?? "")
+  return value || null
+}
+
+// Every text a wrapper in PROGRAM POSITION is asked to execute, each with the
+// working directory in force when it runs. The wrapper chain is walked so
+// `env -i zsh -c '…'` is reached; a shell contributes its `-c` string (wherever
+// it sits among its options, so `zsh -o pipefail -c '…'` is read), a
+// here-string / here-document operand and every readable script file it is
+// handed; a splice wrapper (`env -S`, `script -c`, `watch`, `parallel`)
+// contributes its command string. A wrapper's directory option moves the
+// directory the later texts run from. A non-wrapper program position ends the walk.
 function executedTexts(command, cwd) {
   const tokens = rawCommandTokens(command)
   const texts = []
+  let currentCwd = cwd
   let i = 0
   while (i < tokens.length) {
     const token = stripMatchedQuotes(tokens[i])
@@ -775,7 +798,7 @@ function executedTexts(command, cwd) {
     const base = basenameOf(token)
     const spec = WRAPPER_TABLE.wrappers[base]
     if (!spec) return texts
-    const isShell = WRAPPER_TABLE.shells.has(base)
+    const isShell = WRAPPER_TABLE.shells.has(base.toLowerCase())
     i++
     let spliced = null
     let positionals = spec.leading_positionals || 0
@@ -789,21 +812,21 @@ function executedTexts(command, cwd) {
         // A here-string's operand, and a here-document's inline body, are both
         // standard input to the shell: scan the operand and the rest.
         const operand = stripMatchedQuotes(tokens[i + 1] ?? "")
-        if (operand) texts.push(operand)
+        if (operand) texts.push({ text: operand, cwd: currentCwd })
         const rest = tokens
           .slice(i + 1)
           .map((candidate) => stripMatchedQuotes(candidate))
           .join(" ")
-        if (rest) texts.push(rest)
+        if (rest) texts.push({ text: rest, cwd: currentCwd })
         return texts
       }
       if (isShell) {
         if (option === "-c") {
-          if (tokens[i + 1] !== undefined) texts.push(stripMatchedQuotes(tokens[i + 1]))
+          if (tokens[i + 1] !== undefined) texts.push({ text: stripMatchedQuotes(tokens[i + 1]), cwd: currentCwd })
           return texts
         }
         if (option.startsWith("-c") && option.length > 2 && !option.startsWith("--")) {
-          texts.push(stripMatchedQuotes(option.slice(2)))
+          texts.push({ text: stripMatchedQuotes(option.slice(2)), cwd: currentCwd })
           return texts
         }
         if (option === "--") {
@@ -814,8 +837,8 @@ function executedTexts(command, cwd) {
           i++
           continue
         }
-        const content = readTextIfFile(option, cwd)
-        if (content) texts.push(content)
+        const content = readTextIfFile(option, currentCwd)
+        if (content) texts.push({ text: content, cwd: currentCwd })
         i++
         continue
       }
@@ -831,6 +854,12 @@ function executedTexts(command, cwd) {
         }
         break
       }
+      const directoryValue = wrapperDirectoryValue(base, option, tokens, i)
+      if (directoryValue !== null && currentCwd) {
+        currentCwd = directoryValue.startsWith("/")
+          ? normalizePosixPath(directoryValue)
+          : normalizePosixPath(`${currentCwd}/${directoryValue}`)
+      }
       const step = consumeWrapperOption(spec, option, tokens, i)
       i += step.consumed
       if (step.splice) {
@@ -839,11 +868,11 @@ function executedTexts(command, cwd) {
       }
     }
     if (spliced !== null) {
-      if (spliced) texts.push(spliced)
+      if (spliced) texts.push({ text: spliced, cwd: currentCwd })
       return texts
     }
     if (spec.splice_positional && i < tokens.length) {
-      texts.push(stripMatchedQuotes(tokens[i]))
+      texts.push({ text: stripMatchedQuotes(tokens[i]), cwd: currentCwd })
       return texts
     }
   }
@@ -874,8 +903,8 @@ function textInterpreterVerdict(text, root, baseCwd) {
 // gives its command string / stdin / script file.
 function executedTextVerdict(command, root, cwd) {
   let admitted = false
-  for (const text of executedTexts(command, cwd)) {
-    const verdict = textInterpreterVerdict(text, root, cwd)
+  for (const entry of executedTexts(command, cwd)) {
+    const verdict = textInterpreterVerdict(entry.text, root, entry.cwd)
     if (verdict === "refused") return "refused"
     if (verdict === "admitted") admitted = true
   }
@@ -1192,7 +1221,7 @@ function loadWrapperTable(root) {
       const data = JSON.parse(readFileSync(candidate, "utf8"))
       if (data && typeof data === "object" && data.wrappers && typeof data.wrappers === "object") {
         const findExec = new Set(Array.isArray(data.find_exec_options) ? data.find_exec_options : [])
-        const shells = new Set(Array.isArray(data.shells) ? data.shells.map(String) : [])
+        const shells = new Set(Array.isArray(data.shells) ? data.shells.map((shell) => String(shell).toLowerCase()) : [])
         const admission =
           data.build_wrapper_admission && typeof data.build_wrapper_admission === "object"
             ? data.build_wrapper_admission

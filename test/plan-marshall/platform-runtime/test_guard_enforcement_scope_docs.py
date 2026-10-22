@@ -56,6 +56,9 @@ def test_claude_md_no_longer_claims_the_gate_is_plan_context_only() -> None:
     assert row is not None, 'CLAUDE.md lost the Bash hard-rule row'
     assert 'root session of this repository' in row, 'the row must say a root session of this repository is bound'
     assert 'fresh clone' in row, 'the row must keep the lane reason (a fresh clone carries no hook)'
+    assert 'OpenCode guard' in row, (
+        'the row must not claim the rule is absent on a harness whose guard ships in the repository'
+    )
 
 
 def test_the_enforcement_document_names_every_scope_signal_and_the_install_check() -> None:

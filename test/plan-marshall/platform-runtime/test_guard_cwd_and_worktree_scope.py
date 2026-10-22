@@ -74,6 +74,35 @@ def test_a_cd_inside_a_spliced_string_is_applied_for_every_table_shell(
         assert _HOOK.evaluate(_hook_payload(command, cwd=str(REPO_ROOT))) is not None, f'the hook admitted {command!r}'
 
 
+def test_a_cd_inside_a_spliced_string_is_applied_for_splice_wrappers(tmp_path_factory: pytest.TempPathFactory) -> None:
+    """The non-shell splice wrappers decide the admission only through the cd logic.
+
+    Every table shell is ALSO an R2 shell spawn, so a shell row is refused even if
+    the in-string ``cd`` is ignored. These rows are not R2 spawns: with the cd
+    unapplied the relative executor would be admitted from the repository root,
+    which is exactly the hole the deliverable closes.
+    """
+    rows = [
+        f'env -S "cd /tmp/x; {_EXECUTOR}"',
+        f'script -c "cd /tmp/x; {_EXECUTOR}"',
+        f'watch "cd /tmp/x; {_EXECUTOR}"',
+        f"parallel 'cd /tmp/x; {_EXECUTOR}'",
+        f'flock 0 -c "cd /tmp/x; {_EXECUTOR}"',
+    ]
+    harness: GuardHarness = build_harness(tmp_path_factory.mktemp('guard-spliced-cd-wrappers'))
+    outcomes = harness.run([shell_event(command, agent=SUB_AGENT_AGENT) for command in rows])
+    for command, outcome in zip(rows, outcomes, strict=True):
+        assert outcome.blocked, f'guard.js admitted {command!r}'
+        assert 'R5' in outcome.message, f'the refusal for {command!r} must be R5; message={outcome.message!r}'
+        assert _HOOK.evaluate(_hook_payload(command, cwd=str(REPO_ROOT))) is not None, f'the hook admitted {command!r}'
+
+    # Matched positive control: the same shapes with the cd INTO the project root
+    # leave the executor admitted.
+    control = f'env -S "cd {harness.root}; {_EXECUTOR}"'
+    admitted, control_message = harness.blocks(shell_event(control, agent=SUB_AGENT_AGENT))
+    assert not admitted, f'the executor inside a spliced cd into the root must pass; message={control_message!r}'
+
+
 def test_the_plan_worktree_exemption_is_exactly_one_level(tmp_path_factory: pytest.TempPathFactory) -> None:
     """Only ``{root}/.plan/local/worktrees/{plan}`` is admitted — never deeper, never ``_orchestrator``."""
     harness = build_harness(tmp_path_factory.mktemp('guard-worktree-exact'))

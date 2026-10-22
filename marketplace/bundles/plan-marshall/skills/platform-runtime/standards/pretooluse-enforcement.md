@@ -48,8 +48,18 @@ fail-closed branch is limited to that scope).
   `.plan/temp/rb-<plan>/progress.md` file exists in the project directory and was
   modified within the last 24 hours. A lane run issues every call with the main
   checkout as its working directory, so neither Signal 1 nor Signal 2 fires
-  there and a consumer repository would otherwise be left unbound; the freshness
-  bound keeps a stale marker from binding a checkout forever.
+  there and a consumer repository would otherwise be left unbound.
+
+  **Decision — the whole-checkout, 24-hour scope is intended.** The payload
+  carries no lane-run identity that would separate the lane's own session from
+  another session in the same checkout, so a per-session narrowing is not
+  decidable from the fields the gate reads; the marker is written only by a
+  runbook-lane run, which makes "this checkout is running a lane" the narrowest
+  scope the payload can express. The freshness bound is what keeps a PAST lane
+  run from binding the checkout forever, and it is the part that was missing
+  before PLAN-LB-79. Narrowing further would require the lane to record its
+  session id in the marker, which is a change to the lane contract, not to this
+  gate.
 - **Repository marker.** The project directory carries the plan-marshall source
   repository's own copy of the shared allow-list
   (`marketplace/bundles/plan-marshall/skills/platform-runtime/standards/
@@ -62,7 +72,7 @@ An absent Signal-1 field still lets Signal 2 satisfy the gate, and vice versa.
 |-------------|------------------------|----------------|
 | Signal 1 | the `agent_type` value carrying `:execution-context` | the `agent` value carrying `:execution-context` |
 | Signal 2 | the payload `cwd` (or the project directory) under `.plan/local/worktrees/` | the shell `workdir`, falling back to the project root, under `.plan/local/worktrees/` |
-| Signal 3 (24-hour lane marker) | `.plan/temp/rb-<plan>/progress.md` under `CLAUDE_PROJECT_DIR` (or the hook's own location when the payload names no project directory), fresh within 24 h | the same marker under the guard's project root, fresh within 24 h |
+| Signal 3 (24-hour lane marker) | `.plan/temp/rb-<plan>/progress.md` under `CLAUDE_PROJECT_DIR`, falling back to the payload `cwd`, fresh within 24 h | the same marker under the guard's project root, fresh within 24 h |
 | Repository marker | `CLAUDE_PROJECT_DIR`, falling back to the payload `cwd`, then to the hook's own location, carries the shared allow-list file | the guard's project root carries the same file |
 | R6 | unconditional | unconditional |
 
@@ -87,7 +97,7 @@ one-line `permissionDecisionReason`; on no match it emits nothing.
 | **R3 generated-executor edit** | An Edit/Write whose path is the generated `.plan/execute-script.py` | Regenerate the executor via `/sync-harnesses` + `/marshall-steward`; never edit it |
 | **R4 hard-coded build** | A Bash command invoking `./pw` or a bare `mvn` / `npm` / `gradle` / `uv` (the program is read un-stripped and after R5 wrapper stripping, so `env uv run python -c ...` is refused). The `./pw` verdict is the shared table's `build_wrapper_admission` (`generate*` and `--*` admitted today), so the hook and the guard give `./pw generate` — the command `CLAUDE.md` prescribes — ONE verdict | Resolve build commands via `plan-marshall:manage-architecture:architecture resolve` |
 | **R5 direct interpreter call** | A Bash command invoking an interpreter (`python` / `python3` / `pypy` / `pypy3` / a versioned spelling such as `python3.12`, case-insensitively) as `-c`, a script path, a bare `-` (STDIN) or a `-<`/`->` redirection, or `-m` with any module — except the executor permit (the relative `python3 .plan/execute-script.py` run from the repository root, or an absolute form equal to `{repository root}/.plan/execute-script.py` after path normalization) and the shared allow-list of documented non-executor invocations. **R5 binds inside a plan context, in a live runbook-lane run, AND in every session of the plan-marshall source repository.** The wrapper prefixes come from ONE shared data file, [`r5-wrappers.json`](r5-wrappers.json): a path-qualified `/usr/bin/env` strips like `env`, an option cluster like `env -iu FOO` is walked letter by letter, `timeout` / `flock` / `chrt` / `taskset` consume their leading positional, `env -S` and a shell's `-c` splice the command string back into the walk (all of its segments), `watch`/`parallel` splice their positional command string, and `find … -exec` is walked from the program it runs. A shell's `cd` inside the spliced string is applied in order, so the executor is judged from the directory it really runs in. The **fail-closed floor** runs before R2: a wrapper handed a command string, stdin (a here-string or here-document) or a SCRIPT FILE is refused when that text names an interpreter ANYWHERE, so a grouping keyword (`if`/`then`/`for`/`case`/`{ }`/`( )`/`!`), a shell option before `-c`, a here-string or a script file cannot hide the call; the segment walk decides only whether the text is the admitted executor. With the table absent the check reads each raw token's own content, so `zsh -c "python3 -c x"` is refused rather than read as an opaque token | Route builds and checks via `python3 .plan/execute-script.py`; `.plan` state via `manage-*` verbs or the Read/Edit/Write tools |
-| **R6 raw finalize commit** | A raw `git commit` while the enclosing plan — NAMED from every commit form: the `--work-tree` value, the composed `git -C` target, the plan a `--git-dir` / `GIT_DIR` admin directory points at (`…/worktrees/{plan}`), then the shell workdir, then the project root — its `status.json` field `current_phase` read from the WORKTREE-RESIDENT record first (the live one during phase 5+) and the main-anchored record otherwise, never "the first plan found". A subcommand defined with `-c alias.NAME=…` is resolved to its body; a shell-expansion alias body and any directory value that still carries an unexpanded variable are UNRESOLVABLE and refused fail-closed. **R6 is not context-gated.** Every plan commit must pass through the gate-bearing `git-workflow commit` verb, which sanctions an open loop-back fix task, a review-rubric section-6 record, or a step id of the plan's composed phase-6 manifest. R6 runs after R1 and BEFORE R2–R5 on both harnesses, so the shell-spawn and interpreter classes cannot shadow the specific raw-commit rule for a commit wrapped in a shell string | Commit via `python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow commit` |
+| **R6 raw finalize commit** | A raw `git commit` while the enclosing plan — NAMED from every commit form: the `--work-tree` value, the composed `git -C` target, the plan a `--git-dir` / `GIT_DIR` admin directory points at (`…/worktrees/{plan}`), then the shell workdir, then the project root — its `status.json` field `current_phase` read from the WORKTREE-RESIDENT record first (the live one during phase 5+) and the main-anchored record otherwise, never "the first plan found". A subcommand defined with `-c alias.NAME=…` is resolved to its body; a shell-expansion alias body and any directory value that still carries an unexpanded variable are UNRESOLVABLE and refused fail-closed. **R6 is not context-gated.** Every plan commit must pass through the gate-bearing `git-workflow commit` verb, which sanctions an open loop-back fix task, a review-rubric section-6 record, or a step id of the plan's composed phase-6 manifest. R6 runs after R1 and BEFORE R2–R5 on both harnesses, so the shell-spawn class cannot shadow the specific raw-commit rule for a commit wrapped in a shell string (the interpreter floor still takes precedence, which is the more severe refusal) | Commit via `python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow commit` |
 
 ### R5 — allow-list, wrappers, and the audit line
 
@@ -112,6 +122,16 @@ documented workflows runnable. Three things make that split explicit:
   `CLAUDE_PROJECT_DIR`, falling back to `cwd`). When the file is absent the hook
   uses a narrow built-in base table (`marketplace/targets/sync.py`); the executor
   permit is hardcoded separately.
+
+  **Decision — the unversioned `{root}/plan-marshall/{entry}` candidate stays
+  accepted.** The deployed-form match builds three spellings from a
+  resolver-named root: the flat skill directory, the nested `{root}/{bundle}/
+  {entry}`, and the newest VERSION directory under it. The unversioned form is a
+  real install shape (an operator who unpacks a bundle without a version
+  directory), it is still under a root the layout names, and it is compared by
+  EXACT realpath equality — so keeping it admits only a path inside a deploy root
+  the resolver already trusts, and never widens the trusted set. Removing it
+  would refuse that install shape for no security gain, so it stays.
 - **Wrappers and versioned interpreters.** A prefix cannot hide the interpreter.
   The wrapper population is ONE shared data file,
   [`r5-wrappers.json`](r5-wrappers.json), read by the Claude hook, the OpenCode
@@ -134,9 +154,14 @@ documented workflows runnable. Three things make that split explicit:
   interpreter ANYWHERE — a grouping keyword, an option before `-c`, a here-string
   and a script file included — while the walk decides only whether that text is
   the admitted executor. The program token is matched case-insensitively. When
-  the data file is unreadable the check fails CLOSED: every raw token's own
-  content is scanned, so `zsh -c "python3 -c x"` is refused as well, because no
-  wrapper can be stripped without the table.
+  the data file is unreadable the check fails CLOSED for the interpreter class:
+  every raw token's own content is scanned, so `zsh -c "python3 -c x"` is refused
+  as well, because no wrapper can be stripped without the table. Because the R2
+  shell-spawn set is DERIVED from that same table, a missing table also means no
+  spawn is identified — the mutation class itself (`rm`, `mv`, `cp`, …) is still
+  refused directly, and the interpreter class is refused by the scan above; the
+  table is what supplies the shell names, so that is the accepted cost of having
+  exactly one list.
 - **Audit line.** On a refusal the hook appends one line to
   `<cwd>/.plan/temp/guard.log`, in the same shape the OpenCode guard writes:
   `<ISO-8601 millis> | tool=<tool> | rule=<Rn> | session=<session_id> | call=? | <detail>`.
@@ -218,16 +243,21 @@ dash-skip is what closes that class, so the option tuple carries no enforcement
 weight beyond the detached-value case.
 
 **Decision — the file-search git verbs join the enforced set.** `git grep` and
-`git -C … grep` ARE inside what the guards enforce, as R2; they are deliberately
-not added to the R5 wrapper table.
+`git -C … grep` ARE inside what the guards enforce, and they are deliberately not
+added to the R5 wrapper table.
 
-Reason: a file-search git verb reads file bodies exactly as bare `grep` does,
-which is the R2 family itself, and the structural option walk above already
-resolves the subcommand through every global-option spelling on BOTH harnesses.
-A wrapper-table entry would add a second, weaker path to the same verdict and
-would say the verb is not a file operation. PLAN-LB-79 D1 asked for this decision
-and it was never recorded; it is recorded here, and a doc test asserts this
-paragraph exists, so it cannot be lost again.
+Reason: a file-search git verb reads file bodies exactly as bare `grep` does, so
+it belongs to the file-ops class each harness already has. On the Claude harness
+the R2 matcher refuses it, with the structural option walk above resolving the
+subcommand through every global-option spelling. On the OpenCode harness the
+guard's R2 is the MUTATION class only — read-side probes (`ls`, `cat`, `grep`,
+`git grep`) are governed by the two-tier permission map instead, which denies
+`grep *` and `git grep *` at the global, orchestrator and executor tiers
+(`opencode.json`). Adding a wrapper-table entry would have put the verb in the
+WRONG class and created a second, weaker path to a verdict each harness already
+reaches. PLAN-LB-79 D1 asked for this decision and it was never recorded; it is
+recorded here, and a doc test asserts this paragraph exists, so it cannot be lost
+again.
 
 **Explicit non-triggers** — these are not file-ops and must keep working:
 
