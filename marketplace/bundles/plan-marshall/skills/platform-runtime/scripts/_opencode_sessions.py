@@ -353,23 +353,37 @@ def probe(path: Path | str | None) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
-def _session_rows(connection: sqlite3.Connection) -> dict[str, tuple[str | None, object]]:
-    """Read ``session_v2`` (id, parent_id, model) into a mapping, read-only."""
+def _session_rows(connection: sqlite3.Connection) -> dict[str, tuple[str | None, object, str | None]]:
+    """Read ``session_v2`` into ``id -> (parent_id, model, directory)``, read-only.
+
+    The directory column is read only when the store carries it, so a tier-1
+    store answers with ``None`` there rather than failing the read.
+    """
+    columns = _table_columns(connection, 'session_v2') or set()
+    if 'directory' in columns:
+        cursor = connection.execute('SELECT id, parent_id, model, "directory" FROM session_v2')
+        return {str(row[0]): (row[1], row[2], row[3]) for row in cursor.fetchall()}
     cursor = connection.execute('SELECT id, parent_id, model FROM session_v2')
-    return {str(row[0]): (row[1], row[2]) for row in cursor.fetchall()}
+    return {str(row[0]): (row[1], row[2], None) for row in cursor.fetchall()}
 
 
 def read_session_rows(path: Path | str | None) -> dict[str, Any]:
-    """Read ``session_v2`` id → ``(parent_id, model)`` pairs, read-only.
+    """Read ``session_v2`` id → ``(parent_id, model, directory)`` triples, read-only.
 
     Tier 1 only: the model measurement needs nothing else, so a database
-    carrying no message table or token columns still answers here.
+    carrying no message table or token columns still answers here. ``directory``
+    is ``None`` on a store that does not carry the column.
+
+    This is the TREE read and it scans the table, because a tree is defined by
+    every descendant row. Root resolution alone does not need it — use
+    :func:`resolve_session_root`, which walks ``parent_id`` with one bounded
+    lookup per hop.
 
     Args:
         path: The database file to read.
 
     Returns:
-        ``{'ok': True, 'rows': {id: (parent_id, model)}}`` or
+        ``{'ok': True, 'rows': {id: (parent_id, model, directory)}}`` or
         ``{'ok': False, 'reason': <named reason>}`` — never a partial mapping
         presented as a complete one.
     """
@@ -387,7 +401,7 @@ def read_session_rows(path: Path | str | None) -> dict[str, Any]:
         _close(connection)
 
 
-def session_root(session_id: str | None, rows: Mapping[str, tuple[str | None, object]]) -> str | None:
+def session_root(session_id: str | None, rows: Mapping[str, tuple[str | None, object, str | None]]) -> str | None:
     """Resolve *session_id* to its root through ``parent_id``, or ``None``.
 
     ``None`` means the id names no row in the tree — there is nothing to
@@ -407,10 +421,102 @@ def session_root(session_id: str | None, rows: Mapping[str, tuple[str | None, ob
     return current
 
 
-def session_tree(root: str, rows: Mapping[str, tuple[str | None, object]]) -> list[str]:
+def _same_directory(left: object, right: object) -> bool:
+    """Return whether two directory cells name the same directory.
+
+    Compared through ``realpath``-style normalization so a trailing separator, a
+    ``~`` spelling or a symlinked worktree does not read as a different directory
+    and silently push the root past the plan's own session.
+    """
+    if not isinstance(left, str) or not isinstance(right, str) or not left.strip() or not right.strip():
+        return False
+    try:
+        return os.path.realpath(os.path.expanduser(left.strip())) == os.path.realpath(os.path.expanduser(right.strip()))
+    except (OSError, ValueError):
+        return left.strip() == right.strip()
+
+
+def resolve_session_root(
+    path: Path | str | None,
+    session_id: str | None,
+    *,
+    directory: str | None = None,
+) -> dict[str, Any]:
+    """Resolve *session_id* to the root that belongs to *directory*'s tree.
+
+    The walk is BOUNDED: one ``parent_id`` lookup per hop, never a scan of
+    ``session_v2``. Root resolution asks only "who is my parent", so reading the
+    whole session table to answer it made every capture/bind/resolve pay for
+    every unrelated session the operator ever started.
+
+    *directory* bounds HOW FAR the climb goes. An operator commonly leaves one
+    long-lived outer session open and starts a plan from inside it; the plan's
+    driving session is then a child of that outer session, and the plain
+    ``parent_id`` walk would take the outer session as the plan's root — pulling
+    every other thing that operator did under the same long-lived session into
+    the measurement. When the store carries ``session_v2.directory``, the climb
+    stops at the OUTERMOST ancestor whose directory matches *directory* (the
+    plan's worktree), which is the session the plan was actually started in. With
+    no matching ancestor, or no directory column, the true root is returned.
+
+    Args:
+        path: The database file to read.
+        session_id: Any session id — resolved to its root first.
+        directory: The plan's worktree, or ``None`` to take the true root.
+
+    Returns:
+        ``{'ok': True, 'root': <id>}`` or ``{'ok': False, 'reason': <named reason>}``.
+    """
+    connection, reason = _open(path)
+    if connection is None:
+        return {'ok': False, 'reason': reason}
+    try:
+        tier, reason = _probe_connection(connection)
+        if tier == 0:
+            return {'ok': False, 'reason': reason or REASON_SCHEMA_UNSUPPORTED}
+        if not session_id:
+            return {'ok': False, 'reason': REASON_SESSION_NOT_FOUND}
+        columns = _table_columns(connection, 'session_v2') or set()
+        has_directory = 'directory' in columns
+        query = (
+            'SELECT parent_id, "directory" FROM session_v2 WHERE id = ?'
+            if has_directory
+            else ('SELECT parent_id, NULL FROM session_v2 WHERE id = ?')
+        )
+        chain: list[tuple[str, str | None]] = []
+        seen: set[str] = set()
+        current: str | None = session_id
+        while current and current not in seen:
+            seen.add(current)
+            row = connection.execute(query, (current,)).fetchone()
+            if row is None:
+                if not chain:
+                    return {'ok': False, 'reason': REASON_SESSION_NOT_FOUND}
+                break
+            parent, row_directory = row[0], row[1]
+            chain.append((current, row_directory))
+            current = parent if isinstance(parent, str) and parent else None
+        if not chain:
+            return {'ok': False, 'reason': REASON_SESSION_NOT_FOUND}
+        root = chain[-1][0]
+        if directory:
+            # chain is leaf-first, so the last match is the OUTERMOST ancestor in
+            # the plan's own directory.
+            for candidate, row_directory in chain:
+                if _same_directory(row_directory, directory):
+                    root = candidate
+        return {'ok': True, 'root': root}
+    except sqlite3.Error:
+        return {'ok': False, 'reason': REASON_DB_UNREADABLE}
+    finally:
+        _close(connection)
+
+
+def session_tree(root: str, rows: Mapping[str, tuple[str | None, object, str | None]]) -> list[str]:
     """Return *root* plus every descendant reachable through ``parent_id``."""
     children: dict[str, list[str]] = {}
-    for session_id, (parent, _model) in rows.items():
+    for session_id, row in rows.items():
+        parent = row[0]
         if isinstance(parent, str) and parent:
             children.setdefault(parent, []).append(session_id)
     ordered: list[str] = []

@@ -444,7 +444,11 @@ def test_session_bind_refusal_carries_its_reason(runtime: OpenCodeRuntime, monke
 
 
 def test_session_bind_without_an_id_is_a_noop(runtime: OpenCodeRuntime, monkeypatch: pytest.MonkeyPatch) -> None:
-    """No session id keeps the historical no-op rather than binding a phantom slot."""
+    """Control: no session id keeps the no-op rather than binding a phantom slot.
+
+    A matched control for the root-resolution work — an absent id is still a
+    no-op, so the resolution cannot have turned a missing identity into a write.
+    """
     monkeypatch.delenv('OPENCODE_SESSION_ID', raising=False)
 
     result = _parse(runtime.session_bind('my-plan'))
@@ -457,7 +461,11 @@ def test_session_bind_without_an_id_is_a_noop(runtime: OpenCodeRuntime, monkeypa
 def test_session_resolve_plan_without_an_id_is_a_noop(
     runtime: OpenCodeRuntime, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """No session id keeps the historical no-op on the read side too."""
+    """Control: no session id keeps the no-op on the read side too.
+
+    Matched control for the root-resolution work — an absent id is still a no-op,
+    so resolution cannot have turned a missing identity into a lookup.
+    """
     monkeypatch.delenv('OPENCODE_SESSION_ID', raising=False)
 
     result = _parse(runtime.session_resolve_plan())
@@ -474,6 +482,122 @@ def test_session_resolve_plan_reports_unbound(runtime: OpenCodeRuntime, session_
     assert result['status'] == 'success'
     assert result['resolved'] is False
     assert result['plan_id'] == ''
+
+
+# =============================================================================
+# Session identity resolves to the plan's root in all three operations
+# =============================================================================
+
+
+def _write_directory_db(db_path: pathlib.Path, rows: list[tuple[str, str | None, str | None]]) -> None:
+    """Create a tier-1 store whose ``session_v2`` carries the directory column."""
+    connection = sqlite3.connect(str(db_path))
+    try:
+        connection.execute('CREATE TABLE session_v2 (id TEXT, parent_id TEXT, model TEXT, directory TEXT)')
+        connection.executemany(
+            'INSERT INTO session_v2 (id, parent_id, model, directory) VALUES (?, ?, NULL, ?)',
+            rows,
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+
+def test_session_bind_of_a_child_id_stores_the_root(
+    runtime: OpenCodeRuntime,
+    monkeypatch: pytest.MonkeyPatch,
+    session_cache: pathlib.Path,
+    tmp_path: pathlib.Path,
+) -> None:
+    """A child id binds the plan's root, exactly as capture would store it."""
+    db_path = tmp_path / 'opencode.db'
+    _write_directory_db(
+        db_path, [('ses-root', None, None), ('ses-mid', 'ses-root', None), ('ses-leaf', 'ses-mid', None)]
+    )
+    _isolate_store(monkeypatch, db_path)
+    monkeypatch.setenv('OPENCODE_SESSION_ID', 'ses-leaf')
+
+    result = _parse(runtime.session_bind('my-plan'))
+
+    assert result['status'] == 'success'
+    assert result['session_id'] == 'ses-root'
+    assert result['resolved_as'] == 'root'
+    assert (session_cache / 'ses-root' / 'active-plan').read_text(encoding='utf-8') == 'my-plan'
+
+
+def test_session_resolve_plan_from_a_child_id_finds_the_root_binding(
+    runtime: OpenCodeRuntime,
+    monkeypatch: pytest.MonkeyPatch,
+    session_cache: pathlib.Path,
+    tmp_path: pathlib.Path,
+) -> None:
+    """A sub-agent shell holding a child id resolves the plan bound to the root."""
+    db_path = tmp_path / 'opencode.db'
+    _write_directory_db(db_path, [('ses-root', None, None), ('ses-child', 'ses-root', None)])
+    _isolate_store(monkeypatch, db_path)
+    monkeypatch.setenv('OPENCODE_SESSION_ID', 'ses-root')
+    _parse(runtime.session_bind('my-plan'))
+
+    monkeypatch.setenv('OPENCODE_SESSION_ID', 'ses-child')
+    resolved = _parse(runtime.session_resolve_plan())
+
+    assert resolved['resolved'] is True
+    assert resolved['plan_id'] == 'my-plan'
+    assert resolved['session_id'] == 'ses-root'
+
+
+def test_root_resolution_stops_at_the_session_in_the_plans_worktree(
+    runtime: OpenCodeRuntime,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """An unrelated long-lived outer session is not taken as the plan's root.
+
+    The operator left one session open; the plan's driving session is a CHILD of
+    it. Stopping at the plan's own directory keeps the outer session's other
+    descendants out of the measurement.
+    """
+    db_path = tmp_path / 'opencode.db'
+    worktree = tmp_path / 'worktree'
+    worktree.mkdir()
+    _write_directory_db(
+        db_path,
+        [
+            ('ses-outer', None, str(tmp_path)),
+            ('ses-plan', 'ses-outer', str(worktree)),
+            ('ses-subagent', 'ses-plan', str(worktree)),
+            ('ses-elsewhere', 'ses-outer', str(tmp_path / 'other')),
+        ],
+    )
+    _isolate_store(monkeypatch, db_path)
+    monkeypatch.chdir(worktree)
+    monkeypatch.setenv('OPENCODE_SESSION_ID', 'ses-plan')
+
+    result = _parse(runtime.session_capture('my-plan'))
+
+    assert result['status'] == 'success'
+    assert result['session_id'] == 'ses-plan'
+
+
+_TOUCHED_SKILL_DOCS = (
+    get_skill_dir('plan-marshall', 'phase-5-execute') / 'SKILL.md',
+    get_skill_dir('plan-marshall', 'plan-retrospective') / 'SKILL.md',
+)
+
+
+def test_no_touched_document_says_opencode_session_capture_is_a_noop() -> None:
+    """No touched document still describes OpenCode session capture as a no-op.
+
+    The retired wording is what sent finalize down the manual-token path on a
+    target whose session identity the runtime measures from its own store.
+    """
+    offenders: list[str] = []
+    for document in _TOUCHED_SKILL_DOCS:
+        for paragraph in document.read_text(encoding='utf-8').split('\n\n'):
+            if 'OpenCode' in paragraph and 'session capture' in paragraph and 'no-op' in paragraph:
+                offenders.append(f'{document.name}: {paragraph.strip().splitlines()[0][:120]}')
+
+    assert offenders == [], f'documents still call OpenCode session capture a no-op: {offenders}'
 
 
 # =============================================================================
@@ -1018,7 +1142,11 @@ def test_metrics_capture_zero_tokens_is_honest_noop(runtime: OpenCodeRuntime) ->
 
 
 def _usage_messages() -> list[tuple[str, str, int, Any]]:
-    """Return one main, one sub-agent and one tool message inside ``[0, 30)``."""
+    """Return one main and one sub-agent assistant message inside ``[0, 30)``.
+
+    The sub-agent message carries its tool call the way the store records one: a
+    ``content[]`` part of type ``tool``, not a row type containing ``tool``.
+    """
     return [
         (
             'ses-root',
@@ -1030,9 +1158,19 @@ def _usage_messages() -> list[tuple[str, str, int, Any]]:
             'ses-child',
             'assistant',
             _at(10),
-            {'tokens': {'input': 100, 'output': 200, 'cache': {'read': 30, 'write': 40}}, 'cost': 1.5},
+            {
+                'tokens': {'input': 100, 'output': 200, 'cache': {'read': 30, 'write': 40}},
+                'cost': 1.5,
+                'content': [
+                    {'type': 'text', 'text': 'reading'},
+                    {'type': 'tool', 'tool': 'bash', 'state': {'status': 'completed'}},
+                ],
+            },
         ),
-        ('ses-child', 'tool', _at(12), {'tool': 'bash', 'state': {'status': 'completed'}}),
+        # A later message from the same sub-agent session: its own span inside
+        # the window is what `subagent_duration_ms` measures, so one message
+        # alone spans zero.
+        ('ses-child', 'user', _at(20), {'text': 'continue'}),
     ]
 
 

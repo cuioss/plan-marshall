@@ -267,12 +267,12 @@ def test_database_without_the_session_table_is_schema_unsupported(tmp_path: Path
 # =============================================================================
 
 
-def _chain_rows() -> dict[str, tuple[str | None, object]]:
+def _chain_rows() -> dict[str, tuple[str | None, object, str | None]]:
     """Return a three-level ``root -> mid -> leaf`` row mapping."""
     return {
-        'ses-root': (None, _model('m')),
-        'ses-mid': ('ses-root', _model('m')),
-        'ses-leaf': ('ses-mid', _model('m')),
+        'ses-root': (None, _model('m'), None),
+        'ses-mid': ('ses-root', _model('m'), None),
+        'ses-leaf': ('ses-mid', _model('m'), None),
     }
 
 
@@ -298,9 +298,9 @@ def test_session_root_walks_a_multi_level_parent_chain() -> None:
 
 def test_session_root_terminates_on_a_malformed_cycle() -> None:
     """A cyclic ``parent_id`` chain returns a member instead of hanging."""
-    rows: dict[str, tuple[str | None, object]] = {
-        'ses-a': ('ses-b', _model('m')),
-        'ses-b': ('ses-a', _model('m')),
+    rows: dict[str, tuple[str | None, object, str | None]] = {
+        'ses-a': ('ses-b', _model('m'), None),
+        'ses-b': ('ses-a', _model('m'), None),
     }
 
     assert opencode_sessions.session_root('ses-a', rows) in {'ses-a', 'ses-b'}
@@ -697,6 +697,73 @@ def test_window_usage_sums_each_subagent_sessions_own_span(tmp_path: Path) -> No
     subagent = usage['windows'][0]['subagent']
     assert subagent['duration_ms'] == (4 + 2) * 60 * 1000
     assert subagent['sessions'] == 2
+
+
+# =============================================================================
+# Bounded root resolution
+# =============================================================================
+
+
+def _create_directory_db(path: Path, rows: list[tuple[str, str | None, str | None]]) -> None:
+    """Create a tier-1 store whose ``session_v2`` carries the directory column."""
+    connection = sqlite3.connect(path)
+    try:
+        connection.execute('CREATE TABLE session_v2 (id TEXT, parent_id TEXT, model TEXT, directory TEXT)')
+        connection.executemany(
+            'INSERT INTO session_v2 (id, parent_id, model, directory) VALUES (?, ?, NULL, ?)',
+            rows,
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+
+def test_resolve_session_root_stops_at_the_session_in_the_plans_directory(tmp_path: Path) -> None:
+    """The climb stops at the outermost ancestor started in the plan's worktree.
+
+    An operator's long-lived outer session is a common parent of the plan's
+    driving session; taking it as the root pulls every unrelated descendant into
+    the measurement.
+    """
+    db_path = tmp_path / 'opencode.db'
+    worktree = tmp_path / 'worktree'
+    _create_directory_db(
+        db_path,
+        [
+            ('ses-outer', None, str(tmp_path)),
+            ('ses-plan', 'ses-outer', str(worktree)),
+            ('ses-subagent', 'ses-plan', str(worktree)),
+            ('ses-elsewhere', 'ses-outer', str(tmp_path / 'other')),
+        ],
+    )
+
+    bounded = opencode_sessions.resolve_session_root(db_path, 'ses-subagent', directory=str(worktree))
+    unbounded = opencode_sessions.resolve_session_root(db_path, 'ses-subagent')
+
+    assert bounded == {'ok': True, 'root': 'ses-plan'}
+    assert unbounded == {'ok': True, 'root': 'ses-outer'}
+    reading = opencode_sessions.read_session_rows(db_path)
+    tree = opencode_sessions.session_tree('ses-plan', reading['rows'])
+    assert 'ses-elsewhere' not in tree
+
+
+def test_resolve_session_root_names_an_unknown_session(tmp_path: Path) -> None:
+    """An id naming no row reports the named reason, never a fabricated root."""
+    db_path = tmp_path / 'opencode.db'
+    _create_directory_db(db_path, [('ses-root', None, str(tmp_path))])
+
+    assert opencode_sessions.resolve_session_root(db_path, 'ses-absent') == {
+        'ok': False,
+        'reason': 'session_not_found',
+    }
+
+
+def test_resolve_session_root_names_an_unavailable_store(tmp_path: Path) -> None:
+    """An absent store declines with the reader's named reason."""
+    assert opencode_sessions.resolve_session_root(tmp_path / 'absent.db', 'ses-root') == {
+        'ok': False,
+        'reason': 'db_not_found',
+    }
 
 
 # =============================================================================

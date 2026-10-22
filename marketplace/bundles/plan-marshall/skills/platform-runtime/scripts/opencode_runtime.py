@@ -10,10 +10,14 @@ OpenCode-specific behaviour:
   plan's ``session_ids`` metadata. Every unavailable ground declines with the
   reader's NAMED reason (``db_not_found`` / ``db_unreadable`` /
   ``schema_unsupported`` / ``session_not_found``) and stores nothing — never the
-  raw, unresolved id. ``session bind`` and ``session resolve-plan`` delegate to
-  the shared ``session_binding`` policy. Absent identity is the
-  ``NO_SESSION_IDENTITY`` sentinel from runtime_base, never null; callers log the
-  returned reason at INFO and apply the verbatim alternative per the no-op policy.
+  raw, unresolved id. ``session bind`` and ``session resolve-plan`` resolve the
+  id the SAME way before writing or reading the binding, so a sub-agent shell's
+  ``resolve-plan`` finds the plan's root binding. The climb is bounded by the
+  plan's worktree: an operator's long-lived outer session, with the plan's
+  driving session as a child of it, is not taken as the plan's root. Absent
+  identity is the ``NO_SESSION_IDENTITY`` sentinel from runtime_base, never null;
+  callers log the returned reason at INFO and apply the verbatim alternative per
+  the no-op policy.
 - session render-title is a ``no-op``: OpenCode has no plugin-driven
   terminal-title render channel.
 - project initial-setup succeeds but reports ``hook_installed: false`` because
@@ -660,6 +664,23 @@ def _default_opencode_db_path() -> Path:
     return _opencode_sessions.db_path()
 
 
+def _resolve_opencode_root(session_id: str) -> dict[str, Any]:
+    """Resolve *session_id* to the plan's root session through the shared reader.
+
+    The plan's driving session can be a child of a long-lived outer session the
+    operator left open, so the climb is bounded by the process's working
+    directory — the plan's worktree — and stops at the outermost ancestor started
+    there. Every caller (capture, bind, resolve-plan) goes through this one
+    function, so the three session operations cannot disagree about which session
+    a plan's identity names.
+    """
+    return _opencode_sessions.resolve_session_root(
+        _default_opencode_db_path(),
+        session_id,
+        directory=str(Path.cwd()),
+    )
+
+
 def _normalize_persisted_tool(tool: str) -> str:
     """Normalize a tool name so ``shell`` and ``bash`` compare equal."""
     lowered = tool.strip().lower()
@@ -1278,26 +1299,19 @@ class OpenCodeRuntime(Runtime):
                 ' identity can be measured this run',
                 'pass --total-tokens manually to metrics capture',
             )
-        reading = _opencode_sessions.read_session_rows(_default_opencode_db_path())
-        if not reading['ok']:
+        resolved = _resolve_opencode_root(raw_session_id)
+        if not resolved['ok']:
             return toon_noop(
                 'session capture',
-                str(reading['reason']),
+                str(resolved['reason']),
                 'pass --total-tokens manually to metrics capture',
             )
-        root = _opencode_sessions.session_root(raw_session_id, reading['rows'])
-        if root is None:
-            return toon_noop(
-                'session capture',
-                str(_opencode_sessions.REASON_SESSION_NOT_FOUND),
-                'pass --total-tokens manually to metrics capture',
-            )
-        stored = claude_runtime._manage_status_store_session(plan_id, root)
+        stored = claude_runtime._manage_status_store_session(plan_id, str(resolved['root']))
         return toon_success(
             'session capture',
             {
                 'plan_id': plan_id,
-                'session_id': root,
+                'session_id': resolved['root'],
                 'stored': stored,
             },
         )
@@ -1329,9 +1343,17 @@ class OpenCodeRuntime(Runtime):
         """Bind the running session to *plan_id* through the shared policy.
 
         Resolves ``session_id`` from the argument or, when absent, from
-        ``$OPENCODE_SESSION_ID``, then delegates to :func:`session_binding.bind`
-        — an unconditional write of the caller's own slot (no protect-active, no
-        stale reclaim, no plan-dir-exists check). Best-effort: never raises.
+        ``$OPENCODE_SESSION_ID``, resolves it to the plan's ROOT session — the
+        same resolution ``session capture`` performs — and then delegates to
+        :func:`session_binding.bind` — an unconditional write of the caller's own
+        slot (no protect-active, no stale reclaim, no plan-dir-exists check).
+        Best-effort: never raises.
+
+        Resolving here is what makes a sub-agent shell's ``resolve-plan`` find the
+        plan: the binding is written for the root, and the read side resolves the
+        same way. When the store cannot answer, the raw id is bound rather than
+        dropping an identity the caller already holds; ``resolved_as`` names which
+        happened.
 
         Returns a success TOON carrying ``bound`` (whether the slot was written);
         a validation or I/O failure leaves ``bound: False`` with a ``reason``.
@@ -1344,8 +1366,15 @@ class OpenCodeRuntime(Runtime):
                 f'no OpenCode session id to bind: pass --session-id or set ${runtime_info.OPENCODE_SESSION_ID_ENV}',
                 "Use OpenCode's built-in session mechanism for plan visibility",
             )
-        bound = session_binding.bind(sid, plan_id)
-        result: dict[str, Any] = {'plan_id': plan_id, 'session_id': sid, 'bound': bound}
+        resolved = _resolve_opencode_root(sid)
+        bound_id = str(resolved['root']) if resolved['ok'] else sid
+        bound = session_binding.bind(bound_id, plan_id)
+        result: dict[str, Any] = {
+            'plan_id': plan_id,
+            'session_id': bound_id,
+            'resolved_as': 'root' if resolved['ok'] else 'raw',
+            'bound': bound,
+        }
         if not bound:
             result['reason'] = 'invalid_or_io_error'
         return toon_success('session bind', result)
@@ -1354,8 +1383,13 @@ class OpenCodeRuntime(Runtime):
         """Resolve the running session's bound plan_id through the shared policy.
 
         Resolves ``session_id`` from the argument or, when absent, from
-        ``$OPENCODE_SESSION_ID``, then reads the binding through
-        :func:`session_binding.resolve_plan`. Best-effort: never raises.
+        ``$OPENCODE_SESSION_ID``, resolves it to the plan's ROOT session exactly as
+        ``session capture`` and ``session bind`` do, then reads the binding
+        through :func:`session_binding.resolve_plan`. Best-effort: never raises.
+
+        The root resolution is what lets a sub-agent shell answer this: the
+        binding was written for the plan's root, and the sub-agent holds a child
+        id. When the store cannot answer, the raw id is read instead.
 
         Returns a success TOON carrying ``resolved`` and the resolved ``plan_id``
         (empty string when unbound). A missing session id keeps the historical
@@ -1368,11 +1402,14 @@ class OpenCodeRuntime(Runtime):
                 f'no OpenCode session id to resolve: pass --session-id or set ${runtime_info.OPENCODE_SESSION_ID_ENV}',
                 "Use OpenCode's built-in session mechanism for plan visibility",
             )
-        plan_id = session_binding.resolve_plan(sid)
+        resolved = _resolve_opencode_root(sid)
+        lookup_id = str(resolved['root']) if resolved['ok'] else sid
+        plan_id = session_binding.resolve_plan(lookup_id)
         return toon_success(
             'session resolve-plan',
             {
-                'session_id': sid,
+                'session_id': lookup_id,
+                'resolved_as': 'root' if resolved['ok'] else 'raw',
                 'resolved': bool(plan_id),
                 'plan_id': plan_id or '',
             },
