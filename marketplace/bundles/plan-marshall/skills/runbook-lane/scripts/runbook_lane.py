@@ -558,7 +558,11 @@ def _resolve_base_branch(marshal: dict[str, Any]) -> str:
 
 
 #: The build-server preflight states ``resolve`` reports, in the client's own
-#: vocabulary. ``disabled`` is an unenrolled project, not an error.
+#: vocabulary. ``disabled`` is an unenrolled project, not an error. Kept here
+#: because the client exposes no state constant and this plan CONSUMES the client
+#: without changing it; an unrecognised state is reported as ``down`` — the
+#: fail-closed direction, since the lane then runs in-process rather than
+#: claiming a daemon that may not be there.
 _BUILD_SERVER_STATES = ('ready', 'disabled', 'down')
 
 

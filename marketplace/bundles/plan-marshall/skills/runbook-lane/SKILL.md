@@ -97,11 +97,12 @@ The branch row is derived from the project's configuration rather than returned 
 other row names a field of the resolve result.
 
 The verb **fails closed**: a spec outside `.plan/orchestrator/{slug}/plans/`, an unreadable
-configuration, a missing automatic-review step, an empty required-reviewer list, a build command
-the project's architecture cannot resolve, or a bare `Skills:`/`Persona:` name in a flat install
-whose `SKILL.md` records no bundle identity (`flat_skill_identity_missing`) is an error carrying a
-specific code. There is never a fall-back to a default reviewer list or a default build. Stop and
-report a resolve error; do not substitute a value.
+configuration, a missing automatic-review step, an empty required-reviewer list, no gate build
+command (`quality-gate` or `verify`) the project's architecture can resolve, or a bare
+`Skills:`/`Persona:` name in a flat install whose `SKILL.md` records no bundle identity
+(`flat_skill_identity_missing`) is an error carrying a specific code. There is never a fall-back to
+a default reviewer list or a default build. Stop and report a resolve error; do not substitute a
+value.
 
 **How to read the spec:**
 
@@ -294,10 +295,12 @@ is submitted to the build daemon.
    `build_server: ready|disabled|down`, with `reason` when the state is `down`. The resolve result
    carries the same field for the project root; this setup call is the one that describes the
    worktree.
-   - `disabled` — the project is not enrolled. That is not an error: enrolment is an operator action
-     in `manage-build-server`, and every build runs in-process.
-   - `down` — the daemon is unreachable. Every build runs in-process for this run; record the
-     reason.
+   - `disabled` — the project is not enrolled at setup. That is not an error: enrolment is an
+     operator action in `manage-build-server`, and the default routing's own preflight answers
+     `disabled` for an unenrolled project, so the builds run in-process.
+   - `down` — the daemon was unreachable at setup. Record the reason. The builds still run with the
+     default routing, which preflights again per build, so the `mechanism` a build result reports is
+     the authority for how THAT build ran — record it (a daemon that recovered mid-run can route).
    - `ready` — routing is available. A routed job re-runs the worktree's own `.plan/execute-script.py`,
      which worktree creation supplies: that executor is what the daemon uses, never the main
      checkout's. A missing executor is a worktree defect, not a routing reason — record

@@ -592,6 +592,7 @@ class _BuildServerState:
         self.state_dir = self.home / 'marshalld'
         self._server: socket.socket | None = None
         self._thread: threading.Thread | None = None
+        self._stop = threading.Event()
 
     def __enter__(self) -> dict[str, str]:
         self.state_dir.mkdir(parents=True, exist_ok=True)
@@ -611,12 +612,18 @@ class _BuildServerState:
         return {'PLAN_MARSHALL_HOME': str(self.home)}
 
     def __exit__(self, *_exc: object) -> None:
-        if self._server is not None:
-            self._server.close()
-            self._server = None
+        # Stop first, then join, then close. On Linux ``close()`` does not
+        # reliably wake a blocking ``accept()`` in another thread (the blocked
+        # call holds a reference to the open file description), so a close-only
+        # teardown can leave the loop parked and the join expiring with the
+        # thread still alive.
+        self._stop.set()
         if self._thread is not None:
             self._thread.join(timeout=5)
             self._thread = None
+        if self._server is not None:
+            self._server.close()
+            self._server = None
         shutil.rmtree(self.home, ignore_errors=True)
 
     def _start(self) -> None:
@@ -627,15 +634,22 @@ class _BuildServerState:
             server.close()
             raise
         server.listen(4)
+        # A short timeout makes the accept loop poll the stop flag, so teardown
+        # never depends on close() waking a blocked accept().
+        server.settimeout(0.2)
         self._server = server
-        self._thread = threading.Thread(target=self._serve, args=(server,), daemon=True)
+        self._thread = threading.Thread(target=self._serve, daemon=True)
         self._thread.start()
 
-    @staticmethod
-    def _serve(server: socket.socket) -> None:
-        while True:
+    def _serve(self) -> None:
+        server = self._server
+        if server is None:
+            return
+        while not self._stop.is_set():
             try:
                 conn, _ = server.accept()
+            except TimeoutError:
+                continue
             except OSError:
                 return
             with conn:
