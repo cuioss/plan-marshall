@@ -24,9 +24,11 @@ else. ``--project-dir`` defaults to the current directory and anchors every
 project-scoped read (marshal.json, the project architecture, the guard marker).
 
 **Fail closed.** An empty ``required_bots`` list, a missing automatic-review
-step, an unreadable ``marshal.json``, an unreadable Sonar configuration and an
-unresolvable build command are all errors carrying a specific code. There is
-never a fall-back to a default reviewer list or a default build: a lane that
+step, an unreadable ``marshal.json``, an unreadable Sonar block
+(``sonar_config_unreadable``) or one carrying no project key
+(``sonar_config_incomplete``), and an unresolvable build command are all
+errors carrying a specific code. There is never a fall-back to a default
+reviewer list or a default build: a lane that
 quietly reviews with nobody, or builds with the wrong tool, would report a green
 run over work nobody checked.
 """
@@ -1293,14 +1295,26 @@ def _sonar_gate_verdict(
 def cmd_sonar_gate(args: argparse.Namespace) -> dict[str, Any]:
     """Report whether the pull request's Sonar state admits the merge."""
     state = getattr(args, 'state', None)
+    count_status = getattr(args, 'count_status', None)
+    open_count = getattr(args, 'open_count', None)
     if state not in _SONAR_STATES:
         return {
             'status': 'error',
             'error': 'invalid_sonar_state',
             'message': f'--state must be one of {", ".join(_SONAR_STATES)}; got {state!r}',
         }
-    count_status = getattr(args, 'count_status', None)
-    if state == 'configured' and count_status not in _SONAR_COUNT_STATUSES:
+    if state == 'not_configured':
+        # A read state supplied beside `not_configured` is a contradiction: a
+        # project with no Sonar has no read to report. Refuse it rather than let a
+        # stale count ride an "allowed" verdict.
+        if count_status is not None or open_count is not None:
+            return {
+                'status': 'error',
+                'error': 'state_contradicts_read',
+                'message': 'a not_configured state carries no read; drop --count-status and --open-count',
+            }
+        return _sonar_gate_verdict(state, None, None, [], [])
+    if count_status not in _SONAR_COUNT_STATUSES:
         return {
             'status': 'error',
             'error': 'invalid_count_status',
@@ -1312,7 +1326,7 @@ def cmd_sonar_gate(args: argparse.Namespace) -> dict[str, Any]:
     return _sonar_gate_verdict(
         state,
         count_status,
-        getattr(args, 'open_count', None),
+        open_count,
         _split_csv(getattr(args, 'open_keys', None)),
         _split_csv(getattr(args, 'dismissed_keys', None)),
     )
@@ -1368,6 +1382,15 @@ def cmd_sonar_facts(args: argparse.Namespace) -> dict[str, Any]:
                 }
             count = str(open_count)
             declared = _split_csv(getattr(args, 'rules', None))
+            if not declared and open_count > 0:
+                # A non-zero count with no rules would render as "3 open issues,
+                # no rule left open" — a figure whose other half is missing. The
+                # read enumerates the rules, so the lane can always pass them.
+                return {
+                    'status': 'error',
+                    'error': 'confirmed_read_without_rules',
+                    'message': '--rules is required for a confirmed count above zero',
+                }
             rules = ','.join(declared) if declared else 'none'
 
     return {

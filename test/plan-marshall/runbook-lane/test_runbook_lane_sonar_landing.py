@@ -118,11 +118,24 @@ def test_an_unconfigured_read_carries_unknown_not_zero() -> None:
     assert facts['open_issue_rules'] == 'unknown'
 
 
-def test_a_project_without_sonar_carries_the_answered_absence() -> None:
-    facts = cmd_sonar_facts(_facts_args(state='not_configured', count_status=None))
+def test_a_project_without_sonar_carries_the_answered_absence(tmp_path) -> None:
+    """The not_configured state reaches the facts through the resolve result."""
+    spec = _seed_fixture(tmp_path, executable=_PYPROJECT_EXEC, required_bots='x')
+    resolved = _run_resolve(spec, tmp_path)
 
+    facts = cmd_sonar_facts(_facts_args(state=resolved['sonar'], count_status=None))
+
+    assert resolved['sonar'] == 'not_configured'
     assert facts['open_issue_count'] == 'n/a'
     assert facts['open_issue_rules'] == 'n/a'
+
+
+def test_a_non_zero_count_without_rules_is_refused() -> None:
+    """`none` means a measured zero, so a non-zero count must carry its rules."""
+    verdict = cmd_sonar_facts(_facts_args(open_count='3'))
+
+    assert verdict['status'] == 'error'
+    assert verdict['error'] == 'confirmed_read_without_rules'
 
 
 def test_a_landing_carrying_the_confirmed_fact_is_complete() -> None:

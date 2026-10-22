@@ -239,7 +239,8 @@ landing finds no `open_issue_count` and reads "no Sonar figure was recorded" —
 request had no open issues". The two key sets are distinct measurements of the same platform, and
 neither is inferred from the other.
 
-Two sentinels are legal, and they are different claims:
+Two sentinels are legal, and they are different claims — beside the measured figure itself, and
+`none` for the rules fact at a measured `0`:
 
 - `unknown` — a read that failed: `undecidable` (the analysis never settled, or the REST call
   failed) or `unconfigured` (the credential resolve said existed could not authenticate). It asserts
@@ -248,6 +249,10 @@ Two sentinels are legal, and they are different claims:
   exactly as `total_tokens=unknown` does.
 - `n/a` — a project that does not analyse its pull requests with Sonar (the runbook lane's
   `sonar: not_configured`), a real end state rather than a failed read.
+
+`none` is not a sentinel: it is the rules fact's measured answer at a confirmed count of `0`, where
+no rule is left open. A confirmed count above zero always carries the rules it left open, because the
+read enumerates them.
 
 The two keys are OPTIONAL: the required key set above is unchanged, so a landing without them — an
 earlier landing, or a run that recorded none — is still COMPLETE. A consumer that finds neither reads

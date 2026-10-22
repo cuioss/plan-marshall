@@ -179,6 +179,36 @@ def test_a_confirmed_read_without_a_count_blocks_the_merge() -> None:
     assert verdict['reason'] == 'confirmed_read_without_count'
 
 
+def test_the_gate_reads_both_states_from_a_resolve_result(tmp_path: Path) -> None:
+    """Both resolve states drive the gate — not a literal passed by the test."""
+    configured_root = tmp_path / 'configured'
+    plain_root = tmp_path / 'plain'
+    configured = _run_resolve(
+        _seed_fixture(configured_root, executable=_PYPROJECT_EXEC, required_bots='x', credentials_config=_SONAR_BLOCK),
+        configured_root,
+    )
+    plain = _run_resolve(
+        _seed_fixture(plain_root, executable=_PYPROJECT_EXEC, required_bots='x'),
+        plain_root,
+    )
+
+    assert configured['sonar'] == 'configured'
+    assert cmd_sonar_gate(_gate_args(state=configured['sonar'], open_count='0'))['merge_allowed'] is True
+
+    assert plain['sonar'] == 'not_configured'
+    verdict = cmd_sonar_gate(_gate_args(state=plain['sonar'], count_status=None))
+    assert verdict['merge_allowed'] is True
+    assert verdict['reason'] == 'not_configured'
+
+
+def test_a_not_configured_state_refuses_a_read_supplied_beside_it() -> None:
+    """A count beside `not_configured` is a contradiction, not a licence to merge."""
+    verdict = cmd_sonar_gate(_gate_args(state='not_configured', count_status=None, open_count='5'))
+
+    assert verdict['status'] == 'error'
+    assert verdict['error'] == 'state_contradicts_read'
+
+
 def test_the_gate_rejects_a_state_outside_the_closed_set() -> None:
     verdict = cmd_sonar_gate(_gate_args(state='maybe'))
 

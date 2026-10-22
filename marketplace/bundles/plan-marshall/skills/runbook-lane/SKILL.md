@@ -78,14 +78,15 @@ undismissed key and a count with no enumerated keys all answer `merge_allowed: f
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:runbook-lane:runbook_lane sonar-facts \
-  --state {configured|not_configured} [--count-status {confirmed|undecidable}] \
+  --state {configured|not_configured} [--count-status {confirmed|undecidable|unconfigured}] \
   [--open-count N] [--rules "R1,R2"]
 ```
 
 Renders the landing's optional Sonar facts (section 8) from the read taken at the merge head:
-`step.sonar-roundtrip.open_issue_count` and `step.sonar-roundtrip.open_issue_rules` in `fact_lines`,
-carrying the measured count, `unknown` for an `undecidable` read and `n/a` for a project without
-Sonar.
+`step.sonar-roundtrip.open_issue_count` and `step.sonar-roundtrip.open_issue_rules` in `fact_lines`.
+A confirmed count carries the measured figure and the rules it left open (`--rules` is required
+above zero, and `none` at a measured `0`); `undecidable` and `unconfigured` both carry `unknown`, and
+a project without Sonar carries `n/a` at both.
 
 ## 0. Input
 
@@ -494,7 +495,10 @@ whether to continue at the limit. Record every finding and its disposition.
      A dismissal the lane cannot transmit is a **blocker**, never a silent pass: record the failure
      and stop.
    - An `undecidable` read (the analysis did not settle, or the REST/auth call failed) is a
-     **blocker**, never a `0`: retry the read, and if it stays undecidable do not merge.
+     **blocker**, never a `0`: retry the read, and if it stays undecidable do not merge. An
+     `unconfigured` read — the typed status the provider answers when the credential resolve said
+     existed cannot authenticate — is a blocker too; pass it to the gate and to `sonar-facts` as
+     `--count-status unconfigured`.
 5. **Read all three surfaces** after each push — the PR comments (`ci pr comments`), the PR reviews
    (`ci pr reviews`), and the inline threads in the PR comments. Triage every comment with
    `persona-code-reviewer`, applying its adversarial-refute lenses — defect or preference, surplus
@@ -543,8 +547,8 @@ Merge only when all of these hold:
 - The Sonar state of the current head admits the merge: `sonar-gate` reports `merge_allowed: true`
   on a read taken after the last push — its open new-code issue count is `0` confirmed, or every
   remaining issue carries a recorded dismissal with its reason, or `resolve` reported
-  `not_configured`. An `undecidable` read is a blocker and is retried; the lane never treats it as
-  `0`.
+  `not_configured`. An `undecidable` read is a blocker and is retried, and an `unconfigured` read is
+  a blocker too; the lane never treats either as `0`.
 
 The reviewer quota policy (step 7) applies only while no qualifying review exists. The standing
 authorization never applies to a reviewer that is not quota-limited, and never to a PR without a
@@ -618,7 +622,7 @@ plugin_version={the plan-marshall bundle version}
 executor_version={the executor version when resolve returned one; drop this line when it did not (optional)}
 steps=setup:done,implement:done,build-gate:done,self-review:{clear|budget-exhausted},pr:done,reviews:done,merge:done
 step.sonar-roundtrip.open_issue_count={measured count|unknown|n/a}
-step.sonar-roundtrip.open_issue_rules={rules left open|unknown|n/a}
+step.sonar-roundtrip.open_issue_rules={rules left open|none|unknown|n/a}
 ```
 
 - **Values:** for a required key, write `unknown` for anything you could not read, never `n/a` and
@@ -630,9 +634,9 @@ step.sonar-roundtrip.open_issue_rules={rules left open|unknown|n/a}
   `--state not_configured` and write `n/a` at both. They are the lane's own measurement of the
   merge head — the open new-code issue count and the rules of the issues left open there — and they
   are **optional**: the required key set above is unchanged, so their absence never makes a landing
-  incomplete. A confirmed count writes the measured figure, and `none` as its rules when that count
-  is `0`. An `undecidable` or `unconfigured` read writes `unknown` at both: both are failed reads,
-  never `0`, and never a claim the run did not earn.
+  incomplete. A confirmed count writes the measured figure, with the rules it left open (`none`
+  when that count is `0`). An `undecidable` or `unconfigured` read writes `unknown` at both: both
+  are failed reads, never `0`, and never a claim the run did not earn.
 - **Runtime stamp:** `harness`, `model`, `effort`, `plugin_version` and the optional `executor_version` are
   the resolve result's fields of those names, resolved from the platform-runtime `runtime-info` seam.
   Read the stamp from a `resolve` **re-run at landing time**, not from the setup-time result, so a model
