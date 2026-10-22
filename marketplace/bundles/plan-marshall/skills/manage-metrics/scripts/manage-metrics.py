@@ -452,6 +452,19 @@ _FOUR_FIELD_USAGE_LABELS = (
 # what makes adding a field a one-site change.
 _FOUR_FIELD_USAGE_FIELDS = tuple(field for field, _label in _FOUR_FIELD_USAGE_LABELS)
 
+# The operation's governing contract states the REQUIRED key set in the SHORT
+# spellings (``input``, ``output``, ``cache_read``, ``cache_creation``), while the
+# render walks the long names above. A target that supplies only the documented
+# minimum would otherwise write a bucket every long-name lookup misses, and the
+# phase row would gain no usage figure under a success verdict. The persist loop
+# therefore falls back to the short alias when the long key is absent.
+_FOUR_FIELD_SHORT_ALIASES = {
+    'input_tokens': 'input',
+    'output_tokens': 'output',
+    'cache_read_input_tokens': 'cache_read',
+    'cache_creation_input_tokens': 'cache_creation',
+}
+
 _FOUR_FIELD_GROUP_HEADING = (
     "- **Main-context-window usage**: the runtime's normalized context-load view over this phase's "
     'parent turns and the subagent transcripts attributed to the same window. Every bullet below '
@@ -4221,6 +4234,10 @@ def cmd_enrich(args: argparse.Namespace) -> dict:
         for field in _FOUR_FIELD_USAGE_FIELDS:
             if field in bucket:
                 phase_row[field] = bucket[field]
+                continue
+            short = _FOUR_FIELD_SHORT_ALIASES.get(field)
+            if short is not None and short in bucket:
+                phase_row[field] = bucket[short]
         if 'billing_weighted_total' in bucket:
             phase_row['billing_weighted_total'] = bucket['billing_weighted_total']
         if 'subagent_total_tokens' in bucket:
