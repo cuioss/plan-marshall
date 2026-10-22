@@ -96,7 +96,10 @@ the missing-table branch of C3 re-read; nothing was executed.
   only the hook's pre-existing R2 arm; `guard.js` has no `git grep` rule **(agent)**.
 - **C9 — low.** The D4 base-probe file is untracked in `.plan/temp/base-clone`; deleting the clone
   (an owed operator step) deletes the only copy of the evidence the PR cites by path. The PR body
-  says "three self-review fix commits" and lists four.
+  says "three self-review fix commits" and lists four. **Rescued** by the orchestrator before the clone was deleted:
+  `landings/PLAN-LB-79-evidence/test_guard_documentation_sweep_base_probe.py` (verbatim copy; the clone's other
+  untracked files were earlier copies of tests that merged in #1835, and its two modified files were the lane's
+  scaffolding).
 
 ## Test Audit
 
