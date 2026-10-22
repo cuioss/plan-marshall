@@ -477,6 +477,38 @@ def test_window_usage_refuses_a_tier1_store_rather_than_an_empty_bucket(tmp_path
     assert usage == {'ok': False, 'reason': 'schema_unsupported'}
 
 
+def test_window_usage_attributes_a_message_on_a_start_millisecond_that_rounds_up(tmp_path: Path) -> None:
+    """A start millisecond whose float scale rounds up still attributes its message.
+
+    ``datetime.timestamp()`` is a float, so the SQL millisecond bound can land a
+    fraction ABOVE the exact millisecond of the window start (2038-07-25's
+    ``.313`` second is the reported case: ``low * 1000.0`` is
+    ``2163638855313.0002``). The one-millisecond slack keeps that row inside the
+    SQL envelope, and Python's half-open attribution still places it at the start.
+    """
+    start_iso = '2038-07-25T02:47:35.313000+00:00'
+    start_moment = datetime.fromisoformat(start_iso)
+    exact_ms = int(start_moment.timestamp() * 1000)
+    # Guard the premise: this start is one whose scaled float rounds up.
+    assert start_moment.timestamp() * 1000.0 > exact_ms
+    db_path = tmp_path / 'opencode.db'
+    _create_tier2_db(
+        db_path,
+        [('ses-root', None, 0, 0, 0, 0, 0.0)],
+        [('ses-root', 'assistant', exact_ms, {'tokens': {'input': 7}})],
+    )
+
+    usage = opencode_sessions.window_usage(
+        db_path,
+        'ses-root',
+        [('round-up', start_iso, '2038-07-25T03:47:35.313000+00:00')],
+    )
+
+    main = usage['windows'][0]['main']
+    assert main['input_tokens'] == 7
+    assert main['message_count'] == 1
+
+
 def test_window_usage_attributes_every_in_window_message_through_the_filtered_read(tmp_path: Path) -> None:
     """Every in-window message is summed across the tree; its neighbours are not."""
     db_path = tmp_path / 'opencode.db'

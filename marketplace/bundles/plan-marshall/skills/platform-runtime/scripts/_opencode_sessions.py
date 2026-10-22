@@ -540,6 +540,12 @@ def _window_pre_filter(windows: Sequence[tuple[str, datetime, datetime]]) -> tup
     cell is always kept, because only the parser can read an ISO-8601 stamp —
     the pre-filter must not decide a format it cannot decode.
 
+    The millisecond lower bound is widened by one millisecond: ``timestamp()``
+    is a float, so ``low * 1000.0`` can land a fraction above the exact
+    millisecond of the window start and would drop a row stored on that
+    millisecond. The extra millisecond keeps the SQL envelope a strict superset
+    of the parsed windows; :func:`_window_index` still decides membership.
+
     Returns:
         ``(fragment, params)`` where *fragment* is empty when there is no window
         to bound (nothing is attributable, so no pre-filter is needed) and
@@ -557,7 +563,7 @@ def _window_pre_filter(windows: Sequence[tuple[str, datetime, datetime]]) -> tup
     )
     params: list[Any] = [
         _EPOCH_MS_THRESHOLD,
-        low * 1000.0,
+        low * 1000.0 - 1.0,
         high * 1000.0,
         _EPOCH_MS_THRESHOLD,
         low,
