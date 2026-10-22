@@ -2053,6 +2053,8 @@ _TEMPLATE_FACT_VALUES: dict[str, str] = {
     'plugin_version': '0.1.1919',
     'executor_version': '0.1.1919',
     'steps': 'setup:done,implement:done,build-gate:done,self-review:clear,pr:done,reviews:done,merge:done',
+    'step.sonar-roundtrip.open_issue_count': '0',
+    'step.sonar-roundtrip.open_issue_rules': 'none',
 }
 
 

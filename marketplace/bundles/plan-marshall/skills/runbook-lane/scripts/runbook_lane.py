@@ -15,6 +15,7 @@ Verb surface::
     runbook_lane build-classify --paths P1,P2 [--project-dir DIR]
     runbook_lane sonar-gate --state STATE [--count-status STATUS] [--open-count N]
                              [--open-keys K1,K2] [--dismissed-keys K1,K2]
+    runbook_lane sonar-facts --state STATE [--count-status STATUS] [--open-count N] [--rules R1,R2]
 
 ``--spec`` must name a staged spec, i.e. a file below
 ``.plan/orchestrator/{slug}/plans/``. Anything else is refused: the lane exists
@@ -1311,6 +1312,67 @@ def cmd_sonar_gate(args: argparse.Namespace) -> dict[str, Any]:
     )
 
 
+def cmd_sonar_facts(args: argparse.Namespace) -> dict[str, Any]:
+    """Render the landing's optional Sonar facts from the read taken at the merge head.
+
+    Two facts on the per-step typed-fact channel the lifecycle's
+    ``sonar-roundtrip`` step already uses — one measurement, one channel:
+    ``step.sonar-roundtrip.open_issue_count`` and
+    ``step.sonar-roundtrip.open_issue_rules``.
+
+    The two sentinels are the point of the verb. A confirmed read carries the
+    MEASURED count. An ``undecidable`` read carries ``unknown`` — a failed read
+    asserts that nothing was observed and never collapses into ``0``, which is a
+    claim the run did not earn. A project without Sonar carries ``n/a``, the
+    answered absence. Both facts are OPTIONAL in the landing, so the required key
+    set is untouched and no earlier landing becomes incomplete.
+    """
+    state = getattr(args, 'state', None)
+    if state not in _SONAR_STATES:
+        return {
+            'status': 'error',
+            'error': 'invalid_sonar_state',
+            'message': f'--state must be one of {", ".join(_SONAR_STATES)}; got {state!r}',
+        }
+
+    if state == 'not_configured':
+        count, rules = 'n/a', 'n/a'
+    else:
+        count_status = getattr(args, 'count_status', None)
+        if count_status not in ('confirmed', 'undecidable'):
+            return {
+                'status': 'error',
+                'error': 'invalid_count_status',
+                'message': (
+                    f'--count-status must be confirmed or undecidable when --state configured; got {count_status!r}'
+                ),
+            }
+        if count_status == 'undecidable':
+            count, rules = 'unknown', 'unknown'
+        else:
+            open_count = getattr(args, 'open_count', None)
+            if not isinstance(open_count, int) or open_count < 0:
+                return {
+                    'status': 'error',
+                    'error': 'confirmed_read_without_count',
+                    'message': '--open-count is required for a confirmed read',
+                }
+            count = str(open_count)
+            declared = _split_csv(getattr(args, 'rules', None))
+            rules = ','.join(declared) if declared else 'none'
+
+    return {
+        'status': 'success',
+        'operation': 'sonar-facts',
+        'open_issue_count': count,
+        'open_issue_rules': rules,
+        'fact_lines': [
+            f'step.{_SONAR_FACT_STEP}.open_issue_count={count}',
+            f'step.{_SONAR_FACT_STEP}.open_issue_rules={rules}',
+        ],
+    }
+
+
 def cmd_resolve(args: argparse.Namespace) -> dict[str, Any]:
     """Resolve every project-specific value the runbook lane needs."""
     project_dir = Path(getattr(args, 'project_dir', '.') or '.').resolve()
@@ -1473,6 +1535,35 @@ def main() -> int:
         help='Comma-separated issue keys this run dismissed with a stated reason',
     )
 
+    facts_parser = subparsers.add_parser(
+        'sonar-facts',
+        help="Render the landing's optional Sonar facts from the merge-head read",
+        allow_abbrev=False,
+    )
+    facts_parser.add_argument(
+        '--state',
+        required=True,
+        help='The state resolve reported: configured, or not_configured',
+    )
+    facts_parser.add_argument(
+        '--count-status',
+        dest='count_status',
+        default=None,
+        help="The read's count_status: confirmed, or undecidable (required when configured)",
+    )
+    facts_parser.add_argument(
+        '--open-count',
+        dest='open_count',
+        type=int,
+        default=None,
+        help="The read's confirmed open-issue count",
+    )
+    facts_parser.add_argument(
+        '--rules',
+        default=None,
+        help='Comma-separated rules of the issues left open at the merge head',
+    )
+
     args = parser.parse_args()
     if args.command == 'resolve':
         data = cmd_resolve(args)
@@ -1494,6 +1585,13 @@ def main() -> int:
         return 0
     if args.command == 'sonar-gate':
         data = cmd_sonar_gate(args)
+        if data.get('status') == 'error':
+            output_toon_error(data['error'], data.get('message', data['error']))
+            return 0
+        output_toon(data)
+        return 0
+    if args.command == 'sonar-facts':
+        data = cmd_sonar_facts(args)
         if data.get('status') == 'error':
             output_toon_error(data['error'], data.get('message', data['error']))
             return 0

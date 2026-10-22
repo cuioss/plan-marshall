@@ -73,6 +73,19 @@ every enumerated key carries a recorded dismissal. `undecidable` and `unconfigur
 undismissed key and a count with no enumerated keys all answer `merge_allowed: false` with their
 `reason`.
 
+### sonar-facts
+
+```bash
+python3 .plan/execute-script.py plan-marshall:runbook-lane:runbook_lane sonar-facts \
+  --state {configured|not_configured} [--count-status {confirmed|undecidable}] \
+  [--open-count N] [--rules "R1,R2"]
+```
+
+Renders the landing's optional Sonar facts (section 8) from the read taken at the merge head:
+`step.sonar-roundtrip.open_issue_count` and `step.sonar-roundtrip.open_issue_rules` in `fact_lines`,
+carrying the measured count, `unknown` for an `undecidable` read and `n/a` for a project without
+Sonar.
+
 ## 0. Input
 
 The invocation names a spec:
@@ -601,10 +614,20 @@ effort={the effort level measured with the model}
 plugin_version={the plan-marshall bundle version}
 executor_version={the executor version when resolve returned one; drop this line when it did not (optional)}
 steps=setup:done,implement:done,build-gate:done,self-review:{clear|budget-exhausted},pr:done,reviews:done,merge:done
+step.sonar-roundtrip.open_issue_count={measured count|unknown|n/a}
+step.sonar-roundtrip.open_issue_rules={rules left open|unknown|n/a}
 ```
 
 - **Values:** write `unknown` for anything you could not read, never `n/a` and never a guess.
   `deliverables_done` counts only fully met deliverables.
+- **Sonar (optional):** when `sonar` is `configured`, render the two facts with
+  `python3 .plan/execute-script.py plan-marshall:runbook-lane:runbook_lane sonar-facts --state configured --count-status {confirmed|undecidable} [--open-count {n}] [--rules "{r1,r2}"]`
+  and write its `fact_lines` verbatim. When it is `not_configured`, render them with
+  `--state not_configured` and write `n/a` at both. They are the lane's own measurement of the
+  merge head — the open-issue count and the rules of the issues left open — and they are
+  **optional**: the required key set above is unchanged, so their absence never makes a landing
+  incomplete. A confirmed count writes the measured figure. An `undecidable` read writes `unknown`
+  at both, which means the read failed: it is never `0`, and never a claim the run did not earn.
 - **Runtime stamp:** `harness`, `model`, `effort`, `plugin_version` and the optional `executor_version` are
   the resolve result's fields of those names, resolved from the platform-runtime `runtime-info` seam.
   Read the stamp from a `resolve` **re-run at landing time**, not from the setup-time result, so a model
