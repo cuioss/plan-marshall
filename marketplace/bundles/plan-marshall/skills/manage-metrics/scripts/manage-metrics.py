@@ -2320,7 +2320,7 @@ def cmd_generate(args: argparse.Namespace) -> dict:
         raw_tokens = _numeric(phase.get('total_tokens'))
         winner = _reconcile_dispatched_measures(phase)
         cell_source: str | None = None
-        if population in WHOLE_PHASE_POPULATIONS and raw_tokens is not None:
+        if population == POPULATION_MAIN_PLUS_SUBAGENT and raw_tokens is not None:
             # The row's total IS the phase's whole measured spend (main-context
             # plus sub-agent), so no dispatched-only competitor may displace it:
             # replacing it with a dispatched measure is precisely the under-count
@@ -2377,7 +2377,7 @@ def cmd_generate(args: argparse.Namespace) -> dict:
         # reconciliation trusted more) — then mark whenever the cell is the
         # boundary sum on an unclosed row, however it got there.
         floor = _unclosed_boundary_floor(phase)
-        if floor is not None and population not in WHOLE_PHASE_POPULATIONS:
+        if floor is not None and population != POPULATION_MAIN_PLUS_SUBAGENT:
             current = tokens_values[-1] if cell_source else None
             if current is None or floor > current:
                 if cell_source:
