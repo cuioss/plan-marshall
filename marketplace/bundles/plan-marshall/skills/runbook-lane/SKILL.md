@@ -37,10 +37,12 @@ python3 .plan/execute-script.py plan-marshall:runbook-lane:runbook_lane resolve 
 
 Resolves the epic slug, the derived names, the build commands, the required and optional reviewers
 with their trigger comments, the commit trailer, the harness and guard state, the build server's
-preflight state (`build_server`, plus `build_server_reason` when it is `down`) and the `inbox write`
+preflight state (`build_server`, plus `build_server_reason` when it is `down`), the Sonar state
+(`sonar`, plus `sonar_project_key` when it is `configured`) and the `inbox write`
 command. `--project-dir` defaults to the current directory and anchors every project-scoped read.
 Fails closed with a specific error code for a spec outside the orchestrator tree, an unreadable
-configuration, a missing automatic-review step, an empty required-reviewer list, a project that
+configuration, an unreadable Sonar block (`sonar_config_unreadable`), a missing automatic-review
+step, an empty required-reviewer list, a project that
 resolves no gate build command (naming the gate canonicals it could not resolve), or a bare
 skill/persona name in a flat install with no recorded bundle identity
 (`flat_skill_identity_missing`).
@@ -56,6 +58,20 @@ python3 .plan/execute-script.py plan-marshall:runbook-lane:runbook_lane build-cl
 Classifies changed paths as `docs-only` or `buildable` for the build gate (section 4), reading the
 project's own footprint rule. It answers `source: ci-workflow` when the project's CI opts in to the
 footprint gate, and `source: architecture` otherwise.
+
+### sonar-gate
+
+```bash
+python3 .plan/execute-script.py plan-marshall:runbook-lane:runbook_lane sonar-gate \
+  --state {configured|not_configured} [--count-status {confirmed|undecidable|unconfigured}] \
+  [--open-count N] [--open-keys "K1,K2"] [--dismissed-keys "K1,K2"]
+```
+
+Decides the merge gate's Sonar condition (section 7) from the read taken on the head:
+`merge_allowed: true` for `not_configured`, for a confirmed `0`, and for a confirmed count whose
+every enumerated key carries a recorded dismissal. `undecidable` and `unconfigured` reads, an
+undismissed key and a count with no enumerated keys all answer `merge_allowed: false` with their
+`reason`.
 
 ## 0. Input
 
@@ -92,12 +108,14 @@ The result supplies, and nothing below is spelled from anywhere else:
 | harness, guard and the landing's runtime stamp | `harness`, `guard`, `model`, `effort`, `plugin_version`, and `executor_version` when it was read |
 | guard-log path | `guard_log` |
 | build server state | `build_server`, plus `build_server_reason` when the state is `down` |
+| Sonar state, and the project key when configured | `sonar` (`configured` \| `not_configured`), plus `sonar_project_key` when it is `configured` |
 
 The branch row is derived from the project's configuration rather than returned by `resolve`; every
 other row names a field of the resolve result.
 
 The verb **fails closed**: a spec outside `.plan/orchestrator/{slug}/plans/`, an unreadable
-configuration, a missing automatic-review step, an empty required-reviewer list, no gate build
+configuration, an unreadable Sonar block (`sonar_config_unreadable`), a missing automatic-review
+step, an empty required-reviewer list, no gate build
 command (`quality-gate` or `verify`) the project's architecture can resolve, or a bare
 `Skills:`/`Persona:` name in a flat install whose `SKILL.md` records no bundle identity
 (`flat_skill_identity_missing`) is an error carrying a specific code. There is never a fall-back to
@@ -143,6 +161,7 @@ build-server: {ready|disabled|down}{ (reason)}; fallback: {none|in_process|degra
 D{n} hypothesis: {claim} — confirmed|refuted, {file:line}
 D{n} test: {test name} — failed before fix ({evidence}), passed after
 D{n} done: commit {sha}
+sonar: {configured (project key)}|{not_configured}; read at {sha}: {count} confirmed|{undecidable, retried}|{not_configured}; dismissals: {issue-key: reason, … or none}
 gate: {quality-gate|module-tests|verify} at {sha} — {result}
 self-review round {k}: {findings and disposition}; open: {list or none}
 pr: #{N} created at {sha}
@@ -203,7 +222,7 @@ so git alone shows which deliverables are committed.
 - **The operator decides.** Ask the operator (the `AskUserQuestion` tool) when:
   - you are blocked;
   - a rule would have to bend;
-  - a required reviewer cannot be obtained (step 6).
+  - a required reviewer cannot be obtained (step 7).
 
   Act only on an option the operator **selected**. A question that was cancelled, interrupted or
   aborted (for example by a server restart) has no answer: ask it again, and never act as if an
@@ -442,7 +461,26 @@ whether to continue at the limit. Record every finding and its disposition.
 2. **Trigger each reviewer** with a PR comment (`ci pr prepare-comment` + `ci pr reply`), posting
    its resolved `trigger_comment`.
 3. **Wait for CI:** `python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci checks wait --pr-number {N} --timeout 540`.
-4. **Read all three surfaces** after each push — the PR comments (`ci pr comments`), the PR reviews
+4. **Read the pull request's open Sonar issues** — after CI is green on the head and before the
+   pull request is reported ready. Skip nothing when `sonar` is `configured`:
+   - `resolve` reported `not_configured`: there is nothing to read. Record `sonar: not_configured`
+     in the progress file and the landing, and go on.
+   - `configured`: read the head's open issues with the provider's plan-less read, which needs no
+     plan directory —
+     `python3 .plan/execute-script.py plan-marshall:workflow-integration-sonar:sonar read_open_issues --project {sonar_project_key} --pr {N}`.
+     Fix each issue in a pushed commit, or dismiss it with a stated reason (see the dismissal rule
+     below). Re-read after every push until the count is `0` confirmed, or every remaining issue
+     carries a recorded dismissal. Then decide the gate:
+     `python3 .plan/execute-script.py plan-marshall:runbook-lane:runbook_lane sonar-gate --state configured --count-status {confirmed|undecidable|unconfigured} --open-count {n} --open-keys {k1,k2} --dismissed-keys {k1,k2}`.
+   - **A dismissal** is recorded in the progress file as `{issue-key}: {reason}` and transmitted with
+     the provider's raw REST transition, which is the one dismissal surface that takes a bare issue
+     key and needs no plan —
+     `python3 .plan/execute-script.py plan-marshall:workflow-integration-sonar:sonar_rest transition --issue-key {key} --transition {falsepositive|wontfix}`.
+     A dismissal the lane cannot transmit is a **blocker**, never a silent pass: record the failure
+     and stop.
+   - An `undecidable` read (the analysis did not settle, or the REST/auth call failed) is a
+     **blocker**, never a `0`: retry the read, and if it stays undecidable do not merge.
+5. **Read all three surfaces** after each push — the PR comments (`ci pr comments`), the PR reviews
    (`ci pr reviews`), and the inline threads in the PR comments. Triage every comment with
    `persona-code-reviewer`, applying its adversarial-refute lenses — defect or preference, surplus
    or load-bearing, real or false-positive drift, and severity — before deciding whether it applies.
@@ -450,8 +488,9 @@ whether to continue at the limit. Record every finding and its disposition.
    - fix it, commit and push; or
    - answer it with `ci pr thread-reply` (the reason it does not apply), then close it with
      `ci pr resolve-thread`.
-5. **After every push, re-trigger** a reviewer whose last review predates the head.
-6. **Reviewer quota policy** ("review limit reached" or similar), for ANY required reviewer that
+6. **After every push, re-trigger** a reviewer whose last review predates the head. Re-read the open
+   Sonar issues after every push too, on the same condition as step 4.
+7. **Reviewer quota policy** ("review limit reached" or similar), for ANY required reviewer that
    refuses on quota **while no qualifying review exists** (see section 7):
    1. Wait 90 minutes. Record the refusal and the next allowed trigger time in the progress file,
       then stop the session or wait for the operator; never `sleep`. Then post that
@@ -486,20 +525,25 @@ Merge only when all of these hold:
 - Every comment is handled.
 - `verify` (the full build, step 4) is green on the current head.
 - CI is green on the current head.
+- The Sonar state of the current head admits the merge: `sonar-gate` reports `merge_allowed: true`
+  on a read taken after the last push — its open-issue count is `0` confirmed, or every remaining
+  issue carries a recorded dismissal with its reason, or `resolve` reported `not_configured`. An
+  `undecidable` read is a blocker and is retried; the lane never treats it as `0`.
 
-The reviewer quota policy (step 6) applies only while no qualifying review exists. The standing
+The reviewer quota policy (step 7) applies only while no qualifying review exists. The standing
 authorization never applies to a reviewer that is not quota-limited, and never to a PR without a
 qualifying review.
 
 **Any question that bears on the merge** states, per required reviewer, which head it last reviewed,
-and whether that is the current head. It states the CI status and the `verify` status only from a
-result obtained on that head AFTER the last push; where no such result exists it reports `pending`,
-never an older run's answer. Its options never mark a rule-bending choice "Recommended". A false or
-incomplete statement in such a question fails the run.
+and whether that is the current head. It states the CI status, the `verify` status and the Sonar
+state only from a result obtained on that head AFTER the last push; where no such result exists it
+reports `pending`, never an older run's answer — and the Sonar state it reports is the gate's
+verdict for that head alone. Its options never mark a rule-bending
+choice "Recommended". A false or incomplete statement in such a question fails the run.
 
 **Immediately before enqueue,** fetch the base branch again. **If it moved:**
 `git -C {worktree} fetch origin {base_branch}`, then `git -C {worktree} merge origin/{base_branch}`. Run the build
-gate again, push, re-trigger the reviewers, and repeat step 6.
+gate again, push, re-trigger the reviewers, re-read the Sonar issues, and repeat step 7.
 
 **Before enqueue, re-check the authorization rule:** merge only when every condition above holds, or
 when the operator **selected** an option in a question-tool call that names the exact gap (which
