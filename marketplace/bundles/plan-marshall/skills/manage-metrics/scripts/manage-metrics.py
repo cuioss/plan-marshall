@@ -4084,6 +4084,23 @@ _STORE_BACKED_TARGETS = frozenset({'opencode', 'antigravity'})
 ENRICH_SKIP_REASON_NO_SESSION_IDENTITY = 'no_session_id_identity_unresolved'
 ENRICH_SKIP_POPULATION_UNENRICHED = 'unenriched'
 
+#: The gap flags a skip branch stamps. Every ID-based path that actually
+#: attempted measurement clears them before its write: ``write_metrics``
+#: persists arbitrary top-level keys from the record it re-reads, so a flag left
+#: behind by an earlier skip would survive a later measured run and publish a
+#: measured total as unenriched.
+ENRICH_GAP_KEYS = (
+    'enrichment_skipped',
+    'enrichment_gap_reason',
+    'enrichment_gap_population',
+)
+
+
+def _clear_enrichment_gap(data: dict) -> None:
+    """Drop the skip-branch gap flags from a run that attempted measurement."""
+    for key in ENRICH_GAP_KEYS:
+        data.pop(key, None)
+
 
 def _detect_target_from_env() -> str | None:
     """Detect the runtime target from platform-injected environment variables.
@@ -4204,6 +4221,9 @@ def cmd_enrich(args: argparse.Namespace) -> dict:
         data = read_metrics_raw(plan_id)
         data['updated'] = now_utc_iso()
         _stamp_unknown_totals(data.setdefault('phases', {}))
+        # This run DID attempt measurement; a gap flag from an earlier skip no
+        # longer describes it.
+        _clear_enrichment_gap(data)
         write_metrics(plan_id, data)
         return {
             'status': 'success',
@@ -4337,6 +4357,9 @@ def cmd_enrich(args: argparse.Namespace) -> dict:
         else:
             phase_row['total_tokens_population'] = POPULATION_DISPATCHED
 
+    # Measurement succeeded on this run; drop any gap flag left by an earlier
+    # skip so the persisted record no longer claims the plan is unenriched.
+    _clear_enrichment_gap(data)
     write_metrics(plan_id, data)
 
     return {

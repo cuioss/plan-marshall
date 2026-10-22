@@ -481,6 +481,52 @@ def test_enrich_absent_session_id_antigravity_skips_with_gap_flag(plan_context, 
 
 
 # =============================================================================
+# Test: a measured / degraded ID-based run clears an earlier skip's gap flags
+# =============================================================================
+
+
+def _seed_skip_gap(plan_id, monkeypatch):
+    """Drive the identity-less skip so the three gap flags are persisted."""
+    manage_metrics.write_metrics(plan_id, {'plan_id': plan_id})
+    monkeypatch.setattr(manage_metrics, '_resolve_runtime_target', lambda: 'opencode')
+    result = cmd_enrich(ns('enrich', '--plan-id', plan_id))
+    assert result.get('skipped') is True
+    stored = manage_metrics.read_metrics_raw(plan_id)
+    assert str(stored.get('enrichment_skipped')).lower() == 'true'
+
+
+def _assert_gap_cleared(plan_id):
+    """A run that attempted measurement leaves none of the gap keys behind."""
+    stored = manage_metrics.read_metrics_raw(plan_id)
+    assert 'enrichment_skipped' not in stored
+    assert 'enrichment_gap_reason' not in stored
+    assert 'enrichment_gap_population' not in stored
+
+
+def test_enrich_measured_pass_clears_an_earlier_skip_gap(plan_context, monkeypatch):
+    """A measured ID-based run replaces the gap flags written by an earlier skip."""
+    plan_id = 'enrich-gap-clear-01'
+    _seed_skip_gap(plan_id, monkeypatch)
+
+    _run_enrich_with_buckets(plan_id, monkeypatch, {'5-execute': {'input_tokens': 100}})
+
+    _assert_gap_cleared(plan_id)
+
+
+def test_enrich_degraded_pass_clears_an_earlier_skip_gap(plan_context, monkeypatch):
+    """A no-op/unavailable degrade run still clears the earlier skip's gap flags."""
+    plan_id = 'enrich-gap-clear-02'
+    _seed_skip_gap(plan_id, monkeypatch)
+    _patch_runtime_op(monkeypatch, status='no-op', per_phase=None, counters={})
+
+    result = cmd_enrich(ns_enrich(plan_id, 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'))
+
+    assert result['status'] == 'success'
+    assert result['enriched'] is False
+    _assert_gap_cleared(plan_id)
+
+
+# =============================================================================
 # D1 detected-target enrich skip — detection outranks the marshal declaration
 # =============================================================================
 
