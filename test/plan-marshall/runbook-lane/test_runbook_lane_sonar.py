@@ -26,6 +26,7 @@ from pathlib import Path
 import pytest
 from test_runbook_lane import (
     _PYPROJECT_EXEC,
+    _claude_env,
     _run_resolve,
     _section,
     _seed_fixture,
@@ -317,6 +318,7 @@ def test_an_unparseable_ceiling_payload_fails_closed(monkeypatch) -> None:
 
 
 def test_resolve_reports_the_ce_budget(tmp_path: Path) -> None:
+    """On a target whose ceiling is 600s the budget is 540s, not a range that fits any."""
     spec = _seed_fixture(
         tmp_path,
         executable=_PYPROJECT_EXEC,
@@ -324,10 +326,9 @@ def test_resolve_reports_the_ce_budget(tmp_path: Path) -> None:
         credentials_config=_SONAR_BLOCK,
     )
 
-    data = _run_resolve(spec, tmp_path)
+    data = _run_resolve(spec, tmp_path, env_overrides=_claude_env())
 
-    budget = int(data['sonar_ce_wait_timeout_seconds'])
-    assert 0 < budget <= 540
+    assert int(data['sonar_ce_wait_timeout_seconds']) == 540
 
 
 def test_resolve_omits_the_ce_budget_without_sonar(tmp_path: Path) -> None:
