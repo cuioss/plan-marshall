@@ -471,7 +471,14 @@ def _fetch_issues(project: str, pr: str | None, severities: str | None, types: s
             }
         )
 
-    return {'status': 'success', 'issues': formatted}
+    # Sonar reports the full matching total beside the page. A page that carries
+    # fewer issues than that total is TRUNCATED, and a caller that reports the
+    # page's length as a count would undercount without saying so — so the total
+    # travels back with the issues for the caller to compare.
+    paging = result.get('paging') or {}
+    total = paging.get('total') if isinstance(paging, dict) else None
+
+    return {'status': 'success', 'issues': formatted, 'total': total}
 
 
 def cmd_fetch_findings(args):
@@ -745,10 +752,10 @@ def cmd_read_open_issues(args):
     issues Sonar reports.
 
     Fail-loud: a typed ``unconfigured`` status when no Sonar credential is
-    configured (distinct from a read that failed). A CE timeout, a poll failure
-    or a REST/auth failure returns ``open_issue_count: None`` with
-    ``count_status: undecidable`` and a ``count_status_reason`` — NEVER a false
-    ``0``.
+    configured (distinct from a read that failed). A CE timeout, a poll failure,
+    a REST/auth failure, or a page truncated below the server's reported total
+    returns ``open_issue_count: None`` with ``count_status: undecidable`` and a
+    ``count_status_reason`` — NEVER a false ``0`` and never a short count.
     """
     project: str = args.project
     pr: str | None = getattr(args, 'pr', None)
@@ -774,6 +781,17 @@ def cmd_read_open_issues(args):
         return _undecidable_read(project, pr, fetch_result.get('message', 'Sonar issue fetch failed'))
 
     raw_issues: list[dict[str, Any]] = fetch_result.get('issues') or []
+    total = fetch_result.get('total')
+    if isinstance(total, int) and total > len(raw_issues):
+        # The page is truncated, so the count it yields is not the issue set's
+        # count. Report the read as undecidable rather than a confirmed figure
+        # that is short by an unknown amount — the same fail-closed direction the
+        # rest of this verb takes.
+        return _undecidable_read(
+            project,
+            pr,
+            f'issue list truncated: {len(raw_issues)} of {total} issues returned',
+        )
     issues = [
         {
             'key': issue.get('key', ''),

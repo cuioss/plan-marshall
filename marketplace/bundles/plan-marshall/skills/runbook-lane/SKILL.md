@@ -128,6 +128,7 @@ The result supplies, and nothing below is spelled from anywhere else:
 | guard-log path | `guard_log` |
 | build server state | `build_server`, plus `build_server_reason` when the state is `down` |
 | Sonar state, and the project key when configured | `sonar` (`configured` \| `not_configured`), plus `sonar_project_key` when it is `configured` |
+| Sonar CE-readiness wait budget (seconds) | `sonar_ce_wait_timeout_seconds`, the harness's Bash ceiling less a teardown margin (the provider's own 600s default when the target imposes no ceiling) |
 
 The branch row is derived from the project's configuration rather than returned by `resolve`; every
 other row names a field of the resolve result.
@@ -242,7 +243,7 @@ so git alone shows which deliverables are committed.
 - **The operator decides.** Ask the operator (the `AskUserQuestion` tool) when:
   - you are blocked;
   - a rule would have to bend;
-  - a required reviewer cannot be obtained (step 7).
+  - a required reviewer cannot be obtained (§ 6 step 7).
 
   Act only on an option the operator **selected**. A question that was cancelled, interrupted or
   aborted (for example by a server restart) has no answer: ask it again, and never act as if an
@@ -487,7 +488,9 @@ whether to continue at the limit. Record every finding and its disposition.
      in the progress file and the landing, and go on.
    - `configured`: read the head's open new-code issues with the provider's plan-less read, which
      needs no plan directory —
-     `python3 .plan/execute-script.py plan-marshall:workflow-integration-sonar:sonar read_open_issues --project {sonar_project_key} --pr {N}`.
+     `python3 .plan/execute-script.py plan-marshall:workflow-integration-sonar:sonar read_open_issues --project {sonar_project_key} --pr {N} --ce-wait-timeout {sonar_ce_wait_timeout_seconds}`.
+     Pass the resolved budget: it sits below this harness's Bash ceiling, so a read that does not
+     settle returns its own `undecidable` instead of being killed with no state at all.
      Fix each issue in a pushed commit, or dismiss it with a stated reason (see the dismissal rule
      below). Re-read after every push until the count is `0` confirmed, or every remaining issue
      carries a recorded dismissal. Then decide the gate:
@@ -554,7 +557,7 @@ Merge only when all of these hold:
   `not_configured`. An `undecidable` read is a blocker and is retried, and an `unconfigured` read is
   a blocker too; the lane never treats either as `0`.
 
-The reviewer quota policy (step 7) applies only while no qualifying review exists. The standing
+The reviewer quota policy (§ 6 step 7) applies only while no qualifying review exists. The standing
 authorization never applies to a reviewer that is not quota-limited, and never to a PR without a
 qualifying review.
 
@@ -567,7 +570,8 @@ choice "Recommended". A false or incomplete statement in such a question fails t
 
 **Immediately before enqueue,** fetch the base branch again. **If it moved:**
 `git -C {worktree} fetch origin {base_branch}`, then `git -C {worktree} merge origin/{base_branch}`. Run the build
-gate again, push, re-trigger the reviewers, re-read the Sonar issues, and repeat step 7.
+gate again, push, re-trigger the reviewers, re-read the Sonar issues, and repeat the reviewer quota
+policy (§ 6 step 7).
 
 **Before enqueue, re-check the authorization rule:** merge only when every condition above holds, or
 when the operator **selected** an option in a question-tool call that names the exact gap (which

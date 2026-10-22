@@ -203,6 +203,20 @@ class TestUndecidableRead:
         assert result['open_issue_count'] != 0
         assert 'HTTP 403' in result['count_status_reason']
 
+    def test_a_truncated_page_is_undecidable_not_a_short_count(self):
+        """A page shorter than the server's reported total cannot stand in for the set."""
+        fetch = {'status': 'success', 'issues': [_issue(key='K1')], 'total': 812}
+
+        with (
+            patch.object(sonar_mod, '_wait_for_ce_ready', return_value={'count_status': 'confirmed'}),
+            patch.object(sonar_mod, '_fetch_issues', return_value=fetch),
+        ):
+            result = cmd_read_open_issues(_args('--pr', '42'))
+
+        assert result['count_status'] == 'undecidable'
+        assert result['open_issue_count'] is None
+        assert '1 of 812' in result['count_status_reason']
+
 
 class TestUnconfigured:
     """No Sonar configuration is the typed status, not a count."""

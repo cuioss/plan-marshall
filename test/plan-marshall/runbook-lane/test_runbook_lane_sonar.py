@@ -172,6 +172,14 @@ def test_a_count_with_no_enumerated_keys_cannot_be_verified() -> None:
     assert verdict['reason'] == 'open_issue_keys_missing'
 
 
+def test_a_repeated_key_cannot_stand_in_for_two_issues() -> None:
+    """Distinct keys, not list length: K1,K1 enumerates one issue, not two."""
+    verdict = cmd_sonar_gate(_gate_args(open_count='2', open_keys='K1,K1', dismissed_keys='K1'))
+
+    assert verdict['merge_allowed'] is False
+    assert verdict['reason'] == 'open_issue_keys_missing'
+
+
 def test_a_confirmed_read_without_a_count_blocks_the_merge() -> None:
     verdict = cmd_sonar_gate(_gate_args())
 
@@ -250,3 +258,56 @@ def test_the_merge_condition_binds_the_merge_to_the_gate_verdict() -> None:
 
 def test_the_lane_text_states_the_not_configured_skip() -> None:
     assert 'not_configured' in _skill_text()
+
+
+# =============================================================================
+# the CE-readiness budget — below the harness ceiling, so the read returns a state
+# =============================================================================
+class _FakeRuntime:
+    """A platform runtime whose ceiling op answers a fixed TOON payload."""
+
+    def __init__(self, payload: str | Exception) -> None:
+        self._payload = payload
+
+    def harness_bash_timeout_ceiling(self) -> str:
+        if isinstance(self._payload, Exception):
+            raise self._payload
+        return self._payload
+
+
+def _patch_ceiling(monkeypatch, payload: str | Exception) -> None:
+    import platform_runtime
+
+    monkeypatch.setattr(platform_runtime, '_runtime_for_target', lambda project_dir=None: _FakeRuntime(payload))
+
+
+def test_the_ce_budget_keeps_a_margin_below_the_harness_ceiling(monkeypatch) -> None:
+    _patch_ceiling(monkeypatch, 'status: success\nceiling_seconds: 600\n')
+
+    assert lane._resolve_sonar_ce_wait(Path('.')) == 540
+
+
+def test_a_target_without_a_ceiling_uses_the_provider_default(monkeypatch) -> None:
+    _patch_ceiling(monkeypatch, 'status: no-op\n')
+
+    assert lane._resolve_sonar_ce_wait(Path('.')) == 600
+
+
+def test_an_unreadable_ceiling_degrades_to_the_provider_default(monkeypatch) -> None:
+    _patch_ceiling(monkeypatch, RuntimeError('seam unavailable'))
+
+    assert lane._resolve_sonar_ce_wait(Path('.')) == 600
+
+
+def test_resolve_reports_the_ce_budget(tmp_path: Path) -> None:
+    spec = _seed_fixture(
+        tmp_path,
+        executable=_PYPROJECT_EXEC,
+        required_bots='x',
+        credentials_config=_SONAR_BLOCK,
+    )
+
+    data = _run_resolve(spec, tmp_path)
+
+    budget = int(data['sonar_ce_wait_timeout_seconds'])
+    assert 0 < budget <= 540

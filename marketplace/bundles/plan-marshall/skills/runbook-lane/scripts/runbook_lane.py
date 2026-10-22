@@ -65,6 +65,16 @@ _SONAR_COUNT_STATUSES = ('confirmed', 'undecidable', 'unconfigured')
 #: channel.
 _SONAR_FACT_STEP = 'sonar-roundtrip'
 
+#: The provider's own CE-readiness default, used when the active target imposes no
+#: Bash ceiling (the seam answers ``no-op``).
+_SONAR_CE_DEFAULT_SECONDS = 600
+
+#: Margin kept below the harness's Bash ceiling. The plan-less read polls in-process
+#: and returns its own typed ``undecidable`` when the budget expires; a budget at or
+#: above the ceiling would have the harness kill the call first, leaving the lane a
+#: tool timeout instead of a state it can classify.
+_SONAR_CE_CEILING_MARGIN_SECONDS = 60
+
 #: The build canons the lane runs, each resolved on its own through the
 #: architecture: no composed ``--command-args "<canonical>"`` form exists, because
 #: the canonical name is only meaningful to a wrapper that maps canonical names
@@ -441,6 +451,37 @@ def _resolve_sonar(marshal: dict[str, Any]) -> dict[str, Any]:
         # asked for it. Fail closed instead.
         raise ValueError('sonar_config_incomplete')
     return {'state': 'configured', 'project_key': project_key.strip()}
+
+
+def _resolve_sonar_ce_wait(project_dir: Path) -> int:
+    """Resolve a CE-readiness budget that returns inside the harness's Bash ceiling.
+
+    The plan-less read polls in-process until the analysis settles, so its budget
+    must expire BEFORE the harness's Bash timeout: a budget at or above the ceiling
+    gets the call killed with no typed answer, and the lane has no state to
+    classify. The ceiling comes from the platform-runtime ``harness
+    bash-timeout-ceiling`` seam (per active target), and the margin below it leaves
+    room for the enumeration and the process teardown.
+
+    A target that imposes no ceiling answers ``no-op``; the provider's own 600s
+    default then applies. A seam failure degrades to that same default rather than
+    to a smaller guess, so an unreadable ceiling cannot silently shorten the wait
+    on a harness that could have afforded it.
+    """
+    from platform_runtime import _runtime_for_target
+    from toon_parser import parse_toon
+
+    try:
+        parsed = parse_toon(_runtime_for_target(str(project_dir)).harness_bash_timeout_ceiling())
+    except Exception:
+        return _SONAR_CE_DEFAULT_SECONDS
+    if parsed.get('status') == 'no-op':
+        return _SONAR_CE_DEFAULT_SECONDS
+    try:
+        ceiling = int(parsed['ceiling_seconds'])
+    except (KeyError, TypeError, ValueError):
+        return _SONAR_CE_DEFAULT_SECONDS
+    return max(1, ceiling - _SONAR_CE_CEILING_MARGIN_SECONDS)
 
 
 def _resolve_bots(marshal: dict[str, Any]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
@@ -1263,7 +1304,10 @@ def _sonar_gate_verdict(
             'reason': 'no_open_issues',
             'open_issue_count': 0,
         }
-    if len(open_keys) < count:
+    if len(set(open_keys)) < count:
+        # Distinct keys, not list length: a repeated key enumerates one issue
+        # twice, so `--open-count 2 --open-keys K1,K1` would otherwise pass a
+        # check whose whole purpose is to refuse a count it cannot verify.
         return {
             'status': 'success',
             'operation': 'sonar-gate',
@@ -1507,6 +1551,7 @@ def cmd_resolve(args: argparse.Namespace) -> dict[str, Any]:
         'guard_log': '/'.join(_GUARD_LOG_PARTS),
         'build_server': build_server,
         'sonar': sonar_state['state'],
+        'sonar_ce_wait_timeout_seconds': _resolve_sonar_ce_wait(project_dir),
         'skills_note': deliverable_state['skills_note'],
     }
     # The project key rides only when there is one: an empty row would read like a
