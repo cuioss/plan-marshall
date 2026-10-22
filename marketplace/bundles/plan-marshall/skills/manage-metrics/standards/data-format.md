@@ -421,6 +421,15 @@ accumulator measurement is neither lost nor left competing in the
 dispatched-population maximum as if it were the whole phase. A re-run recomposes
 the same value instead of reading its own composition as a dispatched total.
 
+**How the composition reads the two populations depends on the target's
+`four_field_scope`.** With `main_context` (OpenCode) the four usage fields cover
+the root session only, so the whole-phase figure is those fields PLUS
+`subagent_total_tokens`. With `main_plus_subagent` (the transcript-walking target)
+the four fields already fold the sub-agent transcripts in, so the whole-phase
+figure IS their `input + output + cache_creation` and the sub-agent figure is an
+attribution of part of that total, not a second addend. An absent scope reads as
+`main_context` — the shape a producer that predates the discriminator emits.
+
 The `inline_main_context_tokens` column above describes what **`enrich`** writes. `generate` completes the field on every phase row afterwards, so it is never absent from the record — see its Per-Phase Fields row for the `0`-versus-`unmeasured` rule.
 
 **The composition is deliberate, not a silent substitution.** Adding the two
@@ -447,7 +456,9 @@ still carries its `end_time` marker.
 
 **Consumer rule.** `inline_main_context_tokens` and `dispatched_total_tokens` are
 each one population's measurement, and both are already included in
-`total_tokens` on the composed signatures: never add either to `total_tokens`
+`total_tokens` on the composed signatures — on `main_context` because the
+composition added them, on `main_plus_subagent` because the four usage fields
+already fold the sub-agent transcripts in. Never add either to `total_tokens`
 again. A consumer that needs to know what `total_tokens` measures reads
 `total_tokens_population`; it must not infer a population from the field's name,
 which states a total.

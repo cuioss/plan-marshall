@@ -201,8 +201,40 @@ def test_whole_phase_row_renders_both_populations_summed(plan_context, monkeypat
     assert f'{_INLINE_SUM + 30000:,}' in init_row
     assert '(main + sub-agent)' in init_row
     assert '`(main + sub-agent)`' in report
-    # A single composed row means the Total spans exactly one population.
+    # A single composed row means the Total spans exactly one population — which
+    # it must still DECLARE, because it is not the column's dispatched default.
     assert '(spans populations)' not in _total_tokens_cell(report)
+    assert '(main + sub-agent)' in _total_tokens_cell(report)
+
+
+def test_legacy_inline_row_with_subagent_evidence_is_not_labelled_as_having_dispatched_nothing(
+    plan_context, monkeypatch
+):
+    """A row stamped inline that also recorded sub-agent work is composed, not mislabelled.
+
+    The inline stamp claims the phase dispatched nothing. The base code could
+    stamp it on a bucket that also carried sub-agent usage, so rendering such a
+    row unchanged would print a false claim.
+    """
+    plan_id = 'population-legacy-inline-with-subagent'
+    cmd_start_phase(ns_start_phase(plan_id, '3-outline'))
+    cmd_end_phase(ns_end_phase(plan_id, '3-outline'))
+    data = manage_metrics.read_metrics_raw(plan_id)
+    row = data['phases']['3-outline']
+    row['inline_main_context_tokens'] = 6000
+    row['total_tokens'] = 6000
+    row['total_tokens_population'] = manage_metrics.POPULATION_INLINE
+    row['subagent_total_tokens'] = 30000
+    row['subagent_samples'] = 1
+    manage_metrics.write_metrics(plan_id, data)
+
+    cmd_generate(ns_generate(plan_id))
+    report = (plan_context.plan_dir_for(plan_id) / 'metrics.md').read_text(encoding='utf-8')
+
+    row_line = next(line for line in report.splitlines() if line.startswith('| 3-outline '))
+    assert 'dispatched nothing' not in report
+    assert '(main + sub-agent)' in row_line
+    assert '36,000' in row_line
 
 
 def test_inline_total_tokens_is_excluded_from_the_dispatched_maximum():

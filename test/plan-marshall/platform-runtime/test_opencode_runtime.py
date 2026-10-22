@@ -1320,6 +1320,45 @@ def test_metrics_normalized_tokens_carries_reasoning_tokens(
     assert bucket['output_tokens'] == 20
 
 
+def test_metrics_normalized_tokens_omits_tool_uses_when_one_window_cannot_answer(
+    runtime: OpenCodeRuntime, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """A re-entered phase publishes no tool count if any interval could not measure it.
+
+    One interval's messages carry a content array, the other's do not. Publishing
+    the first interval's count as the phase total would hide the calls the second
+    interval never made observable.
+    """
+    db_path = tmp_path / 'opencode.db'
+    _write_usage_db(
+        db_path,
+        [('ses-root', None, 10, 20, 0, 0)],
+        [
+            (
+                'ses-root',
+                'assistant',
+                _at(5),
+                {'tokens': {'input': 10, 'output': 20}, 'content': [{'type': 'tool'}]},
+            ),
+            ('ses-root', 'assistant', _at(35), {'tokens': {'input': 1, 'output': 2}}),
+        ],
+    )
+    _isolate_store(monkeypatch, db_path)
+    output_file = tmp_path / 'normalized.json'
+
+    result = _parse(
+        runtime.metrics_normalized_tokens(
+            'ses-root',
+            [('5-execute', _iso(0), _iso(30)), ('5-execute', _iso(30), _iso(60))],
+            str(output_file),
+        )
+    )
+
+    assert result['status'] == 'success'
+    bucket = json.loads(output_file.read_text(encoding='utf-8'))['5-execute']
+    assert 'tool_uses' not in bucket
+
+
 def test_metrics_normalized_tokens_reports_the_root_it_measured(
     runtime: OpenCodeRuntime, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:

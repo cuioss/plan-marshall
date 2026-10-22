@@ -586,10 +586,13 @@ worktree-produced subagent transcripts does not depend on where `enrich` runs
 from.
 
 The per-phase rows in `work/metrics.toon` gain `subagent_total_tokens`,
-`subagent_tool_uses`, `subagent_duration_ms`, and `subagent_samples`, plus
+`subagent_tool_uses` (present only where the store made the count observable),
+`subagent_duration_ms`, and `subagent_samples`, plus
 `input_tokens`, `output_tokens`,
-`cache_read_input_tokens`, `cache_creation_input_tokens`, and
-`billing_weighted_total` (all from the runtime's per-phase normalized view), plus the ten
+`cache_read_input_tokens`, `cache_creation_input_tokens`, `reasoning_tokens`,
+`measured_tool_uses` and `cost_usd` (all from the runtime's per-phase normalized
+view; `billing_weighted_total` is present on a target whose runtime derives it and
+absent on a store-backed target that publishes `cost_usd` instead), plus the ten
 exploration-share counters `{exploration,work,execute,orchestration,unclassified}_tool_calls`
 and `{exploration,work,execute,orchestration,unclassified}_result_bytes` (from
 the runtime's tool-call walk) — see [data-format.md](standards/data-format.md). `enrich`

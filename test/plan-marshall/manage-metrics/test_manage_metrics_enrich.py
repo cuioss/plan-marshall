@@ -519,6 +519,41 @@ def test_four_field_phases_attributed_counts_distinct_phases_not_attributions(pl
     assert result['four_field_phases_attributed'] == 3
 
 
+def test_enrich_does_not_add_the_subagents_twice_when_the_fields_already_hold_them(plan_context, monkeypatch):
+    """A runtime whose four fields already fold the sub-agents composes once.
+
+    The transcript-walking target folds sub-agent transcripts into the four usage
+    fields and reports `four_field_scope: main_plus_subagent`. The phase total is
+    then those fields minus cache_read; adding `subagent_total_tokens` again would
+    count the sub-agents twice.
+    """
+    plan_id = 'population-scope-main-plus-subagent'
+    _seed_enrich_window(plan_context, plan_id)
+    _patch_runtime_op(
+        monkeypatch,
+        status='success',
+        per_phase={
+            '5-execute': {
+                'input_tokens': 1000,
+                'output_tokens': 200,
+                'cache_read_input_tokens': 9000,
+                'cache_creation_input_tokens': 50,
+                'subagent_total_tokens': 700,
+                'subagent_samples': 1,
+            }
+        },
+        counters={'message_count': 2},
+        four_field_scope='main_plus_subagent',
+    )
+
+    result = cmd_enrich(ns_enrich(plan_id, 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'))
+
+    assert result['enriched'] is True
+    row = _phase_row(plan_id, '5-execute')
+    assert row['total_tokens'] == 1000 + 200 + 50
+    assert row['total_tokens_population'] == manage_metrics.POPULATION_MAIN_PLUS_SUBAGENT
+
+
 def test_enrich_omits_the_tool_count_when_one_root_could_not_measure_it(plan_context, monkeypatch):
     """A phase one root answered and another did not carries no tool count.
 

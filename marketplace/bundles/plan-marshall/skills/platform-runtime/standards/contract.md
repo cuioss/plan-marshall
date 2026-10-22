@@ -345,7 +345,10 @@ stored: true
 On OpenCode the identity is MEASURED, not self-reported: `$OPENCODE_SESSION_ID`
 names the running session, and the runtime resolves it to its ROOT through
 `session_v2.parent_id` in `opencode.db`, then appends that root to the plan's
-`session_ids` metadata. The raw, unresolved id is never stored.
+`session_ids` metadata. On the capture path the raw, unresolved id is never stored:
+an unavailable ground declines with its named reason instead. (`session bind`
+deliberately keeps a raw id when the store cannot answer, so an identity the
+caller already holds is not dropped — see its section.)
 
 The climb is **bounded by the plan's worktree**: when the store carries
 `session_v2.directory`, it stops at the OUTERMOST ancestor whose directory is the
@@ -1115,9 +1118,9 @@ answers despite `transcripts: none`.
 
 ### `metrics normalized-tokens`
 
-Resolve normalized transcript token totals for the active target. On a transcript-walking target it walks the session transcript; on OpenCode it reads the session database through the shared read-only reader and sums the assistant-message usage per half-open `[start, end)` window, splitting the root session's usage (the main context) from its descendants' (the dispatched sub-agents). Either way it writes the per-phase `{input, output, cache_read, cache_creation, total, billing_weighted_total, subagent_*}` view plus, where the target walks a transcript, the exploration-share counters, the cache-read attribution group, and the exploration sub-source split to `--output-file` as JSON, and returns the attribution counters. `total` is the canonical four-field sum (`input + output + cache_read + cache_creation`); `billing_weighted_total` is reported separately.
+Resolve normalized transcript token totals for the active target. On a transcript-walking target it walks the session transcript; on OpenCode it reads the session database through the shared read-only reader and sums the assistant-message usage per half-open `[start, end)` window, splitting the root session's usage (the main context) from its descendants' (the dispatched sub-agents). It writes the per-phase bucket to `--output-file` as JSON and returns the attribution counters (plus `four_field_scope`, which states what the four usage fields already cover — see below). `total` is the canonical four-field sum (`input + output + cache_read + cache_creation`).
 
-On OpenCode the four canonical categories come from the measured message usage: `input_tokens` from `tokens.input`, `output_tokens` from `tokens.output`, `cache_read_input_tokens` from `tokens.cache.read` and `cache_creation_input_tokens` from `tokens.cache.write`. The sub-agent group is measured from the descendant sessions' messages: `subagent_total_tokens` is their `input + output + cache_creation` (cache reads excluded, matching the dispatched-total definition used everywhere else), `subagent_samples` counts the sub-agent sessions observed, and `subagent_tool_uses` / `subagent_duration_ms` come from the same message rows.
+On OpenCode the four canonical categories come from the measured message usage: `input_tokens` from `tokens.input`, `output_tokens` from `tokens.output`, `cache_read_input_tokens` from `tokens.cache.read` and `cache_creation_input_tokens` from `tokens.cache.write`. `reasoning_tokens` comes from `tokens.reasoning` — its OWN field, because the store keeps reasoning apart from output. The sub-agent group is measured from the descendant sessions' messages: `subagent_total_tokens` is their `input + output + cache_creation` (cache reads excluded, matching the dispatched-total definition used everywhere else), `subagent_samples` counts the sub-agent sessions observed, `subagent_duration_ms` is the SUM of each session's own span inside the window, and `subagent_tool_uses` counts the `content[]` parts of type `tool` inside the assistant messages. `cost_usd` is the store's own per-message cost, summed. `billing_weighted_total` is ABSENT on this target: it applies Anthropic cache-pricing weights that were never written for its model.
 
 **Arguments**: `--session-id <id>` (required), `--windows-file <path>` (required — a JSON array of `[phase, start_iso, end_iso]` triples), `--output-file <path>` (required)
 
@@ -1126,14 +1129,19 @@ On OpenCode the four canonical categories come from the measured message usage: 
 | Group | Keys |
 |-------|------|
 | Normalized token categories | `input`, `output`, `cache_read`, `cache_creation`, `total` |
-| Billing view | `billing_weighted_total` |
-| Subagent `<usage>` attribution | `subagent_total_tokens`, `subagent_tool_uses`, `subagent_duration_ms`, `subagent_samples` |
+| Reasoning | `reasoning_tokens` (store-backed targets only; absent where the store keeps no reasoning figure) |
+| Billing view (transcript-walking target) | `billing_weighted_total` |
+| Store-recorded cost (database-backed target) | `cost_usd` |
+| Store-measured tool use | `tool_uses` (present only when every contributing window's messages made the count observable) |
+| Subagent attribution | `subagent_total_tokens`, `subagent_tool_uses`, `subagent_duration_ms`, `subagent_samples` |
 | Exploration-share turn counts | `exploration_tool_calls`, `work_tool_calls`, `execute_tool_calls`, `orchestration_tool_calls`, `unclassified_tool_calls` |
 | Exploration-share payload bytes | `exploration_result_bytes`, `work_result_bytes`, `execute_result_bytes`, `orchestration_result_bytes`, `unclassified_result_bytes` |
 | Cache-read attribution | `cache_read_attributed_exploration`, `cache_read_attributed_work`, `cache_read_attributed_execute`, `cache_read_attributed_orchestration`, `cache_read_attributed_unclassified`, `cache_read_unattributed` |
 | Exploration sub-sources | `exploration_index_answerable_bytes`, `exploration_doc_residency_bytes`, `exploration_unattributed_bytes` |
 
-The last three groups are a TRANSCRIPT-walk product. A database-backed target (OpenCode) emits the three token groups and omits the exploration counters, cache-read attribution and sub-source split — absent, never zero-filled.
+The last three groups are a TRANSCRIPT-walk product. A database-backed target (OpenCode) emits the token groups, the reasoning field, `cost_usd` and the sub-agent group, and omits `billing_weighted_total`, the exploration counters, the cache-read attribution and the sub-source split — absent, never zero-filled. Within the sub-agent group, `subagent_tool_uses` is itself absent when no contributing assistant message carried a `content` array.
+
+**`four_field_scope`** states what the four usage fields already cover: `main_plus_subagent` where the walk folds the sub-agent transcripts into them (the transcript-walking target), and `main_context` where the root session and its descendants are kept in separate buckets (OpenCode). A consumer composing a phase total adds the sub-agent figure only in the `main_context` case.
 
 Each observed tool call is classified by its tool name into one of five buckets; the call is counted into `{bucket}_tool_calls` and its result payload's UTF-8 byte length into `{bucket}_result_bytes`, both attributed to the phase window containing the call's timestamp. `exploration + work + execute` is the exploration-share denominator; `orchestration` (control-plane calls, which scale with the workflow rather than the change) and `unclassified` are emitted but excluded from the ratio, so the five buckets partition the observed population and the exclusion stays auditable.
 

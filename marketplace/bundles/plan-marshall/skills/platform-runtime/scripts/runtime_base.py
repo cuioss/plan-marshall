@@ -1254,8 +1254,10 @@ class Runtime(ABC):
         itself.
 
         The JSON written to *output_file* is an object mapping each phase name to a
-        bucket. The block below is the full set a target MAY supply; which families
-        a given target actually supplies is stated after it:
+        bucket. The block below is the set the TRANSCRIPT-WALKING target supplies;
+        the store-backed groups stated after it extend that set, so a consumer
+        reads a target's bucket as "this block plus whichever groups that target
+        declares it can measure":
 
         ``{phase_name: {input, output, cache_read, cache_creation, total,
         billing_weighted_total, subagent_total_tokens, subagent_tool_uses,

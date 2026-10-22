@@ -318,9 +318,14 @@ def measure_opencode_model(
     if not reading['ok']:
         return dict(unknown)
     rows = reading['rows']
-    root = _opencode_sessions.session_root(session_id, rows)
-    if root is None:
+    # Resolve the root with the SAME directory bound `session capture` applies, so
+    # the model measured here describes the session tree the plan actually
+    # measures — not an operator's long-lived outer session and its unrelated
+    # descendants.
+    resolved_root = _opencode_sessions.resolve_session_root(db_path, session_id, directory=str(Path.cwd()))
+    if not resolved_root['ok']:
         return dict(unknown)
+    root = str(resolved_root['root'])
     distinct: dict[tuple[str, str, str], dict[str, str]] = {}
     for member in _opencode_sessions.session_tree(root, rows):
         fields = _parse_opencode_model(rows[member][1])

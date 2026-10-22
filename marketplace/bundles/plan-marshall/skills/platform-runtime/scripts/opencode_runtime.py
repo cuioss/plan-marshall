@@ -1011,6 +1011,10 @@ def _per_phase_buckets(
     # would under-report the calls it never saw.
     message_scopes: dict[str, set[str]] = {}
     tool_observable_scopes: dict[str, set[str]] = {}
+    # Phases with at least one contributing WINDOW (or root) that could not answer
+    # the tool count. A partial count presented as the phase's total would hide the
+    # calls that window never saw.
+    tool_observable_phases_incomplete: set[str] = set()
     message_count = 0
     subagent_phases = 0
     for window in windows:
@@ -1040,6 +1044,10 @@ def _per_phase_buckets(
                 phase_tool_uses[phase] = phase_tool_uses.get(phase, 0) + int(scope_bucket['tool_uses'])
                 if scope == 'subagent':
                     subagent_tool_uses[phase] = subagent_tool_uses.get(phase, 0) + int(scope_bucket['tool_uses'])
+            else:
+                # This window's messages carried no content array, so it cannot
+                # answer for the phase it contributes to.
+                tool_observable_phases_incomplete.add(phase)
         sub = subagent_usage.setdefault(
             phase,
             {'subagent_total_tokens': 0, 'subagent_samples': 0, 'subagent_duration_ms': 0},
@@ -1077,7 +1085,10 @@ def _per_phase_buckets(
             'cost_usd': round(cost_usage.get(phase, 0.0), 8),
             **subagent_group,
         }
-        if message_scopes.get(phase, set()) <= tool_observable_scopes.get(phase, set()):
+        if (
+            message_scopes.get(phase, set()) <= tool_observable_scopes.get(phase, set())
+            and phase not in tool_observable_phases_incomplete
+        ):
             bucket['tool_uses'] = phase_tool_uses.get(phase, 0)
         per_phase[phase] = bucket
     return per_phase, message_count, subagent_phases
@@ -1407,18 +1418,24 @@ class OpenCodeRuntime(Runtime):
                 "Use OpenCode's built-in session mechanism for plan visibility",
             )
         resolved = _resolve_opencode_root(sid)
+        resolved_as = 'root' if resolved['ok'] else 'raw'
         lookup_id = str(resolved['root']) if resolved['ok'] else sid
         plan_id = session_binding.resolve_plan(lookup_id)
         if not plan_id and lookup_id != sid:
             # A bind that ran while the store was unreadable wrote the RAW id. Once
             # the store answers, the root slot is empty, so the raw slot is still
-            # the only place that binding can be found.
-            plan_id = session_binding.resolve_plan(sid)
+            # the only place that binding can be found — and it is the id actually
+            # read, so the payload names it.
+            fallback = session_binding.resolve_plan(sid)
+            if fallback:
+                plan_id = fallback
+                lookup_id = sid
+                resolved_as = 'raw'
         return toon_success(
             'session resolve-plan',
             {
                 'session_id': lookup_id,
-                'resolved_as': 'root' if resolved['ok'] else 'raw',
+                'resolved_as': resolved_as,
                 'resolved': bool(plan_id),
                 'plan_id': plan_id or '',
             },

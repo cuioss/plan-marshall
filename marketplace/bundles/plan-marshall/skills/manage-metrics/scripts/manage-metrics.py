@@ -569,9 +569,27 @@ def _token_population(phase_row: dict) -> str:
     usually gone, so it is accepted rather than guessed at. Go-forward rows are
     always stamped. An unrecognised value reads as ``dispatched`` too, rather
     than rendering a marker no reader can interpret.
+
+    A row stamped ``inline`` that ALSO carries sub-agent evidence is upgraded to
+    ``main_plus_subagent``: the inline stamp claims the phase dispatched nothing,
+    and a row with ``subagent_samples`` / ``subagent_total_tokens`` contradicts that
+    claim. Rendering it unchanged would print the very label this discrimination
+    exists to prevent.
     """
     value = phase_row.get('total_tokens_population')
-    return value if value in TOKEN_POPULATIONS else POPULATION_DISPATCHED
+    if value not in TOKEN_POPULATIONS:
+        value = POPULATION_DISPATCHED
+    if value == POPULATION_INLINE and _carries_subagent_evidence(phase_row):
+        return POPULATION_MAIN_PLUS_SUBAGENT
+    return value
+
+
+def _carries_subagent_evidence(phase_row: dict) -> bool:
+    """Return whether the row records any attributed sub-agent work."""
+    return bool(
+        (_coerce_numeric(phase_row.get('subagent_samples')) or 0)
+        or (_coerce_numeric(phase_row.get('subagent_total_tokens')) or 0)
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -2336,8 +2354,16 @@ def cmd_generate(args: argparse.Namespace) -> dict:
             # plus sub-agent), so no dispatched-only competitor may displace it:
             # replacing it with a dispatched measure is precisely the under-count
             # the population stamp exists to make impossible.
-            tokens_str = f'{int(raw_tokens):,}'
-            tokens_values.append(int(raw_tokens))
+            #
+            # A LEGACY row stamped `inline` was folded by an enrich that did not
+            # compose; its recorded total excludes the sub-agent figure it also
+            # recorded. Compose the cell here so the marked figure is the whole
+            # spend rather than the main-context part alone.
+            rendered_tokens = int(raw_tokens)
+            if phase.get('total_tokens_population') == POPULATION_INLINE and 'dispatched_total_tokens' not in phase:
+                rendered_tokens += int(_coerce_numeric(phase.get('subagent_total_tokens')) or 0)
+            tokens_str = f'{rendered_tokens:,}'
+            tokens_values.append(rendered_tokens)
             cell_source = 'total_tokens'
             fed_populations.add(population)
         elif _is_unknown(phase.get('total_tokens')) and winner is None:
@@ -2562,8 +2588,17 @@ def cmd_generate(args: argparse.Namespace) -> dict:
         total_tokens_str = UNKNOWN_TOKEN
     else:
         total_tokens_str = _total_str('tokens', lambda n: f'{n:,}')
-    if spans_populations and total_tokens_str not in ('-', UNKNOWN_TOKEN):
-        total_tokens_str += _TOTAL_CROSS_POPULATION_SUFFIX
+    if total_tokens_str not in ('-', UNKNOWN_TOKEN):
+        if spans_populations:
+            total_tokens_str += _TOTAL_CROSS_POPULATION_SUFFIX
+        elif tokens_population == POPULATION_MAIN_PLUS_SUBAGENT:
+            # A uniformly composed Total is STILL not the column's dispatched
+            # default, so it must say what it sums. Without this, the normal
+            # all-composed report rendered an unmarked Total directly above an
+            # annotation declaring the unmarked cell a dispatched measurement.
+            total_tokens_str += _POPULATION_CELL_SUFFIX[POPULATION_MAIN_PLUS_SUBAGENT]
+        elif tokens_population == POPULATION_INLINE:
+            total_tokens_str += _POPULATION_CELL_SUFFIX[POPULATION_INLINE]
     total_tool_uses_str = _total_str('tool_uses', str)
     total_billing_str = _total_str('billing', lambda n: f'{n:,}')
 
@@ -2863,8 +2898,9 @@ def cmd_generate(args: argparse.Namespace) -> dict:
                 )
             elif population == POPULATION_MAIN_PLUS_SUBAGENT:
                 relation = (
-                    'included in the Total tokens figure, which is this main-context spend added '
-                    "to the phase's dispatched sub-agent spend (subagent_total_tokens)"
+                    'included in the Total tokens figure, which is this phase whole measured spend — '
+                    'the main-context figure plus, where the target keeps the two apart, its '
+                    'dispatched sub-agent work'
                 )
             else:
                 relation = 'surfaced alongside the dispatched Total tokens, which does not include it'
