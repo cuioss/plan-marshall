@@ -101,6 +101,7 @@ import posixpath
 import re
 import shlex
 import sys
+import time
 from collections.abc import Callable
 from typing import Any, NamedTuple
 
@@ -658,6 +659,49 @@ def _r5_stripped_tokens(command: str) -> list[str]:
     return stripped
 
 
+def _spliced_segments(value: str) -> list[str]:
+    """Split a spliced COMMAND STRING into shell segments (quote-aware).
+
+    A wrapper's multi-command string (``zsh -c "cd /tmp; python3 -c x"``) must be
+    walked segment by segment — the interpreter is behind a ``cd`` and a
+    separator inside the string, not at its first word.
+    """
+    segments: list[str] = []
+    current: list[str] = []
+    in_single = False
+    in_double = False
+    escaped = False
+    for char in value:
+        if escaped:
+            current.append(char)
+            escaped = False
+            continue
+        if char == '\\' and not in_single:
+            current.append(char)
+            escaped = True
+            continue
+        if char == "'" and not in_double:
+            in_single = not in_single
+            current.append(char)
+            continue
+        if char == '"' and not in_single:
+            in_double = not in_double
+            current.append(char)
+            continue
+        if not in_single and not in_double and char in ';&|\n':
+            segments.append(''.join(current))
+            current = []
+            continue
+        current.append(char)
+    segments.append(''.join(current))
+    return [segment.strip() for segment in segments if segment.strip()]
+
+
+def _is_interpreter_program_token(token: str) -> bool:
+    """Whether *token* names an interpreter program (basename, case-insensitive)."""
+    return _PYTHON_PROGRAM_RE.match(_wrapper_basename(token).lower()) is not None
+
+
 def _strip_wrapper_tokens(tokens: list[str]) -> list[str]:
     """Strip leading wrappers/assignments from *tokens* (the R5 prefix walk).
 
@@ -685,7 +729,7 @@ def _strip_wrapper_tokens(tokens: list[str]) -> list[str]:
         if not isinstance(spec, dict):
             break
         index += 1
-        spliced: list[str] | None = None
+        spliced: str | None = None
         while index < total:
             option = tokens[index]
             if _R5_ASSIGNMENT_RE.match(option):
@@ -696,22 +740,43 @@ def _strip_wrapper_tokens(tokens: list[str]) -> list[str]:
             is_splice, value, consumed = _consume_wrapper_option(spec, option, tokens, index)
             index += consumed
             if is_splice:
-                try:
-                    spliced = shlex.split(value)
-                except ValueError:
-                    spliced = value.split()
+                spliced = value
                 break
         if spliced is not None:
-            return _strip_wrapper_tokens([*spliced, *tokens[index:]])
+            for segment in _spliced_segments(spliced):
+                try:
+                    segment_tokens = shlex.split(segment)
+                except ValueError:
+                    segment_tokens = segment.split()
+                walked = _strip_wrapper_tokens([*segment_tokens, *tokens[index:]])
+                if walked and _is_interpreter_program_token(walked[0]):
+                    return walked
+            segments = _spliced_segments(spliced)
+            first = segments[0] if segments else spliced
+            try:
+                first_tokens = shlex.split(first)
+            except ValueError:
+                first_tokens = first.split()
+            return _strip_wrapper_tokens([*first_tokens, *tokens[index:]])
         if spec.get('splice_positional') and index < total:
             # `watch '<command>'` / `parallel '<command>'` run their first
             # positional as a shell command, so it is spliced and walked.
             value = _strip_matched_quotes(tokens[index])
+            for segment in _spliced_segments(value):
+                try:
+                    segment_tokens = shlex.split(segment)
+                except ValueError:
+                    segment_tokens = segment.split()
+                walked = _strip_wrapper_tokens([*segment_tokens, *tokens[index + 1 :]])
+                if walked and _is_interpreter_program_token(walked[0]):
+                    return walked
+            segments = _spliced_segments(value)
+            first = segments[0] if segments else value
             try:
-                positional = shlex.split(value)
+                first_tokens = shlex.split(first)
             except ValueError:
-                positional = value.split()
-            return _strip_wrapper_tokens([*positional, *tokens[index + 1 :]])
+                first_tokens = first.split()
+            return _strip_wrapper_tokens([*first_tokens, *tokens[index + 1 :]])
         remaining = int(spec.get('leading_positionals') or 0)
         while remaining > 0 and index < total and not tokens[index].startswith('-'):
             index += 1
@@ -1024,7 +1089,7 @@ def _bundle_entry_candidates(entry: str, roots: tuple[str, ...]) -> list[str]:
         candidates.append(str(base.joinpath(flat_name, *rest)))
         nested = base / nested_dir
         candidates.append(str(nested.joinpath(*entry.split('/'))))
-        version_dir = _newest_version_dir(nested, version_marker)
+        version_dir = _newest_version_dir(nested, version_marker, entry)
         if version_dir is not None:
             candidates.append(str(version_dir.joinpath(*entry.split('/'))))
     return candidates
@@ -1049,15 +1114,28 @@ def _load_layout_data() -> dict[str, Any]:
     return data if isinstance(data, dict) else {}
 
 
-def _newest_version_dir(nested: pathlib.Path, marker: str) -> pathlib.Path | None:
-    """The NEWEST version directory of *nested* carrying the bundle marker, or ``None``.
+def _newest_version_dir(nested: pathlib.Path, marker: str, entry: str) -> pathlib.Path | None:
+    """The resolver's VERSION directory for *entry*, or ``None``.
 
-    A stray directory under ``{root}/plan-marshall/`` (``.../evil/…``) is never a
-    candidate: the deployed version is the one the resolver would select.
+    Delegates to the SHARED ``deployed_layout.newest_version_dir`` — the same
+    newest-marker-carrying-directory-that-contains-the-entry rule
+    ``bootstrap_plugin.resolve_bundle_path`` applies — so the hook, the resolver
+    and the guard select one version, not three. Falls back to an equivalent
+    local selection only when the shared module is unreachable.
     """
+    try:
+        import deployed_layout
+    except ImportError:
+        deployed_layout = None  # type: ignore[assignment]
+    if deployed_layout is not None:
+        return deployed_layout.newest_version_dir(nested, marker, entry)
     if not nested.is_dir():
         return None
-    candidates = [child for child in nested.iterdir() if child.is_dir() and (child / marker).is_file()]
+    candidates = [
+        child
+        for child in nested.iterdir()
+        if child.is_dir() and (child / marker).is_file() and (child / entry).exists()
+    ]
     if not candidates:
         return None
     return max(candidates, key=lambda child: _version_sort_key(child.name))
@@ -1512,7 +1590,10 @@ def _git_commit_target(command: str) -> _GitCommitInfo:
         None,
     )
     if git_at is None:
-        return _GitCommitInfo(False, None, None, None, False)
+        # A wrapper's spliced command string (`watch 'git commit -m x'`) has no raw
+        # `git` token: the stripped program IS the git invocation, so walk from it.
+        raw = stripped
+        git_at = 0
     environment: dict[str, str] = {}
     for token in raw[:git_at]:
         name, separator, value = _strip_matched_quotes(token).partition('=')
@@ -1675,16 +1756,21 @@ def _refusal_detail(payload: dict[str, Any]) -> str:
     return ''
 
 
+#: A runbook-lane marker older than this no longer binds anything.
+_LANE_MARKER_MAX_AGE_SECONDS = 24 * 60 * 60
+
+
 def _is_lane_run(payload: dict[str, Any]) -> bool:
-    """Whether this checkout carries a RUNBOOK-LANE marker.
+    """Whether this checkout carries a LIVE runbook-lane marker.
 
     Signal 3 of the plan-context predicate: a runbook-lane run issues every call
     with the MAIN checkout as its working directory, so neither Signal 1 (the
     lane runs in the main context) nor Signal 2 (no worktree path in the cwd)
     fires, and a consumer repository would be left unbound. The lane writes
-    ``.plan/temp/rb-<plan>/progress.md`` before any implementation work, which
-    makes it a narrower and more deterministic marker than guessing from a
-    ``git -C`` target.
+    ``.plan/temp/rb-<plan>/progress.md`` before any implementation work. The
+    marker is never removed, so it binds only while it is FRESH
+    (:data:`_LANE_MARKER_MAX_AGE_SECONDS`); a stale one would otherwise bind
+    R1-R5 in a consumer checkout forever.
     """
     root = _allow_list_root(payload) or gate.cwd(payload)
     if not root:
@@ -1694,7 +1780,17 @@ def _is_lane_run(payload: dict[str, Any]) -> bool:
         entries = list(temp_dir.iterdir())
     except OSError:
         return False
-    return any(entry.name.startswith('rb-') and (entry / 'progress.md').is_file() for entry in entries)
+    now = time.time()
+    for entry in entries:
+        if not entry.name.startswith('rb-'):
+            continue
+        marker = entry / 'progress.md'
+        try:
+            if now - marker.stat().st_mtime <= _LANE_MARKER_MAX_AGE_SECONDS:
+                return True
+        except OSError:
+            continue
+    return False
 
 
 def evaluate(payload: dict[str, Any]) -> str | None:

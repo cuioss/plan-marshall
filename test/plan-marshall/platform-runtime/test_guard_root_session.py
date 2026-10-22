@@ -107,6 +107,24 @@ _R6_NAMED_FORMS: tuple[str, ...] = (
 )
 
 
+def test_the_side_door_rows_depend_on_the_scope(
+    tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The negative control: with the scope switched off, the same rows are ADMITTED.
+
+    The table proves the hook's gating is what refuses them — restoring the gate
+    (i.e. removing this-repository/lane binding) turns all six red, exactly as the
+    merged code did.
+    """
+    monkeypatch.setattr(_HOOK, '_is_this_repository', lambda payload: False)
+    monkeypatch.setattr(_HOOK, '_is_lane_run', lambda payload: False)
+    monkeypatch.setattr(_HOOK.gate, 'context_gate', lambda payload: False)
+    for command in _ROOT_SESSION_SIDE_DOORS:
+        assert _hook_reason(command, cwd=str(REPO_ROOT)) is None, (
+            f'{command!r} must be ADMITTED once the scope is off, proving the rows are scope-driven'
+        )
+
+
 @pytest.mark.parametrize('command', _R6_NAMED_FORMS, ids=['git-dir-work-tree', 'env-git-dir', 'alias-resolved'])
 def test_r6_names_the_plan_from_every_commit_form(
     command: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, tmp_path_factory: pytest.TempPathFactory
@@ -140,12 +158,33 @@ def test_r6_refuses_an_unresolvable_commit_target(
     """An unexpanded ``-C`` variable and a shell aliased subcommand are refused fail-closed.
 
     The guard cannot know where such a commit lands, so it refuses rather than
-    guessing a plan — even with no plan state present.
+    guessing a plan — even with no plan state present. The refusal is scoped to
+    the enforced scope, so the payload names this repository as its project (as a
+    real main-checkout session does) while the shell cwd is the fixture.
     """
     monkeypatch.delenv('PLAN_BASE_DIR', raising=False)
+    monkeypatch.setenv('CLAUDE_PROJECT_DIR', str(REPO_ROOT))
     assert _hook_reason(command, cwd=str(tmp_path)) == _HOOK._R6_REASON
 
     harness = build_harness(tmp_path_factory.mktemp('d3-r6-unresolvable'))
+    blocked, message = harness.blocks(shell_event(command))
+    assert blocked, f'guard.js must refuse {command!r}; message={message!r}'
+    assert 'R6' in message, f'the refusal must be rule R6; message={message!r}'
+
+
+def test_r6_refuses_a_wrapper_spliced_commit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, tmp_path_factory: pytest.TempPathFactory
+) -> None:
+    """A commit hidden inside ``watch 'git commit …'`` is still a raw commit."""
+    base = tmp_path / '.plan' / 'local'
+    base.mkdir(parents=True)
+    _managed_plan(base, 'plan-a', '6-finalize')
+    monkeypatch.setenv('PLAN_BASE_DIR', str(base))
+    (base / 'worktrees' / 'plan-a').mkdir(parents=True)
+    command = "watch 'git -C .plan/local/worktrees/plan-a commit -m x'"
+    assert _hook_reason(command, cwd=str(tmp_path)) == _HOOK._R6_REASON
+    harness = build_harness(tmp_path_factory.mktemp('d3-r6-spliced'))
+    _managed_plan(harness.plan_base, 'plan-a', '6-finalize')
     blocked, message = harness.blocks(shell_event(command))
     assert blocked, f'guard.js must refuse {command!r}; message={message!r}'
     assert 'R6' in message, f'the refusal must be rule R6; message={message!r}'

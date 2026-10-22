@@ -337,11 +337,59 @@ function consumeWrapperOption(spec, token, tokens, index) {
   return { splice: false, value: null, consumed: values.includes(token) ? 2 : 1 }
 }
 
+// Split a spliced COMMAND STRING into its shell segments, so a wrapper's
+// multi-command string (`zsh -c "cd /tmp; python3 -c x"`) is walked segment by
+// segment instead of only at its first word. Quote-aware: a separator inside a
+// quoted span of the string is data.
+function splicedSegments(value) {
+  const segments = []
+  let current = ""
+  let inSingle = false
+  let inDouble = false
+  let escaped = false
+  for (const ch of String(value)) {
+    if (escaped) {
+      current += ch
+      escaped = false
+      continue
+    }
+    if (ch === "\\" && !inSingle) {
+      current += ch
+      escaped = true
+      continue
+    }
+    if (ch === "'" && !inDouble) {
+      inSingle = !inSingle
+      current += ch
+      continue
+    }
+    if (ch === '"' && !inSingle) {
+      inDouble = !inDouble
+      current += ch
+      continue
+    }
+    if (!inSingle && !inDouble && (ch === ";" || ch === "&" || ch === "|" || ch === "\n")) {
+      segments.push(current)
+      current = ""
+      continue
+    }
+    current += ch
+  }
+  segments.push(current)
+  return segments.map((segment) => segment.trim()).filter((segment) => segment.length > 0)
+}
+
+function isInterpreterProgramToken(token) {
+  const base = basenameOf(token)
+  return PYTHON_INTERPRETERS.has(base.toLowerCase()) || isPythonInterpreter(base)
+}
+
 // Strip leading wrapper/assignment prefixes, per the shared wrapper table.
-// `env -S <string>` and a shell's `-c <string>` SPLICE the string back through
-// the splitter, because the wrapper runs that string as the command. A wrapper's
-// `leading_positionals` (timeout's DURATION, flock's lock file, chrt's
-// priority, taskset's mask) are consumed before the walked command.
+// `env -S <string>`, a shell's `-c <string>` and `watch`/`parallel`'s positional
+// command string SPLICE the string back through the splitter, because the
+// wrapper runs that string as the command. A wrapper's `leading_positionals`
+// (timeout's DURATION, flock's lock file, chrt's priority, taskset's mask) are
+// consumed before the walked command.
 function stripWrappers(tokens, table) {
   let i = 0
   while (i < tokens.length) {
@@ -365,18 +413,39 @@ function stripWrappers(tokens, table) {
       const step = consumeWrapperOption(spec, option, tokens, i)
       i += step.consumed
       if (step.splice) {
-        const parts = shellSplit(step.value)
-        spliced = parts === null ? whitespaceSplit(step.value) : parts
+        spliced = step.value
         break
       }
     }
-    if (spliced !== null) return stripWrappers(spliced.concat(tokens.slice(i)), table)
+    if (spliced !== null) {
+      // Walk EVERY segment of the command string: an interpreter behind a `cd` or
+      // a separator in the string is still an interpreter this rule refuses.
+      for (const segment of splicedSegments(spliced)) {
+        const parts = shellSplit(segment)
+        const segmentTokens = parts === null ? whitespaceSplit(segment) : parts
+        const walked = stripWrappers(segmentTokens.concat(tokens.slice(i)), table)
+        if (walked.length && isInterpreterProgramToken(walked[0])) return walked
+      }
+      const firstSegment = splicedSegments(spliced)[0] ?? spliced
+      const parts = shellSplit(firstSegment)
+      return stripWrappers((parts === null ? whitespaceSplit(firstSegment) : parts).concat(tokens.slice(i)), table)
+    }
     if (spec.splice_positional && i < tokens.length) {
       // `watch '<command>'` / `parallel '<command>'` run their first positional
       // as a shell command, so it is spliced and walked like `env -S`.
-      const parts = shellSplit(stripMatchedQuotes(tokens[i]))
-      const splicedTokens = parts === null ? whitespaceSplit(tokens[i]) : parts
-      return stripWrappers(splicedTokens.concat(tokens.slice(i + 1)), table)
+      const value = stripMatchedQuotes(tokens[i])
+      for (const segment of splicedSegments(value)) {
+        const parts = shellSplit(segment)
+        const segmentTokens = parts === null ? whitespaceSplit(segment) : parts
+        const walked = stripWrappers(segmentTokens.concat(tokens.slice(i + 1)), table)
+        if (walked.length && isInterpreterProgramToken(walked[0])) return walked
+      }
+      const firstSegment = splicedSegments(value)[0] ?? value
+      const parts = shellSplit(firstSegment)
+      return stripWrappers(
+        (parts === null ? whitespaceSplit(firstSegment) : parts).concat(tokens.slice(i + 1)),
+        table,
+      )
     }
     let positionals = spec.leading_positionals || 0
     while (positionals > 0 && i < tokens.length && !tokens[i].startsWith("-")) {
@@ -678,9 +747,10 @@ function loadLayoutData(root) {
 }
 
 // The newest version directory of a nested bundle directory that carries the
-// resolver's version marker. A stray directory under `{root}/plan-marshall/` is
-// never a candidate: the deployed version is the one the resolver would select.
-function newestVersionDir(nested, marker) {
+// resolver's version marker AND carries *entry* — the same rule the resolver
+// applies (`bootstrap_plugin.resolve_bundle_path`: newest dir CONTAINING the
+// requested path), so the guard cannot select a version the resolver would not.
+function newestVersionDir(nested, marker, entry) {
   let entries
   try {
     entries = readdirSync(nested)
@@ -688,40 +758,34 @@ function newestVersionDir(nested, marker) {
     return null
   }
   let newest = null
-  let newestKey = null
   for (const name of entries) {
     const candidate = path.join(nested, name)
     try {
       if (!statSync(candidate).isDirectory()) continue
       if (!existsSync(path.join(candidate, ...marker.split("/")))) continue
+      if (entry && !existsSync(path.join(candidate, ...String(entry).split("/")))) continue
     } catch {
       continue
     }
-    const key = versionSortKey(name)
-    if (newestKey === null || compareVersionKeys(key, newestKey) > 0) {
-      newest = candidate
-      newestKey = key
-    }
+    if (newest === null || compareVersionNames(name, path.basename(newest)) > 0) newest = candidate
   }
   return newest
 }
 
-// Numeric-segment version ordering (`1.0.10` after `1.0.9`), mirroring the
-// resolver's `_version_sort_key`.
-function versionSortKey(name) {
-  return String(name)
-    .split(/[.-]/)
-    .map((part) => (/^\d+$/.test(part) ? Number(part) : part))
-}
-
-function compareVersionKeys(left, right) {
-  const length = Math.max(left.length, right.length)
+// Natural version ordering, mirroring the resolver's `_version_sort_key`: a run
+// of digits compares numerically, any other run lexically, and a missing segment
+// compares as "0" — so `1.0.10` sorts before `1.0.10.1` on every side.
+function compareVersionNames(left, right) {
+  const split = (value) => String(value).match(/\d+|\D+/g) || []
+  const leftParts = split(left)
+  const rightParts = split(right)
+  const length = Math.max(leftParts.length, rightParts.length)
   for (let i = 0; i < length; i++) {
-    const a = left[i]
-    const b = right[i]
+    const a = leftParts[i] ?? '0'
+    const b = rightParts[i] ?? '0'
     if (a === b) continue
-    if (typeof a === "number" && typeof b === "number") return a - b
-    return String(a) < String(b) ? -1 : 1
+    if (/^\d+$/.test(a) && /^\d+$/.test(b)) return Number(a) - Number(b)
+    return a < b ? -1 : 1
   }
   return 0
 }
@@ -745,7 +809,7 @@ function bundleEntryCandidates(entry, roots, layout) {
     candidates.add(rest ? path.join(root, flatName, rest) : path.join(root, flatName))
     const nested = path.join(root, nestedName)
     candidates.add(path.join(nested, entry))
-    const versionDir = newestVersionDir(nested, marker)
+    const versionDir = newestVersionDir(nested, marker, entry)
     if (versionDir) candidates.add(path.join(versionDir, entry))
   }
   return [...candidates]
@@ -786,6 +850,11 @@ function isThisRepository(root) {
 // repository would be left unbound. The progress file is written by the lane
 // before any implementation work and lives for the run, which makes it a
 // cheaper and narrower signal than guessing from `git -C` targets.
+//: A runbook-lane marker older than this no longer binds anything: the marker is
+//: written at run start and never removed, so without a freshness bound a single
+//: past lane run would bind R1-R5 in a consumer checkout forever.
+const LANE_MARKER_MAX_AGE_MS = 24 * 60 * 60 * 1000
+
 function isLaneRun(root) {
   if (!root) return false
   const tempDir = path.join(root, ".plan", "temp")
@@ -795,7 +864,16 @@ function isLaneRun(root) {
   } catch {
     return false
   }
-  return entries.some((name) => name.startsWith("rb-") && existsSync(path.join(tempDir, name, "progress.md")))
+  const now = Date.now()
+  return entries.some((name) => {
+    if (!name.startsWith("rb-")) return false
+    const marker = path.join(tempDir, name, "progress.md")
+    try {
+      return now - statSync(marker).mtimeMs <= LANE_MARKER_MAX_AGE_MS
+    } catch {
+      return false
+    }
+  })
 }
 
 function contextGate(agent, workdir, root) {
@@ -987,7 +1065,7 @@ function planIdFromGitDir(value) {
 // first word; a shell-expansion body (`!…`) or a directory value carrying `$` or
 // a backtick is UNRESOLVABLE, so R6 refuses fail-closed rather than guessing.
 function gitCommitInfo(command) {
-  const raw = rawCommandTokens(command)
+  let raw = rawCommandTokens(command)
   const stripped = commandTokens(command)
   if (!stripped.length || basenameOf(stripped[0]).toLowerCase() !== "git") {
     return { isCommit: false, cwdTarget: null, workTree: null, gitDir: null, unresolvable: false }
@@ -999,7 +1077,12 @@ function gitCommitInfo(command) {
       break
     }
   }
-  if (gitAt === -1) return { isCommit: false, cwdTarget: null, workTree: null, gitDir: null, unresolvable: false }
+  // A wrapper's spliced command string (`watch 'git commit -m x'`) has no raw
+  // `git` token: the stripped program IS the git invocation, so walk from there.
+  if (gitAt === -1) {
+    raw = stripped
+    gitAt = 0
+  }
   const environment = {}
   for (let i = 0; i < gitAt; i++) {
     const token = stripMatchedQuotes(raw[i])

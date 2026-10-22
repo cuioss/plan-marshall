@@ -332,12 +332,13 @@ _DEPLOYED_CACHE_PLACEHOLDER = 'newest_cache'
 
 
 def _newest_deployed_root() -> str | None:
-    """The newest nested deployed version directory, or ``None`` when none exists."""
+    """The newest nested deployed version directory carrying the recovery script."""
     import pathlib
 
+    recovery_entry = 'skills/tools-script-executor/scripts/generate_executor.py'
     for root in _HOOK._deployed_bundle_roots():
         nested = pathlib.Path(root) / 'plan-marshall'
-        version = _HOOK._newest_version_dir(nested, '.claude-plugin/plugin.json')
+        version = _HOOK._newest_version_dir(nested, '.claude-plugin/plugin.json', recovery_entry)
         if version is not None:
             return str(version)
     return None

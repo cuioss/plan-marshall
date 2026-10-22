@@ -172,18 +172,26 @@ def all_bundle_cache_roots(standards_dir: Path, env: Mapping[str, str] | None = 
     return roots
 
 
-def newest_version_dir(bundle_dir: Path, marker: str = '.claude-plugin/plugin.json') -> Path | None:
+def newest_version_dir(
+    bundle_dir: Path, marker: str = '.claude-plugin/plugin.json', contains: str | None = None
+) -> Path | None:
     """Return the NEWEST version directory of *bundle_dir* carrying *marker*.
 
-    ``None`` when no child is a version directory with the marker, so a stray
-    directory under the bundle (``.../plan-marshall/evil/…``) is never a
-    candidate: the deployed version is the one the resolver would select.
+    ``contains`` (a bundle-relative path) restricts the candidates to the version
+    directories that actually carry it — the resolver's own rule
+    (``bootstrap_plugin.resolve_bundle_path``), so a version that holds the bundle
+    but not the requested entry is never selected. ``None`` when no child
+    qualifies, so a stray directory under the bundle is never a candidate.
     """
     from marketplace_bundles import _version_sort_key  # local import: avoids an import cycle
 
     if not bundle_dir.is_dir():
         return None
-    candidates = [child for child in bundle_dir.iterdir() if child.is_dir() and (child / marker).is_file()]
+    candidates = [
+        child
+        for child in bundle_dir.iterdir()
+        if child.is_dir() and (child / marker).is_file() and (contains is None or (child / contains).exists())
+    ]
     if not candidates:
         return None
     return max(candidates, key=lambda child: _version_sort_key(child.name))

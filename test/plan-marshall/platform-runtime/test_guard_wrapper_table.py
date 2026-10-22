@@ -134,6 +134,11 @@ _D1_REFUSED: tuple[str, ...] = (
     'env find . -exec python3 -c x {} +',
     "watch 'python3 -c x'",
     "parallel 'python3 -c x'",
+    'zsh -c "cd /tmp; python3 -c x"',
+    'dash -c "cd /tmp && python3 -c x"',
+    'env -S "cd /tmp; python3 -c x"',
+    'script -c "cd /tmp; python3 -c x"',
+    "watch 'cd /tmp; python3 -c x'",
 )
 
 

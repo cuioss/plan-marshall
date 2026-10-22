@@ -17,8 +17,10 @@ plugin under ``node`` and the Claude hook's ``evaluate``.
 
 from __future__ import annotations
 
+import os
 import shutil
 import tempfile
+import time
 from pathlib import Path
 
 import pytest
@@ -265,6 +267,27 @@ def test_consumer_python_is_refused_inside_a_lane_run(
         assert _hook_refused('python3 x.py', cwd=str(consumer), in_context=False) is False
     finally:
         shutil.rmtree(consumer, ignore_errors=True)
+
+
+def test_a_stale_lane_marker_does_not_bind(tmp_path_factory: pytest.TempPathFactory) -> None:
+    """A lane marker older than the freshness bound no longer binds anything.
+
+    The marker is written at run start and never removed, so a single past lane
+    run must not bind R1-R5 in a consumer checkout forever.
+    """
+    consumer = build_harness(tmp_path_factory.mktemp('exact-stale-lane'), include_allowlist=False)
+    marker = consumer.root / '.plan' / 'temp' / 'rb-fixture' / 'progress.md'
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.write_text('setup: fixture\n', encoding='utf-8')
+    fresh, _message = consumer.blocks(shell_event('python3 x.py'))
+    assert fresh, 'a fresh marker must bind'
+
+    stale_seconds = 48 * 60 * 60
+    old = time.time() - stale_seconds
+    marker.touch()
+    os.utime(marker, (old, old))
+    admitted, message = consumer.blocks(shell_event('python3 x.py'))
+    assert not admitted, f'a stale marker must not bind; message={message!r}'
 
 
 def test_the_layout_data_is_the_one_shared_file() -> None:
