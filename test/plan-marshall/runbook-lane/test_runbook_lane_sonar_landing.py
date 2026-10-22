@@ -138,6 +138,21 @@ def test_a_non_zero_count_without_rules_is_refused() -> None:
     assert verdict['error'] == 'confirmed_read_without_rules'
 
 
+def test_a_measured_zero_with_rules_is_refused() -> None:
+    """The mirror guard: a zero leaves no rule open, so a rule beside it is another read."""
+    verdict = cmd_sonar_facts(_facts_args(open_count='0', rules='java:S1'))
+
+    assert verdict['status'] == 'error'
+    assert verdict['error'] == 'confirmed_zero_with_rules'
+
+
+def test_a_not_configured_state_refuses_a_read_supplied_beside_it() -> None:
+    verdict = cmd_sonar_facts(_facts_args(state='not_configured', count_status=None, rules='java:S1'))
+
+    assert verdict['status'] == 'error'
+    assert verdict['error'] == 'state_contradicts_read'
+
+
 def test_a_landing_carrying_the_confirmed_fact_is_complete() -> None:
     facts = cmd_sonar_facts(_facts_args(open_count='3', rules='java:S1234'))
 

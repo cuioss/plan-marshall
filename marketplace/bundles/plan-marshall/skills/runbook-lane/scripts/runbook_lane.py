@@ -1356,6 +1356,15 @@ def cmd_sonar_facts(args: argparse.Namespace) -> dict[str, Any]:
         }
 
     if state == 'not_configured':
+        # Symmetric with the gate: a read supplied beside `not_configured` is a
+        # contradiction, and rendering `n/a` over it would hide that the caller
+        # read one project's issues and reported another project's state.
+        if any(getattr(args, name, None) is not None for name in ('count_status', 'open_count', 'rules')):
+            return {
+                'status': 'error',
+                'error': 'state_contradicts_read',
+                'message': 'a not_configured state carries no read; drop --count-status, --open-count and --rules',
+            }
         count, rules = 'n/a', 'n/a'
     else:
         count_status = getattr(args, 'count_status', None)
@@ -1392,6 +1401,14 @@ def cmd_sonar_facts(args: argparse.Namespace) -> dict[str, Any]:
                     'message': '--rules is required for a confirmed count above zero',
                 }
             rules = ','.join(declared) if declared else 'none'
+            if declared and open_count == 0:
+                # The mirror of the guard above: a measured zero leaves no rule
+                # open, so a rule beside it describes some other read.
+                return {
+                    'status': 'error',
+                    'error': 'confirmed_zero_with_rules',
+                    'message': 'a confirmed count of zero carries no rule left open',
+                }
 
     return {
         'status': 'success',

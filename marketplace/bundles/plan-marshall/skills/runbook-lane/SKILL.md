@@ -68,6 +68,10 @@ python3 .plan/execute-script.py plan-marshall:runbook-lane:runbook_lane sonar-ga
   [--open-count N] [--open-keys "K1,K2"] [--dismissed-keys "K1,K2"]
 ```
 
+`--count-status`, `--open-count`, `--open-keys` and `--dismissed-keys` belong to a `configured`
+state: supplying any of them beside `--state not_configured` is refused as `state_contradicts_read`,
+because a project with no Sonar has no read to report.
+
 Decides the merge gate's Sonar condition (section 7) from the read taken on the head:
 `merge_allowed: true` for `not_configured`, for a confirmed `0`, and for a confirmed count whose
 every enumerated key carries a recorded dismissal. `undecidable` and `unconfigured` reads, an
@@ -497,7 +501,7 @@ whether to continue at the limit. Record every finding and its disposition.
    - An `undecidable` read (the analysis did not settle, or the REST/auth call failed) is a
      **blocker**, never a `0`: retry the read, and if it stays undecidable do not merge. An
      `unconfigured` read — the typed status the provider answers when the credential resolve said
-     existed cannot authenticate — is a blocker too; pass it to the gate and to `sonar-facts` as
+     existed could not authenticate — is a blocker too; pass it to the gate and to `sonar-facts` as
      `--count-status unconfigured`.
 5. **Read all three surfaces** after each push — the PR comments (`ci pr comments`), the PR reviews
    (`ci pr reviews`), and the inline threads in the PR comments. Triage every comment with
