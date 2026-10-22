@@ -32,7 +32,7 @@ _ENFORCEMENT_DOC = (
 _CLAUDE_MD = REPO_ROOT / 'CLAUDE.md'
 
 #: The decision sentence D1 of PLAN-LB-79 asked for and never recorded.
-_GIT_GREP_DECISION = 'Decision — the file-search git verbs join the enforced set'
+_GIT_GREP_DECISION = "Decision — the file-search git verbs join the hook's enforced set"
 
 
 def test_the_git_grep_decision_is_recorded() -> None:
@@ -41,8 +41,11 @@ def test_the_git_grep_decision_is_recorded() -> None:
     assert _GIT_GREP_DECISION in text, 'the enforcement document records no decision for the file-search git verbs'
     assert '`git grep`' in text and '`git -C … grep`' in text, 'the decision must name both spellings'
     decision_at = text.index(_GIT_GREP_DECISION)
-    decision_paragraph = text[decision_at : decision_at + 1200]
-    assert 'R2' in decision_paragraph, 'the decision must say the verbs join R2, not the R5 wrapper table'
+    decision_paragraph = text[decision_at : decision_at + 1600]
+    assert 'R2' in decision_paragraph, 'the decision must name the rule family each harness uses'
+    assert 'outside what the guard enforces' in decision_paragraph.lower(), (
+        'the decision must state the OpenCode gap instead of claiming a binding it does not provide'
+    )
     assert 'reason' in decision_paragraph.lower(), 'the decision must carry its reason'
 
 

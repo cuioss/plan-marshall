@@ -122,7 +122,8 @@ documented workflows runnable. Three things make that split explicit:
   token is joined with the shell's working directory FIRST, so a same-named script
   under a different cwd resolves outside the repository and is refused; the root
   is the project directory (the guard's `ctx.location.directory`; the hook's
-  `CLAUDE_PROJECT_DIR`, falling back to `cwd`). When the file is absent the hook
+  `CLAUDE_PROJECT_DIR`, falling back to the hook's OWN location — never the
+  payload `cwd`). When the file is absent the hook
   uses a narrow built-in base table (`marketplace/targets/sync.py`); the executor
   permit is hardcoded separately.
 
@@ -246,22 +247,23 @@ would otherwise return its own option token as the subcommand — missing the
 dash-skip is what closes that class, so the option tuple carries no enforcement
 weight beyond the detached-value case.
 
-**Decision — the file-search git verbs join the enforced set.** `git grep` and
-`git -C … grep` ARE inside what the guards enforce, and they are deliberately not
-added to the R5 wrapper table.
+**Decision — the file-search git verbs join the hook's enforced set and stay
+outside the guard's.** `git grep` and `git -C … grep` are deliberately not added
+to the R5 wrapper table.
 
-Reason: a file-search git verb reads file bodies exactly as bare `grep` does, so
-it belongs to the file-ops class each harness already has. On the Claude harness
-the R2 matcher refuses it, with the structural option walk above resolving the
-subcommand through every global-option spelling. On the OpenCode harness the
-guard's R2 is the MUTATION class only — read-side probes (`ls`, `cat`, `grep`,
-`git grep`) are governed by the two-tier permission map instead, which denies
-`git grep *` at every tier and `grep *` at the global, executor and reader tiers
-(the orchestrator's small-ops carve-out makes `grep *` an ask there). Adding a
-wrapper-table entry would have put the verb in the WRONG class and created a
-second, weaker path to a verdict each harness already reaches. PLAN-LB-79 D1
-asked for this decision and it was never recorded; it is recorded here, and a doc
-test asserts this paragraph exists, so it cannot be lost again.
+Reason: the two surfaces are different classes, and each already reaches a
+verdict for the direct spelling. The Claude hook's R2 is the file-ops family, and
+its structural option walk refuses `git grep` AND `git -C … grep`. The OpenCode
+guard's R2 is the MUTATION class only — read-side probes are governed by the
+two-tier permission map — and that map denies the direct `git grep *` spelling at
+every tier while a `git -C … grep` command does not match a `git grep *` pattern.
+The `git -C …` spelling is therefore recorded as OUTSIDE what the guard enforces:
+the guard's R2 is not the place for read-side probes, and adding a wrapper-table
+entry would put the verb in the wrong class and create a second, weaker path to a
+verdict the hook already reaches. The remedy for a content question is the same on
+both harnesses: `architecture search --content --pattern P`. PLAN-LB-79 D1 asked
+for this decision and it was never recorded; it is recorded here, and a doc test
+asserts this paragraph exists, so it cannot be lost again.
 
 **Explicit non-triggers** — these are not file-ops and must keep working:
 

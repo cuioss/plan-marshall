@@ -745,34 +745,36 @@ function readTextIfFile(value, cwd) {
 }
 
 // The directory a wrapper OPTION changes to, or null when the option is not a
-// directory change. `env -C`/`--chdir` and `sudo -D`/`--directory` are the only
-// directory options the table's wrappers have, and a short CLUSTER is walked
+// directory change. WHICH options change directory is TABLE DATA (each wrapper's
+// `dir_options`), so a wrapper added later declares its own and neither
+// implementation carries a second literal mapping. A short CLUSTER is walked
 // letter by letter with the table's value-letter rule, so `env -iC/tmp/x` and
 // `sudo -D/tmp/x` are read exactly like their detached spellings. This is the
 // ONE rule `effectiveCwd` and the floor both use.
 function wrapperDirectoryValue(wrapper, option, tokens, i) {
-  const longForms =
-    wrapper === "env" ? ["--chdir"] : wrapper === "sudo" ? ["--chdir", "--directory"] : []
-  for (const form of longForms) {
+  const spec = WRAPPER_TABLE.wrappers[wrapper]
+  if (!spec) return null
+  const dirOptions = (spec.dir_options || []).map(String)
+  if (!dirOptions.length) return null
+  for (const form of dirOptions) {
+    if (!form.startsWith("--")) continue
     if (option === form || option.startsWith(`${form}=`)) {
       const value = option.includes("=") ? option.slice(option.indexOf("=") + 1) : stripMatchedQuotes(tokens[i + 1] ?? "")
       return value || null
     }
   }
   if (!option.startsWith("-") || option.startsWith("--") || option.length < 2) return null
-  const spec = WRAPPER_TABLE.wrappers[wrapper] || EMPTY_WRAPPER_SPEC
   const valueLetters = new Set(spec.value_letters || [])
   const letters = option.slice(1)
   for (let k = 0; k < letters.length; k++) {
     const ch = letters[k]
-    const isDirectoryLetter = (wrapper === "env" && ch === "C") || (wrapper === "sudo" && ch === "D")
-    if (isDirectoryLetter) {
+    if (dirOptions.includes(`-${ch}`)) {
       const rest = letters.slice(k + 1)
       const value = rest || stripMatchedQuotes(tokens[i + 1] ?? "")
       return value || null
     }
     // A value-taking letter before this point consumes the REST of the cluster,
-    // so a later `C`/`D` is that option's VALUE, not a flag.
+    // so a later directory letter is that option's VALUE, not a flag.
     if (valueLetters.has(ch)) return null
   }
   return null

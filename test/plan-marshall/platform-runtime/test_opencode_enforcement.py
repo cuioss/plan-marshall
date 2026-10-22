@@ -31,7 +31,7 @@ import re
 from typing import Any
 
 import pytest
-from _guard_node_harness import SUB_AGENT_AGENT, WORKTREE_WORKDIR, build_harness, shell_event
+from _guard_node_harness import SUB_AGENT_AGENT, WORKTREE_WORKDIR, build_harness, shell_event, wrapper_table
 from opencode_runtime import OpenCodeRuntime, to_opencode_grant
 from toon_parser import parse_toon
 
@@ -280,7 +280,11 @@ def test_guard_r2_blocks_mutation_class_not_read_probes() -> None:
     assert 'rm' in _GUARD_MUTATION_FILE_OPS
     for probe in _GUARD_READ_PROBES:
         assert probe not in _GUARD_MUTATION_FILE_OPS, f'read probe {probe!r} must not be an R2 guard member'
-    for shell in ('sh', 'bash', 'zsh', 'fish', 'csh', 'tcsh', 'source'):
+    # Derived from the shared table, so a shell added there (dash, ksh, fish, …) is
+    # automatically included in this negative assertion.
+    table_shells = set(wrapper_table().get('shells', ()))
+    assert table_shells, 'the shared wrapper table declares no shells'
+    for shell in sorted(table_shells | {'source'}):
         assert shell not in _GUARD_MUTATION_FILE_OPS, f'shell {shell!r} must come from the shared table, not a literal'
 
 

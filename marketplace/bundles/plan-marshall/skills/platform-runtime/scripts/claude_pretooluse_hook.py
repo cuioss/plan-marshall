@@ -784,14 +784,22 @@ def _read_text_if_file(value: str, cwd: str | None) -> str:
 def _wrapper_directory_value(wrapper: str, option: str, tokens: list[str], index: int) -> str | None:
     """The directory a wrapper OPTION changes to, or ``None``.
 
-    ``env -C``/``--chdir`` and ``sudo -D``/``--directory`` are the only directory
-    options the table's wrappers have. A short CLUSTER is walked letter by letter
-    with the table's value-letter rule, so ``env -iC/tmp/x`` and ``sudo -D/tmp/x``
-    are read exactly like their detached spellings. This is the ONE rule
+    WHICH options change directory is TABLE DATA (each wrapper's ``dir_options``),
+    so a wrapper added later declares its own and neither implementation carries a
+    second literal mapping. A short CLUSTER is walked letter by letter with the
+    table's value-letter rule, so ``env -iC/tmp/x`` and ``sudo -D/tmp/x`` are read
+    exactly like their detached spellings. This is the ONE rule
     :func:`_effective_cwd` and the floor both use.
     """
-    long_forms = ('--chdir',) if wrapper == 'env' else ('--chdir', '--directory') if wrapper == 'sudo' else ()
-    for form in long_forms:
+    spec = _wrapper_table()['wrappers'].get(wrapper)
+    if not isinstance(spec, dict):
+        return None
+    dir_options = [str(option_name) for option_name in (spec.get('dir_options') or [])]
+    if not dir_options:
+        return None
+    for form in dir_options:
+        if not form.startswith('--'):
+            continue
         if option == form or option.startswith(f'{form}='):
             value = option.split('=', 1)[1] if '=' in option else ''
             if not value:
@@ -799,17 +807,15 @@ def _wrapper_directory_value(wrapper: str, option: str, tokens: list[str], index
             return value or None
     if not option.startswith('-') or option.startswith('--') or len(option) < 2:
         return None
-    spec = _wrapper_table()['wrappers'].get(wrapper) or {}
     value_letters = set(spec.get('value_letters') or [])
     letters = option[1:]
     for position, letter in enumerate(letters):
-        is_directory_letter = (wrapper == 'env' and letter == 'C') or (wrapper == 'sudo' and letter == 'D')
-        if is_directory_letter:
+        if f'-{letter}' in dir_options:
             rest = letters[position + 1 :]
             value = rest or (_strip_matched_quotes(tokens[index + 1]) if index + 1 < len(tokens) else '')
             return value or None
         # A value-taking letter before this point consumes the REST of the cluster,
-        # so a later `C`/`D` is that option's VALUE, not a flag.
+        # so a later directory letter is that option's VALUE, not a flag.
         if letter in value_letters:
             return None
     return None
@@ -1706,8 +1712,8 @@ def _match_r5_interpreter_call(
     every later token is scanned with the same fail-closed rule. R1 matches
     against the unstripped command; R2's shell-spawn class and R4's build class
     also read the stripped program, so a wrapper cannot hide a shell spawn or a
-    build tool from them. *root* is the
-    repository root the allow-list match resolves against (the payload ``cwd``).
+    build tool from them. *root* is the allow-list root (:func:`_allow_list_root`:
+    ``CLAUDE_PROJECT_DIR`` or the hook's own location, never the payload ``cwd``).
     """
     command = _bash_command(tool_name, tool_input)
     if command is None:

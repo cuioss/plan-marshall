@@ -219,15 +219,33 @@ def test_r2_spawn_set_is_derived_from_the_shared_table(tmp_path_factory) -> None
     assert 'R2' in message, f'the refusal must be rule R2; message={message!r}'
     assert _hook_refused(source_command), 'the hook must refuse the `source` builtin as an R2 spawn'
 
+    # Every table shell is an R2 SPAWN on both harnesses, proven by a command that
+    # names NO interpreter — so the refusal cannot come from R5.
+    benign = [f"{shell} -c 'printf ok'" for shell in sorted(table_shells)]
+    outcomes = harness.run([shell_event(row, agent=SUB_AGENT_AGENT) for row in benign])
+    for row, outcome in zip(benign, outcomes, strict=True):
+        assert outcome.blocked, f'guard.js admitted the shell spawn {row!r}'
+        assert 'R2' in outcome.message, f'{row!r} must be refused as R2; message={outcome.message!r}'
+        payload = {'agent_type': SUB_AGENT_AGENT, 'tool_name': 'Bash', 'tool_input': {'command': row}}
+        assert _HOOK.evaluate(payload) == _HOOK._R2_REASON, f'the hook must refuse {row!r} as R2'
+
+    # The directory-option mapping is data too: neither implementation hard-codes
+    # `env`/`sudo` directory letters.
+    assert wrapper_table()['wrappers']['env'].get('dir_options'), 'env must declare its directory options in the table'
+    assert wrapper_table()['wrappers']['sudo'].get('dir_options'), (
+        'sudo must declare its directory options in the table'
+    )
     guard_source = guard_plugin_path().read_text(encoding='utf-8')
+    hook_source = (
+        REPO_ROOT / 'marketplace/bundles/plan-marshall/skills/platform-runtime/scripts/claude_pretooluse_hook.py'
+    ).read_text(encoding='utf-8')
+    assert 'dir_options' in guard_source, 'guard.js must read the directory-option data'
+    assert 'dir_options' in hook_source, 'the hook must read the directory-option data'
     assert 'WRAPPER_TABLE.shells' in guard_source, 'guard.js must derive its shell spawn set from the shared table'
     parsed = guard_source.split('const MUTATION_FILE_OPS = new Set([', 1)[1].split('])', 1)[0]
     for shell in table_shells:
         assert f'"{shell}"' not in parsed, f'guard.js MUTATION_FILE_OPS still carries a literal shell {shell!r}'
 
-    hook_source = (
-        REPO_ROOT / 'marketplace/bundles/plan-marshall/skills/platform-runtime/scripts/claude_pretooluse_hook.py'
-    ).read_text(encoding='utf-8')
     assert '_R2_SHELL_SPAWNS = (' not in hook_source, 'the hook still carries a literal shell-spawn tuple'
     assert "get('shells')" in hook_source, 'the hook must derive its shell spawn set from the shared table'
 
