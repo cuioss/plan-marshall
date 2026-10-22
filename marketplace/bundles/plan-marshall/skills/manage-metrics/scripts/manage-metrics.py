@@ -303,10 +303,29 @@ _DENOMINATOR_FIELDS = ('deliverable_count', 'files_modified', 'tasks_completed')
 # ``total_tokens_population`` is that discriminator, persisted by ``cmd_enrich``
 # on every phase row it touches so no render site and no consumer has to infer
 # the population from a field name that does not state one.
+#
+# ``main_plus_subagent`` is the population of a phase whose window carried BOTH
+# main-context and sub-agent usage: ``total_tokens`` is the sum of the two, so the
+# figure is the phase's whole measured spend. Keeping the two apart from
+# ``dispatched``/``mixed`` matters because those two name a cell that covers only
+# one of the two populations; a landing total summed out of them is a fraction of
+# what the plan cost.
 POPULATION_DISPATCHED = 'dispatched'
 POPULATION_INLINE = 'inline'
 POPULATION_MIXED = 'mixed'
-TOKEN_POPULATIONS = (POPULATION_DISPATCHED, POPULATION_INLINE, POPULATION_MIXED)
+POPULATION_MAIN_PLUS_SUBAGENT = 'main_plus_subagent'
+TOKEN_POPULATIONS = (POPULATION_DISPATCHED, POPULATION_INLINE, POPULATION_MIXED, POPULATION_MAIN_PLUS_SUBAGENT)
+
+#: The populations whose ``total_tokens`` already measures the phase's WHOLE
+#: spend, so the dispatched-measure reconciliation must not replace it with a
+#: dispatched-only competitor.
+WHOLE_PHASE_POPULATIONS = frozenset({POPULATION_INLINE, POPULATION_MAIN_PLUS_SUBAGENT})
+
+#: Values a runtime may report for ``four_field_scope``: what the four usage
+#: fields of its per-phase buckets already cover.
+FOUR_FIELD_SCOPE_MAIN_CONTEXT = 'main_context'
+FOUR_FIELD_SCOPE_MAIN_PLUS_SUBAGENT = 'main_plus_subagent'
+FOUR_FIELD_SCOPES = (FOUR_FIELD_SCOPE_MAIN_CONTEXT, FOUR_FIELD_SCOPE_MAIN_PLUS_SUBAGENT)
 
 # Phase Breakdown ``Tokens`` column header. The header names a DEFAULT
 # population plus the marking convention that carries the exceptions — the
@@ -323,6 +342,7 @@ _TOKENS_COLUMN_HEADER = 'Tokens (dispatched unless marked)'
 _POPULATION_CELL_SUFFIX = {
     POPULATION_INLINE: ' (inline)',
     POPULATION_MIXED: ' (mixed)',
+    POPULATION_MAIN_PLUS_SUBAGENT: ' (main + sub-agent)',
 }
 
 # ``Total`` row ``Tokens`` cell suffix. The Total inherits the column's declared
@@ -388,6 +408,8 @@ _TOTALS_DENOMINATOR_FIELD = 'totals_population_denominator'
 # ``denominators_sampled_at``; it is not what a reader tests.
 _TOTALS_SAMPLED_AT_FIELD = 'totals_sampled_at'
 _TOTALS_SPANS_POPULATIONS_FIELD = 'totals_tokens_spans_populations'
+# The population the Tokens Total sums, named beside the figure it qualifies.
+_TOTALS_POPULATION_FIELD = 'totals_tokens_population'
 _BOUNDARY_EXCLUDED_CLASSES_FIELD = 'dispatch_boundary_excluded_classes'
 
 # ---------------------------------------------------------------------------
@@ -486,6 +508,11 @@ _POPULATION_BULLET_NOTE = {
         'separately as inline_main_context_tokens and NOT included here; the two populations are '
         'measured by different methods and are not additively comparable'
     ),
+    POPULATION_MAIN_PLUS_SUBAGENT: (
+        'whole-phase population — the sum of this phase main-context spend '
+        '(inline_main_context_tokens) and its dispatched sub-agent spend '
+        '(subagent_total_tokens), both measured from the same session store over the same window'
+    ),
 }
 
 # The two "unattributed" residuals name the SAME word for two DIFFERENT
@@ -563,12 +590,15 @@ def _token_population(phase_row: dict) -> str:
 #     inflated figure). It is refused the maximum in BOTH cases; only an exact or
 #     coverage-undecidable measure competes (see `_boundary_coverage_state`).
 #   * A measure of a DIFFERENT population may not enter at all. On an `inline`
-#     row `total_tokens` carries a main-context measurement (see
-#     `_token_population`), so it is excluded — putting it in a
-#     dispatched-population max would be the very mislabel the discriminator
-#     exists to prevent.
+#     or `main_plus_subagent` row `total_tokens` carries a measurement that
+#     already covers more than the dispatched population (see `_token_population`),
+#     so it is excluded — putting it in a dispatched-population max would be the
+#     very mislabel the discriminator exists to prevent. The dispatched figure
+#     such a row received from `<usage>` / the accumulator is preserved beside it
+#     as `dispatched_total_tokens`, and THAT competes here.
 _DISPATCHED_MEASURE_FIELDS = (
     'total_tokens',
+    'dispatched_total_tokens',
     'dispatch_boundary_total',
     'subagent_total_tokens',
 )
@@ -1054,7 +1084,7 @@ def _eligible_dispatched_measures(phase_row: dict) -> list[tuple[str, int]]:
         value = _coerce_numeric(phase_row.get(field))
         if not isinstance(value, (int, float)) or not value:
             continue
-        if field == 'total_tokens' and population == POPULATION_INLINE:
+        if field == 'total_tokens' and population in WHOLE_PHASE_POPULATIONS:
             continue
         # A boundary sum is refused the maximum when it cannot be trusted as a
         # competing measurement: PARTIAL (a floor — fewer rows than dispatches) or
@@ -1412,6 +1442,7 @@ def write_metrics(plan_id: str, data: dict, *, preserve_totals: bool = False) ->
         for field in (
             _TOTALS_DENOMINATOR_FIELD,
             _TOTALS_SPANS_POPULATIONS_FIELD,
+            _TOTALS_POPULATION_FIELD,
             _TOTALS_SAMPLED_AT_FIELD,
             TOTALS_TOKENS_UNKNOWN_PHASES_FIELD,
         ):
@@ -1637,7 +1668,12 @@ def _reconcile_accumulator_into_phase(phase_data: dict, accumulator: dict[str, i
 
 
 def _close_phase_accumulating(
-    phase_data: dict, plan_id: str, phase: str, args: argparse.Namespace, now: str
+    phase_data: dict,
+    plan_id: str,
+    phase: str,
+    args: argparse.Namespace,
+    now: str,
+    intervals: list[dict[str, str]] | None = None,
 ) -> dict[str, object]:
     """Close one phase row for one call, accumulating per-close totals onto it.
 
@@ -1682,6 +1718,10 @@ def _close_phase_accumulating(
     # earlier close with no intervening start-phase (see
     # _accumulate_duration_seconds).
     prior_end_time = phase_data.get('end_time')
+    # The interval this close ends. Recorded per close, so a re-entered phase
+    # leaves one window per interval it was open instead of one window spanning
+    # the phases in between (see _phase_window_lookup).
+    interval_start = phase_data.get('start_time')
     # Stamp end_time unconditionally: it is the sole marker cmd_generate's
     # end_time-presence check reads. An inline phase closes here with the usage
     # flags omitted (no agent <usage> envelope) and still carries the marker —
@@ -1735,6 +1775,10 @@ def _close_phase_accumulating(
     # fields the row actually carries, so it must run after every field write
     # above.
     _stamp_value_scope(phase_data)
+    # Record the closed interval AFTER the row writes, so the logged start is the
+    # one this close actually ended. A row with no recorded start contributes no
+    # interval — an invented window would attribute usage the phase never held.
+    _record_phase_interval(intervals, phase, interval_start, now)
 
     return {
         'total_tokens': total_tokens,
@@ -1766,10 +1810,12 @@ def cmd_end_phase(args: argparse.Namespace) -> dict:
         data['phases'][phase] = {}
 
     phase_data = data['phases'][phase]
-    closed = _close_phase_accumulating(phase_data, plan_id, phase, args, now)
+    intervals = _interval_log(data)
+    closed = _close_phase_accumulating(phase_data, plan_id, phase, args, now, intervals=intervals)
     total_tokens = closed['total_tokens']
     retrospective_tokens = closed['retrospective_tokens']
     accumulator = closed['accumulator']
+    _store_interval_log(data, intervals)
 
     data['updated'] = now
     write_metrics(plan_id, data)
@@ -2220,6 +2266,11 @@ def cmd_generate(args: argparse.Namespace) -> dict:
     # row records separately.
     inline_population_phases: list[str] = []
     mixed_population_phases: list[str] = []
+    main_plus_subagent_phases: list[str] = []
+    # The populations that actually fed the Tokens Total. The persisted
+    # ``(spans populations)`` marker is derived from this set, so it states a
+    # genuine disagreement rather than a rule of thumb.
+    fed_populations: set[str] = set()
     # Phases whose Tokens cell is a never-closed phase's dispatch-boundary floor,
     # collected so the annotation under the table can name them and their marker.
     unclosed_boundary_phases: list[tuple[str, int]] = []
@@ -2241,6 +2292,7 @@ def cmd_generate(args: argparse.Namespace) -> dict:
     data_rows: list[tuple[str, ...]] = []
 
     for phase_name, phase in breakdown_rows:
+        population = _token_population(phase)
         wall_ms = _wall_clock_ms(phase)
         worked_ms = _worked_ms(phase)
         idle_ms = phase.get('idle_duration_ms')
@@ -2268,7 +2320,16 @@ def cmd_generate(args: argparse.Namespace) -> dict:
         raw_tokens = _numeric(phase.get('total_tokens'))
         winner = _reconcile_dispatched_measures(phase)
         cell_source: str | None = None
-        if _is_unknown(phase.get('total_tokens')) and winner is None:
+        if population in WHOLE_PHASE_POPULATIONS and raw_tokens is not None:
+            # The row's total IS the phase's whole measured spend (main-context
+            # plus sub-agent), so no dispatched-only competitor may displace it:
+            # replacing it with a dispatched measure is precisely the under-count
+            # the population stamp exists to make impossible.
+            tokens_str = f'{int(raw_tokens):,}'
+            tokens_values.append(int(raw_tokens))
+            cell_source = 'total_tokens'
+            fed_populations.add(population)
+        elif _is_unknown(phase.get('total_tokens')) and winner is None:
             # Stated absence, not a number and not a dash: the phase ran
             # unmeasured, so the cell says `unknown` and feeds nothing to the
             # Total. A winning dispatched measure would still render (it is a
@@ -2284,6 +2345,7 @@ def cmd_generate(args: argparse.Namespace) -> dict:
             tokens_str = f'{winning_value:,}'
             tokens_values.append(winning_value)
             cell_source = winning_field
+            fed_populations.add(population)
         elif raw_tokens is not None:
             # No eligible dispatched measure. The row still carries a figure —
             # the inline phase's main-context total — which renders on its own
@@ -2291,6 +2353,7 @@ def cmd_generate(args: argparse.Namespace) -> dict:
             tokens_str = f'{int(raw_tokens):,}'
             tokens_values.append(int(raw_tokens))
             cell_source = 'total_tokens'
+            fed_populations.add(population)
         else:
             tokens_str = '-'
 
@@ -2314,7 +2377,7 @@ def cmd_generate(args: argparse.Namespace) -> dict:
         # reconciliation trusted more) — then mark whenever the cell is the
         # boundary sum on an unclosed row, however it got there.
         floor = _unclosed_boundary_floor(phase)
-        if floor is not None:
+        if floor is not None and population not in WHOLE_PHASE_POPULATIONS:
             current = tokens_values[-1] if cell_source else None
             if current is None or floor > current:
                 if cell_source:
@@ -2364,13 +2427,14 @@ def cmd_generate(args: argparse.Namespace) -> dict:
         # look cross-population when no inline figure fed it.
         # `unknown` cells take no population marker: there is no measured
         # population to declare, and a suffix would assert one.
-        population = _token_population(phase)
         if tokens_str != '-' and tokens_str != UNKNOWN_TOKEN:
             tokens_str += _POPULATION_CELL_SUFFIX.get(population, '')
             if population == POPULATION_INLINE:
                 inline_population_phases.append(phase_name)
             elif population == POPULATION_MIXED:
                 mixed_population_phases.append(phase_name)
+            elif population == POPULATION_MAIN_PLUS_SUBAGENT:
+                main_plus_subagent_phases.append(phase_name)
             # The coverage marker rides AFTER the population marker: they qualify
             # different things (which population the figure measures, and whether
             # it covers the whole phase), and a cell can legitimately carry both.
@@ -2424,8 +2488,19 @@ def cmd_generate(args: argparse.Namespace) -> dict:
     # an `(inline)` row fed the sum, the Total spans populations and says so.
     # Only `(inline)` rows cross-contaminate the sum — a `(mixed)` row's cell is
     # the dispatched figure, with its inline spend deliberately excluded.
-    spans_populations = bool(inline_population_phases)
+    spans_populations = len(fed_populations) > 1
     data[_TOTALS_SPANS_POPULATIONS_FIELD] = 'true' if spans_populations else 'false'
+    # Name the population the Total actually sums. One value means every fed row
+    # measured the same thing; `mixed` means the sum spans populations and the
+    # per-row markers are the only way to read which part is which. This is the
+    # field a landing reads when it has to state what its `total_tokens` covers.
+    if not fed_populations:
+        tokens_population = POPULATION_DISPATCHED
+    elif len(fed_populations) == 1:
+        tokens_population = next(iter(fed_populations))
+    else:
+        tokens_population = POPULATION_MIXED
+    data[_TOTALS_POPULATION_FIELD] = tokens_population
     # The declared exclusion set, as DATA. It is the key to every boundary
     # coverage shortfall the report shows, and it previously existed only inside
     # the rendered annotation — so a script reading the store got the coverage
@@ -2552,18 +2627,23 @@ def cmd_generate(args: argparse.Namespace) -> dict:
     # the default renders whenever ANY marker appears — including a report whose
     # only exceptions are `(mixed)`, which a gate on the inline case alone would
     # leave with markers and no key.
-    if inline_population_phases or mixed_population_phases:
+    if inline_population_phases or mixed_population_phases or main_plus_subagent_phases:
         population_clauses = [
             '> Tokens population: an unmarked cell is a dispatched-subagent measurement — '
             'the default this column header declares.'
         ]
+        if main_plus_subagent_phases:
+            population_clauses.append(
+                'Marked `(main + sub-agent)` — the cell is the phase whole measured spend: its '
+                'main-context figure (also recorded as inline_main_context_tokens) added to its '
+                'dispatched sub-agent figure (subagent_total_tokens), both read from the same '
+                f'session store over the same window: {", ".join(main_plus_subagent_phases)}.'
+            )
         if inline_population_phases:
             population_clauses.append(
                 'Marked `(inline)` — the phase dispatched nothing, so the cell is the '
                 'main-context-window measurement enrich folded into total_tokens (also recorded '
-                f'under its own name as inline_main_context_tokens): {", ".join(inline_population_phases)}. '
-                'The **Total** therefore sums more than one population and is not a dispatched '
-                'total; its cell is marked `(spans populations)`.'
+                f'under its own name as inline_main_context_tokens): {", ".join(inline_population_phases)}.'
             )
         if mixed_population_phases:
             population_clauses.append(
@@ -2572,6 +2652,15 @@ def cmd_generate(args: argparse.Namespace) -> dict:
                 'inline_main_context_tokens and is excluded from both the cell and the **Total**: '
                 f'{", ".join(mixed_population_phases)}.'
             )
+        population_clauses.append(
+            f'The **Total** sums the `{data[_TOTALS_POPULATION_FIELD]}` population'
+            + (
+                ' and therefore spans more than one population — it is not a dispatched total, and '
+                'its cell is marked `(spans populations)`.'
+                if data[_TOTALS_SPANS_POPULATIONS_FIELD] == 'true'
+                else '.'
+            )
+        )
         lines.append(' '.join(population_clauses))
         lines.append('')
 
@@ -2760,6 +2849,11 @@ def cmd_generate(args: argparse.Namespace) -> dict:
                     'this phase dispatched nothing, so this is the same figure Total tokens '
                     'carries, restated here under its own population-honest name'
                 )
+            elif population == POPULATION_MAIN_PLUS_SUBAGENT:
+                relation = (
+                    'included in the Total tokens figure, which is this main-context spend added '
+                    "to the phase's dispatched sub-agent spend (subagent_total_tokens)"
+                )
             else:
                 relation = 'surfaced alongside the dispatched Total tokens, which does not include it'
             lines.append(
@@ -2919,6 +3013,7 @@ def cmd_generate(args: argparse.Namespace) -> dict:
         totals_echo[field] = data[field]
         totals_echo[count_field] = data[count_field]
     totals_echo[_TOTALS_SPANS_POPULATIONS_FIELD] = data[_TOTALS_SPANS_POPULATIONS_FIELD]
+    totals_echo[_TOTALS_POPULATION_FIELD] = data[_TOTALS_POPULATION_FIELD]
     totals_echo[_TOTALS_SAMPLED_AT_FIELD] = data[_TOTALS_SAMPLED_AT_FIELD]
     # Measured-subset total: the return quotes the measured subset sum with its
     # count while any row is measured; only the nothing-measured run returns
@@ -3321,9 +3416,11 @@ def cmd_phase_boundary(args: argparse.Namespace) -> dict:
         if created_ts is not None:
             prev_data['start_time'] = created_ts
 
-    closed = _close_phase_accumulating(prev_data, plan_id, prev_phase, args, end_now)
+    intervals = _interval_log(data)
+    closed = _close_phase_accumulating(prev_data, plan_id, prev_phase, args, end_now, intervals=intervals)
     total_tokens = closed['total_tokens']
     accumulator = closed['accumulator']
+    _store_interval_log(data, intervals)
 
     # Step 2: start the next phase (mirrors cmd_start_phase semantics).
     start_now = now_utc_iso()
@@ -3791,24 +3888,109 @@ def cmd_record_dispatch_boundary(args: argparse.Namespace) -> dict:
 
 
 def _phase_window_lookup(plan_id: str) -> list[tuple[str, datetime, datetime]]:
-    """Return [(phase, start, end), ...] for phases with full timestamps."""
+    """Return ``[(phase, start, end), ...]`` — one entry per phase INTERVAL.
+
+    A phase can be open more than once: a finalize loop-back re-enters an earlier
+    phase, so a 5-execute → 6-finalize → 5-execute → 6-finalize plan has four
+    intervals. Emitting one window per phase NAME (first start to last end) books
+    the finalize work between the two 5-execute intervals to 5-execute, because
+    the phase's single window then spans the work that belongs to 6-finalize.
+    The intervals are the ones the boundary writers recorded, so each piece of
+    usage is attributed to the interval that actually contains it.
+
+    A store written before intervals were recorded carries none; the single
+    ``start_time``/``end_time`` row pair is then the best available window and is
+    returned per phase, so an older plan still attributes its usage rather than
+    losing it.
+    """
     data = read_metrics_raw(plan_id)
+    recorded = _read_phase_intervals(data)
     windows: list[tuple[str, datetime, datetime]] = []
+    if recorded:
+        for phase_name, start_raw, end_raw in recorded:
+            start_dt = _parse_window_bound(start_raw)
+            end_dt = _parse_window_bound(end_raw)
+            if start_dt is None or end_dt is None:
+                continue
+            windows.append((phase_name, start_dt, end_dt))
+        return windows
     for phase_name in PHASE_NAMES:
         phase_data = data.get('phases', {}).get(phase_name)
         if not phase_data:
             continue
-        start_str = phase_data.get('start_time')
-        end_str = phase_data.get('end_time')
-        if not start_str or not end_str:
-            continue
-        try:
-            start_dt = datetime.fromisoformat(str(start_str))
-            end_dt = datetime.fromisoformat(str(end_str))
-        except (ValueError, TypeError):
+        start_dt = _parse_window_bound(phase_data.get('start_time'))
+        end_dt = _parse_window_bound(phase_data.get('end_time'))
+        if start_dt is None or end_dt is None:
             continue
         windows.append((phase_name, start_dt, end_dt))
     return windows
+
+
+#: Top-level store key carrying the persisted phase intervals, as a JSON array of
+#: ``[phase, start_iso, end_iso]`` triples in the order they were closed.
+_PHASE_INTERVALS_FIELD = 'phase_intervals'
+
+
+def _parse_window_bound(value: object) -> datetime | None:
+    """Parse one interval bound, or ``None`` when it cannot be read."""
+    if not isinstance(value, str) or not value.strip():
+        return None
+    try:
+        return datetime.fromisoformat(value.strip().replace('Z', '+00:00'))
+    except (ValueError, TypeError):
+        return None
+
+
+def _read_phase_intervals(data: dict) -> list[tuple[str, str, str]]:
+    """Read the persisted phase intervals, in the order they were closed.
+
+    The store writes the list as a JSON string, so a plan whose store predates the
+    field, or whose value is malformed, yields no intervals and falls back to the
+    per-phase window lookup rather than losing the attribution entirely.
+    """
+    raw = data.get(_PHASE_INTERVALS_FIELD)
+    if not isinstance(raw, str) or not raw.strip():
+        return []
+    try:
+        parsed = json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        return []
+    if not isinstance(parsed, list):
+        return []
+    intervals: list[tuple[str, str, str]] = []
+    for entry in parsed:
+        if not isinstance(entry, list) or len(entry) != 3:
+            continue
+        phase_name, start_raw, end_raw = entry
+        if all(isinstance(item, str) for item in (phase_name, start_raw, end_raw)):
+            intervals.append((phase_name, start_raw, end_raw))
+    return intervals
+
+
+def _record_phase_interval(intervals: list[dict[str, str]] | None, phase: str, start: object, end: str) -> None:
+    """Append one closed phase interval to the store's interval log, in place.
+
+    Only a complete interval is recorded: a row that never carried a
+    ``start_time`` has no interval to close, and inventing one would attribute
+    usage to a window the phase never occupied.
+    """
+    if intervals is None:
+        return
+    if not isinstance(start, str) or not start.strip():
+        return
+    intervals.append({'phase': phase, 'start': start.strip(), 'end': end})
+
+
+def _interval_log(data: dict) -> list[dict[str, str]]:
+    """Read a store's interval log into mutable entries for one close."""
+    return [{'phase': phase, 'start': start, 'end': end} for phase, start, end in _read_phase_intervals(data)]
+
+
+def _store_interval_log(data: dict, intervals: list[dict[str, str]]) -> None:
+    """Persist the interval log as the JSON array the store round-trips."""
+    if not intervals:
+        return
+    data[_PHASE_INTERVALS_FIELD] = json.dumps([[entry['phase'], entry['start'], entry['end']] for entry in intervals])
 
 
 # The runtime's attribution counters, carried through unchanged from the op's
@@ -3887,6 +4069,7 @@ def _run_normalized_tokens_op(
     measured_roots: list[str] = []
     unmeasured: list[dict[str, str]] = []
     status: str | None = None
+    scopes: set[str] = set()
 
     with tempfile.TemporaryDirectory(prefix='metrics-norm-tokens-') as tmpdir:
         windows_file = Path(tmpdir) / 'windows.json'
@@ -3949,6 +4132,9 @@ def _run_normalized_tokens_op(
 
             measured_roots.append(root)
             _merge_normalized_buckets(per_phase, measured)
+            scope = parsed.get('four_field_scope')
+            if isinstance(scope, str) and scope.strip():
+                scopes.add(scope.strip())
             for field in _NORMALIZED_COUNTER_FIELDS:
                 raw = parsed.get(field)
                 if isinstance(raw, (int, str)) and str(raw).isdigit():
@@ -3960,6 +4146,11 @@ def _run_normalized_tokens_op(
         'roots_measured': measured_roots,
         'sessions_unmeasured': unmeasured,
     }
+    # The four usage fields' scope, read from what the runtime actually reported.
+    # A single value is carried through; disagreeing scopes are left ABSENT so the
+    # consumer falls back to its documented default rather than guessing one.
+    if len(scopes) == 1:
+        population['four_field_scope'] = next(iter(scopes))
     if not measured_roots:
         return None, {}, status, population
     return per_phase, counters, status, population
@@ -4148,6 +4339,23 @@ def _resolve_runtime_target() -> str:
     return 'claude'
 
 
+def _four_field_phase_count(per_phase: dict[str, Any]) -> int:
+    """Count DISTINCT phases whose measured bucket carries four-field usage.
+
+    The runtime reports this counter per measured SESSION, and ``enrich`` sums
+    those reports across every captured identity. A plan that captured two
+    sessions is one plan with six phases, not twelve — so summing per-session
+    attribution counts read 7 for a six-phase run. The distinct-phase count is
+    computed here from the merged view, which is the only place the two sessions
+    have already been folded into one.
+    """
+    return sum(
+        1
+        for bucket in per_phase.values()
+        if isinstance(bucket, dict) and any(field in bucket for field in _FOUR_FIELD_USAGE_FIELDS)
+    )
+
+
 def _population_result(population: dict[str, Any]) -> dict[str, Any]:
     """Render the measured-population block for ``enrich``'s result TOON.
 
@@ -4260,9 +4468,14 @@ def cmd_enrich(args: argparse.Namespace) -> dict:
                 phase_row[field] = bucket[short]
         if 'billing_weighted_total' in bucket:
             phase_row['billing_weighted_total'] = bucket['billing_weighted_total']
+        for field in ('reasoning_tokens', 'cost_usd', 'measured_tool_uses'):
+            source = 'tool_uses' if field == 'measured_tool_uses' else field
+            if source in bucket:
+                phase_row[field] = bucket[source]
         if 'subagent_total_tokens' in bucket:
             phase_row['subagent_total_tokens'] = bucket['subagent_total_tokens']
-            phase_row['subagent_tool_uses'] = bucket.get('subagent_tool_uses', 0)
+            if 'subagent_tool_uses' in bucket:
+                phase_row['subagent_tool_uses'] = bucket['subagent_tool_uses']
             phase_row['subagent_duration_ms'] = bucket.get('subagent_duration_ms', 0)
             phase_row['subagent_samples'] = bucket.get('subagent_samples', 0)
 
@@ -4277,83 +4490,100 @@ def cmd_enrich(args: argparse.Namespace) -> dict:
             if field in bucket:
                 phase_row[field] = bucket[field]
 
-        # Attribute the phase's inline main-context spend, and RECORD which
-        # population the row's total_tokens ends up measuring.
+        # Compose the phase's WHOLE measured spend, and record which population
+        # the row's total_tokens ends up measuring.
         #
-        # A phase that ran inline in the main context (phase-1-init, and the
-        # recipe-inline refine/outline phases) produces no agent `<usage>`
-        # envelope and no accumulator, so its closing phase-boundary omitted
-        # --total-tokens and the row carries no total_tokens — yet enrich has
-        # just attributed the parent-window `message.usage` data to it. Folding
-        # that sum into total_tokens is DELIBERATE and stays: it is what keeps
-        # the phase countable in the breakdown (the report reads n=6/6, not
-        # n=5/6) and what keeps every downstream zero-token predicate off a
-        # phase that really did cost something.
+        # The landing's `total_tokens` is the sum of these rows, so a row that
+        # carries only its dispatched figure (or only its inline figure) makes the
+        # plan's total a fraction of what the store holds. It did: the PLAN-LB-49
+        # landing reported 16,614,516 — the sub-agent input plus output of phases
+        # 2 to 6 plus the main-context figure of phase 1 — against a store holding
+        # 26,338,572 input plus output for the same tree. The rule is therefore:
+        # total_tokens is the phase's main-context spend PLUS its sub-agent spend,
+        # for every phase, and `total_tokens_population` says which of the three
+        # shapes that came to.
         #
-        # What the fold must not do is present a main-context measurement under
-        # a field named for the dispatched population, so it is accompanied by
-        # two records, written together and never apart:
-        #   * inline_main_context_tokens — the same figure under its own
-        #     population-honest name, written on BOTH the inline-only and the
-        #     mixed signature, so the inline measurement is never readable ONLY
-        #     through a dispatched-population field.
-        #   * total_tokens_population — the discriminator every render site and
-        #     every consumer reads to know which population total_tokens
-        #     measures on THIS row.
+        # The two addends are read from DIFFERENT places per target, and the
+        # runtime's `four_field_scope` is what tells them apart:
+        #   * `main_context` — the four usage fields cover the root session only,
+        #     so the whole-phase figure is (four fields) + subagent_total_tokens;
+        #   * `main_plus_subagent` — the four usage fields already fold the
+        #     sub-agent transcripts in, so they ARE the whole-phase figure and
+        #     adding the group again would count the sub-agents twice.
+        # An absent scope defaults to `main_context`: the producer predates the
+        # discriminator, its four fields are the main-context measurement, and the
+        # row's own sub-agent figure is therefore additive.
         #
-        # The sum is input_tokens + output_tokens + cache_creation_input_tokens
-        # ONLY — cache_read_input_tokens is EXCLUDED so the figure matches the
-        # dispatched-phase `<usage>` total definition, which is fed via
-        # end-phase --total-tokens and also excludes cache reads. Including
-        # cache_read (two orders of magnitude larger — plan-13 archive: 1-init
-        # 11.16M dominated by 11.09M cache_read) would over-count the inline row
-        # by ~100x versus comparable dispatched rows. The four raw usage fields
-        # stay persisted on the row above for billing analysis; only the derived
-        # figure narrows.
+        # The figure narrows to input_tokens + output_tokens +
+        # cache_creation_input_tokens — cache_read_input_tokens is EXCLUDED so it
+        # matches the dispatched-`<usage>` total definition, which also excludes
+        # cache reads. Including cache_read (two orders of magnitude larger —
+        # plan-13 archive: 1-init 11.16M dominated by 11.09M cache_read) would
+        # over-count every row by ~100x. The four raw usage fields stay persisted
+        # on the row above for billing analysis; only the derived figure narrows.
         #
-        # Explicit-wins throughout: a total_tokens already set by a dispatched
-        # phase's `<usage>` / accumulator is truthy here and is NEVER
-        # overwritten. The #812 end_time-presence check is untouched — a
-        # timestamps-only inline close still carries its end_time marker.
-        # The branch key is the DISCRIMINATOR, not the folded total, because the
-        # inline-only branch below writes into the very field a truthiness test
-        # would read. Keyed on `not total_tokens` alone, a SECOND enrich run over
-        # the same metrics.toon sees the first run's own fold as a dispatched
-        # total, falls through to the mixed branch, and re-stamps an inline-only
-        # row `mixed` — a population claim no dispatch ever earned, which then
-        # readmits the folded main-context figure to the dispatched maximum
-        # (`_eligible_dispatched_measures`) and drops the Total's `(spans
-        # populations)` marker. Reading `total_tokens_population` instead makes
-        # the stamp idempotent: a re-run recognises its own prior fold. The fold
-        # itself is unchanged. Explicit-wins survives intact — a genuine
-        # dispatched total_tokens never carries POPULATION_INLINE, so it can
-        # never select this branch.
+        # Explicit-wins is preserved as PRESERVATION, not as refusal to update: a
+        # dispatched total the row already carried from `<usage>` / the
+        # accumulator is moved to `dispatched_total_tokens` before total_tokens is
+        # recomputed, so the measurement is neither lost nor left competing in the
+        # dispatched-population maximum as if it were the whole phase. A re-run is
+        # idempotent because the move happens only on the transition OUT of a
+        # dispatched/legacy population — a row already stamped with a whole-phase
+        # population keeps its `dispatched_total_tokens` untouched.
+        # The #812 end_time-presence check is untouched.
         inline_main_context = _inline_main_context_sum(phase_row)
-        already_inline = phase_row.get('total_tokens_population') == POPULATION_INLINE
-        # An `unknown` stamp is stated absence, not a measurement: it selects
-        # the inline-only signature exactly as a missing value does, so a
-        # measurement taken since overwrites the stamp rather than reading it
-        # as a dispatched total and mis-stamping the row `mixed`. A measured
-        # zero stays a measurement (explicit-wins) and keeps the other branch.
-        # See `_stamp_unknown_totals` (a later close or enrich that measures
-        # the phase overwrites the stamp) and the `_reconcile_accumulator_into_phase`
-        # precedent, which backfills `unknown`-stamped rows the same way.
-        has_measured_total = isinstance(_coerce_numeric(phase_row.get('total_tokens')), (int, float))
-        if already_inline or not has_measured_total:
-            # Inline-only signature: no dispatched total exists to preserve.
-            if inline_main_context:
-                phase_row['total_tokens'] = inline_main_context
-                phase_row['inline_main_context_tokens'] = inline_main_context
-                phase_row['total_tokens_population'] = POPULATION_INLINE
-            else:
-                phase_row['total_tokens_population'] = POPULATION_DISPATCHED
-        elif inline_main_context:
-            # Mixed signature (the 6-finalize shape): dispatched steps AND
-            # inline main-context steps both ran in this window. total_tokens
-            # stays the dispatched measurement; the inline part is a separate
-            # field of a different population, not an addend.
+        subagent_total = int(_coerce_numeric(bucket.get('subagent_total_tokens')) or 0)
+        subagent_samples = int(_coerce_numeric(phase_row.get('subagent_samples')) or 0)
+        if inline_main_context:
+            # The same figure under its own population-honest name, so a
+            # main-context measurement is never readable ONLY through a
+            # whole-phase field.
             phase_row['inline_main_context_tokens'] = inline_main_context
-            phase_row['total_tokens_population'] = POPULATION_MIXED
+        prior_population = phase_row.get('total_tokens_population')
+        prior_total = _coerce_numeric(phase_row.get('total_tokens'))
+        prior_dispatched = _coerce_numeric(phase_row.get('dispatched_total_tokens'))
+        if not isinstance(prior_dispatched, (int, float)):
+            # A dispatched figure recorded before this enrichment is the row's
+            # prior total — unless that prior value was itself a whole-phase
+            # composition, in which case re-reading it as dispatched would
+            # double-count the main-context part on the next run.
+            prior_dispatched = (
+                prior_total
+                if isinstance(prior_total, (int, float)) and prior_population not in WHOLE_PHASE_POPULATIONS
+                else 0
+            )
+        dispatched = max(int(prior_dispatched), subagent_total)
+        scope = population.get('four_field_scope')
+        if scope == FOUR_FIELD_SCOPE_MAIN_PLUS_SUBAGENT:
+            # The four fields already fold the sub-agent transcripts in.
+            whole_phase = inline_main_context
+        else:
+            # An absent scope (a producer that predates the discriminator) is
+            # read as `main_context`: the four fields are then the main-context
+            # measurement and the row's own sub-agent figure is additive.
+            whole_phase = inline_main_context + dispatched
+        if not whole_phase:
+            # The store measured nothing in this window — a cache_read-only
+            # window, say — so there is no figure to compose. The recorded figure
+            # stands rather than being overwritten with a zero nobody measured.
+            phase_row['total_tokens_population'] = POPULATION_DISPATCHED
+            continue
+        if (
+            dispatched
+            and isinstance(prior_total, (int, float))
+            and int(prior_total) != whole_phase
+            and prior_population not in WHOLE_PHASE_POPULATIONS
+            and 'dispatched_total_tokens' not in phase_row
+        ):
+            # Preserve the measurement rather than lose it: the row keeps its
+            # dispatched figure under its own name while `total_tokens` becomes
+            # the whole-phase composition.
+            phase_row['dispatched_total_tokens'] = int(prior_dispatched)
+        phase_row['total_tokens'] = whole_phase
+        if inline_main_context and (dispatched or subagent_samples):
+            phase_row['total_tokens_population'] = POPULATION_MAIN_PLUS_SUBAGENT
+        elif inline_main_context:
+            phase_row['total_tokens_population'] = POPULATION_INLINE
         else:
             phase_row['total_tokens_population'] = POPULATION_DISPATCHED
 
@@ -4370,7 +4600,7 @@ def cmd_enrich(args: argparse.Namespace) -> dict:
         'subagent_phases_attributed': counters.get('subagent_phases_attributed', 0),
         'subagent_calls_attributed': counters.get('subagent_calls_attributed', 0),
         'subagent_transcripts_walked': counters.get('subagent_transcripts_walked', 0),
-        'four_field_phases_attributed': counters.get('four_field_phases_attributed', 0),
+        'four_field_phases_attributed': _four_field_phase_count(per_phase),
         **_population_result(population),
     }
 

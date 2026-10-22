@@ -73,7 +73,7 @@ def test_total_tokens_bullet_names_its_population(plan_context, population):
     Parameterized over `TOKEN_POPULATIONS` rather than a hand-listed pair, so a
     population added later cannot render unlabelled and still pass.
     """
-    plan_id = f'population-bullet-{population}'
+    plan_id = f'population-bullet-{population.replace("_", "-")}'
     cmd_start_phase(ns_start_phase(plan_id, '4-plan'))
     cmd_end_phase(ns_end_phase(plan_id, '4-plan', total_tokens=31000))
     data = manage_metrics.read_metrics_raw(plan_id)
@@ -128,17 +128,16 @@ def test_total_row_is_unmarked_when_every_contributing_row_is_dispatched(plan_co
     cmd_start_phase(ns_start_phase(plan_id, '6-finalize'))
     cmd_end_phase(ns_end_phase(plan_id, '6-finalize', total_tokens=88000))
 
-    # 6-finalize is `mixed` — a dispatched cell whose row ALSO records inline
-    # spend that the cell EXCLUDES. A mixed row therefore does NOT make the Total
-    # cross-population, and the Total must stay unmarked despite a marker being
-    # present in the table.
-    _run_enrich_with_buckets(plan_id, monkeypatch, {'6-finalize': _INLINE_BUCKET})
+    # No row was enriched, so every fed row is an unmarked dispatched
+    # measurement and the Total spans exactly one population.
     cmd_generate(ns_generate(plan_id))
     report = (plan_context.plan_dir_for(plan_id) / 'metrics.md').read_text(encoding='utf-8')
 
-    assert '(mixed)' in report, 'fixture must actually produce a marked row'
     assert '(spans populations)' not in _total_tokens_cell(report)
     assert '(spans populations)' not in report
+    assert '(inline)' not in report
+    assert '(main + sub-agent)' not in report
+    assert '> Tokens population:' not in report
 
 
 def test_inline_phase_tokens_cell_and_annotation_declare_the_population(plan_context, monkeypatch):
@@ -171,51 +170,39 @@ def test_inline_phase_tokens_cell_and_annotation_declare_the_population(plan_con
     assert manage_metrics._POPULATION_BULLET_NOTE[manage_metrics.POPULATION_INLINE] in report
 
 
-def test_inline_row_carrying_a_competing_dispatched_measure_renders_both_markers(plan_context, monkeypatch):
-    """An `inline` row that ALSO carries a dispatched measure keeps both markers.
+def test_whole_phase_row_renders_both_populations_summed(plan_context, monkeypatch):
+    """A phase with main-context AND dispatched spend renders the sum, marked.
 
-    This is the row shape the non-idempotent population stamp destroyed, so the
-    coverage gap and the defect are one surface. Re-stamped `mixed`,
-    `_eligible_dispatched_measures` stops excluding the folded main-context
-    `total_tokens` (it becomes a candidate for the dispatched maximum) and
-    `cmd_generate` stops collecting the row into `inline_population_phases`,
-    silently dropping the Total's `(spans populations)` marker. Driven through
-    the render with the stamp idempotent, three things must hold together: the
-    competing dispatched measure wins the cell, the cell still carries the row's
-    `(inline)` population marker, and the Total still declares that it spans
-    populations.
-
-    The fixture makes the folded figure the SMALLER of the two, so no assertion
-    below can pass by accidentally rendering the excluded main-context measure.
+    This is the row shape the landing's total is read from: the cell carries both
+    populations' spend, the marker names the composition, and the annotation
+    states that the main-context part is INCLUDED rather than excluded.
     """
     plan_id = 'population-inline-competing-measure'
     cmd_start_phase(ns_start_phase(plan_id, '1-init'))
     cmd_end_phase(ns_end_phase(plan_id, '1-init'))
 
     bucket = dict(_INLINE_BUCKET, subagent_total_tokens=30000, subagent_samples=1)
-    assert 30000 > _INLINE_SUM, 'the dispatched measure must be the strict maximum'
 
-    # Two runs: the second is what the pre-fix stamp mislabelled.
+    # Two runs: the second must recompose exactly what the first composed.
     _run_enrich_with_buckets(plan_id, monkeypatch, {'1-init': bucket})
     _run_enrich_with_buckets(plan_id, monkeypatch, {'1-init': bucket})
 
     row = _phase_row(plan_id, '1-init')
-    assert row['total_tokens_population'] == manage_metrics.POPULATION_INLINE
-    assert row['total_tokens'] == _INLINE_SUM
-    # The folded main-context figure stays out of the dispatched comparison; the
-    # genuinely dispatched measure is the only eligible one.
+    assert row['total_tokens_population'] == manage_metrics.POPULATION_MAIN_PLUS_SUBAGENT
+    assert row['total_tokens'] == _INLINE_SUM + 30000
+    # The dispatched figure is preserved, and it — not the whole-phase total — is
+    # the only figure eligible for the dispatched-population comparison.
     assert manage_metrics._reconcile_dispatched_measures(row) == ('subagent_total_tokens', 30000)
 
     cmd_generate(ns_generate(plan_id))
     report = (plan_context.plan_dir_for(plan_id) / 'metrics.md').read_text(encoding='utf-8')
 
     init_row = next(line for line in report.splitlines() if line.startswith('| 1-init '))
-    assert '30,000' in init_row, 'the winning dispatched measure must render in the cell'
-    assert f'{_INLINE_SUM:,}' not in init_row, 'the excluded inline figure must not win the cell'
-    assert '(inline)' in init_row
-
-    assert '(spans populations)' in _total_tokens_cell(report)
-    assert '`(spans populations)`' in report
+    assert f'{_INLINE_SUM + 30000:,}' in init_row
+    assert '(main + sub-agent)' in init_row
+    assert '`(main + sub-agent)`' in report
+    # A single composed row means the Total spans exactly one population.
+    assert '(spans populations)' not in _total_tokens_cell(report)
 
 
 def test_inline_total_tokens_is_excluded_from_the_dispatched_maximum():
@@ -247,8 +234,8 @@ def test_inline_only_row_has_no_eligible_dispatched_measure():
     assert manage_metrics._reconcile_dispatched_measures(row) is None
 
 
-def test_mixed_phase_declares_its_excluded_inline_spend(plan_context, monkeypatch):
-    """A mixed row is marked, and the annotation says the inline part is excluded."""
+def test_whole_phase_row_declares_its_included_inline_spend(plan_context, monkeypatch):
+    """A whole-phase row is marked, and the annotation says the inline part IS counted."""
     plan_id = 'population-render-mixed'
     cmd_start_phase(ns_start_phase(plan_id, '6-finalize'))
     cmd_end_phase(ns_end_phase(plan_id, '6-finalize', total_tokens=88000))
@@ -258,12 +245,11 @@ def test_mixed_phase_declares_its_excluded_inline_spend(plan_context, monkeypatc
     report = (plan_context.plan_dir_for(plan_id) / 'metrics.md').read_text(encoding='utf-8')
 
     finalize_row = next(line for line in report.splitlines() if line.startswith('| 6-finalize '))
-    assert '(mixed)' in finalize_row
-    assert '`(mixed)`' in report
-    assert 'excluded from both the cell and the **Total**' in report
-    # The inline bullet must not claim to stand alongside a dispatched total on
-    # the inline-only signature and must claim exactly that here.
-    assert 'surfaced alongside the dispatched Total tokens' in report
+    assert '(main + sub-agent)' in finalize_row
+    assert '`(main + sub-agent)`' in report
+    # The inline bullet states that the Total INCLUDES this figure — the
+    # relationship the pre-composition text got backwards.
+    assert 'included in the Total tokens figure' in report
 
 
 def test_dispatched_only_report_carries_no_population_annotation(plan_context):

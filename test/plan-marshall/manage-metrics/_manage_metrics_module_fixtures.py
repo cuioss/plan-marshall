@@ -48,6 +48,9 @@ cmd_enrich = manage_metrics.cmd_enrich
 cmd_generate = manage_metrics.cmd_generate
 
 
+cmd_phase_boundary = manage_metrics.cmd_phase_boundary
+
+
 cmd_record_dispatch_boundary = manage_metrics.cmd_record_dispatch_boundary
 
 

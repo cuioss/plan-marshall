@@ -392,12 +392,12 @@ def test_enrich_labels_a_zero_dispatch_phase_as_inline(plan_context, monkeypatch
     assert row['total_tokens_population'] == manage_metrics.POPULATION_INLINE
 
 
-def test_enrich_labels_a_dispatched_plus_inline_phase_as_mixed(plan_context, monkeypatch):
-    """A mixed phase keeps its dispatched total and records the inline part apart.
+def test_enrich_totals_a_phase_that_both_dispatched_and_ran_inline(plan_context, monkeypatch):
+    """A phase with main-context AND dispatched spend reports the sum of both.
 
-    `total_tokens` stays byte-identical (explicit-wins), the inline spend is a
-    separate field of a different population, and the row reads `mixed` so a
-    consumer knows the dispatched figure does NOT cover the whole phase.
+    The landing's `total_tokens` sums these rows, so a row that reported only its
+    dispatched figure made the plan's total a fraction of what the store holds.
+    The dispatched figure is preserved under its own name rather than discarded.
     """
     plan_id = 'population-mixed'
     cmd_start_phase(ns_start_phase(plan_id, '6-finalize'))
@@ -406,9 +406,10 @@ def test_enrich_labels_a_dispatched_plus_inline_phase_as_mixed(plan_context, mon
     _run_enrich_with_buckets(plan_id, monkeypatch, {'6-finalize': _INLINE_BUCKET})
 
     row = _phase_row(plan_id, '6-finalize')
-    assert row['total_tokens'] == 88000, 'the dispatched total must never be overwritten'
+    assert row['total_tokens'] == _INLINE_SUM + 88000
+    assert row['dispatched_total_tokens'] == 88000
     assert row['inline_main_context_tokens'] == _INLINE_SUM
-    assert row['total_tokens_population'] == manage_metrics.POPULATION_MIXED
+    assert row['total_tokens_population'] == manage_metrics.POPULATION_MAIN_PLUS_SUBAGENT
 
 
 def test_enrich_labels_a_dispatch_only_phase_as_dispatched(plan_context, monkeypatch):
@@ -423,6 +424,96 @@ def test_enrich_labels_a_dispatch_only_phase_as_dispatched(plan_context, monkeyp
     assert row['total_tokens'] == 42000
     assert 'inline_main_context_tokens' not in row
     assert row['total_tokens_population'] == manage_metrics.POPULATION_DISPATCHED
+
+
+# =============================================================================
+# The plan total sums main-context AND sub-agent usage for every phase
+# =============================================================================
+
+
+def test_phase_total_sums_main_context_and_subagent_usage(plan_context, monkeypatch):
+    """A phase carrying both populations reports main + sub-agent, and so does the Total.
+
+    The landing's `total_tokens` is the sum of these rows, so a row that reported
+    only one population made the plan's total a fraction of what the store holds.
+    """
+    plan_id = 'population-total-both'
+    cmd_start_phase(ns_start_phase(plan_id, '3-outline'))
+    cmd_end_phase(ns_end_phase(plan_id, '3-outline'))
+
+    bucket = dict(_INLINE_BUCKET, subagent_total_tokens=50000, subagent_samples=2, subagent_tool_uses=4)
+    _run_enrich_with_buckets(plan_id, monkeypatch, {'3-outline': bucket})
+
+    row = _phase_row(plan_id, '3-outline')
+    assert row['inline_main_context_tokens'] == _INLINE_SUM
+    assert row['subagent_total_tokens'] == 50000
+    assert row['total_tokens'] == _INLINE_SUM + 50000
+    assert row['total_tokens_population'] == manage_metrics.POPULATION_MAIN_PLUS_SUBAGENT
+
+    generated = cmd_generate(ns_generate(plan_id))
+    assert generated['total_tokens'] == _INLINE_SUM + 50000
+    assert generated['totals_tokens_population'] == manage_metrics.POPULATION_MAIN_PLUS_SUBAGENT
+
+
+def test_a_phase_with_subagent_samples_is_never_labelled_as_having_dispatched_nothing(plan_context, monkeypatch):
+    """A phase that dispatched is never rendered under the inline label.
+
+    The inline label claims the phase dispatched nothing. A row with
+    `subagent_samples > 0` therefore may not carry it, whatever its
+    `total_tokens` happened to be before enrichment.
+    """
+    plan_id = 'population-never-inline-when-dispatched'
+    cmd_start_phase(ns_start_phase(plan_id, '5-execute'))
+    cmd_end_phase(ns_end_phase(plan_id, '5-execute'))
+
+    _run_enrich_with_buckets(
+        plan_id,
+        monkeypatch,
+        {'5-execute': dict(_INLINE_BUCKET, subagent_total_tokens=30000, subagent_samples=3)},
+    )
+    cmd_generate(ns_generate(plan_id))
+    report = (plan_context.plan_dir_for(plan_id) / 'metrics.md').read_text(encoding='utf-8')
+
+    assert 'dispatched nothing' not in report
+    assert '(main + sub-agent)' in report
+
+
+def test_four_field_phases_attributed_counts_distinct_phases_not_attributions(plan_context, monkeypatch):
+    """Two captured roots attributing the same phases report the phase COUNT.
+
+    The runtime reports the counter per measured session; `enrich` sums those
+    reports across captured identities. Summing attribution counts read 7 for a
+    six-phase run, so the run-level counter is derived from the merged view.
+    """
+    plan_id = 'four-field-distinct-phases'
+    _seed_enrich_window(plan_context, plan_id)
+    attributed = {
+        '5-execute': {'input_tokens': 10},
+        '6-finalize': {'input_tokens': 20},
+        '4-plan': {'input_tokens': 30},
+    }
+    _patch_multi_root_op(
+        monkeypatch,
+        {
+            'root-a': {
+                'status': 'success',
+                'root': 'root-a',
+                'per_phase': attributed,
+                'counters': {'message_count': 3},
+            },
+            'root-b': {
+                'status': 'success',
+                'root': 'root-b',
+                'per_phase': attributed,
+                'counters': {'message_count': 3},
+            },
+        },
+    )
+
+    result = cmd_enrich(ns_enrich(plan_id, 'root-a', 'root-b'))
+
+    assert result['sessions_measured'] == 2
+    assert result['four_field_phases_attributed'] == 3
 
 
 # =============================================================================

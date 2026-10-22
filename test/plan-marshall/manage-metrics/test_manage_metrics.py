@@ -294,28 +294,32 @@ def test_repeated_enrich_keeps_an_inline_only_row_labelled_inline(plan_context, 
     assert second['inline_main_context_tokens'] == _INLINE_SUM
 
 
-def test_repeated_enrich_keeps_a_genuinely_mixed_row_labelled_mixed(plan_context, monkeypatch):
-    """Matched control: the idempotence fix does not disable the `mixed` stamp.
+def test_repeated_enrich_composes_and_keeps_a_whole_phase_row(plan_context, monkeypatch):
+    """Matched control: a phase with both populations totals BOTH, on every run.
 
-    Keying the inline branch off the discriminator could have been "widened" into
-    never reaching the mixed branch at all, which would pass the inline test
-    above while destroying the signature it exists to distinguish. A row carrying
-    a REAL dispatched total plus inline spend must still read `mixed` on the
-    first run and on every run after it.
+    A row carrying a REAL dispatched total plus measured inline spend is the
+    whole-phase signature: `total_tokens` is the sum of the two, the dispatched
+    figure is preserved under its own name, and a re-run recomposes exactly the
+    same value rather than reading its own prior composition as a dispatched
+    total and double-counting the main-context part.
     """
     plan_id = 'population-enrich-idempotent-mixed'
     cmd_start_phase(ns_start_phase(plan_id, '6-finalize'))
     cmd_end_phase(ns_end_phase(plan_id, '6-finalize', total_tokens=88000))
 
     _run_enrich_with_buckets(plan_id, monkeypatch, {'6-finalize': _INLINE_BUCKET})
-    assert _phase_row(plan_id, '6-finalize')['total_tokens_population'] == (manage_metrics.POPULATION_MIXED)
+    row = _phase_row(plan_id, '6-finalize')
+    assert row['total_tokens_population'] == manage_metrics.POPULATION_MAIN_PLUS_SUBAGENT
+    assert row['total_tokens'] == _INLINE_SUM + 88000
+    assert row['dispatched_total_tokens'] == 88000
 
     _run_enrich_with_buckets(plan_id, monkeypatch, {'6-finalize': _INLINE_BUCKET})
-    row = _phase_row(plan_id, '6-finalize')
+    rerun = _phase_row(plan_id, '6-finalize')
 
-    assert row['total_tokens_population'] == manage_metrics.POPULATION_MIXED
-    assert row['total_tokens'] == 88000, 'the dispatched total must never be overwritten'
-    assert row['inline_main_context_tokens'] == _INLINE_SUM
+    assert rerun['total_tokens_population'] == manage_metrics.POPULATION_MAIN_PLUS_SUBAGENT
+    assert rerun['total_tokens'] == _INLINE_SUM + 88000
+    assert rerun['dispatched_total_tokens'] == 88000
+    assert rerun['inline_main_context_tokens'] == _INLINE_SUM
 
 
 #: The Phase Details bullet label BOTH cache_read residual renderings carry, so
