@@ -471,10 +471,11 @@ def _fetch_issues(project: str, pr: str | None, severities: str | None, types: s
             }
         )
 
-    # Sonar reports the full matching total beside the page. A page that carries
-    # fewer issues than that total is TRUNCATED, and a caller that reports the
-    # page's length as a count would undercount without saying so — so the total
-    # travels back with the issues for the caller to compare.
+    # Sonar reports the full matching total beside the page. A caller that
+    # reports a page's length as a count must first establish that the page IS
+    # the issue set, so the total travels back beside the issues — including the
+    # ``None`` a response without a usable ``paging.total`` carries, which the
+    # caller must treat as unverifiable rather than as "no more issues".
     paging = result.get('paging') or {}
     total = paging.get('total') if isinstance(paging, dict) else None
 
@@ -782,16 +783,18 @@ def cmd_read_open_issues(args):
 
     raw_issues: list[dict[str, Any]] = fetch_result.get('issues') or []
     total = fetch_result.get('total')
-    if isinstance(total, int) and total > len(raw_issues):
-        # The page is truncated, so the count it yields is not the issue set's
-        # count. Report the read as undecidable rather than a confirmed figure
-        # that is short by an unknown amount — the same fail-closed direction the
-        # rest of this verb takes.
-        return _undecidable_read(
-            project,
-            pr,
-            f'issue list truncated: {len(raw_issues)} of {total} issues returned',
+    if not isinstance(total, int) or total != len(raw_issues):
+        # The response does not establish that the page IS the issue set: either
+        # it carries no usable total, or the page is shorter than the total (a
+        # >``ps`` issue set). Report the read as undecidable rather than a
+        # confirmed figure that is short by an unknown amount — the same
+        # fail-closed direction the rest of this verb takes.
+        detail = (
+            f'issue list truncated: {len(raw_issues)} of {total} issues returned'
+            if isinstance(total, int)
+            else 'the response carried no usable issue total'
         )
+        return _undecidable_read(project, pr, detail)
     issues = [
         {
             'key': issue.get('key', ''),

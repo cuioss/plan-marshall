@@ -100,7 +100,9 @@ class TestReadPersistsNothing:
 
         with (
             patch.object(sonar_mod, '_wait_for_ce_ready', return_value={'count_status': 'confirmed'}),
-            patch.object(sonar_mod, '_fetch_issues', return_value={'status': 'success', 'issues': [_issue()]}),
+            patch.object(
+                sonar_mod, '_fetch_issues', return_value={'status': 'success', 'issues': [_issue()], 'total': 1}
+            ),
         ):
             result = cmd_read_open_issues(args)
 
@@ -111,7 +113,9 @@ class TestReadPersistsNothing:
         with (
             patch.object(sonar_mod, '_wait_for_ce_ready', return_value={'count_status': 'confirmed'}),
             patch.object(
-                sonar_mod, '_fetch_issues', return_value={'status': 'success', 'issues': [_issue(key='ISSUE-77')]}
+                sonar_mod,
+                '_fetch_issues',
+                return_value={'status': 'success', 'issues': [_issue(key='ISSUE-77')], 'total': 1},
             ),
         ):
             result = cmd_read_open_issues(_args('--pr', '42'))
@@ -127,7 +131,7 @@ class TestConfirmedRead:
 
         with (
             patch.object(sonar_mod, '_wait_for_ce_ready', return_value={'count_status': 'confirmed'}),
-            patch.object(sonar_mod, '_fetch_issues', return_value={'status': 'success', 'issues': issues}),
+            patch.object(sonar_mod, '_fetch_issues', return_value={'status': 'success', 'issues': issues, 'total': 2}),
         ):
             result = cmd_read_open_issues(_args('--pr', '42'))
 
@@ -143,7 +147,7 @@ class TestConfirmedRead:
 
         with (
             patch.object(sonar_mod, '_wait_for_ce_ready', return_value={'count_status': 'confirmed'}),
-            patch.object(sonar_mod, '_fetch_issues', return_value={'status': 'success', 'issues': issues}),
+            patch.object(sonar_mod, '_fetch_issues', return_value={'status': 'success', 'issues': issues, 'total': 1}),
         ):
             result = cmd_read_open_issues(_args('--pr', '42'))
 
@@ -153,7 +157,7 @@ class TestConfirmedRead:
     def test_a_settled_analysis_with_no_issue_is_a_confirmed_zero(self):
         with (
             patch.object(sonar_mod, '_wait_for_ce_ready', return_value={'count_status': 'confirmed'}),
-            patch.object(sonar_mod, '_fetch_issues', return_value={'status': 'success', 'issues': []}),
+            patch.object(sonar_mod, '_fetch_issues', return_value={'status': 'success', 'issues': [], 'total': 0}),
         ):
             result = cmd_read_open_issues(_args('--pr', '42'))
 
@@ -216,6 +220,32 @@ class TestUndecidableRead:
         assert result['count_status'] == 'undecidable'
         assert result['open_issue_count'] is None
         assert '1 of 812' in result['count_status_reason']
+
+    def test_a_response_without_a_usable_total_is_undecidable(self):
+        """An absent total leaves the page's completeness unestablished, so no count."""
+        fetch = {'status': 'success', 'issues': [_issue(key='K1')], 'total': None}
+
+        with (
+            patch.object(sonar_mod, '_wait_for_ce_ready', return_value={'count_status': 'confirmed'}),
+            patch.object(sonar_mod, '_fetch_issues', return_value=fetch),
+        ):
+            result = cmd_read_open_issues(_args('--pr', '42'))
+
+        assert result['count_status'] == 'undecidable'
+        assert result['open_issue_count'] is None
+        assert 'no usable issue total' in result['count_status_reason']
+
+    def test_a_page_matching_its_total_is_confirmed(self):
+        fetch = {'status': 'success', 'issues': [_issue(key='K1')], 'total': 1}
+
+        with (
+            patch.object(sonar_mod, '_wait_for_ce_ready', return_value={'count_status': 'confirmed'}),
+            patch.object(sonar_mod, '_fetch_issues', return_value=fetch),
+        ):
+            result = cmd_read_open_issues(_args('--pr', '42'))
+
+        assert result['count_status'] == 'confirmed'
+        assert result['open_issue_count'] == 1
 
 
 class TestUnconfigured:

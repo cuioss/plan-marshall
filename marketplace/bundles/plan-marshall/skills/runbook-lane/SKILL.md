@@ -128,7 +128,7 @@ The result supplies, and nothing below is spelled from anywhere else:
 | guard-log path | `guard_log` |
 | build server state | `build_server`, plus `build_server_reason` when the state is `down` |
 | Sonar state, and the project key when configured | `sonar` (`configured` \| `not_configured`), plus `sonar_project_key` when it is `configured` |
-| Sonar CE-readiness wait budget (seconds) | `sonar_ce_wait_timeout_seconds`, the harness's Bash ceiling less a teardown margin (the provider's own 600s default when the target imposes no ceiling) |
+| Sonar CE-readiness wait budget (seconds) | `sonar_ce_wait_timeout_seconds`, present only when `sonar` is `configured`: the harness's Bash ceiling less a teardown margin (the provider's own 600s default when the target imposes no ceiling). An unreadable ceiling is `sonar_ce_ceiling_unreadable`, never a 600s fallback that a lower ceiling would kill |
 
 The branch row is derived from the project's configuration rather than returned by `resolve`; every
 other row names a field of the resolve result.

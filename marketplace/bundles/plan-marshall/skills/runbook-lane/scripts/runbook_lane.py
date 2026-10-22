@@ -464,9 +464,12 @@ def _resolve_sonar_ce_wait(project_dir: Path) -> int:
     room for the enumeration and the process teardown.
 
     A target that imposes no ceiling answers ``no-op``; the provider's own 600s
-    default then applies. A seam failure degrades to that same default rather than
-    to a smaller guess, so an unreadable ceiling cannot silently shorten the wait
-    on a harness that could have afforded it.
+    default then applies. A ceiling that could not be READ is a different state,
+    and it fails closed (``sonar_ce_ceiling_unreadable``): falling back to 600s
+    would hand a 120s harness a budget it kills before the read can answer, which
+    is the failure this budget exists to prevent. Only a project that analyses
+    with Sonar calls this, so a broken seam does not block a lane that has no Sonar
+    read to make.
     """
     from platform_runtime import _runtime_for_target
     from toon_parser import parse_toon
@@ -474,13 +477,13 @@ def _resolve_sonar_ce_wait(project_dir: Path) -> int:
     try:
         parsed = parse_toon(_runtime_for_target(str(project_dir)).harness_bash_timeout_ceiling())
     except Exception:
-        return _SONAR_CE_DEFAULT_SECONDS
+        raise ValueError('sonar_ce_ceiling_unreadable') from None
     if parsed.get('status') == 'no-op':
         return _SONAR_CE_DEFAULT_SECONDS
     try:
         ceiling = int(parsed['ceiling_seconds'])
     except (KeyError, TypeError, ValueError):
-        return _SONAR_CE_DEFAULT_SECONDS
+        raise ValueError('sonar_ce_ceiling_unreadable') from None
     return max(1, ceiling - _SONAR_CE_CEILING_MARGIN_SECONDS)
 
 
@@ -1297,6 +1300,16 @@ def _sonar_gate_verdict(
             'open_issue_count': None,
         }
     if count == 0:
+        if open_keys:
+            # Mirror of the count guard above: a measured zero enumerates no key,
+            # so keys beside it describe some other read.
+            return {
+                'status': 'success',
+                'operation': 'sonar-gate',
+                'merge_allowed': False,
+                'reason': 'confirmed_zero_with_open_keys',
+                'open_issue_count': 0,
+            }
         return {
             'status': 'success',
             'operation': 'sonar-gate',
@@ -1482,6 +1495,9 @@ def cmd_resolve(args: argparse.Namespace) -> dict[str, Any]:
         base_branch = _resolve_base_branch(marshal)
         deliverable_state = _resolve_deliverable_skills(spec)
         sonar_state = _resolve_sonar(marshal)
+        # The read's budget is resolved only for a project that will make the read:
+        # a broken ceiling seam must not block a lane with no Sonar read to make.
+        sonar_ce_wait = _resolve_sonar_ce_wait(project_dir) if sonar_state['state'] == 'configured' else None
     except _BuildCommandUnresolvable as exc:
         # Fail closed and name the gate canonicals that could not be resolved:
         # the lane never falls back to a composed string or to a default build.
@@ -1551,9 +1567,12 @@ def cmd_resolve(args: argparse.Namespace) -> dict[str, Any]:
         'guard_log': '/'.join(_GUARD_LOG_PARTS),
         'build_server': build_server,
         'sonar': sonar_state['state'],
-        'sonar_ce_wait_timeout_seconds': _resolve_sonar_ce_wait(project_dir),
         'skills_note': deliverable_state['skills_note'],
     }
+    # The read's budget rides only when there is a read to make: an empty row
+    # would read like a parsed-but-empty answer on a project without Sonar.
+    if sonar_ce_wait is not None:
+        resolved['sonar_ce_wait_timeout_seconds'] = sonar_ce_wait
     # The project key rides only when there is one: an empty row would read like a
     # parsed-but-empty answer on a project that does not use Sonar at all.
     if 'project_key' in sonar_state:

@@ -180,6 +180,14 @@ def test_a_repeated_key_cannot_stand_in_for_two_issues() -> None:
     assert verdict['reason'] == 'open_issue_keys_missing'
 
 
+def test_a_measured_zero_refuses_enumerated_keys() -> None:
+    """A zero enumerates no key, so keys beside it describe a different read."""
+    verdict = cmd_sonar_gate(_gate_args(open_count='0', open_keys='K1'))
+
+    assert verdict['merge_allowed'] is False
+    assert verdict['reason'] == 'confirmed_zero_with_open_keys'
+
+
 def test_a_confirmed_read_without_a_count_blocks_the_merge() -> None:
     verdict = cmd_sonar_gate(_gate_args())
 
@@ -293,10 +301,19 @@ def test_a_target_without_a_ceiling_uses_the_provider_default(monkeypatch) -> No
     assert lane._resolve_sonar_ce_wait(Path('.')) == 600
 
 
-def test_an_unreadable_ceiling_degrades_to_the_provider_default(monkeypatch) -> None:
+def test_an_unreadable_ceiling_fails_closed(monkeypatch) -> None:
+    """A ceiling that could not be read must not fall back to a budget it might exceed."""
     _patch_ceiling(monkeypatch, RuntimeError('seam unavailable'))
 
-    assert lane._resolve_sonar_ce_wait(Path('.')) == 600
+    with pytest.raises(ValueError, match='sonar_ce_ceiling_unreadable'):
+        lane._resolve_sonar_ce_wait(Path('.'))
+
+
+def test_an_unparseable_ceiling_payload_fails_closed(monkeypatch) -> None:
+    _patch_ceiling(monkeypatch, 'status: success\n')
+
+    with pytest.raises(ValueError, match='sonar_ce_ceiling_unreadable'):
+        lane._resolve_sonar_ce_wait(Path('.'))
 
 
 def test_resolve_reports_the_ce_budget(tmp_path: Path) -> None:
@@ -311,3 +328,13 @@ def test_resolve_reports_the_ce_budget(tmp_path: Path) -> None:
 
     budget = int(data['sonar_ce_wait_timeout_seconds'])
     assert 0 < budget <= 540
+
+
+def test_resolve_omits_the_ce_budget_without_sonar(tmp_path: Path) -> None:
+    """No read will be made, so no budget is resolved (and no broken seam can block)."""
+    spec = _seed_fixture(tmp_path, executable=_PYPROJECT_EXEC, required_bots='x')
+
+    data = _run_resolve(spec, tmp_path)
+
+    assert data['sonar'] == 'not_configured'
+    assert 'sonar_ce_wait_timeout_seconds' not in data
