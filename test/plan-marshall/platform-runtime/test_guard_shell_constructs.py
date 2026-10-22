@@ -57,7 +57,7 @@ _CMD = 'python3 -c x'
 #: The population floors. They are the reason a table wrapper or a construct
 #: REMOVED from the data source fails this suite instead of silently shrinking it.
 _MIN_SHELLS = 9
-_MIN_CONSTRUCTS = 9
+_MIN_CONSTRUCTS = 10
 _MIN_WRAPPERS = 28
 _MIN_SPLICE_WRAPPERS = 5
 
@@ -232,16 +232,49 @@ def test_r2_spawn_set_is_derived_from_the_shared_table(tmp_path_factory) -> None
     assert "get('shells')" in hook_source, 'the hook must derive its shell spawn set from the shared table'
 
 
-def test_a_wrapper_directory_option_moves_the_floor_cwd(tmp_path_factory) -> None:
-    """``env -C /tmp/x -S "python3 .plan/execute-script.py …"`` runs from /tmp/x.
+def test_a_nested_interpreter_behind_the_executor_is_still_refused(tmp_path_factory) -> None:
+    """An admitted executor segment must not bless a LATER nested interpreter.
 
-    The floor must judge a spliced command string from the directory the wrapper
-    really put it in; otherwise the wrapper one level up is the same vacuity D2
-    closed for a leading ``cd``.
+    ``script -c "python3 .plan/execute-script.py …; sh -c 'python3 -c x'"`` names
+    the executor first and hides the real call inside a token of the second
+    segment. The floor must recurse into a token, not stop at the admitted first
+    segment — otherwise the admission becomes a bypass.
     """
-    command = 'env -C /tmp/x -S "python3 .plan/execute-script.py a:b:c verb"'
-    harness = build_harness(tmp_path_factory.mktemp('guard-env-c-splice'))
-    blocked, message = harness.blocks(shell_event(command, agent=SUB_AGENT_AGENT))
-    assert blocked, 'guard.js must refuse the executor spliced out of the repository by env -C'
-    assert 'R5' in message, f'the refusal must be rule R5; message={message!r}'
-    assert _hook_refused(command), 'the hook must refuse the same env -C splice'
+    rows = [
+        'script -c "python3 .plan/execute-script.py a:b:c verb; sh -c \'python3 -c x\'"',
+        'env -S "python3 .plan/execute-script.py a:b:c verb; sh -c \'python3 -c x\'"',
+        'watch "python3 .plan/execute-script.py a:b:c verb; sh -c \'python3 -c x\'"',
+    ]
+    harness = build_harness(tmp_path_factory.mktemp('guard-nested-splice'))
+    outcomes = harness.run([shell_event(row, agent=SUB_AGENT_AGENT) for row in rows])
+    for row, outcome in zip(rows, outcomes, strict=True):
+        assert outcome.blocked, f'guard.js admitted {row!r}'
+        assert 'R5' in outcome.message, f'the refusal for {row!r} must be R5; message={outcome.message!r}'
+        assert _hook_refused(row), f'the hook admitted {row!r}'
+
+
+def test_a_clustered_wrapper_directory_option_defeats_the_permit(tmp_path_factory) -> None:
+    """``env -iC/tmp/x`` and ``sudo -D/tmp/x`` are directory changes too.
+
+    The attached/clustered spellings are valid getopt forms of the same option;
+    a rule that only recognises the detached spelling leaves the same vacuity one
+    spelling over.
+    """
+    rows = [
+        'env -iC/tmp/x -S "python3 .plan/execute-script.py a:b:c verb"',
+        'sudo -D/tmp/x env -S "python3 .plan/execute-script.py a:b:c verb"',
+        'env -C/tmp/x -S "python3 .plan/execute-script.py a:b:c verb"',
+        'sudo -D /tmp/x env -S "python3 .plan/execute-script.py a:b:c verb"',
+    ]
+    harness = build_harness(tmp_path_factory.mktemp('guard-clustered-dir'))
+    outcomes = harness.run([shell_event(row, agent=SUB_AGENT_AGENT) for row in rows])
+    for row, outcome in zip(rows, outcomes, strict=True):
+        assert outcome.blocked, f'guard.js admitted {row!r}'
+        assert 'R5' in outcome.message, f'the refusal for {row!r} must be R5; message={outcome.message!r}'
+        assert _hook_refused(row), f'the hook admitted {row!r}'
+
+    # Matched control: a flag-only cluster with no directory change keeps the
+    # permit, so the rule is not simply refusing every clustered option.
+    control = 'env -i -S "python3 .plan/execute-script.py a:b:c verb"'
+    admitted, control_message = harness.blocks(shell_event(control, agent=SUB_AGENT_AGENT))
+    assert not admitted, f'a cluster with no directory option must keep the permit; message={control_message!r}'

@@ -21,7 +21,8 @@
     "case x in x) {CMD};; esac",
     "({CMD})",
     "{ {CMD}; }",
-    "! {CMD}"
+    "! {CMD}",
+    "time {CMD}"
   ],
   "build_wrapper_admission": {
     "pw_admitted_verbs": [

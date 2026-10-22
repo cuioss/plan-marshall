@@ -662,20 +662,8 @@ function effectiveCwd(command, base) {
         continue
       }
       if (!(option.startsWith("-") && option.length > 1)) break
-      const isDirectoryOption =
-        option === "-C" ||
-        option === "--chdir" ||
-        option.startsWith("--chdir=") ||
-        (wrapper === "sudo" && (option === "-D" || option === "--directory" || option.startsWith("--directory="))) ||
-        (wrapper === "env" && option.startsWith("-C") && option.length > 2)
-      if (isDirectoryOption) {
-        let value = option.includes("=") ? option.slice(option.indexOf("=") + 1) : null
-        if (value === null && option.startsWith("-C") && option.length > 2 && !option.startsWith("--")) {
-          value = option.slice(2)
-        }
-        if (value === null) value = stripMatchedQuotes(tokens[i + 1] ?? "")
-        apply(value)
-      }
+      const directoryValue = wrapperDirectoryValue(wrapper, option, tokens, i)
+      if (directoryValue !== null) apply(directoryValue)
       const step = consumeWrapperOption(spec, option, tokens, i)
       i += step.consumed
       if (step.splice) {
@@ -757,23 +745,34 @@ function readTextIfFile(value, cwd) {
 }
 
 // The directory a wrapper OPTION changes to, or null when the option is not a
-// directory change. Mirrors the directory-option rule in `effectiveCwd`, so the
-// floor judges a spliced command string from the directory the wrapper really
-// put it in (`env -C /tmp/x -S "python3 …"`).
+// directory change. `env -C`/`--chdir` and `sudo -D`/`--directory` are the only
+// directory options the table's wrappers have, and a short CLUSTER is walked
+// letter by letter with the table's value-letter rule, so `env -iC/tmp/x` and
+// `sudo -D/tmp/x` are read exactly like their detached spellings. This is the
+// ONE rule `effectiveCwd` and the floor both use.
 function wrapperDirectoryValue(wrapper, option, tokens, i) {
-  const isDirectoryOption =
-    option === "-C" ||
-    option === "--chdir" ||
-    option.startsWith("--chdir=") ||
-    (wrapper === "sudo" && (option === "-D" || option === "--directory" || option.startsWith("--directory="))) ||
-    (wrapper === "env" && option.startsWith("-C") && option.length > 2)
-  if (!isDirectoryOption) return null
-  let value = option.includes("=") ? option.slice(option.indexOf("=") + 1) : null
-  if (value === null && option.startsWith("-C") && option.length > 2 && !option.startsWith("--")) {
-    value = option.slice(2)
+  const longForm = wrapper === "env" ? "--chdir" : wrapper === "sudo" ? "--directory" : null
+  if (longForm && (option === longForm || option.startsWith(`${longForm}=`))) {
+    const value = option.includes("=") ? option.slice(option.indexOf("=") + 1) : stripMatchedQuotes(tokens[i + 1] ?? "")
+    return value || null
   }
-  if (value === null) value = stripMatchedQuotes(tokens[i + 1] ?? "")
-  return value || null
+  if (!option.startsWith("-") || option.startsWith("--") || option.length < 2) return null
+  const spec = WRAPPER_TABLE.wrappers[wrapper] || EMPTY_WRAPPER_SPEC
+  const valueLetters = new Set(spec.value_letters || [])
+  const letters = option.slice(1)
+  for (let k = 0; k < letters.length; k++) {
+    const ch = letters[k]
+    const isDirectoryLetter = (wrapper === "env" && ch === "C") || (wrapper === "sudo" && ch === "D")
+    if (isDirectoryLetter) {
+      const rest = letters.slice(k + 1)
+      const value = rest || stripMatchedQuotes(tokens[i + 1] ?? "")
+      return value || null
+    }
+    // A value-taking letter before this point consumes the REST of the cluster,
+    // so a later `C`/`D` is that option's VALUE, not a flag.
+    if (valueLetters.has(ch)) return null
+  }
+  return null
 }
 
 // Every text a wrapper in PROGRAM POSITION is asked to execute, each with the
@@ -893,6 +892,11 @@ function textInterpreterVerdict(text, root, baseCwd) {
       if (!nextCwd) return "refused"
       if (!isExecutorPermit(segment, root, nextCwd)) return "refused"
       admitted = true
+    } else if (commandNamesInterpreterDeep(segment)) {
+      // An interpreter hidden INSIDE a token (`sh -c 'python3 -c x'` is three
+      // tokens on the outer segment, with the call inside the third) is not the
+      // admitted executor, so it is refused.
+      return "refused"
     }
     if (nextCwd) current = nextCwd
   }
@@ -960,8 +964,20 @@ function repoRelativePath(raw, root, cwd) {
   if (token.startsWith("/")) {
     if (!normalizedRoot) return null
     const prefix = normalizedRoot + "/"
-    if (!token.startsWith(prefix)) return null
-    token = token.slice(prefix.length)
+    const worktreePrefix = `${prefix}.plan/local/worktrees/`
+    if (token.startsWith(worktreePrefix)) {
+      // A plan worktree is the same checkout through the worktree's `.plan`
+      // symlink, so a relative allow-listed token run from there resolves to the
+      // SAME repository-relative path. Anything else must be under the root.
+      const rest = token.slice(worktreePrefix.length)
+      const slash = rest.indexOf("/")
+      if (slash === -1) return null
+      token = rest.slice(slash + 1)
+    } else if (token.startsWith(prefix)) {
+      token = token.slice(prefix.length)
+    } else {
+      return null
+    }
   }
   const parts = []
   for (const segment of token.split("/")) {

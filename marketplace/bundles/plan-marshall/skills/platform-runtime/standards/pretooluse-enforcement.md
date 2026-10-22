@@ -31,8 +31,9 @@ the two leaves — all of it lives in `pretooluse_gate.py`.
 
 Two harnesses enforce the same decision table: the **Claude PreToolUse hook**
 (`claude_pretooluse_hook.py`) and the **OpenCode guard** (`.opencode/plugin/
-guard.js`). Each decides its scope from the same inputs, and R1–R5 bind when ANY
-of the following fires; **R6 is not context-gated at all** (only its unresolvable
+guard.js`). On the Claude hook, R1–R5 bind when ANY of the following fires; the
+OpenCode guard applies R1–R4 unconditionally and gates only R5 on the same
+predicate. **R6 is not context-gated on either harness** (only its unresolvable
 fail-closed branch is limited to that scope).
 
 - **Signal 1 — sub-agent identity.** The sub-agent identity field carries the
@@ -71,13 +72,15 @@ An absent Signal-1 field still lets Signal 2 satisfy the gate, and vice versa.
 | Scope input | Claude PreToolUse hook | OpenCode guard |
 |-------------|------------------------|----------------|
 | Signal 1 | the `agent_type` value carrying `:execution-context` | the `agent` value carrying `:execution-context` |
-| Signal 2 | the payload `cwd` (or the project directory) under `.plan/local/worktrees/` | the shell `workdir`, falling back to the project root, under `.plan/local/worktrees/` |
+| Signal 2 | the payload `cwd` under `.plan/local/worktrees/` | the shell `workdir`, falling back to the project root, under `.plan/local/worktrees/` |
 | Signal 3 (24-hour lane marker) | `.plan/temp/rb-<plan>/progress.md` under `CLAUDE_PROJECT_DIR`, falling back to the payload `cwd`, fresh within 24 h | the same marker under the guard's project root, fresh within 24 h |
 | Repository marker | `CLAUDE_PROJECT_DIR`, falling back to the payload `cwd`, then to the hook's own location, carries the shared allow-list file | the guard's project root carries the same file |
 | R6 | unconditional | unconditional |
 
-Both harnesses therefore bind a root session of this repository. A consumer
-repository outside a plan context is refused nothing, except R6.
+Both harnesses therefore bind a root session of this repository. On the Claude
+hook a consumer repository outside a plan context is refused nothing except R6.
+The OpenCode guard applies R1, R2, R3, R4 and R6 unconditionally, so a consumer
+project that installs that guard IS bound by those rules; only its R5 is gated.
 
 ## Rule families
 
@@ -158,10 +161,11 @@ documented workflows runnable. Three things make that split explicit:
   every raw token's own content is scanned, so `zsh -c "python3 -c x"` is refused
   as well, because no wrapper can be stripped without the table. Because the R2
   shell-spawn set is DERIVED from that same table, a missing table also means no
-  spawn is identified — the mutation class itself (`rm`, `mv`, `cp`, …) is still
-  refused directly, and the interpreter class is refused by the scan above; the
-  table is what supplies the shell names, so that is the accepted cost of having
-  exactly one list.
+  TABLE shell is identified there (`source` still is — it is the one builtin the
+  set adds) — the mutation class itself (`rm`, `mv`, `cp`, …) is still refused
+  directly, and the interpreter class is refused by the scan above; the table is
+  what supplies the shell names, so that is the accepted cost of having exactly
+  one list.
 - **Audit line.** On a refusal the hook appends one line to
   `<cwd>/.plan/temp/guard.log`, in the same shape the OpenCode guard writes:
   `<ISO-8601 millis> | tool=<tool> | rule=<Rn> | session=<session_id> | call=? | <detail>`.
@@ -252,12 +256,12 @@ the R2 matcher refuses it, with the structural option walk above resolving the
 subcommand through every global-option spelling. On the OpenCode harness the
 guard's R2 is the MUTATION class only — read-side probes (`ls`, `cat`, `grep`,
 `git grep`) are governed by the two-tier permission map instead, which denies
-`grep *` and `git grep *` at the global, orchestrator and executor tiers
-(`opencode.json`). Adding a wrapper-table entry would have put the verb in the
-WRONG class and created a second, weaker path to a verdict each harness already
-reaches. PLAN-LB-79 D1 asked for this decision and it was never recorded; it is
-recorded here, and a doc test asserts this paragraph exists, so it cannot be lost
-again.
+`git grep *` at every tier and `grep *` at the global, executor and reader tiers
+(the orchestrator's small-ops carve-out makes `grep *` an ask there). Adding a
+wrapper-table entry would have put the verb in the WRONG class and created a
+second, weaker path to a verdict each harness already reaches. PLAN-LB-79 D1
+asked for this decision and it was never recorded; it is recorded here, and a doc
+test asserts this paragraph exists, so it cannot be lost again.
 
 **Explicit non-triggers** — these are not file-ops and must keep working:
 

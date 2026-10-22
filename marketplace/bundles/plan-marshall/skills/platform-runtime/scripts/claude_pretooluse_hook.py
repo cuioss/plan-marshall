@@ -784,24 +784,34 @@ def _read_text_if_file(value: str, cwd: str | None) -> str:
 def _wrapper_directory_value(wrapper: str, option: str, tokens: list[str], index: int) -> str | None:
     """The directory a wrapper OPTION changes to, or ``None``.
 
-    Mirrors the directory-option rule in :func:`_effective_cwd`, so the floor
-    judges a spliced command string from the directory the wrapper really put it
-    in (``env -C /tmp/x -S "python3 …"``).
+    ``env -C``/``--chdir`` and ``sudo -D``/``--directory`` are the only directory
+    options the table's wrappers have. A short CLUSTER is walked letter by letter
+    with the table's value-letter rule, so ``env -iC/tmp/x`` and ``sudo -D/tmp/x``
+    are read exactly like their detached spellings. This is the ONE rule
+    :func:`_effective_cwd` and the floor both use.
     """
-    is_directory_option = (
-        option in ('-C', '--chdir')
-        or option.startswith('--chdir=')
-        or (wrapper == 'sudo' and (option in ('-D', '--directory') or option.startswith('--directory=')))
-        or (wrapper == 'env' and option.startswith('-C') and len(option) > 2)
-    )
-    if not is_directory_option:
+    long_form = '--chdir' if wrapper == 'env' else '--directory' if wrapper == 'sudo' else None
+    if long_form and (option == long_form or option.startswith(f'{long_form}=')):
+        value = option.split('=', 1)[1] if '=' in option else ''
+        if not value:
+            value = _strip_matched_quotes(tokens[index + 1]) if index + 1 < len(tokens) else ''
+        return value or None
+    if not option.startswith('-') or option.startswith('--') or len(option) < 2:
         return None
-    value = option.split('=', 1)[1] if '=' in option else ''
-    if not value and option.startswith('-C') and len(option) > 2 and not option.startswith('--'):
-        value = option[2:]
-    if not value:
-        value = _strip_matched_quotes(tokens[index + 1]) if index + 1 < len(tokens) else ''
-    return value or None
+    spec = _wrapper_table()['wrappers'].get(wrapper) or {}
+    value_letters = set(spec.get('value_letters') or [])
+    letters = option[1:]
+    for position, letter in enumerate(letters):
+        is_directory_letter = (wrapper == 'env' and letter == 'C') or (wrapper == 'sudo' and letter == 'D')
+        if is_directory_letter:
+            rest = letters[position + 1 :]
+            value = rest or (_strip_matched_quotes(tokens[index + 1]) if index + 1 < len(tokens) else '')
+            return value or None
+        # A value-taking letter before this point consumes the REST of the cluster,
+        # so a later `C`/`D` is that option's VALUE, not a flag.
+        if letter in value_letters:
+            return None
+    return None
 
 
 def _executed_texts(command: str, cwd: str | None) -> list[tuple[str, str | None]]:
@@ -913,6 +923,11 @@ def _text_interpreter_verdict(text: str, root: str | None, base_cwd: str | None)
             if not next_cwd or not _is_executor_permit(segment, root, next_cwd):
                 return 'refused'
             admitted = True
+        elif _command_names_interpreter_deep(segment):
+            # An interpreter hidden INSIDE a token (`sh -c 'python3 -c x'` is
+            # three outer tokens, with the call inside the third) is not the
+            # admitted executor, so it is refused.
+            return 'refused'
         if next_cwd:
             current = next_cwd
     return 'admitted' if admitted else 'clear'
@@ -1156,20 +1171,9 @@ def _effective_cwd(command: str, base: str | None) -> str:
                 continue
             if not (option.startswith('-') and len(option) > 1):
                 break
-            is_directory_option = (
-                option in ('-C', '--chdir')
-                or option.startswith('--chdir=')
-                or (wrapper == 'sudo' and (option in ('-D', '--directory') or option.startswith('--directory=')))
-                or (wrapper == 'env' and option.startswith('-C') and len(option) > 2)
-            )
-            if is_directory_option:
-                value = option.split('=', 1)[1] if '=' in option else ''
-                if not value and option.startswith('-C') and len(option) > 2 and not option.startswith('--'):
-                    value = option[2:]
-                if not value:
-                    value = _strip_matched_quotes(tokens[index + 1]) if index + 1 < len(tokens) else ''
-                if value:
-                    current = _resolve_against(current, value)
+            directory_value = _wrapper_directory_value(wrapper, option, tokens, index)
+            if directory_value is not None:
+                current = _resolve_against(current, directory_value)
             _is_splice, value, consumed = _consume_wrapper_option(spec, option, tokens, index)
             index += consumed
             if _is_splice:
@@ -1321,10 +1325,13 @@ def _is_this_repository(payload: dict[str, Any]) -> bool:
     location is only the FALLBACK for a payload that names no project directory.
     A consumer session on a machine that also carries the source tree is judged
     by its own project directory, never by where the hook file happens to live —
-    while the payload with no project directory at all (a bare test/probe call)
-    still inherits the location's stricter scope.
+    while a payload with no project directory at all (a bare test/probe call)
+    still inherits the location's stricter scope. This precedence is deliberately
+    DIFFERENT from :func:`_allow_list_root`, which never reads the payload cwd:
+    scope may name a consumer checkout, but the root a relative PATH resolves
+    against may not.
     """
-    project = _allow_list_root(payload)
+    project = os.environ.get('CLAUDE_PROJECT_DIR') or gate.cwd(payload)
     roots = (project,) if project else (_repo_root_from_hook_location(),)
     for root in roots:
         if root and pathlib.Path(root).joinpath(*_R5_REPO_MARKER.split('/')).is_file():
@@ -1548,9 +1555,20 @@ def _repo_relative_path(raw: str, root: str | None, cwd: str | None = None) -> s
         if not normalized_root:
             return None
         prefix = normalized_root + '/'
-        if not token.startswith(prefix):
+        worktree_prefix = f'{prefix}.plan/local/worktrees/'
+        if token.startswith(worktree_prefix):
+            # A plan worktree is the same checkout through the worktree's `.plan`
+            # symlink, so a relative allow-listed token run from there resolves to
+            # the SAME repository-relative path. Anything else must be under root.
+            rest = token[len(worktree_prefix) :]
+            head, separator, tail = rest.partition('/')
+            if not separator or not head:
+                return None
+            token = tail
+        elif token.startswith(prefix):
+            token = token[len(prefix) :]
+        else:
             return None
-        token = token[len(prefix) :]
     parts: list[str] = []
     for segment in token.split('/'):
         if segment in ('', '.'):
@@ -1569,13 +1587,14 @@ def _allow_list_root(payload: dict[str, Any]) -> str | None:
 
     ``CLAUDE_PROJECT_DIR`` pins the session's project directory independently of
     the shell's working directory, so a command cannot move the root by running
-    from elsewhere; the payload ``cwd`` is the fallback. NOTE: this is NOT the
-    root the relative-EXECUTOR permit uses — that one is
-    :func:`_executor_root`, which never falls back to the payload ``cwd`` (a
-    cwd-based root makes the admission vacuous, because the cwd IS the directory
-    the executor would run from).
+    from elsewhere. With it unset the root is the running hook's OWN location —
+    the repository whose source tree this hook belongs to — and NEVER the payload
+    ``cwd``: a cwd-based root makes the exact-path match vacuous, because a
+    planted ``{cwd}/marketplace/targets/sync.py`` would resolve to an allow-list
+    entry. A relative token run from one of the root's OWN plan worktrees still
+    resolves, because :func:`_repo_relative_path` strips the worktree prefix.
     """
-    return os.environ.get('CLAUDE_PROJECT_DIR') or gate.cwd(payload)
+    return os.environ.get('CLAUDE_PROJECT_DIR') or _repo_root_from_hook_location()
 
 
 def _executor_root() -> str | None:
@@ -2165,7 +2184,7 @@ def _is_lane_run(payload: dict[str, Any]) -> bool:
     (:data:`_LANE_MARKER_MAX_AGE_SECONDS`); a stale one would otherwise bind
     R1-R5 in a consumer checkout forever.
     """
-    root = _allow_list_root(payload) or gate.cwd(payload)
+    root = os.environ.get('CLAUDE_PROJECT_DIR') or gate.cwd(payload)
     if not root:
         return False
     temp_dir = pathlib.Path(root) / '.plan' / 'temp'

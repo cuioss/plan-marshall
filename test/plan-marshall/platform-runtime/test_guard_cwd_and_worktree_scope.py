@@ -103,6 +103,43 @@ def test_a_cd_inside_a_spliced_string_is_applied_for_splice_wrappers(tmp_path_fa
     assert not admitted, f'the executor inside a spliced cd into the root must pass; message={control_message!r}'
 
 
+def test_the_hook_never_takes_the_payload_cwd_as_its_allow_list_root(tmp_path, monkeypatch) -> None:
+    """A planted allow-listed path under the shell cwd must not match.
+
+    The allow-list root is the project directory or the hook's own location; a
+    cwd-based root made the exact-path match vacuous, because
+    ``{cwd}/marketplace/targets/sync.py`` then IS the entry.
+    """
+    monkeypatch.delenv('CLAUDE_PROJECT_DIR', raising=False)
+    planted = tmp_path / 'marketplace' / 'targets' / 'sync.py'
+    planted.parent.mkdir(parents=True)
+    planted.write_text('# planted\n', encoding='utf-8')
+    payload = {
+        'agent_type': SUB_AGENT_AGENT,
+        'tool_name': 'Bash',
+        'tool_input': {'command': 'python3 marketplace/targets/sync.py'},
+        'cwd': str(tmp_path),
+    }
+    assert _HOOK.evaluate(payload) == _HOOK._R5_REASON
+
+
+def test_a_relative_allow_listed_script_resolves_from_a_plan_worktree(monkeypatch) -> None:
+    """A worktree is the same checkout: the relative token still resolves.
+
+    The allow-list root is the project directory, so a relative MUTATING read of
+    ``{root}/.plan/local/worktrees/{plan}/marketplace/…`` must strip the worktree
+    prefix before the exact-entry comparison.
+    """
+    monkeypatch.setenv('CLAUDE_PROJECT_DIR', str(REPO_ROOT))
+    payload = {
+        'agent_type': SUB_AGENT_AGENT,
+        'tool_name': 'Bash',
+        'tool_input': {'command': 'python3 marketplace/targets/sync.py --target opencode'},
+        'cwd': f'{REPO_ROOT}/.plan/local/worktrees/plan-a',
+    }
+    assert _HOOK.evaluate(payload) is None
+
+
 def test_the_plan_worktree_exemption_is_exactly_one_level(tmp_path_factory: pytest.TempPathFactory) -> None:
     """Only ``{root}/.plan/local/worktrees/{plan}`` is admitted — never deeper, never ``_orchestrator``."""
     harness = build_harness(tmp_path_factory.mktemp('guard-worktree-exact'))
