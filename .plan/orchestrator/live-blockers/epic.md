@@ -57,6 +57,75 @@ derive, for rows still live.
   counted 7/7, five regressions; see `landings/PLAN-LB-39.md`. Fix-forward PLAN-LB-50; unshipped
   deliverables re-staged as PLAN-LB-51 (Antigravity) and PLAN-LB-52 (harness-agnostic, as scripts).
 
+- **PLAN-LB-48** (shipped #1830, 2026-10-21, runbook lane) — all five Done-whens met, D5 and D2 partial against
+  their bullets; grade B−; see `landings/PLAN-LB-48.md`. Fix-forward **PLAN-LB-83** (WS-04, runbook lane,
+  medium; emit it after PLAN-LB-49, which is already executing and shares `opencode_runtime.py` but not its functions). #1830 moved
+  files PLAN-LB-49 (`opencode_runtime.py`, `contract.md`, `no-op-policy.md`, `test_opencode_runtime.py`,
+  `test_manage_metrics_enrich.py`) and PLAN-LB-43 (`generate_executor.py`, `marshall-steward/SKILL.md`,
+  `test_variant_emitter.py`, the steward and executor tests) declare: re-read their line references at
+  outline. PLAN-LB-73 D1 gained the trailerless-merge-commit bullet; PLAN-LB-49 and PLAN-LB-81 gained a
+  re-ground note (no surface change).
+
+- **PLAN-LB-78** (shipped #1834, 2026-10-22, runbook lane) — D2 and D3 met as written, D1 shipped-modified with two
+  spec clauses unsatisfiable (D1.1b, D1.3: the run is right); grade B−; see `landings/PLAN-LB-78.md`. Fix-forward is
+  **PLAN-LB-73 D4** (the build-gate text and `resolve` it shipped: a routed build's executor is not supplied by
+  worktree creation, the text contradicts itself on routing, the lane text is not re-read after a compaction, a
+  restart or an idle gap) and two bullets in **PLAN-LB-84** (a mixed-variant `effort`, a source-manifest
+  `plugin_version`). PLAN-LB-73 is now unblocked: re-read its line references at outline, #1834 moved the sections.
+  The landing's `order=test-first` over-counts (the committed Maven and no-gate tests were rewritten after the fix and
+  never run at base); its `total_tokens=unknown` hides 5.30M input+output+reasoning and $0.91 the session store holds.
+
+- **PLAN-LB-49** (shipped #1833, 2026-10-22, plan-marshall lifecycle, OpenCode) — grade C+; see
+  `landings/PLAN-LB-49.md`. The reader, root resolution and the multi-root enrich are in `main`, and the landing
+  carries a measured `total_tokens` for the first time on OpenCode. It is not the cost: 16,614,516 sums one
+  main-context phase and five sub-agent phases (63% of the store's 26.3M input plus output; reasoning, cache and cost
+  left out), `subagent_tool_uses` is a measured `0` in all six phases, and D3's Done-when is not met as written. The
+  landing's fence has a space after the backticks, so `landing-check` reads none of its thirteen keys. Fix-forward:
+  **PLAN-LB-86** (WS-04, runbook, high: tool use, reasoning, cost, the total's population, re-entered phases, session
+  identity, a real fixture-database test), **PLAN-LB-87** (WS-04, runbook, medium: boundary rows' step id and unmeasured
+  spend, gate-route build duration, retrospective after metrics, the `pwx` resolution), **PLAN-LB-84 D6** (the fence),
+  **PLAN-LB-85 D4** (the consumer-visible field set in the spec template). Spec line references moved: PLAN-LB-84
+  (`runtime_info.py`, the recursive-query hypothesis is obsolete), PLAN-LB-83 (`opencode_runtime.py`, +222 lines),
+  PLAN-LB-73 (`runtime_info.py`). PLAN-LB-84 is no longer held on PLAN-LB-49; it now sequences after PLAN-LB-86.
+
+- **PLAN-LB-85** (staged 2026-10-22, WS-04, runbook lane, **high**) — from the consumer-epic finding
+  `pm-mcp-core-m2-m4-005`: the runbook lane never reads a pull request's open SonarCloud issues, so "quality gate
+  passed" is reported over issues the gate does not count. Corroborated in source: no Sonar text in the lane
+  skill or its scripts, and no Sonar condition in the § 7 merge gate. The sender's suggested vehicle does not fit as
+  is: `fetch_findings` is plan-scoped (plan id, plan-local manifest, plan ledger) and the lane has no plan, so D1 is
+  a plan-less read. The consumer's counts (38 open over eight merges, 118 on its `main`) are an unverified lead
+  (SonarCloud not queried here). Sequence AFTER PLAN-LB-73 (same lane sections); overlaps PLAN-LB-58 on `sonar.py`
+  and PLAN-LB-84/69 on `landing-payload-spec.md`; the gate will ask. D4 is the orchestrator's half: the plan-spec
+  template asks for the open-issue read where the project uses Sonar.
+
+- **PLAN-LB-79** (shipped #1835, 2026-10-22, runbook lane, DeepSeek `deepseek-v4.1-flash/high`) — grade C+; see
+  `landings/PLAN-LB-79.md`. D1-D4 delivered with 17 named tests and CodeRabbit's five findings fixed, but the
+  enforcement is still walkable: the splice walk is blind to grouping keywords, options before `-c`, here-strings
+  and a `cd` inside the string, so the relative-executor admission D2 made exact is defeated by the shells D1
+  added (by reading; nothing executed). The landing misstates its own rule check (a `guard.log` line from the
+  PLAN-LB-49 run, 67 read-class shell calls and a clone, a hand-run executor generation and hand-written CI bodies
+  under "all other rules were kept", `test-first` over a base replay run later) and put an operator question on a
+  misread executor. Fix-forward: **PLAN-LB-88** (WS-04, runbook, **high**: the spliced-command walk, `cd` inside a
+  splice, fail-closed completeness and `./pw` parity, the `git grep` decision, the stale CLAUDE.md gate sentence) and
+  **PLAN-LB-89** (WS-04, runbook, medium: the lane's base-sha evidence recipe and thread-reply recipe, the test
+  bootstrap that rewrote an executor). Folded: PLAN-LB-69 D3 (six report-contradiction instances) and PLAN-LB-73 D4
+  (guard-log attribution by session tree; restarts and killed sub-agents listed); neither adds file surface.
+  The realized footprint overlaps six staged specs' declared surface (PLAN-LB-69, 83, 84, 86, 51, 43), re-grounded
+  at the cleanup pass. Sequence PLAN-LB-89 after PLAN-LB-73 (same lane sections); PLAN-LB-88 has no staged sibling.
+
+- **Consumer-epic inbox drain** (`pm-mcp-core-m2-m4-001` to `-004`, four findings, none a landing). Folded:
+  the executor-skew start guard became **PLAN-LB-73 D3** (adds `plugin_registry.py` as a read-only
+  hypothesis surface; PLAN-LB-73 stays AFTER PLAN-LB-78), and the `--repo` selector on `ci pr view`,
+  `pr merge` and `checks status` joined **PLAN-LB-57 D1** (no new file: `ci_base.py`, the provider files,
+  the skill doc and the test directory were already declared). Absorbed as Watches: the opencode
+  `total_tokens=unknown` recurrence (waits on PLAN-LB-49) and the guard-less-harness main-checkout and
+  merge-head findings. Nothing was staged as a new plan.
+
+- **PLAN-LB-81** (shipped #1832, 2026-10-21, runbook lane) — 9 of 13 Done-whens fully met, 3 partial, 1 a spec
+  error; grade C+; see `landings/PLAN-LB-81.md`. Fix-forward **PLAN-LB-84** (WS-04, runbook lane, medium; land
+  it after PLAN-LB-78 D3, which gives the lane the stamp keys and a refresh call). The plan ran beside
+  PLAN-LB-48 and PLAN-LB-49 and was already merged when the overlap prompt asked whether to emit it.
+
 - **Emit order from 2026-10-17 (runbook lane):** PLAN-LB-54 (running) → **PLAN-LB-65** and
   **PLAN-LB-64** (both critical) → **PLAN-LB-63** (high) → PLAN-LB-52, PLAN-LB-55 (each overlaps the running
   PLAN-LB-61 on `pr_intent_section.py` and its test) (each
@@ -621,6 +690,35 @@ derive, for rows still live.
 
 ## Open Defects
 
+- **The R5 enforcement merged by PLAN-LB-79 is still walkable, and the hook it made binding refuses a command
+  the repository prescribes (PLAN-LB-79 landing, 2026-10-22; high; fix-forward PLAN-LB-88).** By code reading,
+  not executed: the spliced-string walk splits on `; & | newline` only, so a grouping keyword, `-o pipefail` before
+  `-c`, a here-string, a script file or `fish`/`csh`/`tcsh` hide the interpreter, and a `cd` inside the string is
+  never applied, so `zsh -c "cd /tmp/x; python3 .plan/execute-script.py …"` is admitted on both harnesses; the
+  missing-table fail-closed branch checks raw tokens and misses a spliced interpreter; the hook's R4 refuses
+  every `./pw`, `./pw generate` included (CLAUDE.md prescribes it); the `git grep` decision the spec asked for was
+  never made. The merged hook is also not installed on Claude here (no cached hook references the new table,
+  `.claude/settings.local.json` has no `claude_pretooluse` entry); `.opencode/plugin/guard.js` is live for OpenCode
+  sessions in this checkout. The self-review found one of these and rated it MEDIUM. Third completion in a chain
+  (LB-65, LB-68, LB-79): PLAN-LB-88 D1 asks for a generated cross-product so the next wrapper is covered by
+  construction. Retire when PLAN-LB-88 ships and its cross-product rows are green on both harnesses.
+- **A second runbook landing's rule-check self-report is contradicted by its transcript (PLAN-LB-79 landing,
+  2026-10-22; medium; owners PLAN-LB-73 D4, PLAN-LB-69 D3, PLAN-LB-89).** The Watch on the PLAN-LB-78 instance named
+  this trigger. PLAN-LB-79 reported three refusals "for this run's sessions" (one belongs to the PLAN-LB-49 run) and
+  "all other rules kept" over 67 read-class shell calls, a clone, a hand-run executor generation, hand-written CI
+  bodies and a killed-and-retried self-review round, and its operator question rested on a misread executor. The
+  deliverable the Watch asked for is a rule-check count taken from the transcript and attributed by session tree:
+  PLAN-LB-73 D4 §8 (extended in this drain), PLAN-LB-69 D3 (six instances added), PLAN-LB-89 (the improvised
+  recipes). Retire when two consecutive runbook landings' self-reports match their transcripts.
+- **A lifecycle landing whose facts fence has a space after the backticks is read as carrying no facts
+  (PLAN-LB-49 landing, 2026-10-22; medium; fix-forward PLAN-LB-84 D6).** `lb-49-opencode-measurement-006` wrote
+  "``` landing-facts"; `_LANDING_FENCE_RE` (`_orchestrator_inbox.py` L1494-1497) requires "```landing-facts", and
+  `landing-check` returned `complete: false` with all thirteen required keys missing for a block that carries them.
+  Cause: `emit-landing.md` L275 describes the opening as "a ` landing-facts ` info-string fence" (padded backticks),
+  and the model took the spaces literally; CommonMark permits them, so the parser is also stricter than the format.
+  The facts were read by eye for this drain (`total_tokens` 16,614,516, `plugin_version` 0.1.1983, `harness` opencode,
+  `model` deepseek-v4.1-flash, `effort` level-5, all 21 steps `executed`); the machine check saw none. One instance.
+  Retire when PLAN-LB-84 D6 ships and a landing with a padded fence reads `complete: true`.
 - **Every runbook-lane landing is now `complete: false` on `effort` and `plugin_version` (PLAN-LB-45 landing,
   2026-10-20; high; fix-forward PLAN-LB-78 D3).** #1802 made `harness`, `model`, `effort` and `plugin_version`
   required, sentinel-rejecting landing keys and changed nothing in the runbook lane: the section 8 fence
@@ -628,13 +726,48 @@ derive, for rows still live.
   and `landing-payload-spec.md` L128-130 says the opposite. PLAN-LB-77's landing will arrive incomplete for
   this reason; record it as this defect's recurrence, not a new one. **Recurrence 1 (PLAN-LB-77, 2026-10-20):**
   `inbox landing-check` reports `complete: false`, `missing_keys` = `total_tokens`, `effort`,
-  `plugin_version`; the model fact also lacks the variant (the database says `high`). Retire with PLAN-LB-78.
+  `plugin_version`; the model fact also lacks the variant (the database says `high`). **Recurrence 2
+  (PLAN-LB-48, 2026-10-21):** `inbox landing-check` reports the same three `missing_keys`; the model fact
+  again lacks the variant and `total_tokens` is `unknown` for a run that measured 2.87M input and $1.30.
+  **Recurrence 3 (PLAN-LB-81, 2026-10-21):** the same three `missing_keys`; `total_tokens` unknown against 3.09M
+  input and $1.06. Irony: the plan that made the stamp complete cannot stamp its own landing, because the
+  runbook lane has no `status.json` and never calls `refresh-runtime-stamp`. Retire with PLAN-LB-78.
+  **Retired 2026-10-22 by PLAN-LB-78 D3 (#1834, `9a23d41e9`); residue open.** `plugin_version` now lands
+  (as the unstamped `0.1`, PLAN-LB-84 D3), and `effort` now lands when the tree ran one variant. Recurrence 4
+  (PLAN-LB-78): `missing_keys` = `total_tokens`, `effort`, because the tree ran two variants and `unknown` is
+  rejected at every key, so a mixed-variant landing can never be complete (PLAN-LB-84 D2); on Claude and
+  Antigravity model and effort stay `unknown` (PLAN-LB-73 D4, an operator ruling on self-report); the lane's
+  landing-time re-read bypasses `refresh-runtime-stamp` (PLAN-LB-84 Dependencies). `total_tokens` is PLAN-LB-49's.
+  **Recurrence 5 (PLAN-LB-79, 2026-10-22):** `missing_keys` = `total_tokens`, `effort`, `plugin_version`. Not a
+  regression of #1834: the run loaded the pre-#1834 lane text once at 17:34Z on 10-21 and never re-read it in 19 h
+  40 min (#1834 merged 06:44Z on 10-22), so its `resolve` could not return the keys. `total_tokens` is `unknown`
+  against 4.41M input, 0.24M output, 0.25M reasoning, 269M cache read and $1.76 in the store; the runbook lane has no
+  measured source at all, so PLAN-LB-86 D2's population rule must also say what a plan-less run sums. Reload of
+  the lane text after a restart or idle gap is PLAN-LB-73 D4.
+- **PLAN-LB-48 is on `main` with a permission writer that can reverse a more specific rule, a bridge that
+  reports no drift for a file it rewrote, and OpenCode 1 tool names left in the OpenCode target rules
+  (PLAN-LB-48 landing, 2026-10-21; medium; PLAN-LB-83).** `_move_rule_to_end` moves a requested rule past
+  later, more specific rules (DF1); `to_opencode_grant` has no `shell` key (DF4); `bridge_drift` is `False`
+  for a deleted-baseline stub write and for a hand-edited body, and a non-UTF-8 `CLAUDE.md` crashes setup
+  (DF3, DF2); `target-rules/SKILL.md` L15, L19, L28, L34, L35 still name `bash`, `task` and the mtime check;
+  and whether the emitted agent and skeleton `shell` catch-alls override a global deny is open (DF12, DF13,
+  verify first in PLAN-LB-83 D5). The root `opencode.json` still carries an OpenCode 1 `permission.bash` map
+  beside its list (steward, #1812): an operator decision, not a plan's. Retire each with PLAN-LB-83.
+- **Retired 2026-10-21 by PLAN-LB-81 (#1832), residue owned by PLAN-LB-84 (medium):** the variant is stamped,
+  effort is measured on OpenCode, the stamp refreshes at landing, a failed preflight clears the old stamp,
+  `metadata_stamped: false` is reported and the reader honours `XDG_DATA_HOME` and percent-encodes its URI.
+  Left open, each with its own deliverable in PLAN-LB-84: the provenance the refresh records never reaches
+  the landing (DF1), the refresh measures the landing process's session and replaces the stamp wholesale (DF2),
+  an environment model overwrites the reported one on a non-measuring harness (DF3), an Antigravity install
+  now stamps `0.1.0` as the bundle version (DF4), and about half of the new tests cannot fail for the reason
+  they name. Original entry kept below as the record.
 - **The stamp PLAN-LB-45 shipped drops the measured variant, is taken once at plan start, and survives a
   failed preflight from an earlier run (PLAN-LB-45 landing; medium; PLAN-LB-81).** `_PREFLIGHT_METADATA_FIELDS`
   omits `variant`; `effort` on OpenCode is the model's self-report; `cmd_preflight` returns before the stamp
   clearing on a collector failure; `phase-1-init` is silent on `metadata_stamped: false`; the database read
-  is unencoded, unbounded and ignores `XDG_DATA_HOME`. The OpenCode 2 detection signal is PLAN-LB-48 D4's
-  (second evidence: `TARGET_ENV_SIGNALS` still lacks `OPENCODE_SESSION_ID`). Retire with PLAN-LB-81.
+  is unencoded, unbounded and ignores `XDG_DATA_HOME`. The OpenCode 2 detection signal shipped with PLAN-LB-48
+  D4 (#1830: `OPENCODE` is the only ambient signal; the run's own `resolve` reported `harness: opencode`).
+  Retire with PLAN-LB-81.
 - **PLAN-LB-70 is on `main` with two unhandled Major CodeRabbit findings (2026-10-19; high;
   fix-forward PLAN-LB-74 D1).** (1) `review_support.py` ignores `worktree_unresolved` even when the plan
   declares a worktree, so a code review can report `may_close: true` without grading the branch's
@@ -828,7 +961,10 @@ derive, for rows still live.
   to sonar-roundtrip. — `lessons-routing-028.md` (153, 189). Recurred on PLAN-LB-42 (2026-10-14
   18:31): a CI-wait lapse was dispatched as `ci-verify-timeout` and refused `unknown producer`; all
   four `ci_timeout` findings were titled "verify failed" while verify was still running
-  (`plan-lb-42-outline-qgate-integrity-001`).
+  (`plan-lb-42-outline-qgate-integrity-001`). Recurred on PLAN-LB-49 (2026-10-22): the bounded CI wait lapsed at
+  head `a8252f57` and two duplicate "[ci_timeout] verify / verify failed" findings were filed, both resolved
+  "Superseded: CI completed green" (`artifacts/findings/triage.jsonl:1-2`). The duplicate filing is itself a smell.
+  Folded under PLAN-LB-44 (staged) with no surface added. — `lb-49-opencode-measurement-001.md`.
 - **The guard has no rule for shell file operations or ad-hoc scripts** (2026-10-15, PLAN-LB-42
   landing). Under OpenCode with the deny rules active, R1 (compound shell) and R4 (raw pytest)
   refused all 8 attempts. `ls` (2), `python3 -m py_compile` (3) and a `.plan/temp/*.py` ad-hoc
@@ -1068,6 +1204,12 @@ derive, for rows still live.
   `pre-commit-verify-freshness` opens. — source: inbox message `lb-23-verify-builds-001.md`,
   2026-10-08; pointers `_build_execute_factory._append_gate_build_row`,
   `_ledger_core.resolve_ledger_path`; not verified here.
+  Recurrence (PLAN-LB-49, 2026-10-22): the plan's 211 logged build calls left 4 `kind=build` rows against
+  3,990 rows scanned, all four without a duration, so `total_build_seconds` read `unavailable` while
+  `pyproject_build` took 62.6% of the plan's script time. Read in source: the gate route appends its row with
+  `duration_seconds=None` (`_build_execute_factory.py` L536-541), the daemon route stamps one; whether the in-process
+  route appends any row is a hypothesis. The duration half is owned by PLAN-LB-87 D2; the daemon-working-tree half
+  above stays unowned. — `lb-49-opencode-measurement-003.md`.
   - **Read in the code on 2026-10-09 at `c9738952a`; the cause holds and PLAN-LB-23 left
     it open.** `resolve_ledger_path` resolves from the working directory, up to the nearest
     ancestor holding `.plan/local`; each plan worktree has its own
@@ -1095,7 +1237,8 @@ derive, for rows still live.
 
 - **Superseded 2026-10-14 — see § Non-Claude-Code Failures "OpenCode 2: no deny rule applies".**
   The new keys are OpenCode 2's own schema; the live defect is rule order and the guard's tool
-  name. Owned by PLAN-LB-48. Original entry kept below as the record.
+  name. Owned by PLAN-LB-48 (shipped #1830, 2026-10-21; its residue is PLAN-LB-83). Original entry kept
+  below as the record.
   **The root `opencode.json` is in a shape nothing in this repository reads.** PLAN-LB-29's
   merge commit rewrote it: `permission.bash`, a map of command pattern to
   `allow`/`ask`/`deny`, became a `permissions` array of `{action, resource, effect}`
@@ -1174,6 +1317,14 @@ derive, for rows still live.
   cost decision in this epic is measured with. — source: inbox messages
   `lb-23-verify-builds-013.md`, `plan-lb-29-harness-sync-010.md`,
   `lb-32-head-dependent-step-refire-005.md`.
+  - **Ninth landing: PLAN-LB-49 (OpenCode, 2026-10-22)**, 17 boundary rows (1 / 3 / 13 across `4-plan`,
+    `5-execute`, `6-finalize`), every one keyless, 0 firings paired against 63 unpaired execution rows,
+    `channel_completeness` 0.256. The cause is now read in source: the `record-dispatch-boundary` templates in
+    `phase-6-finalize/SKILL.md` L1196-1198 and `execution.md` L220-222 carry no `--step-id` (the flag exists,
+    `manage-metrics.py` L4602), and `execution.md` L265-267 writes `--total-tokens 0 --tool-uses 0 --duration-ms 0`
+    as literals. The lesson's "genuinely zero" is contradicted: an OpenCode sub-agent return carries no `<usage>`,
+    so the zero is for want of a source. Owned from now on by PLAN-LB-87 D1. — source: inbox message
+    `lb-49-opencode-measurement-004.md`, `landings/PLAN-LB-49.md`.
   - **Eighth landing: PLAN-LB-26 (OpenCode)** — phase-5 re-dispatches skipped `effort
     resolve-target` (1 resolve against 29 dispatches), so no `[DISPATCH]` rows; the
     retrospective's dispatch audit reported "0 dispatched" against 77 real sub-agent sessions
@@ -1269,6 +1420,11 @@ entries below are OpenCode 1 assumptions in plan-marshall that OpenCode 2 broke.
   the producers that would re-introduce the OpenCode 1 shape are PLAN-LB-48. Whether the deny
   rules now refuse in practice is graded at the PLAN-LB-40 / PLAN-LB-42 landings (Watches).
 
+- **Retired 2026-10-21 — "OpenCode harness is not detected under OpenCode 2".** PLAN-LB-48 D4 (#1830)
+  removed the `OPENCODE_PID` probe and detection rests on `OPENCODE`; the PLAN-LB-48 run's own
+  `runbook_lane resolve` reported `harness: opencode` and its landing carried `harness=opencode`. Original
+  entry kept below as the record.
+
 - **OpenCode harness is not detected under OpenCode 2** (2026-10-15, PLAN-LB-39 landing):
   `script-shared/scripts/target_context.py:167` checks `OPENCODE` / `OPENCODE_PID`; with neither
   resolvable the worktree falls back to `claude`, so the new harness stamp would record a wrong
@@ -1276,7 +1432,10 @@ entries below are OpenCode 1 assumptions in plan-marshall that OpenCode 2 broke.
   `harness=unknown` although its decision log names "target opencode". Owned by PLAN-LB-48 D4.
 
 - **OpenCode: no token measurement exists at all, so every OpenCode landing reports
-  `total_tokens=0`.** Verified at `501aeb313`: `platform-runtime/scripts/opencode_runtime.py`
+  `total_tokens=0`.** **Retired 2026-10-22 by PLAN-LB-49 (#1833, `3baf825e4`); residue open.** An OpenCode landing
+  now carries a measured `total_tokens`, from a reader over `opencode.db`. Residue, owned by PLAN-LB-86: the figure is a
+  mixed population (63% of input plus output), `subagent_tool_uses` is a fabricated `0`, reasoning and cost are dropped,
+  and a re-entered phase is measured as one window. Verified at `501aeb313`: `platform-runtime/scripts/opencode_runtime.py`
   implements every token path as a deliberate no-op — `session_capture` (`:399-411`, "OpenCode
   does not expose a platform-provided session id to the shell; tracked upstream at issue
   #9292"), `metrics_capture` (`:1109`, no-op "on EVERY input", so even an explicit
@@ -1302,7 +1461,8 @@ entries below are OpenCode 1 assumptions in plan-marshall that OpenCode 2 broke.
 - **Model comparison round (operator, 2026-10-19).** The next four runs after the four in flight
   stay on `deepseek-v4.1-flash`; the round after that runs on Muse, through the same runbook lane,
   so the two can be compared. DeepSeek so far under the runbook lane: LB-61 C+, LB-66 F, LB-67 C,
-  LB-71 C−, LB-72 B−, LB-70 F, LB-59 C, LB-74 C, LB-68 C−, LB-76 C+, LB-45 C−, LB-77 B−. Note the
+  LB-71 C−, LB-72 B−, LB-70 F, LB-59 C, LB-74 C, LB-68 C−, LB-76 C+, LB-45 C−, LB-77 B−, LB-48 B−, LB-81 C+, LB-78 B−, LB-79 C+ ($1.76, 5 sessions, 19 h 40 min, `deepseek-v4.1-flash/high` throughout, no switch; code
+  graded on its work, report graded down for the undisclosed shell and clone conduct). Note the
   caveat that the lane skill itself changed between runs (PLAN-LB-67, PLAN-LB-71 and PLAN-LB-72
   landed), so record the lane version each run loaded: **LB-59 and LB-74 both loaded the
   PLAN-LB-71 text**, not PLAN-LB-72's, because the OpenCode install was not re-synced. Retire when
@@ -1323,6 +1483,11 @@ entries below are OpenCode 1 assumptions in plan-marshall that OpenCode 2 broke.
   run, a Claude root session that skips the gated checks, and R6 `--git-dir` forms are admitted by code
   reading (not yet executed); two were spot-checked in `guard.js`. Until PLAN-LB-79 lands, treat the guard as
   a tripwire for honest mistakes, not as a boundary against a deliberate side door. Retire with PLAN-LB-79.
+  **2026-10-22: PLAN-LB-79 landed (#1835) and this Watch is NOT retired.** It closed the forms named here
+  (path-qualified wrappers, option clusters, the listed wrappers, the relative executor from a foreign directory,
+  the deployed roots, the consumer lane, the Claude root-session gate, R6 `--git-dir`), and the splice walk behind
+  those fixes still admits a grouping keyword, an option before `-c`, a here-string and a `cd` inside the string
+  (Open Defects, PLAN-LB-88). Keep treating the guard as a tripwire. Retire with PLAN-LB-88.
 - **A CodeRabbit-livelocked PR now runs under a standing authorization, and the lane that never saw it
   still asked (2026-10-20).** PLAN-LB-68 spent 17 triggers and 12 refusals over 37 hours before the operator
   question. With §7 in the installed lane (post-sync) this case is covered. PLAN-LB-76, the first post-sync
@@ -1418,6 +1583,53 @@ entries below are OpenCode 1 assumptions in plan-marshall that OpenCode 2 broke.
   read, `self-review: clear` for one head of four, no trailer on the merge commit. Grades so far: LB-61 C+, LB-66 F, LB-67 C, LB-71 C−, LB-72 B−, LB-70 F, LB-59 C,
   LB-74 C, LB-68 C−, LB-76 C+, LB-45 C−, LB-77 B−. Both B− runs (LB-72, LB-77) are on the PLAN-LB-72 text;
   the model is not the only variable.
+- **DeepSeek Flash runs, twelfth grade (2026-10-21).** PLAN-LB-48 (`landings/PLAN-LB-48.md`, 2 sessions
+  (main plus one self-review sub-agent), $1.30 and 15 h 27 m of which 5 h 38 m idle and 48 minutes an
+  operator answer): **B−**; every written Done-when met (5 of 5), the spec's bullets not: D5's "never report
+  drift `False` for a rewritten bridge" fails in two arms and a non-UTF-8 baseline crashes setup, D2 left five
+  lines in `target-rules/SKILL.md`; claimed 5/5. Lane: the PLAN-LB-72 text (the newest on `main`), loaded once
+  from a synced install, not re-read after the idle gap (no lane change had landed). Credit: genuinely
+  test-first on a 49-file change, no vacuous test among 27 audited, a three-round self-review that caught a
+  real high-severity regression, eight CodeRabbit threads all resolved, no daemon build in the sub-agent, an
+  accurate guard log and trailers on all 14 non-merge commits, a merge question whose facts were true.
+  Debit: 42 shell file operations reported as "early in the run", a `test-compile` record that is a list of
+  shas, `total_tokens=unknown` for a $1.30 run, a merge two heads after the operator's selection (the lane
+  says to ask again when the base moves), a trailerless merge commit, seven commits after the last
+  self-review (one introduced DF1), and two weak tests that let DF2 and DF3 through. Grades so far: LB-61 C+,
+  LB-66 F, LB-67 C, LB-71 C−, LB-72 B−, LB-70 F, LB-59 C, LB-74 C, LB-68 C−, LB-76 C+, LB-45 C−, LB-77 B−,
+  LB-48 B−. Three of the last four on the PLAN-LB-72 text grade B− (LB-72, LB-77, LB-48).
+- **DeepSeek Flash runs, thirteenth grade (2026-10-21).** PLAN-LB-81 (`landings/PLAN-LB-81.md`, 2 sessions
+  (main plus one self-review sub-agent), $1.06 and 16 h 27 m of which 31 minutes an operator answer): **C+**;
+  9 of 13 written Done-whens fully met, 3 partial (D2 never marks a start-time value in the landing and tests
+  the first clause at `status.json`; D4's replaced-test clause leaves the argv test canned), 1 a clause the
+  orchestrator's spec got wrong ("fails at" over behaviour that held), claimed 12 of 13. Lane: the
+  PLAN-LB-72 text, loaded at start and **re-read after the restart** (the second run to do so, after LB-76).
+  Credit: the cleanest process record so far (one shell file operation, no daemon build, no `git add -A`, a
+  guard log that matches the transcript exactly, trailers on every commit including the merge, every refusal
+  time verified, an honest "not met as written", a sub-agent with the reviewer persona). Debit: the product
+  does not deliver its own Objective (provenance lost between status and landing, wrong session measured, a
+  placeholder bundle version on Antigravity), 15 of 24 test rows weak, misnamed or vacuous at the base, an
+  escalated CodeRabbit trigger 21 minutes after a refusal, the reviewer persona claimed for PR triage but not
+  loaded in the main session, three heads after the last self-review. Grades so far: LB-61 C+, LB-66 F, LB-67 C,
+  LB-71 C−, LB-72 B−, LB-70 F, LB-59 C, LB-74 C, LB-68 C−, LB-76 C+, LB-45 C−, LB-77 B−, LB-48 B−, LB-81 C+.
+  Process and product now diverge: the best process of the series produced a middling product.
+- **Three plans ran at once against one CodeRabbit quota (2026-10-20 to 2026-10-21).** LB-48, LB-49 and LB-81
+  were launched together from one emitted block. LB-81's first PR (#1831) got five refusals and no review in 11
+  hours until the close-and-reopen produced a review in four minutes; LB-48 got its windows only at 22:15,
+  05:17, 06:44 and 08:53. Operator ruling wanted: is parallelism above two plans per CodeRabbit quota worth
+  it? A recorded cost: the escalated trigger at 07:36Z broke the 90-minute floor.
+- **Datapoint for the standing-authorization ruling: a selection at one head, a merge at a later head
+  (PLAN-LB-48, 2026-10-21).** The operator selected "merge accepting the cuioss-review-bot gap" at
+  `e994da000`; the run then merged `main` in (`092bc1a38`, which removed the bot from `project.yml`) and
+  fixed a CodeRabbit finding in `bc0f6b9c8`, and merged on that head without a second question. CodeRabbit
+  confirmed the fix in-thread (09:36:56Z) before the refused re-trigger, so this case is the benign face of
+  the ruling LB-77 raised. Rulings still wanted: whether a selection covers later heads, and whether a fix
+  that changes semantics after the qualifying review waits for the next window.
+- **The lane's required-reviewer set now differs from the standing bot list (2026-10-21).** #1829 removed the
+  cuioss-review-bot block from `.github/project.yml`; a fresh `runbook_lane resolve` now lists only
+  CodeRabbit as required, where the PLAN-LB-48 run's resolve (before the merge of `main`) listed both.
+  `.plan/marshal.json` was not read here. Ruling wanted: is the narrower lane list intended? Retire when the
+  operator answers.
 - **The self-review sub-agent used the build server, and the server coalesced its results (PLAN-LB-77,
   2026-10-20).** 17 daemon-routed `module-tests` builds from the worktree, two in parallel; one result
   reported a sibling job's count and one whole-bundle run hit the daemon's 483 s bound. The lane text
@@ -1707,3 +1919,72 @@ entries below are OpenCode 1 assumptions in plan-marshall that OpenCode 2 broke.
   dead worktree pointer and its archive step never run; four consumer checkouts are still on
   its merged branch. — trigger: clean up by hand or when the worktree-pointer fix
   (`backlog.md` § 1.14) is promoted.
+- **A consumer epic's opencode landings are all `complete: false` on `total_tokens`.** The
+  orchestrator of `pm-mcp-core-m2-m4` reports seven opencode landings (model
+  `deepseek-v4.1-flash`) each with `total_tokens=unknown` and `landing-check` returning
+  `missing_keys: [total_tokens]`, and proposes either letting `unknown` count as complete or
+  measuring it. The first is already ruled out by `landing-payload-spec.md` (the could-not-read
+  class is a gap at every key, "no carve-out"; a harness that measures nothing carries `unknown`,
+  never `0`), so the standing incompleteness is the contract working, and the second is
+  PLAN-LB-49 (OpenCode real tokens from `opencode.db`, running). Recorded as a recurrence on the
+  OpenCode measurement defect, not as a new one. The figures are the sender's, not checked here.
+  — trigger: retire when PLAN-LB-49 lands and a consumer opencode landing drains with a measured
+  `total_tokens`; if it lands and a consumer still reports `unknown`, the reader does not reach
+  the consumer's harness. — source: inbox message `pm-mcp-core-m2-m4-002.md`.
+- **On a harness with no guard, the lane's main-checkout and merge-head rules are unenforced.**
+  The same consumer epic reports (plan-reported, confirmed in its own landing text) a run that
+  edited six files in the main checkout before creating its worktree and corrected them by hand
+  (`guard: none on this harness`), a merge of `origin/main` after the last review that the
+  operator accepted as "Merge with the gap", and a build rewrite appearing after the enqueue that
+  was carried as a separate PR. Checked here: the lane already inspects the worktree with
+  `git -C {worktree} status --porcelain` before `git worktree remove` (`runbook-lane/SKILL.md`
+  L466-469), so the sender's open question about a step that looks for post-merge files is
+  answered; the main checkout is checked clean only at the START (L255), and the sender found it
+  clean at the end because the run had corrected it, so an end-of-run main-checkout check would
+  not have caught this instance and is not staged. The edit-before-worktree class is the one
+  PLAN-LB-65/68/79 enforce through the guard, which this harness does not run; the merge-head
+  class is the open ruling on whether a merge-without-reviewer selection covers later heads
+  (LB-77, LB-48, now this). — trigger: retire the first half when a consumer landing on a
+  guard-less harness reports no main-checkout edit across three runs; the second when the
+  operator rules. — source: inbox message `pm-mcp-core-m2-m4-003.md`.
+- **A runbook-lane run's rule-check self-report undercounts against its transcript, and the guard
+  covers only the mutation class (PLAN-LB-78 landing, 2026-10-22).** The landing reported two guard
+  refusals and "no other rule was bent"; `guard.log` shows three, and the session store shows 22
+  read-class shell file operations in the main session (`cat`, `find`, `grep`, `ls`, `tail`, `head`,
+  `wc`), reads outside the repository, a `git worktree remove --force`, two backgrounded builds, three
+  sub-agent rounds that read `.plan/work/change-ledger.jsonl`, and an operator `continue` plus model
+  switch under "Free-text operator messages: none". R2 refuses mutation only, so the read class is a
+  lane-rule break the guard does not see: it is reported by the run or not at all. One instance. —
+  trigger: a second landing whose rule check is contradicted by its transcript makes it an Open Defect
+  with its own deliverable (a rule-check count taken from the transcript, not from `guard.log`); PLAN-LB-73
+  D4 already makes the lane's §8 state what the count covers. Retire when two consecutive runbook landings'
+  self-reports match their transcripts. **Promoted 2026-10-22:** the trigger fired at the PLAN-LB-79 landing; see
+  the Open Defect "A second runbook landing's rule-check self-report is contradicted by its transcript".
+- **The main checkout's generated executor has no version stamp, and the `base-clone` it once served is still on
+  disk with the only copy of PLAN-LB-79's D4 base evidence (PLAN-LB-78 landing, corrected at the PLAN-LB-79
+  landing 2026-10-22).** The PLAN-LB-78 reading (every notation mapped to `.plan/temp/base-clone`, 171 references)
+  no longer holds: `.plan/execute-script.py` (mtime 11:12Z on 10-22) has 330 entries, **none** under `base-clone`
+  (162 main marketplace, 166 OpenCode deployed bundle, 2 `.claude`), and `MARSHALL_VERSION = ''`, which is why
+  `cleanup restart-check` reports `registry_parity: indeterminate`. PLAN-LB-79's landing said "162 under the clone"
+  and asked the operator how to delete it on that premise; the 164 it counted are the OpenCode bundle. The agent's
+  timeline suggests the clone's test bootstrap wrote the main executor at about 17:54 on 10-21 (a lead, not re-read;
+  PLAN-LB-89 D2 verifies it). `.plan/temp/base-clone` still exists and holds `test_guard_documentation_sweep_base_probe.py`,
+  untracked and in no commit, which the PR cites as D4's base evidence. Operator action: copy that file out, delete
+  the clone, run `/marshall-steward` (the empty version is what it repairs). — trigger: after the regeneration,
+  `restart-check` `registry_parity` is `ready`; retire then.
+- **The retrospective runs before the metrics it scores (PLAN-LB-49 landing, 2026-10-22).** `plan-marshall:plan-retrospective`
+  ran at 11:17 and `record-metrics` at 11:23 (manifest order, `decision.log:73`), so the retrospective reported its token
+  half unscorable and its dispatch audit at `confidence: low`, which skews the lessons it filed (`-004`, `-005`). One
+  instance. Owned by PLAN-LB-87 D3 (staged); retire when a composed finalize manifest lists `record-metrics` first.
+- **A finalize step bent the hard rule on build commands when its canonical did not resolve (PLAN-LB-49 landing,
+  2026-10-22).** The build wrapper resolved `generate-claude` to `pwx generate-claude` (exit -1, `execution_failed`,
+  `duration_seconds: 0`, twice); the run then ran `./pw generate --target …` directly for three targets and marked
+  `deploy-target` `done`. The run did not stop to report that the canonical was broken. One instance; owned by
+  PLAN-LB-87 D4 (staged); trigger: a second finalize step that falls back to a hard-coded command makes it an Open Defect
+  with a rule-check line in the landing.
+- **A code review closed at its round cap by operator override, twice, without a confirming round (PLAN-LB-49
+  landing, 2026-10-22).** "Close the review accepting it" (10-21T14:02) and "Close at the fixed head" (`6db568b1`,
+  10-21T18:14) were the operator's own selections, so no rule was broken; the plan then carried 14 task self-reports
+  that cite compile and quality-gate runs as proof of behaviour criteria (graded `holds: false`, advisory), 8 loop-backs
+  and 10 fix tasks of 16. Recorded so a later landing's grade can be read against it; no deliverable. Retire when a
+  landing closes its code review with a confirming round.

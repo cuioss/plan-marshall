@@ -35,10 +35,18 @@ question during that run — "why not fixing the script?" — was never answered
      playwright-test-artifacts); the observation of the six does not depend on enrolment.
    - Comments on a foreign repository's PR go through the CI abstraction: add `--repo` to
      `ci pr reply` (it has none, which forced PLAN-LB-31 to raw `gh`).
+   - The same selector reaches the other verbs a cross-repository pull request needs: `ci pr view`,
+     `ci pr merge` and `ci checks status` take `--repo OWNER/NAME`, so a pull request of a sibling
+     repository is read, checked and merged without leaving the abstraction (folded from
+     `inbox/pm-mcp-core-m2-m4-004`, where the orchestrator of a consumer epic merged a pull request of
+     `plan-marshall-documentation` with raw `gh` because the verbs have no repository selector).
 
    *Done when:* the PR lists, per repository, the enrolment PR (or the operator's no) and the
-   observed first-review outcome; `ci pr reply --repo` has a test. At `7474b807` 0 of 13 are
-   enrolled and `ci pr reply --repo` is an argparse rejection.
+   observed first-review outcome; `ci pr reply --repo` has a test; `ci pr view --repo`, `ci pr merge
+   --repo` and `ci checks status --repo` each have a test that fails when the option is dropped
+   from the parser. At `7474b807` 0 of 13 are enrolled and `ci pr reply --repo` is an argparse
+   rejection; at `d7e351419` the same rejection holds for `pr view`, `pr merge` and `checks status`
+   (`--repo` is declared only by `repo label list` and `repo file read`).
 
 2. **The measurement instrument is durable and its tables persisted.**
    - The corpus-pass instrument (population with charter split and exclusions, read-only fetch,
@@ -58,6 +66,8 @@ Split guard: two deliverables.
 
 - OBSERVED: `archived-plans/2026-10-14-plan-lb-31-in-house-reviewer/tasks/TASK-006.json` is `done` after one `ci repo file read` step; its gate "PLAN-LB-30 schema release not evidenced" is refuted by `landings/PLAN-LB-30.md:43,77-78` (`v0.39.0`, `v0.40.0`); the roster decision ("keep required as is") does not block enrolment (PLAN-LB-31 inbox `-001`).
 - OBSERVED: `ci pr reply` declares no `--repo` option, so PLAN-LB-31 posted its eight `/review` comments with raw `gh pr comment --repo …`.
+- OBSERVED: at `d7e351419` `ci_base.py` declares `--repo` only on `repo label list` and `repo file read`; the `pr view`, `pr merge`, `pr reply` and `checks status` parsers declare none (orchestrator read of `ci_base.py` L1157, L1201, L1314, L1650, L1667).
+- HYPOTHESIS: a pull request of a repository other than the routed working tree still needs the provider configured for that repository; the sibling's failure was "CI provider not configured" read from the checkout's own `marshal.json` — confirm whether `--repo` alone removes that dependency or whether the provider must also be resolved from the repository argument (verify-at-outline) (D1).
 - OBSERVED: the `task1_*` scripts PLAN-LB-31's doc names (`task1_pop.py`, `task1_fetch.py`, `task1_classify.py`, `task1_final3.py`) no longer exist anywhere.
 - HYPOTHESIS: the instrument belongs under `marketplace/bundles/plan-marshall/skills/automatic-review/scripts/` (it measures that skill's reviewers) or `.claude/skills/` (meta-project only) — confirm with the operator at outline (verify-at-outline).
 - HYPOTHESIS: the corpus reads the instrument needs (PR list with labels, review comments, check runs per head, workflow runs) are all reachable through existing `ci` verbs — confirm against `tools-integration-ci` `--help`; a missing read becomes a small `ci` verb, never a raw `gh` call (verify-at-outline).

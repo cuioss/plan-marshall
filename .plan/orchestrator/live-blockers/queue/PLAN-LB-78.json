@@ -2,10 +2,10 @@
   "id": "PLAN-LB-78",
   "slug": "runbook-lane-build-resolution",
   "workstream": "WS-04",
-  "status": "staged",
+  "status": "shipped",
   "lane": "runbook",
-  "plan_marshall_plan_id": "",
-  "pr": "",
-  "landing": "",
+  "plan_marshall_plan_id": "lb-78-runbook-lane-build-resolution",
+  "pr": "1834",
+  "landing": "landings/PLAN-LB-78.md",
   "seq": 78
 }

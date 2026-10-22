@@ -15,7 +15,7 @@ workstream: WS-04
 > `landings/PLAN-LB-45.md` § Code defects 2-7. Priority is **medium**: the stamp exists and the plan-marshall
 > producer emits it, but it drops the measured variant, is taken once at plan start, can survive a failed
 > preflight from an earlier run, and the database reader has three small robustness gaps. The runbook lane's
-> missing keys are PLAN-LB-78 D3; the OpenCode 2 detection signal is PLAN-LB-48 D4; the token totals are
+> missing keys are PLAN-LB-78 D3; the OpenCode 2 detection signal shipped with PLAN-LB-48 D4 (#1830: `OPENCODE` is the only ambient signal); the token totals are
 > PLAN-LB-49. **Each deliverable is its own outline deliverable, and each Done-when is its own success
 > criterion. Do not merge them.** A Done-when says "fails at `137986c61`" only where the behaviour is new at
 > that sha; a clause that already holds says "holds at `137986c61`". A clause whose premise this spec labels
@@ -130,8 +130,8 @@ current and loud about what it could not read.
 ## Dependencies and Sequencing
 
 - Depends on: PLAN-LB-45 (shipped, `137986c61`).
-- Overlaps with: the staged PLAN-LB-78 D3 on `landing-payload-spec.md` (one file), PLAN-LB-48 and PLAN-LB-49 on the `platform-runtime` tree, and PLAN-LB-79 on `test/plan-marshall/platform-runtime/`. The gate will ask.
-- Adjacent to: PLAN-LB-49 D1's `session_v2` reader, which this plan's D4 hardens and which PLAN-LB-49 later absorbs; the OpenCode 2 detection signal stays PLAN-LB-48 D4.
+- Overlaps with: the staged PLAN-LB-78 D3 on `landing-payload-spec.md` (one file), PLAN-LB-49 on the `platform-runtime` tree, and PLAN-LB-79 on `test/plan-marshall/platform-runtime/`. PLAN-LB-48 shipped (#1830) and moved `opencode_runtime.py`: re-read every line reference in the Claim Labels against `main` at outline. The gate will ask.
+- Adjacent to: PLAN-LB-49 D1's `session_v2` reader, which this plan's D4 hardens and which PLAN-LB-49 later absorbs; the OpenCode 2 detection signal shipped with PLAN-LB-48 D4.
 
 ## Hand-Off Command
 

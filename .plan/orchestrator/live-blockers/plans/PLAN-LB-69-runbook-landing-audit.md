@@ -132,7 +132,21 @@ gives it a sanctioned, read-only session-store reader.
      landing's table (PLAN-LB-77's landing called a red `test-compile` at `be7937fd6` "not run" and omitted the
      pushed head `125617b3d`; neither document recorded the red run), and any quoted timestamp in an operator
      question checked against the PR (PLAN-LB-77's merge question named review triggers at 15:04Z and 15:05Z
-     that do not exist);
+     that do not exist), a `test-compile` claim that rests on CI the run never read per head and a
+     count of shell file operations ("early in the run") set against the transcript's call times
+     (PLAN-LB-48: 42 calls to the last minute), a merge-gate selection that names one head while the merge goes
+     out on a later one (PLAN-LB-77, PLAN-LB-48), and a persona the landing says was used for PR-comment
+     triage that the main session never loaded (PLAN-LB-81: only the self-review sub-agent loaded
+     `persona-code-reviewer`), and the PLAN-LB-79 instances (`landings/PLAN-LB-79.md` § Report
+     Contradictions): a `guard.log` refusal quoted from another run because the count was taken by
+     time window and not by the run's session tree (its third of three lines was PLAN-LB-49's), "all
+     other rules were kept" over a session store with 67 read-class shell calls, a clone, a hand-run
+     executor generation and bodies written outside the CI abstraction, an evidence order of
+     `test-first` that the landing's own log identifiers and the store's edit times contradict (the
+     passing HEAD log is older than the failing base log in every row), a server restart that killed a
+     self-review round and a retried round neither document mentions, and an operator question built on
+     a premise the tree contradicts (an executor said to register 162 scripts under a clone that it
+     registers none from);
      - **Spot checks**: what the orchestrator verified itself;
      - **Process grade**: with credits and debits;
      - **Model Watch row**: one line, appended to the epic's table.
@@ -176,9 +190,17 @@ gives it a sanctioned, read-only session-store reader.
      Done-when could not hold. The clause lives beside the first in `templates/plan-spec.md` and
      `workflow/decompose.md`, and `cleanup` flags a staged Done-when labelled "holds at" whose
      bullet names a symbol that a HYPOTHESIS claim in the same spec also names.
+   - **Third clause (folded from `landings/PLAN-LB-81.md`).** An Expected Surface entry is a full
+     repo-relative path. A bare filename written after "and" in one bullet (PLAN-LB-81 wrote
+     "`test_preflight_client_toon.py` and `test_landing_completeness.py`") resolves as a filename glob and
+     claims no path, so the gate compared 8 of the 9 files the spec meant. The rule lives beside the others in
+     `templates/plan-spec.md` and `workflow/decompose.md`, and `cleanup` flags a staged Expected Surface
+     bullet that names a bare filename without a directory.
 
    *Done when:*
    - template and workflow doc tests assert the two lines and the script-filled staging step;
+   - template and workflow doc tests assert the third clause, and a `cleanup` fixture test flags an
+     Expected Surface bullet carrying a bare filename;
    - template and workflow doc tests assert the "fails at" / "holds at" rule and its second clause, and
      a `cleanup` fixture test flags a Done-when that says "fails at … still …" and one that says "holds
      at" over a HYPOTHESIS-labelled claim;
