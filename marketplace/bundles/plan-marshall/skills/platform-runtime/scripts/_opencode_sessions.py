@@ -89,12 +89,25 @@ _TIER2_SESSION_COLUMNS = _TIER1_COLUMNS | {'directory', 'cost', *TOKEN_COLUMNS}
 _TIER2_MESSAGE_COLUMNS = frozenset({'session_id', 'type', 'time_created', 'data'})
 
 #: Paths inside an assistant message's ``data.tokens`` → normalized usage key.
+#:
+#: ``reasoning`` is carried as its OWN key rather than folded into
+#: ``output_tokens``. The store already keeps the two apart — ``session_v2``
+#: carries a distinct ``tokens_reasoning`` column beside ``tokens_output`` — and
+#: the message-level ``tokens`` object mirrors that split, so adding reasoning to
+#: output would count the same tokens twice. The separate key is what lets a
+#: consumer read reasoning as reasoning and keep the output figure comparable
+#: with a target whose output excludes it.
 _MESSAGE_TOKEN_PATHS: tuple[tuple[tuple[str, ...], str], ...] = (
     (('input',), 'input_tokens'),
     (('output',), 'output_tokens'),
+    (('reasoning',), 'reasoning_tokens'),
     (('cache', 'read'), 'cache_read_input_tokens'),
     (('cache', 'write'), 'cache_creation_input_tokens'),
 )
+
+#: The normalized keys a message's ``tokens`` object supplies, in the order
+#: :data:`_MESSAGE_TOKEN_PATHS` declares them.
+MESSAGE_USAGE_KEYS: tuple[str, ...] = tuple(key for _path, key in _MESSAGE_TOKEN_PATHS)
 
 #: ``name:`` / ``plan_id:`` header lines carried by a dispatched task prompt.
 _HEADER_PATTERN = re.compile(r'(?mi)^[ \t]*(name|plan_id)[ \t]*:[ \t]*(\S.*?)[ \t]*$')
@@ -102,8 +115,14 @@ _HEADER_PATTERN = re.compile(r'(?mi)^[ \t]*(name|plan_id)[ \t]*:[ \t]*(\S.*?)[ \
 #: How many of a session's earliest messages are scanned for its header.
 _PROMPT_SCAN_LIMIT = 50
 
-#: Marker a message ``type`` carries when it records tool activity.
+#: Marker a message ``type`` carries when it records tool activity. Retained for
+#: the legacy row shape and for the store's own ``shell`` rows; a tool CALL is a
+#: ``content[]`` part of an assistant message, not a row type (see
+#: :func:`_count_tool_parts`).
 _TOOL_TYPE_MARKER = 'tool'
+
+#: ``content[]`` part type that records one tool call.
+_TOOL_PART_TYPE = 'tool'
 
 #: Epoch values above this are milliseconds rather than seconds.
 _EPOCH_MS_THRESHOLD = 100_000_000_000
@@ -573,14 +592,31 @@ def _window_pre_filter(windows: Sequence[tuple[str, datetime, datetime]]) -> tup
 
 
 def _empty_bucket() -> dict[str, Any]:
-    """Return a zeroed usage bucket for one window and one session scope."""
-    bucket: dict[str, Any] = dict.fromkeys(USAGE_KEYS, 0)
+    """Return a zeroed usage bucket for one window and one session scope.
+
+    ``tool_uses`` is deliberately ABSENT: it is written only when an assistant
+    message in the window carried a ``content`` array, so a store that records no
+    content parts states "not observable" rather than a measured ``0``.
+    """
+    bucket: dict[str, Any] = dict.fromkeys(MESSAGE_USAGE_KEYS, 0)
     bucket['cost'] = 0.0
     bucket['message_count'] = 0
-    bucket['tool_uses'] = 0
     bucket['duration_ms'] = 0
     bucket['sessions'] = 0
     return bucket
+
+
+def _count_tool_parts(data: Mapping[str, Any]) -> int | None:
+    """Count one assistant message's ``content[]`` tool parts, or ``None``.
+
+    ``None`` means the message carries no ``content`` array, so the store cannot
+    answer how many tool calls it made. A message that carries an array answers
+    with its count, ``0`` included — that is a MEASURED zero.
+    """
+    content = data.get('content')
+    if not isinstance(content, Sequence) or isinstance(content, (str, bytes)):
+        return None
+    return sum(1 for part in content if isinstance(part, Mapping) and part.get('type') == _TOOL_PART_TYPE)
 
 
 def _add_message_usage(data: Mapping[str, Any], bucket: dict[str, Any]) -> None:
@@ -723,10 +759,19 @@ def window_usage(
     to ``cache_read_input_tokens`` and ``tokens.cache.write`` to
     ``cache_creation_input_tokens``.
 
-    Every bucket also carries the measured ``message_count``, ``tool_uses``
-    (rows whose ``type`` names a tool event), ``duration_ms`` (the span between
-    the bucket's earliest and latest message) and ``sessions`` (how many distinct
-    sessions of that scope contributed).
+    Every bucket also carries the measured ``message_count``,
+    ``reasoning_tokens`` (the store keeps reasoning apart from output, so it is
+    never folded into ``output_tokens``), ``duration_ms`` (the SUM of each
+    contributing session's own span inside the window, so two sub-agents that ran
+    minutes apart do not report the idle gap between them as duration) and
+    ``sessions`` (how many distinct sessions of that scope contributed).
+
+    ``tool_uses`` is counted from the ``content[]`` parts of type ``tool`` inside
+    an assistant message — the shape the store records a tool call in — and is
+    ABSENT for a bucket in which no assistant message carried a ``content`` array
+    at all: the store could not answer, and ``0`` is reserved for a measured
+    zero. The legacy ``session_message.type`` marker is still honoured for the
+    row shapes that carry one.
 
     The read is bounded by the two filters the attribution would apply anyway:
     ``session_message.session_id`` is constrained to the tree (chunked to stay
@@ -760,8 +805,12 @@ def window_usage(
         ]
         if not parsed:
             return {'ok': True, 'root': root, 'windows': rows, 'subagent_sessions': 0}
-        spans: dict[tuple[int, str], list[datetime]] = {}
+        # Per (window, scope, session) message instants, so each session's own
+        # span is measured rather than the outer span over all of them.
+        spans: dict[tuple[int, str, str], list[datetime]] = {}
         contributors: dict[tuple[int, str], set[str]] = {}
+        tool_observable: set[tuple[int, str]] = set()
+        tool_counts: dict[tuple[int, str], int] = {}
         subagent_sessions: set[str] = set()
         window_clause, window_params = _window_pre_filter(parsed)
         chunk_size = max(1, _SQL_VARIABLE_BUDGET - len(window_params))
@@ -783,18 +832,30 @@ def window_usage(
                     continue
                 scope = 'main' if owning == root else 'subagent'
                 bucket = rows[index][scope]
-                spans.setdefault((index, scope), []).append(moment)
+                spans.setdefault((index, scope, owning), []).append(moment)
                 contributors.setdefault((index, scope), set()).add(owning)
                 if scope == 'subagent':
                     subagent_sessions.add(owning)
                 kind = str(message_type).strip().lower()
                 if kind == 'assistant':
-                    _add_message_usage(_message_data(data), bucket)
+                    payload = _message_data(data)
+                    _add_message_usage(payload, bucket)
+                    part_tools = _count_tool_parts(payload)
+                    if part_tools is not None:
+                        tool_observable.add((index, scope))
+                        tool_counts[(index, scope)] = tool_counts.get((index, scope), 0) + part_tools
                 elif _TOOL_TYPE_MARKER in kind:
-                    bucket['tool_uses'] += 1
-        for (index, scope), moments in spans.items():
-            rows[index][scope]['duration_ms'] = int((max(moments) - min(moments)).total_seconds() * 1000)
-            rows[index][scope]['sessions'] = len(contributors.get((index, scope), ()))
+                    # Legacy row-typed tool event: a measured call in its own
+                    # right, so it makes the count observable too.
+                    tool_observable.add((index, scope))
+                    tool_counts[(index, scope)] = tool_counts.get((index, scope), 0) + 1
+        for (index, scope), sessions in contributors.items():
+            rows[index][scope]['sessions'] = len(sessions)
+        for (index, scope, _owning), moments in spans.items():
+            rows[index][scope]['duration_ms'] += int((max(moments) - min(moments)).total_seconds() * 1000)
+        for key in tool_observable:
+            index, scope = key
+            rows[index][scope]['tool_uses'] = tool_counts.get(key, 0)
         return {
             'ok': True,
             'root': root,

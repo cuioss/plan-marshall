@@ -933,17 +933,21 @@ _USAGE_FOUR_FIELDS = (
 # A phase measured no sub-agent usage still reports the group as a MEASURED zero:
 # the walk ran over its windows and found none. Only an absent phase has no bucket
 # at all.
+#
+# ``subagent_tool_uses`` is deliberately NOT in this default: a tool-use count is
+# written only when an assistant message's ``content[]`` made the count
+# observable, because a store that records no content parts has not stated that
+# no tool ran. See ``_opencode_sessions._count_tool_parts``.
 _EMPTY_SUBAGENT_USAGE = {
     'subagent_total_tokens': 0,
     'subagent_samples': 0,
-    'subagent_tool_uses': 0,
     'subagent_duration_ms': 0,
 }
 
 
 def _per_phase_buckets(
     windows: Sequence[Mapping[str, Any]],
-) -> tuple[dict[str, dict[str, int]], int, int]:
+) -> tuple[dict[str, dict[str, Any]], int, int]:
     """Compose per-phase buckets from the reader's window buckets.
 
     Only windows that carried at least one usage-bearing message produce a
@@ -956,6 +960,14 @@ def _per_phase_buckets(
     only the last window's numbers silently dropped the earlier interval while
     the run still reported a successful attribution.
 
+    The bucket carries what the store actually holds: the four usage fields, the
+    reasoning tokens (its own field — the store keeps reasoning apart from
+    output), and the summed per-message cost as ``cost_usd``. It does NOT carry a
+    ``billing_weighted_total``: that figure applies Anthropic cache-pricing
+    weights, which were never written for an OpenCode model, so computing it here
+    would price this target's tokens with another vendor's arithmetic. The store
+    records its own cost, and that is what ``cost_usd`` publishes.
+
     Args:
         windows: The reader's per-window records, each carrying ``phase`` plus a
             ``main`` and a ``subagent`` usage bucket.
@@ -967,7 +979,17 @@ def _per_phase_buckets(
         ``subagent_phases`` counts the windows that carried sub-agent usage.
     """
     main_usage: dict[str, dict[str, int]] = {}
+    reasoning_usage: dict[str, int] = {}
+    cost_usage: dict[str, float] = {}
     subagent_usage: dict[str, dict[str, int]] = {}
+    subagent_tool_uses: dict[str, int] = {}
+    phase_tool_uses: dict[str, int] = {}
+    # Per phase: which scopes carried messages, and which of those made their tool
+    # count observable. The phase's tool figure is published only when EVERY
+    # contributing scope answered — a partial count presented as the phase's total
+    # would under-report the calls it never saw.
+    message_scopes: dict[str, set[str]] = {}
+    tool_observable_scopes: dict[str, set[str]] = {}
     message_count = 0
     subagent_phases = 0
     for window in windows:
@@ -981,9 +1003,21 @@ def _per_phase_buckets(
         four = main_usage.setdefault(phase, dict.fromkeys(_USAGE_FOUR_FIELDS, 0))
         for field in _USAGE_FOUR_FIELDS:
             four[field] += int(main.get(field, 0))
+        reasoning_usage[phase] = reasoning_usage.get(phase, 0) + int(main.get('reasoning_tokens', 0))
+        cost_usage[phase] = cost_usage.get(phase, 0.0) + float(main.get('cost', 0.0) or 0.0)
+        cost_usage[phase] += float(subagent.get('cost', 0.0) or 0.0)
+        for scope, scope_bucket, messages in (('main', main, main_messages), ('subagent', subagent, subagent_messages)):
+            if not messages:
+                continue
+            message_scopes.setdefault(phase, set()).add(scope)
+            if 'tool_uses' in scope_bucket:
+                tool_observable_scopes.setdefault(phase, set()).add(scope)
+                phase_tool_uses[phase] = phase_tool_uses.get(phase, 0) + int(scope_bucket['tool_uses'])
+                if scope == 'subagent':
+                    subagent_tool_uses[phase] = subagent_tool_uses.get(phase, 0) + int(scope_bucket['tool_uses'])
         sub = subagent_usage.setdefault(
             phase,
-            {'subagent_total_tokens': 0, 'subagent_samples': 0, 'subagent_tool_uses': 0, 'subagent_duration_ms': 0},
+            {'subagent_total_tokens': 0, 'subagent_samples': 0, 'subagent_duration_ms': 0},
         )
         # The dispatched population's total mirrors the `<usage>` definition the
         # rest of the metrics boundary uses: cache reads are EXCLUDED.
@@ -993,16 +1027,18 @@ def _per_phase_buckets(
             + int(subagent.get('cache_creation_input_tokens', 0))
         )
         sub['subagent_samples'] += int(subagent.get('sessions', 0))
-        sub['subagent_tool_uses'] += int(subagent.get('tool_uses', 0))
         sub['subagent_duration_ms'] += int(subagent.get('duration_ms', 0))
         message_count += main_messages + subagent_messages
         if subagent_messages:
             subagent_phases += 1
 
-    per_phase: dict[str, dict[str, int]] = {}
+    per_phase: dict[str, dict[str, Any]] = {}
     for phase in sorted(set(main_usage) | set(subagent_usage)):
         four = main_usage.get(phase) or dict.fromkeys(_USAGE_FOUR_FIELDS, 0)
-        per_phase[phase] = {
+        subagent_group = dict(subagent_usage.get(phase, _EMPTY_SUBAGENT_USAGE))
+        if 'subagent' in tool_observable_scopes.get(phase, set()):
+            subagent_group['subagent_tool_uses'] = subagent_tool_uses.get(phase, 0)
+        bucket: dict[str, Any] = {
             **four,
             # The contract's canonical four-field view (short keys) alongside the
             # long spellings, so a consumer written against either reads the same
@@ -1012,9 +1048,13 @@ def _per_phase_buckets(
             'cache_read': four['cache_read_input_tokens'],
             'cache_creation': four['cache_creation_input_tokens'],
             'total': sum(four.values()),
-            'billing_weighted_total': claude_runtime._billing_weighted_total(four),
-            **subagent_usage.get(phase, _EMPTY_SUBAGENT_USAGE),
+            'reasoning_tokens': reasoning_usage.get(phase, 0),
+            'cost_usd': round(cost_usage.get(phase, 0.0), 8),
+            **subagent_group,
         }
+        if message_scopes.get(phase, set()) <= tool_observable_scopes.get(phase, set()):
+            bucket['tool_uses'] = phase_tool_uses.get(phase, 0)
+        per_phase[phase] = bucket
     return per_phase, message_count, subagent_phases
 
 
@@ -2320,9 +2360,25 @@ class OpenCodeRuntime(Runtime):
         the reader splits the root session's usage from its descendants'. The
         per-phase buckets carry the four canonical usage fields (with
         ``cache_creation_input_tokens`` sourced from ``tokens.cache.write``), the
-        billing-weighted total, and the measured sub-agent group
+        reasoning tokens as their own field, the store's summed message cost as
+        ``cost_usd``, and the measured sub-agent group
         (``subagent_total_tokens`` / ``subagent_samples`` /
-        ``subagent_tool_uses`` / ``subagent_duration_ms``).
+        ``subagent_duration_ms``, plus ``subagent_tool_uses`` where the store
+        made the count observable).
+
+        ``billing_weighted_total`` is deliberately ABSENT from this target's
+        buckets. It applies Anthropic cache-pricing weights that were never
+        written for an OpenCode model; the store records its own cost, which
+        ``cost_usd`` publishes instead. Omission is a statement, not a gap: it
+        says this target has no billing-weighted figure rather than borrowing
+        another vendor's arithmetic.
+
+        ``four_field_scope`` names what the four usage fields MEASURE on this
+        target: ``main_context`` here, because the reader keeps the root session
+        and its descendants in separate buckets. A consumer that adds the
+        sub-agent group to these fields must know the fields exclude it; on the
+        transcript-walking target the same fields already include it and the
+        scope reads ``main_plus_subagent``.
 
         Buckets are written to *output_file* as JSON for ``manage-metrics
         enrich`` to persist, and the run counters are returned:
@@ -2376,6 +2432,7 @@ class OpenCodeRuntime(Runtime):
                 'root_session_id': str(usage['root']),
                 'output_file': output_file,
                 'phases_attributed': len(per_phase),
+                'four_field_scope': 'main_context',
                 # Every bucket this target emits carries the four usage fields —
                 # a sub-agent-only phase reports them as measured zeros — so the
                 # documented four-field counter equals the attributed phase count.

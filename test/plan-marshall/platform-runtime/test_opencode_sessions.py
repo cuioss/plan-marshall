@@ -572,6 +572,134 @@ def test_window_usage_keeps_a_text_timestamp_for_the_parser(tmp_path: Path) -> N
 
 
 # =============================================================================
+# Tool use, reasoning, cost and spans — the store's real shape
+# =============================================================================
+
+
+def test_window_usage_counts_tool_parts_in_an_assistant_messages_content(tmp_path: Path) -> None:
+    """Tool use is counted from ``content[]`` parts of type ``tool``.
+
+    The store records a tool call as a part of the assistant message's
+    ``content`` array; it carries no ``session_message`` row type containing
+    ``tool``. Counting the row type therefore reported a measured ``0`` for every
+    phase of the plan that shipped the reader.
+    """
+    db_path = tmp_path / 'opencode.db'
+    _create_tier2_db(
+        db_path,
+        [('ses-root', None, 10, 20, 3, 4, 0.5), ('ses-child', 'ses-root', 100, 200, 30, 40, 1.5)],
+        [
+            (
+                'ses-child',
+                'assistant',
+                _at(10),
+                {
+                    'tokens': {'input': 100, 'output': 200},
+                    'cost': 1.5,
+                    'content': [
+                        {'type': 'text', 'text': 'running'},
+                        {'type': 'tool', 'tool': 'bash', 'state': {'status': 'completed'}},
+                        {'type': 'tool', 'tool': 'read', 'state': {'status': 'completed'}},
+                    ],
+                },
+            ),
+            (
+                'ses-root',
+                'assistant',
+                _at(11),
+                {
+                    'tokens': {'input': 10, 'output': 20},
+                    'cost': 0.5,
+                    'content': [{'type': 'tool', 'tool': 'write'}],
+                },
+            ),
+        ],
+    )
+
+    usage = opencode_sessions.window_usage(db_path, 'ses-root', [('5-execute', _iso(0), _iso(30))])
+
+    window = usage['windows'][0]
+    assert window['subagent']['tool_uses'] == 2
+    assert window['main']['tool_uses'] == 1
+
+
+def test_window_usage_omits_tool_uses_when_the_store_cannot_answer(tmp_path: Path) -> None:
+    """A window whose messages carry no ``content`` array omits ``tool_uses``.
+
+    ``0`` is only ever a measured value: a store that records no content parts
+    has not told the reader that no tool ran.
+    """
+    db_path = tmp_path / 'opencode.db'
+    _create_tier2_db(
+        db_path,
+        [('ses-root', None, 10, 20, 3, 4, 0.5)],
+        [('ses-root', 'assistant', _at(5), {'tokens': {'input': 10, 'output': 20}, 'cost': 0.5})],
+    )
+
+    usage = opencode_sessions.window_usage(db_path, 'ses-root', [('5-execute', _iso(0), _iso(30))])
+
+    bucket = usage['windows'][0]['main']
+    assert 'tool_uses' not in bucket
+    assert bucket['message_count'] == 1
+
+
+def test_window_usage_carries_reasoning_tokens_from_the_message(tmp_path: Path) -> None:
+    """``tokens.reasoning`` is read into its own normalized bucket.
+
+    The store keeps reasoning apart from ``tokens.output`` (``session_v2`` carries
+    a distinct ``tokens_reasoning`` column), so folding it into output would
+    double-count it.
+    """
+    db_path = tmp_path / 'opencode.db'
+    _create_tier2_db(
+        db_path,
+        [('ses-root', None, 10, 20, 3, 4, 0.5)],
+        [
+            (
+                'ses-root',
+                'assistant',
+                _at(5),
+                {'tokens': {'input': 10, 'output': 20, 'reasoning': 7}, 'cost': 0.5},
+            )
+        ],
+    )
+
+    usage = opencode_sessions.window_usage(db_path, 'ses-root', [('5-execute', _iso(0), _iso(30))])
+
+    assert usage['windows'][0]['main']['reasoning_tokens'] == 7
+
+
+def test_window_usage_sums_each_subagent_sessions_own_span(tmp_path: Path) -> None:
+    """Two disjoint sub-agent spans sum; the outer span over them is not a duration.
+
+    A phase whose sub-agents ran minutes each reported a 20.9-hour
+    ``subagent_duration_ms`` because the figure was the first sub-agent message to
+    the last one, not the time any sub-agent was actually running.
+    """
+    db_path = tmp_path / 'opencode.db'
+    _create_tier2_db(
+        db_path,
+        [
+            ('ses-root', None, 0, 0, 0, 0, 0.0),
+            ('ses-child-a', 'ses-root', 0, 0, 0, 0, 0.0),
+            ('ses-child-b', 'ses-root', 0, 0, 0, 0, 0.0),
+        ],
+        [
+            ('ses-child-a', 'assistant', _at(1), {'tokens': {'input': 1}}),
+            ('ses-child-a', 'assistant', _at(5), {'tokens': {'input': 1}}),
+            ('ses-child-b', 'assistant', _at(10), {'tokens': {'input': 1}}),
+            ('ses-child-b', 'assistant', _at(12), {'tokens': {'input': 1}}),
+        ],
+    )
+
+    usage = opencode_sessions.window_usage(db_path, 'ses-root', [('5-execute', _iso(0), _iso(30))])
+
+    subagent = usage['windows'][0]['subagent']
+    assert subagent['duration_ms'] == (4 + 2) * 60 * 1000
+    assert subagent['sessions'] == 2
+
+
+# =============================================================================
 # Sub-agent listing
 # =============================================================================
 

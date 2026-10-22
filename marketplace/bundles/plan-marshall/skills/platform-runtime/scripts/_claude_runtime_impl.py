@@ -1799,6 +1799,7 @@ class ClaudeRuntime(Runtime):
                 'session_id': session_id,
                 'output_file': output_file,
                 'phases_attributed': len(per_phase),
+                'four_field_scope': 'main_plus_subagent',
                 **counters,
             },
         )

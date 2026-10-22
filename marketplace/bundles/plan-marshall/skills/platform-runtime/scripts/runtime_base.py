@@ -1278,16 +1278,33 @@ class Runtime(ABC):
         above is a GROUP a target supplies only when it can measure it:
 
         - the **sub-agent group** (``subagent_total_tokens`` /
-          ``subagent_tool_uses`` / ``subagent_duration_ms`` /
-          ``subagent_samples``) — supplied when the target can attribute
+          ``subagent_duration_ms`` / ``subagent_samples``, plus
+          ``subagent_tool_uses``) — supplied when the target can attribute
           sub-agent work to the phase;
+        - the **store-cost group** — ``cost_usd``, supplied by a target whose
+          store records a per-message cost, and the reason
+          ``billing_weighted_total`` is omitted there rather than priced with
+          another vendor's cache weights;
+        - the **reasoning field** — ``reasoning_tokens``, supplied by a target
+          whose store records reasoning apart from output, as its own key so it is
+          never silently added to ``output`` twice;
         - the **exploration-share counters**, the **cache-read attribution**
           group and the **exploration sub-sources** — supplied by a target whose
           walk observes tool calls and the payloads they return.
 
-        A target that cannot measure a group OMITS its keys. It MUST NOT
-        zero-fill them, because a fabricated zero is indistinguishable from a
-        measured one.
+        **An omitted group and a measured zero are DIFFERENT statements, and the
+        shape of the bucket is what distinguishes them.** A key that is PRESENT
+        with the value ``0`` says "this target measured this group and found
+        none": the walk ran and observed no such record. A key that is ABSENT
+        says "this target could not measure it at all" — the source behind the
+        group was absent, unreadable or schema-unsupported, or the target has no
+        such store. A target that cannot measure a group therefore OMITS its keys
+        and MUST NOT zero-fill them, because a fabricated zero erases exactly the
+        distinction a consumer needs in order to tell an idle phase from an
+        unmeasured one. This is why a group may be omitted per-bucket rather than
+        required at bucket granularity: ``subagent_tool_uses`` is absent on a
+        store whose assistant messages carry no ``content`` array, present with a
+        measured count when they do.
 
         The ten ``*_tool_calls`` / ``*_result_bytes`` keys are the exploration-share
         counters: each tool call observed in the transcript is classified by its

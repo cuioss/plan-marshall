@@ -1054,6 +1054,7 @@ def test_metrics_normalized_tokens_writes_measured_buckets(
     assert result['status'] == 'success'
     assert result['operation'] == 'metrics normalized-tokens'
     assert result['phases_attributed'] == 1
+    assert result['four_field_scope'] == 'main_context'
     # The documented four-field counter is present and non-zero: enrich reads it
     # straight into its own result, so an absent key made an attributed run
     # report zero phases carrying four-field usage.
@@ -1069,9 +1070,14 @@ def test_metrics_normalized_tokens_writes_measured_buckets(
     assert bucket['cache_creation_input_tokens'] == 4
     assert bucket['subagent_total_tokens'] == 100 + 200 + 40
     assert bucket['subagent_samples'] == 1
+    # A ``tool``-typed row is still a measured tool event (legacy row shape).
     assert bucket['subagent_tool_uses'] == 1
     assert bucket['subagent_duration_ms'] > 0
-    assert bucket['billing_weighted_total'] == 10 + 20 + round(3 * 0.1) + round(4 * 1.25)
+    # The store's own cost reaches the answer, summed over main + sub-agent.
+    assert bucket['cost_usd'] == 0.5 + 1.5
+    # Anthropic cache weights are never applied to this target's model: the
+    # figure is ABSENT, not computed with another vendor's arithmetic.
+    assert 'billing_weighted_total' not in bucket
     # Parity with the transcript-walking target: the canonical short keys and
     # `total` are present alongside the long spellings, so a consumer reading
     # either form is not target-dependent.
@@ -1084,6 +1090,95 @@ def test_metrics_normalized_tokens_writes_measured_buckets(
     # target does not run, so they are ABSENT rather than fabricated as zeros.
     assert 'exploration_tool_calls' not in bucket
     assert 'unclassified_tool_calls' not in bucket
+
+
+def test_metrics_normalized_tokens_counts_tool_parts_in_an_assistant_content(
+    runtime: OpenCodeRuntime, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """Tool use comes from the assistant message's ``content[]`` parts.
+
+    The store records a tool call as a part of type ``tool`` inside an assistant
+    message. A store whose messages carry no such array cannot answer, so the
+    group is OMITTED rather than reported as a measured ``0``.
+    """
+    db_path = tmp_path / 'opencode.db'
+    _write_usage_db(
+        db_path,
+        [('ses-root', None, 10, 20, 0, 0)],
+        [
+            (
+                'ses-root',
+                'assistant',
+                _at(5),
+                {
+                    'tokens': {'input': 10, 'output': 20},
+                    'cost': 0.25,
+                    'content': [
+                        {'type': 'tool', 'tool': 'bash'},
+                        {'type': 'text', 'text': 'done'},
+                        {'type': 'tool', 'tool': 'read'},
+                    ],
+                },
+            ),
+            ('ses-root', 'assistant', _at(6), {'tokens': {'input': 1, 'output': 2}, 'cost': 0.5}),
+        ],
+    )
+    _isolate_store(monkeypatch, db_path)
+    output_file = tmp_path / 'normalized.json'
+
+    result = _parse(runtime.metrics_normalized_tokens('ses-root', [('5-execute', _iso(0), _iso(30))], str(output_file)))
+
+    assert result['status'] == 'success'
+    bucket = json.loads(output_file.read_text(encoding='utf-8'))['5-execute']
+    # Two tool parts across the window's assistant messages, and a summed cost.
+    assert bucket['tool_uses'] == 2
+    assert bucket['cost_usd'] == 0.75
+
+
+def test_metrics_normalized_tokens_omits_tool_uses_when_no_message_carries_content(
+    runtime: OpenCodeRuntime, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """A store that records no ``content`` array omits the tool-use group.
+
+    A measured ``0`` and an unmeasurable source are different statements: only the
+    first tells a consumer that no tool ran.
+    """
+    db_path = tmp_path / 'opencode.db'
+    _write_usage_db(
+        db_path,
+        [('ses-root', None, 10, 20, 0, 0)],
+        [('ses-root', 'assistant', _at(5), {'tokens': {'input': 10, 'output': 20}, 'cost': 0.25})],
+    )
+    _isolate_store(monkeypatch, db_path)
+    output_file = tmp_path / 'normalized.json'
+
+    result = _parse(runtime.metrics_normalized_tokens('ses-root', [('5-execute', _iso(0), _iso(30))], str(output_file)))
+
+    assert result['status'] == 'success'
+    bucket = json.loads(output_file.read_text(encoding='utf-8'))['5-execute']
+    assert 'tool_uses' not in bucket
+    assert 'subagent_tool_uses' not in bucket
+
+
+def test_metrics_normalized_tokens_carries_reasoning_tokens(
+    runtime: OpenCodeRuntime, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """Reasoning is carried as its own bucket field, never folded into output."""
+    db_path = tmp_path / 'opencode.db'
+    _write_usage_db(
+        db_path,
+        [('ses-root', None, 10, 20, 0, 0)],
+        [('ses-root', 'assistant', _at(5), {'tokens': {'input': 10, 'output': 20, 'reasoning': 7}, 'cost': 0.25})],
+    )
+    _isolate_store(monkeypatch, db_path)
+    output_file = tmp_path / 'normalized.json'
+
+    result = _parse(runtime.metrics_normalized_tokens('ses-root', [('5-execute', _iso(0), _iso(30))], str(output_file)))
+
+    assert result['status'] == 'success'
+    bucket = json.loads(output_file.read_text(encoding='utf-8'))['5-execute']
+    assert bucket['reasoning_tokens'] == 7
+    assert bucket['output_tokens'] == 20
 
 
 def test_metrics_normalized_tokens_reports_the_root_it_measured(
