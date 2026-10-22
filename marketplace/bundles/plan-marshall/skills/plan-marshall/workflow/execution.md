@@ -620,7 +620,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metada
 ```
 
 - **Late capture succeeded** (`status: success` and `value` now populated): use the captured value as the resolved `session_id` and proceed with the dispatch below.
-- **Late capture also failed** (`status: error` or `value` still empty): resolve the target's session identity from the live runtime target at the point of use — read `runtime.target` from `.plan/marshal.json` (absent means the target's own default resolution, never a documented unresolvable default) — then branch on whether that target could resolve an identity this run:
+- **Late capture also failed** (`status: error` or `value` still empty): resolve the target's session identity from the live runtime target at the point of use, using environment-first resolution exactly as `manage-metrics enrich` does (`_resolve_runtime_target`: the detected platform environment signal outranks the marshal-declared `runtime.target`, a tolerated legacy key per `manage-config/standards/data-model.md` § Runtime Target Resolution — never a documented unresolvable default) — then branch on whether that target could resolve an identity this run:
 
   - **Identity unresolvable this run** (the target's session identity variable is unset, its session store is absent, unreadable or schema-unsupported, or it holds no such session — each surfacing the `session capture` no-op's own named reason: the unset-variable reason, or `db_not_found`, `db_unreadable`, `schema_unsupported`, `session_not_found`): do NOT abort. Log the decision naming the absent identity and the named reason, then dispatch finalize WITHOUT a `session_id`, and let `default:record-metrics` skip `enrich` carrying the population-carrying gap flag:
 
