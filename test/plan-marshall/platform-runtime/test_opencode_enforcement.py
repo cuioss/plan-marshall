@@ -211,9 +211,6 @@ _GUARD_EXPECTED: dict[str, frozenset[str]] = {
             'chown',
             'ln',
             'dd',
-            'sh',
-            'bash',
-            'source',
         }
     ),
     'BARE_BUILD_TOOLS': frozenset({'mvn', 'mvnw', 'gradle', 'gradlew', 'make', 'cmake', 'ant', 'uv'}),
@@ -273,11 +270,18 @@ _GUARD_EXECUTOR_PERMIT_PREFIX = f'python3 {_GUARD_EXECUTOR_PATH}'
 
 
 def test_guard_r2_blocks_mutation_class_not_read_probes() -> None:
-    """R2 blocks the mutation class; read probes stay map-governed."""
+    """R2 blocks the mutation class; read probes stay map-governed.
+
+    Shell SPAWNS are deliberately NOT in this literal set: the spawn set is the
+    shared wrapper table's ``shells`` plus ``source`` (see
+    ``test_guard_shell_constructs.test_r2_spawn_set_is_derived_from_the_shared_table``),
+    so the plugin carries no second literal shell list.
+    """
     assert 'rm' in _GUARD_MUTATION_FILE_OPS
-    assert 'sh' in _GUARD_MUTATION_FILE_OPS
     for probe in _GUARD_READ_PROBES:
         assert probe not in _GUARD_MUTATION_FILE_OPS, f'read probe {probe!r} must not be an R2 guard member'
+    for shell in ('sh', 'bash', 'zsh', 'fish', 'csh', 'tcsh', 'source'):
+        assert shell not in _GUARD_MUTATION_FILE_OPS, f'shell {shell!r} must come from the shared table, not a literal'
 
 
 def test_guard_r4_pins_bare_build_tools() -> None:
@@ -295,16 +299,18 @@ def test_guard_sets_match_plugin_contract() -> None:
 
 
 def test_guard_r4_pw_allowlists_generate_prefix_only() -> None:
-    """R4 blocks `./pw` unless its verb is explicitly allowed.
+    """R4's `./pw` verdict is DATA in the shared table, not a branch per file.
 
-    The decision table allowlists by prefix, not by verb set: only
-    `./pw generate*` and `./pw --*` pass, and a missing verb blocks — so a
-    new build.py-routed alias cannot bypass R4 by omission from a set.
+    The verdict moved into ``r5-wrappers.json`` under ``build_wrapper_admission``
+    so the hook and the guard cannot disagree on ``./pw generate`` (the command
+    ``CLAUDE.md`` prescribes). The plugin must read that data and must not
+    re-introduce a local verb/prefix literal.
     """
     source = _guard_plugin_source()
-    assert 'PW_BUILD_VERBS' not in source, 'guard.js must not gate ./pw on a verb set'
-    assert 'verb.startsWith("generate")' in source, 'guard.js must allowlist the generate prefix'
-    assert 'verb.startsWith("--")' in source, 'guard.js must allowlist the -- prefix'
+    assert 'PW_BUILD_VERBS' not in source, 'guard.js must not gate ./pw on a local verb set'
+    assert 'verb.startsWith("generate")' not in source, 'guard.js must not hard-code the generate prefix'
+    assert 'verb.startsWith("--")' not in source, 'guard.js must not hard-code the -- prefix'
+    assert 'build_wrapper_admission' in source, 'guard.js must read the shared ./pw admission data'
 
 
 def test_guard_r3_pins_executor_path() -> None:

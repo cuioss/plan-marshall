@@ -27,10 +27,12 @@
  *   R2 — shell file operations, mutation class (bash): the command's first token,
  *   after stripping the shell wrappers (with options), leading `NAME=value`
  *   assignments, quotes, and path qualification, is one of
- *   {rm mv cp touch mkdir rmdir truncate tee chmod chown ln dd}  => block.
- *   Read-side probes (ls cat head tail grep find) are NOT in this guard class:
+ *   {rm mv cp touch mkdir rmdir truncate tee chmod chown ln dd} => block.
+ *   Read-side probes (ls cat head grep find) are NOT in this guard class:
  *   the two-tier permission map governs them (global deny, orchestrator
- *   small-ops carve-out under ask). Shell spawns `sh`/`bash`/`source` also block.
+ *   small-ops carve-out under ask). A SHELL SPAWN also blocks: the spawn set is
+ *   the shared wrapper table's `shells` plus the `source` builtin, never a
+ *   second literal list here.
  *
  *   R3 — direct edits to the generated executor path (edit/write/patch/apply_patch):
  *   the target resolves under `.plan/execute-script.py` — via filePath, or via
@@ -39,8 +41,10 @@
  *
  *   R4 — hard-coded build commands bypassing `python3 .plan/execute-script.py`
  *   (bash): route builds through the executor only. Block when:
- *     - first token is `./pw` unless its verb is explicitly allowed
- *       (only `./pw generate*` and `./pw --*` pass; a missing verb blocks);
+ *     - first token is `./pw` unless its verb is admitted by the shared table's
+ *       `build_wrapper_admission` (`generate*` and `--*` today; a missing verb
+ *       blocks) — the SAME data the hook reads, so the two agree on
+ *       `./pw generate`;
  *     - first token is a bare build tool {mvn mvnw gradle gradlew make cmake ant
  *       uv}; or a JS runner {npm npx bun pnpm yarn} followed by
  *       {test run build};
@@ -57,7 +61,13 @@
  *   interpreter (python/python3, pypy/pypy3, or a versioned spelling such as
  *   python3.12) and the invocation is -c, a script path (any second token not
  *   starting with -), a bare - (STDIN), a -</- redirection, or -m with any module
- *   — the allow set is executor-only, so every -m form refuses. R5 BINDS inside a
+ *   — the allow set is executor-only, so every -m form refuses. The FAIL-CLOSED
+ *   FLOOR runs before R2: a wrapper handed a command string, stdin (a here-string
+ *   or here-document) or a SCRIPT FILE is refused when that text names an
+ *   interpreter ANYWHERE — a grouping keyword, an option before `-c`, a
+ *   here-string or a script file cannot hide the call behind the segment walk.
+ *   The segment walk decides only whether the text is the admitted executor.
+ *   R5 BINDS inside a
  *   plan context (Signal 1, Signal 2, or the runbook-lane marker) and in EVERY
  *   session of THIS repository; in a consumer repository outside a plan context
  *   it does not refuse a consumer's ordinary Python work (python3 x.py, python3
@@ -132,10 +142,15 @@ function hasChainingConstructor(command) {
 }
 
 // ---- R2: shell file operations, mutation class (declared set, mirrored) ----
+// The mutation class only. Shell SPAWNS are NOT a second literal list: they are
+// the shared wrapper table's `shells` (`WRAPPER_TABLE.shells`) plus the
+// `source` builtin, so a shell added to the table is an R2 spawn here and a
+// shell removed from it is one on neither harness.
 const MUTATION_FILE_OPS = new Set([
   "rm", "mv", "cp", "touch", "mkdir", "rmdir", "truncate", "tee",
-  "chmod", "chown", "ln", "dd", "sh", "bash", "source",
+  "chmod", "chown", "ln", "dd",
 ])
+const R2_SOURCE_BUILTIN = "source"
 
 // ---- R4: hard-coded build bypasses (declared sets, mirrored) ----
 // `./pw` is allowlisted by decision-table prefix, not by verb set: only
@@ -174,7 +189,37 @@ const R5_LAYOUT_NAME = "deployed-layout.json"
 //: The wrapper table in force for this process. Loaded in `setup` from the
 //: project/deployed data file; an EMPTY table with `missing: true` when no data
 //: file resolves, which makes the R5 check fail CLOSED (see the R5 branch).
-let WRAPPER_TABLE = { wrappers: {}, findExec: new Set(), missing: true }
+let WRAPPER_TABLE = {
+  wrappers: {},
+  findExec: new Set(),
+  shells: new Set(),
+  pwVerbs: [],
+  pwPrefixes: [],
+  missing: true,
+}
+
+// Whether a token names a shell SPAWN (R2): a table shell, or the `source`
+// builtin. Derived from the shared table so neither implementation carries a
+// second literal shell list; a missing table yields no spawns, exactly as it
+// yields no wrappers.
+function isShellSpawn(token) {
+  const base = normalizeToken(token)
+  if (!base) return false
+  if (base === R2_SOURCE_BUILTIN) return true
+  return WRAPPER_TABLE.shells.has(base)
+}
+
+// The R4 verdict for `./pw`, read from the ONE shared table's
+// `build_wrapper_admission` — never a verb literal in this file, so the hook and
+// the guard cannot disagree on `./pw generate`.
+function isPwAdmitted(verb) {
+  if (typeof verb !== "string" || !verb) return false
+  const candidate = stripMatchedQuotes(verb)
+  return (
+    WRAPPER_TABLE.pwVerbs.some((allowed) => candidate.startsWith(allowed)) ||
+    WRAPPER_TABLE.pwPrefixes.some((prefix) => candidate.startsWith(prefix))
+  )
+}
 
 // The base allow-list used when no shared data file can be read. Deliberately
 // narrow: the sync engine is the one non-executor invocation that must survive
@@ -561,12 +606,18 @@ function isExecutorPermit(command, root, cwd) {
 
 // Whether the effective directory is the project root itself or one of its OWN
 // plan worktrees. Compared after realpath, so a symlinked tree resolves first.
+// The worktree form is EXACTLY one level — `.plan/local/worktrees/{plan}` — the
+// directory phase-5+ pins the shell to. The orchestrator's shared ledger worktree
+// (`.plan/local/worktrees/_orchestrator`) and any SUB-DIRECTORY of a plan
+// worktree are not that directory, so the relative executor stays refused there.
 function isRepositoryRootOrPlanWorktree(effective, root) {
   const resolvedRoot = realPathOf(root)
   const resolved = realPathOf(effective)
   if (resolved === resolvedRoot) return true
   const worktreeBase = `${normalizePosixPath(resolvedRoot + "/.plan/local/worktrees")}/`
-  return resolved.startsWith(worktreeBase)
+  if (!resolved.startsWith(worktreeBase)) return false
+  const planSegment = resolved.slice(worktreeBase.length)
+  return planSegment.length > 0 && !planSegment.includes("/") && planSegment !== "_orchestrator"
 }
 
 // The command's EFFECTIVE working directory: the shell's own cwd with a leading
@@ -627,10 +678,223 @@ function effectiveCwd(command, base) {
       }
       const step = consumeWrapperOption(spec, option, tokens, i)
       i += step.consumed
-      if (step.splice) break
+      if (step.splice) {
+        current = applySplicedCwd(step.value, current)
+        break
+      }
     }
   }
   return current
+}
+
+// The working directory a wrapper's SPLICED COMMAND STRING leaves in force: the
+// `cd`s of its segments applied in order, so the executor inside
+// `zsh -c "cd /tmp/x; python3 …"` is judged from /tmp/x rather than from the
+// shell's cwd. Without this, the relative-executor admission is vacuous exactly
+// where PLAN-LB-79's shells made it reachable. Returns "" when a segment's `cd`
+// names no directory, which no caller treats as "the repository root".
+function applySplicedCwd(value, base) {
+  let current = base
+  for (const segment of splicedSegments(value)) {
+    const parts = shellSplit(segment)
+    const tokens = parts === null ? whitespaceSplit(segment) : parts
+    current = applySegmentCwd(tokens, current)
+    if (current === "") return ""
+  }
+  return current
+}
+
+// The directory ONE segment's leading `cd` (after any `NAME=value` prefix)
+// leaves in force, or the incoming directory when the segment does not cd.
+function applySegmentCwd(tokens, base) {
+  let i = 0
+  while (i < tokens.length && isAssignment(stripMatchedQuotes(tokens[i]))) i++
+  if (stripMatchedQuotes(tokens[i] ?? "") !== "cd") return base
+  const target = stripMatchedQuotes(tokens[i + 1] ?? "")
+  if (!target) return ""
+  return target.startsWith("/") ? normalizePosixPath(target) : normalizePosixPath(`${base}/${target}`)
+}
+
+// Whether a token that may carry shell GROUPING punctuation names an
+// interpreter. `(python3 -c x)`, `{ python3 -c x; }` and `! python3 -c x` put
+// punctuation on the token that names the program, so the program check strips
+// it first — the floor must not depend on the segment walk having split it off.
+function tokenNamesInterpreter(token) {
+  const trimmed = stripMatchedQuotes(String(token))
+    .replace(/^[!(){}\[\];|&]+/, "")
+    .replace(/[!(){}\[\];|&]+$/, "")
+  return trimmed.length > 0 && isPythonInterpreter(trimmed)
+}
+
+// ---- R5: the fail-closed floor for a wrapper that RUNS a command string ----
+// The segment walk models the first level of shell grammar only, so a grouping
+// keyword, a shell option before `-c`, a here-string or a script file hides the
+// interpreter from it. Extending the walk to C-like shell grammar would restate
+// the problem as a longer list, so the floor is the decision: a wrapper that is
+// handed a command string (`-c`, `env -S`, `script -c`, `watch`/`parallel`),
+// reads one from stdin (a here-string / here-document), or is given a SCRIPT
+// FILE is refused when that text names an interpreter ANYWHERE — except the one
+// text the segment walk admits: the documented executor call. (The walk decides
+// only that admission.)
+
+//: A file read for the script-file arm is bounded, so a shell handed a huge or
+//: binary file cannot turn every tool call into a full-file read.
+const R5_SCRIPT_SCAN_MAX_BYTES = 1024 * 1024
+
+// The contents of a script file a shell was handed, or "" when the operand is
+// not a readable regular file. A missing file yields "" — the shell itself fails
+// too, so there is nothing to refuse.
+function readTextIfFile(value, cwd) {
+  if (!value || value.includes("\n")) return ""
+  try {
+    const resolved = value.startsWith("/") ? value : path.resolve(cwd || ".", value)
+    const stat = statSync(resolved)
+    if (!stat.isFile() || stat.size > R5_SCRIPT_SCAN_MAX_BYTES) return ""
+    return readFileSync(resolved, "utf8")
+  } catch {
+    return ""
+  }
+}
+
+// Every text a wrapper in PROGRAM POSITION is asked to execute. The wrapper chain
+// is walked so `env -i zsh -c '…'` is reached; a shell contributes its `-c`
+// string (wherever it sits among its options, so `zsh -o pipefail -c '…'` is
+// read), a here-string / here-document operand and every readable script file it
+// is handed; a splice wrapper (`env -S`, `script -c`, `watch`, `parallel`)
+// contributes its command string. A non-wrapper program position ends the walk.
+function executedTexts(command, cwd) {
+  const tokens = rawCommandTokens(command)
+  const texts = []
+  let i = 0
+  while (i < tokens.length) {
+    const token = stripMatchedQuotes(tokens[i])
+    if (isAssignment(token)) {
+      i++
+      continue
+    }
+    const base = basenameOf(token)
+    const spec = WRAPPER_TABLE.wrappers[base]
+    if (!spec) return texts
+    const isShell = WRAPPER_TABLE.shells.has(base)
+    i++
+    let spliced = null
+    let positionals = spec.leading_positionals || 0
+    while (i < tokens.length) {
+      const option = stripMatchedQuotes(tokens[i])
+      if (isAssignment(option)) {
+        i++
+        continue
+      }
+      if (option.startsWith("<<")) {
+        // A here-string's operand, and a here-document's inline body, are both
+        // standard input to the shell: scan the operand and the rest.
+        const operand = stripMatchedQuotes(tokens[i + 1] ?? "")
+        if (operand) texts.push(operand)
+        const rest = tokens
+          .slice(i + 1)
+          .map((candidate) => stripMatchedQuotes(candidate))
+          .join(" ")
+        if (rest) texts.push(rest)
+        return texts
+      }
+      if (isShell) {
+        if (option === "-c") {
+          if (tokens[i + 1] !== undefined) texts.push(stripMatchedQuotes(tokens[i + 1]))
+          return texts
+        }
+        if (option.startsWith("-c") && option.length > 2 && !option.startsWith("--")) {
+          texts.push(stripMatchedQuotes(option.slice(2)))
+          return texts
+        }
+        if (option === "--") {
+          i++
+          break
+        }
+        if (option.startsWith("-") && option.length > 1) {
+          i++
+          continue
+        }
+        const content = readTextIfFile(option, cwd)
+        if (content) texts.push(content)
+        i++
+        continue
+      }
+      if (!(option.startsWith("-") && option.length > 1)) {
+        // A wrapper's LEADING POSITIONAL (flock's lock file, timeout's duration)
+        // is consumed where it really sits, and the option walk CONTINUES — the
+        // table's shape is `flock {lock} -c {command}`, so stopping at the
+        // positional would never reach the splice.
+        if (positionals > 0) {
+          i++
+          positionals--
+          continue
+        }
+        break
+      }
+      const step = consumeWrapperOption(spec, option, tokens, i)
+      i += step.consumed
+      if (step.splice) {
+        spliced = step.value
+        break
+      }
+    }
+    if (spliced !== null) {
+      if (spliced) texts.push(spliced)
+      return texts
+    }
+    if (spec.splice_positional && i < tokens.length) {
+      texts.push(stripMatchedQuotes(tokens[i]))
+      return texts
+    }
+  }
+  return texts
+}
+
+// ``"refused"`` when a text names an interpreter the segment walk does not
+// admit, ``"admitted"`` when its only interpreter naming is the documented
+// executor, ``"clear"`` when it names none.
+function textInterpreterVerdict(text, root, baseCwd) {
+  let current = baseCwd
+  let admitted = false
+  for (const segment of splicedSegments(text)) {
+    const parts = shellSplit(segment)
+    const tokens = parts === null ? whitespaceSplit(segment) : parts
+    const nextCwd = applySegmentCwd(tokens, current)
+    if (tokens.some((candidate) => tokenNamesInterpreter(candidate))) {
+      if (!nextCwd) return "refused"
+      if (!isExecutorPermit(segment, root, nextCwd)) return "refused"
+      admitted = true
+    }
+    if (nextCwd) current = nextCwd
+  }
+  return admitted ? "admitted" : "clear"
+}
+
+// The whole-command floor verdict, over every executed text the wrapper chain
+// gives its command string / stdin / script file.
+function executedTextVerdict(command, root, cwd) {
+  let admitted = false
+  for (const text of executedTexts(command, cwd)) {
+    const verdict = textInterpreterVerdict(text, root, cwd)
+    if (verdict === "refused") return "refused"
+    if (verdict === "admitted") admitted = true
+  }
+  return admitted ? "admitted" : "clear"
+}
+
+// Whether a command names an interpreter ANYWHERE, including inside a token that
+// is really a quoted command string (`zsh -c "python3 -c x"` yields the single
+// token `python3 -c x`). Used by the MISSING-TABLE branch, where no wrapper can
+// be stripped, so a raw-token check alone is blind to exactly that shape.
+function commandNamesInterpreterDeep(command, depth = 0) {
+  for (const candidate of rawCommandTokens(command)) {
+    if (isPythonInterpreter(candidate)) return true
+    if (depth >= 3) continue
+    const parts = shellSplit(candidate)
+    const tokens = parts === null ? whitespaceSplit(candidate) : parts
+    if (tokens.length > 1 && commandNamesInterpreterDeep(tokens.join(" "), depth + 1)) return true
+  }
+  return false
 }
 
 // Collapse a posix path to its normal form (`..` applied, no empty segments),
@@ -928,13 +1192,27 @@ function loadWrapperTable(root) {
       const data = JSON.parse(readFileSync(candidate, "utf8"))
       if (data && typeof data === "object" && data.wrappers && typeof data.wrappers === "object") {
         const findExec = new Set(Array.isArray(data.find_exec_options) ? data.find_exec_options : [])
-        return { wrappers: data.wrappers, findExec, missing: false }
+        const shells = new Set(Array.isArray(data.shells) ? data.shells.map(String) : [])
+        const admission =
+          data.build_wrapper_admission && typeof data.build_wrapper_admission === "object"
+            ? data.build_wrapper_admission
+            : {}
+        return {
+          wrappers: data.wrappers,
+          findExec,
+          shells,
+          pwVerbs: Array.isArray(admission.pw_admitted_verbs) ? admission.pw_admitted_verbs.map(String) : [],
+          pwPrefixes: Array.isArray(admission.pw_admitted_prefixes)
+            ? admission.pw_admitted_prefixes.map(String)
+            : [],
+          missing: false,
+        }
       }
     } catch {
       // Try the next candidate.
     }
   }
-  return { wrappers: {}, findExec: new Set(), missing: true }
+  return { wrappers: {}, findExec: new Set(), shells: new Set(), pwVerbs: [], pwPrefixes: [], missing: true }
 }
 
 // Read the shared allow-list from the same candidate list, so the wrapper table
@@ -1386,6 +1664,34 @@ export default Plugin.define({
         )
       }
 
+      // D1 fail-closed floor: a wrapper handed a command string, stdin or a
+      // script file is refused when that text names an interpreter the segment
+      // walk does not admit (see `executedTextVerdict`). It runs BEFORE R2 so a
+      // shell's own text decides the rule, and it is scoped exactly as R5 is.
+      let shellFloorAdmitted = false
+      if (contextGate(event?.agent, workdir, root) || isThisRepository(root)) {
+        const verdict = executedTextVerdict(command, root, workdir || root)
+        if (verdict === "refused") {
+          audit(auditLine("R5", tool, sessionID, callID, command))
+          throw new Error(
+            "[plan-marshall-guard] R5: a wrapper runs a command string, stdin or a script file that names an interpreter; the shell construct hides it from the segment walk, so the invocation is refused (route builds and checks via python3 .plan/execute-script.py)",
+          )
+        }
+        if (verdict === "admitted") shellFloorAdmitted = true
+      }
+
+      // R6 runs unconditionally, AFTER R1 (the first-line rule) but BEFORE the
+      // R2-R5 classes: a commit wrapped in a shell string would otherwise be
+      // refused as a shell spawn or an interpreter call, and R6's
+      // naming-from-every-form contract would be lost even though the verdict
+      // is a refusal either way.
+      if (isRawFinalizeCommit(command, workdir, root, event?.agent)) {
+        audit(auditLine("R6", tool, sessionID, callID, command))
+        throw new Error(
+          "[plan-marshall-guard] R6: a raw git commit is refused in phase 6-finalize — commit through python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow commit (the gate-bearing path), which sanctions an open loop-back fix task, a review-rubric section-6 record, or a step id of the composed phase-6 manifest",
+        )
+      }
+
       const token = normalizeToken(tokenAt(command, 0))
       const rawToken = normalizeToken(rawCommandTokens(command)[0] ?? "")
       if ((token && MUTATION_FILE_OPS.has(token)) || (rawToken && MUTATION_FILE_OPS.has(rawToken))) {
@@ -1394,19 +1700,16 @@ export default Plugin.define({
           "[plan-marshall-guard] R2: shell file operations (mutation class) via Bash are forbidden; use the Read/Edit/Write tools or manage-* scripts",
         )
       }
-
-      if (isRawFinalizeCommit(command, workdir, root, event?.agent)) {
-        audit(auditLine("R6", tool, sessionID, callID, command))
+      if (isShellSpawn(token) || isShellSpawn(rawToken)) {
+        audit(auditLine("R2", tool, sessionID, callID, command))
         throw new Error(
-          "[plan-marshall-guard] R6: a raw git commit is refused in phase 6-finalize — commit through python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow commit (the gate-bearing path), which sanctions an open loop-back fix task, a review-rubric section-6 record, or a step id of the composed phase-6 manifest",
+          "[plan-marshall-guard] R2: shell spawns via Bash are forbidden; use the Read/Edit/Write tools or manage-* scripts",
         )
       }
 
       if (isExecutorPermit(command, root, workdir)) return
       if (token === "./pw" || basenameOf(tokenAt(command, 0)) === "pw") {
-        const verb = tokenAt(command, 1)
-        const passes = Boolean(verb && (verb.startsWith("generate") || verb.startsWith("--")))
-        if (!passes) {
+        if (!isPwAdmitted(tokenAt(command, 1))) {
           audit(auditLine("R4", tool, sessionID, callID, command))
           throw new Error(
             "[plan-marshall-guard] R4: hard-coded build via ./pw is forbidden; route builds through python3 .plan/execute-script.py",
@@ -1429,11 +1732,18 @@ export default Plugin.define({
         )
       }
 
+      // The floor above may have decided this command IS the admitted executor
+      // behind a splicing wrapper (`env -S "python3 .plan/execute-script.py …"`).
+      // Every other unconditional rule (R2, R4) has already run, so it is
+      // admitted here exactly as the bare form is by the permit above.
+      if (shellFloorAdmitted) return
+
       // Fail CLOSED when the shared wrapper table is unavailable: without it
       // no wrapper can be stripped, so refuse any command that names an
-      // interpreter anywhere rather than letting a prefix hide the call.
+      // interpreter ANYWHERE — including inside a quoted command string, which a
+      // raw-token check is blind to (`zsh -c "python3 -c x"`).
       if (WRAPPER_TABLE.missing && (contextGate(event?.agent, workdir, root) || isThisRepository(root))) {
-        if (rawCommandTokens(command).some((candidate) => isPythonInterpreter(candidate))) {
+        if (commandNamesInterpreterDeep(command)) {
           audit(auditLine("R5", tool, sessionID, callID, command))
           throw new Error(
             "[plan-marshall-guard] R5: the shared wrapper table (standards/r5-wrappers.json) is unavailable, so no wrapper can be stripped; the invocation is refused because it names an interpreter",

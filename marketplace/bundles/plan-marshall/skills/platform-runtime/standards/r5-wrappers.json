@@ -1,14 +1,36 @@
 {
   "schema": "r5-wrappers/1",
-  "description": "The ONE wrapper table the R5 interpreter check strips before it looks for the program. Read by the OpenCode guard plugin (.opencode/plugin/guard.js), the Claude PreToolUse hook (claude_pretooluse_hook.py), and the enforcement pin tests; no implementation carries a second literal list. A wrapper is a prefix program whose own invocation runs the command that follows it, so `env python3 -c x` still runs the interpreter. Each entry declares the options that consume a FOLLOWING value ('values' for the full token, 'value_letters' for a letter inside a short cluster such as `-iu FOO`), how many leading positional arguments the wrapper consumes before the command ('leading_positionals', e.g. timeout's DURATION, flock's lock file, chrt's priority), and the options whose value is itself a COMMAND STRING that must be re-lexed and walked ('splice', e.g. `env -S`, a shell's `-c`, `script -c`). Every wrapper is matched by BASENAME, so a path-qualified `/usr/bin/env` strips exactly like `env`.",
+  "description": "The ONE wrapper table the R5 interpreter check strips before it looks for the program. Read by the OpenCode guard plugin (.opencode/plugin/guard.js), the Claude PreToolUse hook (claude_pretooluse_hook.py), and the enforcement pin tests; no implementation carries a second literal list. A wrapper is a prefix program whose own invocation runs the command that follows it, so `env python3 -c x` still runs the interpreter. Each entry declares the options that consume a FOLLOWING value ('values' for the full token, 'value_letters' for a letter inside a short cluster such as `-iu FOO`), how many leading positional arguments the wrapper consumes before the command ('leading_positionals', e.g. timeout's DURATION, flock's lock file, chrt's priority), and the options whose value is itself a COMMAND STRING that must be re-lexed and walked ('splice', e.g. `env -S`, a shell's `-c`, `script -c`). Every wrapper is matched by BASENAME, so a path-qualified `/usr/bin/env` strips exactly like `env`. 'shells' is the shell population: it is the R2 shell-spawn set (plus the `source` builtin) and the set a command string / stdin / script file is read through. 'shell_constructs' is the C-like shell grammar a spliced command string may use; it is DATA so the tests generate their cross-product from it rather than hand-picking rows. 'build_wrapper_admission' is the R4 verdict for `./pw`, decided once here instead of in each implementation.",
   "shells": [
     "bash",
     "sh",
     "dash",
     "zsh",
     "ksh",
+    "fish",
+    "csh",
+    "tcsh",
     "$SHELL"
   ],
+  "shell_constructs": [
+    "if true; then {CMD}; fi",
+    "if true; then {CMD}; elif false; then {CMD}; else {CMD}; fi",
+    "while true; do {CMD}; done",
+    "until false; do {CMD}; done",
+    "for i in 1; do {CMD}; done",
+    "case x in x) {CMD};; esac",
+    "({CMD})",
+    "{ {CMD}; }",
+    "! {CMD}"
+  ],
+  "build_wrapper_admission": {
+    "pw_admitted_verbs": [
+      "generate"
+    ],
+    "pw_admitted_prefixes": [
+      "--"
+    ]
+  },
   "wrappers": {
     "command": {
       "values": [],
@@ -360,6 +382,30 @@
       ]
     },
     "ksh": {
+      "values": [],
+      "value_letters": [],
+      "leading_positionals": 0,
+      "splice": [
+        "-c"
+      ]
+    },
+    "fish": {
+      "values": [],
+      "value_letters": [],
+      "leading_positionals": 0,
+      "splice": [
+        "-c"
+      ]
+    },
+    "csh": {
+      "values": [],
+      "value_letters": [],
+      "leading_positionals": 0,
+      "splice": [
+        "-c"
+      ]
+    },
+    "tcsh": {
       "values": [],
       "value_letters": [],
       "leading_positionals": 0,
