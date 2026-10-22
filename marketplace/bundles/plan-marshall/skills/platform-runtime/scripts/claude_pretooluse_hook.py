@@ -1561,6 +1561,31 @@ def _resolve_target_path(target: str | None, base: str | None) -> str | None:
     return posixpath.normpath(f'{normalized_base}/{normalized}')
 
 
+def _git_program_tokens(command: str) -> list[str] | None:
+    """The token list whose first program is ``git`` in any spliced segment, or ``None``.
+
+    A commit can be hidden behind a ``cd`` inside a wrapper's command string
+    (``zsh -c 'cd /tmp; git commit'``), so every quoted token is split into
+    segments and each segment is walked.
+    """
+    try:
+        raw = shlex.split(command)
+    except ValueError:
+        raw = command.split()
+    for position, token in enumerate(raw):
+        if position == 0:
+            continue
+        for segment in _spliced_segments(token):
+            try:
+                parts = shlex.split(segment)
+            except ValueError:
+                parts = segment.split()
+            walked = _strip_wrapper_tokens(parts)
+            if walked and _strip_matched_quotes(walked[0]).replace('\\', '/').rsplit('/', 1)[-1].lower() == 'git':
+                return walked
+    return None
+
+
 def _git_commit_target(command: str) -> _GitCommitInfo:
     """Return what a ``git commit`` command says about the plan it targets.
 
@@ -1579,20 +1604,28 @@ def _git_commit_target(command: str) -> _GitCommitInfo:
     except ValueError:
         raw = command.split()
     stripped = _r5_stripped_tokens(command)
-    if not stripped or _strip_matched_quotes(stripped[0]).replace('\\', '/').rsplit('/', 1)[-1].lower() != 'git':
-        return _GitCommitInfo(False, None, None, None, False)
-    git_at = next(
-        (
-            position
-            for position, token in enumerate(raw)
-            if _strip_matched_quotes(token).replace('\\', '/').rsplit('/', 1)[-1].lower() == 'git'
-        ),
-        None,
+    program_is_git = (
+        bool(stripped) and _strip_matched_quotes(stripped[0]).replace('\\', '/').rsplit('/', 1)[-1].lower() == 'git'
     )
-    if git_at is None:
-        # A wrapper's spliced command string (`watch 'git commit -m x'`) has no raw
-        # `git` token: the stripped program IS the git invocation, so walk from it.
-        raw = stripped
+    if program_is_git:
+        git_at = next(
+            (
+                position
+                for position, token in enumerate(raw)
+                if _strip_matched_quotes(token).replace('\\', '/').rsplit('/', 1)[-1].lower() == 'git'
+            ),
+            None,
+        )
+        if git_at is None:
+            raw = stripped
+            git_at = 0
+    else:
+        # A commit can sit in ANY segment of a wrapper's spliced command string
+        # (`zsh -c 'cd /tmp; git commit'`).
+        segment = _git_program_tokens(command)
+        if segment is None:
+            return _GitCommitInfo(False, None, None, None, False)
+        raw = segment
         git_at = 0
     environment: dict[str, str] = {}
     for token in raw[:git_at]:

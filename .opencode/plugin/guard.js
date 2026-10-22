@@ -772,22 +772,20 @@ function newestVersionDir(nested, marker, entry) {
   return newest
 }
 
-// Natural version ordering, mirroring the resolver's `_version_sort_key`: a run
-// of digits compares numerically, any other run lexically, and a missing segment
-// compares as "0" — so `1.0.10` sorts before `1.0.10.1` on every side.
+// Natural version ordering, mirroring the resolver's `_version_sort_key`: a
+// tuple of the DIGIT RUNS in the name, compared element-wise, and a SHORTER
+// tuple sorts LOWER when the common prefix is equal — exactly Python's tuple
+// comparison, so `1.0.10` sorts before `1.0.10.1` and a digit-less name sorts
+// lowest on every side.
 function compareVersionNames(left, right) {
-  const split = (value) => String(value).match(/\d+|\D+/g) || []
-  const leftParts = split(left)
-  const rightParts = split(right)
-  const length = Math.max(leftParts.length, rightParts.length)
-  for (let i = 0; i < length; i++) {
-    const a = leftParts[i] ?? '0'
-    const b = rightParts[i] ?? '0'
-    if (a === b) continue
-    if (/^\d+$/.test(a) && /^\d+$/.test(b)) return Number(a) - Number(b)
-    return a < b ? -1 : 1
+  const digits = (value) => (String(value).match(/\d+/g) || []).map(Number)
+  const a = digits(left)
+  const b = digits(right)
+  const common = Math.min(a.length, b.length)
+  for (let i = 0; i < common; i++) {
+    if (a[i] !== b[i]) return a[i] - b[i]
   }
-  return 0
+  return a.length - b.length
 }
 
 // Every absolute path a BUNDLE-RELATIVE allow-list entry (`skills/{skill}/{rest}`)
@@ -1064,23 +1062,45 @@ function planIdFromGitDir(value) {
 // precede the program. A `-c alias.NAME=…` subcommand is RESOLVED to its body's
 // first word; a shell-expansion body (`!…`) or a directory value carrying `$` or
 // a backtick is UNRESOLVABLE, so R6 refuses fail-closed rather than guessing.
+// The token list whose first program is `git`, from the command itself or from
+// any segment of a wrapper's spliced command string (`zsh -c 'cd /tmp; git
+// commit'`), or null. Without this a commit hidden behind a `cd` inside a
+// shell's `-c` string would escape R6.
+function gitProgramTokens(command) {
+  const stripped = commandTokens(command)
+  if (stripped.length && basenameOf(stripped[0]).toLowerCase() === "git") return stripped
+  const raw = rawCommandTokens(command)
+  for (let position = 1; position < raw.length; position++) {
+    for (const segment of splicedSegments(stripMatchedQuotes(raw[position]))) {
+      const parts = shellSplit(segment)
+      const walked = stripWrappers(parts === null ? whitespaceSplit(segment) : parts, WRAPPER_TABLE)
+      if (walked.length && basenameOf(walked[0]).toLowerCase() === "git") return walked
+    }
+  }
+  return null
+}
+
 function gitCommitInfo(command) {
   let raw = rawCommandTokens(command)
   const stripped = commandTokens(command)
-  if (!stripped.length || basenameOf(stripped[0]).toLowerCase() !== "git") {
-    return { isCommit: false, cwdTarget: null, workTree: null, gitDir: null, unresolvable: false }
-  }
   let gitAt = -1
-  for (let i = 0; i < raw.length; i++) {
-    if (basenameOf(raw[i]).toLowerCase() === "git") {
-      gitAt = i
-      break
+  if (stripped.length && basenameOf(stripped[0]).toLowerCase() === "git") {
+    for (let i = 0; i < raw.length; i++) {
+      if (basenameOf(raw[i]).toLowerCase() === "git") {
+        gitAt = i
+        break
+      }
     }
-  }
-  // A wrapper's spliced command string (`watch 'git commit -m x'`) has no raw
-  // `git` token: the stripped program IS the git invocation, so walk from there.
-  if (gitAt === -1) {
-    raw = stripped
+    if (gitAt === -1) {
+      raw = stripped
+      gitAt = 0
+    }
+  } else {
+    const segment = gitProgramTokens(command)
+    if (segment === null) {
+      return { isCommit: false, cwdTarget: null, workTree: null, gitDir: null, unresolvable: false }
+    }
+    raw = segment
     gitAt = 0
   }
   const environment = {}

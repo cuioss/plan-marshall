@@ -269,11 +269,14 @@ def test_consumer_python_is_refused_inside_a_lane_run(
         shutil.rmtree(consumer, ignore_errors=True)
 
 
-def test_a_stale_lane_marker_does_not_bind(tmp_path_factory: pytest.TempPathFactory) -> None:
+def test_a_stale_lane_marker_does_not_bind(
+    tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """A lane marker older than the freshness bound no longer binds anything.
 
     The marker is written at run start and never removed, so a single past lane
-    run must not bind R1-R5 in a consumer checkout forever.
+    run must not bind R1-R5 in a consumer checkout forever. Both harnesses age the
+    marker out.
     """
     consumer = build_harness(tmp_path_factory.mktemp('exact-stale-lane'), include_allowlist=False)
     marker = consumer.root / '.plan' / 'temp' / 'rb-fixture' / 'progress.md'
@@ -282,12 +285,23 @@ def test_a_stale_lane_marker_does_not_bind(tmp_path_factory: pytest.TempPathFact
     fresh, _message = consumer.blocks(shell_event('python3 x.py'))
     assert fresh, 'a fresh marker must bind'
 
-    stale_seconds = 48 * 60 * 60
-    old = time.time() - stale_seconds
-    marker.touch()
+    old = time.time() - 48 * 60 * 60
     os.utime(marker, (old, old))
     admitted, message = consumer.blocks(shell_event('python3 x.py'))
     assert not admitted, f'a stale marker must not bind; message={message!r}'
+
+    hook_consumer = Path(tempfile.mkdtemp(prefix='pm-consumer-stale-'))
+    try:
+        hook_marker = hook_consumer / '.plan' / 'temp' / 'rb-fixture' / 'progress.md'
+        hook_marker.parent.mkdir(parents=True, exist_ok=True)
+        hook_marker.write_text('setup: fixture\n', encoding='utf-8')
+        monkeypatch.setattr(_HOOK, '_repo_root_from_hook_location', lambda: None)
+        monkeypatch.setenv('CLAUDE_PROJECT_DIR', str(hook_consumer))
+        assert _hook_refused('python3 x.py', cwd=str(hook_consumer), in_context=False) is True
+        os.utime(hook_marker, (old, old))
+        assert _hook_refused('python3 x.py', cwd=str(hook_consumer), in_context=False) is False
+    finally:
+        shutil.rmtree(hook_consumer, ignore_errors=True)
 
 
 def test_the_layout_data_is_the_one_shared_file() -> None:
