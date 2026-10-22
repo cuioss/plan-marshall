@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """
-Sonar workflow operations - two-verb provider contract: fetch_findings + post_responses.
+Sonar workflow operations - three-verb provider contract: fetch_findings +
+post_responses + read_open_issues.
 
-The provider surface is exactly TWO pure, zero-LLM verbs — no triage judgment
+The provider surface is exactly THREE pure, zero-LLM verbs — no triage judgment
 lives here:
 
 - ``fetch_findings`` is the single authority on new-code issue enumeration. It
@@ -19,9 +20,20 @@ lives here:
   — a ``do_transition`` dismissal (``wontfix`` for ``suppressed``,
   ``falsepositive`` for ``rejected``) — keyed by each finding's own ``hash_id``.
   It makes NO triage decision.
+- ``read_open_issues`` is the PLAN-LESS read: given a project key and a pull
+  request it returns that pull request's open new-code issues — their count,
+  rules and files, with the same verified ``count_status`` discriminator — and
+  persists NOTHING. It needs no plan id and no manifest, because its caller (the
+  runbook lane) has no plan directory: that lane passes ``NO_PLAN`` to the CI
+  verbs and reads the issues to fix or dismiss them before it reports the pull
+  request ready. The untrusted Sonar ``message`` is deliberately NOT part of the
+  returned contract: the count, the rule and the file are what a caller needs to
+  act on an issue, and a message copied forward is the escalation the
+  producer-side ``raw_input`` quarantine exists to prevent.
 
-Both verbs FAIL LOUD when Sonar is not configured: a typed ``unconfigured``
-status, never a silent success.
+Both PERSISTING verbs FAIL LOUD when Sonar is not configured: a typed
+``unconfigured`` status, never a silent success. ``read_open_issues`` answers the
+same typed status for the same reason.
 
 The returned contract carries a verified ``new_code_issue_count`` and a
 ``count_status`` discriminator (``confirmed`` | ``undecidable``): a confirmed
@@ -37,6 +49,7 @@ LLM consumers query findings via ``manage-findings query --type sonar-issue``.
 Usage:
     sonar.py fetch_findings --plan-id <P> --project <key> [--pr <id>] [--severities <list>] [--types <list>] [--ce-wait-timeout <secs>]
     sonar.py post_responses --plan-id <P> --project <key>
+    sonar.py read_open_issues --project <key> [--pr <id>] [--ce-wait-timeout <secs>]
     sonar.py --help
 """
 
@@ -61,7 +74,7 @@ from triage_helpers import (
 # Register this script's top-level subcommand tokens so that extract_routing_args
 # correctly identifies the subcommand boundary when sonar.py is the entry point
 # (i.e., does not consume a subcommand-level --plan-id as a router flag).
-register_subcommands({'fetch_findings', 'post_responses'})
+register_subcommands({'fetch_findings', 'post_responses', 'read_open_issues'})
 
 # Sonar skill name used to resolve the credential/config store.
 _SONAR_SKILL = 'workflow-integration-sonar'
@@ -689,6 +702,106 @@ def cmd_fetch_findings(args):
 
 
 # ============================================================================
+# READ_OPEN_ISSUES SUBCOMMAND (plan-less read — returns to the caller, persists nothing)
+# ============================================================================
+
+
+def _undecidable_read(project: str, pr: str | None, reason: str) -> dict[str, Any]:
+    """Build the ``undecidable`` read result — a null count beside its reason.
+
+    The single constructor for the state a caller must never read as a clean
+    zero: an analysis that did not settle, or a REST/auth failure, means the
+    issue set was never observed. ``open_issue_count`` is ``None`` on purpose
+    (never ``0``), so a consumer branching on the count cannot treat an
+    unobserved set as an empty one.
+    """
+    return {
+        'status': 'success',
+        'operation': 'read_open_issues',
+        'provider': 'sonar',
+        'project': project,
+        'pull_request': pr or 'none',
+        'count_status': 'undecidable',
+        'open_issue_count': None,
+        'count_status_reason': reason,
+    }
+
+
+def cmd_read_open_issues(args):
+    """PLAN-LESS READ verb: a pull request's open issues, returned without persisting.
+
+    Flow:
+    1. Synchronous bounded CE-readiness wait (the same ``_wait_for_ce_ready`` the
+       producer-side fetch uses), so a count is never taken over an analysis that
+       has not settled for the pull request.
+    2. Fetch the PR-scoped new-code issues via ``_fetch_issues``.
+    3. Return the count, each issue's rule and file (plus its key, type,
+       severity, line and component), and the ``count_status`` discriminator.
+
+    Takes NO plan id and reads NO manifest: there is no finding store to file
+    into, no plan directory to write and no scan-summary marker — the caller
+    owns whatever it records. The pre-filter does not apply either: it is a
+    producer-side rule about which issues become findings, and a read reports the
+    issues Sonar reports.
+
+    Fail-loud: a typed ``unconfigured`` status when no Sonar credential is
+    configured (distinct from a read that failed). A CE timeout, a poll failure
+    or a REST/auth failure returns ``open_issue_count: None`` with
+    ``count_status: undecidable`` and a ``count_status_reason`` — NEVER a false
+    ``0``.
+    """
+    project: str = args.project
+    pr: str | None = getattr(args, 'pr', None)
+
+    missing = _sonar_credential_missing()
+    if missing:
+        return _sonar_unconfigured('read_open_issues', missing)
+
+    # 1. Gate the count on a settled analysis. No manifest exists on this path,
+    #    so the budget is the explicit flag or the conservative default.
+    ce_result = _wait_for_ce_ready(project, pr, _resolve_ce_wait_timeout(args))
+    if ce_result['count_status'] != 'confirmed':
+        return _undecidable_read(
+            project,
+            pr,
+            ce_result.get('count_status_reason') or 'CE analysis did not settle',
+        )
+
+    # 2. Enumerate. The issue ``message`` is untrusted free text and stays out of
+    #    this contract — the trusted structured fields are what a caller acts on.
+    fetch_result = _fetch_issues(project, pr, None, None)
+    if fetch_result.get('status') != 'success':
+        return _undecidable_read(project, pr, fetch_result.get('message', 'Sonar issue fetch failed'))
+
+    raw_issues: list[dict[str, Any]] = fetch_result.get('issues') or []
+    issues = [
+        {
+            'key': issue.get('key', ''),
+            'type': issue.get('type', ''),
+            'severity': issue.get('severity', ''),
+            'rule': issue.get('rule', ''),
+            'file': issue.get('file', ''),
+            'line': issue.get('line', 0),
+            'component': issue.get('component', ''),
+        }
+        for issue in raw_issues
+    ]
+
+    return {
+        'status': 'success',
+        'operation': 'read_open_issues',
+        'provider': 'sonar',
+        'project': project,
+        'pull_request': pr or 'none',
+        'count_status': 'confirmed',
+        'open_issue_count': len(issues),
+        'rules': sorted({issue['rule'] for issue in issues if issue['rule']}),
+        'files': sorted({issue['file'] for issue in issues if issue['file']}),
+        'issues': issues,
+    }
+
+
+# ============================================================================
 # POST_RESPONSES SUBCOMMAND (apply triaged dispositions back to Sonar)
 # ============================================================================
 
@@ -806,6 +919,7 @@ Examples:
   sonar.py fetch_findings --plan-id EXAMPLE-PLAN --project com.example:project --pr 123 --severities BLOCKER,CRITICAL
   sonar.py fetch_findings --plan-id EXAMPLE-PLAN --project com.example:project --pr 123 --ce-wait-timeout 300
   sonar.py post_responses --plan-id EXAMPLE-PLAN --project com.example:project
+  sonar.py read_open_issues --project com.example:project --pr 123
 """,
         subcommands=[
             {
@@ -841,6 +955,25 @@ Examples:
                         'flags': ['--project'],
                         'required': False,
                         'help': 'SonarQube project key (accepted for API uniformity)',
+                    },
+                ],
+            },
+            {
+                'name': 'read_open_issues',
+                'help': 'READ (plan-less): return a pull request open-issue count, rules and files without persisting anything',
+                'handler': cmd_read_open_issues,
+                'args': [
+                    {'flags': ['--project'], 'required': True, 'help': 'SonarQube project key'},
+                    {
+                        'flags': ['--pr'],
+                        'help': 'Pull request ID — scopes the CE-status lookup and new-code enumeration',
+                    },
+                    {
+                        'flags': ['--ce-wait-timeout'],
+                        'dest': 'ce_wait_timeout',
+                        'type': int,
+                        'help': 'Override the CE-readiness wait budget in seconds (default: 600; this path '
+                        'has no plan manifest to read a configured budget from)',
                     },
                 ],
             },

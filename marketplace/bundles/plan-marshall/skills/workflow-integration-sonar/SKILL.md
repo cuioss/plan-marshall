@@ -1,24 +1,25 @@
 ---
 name: workflow-integration-sonar
-description: SonarQube/SonarCloud provider - two pure verbs (fetch_findings files new-code issues to the ledger, post_responses transmits triaged dismissals) via the REST client
+description: SonarQube/SonarCloud provider - three pure verbs (fetch_findings files new-code issues to the ledger, post_responses transmits triaged dismissals, read_open_issues returns a pull request's open issues to a plan-less caller) via the REST client
 user-invocable: false
 mode: workflow
 ---
 
 # Sonar Workflow Skill
 
-Sonar provider for the findings-pipeline `sonar-issue` producer. The provider surface is exactly TWO pure, zero-LLM verbs — no triage judgment lives here:
+Sonar provider for the findings-pipeline `sonar-issue` producer. The provider surface is exactly THREE pure, zero-LLM verbs — no triage judgment lives here:
 
 - **`fetch_findings`** — fetch gate-blocking new-code issues from SonarQube/SonarCloud, apply the pre-filter (`sonar-rules.json`), and file one `sonar-issue` finding per surviving issue via `manage-findings add`. The untrusted Sonar `message` is quarantined under `raw_input.{message}` (never embedded raw in the top-level `detail`); the batched `manage-findings ingest` pass promotes it after `validate_struct`.
 - **`post_responses`** — apply already-decided triage dispositions back to Sonar (a `do_transition` dismissal: `wontfix` for `suppressed`, `falsepositive` for `rejected`), keyed by each finding's own `hash_id`.
+- **`read_open_issues`** — the plan-less read: given a project key and a pull request, return that pull request's open new-code issues (count, rules, files, and the same `count_status` discriminator) and persist nothing. It takes no plan id and reads no manifest, because its caller — the runbook lane — has no plan directory. The untrusted Sonar `message` is not part of its contract.
 
-Both verbs FAIL LOUD when Sonar is not configured (a typed `unconfigured` status). Consumer dispatch lives in [`phase-6-finalize/workflow/sonar-roundtrip.md`](../phase-6-finalize/workflow/sonar-roundtrip.md).
+All three verbs FAIL LOUD when Sonar is not configured (a typed `unconfigured` status). Consumer dispatch lives in [`phase-6-finalize/workflow/sonar-roundtrip.md`](../phase-6-finalize/workflow/sonar-roundtrip.md).
 
 > **Architectural context**: This SKILL.md owns the producer-side CLI surface. For the producer→store→consumer→gate flow that connects this producer to the unified store, the per-domain `ext-triage` consumer dispatch, and the invariant gate, see [`ref-workflow-architecture/standards/findings-pipeline.md`](../ref-workflow-architecture/standards/findings-pipeline.md).
 
 ## Enforcement
 
-**Execution mode**: Two pure provider verbs — `fetch_findings` files new-code Sonar issues to the ledger (untrusted message quarantined under `raw_input`); `post_responses` transmits already-decided triage dismissals back to Sonar. Triage judgment lives in the consolidated triage pass, NOT in this provider.
+**Execution mode**: Three pure provider verbs — `fetch_findings` files new-code Sonar issues to the ledger (untrusted message quarantined under `raw_input`); `post_responses` transmits already-decided triage dismissals back to Sonar; `read_open_issues` returns a pull request's open issues to a caller that has no plan and persists nothing. Triage judgment lives in the consolidated triage pass, NOT in this provider.
 
 **Prohibited actions:**
 - Never make a triage decision inside the provider verbs — they only fetch and transmit already-decided dispositions
@@ -68,6 +69,10 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-sonar:sonar f
 # RESPOND: apply already-decided dismissals (wontfix/falsepositive) back to Sonar, keyed by hash_id
 python3 .plan/execute-script.py plan-marshall:workflow-integration-sonar:sonar post_responses \
   --plan-id EXAMPLE-PLAN --project com.example:project
+
+# READ (plan-less): return a pull request's open-issue count, rules and files; persists nothing
+python3 .plan/execute-script.py plan-marshall:workflow-integration-sonar:sonar read_open_issues \
+  --project com.example:project --pr 123
 
 # LLM consumer reads stored findings via manage-findings
 python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings list --plan-id EXAMPLE-PLAN --type sonar-issue
@@ -149,7 +154,7 @@ For ad-hoc inspection or non-finding-store integrations, `sonar_rest.py search` 
      --plan-id {plan_id} --project {project_key}
    ```
 
-   `post_responses` maps each terminal disposition to its Sonar `do_transition` (`suppressed` → `wontfix`, `rejected` → `falsepositive`); `fixed` / `accepted` / `taken_into_account` get no Sonar action. It is idempotent — a finding whose dismissal was already transmitted carries a `responded` marker and is skipped on a re-run, so re-invoking the verb never re-POSTs the same dismissal. This replaces the retired per-finding `sonar_rest transition` call; the raw REST transition surface remains available only for ad-hoc inspection (see Canonical invocations → `sonar_rest`).
+   `post_responses` maps each terminal disposition to its Sonar `do_transition` (`suppressed` → `wontfix`, `rejected` → `falsepositive`); `fixed` / `accepted` / `taken_into_account` get no Sonar action. It is idempotent — a finding whose dismissal was already transmitted carries a `responded` marker and is skipped on a re-run, so re-invoking the verb never re-POSTs the same dismissal. This replaces the retired per-finding `sonar_rest transition` call for plan-scoped triage; the raw REST transition surface remains available for ad-hoc inspection AND for a plan-less caller that dismisses a known issue key (see Canonical invocations → `sonar_rest`).
 
 ---
 
@@ -183,6 +188,18 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-sonar:sonar f
 ```
 
 **Output:** TOON with the verified `new_code_issue_count` and `count_status` discriminator (`confirmed` | `undecidable`, plus `count_status_reason` on `undecidable`), the pre-filter counters (`count_fetched`, `count_skipped_suppressable`, `count_stored`), the list of stored finding hash_ids, the `scan_summary_path` of the written attestation row, and `producer_mismatch_hash_id` when applicable. A `confirmed` `0` is a confirmed PR-scoped zero; a CE-timeout or auth/REST failure yields `count_status: undecidable` with `new_code_issue_count: null` — never an inferred `0`.
+
+### sonar.py read_open_issues
+
+**Purpose:** The plan-less read the runbook lane calls before it reports a pull request ready. Given a project key and a pull request it performs the same bounded CE-readiness wait and PR-scoped new-code enumeration `fetch_findings` performs, then RETURNS the enumeration: the count, each issue's rule and file (plus key, type, severity, line and component), and the `count_status` discriminator. It files no finding, writes no scan-summary marker and reads no manifest — it has no plan id to take.
+
+**Usage:**
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-sonar:sonar read_open_issues \
+  --project {project_key} --pr {pr} [--ce-wait-timeout {secs}]
+```
+
+**Output:** TOON carrying `count_status` (`confirmed` | `undecidable`), `open_issue_count` (`0`-or-more on `confirmed`, `null` on `undecidable` — never a false `0`), `rules[]`, `files[]`, `issues[]` and `count_status_reason` on `undecidable`. An unconfigured provider returns the typed `unconfigured` status, distinct from a read that failed. The issue `message` is deliberately absent: the trusted structured fields are what a caller acts on.
 
 ### Scan-Summary Marker (sonar-scan-summary.jsonl)
 
@@ -260,6 +277,13 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-sonar:sonar f
 ```bash
 python3 .plan/execute-script.py plan-marshall:workflow-integration-sonar:sonar post_responses \
   --plan-id PLAN_ID [--project PROJECT]
+```
+
+### sonar — read_open_issues
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-sonar:sonar read_open_issues \
+  --project PROJECT [--pr PR] [--ce-wait-timeout CE_WAIT_TIMEOUT]
 ```
 
 ### sonar_rest — search
