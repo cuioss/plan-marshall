@@ -115,10 +115,11 @@ _HEADER_PATTERN = re.compile(r'(?mi)^[ \t]*(name|plan_id)[ \t]*:[ \t]*(\S.*?)[ \
 #: How many of a session's earliest messages are scanned for its header.
 _PROMPT_SCAN_LIMIT = 50
 
-#: Marker a message ``type`` carries when it records tool activity. Retained for
-#: the legacy row shape and for the store's own ``shell`` rows; a tool CALL is a
-#: ``content[]`` part of an assistant message, not a row type (see
-#: :func:`_count_tool_parts`).
+#: Marker a message ``type`` carries when it records tool activity. This is the
+#: LEGACY row shape: the store records a tool call as a ``content[]`` part of an
+#: assistant message instead (see :func:`_count_tool_parts`). The row-typed count
+#: is applied only for a bucket in which no assistant message carried a content
+#: array, so the two shapes can never count the same call twice.
 _TOOL_TYPE_MARKER = 'tool'
 
 #: ``content[]`` part type that records one tool call.
@@ -917,6 +918,10 @@ def window_usage(
         contributors: dict[tuple[int, str], set[str]] = {}
         tool_observable: set[tuple[int, str]] = set()
         tool_counts: dict[tuple[int, str], int] = {}
+        # Legacy row-typed tool events, held aside until the whole read is done:
+        # they count only for a bucket whose assistant messages carried no
+        # content array, so one call recorded in both shapes is counted once.
+        legacy_tool_counts: dict[tuple[int, str], int] = {}
         subagent_sessions: set[str] = set()
         window_clause, window_params = _window_pre_filter(parsed)
         chunk_size = max(1, _SQL_VARIABLE_BUDGET - len(window_params))
@@ -951,14 +956,17 @@ def window_usage(
                         tool_observable.add((index, scope))
                         tool_counts[(index, scope)] = tool_counts.get((index, scope), 0) + part_tools
                 elif _TOOL_TYPE_MARKER in kind:
-                    # Legacy row-typed tool event: a measured call in its own
-                    # right, so it makes the count observable too.
-                    tool_observable.add((index, scope))
-                    tool_counts[(index, scope)] = tool_counts.get((index, scope), 0) + 1
+                    legacy_tool_counts[(index, scope)] = legacy_tool_counts.get((index, scope), 0) + 1
         for (index, scope), sessions in contributors.items():
             rows[index][scope]['sessions'] = len(sessions)
         for (index, scope, _owning), moments in spans.items():
             rows[index][scope]['duration_ms'] += int((max(moments) - min(moments)).total_seconds() * 1000)
+        for key, legacy_count in legacy_tool_counts.items():
+            if key not in tool_observable:
+                # No content array answered for this bucket, so the legacy rows are
+                # the only evidence of tool use it carries.
+                tool_observable.add(key)
+                tool_counts[key] = legacy_count
         for key in tool_observable:
             index, scope = key
             rows[index][scope]['tool_uses'] = tool_counts.get(key, 0)

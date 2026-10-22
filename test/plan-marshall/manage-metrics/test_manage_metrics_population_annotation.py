@@ -252,6 +252,33 @@ def test_whole_phase_row_declares_its_included_inline_spend(plan_context, monkey
     assert 'included in the Total tokens figure' in report
 
 
+def test_legacy_mixed_row_keeps_its_marker_and_feeds_the_dispatched_population(plan_context):
+    """A row stamped `mixed` before the composition landed still renders truthfully.
+
+    Its cell IS the dispatched figure with the inline spend excluded, so it must
+    keep the `(mixed)` marker and must not make the Total look cross-population.
+    """
+    plan_id = 'population-render-mixed-legacy'
+    cmd_start_phase(ns_start_phase(plan_id, '5-execute'))
+    cmd_end_phase(ns_end_phase(plan_id, '5-execute', total_tokens=42000))
+    data = manage_metrics.read_metrics_raw(plan_id)
+    row = data['phases']['5-execute']
+    row['inline_main_context_tokens'] = 6000
+    row['total_tokens_population'] = manage_metrics.POPULATION_MIXED
+    manage_metrics.write_metrics(plan_id, data)
+
+    cmd_generate(ns_generate(plan_id))
+    report = (plan_context.plan_dir_for(plan_id) / 'metrics.md').read_text(encoding='utf-8')
+
+    execute_row = next(line for line in report.splitlines() if line.startswith('| 5-execute '))
+    assert '42,000' in execute_row
+    assert '(mixed)' in execute_row
+    assert '`(mixed)`' in report
+    assert '(spans populations)' not in _total_tokens_cell(report)
+    stored = manage_metrics.read_metrics_raw(plan_id)
+    assert stored[manage_metrics._TOTALS_POPULATION_FIELD] == manage_metrics.POPULATION_DISPATCHED
+
+
 def test_dispatched_only_report_carries_no_population_annotation(plan_context):
     """Negative control: a wholly-dispatched plan gets no marker and no annotation.
 

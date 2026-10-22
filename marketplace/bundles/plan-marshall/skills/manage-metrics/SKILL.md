@@ -601,11 +601,13 @@ a window carrying only `cache_read_input_tokens` gets no figure from `enrich`).
 a row `enrich` stamped but left without a figure was measured at zero and reads
 `0`, while a row `enrich` never visited reads `unmeasured`.
 
-A dispatched `total_tokens` is left byte-identical (explicit-wins). The ONE case
-where `enrich` writes `total_tokens` is a phase that dispatched nothing: there it
-folds the inline main-context sum in, so the phase stays countable, and labels the
-row `total_tokens_population: inline` so no consumer reads that figure as a
-dispatched measurement. See [data-format.md](standards/data-format.md) §
+`enrich` composes `total_tokens` from the store on every phase it measures: the
+main-context sum PLUS the dispatched sub-agent figure when both were measured
+(`total_tokens_population: main_plus_subagent`), or the main-context sum alone on
+a phase that dispatched nothing (`inline`). A dispatched figure the row already
+carried is preserved as `dispatched_total_tokens` rather than overwritten, so the
+`<usage>` / accumulator measurement is neither lost nor re-read as the whole
+phase. See [data-format.md](standards/data-format.md) §
 "Inline Main-Context Attribution". When the orchestrator called `accumulate-agent-usage` for
 the same agent dispatches the on-disk totals are independent of `enrich`'s
 per-phase subagent fields, so double-counting does not occur in the closed-phase

@@ -400,52 +400,57 @@ total definition (which is fed via `end-phase --total-tokens`
 and excludes cache reads); including it would over-count the inline contribution
 by ~100× versus comparable dispatched rows.
 
-#### Three signatures, one derivation, always labelled
+#### Four signatures, one derivation, always labelled
 
 The derivation is the same wherever it applies; what differs is whether the sum is
-ALSO folded into `total_tokens`, and the row records which case applied. "Non-zero
-inline sum" below means the `input + output + cache_creation` derivation above, NOT
-the full context-load view — a window carrying only
+also added to the row's measured total, and the row records which case applied.
+"Non-zero inline sum" below means the `input + output + cache_creation` derivation
+above, NOT the full context-load view — a window carrying only
 `cache_read_input_tokens` takes the `dispatched` row:
 
 | Signature | Condition | `total_tokens` | `inline_main_context_tokens` | `total_tokens_population` |
 |-----------|-----------|----------------|------------------------------|---------------------------|
-| **inline-only** | non-zero inline sum, **no** dispatched `total_tokens` (`1-init`, recipe-inline refine/outline) | the inline sum is folded in | the same sum, under its own name | `inline` |
-| **mixed** | non-zero inline sum **and** a dispatched `total_tokens` (the `6-finalize` shape — dispatched steps and inline finalize steps both ran) | left byte-identical (explicit-wins) | the inline sum | `mixed` |
+| **main-plus-subagent** | non-zero inline sum **and** a dispatched figure (the usual OpenCode shape — main-context turns and dispatched sub-agents in the same window) | the inline sum PLUS the dispatched figure | the inline sum | `main_plus_subagent` |
+| **inline-only** | non-zero inline sum, **no** dispatched figure (`1-init`, recipe-inline refine/outline) | the inline sum | the same sum, under its own name | `inline` |
 | **dispatched** | zero inline sum (no inline attribution) | left byte-identical | not written by `enrich`; `generate` then completes it as a measured `0` | `dispatched` |
+| **mixed** (legacy) | a row written before the composition landed: a dispatched total plus a separately-recorded inline sum | left byte-identical | the inline sum | `mixed` |
+
+On the composed signatures the dispatched figure is preserved as
+`dispatched_total_tokens` before `total_tokens` is recomposed, so the `<usage>` /
+accumulator measurement is neither lost nor left competing in the
+dispatched-population maximum as if it were the whole phase. A re-run recomposes
+the same value instead of reading its own composition as a dispatched total.
 
 The `inline_main_context_tokens` column above describes what **`enrich`** writes. `generate` completes the field on every phase row afterwards, so it is never absent from the record — see its Per-Phase Fields row for the `0`-versus-`unmeasured` rule.
 
-**The inline-only fold is deliberate, not a silent substitution.** Folding the
-inline sum into `total_tokens` is what keeps a zero-dispatch phase countable in
-the Phase Breakdown — the report reads `n=6/6` rather than `n=5/6` — and what
-keeps the downstream zero-token predicates (the telemetry repository auditor's `incomplete_recording`
-anomaly, the checkpoint budget verdict, the corpus percentile cut-points) off a
-phase that really did cost something. The defect the labelling closes is not the
-fold; it is a main-context figure being **read as** a dispatched one. Two records
-prevent that, and they are written together, never apart:
+**The composition is deliberate, not a silent substitution.** Adding the two
+populations is what makes the landing's total equal what the store holds: a total
+summed out of one population per row reported 63% of the plan's measured spend.
+The defect a single-population label closed is not the composition; it is a figure
+being read as a population it does not measure. Two records prevent that, and they
+are written together, never apart:
 
-- `inline_main_context_tokens` carries the figure under a name that states its
-  own population, so the inline measurement is never readable ONLY through a
-  dispatched-population field.
+- `inline_main_context_tokens` carries the main-context figure under a name that
+  states its own population, so the measurement is never readable ONLY through a
+  whole-phase field.
 - `total_tokens_population` states which population `total_tokens` measures on
   this row, and **every render site prints it** — the `Tokens (dispatched unless
-  marked)` column header declaring the default, an `(inline)` / `(mixed)` suffix
-  on the Phase Breakdown `Tokens` cell, a `(spans populations)` marker on the
-  `Total` cell when an `inline` row fed the sum, a population annotation under
-  the table declaring the default and naming the marked phases, and a population
-  qualifier on the Phase Details `Total tokens` bullet.
+  marked)` column header declaring the default, an `(inline)` / `(mixed)` /
+  `(main + sub-agent)` suffix on the Phase Breakdown `Tokens` cell, a
+  `(spans populations)` marker on the `Total` cell when the rows that fed it
+  measure different populations, a population annotation under the table declaring
+  the default and naming the marked phases, and a population qualifier on the
+  Phase Details `Total tokens` bullet.
 
-`total_tokens` is **explicit-wins** on both non-inline signatures: a value
-recorded by a dispatched step's reported total / the accumulator is never overwritten.
-This attribution does not touch the `#812` `end_time`-presence check — a
-timestamps-only inline close still carries its `end_time` marker.
+The `#812` `end_time`-presence check is untouched — a timestamps-only inline close
+still carries its `end_time` marker.
 
-**Consumer rule.** `inline_main_context_tokens` and a dispatched `total_tokens`
-are measured by different methods over different populations and are **not
-additively comparable** — never sum them into a phase figure. A consumer that
-needs to know what `total_tokens` measures reads `total_tokens_population`; it
-must not infer a population from the field's name, which states a total.
+**Consumer rule.** `inline_main_context_tokens` and `dispatched_total_tokens` are
+each one population's measurement, and both are already included in
+`total_tokens` on the composed signatures: never add either to `total_tokens`
+again. A consumer that needs to know what `total_tokens` measures reads
+`total_tokens_population`; it must not infer a population from the field's name,
+which states a total.
 
 ### Unknown token figures (`unknown`)
 
@@ -524,6 +529,13 @@ containing its timestamp, and windows sharing a phase name are summed by the
 per-phase composer, so a phase split into intervals reports the sum of its own
 intervals rather than only the last one it occupied.
 
+A PARTIALLY recorded log is supported: a phase with a recorded interval uses that
+interval and never its own over-wide `start_time`/`end_time` pair, while a phase
+whose intervals predate the field falls back to the pair. Without that split, a
+plan resumed across the change would lose every window for the phases closed
+under the older code — the same silent under-count this section exists to remove.
+
+### Boundary Monotonicity (Loop-Back Re-entry)
 
 A finalize **loop-back** re-enters a prior phase (e.g. `5-execute`) and
 re-records its work under that phase's key. Because a later phase (`6-finalize`)
@@ -770,11 +782,11 @@ Generated: 2026-03-14 09:41:07 UTC
 | Phase | Worked | Reported (wall) | Idle | Tokens (dispatched unless marked) | Tool Uses | Billing (cost) |
 |-------|--------|-----------------|------|-----------------------------------|-----------|----------------|
 | 1-init | 2m 30s | 3m 0s | 30s | 25,514 (inline) | 12 | 41,003 |
-| 2-refine | 4m 0s | 5m 30s | 1m 30s | 42,000 | 8 | 78,000 |
+| 2-refine | 4m 0s | 5m 30s | 1m 30s | 42,000 (main + sub-agent) | 8 | 78,000 |
 | 3-outline | 7m 0s | 8m 15s | 1m 15s | 68,000 | 25 | 96,400 |
 | **Total** | **13m 30s (n=3/6)** | **16m 45s (n=3/6)** | **3m 15s (n=3/6)** | **135,514 (n=3/6) (spans populations)** | **45 (n=3/6)** | **215,403 (n=3/6)** |
 
-> Tokens population: an unmarked cell is a dispatched-subagent measurement — the default this column header declares. Marked `(main + sub-agent)` — the cell is the phase whole measured spend: its main-context figure (also recorded as inline_main_context_tokens) added to its dispatched sub-agent figure (subagent_total_tokens), both read from the same session store over the same window: 5-execute, 6-finalize. Marked `(inline)` — the phase dispatched nothing, so the cell is the main-context-window measurement enrich folded into total_tokens (also recorded under its own name as inline_main_context_tokens): 1-init. The **Total** sums the `main_plus_subagent` population.
+> Tokens population: an unmarked cell is a dispatched-subagent measurement — the default this column header declares. Marked `(main + sub-agent)` — the cell is the phase whole measured spend: its main-context figure (also recorded as inline_main_context_tokens) added to its dispatched sub-agent figure (subagent_total_tokens), both read from the same session store over the same window: 2-refine. Marked `(inline)` — the phase dispatched nothing, so the cell is the main-context-window measurement enrich folded into total_tokens (also recorded under its own name as inline_main_context_tokens): 1-init. The **Total** sums the `mixed` population and therefore spans more than one population — it is not a dispatched total, and its cell is marked `(spans populations)`.
 
 ## 2-refine
 
@@ -795,14 +807,14 @@ The four context-load bullets are **nested under a `Main-context-window usage` h
 
 ### Default-plus-exception labelling of the `Tokens` column
 
-The `Tokens` column is **not** single-population — an inline phase's cell carries a main-context-window figure (see § Inline Main-Context Attribution) — so its header names a default plus the marking convention that carries the exceptions: `Tokens (dispatched unless marked)`. A bare `Tokens (dispatched)` would assert a single population over a mixed column, which is the mislabel this contract exists to prevent.
+The `Tokens` column is **not** single-population — a composed phase's cell carries the main-context and dispatched figures summed (see § Inline Main-Context Attribution) — so its header names a default plus the marking convention that carries the exceptions: `Tokens (dispatched unless marked)`. A bare `Tokens (dispatched)` would assert a single population over a mixed column, which is the mislabel this contract exists to prevent.
 
 A label may state a default population only when **both** guards hold, and they hold here:
 
-1. **Every exception is marked at the row level.** A phase cell takes an `(inline)` / `(mixed)` suffix; an unmarked cell is dispatched. A phase is named in the annotation only when its cell actually carries the marker — a cell that renders `-` contributes nothing to the Total and is not claimed as marked.
+1. **Every exception is marked at the row level.** A phase cell takes an `(inline)` / `(mixed)` / `(main + sub-agent)` suffix; an unmarked cell is dispatched. A phase is named in the annotation only when its cell actually carries the marker — a cell that renders `-` contributes nothing to the Total and is not claimed as marked.
 2. **The annotation declares the default.** The `> Tokens population: …` line renders whenever any marker appears (including a report whose only exceptions are `(mixed)`), so a marker is never printed without its key. It is ONE blockquote carrying the default and every exception clause together — a key split from the markers it explains is a key the reader has to reassemble. A wholly-dispatched report renders no annotation at all, because it has no exception to key.
 
-The **Total** row is a cell in the same column and inherits the same default, so it takes the same discipline: when an `(inline)` row fed the sum it is marked `(spans populations)`. Only `(inline)` rows cross-contaminate the Total — a `(mixed)` row's cell is the dispatched figure with its inline spend deliberately excluded. The distinct marker is deliberate: `(mixed)` already means something else on a phase row.
+The **Total** row is a cell in the same column and inherits the same default, so it takes the same discipline: when the rows that fed it measure different populations it is marked `(spans populations)`. A `(mixed)` row does not by itself make the sum span populations — its cell IS the dispatched figure, with its inline spend deliberately excluded — while an `(inline)` or `(main + sub-agent)` row does. The distinct marker is deliberate: `(mixed)` already means something else on a phase row.
 
 **A third marker qualifies COVERAGE, not population.** A phase whose row carries no `end_time` was never closed, so no close recorded its totals — yet its `work/metrics-dispatch-boundaries-{phase}.toon` file accumulated a row per dispatch throughout, independent of whether the boundary ever closed. When that sum is what the cell shows, the cell is marked `(boundary floor)` and the row records `tokens_cell_source: unclosed_boundary_floor`. This is the same move `enrich` makes when it folds inline spend into a zero-dispatch phase's total and labels the row — a real cost that would otherwise render as nothing — applied to the dispatched population instead of the inline one. It closes two gaps: a boundary sum refused as PARTIAL or OVER leaves the cell rendering `-` while the file holds the phase's whole recorded spend, and a sum whose coverage is UNDECIDABLE already wins the maximum but renders as an ordinary dispatched total, saying nothing about the phase never having closed. The fold can only ever RAISE a cell, and never displaces a measure the reconciliation trusted more.
 

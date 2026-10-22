@@ -623,6 +623,44 @@ def test_window_usage_counts_tool_parts_in_an_assistant_messages_content(tmp_pat
     assert window['main']['tool_uses'] == 1
 
 
+def test_window_usage_counts_a_legacy_row_typed_tool_event(tmp_path: Path) -> None:
+    """A row-typed tool event is still counted when no content array answers.
+
+    The legacy shape is honoured, but only as a fallback: a bucket whose assistant
+    message carried a content array counts its parts, never the row types too.
+    """
+    db_path = tmp_path / 'opencode.db'
+    _create_tier2_db(
+        db_path,
+        [('ses-root', None, 0, 0, 0, 0, 0.0), ('ses-child', 'ses-root', 0, 0, 0, 0, 0.0)],
+        [
+            ('ses-child', 'tool', _at(5), {'tool': 'bash'}),
+            ('ses-child', 'tool', _at(6), {'tool': 'read'}),
+        ],
+    )
+
+    usage = opencode_sessions.window_usage(db_path, 'ses-root', [('5-execute', _iso(0), _iso(30))])
+
+    assert usage['windows'][0]['subagent']['tool_uses'] == 2
+
+
+def test_window_usage_does_not_count_a_call_recorded_in_both_shapes(tmp_path: Path) -> None:
+    """One call recorded as a content part AND a row type is counted once."""
+    db_path = tmp_path / 'opencode.db'
+    _create_tier2_db(
+        db_path,
+        [('ses-root', None, 0, 0, 0, 0, 0.0), ('ses-child', 'ses-root', 0, 0, 0, 0, 0.0)],
+        [
+            ('ses-child', 'assistant', _at(5), {'tokens': {'input': 1}, 'content': [{'type': 'tool'}]}),
+            ('ses-child', 'tool', _at(6), {'tool': 'bash'}),
+        ],
+    )
+
+    usage = opencode_sessions.window_usage(db_path, 'ses-root', [('5-execute', _iso(0), _iso(30))])
+
+    assert usage['windows'][0]['subagent']['tool_uses'] == 1
+
+
 def test_window_usage_omits_tool_uses_when_the_store_cannot_answer(tmp_path: Path) -> None:
     """A window whose messages carry no ``content`` array omits ``tool_uses``.
 

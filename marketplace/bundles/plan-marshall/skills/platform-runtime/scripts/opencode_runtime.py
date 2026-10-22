@@ -1024,7 +1024,11 @@ def _per_phase_buckets(
         four = main_usage.setdefault(phase, dict.fromkeys(_USAGE_FOUR_FIELDS, 0))
         for field in _USAGE_FOUR_FIELDS:
             four[field] += int(main.get(field, 0))
-        reasoning_usage[phase] = reasoning_usage.get(phase, 0) + int(main.get('reasoning_tokens', 0))
+        reasoning_usage[phase] = (
+            reasoning_usage.get(phase, 0)
+            + int(main.get('reasoning_tokens', 0))
+            + int(subagent.get('reasoning_tokens', 0))
+        )
         cost_usage[phase] = cost_usage.get(phase, 0.0) + float(main.get('cost', 0.0) or 0.0)
         cost_usage[phase] += float(subagent.get('cost', 0.0) or 0.0)
         for scope, scope_bucket, messages in (('main', main, main_messages), ('subagent', subagent, subagent_messages)):
@@ -1405,6 +1409,11 @@ class OpenCodeRuntime(Runtime):
         resolved = _resolve_opencode_root(sid)
         lookup_id = str(resolved['root']) if resolved['ok'] else sid
         plan_id = session_binding.resolve_plan(lookup_id)
+        if not plan_id and lookup_id != sid:
+            # A bind that ran while the store was unreadable wrote the RAW id. Once
+            # the store answers, the root slot is empty, so the raw slot is still
+            # the only place that binding can be found.
+            plan_id = session_binding.resolve_plan(sid)
         return toon_success(
             'session resolve-plan',
             {

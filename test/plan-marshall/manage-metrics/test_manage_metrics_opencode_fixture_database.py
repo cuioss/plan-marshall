@@ -125,7 +125,7 @@ def _write_store(db_path: Path, worktree: Path) -> None:
                 'assistant',
                 _at(20),
                 {
-                    'tokens': {'input': 1000, 'output': 500, 'cache': {'write': 100}},
+                    'tokens': {'input': 1000, 'output': 500, 'reasoning': 25, 'cache': {'write': 100}},
                     'cost': 0.5,
                     'content': [{'type': 'tool', 'tool': 'bash'}, {'type': 'tool', 'tool': 'grep'}, {'type': 'tool'}],
                 },
@@ -219,7 +219,7 @@ def test_enrich_and_generate_measure_a_real_fixture_store(plan_context, monkeypa
     assert execute['subagent_samples'] == 2
     assert execute['subagent_tool_uses'] == 4
     assert execute['measured_tool_uses'] == 6
-    assert execute['reasoning_tokens'] == 10
+    assert execute['reasoning_tokens'] == 10 + 25
     assert execute['cost_usd'] == pytest.approx(0.1 + 0.5 + 0.7)
 
     finalize = phases['6-finalize']

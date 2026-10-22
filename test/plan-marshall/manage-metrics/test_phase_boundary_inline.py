@@ -13,17 +13,19 @@ marker.
 
 The omission is at the boundary *write* only — it is NOT a permanent token gap.
 The finalize-phase `manage-metrics enrich` pass attributes the parent-window
-`message.usage` four-field data to each inline window and derives `total_tokens`
-from input + output + cache_creation ONLY (cache_read EXCLUDED, so the inline
-row matches the dispatched-phase `<usage>` total definition), so an inline phase
-DOES count toward the breakdown Tokens column and the report reads `n=6/6` (not
-`n=5/6`). These tests drive the REAL
+`message.usage` four-field data to each inline window and derives the
+main-context part from input + output + cache_creation ONLY (cache_read EXCLUDED,
+so the figure matches the dispatched-phase `<usage>` total definition). `enrich`
+then composes `total_tokens` from that figure plus the phase's dispatched figure
+(preserved separately as `dispatched_total_tokens`), so an inline phase DOES count
+toward the breakdown Tokens column and the report reads `n=6/6` (not `n=5/6`).
+These tests drive the REAL
 enrich production path (with a fixture that mirrors the runtime's
 post-normalization per-phase bucket shape) and lock that contract:
   - the inline **1-init** window and the recipe-inline **2-refine** / **3-outline**
     windows, closed usage-free, carry a real `total_tokens` after enrich;
-  - a dispatched phase's `<usage>`-sourced `total_tokens` is never overwritten
-    (explicit-wins);
+  - a dispatched phase's `<usage>`-sourced figure is preserved as
+    `dispatched_total_tokens` and the row's total is the two populations summed;
   - a six-phase plan whose rows all carry `end_time` reports
     `any_phase_missing_end_time: false` with every phase carrying token data
     (`n=6/6`).

@@ -10,6 +10,7 @@ must emit one window per interval, in order, so usage dated inside a
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -83,6 +84,32 @@ def test_usage_inside_the_first_finalize_interval_belongs_to_finalize(plan_conte
     owners = [phase for phase, start, end in windows if start <= moment < end]
 
     assert owners == ['6-finalize']
+
+
+def test_a_partially_recorded_log_keeps_the_unrecorded_phases_windows(plan_context, clock):
+    """A phase whose intervals predate the field still gets its fallback window.
+
+    A plan resumed across the change has intervals for the phases closed under the
+    new code and none for the earlier ones. Dropping the window of every unrecorded
+    phase would silently lose their usage — the under-count this lookup exists to
+    remove.
+    """
+    plan_id = 'phase-intervals-partial-log'
+    _drive_re_entry(plan_id, clock)
+    data = manage_metrics.read_metrics_raw(plan_id)
+    recorded = json.loads(str(data[manage_metrics._PHASE_INTERVALS_FIELD]))
+    keep = [entry for entry in recorded if entry[0] != '6-finalize']
+    data[manage_metrics._PHASE_INTERVALS_FIELD] = json.dumps(keep)
+    # The row pair is what the fallback reads for the phase left unrecorded.
+    data['phases']['6-finalize']['start_time'] = _at(5)
+    data['phases']['6-finalize']['end_time'] = _at(10)
+    manage_metrics.write_metrics(plan_id, data)
+
+    windows = manage_metrics._phase_window_lookup(plan_id)
+
+    owners = [phase for phase, _start, _end in windows]
+    assert owners.count('5-execute') == 2
+    assert '6-finalize' in owners
 
 
 def test_a_store_without_intervals_falls_back_to_one_window_per_phase(plan_context, clock):

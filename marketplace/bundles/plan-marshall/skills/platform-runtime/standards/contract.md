@@ -347,6 +347,15 @@ names the running session, and the runtime resolves it to its ROOT through
 `session_v2.parent_id` in `opencode.db`, then appends that root to the plan's
 `session_ids` metadata. The raw, unresolved id is never stored.
 
+The climb is **bounded by the plan's worktree**: when the store carries
+`session_v2.directory`, it stops at the OUTERMOST ancestor whose directory is the
+process's working directory. An operator commonly leaves one long-lived outer
+session open and starts a plan from inside it; an unbounded climb would take that
+outer session as the plan's root and pull every unrelated descendant into the
+measurement. The same resolution — and the same bound — is applied by
+`session bind` and `session resolve-plan`, so the three session operations cannot
+disagree about which session a plan's identity names.
+
 **Error (Claude — hook not configured)**:
 ```toon
 status: error
@@ -875,12 +884,17 @@ session_id: abc123def456
 bound: true
 ```
 
-**Success (OpenCode — slot bound)**:
+**Success (OpenCode — slot bound)**: the id is resolved to the plan's ROOT session
+(the same bounded resolution `session capture` performs) before the slot is
+written, so a sub-agent shell's `resolve-plan` finds it. `resolved_as` names which
+id was written: `root` when the store answered, `raw` when it could not (the raw
+id is bound rather than dropping an identity the caller already holds).
 ```toon
 status: success
 operation: session bind
 plan_id: my-plan
 session_id: ses_root_abc123
+resolved_as: root
 bound: true
 ```
 
@@ -896,7 +910,7 @@ alternative: Use OpenCode's built-in session mechanism for plan visibility
 
 ### `session resolve-plan`
 
-Read the running session's bound plan id — the read side of `session bind`. `session render-title` resolves the session→plan binding through the same read path. OpenCode reads the same per-session slot through the shared `session_binding` policy; only a run with no id available is a `no-op`.
+Read the running session's bound plan id — the read side of `session bind`. `session render-title` resolves the session→plan binding through the same read path. OpenCode reads the same per-session slot through the shared `session_binding` policy; only a run with no id available is a `no-op`. OpenCode resolves the id to the plan's ROOT first (the bounded resolution `session capture` and `session bind` apply), so a sub-agent shell holding a CHILD id finds the binding written for the root; `resolved_as` names which id was read.
 
 **Arguments**: `--session-id <id>` (optional — falls back to whatever session identifier the active target exposes; on Claude that is `$CLAUDE_CODE_SESSION_ID`, on OpenCode `$OPENCODE_SESSION_ID`, and a target that exposes none returns `no-op`)
 
@@ -905,6 +919,16 @@ Read the running session's bound plan id — the read side of `session bind`. `s
 status: success
 operation: session resolve-plan
 session_id: abc123def456
+resolved: true
+plan_id: my-plan
+```
+
+**Success (OpenCode — bound through the child id the shell holds)**:
+```toon
+status: success
+operation: session resolve-plan
+session_id: ses_root_abc123
+resolved_as: root
 resolved: true
 plan_id: my-plan
 ```
@@ -1157,6 +1181,7 @@ subagent_phases_attributed: 4
 subagent_calls_attributed: 11
 subagent_transcripts_walked: 11
 four_field_phases_attributed: 6
+four_field_scope: main_plus_subagent
 unclassified_tool_calls: 0
 ```
 
@@ -1171,6 +1196,7 @@ root_session_id: ses_root_abc123
 output_file: .plan/local/plans/my-plan/work/normalized-tokens.json
 phases_attributed: 6
 four_field_phases_attributed: 6
+four_field_scope: main_context
 message_count: 412
 subagent_calls_attributed: 11
 subagent_phases_attributed: 4
@@ -1178,9 +1204,17 @@ subagent_phases_attributed: 4
 
 `root_session_id` is the root the given identity resolved to, so a tree reached
 twice (two identities naming the same root) is summed once.
-`four_field_phases_attributed` is the phase count carrying the four-field view —
-the counter `manage-metrics enrich` echoes — and equals `phases_attributed`
-whenever every attributed phase carries usage.
+`four_field_phases_attributed` is this SESSION's attribution count — the phases
+whose bucket carries the four usage fields — and equals `phases_attributed` on
+these targets. `manage-metrics enrich` does not sum it across captured identities:
+it reports the DISTINCT-phase count from its merged view, so a plan that captured
+two sessions attributing the same phases still reports the number of phases.
+
+`four_field_scope` states what the four usage fields already cover on this target:
+`main_plus_subagent` where the walk folds sub-agent transcripts into them, and
+`main_context` where the root session and its descendants are kept in separate
+buckets. A consumer composing a phase total must add the sub-agent figure only in
+the `main_context` case; adding it in the other double-counts the sub-agents.
 
 **No-op (no transcript located)**:
 ```toon

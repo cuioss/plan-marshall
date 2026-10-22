@@ -540,6 +540,17 @@ _UNATTRIBUTED_RENDER = {
 }
 
 
+def _population_the_cell_measures(population: str) -> str:
+    """Return the population a row's rendered Tokens cell actually measures.
+
+    A ``mixed`` row's cell is its DISPATCHED figure (the inline spend is recorded
+    separately and excluded), so it competes in the dispatched population. Mapping
+    it here is what keeps the Total's ``(spans populations)`` marker and its
+    persisted ``totals_tokens_population`` honest about what the sum contains.
+    """
+    return POPULATION_DISPATCHED if population == POPULATION_MIXED else population
+
+
 def _token_population(phase_row: dict) -> str:
     """Return the population this phase row's ``total_tokens`` figure measures.
 
@@ -2345,7 +2356,7 @@ def cmd_generate(args: argparse.Namespace) -> dict:
             tokens_str = f'{winning_value:,}'
             tokens_values.append(winning_value)
             cell_source = winning_field
-            fed_populations.add(population)
+            fed_populations.add(_population_the_cell_measures(population))
         elif raw_tokens is not None:
             # No eligible dispatched measure. The row still carries a figure —
             # the inline phase's main-context total — which renders on its own
@@ -2353,7 +2364,7 @@ def cmd_generate(args: argparse.Namespace) -> dict:
             tokens_str = f'{int(raw_tokens):,}'
             tokens_values.append(int(raw_tokens))
             cell_source = 'total_tokens'
-            fed_populations.add(population)
+            fed_populations.add(_population_the_cell_measures(population))
         else:
             tokens_str = '-'
 
@@ -2485,9 +2496,10 @@ def cmd_generate(args: argparse.Namespace) -> dict:
     data[TOTALS_TOKENS_UNKNOWN_PHASES_FIELD] = ','.join(unknown_token_phases)
     # The Total is a cell in the same column and inherits the same declared
     # default, so it takes the same marking discipline as every other cell: when
-    # an `(inline)` row fed the sum, the Total spans populations and says so.
-    # Only `(inline)` rows cross-contaminate the sum — a `(mixed)` row's cell is
-    # the dispatched figure, with its inline spend deliberately excluded.
+    # the rows that fed the sum do not all measure the same population, the Total
+    # spans populations and says so. A `(mixed)` row feeds the DISPATCHED figure
+    # (its inline spend is excluded from its cell), so it does not by itself make
+    # the sum cross-population.
     spans_populations = len(fed_populations) > 1
     data[_TOTALS_SPANS_POPULATIONS_FIELD] = 'true' if spans_populations else 'false'
     # Name the population the Total actually sums. One value means every fed row
@@ -3898,23 +3910,28 @@ def _phase_window_lookup(plan_id: str) -> list[tuple[str, datetime, datetime]]:
     The intervals are the ones the boundary writers recorded, so each piece of
     usage is attributed to the interval that actually contains it.
 
-    A store written before intervals were recorded carries none; the single
-    ``start_time``/``end_time`` row pair is then the best available window and is
-    returned per phase, so an older plan still attributes its usage rather than
-    losing it.
+    A store written before intervals were recorded carries none for the phases it
+    closed under the older code; those phases fall back to the single
+    ``start_time``/``end_time`` row pair. The fallback windows are appended AFTER
+    the recorded ones, so where an over-wide legacy window overlaps a recorded
+    interval the recorded interval wins the first-match attribution.
     """
     data = read_metrics_raw(plan_id)
     recorded = _read_phase_intervals(data)
     windows: list[tuple[str, datetime, datetime]] = []
-    if recorded:
-        for phase_name, start_raw, end_raw in recorded:
-            start_dt = _parse_window_bound(start_raw)
-            end_dt = _parse_window_bound(end_raw)
-            if start_dt is None or end_dt is None:
-                continue
-            windows.append((phase_name, start_dt, end_dt))
-        return windows
+    covered: set[str] = set()
+    for phase_name, start_raw, end_raw in recorded:
+        start_dt = _parse_window_bound(start_raw)
+        end_dt = _parse_window_bound(end_raw)
+        if start_dt is None or end_dt is None:
+            continue
+        windows.append((phase_name, start_dt, end_dt))
+        covered.add(phase_name)
     for phase_name in PHASE_NAMES:
+        if phase_name in covered:
+            # This phase's intervals were recorded, so its over-wide row pair is
+            # NOT a window: adding it would re-book the phases between them.
+            continue
         phase_data = data.get('phases', {}).get(phase_name)
         if not phase_data:
             continue
@@ -4070,6 +4087,12 @@ def _run_normalized_tokens_op(
     unmeasured: list[dict[str, str]] = []
     status: str | None = None
     scopes: set[str] = set()
+    # Cross-root presence of the tool-use count: the merged view may state a
+    # measured count only when EVERY root that contributed to the phase answered
+    # it. One root's count presented as the phase's total would hide the calls the
+    # other root never made observable.
+    phase_root_count: dict[str, int] = {}
+    tool_uses_roots: dict[str, set[str]] = {}
 
     with tempfile.TemporaryDirectory(prefix='metrics-norm-tokens-') as tmpdir:
         windows_file = Path(tmpdir) / 'windows.json'
@@ -4132,6 +4155,10 @@ def _run_normalized_tokens_op(
 
             measured_roots.append(root)
             _merge_normalized_buckets(per_phase, measured)
+            for phase_name, bucket in measured.items():
+                phase_root_count[phase_name] = phase_root_count.get(phase_name, 0) + 1
+                if isinstance(bucket, dict) and 'tool_uses' in bucket:
+                    tool_uses_roots.setdefault(phase_name, set()).add(root)
             scope = parsed.get('four_field_scope')
             if isinstance(scope, str) and scope.strip():
                 scopes.add(scope.strip())
@@ -4140,6 +4167,14 @@ def _run_normalized_tokens_op(
                 if isinstance(raw, (int, str)) and str(raw).isdigit():
                     counters[field] = counters.get(field, 0) + int(raw)
 
+    # A phase some root answered and another did not loses the tool-use count:
+    # absence is the honest statement, not a partial sum.
+    for phase_name, roots in phase_root_count.items():
+        merged = per_phase.get(phase_name)
+        if not isinstance(merged, dict):
+            continue
+        if len(tool_uses_roots.get(phase_name, set())) != roots:
+            merged.pop('tool_uses', None)
     population = {
         'sessions_requested': len(session_ids),
         'sessions_measured': len(measured_roots),

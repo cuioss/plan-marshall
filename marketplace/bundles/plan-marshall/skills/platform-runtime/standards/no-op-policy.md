@@ -34,8 +34,11 @@ The `alternative` field is advisory — it names what the caller can do instead.
 
 OpenCode MEASURES its session identity from its session store: `$OPENCODE_SESSION_ID`
 names the running session, which is resolved to its ROOT through `session_v2.parent_id`
-and appended to the plan's `session_ids` metadata. The operation declines on exactly
-THREE genuine grounds, each carrying its own `reason`:
+and appended to the plan's `session_ids` metadata. The climb is bounded by the
+plan's worktree — it stops at the outermost ancestor whose
+`session_v2.directory` is the process's working directory — so a long-lived outer
+session the operator left open is not taken as the plan's root. The operation
+declines on exactly THREE genuine grounds, each carrying its own `reason`:
 
 | Ground | `reason` |
 |--------|----------|

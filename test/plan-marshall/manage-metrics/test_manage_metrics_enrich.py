@@ -492,6 +492,9 @@ def test_four_field_phases_attributed_counts_distinct_phases_not_attributions(pl
         '6-finalize': {'input_tokens': 20},
         '4-plan': {'input_tokens': 30},
     }
+    # Each session reports its OWN attribution count of 3, so summing the two
+    # reports would yield 6 — the "read 7 for six phases" defect.
+    per_session_counters = {'message_count': 3, 'four_field_phases_attributed': 3}
     _patch_multi_root_op(
         monkeypatch,
         {
@@ -499,13 +502,13 @@ def test_four_field_phases_attributed_counts_distinct_phases_not_attributions(pl
                 'status': 'success',
                 'root': 'root-a',
                 'per_phase': attributed,
-                'counters': {'message_count': 3},
+                'counters': per_session_counters,
             },
             'root-b': {
                 'status': 'success',
                 'root': 'root-b',
                 'per_phase': attributed,
-                'counters': {'message_count': 3},
+                'counters': per_session_counters,
             },
         },
     )
@@ -514,6 +517,40 @@ def test_four_field_phases_attributed_counts_distinct_phases_not_attributions(pl
 
     assert result['sessions_measured'] == 2
     assert result['four_field_phases_attributed'] == 3
+
+
+def test_enrich_omits_the_tool_count_when_one_root_could_not_measure_it(plan_context, monkeypatch):
+    """A phase one root answered and another did not carries no tool count.
+
+    Presenting one root's count as the phase total would hide the calls the other
+    root never made observable.
+    """
+    plan_id = 'tool-uses-partial-population'
+    _seed_enrich_window(plan_context, plan_id)
+    _patch_multi_root_op(
+        monkeypatch,
+        {
+            'root-a': {
+                'status': 'success',
+                'root': 'root-a',
+                'per_phase': {'5-execute': {'input_tokens': 10, 'tool_uses': 4}},
+                'counters': {'message_count': 1},
+            },
+            'root-b': {
+                'status': 'success',
+                'root': 'root-b',
+                'per_phase': {'5-execute': {'input_tokens': 20}},
+                'counters': {'message_count': 1},
+            },
+        },
+    )
+
+    result = cmd_enrich(ns_enrich(plan_id, 'root-a', 'root-b'))
+
+    assert result['enriched'] is True
+    row = _phase_row(plan_id, '5-execute')
+    assert row['input_tokens'] == 30
+    assert 'measured_tool_uses' not in row
 
 
 # =============================================================================

@@ -1208,7 +1208,8 @@ def test_metrics_normalized_tokens_writes_measured_buckets(
     assert bucket['cache_creation_input_tokens'] == 4
     assert bucket['subagent_total_tokens'] == 100 + 200 + 40
     assert bucket['subagent_samples'] == 1
-    # A ``tool``-typed row is still a measured tool event (legacy row shape).
+    # The sub-agent assistant message carries one ``content[]`` part of type
+    # ``tool`` — the shape the store records a call in.
     assert bucket['subagent_tool_uses'] == 1
     assert bucket['subagent_duration_ms'] > 0
     # The store's own cost reaches the answer, summed over main + sub-agent.
