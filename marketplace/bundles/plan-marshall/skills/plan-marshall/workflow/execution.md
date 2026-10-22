@@ -620,16 +620,17 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metada
 ```
 
 - **Late capture succeeded** (`status: success` and `value` now populated): use the captured value as the resolved `session_id` and proceed with the dispatch below.
-- **Late capture also failed** (`status: error` or `value` still empty): resolve transcript availability from the live runtime target at the point of use — read `runtime.target` from `.plan/marshal.json` (absent means the default transcript-capable target, never a documented transcript-less default) — then branch:
-  - **Transcript-less target** (no session transcript can exist there; `session capture` is a capture no-op and `metrics normalized-tokens` answers `transcript_not_found`): do NOT abort. Log the decision naming the absent identity and the transcript-less target, then dispatch finalize WITHOUT a `session_id`, and let `default:record-metrics` skip `enrich` carrying the population-carrying gap flag:
+- **Late capture also failed** (`status: error` or `value` still empty): resolve the target's session identity from the live runtime target at the point of use, using environment-first resolution exactly as `manage-metrics enrich` does (`_resolve_runtime_target`: the detected platform environment signal outranks the marshal-declared `runtime.target`, a tolerated legacy key per `manage-config/standards/data-model.md` § Runtime Target Resolution — never a documented unresolvable default) — then branch on whether that target could resolve an identity this run:
+
+  - **Identity unresolvable this run** (the target's session identity variable is unset, its session store is absent, unreadable or schema-unsupported, or it holds no such session — each surfacing the `session capture` no-op's own named reason: the unset-variable reason, or `db_not_found`, `db_unreadable`, `schema_unsupported`, `session_not_found`): do NOT abort. Log the decision naming the absent identity and the named reason, then dispatch finalize WITHOUT a `session_id`, and let `default:record-metrics` skip `enrich` carrying the population-carrying gap flag:
 
     ```bash
     python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
       decision --plan-id {plan_id} --level INFO \
-      --message "(plan-marshall:plan-marshall) Transcript-less finalize: no session identity on target {runtime_target}; proceeding unenriched without session_id"
+      --message "(plan-marshall:plan-marshall) Unresolved finalize identity: no session identity could be resolved on target {runtime_target}; proceeding unenriched without session_id"
     ```
 
-  - **Transcript-capable target**: abort the finalize phase with a clear message naming the missing identity, the blocked finalize dispatch, and the remedy (re-run session capture, check the SessionStart hook) — do **not** invent a filler value and do **not** reach for any `$VAR` expansion. See `phase-6-finalize/SKILL.md` → "How to obtain session_id" for the full resolver contract and forbidden patterns.
+  - **Identity resolvable on a transcript-capable target but absent here**: abort the finalize phase with a clear message naming the missing identity, the blocked finalize dispatch, and the remedy (re-run session capture, check the SessionStart hook) — do **not** invent a filler value and do **not** reach for any `$VAR` expansion. This branch is the home of a `session capture` error whose reason is `hook_not_configured`: an unset `CLAUDE_CODE_SESSION_ID` is that wiring defect, not an absence ground — whereas an unset `OPENCODE_SESSION_ID` is a genuine no-op ground (see `platform-runtime/standards/no-op-policy.md`) and belongs to the branch above, alongside the `db_*` / `session_not_found` store reasons it names. See `phase-6-finalize/SKILL.md` → "How to obtain session_id" for the full resolver contract and forbidden patterns.
 
 The retry runs at most once — never loop the capture call.
 
@@ -646,7 +647,7 @@ plan_id: {plan_id}
 session_id: {resolved session_id from resolver above}
 ```
 
-Without a `session_id` (transcript-less late-capture-failure branch only — the decision above is already logged):
+Without a `session_id` (unresolved-identity late-capture-failure branch only — the decision above is already logged):
 
 ```text
 Skill: plan-marshall:phase-6-finalize

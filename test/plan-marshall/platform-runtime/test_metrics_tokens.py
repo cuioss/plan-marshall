@@ -10,7 +10,8 @@ assert:
 - ``ClaudeRuntime.metrics_normalized_tokens`` walks a synthetic transcript,
   normalizes per-phase token categories, and writes the JSON sidecar;
 - it returns a ``transcript_not_found`` no-op when no transcript exists;
-- ``OpenCodeRuntime.metrics_normalized_tokens`` is an honest no-op;
+- ``OpenCodeRuntime.metrics_normalized_tokens`` declines with the session
+  reader's named reason when the store cannot answer;
 - the relocated arithmetic helpers (``_billing_weighted_total``,
   ``_sum_subagent_transcript``) behave as before;
 - the exploration-share counters bucket each ``tool_use`` by tool name, sum the
@@ -405,17 +406,19 @@ def test_claude_normalized_tokens_missing_transcript_is_noop(tmp_path, home_at_t
 
 
 # =============================================================================
-# 2. OpenCodeRuntime — honest no-op
+# 2. OpenCodeRuntime — declines by the reader's NAMED reason
 # =============================================================================
 
 
-def test_opencode_normalized_tokens_is_noop(tmp_path):
-    """OpenCode exposes no transcript → the op is an honest transcript_not_found no-op."""
+def test_opencode_normalized_tokens_declines_with_the_named_reason(tmp_path, monkeypatch):
+    """No session store → the op declines by name, and writes no sidecar."""
+    monkeypatch.delenv('OPENCODE_DB', raising=False)
+    monkeypatch.setenv('OPENCODE_DB_PATH', str(tmp_path / 'absent.db'))
     output_file = tmp_path / 'normalized.json'
     result = _parse(OpenCodeRuntime().metrics_normalized_tokens('any-session', _WINDOWS, str(output_file)))
     assert result['status'] == 'no-op'
     assert result['operation'] == 'metrics normalized-tokens'
-    assert result['reason'] == 'transcript_not_found'
+    assert result['reason'] == 'db_not_found'
     assert not output_file.exists()
 
 

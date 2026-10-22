@@ -494,29 +494,38 @@ dispatch_boundary_file: work/metrics-dispatch-boundaries-5-execute.toon
 ### enrich
 
 Attribute token usage to phases through the host platform's runtime engine.
-`enrich` delegates the entire transcript walk to [`platform-runtime`](../platform-runtime/SKILL.md)'s
-`metrics normalized-tokens` op: it hands the op the `session_id` and the phase
-windows, and the runtime's engine walks the session transcript, normalizes every
-usage record into the **five canonical categories** `{input, output, cache_read,
+`enrich` delegates the entire measurement to [`platform-runtime`](../platform-runtime/SKILL.md)'s
+`metrics normalized-tokens` op: it hands the op the captured session identities
+and the phase windows, and the runtime's engine answers from whatever source the
+active target owns — on Claude it walks the session transcript and its subagent
+transcripts; on OpenCode it reads the plan's session tree from `opencode.db`
+through the shared read-only reader. Either way it normalizes every usage record
+into the **five canonical categories** `{input, output, cache_read,
 cache_creation, total}` per phase, and writes the per-phase result back.
-`manage-metrics` **never parses a transcript itself** — it reads and persists the
-runtime's normalized numbers:
+`manage-metrics` **never parses a transcript or a session database itself** — it
+reads and persists the runtime's normalized numbers:
 
-1. The op locates the parent JSONL session record for `session_id`.
-2. The op discovers subagent transcripts
+1. `--session-id` is repeatable: the caller forwards every root the plan
+   captured (a resume appends another), so one enrich run measures the union of
+   their trees.
+2. The op resolves each identity to its root and measures that root, reporting
+   which identities it measured and which it could not, with the named reason.
+3. On a transcript target the op also discovers the subagent transcripts
    (`{project_dir}/{parent_session_id}/subagents/agent-*.jsonl`) and every usage
-   record inside them.
+   record inside them; on a store-backed target the descendant sessions come
+   from the store's own parent chain.
 
 All attribution uses the `start_time` / `end_time` windows recorded in
 `work/metrics.toon`. Usage outside any recorded phase window is ignored. The
-per-target transcript vocabulary the engine recognises — on the Claude target,
+per-target usage vocabulary the engine recognises — on the Claude target,
 `message.usage` four-field entries, `<usage>` return tags, and
-`tool_use` / `tool_result` content items — is **the runtime's own concern**,
-stated in its engine, not restated here as the format.
+`tool_use` / `tool_result` content items; on OpenCode, assistant-message
+`tokens` / `cost` rows — is **the runtime's own concern**, stated in its engine,
+not restated here as the format.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics enrich \
-  --plan-id {plan_id} --session-id {session_id}
+  --plan-id {plan_id} --session-id {session_id} [--session-id {another_session_id}]
 ```
 
 **Output:**
@@ -527,10 +536,20 @@ enriched: true
 message_count: 127
 subagent_phases_attributed: 3
 subagent_calls_attributed: 8
-main_phases_attributed: 6
 subagent_transcripts_walked: 4
 four_field_phases_attributed: 5
+sessions_requested: 2
+sessions_measured: 2
+roots_measured[2]:
+  - ses_root_abc123
+  - ses_root_def456
 ```
+
+`sessions_requested` / `sessions_measured` / `roots_measured` name the measured
+population: a plan that captured several roots (one per resume) reports every
+root it measured, so an enriched total is never read as one root's spend. A root
+that could not be read is reported under `sessions_unmeasured` with its named
+reason instead of being silently dropped.
 
 **Context-load view + billing-weighted total**: the normalized per-phase context-load
 figures — `input_tokens`, `output_tokens`, `cache_read_input_tokens`, and
@@ -592,15 +611,23 @@ the same agent dispatches the on-disk totals are independent of `enrich`'s
 per-phase subagent fields, so double-counting does not occur in the closed-phase
 row (`total_tokens`), which is filled from the accumulator at `end-phase` time.
 
-**Unknown reporting contract.** On a `transcripts: none` run the runtime op
-declines with `transcript_not_found` and `enrich` measures nothing: every phase
-row with no measured figure reports `total_tokens: unknown` — the literal
-`unknown`, never `0` and never absent. `generate` and `record` propagate the
-literal unchanged; a Total fed by an `unknown` row is itself `unknown`, never a
-number with a hole in it. A measured zero stays `0` — only never-measured reads
-as `unknown`. The run's `runtime-info` record carries `transcripts: none` as
-the capability flag explaining why. See [data-format.md](standards/data-format.md)
-§ "Unknown token figures (`unknown`)".
+**Unknown reporting contract.** The `transcripts` capability flag and the measured
+answer are two separate facts. `transcripts: none` states only that the harness
+exposes no WALKABLE transcript; it does not itself imply that the runtime op
+declines, because a database-backed source can answer without one — OpenCode
+reports `transcripts: none` and still returns the four usage fields and the
+sub-agent totals from its session database, so `enrich` measures and the row
+carries measured figures. The op declines only on a target that exposes NEITHER
+a walkable transcript NOR a database-backed source, or when the database-backed
+source itself cannot answer (absent, unreadable, or schema-unsupported, each with
+its named reason). On such a decline `enrich` measures nothing: every phase row
+with no measured figure reports `total_tokens: unknown` — the literal `unknown`,
+never `0` and never absent. `generate` and `record` propagate the literal
+unchanged; a Total fed by an `unknown` row is itself `unknown`, never a number
+with a hole in it. A measured zero stays `0` — only never-measured reads as
+`unknown`. The run's `runtime-info` record carries `transcripts: none` as the
+capability flag explaining which transcript surface is missing. See
+[data-format.md](standards/data-format.md) § "Unknown token figures (`unknown`)".
 
 ### reconcile-ledgers
 

@@ -624,12 +624,20 @@ class TestSourceCommitGate:
         assert is_source_commit([]) is False
 
     def test_cli_deny_with_neither(self, tmp_path):
-        """CLI plumbing: source change with no plan signals is refused, exit 0."""
+        """CLI plumbing: source change with no plan signals is refused, exit 0.
+
+        The plan id is pinned to a nonexistent value: ``tmp_path`` sits under the
+        repo-local ``--basetemp``, which inside a plan worktree carries
+        ``.../.plan/local/worktrees/{plan_id}`` and would otherwise resolve a
+        live plan's signals, making this control cwd-dependent.
+        """
         stdout, stderr, returncode = run_git_script(
             [
                 'source-commit-gate',
                 '--phase',
                 '6-finalize',
+                '--plan-id',
+                'no-such-plan-for-this-gate-test',
                 '--changed-paths',
                 'src/foo.py',
                 '--project-dir',
@@ -701,7 +709,13 @@ class TestSourceCommitGate:
         assert result['signals_resolved'] is True
 
     def test_cli_untracked_source_file_is_refused(self, tmp_path):
-        """Git derivation unions untracked files: an untracked source file refuses."""
+        """Git derivation unions untracked files: an untracked source file refuses.
+
+        The plan id is pinned to a nonexistent value so the control does not
+        depend on where pytest's basetemp sits: inside a plan worktree it would
+        otherwise resolve that live plan's signals (including its review-rubric
+        section-6 record) and report a sanctioned commit.
+        """
         subprocess.run(['git', 'init', str(tmp_path)], check=True, capture_output=True)
         subprocess.run(
             ['git', '-C', str(tmp_path), 'config', 'user.email', 'test@example.com'],
@@ -722,6 +736,8 @@ class TestSourceCommitGate:
                 'source-commit-gate',
                 '--phase',
                 '6-finalize',
+                '--plan-id',
+                'no-such-plan-for-this-gate-test',
                 '--project-dir',
                 str(tmp_path),
             ]

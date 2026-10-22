@@ -16,10 +16,12 @@ this module never estimates.
 Every value that CAN come from more than one place carries its source: `model`
 and `effort` are tagged `self_reported` when a caller-supplied flag supplied
 them and `measured` when a script-readable source did. On OpenCode the model is
-measured rather than self-reported: it is read from the `session_v2` table of
-`opencode.db` (read-only) for the plan's root session and its descendants, so a
-flag never stands in for the record. The measured variant IS the effort there,
-so a `--effort` flag never overrides it. See :func:`measure_opencode_model`.
+measured rather than self-reported: it is read from the plan's session tree in
+`opencode.db`, through the shared read-only session reader
+(``_opencode_sessions``), which owns the database path, the schema gate and the
+``parent_id`` walk — this module opens no database of its own. The measured
+variant IS the effort there, so a `--effort` flag never overrides it. See
+:func:`measure_opencode_model`.
 
 Scope: concrete implementations exist for ``claude``, ``opencode``, and
 ``antigravity``.
@@ -29,12 +31,12 @@ from __future__ import annotations
 
 import json
 import os
-import sqlite3
 from collections.abc import Mapping
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+import _opencode_sessions
 from toon_parser import serialize_toon
 
 #: Schema version stamped into every client.toon payload this module renders.
@@ -255,89 +257,6 @@ def _parse_opencode_model(raw: object) -> dict[str, str] | None:
     return fields
 
 
-def _connect_read_only(db_path: Path) -> sqlite3.Connection:
-    """Open *db_path* read-only through a percent-encoded ``file:`` URI.
-
-    ``Path.as_uri()`` encodes the characters that would otherwise split the
-    URI — a path containing ``?``, ``#`` or ``%`` used to truncate at the first
-    one, so the reader silently opened the wrong file (or none) and reported
-    ``unknown``. ``mode=ro`` still guarantees this reader can never write to the
-    developer's session store.
-    """
-    return sqlite3.connect(f'{Path(db_path).resolve().as_uri()}?mode=ro', uri=True)
-
-
-def _session_ancestry(conn: sqlite3.Connection, session_id: str) -> dict[str, str | None]:
-    """Read *session_id*'s ancestors through ``parent_id``, bounded to that chain.
-
-    The upward walk is a recursive CTE, so it reads the chain only instead of
-    scanning every project's sessions. ``UNION`` (not ``UNION ALL``) dedupes a
-    malformed cycle, which is what terminates it.
-    """
-    cursor = conn.execute(
-        'WITH RECURSIVE ancestors(id, parent_id) AS ('
-        ' SELECT id, parent_id FROM session_v2 WHERE id = ?'
-        ' UNION'
-        ' SELECT s.id, s.parent_id FROM session_v2 s'
-        ' JOIN ancestors a ON s.id = a.parent_id'
-        ') SELECT id, parent_id FROM ancestors',
-        (session_id,),
-    )
-    return {str(row[0]): row[1] for row in cursor.fetchall()}
-
-
-def _session_root(session_id: str, ancestry: Mapping[str, str | None]) -> str | None:
-    """Resolve *session_id* to its root through ``parent_id``, or ``None``.
-
-    ``None`` means the id names no row in the tree — there is nothing to
-    measure. A cycle in a malformed tree terminates at the last unvisited id.
-    """
-    if session_id not in ancestry:
-        return None
-    current = session_id
-    seen: set[str] = set()
-    while current not in seen:
-        seen.add(current)
-        parent = ancestry[current]
-        if not isinstance(parent, str) or not parent or parent not in ancestry:
-            return current
-        current = parent
-    return current
-
-
-def _read_session_tree(db_path: Path, session_id: str) -> dict[str, object]:
-    """Read the model cells of *session_id*'s tree, read-only and BOUNDED.
-
-    The root is resolved through the ancestor chain, then a recursive CTE walks
-    ``parent_id`` DOWN from that root. The query is bounded to the tree instead
-    of scanning every project's sessions: another project's sessions are never
-    read, so the measurement cannot be contaminated by them. A missing file, an
-    unreadable schema or a non-``session_v2`` database surfaces as an exception
-    the caller maps to :data:`VALUE_UNKNOWN`.
-
-    The table is read DIRECTLY here (PLAN-LB-49 D1 has not landed): when that
-    plan ships its shared reader, this function is the seam to absorb it.
-    """
-    conn = _connect_read_only(db_path)
-    try:
-        ancestry = _session_ancestry(conn, session_id)
-        root = _session_root(session_id, ancestry)
-        if root is None:
-            return {}
-        cursor = conn.execute(
-            'WITH RECURSIVE tree(id, parent_id, model) AS ('
-            ' SELECT id, parent_id, model FROM session_v2 WHERE id = ?'
-            ' UNION'
-            ' SELECT s.id, s.parent_id, s.model FROM session_v2 s'
-            ' JOIN tree t ON s.parent_id = t.id'
-            ') SELECT id, model FROM tree',
-            (root,),
-        )
-        return {str(row[0]): row[1] for row in cursor.fetchall()}
-    finally:
-        conn.close()
-
-
 def _format_model_key(fields: Mapping[str, str]) -> str:
     """Render one measured model as ``id`` or ``id/variant`` for the mixed list."""
     variant = fields.get('variant')
@@ -367,14 +286,18 @@ def measure_opencode_model(
 ) -> dict[str, Any] | None:
     """Measure the model the OpenCode session tree ran under.
 
-    Reads ``session_v2.model`` from *db_path* (opened read-only) for *session_id*
-    resolved to its root through ``parent_id``, plus every descendant. A tree
-    that ran exactly one model/variant records that model, its variant and its
-    provider as :data:`SOURCE_MEASURED`. A tree that ran more than one records
-    ``model: mixed`` with the distinct ``id/variant`` values listed — never
-    averaged and never reduced to the root's value; :func:`_mixed_model_labels`
-    appends the provider when two providers would otherwise render the same
-    label.
+    Resolves *session_id* to its root and walks the tree through the shared
+    read-only session reader (``_opencode_sessions``), which owns the database
+    path resolution, the schema gate and the ``parent_id`` walk. The measurement
+    needs tier 1 only — ``session_v2(id, parent_id, model)`` — so a database
+    carrying no message table or token columns still measures its model.
+
+    A tree that ran exactly one model/variant records that model, its variant
+    and its provider as :data:`SOURCE_MEASURED`. A tree that ran more than one
+    records ``model: mixed`` with the distinct ``id/variant`` values listed —
+    never averaged and never reduced to the root's value;
+    :func:`_mixed_model_labels` appends the provider when two providers would
+    otherwise render the same label.
 
     Args:
         db_path: The ``opencode.db`` to read, or ``None``.
@@ -389,17 +312,18 @@ def measure_opencode_model(
     if not session_id:
         return None
     unknown = {'model': VALUE_UNKNOWN, 'model_source': SOURCE_MEASURED}
-    if db_path is None or not Path(db_path).is_file():
+    if db_path is None:
         return dict(unknown)
-    try:
-        models = _read_session_tree(Path(db_path), session_id)
-    except (sqlite3.Error, OSError, ValueError):
+    reading = _opencode_sessions.read_session_rows(db_path)
+    if not reading['ok']:
         return dict(unknown)
-    if not models:
+    rows = reading['rows']
+    root = _opencode_sessions.session_root(session_id, rows)
+    if root is None:
         return dict(unknown)
     distinct: dict[tuple[str, str, str], dict[str, str]] = {}
-    for raw in models.values():
-        fields = _parse_opencode_model(raw)
+    for member in _opencode_sessions.session_tree(root, rows):
+        fields = _parse_opencode_model(rows[member][1])
         if fields is None:
             continue
         distinct[(fields['id'], fields.get('provider', ''), fields.get('variant', ''))] = fields

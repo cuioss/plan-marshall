@@ -1,20 +1,24 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for opencode_runtime.py — OpenCode implementation of all 26 operations.
+"""Tests for opencode_runtime.py — OpenCode implementation of all 28 operations.
 
-Asserts the no-op contract for session/display operations that OpenCode does not
-support, the two-tier deny/ask permission contract (OpenCode carries a real
-permission backend: ``to_opencode_grant`` threads ``allow``/``ask``/``deny``
-actions, ``protect-path`` emits a real writing deny) and the ``success`` no-op
-pins for the maintenance operations (``consolidate``, ``normalize``) and for
-the ``wait for`` waiting op (OpenCode holds no wait channel), the success/no-op
-paths for metrics operations, and error paths for invalid arguments across all
-26 operations defined in the Runtime ABC.
+Asserts the measured session-identity contract (capture resolves the root session
+through the session store and appends it; bind/resolve-plan round-trip through the
+shared policy; every unavailable ground declines with a named reason), the
+database-backed normalized-token operation, the two-tier deny/ask permission
+contract (OpenCode carries a real permission backend: ``to_opencode_grant``
+threads ``allow``/``ask``/``deny`` actions, ``protect-path`` emits a real writing
+deny) and the ``success`` no-op pins for the maintenance operations
+(``consolidate``, ``normalize``) and for the ``wait for`` waiting op (OpenCode
+holds no wait channel), the success/no-op paths for metrics operations, and error
+paths for invalid arguments across all 26 operations defined in the Runtime ABC.
 """
 
 import json
 import pathlib
 import sqlite3
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 import pytest
 
@@ -214,23 +218,262 @@ def test_project_install_hook_is_noop(runtime: OpenCodeRuntime) -> None:
 
 
 # =============================================================================
-# 2. session_capture — always no-op
+# 2. session capture / bind / resolve-plan — measured identity
 # =============================================================================
 
+#: Fixed clock so a usage window boundary never depends on the wall clock.
+_BASE = datetime(2026, 10, 20, 10, 0, tzinfo=UTC)
 
-def test_session_capture_is_noop(runtime: OpenCodeRuntime) -> None:
-    """session_capture returns no-op because OpenCode does not expose a session id."""
+
+def _iso(minutes: int) -> str:
+    """Return the ISO stamp *minutes* after the fixed clock."""
+    return (_BASE + timedelta(minutes=minutes)).isoformat()
+
+
+def _at(minutes: int) -> int:
+    """Return the epoch-millisecond stamp *minutes* after the fixed clock."""
+    return int((_BASE + timedelta(minutes=minutes)).timestamp() * 1000)
+
+
+def _isolate_store(monkeypatch: pytest.MonkeyPatch, db_path: pathlib.Path) -> None:
+    """Point the runtime at *db_path*, ahead of any ambient override."""
+    monkeypatch.delenv('OPENCODE_DB', raising=False)
+    monkeypatch.setenv('OPENCODE_DB_PATH', str(db_path))
+
+
+def _write_tier1_db(db_path: pathlib.Path, rows: list[tuple[str, str | None]]) -> None:
+    """Create a tier-1 store with ``session_v2(id, parent_id, model)`` rows."""
+    connection = sqlite3.connect(str(db_path))
+    try:
+        connection.execute('CREATE TABLE session_v2 (id TEXT, parent_id TEXT, model TEXT)')
+        connection.executemany(
+            'INSERT INTO session_v2 (id, parent_id, model) VALUES (?, ?, NULL)',
+            rows,
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+
+def _write_usage_db(
+    db_path: pathlib.Path,
+    sessions: list[tuple[str, str | None, int, int, int, int]],
+    messages: list[tuple[str, str, int, Any]],
+) -> None:
+    """Create a tier-2 store with token columns and a ``session_message`` table.
+
+    Args:
+        db_path: Database file to create.
+        sessions: ``(id, parent_id, input, output, cache_read, cache_write)``.
+        messages: ``(session_id, type, time_created_ms, data)`` rows.
+    """
+    connection = sqlite3.connect(str(db_path))
+    try:
+        connection.execute(
+            'CREATE TABLE session_v2 (id TEXT, parent_id TEXT, model TEXT, directory TEXT,'
+            ' tokens_input INTEGER, tokens_output INTEGER, tokens_cache_read INTEGER,'
+            ' tokens_cache_write INTEGER, cost REAL)'
+        )
+        connection.executemany(
+            'INSERT INTO session_v2 (id, parent_id, model, directory, tokens_input,'
+            ' tokens_output, tokens_cache_read, tokens_cache_write, cost)'
+            ' VALUES (?, ?, NULL, NULL, ?, ?, ?, ?, 0.0)',
+            sessions,
+        )
+        connection.execute('CREATE TABLE session_message (session_id TEXT, type TEXT, time_created INTEGER, data TEXT)')
+        connection.executemany(
+            'INSERT INTO session_message (session_id, type, time_created, data) VALUES (?, ?, ?, ?)',
+            [
+                (session_id, message_type, created, data if isinstance(data, str) else json.dumps(data))
+                for session_id, message_type, created, data in messages
+            ],
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+
+@pytest.fixture()
+def session_cache(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.Path:
+    """Redirect the shared per-session binding cache into ``tmp_path``."""
+    cache = tmp_path / 'sessions'
+    monkeypatch.setattr('session_binding._SESSION_CACHE_BASE', cache)
+    return cache
+
+
+def test_session_capture_resolves_a_child_id_to_the_root(
+    runtime: OpenCodeRuntime, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """A child session id is measured as its ROOT session and stored."""
+    db_path = tmp_path / 'opencode.db'
+    _write_tier1_db(db_path, [('ses-root', None), ('ses-mid', 'ses-root'), ('ses-leaf', 'ses-mid')])
+    _isolate_store(monkeypatch, db_path)
+    monkeypatch.setenv('OPENCODE_SESSION_ID', 'ses-leaf')
+    seen: list[tuple[str, str]] = []
+
+    def _record(plan_id: str, session_id: str) -> bool:
+        seen.append((plan_id, session_id))
+        return True
+
+    monkeypatch.setattr('claude_runtime._manage_status_store_session', _record)
+
     result = _parse(runtime.session_capture('my-plan'))
+
+    assert result['status'] == 'success'
+    assert result['operation'] == 'session capture'
+    assert result['plan_id'] == 'my-plan'
+    assert result['session_id'] == 'ses-root'
+    assert result['stored'] is True
+    assert seen == [('my-plan', 'ses-root')]
+
+
+def test_session_capture_unset_variable_is_a_noop_that_stores_nothing(
+    runtime: OpenCodeRuntime, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """An unset ``OPENCODE_SESSION_ID`` declines and writes no identity."""
+    _isolate_store(monkeypatch, tmp_path / 'opencode.db')
+    monkeypatch.delenv('OPENCODE_SESSION_ID', raising=False)
+    monkeypatch.setattr(
+        'claude_runtime._manage_status_store_session',
+        lambda *_args: pytest.fail('an unset variable must store nothing'),
+    )
+
+    result = _parse(runtime.session_capture('my-plan'))
+
     assert result['status'] == 'no-op'
     assert result['operation'] == 'session capture'
+    assert 'OPENCODE_SESSION_ID' in result['reason']
+    assert result['alternative']
 
 
-def test_session_capture_noop_has_reason_and_alternative(runtime: OpenCodeRuntime) -> None:
-    """session_capture no-op includes reason and alternative fields."""
+def test_session_capture_missing_database_names_its_reason(
+    runtime: OpenCodeRuntime, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """A set variable whose store is absent declines with the reader's named reason."""
+    _isolate_store(monkeypatch, tmp_path / 'absent.db')
+    monkeypatch.setenv('OPENCODE_SESSION_ID', 'ses-root')
+    monkeypatch.setattr(
+        'claude_runtime._manage_status_store_session',
+        lambda *_args: pytest.fail('an unreadable store must store nothing'),
+    )
+
     result = _parse(runtime.session_capture('my-plan'))
-    assert 'reason' in result
-    assert 'alternative' in result
-    assert 'OpenCode' in result['reason']
+
+    assert result['status'] == 'no-op'
+    assert result['reason'] == 'db_not_found'
+
+
+def test_session_capture_unsupported_schema_names_its_reason(
+    runtime: OpenCodeRuntime, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """A store carrying no session table declines with ``schema_unsupported``."""
+    db_path = tmp_path / 'opencode.db'
+    connection = sqlite3.connect(str(db_path))
+    try:
+        connection.execute('CREATE TABLE unrelated (id TEXT)')
+        connection.commit()
+    finally:
+        connection.close()
+    _isolate_store(monkeypatch, db_path)
+    monkeypatch.setenv('OPENCODE_SESSION_ID', 'ses-root')
+
+    result = _parse(runtime.session_capture('my-plan'))
+
+    assert result['status'] == 'no-op'
+    assert result['reason'] == 'schema_unsupported'
+
+
+def test_session_capture_unknown_session_stores_nothing(
+    runtime: OpenCodeRuntime, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """An id naming no row declines with ``session_not_found`` — the raw id is never stored."""
+    db_path = tmp_path / 'opencode.db'
+    _write_tier1_db(db_path, [('ses-root', None)])
+    _isolate_store(monkeypatch, db_path)
+    monkeypatch.setenv('OPENCODE_SESSION_ID', 'ses-absent')
+    monkeypatch.setattr(
+        'claude_runtime._manage_status_store_session',
+        lambda *_args: pytest.fail('an unresolved id must store nothing'),
+    )
+
+    result = _parse(runtime.session_capture('my-plan'))
+
+    assert result['status'] == 'no-op'
+    assert result['reason'] == 'session_not_found'
+
+
+def test_session_bind_and_resolve_plan_round_trip(
+    runtime: OpenCodeRuntime, monkeypatch: pytest.MonkeyPatch, session_cache: pathlib.Path
+) -> None:
+    """Binding writes the caller's own slot; resolve-plan reads it back."""
+    monkeypatch.setenv('OPENCODE_SESSION_ID', 'ses-abc')
+
+    bound = _parse(runtime.session_bind('my-plan'))
+    resolved = _parse(runtime.session_resolve_plan())
+
+    assert bound['status'] == 'success'
+    assert bound['session_id'] == 'ses-abc'
+    assert bound['bound'] is True
+    assert (session_cache / 'ses-abc' / 'active-plan').read_text(encoding='utf-8') == 'my-plan'
+    assert resolved['status'] == 'success'
+    assert resolved['resolved'] is True
+    assert resolved['plan_id'] == 'my-plan'
+
+
+def test_session_bind_is_last_driven_wins(
+    runtime: OpenCodeRuntime, monkeypatch: pytest.MonkeyPatch, session_cache: pathlib.Path
+) -> None:
+    """A second bind on the same session replaces the first binding."""
+    monkeypatch.setenv('OPENCODE_SESSION_ID', 'ses-abc')
+
+    _parse(runtime.session_bind('first-plan'))
+    _parse(runtime.session_bind('second-plan'))
+
+    assert _parse(runtime.session_resolve_plan())['plan_id'] == 'second-plan'
+
+
+def test_session_bind_refusal_carries_its_reason(runtime: OpenCodeRuntime, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A rejected id leaves bound false and names the reason, never a silent success."""
+    monkeypatch.setenv('OPENCODE_SESSION_ID', 'ses/with-a-slash')
+
+    result = _parse(runtime.session_bind('my-plan'))
+
+    assert result['status'] == 'success'
+    assert result['bound'] is False
+    assert result['reason'] == 'invalid_or_io_error'
+
+
+def test_session_bind_without_an_id_is_a_noop(runtime: OpenCodeRuntime, monkeypatch: pytest.MonkeyPatch) -> None:
+    """No session id keeps the historical no-op rather than binding a phantom slot."""
+    monkeypatch.delenv('OPENCODE_SESSION_ID', raising=False)
+
+    result = _parse(runtime.session_bind('my-plan'))
+
+    assert result['status'] == 'no-op'
+    assert result['operation'] == 'session bind'
+    assert result['alternative']
+
+
+def test_session_resolve_plan_without_an_id_is_a_noop(
+    runtime: OpenCodeRuntime, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """No session id keeps the historical no-op on the read side too."""
+    monkeypatch.delenv('OPENCODE_SESSION_ID', raising=False)
+
+    result = _parse(runtime.session_resolve_plan())
+
+    assert result['status'] == 'no-op'
+    assert result['operation'] == 'session resolve-plan'
+    assert result['alternative']
+
+
+def test_session_resolve_plan_reports_unbound(runtime: OpenCodeRuntime, session_cache: pathlib.Path) -> None:
+    """A session with no slot resolves to an empty plan id, not a fabricated one."""
+    result = _parse(runtime.session_resolve_plan('ses-unbound'))
+
+    assert result['status'] == 'success'
+    assert result['resolved'] is False
+    assert result['plan_id'] == ''
 
 
 # =============================================================================
@@ -770,6 +1013,212 @@ def test_metrics_capture_zero_tokens_is_honest_noop(runtime: OpenCodeRuntime) ->
 
 
 # =============================================================================
+# 12b. metrics_normalized_tokens — measured per-phase buckets
+# =============================================================================
+
+
+def _usage_messages() -> list[tuple[str, str, int, Any]]:
+    """Return one main, one sub-agent and one tool message inside ``[0, 30)``."""
+    return [
+        (
+            'ses-root',
+            'assistant',
+            _at(5),
+            {'tokens': {'input': 10, 'output': 20, 'cache': {'read': 3, 'write': 4}}, 'cost': 0.5},
+        ),
+        (
+            'ses-child',
+            'assistant',
+            _at(10),
+            {'tokens': {'input': 100, 'output': 200, 'cache': {'read': 30, 'write': 40}}, 'cost': 1.5},
+        ),
+        ('ses-child', 'tool', _at(12), {'tool': 'bash', 'state': {'status': 'completed'}}),
+    ]
+
+
+def test_metrics_normalized_tokens_writes_measured_buckets(
+    runtime: OpenCodeRuntime, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """Per-phase buckets split the root's usage from its sub-agents'."""
+    db_path = tmp_path / 'opencode.db'
+    _write_usage_db(
+        db_path,
+        [('ses-root', None, 10, 20, 3, 4), ('ses-child', 'ses-root', 100, 200, 30, 40)],
+        _usage_messages(),
+    )
+    _isolate_store(monkeypatch, db_path)
+    output_file = tmp_path / 'normalized.json'
+
+    result = _parse(runtime.metrics_normalized_tokens('ses-root', [('5-execute', _iso(0), _iso(30))], str(output_file)))
+
+    assert result['status'] == 'success'
+    assert result['operation'] == 'metrics normalized-tokens'
+    assert result['phases_attributed'] == 1
+    # The documented four-field counter is present and non-zero: enrich reads it
+    # straight into its own result, so an absent key made an attributed run
+    # report zero phases carrying four-field usage.
+    assert result['four_field_phases_attributed'] == 1
+    assert result['message_count'] == 2
+    assert result['subagent_calls_attributed'] == 1
+    assert result['subagent_phases_attributed'] == 1
+    bucket = json.loads(output_file.read_text(encoding='utf-8'))['5-execute']
+    assert bucket['input_tokens'] == 10
+    assert bucket['output_tokens'] == 20
+    assert bucket['cache_read_input_tokens'] == 3
+    # tokens.cache.write lands in cache_creation_input_tokens.
+    assert bucket['cache_creation_input_tokens'] == 4
+    assert bucket['subagent_total_tokens'] == 100 + 200 + 40
+    assert bucket['subagent_samples'] == 1
+    assert bucket['subagent_tool_uses'] == 1
+    assert bucket['subagent_duration_ms'] > 0
+    assert bucket['billing_weighted_total'] == 10 + 20 + round(3 * 0.1) + round(4 * 1.25)
+    # Parity with the transcript-walking target: the canonical short keys and
+    # `total` are present alongside the long spellings, so a consumer reading
+    # either form is not target-dependent.
+    assert bucket['input'] == 10
+    assert bucket['output'] == 20
+    assert bucket['cache_read'] == 3
+    assert bucket['cache_creation'] == 4
+    assert bucket['total'] == 10 + 20 + 3 + 4
+    # No-zero control: the exploration counters come from a tool-call walk this
+    # target does not run, so they are ABSENT rather than fabricated as zeros.
+    assert 'exploration_tool_calls' not in bucket
+    assert 'unclassified_tool_calls' not in bucket
+
+
+def test_metrics_normalized_tokens_reports_the_root_it_measured(
+    runtime: OpenCodeRuntime, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """The payload names the ROOT, so a multi-session caller can de-duplicate trees.
+
+    A plan that captured more than one session measures each root once; without
+    this field a caller forwarding two ids inside one tree could not tell them
+    from two genuinely distinct trees and would sum the same messages twice.
+    """
+    db_path = tmp_path / 'opencode.db'
+    _write_usage_db(
+        db_path,
+        [('ses-root', None, 10, 20, 3, 4), ('ses-child', 'ses-root', 100, 200, 30, 40)],
+        _usage_messages(),
+    )
+    _isolate_store(monkeypatch, db_path)
+    output_file = tmp_path / 'normalized.json'
+
+    result = _parse(
+        runtime.metrics_normalized_tokens('ses-child', [('5-execute', _iso(0), _iso(30))], str(output_file))
+    )
+
+    assert result['status'] == 'success'
+    assert result['session_id'] == 'ses-child'
+    assert result['root_session_id'] == 'ses-root'
+
+
+def test_metrics_normalized_tokens_omits_a_window_with_no_usage(
+    runtime: OpenCodeRuntime, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """A window that carried no message produces no bucket — absence, not a zero."""
+    db_path = tmp_path / 'opencode.db'
+    _write_usage_db(db_path, [('ses-root', None, 0, 0, 0, 0)], _usage_messages())
+    _isolate_store(monkeypatch, db_path)
+    output_file = tmp_path / 'normalized.json'
+
+    result = _parse(
+        runtime.metrics_normalized_tokens(
+            'ses-root',
+            [('1-init', _iso(0), _iso(1)), ('5-execute', _iso(1), _iso(30))],
+            str(output_file),
+        )
+    )
+
+    assert result['status'] == 'success'
+    assert result['phases_attributed'] == 1
+    assert set(json.loads(output_file.read_text(encoding='utf-8'))) == {'5-execute'}
+
+
+def test_metrics_normalized_tokens_sums_windows_sharing_a_phase(
+    runtime: OpenCodeRuntime, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """Two windows naming one phase aggregate into one bucket, not the last one.
+
+    A resume splits a phase into two intervals; each interval's messages fall in
+    its own window. Overwriting the bucket with the second window's numbers
+    dropped the first interval's measured tokens while the run still reported a
+    successful attribution.
+    """
+    db_path = tmp_path / 'opencode.db'
+    _write_usage_db(
+        db_path,
+        [('ses-root', None, 30, 40, 5, 6)],
+        [
+            (
+                'ses-root',
+                'assistant',
+                _at(5),
+                {'tokens': {'input': 10, 'output': 20, 'cache': {'read': 3, 'write': 4}}},
+            ),
+            (
+                'ses-root',
+                'assistant',
+                _at(35),
+                {'tokens': {'input': 100, 'output': 200, 'cache': {'read': 30, 'write': 40}}},
+            ),
+        ],
+    )
+    _isolate_store(monkeypatch, db_path)
+    output_file = tmp_path / 'normalized.json'
+
+    result = _parse(
+        runtime.metrics_normalized_tokens(
+            'ses-root',
+            [('5-execute', _iso(0), _iso(30)), ('5-execute', _iso(30), _iso(60))],
+            str(output_file),
+        )
+    )
+
+    assert result['status'] == 'success'
+    assert result['phases_attributed'] == 1
+    assert result['message_count'] == 2
+    bucket = json.loads(output_file.read_text(encoding='utf-8'))['5-execute']
+    assert bucket['input_tokens'] == 10 + 100
+    assert bucket['output_tokens'] == 20 + 200
+    assert bucket['cache_read_input_tokens'] == 3 + 30
+    assert bucket['cache_creation_input_tokens'] == 4 + 40
+    assert bucket['total'] == (10 + 20 + 3 + 4) + (100 + 200 + 30 + 40)
+
+
+def test_metrics_normalized_tokens_unavailable_store_names_its_reason(
+    runtime: OpenCodeRuntime, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """An absent store declines with the reader's reason and writes no file."""
+    _isolate_store(monkeypatch, tmp_path / 'absent.db')
+    output_file = tmp_path / 'normalized.json'
+
+    result = _parse(runtime.metrics_normalized_tokens('ses-root', [('5-execute', _iso(0), _iso(30))], str(output_file)))
+
+    assert result['status'] == 'no-op'
+    assert result['reason'] == 'db_not_found'
+    assert not output_file.exists()
+    assert 'input_tokens' not in result
+    assert 'subagent_total_tokens' not in result
+
+
+def test_metrics_normalized_tokens_tier1_store_is_schema_unsupported(
+    runtime: OpenCodeRuntime, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """A store without the totals schema declines rather than answering an empty bucket."""
+    db_path = tmp_path / 'opencode.db'
+    _write_tier1_db(db_path, [('ses-root', None)])
+    _isolate_store(monkeypatch, db_path)
+    output_file = tmp_path / 'normalized.json'
+
+    result = _parse(runtime.metrics_normalized_tokens('ses-root', [('5-execute', _iso(0), _iso(30))], str(output_file)))
+
+    assert result['status'] == 'no-op'
+    assert result['reason'] == 'schema_unsupported'
+    assert not output_file.exists()
+
+
+# =============================================================================
 # 13. subagent_dispatch
 # =============================================================================
 
@@ -987,15 +1436,15 @@ def test_wait_for_noop_reports_no_outcome(runtime: OpenCodeRuntime) -> None:
 
 
 #: ``(payload field, the fragments that field must carry)``. The decline is only
-#: honest if it says WHY, so each row pins one verified gap by name: the three
-#: ``reason`` rows are the absent platform session id (so a held wait cannot be
-#: re-attached), the absent hook channel, and the absent shared build layer
-#: (nothing to inspect an observable through) — the first two carrying their
-#: upstream issue numbers. The two ``alternative`` rows name shipped behaviour on
-#: this target: the observable's own bounded-wait verb run in-turn, and the
-#: checkpoint-and-re-dispatch path for a bound too large to hold.
+#: honest if it says WHY, so each row pins one verified gap by name: the absent
+#: hook channel (so a held wait cannot be re-attached) and the absent shared
+#: build layer (nothing to inspect an observable through) — the first carrying
+#: its upstream issue number. The two ``alternative`` rows name shipped behaviour
+#: on this target: the observable's own bounded-wait verb run in-turn, and the
+#: checkpoint-and-re-dispatch path for a bound too large to hold. The session
+#: identity is NOT one of the grounds: OpenCode resolves it from its session
+#: store, so citing an absent session id here would state something false.
 _WAIT_FOR_DECLINE_TEXT = [
-    ('reason', ['session id', '#9292']),
     ('reason', ['hook channel', 'anomalyco/opencode#8619']),
     ('reason', ['shared build layer']),
     ('alternative', ['bounded-wait verb', 'in-turn']),
@@ -1003,7 +1452,6 @@ _WAIT_FOR_DECLINE_TEXT = [
 ]
 
 _WAIT_FOR_DECLINE_TEXT_IDS = [
-    'reason-names-the-absent-session-id',
     'reason-names-the-absent-hook-channel',
     'reason-names-the-absent-shared-build-layer',
     'alternative-names-the-in-turn-bounded-wait',

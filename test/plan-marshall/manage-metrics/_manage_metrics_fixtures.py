@@ -84,9 +84,16 @@ def ns_generate(plan_id: str) -> Namespace:
     return ns('generate', '--plan-id', plan_id)
 
 
-def ns_enrich(plan_id: str, session_id: str) -> Namespace:
-    """``enrich`` — enrich a plan's metrics from a JSONL transcript."""
-    return ns('enrich', '--plan-id', plan_id, '--session-id', session_id)
+def ns_enrich(plan_id: str, *session_ids: str) -> Namespace:
+    """``enrich`` — one ``--session-id`` occurrence per supplied identity.
+
+    The flag is REPEATABLE on this verb, so passing two identities models a plan
+    that captured two sessions (a resume) and is measured as one population.
+    """
+    argv = ['enrich', '--plan-id', plan_id]
+    for session_id in session_ids:
+        argv.extend(['--session-id', session_id])
+    return ns(*argv)
 
 
 def ns_accumulate(
