@@ -417,11 +417,16 @@ def _resolve_bots(marshal: dict[str, Any]) -> tuple[list[dict[str, Any]], list[d
 
 
 class _BuildCommandUnresolvable(Exception):
-    """A canonical the project's architecture resolves to no executable."""
+    """The gate canonicals the project's architecture resolves to no executable.
 
-    def __init__(self, canonical: str) -> None:
-        super().__init__(canonical)
-        self.canonical = canonical
+    The field is plural by construction: the gate fails closed only when NEITHER
+    ``quality-gate`` nor ``verify`` resolves, so there is never a single
+    canonical to name here.
+    """
+
+    def __init__(self, canonicals: tuple[str, ...]) -> None:
+        super().__init__(','.join(canonicals))
+        self.canonicals = canonicals
 
 
 def _resolve_build(project_dir: Path) -> tuple[dict[str, Any], dict[str, Any]]:
@@ -481,9 +486,9 @@ def _resolve_build(project_dir: Path) -> tuple[dict[str, Any], dict[str, Any]]:
 
     if not any(canonical in resolved for canonical in _GATE_CANONICALS):
         # No gate at all: the lane has nothing it could run, so it refuses by
-        # name rather than building with a default. The name is the pair the
-        # architecture contract requires, because neither one resolved.
-        raise _BuildCommandUnresolvable(','.join(_GATE_CANONICALS))
+        # name rather than building with a default. Both names travel, because
+        # neither resolved.
+        raise _BuildCommandUnresolvable(_GATE_CANONICALS)
 
     build: dict[str, Any] = {canonical: record['executable'] for canonical, record in resolved.items()}
     # The split form exists because ``verify`` may outlive the shell budget; its
@@ -704,7 +709,7 @@ def _unknown_stamp() -> dict[str, str]:
     return {'model': _RUNTIME_UNKNOWN, 'effort': _RUNTIME_UNKNOWN, 'plugin_version': _RUNTIME_UNKNOWN}
 
 
-def _resolve_runtime_stamp(harness: str) -> dict[str, str]:
+def _resolve_runtime_stamp(harness: str) -> tuple[dict[str, str], str | None]:
     """Resolve the landing's runtime stamp from the platform-runtime seam.
 
     ``harness``, ``model``, ``effort`` and ``plugin_version`` are the four facts
@@ -717,13 +722,13 @@ def _resolve_runtime_stamp(harness: str) -> dict[str, str]:
     Values are MEASURED by the collector — on OpenCode from the session tree —
     and an attribute with no readable source is ``unknown`` rather than an
     estimate. A seam that fails outright degrades to the same ``unknown``
-    vocabulary: a landing field must never abort ``resolve`` at setup, and an
-    unreadable stamp is an answer the landing already has wording for.
+    vocabulary and returns a reason naming the failure: a landing field must
+    never abort ``resolve`` at setup, and the degradation must not be silent.
     """
     try:
         info = _collect_runtime_info(harness)
-    except Exception:
-        return _unknown_stamp()
+    except Exception as exc:
+        return _unknown_stamp(), f'runtime_info_unreadable: {type(exc).__name__}: {exc}'
     stamp = {
         'model': _render_model(info),
         'effort': _stamp_value(info.get('effort')),
@@ -732,7 +737,7 @@ def _resolve_runtime_stamp(harness: str) -> dict[str, str]:
     executor_version = info.get('executor_version')
     if isinstance(executor_version, str) and executor_version.strip():
         stamp['executor_version'] = executor_version.strip()
-    return stamp
+    return stamp, None
 
 
 #: The CI directory a workflow lives under, relative to the project root. A
@@ -1139,12 +1144,12 @@ def cmd_resolve(args: argparse.Namespace) -> dict[str, Any]:
         base_branch = _resolve_base_branch(marshal)
         deliverable_state = _resolve_deliverable_skills(spec)
     except _BuildCommandUnresolvable as exc:
-        # Fail closed and name the canonical: the lane never falls back to a
-        # composed string or to a default build.
+        # Fail closed and name the gate canonicals that could not be resolved:
+        # the lane never falls back to a composed string or to a default build.
         return {
             'status': 'error',
             'error': 'build_command_unresolvable',
-            'canonical': exc.canonical,
+            'canonicals': ', '.join(exc.canonicals),
             'spec': args.spec,
             'plan': plan_id,
         }
@@ -1171,7 +1176,7 @@ def cmd_resolve(args: argparse.Namespace) -> dict[str, Any]:
     trailer = run_config.read_commit_trailer()['trailer']
     harness, guard = _resolve_harness_guard(project_dir)
     build_server, build_server_reason = _resolve_build_server(project_dir)
-    runtime_stamp = _resolve_runtime_stamp(harness)
+    runtime_stamp, runtime_stamp_reason = _resolve_runtime_stamp(harness)
 
     worktree = f'.plan/local/worktrees/{plan_id}'
     progress_file = f'.plan/temp/rb-{plan_id}/progress.md'
@@ -1216,6 +1221,10 @@ def cmd_resolve(args: argparse.Namespace) -> dict[str, Any]:
     # explanation, and an empty row would read like a parsed-but-empty answer.
     if build_server_reason is not None:
         resolved['build_server_reason'] = build_server_reason
+    # Likewise for a runtime seam that failed: the stamp degrades to ``unknown``
+    # so setup is never aborted, and the reason keeps that from being silent.
+    if runtime_stamp_reason is not None:
+        resolved['runtime_stamp_reason'] = runtime_stamp_reason
     # Presence-gated: an empty population would render an empty row set that reads
     # like a parsed-but-empty answer, when the truth is that no spec declares one.
     if deliverable_state['deliverables']:

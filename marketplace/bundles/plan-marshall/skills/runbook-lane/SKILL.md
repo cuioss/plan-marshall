@@ -40,9 +40,10 @@ with their trigger comments, the commit trailer, the harness and guard state, th
 preflight state (`build_server`, plus `build_server_reason` when it is `down`) and the `inbox write`
 command. `--project-dir` defaults to the current directory and anchors every project-scoped read.
 Fails closed with a specific error code for a spec outside the orchestrator tree, an unreadable
-configuration, a missing automatic-review step, an empty required-reviewer list, an unresolvable
-build command (naming the canonical), or a bare skill/persona name in a flat install with no
-recorded bundle identity (`flat_skill_identity_missing`).
+configuration, a missing automatic-review step, an empty required-reviewer list, a project that
+resolves no gate build command (naming the gate canonicals it could not resolve), or a bare
+skill/persona name in a flat install with no recorded bundle identity
+(`flat_skill_identity_missing`).
 
 ### build-classify
 
@@ -326,7 +327,9 @@ For each deliverable, in the spec's order:
 ## 4. Build gate
 
 Every build runs from the main checkout against the worktree, using the commands the resolve result
-supplies and the default routing:
+supplies and the default routing. Each line below applies only where the resolve result supplies
+that canonical — a project with a single gate canonical supplies no `{build.verify}`, and one that
+publishes no test part supplies no `{build.module-tests}`:
 
 ```bash
 {build.quality-gate} --project-dir {worktree}
@@ -354,7 +357,7 @@ supplies and the default routing:
 - **Shell timeout, in-process fallback only:** an in-process build holds the shell call for its whole
   duration. Give each call the shell tool's `timeout` parameter, set at or above the build's own
   timeout.
-  - If the tool cannot wait that long, run `{build.verify}`'s parts as separate calls, in the order
+  - If the tool cannot wait that long, run the gate's parts as separate calls, in the order
     `{build.split}` states, running each canonical the resolve result supplies — for example
     `{build.quality-gate}`, `{build.test-compile}` and `{build.module-tests}` where the project
     publishes all three, each with the same worktree flags.
@@ -362,8 +365,9 @@ supplies and the default routing:
     in the architecture's contract, so an absent one means the project publishes no such part — not
     that a part was skipped. `quality-gate` and `verify` are the gate, and each build system
     publishes them conditionally, so the resolve result carries at least one; a project that
-    resolves neither has already failed `resolve`. Where `split` names nothing, run
-    `{build.verify}` itself: the project publishes no separable part.
+    resolves neither has already failed `resolve`. Where `split` names nothing, run the gate
+    canonical the resolve result supplies — `{build.quality-gate}` where supplied, otherwise
+    `{build.verify}` — because the project publishes no separable part.
   - A daemon-routed build is waited on in the same call, never moved to the background.
 - **Read the result, not the exit code.** The TOON must show `status: success` and an empty
   `errors[]`. Open the `log_file` it names for the test summary.
@@ -384,11 +388,12 @@ supplies and the default routing:
   the build gate uses. Required CI checks still have to be green, so the merge gate is unchanged.
 - **When to run what:** run the gate canonical the project publishes (`{build.quality-gate}` where
   the resolve result supplies it, otherwise `{build.verify}`) before each commit that touches
-  `*.py`, and `{build.verify}` once before the PR. Scope the tests to one module while iterating.
+  `*.py`, and the same gate canonical once before the PR. Scope the tests to one module while
+  iterating.
 - **Every pushed head:** a test run at every head pushed to a PR — not once for the run. Run
   `{build.module-tests}` where the resolve result supplies it, plus `{build.test-compile}` where the
-  project publishes one; a project that supplies neither is gated by `{build.verify}`. Record the
-  sha of each run; a head that was not tested is not a green head.
+  project publishes one; a project that supplies neither is gated by the gate canonical it
+  publishes. Record the sha of each run; a head that was not tested is not a green head.
 - **Failures that already fail on the base branch:** environment-dependent tests can fail in a
   project's local module-tests run. They are not yours. Only a failure in a module you touched, or
   one the base branch does not show, is yours.
@@ -596,7 +601,9 @@ steps=setup:done,implement:done,build-gate:done,self-review:{clear|budget-exhaus
      whose resolve result reported `guard: none`.
   8. **Build server** — the setup preflight's state (`ready`, `disabled` or `down`, with its reason),
      the fallback each build used and why (`degraded` with its `reason`, or
-     `executor_absent_from_worktree`), and any `killed` job with its disposition.
+     `executor_absent_from_worktree`), and any `killed` job with its disposition. Add any
+     `runtime_stamp_reason` the resolve result carried: it names a runtime-info seam that failed
+     and left the stamp at `unknown`.
   9. **Residue** — anything left open.
 
 Then tell the operator the PR number, the merge commit, and that the landing message was written.

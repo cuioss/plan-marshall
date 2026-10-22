@@ -496,7 +496,7 @@ def test_resolve_unresolvable_gate_canonical_fails_closed_and_names_it(tmp_path:
 
     assert data['status'] == 'error'
     assert data['error'] == 'build_command_unresolvable'
-    assert data['canonical'] == 'quality-gate,verify'
+    assert data['canonicals'] == 'quality-gate, verify'
     assert 'build' not in data
 
 
@@ -1657,13 +1657,19 @@ def test_evidence_order_field_is_closed_and_reserved() -> None:
         assert 'output identifier' in section, f'{name} does not require an output identifier'
 
 
-def test_test_compile_runs_at_every_pushed_head_and_is_reported() -> None:
+def test_a_test_runs_at_every_pushed_head_and_is_reported() -> None:
     gate = _section('## 4. Build gate')
     landing = _section('## 8. Landing message (the last step, after the merge)')
 
-    assert 'every head pushed to a PR' in gate, 'the gate still lets a pushed head skip test-compile'
-    assert 'test-compile' in landing, 'the landing does not report the test-compile runs'
-    assert 'sha' in landing, 'the landing does not report the sha of each test-compile run'
+    assert 'every head pushed to a PR' in gate, 'the gate still lets a pushed head skip its test run'
+    # The rule is conditional on what the project publishes, so the test pins the
+    # conditional phrasing rather than the bare key: a silent drop of the
+    # condition would otherwise still pass.
+    assert '{build.module-tests}` where the resolve result supplies it' in gate, (
+        'the per-head rule does not say the test command is the one the project publishes'
+    )
+    assert 'test-compile' in landing, 'the landing does not report the per-head test runs'
+    assert 'sha' in landing, 'the landing does not report the sha of each per-head test run'
 
 
 def test_self_review_clear_is_not_permitted_with_an_open_finding() -> None:
@@ -1807,8 +1813,9 @@ _MIXED_RUNTIME_INFO: dict[str, Any] = {
     'harness': 'opencode',
     'transcripts': 'full',
     'model': 'mixed',
-    'models': 'deepseek-v4.1-flash/high,claude-opus-5-5/max',
+    'models': 'deepseek-v4.1-flash/high,claude-opus-5-5/high',
     'model_source': 'measured',
+    'variant': 'high',
     'effort': 'high',
     'bundle_version': '0.1.1919',
 }
@@ -1926,7 +1933,8 @@ def test_resolve_degrades_a_failing_runtime_seam_to_unknown(tmp_path: Path, monk
     """A landing field never aborts setup: a raising seam is ``unknown``.
 
     ``resolve`` runs at setup, before any work; failing it over a landing field
-    would stop the run for a value the landing already has wording for.
+    would stop the run for a value the landing already has wording for. The
+    degradation is not silent: the reason travels beside the stamp.
     """
     import runtime_info
 
@@ -1944,6 +1952,8 @@ def test_resolve_degrades_a_failing_runtime_seam_to_unknown(tmp_path: Path, monk
     assert data['model'] == 'unknown'
     assert data['effort'] == 'unknown'
     assert data['plugin_version'] == 'unknown'
+    assert 'RuntimeError' in data['runtime_stamp_reason']
+    assert 'seam exploded' in data['runtime_stamp_reason']
 
 
 def test_resolve_measures_the_opencode_model_from_the_session_db(tmp_path: Path, monkeypatch) -> None:
@@ -1979,7 +1989,7 @@ def test_resolve_returns_the_mixed_model_as_its_list_form(tmp_path: Path, monkey
     data, _ = _resolve_with_runtime_info(tmp_path, monkeypatch, _MIXED_RUNTIME_INFO)
 
     assert data['status'] == 'success', data
-    assert data['model'] == 'deepseek-v4.1-flash/high,claude-opus-5-5/max'
+    assert data['model'] == 'deepseek-v4.1-flash/high,claude-opus-5-5/high'
     assert data['effort'] == 'high'
     assert data['plugin_version'] == '0.1.1919'
 
