@@ -106,6 +106,7 @@ _R6_NAMED_FORMS: tuple[str, ...] = (
     'git -C .plan/local/worktrees/plan-a -c alias.ci=commit ci -m "fix: x"',
     'zsh -c "cd /tmp; git -C .plan/local/worktrees/plan-a commit -m x"',
     'watch "cd /tmp; git -C .plan/local/worktrees/plan-a commit -m x"',
+    'zsh -c "cd .plan/local/worktrees/plan-a; git commit -m x"',
 )
 
 
@@ -130,7 +131,14 @@ def test_the_side_door_rows_depend_on_the_scope(
 @pytest.mark.parametrize(
     'command',
     _R6_NAMED_FORMS,
-    ids=['git-dir-work-tree', 'env-git-dir', 'alias-resolved', 'zsh-later-segment', 'watch-later-segment'],
+    ids=[
+        'git-dir-work-tree',
+        'env-git-dir',
+        'alias-resolved',
+        'zsh-later-segment',
+        'watch-later-segment',
+        'zsh-leading-cd',
+    ],
 )
 def test_r6_names_the_plan_from_every_commit_form(
     command: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, tmp_path_factory: pytest.TempPathFactory

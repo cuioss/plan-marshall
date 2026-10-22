@@ -532,12 +532,16 @@ function isPythonInterpreter(raw) {
 // The executor permit — the ONE direct interpreter call R5 admits without an
 // allow-list entry. The relative form `.plan/execute-script.py` is the canonical
 // documented invocation, and it is admitted only when the command's EFFECTIVE
-// working directory IS the repository root: a leading `cd`, an `env -C` /
-// `--chdir` / `sudo -D` directory change and the shell's `workdir` are resolved
-// first (see `effectiveCwd`), so the same relative path run from anywhere else
-// is refused. (`git -C` is not a shell directory change: it moves git's own
-// working directory for that one invocation and never the directory a following
-// program runs in.) An ABSOLUTE form is admitted only when it equals
+// working directory IS a repository root: the repository itself, or one of ITS
+// plan worktrees under `.plan/local/worktrees/` (phase-5+ pins the shell cwd to
+// the worktree, where `.plan` is the same executor through the worktree's
+// symlink, so refusing it would break the documented execution flow). A leading
+// `cd`, an `env -C` / `--chdir` / `sudo -D` directory change and the shell's
+// `workdir` are resolved first (see `effectiveCwd`), so the same relative path
+// run from anywhere else — `/tmp/x`, another checkout — is refused. (`git -C` is
+// not a shell directory change: it moves git's own working directory for that
+// one invocation and never the directory a following program runs in.) An
+// ABSOLUTE form is admitted only when it equals
 // `{repository root}/.plan/execute-script.py` after path normalization.
 function isExecutorPermit(command, root, cwd) {
   const tokens = commandTokens(command)
@@ -547,12 +551,22 @@ function isExecutorPermit(command, root, cwd) {
   if (second === ".plan/execute-script.py") {
     const effective = effectiveCwd(command, cwd || root)
     if (!effective || !root) return false
-    return realPathOf(effective) === realPathOf(root)
+    return isRepositoryRootOrPlanWorktree(effective, root)
   }
   if (!second.startsWith("/")) return false
   const repoRoot = (root || cwd || "").replace(/\\/g, "/").replace(/\/+$/, "")
   if (!repoRoot) return false
   return normalizePosixPath(second) === `${repoRoot}/.plan/execute-script.py`
+}
+
+// Whether the effective directory is the project root itself or one of its OWN
+// plan worktrees. Compared after realpath, so a symlinked tree resolves first.
+function isRepositoryRootOrPlanWorktree(effective, root) {
+  const resolvedRoot = realPathOf(root)
+  const resolved = realPathOf(effective)
+  if (resolved === resolvedRoot) return true
+  const worktreeBase = `${normalizePosixPath(resolvedRoot + "/.plan/local/worktrees")}/`
+  return resolved.startsWith(worktreeBase)
 }
 
 // The command's EFFECTIVE working directory: the shell's own cwd with a leading
@@ -1068,13 +1082,22 @@ function planIdFromGitDir(value) {
 // shell's `-c` string would escape R6.
 function gitProgramTokens(command) {
   const stripped = commandTokens(command)
-  if (stripped.length && basenameOf(stripped[0]).toLowerCase() === "git") return stripped
+  if (stripped.length && basenameOf(stripped[0]).toLowerCase() === "git") {
+    return { tokens: stripped, cdTarget: null }
+  }
   const raw = rawCommandTokens(command)
   for (let position = 1; position < raw.length; position++) {
+    let cdTarget = null
     for (const segment of splicedSegments(stripMatchedQuotes(raw[position]))) {
       const parts = shellSplit(segment)
       const walked = stripWrappers(parts === null ? whitespaceSplit(segment) : parts, WRAPPER_TABLE)
-      if (walked.length && basenameOf(walked[0]).toLowerCase() === "git") return walked
+      if (!walked.length) continue
+      if (basenameOf(walked[0]) === "cd" && walked[1]) {
+        const value = stripMatchedQuotes(walked[1])
+        cdTarget = cdTarget === null || value.startsWith("/") ? value : `${cdTarget}/${value}`
+        continue
+      }
+      if (basenameOf(walked[0]).toLowerCase() === "git") return { tokens: walked, cdTarget }
     }
   }
   return null
@@ -1084,6 +1107,7 @@ function gitCommitInfo(command) {
   let raw = rawCommandTokens(command)
   const stripped = commandTokens(command)
   let gitAt = -1
+  let cdTarget = null
   if (stripped.length && basenameOf(stripped[0]).toLowerCase() === "git") {
     for (let i = 0; i < raw.length; i++) {
       if (basenameOf(raw[i]).toLowerCase() === "git") {
@@ -1096,12 +1120,13 @@ function gitCommitInfo(command) {
       gitAt = 0
     }
   } else {
-    const segment = gitProgramTokens(command)
-    if (segment === null) {
+    const program = gitProgramTokens(command)
+    if (program === null) {
       return { isCommit: false, cwdTarget: null, workTree: null, gitDir: null, unresolvable: false }
     }
-    raw = segment
+    raw = program.tokens
     gitAt = 0
+    cdTarget = program.cdTarget
   }
   const environment = {}
   for (let i = 0; i < gitAt; i++) {
@@ -1113,9 +1138,9 @@ function gitCommitInfo(command) {
   }
   let gitDir = environment.GIT_DIR ?? null
   let workTree = environment.GIT_WORK_TREE ?? null
-  let unresolvable = isUnresolvableDir(gitDir) || isUnresolvableDir(workTree)
+  let unresolvable = isUnresolvableDir(gitDir) || isUnresolvableDir(workTree) || isUnresolvableDir(cdTarget)
   const aliases = {}
-  let cwdTarget = null
+  let cwdTarget = cdTarget
   let subcommand = null
   let i = gitAt + 1
   while (i < raw.length) {
@@ -1299,13 +1324,13 @@ function planPhase(workdir, root, info) {
 // named from every commit form (see `gitCommitInfo`) and its phase read from
 // `current_phase`; an UNRESOLVABLE target (an unexpanded variable, an alias the
 // guard cannot reduce) is refused fail-closed.
-function isRawFinalizeCommit(command, workdir, root) {
+function isRawFinalizeCommit(command, workdir, root, agent) {
   const info = gitCommitInfo(command)
   if (!info.isCommit) return false
   if (info.unresolvable) {
-    // Fail-closed ONLY inside the enforced scope: an unrelated consumer's
-    // `git -C "$dir" commit` is not this rule's business.
-    return contextGate(undefined, workdir, root) || isThisRepository(root)
+    // Fail-closed ONLY inside the enforced scope (Signal 1 included): an
+    // unrelated consumer's `git -C "$dir" commit` is not this rule's business.
+    return contextGate(agent, workdir, root) || isThisRepository(root)
   }
   return planPhase(workdir, root, info) === SOURCE_COMMIT_GATE_PHASE
 }
@@ -1370,7 +1395,7 @@ export default Plugin.define({
         )
       }
 
-      if (isRawFinalizeCommit(command, workdir, root)) {
+      if (isRawFinalizeCommit(command, workdir, root, event?.agent)) {
         audit(auditLine("R6", tool, sessionID, callID, command))
         throw new Error(
           "[plan-marshall-guard] R6: a raw git commit is refused in phase 6-finalize — commit through python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow commit (the gate-bearing path), which sanctions an open loop-back fix task, a review-rubric section-6 record, or a step id of the composed phase-6 manifest",

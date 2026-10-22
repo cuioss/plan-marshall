@@ -172,6 +172,29 @@ def test_a_wrapper_with_only_flags_keeps_the_executor_permit(tmp_path_factory: p
     assert not _hook_refused(command)
 
 
+def test_executor_from_a_plan_worktree_is_admitted(tmp_path_factory: pytest.TempPathFactory) -> None:
+    """Phase-5 pins the cwd to the plan worktree, where the relative executor is the same file.
+
+    The worktree's `.plan` is the main checkout's `.plan` through a symlink, so the
+    documented invocation must stay admitted there — and a worktree of a DIFFERENT
+    root must not.
+    """
+    harness = build_harness(tmp_path_factory.mktemp('exact-worktree-root'))
+    worktree = harness.root / '.plan' / 'local' / 'worktrees' / 'plan-a'
+    worktree.mkdir(parents=True, exist_ok=True)
+    blocked, message = harness.blocks(shell_event(_EXECUTOR_CALL, agent=SUB_AGENT_AGENT, workdir=str(worktree)))
+    assert not blocked, f'the documented executor call from a plan worktree must pass; message={message!r}'
+    lane_worktree = REPO_ROOT / '.plan' / 'local' / 'worktrees' / 'lb-79-lb-68-completion'
+    assert not _hook_refused_in_project(_EXECUTOR_CALL, cwd=str(lane_worktree), project_dir=REPO_ROOT)
+
+    foreign = tmp_path_factory.mktemp('exact-foreign-root') / '.plan' / 'local' / 'worktrees' / 'plan-b'
+    foreign.mkdir(parents=True, exist_ok=True)
+    blocked_foreign, foreign_message = harness.blocks(
+        shell_event(_EXECUTOR_CALL, agent=SUB_AGENT_AGENT, workdir=str(foreign))
+    )
+    assert blocked_foreign, f'a worktree of another root must NOT be admitted; message={foreign_message!r}'
+
+
 # =============================================================================
 # The deployed roots: the resolver's DEPLOY roots, after realpath
 # =============================================================================

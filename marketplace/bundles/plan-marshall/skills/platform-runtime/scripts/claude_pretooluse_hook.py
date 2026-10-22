@@ -791,15 +791,18 @@ def _is_executor_permit(command: str, root: str | None, cwd: str | None) -> bool
     (``env python3 .plan/execute-script.py ...``) stays exempt exactly as the
     guard exempts it. The RELATIVE form ``.plan/execute-script.py`` is the
     canonical documented invocation and is admitted only when the command's
-    EFFECTIVE working directory IS the repository root: a leading ``cd``, an
-    ``env -C`` / ``--chdir`` directory change and the payload ``cwd`` are
-    resolved first, so the same relative path run from anywhere else is refused.
+    EFFECTIVE working directory IS a repository root: the repository itself, or
+    one of ITS plan worktrees under ``.plan/local/worktrees/`` (phase-5+ pins the
+    shell cwd to the worktree, where ``.plan`` is the same executor through the
+    worktree's symlink). A leading ``cd``, an ``env -C`` / ``--chdir`` /
+    ``sudo -D`` directory change and the payload ``cwd`` are resolved first, so
+    the same relative path run from anywhere else — ``/tmp/x``, another checkout
+    — is refused.
     (``git -C`` is not a shell directory change: it moves git's own working
     directory for that one invocation, never the directory a following program
-    runs in.) An ABSOLUTE form is admitted only when it RESOLVES to
-    ``{repository root}/.plan/execute-script.py`` (relative to the shell *cwd*
-    when needed), so ``python3 /tmp/x/.plan/execute-script.py`` is refused —
-    never admitted by suffix. Used only by the R5 matcher.
+    runs in.) An ABSOLUTE form is admitted only when it equals
+    ``{repository root}/.plan/execute-script.py`` after path normalization.
+    Used only by the R5 matcher.
     """
     stripped = _r5_stripped_tokens(command)
     if len(stripped) < 2:
@@ -812,13 +815,31 @@ def _is_executor_permit(command: str, root: str | None, cwd: str | None) -> bool
         effective = _effective_cwd(command, cwd or root)
         if not effective or not root:
             return False
-        return _real_path(effective) == _real_path(root)
+        return _is_repository_root_or_plan_worktree(effective, root)
     if not second.startswith('/'):
         return False
     repo_root = (root or cwd or '').replace('\\', '/').rstrip('/')
     if not repo_root:
         return False
     return posixpath.normpath(second) == repo_root + '/.plan/execute-script.py'
+
+
+def _is_repository_root_or_plan_worktree(effective: str, root: str) -> bool:
+    """Whether *effective* is the project root or one of its OWN plan worktrees.
+
+    Phase-5+ pins the shell cwd to the plan worktree, where the relative
+    ``.plan/execute-script.py`` is the same executor through the worktree's
+    symlink — refusing it would break the documented execution flow. A directory
+    that is neither the root nor one of that root's own
+    ``.plan/local/worktrees/{plan}`` paths stays refused. Both sides are compared
+    after ``realpath``.
+    """
+    resolved_root = _real_path(root)
+    resolved = _real_path(effective)
+    if resolved == resolved_root:
+        return True
+    worktree_base = posixpath.normpath(resolved_root + '/.plan/local/worktrees') + '/'
+    return resolved.startswith(worktree_base)
 
 
 def _real_path(value: str) -> str:
@@ -1336,17 +1357,18 @@ def _match_r5_interpreter_call(
     command = _bash_command(tool_name, tool_input)
     if command is None:
         return None
+    if _is_executor_permit(command, root, cwd):
+        return None
     if _wrapper_table()['missing']:
         # Fail CLOSED: without the shared wrapper table no wrapper can be
-        # stripped, so refuse any command that names an interpreter anywhere.
+        # stripped, so refuse any command that names an interpreter anywhere —
+        # EXCEPT the executor permit above, the one sanctioned path.
         try:
             raw = shlex.split(command)
         except ValueError:
             raw = command.split()
         if any(_PYTHON_PROGRAM_RE.match(_wrapper_basename(token).lower()) for token in raw):
             return _R5_REASON
-    if _is_executor_permit(command, root, cwd):
-        return None
     stripped = _r5_stripped_tokens(command)
     first = stripped[0].strip().lower() if stripped else ''
     program = _strip_matched_quotes(first.rsplit('/', 1)[-1] if first else '')
@@ -1561,12 +1583,14 @@ def _resolve_target_path(target: str | None, base: str | None) -> str | None:
     return posixpath.normpath(f'{normalized_base}/{normalized}')
 
 
-def _git_program_tokens(command: str) -> list[str] | None:
-    """The token list whose first program is ``git`` in any spliced segment, or ``None``.
+def _git_program_tokens(command: str) -> tuple[list[str], str | None] | None:
+    """``(tokens, cd_target)`` for a git program in any spliced segment, or ``None``.
 
     A commit can be hidden behind a ``cd`` inside a wrapper's command string
     (``zsh -c 'cd /tmp; git commit'``), so every quoted token is split into
-    segments and each segment is walked.
+    segments, each segment is walked, and the LEADING ``cd`` segments are composed
+    into the directory the git invocation runs in — otherwise R6 would name the
+    plan from the wrong base and admit the commit.
     """
     try:
         raw = shlex.split(command)
@@ -1575,14 +1599,22 @@ def _git_program_tokens(command: str) -> list[str] | None:
     for position, token in enumerate(raw):
         if position == 0:
             continue
+        cd_target: str | None = None
         for segment in _spliced_segments(token):
             try:
                 parts = shlex.split(segment)
             except ValueError:
                 parts = segment.split()
             walked = _strip_wrapper_tokens(parts)
-            if walked and _strip_matched_quotes(walked[0]).replace('\\', '/').rsplit('/', 1)[-1].lower() == 'git':
-                return walked
+            if not walked:
+                continue
+            program = _strip_matched_quotes(walked[0]).replace('\\', '/').rsplit('/', 1)[-1]
+            if program == 'cd' and len(walked) > 1:
+                value = _strip_matched_quotes(walked[1])
+                cd_target = value if cd_target is None or value.startswith('/') else f'{cd_target}/{value}'
+                continue
+            if program.lower() == 'git':
+                return walked, cd_target
     return None
 
 
@@ -1607,6 +1639,7 @@ def _git_commit_target(command: str) -> _GitCommitInfo:
     program_is_git = (
         bool(stripped) and _strip_matched_quotes(stripped[0]).replace('\\', '/').rsplit('/', 1)[-1].lower() == 'git'
     )
+    cd_target: str | None = None
     if program_is_git:
         git_at = next(
             (
@@ -1622,10 +1655,10 @@ def _git_commit_target(command: str) -> _GitCommitInfo:
     else:
         # A commit can sit in ANY segment of a wrapper's spliced command string
         # (`zsh -c 'cd /tmp; git commit'`).
-        segment = _git_program_tokens(command)
-        if segment is None:
+        program = _git_program_tokens(command)
+        if program is None:
             return _GitCommitInfo(False, None, None, None, False)
-        raw = segment
+        raw, cd_target = program
         git_at = 0
     environment: dict[str, str] = {}
     for token in raw[:git_at]:
@@ -1634,9 +1667,9 @@ def _git_commit_target(command: str) -> _GitCommitInfo:
             environment[name] = value
     git_dir = environment.get('GIT_DIR')
     work_tree = environment.get('GIT_WORK_TREE')
-    unresolvable = _is_unresolvable_dir(git_dir) or _is_unresolvable_dir(work_tree)
+    unresolvable = _is_unresolvable_dir(git_dir) or _is_unresolvable_dir(work_tree) or _is_unresolvable_dir(cd_target)
     aliases: dict[str, str] = {}
-    cwd_target: str | None = None
+    cwd_target: str | None = cd_target
     index = git_at + 1
     subcommand: str | None = None
     while index < len(raw):

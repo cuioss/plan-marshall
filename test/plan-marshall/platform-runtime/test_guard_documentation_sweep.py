@@ -779,6 +779,20 @@ def test_a_commented_command_is_flagged_not_skipped() -> None:
     assert 'COMMENT' in offenders[0]
 
 
+def test_generic_placeholder_includes_the_deployed_form(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The generic placeholder expands to the DEPLOYED spelling, not only the repo one."""
+    deployed = '/deployed/skills/tools-script-executor/scripts/generate_executor.py'
+    monkeypatch.setattr(
+        'test_guard_documentation_sweep._deployed_paths',
+        lambda _repo_relative: [deployed],
+        raising=True,
+    )
+    generic = _resolve_script_template('python3 "{SCRIPT_FILE}" mode')
+    assert any(deployed in command and unresolved is None for command, unresolved in generic), (
+        f'the generic placeholder must include the deployed spelling; generic={generic!r}'
+    )
+
+
 def test_a_fixture_doc_with_bash_c_and_uv_run_is_reported(
     tmp_path_factory: pytest.TempPathFactory, tmp_path: Path
 ) -> None:
