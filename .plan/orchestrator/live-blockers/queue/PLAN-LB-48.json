@@ -2,9 +2,10 @@
   "id": "PLAN-LB-48",
   "slug": "opencode-2-compat",
   "workstream": "WS-04",
-  "status": "staged",
-  "plan_marshall_plan_id": "",
-  "pr": "",
-  "landing": "",
+  "status": "shipped",
+  "lane": "runbook",
+  "plan_marshall_plan_id": "lb-48-opencode-2-compat",
+  "pr": "1830",
+  "landing": "landings/PLAN-LB-48.md",
   "seq": 48
 }

@@ -2,9 +2,9 @@
   "id": "PLAN-LB-49",
   "slug": "opencode-measurement",
   "workstream": "WS-04",
-  "status": "staged",
-  "plan_marshall_plan_id": "",
-  "pr": "",
-  "landing": "",
+  "status": "shipped",
+  "plan_marshall_plan_id": "lb-49-opencode-measurement",
+  "pr": "1833",
+  "landing": "landings/PLAN-LB-49.md",
   "seq": 49
 }

@@ -103,8 +103,10 @@ finalize dispatch-boundary rows (lessons `-002`/`-005` of PLAN-LB-39) — all me
 
 ## Dependencies and Sequencing
 
-- Depends on: PLAN-LB-48 — shares `opencode_runtime.py` and `test_opencode_runtime.py`, lands
-  first. PLAN-LB-39 shipped (#1768); the `unknown`-versus-`0` rule it was to own is PLAN-LB-50 D5
+- Depends on: PLAN-LB-48 (shipped, #1830) — it moved `opencode_runtime.py`, `contract.md`,
+  `no-op-policy.md`, `test_opencode_runtime.py` and `test_manage_metrics_enrich.py`, all declared
+  above, so every line reference in the Claim Labels is stale: re-read each against `main` at
+  outline. `subagent dispatch` now returns OpenCode 2's `tool: subagent` / `agent`. PLAN-LB-39 shipped (#1768); the `unknown`-versus-`0` rule it was to own is PLAN-LB-50 D5
   (running) — read PLAN-LB-50's landing before outlining deliverable 3.
 - Overlaps with: PLAN-LB-50 on `manage-metrics.py` / `platform-runtime` docs and the
   `test/plan-marshall/platform-runtime/` directory (this plan does not edit `manage-metrics.py`

@@ -74,9 +74,11 @@ Split guard: three deliverables.
 - OBSERVED: `marketplace/targets/antigravity/mapping.json:43-46` — `"Task:": {"disposition": "preserve", "note": "Leaf-aware: dispatcher prose is descriptive and preserved."}` (orchestrator-read).
 - OBSERVED: PLAN-LB-39's diff touches nothing under `marketplace/targets/` (`git show c8adaf178 --stat`).
 - OBSERVED: `antigravity_runtime.py:120-150` `_write_rules_bridge` body is a heading plus one sentence; drift compares `CLAUDE.md` mtime to the bridge mtime (orchestrator-read).
+  - verdict: corroborated | checked_at: d60b36f8d | by: live-blockers/analyze | rescoped: n/a | evidence: HEAD: _write_rules_bridge at antigravity_runtime.py L108-145 (+1 from #1835), body L119-124, mtime compare L129; text unchanged, strictly a heading plus a two-sentence paragraph.
 - OBSERVED: a content search for "No plugin found" in `marketplace/` returns 0 at `c8adaf178` (delegated agent); rule (a) is at `persona-plan-marshall-agent/standards/agent-behavior-rules.md:193`.
 - OBSERVED: the stamp goes to `phase_5.verification_steps`; no fixture for per-task synthesis (delegated agent).
 - HYPOTHESIS: the `platform-runtime subagent dispatch` seam carries no resolved level and never passes `spawning_tool_available`, so the inline no-op branches (`antigravity_runtime.py:999`, `opencode_runtime.py:1388`) are unreachable — confirm before wiring D1 (verify-at-outline). If confirmed, D1 includes making the seam carry the resolved level and reach the inline branch; a fixture pins both.
+  - verdict: corroborated | checked_at: d60b36f8d | by: live-blockers/analyze | rescoped: n/a | evidence: Inline no-op branches now at antigravity_runtime.py L982-991 and opencode_runtime.py L2458-2467 (cited L999/L1388 were already stale before #1835, which shifted them +2/-14); spawning_tool_available is referenced only in the two runtimes, runtime_base.py and contract.md; #1835 did not touch subagent_dispatch.
 - Verify-first clause: read PLAN-LB-50's landing first (bridge file path) and PLAN-LB-48's D2 state (OpenCode mapping) before outlining.
 - Out of scope: OpenCode tool names (PLAN-LB-48), harness detection under OpenCode 2 (PLAN-LB-48 D4), the harness/model stamp (PLAN-LB-45), the harness-agnostic criteria and gate integrity (PLAN-LB-52).
 
