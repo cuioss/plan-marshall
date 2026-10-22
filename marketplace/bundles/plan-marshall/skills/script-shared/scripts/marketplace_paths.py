@@ -407,8 +407,11 @@ def get_bundle_cache_roots() -> tuple[str, ...]:
     Routes through the platform-runtime ``layout bundle-cache-root`` op,
     memoised per process. On Claude this is the single
     ``~/.claude/plugins/cache/plan-marshall`` cache root; on OpenCode it is the
-    ``~``-anchored user-global skill roots (OpenCode has no separate plugin
-    cache). Falls back to the Claude default when no runtime is resolvable.
+    config-directory skill root the target DEPLOYS to
+    (``~/.config/opencode/skills``, or the ``$OPENCODE_CONFIG_DIR`` /
+    ``$XDG_CONFIG_HOME`` override) — discovery-only skill roots are not deploy
+    roots and are not returned. Falls back to the Claude default when no runtime
+    is resolvable.
 
     Callers probe the returned roots in list order (first existing match wins),
     expanding ``~`` in each. They are normally absolute, but a target with a

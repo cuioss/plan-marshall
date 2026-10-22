@@ -3,13 +3,14 @@
 """Conditional PreToolUse enforcement leaf for Claude Code.
 
 Registered (opt-in) as a matcher-less ``hooks.PreToolUse`` entry. It blocks six
-mechanically-checkable hard-rule violation families. R1-R4 are enforced ONLY when
-the call originates inside a plan-marshall plan context; outside that context
-(and on every error path) those rules emit nothing and the hook exits 0 (fail
-OPEN). **R5** binds inside a plan context AND in every session of this repository
-(so a consumer repository's ordinary Python work is untouched outside a plan
-context). **R6 is not context-gated** — a raw ``git commit`` into a 6-finalize
-plan worktree is refused from any session, named from the ``git -C`` target.
+mechanically-checkable hard-rule violation families. R1-R5 are enforced when the
+call originates inside a plan-marshall plan context, when the checkout carries a
+runbook-lane marker, or in EVERY session of this repository; outside that scope
+(and on every error path) they emit nothing and the hook exits 0 (fail OPEN), so
+a consumer repository's ordinary Python work is untouched outside a plan context.
+**R6 is not context-gated** — a raw ``git commit`` into a 6-finalize plan worktree
+is refused from any session, named from every commit form (``-C``,
+``--git-dir``/``--work-tree``, ``GIT_DIR``, a resolved ``-c alias``).
 
 ALL payload parsing, field access, and the context-gate predicate are delegated
 to the shared ``pretooluse_gate`` module — this leaf adds NO field-name knowledge
@@ -17,7 +18,7 @@ of its own. The only logic it owns is the R1-R6 rule matchers and the
 ``permissionDecision: deny`` envelope layered on top:
 
 - **R1 shell-construct compound** — a Bash command containing an UNQUOTED and
-  UNESCAPED ``&&``, ``;``, ``&``, newline, ``for``/``while`` loop, ``$(...)``
+  UNESCAPED ``&&``, ``;``, ``|``, ``&``, newline, ``for``/``while`` loop, ``$(...)``
   command substitution, or a leading ``VAR=val cmd`` inline env-var assignment.
   The recognised families are enumerated by ``_R1_FAMILIES``. An operator
   confined to a quoted argument is data, not an operator, and does not trip the
@@ -31,47 +32,55 @@ of its own. The only logic it owns is the R1-R6 rule matchers and the
 - **R4 hard-coded build** — a Bash command invoking ``./pw`` or a bare ``mvn`` /
   ``npm`` / ``gradle``.
 - **R5 direct interpreter call** — a Bash command invoking an interpreter
-  (``python`` / ``python3`` / a versioned spelling such as ``python3.12``,
-  case-insensitively) as ``-c``, a script path, a bare ``-`` (STDIN) or a
-  ``-<``/``->`` redirection, or ``-m`` with any module. R5 BINDS inside a plan
-  context (Signal 1 or Signal 2) and in EVERY session of THIS repository; in a
-  consumer repository outside a plan context it does not refuse a consumer's
-  ordinary Python work. Admissions: the ``python3 .plan/execute-script.py``
-  executor permit (the RELATIVE form, or an ABSOLUTE form resolving to
-  ``{repository root}/.plan/execute-script.py``); the shared allow-list of
-  documented non-executor invocations read from ``standards/r5-allowlist.json``,
-  whose REPOSITORY-RELATIVE entries are matched EXACTLY against the invocation's
-  script path resolved against the repository root; and that file's
-  BUNDLE-RELATIVE entries, matched EXACTLY against
-  ``{deployed bundle root}/{entry}`` for the platform-runtime bundle-cache layout
-  (the Claude plugin cache nested layout and the flat OpenCode / Antigravity
-  skill roots). Neither form is ever a basename or a suffix, so a copy of an
-  allow-listed script outside the repository, or under a non-deployed directory,
-  never matches. Wrapper prefixes (``command``/``env``/``sudo``/``timeout``/
-  ``nice``/``nohup``/``time``/``xargs``/``exec``/``stdbuf``/``setsid``, including
-  ``env -S``) are stripped first, so a wrapper cannot hide the interpreter. The
-  allow set is otherwise executor-only, so every ``-m`` form refuses.
-- **R6 raw finalize commit** — a raw ``git commit`` while the enclosing plan is
-  in phase ``6-finalize``. The plan is NAMED from the ``git -C`` TARGET (the
-  persona-mandated ``git -C {WORKTREE} commit`` form), then the payload ``cwd``,
-  then the project root (never "the first plan found") and its phase is read from
-  that plan's own ``status.json`` field ``current_phase`` — the worktree-resident
-  record first (the live one during phase 5+), then the main-anchored record. R6
-  is NOT context-gated. Every plan commit must pass through the gate-bearing
-  ``git-workflow commit`` verb; outside ``6-finalize`` a raw commit is untouched.
+  (``python`` / ``python3`` / ``pypy`` / ``pypy3`` / a versioned spelling such as
+  ``python3.12``, case-insensitively) as ``-c``, a script path, a bare ``-``
+  (STDIN) or a ``-<``/``->`` redirection, or ``-m`` with any module. R5 BINDS
+  inside a plan context (Signal 1 or Signal 2) and in EVERY session of THIS
+  repository; in a consumer repository outside a plan context it does not refuse
+  a consumer's ordinary Python work. Admissions: the ``python3
+  .plan/execute-script.py`` executor permit (the RELATIVE form admitted only from
+  the repository root — a leading ``cd``, an ``env -C``/``--chdir``/``sudo -D``
+  directory change and the shell workdir are resolved first — or an ABSOLUTE form
+  resolving to ``{repository root}/.plan/execute-script.py``); the shared
+  allow-list of documented non-executor invocations read from
+  ``standards/r5-allowlist.json``, whose REPOSITORY-RELATIVE entries are matched
+  EXACTLY against the invocation's script path resolved against the repository
+  root; and that file's BUNDLE-RELATIVE entries, matched EXACTLY against the
+  resolver's deployed path for the entry. Neither form is ever a basename or a
+  suffix, so a copy of an allow-listed script outside the repository, or under a
+  non-deployed directory, never matches. The wrapper prefixes come from ONE
+  shared data file, [`r5-wrappers.json`](r5-wrappers.json): a path-qualified
+  ``/usr/bin/env`` strips like ``env``, an option cluster like ``env -iu FOO`` is
+  walked letter by letter, ``timeout`` / ``flock`` / ``chrt`` / ``taskset``
+  consume their leading positional, ``env -S``, a shell's ``-c`` and ``watch`` /
+  ``parallel`` splice their command string back into the walk, and
+  ``find … -exec`` is walked from the program it runs. The allow set is otherwise
+  executor-only, so every ``-m`` form refuses.
+- **R6 raw finalize commit** — a raw ``git commit`` while the enclosing plan, in
+  phase ``6-finalize``. The plan is NAMED from every commit form: the
+  ``--work-tree`` value, the composed ``git -C`` target, the plan a ``--git-dir``
+  / ``GIT_DIR`` admin directory points at (``…/worktrees/{plan}``), then the
+  payload ``cwd``, then the project root (never "the first plan found"); its
+  phase is read from that plan's own ``status.json`` field ``current_phase`` —
+  the worktree-resident record first (the live one during phase 5+), then the
+  main-anchored record. A subcommand defined with ``-c alias.NAME=…`` is resolved
+  to its body; a shell-expansion alias body and any directory value that still
+  carries an unexpanded variable are UNRESOLVABLE and refused fail-closed inside
+  the enforced scope. R6 is NOT context-gated. Every plan commit must pass
+  through the gate-bearing ``git-workflow commit`` verb; outside ``6-finalize`` a
+  raw commit is untouched.
 
 Control flow:
 
 1. Parse stdin via ``gate.parse`` (empty/malformed → emit nothing, exit 0).
-2. Apply ``gate.context_gate(payload)`` (``Signal1 OR Signal2``). When true, run
-   the R1-R4 matchers; on the FIRST match, append one ``guard.log`` audit line
-   (best-effort) and emit the deny envelope with a one-line redirect reason.
-3. Run the R5 matcher when the gate is satisfied OR this project IS the
-   plan-marshall source repository; on a match, append one ``guard.log`` audit
-   line (best-effort) and emit the deny envelope.
-4. Run the R6 raw-finalize-commit rule unconditionally — it is NOT
+2. Evaluate the scope: ``gate.context_gate(payload)`` (``Signal1 OR Signal2``) OR
+   the runbook-lane marker OR this project IS the plan-marshall source
+   repository. Inside it, run the R1-R5 matchers; on the FIRST match, append one
+   ``guard.log`` audit line (best-effort) and emit the deny envelope with a
+   one-line redirect reason.
+3. Run the R6 raw-finalize-commit rule unconditionally — it is NOT
    context-gated — and on a match audit and deny.
-5. No match → emit nothing, exit 0.
+4. No match → emit nothing, exit 0.
 
 The whole leaf is best-effort/no-raise: any internal error degrades to a silent
 no-op (emit nothing, exit 0).
@@ -92,8 +101,9 @@ import posixpath
 import re
 import shlex
 import sys
+import time
 from collections.abc import Callable
-from typing import Any
+from typing import Any, NamedTuple
 
 import pretooluse_gate as gate
 from command_forms import STEWARD_COMMAND, SYNC_HARNESSES_COMMAND
@@ -166,6 +176,7 @@ def _r1_matches(pattern: re.Pattern[str]) -> Callable[[str], bool]:
 _R1_FAMILIES: tuple[tuple[str, str, Callable[[str], bool]], ...] = (
     ('and_chain', _R1_OPERATOR_VIEW, _r1_contains('&&')),
     ('semicolon', _R1_OPERATOR_VIEW, _r1_contains(';')),
+    ('pipe', _R1_OPERATOR_VIEW, _r1_contains('|')),
     ('background', _R1_OPERATOR_VIEW, _r1_contains('&')),
     ('newline', _R1_OPERATOR_VIEW, _r1_contains('\n')),
     ('substitution', _R1_SUBSTITUTION_VIEW, _r1_contains('$(')),
@@ -526,87 +537,187 @@ def _match_r4_hardcoded_build(tool_name: str | None, tool_input: dict[str, Any])
     return None
 
 
-#: Shell wrappers (``command`` / ``env`` / ``sudo`` / ``timeout`` / ``nice`` /
-#: ``nohup`` / ``time`` / ``xargs`` / ``exec`` / ``stdbuf`` / ``setsid``) and
-#: leading ``NAME=value`` assignments used before the interpreter check. This is
-#: the EXPLICIT list of known prefix programs — extended in one place and
-#: mirrored by the OpenCode guard's ``SHELL_WRAPPERS`` — never guessed from shape.
-#: R5 strips these ahead of its program check; R2 strips them for its SHELL-SPAWN
-#: class only (a file-op keeps its un-stripped read), and R4 strips them so a
-#: wrapper-prefixed build tool is still seen. R1 keeps its unstripped scan.
-_R5_SHELL_WRAPPERS = frozenset(
-    {'command', 'env', 'sudo', 'timeout', 'nice', 'nohup', 'time', 'xargs', 'exec', 'stdbuf', 'setsid'}
-)
+#: The ONE shared wrapper table both harnesses read — the sibling of
+#: ``r5-allowlist.json``. A wrapper is a prefix program whose own invocation RUNS
+#: the command that follows it (``env python3 -c x`` still runs the interpreter),
+#: so R5 strips it (with its options, option values and inline ``NAME=value``
+#: assignments) before the program check. The table declares, per wrapper, the
+#: value-consuming options (``values`` for the full token, ``value_letters`` for a
+#: letter inside a short cluster such as ``-iu FOO``), the number of leading
+#: positional arguments the wrapper consumes (``leading_positionals``), and the
+#: options whose value is itself a COMMAND STRING to re-lex (``splice``). It is
+#: matched by BASENAME, so ``/usr/bin/env`` strips exactly like ``env``. Neither
+#: implementation carries a second literal list: a wrapper added to the data file
+#: is stripped on both harnesses and one removed from it is stripped on neither.
+_R5_WRAPPER_TABLE_NAME = 'r5-wrappers.json'
 
-#: Per-wrapper options that consume a following value token. Kept PER WRAPPER so
-#: ``sudo -n`` (a non-interactive FLAG) does not swallow the interpreter behind
-#: it, while ``nice -n 5`` and ``xargs -n 5`` do consume their value. Mirrors the
-#: guard's ``WRAPPER_VALUE_OPTS``.
-_R5_WRAPPER_VALUE_OPTS: dict[str, frozenset[str]] = {
-    'command': frozenset(),
-    'env': frozenset({'-u', '--unset', '-C', '--chdir'}),
-    'sudo': frozenset({'-u', '--user', '-g', '--group', '-U', '--other-user', '-C', '--chdir', '--directory'}),
-    'timeout': frozenset({'-s', '--signal', '-k', '--kill-after'}),
-    'nice': frozenset({'-n', '--adjustment'}),
-    'nohup': frozenset(),
-    'time': frozenset(),
-    'exec': frozenset({'-a'}),
-    'stdbuf': frozenset({'-i', '-o', '-e', '--input', '--output', '--error'}),
-    'setsid': frozenset(),
-    'xargs': frozenset(
-        {
-            '-I',
-            '-n',
-            '-P',
-            '-s',
-            '-d',
-            '-a',
-            '-E',
-            '-L',
-            '-o',
-            '-R',
-            '-S',
-            '--max-args',
-            '--max-lines',
-            '--max-chars',
-            '--delimiter',
-            '--arg-file',
-            '--replace',
-            '--max-procs',
-            '--eof',
-            '--arg-separator',
-        }
-    ),
-}
+#: The wrapper table's location relative to the skill root, resolved exactly like
+#: the allow-list's.
+_R5_WRAPPER_RELATIVE = ('standards', _R5_WRAPPER_TABLE_NAME)
 
 #: Leading ``NAME=value`` assignment, transparent to the shell.
 _R5_ASSIGNMENT_RE = re.compile(r'^[A-Za-z_][A-Za-z0-9_]*=')
 
 
+def _wrapper_table_path() -> pathlib.Path:
+    """Return the path to the shared R5 wrapper table data file.
+
+    Resolved relative to this script's own skill (``standards/`` beside
+    ``scripts/``), exactly as a deployed tree carries it — independent of the
+    allow-list override seam, so a fixture that redirects the allow-list still
+    reads the real wrapper table.
+    """
+    return pathlib.Path(__file__).resolve().parent.parent.joinpath(*_R5_WRAPPER_RELATIVE)
+
+
+def _wrapper_table() -> dict[str, Any]:
+    """Return the parsed shared wrapper table, or an EMPTY table flagged missing.
+
+    ``missing`` makes :func:`_match_r5_interpreter_call` fail CLOSED: without the
+    table no wrapper can be stripped, so a command that names an interpreter
+    anywhere is refused rather than admitted through a prefix.
+
+    Read on each call rather than cached, so a test can point the path at a
+    fixture table without an invalidation step.
+    """
+    try:
+        data = json.loads(_wrapper_table_path().read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return {'wrappers': {}, 'find_exec': (), 'missing': True}
+    wrappers = data.get('wrappers') if isinstance(data, dict) else None
+    if not isinstance(wrappers, dict) or not wrappers:
+        return {'wrappers': {}, 'find_exec': (), 'missing': True}
+    find_exec = data.get('find_exec_options')
+    return {
+        'wrappers': wrappers,
+        'find_exec': tuple(str(option) for option in find_exec) if isinstance(find_exec, list) else (),
+        'missing': False,
+    }
+
+
+def _wrapper_basename(token: str) -> str:
+    """Return a wrapper token's program name (quotes and path qualification gone)."""
+    return _strip_matched_quotes(token).replace('\\', '/').rsplit('/', 1)[-1]
+
+
+def _consume_wrapper_option(spec: dict[str, Any], token: str, tokens: list[str], index: int) -> tuple[bool, str, int]:
+    """Step over ONE wrapper option, per the shared table.
+
+    Returns ``(is_splice, value, consumed)``: ``consumed`` is how many tokens the
+    option takes (1 = the option alone, 2 = the option plus its following value),
+    and ``is_splice`` is set when the option's value is a COMMAND STRING that must
+    be re-lexed and walked (a shell's ``-c``, ``env -S``, ``script -c``). A short
+    CLUSTER (``-iu FOO``) is walked letter by letter, so a value-taking letter is
+    honoured wherever it sits in the cluster.
+    """
+    values = spec.get('values') or []
+    value_letters = set(spec.get('value_letters') or [])
+    splice_opts = spec.get('splice') or []
+    splice_longs = {option for option in splice_opts if option.startswith('--')}
+    splice_letters = {
+        option[1] for option in splice_opts if len(option) == 2 and option[0] == '-' and not option.startswith('--')
+    }
+    next_value = tokens[index + 1] if index + 1 < len(tokens) else ''
+    if token.startswith('--'):
+        base, separator, attached = token.partition('=')
+        if base in splice_longs:
+            return True, (attached if separator else next_value), (1 if separator else 2)
+        if base in values:
+            return False, '', (1 if separator else 2)
+        return False, '', 1
+    letters = token[1:]
+    for position, letter in enumerate(letters):
+        if letter in splice_letters:
+            rest = letters[position + 1 :]
+            if rest:
+                return True, rest, 1
+            return True, next_value, 2
+        if letter in value_letters:
+            return False, '', (1 if letters[position + 1 :] else 2)
+    return False, '', (2 if token in values else 1)
+
+
 def _r5_stripped_tokens(command: str) -> list[str]:
     """Return shell-lexical tokens of *command* minus R5-transparent prefixes.
 
-    Drops leading shell wrappers (each with its options, option values and
-    inline assignments) and leading ``NAME=value`` assignments, mirroring the
-    guard's ``commandTokens`` walk. ``timeout`` additionally consumes its
-    mandatory duration value; ``env -S``/``--split-string`` splices its string
-    back through the splitter, because ``env -S`` runs that string as the
-    command. Shell-lexical (``shlex``) like the other R5 helpers, falling back
-    to the whitespace split on malformed quoting rather than returning early.
+    Shell-lexical (``shlex``) like the other R5 helpers, falling back to the
+    whitespace split on malformed quoting rather than returning early, then
+    walked by :func:`_strip_wrapper_tokens`. A ``find … -exec`` program hidden
+    behind a wrapper (``env find . -exec python3 -c x {} +``) is spliced AFTER the
+    wrapper walk, so the wrapper prefix cannot hide it.
     """
     try:
         tokens = shlex.split(command)
     except ValueError:
         tokens = command.split()
-    return _strip_wrapper_tokens(tokens)
+    stripped = _strip_wrapper_tokens(tokens)
+    if stripped and _wrapper_basename(stripped[0]) == 'find':
+        table = _wrapper_table()
+        for position, token in enumerate(stripped):
+            if token in table['find_exec']:
+                return _strip_wrapper_tokens(stripped[position + 1 :])
+    return stripped
+
+
+def _spliced_segments(value: str) -> list[str]:
+    """Split a spliced COMMAND STRING into shell segments (quote-aware).
+
+    A wrapper's multi-command string (``zsh -c "cd /tmp; python3 -c x"``) must be
+    walked segment by segment — the interpreter is behind a ``cd`` and a
+    separator inside the string, not at its first word.
+    """
+    segments: list[str] = []
+    current: list[str] = []
+    in_single = False
+    in_double = False
+    escaped = False
+    for char in value:
+        if escaped:
+            current.append(char)
+            escaped = False
+            continue
+        if char == '\\' and not in_single:
+            current.append(char)
+            escaped = True
+            continue
+        if char == "'" and not in_double:
+            in_single = not in_single
+            current.append(char)
+            continue
+        if char == '"' and not in_single:
+            in_double = not in_double
+            current.append(char)
+            continue
+        if not in_single and not in_double and char in ';&|\n':
+            segments.append(''.join(current))
+            current = []
+            continue
+        current.append(char)
+    segments.append(''.join(current))
+    return [segment.strip() for segment in segments if segment.strip()]
+
+
+def _is_interpreter_program_token(token: str) -> bool:
+    """Whether *token* names an interpreter program (basename, case-insensitive)."""
+    return _PYTHON_PROGRAM_RE.match(_wrapper_basename(token).lower()) is not None
 
 
 def _strip_wrapper_tokens(tokens: list[str]) -> list[str]:
     """Strip leading wrappers/assignments from *tokens* (the R5 prefix walk).
 
-    Factored out so the ``env -S`` splice can recurse on the spliced head
-    without re-lexing the whole command.
+    ``env -S <string>`` and a shell's ``-c <string>`` SPLICE the string back
+    through the splitter, because the wrapper runs that string as the command. A
+    wrapper's ``leading_positionals`` (timeout's DURATION, flock's lock file,
+    chrt's priority, taskset's mask) are consumed before the walked command. A
+    ``find … -exec <program>`` invocation is walked from the program after the
+    find-exec option, sourced from the same table's ``find_exec_options``.
     """
+    table = _wrapper_table()
+    if tokens and _wrapper_basename(tokens[0]) == 'find':
+        for index, token in enumerate(tokens):
+            if token in table['find_exec']:
+                return _strip_wrapper_tokens(tokens[index + 1 :])
+    wrappers = table['wrappers']
     index = 0
     total = len(tokens)
     while index < total:
@@ -614,12 +725,11 @@ def _strip_wrapper_tokens(tokens: list[str]) -> list[str]:
         if _R5_ASSIGNMENT_RE.match(token):
             index += 1
             continue
-        if token not in _R5_SHELL_WRAPPERS:
+        spec = wrappers.get(_wrapper_basename(token))
+        if not isinstance(spec, dict):
             break
-        wrapper = token
-        value_opts = _R5_WRAPPER_VALUE_OPTS.get(wrapper, frozenset())
         index += 1
-        spliced: list[str] | None = None
+        spliced: str | None = None
         while index < total:
             option = tokens[index]
             if _R5_ASSIGNMENT_RE.match(option):
@@ -627,30 +737,50 @@ def _strip_wrapper_tokens(tokens: list[str]) -> list[str]:
                 continue
             if not (option.startswith('-') and len(option) > 1):
                 break
-            if wrapper == 'env' and (option.startswith('-S') or option.split('=', 1)[0] == '--split-string'):
-                if '=' in option:
-                    value = option.split('=', 1)[1]
-                    index += 1
-                elif option in ('-S', '--split-string'):
-                    index += 1
-                    value = tokens[index] if index < total else ''
-                    index += 1
-                else:
-                    value = option[2:]
-                    index += 1
-                try:
-                    spliced = shlex.split(value)
-                except ValueError:
-                    spliced = value.split()
+            is_splice, value, consumed = _consume_wrapper_option(spec, option, tokens, index)
+            index += consumed
+            if is_splice:
+                spliced = value
                 break
-            base = option.split('=', 1)[0]
-            index += 1
-            if '=' not in option and base in value_opts and index < total and not tokens[index].startswith('-'):
-                index += 1
         if spliced is not None:
-            return _strip_wrapper_tokens([*spliced, *tokens[index:]])
-        if wrapper == 'timeout' and index < total and not tokens[index].startswith('-'):
+            for segment in _spliced_segments(spliced):
+                try:
+                    segment_tokens = shlex.split(segment)
+                except ValueError:
+                    segment_tokens = segment.split()
+                walked = _strip_wrapper_tokens([*segment_tokens, *tokens[index:]])
+                if walked and _is_interpreter_program_token(walked[0]):
+                    return walked
+            segments = _spliced_segments(spliced)
+            first = segments[0] if segments else spliced
+            try:
+                first_tokens = shlex.split(first)
+            except ValueError:
+                first_tokens = first.split()
+            return _strip_wrapper_tokens([*first_tokens, *tokens[index:]])
+        if spec.get('splice_positional') and index < total:
+            # `watch '<command>'` / `parallel '<command>'` run their first
+            # positional as a shell command, so it is spliced and walked.
+            value = _strip_matched_quotes(tokens[index])
+            for segment in _spliced_segments(value):
+                try:
+                    segment_tokens = shlex.split(segment)
+                except ValueError:
+                    segment_tokens = segment.split()
+                walked = _strip_wrapper_tokens([*segment_tokens, *tokens[index + 1 :]])
+                if walked and _is_interpreter_program_token(walked[0]):
+                    return walked
+            segments = _spliced_segments(value)
+            first = segments[0] if segments else value
+            try:
+                first_tokens = shlex.split(first)
+            except ValueError:
+                first_tokens = first.split()
+            return _strip_wrapper_tokens([*first_tokens, *tokens[index + 1 :]])
+        remaining = int(spec.get('leading_positionals') or 0)
+        while remaining > 0 and index < total and not tokens[index].startswith('-'):
             index += 1
+            remaining -= 1
     return tokens[index:]
 
 
@@ -660,11 +790,19 @@ def _is_executor_permit(command: str, root: str | None, cwd: str | None) -> bool
     Compared after R5 wrapper stripping, so a wrapper-prefixed executor call
     (``env python3 .plan/execute-script.py ...``) stays exempt exactly as the
     guard exempts it. The RELATIVE form ``.plan/execute-script.py`` is the
-    canonical documented invocation and is admitted as-is; an ABSOLUTE form is
-    admitted only when it RESOLVES to ``{repository root}/.plan/execute-script.py``
-    (relative to the shell *cwd* when needed), so
-    ``python3 /tmp/x/.plan/execute-script.py`` is refused — never admitted by
-    suffix. Used only by the R5 matcher.
+    canonical documented invocation and is admitted only when the command's
+    EFFECTIVE working directory IS a repository root: the repository itself, or
+    one of ITS plan worktrees under ``.plan/local/worktrees/`` (phase-5+ pins the
+    shell cwd to the worktree, where ``.plan`` is the same executor through the
+    worktree's symlink). A leading ``cd``, an ``env -C`` / ``--chdir`` /
+    ``sudo -D`` directory change and the payload ``cwd`` are resolved first, so
+    the same relative path run from anywhere else — ``/tmp/x``, another checkout
+    — is refused.
+    (``git -C`` is not a shell directory change: it moves git's own working
+    directory for that one invocation, never the directory a following program
+    runs in.) An ABSOLUTE form is admitted only when it equals
+    ``{repository root}/.plan/execute-script.py`` after path normalization.
+    Used only by the R5 matcher.
     """
     stripped = _r5_stripped_tokens(command)
     if len(stripped) < 2:
@@ -674,7 +812,10 @@ def _is_executor_permit(command: str, root: str | None, cwd: str | None) -> bool
         return False
     second = _strip_matched_quotes(stripped[1]).replace('\\', '/')
     if second == '.plan/execute-script.py':
-        return True
+        effective = _effective_cwd(command, cwd or root)
+        if not effective or not root:
+            return False
+        return _is_repository_root_or_plan_worktree(effective, root)
     if not second.startswith('/'):
         return False
     repo_root = (root or cwd or '').replace('\\', '/').rstrip('/')
@@ -683,9 +824,107 @@ def _is_executor_permit(command: str, root: str | None, cwd: str | None) -> bool
     return posixpath.normpath(second) == repo_root + '/.plan/execute-script.py'
 
 
+def _is_repository_root_or_plan_worktree(effective: str, root: str) -> bool:
+    """Whether *effective* is the project root or one of its OWN plan worktrees.
+
+    Phase-5+ pins the shell cwd to the plan worktree, where the relative
+    ``.plan/execute-script.py`` is the same executor through the worktree's
+    symlink — refusing it would break the documented execution flow. A directory
+    that is neither the root nor one of that root's own
+    ``.plan/local/worktrees/{plan}`` paths stays refused. Both sides are compared
+    after ``realpath``.
+    """
+    resolved_root = _real_path(root)
+    resolved = _real_path(effective)
+    if resolved == resolved_root:
+        return True
+    worktree_base = posixpath.normpath(resolved_root + '/.plan/local/worktrees') + '/'
+    return resolved.startswith(worktree_base)
+
+
+def _real_path(value: str) -> str:
+    """Return *value* as a realpath, falling back to its normalized form."""
+    try:
+        return str(pathlib.Path(value).resolve())
+    except OSError:
+        return posixpath.normpath(value)
+
+
+def _effective_cwd(command: str, base: str | None) -> str:
+    """The command's EFFECTIVE working directory.
+
+    The shell's own cwd with a leading ``cd`` and every ``env -C`` / ``--chdir`` /
+    ``sudo -D`` / ``--directory`` directory change applied in order. The wrapper
+    chain is walked with the SHARED table, so a directory change is found wherever
+    it sits among a wrapper's options (``env -u FOO -C /tmp/x …``,
+    ``sudo -u bob -D /tmp/x …``). Empty when no base is known, which no caller
+    treats as "the repository root".
+    """
+    if not base:
+        return ''
+    current = base.replace('\\', '/').rstrip('/')
+    if not current.startswith('/'):
+        return ''
+    try:
+        tokens = shlex.split(command)
+    except ValueError:
+        tokens = command.split()
+    index = 0
+    while index < len(tokens):
+        token = _strip_matched_quotes(tokens[index])
+        if _R5_ASSIGNMENT_RE.match(token):
+            index += 1
+            continue
+        if token == 'cd':
+            value = _strip_matched_quotes(tokens[index + 1]) if index + 1 < len(tokens) else ''
+            if not value:
+                return ''
+            current = _resolve_against(current, value)
+            index += 2
+            continue
+        wrapper = _wrapper_basename(token)
+        spec = _wrapper_table()['wrappers'].get(wrapper)
+        if not isinstance(spec, dict):
+            break
+        index += 1
+        while index < len(tokens):
+            option = _strip_matched_quotes(tokens[index])
+            if _R5_ASSIGNMENT_RE.match(option):
+                index += 1
+                continue
+            if not (option.startswith('-') and len(option) > 1):
+                break
+            is_directory_option = (
+                option in ('-C', '--chdir')
+                or option.startswith('--chdir=')
+                or (wrapper == 'sudo' and (option in ('-D', '--directory') or option.startswith('--directory=')))
+                or (wrapper == 'env' and option.startswith('-C') and len(option) > 2)
+            )
+            if is_directory_option:
+                value = option.split('=', 1)[1] if '=' in option else ''
+                if not value and option.startswith('-C') and len(option) > 2 and not option.startswith('--'):
+                    value = option[2:]
+                if not value:
+                    value = _strip_matched_quotes(tokens[index + 1]) if index + 1 < len(tokens) else ''
+                if value:
+                    current = _resolve_against(current, value)
+            _is_splice, _value, consumed = _consume_wrapper_option(spec, option, tokens, index)
+            index += consumed
+            if _is_splice:
+                break
+    return current
+
+
+def _resolve_against(base: str, value: str) -> str:
+    """Resolve *value* against *base* into a normalized posix path."""
+    if value.startswith('/'):
+        return posixpath.normpath(value)
+    return posixpath.normpath(f'{base}/{value}')
+
+
 #: Interpreter program name, including a versioned spelling (``python3.12``).
 #: Matched after lowercasing, mirroring the guard's ``isPythonInterpreter``.
-_PYTHON_PROGRAM_RE = re.compile(r'^python(\d+(\.\d+)*)?$')
+_PYTHON_PROGRAM_RE = re.compile(r'^(python|pypy)(\d+(\.\d+)*)?$')
 
 #: The shared allow-list data file both harnesses read. Resolved relative to the
 #: script so the deployed Claude hook finds the skill's ``standards/`` directory.
@@ -766,81 +1005,169 @@ def _repo_root_from_hook_location() -> str | None:
 def _is_this_repository(payload: dict[str, Any]) -> bool:
     """Whether this call runs against the plan-marshall source repository.
 
-    True when EITHER the call's project directory (``CLAUDE_PROJECT_DIR`` then the
-    payload ``cwd``) OR the running hook's own location carries the repository
-    marker. The location arm keeps a hook dispatched from the repository tree —
-    as the test harness loads it, and as a developer checkout wires it — bound to
-    this repository's stricter scope.
+    The SESSION's project directory (``CLAUDE_PROJECT_DIR``, falling back to the
+    payload ``cwd``) decides when the payload names one; the running hook's own
+    location is only the FALLBACK for a payload that names no project directory.
+    A consumer session on a machine that also carries the source tree is judged
+    by its own project directory, never by where the hook file happens to live —
+    while a payload with no project directory at all (a bare test/probe call)
+    still inherits the location's stricter scope.
     """
-    for root in (_allow_list_root(payload), _repo_root_from_hook_location()):
+    project = _allow_list_root(payload)
+    roots = (project,) if project else (_repo_root_from_hook_location(),)
+    for root in roots:
         if root and pathlib.Path(root).joinpath(*_R5_REPO_MARKER.split('/')).is_file():
             return True
     return False
 
 
 def _deployed_bundle_roots() -> tuple[str, ...]:
-    """The candidate deployed bundle roots from the platform-runtime cache layout.
+    """The deployed bundle-cache roots, from the SHARED layout resolver.
 
-    The OpenCode / Antigravity FLAT skill roots (``{root}/plan-marshall-{skill}/``)
-    plus the Claude plugin-cache NESTED root (``{root}/plan-marshall/{version}/``).
-    Read from the environment so a fixture can place a deployed tree where the
-    hook looks; deduplicated, in probe order.
+    The roots are not a hard-coded list here: they come from
+    ``deployed_layout.all_bundle_cache_roots`` — the same shared module the
+    ``platform_runtime layout bundle-cache-root`` verb delegates to, reading the
+    same ``standards/deployed-layout.json`` data file. A machine may carry more
+    than one harness, so the union across targets is used. Every root is
+    realpath'd, so a symlinked tree is never trusted lexically, and a root the
+    resolver does not name is never a candidate. When the shared module is
+    unreachable the data file is read directly (same data, no second list); when
+    neither can be read the result is EMPTY, which refuses every deployed script
+    rather than trusting an unknown tree.
     """
-    home = os.environ.get('HOME') or str(pathlib.Path.home())
-    config_dir = os.environ.get('XDG_CONFIG_HOME') or (str(pathlib.Path(home) / '.config') if home else '')
-    roots: list[str] = []
-    opencode_config = os.environ.get('OPENCODE_CONFIG_DIR', '')
-    if opencode_config:
-        roots.append(str(pathlib.Path(opencode_config) / 'skills'))
-    if config_dir:
-        roots.append(str(pathlib.Path(config_dir) / 'opencode' / 'skills'))
-        roots.append(str(pathlib.Path(config_dir) / 'opencode' / 'skill'))
-    if home:
-        roots.extend(
-            [
-                str(pathlib.Path(home) / '.config' / 'opencode' / 'skills'),
-                str(pathlib.Path(home) / '.claude' / 'skills'),
-                str(pathlib.Path(home) / '.claude' / 'plugins' / 'cache' / 'plan-marshall'),
-                str(pathlib.Path(home) / '.agents' / 'skills'),
-                str(pathlib.Path(home) / '.gemini' / 'config' / 'plugins' / 'plan-marshall' / 'skills'),
-                str(pathlib.Path(home) / '.gemini' / 'config' / 'skills'),
-                str(pathlib.Path(home) / '.gemini' / 'antigravity' / 'skills'),
-            ]
+    standards_dir = _standards_dir()
+    try:
+        import deployed_layout
+    except ImportError:
+        return _layout_roots_from_data()
+    try:
+        return tuple(
+            str(pathlib.Path(root).resolve()) for root in deployed_layout.all_bundle_cache_roots(standards_dir)
         )
-    seen: dict[str, None] = {}
-    for root in roots:
-        seen.setdefault(root, None)
-    return tuple(seen)
+    except Exception:
+        return ()
+
+
+def _layout_roots_from_data() -> tuple[str, ...]:
+    """Expand the shared layout data file without the shared module (fallback)."""
+    targets = _load_layout_data().get('targets')
+    if not isinstance(targets, dict):
+        return ()
+    roots: list[str] = []
+    for templates in targets.values():
+        for template in templates if isinstance(templates, list) else []:
+            if not isinstance(template, dict):
+                continue
+            append = str(template.get('append') or '')
+            home = os.environ.get('HOME') or str(pathlib.Path.home())
+            if 'env' in template:
+                base = os.environ.get(str(template['env']), '')
+            elif 'xdg' in template:
+                base = os.environ.get('XDG_CONFIG_HOME') or str(pathlib.Path(home) / '.config')
+            elif 'home' in template:
+                base = home
+            else:
+                continue
+            if not base:
+                continue
+            root = str(pathlib.Path(base).joinpath(*append.split('/'))) if append else str(pathlib.Path(base))
+            root = str(pathlib.Path(root).resolve())
+            if root not in roots:
+                roots.append(root)
+    return tuple(roots)
+
+
+def _standards_dir() -> pathlib.Path:
+    """The skill's ``standards/`` directory — where the shared data files live."""
+    return pathlib.Path(__file__).resolve().parent.parent / 'standards'
+
+
+#: The deployed-layout data file the resolver and both guards read (the
+#: allow-list's sibling).
+_LAYOUT_DATA_NAME = 'deployed-layout.json'
 
 
 def _bundle_entry_candidates(entry: str, roots: tuple[str, ...]) -> list[str]:
     """Every absolute path a bundle-relative *entry* can be deployed at.
 
-    The nested shape is ``{root}/plan-marshall/{entry}`` (plus each versioned
-    ``{root}/plan-marshall/{version}/{entry}``); the flat shape reconstructs the
-    skill's dash-namespaced directory name as
-    ``{root}/plan-marshall-{skill}/{rest}``.
+    The nested shape is ``{root}/plan-marshall/{version}/{entry}`` for the
+    resolver's VERSION directory — the newest sibling carrying the bundle marker,
+    never an arbitrary directory under the bundle — plus the unversioned
+    ``{root}/plan-marshall/{entry}``; the flat shape reconstructs the skill's
+    dash-namespaced directory name as ``{root}/plan-marshall-{skill}/{rest}``.
+    The three layout spellings come from the shared ``deployed-layout.json``.
     """
     parts = entry.split('/')
     if len(parts) < 2 or parts[0] != 'skills':
         return []
     skill = parts[1]
     rest = parts[2:]
-    flat_name = f'plan-marshall-{skill}'
+    flat_prefix, nested_dir, version_marker = _bundle_layout_spellings()
+    flat_name = f'{flat_prefix}{skill}'
     candidates: list[str] = []
     for root in roots:
         base = pathlib.Path(root.replace('\\', '/'))
         candidates.append(str(base.joinpath(flat_name, *rest)))
-        nested = base / 'plan-marshall'
+        nested = base / nested_dir
         candidates.append(str(nested.joinpath(*entry.split('/'))))
-        try:
-            children = sorted(nested.iterdir())
-        except OSError:
-            continue
-        for child in children:
-            if child.is_dir():
-                candidates.append(str(child.joinpath(*entry.split('/'))))
+        version_dir = _newest_version_dir(nested, version_marker, entry)
+        if version_dir is not None:
+            candidates.append(str(version_dir.joinpath(*entry.split('/'))))
     return candidates
+
+
+def _bundle_layout_spellings() -> tuple[str, str, str]:
+    """``(flat_skill_prefix, nested_bundle_dir, version_marker)`` from the shared data."""
+    data = _load_layout_data()
+    return (
+        str(data.get('flat_skill_prefix') or 'plan-marshall-'),
+        str(data.get('nested_bundle_dir') or 'plan-marshall'),
+        str(data.get('version_marker') or '.claude-plugin/plugin.json'),
+    )
+
+
+def _load_layout_data() -> dict[str, Any]:
+    """Return the shared deployed-layout data file, or ``{}`` when unreadable."""
+    try:
+        data = json.loads((_standards_dir() / _LAYOUT_DATA_NAME).read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _newest_version_dir(nested: pathlib.Path, marker: str, entry: str) -> pathlib.Path | None:
+    """The resolver's VERSION directory for *entry*, or ``None``.
+
+    Delegates to the SHARED ``deployed_layout.newest_version_dir`` — the same
+    newest-marker-carrying-directory-that-contains-the-entry rule
+    ``bootstrap_plugin.resolve_bundle_path`` applies — so the hook, the resolver
+    and the guard select one version, not three. Falls back to an equivalent
+    local selection only when the shared module is unreachable.
+    """
+    try:
+        import deployed_layout
+    except ImportError:
+        deployed_layout = None  # type: ignore[assignment]
+    if deployed_layout is not None:
+        return deployed_layout.newest_version_dir(nested, marker, entry)
+    if not nested.is_dir():
+        return None
+    candidates = [
+        child
+        for child in nested.iterdir()
+        if child.is_dir() and (child / marker).is_file() and (child / entry).exists()
+    ]
+    if not candidates:
+        return None
+    return max(candidates, key=lambda child: _version_sort_key(child.name))
+
+
+def _version_sort_key(name: str) -> tuple[tuple[int, int | str], ...]:
+    """Numeric-segment version ordering (``1.0.10`` after ``1.0.9``)."""
+    key: list[tuple[int, int | str]] = []
+    for part in name.replace('-', '.').split('.'):
+        key.append((0, int(part)) if part.isdigit() else (1, part))
+    return tuple(key)
 
 
 def _resolved_script_path(raw: str, root: str | None, cwd: str | None) -> str:
@@ -864,12 +1191,21 @@ def _resolved_script_path(raw: str, root: str | None, cwd: str | None) -> str:
 def _is_deployed_allow_listed(absolute_path: str, entries: tuple[str, ...], roots: tuple[str, ...]) -> bool:
     """Whether *absolute_path* is a deployed bundle script on the bundle allow-list.
 
-    Matched EXACTLY against ``{deployed bundle root}/{entry}`` for every candidate
-    root, so a same-named script under a NON-deployed directory never matches.
+    Compared after ``realpath`` on BOTH sides: a symlink pointing out of a
+    deployed root resolves elsewhere and is refused, and a same-named script under
+    a NON-deployed directory never matches.
     """
     if not absolute_path or not absolute_path.startswith('/'):
         return False
-    normalized = posixpath.normpath(absolute_path)
+    try:
+        normalized = str(pathlib.Path(absolute_path).resolve())
+    except OSError:
+        return False
+    # The SCRIPT is realpath'd; every candidate is built lexically from an
+    # already-realpath'd root. A symlink pointing out of a deployed root
+    # therefore resolves to its target and never equals the expected deployed
+    # path, while a same-named script under a non-deployed directory never
+    # matches at all.
     for entry in entries:
         for candidate in _bundle_entry_candidates(entry, roots):
             if posixpath.normpath(candidate) == normalized:
@@ -1023,6 +1359,16 @@ def _match_r5_interpreter_call(
         return None
     if _is_executor_permit(command, root, cwd):
         return None
+    if _wrapper_table()['missing']:
+        # Fail CLOSED: without the shared wrapper table no wrapper can be
+        # stripped, so refuse any command that names an interpreter anywhere —
+        # EXCEPT the executor permit above, the one sanctioned path.
+        try:
+            raw = shlex.split(command)
+        except ValueError:
+            raw = command.split()
+        if any(_PYTHON_PROGRAM_RE.match(_wrapper_basename(token).lower()) for token in raw):
+            return _R5_REASON
     stripped = _r5_stripped_tokens(command)
     first = stripped[0].strip().lower() if stripped else ''
     program = _strip_matched_quotes(first.rsplit('/', 1)[-1] if first else '')
@@ -1130,45 +1476,97 @@ def _main_anchored_status_path(plan_id: str) -> pathlib.Path | None:
         return None
 
 
-def _plan_phase(payload: dict[str, Any], git_target: str | None = None) -> str | None:
+class _GitCommitInfo(NamedTuple):
+    """What a ``git commit`` command says about the plan it is aimed at.
+
+    ``cwd_target`` is git's composed ``-C`` target, ``work_tree`` and ``git_dir``
+    are the ``--work-tree`` / ``--git-dir`` (or ``GIT_WORK_TREE`` / ``GIT_DIR``)
+    values, and ``unresolvable`` is set when one of them cannot be resolved (an
+    unexpanded shell variable in a `-C` target) or when a subcommand alias cannot
+    be turned into a plain subcommand — both refuse fail-closed.
+    """
+
+    is_commit: bool
+    cwd_target: str | None
+    work_tree: str | None
+    git_dir: str | None
+    unresolvable: bool
+
+
+#: A directory value that still carries a shell expansion is UNRESOLVABLE: the
+#: guard cannot know where the commit would land, so R6 refuses fail-closed.
+_UNRESOLVABLE_DIR_RE = re.compile(r'[$`]')
+
+
+def _is_unresolvable_dir(value: str | None) -> bool:
+    """Whether a directory value still carries an unexpanded shell expansion."""
+    if not value:
+        return False
+    return _UNRESOLVABLE_DIR_RE.search(value) is not None
+
+
+def _plan_id_from_git_dir(value: str) -> str:
+    """The plan id a git admin directory names (``.git/worktrees/{plan}``), or ``''``."""
+    normalized = value.replace('\\', '/').rstrip('/')
+    marker = '/worktrees/'
+    at = normalized.rfind(marker)
+    if at == -1:
+        return ''
+    if normalized.endswith('/worktrees'):
+        return ''
+    return normalized[at + len(marker) :].split('/')[0]
+
+
+def _plan_phase(payload: dict[str, Any], commit_info: _GitCommitInfo | None = None) -> str | None:
     """Read the enclosing plan's phase from its own ``status.json``.
 
-    The plan is NAMED, in priority order, by the ``git -C`` TARGET (the
-    persona-mandated ``git -C {WORKTREE} commit`` form, resolved against the
-    shell cwd), then the payload ``cwd``, then the project root — never "the
-    first plan found". The record is the WORKTREE-RESIDENT one first — the live
-    record during phase 5+, where ``prepare_execute`` moves the plan directory
-    into the worktree — then the main-anchored live record. ``None`` when no
-    candidate names a plan worktree, or no readable record resolves — the
-    raw-commit rule then does not fire.
+    The plan is NAMED, in priority order, by the ``--work-tree`` value, then the
+    composed ``git -C`` target (the persona-mandated ``git -C {WORKTREE} commit``
+    form, resolved against the shell cwd), then the plan a ``--git-dir`` /
+    ``GIT_DIR`` admin directory points at (``.git/worktrees/{plan}``), then the
+    payload ``cwd``, then the project root — never "the first plan found". The
+    record is the WORKTREE-RESIDENT one first — the live one during phase 5+,
+    where ``prepare_execute`` moves the plan directory into the worktree — then
+    the main-anchored live record. ``None`` when no candidate names a plan
+    worktree, or no readable record resolves — the raw-commit rule then does not
+    fire.
     """
     cwd = gate.cwd(payload)
     project_root = _allow_list_root(payload)
-    worktree = (
-        _worktree_root_from_path(_resolve_target_path(git_target, cwd or project_root))
-        or _worktree_root_from_path(cwd)
-        or _worktree_root_from_path(project_root)
-    )
-    if worktree is None:
+    candidates: list[tuple[pathlib.Path, str]] = []
+    if commit_info is not None:
+        for value in (commit_info.work_tree, commit_info.cwd_target):
+            named = _worktree_root_from_path(_resolve_target_path(value, cwd or project_root))
+            if named is not None:
+                candidates.append(named)
+        if commit_info.git_dir:
+            plan_id = _plan_id_from_git_dir(commit_info.git_dir)
+            if plan_id and project_root:
+                candidates.append((pathlib.Path(project_root) / '.plan' / 'local' / 'worktrees' / plan_id, plan_id))
+    for value in (cwd, project_root):
+        named = _worktree_root_from_path(value)
+        if named is not None:
+            candidates.append(named)
+    if not candidates:
         return None
-    worktree_root, plan_id = worktree
-    candidates: list[pathlib.Path | None] = [
-        worktree_root / '.plan' / 'local' / 'plans' / plan_id / 'status.json',
-        _main_anchored_status_path(plan_id),
-    ]
-    for status_path in candidates:
-        if status_path is None:
-            continue
-        try:
-            data = json.loads(status_path.read_text(encoding='utf-8'))
-        except FileNotFoundError:
-            continue
-        except (OSError, ValueError):
+    for worktree_root, plan_id in candidates:
+        status_candidates: list[pathlib.Path | None] = [
+            worktree_root / '.plan' / 'local' / 'plans' / plan_id / 'status.json',
+            _main_anchored_status_path(plan_id),
+        ]
+        for status_path in status_candidates:
+            if status_path is None:
+                continue
+            try:
+                data = json.loads(status_path.read_text(encoding='utf-8'))
+            except FileNotFoundError:
+                continue
+            except (OSError, ValueError):
+                return None
+            phase = data.get('current_phase') if isinstance(data, dict) else None
+            if isinstance(phase, str) and phase:
+                return phase
             return None
-        phase = data.get('current_phase') if isinstance(data, dict) else None
-        if isinstance(phase, str) and phase:
-            return phase
-        return None
     return None
 
 
@@ -1185,44 +1583,158 @@ def _resolve_target_path(target: str | None, base: str | None) -> str | None:
     return posixpath.normpath(f'{normalized_base}/{normalized}')
 
 
-def _git_commit_target(command: str) -> tuple[bool, str | None]:
-    """Return ``(is_commit, target)`` for a ``git commit`` command.
+def _git_program_tokens(command: str) -> tuple[list[str], str | None] | None:
+    """``(tokens, cd_target)`` for a git program in any spliced segment, or ``None``.
 
-    ``target`` is the value of git's ``-C`` global option (attached ``-C.`` form
-    included), so R6 can name the plan the commit is AIMED at. Successive ``-C``
-    values COMPOSE — git applies each in order, resolving a relative value against
-    the running target — so ``git -C . -C .plan/local/worktrees/plan-a commit``
-    names the worktree too. Mirrors the guard's ``gitCommitTarget``: the R5
-    wrappers are stripped first, then git's global options are walked.
+    A commit can be hidden behind a ``cd`` inside a wrapper's command string
+    (``zsh -c 'cd /tmp; git commit'``), so every quoted token is split into
+    segments, each segment is walked, and the LEADING ``cd`` segments are composed
+    into the directory the git invocation runs in — otherwise R6 would name the
+    plan from the wrong base and admit the commit.
     """
+    try:
+        raw = shlex.split(command)
+    except ValueError:
+        raw = command.split()
+    for position, token in enumerate(raw):
+        if position == 0:
+            continue
+        cd_target: str | None = None
+        for segment in _spliced_segments(token):
+            try:
+                parts = shlex.split(segment)
+            except ValueError:
+                parts = segment.split()
+            walked = _strip_wrapper_tokens(parts)
+            if not walked:
+                continue
+            program = _strip_matched_quotes(walked[0]).replace('\\', '/').rsplit('/', 1)[-1]
+            if program == 'cd' and len(walked) > 1:
+                value = _strip_matched_quotes(walked[1])
+                cd_target = value if cd_target is None or value.startswith('/') else f'{cd_target}/{value}'
+                continue
+            if program.lower() == 'git':
+                return walked, cd_target
+    return None
+
+
+def _git_commit_target(command: str) -> _GitCommitInfo:
+    """Return what a ``git commit`` command says about the plan it targets.
+
+    Names the plan from EVERY commit form the harness can express: git's ``-C``
+    global option (attached ``-C.`` form included; successive values COMPOSE,
+    because git applies each in order against the running target), the
+    ``--git-dir`` / ``--work-tree`` options in both detached and ``=`` form, and
+    the ``GIT_DIR`` / ``GIT_WORK_TREE`` environment assignments that precede the
+    program. A subcommand defined with ``-c alias.NAME=…`` is RESOLVED to its
+    body's first word; a shell-expansion body (``!…``) and any directory value
+    that still carries ``$``/a backtick are UNRESOLVABLE, so R6 refuses
+    fail-closed rather than guessing the plan.
+    """
+    try:
+        raw = shlex.split(command)
+    except ValueError:
+        raw = command.split()
     stripped = _r5_stripped_tokens(command)
-    if len(stripped) < 2:
-        return False, None
-    program = _strip_matched_quotes(stripped[0]).rsplit('/', 1)[-1].lower()
-    if program != 'git':
-        return False, None
-    index = 1
-    target: str | None = None
-    while index < len(stripped):
-        token = _strip_matched_quotes(stripped[index])
+    program_is_git = (
+        bool(stripped) and _strip_matched_quotes(stripped[0]).replace('\\', '/').rsplit('/', 1)[-1].lower() == 'git'
+    )
+    cd_target: str | None = None
+    if program_is_git:
+        git_at = next(
+            (
+                position
+                for position, token in enumerate(raw)
+                if _strip_matched_quotes(token).replace('\\', '/').rsplit('/', 1)[-1].lower() == 'git'
+            ),
+            None,
+        )
+        if git_at is None:
+            raw = stripped
+            git_at = 0
+    else:
+        # A commit can sit in ANY segment of a wrapper's spliced command string
+        # (`zsh -c 'cd /tmp; git commit'`).
+        program = _git_program_tokens(command)
+        if program is None:
+            return _GitCommitInfo(False, None, None, None, False)
+        raw, cd_target = program
+        git_at = 0
+    environment: dict[str, str] = {}
+    for token in raw[:git_at]:
+        name, separator, value = _strip_matched_quotes(token).partition('=')
+        if separator and re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*', name):
+            environment[name] = value
+    git_dir = environment.get('GIT_DIR')
+    work_tree = environment.get('GIT_WORK_TREE')
+    unresolvable = _is_unresolvable_dir(git_dir) or _is_unresolvable_dir(work_tree) or _is_unresolvable_dir(cd_target)
+    aliases: dict[str, str] = {}
+    cwd_target: str | None = cd_target
+    index = git_at + 1
+    subcommand: str | None = None
+    while index < len(raw):
+        token = _strip_matched_quotes(raw[index])
         if token == '-C':
-            value = _strip_matched_quotes(stripped[index + 1]) if index + 1 < len(stripped) else ''
-            target = value if target is None or value.startswith('/') else f'{target}/{value}'
+            value = _strip_matched_quotes(raw[index + 1]) if index + 1 < len(raw) else ''
+            cwd_target = value if cwd_target is None or value.startswith('/') else f'{cwd_target}/{value}'
+            unresolvable = unresolvable or _is_unresolvable_dir(value)
             index += 2
             continue
         if token.startswith('-C') and not token.startswith('--') and len(token) > 2:
             value = token[2:]
-            target = value if target is None or value.startswith('/') else f'{target}/{value}'
+            cwd_target = value if cwd_target is None or value.startswith('/') else f'{cwd_target}/{value}'
+            unresolvable = unresolvable or _is_unresolvable_dir(value)
             index += 1
             continue
-        if token in _R2_GIT_VALUE_OPTIONS:
-            index += 2
+        matched_target_option = False
+        for prefix in ('--git-dir', '--work-tree'):
+            if token == prefix or token.startswith(prefix + '='):
+                if '=' in token:
+                    value = token.split('=', 1)[1]
+                    index += 1
+                else:
+                    value = _strip_matched_quotes(raw[index + 1]) if index + 1 < len(raw) else ''
+                    index += 2
+                if prefix == '--git-dir':
+                    git_dir = value
+                else:
+                    work_tree = value
+                unresolvable = unresolvable or _is_unresolvable_dir(value)
+                matched_target_option = True
+                break
+        if matched_target_option:
+            continue
+        if token == '-c' or (token.startswith('-c') and not token.startswith('--')):
+            if token == '-c':
+                value = _strip_matched_quotes(raw[index + 1]) if index + 1 < len(raw) else ''
+                index += 2
+            else:
+                value = token[2:]
+                index += 1
+            alias_name, separator, body = value.partition('=')
+            if separator and alias_name.startswith('alias.'):
+                aliases[alias_name[len('alias.') :]] = body
             continue
         if token.startswith('-'):
-            index += 1
+            index += 2 if token in _R2_GIT_VALUE_OPTIONS else 1
             continue
-        return token.lower() == 'commit', target
-    return False, target
+        subcommand = token.lower()
+        break
+    if subcommand is None:
+        return _GitCommitInfo(False, cwd_target, work_tree, git_dir, unresolvable)
+    if subcommand in aliases:
+        body = aliases[subcommand]
+        if body.startswith('!') or _is_unresolvable_dir(body):
+            # The alias body cannot be reduced to a plain subcommand, so whether
+            # this is a commit is unknown: refuse fail-closed.
+            return _GitCommitInfo(True, cwd_target, work_tree, git_dir, True)
+        else:
+            try:
+                parts = shlex.split(body)
+            except ValueError:
+                parts = body.split()
+            subcommand = parts[0].lower() if parts else ''
+    return _GitCommitInfo(subcommand == 'commit', cwd_target, work_tree, git_dir, unresolvable)
 
 
 def _match_r6_raw_finalize_commit(
@@ -1239,10 +1751,16 @@ def _match_r6_raw_finalize_commit(
     command = _bash_command(tool_name, tool_input)
     if command is None:
         return None
-    is_commit, target = _git_commit_target(command)
-    if not is_commit:
+    info = _git_commit_target(command)
+    if not info.is_commit:
         return None
-    if _plan_phase(payload, target) != _SOURCE_COMMIT_GATE_PHASE:
+    if info.unresolvable:
+        # An unresolvable target is refused fail-closed ONLY inside the enforced
+        # scope; an unrelated consumer's `git -C "$dir" commit` is not this rule's
+        # business.
+        scoped = gate.context_gate(payload) or _is_lane_run(payload) or _is_this_repository(payload)
+        return _R6_REASON if scoped else None
+    if _plan_phase(payload, info) != _SOURCE_COMMIT_GATE_PHASE:
         return None
     return _R6_REASON
 
@@ -1304,17 +1822,54 @@ def _refusal_detail(payload: dict[str, Any]) -> str:
     return ''
 
 
+#: A runbook-lane marker older than this no longer binds anything.
+_LANE_MARKER_MAX_AGE_SECONDS = 24 * 60 * 60
+
+
+def _is_lane_run(payload: dict[str, Any]) -> bool:
+    """Whether this checkout carries a LIVE runbook-lane marker.
+
+    Signal 3 of the plan-context predicate: a runbook-lane run issues every call
+    with the MAIN checkout as its working directory, so neither Signal 1 (the
+    lane runs in the main context) nor Signal 2 (no worktree path in the cwd)
+    fires, and a consumer repository would be left unbound. The lane writes
+    ``.plan/temp/rb-<plan>/progress.md`` before any implementation work. The
+    marker is never removed, so it binds only while it is FRESH
+    (:data:`_LANE_MARKER_MAX_AGE_SECONDS`); a stale one would otherwise bind
+    R1-R5 in a consumer checkout forever.
+    """
+    root = _allow_list_root(payload) or gate.cwd(payload)
+    if not root:
+        return False
+    temp_dir = pathlib.Path(root) / '.plan' / 'temp'
+    try:
+        entries = list(temp_dir.iterdir())
+    except OSError:
+        return False
+    now = time.time()
+    for entry in entries:
+        if not entry.name.startswith('rb-'):
+            continue
+        marker = entry / 'progress.md'
+        try:
+            if now - marker.stat().st_mtime <= _LANE_MARKER_MAX_AGE_SECONDS:
+                return True
+        except OSError:
+            continue
+    return False
+
+
 def evaluate(payload: dict[str, Any]) -> str | None:
     """Return the deny reason for the first matched rule, or ``None``.
 
-    Runs the R1-R4 matchers inside the shared context gate (``Signal1 OR
-    Signal2``); when the gate is not satisfied those rules return ``None`` (fail
-    OPEN). **R5** binds when the gate is satisfied OR this project IS the
-    plan-marshall source repository, so a root session here is protected while a
-    consumer repository outside a plan context is not. **R6** is not
-    context-gated at all: the raw-finalize commit rule fires in every session,
-    named from the ``git -C`` target. A match also appends one ``guard.log`` audit
-    line (best-effort — logging never changes the verdict).
+    Scope: ``gate.context_gate(payload)`` (``Signal1 OR Signal2``) OR the
+    runbook-lane marker OR this project IS the plan-marshall source repository.
+    Inside that scope the R1-R5 matchers run in order; a consumer repository
+    outside a plan context is left untouched (fail OPEN), so its ordinary work is
+    never refused. **R6** is not context-gated: the raw-finalize commit rule fires
+    in every session, named from every commit form, and only its UNRESOLVABLE
+    fail-closed branch is limited to the enforced scope. A match also appends one
+    ``guard.log`` audit line (best-effort — logging never changes the verdict).
 
     Args:
         payload: The parsed PreToolUse payload.
@@ -1325,8 +1880,14 @@ def evaluate(payload: dict[str, Any]) -> str | None:
     """
     tool_name = gate.tool_name(payload)
     tool_input = gate.tool_input(payload)
-    gated = gate.context_gate(payload)
-    if gated:
+    gated = gate.context_gate(payload) or _is_lane_run(payload)
+    # R1-R4 bind when the gate is satisfied OR this project IS the plan-marshall
+    # source repository. The OpenCode guard applies them unconditionally, so
+    # gating them here left a ROOT session of this repository admitted for forms
+    # the guard refuses — the parity divergence D3 closes. A consumer repository
+    # outside a plan context is still untouched (the two-tier permission map
+    # governs it).
+    if gated or _is_this_repository(payload):
         for rule_name, rule in _RULES:
             reason = rule(tool_name, tool_input)
             if reason is not None:

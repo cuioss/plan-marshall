@@ -42,9 +42,11 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 #: produce these values. ``refused`` means the guard threw and the hook returned
 #: a deny reason. R5 binds inside a plan context AND in every session of THIS
 #: repository — which the node scratch root is (it carries the repository
-#: marker), and which the hook's own location is — so a refusal row is refused in
-#: context AND out of it; the two columns agree on every row and are kept
-#: separate so a future re-scoping shows up here.
+#: marker), and which the hook's ``cwd`` (the real repository root) is — so a
+#: refusal row is refused in context AND out of it; the two columns agree on every
+#: row and are kept separate so a future re-scoping shows up here. The OUT column
+#: is "no sub-agent identity" in this repository, not "a consumer repository":
+#: the consumer arm is covered by ``test_guard_exact_admissions``.
 _PARITY_CORPUS: tuple[tuple[str, bool, bool], ...] = (
     ('timeout 5 python3 -c "x"', True, True),
     ('python3.12 -c "x"', True, True),
@@ -68,7 +70,9 @@ _PARITY_IDS = [command for command, _in, _out in _PARITY_CORPUS]
 
 
 def _hook_payload(command: str, *, in_context: bool) -> dict:
-    payload: dict = {'tool_name': 'Bash', 'tool_input': {'command': command}}
+    # Real PreToolUse payloads always carry `cwd`; the relative executor permit
+    # needs it to decide whether the call runs from the repository root.
+    payload: dict = {'tool_name': 'Bash', 'tool_input': {'command': command}, 'cwd': str(REPO_ROOT)}
     if in_context:
         payload['agent_type'] = SUB_AGENT_AGENT
     return payload

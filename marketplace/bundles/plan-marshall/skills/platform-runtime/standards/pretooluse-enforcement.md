@@ -1,10 +1,11 @@
 # PreToolUse Enforcement Hook
 
 The PreToolUse enforcement hook deterministically blocks six
-mechanically-checkable hard-rule violation families. Rules **R1–R4** apply
-ONLY when the call originates inside a plan-marshall plan context; **R5 binds
-inside a plan context AND in every session of the plan-marshall source
-repository**; **R6 is not context-gated at all**. This document
+mechanically-checkable hard-rule violation families. Rules **R1–R5** apply when
+the call originates inside a plan-marshall plan context, when the checkout
+carries a live runbook-lane marker, **or in every session of the plan-marshall
+source repository**; **R6 is not context-gated at all** (only its unresolvable
+fail-closed branch is limited to that scope). This document
 is the canonical reference for the hook's context gate, rule families, fail-open
 contract, the capture-validates-the-gate dependency chain, and the on-demand
 registration model.
@@ -31,10 +32,13 @@ the two leaves — all of it lives in `pretooluse_gate.py`.
 `pretooluse_gate.context_gate(payload)` is the single-sourced decision for
 whether a call is eligible for the GATED rules (R1–R4). It returns the OR
 of two stateless signals and is fail-open (False when neither fires, so calls
-outside a plan context are never enforced for those rules). R5 is not covered by
-this predicate alone: it binds when the gate is satisfied OR this project IS the
-plan-marshall source repository, so a consumer repository's ordinary Python work
-is untouched outside a plan context. R6 is not gated at all.
+outside a plan context are never enforced for those rules). R1–R4 and R5 ALSO
+bind in EVERY session of the plan-marshall source repository — decided by the
+session's project directory (`CLAUDE_PROJECT_DIR`, falling back to the payload
+`cwd`; the hook's own location is only the fallback for a payload that names
+none) — so a root session of this repository gets the SAME verdict the OpenCode
+guard gives, while a consumer repository outside a plan context is untouched.
+R6 is not gated at all.
 
 - **Signal 1 — sub-agent identity.** The sub-agent identity field carries the
   `:execution-context` marker (the call runs inside a dispatched
@@ -47,26 +51,32 @@ is untouched outside a plan context. R6 is not gated at all.
   `.plan/local/worktrees/` (the call runs inside a plan worktree).
 
 An absent Signal-1 field still lets Signal 2 satisfy the gate, and vice versa.
+The enforcement leaf ORs ONE more condition onto the gate: a LIVE runbook-lane
+marker (``.plan/temp/rb-<plan>/progress.md`` in the project directory, modified
+within the last 24 hours). A lane run issues every call with the main checkout as
+its working directory, so neither Signal fires there and a consumer repository
+would otherwise be left unbound; the freshness bound keeps a stale marker from
+binding a checkout forever.
 
 ## Rule families
 
 The R1–R6 matchers are enforcement-only — they live solely in the enforcement
 leaf, layered on top of the shared gate, and run against the shared gate's
 `tool_name(payload)` / `tool_input(payload)` accessors. When the gate is satisfied
-the leaf runs R1–R4; R5 runs when the gate is satisfied OR this project IS the
-plan-marshall source repository; R6 runs unconditionally. On the first matching
+OR this project IS the plan-marshall source repository the leaf runs R1–R5; R6
+runs unconditionally. On the first matching
 rule the leaf appends one `guard.log` audit
 line (best-effort) and emits a `permissionDecision: deny` envelope carrying a
 one-line `permissionDecisionReason`; on no match it emits nothing.
 
 | Rule | Fires on | Redirect reason (substance) |
 |------|----------|-----------------------------|
-| **R1 shell-construct compound** | A Bash command containing an **unquoted, unescaped** `&&`, `;`, `&`, newline, `for`/`while` loop, `$(...)` command substitution, or leading `VAR=val cmd` inline env-var assignment. Quoting and backslash escapes are resolved first, so an operator confined to a quoted argument is data and does not fire — but a `$(...)` or backtick substitution still fires inside **double** quotes, where the shell still executes it | One command per Bash call — use separate Bash calls or dedicated tools |
+| **R1 shell-construct compound** | A Bash command containing an **unquoted, unescaped** `&&`, `;`, `\|`, `&`, newline, `for`/`while` loop, `$(...)` command substitution, or leading `VAR=val cmd` inline env-var assignment. Quoting and backslash escapes are resolved first, so an operator confined to a quoted argument is data and does not fire — but a `$(...)` or backtick substitution still fires inside **double** quotes, where the shell still executes it | One command per Bash call — use separate Bash calls or dedicated tools |
 | **R2 Bash file-ops** | A Bash command whose program is `cat` / `grep` / `head` / `tail` / `find` / `ls`, a shell spawn (`sh` / `bash` / `source`), **or** `git` whose subcommand (after any global options) is `grep` | Use the Read/Glob/Grep tools, not Bash, for file operations; for a content sweep run `architecture search --content --pattern P` |
 | **R3 generated-executor edit** | An Edit/Write whose path is the generated `.plan/execute-script.py` | Regenerate the executor via `/sync-harnesses` + `/marshall-steward`; never edit it |
 | **R4 hard-coded build** | A Bash command invoking `./pw` or a bare `mvn` / `npm` / `gradle` / `uv` (the program is read un-stripped and after R5 wrapper stripping, so `env uv run python -c ...` is refused) | Resolve build commands via `plan-marshall:manage-architecture:architecture resolve` |
-| **R5 direct interpreter call** | A Bash command invoking an interpreter (`python` / `python3` / a versioned spelling such as `python3.12`, case-insensitively) as `-c`, a script path, a bare `-` (STDIN) or a `-<`/`->` redirection, or `-m` with any module — except the executor permit (the relative `python3 .plan/execute-script.py`, or an absolute form resolving to `{repository root}/.plan/execute-script.py`) and the shared allow-list of documented non-executor invocations. **R5 binds inside a plan context AND in every session of the plan-marshall source repository.** Wrapper prefixes (`command` / `env` / `sudo` / `timeout` / `nice` / `nohup` / `time` / `xargs` / `exec` / `stdbuf` / `setsid`, including `env -S`) are stripped first, so a wrapper cannot hide the interpreter | Route builds and checks via `python3 .plan/execute-script.py`; `.plan` state via `manage-*` verbs or the Read/Edit/Write tools |
-| **R6 raw finalize commit** | A raw `git commit` while the enclosing plan — NAMED from the `git -C` target, then the shell workdir, then the project root, its `status.json` field `current_phase` read from the WORKTREE-RESIDENT record first (the live one during phase 5+) and the main-anchored record otherwise, never "the first plan found" — is in phase `6-finalize`. **R6 is not context-gated.** Every plan commit must pass through the gate-bearing `git-workflow commit` verb, which sanctions an open loop-back fix task, a review-rubric section-6 record, or a step id of the plan's composed phase-6 manifest | Commit via `python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow commit` |
+| **R5 direct interpreter call** | A Bash command invoking an interpreter (`python` / `python3` / `pypy` / `pypy3` / a versioned spelling such as `python3.12`, case-insensitively) as `-c`, a script path, a bare `-` (STDIN) or a `-<`/`->` redirection, or `-m` with any module — except the executor permit (the relative `python3 .plan/execute-script.py` run from the repository root, or an absolute form equal to `{repository root}/.plan/execute-script.py` after path normalization) and the shared allow-list of documented non-executor invocations. **R5 binds inside a plan context, in a live runbook-lane run, AND in every session of the plan-marshall source repository.** The wrapper prefixes come from ONE shared data file, [`r5-wrappers.json`](r5-wrappers.json): a path-qualified `/usr/bin/env` strips like `env`, an option cluster like `env -iu FOO` is walked letter by letter, `timeout` / `flock` / `chrt` / `taskset` consume their leading positional, `env -S` and a shell's `-c` splice the command string back into the walk (all of its segments), `watch`/`parallel` splice their positional command string, and `find … -exec` is walked from the program it runs | Route builds and checks via `python3 .plan/execute-script.py`; `.plan` state via `manage-*` verbs or the Read/Edit/Write tools |
+| **R6 raw finalize commit** | A raw `git commit` while the enclosing plan — NAMED from every commit form: the `--work-tree` value, the composed `git -C` target, the plan a `--git-dir` / `GIT_DIR` admin directory points at (`…/worktrees/{plan}`), then the shell workdir, then the project root — its `status.json` field `current_phase` read from the WORKTREE-RESIDENT record first (the live one during phase 5+) and the main-anchored record otherwise, never "the first plan found". A subcommand defined with `-c alias.NAME=…` is resolved to its body; a shell-expansion alias body and any directory value that still carries an unexpanded variable are UNRESOLVABLE and refused fail-closed. **R6 is not context-gated.** Every plan commit must pass through the gate-bearing `git-workflow commit` verb, which sanctions an open loop-back fix task, a review-rubric section-6 record, or a step id of the plan's composed phase-6 manifest | Commit via `python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow commit` |
 
 ### R5 — allow-list, wrappers, and the audit line
 
@@ -91,11 +101,25 @@ documented workflows runnable. Three things make that split explicit:
   `CLAUDE_PROJECT_DIR`, falling back to `cwd`). When the file is absent the hook
   uses a narrow built-in base table (`marketplace/targets/sync.py`); the executor
   permit is hardcoded separately.
-- **Wrappers and versioned interpreters.** A prefix cannot hide the interpreter:
-  the shell wrappers above (with their options and, for `timeout`, its mandatory
-  duration) are stripped before the interpreter check, `env -S` / `--split-string`
-  splices its string back into the command, and a versioned spelling
-  (`python3.12`) is recognised. The program token is matched case-insensitively.
+- **Wrappers and versioned interpreters.** A prefix cannot hide the interpreter.
+  The wrapper population is ONE shared data file,
+  [`r5-wrappers.json`](r5-wrappers.json), read by the Claude hook, the OpenCode
+  guard plugin and the enforcement pins — neither implementation carries a second
+  literal list. A wrapper is matched by BASENAME (`/usr/bin/env` strips like
+  `env`); its value-consuming options, its short-option clusters (`env -iu FOO`),
+  its leading positional arguments (`timeout`'s duration, `flock`'s lock file,
+  `chrt`'s priority, `taskset`'s mask) and its command-string options
+  (`env -S`/`--split-string`, a shell's `-c`, `script -c`) all come from that
+  file. The shells (`bash`/`sh`/`dash`/`zsh`/`ksh`/`$SHELL`), the runners
+  (`ionice`/`chrt`/`taskset`/`flock`/`watch`/`parallel`/`busybox`/`script`) and
+  `find … -exec` are all covered, and a versioned spelling (`python3.12`) or a
+  `pypy` interpreter is recognised. A wrapper's spliced command string is walked
+  SEGMENT BY SEGMENT, so `zsh -c "cd /tmp; python3 -c x"`, `env -S "cd /tmp;
+  python3 -c x"` and `watch 'cd /tmp && python3 -c x'` are refused too. The
+  program token is matched
+  case-insensitively. When the data file is unreadable the check fails CLOSED: a
+  command that names an interpreter anywhere is refused, because no wrapper can
+  be stripped without the table.
 - **Audit line.** On a refusal the hook appends one line to
   `<cwd>/.plan/temp/guard.log`, in the same shape the OpenCode guard writes:
   `<ISO-8601 millis> | tool=<tool> | rule=<Rn> | session=<session_id> | call=? | <detail>`.
@@ -196,16 +220,14 @@ The enforcement leaf fails OPEN on every path outside a matched rule, so a hook
 bug can never block the user:
 
 - Empty or malformed stdin → emit nothing, exit 0.
-- R5: run when the gate is satisfied OR this project IS the plan-marshall source
-  repository; a match → deny, no match → fall through.
-- R1–R4 context gate unsatisfied → emit nothing, exit 0.
+- R1–R5: run when the gate is satisfied OR this project IS the plan-marshall
+  source repository; a match → deny, no match → fall through.
 - R6: run unconditionally; a match → deny, no match → fall through.
-- Gate satisfied but no rule matches → emit nothing, exit 0.
+- Neither the gate nor the this-repository scope → emit nothing, exit 0.
 - Any internal error → emit nothing, exit 0.
 
-Only an R5 or R6 match, or a satisfied gate plus a first-matching R1–R4 rule,
-produces a deny. Every accessor in the shared gate is best-effort and degrades to
-a safe default rather than raising.
+Only an R1–R6 match inside that scope produces a deny. Every accessor in the
+shared gate is best-effort and degrades to a safe default rather than raising.
 
 ## Registration — orthogonal, on-demand, human-gated
 

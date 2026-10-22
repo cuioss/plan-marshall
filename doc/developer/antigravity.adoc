@@ -273,7 +273,7 @@ The `AntigravityRuntime` subclass implements target operations:
 
 * **Layout Resolution**:
   ** `layout_skill_roots()`: Returns `['.agents/skills', '.agents/plugins/plan-marshall/skills', '.claude/skills']`.
-  ** `layout_bundle_cache_root()`: Returns `['~/.gemini/config/plugins/plan-marshall/skills', '~/.gemini/antigravity/skills']`.
+  ** `layout_bundle_cache_root()`: Returns `['~/.gemini/config/plugins/plan-marshall/skills']` — the directory the target DEPLOYS to, read from the shared `deployed-layout.json`.
 * **Harness Constraints**: Enforces a 600-second ceiling for bash execution timeouts.
 * **Health Check**: Inspects presence of `~/.gemini/config/config.json` and the installed plugin directory.
 * **Session Metrics**: Tracks tokens and lifecycle phase transitions.

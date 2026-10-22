@@ -217,10 +217,11 @@ binding, output channels, platform abstraction, and the glyph + icon vocabulary.
 ## PreToolUse Enforcement Hook
 
 A PreToolUse enforcement hook deterministically blocks six
-mechanically-checkable hard-rule violation families. R1–R4 apply ONLY
-when the call originates inside a plan-marshall plan context — failing open
-everywhere else — while R5 binds inside a plan context AND in every session of
-the plan-marshall source repository, and R6 is not context-gated at all.
+mechanically-checkable hard-rule violation families. R1–R5 apply when the call
+originates inside a plan-marshall plan context, when the checkout carries a live
+runbook-lane marker, OR in every session of the plan-marshall source
+repository — failing open everywhere else — and R6 is not context-gated at all
+(only its unresolvable fail-closed branch is limited to that scope).
 It is implemented by three sibling scripts:
 
 - `pretooluse_gate.py` — the shared, pure-function module that is the SINGLE

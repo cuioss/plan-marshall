@@ -163,7 +163,6 @@ _GUARD_SET_NAMES = (
     'JS_RUNNERS',
     'JS_RUNNER_BUILD_VERBS',
     'PYTHON_DIRECT_RUNNERS',
-    'SHELL_WRAPPERS',
     'PYTHON_INTERPRETERS',
     'R5_ALWAYS_REFUSE_FLAGS',
 )
@@ -193,8 +192,10 @@ def _parse_guard_sets(path: pathlib.Path) -> dict[str, frozenset[str]]:
 
 #: Expected guard decision-table pins. The parsed sets above must equal
 #: these exactly — drift in either direction (a removed or an added entry)
-#: fails the contract test. ``SHELL_WRAPPERS`` now names the full wrapper set
-#: the guard strips before its interpreter check (the D1 wrapper contract).
+#: fails the contract test. ``SHELL_WRAPPERS`` is NOT here: the wrapper table
+#: lives in the shared data file ``standards/r5-wrappers.json``, so there is no
+#: literal wrapper set in the plugin to parse (see
+#: ``test_guard_carries_no_literal_wrapper_table``).
 _GUARD_EXPECTED: dict[str, frozenset[str]] = {
     'MUTATION_FILE_OPS': frozenset(
         {
@@ -219,10 +220,7 @@ _GUARD_EXPECTED: dict[str, frozenset[str]] = {
     'JS_RUNNERS': frozenset({'npm', 'npx', 'bun', 'pnpm', 'yarn'}),
     'JS_RUNNER_BUILD_VERBS': frozenset({'test', 'run', 'build'}),
     'PYTHON_DIRECT_RUNNERS': frozenset({'pytest', 'mypy', 'ruff'}),
-    'SHELL_WRAPPERS': frozenset(
-        {'command', 'env', 'sudo', 'timeout', 'nice', 'nohup', 'time', 'xargs', 'exec', 'stdbuf', 'setsid'}
-    ),
-    'PYTHON_INTERPRETERS': frozenset({'python', 'python3'}),
+    'PYTHON_INTERPRETERS': frozenset({'python', 'python3', 'pypy', 'pypy3'}),
     'R5_ALWAYS_REFUSE_FLAGS': frozenset({'-c', '-m'}),
 }
 
@@ -604,6 +602,9 @@ def test_guard_node_admits_a_nested_cache_bundle_script(tmp_path_factory: pytest
     """Done-when (D1): the guard admits the nested-cache steward and generator scripts."""
     home = tmp_path_factory.mktemp('home')
     base = home / '.claude' / 'plugins' / 'cache' / 'plan-marshall' / 'plan-marshall' / _NESTED_DEPLOYED_VERSION
+    marker = base / '.claude-plugin' / 'plugin.json'
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.write_text('{"name": "plan-marshall"}\n', encoding='utf-8')
     scripts = {
         'determine_mode.py': ('marshall-steward', 'mode'),
         'generate_executor.py': ('tools-script-executor', 'generate'),

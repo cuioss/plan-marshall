@@ -70,6 +70,7 @@ from typing import Any
 
 import _opencode_sessions
 import claude_runtime
+import deployed_layout
 import runtime_info
 import session_binding
 from marketplace_paths import resolve_home
@@ -1178,33 +1179,18 @@ class OpenCodeRuntime(Runtime):
     def layout_bundle_cache_root(self) -> str:
         """Return the OpenCode deployed-bundle cache root(s).
 
-        OpenCode has no separate single plugin-cache directory; deployed
-        bundles live under the project-local-skill discovery roots themselves.
-        Return the ``~``-anchored user-global skill roots (the cross-checkout
-        discovery homes) in priority order, mirroring the executor's discovery
-        order. Callers probe first-match-wins.
+        Read from the shared ``deployed-layout.json`` data file — the same one
+        the enforcement guards read — so the resolver and the guards cannot
+        disagree about which roots are DEPLOY roots. The targets deploy bundles
+        under the harness config directory (``~/.config/opencode``), not under
+        every skill-DISCOVERY root the harness also reads.
         """
-        import os
         import pathlib
 
-        home = pathlib.Path.home()
-        roots: list[str] = []
-
-        env_config_dir = os.environ.get('OPENCODE_CONFIG_DIR', '')
-        if env_config_dir:
-            roots.append(str(pathlib.Path(env_config_dir) / 'skills'))
-
-        roots.extend(
-            [
-                str(home / '.config' / 'opencode' / 'skills'),
-                str(home / '.claude' / 'skills'),
-                str(home / '.agents' / 'skills'),
-            ]
-        )
-
+        standards_dir = pathlib.Path(__file__).resolve().parent.parent / 'standards'
         return toon_success(
             'layout bundle-cache-root',
-            {'target': 'opencode', 'roots': roots},
+            {'target': 'opencode', 'roots': deployed_layout.bundle_cache_roots('opencode', standards_dir)},
         )
 
     # ------------------------------------------------------------------

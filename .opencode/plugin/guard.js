@@ -50,38 +50,44 @@
  *   R4 is UNCONDITIONAL. The executor permit stays exempt under R4 and R5.
  *
  *   R5 — direct interpreter calls bypassing the executor (bash): block when the
- *   first token is an interpreter (python/python3 or a versioned spelling such
- *   as python3.12) and the invocation is -c, a script path (any second token not
- *   starting with -), a bare - (STDIN), a -</- redirection, or -m with any
- *   module — the allow set is executor-only, so every -m form refuses. R5 BINDS
- *   inside a plan context (Signal 1 or Signal 2) and in EVERY session of THIS
- *   repository; in a consumer repository outside a plan context it does not
- *   refuse a consumer's ordinary Python work (python3 x.py, python3 -m venv,
- *   python3 -m pip). Three admissions apply: the executor permit, the SHARED
- *   repository-relative allow-list, and the SHARED bundle-relative allow-list
- *   (matched EXACTLY against a resolved deployed bundle root); neither
- *   allow-list form is ever a basename or a suffix — so a copy of an
- *   allow-listed script outside the repository, or under a non-deployed
+ *   first token, after stripping the SHARED wrapper table
+ *   (`standards/r5-wrappers.json`: matched by basename, with each wrapper's
+ *   value options, short-option clusters, leading positionals, command-string
+ *   splicing and watch/parallel positional splicing, plus `find … -exec`), is an
+ *   interpreter (python/python3, pypy/pypy3, or a versioned spelling such as
+ *   python3.12) and the invocation is -c, a script path (any second token not
+ *   starting with -), a bare - (STDIN), a -</- redirection, or -m with any module
+ *   — the allow set is executor-only, so every -m form refuses. R5 BINDS inside a
+ *   plan context (Signal 1, Signal 2, or the runbook-lane marker) and in EVERY
+ *   session of THIS repository; in a consumer repository outside a plan context
+ *   it does not refuse a consumer's ordinary Python work (python3 x.py, python3
+ *   -m venv, python3 -m pip). Three admissions apply: the executor permit, the
+ *   SHARED repository-relative allow-list, and the SHARED bundle-relative
+ *   allow-list (matched EXACTLY against the resolver's deployed path for the
+ *   entry); neither allow-list form is ever a basename or a suffix — so a copy of
+ *   an allow-listed script outside the repository, or under a non-deployed
  *   directory, never matches.
  *
  *   R6 — a raw `git commit` while the enclosing plan is in phase `6-finalize`
- *   => block. The plan is NAMED from the `git -C` TARGET (the persona-mandated
- *   `git -C {WORKTREE} commit` form), then the `workdir`, then the project root;
- *   its phase is read from that plan's own `status.json` field `current_phase` —
- *   the worktree-resident record first (the live one during phase 5+), then the
- *   main-anchored record (git's common dir, or a `PLAN_BASE_DIR` override). Never
- *   "the first plan found" by a directory scan. Every plan commit must pass
- *   through the gate-bearing `git-workflow commit` verb, which sanctions an open
- *   loop-back fix task, a review-rubric section-6 record, or a composed phase-6
- *   manifest step. Outside `6-finalize`, or with no plan state present, a raw
- *   commit is untouched.
+ *   => block. The plan is NAMED from EVERY commit form: the `--work-tree` value,
+ *   the composed `git -C` TARGET (the persona-mandated `git -C {WORKTREE}
+ *   commit` form), the plan a `--git-dir` / `GIT_DIR` admin directory points at
+ *   (`…/worktrees/{plan}`), then the `workdir`, then the project root; its phase
+ *   is read from that plan's own `status.json` field `current_phase` — the
+ *   worktree-resident record first (the live one during phase 5+), then the
+ *   main-anchored record. Never "the first plan found" by a directory scan. A
+ *   `-c alias.NAME=…` subcommand is resolved to its body; an unresolvable target
+ *   (an unexpanded variable, a shell alias) is refused fail-closed inside the
+ *   enforced scope. Every plan commit must pass through the gate-bearing
+ *   `git-workflow commit` verb. Outside `6-finalize`, or with no plan state
+ *   present, a raw commit is untouched.
  *
  * TOKENISATION PARITY: the R5 branch tokenises with a quoting-aware splitter
  * (`shellSplit`) matching the Python hook's `shlex.split`, strips the SAME
  * wrapper set, and lowercases the program token for the interpreter check, so
  * the two decision tables agree on the interpreter surface.
  */
-import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync } from "node:fs"
+import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs"
 import { execFileSync } from "node:child_process"
 import { homedir } from "node:os"
 import path from "node:path"
@@ -145,52 +151,30 @@ const PYTHON_DIRECT_RUNNERS = new Set(["pytest", "mypy", "ruff"])
 // set exists to declare. The two sets below are the whole R5 population the
 // contract test parses: the interpreter names and the always-refuse flags.
 // A versioned spelling (python3.12) is recognised by `isPythonInterpreter`.
-const PYTHON_INTERPRETERS = new Set(["python", "python3"])
+const PYTHON_INTERPRETERS = new Set(["python", "python3", "pypy", "pypy3"])
 const R5_ALWAYS_REFUSE_FLAGS = new Set(["-c", "-m"])
 
-// Shell wrappers a prefix of which is transparent to the shell: `timeout 5 rm
-// file` still runs `rm`, `env python3 -c x` still runs the interpreter. Strip
-// them (with their options, option values and inline `NAME=value` assignments)
-// before the first-token checks so a blocked invocation cannot be reached by
-// prefixing a wrapper. Options a wrapper does not itself consume are skipped
-// structurally; `timeout` additionally consumes its mandatory DURATION value.
-// This is an EXPLICIT list of known prefix programs — extended in one place and
-// mirrored by the Claude hook's `_R5_SHELL_WRAPPERS` — never guessed from shape.
-const SHELL_WRAPPERS = new Set([
-  "command",
-  "env",
-  "sudo",
-  "timeout",
-  "nice",
-  "nohup",
-  "time",
-  "xargs",
-  "exec",
-  "stdbuf",
-  "setsid",
-])
+// ---- R5: the ONE shared wrapper table ----
+// Shell wrappers are prefix programs whose own invocation RUNS the command that
+// follows (`timeout 5 rm file` still runs `rm`, `env python3 -c x` still runs
+// the interpreter). The set, each wrapper's value-consuming options, its
+// leading positional arguments and its command-string splicing options live in
+// ONE data file — `standards/r5-wrappers.json`, the sibling of
+// `r5-allowlist.json` — read here, by the Claude hook and by the enforcement
+// pin tests. Neither implementation carries a second literal list: a wrapper
+// added to the data file is stripped on both harnesses and a wrapper removed
+// from it is stripped on neither. A wrapper is matched by BASENAME, so
+// `/usr/bin/env` strips exactly like `env`.
+const R5_WRAPPER_TABLE_NAME = "r5-wrappers.json"
+const EMPTY_WRAPPER_SPEC = { values: [], value_letters: [], leading_positionals: 0, splice: [] }
 
-// Per-wrapper options that consume a FOLLOWING value token. Kept PER WRAPPER on
-// purpose: `sudo -n` is a flag (non-interactive), so a single shared value set
-// would swallow the interpreter behind it, while `nice -n 5` and `xargs -n 5`
-// DO take a value.
-const WRAPPER_VALUE_OPTS = {
-  command: new Set([]),
-  env: new Set(["-u", "--unset", "-C", "--chdir"]),
-  sudo: new Set(["-u", "--user", "-g", "--group", "-U", "--other-user", "-C", "--chdir", "--directory"]),
-  timeout: new Set(["-s", "--signal", "-k", "--kill-after"]),
-  nice: new Set(["-n", "--adjustment"]),
-  nohup: new Set([]),
-  time: new Set([]),
-  exec: new Set(["-a"]),
-  stdbuf: new Set(["-i", "-o", "-e", "--input", "--output", "--error"]),
-  setsid: new Set([]),
-  xargs: new Set([
-    "-I", "-n", "-P", "-s", "-d", "-a", "-E", "-L", "-o", "-R", "-S",
-    "--max-args", "--max-lines", "--max-chars", "--delimiter", "--arg-file",
-    "--replace", "--max-procs", "--eof", "--arg-separator",
-  ]),
-}
+//: The deployed-layout data file the resolver and this guard both read.
+const R5_LAYOUT_NAME = "deployed-layout.json"
+
+//: The wrapper table in force for this process. Loaded in `setup` from the
+//: project/deployed data file; an EMPTY table with `missing: true` when no data
+//: file resolves, which makes the R5 check fail CLOSED (see the R5 branch).
+let WRAPPER_TABLE = { wrappers: {}, findExec: new Set(), missing: true }
 
 // The base allow-list used when no shared data file can be read. Deliberately
 // narrow: the sync engine is the one non-executor invocation that must survive
@@ -214,7 +198,7 @@ const EXECUTION_CONTEXT_MARKER = ":execution-context"
 const WORKTREE_PATH_SEGMENT = "/.plan/local/worktrees/"
 
 const ASSIGNMENT_RE = /^[A-Za-z_][A-Za-z0-9_]*=/
-const VERSIONED_PYTHON_RE = /^python(\d+(\.\d+)*)?$/
+const VERSIONED_PYTHON_RE = /^(python|pypy)(\d+(\.\d+)*)?$/
 
 // Phase the raw-commit rule guards, mirroring git-workflow.py's
 // `_SOURCE_COMMIT_GATE_PHASE`. Outside it a raw `git commit` is untouched.
@@ -311,10 +295,102 @@ function isAssignment(token) {
   return ASSIGNMENT_RE.test(token)
 }
 
-// Strip leading wrapper/assignment prefixes, mirroring the hook's
-// `_r5_stripped_tokens`. `env -S <string>`/`--split-string[=]<string>` splices
-// the string back through the splitter, because `env -S` runs it as the command.
-function stripWrappers(tokens) {
+// Step over ONE option token of a wrapper, per the shared table.
+//
+// `consumed` is how many tokens the option takes (1 = the option alone, 2 = the
+// option plus its following value). `splice` is set when the option's value is a
+// COMMAND STRING that must be re-lexed and walked (a shell's `-c`, `env -S`,
+// `script -c`). A short CLUSTER (`-iu FOO`) is walked letter by letter, so the
+// value-taking letter is honoured wherever it sits in the cluster.
+function consumeWrapperOption(spec, token, tokens, index) {
+  const values = spec.values || []
+  const valueLetters = new Set(spec.value_letters || [])
+  const spliceOpts = spec.splice || []
+  const spliceLongs = new Set(spliceOpts.filter((option) => option.startsWith("--")))
+  const spliceLetters = new Set(
+    spliceOpts.filter((option) => option.length === 2 && option[0] === "-" && option[1] !== "-").map((option) => option[1]),
+  )
+  const nextValue = () => (index + 1 < tokens.length ? tokens[index + 1] : "")
+  if (token.startsWith("--")) {
+    const base = token.split("=")[0]
+    const attached = token.includes("=") ? token.slice(token.indexOf("=") + 1) : null
+    if (spliceLongs.has(base)) {
+      const value = attached !== null ? attached : nextValue()
+      return { splice: true, value, consumed: attached !== null ? 1 : 2 }
+    }
+    if (values.includes(base)) return { splice: false, value: null, consumed: attached !== null ? 1 : 2 }
+    return { splice: false, value: null, consumed: 1 }
+  }
+  const letters = token.slice(1)
+  for (let k = 0; k < letters.length; k++) {
+    const ch = letters[k]
+    if (spliceLetters.has(ch)) {
+      const rest = letters.slice(k + 1)
+      if (rest) return { splice: true, value: rest, consumed: 1 }
+      return { splice: true, value: nextValue(), consumed: 2 }
+    }
+    if (valueLetters.has(ch)) {
+      // A value-taking letter takes the REST of the cluster, else the next token.
+      return { splice: false, value: null, consumed: letters.slice(k + 1) ? 1 : 2 }
+    }
+  }
+  return { splice: false, value: null, consumed: values.includes(token) ? 2 : 1 }
+}
+
+// Split a spliced COMMAND STRING into its shell segments, so a wrapper's
+// multi-command string (`zsh -c "cd /tmp; python3 -c x"`) is walked segment by
+// segment instead of only at its first word. Quote-aware: a separator inside a
+// quoted span of the string is data.
+function splicedSegments(value) {
+  const segments = []
+  let current = ""
+  let inSingle = false
+  let inDouble = false
+  let escaped = false
+  for (const ch of String(value)) {
+    if (escaped) {
+      current += ch
+      escaped = false
+      continue
+    }
+    if (ch === "\\" && !inSingle) {
+      current += ch
+      escaped = true
+      continue
+    }
+    if (ch === "'" && !inDouble) {
+      inSingle = !inSingle
+      current += ch
+      continue
+    }
+    if (ch === '"' && !inSingle) {
+      inDouble = !inDouble
+      current += ch
+      continue
+    }
+    if (!inSingle && !inDouble && (ch === ";" || ch === "&" || ch === "|" || ch === "\n")) {
+      segments.push(current)
+      current = ""
+      continue
+    }
+    current += ch
+  }
+  segments.push(current)
+  return segments.map((segment) => segment.trim()).filter((segment) => segment.length > 0)
+}
+
+function isInterpreterProgramToken(token) {
+  const base = basenameOf(token)
+  return PYTHON_INTERPRETERS.has(base.toLowerCase()) || isPythonInterpreter(base)
+}
+
+// Strip leading wrapper/assignment prefixes, per the shared wrapper table.
+// `env -S <string>`, a shell's `-c <string>` and `watch`/`parallel`'s positional
+// command string SPLICE the string back through the splitter, because the
+// wrapper runs that string as the command. A wrapper's `leading_positionals`
+// (timeout's DURATION, flock's lock file, chrt's priority, taskset's mask) are
+// consumed before the walked command.
+function stripWrappers(tokens, table) {
   let i = 0
   while (i < tokens.length) {
     const token = tokens[i]
@@ -322,9 +398,9 @@ function stripWrappers(tokens) {
       i++
       continue
     }
-    if (!SHELL_WRAPPERS.has(token)) break
-    const wrapper = token
-    const valueOpts = WRAPPER_VALUE_OPTS[wrapper] || new Set()
+    const base = basenameOf(token)
+    const spec = table.wrappers[base] || table.wrappers[token] || EMPTY_WRAPPER_SPEC
+    if (spec === EMPTY_WRAPPER_SPEC) break
     i++
     let spliced = null
     while (i < tokens.length) {
@@ -334,41 +410,80 @@ function stripWrappers(tokens) {
         continue
       }
       if (!(option.startsWith("-") && option.length > 1)) break
-      if (wrapper === "env" && (option.startsWith("-S") || option.split("=")[0] === "--split-string")) {
-        let value
-        if (option.includes("=")) {
-          value = option.slice(option.indexOf("=") + 1)
-          i++
-        } else if (option === "-S" || option === "--split-string") {
-          i++
-          value = tokens[i] ?? ""
-          i++
-        } else {
-          value = option.slice(2)
-          i++
-        }
-        const parts = shellSplit(value)
-        spliced = parts === null ? whitespaceSplit(value) : parts
+      const step = consumeWrapperOption(spec, option, tokens, i)
+      i += step.consumed
+      if (step.splice) {
+        spliced = step.value
         break
       }
-      const base = option.split("=")[0]
-      i++
-      if (!option.includes("=") && valueOpts.has(base) && i < tokens.length && !tokens[i].startsWith("-")) {
-        i++
-      }
     }
-    if (spliced !== null) return stripWrappers(spliced.concat(tokens.slice(i)))
-    if (wrapper === "timeout" && i < tokens.length && !tokens[i].startsWith("-")) {
+    if (spliced !== null) {
+      // Walk EVERY segment of the command string: an interpreter behind a `cd` or
+      // a separator in the string is still an interpreter this rule refuses.
+      for (const segment of splicedSegments(spliced)) {
+        const parts = shellSplit(segment)
+        const segmentTokens = parts === null ? whitespaceSplit(segment) : parts
+        const walked = stripWrappers(segmentTokens.concat(tokens.slice(i)), table)
+        if (walked.length && isInterpreterProgramToken(walked[0])) return walked
+      }
+      const firstSegment = splicedSegments(spliced)[0] ?? spliced
+      const parts = shellSplit(firstSegment)
+      return stripWrappers((parts === null ? whitespaceSplit(firstSegment) : parts).concat(tokens.slice(i)), table)
+    }
+    if (spec.splice_positional && i < tokens.length) {
+      // `watch '<command>'` / `parallel '<command>'` run their first positional
+      // as a shell command, so it is spliced and walked like `env -S`.
+      const value = stripMatchedQuotes(tokens[i])
+      for (const segment of splicedSegments(value)) {
+        const parts = shellSplit(segment)
+        const segmentTokens = parts === null ? whitespaceSplit(segment) : parts
+        const walked = stripWrappers(segmentTokens.concat(tokens.slice(i + 1)), table)
+        if (walked.length && isInterpreterProgramToken(walked[0])) return walked
+      }
+      const firstSegment = splicedSegments(value)[0] ?? value
+      const parts = shellSplit(firstSegment)
+      return stripWrappers(
+        (parts === null ? whitespaceSplit(firstSegment) : parts).concat(tokens.slice(i + 1)),
+        table,
+      )
+    }
+    let positionals = spec.leading_positionals || 0
+    while (positionals > 0 && i < tokens.length && !tokens[i].startsWith("-")) {
       i++
+      positionals--
     }
   }
   return tokens.slice(i)
 }
 
+// `find … -exec <program> … +` runs <program> exactly as a prefix wrapper does,
+// so the tokens after a find-exec option are walked as the real command. Only a
+// `find` program is spliced, and the option list is data
+// (`find_exec_options`), never a find-specific literal.
+function spliceFindExec(tokens, table) {
+  if (basenameOf(tokens[0] ?? "") !== "find") return null
+  for (let i = 0; i < tokens.length; i++) {
+    if (table.findExec.has(tokens[i])) return tokens.slice(i + 1)
+  }
+  return null
+}
+
+// The command's tokens after wrapper stripping — the population every
+// first-token check (R2, R4, R5, R6, the executor permit, the allow-lists) reads.
 function commandTokens(command) {
   const split = shellSplit(command)
   const tokens = split === null ? whitespaceSplit(command) : split
-  return stripWrappers(tokens)
+  const stripped = stripWrappers(tokens, WRAPPER_TABLE)
+  const spliced = spliceFindExec(stripped, WRAPPER_TABLE)
+  return spliced === null ? stripped : stripWrappers(spliced, WRAPPER_TABLE)
+}
+
+// The command's tokens WITHOUT wrapper stripping — the raw first token, so R2's
+// shell-spawn class still names `bash` even though `bash` is also a transparent
+// wrapper whose `-c` string the interpreter walk descends into.
+function rawCommandTokens(command) {
+  const split = shellSplit(command)
+  return split === null ? whitespaceSplit(command) : split
 }
 
 function stripMatchedQuotes(raw) {
@@ -416,20 +531,106 @@ function isPythonInterpreter(raw) {
 
 // The executor permit — the ONE direct interpreter call R5 admits without an
 // allow-list entry. The relative form `.plan/execute-script.py` is the canonical
-// documented invocation (run from the repository root) and is admitted as-is.
-// An ABSOLUTE form is admitted only when it RESOLVES to
-// `{repository root}/.plan/execute-script.py` — so `python3
-// /tmp/x/.plan/execute-script.py` is refused, never admitted by suffix.
+// documented invocation, and it is admitted only when the command's EFFECTIVE
+// working directory IS a repository root: the repository itself, or one of ITS
+// plan worktrees under `.plan/local/worktrees/` (phase-5+ pins the shell cwd to
+// the worktree, where `.plan` is the same executor through the worktree's
+// symlink, so refusing it would break the documented execution flow). A leading
+// `cd`, an `env -C` / `--chdir` / `sudo -D` directory change and the shell's
+// `workdir` are resolved first (see `effectiveCwd`), so the same relative path
+// run from anywhere else — `/tmp/x`, another checkout — is refused. (`git -C` is
+// not a shell directory change: it moves git's own working directory for that
+// one invocation and never the directory a following program runs in.) An
+// ABSOLUTE form is admitted only when it equals
+// `{repository root}/.plan/execute-script.py` after path normalization.
 function isExecutorPermit(command, root, cwd) {
   const tokens = commandTokens(command)
   if (tokens.length < 2) return false
   if (basenameOf(tokens[0]).toLowerCase() !== "python3") return false
   const second = stripMatchedQuotes(tokens[1]).replace(/\\/g, "/")
-  if (second === ".plan/execute-script.py") return true
+  if (second === ".plan/execute-script.py") {
+    const effective = effectiveCwd(command, cwd || root)
+    if (!effective || !root) return false
+    return isRepositoryRootOrPlanWorktree(effective, root)
+  }
   if (!second.startsWith("/")) return false
   const repoRoot = (root || cwd || "").replace(/\\/g, "/").replace(/\/+$/, "")
   if (!repoRoot) return false
   return normalizePosixPath(second) === `${repoRoot}/.plan/execute-script.py`
+}
+
+// Whether the effective directory is the project root itself or one of its OWN
+// plan worktrees. Compared after realpath, so a symlinked tree resolves first.
+function isRepositoryRootOrPlanWorktree(effective, root) {
+  const resolvedRoot = realPathOf(root)
+  const resolved = realPathOf(effective)
+  if (resolved === resolvedRoot) return true
+  const worktreeBase = `${normalizePosixPath(resolvedRoot + "/.plan/local/worktrees")}/`
+  return resolved.startsWith(worktreeBase)
+}
+
+// The command's EFFECTIVE working directory: the shell's own cwd with a leading
+// `cd` and every `env -C` / `--chdir` / `sudo -D` / `--directory` directory
+// change applied in order. The wrapper chain is walked with the SHARED table, so
+// the directory change is found wherever it sits among a wrapper's options
+// (`env -u FOO -C /tmp/x …`, `sudo -u bob -D /tmp/x …`) — an option-order scan
+// that stopped at the first non-option would miss exactly those. Returns "" when
+// no base is known, which no caller treats as "the repository root".
+function effectiveCwd(command, base) {
+  if (typeof base !== "string" || !base) return ""
+  let current = base.replace(/\\/g, "/").replace(/\/+$/, "")
+  if (!current.startsWith("/")) return ""
+  const tokens = rawCommandTokens(command)
+  const apply = (value) => {
+    if (!value) return false
+    current = value.startsWith("/") ? normalizePosixPath(value) : normalizePosixPath(`${current}/${value}`)
+    return true
+  }
+  let i = 0
+  while (i < tokens.length) {
+    const token = stripMatchedQuotes(tokens[i])
+    if (isAssignment(token)) {
+      i++
+      continue
+    }
+    if (token === "cd") {
+      const value = stripMatchedQuotes(tokens[i + 1] ?? "")
+      if (!value) return ""
+      apply(value)
+      i += 2
+      continue
+    }
+    const spec = WRAPPER_TABLE.wrappers[basenameOf(token)]
+    if (!spec) break
+    const wrapper = basenameOf(token)
+    i++
+    while (i < tokens.length) {
+      const option = stripMatchedQuotes(tokens[i])
+      if (isAssignment(option)) {
+        i++
+        continue
+      }
+      if (!(option.startsWith("-") && option.length > 1)) break
+      const isDirectoryOption =
+        option === "-C" ||
+        option === "--chdir" ||
+        option.startsWith("--chdir=") ||
+        (wrapper === "sudo" && (option === "-D" || option === "--directory" || option.startsWith("--directory="))) ||
+        (wrapper === "env" && option.startsWith("-C") && option.length > 2)
+      if (isDirectoryOption) {
+        let value = option.includes("=") ? option.slice(option.indexOf("=") + 1) : null
+        if (value === null && option.startsWith("-C") && option.length > 2 && !option.startsWith("--")) {
+          value = option.slice(2)
+        }
+        if (value === null) value = stripMatchedQuotes(tokens[i + 1] ?? "")
+        apply(value)
+      }
+      const step = consumeWrapperOption(spec, option, tokens, i)
+      i += step.consumed
+      if (step.splice) break
+    }
+  }
+  return current
 }
 
 // Collapse a posix path to its normal form (`..` applied, no empty segments),
@@ -505,75 +706,138 @@ function resolvedScriptPath(raw, root, cwd) {
   return normalizePosixPath(base + "/" + token)
 }
 
-// The candidate deployed bundle roots, from the platform-runtime bundle-cache
-// layout: the OpenCode / Antigravity FLAT skill roots (deployed under
-// `{root}/plan-marshall-{skill}/`) plus the Claude plugin-cache NESTED root
-// (deployed under `{root}/plan-marshall/{version}/`). Read from the environment
-// so a fixture can place a deployed tree where the guard looks. Deduplicated.
-function deployedBundleRoots() {
+// The deployed bundle-cache roots, read from the SHARED layout data file
+// (`standards/deployed-layout.json`) that the platform-runtime `layout
+// bundle-cache-root` resolver reads too — so the resolver and the guard cannot
+// disagree about which roots are DEPLOY roots. The union across targets is used
+// because a machine may carry more than one harness. Every root is realpath'd,
+// so a symlinked tree is never trusted lexically, and a root the layout does not
+// name is never a candidate. An unreadable layout yields NO roots (fail closed).
+function deployedBundleRoots(root) {
+  const data = loadLayoutData(root)
   const home = process.env.HOME || homedir() || ""
-  const configDir = process.env.XDG_CONFIG_HOME || (home ? path.join(home, ".config") : "")
+  const xdg = process.env.XDG_CONFIG_HOME || (home ? path.join(home, ".config") : "")
+  const targets = data && data.targets && typeof data.targets === "object" ? data.targets : {}
   const roots = []
-  if (process.env.OPENCODE_CONFIG_DIR) roots.push(path.join(process.env.OPENCODE_CONFIG_DIR, "skills"))
-  if (configDir) {
-    roots.push(path.join(configDir, "opencode", "skills"), path.join(configDir, "opencode", "skill"))
-  }
-  if (home) {
-    roots.push(
-      path.join(home, ".config", "opencode", "skills"),
-      path.join(home, ".claude", "skills"),
-      path.join(home, ".claude", "plugins", "cache", "plan-marshall"),
-      path.join(home, ".agents", "skills"),
-      path.join(home, ".gemini", "config", "plugins", "plan-marshall", "skills"),
-      path.join(home, ".gemini", "config", "skills"),
-      path.join(home, ".gemini", "antigravity", "skills"),
-    )
+  for (const name of Object.keys(targets)) {
+    const templates = Array.isArray(targets[name]) ? targets[name] : []
+    for (const template of templates) {
+      if (!template || typeof template !== "object") continue
+      let base = null
+      if (typeof template.env === "string") base = process.env[template.env] || null
+      else if (typeof template.xdg === "string") base = xdg || null
+      else if (typeof template.home === "string") base = home || null
+      if (!base) continue
+      const append = typeof template.append === "string" ? template.append : ""
+      roots.push(realPathOf(append ? path.join(base, append) : base))
+    }
   }
   return [...new Set(roots)]
 }
 
+// Resolve a path to its REAL path, falling back to a lexical absolute path when
+// the entry does not exist (a candidate that does not exist can never match a
+// script that does).
+function realPathOf(value) {
+  const absolute = path.resolve(String(value))
+  try {
+    return realpathSync(absolute)
+  } catch {
+    return absolute
+  }
+}
+
+// Read the shared deployed-layout data file, or null when it cannot be read.
+function loadLayoutData(root) {
+  for (const candidate of standardDataCandidates(root, R5_LAYOUT_NAME)) {
+    try {
+      const data = JSON.parse(readFileSync(candidate, "utf8"))
+      if (data && typeof data === "object") return data
+    } catch {
+      // Try the next candidate.
+    }
+  }
+  return null
+}
+
+// The newest version directory of a nested bundle directory that carries the
+// resolver's version marker AND carries *entry* — the same rule the resolver
+// applies (`bootstrap_plugin.resolve_bundle_path`: newest dir CONTAINING the
+// requested path), so the guard cannot select a version the resolver would not.
+function newestVersionDir(nested, marker, entry) {
+  let entries
+  try {
+    entries = readdirSync(nested)
+  } catch {
+    return null
+  }
+  let newest = null
+  for (const name of entries) {
+    const candidate = path.join(nested, name)
+    try {
+      if (!statSync(candidate).isDirectory()) continue
+      if (!existsSync(path.join(candidate, ...marker.split("/")))) continue
+      if (entry && !existsSync(path.join(candidate, ...String(entry).split("/")))) continue
+    } catch {
+      continue
+    }
+    if (newest === null || compareVersionNames(name, path.basename(newest)) > 0) newest = candidate
+  }
+  return newest
+}
+
+// Natural version ordering, mirroring the resolver's `_version_sort_key`: a
+// tuple of the DIGIT RUNS in the name, compared element-wise, and a SHORTER
+// tuple sorts LOWER when the common prefix is equal — exactly Python's tuple
+// comparison, so `1.0.10` sorts before `1.0.10.1` and a digit-less name sorts
+// lowest on every side.
+function compareVersionNames(left, right) {
+  const digits = (value) => (String(value).match(/\d+/g) || []).map(Number)
+  const a = digits(left)
+  const b = digits(right)
+  const common = Math.min(a.length, b.length)
+  for (let i = 0; i < common; i++) {
+    if (a[i] !== b[i]) return a[i] - b[i]
+  }
+  return a.length - b.length
+}
+
 // Every absolute path a BUNDLE-RELATIVE allow-list entry (`skills/{skill}/{rest}`)
-// can be deployed at, across the nested and flat shapes, for every candidate
-// root. The nested shape is `{root}/plan-marshall/{entry}` (and each versioned
-// `{root}/plan-marshall/{version}/{entry}`); the flat shape reconstructs the
-// skill's dash-namespaced directory name as `{root}/plan-marshall-{skill}/{rest}`.
-function bundleEntryCandidates(entry, roots) {
+// can be deployed at, across the nested and flat shapes, for every root the
+// layout names. The nested shape is `{root}/{nested}/{version}/{entry}` for the
+// resolver's version directory (and the unversioned `{root}/{nested}/{entry}`);
+// the flat shape reconstructs the skill's dash-namespaced directory name.
+function bundleEntryCandidates(entry, roots, layout) {
   const parts = String(entry).split("/")
   if (parts.length < 2 || parts[0] !== "skills") return []
   const skill = parts[1]
   const rest = parts.slice(2).join("/")
-  const flatName = `plan-marshall-${skill}`
+  const prefix = (layout && layout.flat_skill_prefix) || "plan-marshall-"
+  const nestedName = (layout && layout.nested_bundle_dir) || "plan-marshall"
+  const marker = (layout && layout.version_marker) || ".claude-plugin/plugin.json"
+  const flatName = `${prefix}${skill}`
   const candidates = new Set()
   for (const root of roots) {
     candidates.add(rest ? path.join(root, flatName, rest) : path.join(root, flatName))
-    const nested = path.join(root, "plan-marshall")
+    const nested = path.join(root, nestedName)
     candidates.add(path.join(nested, entry))
-    try {
-      for (const name of readdirSync(nested)) {
-        const versionDir = path.join(nested, name)
-        try {
-          if (statSync(versionDir).isDirectory()) candidates.add(path.join(versionDir, entry))
-        } catch {
-          // An unreadable version entry is skipped; never guessed at.
-        }
-      }
-    } catch {
-      // No nested bundle directory under this root — the flat shape may still
-      // match above, and a root with neither shape contributes no candidate.
-    }
+    const versionDir = newestVersionDir(nested, marker, entry)
+    if (versionDir) candidates.add(path.join(versionDir, entry))
   }
   return [...candidates]
 }
 
 // Whether an absolute script path is a DEPLOYED bundle script on the shared
-// bundle-relative allow-list. Matched EXACTLY against
-// `{deployed bundle root}/{entry}` for every candidate root, so a same-named
-// script under a NON-deployed directory (`/tmp/x/skills/...`) never matches.
-function isDeployedAllowListed(absolutePath, bundleEntries, roots) {
+// bundle-relative allow-list. The SCRIPT is realpath'd, while every candidate is
+// built lexically from an already-realpath'd root: a symlink pointing out of a
+// deployed root therefore resolves to its target and never equals the expected
+// deployed path, and a same-named script under a non-deployed directory never
+// matches at all.
+function isDeployedAllowListed(absolutePath, bundleEntries, roots, layout) {
   if (!absolutePath || !absolutePath.startsWith("/")) return false
-  const normalized = normalizePosixPath(absolutePath)
+  const normalized = realPathOf(absolutePath)
   for (const entry of bundleEntries) {
-    for (const candidate of bundleEntryCandidates(entry, roots)) {
+    for (const candidate of bundleEntryCandidates(entry, roots, layout)) {
       if (normalizePosixPath(candidate) === normalized) return true
     }
   }
@@ -588,9 +852,42 @@ function isThisRepository(root) {
 }
 
 // The plan-context predicate: Signal 1 (the sub-agent identity carries the
-// execution-context marker) OR Signal 2 (the shell workdir, or the project root,
-// resolves under a plan-worktree path segment). Mirrors the Claude hook's
-// `gate.context_gate`.
+// execution-context marker), Signal 2 (the shell workdir, or the project root,
+// resolves under a plan-worktree path segment), or Signal 3 (this checkout
+// carries a RUNBOOK-LANE marker: a `.plan/temp/rb-<plan>/progress.md` file.
+//
+// Signal 3 is the lane's own marker: a runbook-lane run issues every call with
+// `workdir` = the MAIN checkout, so neither Signal 1 (the lane runs in the main
+// context) nor Signal 2 (no worktree path in the cwd) fires, and a consumer
+// repository would be left unbound. The progress file is written by the lane
+// before any implementation work and lives for the run, which makes it a
+// cheaper and narrower signal than guessing from `git -C` targets.
+//: A runbook-lane marker older than this no longer binds anything: the marker is
+//: written at run start and never removed, so without a freshness bound a single
+//: past lane run would bind R1-R5 in a consumer checkout forever.
+const LANE_MARKER_MAX_AGE_MS = 24 * 60 * 60 * 1000
+
+function isLaneRun(root) {
+  if (!root) return false
+  const tempDir = path.join(root, ".plan", "temp")
+  let entries
+  try {
+    entries = readdirSync(tempDir)
+  } catch {
+    return false
+  }
+  const now = Date.now()
+  return entries.some((name) => {
+    if (!name.startsWith("rb-")) return false
+    const marker = path.join(tempDir, name, "progress.md")
+    try {
+      return now - statSync(marker).mtimeMs <= LANE_MARKER_MAX_AGE_MS
+    } catch {
+      return false
+    }
+  })
+}
+
 function contextGate(agent, workdir, root) {
   if (typeof agent === "string" && agent.includes(EXECUTION_CONTEXT_MARKER)) return true
   for (const candidate of [workdir, root]) {
@@ -598,36 +895,54 @@ function contextGate(agent, workdir, root) {
     const normalized = candidate.replace(/\\/g, "/").replace(/\/+$/, "") + "/"
     if (normalized.includes(WORKTREE_PATH_SEGMENT)) return true
   }
-  return false
+  return isLaneRun(root)
 }
 
-// Read the shared allow-list. Project first, then the deployed OpenCode config
-// directory; absent (or empty) falls back to the built-in base table. Returns
-// BOTH forms — the repository-relative `entries` and the `bundleEntries` matched
-// against a deployed bundle root.
-function loadAllowList(root) {
+// Every path a standards DATA FILE (`r5-allowlist.json`, `r5-wrappers.json`) is
+// read from, in probe order: the project's own copy first, then every deployed
+// platform-runtime skill tree this harness can resolve — including the
+// `OPENCODE_CONFIG_DIR` override, which the wizard honours and which the
+// allow-list loader must honour identically.
+function standardDataCandidates(root, filename) {
   const home = process.env.HOME || homedir() || ""
   const configRoot = process.env.XDG_CONFIG_HOME || (home ? path.join(home, ".config") : "")
-  const candidates = [
-    path.join(root, ...R5_REPO_MARKER.split("/")),
-    path.join(
-      configRoot,
-      "opencode",
-      "skills",
-      "plan-marshall-platform-runtime",
-      "standards",
-      "r5-allowlist.json",
-    ),
-    path.join(
-      configRoot,
-      "opencode",
-      "skill",
-      "plan-marshall-platform-runtime",
-      "standards",
-      "r5-allowlist.json",
-    ),
-  ]
-  for (const candidate of candidates) {
+  const candidates = [path.join(root, "marketplace", "bundles", "plan-marshall", "skills", "platform-runtime", "standards", filename)]
+  const skillRoots = []
+  if (process.env.OPENCODE_CONFIG_DIR) skillRoots.push(process.env.OPENCODE_CONFIG_DIR)
+  if (configRoot) skillRoots.push(path.join(configRoot, "opencode"))
+  if (home) skillRoots.push(path.join(home, ".config", "opencode"))
+  for (const skillRoot of skillRoots) {
+    for (const name of ["skills", "skill"]) {
+      candidates.push(path.join(skillRoot, name, "plan-marshall-platform-runtime", "standards", filename))
+    }
+  }
+  return candidates
+}
+
+// Read the shared wrapper table. Absent (or unreadable, or shapeless) yields an
+// EMPTY table flagged `missing`, which makes the R5 check fail CLOSED rather
+// than silently admitting a wrapped interpreter call.
+function loadWrapperTable(root) {
+  for (const candidate of standardDataCandidates(root, R5_WRAPPER_TABLE_NAME)) {
+    try {
+      const data = JSON.parse(readFileSync(candidate, "utf8"))
+      if (data && typeof data === "object" && data.wrappers && typeof data.wrappers === "object") {
+        const findExec = new Set(Array.isArray(data.find_exec_options) ? data.find_exec_options : [])
+        return { wrappers: data.wrappers, findExec, missing: false }
+      }
+    } catch {
+      // Try the next candidate.
+    }
+  }
+  return { wrappers: {}, findExec: new Set(), missing: true }
+}
+
+// Read the shared allow-list from the same candidate list, so the wrapper table
+// and the allow-list can never be found at different roots. Returns BOTH forms —
+// the repository-relative `entries` and the `bundleEntries` matched against a
+// deployed bundle root.
+function loadAllowList(root) {
+  for (const candidate of standardDataCandidates(root, "r5-allowlist.json")) {
     try {
       const data = JSON.parse(readFileSync(candidate, "utf8"))
       const entries = data && data.entries
@@ -736,44 +1051,167 @@ function patchTextTargetsExecutor(patchText) {
   return candidates.some(normalizedIsExecutorPath)
 }
 
-// Whether the command is a plain `git commit` invocation — `git` as the
-// program, `commit` as the subcommand after any global options — together with
-// the `-C` TARGET the commit is aimed at. R6 names the plan from that target
-// (when it lies under a plan worktree), so the persona-mandated
-// `git -C {WORKTREE} commit` form from the main checkout is judged by the
-// worktree's own plan. Successive `-C` values COMPOSE (git applies each in
-// order, resolving a relative value against the running target), so
-// `git -C . -C .plan/local/worktrees/plan-a commit` names the worktree too.
-function gitCommitTarget(command) {
-  if (normalizeToken(tokenAt(command, 0)).toLowerCase() !== "git") return { isCommit: false, target: null }
-  const tokens = commandTokens(command)
-  let i = 1
-  let target = null
-  while (i < tokens.length) {
-    const t = stripMatchedQuotes(tokens[i])
-    if (t === "-C") {
-      const value = stripMatchedQuotes(tokens[i + 1] ?? "")
-      target = target === null || value.startsWith("/") ? value : `${target}/${value}`
+// A directory value that still carries a shell expansion is UNRESOLVABLE: the
+// guard cannot know where the commit would land, so R6 refuses fail-closed.
+const UNRESOLVABLE_DIR_RE = /[$`]/
+
+function isUnresolvableDir(value) {
+  return typeof value === "string" && value.length > 0 && UNRESOLVABLE_DIR_RE.test(value)
+}
+
+// The plan id a git admin directory names (`.../.git/worktrees/{plan}`), or "".
+function planIdFromGitDir(value) {
+  const normalized = String(value).replace(/\\/g, "/").replace(/\/+$/, "")
+  const marker = "/worktrees/"
+  const at = normalized.lastIndexOf(marker)
+  if (at === -1) return ""
+  return normalized.slice(at + marker.length).split("/")[0]
+}
+
+// What a `git commit` command says about the plan it targets. The plan is named
+// from EVERY form the harness can express: git's `-C` global option (attached
+// form included; successive values COMPOSE, because git applies each in order
+// against the running target), the `--git-dir` / `--work-tree` options in both
+// detached and `=` form, and the `GIT_DIR` / `GIT_WORK_TREE` assignments that
+// precede the program. A `-c alias.NAME=…` subcommand is RESOLVED to its body's
+// first word; a shell-expansion body (`!…`) or a directory value carrying `$` or
+// a backtick is UNRESOLVABLE, so R6 refuses fail-closed rather than guessing.
+// The token list whose first program is `git`, from the command itself or from
+// any segment of a wrapper's spliced command string (`zsh -c 'cd /tmp; git
+// commit'`), or null. Without this a commit hidden behind a `cd` inside a
+// shell's `-c` string would escape R6.
+function gitProgramTokens(command) {
+  const stripped = commandTokens(command)
+  if (stripped.length && basenameOf(stripped[0]).toLowerCase() === "git") {
+    return { tokens: stripped, cdTarget: null }
+  }
+  const raw = rawCommandTokens(command)
+  for (let position = 1; position < raw.length; position++) {
+    let cdTarget = null
+    for (const segment of splicedSegments(stripMatchedQuotes(raw[position]))) {
+      const parts = shellSplit(segment)
+      const walked = stripWrappers(parts === null ? whitespaceSplit(segment) : parts, WRAPPER_TABLE)
+      if (!walked.length) continue
+      if (basenameOf(walked[0]) === "cd" && walked[1]) {
+        const value = stripMatchedQuotes(walked[1])
+        cdTarget = cdTarget === null || value.startsWith("/") ? value : `${cdTarget}/${value}`
+        continue
+      }
+      if (basenameOf(walked[0]).toLowerCase() === "git") return { tokens: walked, cdTarget }
+    }
+  }
+  return null
+}
+
+function gitCommitInfo(command) {
+  let raw = rawCommandTokens(command)
+  const stripped = commandTokens(command)
+  let gitAt = -1
+  let cdTarget = null
+  if (stripped.length && basenameOf(stripped[0]).toLowerCase() === "git") {
+    for (let i = 0; i < raw.length; i++) {
+      if (basenameOf(raw[i]).toLowerCase() === "git") {
+        gitAt = i
+        break
+      }
+    }
+    if (gitAt === -1) {
+      raw = stripped
+      gitAt = 0
+    }
+  } else {
+    const program = gitProgramTokens(command)
+    if (program === null) {
+      return { isCommit: false, cwdTarget: null, workTree: null, gitDir: null, unresolvable: false }
+    }
+    raw = program.tokens
+    gitAt = 0
+    cdTarget = program.cdTarget
+  }
+  const environment = {}
+  for (let i = 0; i < gitAt; i++) {
+    const token = stripMatchedQuotes(raw[i])
+    const eq = token.indexOf("=")
+    if (eq > 0 && /^[A-Za-z_][A-Za-z0-9_]*$/.test(token.slice(0, eq))) {
+      environment[token.slice(0, eq)] = token.slice(eq + 1)
+    }
+  }
+  let gitDir = environment.GIT_DIR ?? null
+  let workTree = environment.GIT_WORK_TREE ?? null
+  let unresolvable = isUnresolvableDir(gitDir) || isUnresolvableDir(workTree) || isUnresolvableDir(cdTarget)
+  const aliases = {}
+  let cwdTarget = cdTarget
+  let subcommand = null
+  let i = gitAt + 1
+  while (i < raw.length) {
+    const token = stripMatchedQuotes(raw[i])
+    if (token === "-C") {
+      const value = stripMatchedQuotes(raw[i + 1] ?? "")
+      cwdTarget = cwdTarget === null || value.startsWith("/") ? value : `${cwdTarget}/${value}`
+      if (isUnresolvableDir(value)) unresolvable = true
       i += 2
       continue
     }
-    if (t.startsWith("-C") && !t.startsWith("--") && t.length > 2) {
-      const value = t.slice(2)
-      target = target === null || value.startsWith("/") ? value : `${target}/${value}`
+    if (token.startsWith("-C") && !token.startsWith("--") && token.length > 2) {
+      const value = token.slice(2)
+      cwdTarget = cwdTarget === null || value.startsWith("/") ? value : `${cwdTarget}/${value}`
+      if (isUnresolvableDir(value)) unresolvable = true
       i += 1
       continue
     }
-    if (GIT_VALUE_OPTIONS.has(t)) {
-      i += 2
+    let matchedTargetOption = false
+    for (const prefix of ["--git-dir", "--work-tree"]) {
+      if (token === prefix || token.startsWith(`${prefix}=`)) {
+        let value
+        if (token.includes("=")) {
+          value = token.slice(token.indexOf("=") + 1)
+          i += 1
+        } else {
+          value = stripMatchedQuotes(raw[i + 1] ?? "")
+          i += 2
+        }
+        if (prefix === "--git-dir") gitDir = value
+        else workTree = value
+        if (isUnresolvableDir(value)) unresolvable = true
+        matchedTargetOption = true
+        break
+      }
+    }
+    if (matchedTargetOption) continue
+    if (token === "-c" || (token.startsWith("-c") && !token.startsWith("--"))) {
+      let value
+      if (token === "-c") {
+        value = stripMatchedQuotes(raw[i + 1] ?? "")
+        i += 2
+      } else {
+        value = token.slice(2)
+        i += 1
+      }
+      const eq = value.indexOf("=")
+      if (eq > 0 && value.slice(0, eq).startsWith("alias.")) {
+        aliases[value.slice(0, eq).slice("alias.".length)] = value.slice(eq + 1)
+      }
       continue
     }
-    if (t.startsWith("-")) {
-      i++
+    if (token.startsWith("-")) {
+      i += GIT_VALUE_OPTIONS.has(token) ? 2 : 1
       continue
     }
-    return { isCommit: t.toLowerCase() === "commit", target }
+    subcommand = token.toLowerCase()
+    break
   }
-  return { isCommit: false, target }
+  if (subcommand !== null && aliases[subcommand]) {
+    const body = aliases[subcommand]
+    if (body.startsWith("!") || isUnresolvableDir(body)) {
+      // The alias body cannot be reduced to a plain subcommand, so whether this
+      // is a commit is unknown: refuse fail-closed.
+      return { isCommit: true, cwdTarget, workTree, gitDir, unresolvable: true }
+    }
+    const parts = shellSplit(body)
+    const resolved = parts === null ? whitespaceSplit(body) : parts
+    subcommand = (resolved[0] ?? "").toLowerCase()
+  }
+  return { isCommit: subcommand === "commit", cwdTarget, workTree, gitDir, unresolvable }
 }
 
 // The plan worktree a path names: `{ root, planId }` for a path carrying
@@ -834,43 +1272,67 @@ function resolveTargetPath(target, base) {
 }
 
 // The enclosing plan's phase, read from the plan's own status.json field
-// `current_phase`. The plan is NAMED, in priority order, by the `git -C` target
-// (the persona-mandated `git -C {WORKTREE} commit` form), then the shell
+// `current_phase`. The plan is NAMED, in priority order, by the `--work-tree`
+// value, then the composed `git -C` target, then the plan a `--git-dir` /
+// `GIT_DIR` admin directory points at (`.../worktrees/{plan}`), then the shell
 // `workdir`, then the project `root` — never "the first plan found". The record
 // is the WORKTREE-RESIDENT one first (the live one during phase 5+), then the
 // main-anchored live record. Empty when no plan worktree is named, or no
 // readable record resolves.
-function planPhase(workdir, root, gitTarget) {
-  const named =
-    worktreeInfoFromPath(resolveTargetPath(gitTarget, workdir || root)) ||
-    worktreeInfoFromPath(workdir) ||
-    worktreeInfoFromPath(root)
-  if (named === null) return ""
-  const candidates = [path.join(named.root, ".plan", "local", "plans", named.planId, "status.json")]
+function planPhase(workdir, root, info) {
+  const candidates = []
+  const addTarget = (value) => {
+    if (!value) return
+    const named = worktreeInfoFromPath(resolveTargetPath(value, workdir || root))
+    if (named) candidates.push(named)
+  }
+  if (info) {
+    addTarget(info.workTree)
+    addTarget(info.cwdTarget)
+    if (info.gitDir) {
+      const planId = planIdFromGitDir(info.gitDir)
+      if (planId && root) {
+        candidates.push({ root: path.join(root, ".plan", "local", "worktrees", planId), planId })
+      }
+    }
+  }
+  const fromWorkdir = worktreeInfoFromPath(workdir)
+  if (fromWorkdir) candidates.push(fromWorkdir)
+  const fromRoot = worktreeInfoFromPath(root)
+  if (fromRoot) candidates.push(fromRoot)
   const base = mainPlanLocalDir(root)
-  if (base !== null) candidates.push(path.join(base, "plans", named.planId, "status.json"))
-  for (const candidate of candidates) {
-    let data
-    try {
-      data = JSON.parse(readFileSync(candidate, "utf8"))
-    } catch (error) {
-      if (error && error.code === "ENOENT") continue
+  for (const named of candidates) {
+    const statuses = [path.join(named.root, ".plan", "local", "plans", named.planId, "status.json")]
+    if (base !== null) statuses.push(path.join(base, "plans", named.planId, "status.json"))
+    for (const candidate of statuses) {
+      let data
+      try {
+        data = JSON.parse(readFileSync(candidate, "utf8"))
+      } catch (error) {
+        if (error && error.code === "ENOENT") continue
+        return ""
+      }
+      if (data && typeof data.current_phase === "string" && data.current_phase) return data.current_phase
       return ""
     }
-    if (data && typeof data.current_phase === "string" && data.current_phase) return data.current_phase
-    return ""
   }
   return ""
 }
 
 // R6 — a raw `git commit` in phase 6-finalize is refused: every plan commit
 // must pass through the gate-bearing `git-workflow commit` verb. The plan is
-// named from the `git -C` target (then the worktree path) and its phase read
-// from `current_phase`.
-function isRawFinalizeCommit(command, workdir, root) {
-  const info = gitCommitTarget(command)
+// named from every commit form (see `gitCommitInfo`) and its phase read from
+// `current_phase`; an UNRESOLVABLE target (an unexpanded variable, an alias the
+// guard cannot reduce) is refused fail-closed.
+function isRawFinalizeCommit(command, workdir, root, agent) {
+  const info = gitCommitInfo(command)
   if (!info.isCommit) return false
-  return planPhase(workdir, root, info.target) === SOURCE_COMMIT_GATE_PHASE
+  if (info.unresolvable) {
+    // Fail-closed ONLY inside the enforced scope (Signal 1 included): an
+    // unrelated consumer's `git -C "$dir" commit` is not this rule's business.
+    return contextGate(agent, workdir, root) || isThisRepository(root)
+  }
+  return planPhase(workdir, root, info) === SOURCE_COMMIT_GATE_PHASE
 }
 
 function auditLine(rule, tool, sessionID, callID, detail) {
@@ -883,7 +1345,9 @@ export default Plugin.define({
     const root = ctx.location?.directory || "."
     const logPath = path.join(root, ".plan", "temp", "guard.log")
     const allowList = loadAllowList(root)
-    const deployedRoots = deployedBundleRoots()
+    const deployedRoots = deployedBundleRoots(root)
+    const layoutData = loadLayoutData(root)
+    WRAPPER_TABLE = loadWrapperTable(root)
 
     function audit(entry) {
       try {
@@ -923,14 +1387,15 @@ export default Plugin.define({
       }
 
       const token = normalizeToken(tokenAt(command, 0))
-      if (token && MUTATION_FILE_OPS.has(token)) {
+      const rawToken = normalizeToken(rawCommandTokens(command)[0] ?? "")
+      if ((token && MUTATION_FILE_OPS.has(token)) || (rawToken && MUTATION_FILE_OPS.has(rawToken))) {
         audit(auditLine("R2", tool, sessionID, callID, command))
         throw new Error(
           "[plan-marshall-guard] R2: shell file operations (mutation class) via Bash are forbidden; use the Read/Edit/Write tools or manage-* scripts",
         )
       }
 
-      if (isRawFinalizeCommit(command, workdir, root)) {
+      if (isRawFinalizeCommit(command, workdir, root, event?.agent)) {
         audit(auditLine("R6", tool, sessionID, callID, command))
         throw new Error(
           "[plan-marshall-guard] R6: a raw git commit is refused in phase 6-finalize — commit through python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow commit (the gate-bearing path), which sanctions an open loop-back fix task, a review-rubric section-6 record, or a step id of the composed phase-6 manifest",
@@ -964,6 +1429,18 @@ export default Plugin.define({
         )
       }
 
+      // Fail CLOSED when the shared wrapper table is unavailable: without it
+      // no wrapper can be stripped, so refuse any command that names an
+      // interpreter anywhere rather than letting a prefix hide the call.
+      if (WRAPPER_TABLE.missing && (contextGate(event?.agent, workdir, root) || isThisRepository(root))) {
+        if (rawCommandTokens(command).some((candidate) => isPythonInterpreter(candidate))) {
+          audit(auditLine("R5", tool, sessionID, callID, command))
+          throw new Error(
+            "[plan-marshall-guard] R5: the shared wrapper table (standards/r5-wrappers.json) is unavailable, so no wrapper can be stripped; the invocation is refused because it names an interpreter",
+          )
+        }
+      }
+
       if (PYTHON_INTERPRETERS.has(token) || isPythonInterpreter(token)) {
         const second = basenameOf(tokenAt(command, 1))
         const mModule = normalizeToken(mModuleOf(tokenAt(command, 1), tokenAt(command, 2)))
@@ -983,7 +1460,7 @@ export default Plugin.define({
           // bundle-cache root.
           if (isAllowListed(command, allowList.entries, root, workdir || root)) return
           const scriptPath = resolvedScriptPath(tokenAt(command, 1), root, workdir || root)
-          if (isDeployedAllowListed(scriptPath, allowList.bundleEntries, deployedRoots)) return
+          if (isDeployedAllowListed(scriptPath, allowList.bundleEntries, deployedRoots, layoutData)) return
           if (isInterpreterBypass(tokenAt(command, 1)) || hasFlagPrefixedBypass(command)) {
             audit(auditLine("R5", tool, sessionID, callID, command))
             throw new Error(

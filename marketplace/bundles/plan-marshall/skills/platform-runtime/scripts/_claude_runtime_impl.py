@@ -31,6 +31,7 @@ from typing import Any
 
 import _chat_signal_reducer
 import claude_runtime
+import deployed_layout
 import runtime_info
 import session_binding
 from manage_terminal_title import _compose_body, compose
@@ -310,22 +311,24 @@ class ClaudeRuntime(Runtime):
         )
 
     def layout_bundle_cache_root(self) -> str:
-        """Return the Claude deployed-bundle cache root.
+        """Return the Claude deployed-bundle cache root(s).
 
-        ``~/.claude/plugins/cache/plan-marshall`` — the single flat cache root
-        under which installed marketplace bundles live on Claude. The path is
-        composed in ``claude_runtime._claude_bundle_cache_root``, which shares
-        its cache segments with the default-permission renderer, so those two
-        cannot drift. Other sites compose the same segments themselves because
-        they cannot reach this helper — the steward's bootstrap detector runs
-        before the plugin is resolvable, the resolver ``generate_executor.py``
-        embeds runs standalone, and ``marketplace_paths`` composes the fallback
-        this op's own consumers use when the layout op is unreachable, which
-        importing back here would make circular.
+        ``~/.claude/plugins/cache/plan-marshall`` — the deployed bundle cache on
+        Claude. Read from the shared ``deployed-layout.json`` data file, the same
+        one the enforcement guards read, so the resolver and the guards cannot
+        disagree about which roots are deploy roots.
         """
+        import pathlib
+
+        standards_dir = pathlib.Path(__file__).resolve().parent.parent / 'standards'
+        environment = dict(os.environ)
+        environment['HOME'] = str(claude_runtime.resolve_home())
         return toon_success(
             'layout bundle-cache-root',
-            {'target': 'claude', 'roots': [str(claude_runtime._claude_bundle_cache_root())]},
+            {
+                'target': 'claude',
+                'roots': deployed_layout.bundle_cache_roots('claude', standards_dir, environment),
+            },
         )
 
     # ------------------------------------------------------------------
