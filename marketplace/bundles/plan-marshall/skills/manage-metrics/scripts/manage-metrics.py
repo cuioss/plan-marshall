@@ -509,9 +509,11 @@ _POPULATION_BULLET_NOTE = {
         'measured by different methods and are not additively comparable'
     ),
     POPULATION_MAIN_PLUS_SUBAGENT: (
-        'whole-phase population — the sum of this phase main-context spend '
-        '(inline_main_context_tokens) and its dispatched sub-agent spend '
-        '(subagent_total_tokens), both measured from the same session store over the same window'
+        'whole-phase population — the phase measured spend: its main-context figure '
+        '(inline_main_context_tokens) together with its dispatched sub-agent work '
+        '(subagent_total_tokens), both read from the same session store over the same '
+        'window. Where the target four usage fields already fold the sub-agent '
+        'transcripts in, that work is part of the same figure rather than an addend'
     ),
 }
 
@@ -2362,6 +2364,12 @@ def cmd_generate(args: argparse.Namespace) -> dict:
             rendered_tokens = int(raw_tokens)
             if phase.get('total_tokens_population') == POPULATION_INLINE and 'dispatched_total_tokens' not in phase:
                 rendered_tokens += int(_coerce_numeric(phase.get('subagent_total_tokens')) or 0)
+                # Persist the composition too: a cell the render composed but the
+                # row did not would make the store disagree with the Total it
+                # persists beside it. The guard above is idempotent — once stamped,
+                # the row takes the ordinary composed path on the next run.
+                phase['total_tokens'] = rendered_tokens
+                phase['total_tokens_population'] = POPULATION_MAIN_PLUS_SUBAGENT
             tokens_str = f'{rendered_tokens:,}'
             tokens_values.append(rendered_tokens)
             cell_source = 'total_tokens'
@@ -2682,9 +2690,10 @@ def cmd_generate(args: argparse.Namespace) -> dict:
         if main_plus_subagent_phases:
             population_clauses.append(
                 'Marked `(main + sub-agent)` — the cell is the phase whole measured spend: its '
-                'main-context figure (also recorded as inline_main_context_tokens) added to its '
-                'dispatched sub-agent figure (subagent_total_tokens), both read from the same '
-                f'session store over the same window: {", ".join(main_plus_subagent_phases)}.'
+                'main-context figure (also recorded as inline_main_context_tokens) together with '
+                'its dispatched sub-agent work (subagent_total_tokens), both read from the same '
+                'session store over the same window (where the target four usage fields already '
+                f'fold the sub-agents in, they are part of that same figure): {", ".join(main_plus_subagent_phases)}.'
             )
         if inline_population_phases:
             population_clauses.append(

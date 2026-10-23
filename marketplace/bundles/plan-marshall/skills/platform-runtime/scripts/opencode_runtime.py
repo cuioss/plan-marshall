@@ -1001,7 +1001,9 @@ def _per_phase_buckets(
     """
     main_usage: dict[str, dict[str, int]] = {}
     reasoning_usage: dict[str, int] = {}
+    reasoning_observed: set[str] = set()
     cost_usage: dict[str, float] = {}
+    cost_observed: set[str] = set()
     subagent_usage: dict[str, dict[str, int]] = {}
     subagent_tool_uses: dict[str, int] = {}
     phase_tool_uses: dict[str, int] = {}
@@ -1015,6 +1017,7 @@ def _per_phase_buckets(
     # the tool count. A partial count presented as the phase's total would hide the
     # calls that window never saw.
     tool_observable_phases_incomplete: set[str] = set()
+    subagent_tool_incomplete: set[str] = set()
     message_count = 0
     subagent_phases = 0
     for window in windows:
@@ -1035,6 +1038,10 @@ def _per_phase_buckets(
         )
         cost_usage[phase] = cost_usage.get(phase, 0.0) + float(main.get('cost', 0.0) or 0.0)
         cost_usage[phase] += float(subagent.get('cost', 0.0) or 0.0)
+        if 'reasoning_tokens' in main or 'reasoning_tokens' in subagent:
+            reasoning_observed.add(phase)
+        if 'cost' in main or 'cost' in subagent:
+            cost_observed.add(phase)
         for scope, scope_bucket, messages in (('main', main, main_messages), ('subagent', subagent, subagent_messages)):
             if not messages:
                 continue
@@ -1046,8 +1053,11 @@ def _per_phase_buckets(
                     subagent_tool_uses[phase] = subagent_tool_uses.get(phase, 0) + int(scope_bucket['tool_uses'])
             else:
                 # This window's messages carried no content array, so it cannot
-                # answer for the phase it contributes to.
+                # answer for the phase it contributes to — and neither can a
+                # sub-agent partial count be published for it.
                 tool_observable_phases_incomplete.add(phase)
+                if scope == 'subagent':
+                    subagent_tool_incomplete.add(phase)
         sub = subagent_usage.setdefault(
             phase,
             {'subagent_total_tokens': 0, 'subagent_samples': 0, 'subagent_duration_ms': 0},
@@ -1069,7 +1079,7 @@ def _per_phase_buckets(
     for phase in sorted(set(main_usage) | set(subagent_usage)):
         four = main_usage.get(phase) or dict.fromkeys(_USAGE_FOUR_FIELDS, 0)
         subagent_group = dict(subagent_usage.get(phase, _EMPTY_SUBAGENT_USAGE))
-        if 'subagent' in tool_observable_scopes.get(phase, set()):
+        if 'subagent' in tool_observable_scopes.get(phase, set()) and phase not in subagent_tool_incomplete:
             subagent_group['subagent_tool_uses'] = subagent_tool_uses.get(phase, 0)
         bucket: dict[str, Any] = {
             **four,
@@ -1081,10 +1091,14 @@ def _per_phase_buckets(
             'cache_read': four['cache_read_input_tokens'],
             'cache_creation': four['cache_creation_input_tokens'],
             'total': sum(four.values()),
-            'reasoning_tokens': reasoning_usage.get(phase, 0),
-            'cost_usd': round(cost_usage.get(phase, 0.0), 8),
             **subagent_group,
         }
+        # The optional groups are published only where the store answered them: an
+        # absent field is not a measured zero.
+        if phase in reasoning_observed:
+            bucket['reasoning_tokens'] = reasoning_usage.get(phase, 0)
+        if phase in cost_observed:
+            bucket['cost_usd'] = round(cost_usage.get(phase, 0.0), 8)
         if (
             message_scopes.get(phase, set()) <= tool_observable_scopes.get(phase, set())
             and phase not in tool_observable_phases_incomplete

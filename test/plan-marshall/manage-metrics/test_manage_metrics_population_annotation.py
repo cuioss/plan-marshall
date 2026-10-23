@@ -207,14 +207,13 @@ def test_whole_phase_row_renders_both_populations_summed(plan_context, monkeypat
     assert '(main + sub-agent)' in _total_tokens_cell(report)
 
 
-def test_legacy_inline_row_with_subagent_evidence_is_not_labelled_as_having_dispatched_nothing(
-    plan_context, monkeypatch
-):
-    """A row stamped inline that also recorded sub-agent work is composed, not mislabelled.
+def test_legacy_inline_row_with_subagent_evidence_is_composed_and_persisted(plan_context, monkeypatch):
+    """A row stamped inline that also recorded sub-agent work is composed AND stored.
 
     The inline stamp claims the phase dispatched nothing. The base code could
     stamp it on a bucket that also carried sub-agent usage, so rendering such a
-    row unchanged would print a false claim.
+    row unchanged would print a false claim — and composing only the cell would
+    leave the store disagreeing with the Total it persists.
     """
     plan_id = 'population-legacy-inline-with-subagent'
     cmd_start_phase(ns_start_phase(plan_id, '3-outline'))
@@ -235,6 +234,10 @@ def test_legacy_inline_row_with_subagent_evidence_is_not_labelled_as_having_disp
     assert 'dispatched nothing' not in report
     assert '(main + sub-agent)' in row_line
     assert '36,000' in row_line
+    # The composition is persisted too, so the store reconciles with its Total.
+    stored = manage_metrics.read_metrics_raw(plan_id)['phases']['3-outline']
+    assert stored['total_tokens'] == 36000
+    assert stored['total_tokens_population'] == manage_metrics.POPULATION_MAIN_PLUS_SUBAGENT
 
 
 def test_inline_total_tokens_is_excluded_from_the_dispatched_maximum():
@@ -282,6 +285,21 @@ def test_whole_phase_row_declares_its_included_inline_spend(plan_context, monkey
     # The inline bullet states that the Total INCLUDES this figure — the
     # relationship the pre-composition text got backwards.
     assert 'included in the Total tokens figure' in report
+
+
+def test_all_inline_total_declares_its_population(plan_context, monkeypatch):
+    """A Total fed only by inline rows declares that population, not the default."""
+    plan_id = 'population-total-all-inline'
+    cmd_start_phase(ns_start_phase(plan_id, '1-init'))
+    cmd_end_phase(ns_end_phase(plan_id, '1-init'))
+
+    _run_enrich_with_buckets(plan_id, monkeypatch, {'1-init': _INLINE_BUCKET})
+    cmd_generate(ns_generate(plan_id))
+    report = (plan_context.plan_dir_for(plan_id) / 'metrics.md').read_text(encoding='utf-8')
+
+    total_cell = _total_tokens_cell(report)
+    assert '(inline)' in total_cell
+    assert '(spans populations)' not in total_cell
 
 
 def test_legacy_mixed_row_keeps_its_marker_and_feeds_the_dispatched_population(plan_context):

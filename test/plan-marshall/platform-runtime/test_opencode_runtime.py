@@ -1359,6 +1359,62 @@ def test_metrics_normalized_tokens_omits_tool_uses_when_one_window_cannot_answer
     assert 'tool_uses' not in bucket
 
 
+def test_metrics_normalized_tokens_omits_reasoning_and_cost_when_unreported(
+    runtime: OpenCodeRuntime, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """A store that records no reasoning figure and no cost publishes neither key.
+
+    ``0`` is only ever a measured value: a message that carried neither field has
+    not told the reader that the phase reasoned or cost nothing.
+    """
+    db_path = tmp_path / 'opencode.db'
+    _write_usage_db(
+        db_path,
+        [('ses-root', None, 10, 20, 0, 0)],
+        [('ses-root', 'assistant', _at(5), {'tokens': {'input': 10, 'output': 20}})],
+    )
+    _isolate_store(monkeypatch, db_path)
+    output_file = tmp_path / 'normalized.json'
+
+    result = _parse(runtime.metrics_normalized_tokens('ses-root', [('5-execute', _iso(0), _iso(30))], str(output_file)))
+
+    assert result['status'] == 'success'
+    bucket = json.loads(output_file.read_text(encoding='utf-8'))['5-execute']
+    assert bucket['input_tokens'] == 10
+    assert 'reasoning_tokens' not in bucket
+    assert 'cost_usd' not in bucket
+
+
+def test_metrics_normalized_tokens_omits_the_subagent_tool_count_across_intervals(
+    runtime: OpenCodeRuntime, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """A re-entered phase publishes no sub-agent tool count if one interval cannot answer."""
+    db_path = tmp_path / 'opencode.db'
+    _write_usage_db(
+        db_path,
+        [('ses-root', None, 0, 0, 0, 0), ('ses-child', 'ses-root', 0, 0, 0, 0)],
+        [
+            ('ses-child', 'assistant', _at(5), {'tokens': {'input': 1}, 'content': [{'type': 'tool'}]}),
+            ('ses-child', 'assistant', _at(35), {'tokens': {'input': 1}}),
+        ],
+    )
+    _isolate_store(monkeypatch, db_path)
+    output_file = tmp_path / 'normalized.json'
+
+    result = _parse(
+        runtime.metrics_normalized_tokens(
+            'ses-root',
+            [('5-execute', _iso(0), _iso(30)), ('5-execute', _iso(30), _iso(60))],
+            str(output_file),
+        )
+    )
+
+    assert result['status'] == 'success'
+    bucket = json.loads(output_file.read_text(encoding='utf-8'))['5-execute']
+    assert bucket['subagent_total_tokens'] == 2
+    assert 'subagent_tool_uses' not in bucket
+
+
 def test_metrics_normalized_tokens_reports_the_root_it_measured(
     runtime: OpenCodeRuntime, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:

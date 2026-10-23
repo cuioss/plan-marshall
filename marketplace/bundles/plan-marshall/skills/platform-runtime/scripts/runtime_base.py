@@ -1287,6 +1287,10 @@ class Runtime(ABC):
           store records a per-message cost, and the reason
           ``billing_weighted_total`` is omitted there rather than priced with
           another vendor's cache weights;
+        - the **store-measured tool count** — ``tool_uses``, supplied by a target
+          whose store records each call inside a message's ``content`` array.
+          Absent for a phase in which any contributing message carried no such
+          array, so a partial count is never published as the phase's total;
         - the **reasoning field** — ``reasoning_tokens``, supplied by a target
           whose store records reasoning apart from output, as its own key so it is
           never silently added to ``output`` twice;
@@ -1399,7 +1403,15 @@ class Runtime(ABC):
             ``four_field_phases_attributed``, ``unclassified_tool_calls`` — the
             run-level count of tool names outside the classifier's
             population-derived domain, non-zero when the classifier needs
-            extending). A target whose ids resolve into a session tree MAY also
+            extending) and ``four_field_scope``, which states what the four usage
+            fields already cover: ``main_plus_subagent`` when the walk folds the
+            sub-agent transcripts into them, ``main_context`` when the root
+            session and its descendants are kept in separate buckets. A consumer
+            composing a phase total adds the sub-agent figure only in the
+            ``main_context`` case, so a target MUST report the field accurately —
+            omitting it makes the consumer fall back to ``main_context`` and add a
+            figure the fields may already contain. A target whose ids resolve into
+            a session tree MAY also
             report ``root_session_id``, the root the run measured, so a caller
             measuring several captured identities can tell two ids inside one tree
             from two distinct trees. The no-op carries the target's OWN ``reason``

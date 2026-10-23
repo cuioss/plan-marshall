@@ -701,12 +701,13 @@ def _window_pre_filter(windows: Sequence[tuple[str, datetime, datetime]]) -> tup
 def _empty_bucket() -> dict[str, Any]:
     """Return a zeroed usage bucket for one window and one session scope.
 
-    ``tool_uses`` is deliberately ABSENT: it is written only when an assistant
-    message in the window carried a ``content`` array, so a store that records no
-    content parts states "not observable" rather than a measured ``0``.
+    Only the contract's REQUIRED four usage keys are pre-zeroed: they are measured
+    zeros on a bucket that was walked. ``reasoning_tokens`` and ``cost`` are
+    written only when a message actually carried them, and ``tool_uses`` only
+    when a message made the count observable — the store saying nothing is not the
+    store saying zero.
     """
-    bucket: dict[str, Any] = dict.fromkeys(MESSAGE_USAGE_KEYS, 0)
-    bucket['cost'] = 0.0
+    bucket: dict[str, Any] = dict.fromkeys(USAGE_KEYS, 0)
     bucket['message_count'] = 0
     bucket['duration_ms'] = 0
     bucket['sessions'] = 0
@@ -727,15 +728,24 @@ def _count_tool_parts(data: Mapping[str, Any]) -> int | None:
 
 
 def _add_message_usage(data: Mapping[str, Any], bucket: dict[str, Any]) -> None:
-    """Add one assistant message's ``tokens``/``cost`` to *bucket*."""
+    """Add one assistant message's ``tokens``/``cost`` to *bucket*.
+
+    The four required usage keys are always summed (a missing one is the store's
+    measured ``0``). ``reasoning_tokens`` is summed only when the message actually
+    carried a reasoning figure, and ``cost`` only when it carried a cost, so an
+    absent store field stays absent rather than becoming a fabricated zero.
+    """
     tokens = data.get('tokens')
     if isinstance(tokens, Mapping):
         for path, key in _MESSAGE_TOKEN_PATHS:
             node: Any = tokens
             for segment in path:
                 node = node.get(segment) if isinstance(node, Mapping) else None
-            bucket[key] += _as_int(node)
-    bucket['cost'] += _as_float(data.get('cost'))
+            if node is None and key == 'reasoning_tokens':
+                continue
+            bucket[key] = bucket.get(key, 0) + _as_int(node)
+    if 'cost' in data:
+        bucket['cost'] = bucket.get('cost', 0.0) + _as_float(data.get('cost'))
     bucket['message_count'] += 1
 
 
