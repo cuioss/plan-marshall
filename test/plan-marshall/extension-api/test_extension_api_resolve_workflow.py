@@ -111,10 +111,33 @@ def test_not_found_names_both_probes(tmp_path: Path) -> None:
 
 
 def test_malformed_notation_is_not_found(tmp_path: Path) -> None:
-    for notation in ('b:s', 'b:s/no-suffix', 'b:s/../x.md', '/abs:s/x.md', 'b:/x.md'):
+    for notation in (
+        'b:s',
+        'b:s/no-suffix',
+        'b:s/../x.md',
+        '/abs:s/x.md',
+        '/etc:passwd/standards/x.md',
+        'b:/x.md',
+        'b:../skills/standards/x.md',
+        'b:s/references/n.md',
+    ):
         result = extension_api.resolve_workflow(notation, str(tmp_path))
         assert result['status'] == 'error', notation
         assert result['error'] == 'workflow_not_found', notation
+
+
+def test_flat_layout_runtime_skill_root_resolves(tmp_path: Path) -> None:
+    """The runtime returns ``{config}/skills`` as the root, not its parent."""
+    worktree = tmp_path / 'consumer'
+    worktree.mkdir()
+    skill_root = tmp_path / 'flat' / 'skills'
+    flat_file = _write(skill_root / 'b-s' / 'standards' / 'n.md')
+
+    result = extension_api.resolve_workflow('b:s/standards/n.md', str(worktree), cache_roots=(str(skill_root),))
+
+    assert result['status'] == 'success'
+    assert result['source'] == 'installed'
+    assert result['path'] == str(flat_file.resolve())
 
 
 # =============================================================================

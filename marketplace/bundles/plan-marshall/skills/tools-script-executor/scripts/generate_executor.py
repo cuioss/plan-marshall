@@ -3375,6 +3375,23 @@ def cmd_recover(args: argparse.Namespace) -> dict:
             **base,
         }
 
+    # The generation's OUTPUT is the authority, not the cwd assumption: an
+    # ambient PLAN_BASE_DIR can redirect `get_tracked_config_dir()` away from the
+    # project, so confirm the file the generator wrote IS the one about to be
+    # probed before claiming a recovery.
+    generated = str(regen.get('executor_generated') or '')
+    if not generated or Path(generated).resolve() != executor.resolve() or not executor.is_file():
+        return {
+            'status': 'error',
+            'action': 'regenerate_failed',
+            'detail': (
+                f'the generator wrote {generated or "no executor"}, not {executor}; '
+                'the project executor was not regenerated'
+            ),
+            'probe_reason': '',
+            **base,
+        }
+
     probe_after = _probe_executor_import(executor)
     if probe_after:
         return {

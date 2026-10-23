@@ -751,73 +751,20 @@ def _run_bootstrap_generate(generator: Path, anchor: Path, project_dir: Path) ->
     return result.returncode, result.stdout, result.stderr
 
 
-#: Import-failure markers in a probe's stderr: the Python import-error phrases
-#: and the executor's own bootstrap-guard prefix
-#: (``execute-script.py cannot start:``), which prints instead of a traceback
-#: when the failed import coincides with an unresolved bootstrap directory. The
-#: guard prefix is EXACT, not the bare ``cannot start:``: a generic substring
-#: would classify any unrelated stderr carrying those words as an import failure
-#: and rewrite the executor unconsented. ``ImportError`` covers the whole family —
-#: ``ModuleNotFoundError`` and every other subclass — and a subprocess probe
-#: wraps argparse errors in none of them, so no non-import failure is
-#: misclassified. The boundary is deliberate: only an IMPORT error (or the
-#: executor's guard form of one) is a recovery trigger. A module-level
-#: NON-import failure — a syntax error, or a direct ``SystemExit`` — carries
-#: none of these markers, so it stays inconclusive and is reported under the
-#: consent gate instead of forcing an ungated rewrite.
-_IMPORT_FAILURE_MARKERS = (
-    'ModuleNotFoundError',
-    'ImportError',
-    'No module named',
-    'execute-script.py cannot start:',
-)
-
-#: Timeout for the read-only executor import probe.
-_BOOTSTRAP_PROBE_TIMEOUT_SECONDS = 30
-
-
+#: The import-failure markers and the probe live in ONE place — the generator's
+#: ``_RECOVERY_IMPORT_MARKERS`` / ``_probe_executor_import`` — so ``recover`` and
+#: ``upgrade plan`` cannot disagree on whether an executor is broken. The wrapper
+#: below exists only to keep this module's callable seam monkeypatchable.
 def _probe_executor_import(executor_path: Path) -> str:
-    """Probe the serving executor's module-level imports. Never raises.
+    """Probe the serving executor via the generator's single definition.
 
-    Runs ``python3 <executor> --list`` — the executor's cheapest read-only entry
-    point: it exercises the module-level bootstrap import block (every import
-    the executor needs to start) and exits before any notation resolution or
-    dispatch, so a broken import is observed without running any verb. Returns a
-    short reason when the probe observed an IMPORT failure, and ``''`` for a
-    healthy executor, a missing file, or any other failure — a non-import
-    nonzero exit is NOT an import failure, and an inconclusive probe never
-    triggers a recovery.
+    Delegates to :func:`generate_executor._probe_executor_import`, which runs
+    ``<executor> --list`` with ``PYTHONPATH`` removed (a fresh-shell environment).
+    Returns a short reason on an observed import failure, ``''`` otherwise.
     """
-    import subprocess
+    from generate_executor import _probe_executor_import as _probe
 
-    if not executor_path.is_file():
-        return ''
-    # A FRESH-SHELL environment: the probe must observe the on-disk executor,
-    # not one the parent's injected PYTHONPATH can make importable. A probe that
-    # inherited it would let a module the executor cannot find succeed here,
-    # masking the broken executor recovery exists to fix.
-    env = {key: value for key, value in os.environ.items() if key != 'PYTHONPATH'}
-    try:
-        result = subprocess.run(
-            ['python3', str(executor_path), '--list'],
-            cwd=str(executor_path.parent.parent),
-            capture_output=True,
-            text=True,
-            timeout=_BOOTSTRAP_PROBE_TIMEOUT_SECONDS,
-            env=env,
-        )
-    except (OSError, subprocess.TimeoutExpired, UnicodeDecodeError):
-        return ''
-    if result.returncode == 0:
-        return ''
-    stderr = result.stderr or ''
-    if not any(marker in stderr for marker in _IMPORT_FAILURE_MARKERS):
-        return ''
-    lines = [line.strip() for line in stderr.splitlines() if line.strip()]
-    for line in lines:
-        if any(marker in line for marker in _IMPORT_FAILURE_MARKERS):
-            return line[:200]
-    return (lines[-1] if lines else 'import failure')[:200]
+    return _probe(executor_path)
 
 
 # A plugin-cache version directory name (``.../plan-marshall/0.1.1916/…``).

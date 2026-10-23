@@ -648,9 +648,11 @@ def test_install_uninstall_full_with_manifest_preserves_user_files(
 ):
     out = tmp_path / 'out'
     emit_bundles(multi_bundle_repo, out, opencode_config_dir)
+    _write(out / 'dist-manifest.json', json.dumps({'version': '1.0.0'}) + '\n')
 
     dest = tmp_path / 'installed'
     subprocess.run([str(out / 'install.sh'), '--target-dir', str(dest), '--all'], check=True)
+    assert (dest / 'dist-manifest.json').is_file()
 
     # Add user custom files
     user_skill_1 = dest / 'skills' / 'my-custom-skill' / 'SKILL.md'
@@ -667,6 +669,9 @@ def test_install_uninstall_full_with_manifest_preserves_user_files(
     assert not (dest / 'skills' / 'plan-marshall-core-skill').exists()
     assert not (dest / 'skills' / 'pm-dev-java-java-skill').exists()
     assert not (dest / '.plan-marshall-manifest.json').exists()
+    # The installed manifest is recorded in managed_files, so the manifest-driven
+    # uninstall removes it.
+    assert not (dest / 'dist-manifest.json').exists()
 
     # User custom components preserved
     assert user_skill_1.is_file()
@@ -704,9 +709,10 @@ def test_install_uninstall_full_fallback_without_manifest_preserves_user_files(
     # Managed components removed
     assert not (dest / 'skills' / 'plan-marshall-core-skill').exists()
     assert not (dest / 'skills' / 'pm-dev-java-java-skill').exists()
-    # The installed manifest is a managed file; the no-old-manifest fallback
-    # must still remove it.
-    assert not (dest / 'dist-manifest.json').exists()
+    # Ownership is recorded only in the manifest; without it the fallback cannot
+    # prove the manifest is ours, so it PRESERVES the file rather than deleting a
+    # possibly user-owned document.
+    assert (dest / 'dist-manifest.json').is_file()
 
     # User custom components preserved
     assert user_skill_1.is_file()

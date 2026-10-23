@@ -628,10 +628,10 @@ def _deploy_command(command_file: Path, dest: Path, *, dry_run: bool) -> None:
 
 def _deploy_root_assets(source: Path, dest: Path, config: TargetSyncConfig, *, dry_run: bool) -> int:
     count = 0
-    for asset_file, _kind, is_executable in config.root_assets:
+    for asset_file, kind, is_executable in config.root_assets:
         asset_src = source / asset_file
+        target = dest / asset_file
         if asset_src.is_file():
-            target = dest / asset_file
             if not dry_run:
                 _refuse_file_link(target, dest)
                 target.parent.mkdir(parents=True, exist_ok=True)
@@ -639,6 +639,13 @@ def _deploy_root_assets(source: Path, dest: Path, config: TargetSyncConfig, *, d
                 if is_executable:
                     target.chmod(0o755)
             count += 1
+        elif kind == 'manifest' and not dry_run:
+            # A source that omitted its manifest (a generator that failed before
+            # the stamping step) must not leave the PREVIOUS install's manifest
+            # in place: the staleness reads would then report the old version as
+            # the installed one. Unlinking removes the link itself, never its
+            # target, so this does not act through a symlink.
+            target.unlink(missing_ok=True)
     return count
 
 

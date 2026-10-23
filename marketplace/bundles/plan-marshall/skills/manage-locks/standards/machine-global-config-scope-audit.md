@@ -66,12 +66,12 @@ coincidence.
 
 | `--pattern` | `file_count` | `match_count` sum |
 |-------------|--------------|-------------------|
-| `chdir` | 4 | 7 |
-| `os.chdir(` | 3 | 3 |
+| `chdir` | 5 | 9 |
+| `os.chdir(` | 4 | 5 |
 
-The bare name is the operative sweep: a call always contains it, so the 4-file set
+The bare name is the operative sweep: a call always contains it, so the 5-file set
 provably contains every call site. The parenthesised figure is recorded only to
-show that it is 3 — one file short of the superset — and that the missing file is
+show that it is 4 — one file short of the superset — and that the missing file is
 the one the next stage decides.
 
 ### Shape A — stage 2, classification (AST, call-aware)

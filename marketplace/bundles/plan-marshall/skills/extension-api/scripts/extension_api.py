@@ -202,25 +202,40 @@ _WORKFLOW_SUFFIX = '.md'
 _WORKFLOW_NOT_FOUND = 'workflow_not_found'
 
 
+def _is_single_component(name: str) -> bool:
+    """Whether *name* is one directory component, not a path.
+
+    A notation is a bundle-relative address. An absolute or ``..`` segment in
+    ``bundle`` or ``skill`` would reset the join to an arbitrary path (pathlib
+    discards the left side when the right side is absolute), so both components
+    are constrained to a single, non-traversing name here rather than trusted
+    into the resolver.
+    """
+    return bool(name) and name not in ('.', '..') and '/' not in name and '\\' not in name
+
+
 def parse_workflow_notation(notation: str) -> tuple[str, str, str] | None:
     """Split ``{bundle}:{skill}/{relative path}.md`` into its three components.
 
     Returns ``None`` for any shape a workflow document cannot take, so the caller
     reports one ``workflow_not_found`` error instead of constructing a path from
     a malformed notation. Rejected shapes: a missing ``:`` or ``/``, an empty
-    bundle or skill, a path that does not end in ``.md``, an absolute path, and
-    any ``.``/``..``/empty segment (a notation is a bundle-relative address, never
-    a traversal primitive).
+    ``bundle`` or ``skill``, a component that is not a single directory name
+    (absolute, ``.``/``..``, or carrying a separator), a path that does not end
+    in ``.md`` or does not live at the skill root / under ``workflow/`` or
+    ``standards/``, and any ``.``/``..``/empty path segment. The location
+    restriction keeps a reference or contract document from being dispatched as
+    a workflow body.
     """
     bundle, separator, remainder = notation.partition(_WORKFLOW_NOTATION_SEPARATOR)
-    if not separator or not bundle:
+    if not separator or not _is_single_component(bundle):
         return None
     skill, path_separator, relative = remainder.partition(_WORKFLOW_PATH_SEPARATOR)
-    if not path_separator or not skill or not relative:
+    if not path_separator or not _is_single_component(skill) or not relative:
         return None
     if not relative.endswith(_WORKFLOW_SUFFIX):
         return None
-    if Path(relative).is_absolute():
+    if not (relative == 'SKILL.md' or relative.startswith(('workflow/', 'standards/'))):
         return None
     if any(segment in ('', '.', '..') for segment in relative.split(_WORKFLOW_PATH_SEPARATOR)):
         return None
