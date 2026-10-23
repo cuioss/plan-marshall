@@ -88,15 +88,29 @@ derive, for rows still live.
   (`runtime_info.py`, the recursive-query hypothesis is obsolete), PLAN-LB-83 (`opencode_runtime.py`, +222 lines),
   PLAN-LB-73 (`runtime_info.py`). PLAN-LB-84 is no longer held on PLAN-LB-49; it now sequences after PLAN-LB-86.
 
-- **PLAN-LB-85** (staged 2026-10-22, WS-04, runbook lane, **high**) — from the consumer-epic finding
-  `pm-mcp-core-m2-m4-005`: the runbook lane never reads a pull request's open SonarCloud issues, so "quality gate
-  passed" is reported over issues the gate does not count. Corroborated in source: no Sonar text in the lane
-  skill or its scripts, and no Sonar condition in the § 7 merge gate. The sender's suggested vehicle does not fit as
-  is: `fetch_findings` is plan-scoped (plan id, plan-local manifest, plan ledger) and the lane has no plan, so D1 is
-  a plan-less read. The consumer's counts (38 open over eight merges, 118 on its `main`) are an unverified lead
-  (SonarCloud not queried here). Sequence AFTER PLAN-LB-73 (same lane sections); overlaps PLAN-LB-58 on `sonar.py`
-  and PLAN-LB-84/69 on `landing-payload-spec.md`; the gate will ask. D4 is the orchestrator's half: the plan-spec
-  template asks for the open-issue read where the project uses Sonar.
+- **PLAN-LB-85** (shipped #1839, 2026-10-22, runbook lane, `deepseek-v4.1-flash/high`, confirmed in the store) — grade
+  B; see `landings/PLAN-LB-85.md`. D1, D2 and D4 delivered; D3 is 2 of 3 clauses, clause 3 being a
+  preservation claim that cannot fail (a spec error). The lane now resolves its Sonar state, reads a pull request's open
+  issues through the plan-less `read_open_issues` verb and gates the merge on `sonar-gate`. **The Sonar figure for its
+  own PR is `unknown`** (the verbs were unreachable through the stale executor and the bootstrap was refused by the
+  guard). The landing is the first runbook landing whose guard-log attribution matched `guard.log` exactly by session tree, and the
+  first to re-read the lane text on its own after a server restart (25 s later). Store facts: 4 sessions, none killed,
+  2.10M input+output (2.23M with reasoning), $1.00, 8 h 37 min; `total_tokens` was written `unknown` regardless, and
+  `ls` was under-reported (4, not 2). Realized footprint moved `runbook-lane/SKILL.md`
+  and `runbook_lane.py` (PLAN-LB-73, 89, 69), `sonar.py` and the sonar `SKILL.md` (PLAN-LB-58) and
+  `landing-payload-spec.md`, `landing-analysis.md`, `plan-spec.md` (PLAN-LB-84, 69): re-read their line references at
+  outline. Added surface outside the declaration: `ext-point-triage.md`, `findings-pipeline.md` (one line each, the
+  provider contract is now three verbs). PLAN-LB-73 and PLAN-LB-89 are unblocked on this plan.
+
+- **PLAN-LB-88** (shipped #1840, 2026-10-23, runbook lane, `deepseek-v4.1-flash/high`) — grade B; see
+  `landings/PLAN-LB-88.md`. D1-D4 delivered. Residual guard boundaries (a `git -C ... grep` in the OpenCode guard, a script
+  run by a script, an absent table) are accepted under the focus rule. Fix-forward: none.
+- **Parked by the focus rule (2026-10-23, operator-accepted split):** PLAN-LB-87 (token recording), LB-84, LB-69, LB-89,
+  LB-83, LB-75, LB-41, LB-46, LB-51, LB-57. They stay in the corpus and resume on the surface they declare. Blocking set kept
+  staged: LB-55, LB-58, LB-53, LB-44, LB-43, LB-80, LB-82, plus the two staged on 2026-10-23: **PLAN-LB-90** (WS-04, runbook,
+  **high**: the lane reads its spec from the ledger worktree when told to; from `pm-mcp-core-m2-m4-006`, sequence after
+  PLAN-LB-73) and **PLAN-LB-91** (WS-01, runbook, **high**: a history rewrite no longer invalidates the change ledger; from
+  `lessons-routing-046`).
 
 - **PLAN-LB-79** (shipped #1835, 2026-10-22, runbook lane, DeepSeek `deepseek-v4.1-flash/high`) — grade C+; see
   `landings/PLAN-LB-79.md`. D1-D4 delivered with 17 named tests and CodeRabbit's five findings fixed, but the
@@ -346,6 +360,35 @@ derive, for rows still live.
 
 ## Decisions
 
+- 2026-10-23 — **Operator rulings on the review quota, the standing authorization, Sourcery and token usage,
+  and a focus rule for the whole epic.** (1) *CodeRabbit quota:* when the quota refuses a review, wait. Other plans
+  draw on the same quota, so there is nothing sensible to do about it; no cap on concurrent plans, no escalated trigger
+  ahead of the 90-minute floor. (2) *Selection covering later heads / a semantic fix after a qualifying review:* keep the
+  standing authorization as written. The plan tries to get a re-review of the later head, and asks the operator when the
+  quota prevents it. (3) *Sourcery:* optional, because it has a weekly limit. (4) *Token usage:* out of scope. This
+  version of plan-marshall is replaced completely, so no token total, reasoning, cost or measurement aspect is worth
+  work here. (5) *Focus:* fix high and blocking issues only; fine-tuning is not this epic's job (it restates the founding
+  decision below: critical and high only). Every open aspect is revisited against that rule; the result is recorded in
+  the entries that follow it. Consequences already applied: a landing that is `complete: false` on `total_tokens` alone is
+  no longer recorded as an Open Defect or a recurrence; the `plugin_version` / `bundle_version` lead is not pursued; the
+  Claude PreToolUse hook stays unset by choice.
+- 2026-10-23 — **Inbox drain: 14 `lessons-routing` findings, one consumer requirement and the PLAN-LB-88 landing.**
+  Review bot: the operator put `cuioss-review-bot` dormant and wants it removed completely, so CodeRabbit is the one required
+  bot and Sourcery the optional one (the #1829 narrowing is intended; any remaining `cuioss-review-bot` entry in a
+  `marshal.json` or `.github/project.yml` is a removal still owed, not a gap to restore). Dispositions under the focus rule,
+  each from a sender-graded "high" that was NOT re-verified at HEAD unless stated:
+  `pm-mcp-core-m2-m4-006` **staged** as PLAN-LB-90 (operator-set high); `-046` (history rewrite vs change ledger)
+  **staged** as PLAN-LB-91 (the refusal exists at HEAD: `_cmd_lifecycle.py`); `-045` (foreign-target executor skew)
+  **folded** into PLAN-LB-43 as D5, no new file surface; `-053` item 3 (root-level guards skipped before push) **folded**
+  into PLAN-LB-58 as D4, no new file surface; `-053` item 2 (run attribution, log pointers) **folded** into PLAN-LB-44 as
+  D3, surface widened by `ci_base.py` and `test/plan-marshall/tools-integration-ci/`; `-053` item 1 is already PLAN-LB-44
+  D1; `-050` **folded** into PLAN-LB-46 (parked) as D6, items 3-4 already its D2-D4, no new file surface; **discarded** as
+  not blocking: `-044` (argparse drift; the executor already reports the accepted set), `-047` (task closes before its
+  verification), `-048` (declared footprint omits files), `-049` (in-run review coverage), `-051` (leaf search coverage),
+  `-052` (manifest steps and tier oscillation), `-054` (merge-lock holder is the plan id; rare, residual accepted by the
+  sender's operator), `-055` (`format_toon` second projection), `-056` (free-text placeholders in command templates; R1
+  refuses command substitution on both harnesses), `-057` (domain content, low). Surface check after the folds:
+  `corpus surfaces` reads PLAN-LB-43, 44, 46, 58, 90 and 91 as `declarative`.
 - 2026-10-07 — **Epic created by operator instruction** ("create an orchestrator for the
   critical / high; remove them from the current orchestrator; archive / dormant the other
   orchestrators beside lessons-routing"). Scope is the 21 high-priority clusters of the
@@ -690,7 +733,41 @@ derive, for rows still live.
 
 ## Open Defects
 
-- **The R5 enforcement merged by PLAN-LB-79 is still walkable, and the hook it made binding refuses a command
+- **RETIRED 2026-10-23: the PLAN-LB-88 landing carries `open_issue_count=0` from five reads the run took itself
+  (`landings/PLAN-LB-88.md`).** **The Sonar read the lane now requires has never been taken on a real pull request (PLAN-LB-85 landing,
+  2026-10-23; high; owner: the next runbook run, and an operator step).** `lb-85-lane-sonar-issues` shipped the
+  verbs and could not run them on its own PR: the main checkout's executor predates the change, the worktree has none,
+  and the only route that writes a worktree executor is a direct `generate_executor.py` call, which the guard refused
+  (R5, `guard.log` 16:35:56Z). The landing carries `step.sonar-roundtrip.open_issue_count=unknown`. Until a run reads
+  a PR with the merged lane text, the gate's verdicts on a real analysis are unobserved; `resolve` on the merged tree
+  reports `sonar: configured`, project `cuioss_plan-marshall`. **2026-10-23: the executor was regenerated and the
+  orchestrator took the read for the merged PR** (`sonar read_open_issues --project cuioss_plan-marshall --pr 1839`):
+  `count_status: confirmed`, `open_issue_count: 0`, no rules. So #1839 had no open Sonar issue, the verb works against
+  the live service, and the landing's `unknown` was a missed measurement, not a hidden finding. Still open until a runbook
+  landing carries the measured count itself (the lane's own read step, not the orchestrator's).
+- **A plan whose own lane text calls a verb it introduces cannot run it, and the guard refuses the bootstrap
+  (PLAN-LB-85 landing, 2026-10-23; medium; owner PLAN-LB-89, which already declares `generate_executor.py`).**
+  Either the guard admits the generator verb, or worktree creation generates the per-tree executor. The build-server
+  fallback `executor_absent_from_worktree` is the same gap seen from the build side (every build ran `in_process`).
+  Retire when PLAN-LB-89 ships and a worktree can run a verb added by its own plan. **Recurrence 1 (PLAN-LB-88,
+  2026-10-23):** the run needed an operator question ("stale sonar surface") and a hand-run executor regeneration. PLAN-LB-89
+  is parked by the focus rule; the cost is one operator question per affected run, not a failed run.
+- **OUT OF SCOPE since 2026-10-23 (measurement; see Decisions) — `plugin_version` is recorded as `0.1` beside `executor_version` `0.1.1986` (PLAN-LB-85 landing, 2026-10-23;
+  medium; lead, owner PLAN-LB-84 once confirmed).** The landing copied what its stamp source reported;
+  `platform_runtime runtime-info` run here (Claude) also returns `bundle_version: "0.1"`, while PLAN-LB-49's landing
+  carried `0.1.1983`. **Cause found (2026-10-23):** `read_bundle_version` (`runtime_info.py:455`) returns the `version` of the bundle manifest
+  it runs from, and the source manifest says `"0.1"`; only installed copies are stamped by the sync (the Claude cache holds
+  `0.1.1986` to `0.1.1989`). So the value is `0.1` whenever the executor resolves the script to the main checkout, not a
+  truncation bug. Open: which copy a runbook run executes. Original note: confirm under OpenCode first: if `runtime-info` truncates the bundle version, PLAN-LB-84's
+  `plugin_version` bullet (source-manifest version) must cover it and its test must pin a three-part value. Retire when
+  a runbook landing's `plugin_version` equals the installed bundle version.
+- **OUT OF SCOPE since 2026-10-23 (token usage; see Decisions) — the runbook landing's `complete: false` on `total_tokens` is now the only missing key (PLAN-LB-85 landing,
+  2026-10-23; recurrence of the PLAN-LB-86 D2 contract collision, not a new defect).** `effort` and `plugin_version`
+  are supplied under the post-sync lane text, so PLAN-LB-78 D3's fix reached the run. `surface_delta` measured:
+  `expansion_detected` (2 added, 3 missing). The store holds the total the lane wrote as `unknown` (2,099,576 input+output,
+  $1.0042): the fourth runbook landing to hide a measurable figure.
+- **RETIRED 2026-10-23 (PLAN-LB-88 shipped #1840; the cross-product rows are in the PR's tests and CI is green; residual
+  boundaries accepted, see `landings/PLAN-LB-88.md`).** **The R5 enforcement merged by PLAN-LB-79 is still walkable, and the hook it made binding refuses a command
   the repository prescribes (PLAN-LB-79 landing, 2026-10-22; high; fix-forward PLAN-LB-88).** By code reading,
   not executed: the spliced-string walk splits on `; & | newline` only, so a grouping keyword, `-o pipefail` before
   `-c`, a here-string, a script file or `fish`/`csh`/`tcsh` hide the interpreter, and a `cd` inside the string is
@@ -1458,11 +1535,20 @@ entries below are OpenCode 1 assumptions in plan-marshall that OpenCode 2 broke.
 
 ## Watches
 
+- **PLAN-LB-88's last head carries unreviewed new logic in the guard (2026-10-23).** `c5a041315` fixes two MAJOR CodeRabbit
+  findings (attached redirection operators bypassed the floor and R2) by changing both tokenizers; CodeRabbit refused the
+  re-trigger on quota and the PR merged under the standing authorization. CI and the run's own rows cover it; no reviewer
+  read it. By the 2026-10-23 rulings the next such case is retried and put to the operator if the quota blocks it. Retire
+  when a later review of `main` covers the tokenizer change, or when the next guard change is reviewed.
 - **Model comparison round (operator, 2026-10-19).** The next four runs after the four in flight
   stay on `deepseek-v4.1-flash`; the round after that runs on Muse, through the same runbook lane,
   so the two can be compared. DeepSeek so far under the runbook lane: LB-61 C+, LB-66 F, LB-67 C,
   LB-71 C−, LB-72 B−, LB-70 F, LB-59 C, LB-74 C, LB-68 C−, LB-76 C+, LB-45 C−, LB-77 B−, LB-48 B−, LB-81 C+, LB-78 B−, LB-79 C+ ($1.76, 5 sessions, 19 h 40 min, `deepseek-v4.1-flash/high` throughout, no switch; code
-  graded on its work, report graded down for the undisclosed shell and clone conduct). Note the
+  graded on its work, report graded down for the undisclosed shell and clone conduct), LB-88 B (4 sessions, 16 h 47 min, `deepseek-v4.1-flash/high`
+  throughout; all four deliverables, guard attribution exact, lane text not re-read after a restart, last head unreviewed
+  new logic), LB-85 B ($1.00, 4 sessions, 8 h 37 min,
+  `deepseek-v4.1-flash/high` throughout; the report matched the store on attribution, restart handling and questions;
+  `total_tokens` hidden, `ls` under-counted). Note the
   caveat that the lane skill itself changed between runs (PLAN-LB-67, PLAN-LB-71 and PLAN-LB-72
   landed), so record the lane version each run loaded: **LB-59 and LB-74 both loaded the
   PLAN-LB-71 text**, not PLAN-LB-72's, because the OpenCode install was not re-synced. Retire when
@@ -1477,7 +1563,7 @@ entries below are OpenCode 1 assumptions in plan-marshall that OpenCode 2 broke.
   round 3, four re-triggers under the 90-minute floor, the most expensive run so far. Grades so far: LB-61
   C+, LB-66 F, LB-67 C, LB-71 C−, LB-72 B−, LB-70 F, LB-59 C, LB-74 C, LB-68 C−. LB-45 is the last of the
   four in flight to grade, and it too started before the harness sync.
-- **The R5/R6 enforcement shipped by PLAN-LB-65 and PLAN-LB-68 is still bypassable, owned by PLAN-LB-79
+- **RETIRED 2026-10-23 with PLAN-LB-88 (#1840).** **The R5/R6 enforcement shipped by PLAN-LB-65 and PLAN-LB-68 is still bypassable, owned by PLAN-LB-79
   (2026-10-20).** A path-qualified `env`, option clusters, unlisted wrappers and shells, the relative
   executor from another directory, a planted script under a broad deployed root, the unbound consumer lane
   run, a Claude root session that skips the gated checks, and R6 `--git-dir` forms are admitted by code

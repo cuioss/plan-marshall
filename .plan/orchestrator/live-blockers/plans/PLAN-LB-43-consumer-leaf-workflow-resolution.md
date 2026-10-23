@@ -105,6 +105,13 @@ This plan gives the leaf one script verb that returns the verified absolute path
    - **Staleness with no installed version.** `check-staleness` with `marshal_version` 0.1.1938, `executor_version` 0.1.1953 and no resolvable installed version reports `marshal_status: stale`, not `unknown`.
    - **Upgrade proceeds.** In the fixture where the manifest resolves, `upgrade` passes Stage 1 and Stage 2 re-stamps `provisioned_version`.
 
+5. **A foreign-target regeneration of the shared executor is refused by name, not discovered by a crash.** Added 2026-10-23 from `lessons-routing-045` (consumer epic `pm-mcp-core-m2-m4`, six occurrences), graded **high**.
+   - The generator stamps the generating harness and plugin root into the executor it writes.
+   - The executor compares that stamp with the runtime that runs it and refuses a mismatch with `executor_target_mismatch`, naming the observed target, the expected target and the regenerate command.
+   - The stamp is recorded in the plan's `status.metadata` at init.
+
+   *Done when:* a fixture executor stamped for OpenCode, run under the Claude target, returns `executor_target_mismatch` with both targets and the regenerate command instead of resolving scripts into the other harness's tree. The same executor under its own target runs unchanged. At HEAD the executor carries no target stamp (HYPOTHESIS, see Claim Labels).
+
 ## Claim Labels
 
 - OBSERVED: Step 4 maps `{bundle}:{skill}/SKILL.md` and `{bundle}:{skill}/workflow/{file}.md` only to `marketplace/bundles/{bundle}/skills/{skill}/…` and otherwise returns `workflow_not_found` — `marketplace/bundles/plan-marshall/agents/execution-context.md` L107-122.
@@ -126,6 +133,7 @@ This plan gives the leaf one script verb that returns the verified absolute path
 - OBSERVED: an operator run on OpenCode in a consumer repository stopped at Stage 1 with `freshness: unknown`, left `system.provisioned_version` at `0.1.1938` (executor `0.1.1953`, installed plugin `0.1.1961`), and read `marshal_status: unknown` in `determine_mode check-staleness` (operator paste; the run is in another repository and is not re-run here).
 - HYPOTHESIS: `determine_mode check-staleness` resolves `installed_version` through the same manifest lookup, which is why it reads `unknown` — confirm at `marketplace/bundles/plan-marshall/skills/marshall-steward/scripts/determine_mode.py` (verify-at-outline).
 - Verify-first clause: find where an OpenCode install keeps, or can be given, a version manifest, before choosing between extending the lookup and publishing the manifest from the OpenCode sync.
+- HYPOTHESIS (D5): the generated executor records no harness or plugin-root stamp, so a concurrent OpenCode regeneration of the shared `.plan/execute-script.py` is invisible to a Claude-driven plan — confirm at `marketplace/bundles/plan-marshall/skills/tools-script-executor/scripts/generate_executor.py` and `templates/execute-script.py.template` (verify-at-outline). The sender's six occurrences were not re-verified at HEAD. D5 adds no file surface: both files are already declared.
 
 ## Expected Surface
 

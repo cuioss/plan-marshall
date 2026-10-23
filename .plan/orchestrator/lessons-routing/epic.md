@@ -332,6 +332,55 @@ Operator rulings this run: all five `pm-mcp-core` borderlines graded **high** (2
 
 Recurrences carried: deep-lane no-assessments (`-022`, filing `-032`), Q-Gate hash skip (`-023`, `-033`), fix-task deliverable 0 (`-020`, `-034`), sibling-repo lifecycle (`-018`, `-029`), ci-verify triage (`-019`, `-043` evidence only).
 
+### 2026-10-23 — seventh `ingest` run (corpus + inbox)
+
+Corpus at start: 31 active lessons. Inbox at start: 116 live messages
+(`pm-mcp-core-m2-m4-287`..`-402`, all `candidate-lesson` from pm-mcp-core plans). Both refills
+were ingested in one run on the operator's decision. Per-item dispositions:
+`lessons-archive/INDEX.md` § Sweep 2026-10-23.
+
+**Two constraints shaped the run, both recorded as decisions.**
+
+1. `live-blockers`' FOCUS RULE (2026-10-23: high and blocking only; token usage and measurement
+   out of scope) governs what may be filed there. One drafted filing — the head-dependent
+   re-fire **cost** cluster (7 sources) — was withdrawn rather than routed, and its members were
+   archived `medium`. No `PLAN-LR-NN` was staged: nothing in this run was a defect in the
+   routing/versioning mechanism itself, so the narrow exception of RULING 2026-10-09 was not
+   needed.
+2. Message bodies are preserved verbatim in `inbox/archive/pm-mcp-core-m2-m4/` rather than
+   copied a second time into `lessons-archive/{level}/` (prior sweeps made such copies). Filed
+   clusters have one consolidated body each in `filed-live-blockers/`. Nothing was retyped, so
+   nothing can drift; the level of every message is in the INDEX.
+
+| Disposition | Items | Where |
+|---|---|---|
+| high, filed to `live-blockers` | 74 (14 corpus lessons, 60 messages) in 13 filings (`lessons-routing-044`..`-046`, `-048`..`-057`) | `live-blockers/inbox/`; bodies in `lessons-archive/filed-live-blockers/` |
+| medium, archived | 67 (15 corpus lessons, 52 messages) | `lessons-archive/medium/` + `inbox/archive/` |
+| low, archived | 2 (1 corpus lesson, pm 301) | `lessons-archive/low/` + `inbox/archive/` |
+| already-covered | 5 (2 corpus lessons, 3 messages) | archived; no new filing — `-039`/`-024` and `-025` already own the subjects |
+
+All 31 corpus lessons were retired through `manage-lessons remove` after their archive copy
+existed (`superseded` for the 14 filed, `redundant` for the 2 already-covered, `obsolete` for
+the other 15). Corpus after the run: 0 active. All 116 messages were consumed through
+`inbox archive` after their filing or disposition; inbox after the run: 0 live, 0 invalid.
+
+Dominant clusters this run: **script surface drift** (24 sources, one filing) — documented
+verbs/flags the scripts do not declare, the `--parse-only` gap; **declared footprint
+completeness** (8 sources); **review-bot registry** (8 sources, a recurrence of `-030`);
+**search coverage for leaves denied Grep** (6); **executor version/target skew** (6); **history
+rewrite vs change ledger** (7). Four clusters land on work already staged in `live-blockers`
+(LB-43, LB-46, LB-58), so those filings read as recurrences rather than new work.
+
+Nothing was re-verified in code: filed items rest on the senders' verification at the shas they
+cite, and the medium/low grades rest on the message text and the lessons' own ground-truth
+notes.
+
+⚠ All 13 filings were delivered, and by the end of this run a **concurrent `live-blockers`
+session** had already relocated them into `live-blockers/inbox/archive/lessons-routing/`
+(`lifecycle: live`, `consumption: unconsumed` — relocation only). This run therefore cannot
+attest that their content was dispositioned; the next session should confirm that with the
+`live-blockers` session rather than re-draining them here.
+
 ## START HERE
 
 ### Annotations
