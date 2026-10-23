@@ -118,6 +118,15 @@ derive, for rows still live.
   is `complete: false` on `total_tokens` (recurrence 2 of the PLAN-LB-49 entry), and it reports two shell file reads the
   guard cannot see. Grading deferred to the audit pass; the report's disclosures are the strongest of any runbook run so far.
 
+- **PLAN-LB-44** (shipped #1848, 2026-10-23, runbook lane, `deepseek-v4.1-flash/high`) — see
+  `landings/PLAN-LB-44.md`. D1-D3 all landed; every declared file was touched and the "Red CI has no triage route"
+  Open Defect is retired on the merged code. Two checkable conduct claims hold exactly (both guard refusals, the
+  CodeRabbit review at `8bba8fc`, Sonar `0 confirmed`). Debit: the realized footprint is **30 files against 11
+  declared** — the vocabulary/path-anchor documentation sweep was not in the spec's surface. No collision followed,
+  because none of the 19 added paths belongs to another in-flight plan, so the gate's `max_shared 0` prediction was not
+  contradicted; the delta is recorded as declaration-quality evidence rather than corrected into a shipped spec.
+  Self-review hit the lane's round limit and continued on an operator answer (`budget-exhausted` in the facts block).
+
 - **PLAN-LB-92** (staged 2026-10-23, WS-04, runbook lane, operator-prioritised **next plan**) — a lane worktree has its own
   executor. Not running: PLAN-LB-73 D4 chose to check for the missing executor and record
   `executor_absent_from_worktree`, a disclosure that leaves the worktree without one. LB-92 produces it at worktree creation
@@ -126,7 +135,9 @@ derive, for rows still live.
   introduces" Open Defect (PLAN-LB-85, PLAN-LB-88). Overlap prompt answered 2026-10-23: **hold until PLAN-LB-73 lands** (4 shared
   files with it). **Unblocked 2026-10-23: the PLAN-LB-73 landing has arrived (#1843), so the shared surface is no longer in flight.**
   PLAN-LB-73's own run is the live evidence for the defect this plan fixes: every build answered
-  `executor_absent_from_worktree` and ran `in_process`.
+  `executor_absent_from_worktree` and ran `in_process`. **Started by the operator 2026-10-23 (row `running`).**
+  No lane worktree existed under `.plan/local/worktrees/` at the moment the start was recorded — noted, not treated as a
+  fault: the lane creates it during setup, and this plan's whole subject is what that setup must also produce.
 
 - **Parked by the focus rule (2026-10-23, operator-accepted split):** PLAN-LB-87 (token recording), LB-84, LB-69, LB-89,
   LB-83, LB-75, LB-41, LB-46, LB-51, LB-57. They stay in the corpus and resume on the surface they declare. Blocking set kept
@@ -383,6 +394,14 @@ derive, for rows still live.
 
 ## Decisions
 
+- 2026-10-23 — **Both emitted plans started by the operator; the epic is at its concurrency ceiling.** PLAN-LB-92
+  (runbook) and PLAN-LB-43 (plan-marshall) were started from the block `analyze` emitted, and both rows are now `running`
+  on the operator's confirmation — the emit≠running invariant is intact: the orchestrator never asserted a start it had not
+  been told about. With LB-91 still running that is **3 of `parallelization_scope` 4 slots occupied, so one slot is
+  free** — the block below fills it or states why it cannot. LB-55, LB-82, LB-90 and LB-53 stay staged behind the overlap
+  prompt; LB-58 and LB-80 stay admitted and unemitted. Note: neither new plan's worktree existed under
+  `.plan/local/worktrees/` when the starts were recorded — LB-43's is created at phase-1 init, and LB-92 is the plan whose
+  subject is making worktree setup produce an executor, so the absence is expected rather than evidence against the start.
 - 2026-10-23 — **The PLAN-LB-73 landing was reconciled from the inbox, not from a paste.** The drain-completeness check
   reported `complete: false` on `total_tokens` alone, which the ruling above puts out of scope, so no defect was opened. The
   corroboration that mattered: merge sha `3873b6695` on `origin/main`, both CodeRabbit finding rounds at 10:47:35Z and
@@ -1067,7 +1086,10 @@ derive, for rows still live.
   actionable and security items, or at least report a dropped summary that carried them; a
   summary-only security fixture pins it. Not owned by any staged plan; nearest PLAN-LB-31 or
   the `-017` remainder. — `lessons-routing-027.md`.
-- **Red CI has no triage route.** `verification-feedback.md` accepts only `build-runner, sonar,
+- **RETIRED 2026-10-23 (the PLAN-LB-44 landing, #1848: `verification-feedback` accepts the single `ci-verify`
+  producer from one shared constant, the taxonomy row travels as a finding subtype, a failing check is classed by
+  what it ran — closed policy list, build default, Sonar-marker deferral — and each finding is keyed on its own
+  check's run with a log pointer or a named `log_unavailable_reason`).** **Red CI has no triage route.** `verification-feedback.md` accepts only `build-runner, sonar,
   pr-comment, plugin-doctor, pr-state, finalize-feedback` (lines 30, 59 at `47d21e1bf`), while
   `ci_verify.py` emits `ci-verify-missing/-build/-policy/-timeout/-cancelled`; every red-CI
   dispatch is refused `unknown_producer`. Five plans (PLAN-LB-25 and four pm-mcp-core plans);
