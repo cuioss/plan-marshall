@@ -349,6 +349,27 @@ class TestWorktreeCreationProducesTheExecutor:
         assert payload['executor_in_worktree'] == 'present'
         assert executor.read_text(encoding='utf-8') == _CREATION_MARKER
 
+    def test_resume_without_a_plan_local_reports_absent_instead_of_writing(
+        self, main_repo: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A pre-existing directory with no ``.plan/local`` is reported, never filled.
+
+        The generator resolves its output by walking up from cwd, so healing a
+        directory that has no worktree ``.plan/local`` would land in the CALLER's
+        tree. The resume answers ``absent`` with the reason instead.
+        """
+        stray = main_repo / '.plan' / 'local' / 'worktrees' / _PLAN_ID
+        stray.mkdir(parents=True)
+        calls = _stub_generation(monkeypatch, _CREATION_MARKER)
+
+        payload = _create_worktree()
+
+        assert payload['error'] == 'worktree_exists'
+        assert payload['executor_in_worktree'] == 'absent'
+        assert payload['executor_reason'] == 'worktree_plan_local_absent'
+        assert calls == [], 'the seam must not run without the worktree plan-local directory'
+        assert not _worktree_executor(stray).exists()
+
 
 # =============================================================================
 # D2 — the refresh verb resolves the plan's own new script

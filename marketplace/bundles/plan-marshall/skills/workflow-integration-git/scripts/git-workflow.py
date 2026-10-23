@@ -2316,11 +2316,18 @@ def cmd_worktree_create(args):
         # Resume path, and it heals the same slot: a worktree created before this
         # verb produced executors carries none, and reporting that state without
         # filling it would leave every later run on the degraded routing path.
-        # Ordering mirrors the creation path — the slot's own .plan/local exists
-        # first, so the generator's cwd-derived output root lands in the worktree
-        # instead of resolving to the caller's tree.
-        _ensure_worktree_plan_local_real(target)
-        executor_verdict = _produce_worktree_executor(target, args.plan_id)
+        # The heal is guard-clause gated on the worktree's own `.plan/local`
+        # rather than materialized here: the generator resolves its output by
+        # walking up from cwd, so without that directory it can land in the
+        # CALLER's tree — and turning `worktree_exists` into a .plan writer for
+        # any pre-existing directory is not this verb's business.
+        if (target / _PLAN_DIR_NAME / 'local').is_dir():
+            executor_verdict = _produce_worktree_executor(target, args.plan_id)
+        else:
+            executor_verdict = {
+                'executor_in_worktree': 'absent',
+                'executor_reason': 'worktree_plan_local_absent',
+            }
         return {
             'status': 'error',
             'plan_id': args.plan_id,

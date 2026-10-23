@@ -440,6 +440,9 @@ For each deliverable, in the spec's order:
      worktree: `python3 .plan/execute-script.py plan-marshall:tools-script-executor:generate_executor generate --marketplace-root .`
      with the shell in the worktree. It is a notation like any other, never the generator's path, and
      every plan landing after this one finds the verb already in its own executor.
+   - A worktree reporting `executor_in_worktree: absent` has no executor to bootstrap through. That is
+     a **blocker**: record it, and have the operator regenerate the checkout's executor with the
+     project's own steward step. The lane never spells the generator's path to get around it.
 6. Commit with the deliverable paths staged by name, then push. Record `D{n} done` in the progress
    file.
 

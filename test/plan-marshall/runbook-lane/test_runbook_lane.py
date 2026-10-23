@@ -1938,23 +1938,18 @@ def test_skill_names_the_worktree_executor_refresh_verb() -> None:
 
 
 def test_no_lane_instruction_runs_the_generator_by_path() -> None:
-    """No fenced instruction in the lane text invokes ``generate_executor.py``.
+    """No lane instruction anywhere invokes ``generate_executor.py``.
 
-    The generator is reachable through the executor like every other script. A
-    lane that spells its path ships a direct interpreter call, which the guard
-    refuses — the exact dead end this verb exists to remove. Every fenced line is
-    scanned, not only the ones that start with an interpreter name, so a
-    ``sys.executable`` spelling is caught too; a prohibition may name the file in
-    prose, where a reader sees the "never", and prose is not a fenced block.
+    The generator is reachable through the executor like every other script, so
+    the lane may name its NOTATION and must never spell its path: a path form is
+    the direct interpreter call the guard refuses, and it is exactly the dead end
+    this verb exists to remove. Scanning the whole text for the ``.py`` file name
+    covers fenced blocks and inline code alike — a path form always carries it,
+    while the notation (`…:tools-script-executor:generate_executor`) does not.
     """
-    offenders = [
-        line.strip()
-        for block in _fenced_blocks(_skill_text())
-        for line in block.splitlines()
-        if 'generate_executor' in line
-    ]
+    offenders = [line.strip() for line in _skill_text().splitlines() if 'generate_executor.py' in line]
 
-    assert offenders == [], f'the lane text runs the generator by path: {offenders}'
+    assert offenders == [], f'the lane text spells the generator path: {offenders}'
 
 
 def test_build_routing_answers_in_process_when_the_worktree_has_no_executor(tmp_path: Path) -> None:
