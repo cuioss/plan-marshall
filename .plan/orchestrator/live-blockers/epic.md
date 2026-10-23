@@ -160,6 +160,11 @@ derive, for rows still live.
   LB-80 left nothing. **PLAN-LB-43 also carries an uncommitted change to `manage-status/scripts/_cmd_lifecycle.py` (+32) —
   a file it did not declare and that PLAN-LB-91 declares**, so the two running plans now share a file the gate scored as
   disjoint; that is a live merge-collision risk to check when either lands.
+  **Remediated the same day:** the operator removed both stray files (main checkout re-checked clean, `git status
+  --porcelain` empty) and pasted the notice — stop writing outside the worktree, do not attempt `rm`/`git clean`,
+  disclose the stray write in the landing's rule check — into all three sessions (LB-43, LB-92, LB-91). The stray-file
+  half is therefore closed; the `_cmd_lifecycle.py` overlap stays **open** until LB-43 answers whether that edit is in
+  scope, because if it is, its spec's Expected Surface must be widened and the conflict with LB-91 handled at merge.
 
 - **Parked by the focus rule (2026-10-23, operator-accepted split):** PLAN-LB-87 (token recording), LB-84, LB-69, LB-89,
   LB-83, LB-75, LB-41, LB-46, LB-51, LB-57. They stay in the corpus and resume on the surface they declare. Blocking set kept
