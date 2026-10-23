@@ -1769,12 +1769,15 @@ def _classify_with_a_failing_glob_import(tmp_path: Path, monkeypatch, error: Bas
         return real_import(name, *args, **kwargs)
 
     monkeypatch.setattr(builtins, '__import__', _blocked)
-    return module.cmd_build_classify(
+    # Bind to a typed local: the module is loaded dynamically, so its return is
+    # `Any` and a bare `return` from this typed helper trips ``no-any-return``.
+    result: dict[str, Any] = module.cmd_build_classify(
         argparse.Namespace(
             paths='doc/developer/build.adoc,marketplace/bundles/plan-marshall/skills/x/SKILL.md',
             project_dir=str(project),
         )
     )
+    return result
 
 
 def test_build_classify_builds_every_path_when_the_glob_helper_is_absent(tmp_path: Path, monkeypatch) -> None:
