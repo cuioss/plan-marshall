@@ -197,6 +197,27 @@ def _unknown(reason: str, cache_root: Path | None, cache_version: str, probed: l
     }
 
 
+#: The ``compared_against`` value for a flat install, where the cache version and
+#: the manifest version are read from the SAME installed ``dist-manifest.json``.
+#: Named separately so the verdict never claims a clone-manifest comparison it
+#: did not perform (ADR-009).
+FLAT_COMPARED_AGAINST = 'installed_manifest'
+
+
+def _is_flat_root(cache_root: Path) -> bool:
+    """Whether ``cache_root`` deploys the flat (unversioned) shape."""
+    try:
+        for bundle_dir in cache_root.iterdir():
+            if not bundle_dir.is_dir():
+                continue
+            for child in bundle_dir.iterdir():
+                if child.is_dir() and _VERSION_DIR_RE.match(child.name):
+                    return False
+    except OSError:
+        return False
+    return True
+
+
 def check_freshness(cache_root: Path | None) -> dict:
     """Compute the three-valued freshness verdict. Read-only; mutates nothing.
 
@@ -252,17 +273,24 @@ def check_freshness(cache_root: Path | None) -> dict:
         )
 
     is_fresh = _version_tuple(cache_version) >= _version_tuple(manifest_version)
+    flat = _is_flat_root(cache_root)
     return {
         'status': 'success',
         'freshness': FRESH if is_fresh else STALE,
         'refuses_upgrade': not is_fresh,
         'cache_version': cache_version,
         'manifest_version': manifest_version,
-        'compared_against': COMPARED_AGAINST,
+        'compared_against': FLAT_COMPARED_AGAINST if flat else COMPARED_AGAINST,
         'cache_root': str(cache_root),
         'manifest_path': str(manifest_path),
         'remediation': '' if is_fresh else REMEDIATION,
-        'warning': '',
+        'warning': (
+            'flat install: the cache version is read from the installed dist-manifest itself, '
+            'so a fresh verdict states that the install is internally consistent, not that it '
+            'matches a separate clone manifest'
+            if flat
+            else ''
+        ),
     }
 
 

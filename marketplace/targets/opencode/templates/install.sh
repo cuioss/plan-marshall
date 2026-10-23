@@ -715,6 +715,9 @@ def do_opencode_full_uninstall(target_dir: Path, source_dir: Path):
     files_to_delete.add('plan-marshall-install.sh')
     files_to_delete.add('.plan-marshall-components.json')
     files_to_delete.add('.plan-marshall-manifest.json')
+    # The installed dist-manifest is a managed file; a full uninstall removes it
+    # even when the old-manifest fallback has no managed_files list to read.
+    files_to_delete.add('dist-manifest.json')
 
     for rel in files_to_delete:
         f = target_dir / rel

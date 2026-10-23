@@ -672,14 +672,15 @@ This case is distinct from the [Bootstrap Pattern](#bootstrap-pattern-before-exe
 The executor's own failure output prints the exact command. Run it verbatim: the
 `recover` verb finds the newest installed cache, probes the executor, regenerates
 it from that cache, and re-probes the regenerated file. It needs no working
-`.plan/execute-script.py`.
+`.plan/execute-script.py`, so the command is the newest cache's script by
+absolute path — not the executor notation, which cannot dispatch in this state:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:tools-script-executor:generate_executor recover \
-  [--project-dir PATH] [--target TARGET]
+python3 {newest_cache}/skills/tools-script-executor/scripts/generate_executor.py recover --project-dir . --target <active-target>
 ```
 
-From a meta-project checkout that carries the sources, the same entry runs by its
+The `{newest_cache}` segment is already resolved in the printed line. From a
+meta-project checkout that carries the sources, the same entry runs by its
 repository-relative path against the live tree:
 
 ```bash

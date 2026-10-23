@@ -45,8 +45,8 @@ A skill MAY hold zero, one, or many `workflow/*.md` files. A SKILL.md MAY itself
 
 The `workflow` field in a `Task:` prompt body is resolved by the single `resolve-workflow` verb
 (`plan-marshall:extension-api:extension_api resolve-workflow --notation {N} --worktree {W}`), which
-returns a verified absolute path in this order — the agent cross-references this section and does
-not restate the order:
+returns a verified absolute path in this order — the agent cross-references this section for the
+authoritative rule:
 
 1. **The worktree source tree first.** `{WORKTREE}/marketplace/bundles/{bundle}/skills/{skill}/{path}`
    is returned when that file exists. A bundle-owning checkout — this meta-project and every other

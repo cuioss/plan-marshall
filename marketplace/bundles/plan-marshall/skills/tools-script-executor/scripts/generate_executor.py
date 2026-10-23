@@ -7,6 +7,7 @@ Usage:
     python3 generate_executor.py generate [--force] [--dry-run] [--marketplace] [--marketplace-root PATH] [--target TARGET]
     python3 generate_executor.py verify [--target TARGET]
     python3 generate_executor.py bootstrap [--marketplace] [--marketplace-root PATH] [--target TARGET]
+    python3 generate_executor.py recover [--project-dir PATH] [--marketplace-root PATH] [--target TARGET]
     python3 generate_executor.py drift [--marketplace] [--marketplace-root PATH] [--target TARGET]
     python3 generate_executor.py preflight [--marketplace] [--marketplace-root PATH] [--target TARGET]
     python3 generate_executor.py paths [--target TARGET]

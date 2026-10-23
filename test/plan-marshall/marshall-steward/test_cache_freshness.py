@@ -530,6 +530,8 @@ def test_flat_install_with_manifest_reports_fresh_not_unknown(tmp_path: Path):
     assert result['freshness'] != 'unknown'
     assert result['manifest_version'] == '0.1.100'
     assert result['manifest_path'].endswith('dist-manifest.json')
+    assert result['compared_against'] == 'installed_manifest'
+    assert 'flat install' in result['warning']
 
 
 def test_flat_install_without_manifest_names_every_probe(tmp_path: Path):

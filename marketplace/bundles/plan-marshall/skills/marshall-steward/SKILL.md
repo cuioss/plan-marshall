@@ -997,15 +997,18 @@ python3 .plan/execute-script.py plan-marshall:marshall-steward:gitignore_setup [
 
 ### recover — broken executor
 
+The executor's failure output prints the exact command; run it verbatim. It names
+the newest cache's script by absolute path, which is what works when
+`.plan/execute-script.py` cannot start:
+
 ```bash
-python3 .plan/execute-script.py plan-marshall:tools-script-executor:generate_executor recover \
-  [--project-dir PATH] [--target TARGET]
+python3 {newest_cache}/skills/tools-script-executor/scripts/generate_executor.py recover --project-dir . --target <active-target>
 ```
 
-The one direct-path recovery entry for an executor that exists but cannot start.
-It needs no working `.plan/execute-script.py`; it finds the newest installed
-cache, probes, regenerates, and re-probes. The executor's own failure output
-prints this exact command. `references/upgrade-flow.md` Step 0 calls it first;
+Once a working executor exists (or from a meta-project checkout),
+`plan-marshall:tools-script-executor:generate_executor recover` is the same verb
+through the executor. It finds the newest installed cache, probes, regenerates,
+and re-probes. `references/upgrade-flow.md` Step 0 calls it first;
 `upgrade plan`'s `--bootstrap` path is the in-place stale rewrite, not this
 recovery.
 
