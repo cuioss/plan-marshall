@@ -1873,6 +1873,29 @@ def test_executor_skew_cannot_check_an_unreadable_executor(tmp_path: Path) -> No
     assert verdict != 'match', 'an unreadable executor is read as no skew'
 
 
+def test_executor_skew_names_a_read_but_versionless_executor(tmp_path: Path) -> None:
+    """A file that was READ and carries no usable version is not "unreadable"."""
+    module = load_script_module('plan-marshall', _SKILL_NAME, 'runbook_lane.py', register=False)
+    lane = _versioned_lane_dir(tmp_path, '0.1.1977')
+    executor = tmp_path / 'execute-script.py'
+    _write(executor, '# no version assignment\n')
+
+    data = module.cmd_executor_skew(argparse.Namespace(executor=str(executor), lane_dir=str(lane)))
+
+    assert data['verdict'] == 'could_not_check'
+    assert data['reason'] == 'executor version missing or empty'
+
+
+def test_executor_skew_names_an_unreadable_executor(tmp_path: Path) -> None:
+    module = load_script_module('plan-marshall', _SKILL_NAME, 'runbook_lane.py', register=False)
+    lane = _versioned_lane_dir(tmp_path, '0.1.1977')
+
+    data = module.cmd_executor_skew(argparse.Namespace(executor=str(tmp_path / 'absent.py'), lane_dir=str(lane)))
+
+    assert data['verdict'] == 'could_not_check'
+    assert data['reason'] == 'executor version unreadable'
+
+
 # =============================================================================
 # PLAN-LB-73 D4 — the build gate and resolve state only what is true
 # =============================================================================

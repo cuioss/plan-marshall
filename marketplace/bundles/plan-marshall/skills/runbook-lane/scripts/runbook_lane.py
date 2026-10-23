@@ -375,7 +375,12 @@ def cmd_executor_skew(args: argparse.Namespace) -> dict[str, Any]:
     reason; the lane reports it and asks the operator instead of reading it as
     no skew.
     """
-    from plugin_registry import EXECUTOR_VERSION_FOUND, read_executor_version
+    from plugin_registry import (
+        EXECUTOR_VERSION_EMPTY,
+        EXECUTOR_VERSION_FOUND,
+        EXECUTOR_VERSION_NOT_FOUND,
+        read_executor_version,
+    )
 
     executor = Path(getattr(args, 'executor', None) or '.plan/execute-script.py')
     lane_skill_dir = Path(getattr(args, 'lane_dir', None) or _lane_skill_dir())
@@ -393,11 +398,15 @@ def cmd_executor_skew(args: argparse.Namespace) -> dict[str, Any]:
     if verdict == _EXECUTOR_SKEW_SKEW:
         result['remedy'] = 'regenerate the executor'
     elif verdict == _EXECUTOR_SKEW_UNCHECKED:
-        result['reason'] = (
-            'executor version unreadable'
-            if state != EXECUTOR_VERSION_FOUND
-            else 'lane text version not derivable from its install path'
-        )
+        # Name WHICH side could not be read: a file that was read but carries no
+        # usable assignment is a different fact from an unreadable file, and the
+        # operator's remedy differs.
+        if state == EXECUTOR_VERSION_FOUND:
+            result['reason'] = 'lane text version not derivable from its install path'
+        elif state in (EXECUTOR_VERSION_EMPTY, EXECUTOR_VERSION_NOT_FOUND):
+            result['reason'] = 'executor version missing or empty'
+        else:
+            result['reason'] = 'executor version unreadable'
     return result
 
 
