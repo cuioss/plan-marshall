@@ -580,8 +580,9 @@ status: success
 plan_id: EXAMPLE-PLAN
 worktree: /repo/.plan/local/worktrees/EXAMPLE-PLAN
 executor_path: /repo/.plan/local/worktrees/EXAMPLE-PLAN/.plan/execute-script.py
+executor_in_worktree: present
 executor_regenerated: true
-executor_detail: worktree executor regenerated at /repo/.plan/local/worktrees/EXAMPLE-PLAN/.plan/execute-script.py
+executor_detail: worktree executor generated at /repo/.plan/local/worktrees/EXAMPLE-PLAN/.plan/execute-script.py
 ```
 
 `executor_regenerated` is taken from the file on disk, never from generation intent, and a `false` carries the reason in `executor_detail`. **The refresh never falls back to copying main's executor**: that would put main's older surface back over the branch's — the staleness this verb removes — so a generation that cannot land is reported as `executor_regenerated: false` with the existing slot left untouched. The verb is non-fatal by contract: the caller judges the boolean. A plan whose worktree cannot be resolved returns the plan-context resolver's own `plan_resolution_failed` error, and a path that is not a real worktree returns `executor_in_worktree: absent` with `worktree_plan_local_absent` rather than writing an executor outside one.

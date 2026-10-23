@@ -559,6 +559,47 @@ class TestWorktreeExecutorRefresh:
         assert payload['executor_regenerated'] is False
         assert executor.read_text(encoding='utf-8') == _CREATION_MARKER
 
+    def test_refresh_falls_back_to_the_structural_probe(self, main_repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """A lane worktree has no status record, and must still be refreshable.
+
+        The runbook lane never runs the phases that write
+        ``status.metadata.worktree_path``, so the canonical read answers with
+        nothing for a lane id while its worktree exists. Without the structural
+        fallback the verb would return ``plan_resolution_failed`` and the lane,
+        which treats a failed refresh as a blocker, would stop.
+        """
+        _stub_generation(monkeypatch, _CREATION_MARKER)
+        created = _create_worktree()
+        worktree = Path(created['worktree_path'])
+        assert (worktree / '.git').exists(), 'the fixture worktree carries no git link'
+        monkeypatch.setattr(
+            git_workflow,
+            '_resolve_worktree_path_for_plan',
+            lambda _plan_id: (None, {'status': 'error', 'error': 'plan_resolution_failed'}),
+        )
+        _stub_generation(monkeypatch, _MOVE_IN_MARKER)
+
+        payload = git_workflow.cmd_worktree_executor_refresh(Namespace(plan_id=_PLAN_ID))
+
+        assert payload['status'] == 'success', payload
+        assert payload['worktree'] == str(worktree)
+        assert payload['executor_regenerated'] is True
+
+    def test_refresh_still_refuses_when_neither_channel_resolves(
+        self, main_repo: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """No metadata AND no structural slot: the resolver's error is returned."""
+        monkeypatch.setattr(
+            git_workflow,
+            '_resolve_worktree_path_for_plan',
+            lambda _plan_id: (None, {'status': 'error', 'error': 'plan_resolution_failed'}),
+        )
+
+        payload = git_workflow.cmd_worktree_executor_refresh(Namespace(plan_id='no-such-plan'))
+
+        assert payload['status'] == 'error'
+        assert payload['error'] == 'plan_resolution_failed'
+
     def test_refresh_refuses_a_path_that_is_not_a_worktree(
         self, main_repo: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:

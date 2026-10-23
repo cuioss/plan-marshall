@@ -1921,13 +1921,20 @@ def cmd_worktree_executor_refresh(args):
     status, so a caller that only checks the exit code is told the truth by the
     boolean rather than by a success that means "the verb ran".
 
-    A worktree that cannot be resolved (no plan record, no worktree opted in)
-    returns the resolver's own error payload unchanged.
+    A worktree that cannot be resolved through the plan-context channel falls
+    back to the structural probe ``get_worktree_root() / {plan_id}``. That
+    fallback is what makes the verb usable from a runbook-lane worktree at all:
+    the lane never runs the phases that write ``status.metadata.worktree_path``,
+    so the canonical read answers with nothing for a lane id while its worktree
+    demonstrably exists on disk. Without it the lane's blocker-on-false rule would
+    turn a resolvable worktree into a stopped run.
     """
     plan_id = args.plan_id
     worktree, error = _resolve_worktree_path_for_plan(plan_id)
     if error is not None:
-        return error
+        worktree = _structural_worktree_probe(plan_id)
+        if worktree is None:
+            return error
     verdict = _produce_worktree_executor(worktree, plan_id, allow_copy=False)
     executor_path = worktree_executor_path(worktree)
     return {
