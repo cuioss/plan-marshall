@@ -896,6 +896,13 @@ def domain_bundle(domain: str, project_dir: str | None = None) -> str:
     return str(bundle).strip() if isinstance(bundle, str) else ''
 
 
+#: ``skill_domains`` siblings that are bookkeeping, not domains. The global
+#: active-profile list lives here beside the domain entries, so a non-mapping
+#: value under one of these keys is a documented shape and not a malformed
+#: prohibition.
+_SKILL_DOMAIN_NON_DOMAIN_KEYS = frozenset({'active_profiles'})
+
+
 def _skill_domain_exclusions(project_dir: str | None = None) -> dict[str, set[str]]:
     """Read every domain's ``excluded_skills`` set from ``marshal.json``.
 
@@ -919,6 +926,12 @@ def _skill_domain_exclusions(project_dir: str | None = None) -> dict[str, set[st
     exclusions: dict[str, set[str]] = {}
     for domain, entry in skill_domains.items():
         if not isinstance(entry, dict):
+            # `skill_domains` also carries bookkeeping siblings (the global
+            # `active_profiles` list). Only dict-valued entries are domains; a
+            # reserved sibling is skipped, any other non-mapping value is a
+            # malformed domain and is reported.
+            if str(domain) in _SKILL_DOMAIN_NON_DOMAIN_KEYS:
+                continue
             raise SkillExclusionReadError(f'skill_domains.{domain} is not a mapping: {type(entry).__name__}')
         if 'excluded_skills' not in entry:
             continue

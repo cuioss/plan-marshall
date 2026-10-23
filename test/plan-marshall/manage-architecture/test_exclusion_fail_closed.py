@@ -148,7 +148,8 @@ def _discovered_module(root: Path | str, dependencies: list[tuple[str, str]]) ->
     discovered = extension_discovery.discover_project_modules(Path(root))
     modules = discovered.get('modules') if isinstance(discovered, dict) else None
     assert isinstance(modules, dict) and modules, 'discovery returned no module map'
-    return modules['sample']
+    module_data: dict = modules['sample']
+    return module_data
 
 
 # =============================================================================
@@ -211,6 +212,20 @@ def test_malformed_marshal_is_reported_even_when_no_module_has_a_skill_map():
         )
 
     assert result['status'] == 'error'
+
+
+def test_global_active_profiles_sibling_is_not_a_malformed_domain():
+    """The global active-profile list lives beside the domains; it is not one."""
+    with tempfile.TemporaryDirectory() as project_dir:
+        _seed(project_dir)
+        _write_marshal(
+            project_dir,
+            {'active_profiles': ['implementation'], 'java': {'bundle': 'pm-dev-java'}},
+        )
+
+        payload = _cmd_client_query.get_module_info('module-a', project_dir=project_dir)
+
+    assert QUARKUS in json.dumps(payload['skills_by_profile'])
 
 
 def test_enrich_reports_an_unreadable_configuration_instead_of_persisting():
