@@ -1921,6 +1921,7 @@ def test_skill_keeps_the_in_process_fallback_as_the_degraded_case() -> None:
     gate = _section('## 4. Build gate')
 
     assert 'build-routing' in gate
+    assert 'before the first routed build' in gate.lower()
     assert 'executor_absent_from_worktree' in gate
     assert 'degraded' in gate.lower(), 'the absent-executor path is not framed as the degraded case'
 
@@ -1931,6 +1932,9 @@ def test_skill_names_the_worktree_executor_refresh_verb() -> None:
 
     assert 'worktree-executor-refresh' in section
     assert 'after adding, removing or renaming a script verb' in section.lower()
+    # The refresh is worthless if the run then dispatches the new verb through
+    # main's executor: only the worktree's surface was rebuilt.
+    assert "through the worktree's executor" in section.lower()
 
 
 def test_no_lane_instruction_runs_the_generator_by_path() -> None:
@@ -1938,16 +1942,19 @@ def test_no_lane_instruction_runs_the_generator_by_path() -> None:
 
     The generator is reachable through the executor like every other script. A
     lane that spells its path ships a direct interpreter call, which the guard
-    refuses — the exact dead end this verb exists to remove.
+    refuses — the exact dead end this verb exists to remove. Every fenced line is
+    scanned, not only the ones that start with an interpreter name, so a
+    ``sys.executable`` spelling is caught too; a prohibition may name the file in
+    prose, where a reader sees the "never", and prose is not a fenced block.
     """
-    invocations = [
-        block
+    offenders = [
+        line.strip()
         for block in _fenced_blocks(_skill_text())
         for line in block.splitlines()
-        if 'generate_executor' in line and line.strip().startswith(('python', './', 'pw '))
+        if 'generate_executor' in line
     ]
 
-    assert invocations == [], f'the lane text runs the generator by path: {invocations}'
+    assert offenders == [], f'the lane text runs the generator by path: {offenders}'
 
 
 def test_build_routing_answers_in_process_when_the_worktree_has_no_executor(tmp_path: Path) -> None:
@@ -2082,6 +2089,67 @@ def test_the_executor_absent_verdict_runs_the_build_in_process(tmp_path: Path, m
 
     assert pyproject.cmd_run(args) == 0
     assert routed['called'] is False, 'an executor-less worktree still consulted the daemon route'
+
+
+def test_the_auto_verdict_submits_the_build_through_the_daemon(tmp_path: Path, monkeypatch) -> None:
+    """The matched control: a worktree that carries its executor IS routed.
+
+    Same harness, same handler, one difference — the slot exists. ``auto`` must
+    reach ``_route_to_daemon`` (which re-runs the worktree's executor), so the
+    present verdict buys the routed path the defect used to deny it.
+    """
+    from contextlib import contextmanager
+
+    from conftest import parse_ns
+
+    lane = load_script_module('plan-marshall', _SKILL_NAME, 'runbook_lane.py', register=False)
+    pyproject = load_script_module(
+        'plan-marshall', 'build-pyproject', '_pyproject_execute.py', '_rb_lb92_pyproject_execute'
+    )
+    worktree = tmp_path / 'worktree'
+    (worktree / '.plan').mkdir(parents=True)
+    _write(worktree / '.plan' / 'execute-script.py', '#!/usr/bin/env python3\n')
+
+    verdict = lane.cmd_build_routing(argparse.Namespace(worktree=str(worktree)))
+    assert verdict['execution_mode'] == 'auto'
+
+    args = parse_ns(
+        'plan-marshall',
+        'build-pyproject',
+        'pyproject_build.py',
+        'run',
+        '--command-args',
+        'verify',
+        '--plan-id',
+        'P',
+        '--execution-mode',
+        verdict['execution_mode'],
+        register=False,
+    )
+    globals_ = pyproject.cmd_run.__globals__
+    routed = {'called': False}
+
+    def _observe_route(*_args: Any, **_kwargs: Any) -> Any:
+        routed['called'] = True
+        return (None, 'no_notation')
+
+    @contextmanager
+    def _slot(plan_id: str, *, routed: bool = False):
+        yield
+
+    monkeypatch.setitem(globals_, '_route_to_daemon', _observe_route)
+    monkeypatch.setitem(
+        globals_,
+        'execute_direct_base',
+        lambda **_kwargs: {'status': 'success', 'exit_code': 0, 'duration_seconds': 1, 'log_file': 'l', 'command': 'c'},
+    )
+    monkeypatch.setitem(globals_, 'build_queue_slot', _slot)
+    monkeypatch.setitem(globals_, 'cmd_run_common', lambda **_kwargs: 0)
+    monkeypatch.setitem(globals_, '_record_resolution', lambda *_args, **_kwargs: None)
+    monkeypatch.setitem(globals_, '_append_gate_build_row', lambda **_kwargs: None)
+
+    assert pyproject.cmd_run(args) == 0
+    assert routed['called'] is True, 'a worktree with its own executor never reached the daemon route'
 
 
 def test_build_routing_leaves_a_supplied_executor_on_auto(tmp_path: Path) -> None:

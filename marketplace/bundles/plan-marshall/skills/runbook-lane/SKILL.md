@@ -69,9 +69,10 @@ python3 .plan/execute-script.py plan-marshall:runbook-lane:runbook_lane build-ro
 
 Decides whether the next build may be submitted to the daemon or must run in-process, from whether
 the worktree carries a usable `.plan/execute-script.py`. It answers `executor_in_worktree:
-present|absent`, then `auto` (submit with no execution flag) or `in_process` with the
-`executor_absent_from_worktree` reason for the degraded case. Section 4 runs it before the first
-routed build.
+present|absent`, then `auto` (submit with no execution flag) or `in_process` with the reason it
+names for the degraded case — `executor_absent_from_worktree` for a worktree with no usable slot,
+`worktree_not_created` for one that does not exist yet. Section 4 runs it before the first routed
+build.
 
 ### build-classify
 
@@ -382,9 +383,11 @@ checkout stays untouched.
 
 Every executor call runs with the shell in the **main checkout**, in exactly the form
 `python3 .plan/execute-script.py …`. The guard refuses any other form, including an absolute
-executor path. Builds run against the worktree with the resolved `build` commands (section 4) and
-the default routing (`auto`): the project's build wrapper decides whether the job runs in-process or
-is submitted to the build daemon.
+executor path. One exception is a verb the plan's own branch introduces: only the WORKTREE's
+executor knows that surface, so that call runs with the shell in the worktree, in the same relative
+form — section 3 step 5 refreshes that executor first. Builds run against the worktree with the
+resolved `build` commands (section 4) and the default routing (`auto`): the project's build wrapper
+decides whether the job runs in-process or is submitted to the build daemon.
 
 6. **Build-server preflight — once, here.**
    `python3 .plan/execute-script.py plan-marshall:build-server-client:build_server preflight --project-path {worktree}`
@@ -423,12 +426,15 @@ For each deliverable, in the spec's order:
 3. Implement. Run the tests; record them passing.
 4. If any `*.py` changed, run the quality gate (step 4) until clean.
 5. **Refresh the worktree executor after adding, removing or renaming a script verb**, before running
-   the new verb in this worktree:
+   the new verb:
    `python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow worktree-executor-refresh --plan-id {plan}`.
    The executor embeds the script map and argparse surface it derived when the worktree was created,
    so a verb the branch adds is refused as `unknown_verb` until that surface is rebuilt — and the
    rebuild goes through this verb, never through a direct interpreter call to the generator by path.
    Record `executor_regenerated` and its detail; a `false` is a blocker, not a warning.
+   Then run the new verb **through the worktree's executor**, with the shell in the worktree and the
+   same relative form (`python3 .plan/execute-script.py …`): that executor is the only one whose
+   surface the refresh rebuilt, and it is the same one a routed build re-runs.
 6. Commit with the deliverable paths staged by name, then push. Record `D{n} done` in the progress
    file.
 

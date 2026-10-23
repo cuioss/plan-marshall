@@ -538,6 +538,8 @@ Run `git worktree add <resolved-path> <branch>` against the main checkout, mater
 
 **The executor is produced here, not only at the phase-5 move-in.** A routed build re-runs the worktree's own `.plan/execute-script.py`, and a plan whose lane text calls verb it introduced in its branch needs that slot to resolve the call — so an absent slot costs every build its routed path and the plan its own new verbs. Production goes through the same seam the move-in uses (`prepare_execute`'s generate-with-`--marketplace-root-{worktree}` then copy-from-main), with the verdict taken from the file on disk. It is non-fatal: a worktree that cannot get an executor is still a usable worktree.
 
+It runs for **every** plan, not behind a lane-only flag: the executor is per-tree derived state every worktree consumer needs, generation is idempotent and non-fatal, and a flag would add a second path a future caller can forget — the defect class this closes. The phase-5 move-in still generates its own copy, so the lifecycle's outcome is unchanged either way.
+
 ```bash
 python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow worktree-create \
   --plan-id EXAMPLE-PLAN --branch feature/EXAMPLE-PLAN [--base {base_branch}]

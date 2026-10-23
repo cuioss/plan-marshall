@@ -1878,14 +1878,17 @@ def _resolve_worktree_path_for_plan(plan_id: str) -> tuple[Path | None, dict | N
 def _produce_worktree_executor(worktree_path: Path, plan_id: str) -> dict[str, Any]:
     """Produce the worktree executor through ``prepare_execute``'s shared seam.
 
-    Imported lazily because ``prepare_execute`` loads THIS module by file path
-    (``_load_git_workflow``) to reuse ``cmd_worktree_create``: a module-level
-    import would instantiate a second ``prepare_execute`` module whenever that
-    script is the entrypoint, leaving two copies of the seam's state depending
-    on which script the executor dispatched.
+    Imported lazily rather than at module scope so this module's own body stays
+    free of a load-time cycle: ``prepare_execute`` loads THIS file by path
+    (``_load_git_workflow``) to reuse ``cmd_worktree_create``, so a module-scope
+    import would make that load re-enter ``prepare_execute``'s import while its
+    body is still executing. Deferring it also means the copy that a
+    ``prepare_execute`` entrypoint resolves at call time is a second, stateless
+    module instance — harmless, because the seam keeps no module state.
 
-    Returns ``{executor_in_worktree, executor_reason?}`` exactly as the seam
-    reports it; the caller merges it into its own payload unchanged.
+    Returns ``{executor_in_worktree, executor_produced, executor_detail,
+    executor_reason?}`` exactly as the seam reports it; the caller decides which
+    fields belong in its own payload.
     """
     from prepare_execute import produce_worktree_executor
 
@@ -1920,18 +1923,14 @@ def cmd_worktree_executor_refresh(args):
         return error
     verdict = _produce_worktree_executor(worktree, plan_id)
     executor_path = worktree_executor_path(worktree)
-    regenerated = verdict['executor_in_worktree'] == 'present'
     return {
         'status': 'success',
         'plan_id': plan_id,
         'worktree': str(worktree),
         'executor_path': str(executor_path),
-        'executor_regenerated': regenerated,
-        'executor_detail': (
-            f'worktree executor regenerated at {executor_path}'
-            if regenerated
-            else verdict.get('executor_reason', 'no reason reported')
-        ),
+        'executor_in_worktree': verdict['executor_in_worktree'],
+        'executor_regenerated': verdict['executor_produced'],
+        'executor_detail': verdict['executor_detail'],
     }
 
 
@@ -2277,6 +2276,14 @@ def cmd_worktree_create(args):
     ``executor_in_worktree``. Non-fatal: a worktree that cannot get an executor
     is still a usable worktree, and the lane records ``absent`` plus its reason.
 
+    **Produced for EVERY plan, not behind a lane-only flag** — the decision the
+    plan left to this verb. The executor is per-tree derived state that every
+    worktree consumer needs (a routed build, a verb the branch adds), generation
+    is idempotent and non-fatal, and a flag would add a second path a future
+    caller can forget — which is precisely the defect this verb now closes. The
+    phase-5 move-in still generates its own copy, so the lifecycle's outcome is
+    unchanged either way.
+
     The reserved shared orchestrator ledger key
     (:data:`marketplace_paths.ORCHESTRATOR_WORKTREE_KEY`) is refused BEFORE any
     path resolution, filesystem touch, or git call: that tree is a non-plan
@@ -2306,12 +2313,22 @@ def cmd_worktree_create(args):
         }
 
     if target.exists():
+        # Resume path, and it heals the same slot: a worktree created before this
+        # verb produced executors carries none, and reporting that state without
+        # filling it would leave every later run on the degraded routing path.
+        # Idempotent by construction — the seam re-derives the verdict from disk.
+        executor_verdict = _produce_worktree_executor(target, args.plan_id)
         return {
             'status': 'error',
             'plan_id': args.plan_id,
             'error': 'worktree_exists',
             'message': f'Worktree already exists: {target}',
             'worktree_path': str(target),
+            **{
+                key: executor_verdict[key]
+                for key in ('executor_in_worktree', 'executor_reason')
+                if key in executor_verdict
+            },
         }
     target.parent.mkdir(parents=True, exist_ok=True)
 
@@ -2389,8 +2406,10 @@ def cmd_worktree_create(args):
         'branch': args.branch,
         'plan_symlink': str(target / _PLAN_DIR_NAME),
         'bootstrap': bootstrap_status,
-        **executor_verdict,
+        'executor_in_worktree': executor_verdict['executor_in_worktree'],
     }
+    if 'executor_reason' in executor_verdict:
+        payload['executor_reason'] = executor_verdict['executor_reason']
     if bootstrap_status == 'warning':
         payload['bootstrap_warning'] = bootstrap_detail
     if bookkeeping_warnings:

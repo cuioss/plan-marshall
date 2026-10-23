@@ -578,10 +578,20 @@ def produce_worktree_executor(worktree_path: Path, plan_id: str) -> dict[str, An
     ``executor_reason`` rides only on ``absent``, naming which mechanism was
     tried and why neither produced a file — a ``present`` row carrying a reason
     would read like a qualified success.
+
+    ``executor_produced`` answers a DIFFERENT question from ``present``: whether
+    THIS call produced the slot (either mechanism) or left an older one in
+    place. They diverge exactly when a regeneration fails over a usable existing
+    executor — present and usable, but stale — and a caller that needs to know
+    whether a refresh achieved anything reads this field, not the presence one.
     """
     produced, detail = _generate_worktree_executor(worktree_path, plan_id)
-    present = produced and executor_landed(worktree_executor_path(worktree_path))
-    verdict: dict[str, Any] = {'executor_in_worktree': 'present' if present else 'absent'}
+    present = executor_landed(worktree_executor_path(worktree_path))
+    verdict: dict[str, Any] = {
+        'executor_in_worktree': 'present' if present else 'absent',
+        'executor_produced': produced,
+        'executor_detail': detail,
+    }
     if not present:
         verdict['executor_reason'] = detail
     return verdict

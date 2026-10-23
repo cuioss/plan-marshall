@@ -329,6 +329,26 @@ class TestWorktreeCreationProducesTheExecutor:
         assert result['worktree_executor_generated'] is True
         assert _worktree_executor(worktree).read_text(encoding='utf-8') == _MOVE_IN_MARKER
 
+    def test_resume_heals_an_executor_less_worktree(self, main_repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """``worktree_exists`` still produces the slot and reports its verdict.
+
+        A worktree created before this verb produced executors is exactly the
+        state a resume runs into, and the lane reads the verdict from this call.
+        Reporting the resume without filling the slot would leave every later
+        build on the degraded routing path.
+        """
+        _stub_generation(monkeypatch, _CREATION_MARKER)
+        created = _create_worktree()
+        executor = _worktree_executor(Path(created['worktree_path']))
+        executor.unlink()
+
+        payload = _create_worktree()
+
+        assert payload['status'] == 'error'
+        assert payload['error'] == 'worktree_exists'
+        assert payload['executor_in_worktree'] == 'present'
+        assert executor.read_text(encoding='utf-8') == _CREATION_MARKER
+
 
 # =============================================================================
 # D2 — the refresh verb resolves the plan's own new script
@@ -409,3 +429,25 @@ class TestWorktreeExecutorRefresh:
 
         assert payload['status'] == 'error'
         assert payload['error'] == 'plan_resolution_failed'
+
+    def test_a_failed_refresh_reports_no_regeneration_and_keeps_the_old_slot(
+        self, main_repo: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """``executor_regenerated`` answers "did this call produce one", not "is one there".
+
+        A refresh that cannot regenerate over a usable older executor leaves the
+        slot present and stale. Reporting that as ``regenerated`` would claim work
+        the call did not do; reporting it as ``absent`` would send the run to the
+        degraded routing path for an executor that still dispatches.
+        """
+        _stub_generation(monkeypatch, _CREATION_MARKER)
+        created = _create_worktree()
+        worktree = Path(created['worktree_path'])
+        _stub_generation(monkeypatch, None)
+
+        monkeypatch.setattr(git_workflow, '_resolve_worktree_path_for_plan', lambda _plan_id: (worktree, None))
+        payload = git_workflow.cmd_worktree_executor_refresh(Namespace(plan_id=_PLAN_ID))
+
+        assert payload['executor_regenerated'] is False
+        assert payload['executor_in_worktree'] == 'present'
+        assert 'generation exited 1' in payload['executor_detail']

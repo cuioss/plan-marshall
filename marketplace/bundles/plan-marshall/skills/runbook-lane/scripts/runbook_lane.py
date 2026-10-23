@@ -1365,11 +1365,16 @@ def _worktree_executor_state(worktree_dir: Path) -> tuple[str, str | None]:
     empty file is the "generation exited 0 and wrote nothing" shape — neither can
     dispatch a call, so both are ``absent``.
 
-    Stated here rather than imported because that module is private to the
-    producing skill: the lane reads the slot as a CONTRACT, not by reaching into
-    another skill's internals. The pair is the whole vocabulary — ``present``
-    carries no reason, and ``absent`` always names one, so a run records what it
-    saw instead of a bare word.
+    Restated here rather than imported: the slot module lives in the PRODUCING
+    skill, and a consumer that imported it would couple the lane to another
+    skill's internals for a four-line predicate. The authority stays there; this
+    is the read side of the same on-disk contract, and a divergence would show
+    as the lane routing on a file the producer would not have called landed.
+
+    The pair is the whole vocabulary — ``present`` carries no reason, and
+    ``absent`` always names one: ``worktree_not_created`` when the directory does
+    not exist yet (a resolve taken before setup), ``executor_absent_from_worktree``
+    when it exists with no usable slot.
     """
     executor = worktree_dir / '.plan' / 'execute-script.py'
     try:
