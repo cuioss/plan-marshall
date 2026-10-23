@@ -588,6 +588,48 @@ def test_enrich_omits_the_tool_count_when_one_root_could_not_measure_it(plan_con
     assert 'measured_tool_uses' not in row
 
 
+def test_enrich_omits_the_subagent_tool_count_when_one_root_could_not_measure_it(plan_context, monkeypatch):
+    """A phase whose sub-agent count only some roots measured publishes none.
+
+    The same rule the phase-level tool count follows: a partial sum presented as
+    the phase's sub-agent count would hide the calls the other root never made
+    observable.
+    """
+    plan_id = 'subagent-tool-uses-partial-population'
+    _seed_enrich_window(plan_context, plan_id)
+    _patch_multi_root_op(
+        monkeypatch,
+        {
+            'root-a': {
+                'status': 'success',
+                'root': 'root-a',
+                'per_phase': {
+                    '5-execute': {
+                        'input_tokens': 10,
+                        'subagent_total_tokens': 100,
+                        'subagent_samples': 1,
+                        'subagent_tool_uses': 3,
+                    }
+                },
+                'counters': {'message_count': 1},
+            },
+            'root-b': {
+                'status': 'success',
+                'root': 'root-b',
+                'per_phase': {'5-execute': {'input_tokens': 20, 'subagent_total_tokens': 50, 'subagent_samples': 1}},
+                'counters': {'message_count': 1},
+            },
+        },
+    )
+
+    result = cmd_enrich(ns_enrich(plan_id, 'root-a', 'root-b'))
+
+    assert result['enriched'] is True
+    row = _phase_row(plan_id, '5-execute')
+    assert row['subagent_total_tokens'] == 150
+    assert 'subagent_tool_uses' not in row
+
+
 # =============================================================================
 # Test: enrich absent session identity (transcript-gated skip vs hard error)
 # =============================================================================

@@ -2482,7 +2482,12 @@ class OpenCodeRuntime(Runtime):
         An absent, unreadable or schema-unsupported store declines with the
         reader's NAMED reason instead of the blanket ``transcript_not_found``.
         """
-        usage = _opencode_sessions.window_usage(_default_opencode_db_path(), session_id, windows)
+        usage = _opencode_sessions.window_usage(
+            _default_opencode_db_path(),
+            session_id,
+            windows,
+            directory=str(Path.cwd()),
+        )
         if not usage['ok']:
             return toon_noop(
                 'metrics normalized-tokens',

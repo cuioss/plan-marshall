@@ -4138,6 +4138,8 @@ def _run_normalized_tokens_op(
     # other root never made observable.
     phase_root_count: dict[str, int] = {}
     tool_uses_roots: dict[str, set[str]] = {}
+    subagent_usage_roots: dict[str, int] = {}
+    subagent_tool_uses_roots: dict[str, set[str]] = {}
 
     with tempfile.TemporaryDirectory(prefix='metrics-norm-tokens-') as tmpdir:
         windows_file = Path(tmpdir) / 'windows.json'
@@ -4202,8 +4204,16 @@ def _run_normalized_tokens_op(
             _merge_normalized_buckets(per_phase, measured)
             for phase_name, bucket in measured.items():
                 phase_root_count[phase_name] = phase_root_count.get(phase_name, 0) + 1
-                if isinstance(bucket, dict) and 'tool_uses' in bucket:
+                if not isinstance(bucket, dict):
+                    continue
+                if 'tool_uses' in bucket:
                     tool_uses_roots.setdefault(phase_name, set()).add(root)
+                if (_coerce_numeric(bucket.get('subagent_samples')) or 0) or (
+                    _coerce_numeric(bucket.get('subagent_total_tokens')) or 0
+                ):
+                    subagent_usage_roots[phase_name] = subagent_usage_roots.get(phase_name, 0) + 1
+                    if 'subagent_tool_uses' in bucket:
+                        subagent_tool_uses_roots.setdefault(phase_name, set()).add(root)
             scope = parsed.get('four_field_scope')
             if isinstance(scope, str) and scope.strip():
                 scopes.add(scope.strip())
@@ -4220,6 +4230,14 @@ def _run_normalized_tokens_op(
             continue
         if len(tool_uses_roots.get(phase_name, set())) != roots:
             merged.pop('tool_uses', None)
+    # The same cross-root rule for the sub-agent attribution: a phase whose
+    # sub-agent work only some roots could count publishes no sub-agent count.
+    for phase_name, roots in subagent_usage_roots.items():
+        merged = per_phase.get(phase_name)
+        if not isinstance(merged, dict):
+            continue
+        if len(subagent_tool_uses_roots.get(phase_name, set())) != roots:
+            merged.pop('subagent_tool_uses', None)
     population = {
         'sessions_requested': len(session_ids),
         'sessions_measured': len(measured_roots),

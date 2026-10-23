@@ -613,10 +613,12 @@ main-context figure alone on a phase that dispatched nothing (`inline`). A
 dispatched figure the row already carried is preserved as `dispatched_total_tokens`
 rather than overwritten, so the `<usage>` / accumulator measurement is neither
 lost nor re-read as the whole phase. See [data-format.md](standards/data-format.md)
-§ "Inline Main-Context Attribution". When the orchestrator called `accumulate-agent-usage` for
-the same agent dispatches the on-disk totals are independent of `enrich`'s
-per-phase subagent fields, so double-counting does not occur in the closed-phase
-row (`total_tokens`), which is filled from the accumulator at `end-phase` time.
+§ "Inline Main-Context Attribution". The on-disk accumulator totals the orchestrator
+recorded via `accumulate-agent-usage` are independent of `enrich`'s per-phase
+subagent fields, so double-counting does not occur between them: `end-phase`
+fills the closed-phase row from the accumulator first, and `enrich` then preserves
+that value as `dispatched_total_tokens` while it composes the whole-phase
+`total_tokens`.
 
 **Unknown reporting contract.** The `transcripts` capability flag and the measured
 answer are two separate facts. `transcripts: none` states only that the harness

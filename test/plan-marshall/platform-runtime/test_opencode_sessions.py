@@ -743,12 +743,18 @@ def test_window_usage_sums_each_subagent_sessions_own_span(tmp_path: Path) -> No
 
 
 def _create_directory_db(path: Path, rows: list[tuple[str, str | None, str | None]]) -> None:
-    """Create a tier-1 store whose ``session_v2`` carries the directory column."""
+    """Create a tier-2 store whose ``session_v2`` carries the directory column."""
     connection = sqlite3.connect(path)
     try:
-        connection.execute('CREATE TABLE session_v2 (id TEXT, parent_id TEXT, model TEXT, directory TEXT)')
+        connection.execute(
+            'CREATE TABLE session_v2 (id TEXT, parent_id TEXT, model TEXT, directory TEXT,'
+            ' tokens_input INTEGER, tokens_output INTEGER, tokens_cache_read INTEGER,'
+            ' tokens_cache_write INTEGER, cost REAL)'
+        )
         connection.executemany(
-            'INSERT INTO session_v2 (id, parent_id, model, directory) VALUES (?, ?, NULL, ?)',
+            'INSERT INTO session_v2 (id, parent_id, model, directory, tokens_input,'
+            ' tokens_output, tokens_cache_read, tokens_cache_write, cost)'
+            ' VALUES (?, ?, NULL, ?, 0, 0, 0, 0, 0.0)',
             rows,
         )
         connection.commit()
@@ -802,6 +808,50 @@ def test_resolve_session_root_names_an_unavailable_store(tmp_path: Path) -> None
         'ok': False,
         'reason': 'db_not_found',
     }
+
+
+def test_window_usage_stops_at_the_plans_directory(tmp_path: Path) -> None:
+    """The measurement tree is the plan's bounded tree, not the outer session's.
+
+    The plan's captured identity IS the bounded root, so re-resolving it without
+    the bound would walk back out to the operator's unrelated outer session and
+    measure its other descendants too.
+    """
+    db_path = tmp_path / 'opencode.db'
+    worktree = tmp_path / 'worktree'
+    _create_directory_db(
+        db_path,
+        [
+            ('ses-outer', None, str(tmp_path)),
+            ('ses-plan', 'ses-outer', str(worktree)),
+            ('ses-elsewhere', 'ses-outer', str(tmp_path / 'other')),
+        ],
+    )
+    connection = sqlite3.connect(db_path)
+    try:
+        connection.execute('CREATE TABLE session_message (session_id TEXT, type TEXT, time_created INTEGER, data TEXT)')
+        connection.executemany(
+            'INSERT INTO session_message (session_id, type, time_created, data) VALUES (?, ?, ?, ?)',
+            [
+                ('ses-plan', 'assistant', _at(5), json.dumps({'tokens': {'input': 7}, 'content': [{'type': 'tool'}]})),
+                ('ses-elsewhere', 'assistant', _at(6), json.dumps({'tokens': {'input': 500}})),
+            ],
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+    bounded = opencode_sessions.window_usage(
+        db_path, 'ses-plan', [('5-execute', _iso(0), _iso(30))], directory=str(worktree)
+    )
+    unbounded = opencode_sessions.window_usage(db_path, 'ses-plan', [('5-execute', _iso(0), _iso(30))])
+
+    assert bounded['root'] == 'ses-plan'
+    assert bounded['windows'][0]['main']['input_tokens'] == 7
+    assert bounded['windows'][0]['subagent']['input_tokens'] == 0
+    # Without the bound the outer session is the root and its other descendant is
+    # measured — the behaviour the plan's captured identity must not trigger.
+    assert unbounded['root'] == 'ses-outer'
 
 
 # =============================================================================

@@ -402,6 +402,38 @@ def read_session_rows(path: Path | str | None) -> dict[str, Any]:
         _close(connection)
 
 
+def _bounded_root(
+    session_id: str | None,
+    rows: Mapping[str, tuple[str | None, object, str | None]],
+    directory: str | None,
+) -> str | None:
+    """Resolve *session_id* to its root, bounded by *directory* when given.
+
+    The selection rule is shared with :func:`resolve_session_root`: the climb ends
+    at the OUTERMOST ancestor whose ``directory`` cell matches *directory*, and
+    falls back to the true root when no ancestor carries it. ``rows`` here is the
+    already-read table, because a tree walk needs it anyway.
+    """
+    if not session_id or session_id not in rows:
+        return None
+    chain: list[tuple[str, str | None]] = []
+    seen: set[str] = set()
+    current: str | None = session_id
+    while current and current not in seen and current in rows:
+        seen.add(current)
+        chain.append((current, rows[current][2]))
+        parent = rows[current][0]
+        current = parent if isinstance(parent, str) and parent else None
+    if not chain:
+        return None
+    root = chain[-1][0]
+    if directory:
+        for candidate, row_directory in chain:
+            if _same_directory(row_directory, directory):
+                root = candidate
+    return root
+
+
 def session_root(session_id: str | None, rows: Mapping[str, tuple[str | None, object, str | None]]) -> str | None:
     """Resolve *session_id* to its root through ``parent_id``, or ``None``.
 
@@ -533,14 +565,18 @@ def session_tree(root: str, rows: Mapping[str, tuple[str | None, object, str | N
     return ordered
 
 
-def _resolve_tree(connection: sqlite3.Connection, session_id: str | None) -> tuple[str | None, list[str], str | None]:
+def _resolve_tree(
+    connection: sqlite3.Connection, session_id: str | None, directory: str | None = None
+) -> tuple[str | None, list[str], str | None]:
     """Resolve ``(root, tree, reason)`` for *session_id* on an open connection.
 
     ``reason`` is ``None`` when a tree was resolved; otherwise it names why none
-    was (``session_not_found`` when the id names no row).
+    was (``session_not_found`` when the id names no row). *directory* bounds the
+    climb exactly as :func:`_bounded_root` describes, so a measurement of a plan's
+    captured root does not walk back out to an unrelated outer session.
     """
     rows = _session_rows(connection)
-    root = session_root(session_id, rows)
+    root = _bounded_root(session_id, rows, directory)
     if root is None:
         return None, [], REASON_SESSION_NOT_FOUND
     return root, session_tree(root, rows), None
@@ -864,6 +900,8 @@ def window_usage(
     path: Path | str | None,
     session_id: str | None,
     windows: Sequence[tuple[str, str, str]],
+    *,
+    directory: str | None = None,
 ) -> dict[str, Any]:
     """Sum assistant-message usage per half-open window, main versus sub-agent.
 
@@ -896,11 +934,16 @@ def window_usage(
     :func:`_window_pre_filter` bounds ``time_created``, so the scan never walks
     a store's rows from sessions outside the tree or messages outside the run.
 
+    *directory* bounds ROOT RESOLUTION: the plan's captured identity is the
+    worktree-bounded root, so re-resolving it without the bound would walk back
+    out to an operator's unrelated outer session and measure its descendants too.
+
     Args:
         path: The database file to read.
         session_id: Any session in the tree — resolved to its root first.
         windows: ``(phase, start, end)`` triples; an unreadable bound drops the
             window rather than widening it.
+        directory: The plan's worktree, or ``None`` to take the true root.
 
     Returns:
         ``{'ok': True, 'root', 'windows': [{'phase', 'main', 'subagent'}],
@@ -913,7 +956,7 @@ def window_usage(
         tier, reason = _probe_connection(connection)
         if tier < TIER_TOTALS:
             return {'ok': False, 'reason': reason or REASON_SCHEMA_UNSUPPORTED}
-        root, tree, reason = _resolve_tree(connection, session_id)
+        root, tree, reason = _resolve_tree(connection, session_id, directory)
         if root is None:
             return {'ok': False, 'reason': reason}
         parsed = _parse_windows(windows)
