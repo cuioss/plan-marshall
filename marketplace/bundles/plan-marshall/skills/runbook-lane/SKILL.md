@@ -429,8 +429,9 @@ For each deliverable, in the spec's order:
    the new verb:
    `python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow worktree-executor-refresh --plan-id {plan}`.
    The executor embeds the script map and argparse surface it derived when the worktree was created,
-   so a verb the branch adds is refused as `unknown_verb` until that surface is rebuilt — and the
-   rebuild goes through this verb, never through a direct interpreter call to the generator by path.
+   so a verb the branch adds is not in that record — the executor may refuse the call as
+   `unknown_verb`, and cannot describe the verb's flags — until the surface is rebuilt. The rebuild
+   goes through this verb, never through a direct interpreter call to the generator by path.
    Record `executor_regenerated` and its detail; a `false` is a blocker, not a warning.
    Then run the new verb **through the worktree's executor**, with the shell in the worktree and the
    same relative form (`python3 .plan/execute-script.py …`): that executor is the only one whose
