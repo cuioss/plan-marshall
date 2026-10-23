@@ -2607,39 +2607,18 @@ def check_paths_exist(mappings: dict[str, str]) -> tuple[list, list]:
 # ============================================================================
 
 
-def find_installed_manifest_path(base_path: Path | None = None, target: str = 'claude') -> Path | None:
-    """Locate the installed ``dist-manifest.json``, or ``None`` when absent.
+def installed_manifest_probe_paths(base_path: Path | None = None, target: str = 'claude') -> list[Path]:
+    """Return the ordered paths :func:`find_installed_manifest_path` probes.
 
-    The manifest is emitted by the target generator at the target output root
-    (meta-project: ``target/{target}/``). On a meta-project install it is
-    copied into the plugin-cache tree; on a marketplace install it stays at the
-    marketplace clone root (``.../plugins/marketplaces/<marketplace>/``) and is
-    NOT copied into ``.../plugins/cache/<marketplace>/``. Search order:
-
-    1. ``$PM_DIST_MANIFEST`` — explicit override (tests + alternate installs).
-    2. The meta-project target tree (``<repo>/target/{target}/dist-manifest.json``)
-       when ``base_path`` points inside a ``marketplace/bundles`` checkout.
-    3. ``base_path/dist-manifest.json`` and its parent (cache / target root).
-    4. The marketplace clone root: when ``base_path`` resolves inside a
-       plugin-cache layout (``.../plugins/cache/<marketplace>/...``), the
-       ``/plugins/cache/<marketplace>`` segment is mapped to
-       ``/plugins/marketplaces/<marketplace>`` and ``dist-manifest.json`` is
-       appended — where a marketplace install actually keeps its manifest.
-
-    Args:
-        base_path: The resolved bundles/cache root, or ``None`` when it could
-            not be resolved (fresh install).
-        target: The resolved platform target (``claude`` or ``opencode``) whose
-            manifest to look up under the meta-project target tree. Defaults to
-            ``claude`` for callers that have no resolved target in hand.
-
-    Returns:
-        Path to an existing manifest file, or ``None``.
+    The single construction of the candidate set, shared by the lookup and by
+    callers that must REPORT what was probed when nothing resolves. A lookup
+    that fails without naming its probes makes "the manifest is missing" and
+    "the lookup could not look" indistinguishable, which is exactly the
+    ambiguity the flat-install defect rested on.
     """
     env_manifest = os.environ.get('PM_DIST_MANIFEST')
     if env_manifest:
-        candidate = Path(env_manifest)
-        return candidate if candidate.is_file() else None
+        return [Path(env_manifest)]
 
     candidates: list[Path] = []
     if base_path is not None:
@@ -2677,6 +2656,42 @@ def find_installed_manifest_path(base_path: Path | None = None, target: str = 'c
             )
             if is_safe_segment:
                 candidates.append(Path(prefix) / 'plugins' / 'marketplaces' / marketplace_name / 'dist-manifest.json')
+    return candidates
+
+
+def find_installed_manifest_path(base_path: Path | None = None, target: str = 'claude') -> Path | None:
+    """Locate the installed ``dist-manifest.json``, or ``None`` when absent.
+
+    The manifest is emitted by the target generator at the target output root
+    (meta-project: ``target/{target}/``). On a meta-project install it is
+    copied into the plugin-cache tree; on a marketplace install it stays at the
+    marketplace clone root (``.../plugins/marketplaces/<marketplace>/``) and is
+    NOT copied into ``.../plugins/cache/<marketplace>/``. Search order:
+
+    1. ``$PM_DIST_MANIFEST`` — explicit override (tests + alternate installs).
+    2. The meta-project target tree (``<repo>/target/{target}/dist-manifest.json``)
+       when ``base_path`` points inside a ``marketplace/bundles`` checkout.
+    3. ``base_path/dist-manifest.json`` and its parent (cache / target root).
+    4. The marketplace clone root: when ``base_path`` resolves inside a
+       plugin-cache layout (``.../plugins/cache/<marketplace>/...``), the
+       ``/plugins/cache/<marketplace>`` segment is mapped to
+       ``/plugins/marketplaces/<marketplace>`` and ``dist-manifest.json`` is
+       appended — where a marketplace install actually keeps its manifest.
+
+    The candidate set is built by :func:`installed_manifest_probe_paths`, which
+    callers also use to report what was probed when nothing resolves.
+
+    Args:
+        base_path: The resolved bundles/cache root, or ``None`` when it could
+            not be resolved (fresh install).
+        target: The resolved platform target (``claude`` or ``opencode``) whose
+            manifest to look up under the meta-project target tree. Defaults to
+            ``claude`` for callers that have no resolved target in hand.
+
+    Returns:
+        Path to an existing manifest file, or ``None``.
+    """
+    candidates = installed_manifest_probe_paths(base_path, target=target)
 
     # Highest-version-wins selection over the existing candidates: a stale
     # cache-root manifest must never shadow a newer clone-root manifest just
@@ -3628,14 +3643,16 @@ def cmd_preflight(args: argparse.Namespace) -> dict:
       route the user to ``/marshall-steward``; a resolvable, non-stale manifest
       reports ``marshal_status: fresh``.
 
-    - **Fail CLOSED on an unresolvable manifest.** When the installed
-      ``dist-manifest.json`` cannot be resolved (``read_installed_manifest``
-      returned ``{}``, so ``installed_version == 'unknown'``), no version-based
-      staleness verdict can be substantiated. Rather than report a vacuous
-      ``fresh`` it can neither confirm nor deny, the verb reports
-      ``marshal_status: unknown`` and emits a legible warning to stderr (also
-      surfaced in the return's ``warning`` field). The verdict never claims a
-      freshness it cannot prove.
+    - **An unresolvable manifest is `unknown` only when no drift is measurable.**
+      When the installed ``dist-manifest.json`` cannot be resolved
+      (``read_installed_manifest`` returned ``{}``, so ``installed_version ==
+      'unknown'``) the verb names every path it probed. If ``marshal_version``
+      and ``executor_version`` are both readable, it derives ``marshal_status``
+      from that pair — ``stale`` when the executor is ahead of the provisioned
+      config seed, ``fresh`` otherwise — instead of reporting ``unknown`` over a
+      measurable drift. Only when neither version is readable does it report
+      ``marshal_status: unknown``. The warning is emitted on stderr and carried
+      in the return, and no verdict claims a freshness it cannot substantiate.
 
     Multiple plugin-cache version dirs no longer trigger a preflight
     regeneration or any marker write: the executor resolves bundle script paths
@@ -3644,10 +3661,6 @@ def cmd_preflight(args: argparse.Namespace) -> dict:
     a stale version dir left on disk can never shadow the current scripts and
     there is nothing for the preflight to contain. Pruning the superseded dirs is
     the ``marshall-steward`` ``cache_retention sweep``'s union-keep job.
-
-    A fresh install with no manifest resolves ``installed_version`` to the
-    ``unknown`` sentinel, so the verb fails closed and reports
-    ``marshal_status: unknown`` with a warning rather than a vacuous ``fresh``.
 
     Returns:
         A single nine-field TOON dict: ``status``, ``executor_action``
@@ -3703,18 +3716,30 @@ def cmd_preflight(args: argparse.Namespace) -> dict:
     if config_changed_at and _version_tuple(marshal_version) < _version_tuple(config_changed_at):
         marshal_status = 'stale'
 
-    # Fail CLOSED on an unresolvable manifest. read_installed_manifest returned
-    # {} (installed_version is the 'unknown' sentinel), so no version-based
-    # staleness verdict can be substantiated. Never report a vacuous 'fresh' the
-    # verb can neither confirm nor deny: report the dedicated 'unknown' verdict
-    # and emit a legible warning (surfaced both on stderr and in the return).
+    # An unresolvable manifest is not automatically "unknown": when the
+    # marshal-config seed and the executor version ARE readable, their pair is a
+    # measurable drift signal and the verdict is derived from it. Never report a
+    # vacuous 'fresh' AND never report 'unknown' where a fact exists.
     warning = ''
     if installed_version == 'unknown':
-        marshal_status = 'unknown'
-        warning = (
-            'installed dist-manifest.json could not be resolved; version-based '
-            'staleness cannot be determined (marshal_status=unknown)'
-        )
+        probe_paths = installed_manifest_probe_paths(base_path, target=resolved_target)
+        probed = ', '.join(str(path) for path in probe_paths)
+        if marshal_version and executor_version:
+            # The executor is the artifact a cache advance rewrites; an executor
+            # ahead of the provisioned config seed is the drift the manifest
+            # comparison would otherwise have measured.
+            marshal_status = 'stale' if _version_tuple(marshal_version) < _version_tuple(executor_version) else 'fresh'
+            warning = (
+                'installed dist-manifest.json could not be resolved; marshal_status derived from the '
+                f'readable pair marshal_version={marshal_version}, executor_version={executor_version} '
+                f'(marshal_status={marshal_status}). probed: {probed}'
+            )
+        else:
+            marshal_status = 'unknown'
+            warning = (
+                'installed dist-manifest.json could not be resolved; version-based staleness cannot '
+                f'be determined (marshal_status=unknown). probed: {probed}'
+            )
         print(f'WARNING: {warning}', file=sys.stderr)
 
     return {

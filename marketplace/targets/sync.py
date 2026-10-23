@@ -23,7 +23,9 @@ Target profiles:
   with only the stdlib and ``toon_parser``.
 * **opencode**: Source layout is singular (``skill/``, ``agent/``, ``command/``).
   Destination is ``~/.config/opencode/`` with plural layout (``skills/``,
-  ``agents/``, ``commands/``). Deploys ``opencode.json``.
+  ``agents/``, ``commands/``). Deploys ``opencode.json`` and the emitted
+  ``dist-manifest.json`` at the install root, so a flat install can resolve its
+  installed version (there is no plugin-cache version dir to read it from).
 * **antigravity**: Source layout is plural (``skills/``, ``agents/``,
   ``commands/``). Destination is ``~/.gemini/config/plugins/plan-marshall/``.
   Deploys root assets ``plugin.json``, ``install.sh`` (chmod 0o755), and ``README.adoc``.
@@ -291,7 +293,16 @@ TARGET_CONFIGS: dict[str, TargetSyncConfig] = {
         source_skills_dir='skill',
         source_agents_dir='agent',
         source_commands_dir='command',
-        root_assets=(('opencode.json', 'config', False),),
+        root_assets=(
+            ('opencode.json', 'config', False),
+            # Publish the emitted dist-manifest at the install root, mirroring the
+            # Claude cache sync. A flat OpenCode install has no
+            # marketplace/bundles tree and no plugin-cache version dir, so this
+            # is the one location the installed-manifest lookup can resolve
+            # (``{cache_root}/../dist-manifest.json``), and it is what makes
+            # ``check_freshness`` report fresh/stale instead of unknown.
+            ('dist-manifest.json', 'manifest', False),
+        ),
         extra_count_key='config_count',
     ),
 }

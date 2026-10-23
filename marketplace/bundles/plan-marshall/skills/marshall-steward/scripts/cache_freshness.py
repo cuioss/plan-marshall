@@ -82,6 +82,7 @@ from pathlib import Path
 from generate_executor import (
     _version_tuple,
     find_installed_manifest_path,
+    installed_manifest_probe_paths,
     read_installed_manifest,
 )
 from marketplace_bundles import _version_sort_key
@@ -171,8 +172,17 @@ def newest_cache_version(cache_root: Path) -> str:
     return max(version_dirs, key=_version_sort_key)
 
 
-def _unknown(reason: str, cache_root: Path | None, cache_version: str) -> dict:
-    """Build the ``unknown`` verdict — refusing, never downgraded to a guess."""
+def _unknown(reason: str, cache_root: Path | None, cache_version: str, probed: list[Path] | None = None) -> dict:
+    """Build the ``unknown`` verdict — refusing, never downgraded to a guess.
+
+    ``probed`` names every path the installed-manifest lookup visited. It is
+    appended to the warning so a could-not-look result (a lookup that found
+    nothing where a manifest could live) is distinguishable from a missing
+    install — ADR-019's "state what was probed" rule.
+    """
+    warning = reason
+    if probed:
+        warning = f'{reason}. probed: {", ".join(str(path) for path in probed)}'
     return {
         'status': 'success',
         'freshness': UNKNOWN,
@@ -183,7 +193,7 @@ def _unknown(reason: str, cache_root: Path | None, cache_version: str) -> dict:
         'cache_root': str(cache_root) if cache_root is not None else '',
         'manifest_path': '',
         'remediation': REMEDIATION,
-        'warning': reason,
+        'warning': warning,
     }
 
 
@@ -207,15 +217,6 @@ def check_freshness(cache_root: Path | None) -> dict:
             '',
         )
 
-    cache_version = newest_cache_version(cache_root)
-    if not cache_version:
-        return _unknown(
-            f'no version directory found under the plugin-cache root {cache_root}; '
-            'cache freshness cannot be substantiated',
-            cache_root,
-            '',
-        )
-
     # The active target comes from the shared resolver, so this verb inherits
     # the env tier it never had: on a machine whose only deployment is OpenCode
     # the manifest lookup below addresses that target's published
@@ -223,6 +224,22 @@ def check_freshness(cache_root: Path | None) -> dict:
     # produced the answer is available from the same call; the verdict's own
     # shape is unchanged, so no consumer has to learn a new field to read it.
     target = resolve_target()['target']
+    # One probe list, shared by both refusing branches below: a flat install
+    # with no version marker AND a flat install whose manifest is missing both
+    # name what the lookup visited, so "absent" is distinguishable from
+    # "could not look" (ADR-019).
+    probe_paths = installed_manifest_probe_paths(cache_root, target=target)
+
+    cache_version = newest_cache_version(cache_root)
+    if not cache_version:
+        return _unknown(
+            f'no version directory found under the plugin-cache root {cache_root}; '
+            'cache freshness cannot be substantiated',
+            cache_root,
+            '',
+            probed=probe_paths,
+        )
+
     manifest_path = find_installed_manifest_path(cache_root, target=target)
     manifest = read_installed_manifest(cache_root, target=target)
     manifest_version = str(manifest.get('version', '') or '')
@@ -231,6 +248,7 @@ def check_freshness(cache_root: Path | None) -> dict:
             'marketplace-clone-root dist-manifest.json could not be resolved; cache freshness cannot be substantiated',
             cache_root,
             cache_version,
+            probed=probe_paths,
         )
 
     is_fresh = _version_tuple(cache_version) >= _version_tuple(manifest_version)
