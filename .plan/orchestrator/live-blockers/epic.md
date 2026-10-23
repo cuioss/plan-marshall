@@ -88,13 +88,15 @@ derive, for rows still live.
   (`runtime_info.py`, the recursive-query hypothesis is obsolete), PLAN-LB-83 (`opencode_runtime.py`, +222 lines),
   PLAN-LB-73 (`runtime_info.py`). PLAN-LB-84 is no longer held on PLAN-LB-49; it now sequences after PLAN-LB-86.
 
-- **PLAN-LB-85** (shipped #1839, 2026-10-22, runbook lane, `deepseek-v4.1-flash/high` as reported) — provisional
-  grade B−; see `landings/PLAN-LB-85.md`. D1, D2 and D4 delivered; D3 is 2 of 3 clauses, clause 3 being a
+- **PLAN-LB-85** (shipped #1839, 2026-10-22, runbook lane, `deepseek-v4.1-flash/high`, confirmed in the store) — grade
+  B; see `landings/PLAN-LB-85.md`. D1, D2 and D4 delivered; D3 is 2 of 3 clauses, clause 3 being a
   preservation claim that cannot fail (a spec error). The lane now resolves its Sonar state, reads a pull request's open
   issues through the plan-less `read_open_issues` verb and gates the merge on `sonar-gate`. **The Sonar figure for its
   own PR is `unknown`** (the verbs were unreachable through the stale executor and the bootstrap was refused by the
-  guard). The landing is the first runbook landing whose guard-log attribution matched `guard.log`; session-tree facts
-  were not verified (the session store was not readable in this analysis). Realized footprint moved `runbook-lane/SKILL.md`
+  guard). The landing is the first runbook landing whose guard-log attribution matched `guard.log` exactly by session tree, and the
+  first to re-read the lane text on its own after a server restart (25 s later). Store facts: 4 sessions, none killed,
+  2.10M input+output (2.23M with reasoning), $1.00, 8 h 37 min; `total_tokens` was written `unknown` regardless, and
+  `ls` was under-reported (4, not 2). Realized footprint moved `runbook-lane/SKILL.md`
   and `runbook_lane.py` (PLAN-LB-73, 89, 69), `sonar.py` and the sonar `SKILL.md` (PLAN-LB-58) and
   `landing-payload-spec.md`, `landing-analysis.md`, `plan-spec.md` (PLAN-LB-84, 69): re-read their line references at
   outline. Added surface outside the declaration: `ext-point-triage.md`, `findings-pipeline.md` (one line each, the
@@ -713,7 +715,8 @@ derive, for rows still live.
 - **The runbook landing's `complete: false` on `total_tokens` is now the only missing key (PLAN-LB-85 landing,
   2026-10-23; recurrence of the PLAN-LB-86 D2 contract collision, not a new defect).** `effort` and `plugin_version`
   are supplied under the post-sync lane text, so PLAN-LB-78 D3's fix reached the run. `surface_delta` measured:
-  `expansion_detected` (2 added, 3 missing).
+  `expansion_detected` (2 added, 3 missing). The store holds the total the lane wrote as `unknown` (2,099,576 input+output,
+  $1.0042): the fourth runbook landing to hide a measurable figure.
 - **The R5 enforcement merged by PLAN-LB-79 is still walkable, and the hook it made binding refuses a command
   the repository prescribes (PLAN-LB-79 landing, 2026-10-22; high; fix-forward PLAN-LB-88).** By code reading,
   not executed: the spliced-string walk splits on `; & | newline` only, so a grouping keyword, `-o pipefail` before
@@ -1486,9 +1489,9 @@ entries below are OpenCode 1 assumptions in plan-marshall that OpenCode 2 broke.
   stay on `deepseek-v4.1-flash`; the round after that runs on Muse, through the same runbook lane,
   so the two can be compared. DeepSeek so far under the runbook lane: LB-61 C+, LB-66 F, LB-67 C,
   LB-71 C−, LB-72 B−, LB-70 F, LB-59 C, LB-74 C, LB-68 C−, LB-76 C+, LB-45 C−, LB-77 B−, LB-48 B−, LB-81 C+, LB-78 B−, LB-79 C+ ($1.76, 5 sessions, 19 h 40 min, `deepseek-v4.1-flash/high` throughout, no switch; code
-  graded on its work, report graded down for the undisclosed shell and clone conduct), LB-85 B− (provisional: tokens, cost and the session tree
-  were not readable in the analysis; the report matched every piece of evidence that could be re-read, `deepseek-v4.1-flash/high`
-  as reported). Note the
+  graded on its work, report graded down for the undisclosed shell and clone conduct), LB-85 B ($1.00, 4 sessions, 8 h 37 min,
+  `deepseek-v4.1-flash/high` throughout; the report matched the store on attribution, restart handling and questions;
+  `total_tokens` hidden, `ls` under-counted). Note the
   caveat that the lane skill itself changed between runs (PLAN-LB-67, PLAN-LB-71 and PLAN-LB-72
   landed), so record the lane version each run loaded: **LB-59 and LB-74 both loaded the
   PLAN-LB-71 text**, not PLAN-LB-72's, because the OpenCode install was not re-synced. Retire when

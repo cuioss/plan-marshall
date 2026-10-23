@@ -6,17 +6,19 @@ pr: #1839 (`e40f50aa1`, parent `58a2b31eb`, merge queue, base `main`)
 
 > Landing record for one shipped plan. Written by the `analyze` verb after verifying claims
 > against ground truth. A claim marked **(re-read)** was read again by the orchestrator in git,
-> the CI abstraction or the run's evidence files. A claim marked **(unverified)** rests on the
-> landing alone: the harness session store could not be read in this analysis (the read was
-> refused by the permission classifier), so every session-tree fact is a lead, not a finding.
-> Nothing below was executed except read-side git, `ci` and orchestrator verbs.
+> the CI abstraction or the run's evidence files. A claim marked **(store)** was read from the
+> OpenCode session database, opened read-only after the operator allowed it (the first attempt
+> was refused by the permission classifier). Only counts, tool names, command words and times
+> were read; no message text was reproduced. Nothing below was executed except read-side git,
+> `ci`, orchestrator verbs and read-only queries.
 
 ## Verdict
 
-**Grade: B− (provisional).** Runbook lane, `deepseek-v4.1-flash/high` (as reported, **unverified**).
+**Grade: B.** Runbook lane, `deepseek-v4.1-flash/high` on all four sessions of the tree **(store)**
+(root plus three self-review sub-agents, none killed), 8 h 37 min wall clock, $1.00.
 
-The work is real and the report holds up wherever the orchestrator could read the evidence
-(the session store excepted). The three
+The work is real and the report holds up against every piece of evidence the orchestrator could
+read, the session store included. The three
 new surfaces exist as described: the plan-less `read_open_issues` verb, the lane's `resolve`
 Sonar state plus `sonar-gate`, and the `step.sonar-roundtrip.*` landing facts. Every red log
 the landing cites exists and shows the failure it names **(re-read)**. All five review threads
@@ -45,9 +47,18 @@ scripts/sonar_provider.py` and `test_landing_completeness.py`. The shipped spec 
 
 ## Metrics and Anomalies
 
-- Tokens: `unknown`. The lane writes `unknown` because it measures none; the session store
-  could not be queried here, so the figure is **unobserved by this analysis too**.
-- Duration: not in the facts. Authored commits span 17:27 to 00:50 local, merge queue after.
+- Tokens: the landing wrote `total_tokens=unknown`; **the store holds them** **(store)**. Whole
+  tree: input 1,936,119, output 163,457, reasoning 127,126, cache read 179,827,200, cost $1.0042
+  (input + output = 2,099,576). Root 1,411,006 / 135,671 / 60,838, $0.8217; round 1 348,016 /
+  10,355 / 25,119; round 2 117,548 / 10,666 / 28,362; round 3 59,549 / 6,765 / 12,807. The fourth
+  runbook landing in a row that hides a measurable total (LB-78, LB-79, LB-85); PLAN-LB-86 D2 owns it.
+- Duration: 2026-10-22T15:14:33Z to 23:52:03Z (8 h 37 min) **(store)**; the longest quiet gap in
+  the root session is 49 minutes. One operator launch message, three question answers.
+- Server restart at 20:19:44Z **(store)**: the lane skill was loaded again at 20:20:09Z, 25
+  seconds later, and both loads are 40,846 characters. This is the first runbook landing
+  that re-read the lane text after a restart on its own. The loaded text best matches the
+  #1834 revision (81% line overlap, the OpenCode target rewrites the file), i.e. the
+  post-sync text without the Sonar sections, as expected.
 - `landing-check`: `complete: false`, `missing_keys` = `total_tokens` only. `effort` and
   `plugin_version` are now supplied, so PLAN-LB-78 D3's fix reached this run through the
   post-sync lane text. The remaining miss is the known collision (the lane's § 8 prescribes
@@ -58,8 +69,7 @@ scripts/sonar_provider.py` and `test_landing_completeness.py`. The shipped spec 
   "0.1"` beside `executor_version: 0.1.1986` **(re-read)**, so the lane copied what its stamp
   source reported. Lead: the stamp source truncates the bundle version. Not confirmed under
   OpenCode.
-- The `model` fact is a single scalar `deepseek-v4.1-flash/high`; whether it held for every
-  session is **unverified**.
+- The `model` fact holds: all four sessions are `deepseek-v4.1-flash` at variant `high` **(store)**.
 - Anomalies: `verify` at `bd6568a26` hit its 1776 s bound locally and ran in the split form
   (disclosed). CI's `verify / verify` was 1641 s on the merge-head run, the landing says 1612 s
   (immaterial).
@@ -84,7 +94,7 @@ scripts/sonar_provider.py` and `test_landing_completeness.py`. The shipped spec 
 
 ## Report Contradictions
 
-None found against the evidence the orchestrator could read:
+One small under-report and one hidden measurement; everything else matches:
 
 1. Guard log: the four refusal lines the landing claims (`16:08:08` R1, `16:35:56` R5,
    `17:05:49` R1, `17:32:22` R1) are in `guard.log`, each on a command that names the
@@ -93,9 +103,27 @@ None found against the evidence the orchestrator could read:
    **(re-read)**. The "two mine, two from sub-agents" split follows the session ids.
 2. Every sha the landing cites resolves, and the merge sha matches the PR **(re-read)**. Commit
    trailers were not checked.
-3. **Unverified:** the main-checkout edit that was reverted, the `ls`/`tail`/`wc` counts, the
-   lane text loaded and whether it was re-read after any restart, restarts and killed
-   sub-agents, and the tree's session count. All need the session store.
+3. **Guard attribution by session tree** **(store)**: the four sessions' ids match the four
+   refusal lines exactly (root: R5 and the commit-message R1; round 1: the `grep | head` R1;
+   round 2: the `test -f` R1). Round 3 has none. The four other lines in the window belong to
+   the LB-86 and LB-88 sessions. The landing's split is right.
+4. **Read-class shell calls** **(store)**: root 10 (`ls` 4, `tail` 5, `wc` 1); the landing says
+   `ls` "twice". Sub-agents: `grep` 1 and `test` 1 (both refused), `df` 2. Small under-report;
+   nothing like LB-79's 67.
+5. **Main-checkout edits** **(store)**: 14 edits to `workflow-integration-sonar/scripts/sonar.py`
+   in the main checkout between 15:21:44Z and 15:23:23Z, then the worktree's AGENTS.md notice at
+   15:23:45Z. Six edits have an exact inverse later; a seventh reverses a 1,606-character edit
+   with a 1,017-to-50-character edit whose net length cancels. Consistent with "reverted every
+   hunk"; the byte-level result cannot be re-derived from the store, and the landing says
+   `git status` was clean afterwards.
+6. **Operator questions** **(store)**: three `question` calls (16:34, 16:36, 17:56) match the
+   three the landing reports. Three `subagent` calls, all `completed`; no killed sub-agent.
+7. **PR bodies** **(store)**: the 23 `write` calls under `plans/NO_PLAN/work/ci-bodies/` use
+   the allocated `-default` file names, i.e. the path-allocate flow, not the hand-named bodies
+   of LB-79.
+8. **`total_tokens=unknown`** while the store holds the total (see Metrics).
+9. The sub-agents' `python3 …/execute-script.py` calls use the absolute executor path and
+   `--working-dir` the lane worktree: executor calls, not direct interpreter use.
 
 ## Reconciliation Actions
 
