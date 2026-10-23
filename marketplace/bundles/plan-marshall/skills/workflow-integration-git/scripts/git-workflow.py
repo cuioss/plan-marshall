@@ -2320,12 +2320,18 @@ def cmd_worktree_create(args):
         }
 
     if target.exists():
-        # Resume path, and it heals the same slot: a worktree created before this
+        # Resume path. It heals a MISSING slot — a worktree created before this
         # verb produced executors carries none, and reporting that state without
-        # filling it would leave every later run on the degraded routing path.
-        # The seam owns the "is this a real worktree" guard, so no write can land
-        # outside one whatever the caller passes.
-        executor_verdict = _produce_worktree_executor(target, args.plan_id)
+        # filling it would leave every later run on the degraded routing path —
+        # and touches nothing when one is already there: producing over a good
+        # slot would re-run the generator on every plain resume, and a transient
+        # failure would fall back to main's older executor and replace a surface
+        # the refresh verb had rebuilt. ``_already_moved_in_response`` guards the
+        # same decision the same way.
+        if executor_landed(worktree_executor_path(target)):
+            executor_verdict: dict[str, Any] = {'executor_in_worktree': 'present'}
+        else:
+            executor_verdict = _produce_worktree_executor(target, args.plan_id)
         return {
             'status': 'error',
             'plan_id': args.plan_id,

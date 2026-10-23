@@ -75,6 +75,29 @@ _SCRIPT_BODY = (
 # =============================================================================
 
 
+@pytest.fixture(autouse=True)
+def _scrub_git_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Clear inherited git location variables for the whole module.
+
+    ``_init_repo`` runs ``git init`` / ``config`` / ``add`` / ``commit`` against a
+    temporary repository. Git resolves those from ``GIT_DIR`` and reads the index
+    from ``GIT_INDEX_FILE``, so an inherited value — a hook exporting one is the
+    realistic case — would point the fixture's commands at the caller's
+    repository. Clearing them before every test also covers the child processes
+    the tests start, which inherit this environment.
+    """
+    for name in (
+        'GIT_DIR',
+        'GIT_WORK_TREE',
+        'GIT_COMMON_DIR',
+        'GIT_INDEX_FILE',
+        'GIT_OBJECT_DIRECTORY',
+        'GIT_ALTERNATE_OBJECT_DIRECTORIES',
+        'GIT_PREFIX',
+    ):
+        monkeypatch.delenv(name, raising=False)
+
+
 def _init_repo(repo: Path) -> None:
     """A real-git checkout with the canonical ``.plan`` layout, no marketplace."""
     subprocess.run(['git', 'init', '-q', '-b', 'main', str(repo)], check=True)
@@ -367,6 +390,25 @@ class TestWorktreeCreationProducesTheExecutor:
         assert payload['executor_in_worktree'] == 'present'
         assert executor.read_text(encoding='utf-8') == _CREATION_MARKER
 
+    def test_resume_leaves_a_usable_executor_alone(self, main_repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """A resume must not regenerate over — or copy main's executor onto — a good slot.
+
+        Re-running generation on every plain resume would be waste, and a
+        transient failure there would fall back to main's older surface and undo a
+        refresh this worktree had already taken.
+        """
+        _stub_generation(monkeypatch, _CREATION_MARKER)
+        created = _create_worktree()
+        executor = _worktree_executor(Path(created['worktree_path']))
+        calls = _stub_generation(monkeypatch, None)
+
+        payload = _create_worktree()
+
+        assert payload['error'] == 'worktree_exists'
+        assert payload['executor_in_worktree'] == 'present'
+        assert calls == [], 'the resume ran the production seam over a usable executor'
+        assert executor.read_text(encoding='utf-8') == _CREATION_MARKER
+
     def test_resume_without_a_plan_local_reports_absent_instead_of_writing(
         self, main_repo: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -465,27 +507,29 @@ class TestWorktreeExecutorRefresh:
     def test_a_failed_refresh_reports_no_regeneration_and_keeps_the_old_slot(
         self, main_repo: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """``executor_regenerated`` answers "did this call produce one", not "is one there".
+        """The PRODUCTION path: generation fails for real over a usable older executor.
 
-        A refresh that cannot regenerate over a usable older executor leaves the
-        slot present and stale. Reporting that as ``regenerated`` would claim work
-        the call did not do; reporting it as ``absent`` would send the run to the
-        degraded routing path for an executor that still dispatches.
+        The seam is restored to its real implementation after creation, so this
+        exercises the copy guard itself rather than a stub: the fixture has no
+        marketplace to generate from, main's executor exists (the copy WOULD
+        succeed), and the refresh must still leave the slot byte-identical and
+        report ``executor_regenerated: false``.
         """
+        seam_module = _live_prepare_execute()
+        real_generate = seam_module._generate_worktree_executor
         _stub_generation(monkeypatch, _CREATION_MARKER)
         created = _create_worktree()
         worktree = Path(created['worktree_path'])
-        _stub_generation(monkeypatch, None)
+        executor = _worktree_executor(worktree)
+        before = executor.read_text(encoding='utf-8')
+        monkeypatch.setattr(seam_module, '_generate_worktree_executor', real_generate)
 
         monkeypatch.setattr(git_workflow, '_resolve_worktree_path_for_plan', lambda _plan_id: (worktree, None))
         payload = git_workflow.cmd_worktree_executor_refresh(Namespace(plan_id=_PLAN_ID))
 
-        assert payload['executor_regenerated'] is False
+        assert payload['executor_regenerated'] is False, payload
         assert payload['executor_in_worktree'] == 'present'
-        assert 'generation exited 1' in payload['executor_detail']
-        # The old slot must survive: a refresh that falls back to main's copy
-        # would restore exactly the staleness it was asked to remove.
-        assert _worktree_executor(worktree).read_text(encoding='utf-8') == _CREATION_MARKER
+        assert executor.read_text(encoding='utf-8') == before, 'the refresh replaced the slot'
 
     def test_the_refresh_forbids_the_copy_fallback(self, main_repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """The verb calls the seam with ``allow_copy=False`` and leaves the slot alone.

@@ -478,6 +478,14 @@ def _copy_main_executor(worktree_path: Path, plan_id: str) -> tuple[bool, str]:
     return True, f'worktree executor copied from main ({main_executor} -> {wt_executor})'
 
 
+def _mtime_ns(path: Path) -> int | None:
+    """Return ``path``'s modification time in nanoseconds, or ``None`` when absent."""
+    try:
+        return path.stat().st_mtime_ns
+    except OSError:
+        return None
+
+
 def _generate_worktree_executor(worktree_path: Path, plan_id: str, *, allow_copy: bool = True) -> tuple[bool, str]:
     """Produce ``worktree_path/.plan/execute-script.py`` and confirm it on disk.
 
@@ -526,6 +534,11 @@ def _generate_worktree_executor(worktree_path: Path, plan_id: str, *, allow_copy
         return False, f'generator not found at {_GENERATE_EXECUTOR_PATH}; {copy_detail}'
 
     launch_detail: str | None = None
+    # The slot's state BEFORE the subprocess runs. On a refresh an older executor
+    # is already on disk, so "a file exists afterwards" cannot answer whether THIS
+    # call produced one — the generator's plugin-cache failure mode exits 0 having
+    # written nothing, and the pre-existing file would satisfy the landed test.
+    before_mtime = _mtime_ns(wt_executor)
     try:
         result = subprocess.run(
             [
@@ -547,13 +560,16 @@ def _generate_worktree_executor(worktree_path: Path, plan_id: str, *, allow_copy
             lines = (result.stderr or result.stdout or '').strip().splitlines()
             tail = lines[-1] if lines else f'exit {result.returncode}'
             launch_detail = f'generation exited {result.returncode}: {tail}'
-        elif _executor_landed(wt_executor):
-            # FIX 1: only report success after the file is confirmed on disk.
+        elif _executor_landed(wt_executor) and _mtime_ns(wt_executor) != before_mtime:
+            # FIX 1: only report success after the file is confirmed on disk AND
+            # newer than it was before this call — a file that was already there
+            # proves nothing about what this call wrote.
             return True, f'worktree executor generated at {wt_executor}'
         else:
-            # returncode 0 but no file landed (plugin-cache "exited 0, wrote
-            # nothing" condition) — do NOT report a generation that did not land.
-            launch_detail = f'generation exited 0 but no file landed at {wt_executor}'
+            # returncode 0 but no NEW file landed (the plugin-cache "exited 0,
+            # wrote nothing" condition) — do NOT report a generation that did not
+            # land, and do not let an older executor stand in for one.
+            launch_detail = f'generation exited 0 but wrote nothing new at {wt_executor}'
 
     # FIX 2: generation did not produce a usable executor — copy from main.
     if not allow_copy:
