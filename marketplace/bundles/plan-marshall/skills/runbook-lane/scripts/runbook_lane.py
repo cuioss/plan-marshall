@@ -631,7 +631,17 @@ class _BuildCommandUnresolvable(Exception):
         self.canonicals = canonicals
 
 
-def _resolve_build(project_dir: Path) -> tuple[dict[str, Any], dict[str, Any]]:
+class _ArchitectureUnavailable(Exception):
+    """The project's architecture is missing or unreadable.
+
+    A DIFFERENT fact from "the architecture does not publish this canonical": it
+    says nothing was resolved at all, so reporting it as
+    ``build_command_unresolvable`` would name a project defect where the cause is
+    an absent crawl.
+    """
+
+
+def _resolve_build(project_dir: Path) -> tuple[dict[str, Any], dict[str, Any], list[str]]:
     """Resolve the lane's build commands through the project architecture.
 
     Each canonical is resolved on its own through the same seam
@@ -657,12 +667,24 @@ def _resolve_build(project_dir: Path) -> tuple[dict[str, Any], dict[str, Any]]:
     :class:`_BuildCommandUnresolvable`, naming the gate canonicals. There is no
     composed fall-back, no default build, and no synthesized part.
 
-    Returns ``(build, probed)``: the build command map, and the architecture's
-    resolved ``verify`` record, so the caller can read the timeout stamp off the
-    same resolution instead of re-deriving the build system.
+    Returns ``(build, probed, missing_gate)``: the build command map, the
+    architecture's resolved ``verify`` record (so the caller can read the
+    timeout stamp off the same resolution instead of re-deriving the build
+    system), and the gate canonicals this project does NOT publish — named
+    rather than silently absent.
     """
-    from _architecture_core import DataNotFoundError, ModuleNotFoundInProjectError
+    from _architecture_core import DataNotFoundError, ModuleNotFoundInProjectError, iter_modules
     from _cmd_client_query import resolve_command
+
+    # A missing or unreadable architecture answers "architecture unavailable",
+    # never "this project publishes no gate": the latter would name a build
+    # defect for a crawl that never ran.
+    try:
+        modules = list(iter_modules(str(project_dir)))
+    except Exception as exc:
+        raise _ArchitectureUnavailable(f'{type(exc).__name__}: {exc}') from exc
+    if not modules:
+        raise _ArchitectureUnavailable('no modules')
 
     # The exceptions ``resolve_command`` uses for "this project does not publish
     # that canonical"; the same trio ``_cmd_client_handlers`` treats as absence.
@@ -695,12 +717,19 @@ def _resolve_build(project_dir: Path) -> tuple[dict[str, Any], dict[str, Any]]:
     build: dict[str, Any] = {canonical: record['executable'] for canonical, record in resolved.items()}
     # The split form exists because ``verify`` may outlive the shell budget; its
     # parts are the architecture's own commands for the same build system, in a
-    # fixed order, filtered to the ones this project publishes.
-    build['split'] = [canonical for canonical in _SPLIT_FORM if canonical in resolved]
+    # fixed order, filtered to the ones this project publishes. When no
+    # test-conditional part resolved, the "split" is the gate canonical alone —
+    # Maven's ``quality-gate`` IS ``verify -Ppre-commit`` — so it cannot be
+    # shorter than ``verify`` and is answered EMPTY rather than as a duplicate.
+    split = [canonical for canonical in _SPLIT_FORM if canonical in resolved]
+    if not any(canonical in resolved for canonical in _TEST_CONDITIONAL_CANONICALS):
+        split = []
+    build['split'] = split
     # ``verify`` when published, else the gate canonical the project has. The
     # caller reads the timeout stamp off it, so it must be a gate canonical.
     probed = resolved.get('verify') or resolved[_GATE_CANONICALS[0]]
-    return build, probed
+    missing_gate = [canonical for canonical in _GATE_CANONICALS if canonical not in resolved]
+    return build, probed, missing_gate
 
 
 def _augment_resolved(probed: dict[str, Any], project_dir: Path) -> dict[str, Any]:
@@ -943,7 +972,13 @@ def _resolve_runtime_stamp(harness: str) -> tuple[dict[str, str], str | None]:
     executor_version = info.get('executor_version')
     if isinstance(executor_version, str) and executor_version.strip():
         stamp['executor_version'] = executor_version.strip()
-    return stamp, None
+    # The collector's own omission reason travels beside the stamp: a fact it
+    # could not measure (an OpenCode run with no session id) is `unknown` WITH a
+    # reason, never a silent unknown. A self-reported model is not substituted —
+    # only a measurement is a stamp.
+    omission = info.get('model_omission_reason')
+    reason = omission.strip() if isinstance(omission, str) and omission.strip() else None
+    return stamp, reason
 
 
 #: The CI directory a workflow lives under, relative to the project root. A
@@ -1277,6 +1312,30 @@ def _classify_path(
     return 'docs-only' if _is_project_doc(path, doc_surfaces) else 'buildable'
 
 
+def cmd_build_routing(args: argparse.Namespace) -> dict[str, Any]:
+    """Decide whether a routed build may be submitted or must run in-process.
+
+    A routed job re-runs the WORKTREE's own ``.plan/execute-script.py``, and the
+    routing submits without checking that it exists — so an absent executor ends
+    the job terminal (exit 2) with no in-process fallback. Worktree creation does
+    not supply one, so the lane asks this before its first routed build:
+    ``auto`` means submit normally; ``in_process`` carries the named reason the
+    run records, and the mode it passes for that build.
+    """
+    worktree = Path(getattr(args, 'worktree', None) or '.').resolve()
+    executor = worktree / '.plan' / 'execute-script.py'
+    result: dict[str, Any] = {
+        'status': 'success',
+        'operation': 'build-routing',
+        'worktree': worktree.as_posix(),
+        'execution_mode': 'auto',
+    }
+    if not executor.is_file():
+        result['execution_mode'] = 'in_process'
+        result['reason'] = 'executor_absent_from_worktree'
+    return result
+
+
 def cmd_build_classify(args: argparse.Namespace) -> dict[str, Any]:
     """Classify the changed paths so the build gate can skip a docs-only change.
 
@@ -1585,7 +1644,7 @@ def cmd_resolve(args: argparse.Namespace) -> dict[str, Any]:
     try:
         marshal = _read_marshal(project_dir)
         required, optional = _resolve_bots(marshal)
-        build, probed = _resolve_build(project_dir)
+        build, probed, missing_gate = _resolve_build(project_dir)
         build_timeout_seconds = _resolve_build_timeout(probed, project_dir)
         base_branch = _resolve_base_branch(marshal)
         deliverable_state = _resolve_deliverable_skills(spec)
@@ -1593,13 +1652,24 @@ def cmd_resolve(args: argparse.Namespace) -> dict[str, Any]:
         # The read's budget is resolved only for a project that will make the read:
         # a broken ceiling seam must not block a lane with no Sonar read to make.
         sonar_ce_wait = _resolve_sonar_ce_wait(project_dir) if sonar_state['state'] == 'configured' else None
+    except _ArchitectureUnavailable as exc:
+        # Nothing was resolved because the architecture itself is absent or
+        # unreadable: naming that cause keeps it distinct from a project that
+        # publishes no gate canonical.
+        return {
+            'status': 'error',
+            'error': 'architecture_unavailable',
+            'message': str(exc),
+            'spec': args.spec,
+            'plan': plan_id,
+        }
     except _BuildCommandUnresolvable as exc:
         # Fail closed and name the gate canonicals that could not be resolved:
         # the lane never falls back to a composed string or to a default build.
         return {
             'status': 'error',
             'error': 'build_command_unresolvable',
-            'canonicals': ', '.join(exc.canonicals),
+            'canonicals': list(exc.canonicals),
             'spec': args.spec,
             'plan': plan_id,
         }
@@ -1664,6 +1734,12 @@ def cmd_resolve(args: argparse.Namespace) -> dict[str, Any]:
         'sonar': sonar_state['state'],
         'skills_note': deliverable_state['skills_note'],
     }
+    # A project can publish only one gate canonical (npm publishes each
+    # conditionally), so the missing one is NAMED rather than silently dropped.
+    # Presence-gated: an empty population would read like a parsed-but-empty
+    # answer on every fully-populated project.
+    if missing_gate:
+        resolved['build_missing_canonicals'] = list(missing_gate)
     # The read's budget rides only when there is a read to make: an empty row
     # would read like a parsed-but-empty answer on a project without Sonar.
     if sonar_ce_wait is not None:
@@ -1718,6 +1794,17 @@ def main() -> int:
         dest='lane_dir',
         default=None,
         help="The lane skill's own directory (default: this script's skill dir)",
+    )
+
+    routing_parser = subparsers.add_parser(
+        'build-routing',
+        help='Decide whether a routed build may be submitted or must run in-process',
+        allow_abbrev=False,
+    )
+    routing_parser.add_argument(
+        '--worktree',
+        required=True,
+        help='The worktree the build will run against',
     )
 
     classify_parser = subparsers.add_parser(
@@ -1803,6 +1890,9 @@ def main() -> int:
         return 0
     if args.command == 'executor-skew':
         output_toon(cmd_executor_skew(args))
+        return 0
+    if args.command == 'build-routing':
+        output_toon(cmd_build_routing(args))
         return 0
     if args.command == 'build-classify':
         data = cmd_build_classify(args)

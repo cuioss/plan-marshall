@@ -667,7 +667,7 @@ def test_resolve_unresolvable_gate_canonical_fails_closed_and_names_it(tmp_path:
 
     assert data['status'] == 'error'
     assert data['error'] == 'build_command_unresolvable'
-    assert data['canonicals'] == 'quality-gate, verify'
+    assert data['canonicals'] == ['quality-gate', 'verify'], 'the canonicals are a list, not a joined string'
     assert 'build' not in data
 
 
@@ -690,6 +690,7 @@ def test_resolve_accepts_a_project_that_publishes_only_one_gate_canonical(tmp_pa
     assert data['status'] == 'success', data
     assert set(data['build']) == {'verify', 'module-tests', 'split'}
     assert data['build']['split'] == ['module-tests']
+    assert data['build_missing_canonicals'] == ['quality-gate']
 
 
 def test_resolve_pyproject_commands_stay_on_the_pyproject_wrapper(tmp_path: Path) -> None:
@@ -731,7 +732,9 @@ def test_resolve_omits_a_test_conditional_canonical_the_project_does_not_publish
 
     assert data['status'] == 'success', data
     assert set(data['build']) == {'quality-gate', 'verify', 'split'}
-    assert data['build']['split'] == ['quality-gate']
+    # No test-conditional part resolved, so the split cannot be shorter than
+    # `verify` and is answered empty.
+    assert data['build']['split'] == []
 
 
 # -----------------------------------------------------------------------------
@@ -909,16 +912,17 @@ def _fenced_blocks(section: str) -> list[str]:
 
 
 def test_skill_does_not_forbid_the_build_daemon() -> None:
-    """The old blanket prohibition and its wrong premise are gone."""
+    """The old blanket prohibition is gone and the executor premise is true."""
     text = _skill_text()
     lowered = text.lower()
     assert 'Never use the daemon' not in text
     assert 'never drop `--execution-mode in_process`' not in text
     assert 'worktree has no executor' not in lowered
-    assert 'has no executor' not in lowered
-    # The positive premise, not just the absence of the wrong one: a routed job
-    # re-runs the worktree's OWN executor, which worktree creation supplies.
+    # The positive premise: a routed job re-runs the worktree's OWN executor, and
+    # the lane checks for it before the first routed build because creation does
+    # NOT supply it.
     assert "the worktree's own `.plan/execute-script.py`" in text
+    assert 'does NOT supply' in text
 
 
 def test_skill_does_not_require_a_test_conditional_canonical() -> None:
@@ -1077,14 +1081,7 @@ def test_resolve_opencode_with_guard_js_reports_present(tmp_path: Path) -> None:
 
 def test_resolve_unresolvable_build_is_an_error(tmp_path: Path) -> None:
     """A project whose architecture resolves no build command fails closed."""
-    _write(
-        tmp_path / '.plan' / 'marshal.json',
-        json.dumps(
-            {'plan': {'phase-6-finalize': {'steps': {'plan-marshall:automatic-review': {'required_bots': 'x'}}}}}
-        ),
-    )
-    spec = tmp_path / '.plan' / 'orchestrator' / 'demo-epic' / 'plans' / 'PLAN-LB-66-runbook-lane-skill.md'
-    _write(spec, '# staged spec\n')
+    spec = _seed_fixture(tmp_path, required_bots='x', commands={})
     data = _run_resolve(spec, tmp_path)
     assert data['status'] == 'error'
     assert data['error'] == 'build_command_unresolvable'
@@ -1850,6 +1847,154 @@ def test_executor_skew_cannot_check_an_unreadable_executor(tmp_path: Path) -> No
 
     assert verdict == 'could_not_check'
     assert verdict != 'match', 'an unreadable executor is read as no skew'
+
+
+# =============================================================================
+# PLAN-LB-73 D4 — the build gate and resolve state only what is true
+# =============================================================================
+
+
+def test_skill_no_longer_claims_worktree_creation_supplies_the_executor() -> None:
+    text = _skill_text()
+    setup = _section('## 2. Set up the worktree')
+    gate = _section('## 4. Build gate')
+
+    assert 'which worktree creation supplies' not in text, 'the false executor premise survives'
+    assert 'supplies' not in setup or 'does NOT supply' in setup, 'section 2 still claims creation supplies it'
+    assert 'before the first routed build' in gate.lower(), 'section 4 carries no pre-routing check'
+    assert 'build-routing' in gate
+    assert 'executor_absent_from_worktree' in gate
+
+
+def test_build_routing_answers_in_process_when_the_worktree_has_no_executor(tmp_path: Path) -> None:
+    """A routed job whose executor is absent is recorded and run in-process.
+
+    The routed command would end terminal (exit 2) with no fallback; the lane
+    asks this before it submits, so the failure never happens.
+    """
+    module = load_script_module('plan-marshall', _SKILL_NAME, 'runbook_lane.py', register=False)
+    worktree = tmp_path / 'worktree'
+    (worktree / '.plan').mkdir(parents=True)
+
+    data = module.cmd_build_routing(argparse.Namespace(worktree=str(worktree)))
+
+    assert data['execution_mode'] == 'in_process'
+    assert data['reason'] == 'executor_absent_from_worktree'
+
+
+def test_build_routing_leaves_a_supplied_executor_on_auto(tmp_path: Path) -> None:
+    module = load_script_module('plan-marshall', _SKILL_NAME, 'runbook_lane.py', register=False)
+    worktree = tmp_path / 'worktree'
+    (worktree / '.plan').mkdir(parents=True)
+    _write(worktree / '.plan' / 'execute-script.py', '# executor\n')
+
+    data = module.cmd_build_routing(argparse.Namespace(worktree=str(worktree)))
+
+    assert data['execution_mode'] == 'auto'
+    assert 'reason' not in data
+
+
+def test_skill_states_routing_once_and_the_no_verify_rule() -> None:
+    setup = _section('## 2. Set up the worktree')
+    gate = _section('## 4. Build gate')
+    merge = _section('## 7. Merge gate')
+
+    assert '--execution-mode' not in setup, 'section 2 still prescribes an execution mode'
+    assert 'preflights again per build' in setup, 'section 2 no longer explains the down-setup routing'
+    assert 'runs in-process otherwise' in gate, 'section 4 lost the default-routing rule'
+    assert 'routed build also holds the call' in gate, 'section 4 omits the routed-build shell-timeout rule'
+    assert 'publishes no `verify`' in gate, 'section 4 omits the no-verify cross-reference'
+    assert 'publishes no `verify`' in merge, 'section 7 does not say what replaces verify'
+    assert 'split form' in merge, 'section 7 does not name the bound-expiry run'
+
+
+def test_resolve_names_the_missing_gate_canonical(tmp_path: Path) -> None:
+    cases = (('quality-gate', 'verify'), ('verify', 'quality-gate'))
+    for present, missing in cases:
+        case = tmp_path / present
+        commands = {present: _PYPROJECT_EXEC.format(args=present)}
+        spec = _seed_fixture(case, required_bots='some-bot', commands=commands)
+
+        data = _run_resolve(spec, case)
+
+        assert data['status'] == 'success', data
+        assert data['build_missing_canonicals'] == [missing], f'{present}-only fixture lost {missing}'
+
+
+def test_resolve_reports_a_missing_architecture_as_such(tmp_path: Path) -> None:
+    """No architecture is an architecture problem, never an unresolvable build."""
+    _write(
+        tmp_path / '.plan' / 'marshal.json',
+        json.dumps(
+            {'plan': {'phase-6-finalize': {'steps': {'plan-marshall:automatic-review': {'required_bots': 'x'}}}}}
+        ),
+    )
+    spec = tmp_path / '.plan' / 'orchestrator' / 'demo-epic' / 'plans' / 'PLAN-LB-66-x.md'
+    _write(spec, '# staged spec\n')
+
+    data = _run_resolve(spec, tmp_path)
+
+    assert data['status'] == 'error'
+    assert data['error'] == 'architecture_unavailable', data
+    assert data['error'] != 'build_command_unresolvable'
+
+
+def test_resolve_maven_split_is_empty_when_the_gate_cannot_be_shorter(tmp_path: Path) -> None:
+    """Maven's root gate IS ``verify -Ppre-commit``, so there is no shorter split."""
+    prefix = 'python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args'
+    commands = {'quality-gate': f'{prefix} "verify -Ppre-commit"'}
+    spec = _seed_fixture(tmp_path, build_systems=('maven',), required_bots='some-bot', commands=commands)
+
+    data = _run_resolve(spec, tmp_path)
+
+    assert data['status'] == 'success', data
+    assert data['build']['split'] == []
+
+
+def test_resolve_opencode_without_a_session_id_returns_the_omission_reason(tmp_path: Path, monkeypatch) -> None:
+    """A stamp nothing measured travels with the collector's own reason."""
+    for name in ('ANTIGRAVITY_AGENT', 'OPENCODE', 'CLAUDE_CODE_SESSION_ID', 'OPENCODE_SESSION_ID', 'MODEL_NAME'):
+        monkeypatch.delenv(name, raising=False)
+    _write(
+        tmp_path / '.plan' / 'local' / 'harness' / 'opencode.json',
+        json.dumps({'schema_version': 1, 'harness': 'opencode'}),
+    )
+    monkeypatch.setenv('OPENCODE_DB_PATH', str(tmp_path / 'absent.db'))
+    monkeypatch.setenv('PLAN_MARSHALL_HOME', str(tmp_path / '.machine-home'))
+    spec = _seed_fixture(tmp_path, executable=_PYPROJECT_EXEC, required_bots='x')
+    module = load_script_module('plan-marshall', _SKILL_NAME, 'runbook_lane.py', register=False)
+
+    data = module.cmd_resolve(argparse.Namespace(spec=str(spec), project_dir=str(tmp_path)))
+
+    assert data['status'] == 'success', data
+    assert data['model'] == 'unknown'
+    assert data['runtime_stamp_reason'] == 'no_session_id'
+
+
+def test_progress_protocol_requires_the_lane_text_reread() -> None:
+    progress = _raw_section('## 0a. Progress file and resume (do this first, every session)')
+    template = next((block for block in _fenced_blocks(progress) if 'setup: worktree' in block), '')
+
+    for trigger in ('compaction', 'restart', 'idle gap'):
+        assert trigger in progress, f'section 0a does not require a re-read after a {trigger}'
+    assert 're-read:' in template, 'the progress template carries no re-read slot'
+    assert 'timestamp' in template
+
+
+def test_landing_rule_check_counts_the_run_own_actions() -> None:
+    landing = _section('## 8. Landing message (the last step, after the merge)')
+
+    for phrase in (
+        'read-class',
+        'routed build',
+        'operator message',
+        'model switch',
+        'session tree',
+        'killed sub-agent',
+        're-dispatch',
+        'guard log alone',
+    ):
+        assert phrase in landing, f'section 8 does not name {phrase!r} in its rule check'
 
 
 def test_extra_buildable_globs_drops_a_block_indicator_and_unwraps_quotes() -> None:

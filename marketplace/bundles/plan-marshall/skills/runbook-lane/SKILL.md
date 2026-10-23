@@ -60,6 +60,18 @@ executor through the shared `plugin_registry` reader rather than parsing it. It 
 `skew` or `could_not_check` and names both versions; `skew` also carries the remedy. The lane runs it
 before `resolve` (section 0), because a stale executor's own `resolve` cannot perform the check.
 
+### build-routing
+
+```bash
+python3 .plan/execute-script.py plan-marshall:runbook-lane:runbook_lane build-routing \
+  --worktree {worktree}
+```
+
+Decides whether the next build may be submitted to the daemon or must run in-process, from whether
+the worktree carries its own `.plan/execute-script.py`. It answers `auto` (submit with no execution
+flag) or `in_process` with the `executor_absent_from_worktree` reason. Section 4 runs it before the
+first routed build.
+
 ### build-classify
 
 ```bash
@@ -188,8 +200,9 @@ value.
 
 ## 0a. Progress file and resume (do this first, every session)
 
-**Re-read this skill in full** at every session start, after every server restart and after every
-context compaction. It can change during a run; the current version binds.
+**Re-read this skill in full** at every session start, after every server restart, after every
+context compaction and after any idle gap. It can change during a run; the current version binds.
+Record the re-read in the progress file with its timestamp and what triggered it.
 
 **Check for a resume first.** If `{progress_file}` exists, this session is a resume:
 
@@ -207,6 +220,7 @@ item below and before starting the next. One line per entry, newest last:
 ```text
 setup: worktree {worktree}, branch {branch}, pushed
 build-server: {ready|disabled|down}{ (reason)}; fallback: {none|in_process|degraded}, {reason or none}
+re-read: lane text loaded at {timestamp} ({session start|compaction|restart|idle gap})
 D{n} hypothesis: {claim} — confirmed|refuted, {file:line}
 D{n} test: {test name} — order {test-first|mutation-after|none}; failing run {commit} {output identifier}; passed at {sha}
 D{n} done: commit {sha}
@@ -377,10 +391,10 @@ is submitted to the build daemon.
      default routing, which preflights again per build, so the `mechanism` a build result reports is
      the authority for how THAT build ran — record it (a daemon that recovered mid-run can route).
    - `ready` — routing is available. A routed job re-runs the worktree's own `.plan/execute-script.py`,
-     which worktree creation supplies: that executor is what the daemon uses, never the main
-     checkout's. A missing executor is a worktree defect, not a routing reason — record
-     `executor_absent_from_worktree`, report it, and run that build in-process with
-     `--execution-mode in_process` so the gate still runs.
+     never the main checkout's. Worktree creation does NOT supply it: its `_materialize_local_dir`
+     creates only `.plan/local`, and the executor is moved in by `prepare_execute`, which this lane
+     never runs. Section 4 therefore runs the `build-routing` check before the first routed build and
+     answers `in_process` with `executor_absent_from_worktree` when it is absent.
 
 ## 3. Implement, deliverable by deliverable
 
@@ -415,9 +429,12 @@ publishes no test part supplies no `{build.module-tests}`:
 ```
 
 - **Routing.** `auto` submits the job to the build daemon when the setup preflight found it `ready`,
-  and runs in-process otherwise. A routed job re-runs the worktree's own executor; the
-  `executor_absent_from_worktree` fallback from setup applies only when that executor is genuinely
-  missing, and is recorded with its reason. The daemon applies its OWN supervisory bound, which
+  and runs in-process otherwise. Before the first routed build, run
+  `python3 .plan/execute-script.py plan-marshall:runbook-lane:runbook_lane build-routing --worktree {worktree}`:
+  `auto` means submit with no execution flag; `in_process` means pass `--execution-mode in_process`
+  for that build and record the `executor_absent_from_worktree` reason it names, so the gate still
+  runs instead of ending terminal on an executor worktree creation never supplied. A routed job
+  re-runs the worktree's own executor. The daemon applies its OWN supervisory bound, which
   `--timeout` can only raise; a bound expiry comes back as `timeout` naming `timeout_used_seconds`
   and `timeout_source`, and the client's rules for it are cited, not restated. Record a bound
   expiry and continue with the split form below rather than re-submitting the same bound.
@@ -431,9 +448,11 @@ publishes no test part supplies no `{build.module-tests}`:
   bounded wait — are stated in `build-server-client/SKILL.md` and bind here as written, not
   restated. A second concurrent submission is the case that client cannot see: two routed builds
   from one worktree can interleave, and a result can carry its sibling job's counts.
-- **Shell timeout, in-process fallback only:** an in-process build holds the shell call for its whole
-  duration. Give each call the shell tool's `timeout` parameter, set at or above the build's own
-  timeout.
+- **Shell timeout:** an in-process build holds the shell call for its whole duration, and a routed
+  build also holds the call — its wait is bounded and re-polled inside the same call, never
+  backgrounded. Give each call the shell tool's `timeout` parameter, set at or above the build's own
+  timeout; on a harness whose default shell timeout is shorter than the build, raise that parameter
+  or run the split form below. The routing choice does not shorten the call.
   - If the tool cannot wait that long, run the gate's parts as separate calls, in the order
     `{build.split}` states, running each canonical the resolve result supplies — for example
     `{build.quality-gate}`, `{build.test-compile}` and `{build.module-tests}` where the project
@@ -444,7 +463,10 @@ publishes no test part supplies no `{build.module-tests}`:
     publishes them conditionally, so the resolve result carries at least one; a project that
     resolves neither has already failed `resolve`. Where `split` names nothing, run the gate
     canonical the resolve result supplies — `{build.quality-gate}` where supplied, otherwise
-    `{build.verify}` — because the project publishes no separable part.
+    `{build.verify}` — because the project publishes no separable part. Where the only candidate
+    parts are gate canonicals, the split cannot be shorter than `verify` (Maven's `quality-gate` IS
+    `verify -Ppre-commit`), so `resolve` answers an empty `split` and the lane runs the gate
+    canonical itself.
   - A daemon-routed build is waited on in the same call, never moved to the background.
 - **Read the result, not the exit code.** The TOON must show `status: success` and an empty
   `errors[]`. Open the `log_file` it names for the test summary.
@@ -473,6 +495,9 @@ publishes no test part supplies no `{build.module-tests}`:
   `{build.module-tests}` where the resolve result supplies it, plus `{build.test-compile}` where the
   project publishes one; a project that supplies neither is gated by the gate canonical it
   publishes. Record the sha of each run; a head that was not tested is not a green head.
+- **A single gate canonical is a complete gate.** The merge gate's `verify` condition (section 7)
+  names what replaces it when the project publishes no `verify` or the routed run hit the daemon's
+  bound.
 - **Failures that already fail on the base branch:** environment-dependent tests can fail in a
   project's local module-tests run. They are not yours. Only a failure in a module you touched, or
   one the base branch does not show, is yours.
@@ -586,7 +611,10 @@ Merge only when all of these hold:
   4. **every other gate condition holds on the current head** — every reviewer that is not
      quota-limited reviewed it, every comment is handled, the build gate is green, CI is green.
 - Every comment is handled.
-- `verify` (the full build, step 4) is green on the current head.
+- `verify` (the full build, step 4) is green on the current head. Where the project publishes no
+  `verify`, the gate canonical it does publish is green instead — a single gate canonical is a
+  complete gate (section 4). Where the routed `verify` hit the daemon's supervisory bound, the split
+  form's parts are the run that must be green.
 - CI is green on the current head.
 - The Sonar state of the current head admits the merge: `sonar-gate` reports `merge_allowed: true`
   on a read taken after the last push — its open new-code issue count is `0` confirmed, or every
@@ -730,9 +758,14 @@ step.sonar-roundtrip.open_issue_rules={rules left open|none|unknown|n/a}
      harness offered no question tool at all, this section says `no question tool was available`. If
      no question was needed and none was asked, write "none asked".
   7. **Rule check** — every section 1 rule that you or a sub-agent did not keep, and every guard
-     refusal: read `{guard_log}` (the path `resolve` returns) for this run's sessions and list each
-     line. "All kept" is allowed only when that log has no line for the run — and never on a harness
-     whose resolve result reported `guard: none`.
+     refusal. The check counts the run's OWN actions, not only what the guard recorded: every shell
+     file operation the run issued — the read-class ones included — every routed build including a
+     failed one, and every operator message including a model switch. Read `{guard_log}` (the path
+     `resolve` returns) for this run's sessions; a count taken from the guard log alone is labelled
+     as such. Attribute a refusal by the run's own session tree, never by a time window, and list
+     every restart, every killed sub-agent and every re-dispatch with what it re-ran. "All kept" is
+     allowed only when the log has no line for the run — and never on a harness whose resolve
+     result reported `guard: none`.
   8. **Build server** — the setup preflight's state (`ready`, `disabled` or `down`, with its reason),
      the fallback each build used and why (`degraded` with its `reason`, or
      `executor_absent_from_worktree`), and any `killed` job with its disposition. Add any
