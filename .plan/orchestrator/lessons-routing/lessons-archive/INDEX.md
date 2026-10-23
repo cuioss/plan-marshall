@@ -401,6 +401,8 @@ No fresh code re-verification was performed: filed items rest on the senders' ow
 | `lessons-routing-056` | high | corpus `2026-10-13-07-002` | Free-text placeholders in documented commands are not shell-quoted | partially shipped (LB-37) |
 | `lessons-routing-057` | low | pm 401 | Domain content (`pm-documents`): "declared once" is a claim about every consumer | none |
 
+**Archive-file numbering.** The destination allocator numbered only messages it actually wrote: `044`, `045`, `046`, then `047`..`057` (13 messages; `-047` was never allocated because the draft of that number was withdrawn). The archive files under `filed-live-blockers/` keep the DRAFT numbers, so from `048` onwards the filename is one higher than the message it carries: file `048` → message `047`, `049` → `048`, …, `058` → `057`. The message column above is authoritative.
+
 ### `medium/` (67 sources, grouped by cluster; not filed)
 
 | Sources | Subject |
