@@ -135,15 +135,21 @@ derive, for rows still live.
   introduces" Open Defect (PLAN-LB-85, PLAN-LB-88). Overlap prompt answered 2026-10-23: **hold until PLAN-LB-73 lands** (4 shared
   files with it). **Unblocked 2026-10-23: the PLAN-LB-73 landing has arrived (#1843), so the shared surface is no longer in flight.**
   PLAN-LB-73's own run is the live evidence for the defect this plan fixes: every build answered
-  `executor_absent_from_worktree` and ran `in_process`. **Started by the operator 2026-10-23 (row `running`).**
-  No lane worktree existed under `.plan/local/worktrees/` at the moment the start was recorded — noted, not treated as a
-  fault: the lane creates it during setup, and this plan's whole subject is what that setup must also produce.
+  `executor_absent_from_worktree` and ran `in_process`. **Started by the operator 2026-10-23 (row `running`); its lane
+  worktree `lb-92-lane-worktree-executor` now exists.** No worktree was present at the moment the start was recorded —
+  expected, since the lane creates it during setup, and this plan's whole subject is what that setup must also produce.
 
 - **PLAN-LB-53** (staged 2026-10-23, WS-01, plan-marshall lane) — **emitted 2026-10-23, then held back by the operator
   the same day: three plans are already running and the fourth slot was not taken.** The gate admitted it without a
   prompt — its only remaining overlap is a single file (`manage-status/scripts/_cmd_lifecycle.py` with LB-91), which is
   below the multi-file threshold. Nothing is wrong with the plan; the decision is capacity, so the row stays `staged`
   and sequenced rather than parked. Its emit form for this harness is the plan-marshall lane's OpenCode command.
+
+- **PLAN-LB-80** (staged 2026-10-23, WS-01, runbook lane) — **started by the operator 2026-10-23 (row `running`).**
+  `lb-76-completion`, the fix-forward for PLAN-LB-76's residue: the repository skill veto fails open on every
+  unreadable-configuration path, a bundle-qualified exclusion removes another bundle's bare skill, module qualification
+  still does not bind the architecture path, and four enrich/query verbs bypass the veto (see the PLAN-LB-76 residue
+  entry below, which this plan owns). Admitted with `max_shared 0` against everything in flight.
 
 - **Parked by the focus rule (2026-10-23, operator-accepted split):** PLAN-LB-87 (token recording), LB-84, LB-69, LB-89,
   LB-83, LB-75, LB-41, LB-46, LB-51, LB-57. They stay in the corpus and resume on the surface they declare. Blocking set kept
@@ -400,20 +406,21 @@ derive, for rows still live.
 
 ## Decisions
 
-- 2026-10-23 — **PLAN-LB-53 held back by the operator; the fourth slot stays empty.** The plan was emitted from a clean
+- 2026-10-23 — **PLAN-LB-53 held back by the operator; PLAN-LB-80 took the slot instead.** The plan was emitted from a clean
   gate verdict (declarative surface, determinate comparison, one shared file — below the prompt threshold), and the
   operator declined to start it with three plans already running. Recorded as a capacity decision, not a gate refusal:
-  the row stays `staged`, sequenced, and re-emittable as-is. Consequence for the next `next`/`analyze` emit: the
-  `N − R` slot count is advisory capacity, not a mandate — with `parallelization_scope` 4 and three in flight, one slot
-  remains open and unfilled by choice until a landing frees work or the operator asks for it.
+  the row stays `staged`, sequenced, and re-emittable as-is. **The operator then started PLAN-LB-80 instead the same day**,
+  which fills the epic to `parallelization_scope` 4 of 4 — so the `N − R` slot count is advisory capacity, not a mandate,
+  and the operator, not the knob, decides which admitted candidate takes a free slot.
 - 2026-10-23 — **Both emitted plans started by the operator; the epic is at its concurrency ceiling.** PLAN-LB-92
   (runbook) and PLAN-LB-43 (plan-marshall) were started from the block `analyze` emitted, and both rows are now `running`
   on the operator's confirmation — the emit≠running invariant is intact: the orchestrator never asserted a start it had not
-  been told about. With LB-91 still running that is **3 of `parallelization_scope` 4 slots occupied, so one slot is
-  free** — the block below fills it or states why it cannot. LB-55, LB-82, LB-90 and LB-53 stay staged behind the overlap
-  prompt; LB-58 and LB-80 stay admitted and unemitted. Note: neither new plan's worktree existed under
-  `.plan/local/worktrees/` when the starts were recorded — LB-43's is created at phase-1 init, and LB-92 is the plan whose
-  subject is making worktree setup produce an executor, so the absence is expected rather than evidence against the start.
+  been told about. With LB-91 still running that made **3 of `parallelization_scope` 4 slots occupied**; PLAN-LB-80 has
+  since been started too, so the epic now stands at **4 of 4**. LB-55, LB-82 and LB-90 stay staged behind the overlap
+  prompt; LB-58 stays admitted and unemitted. Note: neither new plan's worktree existed under
+  `.plan/local/worktrees/` when the starts were first recorded — LB-43's is created at phase-1 init, and LB-92's at lane
+  setup. **Both now exist** (`lb-43-consumer-leaf-workflow-resolution`, `lb-92-lane-worktree-executor`), so the starts are
+  corroborated on disk rather than resting on the operator's word alone.
 - 2026-10-23 — **The PLAN-LB-73 landing was reconciled from the inbox, not from a paste.** The drain-completeness check
   reported `complete: false` on `total_tokens` alone, which the ruling above puts out of scope, so no defect was opened. The
   corroboration that mattered: merge sha `3873b6695` on `origin/main`, both CodeRabbit finding rounds at 10:47:35Z and
