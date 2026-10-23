@@ -559,11 +559,11 @@ Downloads the raw failing-job log for a single workflow run, keyed by `run_id`.
 | CLI invocation | `gh run view {run_id} --log-failed` | `glab ci trace {run_id}` |
 | Source | Failed-job log lines for the run | Job trace for the run |
 
-The downloaded raw log is written to `artifacts/ci-runs/{run_id}/{slug}.log`, where `{slug}` is the failing check's name slugified (lowercased, non-alphanumeric runs collapsed to `-`, e.g. check `verify / verify` → slug `verify-verify`). The absolute (plan-relative) path is surfaced as the per-entry `log_file` field.
+The downloaded raw log is written to `{plan-root}/.plan/local/plans/{plan_id}/artifacts/ci-runs/{run_id}/{slug}.log`, where `{slug}` is the failing check's name slugified (lowercased, non-alphanumeric runs collapsed to `-`, e.g. check `verify / verify` → slug `verify-verify`). The absolute path is surfaced as the per-entry `log_file` field, expressed relative to the `.plan` directory — the anchor `manage-ci-artifacts` uses: `local/plans/{plan_id}/artifacts/ci-runs/{run_id}/{slug}.log`.
 
 ### Parse/filter operation
 
-Reads the raw `{slug}.log` and produces a filtered error-extraction variant containing only the error-relevant lines plus surrounding context. The output is written to `artifacts/ci-runs/{run_id}/{slug}.filtered.log` and surfaced as the per-entry `filtered_log_file` field.
+Reads the raw `{slug}.log` and produces a filtered error-extraction variant containing only the error-relevant lines plus surrounding context. The output is written beside it as `{slug}.filtered.log` and surfaced as the per-entry `filtered_log_file` field, on the same `.plan`-relative anchor.
 
 The line-selection strategy is governed by the `--error-style` selector:
 
@@ -580,12 +580,16 @@ The line-selection strategy is governed by the `--error-style` selector:
 
 `log_file` and `filtered_log_file` are fields of each individual `failing_checks[]` entry — they are **never** scalar top-level keys. A single run can fail multiple checks, each with its own distinctly-slugged raw and filtered file. The failing-checks table is emitted in addition to (not instead of) the existing `checks[]` table; `failing_checks[]` is the subset of `checks[]` whose `result` is `failure`, enriched with the two file paths.
 
-Naming scheme, per failing check, under the run's artifact directory:
+When either path stays empty, the same entry carries `log_unavailable_reason` naming why: `no_plan_id` (no plan directory to persist under), `no_run_id` (the entry names no run), `persist_unavailable` (the persistence layer could not be loaded), `log_fetch_failed` (the download returned nothing), `persist_failed` (the persist call refused), `log_path_missing` (persist succeeded but reported no path for this slug), or `enrich_failed` (the enrichment raised). The reason is present only when a pointer is empty, so an empty `log_file` is never mistaken for a log the triager did not need.
+
+Naming scheme, per failing check, under the run's artifact directory (paths shown relative to `.plan`):
 
 ```text
-artifacts/ci-runs/{run_id}/{slug}.log           # raw downloaded log         → log_file
-artifacts/ci-runs/{run_id}/{slug}.filtered.log  # filtered error extraction  → filtered_log_file
+local/plans/{plan_id}/artifacts/ci-runs/{run_id}/{slug}.log           # raw downloaded log         → log_file
+local/plans/{plan_id}/artifacts/ci-runs/{run_id}/{slug}.filtered.log  # filtered error extraction  → filtered_log_file
 ```
+
+The `{run_id}` is the run of the CHECK that failed, not the run-level id of the first check, so two failing runs at one head accumulate under two directories.
 
 ### Worked example: `checks status` with two failing checks
 
@@ -603,8 +607,15 @@ verify / verify	completed	failure	180	https://github.com/org/repo/actions/runs/1
 lint	completed	failure	40	https://github.com/org/repo/actions/runs/113	Lint
 
 failing_checks[2]{name,run_id,error_style,log_file,filtered_log_file}:
-verify / verify	112	generic	artifacts/ci-runs/112/verify-verify.log	artifacts/ci-runs/112/verify-verify.filtered.log
-lint	113	generic	artifacts/ci-runs/113/lint.log	artifacts/ci-runs/113/lint.filtered.log
+verify / verify	112	generic	local/plans/my-plan/artifacts/ci-runs/112/verify-verify.log	local/plans/my-plan/artifacts/ci-runs/112/verify-verify.filtered.log
+lint	113	generic	local/plans/my-plan/artifacts/ci-runs/113/lint.log	local/plans/my-plan/artifacts/ci-runs/113/lint.filtered.log
+```
+
+### Worked example: `checks status` where a log could not be persisted
+
+```toon
+failing_checks[1]{name,run_id,error_style,log_file,filtered_log_file,log_unavailable_reason}:
+lint	113	generic			log_fetch_failed
 ```
 
 ### Worked example: `checks wait` with two failing checks
@@ -624,8 +635,8 @@ verify / verify	completed	failure	180	https://github.com/org/repo/actions/runs/1
 lint	completed	failure	40	https://github.com/org/repo/actions/runs/113	Lint
 
 failing_checks[2]{name,run_id,error_style,log_file,filtered_log_file}:
-verify / verify	112	generic	artifacts/ci-runs/112/verify-verify.log	artifacts/ci-runs/112/verify-verify.filtered.log
-lint	113	generic	artifacts/ci-runs/113/lint.log	artifacts/ci-runs/113/lint.filtered.log
+verify / verify	112	generic	local/plans/my-plan/artifacts/ci-runs/112/verify-verify.log	local/plans/my-plan/artifacts/ci-runs/112/verify-verify.filtered.log
+lint	113	generic	local/plans/my-plan/artifacts/ci-runs/113/lint.log	local/plans/my-plan/artifacts/ci-runs/113/lint.filtered.log
 ```
 
 In both examples the two failing checks (`verify / verify` and `lint`) carry distinctly-slugged raw and filtered files under their respective `{run_id}` directories, demonstrating the multi-failure transport: one `failing_checks[]` row per failure, each with its own `log_file` and `filtered_log_file`.

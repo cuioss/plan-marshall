@@ -216,19 +216,20 @@ Composition is additive-only and de-duped: an entry already present under its
 bare key is kept once, and composition never drops a matrix- or routing-seeded
 entry. Phase 5 enforces the stamped list verbatim.
 
-## Per-producer dispatch fan-out
+## Single-producer red-CI dispatch
 
 `ci-verify` is a deterministic finalize-step SCRIPT (`scripts/ci_verify.py`),
 NOT a dispatched workflow: on GREEN CI it marks the step done with ZERO
 dispatch, and only on RED CI does it file one taxonomy finding per failing
-check and return a per-producer needs-triage signal so the dispatcher runs the
-`verification-feedback` triage once per producer string (seven possible
-producers: `ci-verify-{build,policy,timeout,cancelled,action-required,stale,
-missing}`). The manifest validator MUST NOT double-count that red-CI-only
-per-producer fan-out — the producers are a runtime detail of the deterministic
-classifier, not separate manifest entries. The manifest contains exactly ONE
-`ci-verify` row regardless of how many producer strings the step fans out into
-at runtime.
+check and return a needs-triage signal carrying the single producer value
+`ci-verify`. The per-row distinction rides each finding's `[subtype]` title tag
+(`ci_build_failure`, `ci_policy_failure`, `ci_sonar_gate`, `ci_timeout`,
+`ci_cancelled`, `ci_action_required`, `ci_stale`, `ci_no_checks`), never a
+producer string. The dispatcher therefore runs exactly ONE
+`verification-feedback` invocation with `producer=ci-verify`, and the manifest
+contains exactly ONE `ci-verify` row — the diagnosis is a runtime detail of the
+deterministic classifier, not a manifest entry, so the validator counts the
+step once.
 
 ## Validation
 

@@ -63,7 +63,7 @@ Before the first repo edit in a session, verify the working tree matches the pla
 
 ## Producer vocabulary and roster contract reach-point (phase-5 executor)
 
-Phase-5 executors reach the same contract the docs name: the `producer` runtime input accepts only the single accept-set (`build-runner`, `sonar`, `pr-comment`, `plugin-doctor`, `pr-state`, `finalize-feedback`); `ci-verify-timeout` is rejected on every producer path with owner `default:ci-verify`; the finalize dispatch roster carries each dispatched step's explicit prompt skill set (`skills:` column) with the `plan-retrospective` record-before-return guard. See `doc/concepts/verification.adoc` § Producer vocabulary and dispatch roster contract.
+Phase-5 executors reach the same contract the docs name: the `producer` runtime input accepts only the single accept-set (`build-runner`, `sonar`, `pr-comment`, `plugin-doctor`, `pr-state`, `finalize-feedback`, `ci-verify`); `ci-verify`'s taxonomy labels are finding subtype tags, never producer values; the finalize dispatch roster carries each dispatched step's explicit prompt skill set (`skills:` column) with the `plan-retrospective` record-before-return guard. See `doc/concepts/verification.adoc` § Producer vocabulary and dispatch roster contract.
 
 ## Build Operations
 

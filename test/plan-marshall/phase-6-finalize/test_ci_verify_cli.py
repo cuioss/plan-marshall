@@ -21,8 +21,8 @@ live plan state:
 * The ``--wait-outcome`` value passed to persist is always in the
   ``{completed, deadline_exceeded}`` enum and is NEVER a copy of
   ``--final-status``.
-* One finding per failing check; per-producer signal aggregation dedupes
-  the producer strings.
+* One finding per failing check; the single ``ci-verify`` producer signal is
+  returned once, never per finding.
 
 Each test uses a unique ``worktree_path`` (pytest ``tmp_path``) so the
 ``.plan/temp/`` jobs-file write is isolated.
@@ -84,7 +84,7 @@ verify = _mod.verify
 classify_check = _mod.classify_check
 _extract_run_id_from_url = _mod._extract_run_id_from_url
 _normalize_check_entry = _mod._normalize_check_entry
-_matches_build_profile = _mod._matches_build_profile
+_matches_policy_profile = _mod._matches_policy_profile
 _first_missing_required_field = _mod._first_missing_required_field
 _resolve_failing_set = _mod._resolve_failing_set
 
@@ -238,14 +238,20 @@ class _StubCiWait:
         return self.envelope
 
 
-def test_matches_build_profile_tokens():
-    # Arrange / Act / Assert
-    assert _matches_build_profile('verify / verify') is True
-    assert _matches_build_profile('Quality-Gate') is True
-    assert _matches_build_profile('module-tests') is True
-    assert _matches_build_profile('coverage') is True
-    assert _matches_build_profile('license/cla') is False
-    assert _matches_build_profile('') is False
+def test_matches_policy_profile_is_a_closed_list():
+    # Arrange / Act / Assert — the four policy families match.
+    assert _matches_policy_profile('license/cla') is True
+    assert _matches_policy_profile('dependency review') is True
+    assert _matches_policy_profile('CodeQL') is True
+    assert _matches_policy_profile('labeler') is True
+    assert _matches_policy_profile('PR title check') is True
+    # Everything else is a build failure, including the build canonicals.
+    assert _matches_policy_profile('verify / verify') is False
+    assert _matches_policy_profile('Quality-Gate') is False
+    assert _matches_policy_profile('module-tests') is False
+    assert _matches_policy_profile('coverage') is False
+    assert _matches_policy_profile('Integration Tests') is False
+    assert _matches_policy_profile('') is False
 
 
 def test_green_marks_done_no_findings(tmp_path):
@@ -419,8 +425,10 @@ def test_failure_files_one_finding_per_check(tmp_path):
     # Assert — exactly one finding per failing check.
     assert result['findings_filed'] == 3
     assert len(findings.calls) == 3
-    # Two producers: build (verify + module-tests) and policy (codeql), deduped.
-    assert set(result['producers']) == {'ci-verify-build', 'ci-verify-policy'}
+    # One producer value; the build/policy split rides the subtype tags.
+    assert result['producers'] == ['ci-verify']
+    assert findings.calls[0]['title'].startswith('[ci_build_failure]')
+    assert findings.calls[2]['title'].startswith('[ci_policy_failure]')
     assert result['outcome'] == 'needs_triage'
     assert result['step_marked_done'] is False
 
@@ -448,7 +456,7 @@ def test_timeout_routes_to_timeout_producer(tmp_path):
     )
 
     # Assert
-    assert result['producers'] == ['ci-verify-timeout']
+    assert result['producers'] == ['ci-verify']
     assert result['findings_filed'] == 1
     assert '[ci_timeout]' in findings.calls[0]['title']
 
@@ -588,9 +596,15 @@ def test_ci_verify_declares_head_dependent_frontmatter_fact():
     )
 
 
-def test_standards_enumerates_all_seven_producer_strings():
+def test_standards_retires_the_per_row_producer_strings():
+    """The standards doc names the single producer and carries no per-row producer.
+
+    A per-row producer string reappearing in the doc is the defect this change
+    removed: it invites a dispatch the workflow refuses as `unknown_producer`.
+    """
     content = _STANDARDS_PATH.read_text(encoding='utf-8')
-    expected_producers = (
+    assert '`ci-verify`' in content, 'Standards file must name the single producer value'
+    for retired in (
         'ci-verify-build',
         'ci-verify-policy',
         'ci-verify-timeout',
@@ -598,9 +612,8 @@ def test_standards_enumerates_all_seven_producer_strings():
         'ci-verify-action-required',
         'ci-verify-stale',
         'ci-verify-missing',
-    )
-    for producer in expected_producers:
-        assert producer in content, f'Standards file must enumerate producer string {producer}'
+    ):
+        assert retired not in content, f'retired per-row producer string reintroduced: {retired}'
 
 
 def test_standards_references_consume_failures_mode():

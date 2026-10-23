@@ -38,6 +38,8 @@ PLAN_IDS = (
     'store-qgate-auth-filter',
     'store-qgate-query',
     'store-query-all',
+    'store-query-component',
+    'store-query-component-qgate',
     'store-query-empty',
     'store-query-file',
     'store-query-res',
@@ -189,6 +191,41 @@ def test_query_findings_unified_filters_qgate_by_author(plan_context):
     titles = [f['title'] for f in unified['findings']]
     assert 'Plan finding alice' in titles
     assert 'Q-Gate finding without author' not in titles
+
+
+def test_query_findings_filters_by_component(plan_context):
+    """A component filter is an exact match, not a prefix or substring."""
+    plan_id = 'store-query-component'
+    add_finding(plan_id, 'triage', 'Own finding', 'd', component='plan-marshall:phase-6-finalize')
+    add_finding(plan_id, 'triage', 'Other finding', 'd', component='plan-marshall:other-step')
+
+    result = query_findings(plan_id, component='plan-marshall:phase-6-finalize')
+
+    assert result['total_count'] == 2
+    assert result['filtered_count'] == 1
+    assert [f['title'] for f in result['findings']] == ['Own finding']
+
+
+def test_query_findings_unified_applies_component_to_both_slices(plan_context):
+    """The Q-Gate slice honours the same component filter as the plan slice."""
+    plan_id = 'store-query-component-qgate'
+    add_finding(plan_id, 'triage', 'Plan own', 'd', component='plan-marshall:phase-6-finalize')
+    add_qgate_finding(
+        plan_id,
+        '2-refine',
+        'qgate',
+        'triage',
+        'Q-Gate own',
+        'detail',
+        component='plan-marshall:phase-6-finalize',
+    )
+    add_qgate_finding(plan_id, '2-refine', 'qgate', 'triage', 'Q-Gate other', 'detail', component='plan-marshall:other')
+
+    unified = query_findings_unified(plan_id, component='plan-marshall:phase-6-finalize')
+
+    assert unified['plan_count'] == 1
+    assert unified['qgate_count'] == 1
+    assert sorted(f['title'] for f in unified['findings']) == ['Plan own', 'Q-Gate own']
 
 
 # =============================================================================
