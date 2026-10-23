@@ -48,6 +48,9 @@ cmd_enrich = manage_metrics.cmd_enrich
 cmd_generate = manage_metrics.cmd_generate
 
 
+cmd_phase_boundary = manage_metrics.cmd_phase_boundary
+
+
 cmd_record_dispatch_boundary = manage_metrics.cmd_record_dispatch_boundary
 
 
@@ -199,13 +202,21 @@ class _FakeCompleted:
         self.stderr = ''
 
 
-def _patch_runtime_op(monkeypatch, *, status: str, per_phase: dict | None, counters: dict | None):
+def _patch_runtime_op(
+    monkeypatch,
+    *,
+    status: str,
+    per_phase: dict | None,
+    counters: dict | None,
+    four_field_scope: str | None = None,
+):
     """Patch subprocess.run so the runtime-op call writes *per_phase* and returns a TOON.
 
     The fake reads the ``--output-file`` argument from the constructed argv and
     writes ``per_phase`` to it as JSON (mirroring what the real Claude runtime op
     does), then returns a CompletedProcess whose stdout is a TOON envelope with the
-    requested ``status`` and ``counters``.
+    requested ``status`` and ``counters``. *four_field_scope* is emitted when
+    supplied, so a test can exercise what the four usage fields already cover.
     """
     counters = counters or {}
 
@@ -217,6 +228,8 @@ def _patch_runtime_op(monkeypatch, *, status: str, per_phase: dict | None, count
         if status == 'success' and per_phase is not None and output_file is not None:
             Path(output_file).write_text(json.dumps(per_phase), encoding='utf-8')
         lines = [f'status: {status}', 'operation: metrics normalized-tokens']
+        if four_field_scope is not None:
+            lines.append(f'four_field_scope: {four_field_scope}')
         for key, value in counters.items():
             lines.append(f'{key}: {value}')
         return _FakeCompleted('\n'.join(lines) + '\n')

@@ -2,10 +2,10 @@
   "id": "PLAN-LB-85",
   "slug": "lane-sonar-issues",
   "workstream": "WS-04",
-  "status": "running",
+  "status": "shipped",
   "lane": "runbook",
-  "plan_marshall_plan_id": "",
-  "pr": "",
-  "landing": "",
+  "plan_marshall_plan_id": "lb-85-lane-sonar-issues",
+  "pr": "1839",
+  "landing": "landings/PLAN-LB-85.md",
   "seq": 85
 }

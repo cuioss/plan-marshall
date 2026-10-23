@@ -64,7 +64,13 @@ Three verification steps report a result over evidence they never examined:
    modules as the gate population and a `resolve-test-scope` answer for each; a path outside every
    module is reported unresolved. Both fail at `d17ac5bef`.
 
-Split guard: three deliverables, one theme (a verification result covers what it claims).
+4. **A green scoped test run states what it did not cover, and the pre-push gate runs the root-level guards.** Added 2026-10-23 from `lessons-routing-053` item 3, graded **high** (three consumer plans: two pre-push failures on one rule, one stopped unmerged).
+   - Guards at the root of `test/` (for example `test/test_harness_shape_guards.py`) sit outside every module, so `module-tests {module}` never runs them and the gate resolved `divergence_possible=false` and skipped its whole-tree run; CI then failed on rule R5.
+   - The pre-push gate includes the root-level `test/*.py` guards whenever the plan adds or edits a test file, and a scoped green run reports the excluded population.
+
+   *Done when:* a fixture diff that edits one test file inside a module yields a gate population that includes the root-level guards. A docs-only diff does not. The report of a scoped run names what it left out. At HEAD the population is module-scoped only (HYPOTHESIS, see Claim Labels).
+
+Split guard: four deliverables, one theme (a verification result covers what it claims).
 
 ## Claim Labels
 
@@ -75,6 +81,7 @@ Split guard: three deliverables, one theme (a verification result covers what it
 - OBSERVED: pm-mcp-core `-205`, `-216`, `-229`, `-237`, `-250`, `-267`: 0 bundles, module-tests DEGRADED on every Maven plan; the whole-tree arms ran (`lessons-routing-031`).
 - HYPOTHESIS: the Sonar API exposes the analysed revision for a PR analysis (`/api/project_analyses/search` `revision`, or the CE task's `analysisId` → analysis) — confirm against the provider before choosing the call (verify-at-outline).
 - HYPOTHESIS: `architecture which-module` answers for Maven layouts in a consumer project — confirm with the Maven extension's discovery (verify-at-outline).
+- HYPOTHESIS (D4): the pre-push gate's module-scoped population omits root-level `test/*.py` guards, so a plan that edits only module tests skips them — confirm at `derive_gate_bundles.py` and `pre-push-quality-gate.md` (verify-at-outline). The sender's three occurrences (`lessons-routing-053`) were not re-verified at HEAD. D4 lands in the files D3 already declares, so it adds no file surface.
 
 ## Expected Surface
 

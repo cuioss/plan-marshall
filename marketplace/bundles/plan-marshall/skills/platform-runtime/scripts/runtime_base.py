@@ -1254,8 +1254,10 @@ class Runtime(ABC):
         itself.
 
         The JSON written to *output_file* is an object mapping each phase name to a
-        bucket. The block below is the full set a target MAY supply; which families
-        a given target actually supplies is stated after it:
+        bucket. The block below is the set the TRANSCRIPT-WALKING target supplies;
+        the store-backed groups stated after it extend that set, so a consumer
+        reads a target's bucket as "this block plus whichever groups that target
+        declares it can measure":
 
         ``{phase_name: {input, output, cache_read, cache_creation, total,
         billing_weighted_total, subagent_total_tokens, subagent_tool_uses,
@@ -1278,16 +1280,37 @@ class Runtime(ABC):
         above is a GROUP a target supplies only when it can measure it:
 
         - the **sub-agent group** (``subagent_total_tokens`` /
-          ``subagent_tool_uses`` / ``subagent_duration_ms`` /
-          ``subagent_samples``) — supplied when the target can attribute
+          ``subagent_duration_ms`` / ``subagent_samples``, plus
+          ``subagent_tool_uses``) — supplied when the target can attribute
           sub-agent work to the phase;
+        - the **store-cost group** — ``cost_usd``, supplied by a target whose
+          store records a per-message cost, and the reason
+          ``billing_weighted_total`` is omitted there rather than priced with
+          another vendor's cache weights;
+        - the **store-measured tool count** — ``tool_uses``, supplied by a target
+          whose store records each call inside a message's ``content`` array.
+          Absent for a phase in which any contributing message carried no such
+          array, so a partial count is never published as the phase's total;
+        - the **reasoning field** — ``reasoning_tokens``, supplied by a target
+          whose store records reasoning apart from output, as its own key so it is
+          never silently added to ``output`` twice;
         - the **exploration-share counters**, the **cache-read attribution**
           group and the **exploration sub-sources** — supplied by a target whose
           walk observes tool calls and the payloads they return.
 
-        A target that cannot measure a group OMITS its keys. It MUST NOT
-        zero-fill them, because a fabricated zero is indistinguishable from a
-        measured one.
+        **An omitted group and a measured zero are DIFFERENT statements, and the
+        shape of the bucket is what distinguishes them.** A key that is PRESENT
+        with the value ``0`` says "this target measured this group and found
+        none": the walk ran and observed no such record. A key that is ABSENT
+        says "this target could not measure it at all" — the source behind the
+        group was absent, unreadable or schema-unsupported, or the target has no
+        such store. A target that cannot measure a group therefore OMITS its keys
+        and MUST NOT zero-fill them, because a fabricated zero erases exactly the
+        distinction a consumer needs in order to tell an idle phase from an
+        unmeasured one. This is why a group may be omitted per-bucket rather than
+        required at bucket granularity: ``subagent_tool_uses`` is absent on a
+        store whose assistant messages carry no ``content`` array, present with a
+        measured count when they do.
 
         The ten ``*_tool_calls`` / ``*_result_bytes`` keys are the exploration-share
         counters: each tool call observed in the transcript is classified by its
@@ -1380,7 +1403,15 @@ class Runtime(ABC):
             ``four_field_phases_attributed``, ``unclassified_tool_calls`` — the
             run-level count of tool names outside the classifier's
             population-derived domain, non-zero when the classifier needs
-            extending). A target whose ids resolve into a session tree MAY also
+            extending) and ``four_field_scope``, which states what the four usage
+            fields already cover: ``main_plus_subagent`` when the walk folds the
+            sub-agent transcripts into them, ``main_context`` when the root
+            session and its descendants are kept in separate buckets. A consumer
+            composing a phase total adds the sub-agent figure only in the
+            ``main_context`` case, so a target MUST report the field accurately —
+            omitting it makes the consumer fall back to ``main_context`` and add a
+            figure the fields may already contain. A target whose ids resolve into
+            a session tree MAY also
             report ``root_session_id``, the root the run measured, so a caller
             measuring several captured identities can tell two ids inside one tree
             from two distinct trees. The no-op carries the target's OWN ``reason``

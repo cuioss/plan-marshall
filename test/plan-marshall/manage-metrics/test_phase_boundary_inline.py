@@ -13,17 +13,19 @@ marker.
 
 The omission is at the boundary *write* only — it is NOT a permanent token gap.
 The finalize-phase `manage-metrics enrich` pass attributes the parent-window
-`message.usage` four-field data to each inline window and derives `total_tokens`
-from input + output + cache_creation ONLY (cache_read EXCLUDED, so the inline
-row matches the dispatched-phase `<usage>` total definition), so an inline phase
-DOES count toward the breakdown Tokens column and the report reads `n=6/6` (not
-`n=5/6`). These tests drive the REAL
+`message.usage` four-field data to each inline window and derives the
+main-context part from input + output + cache_creation ONLY (cache_read EXCLUDED,
+so the figure matches the dispatched-phase `<usage>` total definition). `enrich`
+then composes `total_tokens` from that figure plus the phase's dispatched figure
+(preserved separately as `dispatched_total_tokens`), so an inline phase DOES count
+toward the breakdown Tokens column and the report reads `n=6/6` (not `n=5/6`).
+These tests drive the REAL
 enrich production path (with a fixture that mirrors the runtime's
 post-normalization per-phase bucket shape) and lock that contract:
   - the inline **1-init** window and the recipe-inline **2-refine** / **3-outline**
     windows, closed usage-free, carry a real `total_tokens` after enrich;
-  - a dispatched phase's `<usage>`-sourced `total_tokens` is never overwritten
-    (explicit-wins);
+  - a dispatched phase's `<usage>`-sourced figure is preserved as
+    `dispatched_total_tokens` and the row's total is the two populations summed;
   - a six-phase plan whose rows all carry `end_time` reports
     `any_phase_missing_end_time: false` with every phase carrying token data
     (`n=6/6`).
@@ -138,13 +140,12 @@ def test_inline_init_phase_absent_from_missing_end_time_list(plan_context):
 def test_inline_main_context_surfaced_on_mixed_finalize_phase(plan_context, monkeypatch):
     """A 6-finalize phase carrying BOTH a dispatched total_tokens AND four-field usage
     surfaces inline_main_context_tokens (input+output+cache_creation, cache_read
-    EXCLUDED), keeps total_tokens byte-identical, and keeps its end_time marker.
+    EXCLUDED), keeps the dispatched figure under its own name, composes the
+    whole-phase total from both, and keeps its end_time marker.
     """
     _drive_full_six_phase_plan('inline-mixed-finalize')
     # 6-finalize closed with dispatched total_tokens=31000. Feed enrich a
-    # four-field bucket for it — the inline finalize-step contribution. The
-    # enrich else-branch must surface inline_main_context_tokens without
-    # overwriting the dispatched total.
+    # four-field bucket for it — the inline finalize-step contribution.
     buckets = {
         '6-finalize': {
             'input_tokens': 20000,
@@ -163,18 +164,21 @@ def test_inline_main_context_surfaced_on_mixed_finalize_phase(plan_context, monk
 
     content = (plan_context.plan_dir_for('inline-mixed-finalize') / 'work' / 'metrics.toon').read_text()
     fin_block = _phase_block(content, '6-finalize')
-    # Explicit-wins: the dispatched total_tokens is byte-identical.
-    assert int(_field(fin_block, 'total_tokens')) == 31000
+    # The dispatched total is preserved under its own name...
+    assert int(_field(fin_block, 'dispatched_total_tokens')) == 31000
     # inline_main_context_tokens = 20000 + 8000 + 2000 = 30000 (cache_read EXCLUDED).
     inline_field = _field(fin_block, 'inline_main_context_tokens')
     assert inline_field is not None
     assert int(inline_field) == 30000
     # The cache_read magnitude must NOT leak into the surfaced inline figure.
     assert int(inline_field) < 500000
+    # ...and the phase total is the two populations summed.
+    assert int(_field(fin_block, 'total_tokens')) == 30000 + 31000
 
     # generate renders the inline reconciliation line under the phase total.
     md = (plan_context.plan_dir_for('inline-mixed-finalize') / 'metrics.md').read_text()
     assert 'Inline main-context tokens' in md
+    assert 'included in the Total tokens figure' in md
 
 
 # =============================================================================
@@ -220,22 +224,24 @@ def test_report_is_n_six_of_six_after_inline_enrich(plan_context, monkeypatch):
 
 
 def test_enrich_does_not_overwrite_dispatched_phase_total(plan_context, monkeypatch):
-    """Explicit-wins: a dispatched phase's <usage> total_tokens is never clobbered by enrich.
+    """A dispatched phase's `<usage>` total is preserved, under its own name.
 
-    Even when enrich attributes four-field data to a phase that already carries a
-    dispatched `<usage>` total, the derivation only fills an ABSENT total_tokens,
-    so the dispatched value is preserved byte-for-byte.
+    Enrich composes the phase's whole measured spend into `total_tokens`, so the
+    dispatched measurement moves to `dispatched_total_tokens` rather than being
+    lost — and a re-run recomposes the same figure instead of reading its own
+    composition as a dispatched total.
     """
     _drive_full_six_phase_plan('inline-explicit-wins')
     # 4-plan closed with total_tokens=42000 (dispatched). Feed enrich a tiny
-    # four-field bucket for it; the derivation must NOT overwrite the real total.
+    # four-field bucket for it; the dispatched figure must survive intact.
     buckets = {'4-plan': {'input_tokens': 1, 'output_tokens': 1, 'billing_weighted_total': 2}}
     _run_inline_enrich('inline-explicit-wins', monkeypatch, buckets=buckets)
     cmd_generate(ns_generate('inline-explicit-wins'))
 
     content = (plan_context.plan_dir_for('inline-explicit-wins') / 'work' / 'metrics.toon').read_text()
     plan_block = _phase_block(content, '4-plan')
-    assert int(_field(plan_block, 'total_tokens')) == 42000
+    assert int(_field(plan_block, 'dispatched_total_tokens')) == 42000
+    assert int(_field(plan_block, 'total_tokens')) == 42000 + 2
 
 
 # =============================================================================

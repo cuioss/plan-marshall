@@ -257,6 +257,7 @@ def build_harness(
     *,
     entries: list[str] | None = None,
     include_allowlist: bool = True,
+    include_wrapper_table: bool = True,
     extra_env: dict[str, str] | None = None,
 ) -> GuardHarness:
     """Materialise a scratch ESM project around a copy of the real plugin.
@@ -271,6 +272,9 @@ def build_harness(
             guard falls back to its built-in base table (the absent-file path)
             and the scratch root carries no repository marker (R5 does not bind
             out of a plan context).
+        include_wrapper_table: When False, no wrapper table is written, so the
+            guard's R5 check takes its MISSING-TABLE branch. The deployed-layout
+            data is still written: only the table is under test.
         extra_env: Extra environment for the node child (e.g. ``HOME`` or
             ``OPENCODE_CONFIG_DIR`` pointing at a fixture deployed tree).
     """
@@ -288,7 +292,8 @@ def build_harness(
     # allow-list, read from the same candidate list, so a scratch root that
     # carries one must carry all three — otherwise the guard fails CLOSED on
     # every interpreter call (no table) or admits no deployed script (no layout).
-    _write(scratch / _WRAPPER_TABLE_REL, json.dumps(wrapper_table()))
+    if include_wrapper_table:
+        _write(scratch / _WRAPPER_TABLE_REL, json.dumps(wrapper_table()))
     _write(scratch / _LAYOUT_REL, json.dumps(layout_data()))
     if include_allowlist:
         resolved = allowlist_entries() if entries is None else entries

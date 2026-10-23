@@ -65,8 +65,9 @@ _TABLE = wrapper_table()
 _WRAPPERS = _TABLE.get('wrappers', {})
 
 #: Wrappers that are ALSO R2 shell spawns, so the guard's R2 refuses them before
-#: the interpreter check runs (the hook's R2 does the same).
-_R2_SHELLS = frozenset({'bash', 'sh'})
+#: the interpreter check runs (the hook's R2 does the same). Derived from the
+#: shared table — the spawn set is the table's shells, never a second list here.
+_R2_SHELLS = frozenset(wrapper_table().get('shells', ()))
 
 
 def test_the_shared_wrapper_table_exists_and_carries_the_wrappers() -> None:
