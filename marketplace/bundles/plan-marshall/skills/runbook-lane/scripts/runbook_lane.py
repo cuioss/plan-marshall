@@ -273,13 +273,25 @@ def _skill_probe_paths(notation: str, lane_bundle: str) -> list[Path]:
         root / flat_skill_dir_name(bundle, skill) / 'SKILL.md' for root in skill_roots(_lane_skills_root())
     ]
     try:
-        from marketplace_bundles import resolve_bundle_path, resolve_bundles_root
+        from marketplace_bundles import resolve_bundle_path, resolve_bundles_root, select_live_version_dir
 
         bundles_root: Path | None = resolve_bundles_root(Path(__file__))
     except Exception:
         bundles_root = None
     if bundles_root is not None:
-        nested = resolve_bundle_path(bundles_root, bundle, subpath)
+        # A VERSIONED bundle cache has one live version dir, and that is the
+        # path a probe actually reads. Naming the unversioned
+        # ``{bundle}/{subpath}`` fallback for such a cache reports a path that
+        # cannot exist on that machine, hiding which version was probed.
+        bundle_dir = bundles_root / bundle
+        live_version: Path | None = None
+        if bundle_dir.is_dir():
+            live_version = select_live_version_dir(
+                bundle_dir, lambda version_dir: (version_dir / '.claude-plugin' / 'plugin.json').is_file()
+            )
+        nested = (
+            live_version / subpath if live_version is not None else resolve_bundle_path(bundles_root, bundle, subpath)
+        )
         if nested not in candidates:
             candidates.append(nested)
     return candidates
@@ -1220,10 +1232,13 @@ def cmd_build_classify(args: argparse.Namespace) -> dict[str, Any]:
                 }
                 for path in paths
             ]
-        except ImportError as exc:
-            # The shared glob translator is unavailable (a partial install).
+        except Exception as exc:
+            # The shared glob translator is unavailable: absent from a partial
+            # install, or raising something other than ImportError while it is
+            # imported (a missing dependency of its own, a broken module body).
             # Build everything and name the cause: a broken translator must never
-            # be read as "no path matches", which for a skip rule would skip.
+            # be read as "no path matches", which for a skip rule would skip, and
+            # an uncaught non-ImportError would abort the classifier entirely.
             rows = [{'path': path, 'kind': 'buildable'} for path in paths]
             reason = f'glob helper unavailable: {type(exc).__name__}'
     buildable = any(row['kind'] == 'buildable' for row in rows)

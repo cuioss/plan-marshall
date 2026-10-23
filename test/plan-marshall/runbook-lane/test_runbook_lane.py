@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import argparse
 import ast
+import builtins
 import json
 import re
 import shutil
@@ -189,6 +190,11 @@ def _section(heading: str) -> str:
     rest = text[start + len(heading) :]
     end = rest.find('\n## ')
     return ' '.join((heading + (rest if end == -1 else rest[:end])).split())
+
+
+def _sentences(text: str) -> list[str]:
+    """Split whitespace-normalised prose into sentences at ``.``/``!``/``?``."""
+    return [part.strip() for part in re.split(r'(?<=[.!?])\s+', text) if part.strip()]
 
 
 #: The four conditions the standing authorization replaces "reviewed the current
@@ -1651,7 +1657,10 @@ def test_resolve_missing_skill_names_every_probed_layout(tmp_path: Path) -> None
     assert data['error'] == 'named_skill_not_found'
     probed = data['probed']
     assert 'skills/plan-marshall-absent-everywhere/SKILL.md' in probed, 'the flat layout is not named'
-    assert 'plan-marshall/skills/absent-everywhere/SKILL.md' in probed, 'the nested layout is not named'
+    assert 'plan-marshall/0.1.0/skills/absent-everywhere/SKILL.md' in probed, 'the VERSIONED nested layout is not named'
+    assert 'plan-marshall/skills/absent-everywhere/SKILL.md' not in probed, (
+        'the unversioned fallback is named for a versioned cache'
+    )
 
     module = load_script_module('plan-marshall', _SKILL_NAME, 'runbook_lane.py', register=False)
     tree_probed = [
@@ -1744,6 +1753,48 @@ def test_build_classify_architecture_fallback_treats_a_doc_module_as_prose(tmp_p
 
     assert data['source'] == 'architecture'
     assert data['kind'] == 'docs-only'
+
+
+def _classify_with_a_failing_glob_import(tmp_path: Path, monkeypatch, error: BaseException) -> dict:
+    """Classify two paths while the shared glob translator cannot be imported.
+
+    The import is blocked at the INTERPRETER primitive, so the failure happens
+    where the real helper is imported rather than by replacing the lane's own
+    wrapper with a stub.
+    """
+    project = _seed_footprint(tmp_path)
+    module = load_script_module('plan-marshall', _SKILL_NAME, 'runbook_lane.py', register=False)
+    real_import = builtins.__import__
+
+    def _blocked(name: str, *args: Any, **kwargs: Any) -> Any:
+        if name == '_cmd_manage':
+            raise error
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, '__import__', _blocked)
+    return module.cmd_build_classify(
+        argparse.Namespace(
+            paths='doc/developer/build.adoc,marketplace/bundles/plan-marshall/skills/x/SKILL.md',
+            project_dir=str(project),
+        )
+    )
+
+
+def test_build_classify_builds_every_path_when_the_glob_helper_is_absent(tmp_path: Path, monkeypatch) -> None:
+    data = _classify_with_a_failing_glob_import(tmp_path, monkeypatch, ImportError("No module named '_cmd_manage'"))
+
+    assert all(row['kind'] == 'buildable' for row in data['paths']), 'an absent translator skipped a build'
+    assert data['reason'] == 'glob helper unavailable: ImportError'
+
+
+def test_build_classify_builds_every_path_when_the_glob_helper_import_fails_otherwise(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """A non-ImportError failure at import is named, not propagated."""
+    data = _classify_with_a_failing_glob_import(tmp_path, monkeypatch, RuntimeError('translator exploded'))
+
+    assert all(row['kind'] == 'buildable' for row in data['paths']), 'a broken translator skipped a build'
+    assert data['reason'] == 'glob helper unavailable: RuntimeError'
 
 
 def test_extra_buildable_globs_drops_a_block_indicator_and_unwraps_quotes() -> None:
@@ -1848,8 +1899,12 @@ def test_a_test_runs_at_every_pushed_head_and_is_reported() -> None:
     assert '{build.module-tests}` where the resolve result supplies it' in gate, (
         'the per-head rule does not say the test command is the one the project publishes'
     )
-    assert 'test-compile' in landing, 'the landing does not report the per-head test runs'
-    assert 'sha' in landing, 'the landing does not report the sha of each per-head test run'
+    # The `test-compile` token must sit beside the sha requirement, not merely
+    # appear somewhere in the section where a pre-existing `{sha}` placeholder
+    # would satisfy a bare word check.
+    per_head = [sentence for sentence in _sentences(landing) if 'test-compile' in sentence]
+    assert per_head, 'the landing does not report the per-head test-compile run'
+    assert any('sha' in sentence for sentence in per_head), 'the test-compile token is not beside the sha placeholder'
 
 
 def test_self_review_clear_is_not_permitted_with_an_open_finding() -> None:
@@ -1914,19 +1969,21 @@ def test_sleep_parity_keyword_is_the_qualifier_free_sentence() -> None:
 def test_build_timeout_comes_from_the_architecture_stamp(tmp_path: Path, monkeypatch) -> None:
     """``resolve`` reports the stamp the REAL delegation reads.
 
-    The test drives ``cmd_resolve``, not the extracted seam, and replaces the
-    DELEGATION TARGET — ``_cmd_client._augment_resolved`` — so a broken or
-    raising delegation is caught: either one leaves the lane's 1800 fallback in
-    place, and the assertion below fails. The target is obtained through the
-    loader (never a plain ``import``) so it is the very object the lane's
-    deferred ``from _cmd_client import …`` resolves.
+    The test drives ``cmd_resolve`` and leaves the REAL
+    ``_cmd_client._augment_resolved`` in place; only the lookup it READS —
+    ``_lookup_bash_timeout`` — is replaced, so the function's own augmentation
+    still runs. A raising real function leaves the lane's 1800 fallback in place
+    and the assertion below fails, which a fixed-value stub of the function
+    could never show.
     """
     client = load_script_module('plan-marshall', 'manage-architecture', '_cmd_client.py')
     spec = _seed_fixture(tmp_path, executable=_PYPROJECT_EXEC, required_bots='x')
-    monkeypatch.setattr(
-        client,
-        '_augment_resolved',
-        lambda resolved, project_dir: {'bash_timeout_seconds': 1234},
+    # Patch the lookup in the globals of the REAL function the lane calls, so the
+    # real augmentation still runs and only what it READS is replaced.
+    monkeypatch.setitem(
+        client._augment_resolved.__globals__,
+        '_lookup_bash_timeout',
+        lambda tool, args, project: (1234, True),
     )
     module = load_script_module('plan-marshall', _SKILL_NAME, 'runbook_lane.py', register=False)
 
