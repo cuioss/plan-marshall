@@ -222,6 +222,7 @@ def _recovery_command(target: str | None = None) -> str:
     import shlex
 
     resolved_target = target or _EXECUTOR_TARGET
+    target_flag = f' --target {resolved_target}' if resolved_target else ''
     scripts = _newest_cache_scripts_dir('tools-script-executor')
     project_root = Path(__file__).resolve().parent.parent
     if scripts:
@@ -229,12 +230,11 @@ def _recovery_command(target: str | None = None) -> str:
         if generator.is_file():
             return (
                 f'python3 {shlex.quote(str(generator))} recover '
-                f'--project-dir {shlex.quote(str(project_root))} --target {resolved_target}'
+                f'--project-dir {shlex.quote(str(project_root))}{target_flag}'
             )
     return (
         'python3 marketplace/bundles/plan-marshall/skills/tools-script-executor/scripts/'
-        f'generate_executor.py recover --project-dir {shlex.quote(str(project_root))} '
-        f'--target {resolved_target}'
+        f'generate_executor.py recover --project-dir {shlex.quote(str(project_root))}{target_flag}'
     )
 
 
@@ -352,7 +352,7 @@ def _exit_on_unresolved_bootstrap(error: ImportError) -> None:
     else:
         detail = 'A bootstrap module failed to import although every bootstrap directory resolved. '
     print(
-        f'execute-script.py cannot start: {error}. {detail}'
+        f'execute-script.py cannot start: ImportError: {error}. {detail}'
         f'Recover the executor with:\n{command}',
         file=sys.stderr,
     )

@@ -31,7 +31,7 @@ GENERATE_SCRIPT = SCRIPTS_DIR / 'generate_executor.py'
 #: has a roster to iterate, and compared against the module's own parser by
 #: ``test_roster_matches_the_parser`` — so a verb that gains or loses
 #: ``--target`` fails that comparison instead of silently escaping the matrix.
-TARGET_RESOLVING_VERBS = ('generate', 'verify', 'bootstrap', 'drift', 'preflight', 'paths')
+TARGET_RESOLVING_VERBS = ('generate', 'verify', 'bootstrap', 'recover', 'drift', 'preflight', 'paths')
 
 #: Every platform env signal the cascade reads. Cleared before each tier case so
 #: the developer's own runtime cannot decide the outcome.

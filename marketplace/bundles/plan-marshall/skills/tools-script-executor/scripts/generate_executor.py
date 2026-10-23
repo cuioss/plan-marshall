@@ -3727,7 +3727,7 @@ def cmd_preflight(args: argparse.Namespace) -> dict:
     if installed_version == 'unknown':
         probe_paths = installed_manifest_probe_paths(base_path, target=resolved_target)
         probed = ', '.join(str(path) for path in probe_paths)
-        if marshal_version and executor_version:
+        if marshal_version not in ('', 'unknown') and executor_version not in ('', 'unknown'):
             # The executor is the artifact a cache advance rewrites; an executor
             # ahead of the provisioned config seed is the drift the manifest
             # comparison would otherwise have measured.
