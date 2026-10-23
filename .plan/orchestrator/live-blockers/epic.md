@@ -713,7 +713,10 @@ derive, for rows still live.
 - **`plugin_version` is recorded as `0.1` beside `executor_version` `0.1.1986` (PLAN-LB-85 landing, 2026-10-23;
   medium; lead, owner PLAN-LB-84 once confirmed).** The landing copied what its stamp source reported;
   `platform_runtime runtime-info` run here (Claude) also returns `bundle_version: "0.1"`, while PLAN-LB-49's landing
-  carried `0.1.1983`. Confirm under OpenCode first: if `runtime-info` truncates the bundle version, PLAN-LB-84's
+  carried `0.1.1983`. **Cause found (2026-10-23):** `read_bundle_version` (`runtime_info.py:455`) returns the `version` of the bundle manifest
+  it runs from, and the source manifest says `"0.1"`; only installed copies are stamped by the sync (the Claude cache holds
+  `0.1.1986` to `0.1.1989`). So the value is `0.1` whenever the executor resolves the script to the main checkout, not a
+  truncation bug. Open: which copy a runbook run executes. Original note: confirm under OpenCode first: if `runtime-info` truncates the bundle version, PLAN-LB-84's
   `plugin_version` bullet (source-manifest version) must cover it and its test must pin a three-part value. Retire when
   a runbook landing's `plugin_version` equals the installed bundle version.
 - **The runbook landing's `complete: false` on `total_tokens` is now the only missing key (PLAN-LB-85 landing,
