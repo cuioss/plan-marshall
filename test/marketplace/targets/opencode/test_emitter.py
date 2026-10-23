@@ -517,6 +517,13 @@ def test_install_core_only(multi_bundle_repo: Path, tmp_path: Path, opencode_con
     assert len(manifest['dist_manifest_sha']) == 64
     assert 'skills/plan-marshall-core-skill/SKILL.md' in manifest['managed_files']
     assert 'agents/core-agent.md' in manifest['managed_files']
+    # The emitted dist-manifest is installed at the config root, beside
+    # opencode.json. A flat install has no version dir, so this is the one file
+    # `generate_executor preflight` and `cache_freshness check` can resolve the
+    # installed version from.
+    assert (dest / 'dist-manifest.json').is_file()
+    assert json.loads((dest / 'dist-manifest.json').read_text(encoding='utf-8'))['version'] == '1.0.0'
+    assert 'dist-manifest.json' in manifest['managed_files']
 
 
 def test_install_bundles_and_aliases(multi_bundle_repo: Path, tmp_path: Path, opencode_config_dir: Path):

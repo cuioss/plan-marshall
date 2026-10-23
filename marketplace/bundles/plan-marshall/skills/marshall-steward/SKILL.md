@@ -995,6 +995,20 @@ python3 .plan/execute-script.py plan-marshall:marshall-steward:bootstrap_plugin 
 python3 .plan/execute-script.py plan-marshall:marshall-steward:gitignore_setup [--project-root PROJECT_ROOT] [--dry-run]
 ```
 
+### recover — broken executor
+
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-script-executor:generate_executor recover \
+  [--project-dir PATH] [--target TARGET]
+```
+
+The one direct-path recovery entry for an executor that exists but cannot start.
+It needs no working `.plan/execute-script.py`; it finds the newest installed
+cache, probes, regenerates, and re-probes. The executor's own failure output
+prints this exact command. `references/upgrade-flow.md` Step 0 calls it first;
+`upgrade plan`'s `--bootstrap` path is the in-place stale rewrite, not this
+recovery.
+
 ### upgrade — plan
 
 ```bash

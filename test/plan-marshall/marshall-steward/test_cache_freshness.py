@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import json
 import os
+from argparse import Namespace
 from pathlib import Path
 
 import pytest
@@ -547,8 +548,9 @@ def test_a_resolved_manifest_stamps_provisioned_version(tmp_path: Path, monkeypa
     """The fixture that passes Stage 1 also reaches the Stage 2 re-stamp.
 
     Stage 1's gate opens once ``check_freshness`` resolves the installed manifest;
-    Stage 2 then re-stamps ``system.provisioned_version`` from the executor's
-    embedded version (itself stamped from that manifest at generation time).
+    Stage 2's handler (``sync-defaults``) then re-stamps
+    ``system.provisioned_version`` from the executor's embedded version (itself
+    stamped from that manifest at generation time).
     """
     version = '0.1.2000'
     skill_root = _make_flat_install(tmp_path, version=version)
@@ -557,12 +559,21 @@ def test_a_resolved_manifest_stamps_provisioned_version(tmp_path: Path, monkeypa
     assert gate['refuses_upgrade'] is False
 
     project = tmp_path / 'project'
-    (project / '.plan').mkdir(parents=True)
-    (project / '.plan' / 'execute-script.py').write_text(f"MARSHALL_VERSION = '{version}'\n", encoding='utf-8')
-    monkeypatch.setenv('PLAN_BASE_DIR', str(project / '.plan'))
+    plan_dir = project / '.plan'
+    plan_dir.mkdir(parents=True)
+    (plan_dir / 'execute-script.py').write_text(f"MARSHALL_VERSION = '{version}'\n", encoding='utf-8')
+    (plan_dir / 'marshal.json').write_text('{}\n', encoding='utf-8')
+    monkeypatch.setenv('PLAN_BASE_DIR', str(plan_dir))
 
-    config_defaults = load_script_module('plan-marshall', 'manage-config', '_config_defaults.py')
-    config: dict = {}
-    config_defaults.stamp_provisioning_fields(config)
+    # ``_config_core`` computes MARSHAL_PATH at import time; point the already
+    # imported module at the fixture so the Stage 2 handler writes here, not into
+    # the checkout the test process happens to run from.
+    config_core = load_script_module('plan-marshall', 'manage-config', '_config_core.py')
+    monkeypatch.setattr(config_core, 'MARSHAL_PATH', plan_dir / 'marshal.json')
+    monkeypatch.setattr(config_core, 'TRACKED_CONFIG_DIR', plan_dir)
 
-    assert config['system']['provisioned_version'] == version
+    sync_defaults = load_script_module('plan-marshall', 'manage-config', '_cmd_sync_defaults.py')
+    sync_defaults.cmd_sync_defaults(Namespace())
+
+    saved = json.loads((plan_dir / 'marshal.json').read_text(encoding='utf-8'))
+    assert saved['system']['provisioned_version'] == version

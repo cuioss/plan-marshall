@@ -16,6 +16,7 @@ Subcommands:
     generate    Generate executor with script mappings
     verify      Verify existing executor is valid
     bootstrap   Sanctioned direct-path bootstrap (see below)
+    recover     Recover a broken executor: find newest cache, probe, regenerate, re-probe
     drift       Compare executor mappings with current marketplace state
     preflight   Report the preconditions a regeneration depends on
     paths       Verify all mapped paths exist
@@ -3347,7 +3348,7 @@ def cmd_recover(args: argparse.Namespace) -> dict:
                     force=True,
                     dry_run=False,
                     marketplace=False,
-                    marketplace_root=None,
+                    marketplace_root=ctx['marketplace_root'],
                     target=target,
                 )
             )
@@ -3376,7 +3377,7 @@ def cmd_recover(args: argparse.Namespace) -> dict:
     probe_after = _probe_executor_import(executor)
     if probe_after:
         return {
-            'status': 'success',
+            'status': 'error',
             'action': 'regenerate_failed',
             'detail': 'the regenerated executor still fails to import',
             'probe_reason': probe_after,

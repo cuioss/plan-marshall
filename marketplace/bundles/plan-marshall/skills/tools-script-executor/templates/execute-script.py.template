@@ -174,9 +174,12 @@ def _newest_cache_scripts_dir(skill: str) -> str | None:
     try:
         for root in _CACHE_RECOVERY_ROOTS:
             base = Path(root).expanduser()
-            # The Claude cache root IS the bundle directory (``.../cache/plan-marshall``
-            # with version dirs directly inside); the flat roots carry the bundle as
-            # a ``{root}/{bundle}`` child. Probe both, bundle-child first.
+            # The Claude cache root is the marketplace directory
+            # (``.../cache/plan-marshall``); the bundle is a child
+            # (``.../cache/plan-marshall/plan-marshall``) whose version dirs hold the
+            # skills. The flat roots carry the bundle as a ``{root}/{bundle}`` child
+            # too, but with no version dirs. Probe both the bundle-child and the root
+            # itself, so a root that already names the bundle still resolves.
             for bundle_dir in (base / _BOOTSTRAP_BUNDLE, base):
                 if not bundle_dir.is_dir():
                     continue

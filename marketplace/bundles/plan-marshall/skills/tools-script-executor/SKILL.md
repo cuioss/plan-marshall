@@ -669,21 +669,35 @@ This case is distinct from the [Bootstrap Pattern](#bootstrap-pattern-before-exe
 
 ### Recovery
 
-Regenerate the executor by invoking `generate_executor.py` **directly**, bypassing the broken `.plan/execute-script.py` — through the sanctioned `bootstrap` verb, which detects the invalid executor and regenerates:
+The executor's own failure output prints the exact command. Run it verbatim: the
+`recover` verb finds the newest installed cache, probes the executor, regenerates
+it from that cache, and re-probes the regenerated file. It needs no working
+`.plan/execute-script.py`.
 
 ```bash
-python3 marketplace/bundles/plan-marshall/skills/tools-script-executor/scripts/generate_executor.py bootstrap --marketplace --marketplace-root .
+python3 .plan/execute-script.py plan-marshall:tools-script-executor:generate_executor recover \
+  [--project-dir PATH] [--target TARGET]
 ```
 
-This is the same `generate_executor — bootstrap` surface documented under [Canonical invocations](#canonical-invocations), run against the script file by its repository path rather than through the executor notation. The `--marketplace` flag selects the marketplace-source generation mode and `--marketplace-root .` pins discovery to the current checkout root (the directory that contains `marketplace/bundles`). After the direct call succeeds, the rewritten `.plan/execute-script.py` carries the corrected preamble and the normal executor-routed commands work again.
+From a meta-project checkout that carries the sources, the same entry runs by its
+repository-relative path against the live tree:
+
+```bash
+python3 marketplace/bundles/plan-marshall/skills/tools-script-executor/scripts/generate_executor.py recover --project-dir . --target <active-target>
+```
+
+`bootstrap --marketplace --marketplace-root .` remains a **meta-project-only**
+first-run entry (it needs a `marketplace/bundles` tree at the anchor). It is not
+the consumer recovery path: a consumer has no such tree, and its executor's
+failure output names `recover` for exactly that reason.
 
 ### Distinguishing the executor-unavailable cases
 
 | Case | Symptom | Recovery |
 |------|---------|----------|
 | First run (bootstrap) | `.plan/execute-script.py` does not exist | [Bootstrap Pattern](#bootstrap-pattern-before-executor-exists) — resolve the plugin root, run scripts directly |
-| Broken generated executor | `.plan/execute-script.py` exists but every invocation fails before reaching a script body | Run `generate_executor.py bootstrap --marketplace --marketplace-root .` directly to rebuild it |
-| Interpreter-launch abort | `python3 .plan/execute-script.py …` produces **no TOON and no `status` field at all** — the interpreter aborts at `dyld` level before the executor's own preamble runs, so there is no Python-level traceback either | Same as the broken-executor row: run `generate_executor.py bootstrap --marketplace --marketplace-root .` directly. Re-materialise the virtual environment first when its interpreter pointer is the cause (see below) |
+| Broken generated executor | `.plan/execute-script.py` exists but every invocation fails before reaching a script body | Run the `recover` command the failure output prints (above) |
+| Interpreter-launch abort | `python3 .plan/execute-script.py …` produces **no TOON and no `status` field at all** — the interpreter aborts at `dyld` level before the executor's own preamble runs, so there is no Python-level traceback either | Same as the broken-executor row: run the printed `recover` command. Re-materialise the virtual environment first when its interpreter pointer is the cause (see below) |
 
 **Known divergence — a stale `pyvenv.cfg` interpreter pointer.** A virtual environment whose `pyvenv.cfg` names an interpreter that no longer resolves on disk aborts the launch at the dynamic-loader level: the process never reaches Python, so no in-process guard, retry, or error handler can observe it. This is stated as a fact about the environment, not a defect to fix here — the abort is **not repairable from inside the process that failed to launch**, and no repair of the third-party virtual-environment materialisation is attempted by this skill.
 

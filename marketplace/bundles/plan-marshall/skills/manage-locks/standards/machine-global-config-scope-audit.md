@@ -155,7 +155,7 @@ mention-only files excluded.
 | **Union — the machine-global config-scope population** | **10** |
 
 The intersection is `manage-build-server/scripts/marshalld.py`, so the union is
-1 + 9 − 1 = **9 distinct script files**.
+2 + 9 − 1 = **10 distinct script files**.
 
 At the KEY level, where the shapes are defined:
 
