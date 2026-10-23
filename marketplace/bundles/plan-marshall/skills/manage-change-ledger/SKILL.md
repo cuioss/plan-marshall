@@ -281,10 +281,11 @@ reported in `unresolved` for the same reason, and an explicit-map key that names
 no recorded row is reported in `unmapped` — a typo'd map is never a silent
 success. A line of a hand-written map that does not name two SHAs is refused,
 not dropped. A source row that already has a mapped row — same `remapped_from`,
-`deliverable_id` and target commit — is skipped, so re-running the verb after an
-interruption appends nothing twice; two rows that share one old commit are
-distinct records and each maps once. `--dry-run` reports the map without
-appending; `--emit-map PATH` writes the applied map as JSON.
+`deliverable_id`, sorted `changed_paths` and target commit — is skipped, so
+re-running the verb after an interruption appends nothing twice; two rows that
+share one old commit (even one deliverable) are distinct records and each maps
+once. `--dry-run` reports the map without appending; `--emit-map PATH` writes
+the applied map as JSON.
 
 The mapped row preserves the source row's recorded facts (`deliverable_id`,
 `changed_paths`, …) and adds `remapped_from` — the row's original `commit_sha` —

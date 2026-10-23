@@ -548,6 +548,31 @@ def _derive_patch_id_map(
     return pairs, unmapped
 
 
+def _row_map_key(
+    remapped_from: Any,
+    deliverable_id: Any,
+    changed_paths: Any,
+    commit_sha: Any,
+) -> tuple[str, str, tuple[str, ...], str]:
+    """The identity a mapped row uses to recognise its own work on a re-run.
+
+    A ``kind=change`` row's recorded facts are ``deliverable_id``,
+    ``changed_paths`` and the commit identity; ``worktree_sha`` and
+    ``timestamp_iso`` are currency stamps. Two rows can share one old commit AND
+    one deliverable while recording different paths, so the key carries the
+    sorted path list as well — otherwise the second row would look like an
+    already-mapped sibling and lose its facts. The mapped row copies all three
+    fields, so the key is derivable from the row itself, with no extra schema.
+    """
+    paths = changed_paths if isinstance(changed_paths, list) else []
+    return (
+        str(remapped_from or '').strip(),
+        str(deliverable_id or '').strip(),
+        tuple(sorted(str(path) for path in paths)),
+        str(commit_sha or '').strip(),
+    )
+
+
 def remap_change_rows(
     *,
     worktree_root: str,
@@ -568,10 +593,11 @@ def remap_change_rows(
     in ``unmapped`` instead of being offered a counterpart.
 
     A source row that already has a mapped row — same ``remapped_from``,
-    ``deliverable_id`` and target commit — is skipped, so re-running the verb
-    after an interrupted run appends nothing twice. Appending is therefore
-    idempotent at the row level even though the ledger itself stays pure-append.
-    Two rows that share one old commit are distinct records and each maps once.
+    ``deliverable_id``, sorted ``changed_paths`` and target commit — is skipped,
+    so re-running the verb after an interrupted run appends nothing twice.
+    Appending is therefore idempotent at the row level even though the ledger
+    itself stays pure-append. Two rows that share one old commit are distinct
+    records and each maps once, even when they also share a deliverable.
 
     Returns ``remap_count`` (rows mapped — appended unless ``dry_run``),
     ``mappings`` (the pairs applied, as ``old_commit_sha`` / ``new_commit_sha``),
@@ -589,15 +615,16 @@ def remap_change_rows(
         else:
             resolved_rows.append((row, full))
     existing_pairs = {
-        (
-            str(row.get('remapped_from', '')).strip(),
-            str(row.get('deliverable_id', '')).strip(),
-            str(row.get('commit_sha', '')).strip(),
+        _row_map_key(
+            row.get('remapped_from'),
+            row.get('deliverable_id'),
+            row.get('changed_paths'),
+            row.get('commit_sha'),
         )
         for row in rows
         if row.get('remapped_from')
     }
-    superseded = {old for old, _deliverable, _new in existing_pairs}
+    superseded = {old for old, _deliverable, _paths, _new in existing_pairs}
     by_full: dict[str, list[dict[str, Any]]] = {}
     for row, full in resolved_rows:
         by_full.setdefault(full, []).append(row)
@@ -644,7 +671,12 @@ def remap_change_rows(
             # abbreviated one; comparing the map key instead would miss the
             # recorded pair and append a duplicate on every re-run.
             source_raw = str(source.get('commit_sha', '')).strip()
-            source_pair = (source_raw, str(source.get('deliverable_id', '')).strip(), new_full)
+            source_pair = _row_map_key(
+                source_raw,
+                source.get('deliverable_id'),
+                source.get('changed_paths'),
+                new_full,
+            )
             if source_pair in existing_pairs:
                 continue
             record = remap_record(
@@ -657,8 +689,8 @@ def remap_change_rows(
             # Track the pair immediately: two rows can share one old commit (the
             # derivation emits one pair per row), and a later pair would iterate
             # the same siblings again without this update. The key carries the
-            # deliverable id as well, because rows for one commit are distinct
-            # records and each must be mapped once.
+            # deliverable and the paths as well, because rows for one commit are
+            # distinct records and each must be mapped once.
             existing_pairs.add(source_pair)
             appended += 1
             mappings.append({'old_commit_sha': old_raw, 'new_commit_sha': new_full})

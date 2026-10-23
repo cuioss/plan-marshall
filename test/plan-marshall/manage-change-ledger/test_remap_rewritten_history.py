@@ -422,6 +422,31 @@ def test_two_rows_for_one_commit_append_once_each(rewrite_env) -> None:
     assert len(rewrite_env.change_rows()) == 4, 'two originals plus exactly two mapped rows'
 
 
+def test_rows_sharing_commit_and_deliverable_keep_their_own_paths(rewrite_env) -> None:
+    """Two records for one commit and one deliverable stay distinct."""
+    for changed_paths in ('f3.txt', 'f3.txt,extra.txt'):
+        appended = rewrite_env.run(
+            'append',
+            '--kind',
+            'change',
+            '--deliverable-id',
+            '3',
+            '--commit-sha',
+            rewrite_env.shas[2],
+            '--changed-paths',
+            changed_paths,
+        )
+        assert appended.success, appended.stderr
+    _git(rewrite_env.repo, 'commit', '-q', '--amend', '-m', 'commit 3, reworded')
+
+    result = rewrite_env.run('remap', '--worktree-root', str(rewrite_env.repo))
+
+    assert result.success, result.stderr
+    assert result.toon()['remap_count'] == 2
+    mapped = [row for row in rewrite_env.change_rows() if row.get('remapped_from')]
+    assert {tuple(row['changed_paths']) for row in mapped} == {('f3.txt',), ('f3.txt', 'extra.txt')}
+
+
 def test_unparseable_map_line_is_refused(rewrite_env) -> None:
     """A typo'd map line fails loud instead of reading as a clean no-op."""
     rewrite_env.record_all()

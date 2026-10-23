@@ -237,7 +237,11 @@ python3 .plan/execute-script.py plan-marshall:manage-change-ledger:manage-change
 
 If either call returns `status: error`, ABORT the step with `outcome=failed`: log the returned `error` and `message`, do not run the append, and record the failure via **Mark Step Complete (Failure)**. A remap that did not run leaves the ledger stale, and `outcome=done` would record a repair that never happened.
 
-Read the first invocation's `unmapped` list before continuing. Append only entries whose stale SHA is an ancestor of `{pre_sha}` (check with `git merge-base --is-ancestor {stale_sha} {pre_sha}`): those are the rows attributable to this rebase whose patches changed during conflict resolution, and each needs its row appended explicitly rather than letting the remap guess. Do NOT append an `unmapped` entry outside that ancestry — it belongs to another history (another plan, or a rewrite whose replacement row already exists), and appending it would create an unrelated replacement row in the shared ledger. `{deliverable_id}` and `{changed_paths}` come from the stale row itself:
+Read the first invocation's `unmapped` list before continuing. Append only entries whose stale SHA is an ancestor of `{pre_sha}` (check with `git merge-base --is-ancestor {stale_sha} {pre_sha}`): those are the rows attributable to this rebase whose patches changed during conflict resolution, and each needs its row appended explicitly rather than letting the remap guess. Do NOT append an `unmapped` entry outside that ancestry — it belongs to another history (another plan, or a rewrite whose replacement row already exists), and appending it would create an unrelated replacement row in the shared ledger.
+
+Resolve the replacement SHA for each eligible entry from `git range-diff --no-color {pre_sha}...{post_sha}`: its pair lines name the replayed commit that corresponds to each stale one, including a commit whose conflict resolution changed its patch. `{post_sha}` is the `post_sha` field of the same `worktree-rebase-to` result. Never guess `{rebased_sha}` from position or from `HEAD`: a wrong SHA would record a fact about a commit that did not carry the work. If range-diff names no counterpart, the commit was dropped by the rebase — report that in the step log and do not append a row for it.
+
+`{deliverable_id}` comes from the stale row; `{changed_paths}` is git-sourced from the REBASED commit — `git diff-tree --no-commit-id --name-only -r {rebased_sha}`, comma-joined — because a conflict resolution can change which paths the replayed commit touches, and the stale row's list describes the pre-rewrite commit:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-change-ledger:manage-change-ledger append \
@@ -246,7 +250,7 @@ python3 .plan/execute-script.py plan-marshall:manage-change-ledger:manage-change
   --worktree-root {worktree_path}
 ```
 
-`{changed_paths}` is the same git-sourced list the stale row carries (and `git diff-tree --no-commit-id --name-only -r {rebased_sha}` reproduces); omitting it would record an empty path list, a fact the ledger is supposed to hold.
+Omitting `--changed-paths` would record an empty path list, a fact the ledger is supposed to hold.
 
 Log the remap outcome:
 
