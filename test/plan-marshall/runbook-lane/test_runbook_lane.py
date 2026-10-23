@@ -1797,6 +1797,61 @@ def test_build_classify_builds_every_path_when_the_glob_helper_import_fails_othe
     assert data['reason'] == 'glob helper unavailable: RuntimeError'
 
 
+# =============================================================================
+# PLAN-LB-73 D3 — the executor may not predate the lane text it runs
+# =============================================================================
+
+
+def _executor_with_version(path: Path, version: str) -> Path:
+    _write(path, f"MARSHALL_VERSION = '{version}'\n")
+    return path
+
+
+def _versioned_lane_dir(tmp_path: Path, version: str) -> Path:
+    lane = tmp_path / 'cache' / 'plan-marshall' / version / 'skills' / _SKILL_NAME
+    lane.mkdir(parents=True, exist_ok=True)
+    return lane
+
+
+def test_input_checks_executor_skew_before_resolve() -> None:
+    section = _raw_section('## 0. Input')
+
+    assert 'executor-skew' in section, 'section 0 carries no executor-skew check'
+    assert section.index('executor-skew') < section.index('runbook_lane resolve --spec'), (
+        'the skew check does not run before the resolve call'
+    )
+    assert 'blocked' in section, 'the skew outcome is not named as blocked'
+    assert 'regenerate the executor' in section, 'the check names no remedy'
+    assert 'could_not_check' in section
+    assert 'never read as' in section, 'an unmakeable comparison is not distinguished from no skew'
+
+
+def test_executor_skew_detects_an_older_executor(tmp_path: Path) -> None:
+    module = load_script_module('plan-marshall', _SKILL_NAME, 'runbook_lane.py', register=False)
+    executor = _executor_with_version(tmp_path / 'execute-script.py', '0.1.1961')
+    lane = _versioned_lane_dir(tmp_path, '0.1.1977')
+
+    assert module._executor_skew(executor, lane) == 'skew'
+
+
+def test_executor_skew_matches_equal_versions(tmp_path: Path) -> None:
+    module = load_script_module('plan-marshall', _SKILL_NAME, 'runbook_lane.py', register=False)
+    executor = _executor_with_version(tmp_path / 'execute-script.py', '0.1.1977')
+    lane = _versioned_lane_dir(tmp_path, '0.1.1977')
+
+    assert module._executor_skew(executor, lane) == 'match'
+
+
+def test_executor_skew_cannot_check_an_unreadable_executor(tmp_path: Path) -> None:
+    module = load_script_module('plan-marshall', _SKILL_NAME, 'runbook_lane.py', register=False)
+    lane = _versioned_lane_dir(tmp_path, '0.1.1977')
+
+    verdict = module._executor_skew(tmp_path / 'absent-execute-script.py', lane)
+
+    assert verdict == 'could_not_check'
+    assert verdict != 'match', 'an unreadable executor is read as no skew'
+
+
 def test_extra_buildable_globs_drops_a_block_indicator_and_unwraps_quotes() -> None:
     module = load_script_module('plan-marshall', _SKILL_NAME, 'runbook_lane.py', register=False)
 

@@ -307,6 +307,86 @@ def _skill_exists(notation: str, lane_bundle: str) -> bool:
     return any(path.is_file() for path in _skill_probe_paths(notation, lane_bundle))
 
 
+#: The version-directory grammar a deployed bundle cache uses, shaped exactly as
+#: ``plugin_registry`` and ``marketplace_bundles`` select version dirs by.
+_VERSION_DIR_RE = re.compile(r'^\d+\.\d+')
+
+_EXECUTOR_SKEW_MATCH = 'match'
+_EXECUTOR_SKEW_SKEW = 'skew'
+_EXECUTOR_SKEW_UNCHECKED = 'could_not_check'
+
+
+def _lane_text_version(skill_dir: Path | None = None) -> str | None:
+    """Return the version directory the lane text was loaded from, or ``None``.
+
+    A deployed bundle lives under ``{bundle}/{version}/skills/{skill}``, so the
+    version is the first version-shaped path segment above the skill. The source
+    tree carries no version directory; that is an UNMAKEABLE comparison, never
+    "no skew".
+    """
+    root = (skill_dir or _lane_skill_dir()).resolve()
+    for part in root.parts:
+        if _VERSION_DIR_RE.match(part):
+            return part
+    return None
+
+
+def _executor_skew(executor: Path, lane_skill_dir: Path | None = None) -> str:
+    """Compare the executor's version with the lane text's version.
+
+    The version is read through ``plugin_registry``'s shared executor reader,
+    never by parsing the executor here. Returns ``match`` when the executor is
+    the same version or newer, ``skew`` when it is OLDER than the text this run
+    read — the dangerous direction, where the text names verbs the executor's
+    mapped script does not have — and ``could_not_check`` when either version
+    cannot be read. ``could_not_check`` is deliberately not ``match``: a failed
+    read must never be reported as agreement.
+    """
+    from plugin_registry import EXECUTOR_VERSION_FOUND, read_executor_version, version_key
+
+    state, executor_version = read_executor_version(executor)
+    lane_version = _lane_text_version(lane_skill_dir)
+    if state != EXECUTOR_VERSION_FOUND or executor_version is None or lane_version is None:
+        return _EXECUTOR_SKEW_UNCHECKED
+    if version_key(executor_version) < version_key(lane_version):
+        return _EXECUTOR_SKEW_SKEW
+    return _EXECUTOR_SKEW_MATCH
+
+
+def cmd_executor_skew(args: argparse.Namespace) -> dict[str, Any]:
+    """Decide whether the executor may run the lane text this run read.
+
+    Reports the verdict and both versions, so a ``skew`` can name them and the
+    remedy. A comparison that cannot be made is ``could_not_check`` with its
+    reason; the lane reports it and asks the operator instead of reading it as
+    no skew.
+    """
+    from plugin_registry import EXECUTOR_VERSION_FOUND, read_executor_version
+
+    executor = Path(getattr(args, 'executor', None) or '.plan/execute-script.py')
+    lane_skill_dir = Path(getattr(args, 'lane_dir', None) or _lane_skill_dir())
+    state, executor_version = read_executor_version(executor)
+    lane_version = _lane_text_version(lane_skill_dir)
+    verdict = _executor_skew(executor, lane_skill_dir)
+    result: dict[str, Any] = {
+        'status': 'success',
+        'operation': 'executor-skew',
+        'verdict': verdict,
+        'executor': executor.as_posix(),
+        'executor_version': executor_version or 'unknown',
+        'lane_version': lane_version or 'unknown',
+    }
+    if verdict == _EXECUTOR_SKEW_SKEW:
+        result['remedy'] = 'regenerate the executor'
+    elif verdict == _EXECUTOR_SKEW_UNCHECKED:
+        result['reason'] = (
+            'executor version unreadable'
+            if state != EXECUTOR_VERSION_FOUND
+            else 'lane text version not derivable from its install path'
+        )
+    return result
+
+
 def _spec_deliverables(spec: Path) -> list[dict[str, str]]:
     """Read a staged spec's ``## Deliverables`` section into per-deliverable rows.
 
@@ -1623,6 +1703,23 @@ def main() -> int:
     )
     resolve_parser.add_argument('--project-dir', default='.', help='Project root (default: current directory)')
 
+    skew_parser = subparsers.add_parser(
+        'executor-skew',
+        help='Compare the executor version with the lane text version',
+        allow_abbrev=False,
+    )
+    skew_parser.add_argument(
+        '--executor',
+        default=None,
+        help='Executor to read (default: .plan/execute-script.py)',
+    )
+    skew_parser.add_argument(
+        '--lane-dir',
+        dest='lane_dir',
+        default=None,
+        help="The lane skill's own directory (default: this script's skill dir)",
+    )
+
     classify_parser = subparsers.add_parser(
         'build-classify', help='Classify changed paths as docs-only or buildable', allow_abbrev=False
     )
@@ -1703,6 +1800,9 @@ def main() -> int:
             )
             return 0
         output_toon(data)
+        return 0
+    if args.command == 'executor-skew':
+        output_toon(cmd_executor_skew(args))
         return 0
     if args.command == 'build-classify':
         data = cmd_build_classify(args)

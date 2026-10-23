@@ -48,6 +48,18 @@ resolves no gate build command (naming the gate canonicals it could not resolve)
 skill/persona name in a flat install with no recorded bundle identity
 (`flat_skill_identity_missing`).
 
+### executor-skew
+
+```bash
+python3 .plan/execute-script.py plan-marshall:runbook-lane:runbook_lane executor-skew \
+  [--executor .plan/execute-script.py] [--lane-dir DIR]
+```
+
+Compares the version the executor carries with the version of the lane text it will run, reading the
+executor through the shared `plugin_registry` reader rather than parsing it. It answers `match`,
+`skew` or `could_not_check` and names both versions; `skew` also carries the remedy. The lane runs it
+before `resolve` (section 0), because a stale executor's own `resolve` cannot perform the check.
+
 ### build-classify
 
 ```bash
@@ -100,7 +112,23 @@ The invocation names a spec:
 /plan-marshall-runbook-lane plan=.plan/orchestrator/{slug}/plans/PLAN-NN-{slug}.md
 ```
 
-Read it from the **main checkout**; it is git-tracked there. Then **resolve** every value the run
+**Before `resolve`, check that the executor is not older than this text.** Compare the version the
+executor carries with the version of the lane text this run read:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:runbook-lane:runbook_lane executor-skew
+```
+
+It answers `match`, `skew` or `could_not_check`, naming both versions. A `skew` — or an
+`unknown_verb`/argparse rejection that shows the executor predates this text — stops the run as
+**blocked**, naming both versions and the remedy: regenerate the executor (`/marshall-steward`, or
+the project's equivalent generate step). A `could_not_check` (the executor is unreadable, its
+version is absent, or the lane text's own version cannot be derived) is reported as **could not
+check** and the operator is asked; it is never read as no skew. The check cannot live inside
+`resolve`: a stale executor runs the stale `resolve`, which is exactly the code that lacks it, while
+this text is loaded from the installed plugin and is current when the executor is not.
+
+Read the spec from the **main checkout**; it is git-tracked there. Then **resolve** every value the run
 uses, and read the result before doing anything else:
 
 ```bash
