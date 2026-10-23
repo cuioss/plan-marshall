@@ -136,8 +136,10 @@ One small under-report and one hidden measurement; everything else matches:
 
 ## Follow-Ups
 
-- **Sonar read of the merged tree** (owed, operator): regenerate the executor, then run the
-  read against `main`. Until then no landing carries a measured figure.
+- **Sonar read of the merged PR** (taken afterwards by the orchestrator, once the operator's
+  steward run had regenerated the executor): `read_open_issues` on PR 1839 returns
+  `count_status: confirmed`, `open_issue_count: 0`. The landing's `unknown` was a missed
+  measurement. No runbook landing yet carries a count written by the lane's own read step.
 - **Executor bootstrap gap** → PLAN-LB-89 (it already declares `generate_executor.py`): a plan
   whose lane text calls a verb it adds cannot run it, and the guard refuses the only route.
 - **`plugin_version` stamp** → verify under OpenCode, then PLAN-LB-84 (it declares

@@ -700,7 +700,11 @@ derive, for rows still live.
   and the only route that writes a worktree executor is a direct `generate_executor.py` call, which the guard refused
   (R5, `guard.log` 16:35:56Z). The landing carries `step.sonar-roundtrip.open_issue_count=unknown`. Until a run reads
   a PR with the merged lane text, the gate's verdicts on a real analysis are unobserved; `resolve` on the merged tree
-  reports `sonar: configured`, project `cuioss_plan-marshall`. Retire when one landing carries a measured count.
+  reports `sonar: configured`, project `cuioss_plan-marshall`. **2026-10-23: the executor was regenerated and the
+  orchestrator took the read for the merged PR** (`sonar read_open_issues --project cuioss_plan-marshall --pr 1839`):
+  `count_status: confirmed`, `open_issue_count: 0`, no rules. So #1839 had no open Sonar issue, the verb works against
+  the live service, and the landing's `unknown` was a missed measurement, not a hidden finding. Still open until a runbook
+  landing carries the measured count itself (the lane's own read step, not the orchestrator's).
 - **A plan whose own lane text calls a verb it introduces cannot run it, and the guard refuses the bootstrap
   (PLAN-LB-85 landing, 2026-10-23; medium; owner PLAN-LB-89, which already declares `generate_executor.py`).**
   Either the guard admits the generator verb, or worktree creation generates the per-tree executor. The build-server
