@@ -143,6 +143,10 @@ def test_boundary_refuses_all_three_commits_after_rebase_before_remap(rewrite_en
     assert refusal['error'] == 'execute_commits_unrecorded'
     assert refusal['unrecorded_count'] == 3
     assert refusal['branch_commit_count'] == 3
+    assert refusal['signature'] == 'history_rewritten', (
+        f'A real rebase must reach the rewrite signature, got {refusal!r}.'
+    )
+    assert 'manage-change-ledger:manage-change-ledger remap' in refusal['remap_invocation']
 
 
 def test_rebase_remap_clears_the_boundary_and_keeps_original_rows(rewrite_env, monkeypatch) -> None:
@@ -365,6 +369,24 @@ def test_partial_explicit_map_reports_the_rows_it_left_stale(rewrite_env) -> Non
     assert set(data['unmapped']) == {rewrite_env.shas[1], rewrite_env.shas[2]}, (
         f'The rows the map left stale must be reported, got {data!r}'
     )
+
+
+def test_unresolvable_old_head_is_refused(rewrite_env) -> None:
+    """A pre-rewrite head that is not a commit here is refused, not read as empty."""
+    rewrite_env.record_all()
+
+    result = rewrite_env.run(
+        'remap',
+        '--worktree-root',
+        str(rewrite_env.repo),
+        '--old-head',
+        'deadbeefdeadbeefdeadbeefdeadbeefdeadbeef',
+    )
+
+    data = result.toon()
+    assert data['status'] == 'error'
+    assert data['error_code'] == 'INVALID_INPUT'
+    assert len(rewrite_env.change_rows()) == 3, 'a refused invocation must append nothing'
 
 
 def test_explicit_map_key_with_no_recorded_row_is_reported(rewrite_env) -> None:

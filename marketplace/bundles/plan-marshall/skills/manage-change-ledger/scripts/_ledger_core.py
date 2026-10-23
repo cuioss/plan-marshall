@@ -359,7 +359,8 @@ def commit_ancestry(worktree_root: str | Path, sha: str) -> bool | None:
     exits 0 / 1). ``None`` is the third answer a gate must not collapse into
     either: git could not answer at all (a missing object store, an unreadable
     worktree, a SHA this repository does not hold), so nothing was established
-    about ancestry.
+    about ancestry. Callers that report a CAUSE must keep the three apart; a
+    caller that only needs a positive membership test compares against ``True``.
     """
     proc = _run_git(worktree_root, 'merge-base', '--is-ancestor', sha, 'HEAD')
     if proc.returncode == 0:
@@ -367,15 +368,6 @@ def commit_ancestry(worktree_root: str | Path, sha: str) -> bool | None:
     if proc.returncode == 1:
         return False
     return None
-
-
-def commit_is_ancestor(worktree_root: str | Path, sha: str) -> bool:
-    """Return True only when ``sha`` is PROVEN reachable from HEAD.
-
-    The unevaluable answer is False here, so a caller that treats this as a plain
-    predicate never takes a positive branch on a question git did not answer.
-    """
-    return commit_ancestry(worktree_root, sha) is True
 
 
 def _commit_patch_id(worktree_root: str | Path, sha: str) -> str | None:
@@ -502,7 +494,7 @@ def _derive_patch_id_map(
     is a real outcome that needs the explicit append path, not a silent omission:
     a patch that changed during conflict resolution has no counterpart.
     """
-    rewritten = [(row, full) for row, full in resolved_rows if not commit_is_ancestor(worktree_root, full)]
+    rewritten = [(row, full) for row, full in resolved_rows if commit_ancestry(worktree_root, full) is False]
 
     candidate_shas: set[str] = set()
     if old_head is not None:
@@ -552,8 +544,9 @@ def remap_change_rows(
 
     ``explicit_map`` (an old-to-new map the rewriting step emitted) is consumed
     verbatim; without it, the map is derived by stable patch-id from the rows
-    whose recorded commit is no longer an ancestor of HEAD. ``old_head`` scopes
-    the derivation to the commits a known rewrite replayed.
+    whose recorded commit is no longer an ancestor of HEAD. ``old_head`` narrows
+    the candidate window to commits reachable from HEAD but not from the
+    pre-rewrite head; it does not identify which of them the rewrite replayed.
 
     A pair that is already recorded — a row whose ``remapped_from`` and
     ``commit_sha`` are exactly this pair — is skipped, so re-running the verb
@@ -601,7 +594,7 @@ def remap_change_rows(
         # `unmapped` means the same thing on both branches.
         covered = {old_full for _old, old_full, _new in pairs}
         for row, full in resolved_rows:
-            if full in covered or commit_is_ancestor(worktree_root, full):
+            if full in covered or commit_ancestry(worktree_root, full) is not False:
                 continue
             unmapped.append(str(row.get('commit_sha', '')).strip())
     else:

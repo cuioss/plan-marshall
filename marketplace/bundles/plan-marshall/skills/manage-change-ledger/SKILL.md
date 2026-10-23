@@ -266,11 +266,11 @@ The old-to-new map has two sources:
   `commit_sha`, keeps the rows whose commit is no longer an ancestor of `HEAD`,
   and matches them to the commits they became by **stable `git patch-id`**.
   Patch-id hashes the patch, not the message, so a rebased commit and a
-  message-only amend both match. `--old-head` scopes the derivation to the
-  commits a known rewrite replayed; without it the candidate window is each
-  stale row's `<stale>..HEAD`, which can also contain upstream commits, so a
-  caller that knows the pre-rewrite head should pass it. A patch-id carried by
-  two candidates is ambiguous and left unmapped rather than guessed.
+  message-only amend both match. `--old-head` narrows the candidate window to
+  commits reachable from HEAD but not from the pre-rewrite head — it does not
+  identify which of them the rewrite replayed, and the window still includes any
+  upstream commits fetched with the rebase. A patch-id carried by two candidates
+  is ambiguous and left unmapped rather than guessed.
 
 An old commit whose patch changed (a conflict resolved during the rebase) has no
 patch-id counterpart: it is reported in `unmapped` rather than guessed at, and
@@ -358,7 +358,7 @@ from _ledger_core import (
     build_record,
     change_record,
     job_record,
-    commit_is_ancestor,
+    commit_ancestry,
     parse_sha_map_text,
     remap_change_rows,
     remap_record,
@@ -373,7 +373,7 @@ from _ledger_core import (
 - `remap_change_rows(...)` — the rewrite-remap: derive or consume an old-to-new map, then append one `remap_record` per affected row. Returns `remap_count`, `mappings`, `unmapped` / `unresolved` and the ledger path. Idempotent at the `(remapped_from, commit_sha)` pair level, so a repeated run appends nothing.
 - `remap_record(...)` — the mapped-row constructor: copies the source row's recorded facts and stamps `commit_sha` / `worktree_sha` / `timestamp_iso` / `remapped_from`.
 - `parse_sha_map_text(...)` — parse the map from JSON (`--emit-map` output) or lines of `old new` / `old:new` / `old=new`; a line that does not name two SHAs is refused rather than dropped, so a typo cannot read as a clean no-op.
-- `commit_is_ancestor(...)` / `resolve_commit(...)` — the git primitives the derivation shares, so no consumer re-implements the ancestry or rev-parse check.
+- `commit_ancestry(...)` / `resolve_commit(...)` — the git primitives the derivation and the 5-execute guard share, so no consumer re-implements the ancestry or rev-parse check. `commit_ancestry` is tri-state: `True`/`False` are git's answers, `None` means git could not answer and must never be read as proof that a commit is stale.
 
 
 ## Integration

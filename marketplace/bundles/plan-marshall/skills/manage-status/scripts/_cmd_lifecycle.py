@@ -661,10 +661,11 @@ def _phase_end_marker_refusal(plan_id: str, status: dict[str, Any]) -> dict[str,
       otherwise, carrying ``append_invocations`` (plus the first as
       ``append_invocation``). The remedy differs because the cause does:
       remapping stale rows is not the same repair as appending skipped ones.
-      When the whole branch is unrecorded but the ledger still holds live rows
-      for other work, the guard cannot tell a rewrite from a settlement that
-      never ran, so the rewrite signature carries BOTH repairs rather than send
-      the reader to a remap that would map nothing.
+      The whole-branch state is inherently AMBIGUOUS: no row is attributable to
+      this branch, so the ledger may describe a rewrite or may hold other work
+      while this settlement never ran. It therefore carries BOTH repairs and a
+      message that names both possibilities; only a partial gap beside rows
+      proven stale asserts a rewrite as the cause.
     - ``None`` (pass) — no worktree in play, no persisted path, an empty
       range, or full coverage. Each pass-through is a distinct unevaluable
       state, never a clean verdict over an examined store. An unreadable
@@ -771,11 +772,12 @@ def _phase_end_marker_refusal(plan_id: str, status: dict[str, Any]) -> dict[str,
         remedy: dict[str, Any] = {}
     else:
         is_rewrite, every_row_stale = _rewrite_evidence(worktree_path, unrecorded, branch_shas, recorded)
+        whole_branch = len(unrecorded) == len(branch_shas)
         append_invocations = [_append_invocation(worktree_path, sha) for sha in unrecorded]
         if is_rewrite:
             error = EXECUTE_COMMITS_UNRECORDED_ERROR
             remap_invocation = _remap_invocation(worktree_path)
-            if every_row_stale:
+            if every_row_stale and not whole_branch:
                 message = (
                     f'{len(unrecorded)} of {len(branch_shas)} worktree-branch commit(s) since diverging from '
                     f'{base_branch} carry no kind=change ledger row, and every recorded row points at a commit '
@@ -788,11 +790,11 @@ def _phase_end_marker_refusal(plan_id: str, status: dict[str, Any]) -> dict[str,
                     'remap_invocation': remap_invocation,
                 }
             else:
-                # Whole branch unrecorded, but the ledger still holds live rows
-                # for other work: either this branch was rewritten or its
-                # settlement never ran, and this guard cannot tell which. Carry
-                # BOTH repairs rather than send the reader to a remap that would
-                # map nothing.
+                # The whole branch is unrecorded, so NO row can be attributed to
+                # this branch. That is the signature D2 names, but it is equally
+                # the signature of a settlement that never ran — the ledger is
+                # shared, and its rows may belong to other work. Carry BOTH
+                # repairs rather than assert a cause the evidence cannot separate.
                 message = (
                     f'{len(unrecorded)} of {len(branch_shas)} worktree-branch commit(s) since diverging from '
                     f'{base_branch} carry no kind=change ledger row and no branch commit matches a recorded '

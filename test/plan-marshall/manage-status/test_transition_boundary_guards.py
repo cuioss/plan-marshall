@@ -660,7 +660,12 @@ def _rewrite_refusal(plan_id: str) -> dict:
 
 
 def test_whole_branch_unrecorded_reports_rewrite_signature_with_remap(plan_context, monkeypatch) -> None:
-    """The whole branch unrecorded is the rewrite signature, never a plain gap."""
+    """The whole branch unrecorded is the rewrite signature, and is ambiguous.
+
+    No row can be attributed to this branch, so the guard cannot separate a
+    rewrite from a settlement that never ran: it carries both repairs and its
+    message names both, rather than asserting a cause it did not establish.
+    """
     plan_id = 'rewrite-whole-branch'
     _seed_rewrite_gate_plan(plan_context, plan_id)
     new_shas = ['1' * 40, '2' * 40, '3' * 40]
@@ -680,36 +685,13 @@ def test_whole_branch_unrecorded_reports_rewrite_signature_with_remap(plan_conte
         f'The rewrite refusal must carry the ready-to-run remap invocation, got {refusal!r}.'
     )
     assert '--worktree-root' in refusal['remap_invocation']
-    assert 'append_invocation' not in refusal, (
-        'a proven rewrite (every recorded row left HEAD) must not offer a blind append'
-    )
-
-
-def test_whole_branch_with_live_ledger_rows_carries_both_remedies(plan_context, monkeypatch) -> None:
-    """The whole branch unrecorded beside live rows cannot be proven a rewrite.
-
-    A ledger that still holds a landed plan's rows makes "the unrecorded set is
-    the whole branch" true for a branch whose settlement simply never ran. The
-    guard must not then claim every recorded row left HEAD (it did not) or send
-    the reader to a remap that would map nothing: it carries both repairs.
-    """
-    plan_id = 'rewrite-whole-branch-live-rows'
-    _seed_rewrite_gate_plan(plan_context, plan_id)
-    new_shas = ['1' * 40, '2' * 40, '3' * 40]
-    monkeypatch.setattr(_lifecycle, '_branch_commit_shas', lambda _p, _b: new_shas)
-    monkeypatch.setattr(_lifecycle, '_recorded_change_shas', lambda: {'a' * 40})
-    monkeypatch.setattr(_lifecycle, '_sha_is_ancestor_of_head', lambda _w, _s: True)
-
-    refusal = _rewrite_refusal(plan_id)
-
-    assert refusal is not None
-    assert refusal['signature'] == 'history_rewritten'
-    assert 'remap_invocation' in refusal, 'the rewrite signature must still offer the remap'
-    assert refusal['append_invocations'], f'The unprovable case must also offer the append repair, got {refusal!r}.'
-    assert 'every recorded row points at a commit' not in refusal['message'], (
-        f'The message must not assert staleness the guard did not establish, got {refusal["message"]!r}.'
+    assert refusal['append_invocations'], (
+        f'The ambiguous whole-branch case must also offer the append repair, got {refusal!r}.'
     )
     assert 'If it was not rewritten' in refusal['message']
+    assert 'The branch history was rewritten' not in refusal['message'], (
+        f'The message must not assert a cause the evidence cannot separate, got {refusal["message"]!r}.'
+    )
 
 
 def test_unanswerable_ancestry_does_not_claim_a_proven_rewrite(plan_context, monkeypatch) -> None:

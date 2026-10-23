@@ -69,6 +69,7 @@ from _ledger_core import (
     parse_sha_map_text,
     read_entries,
     remap_change_rows,
+    resolve_commit,
     resolve_ledger_path,
 )
 from marketplace_paths import NO_PLAN_SENTINEL
@@ -358,6 +359,15 @@ def run_remap(args: Namespace) -> dict[str, Any]:
     as JSON so a rewriting step can publish it beside the repair.
     """
     worktree_root = args.worktree_root or '.'
+    if args.old_head and resolve_commit(worktree_root, args.old_head) is None:
+        # An unresolvable pre-rewrite head would leave the candidate window empty
+        # and read as "every row is unmapped", sending the caller to hand-append
+        # rows for a typo. Refuse instead.
+        return make_error(
+            f'--old-head {args.old_head} does not resolve to a commit in {worktree_root}',
+            code=ErrorCode.INVALID_INPUT,
+            worktree_root=str(worktree_root),
+        )
     try:
         explicit_map = _explicit_sha_map(args)
     except (OSError, ValueError) as exc:
@@ -520,7 +530,7 @@ Examples:
                     {
                         'flags': ['--old-head'],
                         'dest': 'old_head',
-                        'help': 'Pre-rewrite HEAD; scopes patch-id derivation to the commits that rewrite replayed',
+                        'help': 'Pre-rewrite HEAD; narrows patch-id candidates to commits reachable from HEAD but not from it',
                     },
                     {
                         'flags': ['--emit-map'],
