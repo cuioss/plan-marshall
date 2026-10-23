@@ -78,17 +78,22 @@ python3 .plan/execute-script.py plan-marshall:manage-ci-artifacts:manage-ci-arti
 status: success
 plan_id: {plan_id}
 run_id: {run_id}
-run_dir: artifacts/ci-runs/{run_id}
+run_dir: local/plans/{plan_id}/artifacts/ci-runs/{run_id}
 already_persisted: true | false
 job_count: N
-manifest_path: artifacts/ci-runs/{run_id}/manifest.toon
+manifest_path: local/plans/{plan_id}/artifacts/ci-runs/{run_id}/manifest.toon
 log_paths[N]:
-  - artifacts/ci-runs/{run_id}/{job_name}.log
+  - local/plans/{plan_id}/artifacts/ci-runs/{run_id}/{slug}.log
   - ...
 ```
 
-**Idempotence**: when `artifacts/ci-runs/{run_id}/manifest.toon` already
-exists and every supplied job stem is already recorded in it, the script
+Every returned path is expressed relative to the `.plan` directory (the
+`get_base_dir().parent` anchor), not to the plan directory. Consumers that
+filter finding paths by artifact location must therefore match
+`*artifacts/ci-runs/*`, never an anchored `artifacts/ci-runs/*`.
+
+**Idempotence**: when `.plan/local/plans/{plan_id}/artifacts/ci-runs/{run_id}/manifest.toon`
+already exists and every supplied job stem is already recorded in it, the script
 returns `already_persisted: true` and re-emits the existing manifest
 contents (paths and job_count) without writing logs. When any supplied
 stem is new, the script writes the logs of the supplied jobs, merges the

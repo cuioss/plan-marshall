@@ -150,9 +150,9 @@ def _build_manifest(
 
     ``jobs`` are the per-job dicts taken from the ``checks wait`` envelope
     (or an equivalent ``checks status`` envelope). ``log_paths`` maps each
-    job's filename stem to its plan-dir-relative raw-log path;
-    ``filtered_log_paths`` (optional) maps the same stem to the plan-dir-relative
-    filtered-log path written for failing checks.
+    job's filename stem to its ``.plan``-relative raw-log path;
+    ``filtered_log_paths`` (optional) maps the same stem to the
+    ``.plan``-relative filtered-log path written for failing checks.
     """
     filtered_log_paths = filtered_log_paths or {}
     fetched_at = datetime.now(UTC).strftime('%Y-%m-%dT%H:%M:%SZ')

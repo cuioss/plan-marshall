@@ -21,8 +21,8 @@ live plan state:
 * The ``--wait-outcome`` value passed to persist is always in the
   ``{completed, deadline_exceeded}`` enum and is NEVER a copy of
   ``--final-status``.
-* One finding per failing check; per-producer signal aggregation dedupes
-  the producer strings.
+* One finding per failing check; the single ``ci-verify`` producer signal is
+  returned once, never per finding.
 
 Each test uses a unique ``worktree_path`` (pytest ``tmp_path``) so the
 ``.plan/temp/`` jobs-file write is isolated.

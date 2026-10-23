@@ -283,17 +283,18 @@ this order per failing check.
   per run, NOT per finding.
 
 - **Every finding is keyed on the run of its own check.** The failing-check
-  finding's `--file-path` is `artifacts/ci-runs/{check_run_id}/{job_name}.log`,
+  finding's `--file-path` is `artifacts/ci-runs/{check_run_id}/{slug}.log`,
   where `{check_run_id}` is the run id of the CHECK that failed, not the
-  run-level id of the first check; a check carrying no run id falls back to the
+  run-level id of the first check, and `{slug}` is the check name slugified as
+  `manage-ci-artifacts` names it (lowercase, non-alphanumeric runs collapsed to
+  `-`). A check carrying no run id falls back to the
   run-level id, and to `no-run-id` when neither is known. Two failing runs at
   one head therefore file under two directories and neither overwrites the
   other's evidence. The `final_status == none` finding is the one exception: it
   names the run's manifest (`artifacts/ci-runs/{run_id}/manifest.toon`), because
   no check exists to key on. When the check carries a persisted `log_file`, that
   real pointer is the finding's `--file-path`; otherwise the constructed path is
-  used, whose file name is the check name slugified exactly as
-  `manage-ci-artifacts` names it. `ci checks status` fills the failing
+  used. `ci checks status` fills the failing
   entry's `log_file` / `filtered_log_file`; when it cannot, it names the reason
   in `log_unavailable_reason` — the values and their discriminations are owned
   by [`api-contract.md`](../../tools-integration-ci/standards/api-contract.md) §

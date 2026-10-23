@@ -861,7 +861,8 @@ def verify(
     for check in failing_set:
         job_log = ''
         if sonar_roundtrip_enabled:
-            job_log = _read_persisted_job_log(plan_id, str(check.get('log_file') or ''), worktree_path)
+            job_log_pointer = str(check.get('log_file') or '') or str(check.get('filtered_log_file') or '')
+            job_log = _read_persisted_job_log(plan_id, job_log_pointer, worktree_path)
         producer, subtype = classify_check(
             check,
             wait_outcome,
