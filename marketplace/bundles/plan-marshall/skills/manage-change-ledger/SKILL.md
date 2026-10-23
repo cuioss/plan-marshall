@@ -267,10 +267,12 @@ The old-to-new map has two sources:
   and matches them to the commits they became by **stable `git patch-id`**.
   Patch-id hashes the patch, not the message, so a rebased commit and a
   message-only amend both match. `--old-head` narrows the candidate window to
-  commits reachable from HEAD but not from the pre-rewrite head — it does not
-  identify which of them the rewrite replayed, and the window still includes any
-  upstream commits fetched with the rebase. A patch-id carried by two candidates
-  is ambiguous and left unmapped rather than guessed.
+  commits reachable from HEAD but not from the pre-rewrite head, and drops stale
+  rows outside that head (reported in `unmapped`) so a foreign history is never
+  offered a counterpart. It does not identify which of the window's commits the
+  rewrite replayed, and the window still includes any upstream commits fetched
+  with the rebase. A patch-id carried by two candidates is ambiguous and left
+  unmapped rather than guessed.
 
 An old commit whose patch changed (a conflict resolved during the rebase) has no
 patch-id counterpart: it is reported in `unmapped` rather than guessed at, and

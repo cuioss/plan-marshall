@@ -558,8 +558,8 @@ def _rewrite_evidence(
     unrecorded: list[str],
     branch_shas: list[str],
     recorded: set[str],
-) -> tuple[bool, bool]:
-    """Return ``(is_rewrite, every_recorded_row_stale)`` for the unrecorded set.
+) -> tuple[bool, bool, bool]:
+    """Return ``(is_rewrite, every_row_stale, any_row_stale)``.
 
     Two conditions identify a rewrite rather than a skipped settlement:
 
@@ -568,30 +568,34 @@ def _rewrite_evidence(
     - every recorded row's commit is no longer an ancestor of HEAD — the ledger
       describes a history that HEAD replaced.
 
-    A partial gap beside at least one live recorded row is neither: that branch
-    was not rewritten, and appending the missing rows is the repair.
+    A ``bookkeeping_gap`` beside at least one stale row is the MIXED state: part
+    of the branch is recorded, part is missing, and at least one recorded row is
+    a rewritten commit. ``any_row_stale`` reports it, so that state can carry the
+    remap remedy beside the append one even though it is not the rewrite
+    signature.
 
-    The second return value separates the two conditions, because they support
-    different claims. Only ``every_recorded_row_stale`` proves that the recorded
-    rows describe a history HEAD replaced; the whole-branch condition alone does
-    not — a ledger that holds a landed plan's rows is exactly that case, and a
-    branch whose settlement simply never ran there would be sent to a remap that
-    maps nothing. A row whose ancestry probe could not be answered makes the
-    claim UNPROVEN, so it never counts as stale.
+    Only ``every_row_stale`` proves that the recorded rows describe a history
+    HEAD replaced; the whole-branch condition alone does not — a ledger that
+    holds a landed plan's rows is exactly that case, and a branch whose
+    settlement simply never ran there would be sent to a remap that maps nothing.
+    A row whose ancestry probe could not be answered makes the claim UNPROVEN,
+    so it never counts as stale.
 
-    The prefix rule in :func:`_sha_is_recorded` does not absorb either case: it
+    The prefix rule in :func:`_sha_is_recorded` does not absorb any of this: it
     compares a row's SHA against a branch SHA as a prefix, and a rewritten
     commit's new SHA shares no prefix with the old one, so a rebase, amend or
     cherry-pick is always a mismatch under that rule.
     """
     every_row_stale = True
+    any_row_stale = False
     for sha in recorded:
         answer = _sha_is_ancestor_of_head(worktree_path, sha)
-        if answer is not False:
+        if answer is False:
+            any_row_stale = True
+        else:
             every_row_stale = False
-            break
     whole_branch = bool(unrecorded) and len(unrecorded) == len(branch_shas)
-    return (bool(whole_branch or every_row_stale), every_row_stale)
+    return (bool(whole_branch or every_row_stale), every_row_stale, any_row_stale)
 
 
 def _recorded_change_shas() -> set[str] | None:
@@ -771,7 +775,7 @@ def _phase_end_marker_refusal(plan_id: str, status: dict[str, Any]) -> dict[str,
         )
         remedy: dict[str, Any] = {}
     else:
-        is_rewrite, every_row_stale = _rewrite_evidence(worktree_path, unrecorded, branch_shas, recorded)
+        is_rewrite, every_row_stale, any_row_stale = _rewrite_evidence(worktree_path, unrecorded, branch_shas, recorded)
         whole_branch = len(unrecorded) == len(branch_shas)
         append_invocations = [_append_invocation(worktree_path, sha) for sha in unrecorded]
         if is_rewrite:
@@ -822,6 +826,18 @@ def _phase_end_marker_refusal(plan_id: str, status: dict[str, Any]) -> dict[str,
                 'append_invocations': append_invocations,
                 'append_invocation': append_invocations[0],
             }
+            if any_row_stale:
+                # Mixed state: part of the branch is recorded, part is missing,
+                # and at least one recorded row is a rewritten commit (a manual
+                # amend beside a skipped settlement). The append covers the
+                # missing commit and the remap covers the stale row, so the
+                # reader is not left to discover the rewrite at the next attempt.
+                remap_invocation = _remap_invocation(worktree_path)
+                message = (
+                    f"{message} A recorded row also points at a commit outside HEAD's history — a "
+                    f'rewritten commit. Map the rewritten rows: {remap_invocation}'
+                )
+                remedy['remap_invocation'] = remap_invocation
     return {
         'status': 'error',
         'plan_id': plan_id,

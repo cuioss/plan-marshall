@@ -352,8 +352,8 @@ def resolve_commit(worktree_root: str | Path, sha: str) -> str | None:
     return resolved or None
 
 
-def commit_ancestry(worktree_root: str | Path, sha: str) -> bool | None:
-    """Whether HEAD can reach ``sha``.
+def commit_ancestry(worktree_root: str | Path, sha: str, ref: str = 'HEAD') -> bool | None:
+    """Whether ``ref`` can reach ``sha``.
 
     ``True`` / ``False`` are git's own answers (``merge-base --is-ancestor``
     exits 0 / 1). ``None`` is the third answer a gate must not collapse into
@@ -362,7 +362,7 @@ def commit_ancestry(worktree_root: str | Path, sha: str) -> bool | None:
     about ancestry. Callers that report a CAUSE must keep the three apart; a
     caller that only needs a positive membership test compares against ``True``.
     """
-    proc = _run_git(worktree_root, 'merge-base', '--is-ancestor', sha, 'HEAD')
+    proc = _run_git(worktree_root, 'merge-base', '--is-ancestor', sha, ref)
     if proc.returncode == 0:
         return True
     if proc.returncode == 1:
@@ -497,9 +497,20 @@ def _derive_patch_id_map(
     rewritten = [(row, full) for row, full in resolved_rows if commit_ancestry(worktree_root, full) is False]
 
     candidate_shas: set[str] = set()
+    unscoped: list[str] = []
     if old_head is not None:
         old_head_full = resolve_commit(worktree_root, old_head)
         if old_head_full is not None:
+            # Attribute the stale rows to THIS rewrite: a row whose commit is not
+            # part of the pre-rewrite head belongs to another history and must
+            # not be offered a counterpart, even if a patch-id coincides.
+            attributable: list[tuple[dict[str, Any], str]] = []
+            for row, full in rewritten:
+                if commit_ancestry(worktree_root, full, old_head_full) is True:
+                    attributable.append((row, full))
+                else:
+                    unscoped.append(str(row.get('commit_sha', '')).strip())
+            rewritten = attributable
             candidate_shas.update(_rev_list(worktree_root, f'{old_head_full}..HEAD'))
     else:
         for _row, full in rewritten:
@@ -519,7 +530,7 @@ def _derive_patch_id_map(
             new_by_patch[patch_id] = candidate
 
     pairs: list[tuple[str, str, str]] = []
-    unmapped: list[str] = []
+    unmapped: list[str] = list(unscoped)
     for row, full in rewritten:
         raw = str(row.get('commit_sha', '')).strip()
         patch_id = _commit_patch_id(worktree_root, full)
@@ -546,7 +557,9 @@ def remap_change_rows(
     verbatim; without it, the map is derived by stable patch-id from the rows
     whose recorded commit is no longer an ancestor of HEAD. ``old_head`` narrows
     the candidate window to commits reachable from HEAD but not from the
-    pre-rewrite head; it does not identify which of them the rewrite replayed.
+    pre-rewrite head, and attributes the derivation to that rewrite's rows — a
+    row outside the pre-rewrite head belongs to another history and is reported
+    in ``unmapped`` instead of being offered a counterpart.
 
     A pair that is already recorded — a row whose ``remapped_from`` and
     ``commit_sha`` are exactly this pair — is skipped, so re-running the verb
@@ -613,6 +626,14 @@ def remap_change_rows(
         if (old_raw, new_full) in existing_pairs:
             continue
         for source in sources:
+            # The pair key uses the SOURCE ROW's own raw SHA, because that is
+            # what `remap_record` writes into `remapped_from`. A hand-written map
+            # may name the same commit in its full form while the row carries an
+            # abbreviated one; comparing the map key instead would miss the
+            # recorded pair and append a duplicate on every re-run.
+            source_raw = str(source.get('commit_sha', '')).strip()
+            if (source_raw, new_full) in existing_pairs:
+                continue
             record = remap_record(
                 source=source,
                 new_commit_sha=new_full,

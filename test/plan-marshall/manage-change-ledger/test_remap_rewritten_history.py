@@ -309,6 +309,69 @@ def test_inline_map_is_consumed(rewrite_env) -> None:
     assert result.toon()['remap_count'] == 1
 
 
+def test_old_head_scopes_derivation_to_the_rewrite(rewrite_env) -> None:
+    """A row outside the pre-rewrite head is not offered a counterpart."""
+    rewrite_env.record_all()
+    _git(rewrite_env.repo, 'checkout', '-q', '--orphan', 'unrelated')
+    foreign = _commit(rewrite_env.repo, 'unrelated.txt', 'unrelated\n', 'unrelated work')
+    _git(rewrite_env.repo, 'checkout', '-q', 'feature')
+    appended = rewrite_env.run(
+        'append',
+        '--kind',
+        'change',
+        '--deliverable-id',
+        '99',
+        '--commit-sha',
+        foreign,
+        '--changed-paths',
+        'unrelated.txt',
+    )
+    assert appended.success, appended.stderr
+    rewrite_env.advance_main()
+    rewrite_env.rebase_onto_main()
+
+    result = rewrite_env.run(
+        'remap',
+        '--worktree-root',
+        str(rewrite_env.repo),
+        '--old-head',
+        rewrite_env.shas[2],
+    )
+
+    assert result.success, result.stderr
+    data = result.toon()
+    assert data['remap_count'] == 3, f"Only this rewrite's rows may map, got {data!r}"
+    assert foreign in data['unmapped'], f'A row from another history must be reported, not mapped, got {data!r}'
+
+
+def test_abbreviated_row_sha_does_not_duplicate_on_rerun(rewrite_env) -> None:
+    """The idempotency key is the row's own SHA form, not the map key's."""
+    abbreviated = rewrite_env.shas[2][:8]
+    appended = rewrite_env.run(
+        'append',
+        '--kind',
+        'change',
+        '--deliverable-id',
+        '3',
+        '--commit-sha',
+        abbreviated,
+        '--changed-paths',
+        'f3.txt',
+    )
+    assert appended.success, appended.stderr
+    _git(rewrite_env.repo, 'commit', '-q', '--amend', '-m', 'commit 3, reworded')
+    amended = _git(rewrite_env.repo, 'rev-parse', 'HEAD')
+    explicit_map = f'{rewrite_env.shas[2]}:{amended}'
+
+    first = rewrite_env.run('remap', '--worktree-root', str(rewrite_env.repo), '--map', explicit_map)
+    assert first.toon()['remap_count'] == 1
+    second = rewrite_env.run('remap', '--worktree-root', str(rewrite_env.repo), '--map', explicit_map)
+
+    assert second.success, second.stderr
+    assert second.toon()['remap_count'] == 0, 'the second run must recognise the recorded pair'
+    assert len(rewrite_env.change_rows()) == 2
+
+
 def test_unparseable_map_line_is_refused(rewrite_env) -> None:
     """A typo'd map line fails loud instead of reading as a clean no-op."""
     rewrite_env.record_all()

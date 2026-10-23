@@ -233,7 +233,9 @@ python3 .plan/execute-script.py plan-marshall:manage-change-ledger:manage-change
   --map-file .plan/temp/sync-baseline-sha-map-{plan_id}.json
 ```
 
-`{pre_sha}` is the `pre_sha` field of the successful `worktree-rebase-to` result — the head before the rebase. It narrows the candidate window to the commits HEAD gained since then (the replayed commits plus any upstream commits fetched with them); patch-id still decides every match. The map is derived by stable `git patch-id`, which hashes a commit's patch rather than its message.
+`{pre_sha}` is the `pre_sha` field of the successful `worktree-rebase-to` result — the head before the rebase. It narrows the candidate window to the commits HEAD gained since then (the replayed commits plus any upstream commits fetched with them), and attributes the stale rows to this rewrite; patch-id still decides every match. The map is derived by stable `git patch-id`, which hashes a commit's patch rather than its message.
+
+If either call returns `status: error`, ABORT the step with `outcome=failed`: log the returned `error` and `message`, do not run the append, and record the failure via **Mark Step Complete (Failure)**. A remap that did not run leaves the ledger stale, and `outcome=done` would record a repair that never happened.
 
 Read the first invocation's `unmapped` list before continuing. A commit whose patch changed during the rebase (a conflict resolution) has no patch-id counterpart and therefore no map entry: append its row explicitly rather than letting the remap guess, and record why the append was needed. `{deliverable_id}` is the deliverable the rewritten commit belonged to — read it off the stale row the `unmapped` entry names, which is still in the ledger:
 

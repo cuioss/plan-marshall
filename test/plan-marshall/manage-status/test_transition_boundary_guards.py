@@ -689,7 +689,7 @@ def test_whole_branch_unrecorded_reports_rewrite_signature_with_remap(plan_conte
         f'The ambiguous whole-branch case must also offer the append repair, got {refusal!r}.'
     )
     assert 'If it was not rewritten' in refusal['message']
-    assert 'The branch history was rewritten' not in refusal['message'], (
+    assert 'every recorded row points at a commit' not in refusal['message'], (
         f'The message must not assert a cause the evidence cannot separate, got {refusal["message"]!r}.'
     )
 
@@ -738,6 +738,35 @@ def test_one_missing_row_reports_plain_gap_with_append_invocation(plan_context, 
         'the append remedy must carry the changed-paths fact, not record an empty list'
     )
     assert 'remap_invocation' not in refusal, 'a plain gap must not be reported as a rewrite'
+
+
+def test_partial_gap_with_one_stale_row_also_offers_the_remap(plan_context, monkeypatch) -> None:
+    """A mixed gap beside one stale row carries both repairs.
+
+    One branch commit is recorded (live), the other two are missing, and a
+    recorded row for a rewritten commit is stale — the shape a manual amend
+    beside a skipped settlement leaves. The append repairs the gap; the remap
+    repairs the stale row, and the payload offers both.
+    """
+    plan_id = 'rewrite-partial-gap-with-stale'
+    _seed_rewrite_gate_plan(plan_context, plan_id)
+    live = '1' * 40
+    stale = 'a' * 40
+    monkeypatch.setattr(
+        _lifecycle,
+        '_branch_commit_shas',
+        lambda _p, _b: [live, '2' * 40, '3' * 40],
+    )
+    monkeypatch.setattr(_lifecycle, '_recorded_change_shas', lambda: {live, stale})
+    monkeypatch.setattr(_lifecycle, '_sha_is_ancestor_of_head', lambda _w, sha: sha == live)
+
+    refusal = _rewrite_refusal(plan_id)
+
+    assert refusal is not None
+    assert refusal['signature'] == 'bookkeeping_gap', 'the mismatch is not the whole branch'
+    assert refusal['unrecorded_commits'] == ['2' * 40, '3' * 40]
+    assert 'append_invocation' in refusal
+    assert 'remap_invocation' in refusal, f'A mixed gap must also offer the remap for its stale row, got {refusal!r}.'
 
 
 def test_every_recorded_row_absent_from_head_is_a_rewrite_even_when_partially_unrecorded(
