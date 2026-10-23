@@ -89,12 +89,25 @@ _TIER2_SESSION_COLUMNS = _TIER1_COLUMNS | {'directory', 'cost', *TOKEN_COLUMNS}
 _TIER2_MESSAGE_COLUMNS = frozenset({'session_id', 'type', 'time_created', 'data'})
 
 #: Paths inside an assistant message's ``data.tokens`` → normalized usage key.
+#:
+#: ``reasoning`` is carried as its OWN key rather than folded into
+#: ``output_tokens``. The store already keeps the two apart — ``session_v2``
+#: carries a distinct ``tokens_reasoning`` column beside ``tokens_output`` — and
+#: the message-level ``tokens`` object mirrors that split, so adding reasoning to
+#: output would count the same tokens twice. The separate key is what lets a
+#: consumer read reasoning as reasoning and keep the output figure comparable
+#: with a target whose output excludes it.
 _MESSAGE_TOKEN_PATHS: tuple[tuple[tuple[str, ...], str], ...] = (
     (('input',), 'input_tokens'),
     (('output',), 'output_tokens'),
+    (('reasoning',), 'reasoning_tokens'),
     (('cache', 'read'), 'cache_read_input_tokens'),
     (('cache', 'write'), 'cache_creation_input_tokens'),
 )
+
+#: The normalized keys a message's ``tokens`` object supplies, in the order
+#: :data:`_MESSAGE_TOKEN_PATHS` declares them.
+MESSAGE_USAGE_KEYS: tuple[str, ...] = tuple(key for _path, key in _MESSAGE_TOKEN_PATHS)
 
 #: ``name:`` / ``plan_id:`` header lines carried by a dispatched task prompt.
 _HEADER_PATTERN = re.compile(r'(?mi)^[ \t]*(name|plan_id)[ \t]*:[ \t]*(\S.*?)[ \t]*$')
@@ -102,8 +115,15 @@ _HEADER_PATTERN = re.compile(r'(?mi)^[ \t]*(name|plan_id)[ \t]*:[ \t]*(\S.*?)[ \
 #: How many of a session's earliest messages are scanned for its header.
 _PROMPT_SCAN_LIMIT = 50
 
-#: Marker a message ``type`` carries when it records tool activity.
+#: Marker a message ``type`` carries when it records tool activity. This is the
+#: LEGACY row shape: the store records a tool call as a ``content[]`` part of an
+#: assistant message instead (see :func:`_count_tool_parts`). The row-typed count
+#: is applied only for a bucket in which no assistant message carried a content
+#: array, so the two shapes can never count the same call twice.
 _TOOL_TYPE_MARKER = 'tool'
+
+#: ``content[]`` part type that records one tool call.
+_TOOL_PART_TYPE = 'tool'
 
 #: Epoch values above this are milliseconds rather than seconds.
 _EPOCH_MS_THRESHOLD = 100_000_000_000
@@ -334,23 +354,37 @@ def probe(path: Path | str | None) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
-def _session_rows(connection: sqlite3.Connection) -> dict[str, tuple[str | None, object]]:
-    """Read ``session_v2`` (id, parent_id, model) into a mapping, read-only."""
+def _session_rows(connection: sqlite3.Connection) -> dict[str, tuple[str | None, object, str | None]]:
+    """Read ``session_v2`` into ``id -> (parent_id, model, directory)``, read-only.
+
+    The directory column is read only when the store carries it, so a tier-1
+    store answers with ``None`` there rather than failing the read.
+    """
+    columns = _table_columns(connection, 'session_v2') or set()
+    if 'directory' in columns:
+        cursor = connection.execute('SELECT id, parent_id, model, "directory" FROM session_v2')
+        return {str(row[0]): (row[1], row[2], row[3]) for row in cursor.fetchall()}
     cursor = connection.execute('SELECT id, parent_id, model FROM session_v2')
-    return {str(row[0]): (row[1], row[2]) for row in cursor.fetchall()}
+    return {str(row[0]): (row[1], row[2], None) for row in cursor.fetchall()}
 
 
 def read_session_rows(path: Path | str | None) -> dict[str, Any]:
-    """Read ``session_v2`` id → ``(parent_id, model)`` pairs, read-only.
+    """Read ``session_v2`` id → ``(parent_id, model, directory)`` triples, read-only.
 
     Tier 1 only: the model measurement needs nothing else, so a database
-    carrying no message table or token columns still answers here.
+    carrying no message table or token columns still answers here. ``directory``
+    is ``None`` on a store that does not carry the column.
+
+    This is the TREE read and it scans the table, because a tree is defined by
+    every descendant row. Root resolution alone does not need it — use
+    :func:`resolve_session_root`, which walks ``parent_id`` with one bounded
+    lookup per hop.
 
     Args:
         path: The database file to read.
 
     Returns:
-        ``{'ok': True, 'rows': {id: (parent_id, model)}}`` or
+        ``{'ok': True, 'rows': {id: (parent_id, model, directory)}}`` or
         ``{'ok': False, 'reason': <named reason>}`` — never a partial mapping
         presented as a complete one.
     """
@@ -368,7 +402,39 @@ def read_session_rows(path: Path | str | None) -> dict[str, Any]:
         _close(connection)
 
 
-def session_root(session_id: str | None, rows: Mapping[str, tuple[str | None, object]]) -> str | None:
+def _bounded_root(
+    session_id: str | None,
+    rows: Mapping[str, tuple[str | None, object, str | None]],
+    directory: str | None,
+) -> str | None:
+    """Resolve *session_id* to its root, bounded by *directory* when given.
+
+    The selection rule is shared with :func:`resolve_session_root`: the climb ends
+    at the OUTERMOST ancestor whose ``directory`` cell matches *directory*, and
+    falls back to the true root when no ancestor carries it. ``rows`` here is the
+    already-read table, because a tree walk needs it anyway.
+    """
+    if not session_id or session_id not in rows:
+        return None
+    chain: list[tuple[str, str | None]] = []
+    seen: set[str] = set()
+    current: str | None = session_id
+    while current and current not in seen and current in rows:
+        seen.add(current)
+        chain.append((current, rows[current][2]))
+        parent = rows[current][0]
+        current = parent if isinstance(parent, str) and parent else None
+    if not chain:
+        return None
+    root = chain[-1][0]
+    if directory:
+        for candidate, row_directory in chain:
+            if _same_directory(row_directory, directory):
+                root = candidate
+    return root
+
+
+def session_root(session_id: str | None, rows: Mapping[str, tuple[str | None, object, str | None]]) -> str | None:
     """Resolve *session_id* to its root through ``parent_id``, or ``None``.
 
     ``None`` means the id names no row in the tree — there is nothing to
@@ -388,10 +454,102 @@ def session_root(session_id: str | None, rows: Mapping[str, tuple[str | None, ob
     return current
 
 
-def session_tree(root: str, rows: Mapping[str, tuple[str | None, object]]) -> list[str]:
+def _same_directory(left: object, right: object) -> bool:
+    """Return whether two directory cells name the same directory.
+
+    Compared through ``realpath``-style normalization so a trailing separator, a
+    ``~`` spelling or a symlinked worktree does not read as a different directory
+    and silently push the root past the plan's own session.
+    """
+    if not isinstance(left, str) or not isinstance(right, str) or not left.strip() or not right.strip():
+        return False
+    try:
+        return os.path.realpath(os.path.expanduser(left.strip())) == os.path.realpath(os.path.expanduser(right.strip()))
+    except (OSError, ValueError):
+        return left.strip() == right.strip()
+
+
+def resolve_session_root(
+    path: Path | str | None,
+    session_id: str | None,
+    *,
+    directory: str | None = None,
+) -> dict[str, Any]:
+    """Resolve *session_id* to the root that belongs to *directory*'s tree.
+
+    The walk is BOUNDED: one ``parent_id`` lookup per hop, never a scan of
+    ``session_v2``. Root resolution asks only "who is my parent", so reading the
+    whole session table to answer it made every capture/bind/resolve pay for
+    every unrelated session the operator ever started.
+
+    *directory* bounds HOW FAR the climb goes. An operator commonly leaves one
+    long-lived outer session open and starts a plan from inside it; the plan's
+    driving session is then a child of that outer session, and the plain
+    ``parent_id`` walk would take the outer session as the plan's root — pulling
+    every other thing that operator did under the same long-lived session into
+    the measurement. When the store carries ``session_v2.directory``, the climb
+    stops at the OUTERMOST ancestor whose directory matches *directory* (the
+    plan's worktree), which is the session the plan was actually started in. With
+    no matching ancestor, or no directory column, the true root is returned.
+
+    Args:
+        path: The database file to read.
+        session_id: Any session id — resolved to its root first.
+        directory: The plan's worktree, or ``None`` to take the true root.
+
+    Returns:
+        ``{'ok': True, 'root': <id>}`` or ``{'ok': False, 'reason': <named reason>}``.
+    """
+    connection, reason = _open(path)
+    if connection is None:
+        return {'ok': False, 'reason': reason}
+    try:
+        tier, reason = _probe_connection(connection)
+        if tier == 0:
+            return {'ok': False, 'reason': reason or REASON_SCHEMA_UNSUPPORTED}
+        if not session_id:
+            return {'ok': False, 'reason': REASON_SESSION_NOT_FOUND}
+        columns = _table_columns(connection, 'session_v2') or set()
+        has_directory = 'directory' in columns
+        query = (
+            'SELECT parent_id, "directory" FROM session_v2 WHERE id = ?'
+            if has_directory
+            else ('SELECT parent_id, NULL FROM session_v2 WHERE id = ?')
+        )
+        chain: list[tuple[str, str | None]] = []
+        seen: set[str] = set()
+        current: str | None = session_id
+        while current and current not in seen:
+            seen.add(current)
+            row = connection.execute(query, (current,)).fetchone()
+            if row is None:
+                if not chain:
+                    return {'ok': False, 'reason': REASON_SESSION_NOT_FOUND}
+                break
+            parent, row_directory = row[0], row[1]
+            chain.append((current, row_directory))
+            current = parent if isinstance(parent, str) and parent else None
+        if not chain:
+            return {'ok': False, 'reason': REASON_SESSION_NOT_FOUND}
+        root = chain[-1][0]
+        if directory:
+            # chain is leaf-first, so the last match is the OUTERMOST ancestor in
+            # the plan's own directory.
+            for candidate, row_directory in chain:
+                if _same_directory(row_directory, directory):
+                    root = candidate
+        return {'ok': True, 'root': root}
+    except sqlite3.Error:
+        return {'ok': False, 'reason': REASON_DB_UNREADABLE}
+    finally:
+        _close(connection)
+
+
+def session_tree(root: str, rows: Mapping[str, tuple[str | None, object, str | None]]) -> list[str]:
     """Return *root* plus every descendant reachable through ``parent_id``."""
     children: dict[str, list[str]] = {}
-    for session_id, (parent, _model) in rows.items():
+    for session_id, row in rows.items():
+        parent = row[0]
         if isinstance(parent, str) and parent:
             children.setdefault(parent, []).append(session_id)
     ordered: list[str] = []
@@ -407,14 +565,18 @@ def session_tree(root: str, rows: Mapping[str, tuple[str | None, object]]) -> li
     return ordered
 
 
-def _resolve_tree(connection: sqlite3.Connection, session_id: str | None) -> tuple[str | None, list[str], str | None]:
+def _resolve_tree(
+    connection: sqlite3.Connection, session_id: str | None, directory: str | None = None
+) -> tuple[str | None, list[str], str | None]:
     """Resolve ``(root, tree, reason)`` for *session_id* on an open connection.
 
     ``reason`` is ``None`` when a tree was resolved; otherwise it names why none
-    was (``session_not_found`` when the id names no row).
+    was (``session_not_found`` when the id names no row). *directory* bounds the
+    climb exactly as :func:`_bounded_root` describes, so a measurement of a plan's
+    captured root does not walk back out to an unrelated outer session.
     """
     rows = _session_rows(connection)
-    root = session_root(session_id, rows)
+    root = _bounded_root(session_id, rows, directory)
     if root is None:
         return None, [], REASON_SESSION_NOT_FOUND
     return root, session_tree(root, rows), None
@@ -573,26 +735,53 @@ def _window_pre_filter(windows: Sequence[tuple[str, datetime, datetime]]) -> tup
 
 
 def _empty_bucket() -> dict[str, Any]:
-    """Return a zeroed usage bucket for one window and one session scope."""
+    """Return a zeroed usage bucket for one window and one session scope.
+
+    Only the contract's REQUIRED four usage keys are pre-zeroed: they are measured
+    zeros on a bucket that was walked. ``reasoning_tokens`` and ``cost`` are
+    written only when a message actually carried them, and ``tool_uses`` only
+    when a message made the count observable — the store saying nothing is not the
+    store saying zero.
+    """
     bucket: dict[str, Any] = dict.fromkeys(USAGE_KEYS, 0)
-    bucket['cost'] = 0.0
     bucket['message_count'] = 0
-    bucket['tool_uses'] = 0
     bucket['duration_ms'] = 0
     bucket['sessions'] = 0
     return bucket
 
 
+def _count_tool_parts(data: Mapping[str, Any]) -> int | None:
+    """Count one assistant message's ``content[]`` tool parts, or ``None``.
+
+    ``None`` means the message carries no ``content`` array, so the store cannot
+    answer how many tool calls it made. A message that carries an array answers
+    with its count, ``0`` included — that is a MEASURED zero.
+    """
+    content = data.get('content')
+    if not isinstance(content, Sequence) or isinstance(content, (str, bytes)):
+        return None
+    return sum(1 for part in content if isinstance(part, Mapping) and part.get('type') == _TOOL_PART_TYPE)
+
+
 def _add_message_usage(data: Mapping[str, Any], bucket: dict[str, Any]) -> None:
-    """Add one assistant message's ``tokens``/``cost`` to *bucket*."""
+    """Add one assistant message's ``tokens``/``cost`` to *bucket*.
+
+    The four required usage keys are always summed (a missing one is the store's
+    measured ``0``). ``reasoning_tokens`` is summed only when the message actually
+    carried a reasoning figure, and ``cost`` only when it carried a cost, so an
+    absent store field stays absent rather than becoming a fabricated zero.
+    """
     tokens = data.get('tokens')
     if isinstance(tokens, Mapping):
         for path, key in _MESSAGE_TOKEN_PATHS:
             node: Any = tokens
             for segment in path:
                 node = node.get(segment) if isinstance(node, Mapping) else None
-            bucket[key] += _as_int(node)
-    bucket['cost'] += _as_float(data.get('cost'))
+            if node is None and key == 'reasoning_tokens':
+                continue
+            bucket[key] = bucket.get(key, 0) + _as_int(node)
+    if 'cost' in data:
+        bucket['cost'] = bucket.get('cost', 0.0) + _as_float(data.get('cost'))
     bucket['message_count'] += 1
 
 
@@ -711,6 +900,8 @@ def window_usage(
     path: Path | str | None,
     session_id: str | None,
     windows: Sequence[tuple[str, str, str]],
+    *,
+    directory: str | None = None,
 ) -> dict[str, Any]:
     """Sum assistant-message usage per half-open window, main versus sub-agent.
 
@@ -723,10 +914,19 @@ def window_usage(
     to ``cache_read_input_tokens`` and ``tokens.cache.write`` to
     ``cache_creation_input_tokens``.
 
-    Every bucket also carries the measured ``message_count``, ``tool_uses``
-    (rows whose ``type`` names a tool event), ``duration_ms`` (the span between
-    the bucket's earliest and latest message) and ``sessions`` (how many distinct
-    sessions of that scope contributed).
+    Every bucket also carries the measured ``message_count``,
+    ``reasoning_tokens`` (the store keeps reasoning apart from output, so it is
+    never folded into ``output_tokens``), ``duration_ms`` (the SUM of each
+    contributing session's own span inside the window, so two sub-agents that ran
+    minutes apart do not report the idle gap between them as duration) and
+    ``sessions`` (how many distinct sessions of that scope contributed).
+
+    ``tool_uses`` is counted from the ``content[]`` parts of type ``tool`` inside
+    an assistant message — the shape the store records a tool call in — and is
+    ABSENT for a bucket in which no assistant message carried a ``content`` array
+    at all: the store could not answer, and ``0`` is reserved for a measured
+    zero. The legacy ``session_message.type`` marker is still honoured for the
+    row shapes that carry one.
 
     The read is bounded by the two filters the attribution would apply anyway:
     ``session_message.session_id`` is constrained to the tree (chunked to stay
@@ -734,11 +934,16 @@ def window_usage(
     :func:`_window_pre_filter` bounds ``time_created``, so the scan never walks
     a store's rows from sessions outside the tree or messages outside the run.
 
+    *directory* bounds ROOT RESOLUTION: the plan's captured identity is the
+    worktree-bounded root, so re-resolving it without the bound would walk back
+    out to an operator's unrelated outer session and measure its descendants too.
+
     Args:
         path: The database file to read.
         session_id: Any session in the tree — resolved to its root first.
         windows: ``(phase, start, end)`` triples; an unreadable bound drops the
             window rather than widening it.
+        directory: The plan's worktree, or ``None`` to take the true root.
 
     Returns:
         ``{'ok': True, 'root', 'windows': [{'phase', 'main', 'subagent'}],
@@ -751,7 +956,7 @@ def window_usage(
         tier, reason = _probe_connection(connection)
         if tier < TIER_TOTALS:
             return {'ok': False, 'reason': reason or REASON_SCHEMA_UNSUPPORTED}
-        root, tree, reason = _resolve_tree(connection, session_id)
+        root, tree, reason = _resolve_tree(connection, session_id, directory)
         if root is None:
             return {'ok': False, 'reason': reason}
         parsed = _parse_windows(windows)
@@ -760,8 +965,16 @@ def window_usage(
         ]
         if not parsed:
             return {'ok': True, 'root': root, 'windows': rows, 'subagent_sessions': 0}
-        spans: dict[tuple[int, str], list[datetime]] = {}
+        # Per (window, scope, session) message instants, so each session's own
+        # span is measured rather than the outer span over all of them.
+        spans: dict[tuple[int, str, str], list[datetime]] = {}
         contributors: dict[tuple[int, str], set[str]] = {}
+        tool_observable: set[tuple[int, str]] = set()
+        tool_counts: dict[tuple[int, str], int] = {}
+        # Legacy row-typed tool events, held aside until the whole read is done:
+        # they count only for a bucket whose assistant messages carried no
+        # content array, so one call recorded in both shapes is counted once.
+        legacy_tool_counts: dict[tuple[int, str], int] = {}
         subagent_sessions: set[str] = set()
         window_clause, window_params = _window_pre_filter(parsed)
         chunk_size = max(1, _SQL_VARIABLE_BUDGET - len(window_params))
@@ -783,18 +996,33 @@ def window_usage(
                     continue
                 scope = 'main' if owning == root else 'subagent'
                 bucket = rows[index][scope]
-                spans.setdefault((index, scope), []).append(moment)
+                spans.setdefault((index, scope, owning), []).append(moment)
                 contributors.setdefault((index, scope), set()).add(owning)
                 if scope == 'subagent':
                     subagent_sessions.add(owning)
                 kind = str(message_type).strip().lower()
                 if kind == 'assistant':
-                    _add_message_usage(_message_data(data), bucket)
+                    payload = _message_data(data)
+                    _add_message_usage(payload, bucket)
+                    part_tools = _count_tool_parts(payload)
+                    if part_tools is not None:
+                        tool_observable.add((index, scope))
+                        tool_counts[(index, scope)] = tool_counts.get((index, scope), 0) + part_tools
                 elif _TOOL_TYPE_MARKER in kind:
-                    bucket['tool_uses'] += 1
-        for (index, scope), moments in spans.items():
-            rows[index][scope]['duration_ms'] = int((max(moments) - min(moments)).total_seconds() * 1000)
-            rows[index][scope]['sessions'] = len(contributors.get((index, scope), ()))
+                    legacy_tool_counts[(index, scope)] = legacy_tool_counts.get((index, scope), 0) + 1
+        for (index, scope), sessions in contributors.items():
+            rows[index][scope]['sessions'] = len(sessions)
+        for (index, scope, _owning), moments in spans.items():
+            rows[index][scope]['duration_ms'] += int((max(moments) - min(moments)).total_seconds() * 1000)
+        for key, legacy_count in legacy_tool_counts.items():
+            if key not in tool_observable:
+                # No content array answered for this bucket, so the legacy rows are
+                # the only evidence of tool use it carries.
+                tool_observable.add(key)
+                tool_counts[key] = legacy_count
+        for key in tool_observable:
+            index, scope = key
+            rows[index][scope]['tool_uses'] = tool_counts.get(key, 0)
         return {
             'ok': True,
             'root': root,

@@ -1312,7 +1312,7 @@ python3 .plan/execute-script.py plan-marshall:platform-runtime:platform_runtime 
   session capture --plan-id {plan_id}
 ```
 
-On Claude Code the runtime reads the stored `session_id` from the `SessionStart` hook. On OpenCode it returns `no-op` (no platform session id available) — the phase proceeds normally and uses manual `--total-tokens` for metrics.
+On Claude Code the runtime reads the stored `session_id` from the `SessionStart` hook. On OpenCode it measures `$OPENCODE_SESSION_ID` against the session store, resolves it to the plan's ROOT session (bounded by the plan's worktree, so a long-lived outer session the operator left open is not taken as the plan's root) and stores that root in the plan's `session_ids` metadata. An absent or unresolvable store declines with its named reason, and the phase proceeds normally.
 
 ### Step 13: Log Phase Completion (When phase completes)
 
@@ -1443,7 +1443,7 @@ python3 .plan/execute-script.py plan-marshall:platform-runtime:platform_runtime 
   metrics capture --plan-id {plan_id} --phase 5-execute
 ```
 
-On Claude Code the runtime reads the stored `session_id` and captures token usage from the transcript. On OpenCode it returns `no-op` — the phase still transitions and accepts manual `--total-tokens` when available.
+On Claude Code the runtime reads the stored `session_id` and captures token usage from the transcript. On OpenCode it returns `no-op` for the PERSISTENCE boundary, but token accounting is not lost: `metrics enrich` measures the plan's captured session ids against the OpenCode session store and attributes the measured usage to the phase windows, so manual `--total-tokens` is a fallback rather than the only source.
 
 Then update the phase status:
 

@@ -741,7 +741,7 @@ class TestComparatorThreeWayDistinction:
         """value == total_tokens → agreement, NOT a strict "> total_tokens" claim.
 
         Reaches the equal branch via an inline-population row, where total_tokens is
-        excluded from the dispatched maximum and a dispatched measure numerically
+        excluded from the dispatched maximum and a boundary measure numerically
         equal to it wins — the case pre-fix code mislabels as under-count.
         """
         report = _render_report(
@@ -751,7 +751,7 @@ class TestComparatorThreeWayDistinction:
                 '4-plan': {
                     'total_tokens': 5000,
                     'total_tokens_population': manage_metrics.POPULATION_INLINE,
-                    'subagent_total_tokens': 5000,
+                    'dispatch_boundary_total': 5000,
                 },
             },
         )
@@ -771,7 +771,7 @@ class TestComparatorThreeWayDistinction:
                 '4-plan': {
                     'total_tokens': 5000,
                     'total_tokens_population': manage_metrics.POPULATION_INLINE,
-                    'subagent_total_tokens': 3000,
+                    'dispatch_boundary_total': 3000,
                 },
             },
         )

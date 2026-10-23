@@ -101,7 +101,7 @@ python3 .plan/execute-script.py plan-marshall:platform-runtime:platform_runtime 
   session capture --plan-id {plan_id}
 ```
 
-On Claude Code the runtime reads the stored `session_id`. On OpenCode it returns `no-op` (no platform session id available) — the retrospective proceeds normally.
+On Claude Code the runtime reads the stored `session_id`. On OpenCode it measures `$OPENCODE_SESSION_ID` against the session store and stores the plan's ROOT session in `session_ids` (an absent or unresolvable store declines with its named reason) — the retrospective proceeds normally.
 
 Log start:
 
@@ -444,7 +444,7 @@ python3 .plan/execute-script.py plan-marshall:platform-runtime:platform_runtime 
   metrics capture --plan-id {plan_id} --phase retrospective
 ```
 
-On Claude Code the runtime reads the stored `session_id` and captures token usage from the transcript. On OpenCode it returns `no-op` — the retrospective still completes and accepts manual `--total-tokens` when available.
+On Claude Code the runtime reads the stored `session_id` and captures token usage from the transcript. On OpenCode it returns `no-op` for the persistence boundary, but the retrospective's spend is still measured: `metrics enrich` attributes the store's usage to the phase windows from the plan's captured session ids, so manual `--total-tokens` is a fallback rather than the only source.
 
 **Finalize-step mode**: emit the `mark-step-done` handshake so the `phase_steps_complete` invariant is satisfied:
 

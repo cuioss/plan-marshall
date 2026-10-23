@@ -121,6 +121,7 @@ def _tool_result_entry(timestamp: str, tool_use_id: str, text: str) -> dict:
     }
 
 
+# The four raw ``message.usage`` key spellings the Claude producer emits ALONGSIDE
 def _contract_bucket_keys() -> set[str]:
     """Parse the per-phase bucket key set out of the ABC's contract docstring.
 
@@ -1112,3 +1113,30 @@ def test_transcripts_none_explains_unknown_figures():
     assert runtime_info.TRANSCRIPTS_NONE == 'none'
     assert runtime_info.TRANSCRIPTS_FULL == 'full'
     assert set(runtime_info.TRANSCRIPTS_CAPABILITIES) == {'full', 'none'}
+
+
+# =============================================================================
+# 6. The contract's absent-versus-zero rule
+# =============================================================================
+
+
+def test_contract_distinguishes_an_omitted_group_from_a_measured_zero():
+    """The contract names the rule that tells an omitted group from a zero.
+
+    A group a target cannot measure is OMITTED; a group it measured and found
+    empty is PRESENT at ``0``. The docstring must state the rule AND the reason it
+    matters, because a consumer that reads an absent key as a zero silently turns
+    "never measured" into "measured, and there was none".
+    """
+    doc = Runtime.metrics_normalized_tokens.__doc__ or ''
+    lowered = doc.lower()
+    flat = ' '.join(lowered.split())
+
+    assert 'omitted group and a measured zero' in flat
+    assert 'absent' in flat
+    assert 'must not zero-fill' in flat
+    assert 'indistinguishable' in flat or 'erases' in flat
+    # The per-bucket example the rule is anchored on: a tool count that is only
+    # observable when the store's assistant messages carry a content array.
+    assert 'subagent_tool_uses' in doc
+    assert 'content' in flat

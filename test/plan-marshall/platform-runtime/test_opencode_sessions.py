@@ -267,12 +267,12 @@ def test_database_without_the_session_table_is_schema_unsupported(tmp_path: Path
 # =============================================================================
 
 
-def _chain_rows() -> dict[str, tuple[str | None, object]]:
+def _chain_rows() -> dict[str, tuple[str | None, object, str | None]]:
     """Return a three-level ``root -> mid -> leaf`` row mapping."""
     return {
-        'ses-root': (None, _model('m')),
-        'ses-mid': ('ses-root', _model('m')),
-        'ses-leaf': ('ses-mid', _model('m')),
+        'ses-root': (None, _model('m'), None),
+        'ses-mid': ('ses-root', _model('m'), None),
+        'ses-leaf': ('ses-mid', _model('m'), None),
     }
 
 
@@ -298,9 +298,9 @@ def test_session_root_walks_a_multi_level_parent_chain() -> None:
 
 def test_session_root_terminates_on_a_malformed_cycle() -> None:
     """A cyclic ``parent_id`` chain returns a member instead of hanging."""
-    rows: dict[str, tuple[str | None, object]] = {
-        'ses-a': ('ses-b', _model('m')),
-        'ses-b': ('ses-a', _model('m')),
+    rows: dict[str, tuple[str | None, object, str | None]] = {
+        'ses-a': ('ses-b', _model('m'), None),
+        'ses-b': ('ses-a', _model('m'), None),
     }
 
     assert opencode_sessions.session_root('ses-a', rows) in {'ses-a', 'ses-b'}
@@ -313,7 +313,7 @@ def test_session_root_names_no_row_for_an_unknown_session() -> None:
 
 def test_session_tree_returns_the_root_and_every_descendant() -> None:
     """The walk covers the root plus all transitive descendants."""
-    rows = {**_chain_rows(), 'ses-sibling': ('ses-root', _model('m'))}
+    rows = {**_chain_rows(), 'ses-sibling': ('ses-root', _model('m'), None)}
 
     tree = opencode_sessions.session_tree('ses-root', rows)
 
@@ -569,6 +569,289 @@ def test_window_usage_keeps_a_text_timestamp_for_the_parser(tmp_path: Path) -> N
 
     assert usage['windows'][0]['main']['input_tokens'] == 6
     assert usage['windows'][0]['main']['message_count'] == 1
+
+
+# =============================================================================
+# Tool use, reasoning, cost and spans — the store's real shape
+# =============================================================================
+
+
+def test_window_usage_counts_tool_parts_in_an_assistant_messages_content(tmp_path: Path) -> None:
+    """Tool use is counted from ``content[]`` parts of type ``tool``.
+
+    The store records a tool call as a part of the assistant message's
+    ``content`` array; it carries no ``session_message`` row type containing
+    ``tool``. Counting the row type therefore reported a measured ``0`` for every
+    phase of the plan that shipped the reader.
+    """
+    db_path = tmp_path / 'opencode.db'
+    _create_tier2_db(
+        db_path,
+        [('ses-root', None, 10, 20, 3, 4, 0.5), ('ses-child', 'ses-root', 100, 200, 30, 40, 1.5)],
+        [
+            (
+                'ses-child',
+                'assistant',
+                _at(10),
+                {
+                    'tokens': {'input': 100, 'output': 200},
+                    'cost': 1.5,
+                    'content': [
+                        {'type': 'text', 'text': 'running'},
+                        {'type': 'tool', 'tool': 'bash', 'state': {'status': 'completed'}},
+                        {'type': 'tool', 'tool': 'read', 'state': {'status': 'completed'}},
+                    ],
+                },
+            ),
+            (
+                'ses-root',
+                'assistant',
+                _at(11),
+                {
+                    'tokens': {'input': 10, 'output': 20},
+                    'cost': 0.5,
+                    'content': [{'type': 'tool', 'tool': 'write'}],
+                },
+            ),
+        ],
+    )
+
+    usage = opencode_sessions.window_usage(db_path, 'ses-root', [('5-execute', _iso(0), _iso(30))])
+
+    window = usage['windows'][0]
+    assert window['subagent']['tool_uses'] == 2
+    assert window['main']['tool_uses'] == 1
+
+
+def test_window_usage_counts_a_legacy_row_typed_tool_event(tmp_path: Path) -> None:
+    """A row-typed tool event is still counted when no content array answers.
+
+    The legacy shape is honoured, but only as a fallback: a bucket whose assistant
+    message carried a content array counts its parts, never the row types too.
+    """
+    db_path = tmp_path / 'opencode.db'
+    _create_tier2_db(
+        db_path,
+        [('ses-root', None, 0, 0, 0, 0, 0.0), ('ses-child', 'ses-root', 0, 0, 0, 0, 0.0)],
+        [
+            ('ses-child', 'tool', _at(5), {'tool': 'bash'}),
+            ('ses-child', 'tool', _at(6), {'tool': 'read'}),
+        ],
+    )
+
+    usage = opencode_sessions.window_usage(db_path, 'ses-root', [('5-execute', _iso(0), _iso(30))])
+
+    assert usage['windows'][0]['subagent']['tool_uses'] == 2
+
+
+def test_window_usage_does_not_count_a_call_recorded_in_both_shapes(tmp_path: Path) -> None:
+    """One call recorded as a content part AND a row type is counted once."""
+    db_path = tmp_path / 'opencode.db'
+    _create_tier2_db(
+        db_path,
+        [('ses-root', None, 0, 0, 0, 0, 0.0), ('ses-child', 'ses-root', 0, 0, 0, 0, 0.0)],
+        [
+            ('ses-child', 'assistant', _at(5), {'tokens': {'input': 1}, 'content': [{'type': 'tool'}]}),
+            ('ses-child', 'tool', _at(6), {'tool': 'bash'}),
+        ],
+    )
+
+    usage = opencode_sessions.window_usage(db_path, 'ses-root', [('5-execute', _iso(0), _iso(30))])
+
+    assert usage['windows'][0]['subagent']['tool_uses'] == 1
+
+
+def test_window_usage_omits_tool_uses_when_the_store_cannot_answer(tmp_path: Path) -> None:
+    """A window whose messages carry no ``content`` array omits ``tool_uses``.
+
+    ``0`` is only ever a measured value: a store that records no content parts
+    has not told the reader that no tool ran.
+    """
+    db_path = tmp_path / 'opencode.db'
+    _create_tier2_db(
+        db_path,
+        [('ses-root', None, 10, 20, 3, 4, 0.5)],
+        [('ses-root', 'assistant', _at(5), {'tokens': {'input': 10, 'output': 20}, 'cost': 0.5})],
+    )
+
+    usage = opencode_sessions.window_usage(db_path, 'ses-root', [('5-execute', _iso(0), _iso(30))])
+
+    bucket = usage['windows'][0]['main']
+    assert 'tool_uses' not in bucket
+    assert bucket['message_count'] == 1
+
+
+def test_window_usage_carries_reasoning_tokens_from_the_message(tmp_path: Path) -> None:
+    """``tokens.reasoning`` is read into its own normalized bucket.
+
+    The store keeps reasoning apart from ``tokens.output`` (``session_v2`` carries
+    a distinct ``tokens_reasoning`` column), so folding it into output would
+    double-count it.
+    """
+    db_path = tmp_path / 'opencode.db'
+    _create_tier2_db(
+        db_path,
+        [('ses-root', None, 10, 20, 3, 4, 0.5)],
+        [
+            (
+                'ses-root',
+                'assistant',
+                _at(5),
+                {'tokens': {'input': 10, 'output': 20, 'reasoning': 7}, 'cost': 0.5},
+            )
+        ],
+    )
+
+    usage = opencode_sessions.window_usage(db_path, 'ses-root', [('5-execute', _iso(0), _iso(30))])
+
+    assert usage['windows'][0]['main']['reasoning_tokens'] == 7
+
+
+def test_window_usage_sums_each_subagent_sessions_own_span(tmp_path: Path) -> None:
+    """Two disjoint sub-agent spans sum; the outer span over them is not a duration.
+
+    A phase whose sub-agents ran minutes each reported a 20.9-hour
+    ``subagent_duration_ms`` because the figure was the first sub-agent message to
+    the last one, not the time any sub-agent was actually running.
+    """
+    db_path = tmp_path / 'opencode.db'
+    _create_tier2_db(
+        db_path,
+        [
+            ('ses-root', None, 0, 0, 0, 0, 0.0),
+            ('ses-child-a', 'ses-root', 0, 0, 0, 0, 0.0),
+            ('ses-child-b', 'ses-root', 0, 0, 0, 0, 0.0),
+        ],
+        [
+            ('ses-child-a', 'assistant', _at(1), {'tokens': {'input': 1}}),
+            ('ses-child-a', 'assistant', _at(5), {'tokens': {'input': 1}}),
+            ('ses-child-b', 'assistant', _at(10), {'tokens': {'input': 1}}),
+            ('ses-child-b', 'assistant', _at(12), {'tokens': {'input': 1}}),
+        ],
+    )
+
+    usage = opencode_sessions.window_usage(db_path, 'ses-root', [('5-execute', _iso(0), _iso(30))])
+
+    subagent = usage['windows'][0]['subagent']
+    assert subagent['duration_ms'] == (4 + 2) * 60 * 1000
+    assert subagent['sessions'] == 2
+
+
+# =============================================================================
+# Bounded root resolution
+# =============================================================================
+
+
+def _create_directory_db(path: Path, rows: list[tuple[str, str | None, str | None]]) -> None:
+    """Create a tier-2 store whose ``session_v2`` carries the directory column."""
+    connection = sqlite3.connect(path)
+    try:
+        connection.execute(
+            'CREATE TABLE session_v2 (id TEXT, parent_id TEXT, model TEXT, directory TEXT,'
+            ' tokens_input INTEGER, tokens_output INTEGER, tokens_cache_read INTEGER,'
+            ' tokens_cache_write INTEGER, cost REAL)'
+        )
+        connection.executemany(
+            'INSERT INTO session_v2 (id, parent_id, model, directory, tokens_input,'
+            ' tokens_output, tokens_cache_read, tokens_cache_write, cost)'
+            ' VALUES (?, ?, NULL, ?, 0, 0, 0, 0, 0.0)',
+            rows,
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+
+def test_resolve_session_root_stops_at_the_session_in_the_plans_directory(tmp_path: Path) -> None:
+    """The climb stops at the outermost ancestor started in the plan's worktree.
+
+    An operator's long-lived outer session is a common parent of the plan's
+    driving session; taking it as the root pulls every unrelated descendant into
+    the measurement.
+    """
+    db_path = tmp_path / 'opencode.db'
+    worktree = tmp_path / 'worktree'
+    _create_directory_db(
+        db_path,
+        [
+            ('ses-outer', None, str(tmp_path)),
+            ('ses-plan', 'ses-outer', str(worktree)),
+            ('ses-subagent', 'ses-plan', str(worktree)),
+            ('ses-elsewhere', 'ses-outer', str(tmp_path / 'other')),
+        ],
+    )
+
+    bounded = opencode_sessions.resolve_session_root(db_path, 'ses-subagent', directory=str(worktree))
+    unbounded = opencode_sessions.resolve_session_root(db_path, 'ses-subagent')
+
+    assert bounded == {'ok': True, 'root': 'ses-plan'}
+    assert unbounded == {'ok': True, 'root': 'ses-outer'}
+    reading = opencode_sessions.read_session_rows(db_path)
+    tree = opencode_sessions.session_tree('ses-plan', reading['rows'])
+    assert 'ses-elsewhere' not in tree
+
+
+def test_resolve_session_root_names_an_unknown_session(tmp_path: Path) -> None:
+    """An id naming no row reports the named reason, never a fabricated root."""
+    db_path = tmp_path / 'opencode.db'
+    _create_directory_db(db_path, [('ses-root', None, str(tmp_path))])
+
+    assert opencode_sessions.resolve_session_root(db_path, 'ses-absent') == {
+        'ok': False,
+        'reason': 'session_not_found',
+    }
+
+
+def test_resolve_session_root_names_an_unavailable_store(tmp_path: Path) -> None:
+    """An absent store declines with the reader's named reason."""
+    assert opencode_sessions.resolve_session_root(tmp_path / 'absent.db', 'ses-root') == {
+        'ok': False,
+        'reason': 'db_not_found',
+    }
+
+
+def test_window_usage_stops_at_the_plans_directory(tmp_path: Path) -> None:
+    """The measurement tree is the plan's bounded tree, not the outer session's.
+
+    The plan's captured identity IS the bounded root, so re-resolving it without
+    the bound would walk back out to the operator's unrelated outer session and
+    measure its other descendants too.
+    """
+    db_path = tmp_path / 'opencode.db'
+    worktree = tmp_path / 'worktree'
+    _create_directory_db(
+        db_path,
+        [
+            ('ses-outer', None, str(tmp_path)),
+            ('ses-plan', 'ses-outer', str(worktree)),
+            ('ses-elsewhere', 'ses-outer', str(tmp_path / 'other')),
+        ],
+    )
+    connection = sqlite3.connect(db_path)
+    try:
+        connection.execute('CREATE TABLE session_message (session_id TEXT, type TEXT, time_created INTEGER, data TEXT)')
+        connection.executemany(
+            'INSERT INTO session_message (session_id, type, time_created, data) VALUES (?, ?, ?, ?)',
+            [
+                ('ses-plan', 'assistant', _at(5), json.dumps({'tokens': {'input': 7}, 'content': [{'type': 'tool'}]})),
+                ('ses-elsewhere', 'assistant', _at(6), json.dumps({'tokens': {'input': 500}})),
+            ],
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+    bounded = opencode_sessions.window_usage(
+        db_path, 'ses-plan', [('5-execute', _iso(0), _iso(30))], directory=str(worktree)
+    )
+    unbounded = opencode_sessions.window_usage(db_path, 'ses-plan', [('5-execute', _iso(0), _iso(30))])
+
+    assert bounded['root'] == 'ses-plan'
+    assert bounded['windows'][0]['main']['input_tokens'] == 7
+    assert bounded['windows'][0]['subagent']['input_tokens'] == 0
+    # Without the bound the outer session is the root and its other descendant is
+    # measured — the behaviour the plan's captured identity must not trigger.
+    assert unbounded['root'] == 'ses-outer'
 
 
 # =============================================================================
