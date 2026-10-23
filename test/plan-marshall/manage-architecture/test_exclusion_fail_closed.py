@@ -200,6 +200,19 @@ def test_overview_reports_an_unreadable_configuration():
     assert result['status'] == 'error'
 
 
+def test_malformed_marshal_is_reported_even_when_no_module_has_a_skill_map():
+    """An empty map is not evidence that the prohibition could be read."""
+    with tempfile.TemporaryDirectory() as project_dir:
+        setup_test_project(project_dir, {'module-a': _module(NON_CDI_DEPENDENCIES)})
+        _write_malformed_marshal(project_dir)
+
+        result = _cmd_client_handlers.cmd_module(
+            Namespace(module='module-a', project_dir=project_dir, full=False, budget=None)
+        )
+
+    assert result['status'] == 'error'
+
+
 def test_enrich_reports_an_unreadable_configuration_instead_of_persisting():
     """``enrich --project-dir D`` fails instead of writing an unfiltered map."""
     with tempfile.TemporaryDirectory() as project_dir:

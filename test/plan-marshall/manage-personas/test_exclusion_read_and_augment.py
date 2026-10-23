@@ -166,6 +166,35 @@ def test_bare_exclusion_still_removes_a_bare_skill():
     assert 'java-cdi' not in _architecture_optionals()
 
 
+def test_resolver_keeps_a_bare_cell_skill_excluded_by_another_bundle(monkeypatch):
+    """The resolver narrows the same way: another bundle's entry spares the cell's skill."""
+    import sys
+    import types
+
+    fake = types.ModuleType('_cmd_skill_resolution')
+    fake.cmd_resolve_domain_skills = lambda ns: {
+        'status': 'success',
+        'defaults': {},
+        'optionals': {'java-cdi': {}},
+    }
+    monkeypatch.setitem(sys.modules, '_cmd_skill_resolution', fake)
+
+    class _Extension:
+        def applies_to_module(self, module_data):
+            return {'applicable': True, 'skills_by_profile': {}}
+
+        def qualifies_optional(self, profile, skill, module_data):
+            return True
+
+    monkeypatch.setattr(_mp, '_find_domain_extension', lambda domain: _Extension())
+    monkeypatch.setattr(_mp, '_resolve_module_data', lambda module: ({}, 'resolved'))
+    _write_marshal({'skill_domains': {'java': {'bundle': 'pm-dev-java', 'excluded_skills': ['other-bundle:java-cdi']}}})
+
+    result = _mp._resolve_profile_domain_skills('implementation', 'java', module='sample-module')
+
+    assert 'java-cdi' in result['skills']
+
+
 # =============================================================================
 # D3 — the phase-4 augmentation step is a script verb
 # =============================================================================

@@ -973,12 +973,12 @@ def all_excluded_skills(project_dir: str | None = None) -> set[str]:
 def filter_skill_map(skills_by_profile: dict, exclusions: set[str], owner_bundle: str = '') -> dict:
     """Return a copy of a ``skills_by_profile`` map with excluded skills removed.
 
-    The single implementation of "apply the veto to a map", shared by the three
-    seams that can otherwise disagree: the architecture path that builds the map
+    The single implementation of "apply the veto to a map", shared by every seam
+    that can otherwise disagree: the architecture path that builds the map
     (``ExtensionBase._build_applicable_result``), the enrichment merge that
-    persists it, and the read seam phase-4 consumes. Keeping one implementation
-    is what makes the exclusion bind a persisted, stale map rather than only a
-    freshly built one.
+    persists it, the rendered surfaces, the outline context read, and the read
+    seam phase-4 consumes. Keeping one implementation is what makes the exclusion
+    bind a persisted, stale map rather than only a freshly built one.
 
     A profile the veto empties is marked ``"minimal": true``. That is the
     existing declared-empty signal: the repository forbade the remaining skills,

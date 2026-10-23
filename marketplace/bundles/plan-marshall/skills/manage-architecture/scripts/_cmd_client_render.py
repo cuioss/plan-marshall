@@ -192,11 +192,13 @@ def _effective_skills_by_profile(enriched: dict[str, Any], project_dir: str = '.
     than displaying a map whose prohibition could not be read.
     """
     skills_by_profile = enriched.get('skills_by_profile')
-    if not isinstance(skills_by_profile, dict) or not skills_by_profile:
-        return {}
+    # The read happens before the empty-map shortcut for the same reason as the
+    # served seam: an unreadable prohibition is an error, not a clean surface.
     from extension_base import all_excluded_skills, filter_skill_map
 
     exclusions = all_excluded_skills(project_dir)
+    if not isinstance(skills_by_profile, dict) or not skills_by_profile:
+        return {}
     if not exclusions:
         return skills_by_profile
     return filter_skill_map(skills_by_profile, exclusions)

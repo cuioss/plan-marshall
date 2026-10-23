@@ -170,12 +170,34 @@ def _excluded_skills(domain: str) -> set[str]:
     return excluded_skills(domain)
 
 
-def _is_excluded(skill: str, exclusions: set[str]) -> bool:
+def _domain_bundle(domain: str) -> str:
+    """Return the bundle a domain's cells belong to, or ``''`` when undeclared.
+
+    The same delegation and failure posture as :func:`_excluded_skills`: a bare
+    skill's owner is the domain's configured ``bundle``, so a bundle-qualified
+    exclusion narrows to it rather than removing another bundle's same-named
+    skill.
+    """
+    try:
+        from extension_base import domain_bundle
+    except Exception as exc:
+        raise RuntimeError(f'skill_exclusions_unreadable: the shared bundle reader is not importable: {exc}') from exc
+
+    return domain_bundle(domain)
+
+
+def _is_excluded(skill: str, exclusions: set[str], owner_bundle: str = '') -> bool:
     """True when ``skill`` matches an exclusion in full or bare-name form.
 
     Delegates to the shared matcher in ``extension_base`` for the same
     single-definition reason as :func:`_excluded_skills`, and fails the same way:
     an unimportable matcher is an error, never a silent "not excluded".
+
+    Args:
+        skill: The skill notation to test.
+        exclusions: The domain's configured exclusion set.
+        owner_bundle: The bundle a bare ``skill`` belongs to, so a
+            bundle-qualified exclusion narrows to that bundle.
     """
     try:
         from extension_base import is_excluded
@@ -184,7 +206,7 @@ def _is_excluded(skill: str, exclusions: set[str]) -> bool:
             f'skill_exclusions_unreadable: the shared exclusion matcher is not importable: {exc}'
         ) from exc
 
-    return is_excluded(skill, exclusions)
+    return is_excluded(skill, exclusions, owner_bundle)
 
 
 @lru_cache(maxsize=1)
@@ -339,15 +361,21 @@ def _resolve_profile_domain_skills(profile: str, domain: str, module: str = '') 
             target.extend(_skill_name(entry) for entry in block)
 
     exclusions = _excluded_skills(domain)
+    owner_bundle = _domain_bundle(domain)
 
     skills: list[str] = []
     for skill in defaults:
-        if skill and not _is_excluded(skill, exclusions) and skill not in skills:
+        if skill and not _is_excluded(skill, exclusions, owner_bundle) and skill not in skills:
             skills.append(skill)
 
     candidates: list[str] = []
     for skill in optionals:
-        if skill and not _is_excluded(skill, exclusions) and skill not in skills and skill not in candidates:
+        if (
+            skill
+            and not _is_excluded(skill, exclusions, owner_bundle)
+            and skill not in skills
+            and skill not in candidates
+        ):
             candidates.append(skill)
 
     qualified: set[str] = set()
@@ -521,12 +549,14 @@ def _resolve_persona(args) -> dict:
 
     # The veto binds the flattened result too, not only the profile x domain
     # cells: a composed ref or the always-added base can name a skill the
-    # repository excludes for one of the requested domains.
-    exclusions: set[str] = set()
+    # repository excludes for one of the requested domains. Each domain vetoes
+    # with its own owner bundle, so a bundle-qualified exclusion narrows here
+    # exactly as it does per cell.
     for domain in domains:
-        exclusions |= _excluded_skills(domain)
-    if exclusions:
-        ordered = [skill for skill in ordered if not _is_excluded(skill, exclusions)]
+        domain_exclusions = _excluded_skills(domain)
+        if not domain_exclusions:
+            continue
+        ordered = [skill for skill in ordered if not _is_excluded(skill, domain_exclusions, _domain_bundle(domain))]
 
     if not module:
         module_status = MODULE_STATUS_NOT_REQUESTED
