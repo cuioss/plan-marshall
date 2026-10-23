@@ -673,18 +673,22 @@ def _resolve_build(project_dir: Path) -> tuple[dict[str, Any], dict[str, Any], l
     system), and the gate canonicals this project does NOT publish — named
     rather than silently absent.
     """
-    from _architecture_core import DataNotFoundError, ModuleNotFoundInProjectError, iter_modules
+    from _architecture_core import DataNotFoundError, ModuleNotFoundInProjectError
     from _cmd_client_query import resolve_command
 
-    # A missing or unreadable architecture answers "architecture unavailable",
-    # never "this project publishes no gate": the latter would name a build
-    # defect for a crawl that never ran.
+    # The PERSISTED architecture is what ``resolve_command`` reads, so it is what
+    # this check reads: a missing or unreadable project file answers
+    # "architecture unavailable", never "this project publishes no gate" — the
+    # latter would name a build defect for a crawl that never ran.
+    project_file = project_dir / '.plan' / 'project-architecture' / '_project.json'
     try:
-        modules = list(iter_modules(str(project_dir)))
-    except Exception as exc:
+        project_data = json.loads(project_file.read_text(encoding='utf-8'))
+    except FileNotFoundError as exc:
+        raise _ArchitectureUnavailable(f'no project architecture at {project_file.as_posix()}') from exc
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise _ArchitectureUnavailable(f'{type(exc).__name__}: {exc}') from exc
-    if not modules:
-        raise _ArchitectureUnavailable('no modules')
+    if not isinstance(project_data, dict) or not project_data.get('modules'):
+        raise _ArchitectureUnavailable('the project architecture declares no modules')
 
     # The exceptions ``resolve_command`` uses for "this project does not publish
     # that canonical"; the same trio ``_cmd_client_handlers`` treats as absence.
@@ -737,8 +741,9 @@ def _augment_resolved(probed: dict[str, Any], project_dir: Path) -> dict[str, An
 
     A thin seam over ``manage-architecture``'s augmentation, so the timeout
     resolution reads the architecture's own stamp without this module importing
-    the architecture client at load time. It is also the seam a test can replace
-    to pin a stamp the fixture architecture cannot express.
+    the architecture client at load time. The REAL augmentation always runs; a
+    test that needs a stamp the fixture architecture cannot express patches the
+    LOOKUP it reads, never this function.
     """
     from _cmd_client import _augment_resolved as augment
 
@@ -1230,6 +1235,14 @@ def _architecture_module_prefixes(project_dir: Path) -> list[str] | None:
         return None
 
 
+class _GlobHelperUnavailable(Exception):
+    """The shared glob translator could not even be imported.
+
+    Raised from the ONE import seam, so the classifier's fail-closed answer
+    names a missing translator rather than any defect in classification itself.
+    """
+
+
 def _glob_to_regex(pattern: str) -> re.Pattern[str]:
     """Compile *pattern* as a ROOT-ANCHORED path glob.
 
@@ -1247,7 +1260,13 @@ def _glob_to_regex(pattern: str) -> re.Pattern[str]:
     semantics (a matched DIRECTORY covers its contents), and it would let
     ``docs/*`` match ``docs/a/b.md`` and skip a build the CI runs.
     """
-    from _cmd_manage import _gitignore_pattern_to_regex
+    try:
+        from _cmd_manage import _gitignore_pattern_to_regex
+    except Exception as exc:
+        # A partial install (ImportError) and a translator whose own import
+        # raises something else are one fact for the caller: there is no
+        # translator, so nothing may be read as "no path matches".
+        raise _GlobHelperUnavailable(type(exc).__name__) from exc
 
     translated = _gitignore_pattern_to_regex(f'/{pattern}').pattern
     if translated.endswith(_GITIGNORE_DIR_TAIL):
@@ -1371,15 +1390,15 @@ def cmd_build_classify(args: argparse.Namespace) -> dict[str, Any]:
                 }
                 for path in paths
             ]
-        except Exception as exc:
+        except _GlobHelperUnavailable as exc:
             # The shared glob translator is unavailable: absent from a partial
             # install, or raising something other than ImportError while it is
             # imported (a missing dependency of its own, a broken module body).
             # Build everything and name the cause: a broken translator must never
             # be read as "no path matches", which for a skip rule would skip, and
-            # an uncaught non-ImportError would abort the classifier entirely.
+            # an uncaught non-ImportError must not abort the classifier.
             rows = [{'path': path, 'kind': 'buildable'} for path in paths]
-            reason = f'glob helper unavailable: {type(exc).__name__}'
+            reason = f'glob helper unavailable: {exc}'
     buildable = any(row['kind'] == 'buildable' for row in rows)
     result: dict[str, Any] = {
         'status': 'success',

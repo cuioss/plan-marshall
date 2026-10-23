@@ -160,7 +160,9 @@ The result supplies, and nothing below is spelled from anywhere else:
 | progress file | `progress_file` |
 | landing file | `landing_file` |
 | build commands | `build` |
+| gate canonicals the project does not publish | `build_missing_canonicals`, present only when one is missing |
 | build timeout (seconds) | `build_timeout_seconds` |
+| runtime stamp reason | `runtime_stamp_reason`, present when a stamp fact could not be measured |
 | required and optional reviewers, with their trigger comments | `required_bots`, `optional_bots` |
 | commit trailer | `commit_trailer` |
 | `inbox write` command | `inbox_write_command` |
@@ -174,7 +176,8 @@ The branch row is derived from the project's configuration rather than returned 
 other row names a field of the resolve result.
 
 The verb **fails closed**: a spec outside `.plan/orchestrator/{slug}/plans/`, an unreadable
-configuration, an unreadable Sonar block (`sonar_config_unreadable`) or a Sonar block with no project
+configuration, a missing or unreadable project architecture (`architecture_unavailable`), an
+unreadable Sonar block (`sonar_config_unreadable`) or a Sonar block with no project
 key (`sonar_config_incomplete`), a missing automatic-review
 step, an empty required-reviewer list, no gate build
 command (`quality-gate` or `verify`) the project's architecture can resolve, or a bare
@@ -389,12 +392,14 @@ is submitted to the build daemon.
      `disabled` for an unenrolled project, so the builds run in-process.
    - `down` — the daemon was unreachable at setup. Record the reason. The builds still run with the
      default routing, which preflights again per build, so the `mechanism` a build result reports is
-     the authority for how THAT build ran — record it (a daemon that recovered mid-run can route).
+     the authority for how THAT build ran. The `build-routing` check (section 4) decides whether a
+     build may be routed at all.
    - `ready` — routing is available. A routed job re-runs the worktree's own `.plan/execute-script.py`,
-     never the main checkout's. Worktree creation does NOT supply it: its `_materialize_local_dir`
-     creates only `.plan/local`, and the executor is moved in by `prepare_execute`, which this lane
-     never runs. Section 4 therefore runs the `build-routing` check before the first routed build and
-     answers `in_process` with `executor_absent_from_worktree` when it is absent.
+     never the main checkout's. Worktree creation does NOT supply it: its
+     `_ensure_worktree_plan_local_real` creates only `.plan/local`, and the executor is moved in by
+     `prepare_execute`, which this lane never runs. Section 4 therefore runs the `build-routing` check
+     before the first routed build and answers `in_process` with
+     `executor_absent_from_worktree` when it is absent.
 
 ## 3. Implement, deliverable by deliverable
 
@@ -602,7 +607,7 @@ Merge only when all of these hold:
      listed by `ci pr reviews` with its commit id, or, where the reviewer publishes a clean review
      only as a summary comment, the marker-bearing summary comment whose `sourceCommitId` /
      `coveredCommitId` name one of this PR's heads and whose `kind=reviewed` (the reviewer's own
-     standard under `plan-marshall:automatic-review`, § the reviewer's published artifacts).
+     standard under `plan-marshall:automatic-review`, § "Participation evidence").
      Rate-limit notices, marker-less walkthroughs and thread replies do not count;
   2. **every finding is handled** — each finding from that review and from any later one is fixed in
      a pushed commit, or answered with a reason, and every one of that reviewer's threads is
@@ -769,8 +774,8 @@ step.sonar-roundtrip.open_issue_rules={rules left open|none|unknown|n/a}
   8. **Build server** — the setup preflight's state (`ready`, `disabled` or `down`, with its reason),
      the fallback each build used and why (`degraded` with its `reason`, or
      `executor_absent_from_worktree`), and any `killed` job with its disposition. Add any
-     `runtime_stamp_reason` the resolve result carried: it names a runtime-info seam that failed
-     and left the stamp at `unknown`.
+     `runtime_stamp_reason` the resolve result carried: it names a runtime-info seam that failed, or
+     a fact nothing could measure, and marks the stamp as `unknown` rather than silently absent.
   9. **Residue** — anything left open.
 
 Then tell the operator the PR number, the merge commit, and that the landing message was written.

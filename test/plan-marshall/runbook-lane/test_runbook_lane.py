@@ -1867,11 +1867,7 @@ def test_skill_no_longer_claims_worktree_creation_supplies_the_executor() -> Non
 
 
 def test_build_routing_answers_in_process_when_the_worktree_has_no_executor(tmp_path: Path) -> None:
-    """A routed job whose executor is absent is recorded and run in-process.
-
-    The routed command would end terminal (exit 2) with no fallback; the lane
-    asks this before it submits, so the failure never happens.
-    """
+    """The lane's own decision names the mode and the reason it records."""
     module = load_script_module('plan-marshall', _SKILL_NAME, 'runbook_lane.py', register=False)
     worktree = tmp_path / 'worktree'
     (worktree / '.plan').mkdir(parents=True)
@@ -1880,6 +1876,65 @@ def test_build_routing_answers_in_process_when_the_worktree_has_no_executor(tmp_
 
     assert data['execution_mode'] == 'in_process'
     assert data['reason'] == 'executor_absent_from_worktree'
+
+
+def test_the_executor_absent_verdict_runs_the_build_in_process(tmp_path: Path, monkeypatch) -> None:
+    """The verdict for an executor-less worktree runs the real build in-process.
+
+    The build is driven through the wrapper's OWN execute handler with the mode
+    the lane derived. A mode other than ``in_process`` reaches
+    ``_route_to_daemon``; this mode must not, and the build must complete
+    instead of ending terminal on an executor the worktree does not carry.
+    """
+    from contextlib import contextmanager
+
+    from conftest import parse_ns
+
+    lane = load_script_module('plan-marshall', _SKILL_NAME, 'runbook_lane.py', register=False)
+    pyproject = load_script_module(
+        'plan-marshall', 'build-pyproject', '_pyproject_execute.py', '_rb_lb73_pyproject_execute'
+    )
+    worktree = tmp_path / 'worktree'
+    (worktree / '.plan').mkdir(parents=True)
+
+    verdict = lane.cmd_build_routing(argparse.Namespace(worktree=str(worktree)))
+    assert verdict['execution_mode'] == 'in_process'
+
+    args = parse_ns(
+        'plan-marshall',
+        'build-pyproject',
+        'pyproject_build.py',
+        'run',
+        '--command-args',
+        'verify',
+        '--plan-id',
+        'P',
+        '--execution-mode',
+        verdict['execution_mode'],
+        register=False,
+    )
+    globals_ = pyproject.cmd_run.__globals__
+    routed = {'called': False}
+
+    def _must_not_route(*_args: Any, **_kwargs: Any) -> Any:
+        routed['called'] = True
+        return (None, 'no_notation')
+
+    @contextmanager
+    def _slot(plan_id: str, *, routed: bool = False):
+        yield
+
+    monkeypatch.setitem(globals_, '_route_to_daemon', _must_not_route)
+    monkeypatch.setitem(
+        globals_,
+        'execute_direct_base',
+        lambda **_kwargs: {'status': 'success', 'exit_code': 0, 'duration_seconds': 1, 'log_file': 'l', 'command': 'c'},
+    )
+    monkeypatch.setitem(globals_, 'build_queue_slot', _slot)
+    monkeypatch.setitem(globals_, 'cmd_run_common', lambda **_kwargs: 0)
+
+    assert pyproject.cmd_run(args) == 0
+    assert routed['called'] is False, 'an executor-less worktree still consulted the daemon route'
 
 
 def test_build_routing_leaves_a_supplied_executor_on_auto(tmp_path: Path) -> None:
@@ -1901,6 +1956,8 @@ def test_skill_states_routing_once_and_the_no_verify_rule() -> None:
 
     assert '--execution-mode' not in setup, 'section 2 still prescribes an execution mode'
     assert 'preflights again per build' in setup, 'section 2 no longer explains the down-setup routing'
+    assert 'build-routing' in setup, 'section 2 does not defer the routing decision to the check'
+    assert 'recovered mid-run' not in setup, 'section 2 still claims a recovered daemon can route'
     assert 'runs in-process otherwise' in gate, 'section 4 lost the default-routing rule'
     assert 'routed build also holds the call' in gate, 'section 4 omits the routed-build shell-timeout rule'
     assert 'publishes no `verify`' in gate, 'section 4 omits the no-verify cross-reference'
@@ -1921,22 +1978,33 @@ def test_resolve_names_the_missing_gate_canonical(tmp_path: Path) -> None:
         assert data['build_missing_canonicals'] == [missing], f'{present}-only fixture lost {missing}'
 
 
-def test_resolve_reports_a_missing_architecture_as_such(tmp_path: Path) -> None:
-    """No architecture is an architecture problem, never an unresolvable build."""
-    _write(
-        tmp_path / '.plan' / 'marshal.json',
-        json.dumps(
-            {'plan': {'phase-6-finalize': {'steps': {'plan-marshall:automatic-review': {'required_bots': 'x'}}}}}
-        ),
-    )
-    spec = tmp_path / '.plan' / 'orchestrator' / 'demo-epic' / 'plans' / 'PLAN-LB-66-x.md'
-    _write(spec, '# staged spec\n')
+def test_resolve_reports_a_missing_or_broken_architecture_as_such(tmp_path: Path) -> None:
+    """No persisted architecture is an architecture problem, never an unresolvable build.
 
-    data = _run_resolve(spec, tmp_path)
+    The fixture carries a build file, so the answer cannot rest on a tree that
+    looks unbuilding: it must rest on the PERSISTED architecture
+    ``resolve_command`` actually reads.
+    """
+    for case, project_json in (('absent', None), ('broken', b'{not json')):
+        case_root = tmp_path / case
+        _write(
+            case_root / '.plan' / 'marshal.json',
+            json.dumps(
+                {'plan': {'phase-6-finalize': {'steps': {'plan-marshall:automatic-review': {'required_bots': 'x'}}}}}
+            ),
+        )
+        _write(case_root / 'pyproject.toml', '[project]\nname = "fixture"\n')
+        if project_json is not None:
+            (case_root / '.plan' / 'project-architecture').mkdir(parents=True)
+            (case_root / '.plan' / 'project-architecture' / '_project.json').write_bytes(project_json)
+        spec = case_root / '.plan' / 'orchestrator' / 'demo-epic' / 'plans' / 'PLAN-LB-66-x.md'
+        _write(spec, '# staged spec\n')
 
-    assert data['status'] == 'error'
-    assert data['error'] == 'architecture_unavailable', data
-    assert data['error'] != 'build_command_unresolvable'
+        data = _run_resolve(spec, case_root)
+
+        assert data['status'] == 'error', f'{case}: {data}'
+        assert data['error'] == 'architecture_unavailable', f'{case}: {data}'
+        assert data['error'] != 'build_command_unresolvable'
 
 
 def test_resolve_maven_split_is_empty_when_the_gate_cannot_be_shorter(tmp_path: Path) -> None:
