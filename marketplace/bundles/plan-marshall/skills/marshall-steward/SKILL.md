@@ -1005,12 +1005,12 @@ the newest cache's script by absolute path, which is what works when
 python3 {newest_cache}/skills/tools-script-executor/scripts/generate_executor.py recover --project-dir . --target <active-target>
 ```
 
-Once a working executor exists (or from a meta-project checkout),
-`plan-marshall:tools-script-executor:generate_executor recover` is the same verb
-through the executor. It finds the newest installed cache, probes, regenerates,
-and re-probes. `references/upgrade-flow.md` Step 0 calls it first;
-`upgrade plan`'s `--bootstrap` path is the in-place stale rewrite, not this
-recovery.
+Once a working executor exists, `plan-marshall:tools-script-executor:generate_executor recover`
+is the same verb through the executor (from a meta-project checkout, use the
+repository-relative direct path in `tools-script-executor` § Recovery). It finds
+the newest installed cache, probes, regenerates, and re-probes.
+`references/upgrade-flow.md` Step 0 calls it first; `upgrade plan`'s
+`--bootstrap` path is the in-place stale rewrite, not this recovery.
 
 ### upgrade — plan
 

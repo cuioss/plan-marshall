@@ -235,10 +235,13 @@ plan emitted for the resolved kind:
   with the local marketplace clone? — and preflight is unchanged. Neither sub-step
   has an upstream leg: whether the clone itself is current with the actual upstream
   is not verified here, and the `cache_freshness` verdict stamps
-  `compared_against: local_clone_manifest` to declare that scope. A `fresh` verdict
-  is therefore a clone-currency claim, not an upstream-currency one; keeping the
-  clone current with upstream (a separate `/plugin marketplace update`) is an
-  operator action this gate does not perform.
+  `compared_against` to declare that scope: `local_clone_manifest` on a versioned
+  cache, `installed_manifest` on a flat install (whose cache version is read from
+  the installed `dist-manifest.json` itself). A `fresh` verdict is therefore a
+  clone-currency claim (or, on a flat install, an internal-consistency claim),
+  never an upstream-currency one; keeping the clone current with upstream (a
+  separate `/plugin marketplace update`) is an operator action this gate does not
+  perform.
 
 - **`regenerate-target-tree`** (meta only — absent from a consumer plan) —
   regenerate the target tree for the project's target:

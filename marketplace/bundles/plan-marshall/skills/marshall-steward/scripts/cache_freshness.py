@@ -33,14 +33,18 @@ name the exact operator commands to run. ``unknown`` is terminal: there is no
 age-based, mtime-based, or otherwise-inferred fallback that downgrades it to a
 guessed ``fresh``/``stale``. The verdict set is exactly these three values.
 
-Every verdict stamps ``compared_against: local_clone_manifest``. This verb has NO
-upstream leg, so a ``fresh`` verdict means "the cache is current with the LOCAL
-marketplace clone", never "current with the actual upstream": a clone that is
-itself behind upstream can still read ``fresh`` here. The field declares that
-scope so ``fresh`` is never mistakable for an upstream-currency claim — fetching
-the git remote belongs to the separately-owned version-resolution surface, not to
-this read-only deterministic emitter. The refusing verdicts' remediation already
-leads the operator through refreshing the clone.
+Every verdict stamps ``compared_against``: a versioned-cache verdict stamps
+``local_clone_manifest``, while a flat install (whose cache version is read from
+the installed ``dist-manifest.json`` itself) stamps ``installed_manifest`` and
+says so in ``warning``. This verb has NO upstream leg, so a ``fresh`` verdict
+means "the cache is current with the LOCAL marketplace clone" (or, on a flat
+install, "the install is internally consistent"), never "current with the actual
+upstream": a clone that is itself behind upstream can still read ``fresh`` here.
+The field declares that scope so ``fresh`` is never mistakable for an upstream-
+currency claim — fetching the git remote belongs to the separately-owned
+version-resolution surface, not to this read-only deterministic emitter. The
+refusing verdicts' remediation already leads the operator through refreshing the
+clone.
 
 Subcommand:
     check  Emit the freshness verdict. ``--cache-root`` optionally overrides the
@@ -189,7 +193,13 @@ def _unknown(reason: str, cache_root: Path | None, cache_version: str, probed: l
         'refuses_upgrade': True,
         'cache_version': cache_version or UNKNOWN,
         'manifest_version': UNKNOWN,
-        'compared_against': COMPARED_AGAINST,
+        # Keep the label consistent with a flat success verdict for the same root:
+        # both read the installed manifest, so neither claims a clone comparison.
+        'compared_against': (
+            FLAT_COMPARED_AGAINST
+            if cache_root is not None and cache_root.is_dir() and _is_flat_root(cache_root)
+            else COMPARED_AGAINST
+        ),
         'cache_root': str(cache_root) if cache_root is not None else '',
         'manifest_path': '',
         'remediation': REMEDIATION,
