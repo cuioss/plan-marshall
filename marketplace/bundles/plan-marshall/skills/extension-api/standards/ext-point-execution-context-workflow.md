@@ -6,7 +6,7 @@
 
 The `ext-point-execution-context-workflow` extension point declares that a marketplace doc is dispatchable as a workflow by `plan-marshall:execution-context-{level}`. It is the consumer-side companion to `ext-point-dynamic-level-executor` (which governs the dispatcher agent itself).
 
-When a workflow doc declares this extension point, it asserts conformance to the prompt-body input contract, the return-TOON output contract, and the addressing convention defined below. The execution-context dispatcher reads the `workflow` field in its prompt body as a `{bundle}:{skill}/workflow/{file}.md` or `{bundle}:{skill}/SKILL.md` notation, resolves it to a filesystem path, and `Read`s the file — implementors of this ext-point are the legal targets of that `Read`.
+When a workflow doc declares this extension point, it asserts conformance to the prompt-body input contract, the return-TOON output contract, and the addressing convention defined below. The execution-context dispatcher reads the `workflow` field in its prompt body as a `{bundle}:{skill}/workflow/{file}.md`, `{bundle}:{skill}/standards/{file}.md` or `{bundle}:{skill}/SKILL.md` notation, resolves it to a filesystem path through the `resolve-workflow` verb, and `Read`s the returned absolute path — implementors of this ext-point are the legal targets of that `Read`.
 
 ## Implementor Requirements
 
@@ -37,20 +37,33 @@ A skill MAY hold zero, one, or many `workflow/*.md` files. A SKILL.md MAY itself
 
 ### Workflow-Resolution Root
 
-The `workflow` field in a `Task:` prompt body is resolved against the **installed plugin cache** — `~/.claude/plugins/cache/plan-marshall/skills/{skill}/workflow/{file}.md` or `…/skills/{skill}/SKILL.md` — by the dispatched `plan-marshall:execution-context-{level}` agent. **On the Claude target** (cache root = the runtime-resolved `layout bundle-cache-root` op), resolution is never performed against:
+The `workflow` field in a `Task:` prompt body is resolved by the single `resolve-workflow` verb
+(`plan-marshall:extension-api:extension_api resolve-workflow --notation {N} --worktree {W}`), which
+returns a verified absolute path in this order — stated here once, and nowhere else:
 
-- the active worktree path (e.g., `.plan/local/worktrees/{plan_id}/marketplace/bundles/plan-marshall/skills/…`),
-- the main checkout's `marketplace/bundles/` tree,
-- any other filesystem root supplied at dispatch time.
+1. **The worktree source tree first.** `{WORKTREE}/marketplace/bundles/{bundle}/skills/{skill}/{path}`
+   is returned when that file exists. A bundle-owning checkout — this meta-project and every other
+   checkout that carries `marketplace/bundles` — therefore resolves to the code the worktree actually
+   carries, so a dispatched leaf sees worktree edits without a cache sync.
+2. **The installed copy second.** When the worktree probe misses, the verb resolves through the
+   platform-runtime `layout bundle-cache-root` roots and
+   `marketplace_bundles.resolve_bundle_path`, which already handles the nested versioned plugin cache
+   (newest eligible version) and the flat OpenCode / Antigravity layout. A consumer repository has no
+   `marketplace/bundles` tree, so this is the leg that serves it.
 
-On Claude the cache is the single resolution root for every workflow load, regardless of `WORKTREE` value or call site. `WORKTREE` governs where the dispatched workflow's tool calls (Edit / Write / Read / `git -C`) act; it does NOT govern where the workflow body itself is loaded from. **On OpenCode** there is no versioned plugin cache: the workflow body resolves from the checkout tree (the runtime's `layout skill-roots` op), so the cache-only rules below are Claude-specific.
+The verb is the ONLY resolution path. A dispatcher MUST NOT construct a workflow path by hand, and
+MUST NOT map a notation only to `marketplace/bundles/`. When neither probe carries the file the verb
+returns `error: workflow_not_found`, naming every probed path so a could-not-find is distinguishable
+from a wrong path.
 
-**Consequence (Claude target) — stale dispatch until cache sync + session restart**: a plan that modifies a `workflow/*.md` or `SKILL.md` in its worktree sees the **pre-change** version of that file at every dispatch site until BOTH of the following hold:
+`WORKTREE` governs where the dispatched workflow's tool calls (Edit / Write / Read / `git -C`) act. It
+now also anchors the first resolution probe; the installed copy is the fallback, never a competing
+root for a checkout that owns the bundle.
 
-1. The plugin cache has been synced from the worktree (via the project-local, meta-repo-only `/sync-harnesses` command or `project:finalize-step-sync-plugin-cache`), and
-2. The Claude Code session has been restarted so the host platform re-reads the cache instead of serving its in-process registry snapshot.
-
-Meta-projects that author marketplace bundles maintain their own self-host fence (a project-local finalize step) that halts the dispatcher and demands a session restart before any agent-dispatched step runs against the worktree-modified workflow; consumer projects do not encounter the failure mode because their plans do not modify the bundles the dispatcher loads from.
+**Consequence.** In a bundle-owning checkout a worktree edit is visible to the next dispatch
+immediately, because the worktree probe wins. A consumer repository resolves the installed copy and
+receives a changed body only after the harness install advances; consumer plans do not author the
+bundles they load, so that is the intended direction.
 
 ### Input Contract — what the implementor can rely on
 
