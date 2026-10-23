@@ -55,7 +55,7 @@ directly)::
     persisted: true | false
     persist_skipped_reason: <field>   # present only when persisted == false
     findings_filed: <int>
-    producers: [str, ...]      # present only when outcome == needs_triage
+    producers: [ci-verify]     # present only when outcome == needs_triage
     step_marked_done: true | false    # true only when the mark returned success
     step_mark_error: <str>     # present only when outcome == green_unrecorded
     step_mark_message: <str>   # present only when outcome == green_unrecorded
@@ -347,20 +347,25 @@ def _derive_run_id(normalized_checks: list[dict]) -> str:
     return ''
 
 
-def _plan_artifact_root(plan_id: str, worktree_path: str) -> Path:
-    """Return the plan directory the persisted CI artifacts live under.
+def _plan_store_anchor(worktree_path: str) -> Path:
+    """Return the ``.plan`` directory ``manage-ci-artifacts`` anchors its paths to.
 
-    ``manage-ci-artifacts`` writes to ``.plan/local/plans/{plan_id}/`` and
-    reports its paths relative to that plan directory. The persist call runs
-    with the worktree as its cwd, so its root is the nearest ancestor of the
-    worktree holding ``.plan/local`` — mirrored here rather than assumed to be
-    the worktree root, so the reader and the writer resolve the same directory.
+    The persist call reports each log path relative to ``get_base_dir().parent``,
+    i.e. the ``.plan`` directory of the root it resolves from. The root is found
+    the same way the persist call finds it — by walking up from the worktree to
+    the nearest ancestor holding ``.plan/local`` — so the reader and the writer
+    agree on the file they are naming.
     """
     start = Path(worktree_path or '.').resolve()
     for candidate in (start, *start.parents):
         if (candidate / '.plan' / 'local').is_dir():
-            return candidate / '.plan' / 'local' / 'plans' / plan_id
-    return start / '.plan' / 'local' / 'plans' / plan_id
+            return candidate / '.plan'
+    return start / '.plan'
+
+
+def _plan_artifact_root(plan_id: str, worktree_path: str) -> Path:
+    """Return the plan directory, the home of the manifest and job logs."""
+    return _plan_store_anchor(worktree_path) / 'local' / 'plans' / plan_id
 
 
 def _sonar_roundtrip_in_manifest(plan_id: str, worktree_path: str) -> bool:
@@ -382,13 +387,23 @@ def _sonar_roundtrip_in_manifest(plan_id: str, worktree_path: str) -> bool:
 
 
 def _read_persisted_job_log(plan_id: str, log_file: str, worktree_path: str) -> str:
-    """Return a persisted check log's text, or ``''`` when it cannot be read."""
+    """Return a persisted check log's text, or ``''`` when it cannot be read.
+
+    ``manage-ci-artifacts`` reports its paths relative to the ``.plan`` anchor,
+    so that is tried first. A pointer expressed relative to the plan directory
+    is accepted too, because earlier artifact trees used that shape; whichever
+    file exists is the one the persist step wrote.
+    """
     if not log_file:
         return ''
-    try:
-        return (_plan_artifact_root(plan_id, worktree_path) / log_file).read_text(encoding='utf-8')
-    except (OSError, ValueError):
-        return ''
+    anchor = _plan_store_anchor(worktree_path)
+    candidates = (anchor / log_file, _plan_artifact_root(plan_id, worktree_path) / log_file)
+    for candidate in candidates:
+        try:
+            return candidate.read_text(encoding='utf-8')
+        except (OSError, ValueError):
+            continue
+    return ''
 
 
 # ---------------------------------------------------------------------------
@@ -844,8 +859,10 @@ def verify(
         job_name = check.get('job_name') or check_name
         # Key the artifact path on the run THIS check belongs to: two failing
         # runs at one head then file under two directories instead of the first
-        # run's directory twice.
+        # run's directory twice. When the status payload reported the check's
+        # own persisted log, that real pointer IS the evidence path.
         check_run_id = str(check.get('run_id') or '') or run_id or 'no-run-id'
+        pointer = str(check.get('log_file') or '') or str(check.get('filtered_log_file') or '')
         detail = f'[{subtype}] {check_name} failed on PR {pr_number} at HEAD {head_sha}'
         if subtype == _SUBTYPE_SONAR_GATE:
             detail += ' — deferred to sonar-roundtrip, which owns the Sonar quality gate'
@@ -853,7 +870,7 @@ def verify(
             plan_id=plan_id,
             title=f'[{subtype}] {check_name} failed',
             detail=detail,
-            file_path=f'artifacts/ci-runs/{check_run_id}/{job_name}.log',
+            file_path=pointer or f'artifacts/ci-runs/{check_run_id}/{job_name}.log',
             worktree_path=worktree_path,
         )
         findings_filed += 1
@@ -902,7 +919,7 @@ def _resolve_failing_set(
         return _drop_running_beside_failures([_normalize_check_entry(c) for c in threaded], wait_outcome)
 
     # An empty/unknown conclusion is NOT passing — it must fall through to the
-    # classifier's ci_policy_failure defense-in-depth row (fail-closed).
+    # classifier, whose default is a build failure (the fix direction).
     failing_set: list[dict] = []
     for entry in normalized_all:
         conclusion = (entry.get('conclusion') or '').strip().lower()

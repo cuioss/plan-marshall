@@ -290,12 +290,15 @@ this order per failing check.
   one head therefore file under two directories and neither overwrites the
   other's evidence. The `final_status == none` finding is the one exception: it
   names the run's manifest (`artifacts/ci-runs/{run_id}/manifest.toon`), because
-  no check exists to key on. `ci checks status` fills the failing entry's
-  `log_file` / `filtered_log_file`; when it cannot, it names the reason
-  (`no_plan_id`, `no_run_id`, `persist_unavailable`, `log_fetch_failed`,
-  `persist_failed`, `log_path_missing`, `enrich_failed`) in
-  `log_unavailable_reason`, so an empty pointer is never mistaken for a log that
-  was not needed.
+  no check exists to key on. When the check carries a persisted `log_file`, that
+  real pointer is the finding's `--file-path`; otherwise the constructed path is
+  used, whose file name is the raw job name rather than the slug
+  `manage-ci-artifacts` sanitises to. `ci checks status` fills the failing
+  entry's `log_file` / `filtered_log_file`; when it cannot, it names the reason
+  in `log_unavailable_reason` — the values and their discriminations are owned
+  by [`api-contract.md`](../../tools-integration-ci/standards/api-contract.md) §
+  "Transport shape: per-entry, NOT scalar top-level" — so an empty pointer is
+  never mistaken for a log that was not needed.
 
 ## Eager-fetch and persist contract
 

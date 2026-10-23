@@ -90,11 +90,22 @@ def test_every_producer_ci_verify_can_emit_is_accepted(tmp_path):
     assert not refused, f'ci_verify returns producer value(s) the workflow refuses: {refused}'
 
 
-def test_accept_set_lists_every_producer():
-    """The Inputs table accepts every vocabulary member."""
-    text = _read_doc()
-    for producer in _accept_set():
-        assert f'`{producer}`' in text, f'accept-set member missing: {producer}'
+def test_accept_set_is_the_expected_closed_vocabulary():
+    """The Inputs table declares exactly the expected members.
+
+    Parsing the set off the doc keeps the test reading the contract rather than
+    a copy; pinning the parsed value keeps the guard able to fail when a member
+    is silently dropped or added.
+    """
+    assert _accept_set() == {
+        'build-runner',
+        'sonar',
+        'pr-comment',
+        'plugin-doctor',
+        'pr-state',
+        'finalize-feedback',
+        'ci-verify',
+    }
 
 
 def test_taxonomy_tags_are_subtypes_not_producer_values():
@@ -115,7 +126,9 @@ def test_ci_verify_branch_reaches_the_shared_ingestion_step():
     """A ``producer=ci-verify`` dispatch falls through to Step 1.4, not an error."""
     text = _read_doc()
     assert 'producer=ci-verify' in text, 'no Step 1 branch for the ci-verify producer'
-    branch = text.split('producer=ci-verify', 1)[1]
+    # Slice to the next ``###`` branch so a fall-through stated by a DIFFERENT
+    # branch cannot satisfy this assertion.
+    branch = text.split('producer=ci-verify', 1)[1].split('\n### ', 1)[0]
     assert 'Step 1.4' in branch, 'the ci-verify branch must fall through to the shared ingestion step'
     assert 'plan-marshall:phase-6-finalize' in branch, 'the branch must scope its store query to ci-verify findings'
 

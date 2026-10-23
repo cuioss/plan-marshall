@@ -62,9 +62,7 @@ artifacts/ci-runs/{run_id}/{slug}.filtered.log  # error-extraction filtered vari
 e.g. `verify / verify` → `verify-verify`). Each path is surfaced **per entry** inside the
 `failing_checks[]` array — as the entry's `log_file` and `filtered_log_file` fields — never
 as scalar top-level keys. When either path stays empty the entry carries
-`log_unavailable_reason` naming why (`no_plan_id`, `no_run_id`, `persist_unavailable`,
-`log_fetch_failed`, `persist_failed`, `log_path_missing`, `enrich_failed`); the reason is
-absent when both paths are filled. See
+`log_unavailable_reason`; its values and their discriminations are owned by
 [`api-contract.md`](api-contract.md) § "Transport shape: per-entry, NOT scalar top-level".
 
 For a **reusable-workflow** check (name contains `" / "`, e.g. `verify / verify`), the

@@ -28,7 +28,7 @@ The exit-code contract for every `python3 .plan/execute-script.py` call in this 
 
 | Prompt-body field | Required | Description |
 |-------------------|:--------:|-------------|
-| `producer` | Yes | Single accept-set: one of `build-runner`, `sonar`, `pr-comment`, `plugin-doctor`, `pr-state`, `finalize-feedback`, `ci-verify`. Selects the Step 1 branch and which `ext-triage-{domain}` skills are pre-loaded in Step 2. `ci-verify`'s taxonomy tags (`ci_build_failure`, `ci_policy_failure`, `ci_sonar_gate`, `ci_timeout`, `ci_cancelled`, `ci_action_required`, `ci_stale`, `ci_no_checks`) are finding SUBTYPES carried in each finding's title, never `producer` values — the executor returns the one producer value `ci-verify`. |
+| `producer` | Yes | Single accept-set: one of `build-runner`, `sonar`, `pr-comment`, `plugin-doctor`, `pr-state`, `finalize-feedback`, `ci-verify`. Selects the Step 1 branch and which `ext-triage-{domain}` skills are pre-loaded in Step 2. The row labels of the `ci-verify` taxonomy (`ci_build_failure`, `ci_sonar_gate`, … — see [`ci-verify.md`](../../phase-6-finalize/standards/ci-verify.md)) are finding SUBTYPES carried in each finding's title, never `producer` values: the executor returns the one producer value `ci-verify`. |
 | `plan_id` | Yes | Forwarded to every `manage-findings` / `manage-tasks` / `tools-integration-ci` call. |
 | `WORKTREE` | Yes | Used verbatim for `git -C {WORKTREE}` and as the root for every Edit/Write/Read. |
 | `pr_number` | Conditional | Required for `pr-comment` (thread replies) and for `pr-state` (CI wait + multi-source fetch). |
@@ -70,7 +70,7 @@ producer: {received value}
 display_detail: "unknown producer: {received value}"
 ```
 
-The `ci-verify` taxonomy's row labels (`ci_build_failure`, `ci_policy_failure`, `ci_sonar_gate`, `ci_timeout`, `ci_cancelled`, `ci_action_required`, `ci_stale`, `ci_no_checks`) are finding subtype tags, not `producer` values: the executor returns the single `ci-verify` producer and carries the row in the finding title, so no taxonomy label is ever the value validated here.
+The `ci-verify` taxonomy's row labels are finding subtype tags, not `producer` values (the labels and their rows are enumerated in [`ci-verify.md`](../../phase-6-finalize/standards/ci-verify.md) § Failure-mode taxonomy): the executor returns the single `ci-verify` producer and carries the row in the finding title, so no taxonomy label is ever the value validated here.
 
 ### Branch: `producer=ci-verify` (store-only query)
 

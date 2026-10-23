@@ -332,9 +332,9 @@ def _write_execution_manifest(tmp_path, plan_id: str, phase_6_steps: list[str]) 
     (plan_dir / 'execution.toon').write_text(serialize_toon(body), encoding='utf-8')
 
 
-def _write_job_log(tmp_path, plan_id: str, log_file: str, content: str) -> None:
-    """Write a persisted job log where ``manage-ci-artifacts`` put it."""
-    target = tmp_path / '.plan' / 'local' / 'plans' / plan_id / log_file
+def _write_job_log(tmp_path, log_file: str, content: str) -> None:
+    """Write a persisted job log at the ``.plan``-relative path persist reports."""
+    target = tmp_path / '.plan' / log_file
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(content, encoding='utf-8')
 
@@ -367,9 +367,11 @@ def _sonar_job_envelope(log_file: str) -> dict:
 
 
 def _run_sonar_case(tmp_path, plan_id: str, manifest_steps: list[str], log_content: str):
-    log_file = 'artifacts/ci-runs/987654/build-sonar-build.log'
+    # The path shape ``manage-ci-artifacts persist`` reports: relative to the
+    # ``.plan`` anchor, not to the plan directory.
+    log_file = f'local/plans/{plan_id}/artifacts/ci-runs/987654/build-sonar-build.log'
     _write_execution_manifest(tmp_path, plan_id, manifest_steps)
-    _write_job_log(tmp_path, plan_id, log_file, log_content)
+    _write_job_log(tmp_path, log_file, log_content)
     findings = _StubFindings()
     result = verify(
         plan_id=plan_id,
@@ -435,6 +437,32 @@ def test_the_sonar_marker_without_the_manifest_step_stays_a_build_failure(tmp_pa
     # Assert
     assert result['findings_filed'] == 1
     assert findings.calls[0]['title'].startswith('[ci_build_failure]')
+
+
+def test_a_pointer_from_the_plan_dir_anchor_is_still_read(tmp_path):
+    """Both anchor shapes resolve: the ``.plan`` one and the plan-dir one."""
+    plan_id = 'ci-verify-legacy-anchor'
+    plan_relative = 'artifacts/ci-runs/987654/build.log'
+    target = tmp_path / '.plan' / 'local' / 'plans' / plan_id / plan_relative
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(_SONAR_JOB_LOG, encoding='utf-8')
+
+    assert _mod._read_persisted_job_log(plan_id, plan_relative, str(tmp_path)) == _SONAR_JOB_LOG
+
+
+def test_a_finding_points_at_the_persisted_log_when_the_status_reported_one(tmp_path):
+    """The finding's file path is the real evidence the status payload named."""
+    result, findings = _run_sonar_case(
+        tmp_path,
+        'ci-verify-sonar-gate-pointer',
+        ['create-pr', 'ci-verify', 'sonar-roundtrip'],
+        _SONAR_JOB_LOG,
+    )
+
+    assert result['findings_filed'] == 1
+    assert findings.calls[0]['file_path'] == (
+        'local/plans/ci-verify-sonar-gate-pointer/artifacts/ci-runs/987654/build-sonar-build.log'
+    )
 
 
 # ---------------------------------------------------------------------------
