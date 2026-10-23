@@ -139,6 +139,12 @@ derive, for rows still live.
   No lane worktree existed under `.plan/local/worktrees/` at the moment the start was recorded — noted, not treated as a
   fault: the lane creates it during setup, and this plan's whole subject is what that setup must also produce.
 
+- **PLAN-LB-53** (staged 2026-10-23, WS-01, plan-marshall lane) — **emitted 2026-10-23, then held back by the operator
+  the same day: three plans are already running and the fourth slot was not taken.** The gate admitted it without a
+  prompt — its only remaining overlap is a single file (`manage-status/scripts/_cmd_lifecycle.py` with LB-91), which is
+  below the multi-file threshold. Nothing is wrong with the plan; the decision is capacity, so the row stays `staged`
+  and sequenced rather than parked. Its emit form for this harness is the plan-marshall lane's OpenCode command.
+
 - **Parked by the focus rule (2026-10-23, operator-accepted split):** PLAN-LB-87 (token recording), LB-84, LB-69, LB-89,
   LB-83, LB-75, LB-41, LB-46, LB-51, LB-57. They stay in the corpus and resume on the surface they declare. Blocking set kept
   staged: LB-55, LB-58, LB-53, LB-44, LB-43, LB-80, LB-82, plus the two staged on 2026-10-23: **PLAN-LB-90** (WS-04, runbook,
@@ -394,6 +400,12 @@ derive, for rows still live.
 
 ## Decisions
 
+- 2026-10-23 — **PLAN-LB-53 held back by the operator; the fourth slot stays empty.** The plan was emitted from a clean
+  gate verdict (declarative surface, determinate comparison, one shared file — below the prompt threshold), and the
+  operator declined to start it with three plans already running. Recorded as a capacity decision, not a gate refusal:
+  the row stays `staged`, sequenced, and re-emittable as-is. Consequence for the next `next`/`analyze` emit: the
+  `N − R` slot count is advisory capacity, not a mandate — with `parallelization_scope` 4 and three in flight, one slot
+  remains open and unfilled by choice until a landing frees work or the operator asks for it.
 - 2026-10-23 — **Both emitted plans started by the operator; the epic is at its concurrency ceiling.** PLAN-LB-92
   (runbook) and PLAN-LB-43 (plan-marshall) were started from the block `analyze` emitted, and both rows are now `running`
   on the operator's confirmation — the emit≠running invariant is intact: the orchestrator never asserted a start it had not
