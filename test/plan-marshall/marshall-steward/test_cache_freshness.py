@@ -572,14 +572,10 @@ def test_a_resolved_manifest_stamps_provisioned_version(tmp_path: Path, monkeypa
     # into the checkout the test process runs from. Loading with register=False
     # keeps the shared module registry free of a second `_config_core` /
     # `_cmd_sync_defaults` entry.
-    sync_defaults = load_script_module(
-        'plan-marshall', 'manage-config', '_cmd_sync_defaults.py', register=False
-    )
+    sync_defaults = load_script_module('plan-marshall', 'manage-config', '_cmd_sync_defaults.py', register=False)
     marshal = plan_dir / 'marshal.json'
     monkeypatch.setattr(sync_defaults, 'is_initialized', lambda: marshal.is_file())
-    monkeypatch.setattr(
-        sync_defaults, 'load_config', lambda: json.loads(marshal.read_text(encoding='utf-8'))
-    )
+    monkeypatch.setattr(sync_defaults, 'load_config', lambda: json.loads(marshal.read_text(encoding='utf-8')))
 
     def _save_config(config: dict) -> None:
         marshal.write_text(json.dumps(config), encoding='utf-8')
