@@ -3209,6 +3209,169 @@ def cmd_bootstrap(args: argparse.Namespace) -> dict:
     }
 
 
+def _newest_cache_generator(target: str) -> Path | None:
+    """Return the newest installed cache's ``generate_executor.py``, or ``None``.
+
+    Probes the target's deployed bundle roots through the shared resolver
+    (``resolve_bundle_path``), which already selects the newest eligible version
+    directory for a nested cache and reconstructs the flat OpenCode / Antigravity
+    name. The returned script is the one an executor must name in its recovery
+    line: it is reachable without a working executor, by construction.
+    """
+    for root in _shared_bundle_cache_roots_for(target):
+        candidate = resolve_bundle_path(
+            Path(root).expanduser(),
+            BOOTSTRAP_BUNDLE,
+            'skills/tools-script-executor/scripts/generate_executor.py',
+        )
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+#: Import-failure markers shared with ``upgrade._IMPORT_FAILURE_MARKERS``: the
+#: Python import-error phrases and the executor's exact bootstrap-guard prefix.
+_RECOVERY_IMPORT_MARKERS = (
+    'ModuleNotFoundError',
+    'ImportError',
+    'No module named',
+    'execute-script.py cannot start:',
+)
+
+_RECOVERY_PROBE_TIMEOUT_SECONDS = 30
+
+
+def _probe_executor_import(executor_path: Path) -> str:
+    """Probe an executor's module-level imports in a fresh-shell environment.
+
+    Runs ``<executor> --list`` with ``PYTHONPATH`` REMOVED: the probe must
+    observe the on-disk executor the way a new shell starts it, never the
+    parent's injected path. A probe that inherited the parent's ``PYTHONPATH``
+    could import a module the executor itself cannot find, masking exactly the
+    broken executor recovery exists to fix.
+
+    Returns a short reason when an IMPORT failure is observed, and ``''`` for a
+    healthy executor, a missing file, or any non-import failure.
+    """
+    if not executor_path.is_file():
+        return ''
+    env = {key: value for key, value in os.environ.items() if key != 'PYTHONPATH'}
+    try:
+        result = subprocess.run(
+            [sys.executable, str(executor_path), '--list'],
+            cwd=str(executor_path.parent.parent),
+            capture_output=True,
+            text=True,
+            timeout=_RECOVERY_PROBE_TIMEOUT_SECONDS,
+            env=env,
+        )
+    except (OSError, subprocess.TimeoutExpired, UnicodeDecodeError):
+        return ''
+    if result.returncode == 0:
+        return ''
+    stderr = result.stderr or ''
+    if not any(marker in stderr for marker in _RECOVERY_IMPORT_MARKERS):
+        return ''
+    lines = [line.strip() for line in stderr.splitlines() if line.strip()]
+    for line in lines:
+        if any(marker in line for marker in _RECOVERY_IMPORT_MARKERS):
+            return line[:200]
+    return (lines[-1] if lines else 'import failure')[:200]
+
+
+def cmd_recover(args: argparse.Namespace) -> dict:
+    """Recover a broken executor through a direct-path script that needs no executor.
+
+    The single deterministic recovery entry. It resolves the newest installed
+    cache's generator, probes the project's executor, regenerates the executor
+    from that cache, and RE-PROBES the regenerated file. A regenerated executor
+    that still fails to import is reported as ``regenerate_failed`` with the
+    probe's reason — never as ``regenerated``.
+
+    The verb itself runs by direct script path, so it works when
+    ``.plan/execute-script.py`` cannot start. ``--project-dir`` names the
+    checkout whose executor is recovered (default: cwd); the process cwd is
+    pinned there for the generation so the output lands in the right ``.plan``.
+    """
+    from contextlib import redirect_stdout
+    from io import StringIO
+
+    project_dir = Path(getattr(args, 'project_dir', None) or '.').resolve()
+    executor = project_dir / '.plan' / 'execute-script.py'
+    try:
+        ctx = resolve_verb_context(args)
+    except ValueError as exc:
+        return {'status': 'error', 'error': 'invalid_context', 'action': 'regenerate_failed', 'detail': str(exc)}
+    target = ctx['target']
+
+    generator = _newest_cache_generator(target)
+    if generator is None:
+        return {
+            'status': 'error',
+            'error': 'recovery_generator_missing',
+            'action': 'regenerate_failed',
+            'target': target,
+            'executor': str(executor),
+            'detail': (
+                'no installed cache carries tools-script-executor/scripts/generate_executor.py; '
+                'run /marshall-steward to restore the plugin cache'
+            ),
+        }
+
+    probe_before = _probe_executor_import(executor)
+    original_cwd = Path.cwd()
+    captured = StringIO()
+    try:
+        os.chdir(project_dir)
+        with redirect_stdout(captured):
+            regen = cmd_generate(
+                argparse.Namespace(
+                    force=True,
+                    dry_run=False,
+                    marketplace=False,
+                    marketplace_root=None,
+                    target=target,
+                )
+            )
+    finally:
+        os.chdir(original_cwd)
+
+    base = {
+        'target': target,
+        'executor': str(executor),
+        'generator': str(generator),
+        'probe_before': probe_before,
+        'generator_output': captured.getvalue()[-2000:],
+    }
+    if regen.get('status') != 'success':
+        return {
+            'status': 'error',
+            'action': 'regenerate_failed',
+            'error': str(regen.get('error', 'generation failed')),
+            # The on-disk executor is still the broken one; its probe reason is
+            # the fact that names WHY recovery was needed, even when generation
+            # itself refused.
+            'probe_reason': _probe_executor_import(executor),
+            **base,
+        }
+
+    probe_after = _probe_executor_import(executor)
+    if probe_after:
+        return {
+            'status': 'success',
+            'action': 'regenerate_failed',
+            'detail': 'the regenerated executor still fails to import',
+            'probe_reason': probe_after,
+            **base,
+        }
+    return {
+        'status': 'success',
+        'action': 'regenerated',
+        'detail': 'executor regenerated from the newest cache and re-probed clean',
+        **base,
+    }
+
+
 def _flip_notation_separators(segment: str) -> str:
     """Return ``segment`` with hyphens and underscores swapped.
 
@@ -3680,6 +3843,31 @@ def build_parser() -> argparse.ArgumentParser:
     # (absent, invalid, or template-stale executor) raises AttributeError
     # instead of generating.
     bootstrap_parser.set_defaults(func=cmd_bootstrap, dry_run=False)
+
+    # recover subcommand — the direct-path recovery entry an executor's own
+    # failure output names. Finds the newest cache, probes, regenerates,
+    # re-probes. Needs no working executor.
+    recover_parser = subparsers.add_parser(
+        'recover',
+        help='Recover a broken executor from the newest cache: probe, regenerate, re-probe',
+        allow_abbrev=False,
+    )
+    recover_parser.add_argument(
+        '--project-dir',
+        type=Path,
+        default=None,
+        metavar='PATH',
+        help='Checkout whose .plan/execute-script.py is recovered (default: current directory)',
+    )
+    recover_parser.add_argument(
+        '--marketplace-root',
+        type=Path,
+        default=None,
+        metavar='PATH',
+        help='Explicit marketplace anchor directory (must contain marketplace/bundles)',
+    )
+    add_target_argument(recover_parser)
+    recover_parser.set_defaults(func=cmd_recover)
 
     # drift subcommand
     drift_parser = subparsers.add_parser('drift', help='Compare with current bundles state', allow_abbrev=False)

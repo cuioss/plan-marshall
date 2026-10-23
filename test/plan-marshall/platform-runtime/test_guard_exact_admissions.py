@@ -327,6 +327,33 @@ def test_a_stale_lane_marker_does_not_bind(
         shutil.rmtree(hook_consumer, ignore_errors=True)
 
 
+_RECOVERY_SCRIPT = 'skills/plan-marshall-tools-script-executor/scripts/generate_executor.py'
+
+
+def test_the_executor_recovery_command_is_admitted_on_the_guard_and_the_hook(
+    tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The exact command the executor prints for recovery passes R5 on both surfaces.
+
+    The command runs a deployed cache script by its absolute path, so it must be
+    admitted through the BUNDLE-RELATIVE allow-list entry (the repository-relative
+    one cannot match outside the repository). A consumer plugin exists only in
+    the cache — the case the recovery exists for.
+    """
+    deployed = tmp_path_factory.mktemp('recovery-flat-root')
+    script = deployed / _RECOVERY_SCRIPT
+    script.parent.mkdir(parents=True, exist_ok=True)
+    script.write_text('# deployed generator\n', encoding='utf-8')
+    command = f'python3 {script} recover --project-dir /tmp/consumer --target opencode'
+
+    harness = build_harness(tmp_path_factory.mktemp('recovery-flat'), extra_env={'OPENCODE_CONFIG_DIR': str(deployed)})
+    blocked, message = harness.blocks(shell_event(command, agent=SUB_AGENT_AGENT))
+    assert not blocked, f'the recovery command must be admitted; message={message!r}'
+
+    monkeypatch.setenv('OPENCODE_CONFIG_DIR', str(deployed))
+    assert not _hook_refused(command), 'the hook must admit the recovery command too'
+
+
 def test_the_layout_data_is_the_one_shared_file() -> None:
     """The deployed roots come from the shared layout data, not a literal list."""
     layout = layout_data()

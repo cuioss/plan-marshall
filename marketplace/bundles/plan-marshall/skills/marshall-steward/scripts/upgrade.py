@@ -144,6 +144,7 @@ reported as ``error_type: concurrent_modification`` at exit 0.
 from __future__ import annotations
 
 import argparse
+import os
 import re
 from pathlib import Path
 
@@ -730,7 +731,6 @@ def _run_bootstrap_generate(generator: Path, anchor: Path, project_dir: Path) ->
     DISCOVERY (see the section header). Returns
     ``(returncode, stdout, stderr)``.
     """
-    import os
     import subprocess
 
     env = dict(os.environ)
@@ -792,6 +792,11 @@ def _probe_executor_import(executor_path: Path) -> str:
 
     if not executor_path.is_file():
         return ''
+    # A FRESH-SHELL environment: the probe must observe the on-disk executor,
+    # not one the parent's injected PYTHONPATH can make importable. A probe that
+    # inherited it would let a module the executor cannot find succeed here,
+    # masking the broken executor recovery exists to fix.
+    env = {key: value for key, value in os.environ.items() if key != 'PYTHONPATH'}
     try:
         result = subprocess.run(
             ['python3', str(executor_path), '--list'],
@@ -799,6 +804,7 @@ def _probe_executor_import(executor_path: Path) -> str:
             capture_output=True,
             text=True,
             timeout=_BOOTSTRAP_PROBE_TIMEOUT_SECONDS,
+            env=env,
         )
     except (OSError, subprocess.TimeoutExpired, UnicodeDecodeError):
         return ''
@@ -808,6 +814,9 @@ def _probe_executor_import(executor_path: Path) -> str:
     if not any(marker in stderr for marker in _IMPORT_FAILURE_MARKERS):
         return ''
     lines = [line.strip() for line in stderr.splitlines() if line.strip()]
+    for line in lines:
+        if any(marker in line for marker in _IMPORT_FAILURE_MARKERS):
+            return line[:200]
     return (lines[-1] if lines else 'import failure')[:200]
 
 
@@ -1152,9 +1161,14 @@ def bootstrap_executor(
         action = 'regenerated'
 
     if action == 'regenerated' and executor_version and executor_version != newest:
-        warning = (
+        # JOIN, never replace: an import-failure warning set earlier in this
+        # function is a distinct fact from the post-regeneration version split,
+        # and overwriting it would hide why the recovery happened at all. Both
+        # are reported.
+        warning = _join_warnings(
+            warning,
             f'skill/planner version split: planner at {executor_version} does not match the '
-            f'newest cache at {newest} after regeneration. {_VERSION_SPLIT_REMEDY}'
+            f'newest cache at {newest} after regeneration. {_VERSION_SPLIT_REMEDY}',
         )
     return {
         'status': 'success',

@@ -795,6 +795,15 @@ python3 .plan/execute-script.py plan-marshall:tools-script-executor:generate_exe
 
 A sanctioned direct-path entry point for fresh-clone / stale-cache cases. Generates only when the executor is absent (fresh clone), fails verification (corrupt/stale cache), or its embedded `TEMPLATE_SHA256` no longer matches the live template (template-content staleness). A present, valid, template-fresh executor is refused with `action: not_needed`; an unstampable side reports `template_status: unknown` (never a vacuous `fresh`) and still refuses. `template_status` is four-valued: `fresh` (hashes match), `stale` (both hashes known and differ), `unknown` (either side unstampable), and `uncompared` (no hash comparison was attempted — the executor was absent, or it failed structural verification — while the live template hash was resolvable) — `unknown`/`uncompared` never drive a regeneration on their own; both ride the verdict the presence check or the verification half already reached.
 
+### generate_executor — recover
+
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-script-executor:generate_executor recover \
+  [--project-dir PATH] [--marketplace-root PATH] [--target TARGET]
+```
+
+The direct-path recovery entry an executor's own failure output names. It needs no working executor: it resolves the newest installed cache's generator, probes the project's executor, regenerates from the cache, and re-probes. Reports `action: regenerated` only when the regenerated executor starts; a regenerated executor that still fails to import, or a generation the generator's own guards refuse, reports `action: regenerate_failed` with the probe's reason. Every probe runs with `PYTHONPATH` removed, so the parent's injected path cannot mask the on-disk executor's failure.
+
 ### generate_executor — drift
 
 ```bash
