@@ -273,13 +273,25 @@ def _skill_probe_paths(notation: str, lane_bundle: str) -> list[Path]:
         root / flat_skill_dir_name(bundle, skill) / 'SKILL.md' for root in skill_roots(_lane_skills_root())
     ]
     try:
-        from marketplace_bundles import resolve_bundle_path, resolve_bundles_root
+        from marketplace_bundles import resolve_bundle_path, resolve_bundles_root, select_live_version_dir
 
         bundles_root: Path | None = resolve_bundles_root(Path(__file__))
     except Exception:
         bundles_root = None
     if bundles_root is not None:
-        nested = resolve_bundle_path(bundles_root, bundle, subpath)
+        # A VERSIONED bundle cache has one live version dir, and that is the
+        # path a probe actually reads. Naming the unversioned
+        # ``{bundle}/{subpath}`` fallback for such a cache reports a path that
+        # cannot exist on that machine, hiding which version was probed.
+        bundle_dir = bundles_root / bundle
+        live_version: Path | None = None
+        if bundle_dir.is_dir():
+            live_version = select_live_version_dir(
+                bundle_dir, lambda version_dir: (version_dir / '.claude-plugin' / 'plugin.json').is_file()
+            )
+        nested = (
+            live_version / subpath if live_version is not None else resolve_bundle_path(bundles_root, bundle, subpath)
+        )
         if nested not in candidates:
             candidates.append(nested)
     return candidates
@@ -293,6 +305,109 @@ def _skill_exists(notation: str, lane_bundle: str) -> bool:
     name resolves through.
     """
     return any(path.is_file() for path in _skill_probe_paths(notation, lane_bundle))
+
+
+_EXECUTOR_SKEW_MATCH = 'match'
+_EXECUTOR_SKEW_SKEW = 'skew'
+_EXECUTOR_SKEW_UNCHECKED = 'could_not_check'
+
+
+def _lane_text_version(skill_dir: Path | None = None) -> str | None:
+    """Return the version of the lane text a harness would load, or ``None``.
+
+    The version is read from the LIVE installed bundle, never from the executing
+    script's own path: a stale executor runs an older ``runbook_lane.py`` from
+    its embedded path, so reading ``__file__``'s version would compare that stale
+    version with itself and report ``match``. ``select_live_version_dir`` is the
+    shared selector the harness's resolution follows, so the comparison names the
+    text an agent actually reads.
+
+    A deployed bundle lives under ``{bundle}/{version}/skills/{skill}``. The
+    source tree and a flat install carry no version directory; either is an
+    UNMAKEABLE comparison, never "no skew".
+    """
+    from marketplace_bundles import resolve_bundles_root, select_live_version_dir
+
+    root = (skill_dir or _lane_skill_dir()).resolve()
+    bundle = _lane_bundle()
+    if not bundle:
+        return None
+    try:
+        bundles_root = resolve_bundles_root(root / 'SKILL.md')
+    except Exception:
+        return None
+    bundle_dir = bundles_root / bundle
+    if not bundle_dir.is_dir():
+        return None
+    live = select_live_version_dir(
+        bundle_dir, lambda version_dir: (version_dir / 'skills' / root.name / 'SKILL.md').is_file()
+    )
+    return live.name if live is not None else None
+
+
+def _executor_skew(executor: Path, lane_skill_dir: Path | None = None) -> str:
+    """Compare the executor's version with the lane text's version.
+
+    The version is read through ``plugin_registry``'s shared executor reader,
+    never by parsing the executor here. Returns ``match`` when the executor is
+    the same version or newer, ``skew`` when it is OLDER than the text this run
+    read — the dangerous direction, where the text names verbs the executor's
+    mapped script does not have — and ``could_not_check`` when either version
+    cannot be read. ``could_not_check`` is deliberately not ``match``: a failed
+    read must never be reported as agreement.
+    """
+    from plugin_registry import EXECUTOR_VERSION_FOUND, read_executor_version, version_key
+
+    state, executor_version = read_executor_version(executor)
+    lane_version = _lane_text_version(lane_skill_dir)
+    if state != EXECUTOR_VERSION_FOUND or executor_version is None or lane_version is None:
+        return _EXECUTOR_SKEW_UNCHECKED
+    if version_key(executor_version) < version_key(lane_version):
+        return _EXECUTOR_SKEW_SKEW
+    return _EXECUTOR_SKEW_MATCH
+
+
+def cmd_executor_skew(args: argparse.Namespace) -> dict[str, Any]:
+    """Decide whether the executor may run the lane text this run read.
+
+    Reports the verdict and both versions, so a ``skew`` can name them and the
+    remedy. A comparison that cannot be made is ``could_not_check`` with its
+    reason; the lane reports it and asks the operator instead of reading it as
+    no skew.
+    """
+    from plugin_registry import (
+        EXECUTOR_VERSION_EMPTY,
+        EXECUTOR_VERSION_FOUND,
+        EXECUTOR_VERSION_NOT_FOUND,
+        read_executor_version,
+    )
+
+    executor = Path(getattr(args, 'executor', None) or '.plan/execute-script.py')
+    lane_skill_dir = Path(getattr(args, 'lane_dir', None) or _lane_skill_dir())
+    state, executor_version = read_executor_version(executor)
+    lane_version = _lane_text_version(lane_skill_dir)
+    verdict = _executor_skew(executor, lane_skill_dir)
+    result: dict[str, Any] = {
+        'status': 'success',
+        'operation': 'executor-skew',
+        'verdict': verdict,
+        'executor': executor.as_posix(),
+        'executor_version': executor_version or 'unknown',
+        'lane_version': lane_version or 'unknown',
+    }
+    if verdict == _EXECUTOR_SKEW_SKEW:
+        result['remedy'] = 'regenerate the executor'
+    elif verdict == _EXECUTOR_SKEW_UNCHECKED:
+        # Name WHICH side could not be read: a file that was read but carries no
+        # usable assignment is a different fact from an unreadable file, and the
+        # operator's remedy differs.
+        if state == EXECUTOR_VERSION_FOUND:
+            result['reason'] = 'lane text version not derivable from its install path'
+        elif state in (EXECUTOR_VERSION_EMPTY, EXECUTOR_VERSION_NOT_FOUND):
+            result['reason'] = 'executor version missing or empty'
+        else:
+            result['reason'] = 'executor version unreadable'
+    return result
 
 
 def _spec_deliverables(spec: Path) -> list[dict[str, str]]:
@@ -539,7 +654,17 @@ class _BuildCommandUnresolvable(Exception):
         self.canonicals = canonicals
 
 
-def _resolve_build(project_dir: Path) -> tuple[dict[str, Any], dict[str, Any]]:
+class _ArchitectureUnavailable(Exception):
+    """The project's architecture is missing or unreadable.
+
+    A DIFFERENT fact from "the architecture does not publish this canonical": it
+    says nothing was resolved at all, so reporting it as
+    ``build_command_unresolvable`` would name a project defect where the cause is
+    an absent crawl.
+    """
+
+
+def _resolve_build(project_dir: Path) -> tuple[dict[str, Any], dict[str, Any], list[str]]:
     """Resolve the lane's build commands through the project architecture.
 
     Each canonical is resolved on its own through the same seam
@@ -565,12 +690,28 @@ def _resolve_build(project_dir: Path) -> tuple[dict[str, Any], dict[str, Any]]:
     :class:`_BuildCommandUnresolvable`, naming the gate canonicals. There is no
     composed fall-back, no default build, and no synthesized part.
 
-    Returns ``(build, probed)``: the build command map, and the architecture's
-    resolved ``verify`` record, so the caller can read the timeout stamp off the
-    same resolution instead of re-deriving the build system.
+    Returns ``(build, probed, missing_gate)``: the build command map, the
+    architecture's resolved ``verify`` record (so the caller can read the
+    timeout stamp off the same resolution instead of re-deriving the build
+    system), and the gate canonicals this project does NOT publish — named
+    rather than silently absent.
     """
-    from _architecture_core import DataNotFoundError, ModuleNotFoundInProjectError
+    from _architecture_core import DataNotFoundError, ModuleNotFoundInProjectError, load_project_meta
     from _cmd_client_query import resolve_command
+
+    # The PERSISTED architecture is what ``resolve_command`` reads, so it is what
+    # this check reads — through the owner's own loader rather than a hand-parse
+    # of its filename and schema. A missing or unreadable project file answers
+    # "architecture unavailable", never "this project publishes no gate": the
+    # latter would name a build defect for a crawl that never ran.
+    try:
+        project_meta = load_project_meta(str(project_dir))
+    except DataNotFoundError as exc:
+        raise _ArchitectureUnavailable(str(exc)) from exc
+    except Exception as exc:
+        raise _ArchitectureUnavailable(f'{type(exc).__name__}: {exc}') from exc
+    if not isinstance(project_meta, dict) or not project_meta.get('modules'):
+        raise _ArchitectureUnavailable('the project architecture declares no modules')
 
     # The exceptions ``resolve_command`` uses for "this project does not publish
     # that canonical"; the same trio ``_cmd_client_handlers`` treats as absence.
@@ -603,12 +744,19 @@ def _resolve_build(project_dir: Path) -> tuple[dict[str, Any], dict[str, Any]]:
     build: dict[str, Any] = {canonical: record['executable'] for canonical, record in resolved.items()}
     # The split form exists because ``verify`` may outlive the shell budget; its
     # parts are the architecture's own commands for the same build system, in a
-    # fixed order, filtered to the ones this project publishes.
-    build['split'] = [canonical for canonical in _SPLIT_FORM if canonical in resolved]
+    # fixed order, filtered to the ones this project publishes. When no
+    # test-conditional part resolved, the "split" is the gate canonical alone —
+    # Maven's ``quality-gate`` IS ``verify -Ppre-commit`` — so it cannot be
+    # shorter than ``verify`` and is answered EMPTY rather than as a duplicate.
+    split = [canonical for canonical in _SPLIT_FORM if canonical in resolved]
+    if not any(canonical in resolved for canonical in _TEST_CONDITIONAL_CANONICALS):
+        split = []
+    build['split'] = split
     # ``verify`` when published, else the gate canonical the project has. The
     # caller reads the timeout stamp off it, so it must be a gate canonical.
     probed = resolved.get('verify') or resolved[_GATE_CANONICALS[0]]
-    return build, probed
+    missing_gate = [canonical for canonical in _GATE_CANONICALS if canonical not in resolved]
+    return build, probed, missing_gate
 
 
 def _augment_resolved(probed: dict[str, Any], project_dir: Path) -> dict[str, Any]:
@@ -616,8 +764,9 @@ def _augment_resolved(probed: dict[str, Any], project_dir: Path) -> dict[str, An
 
     A thin seam over ``manage-architecture``'s augmentation, so the timeout
     resolution reads the architecture's own stamp without this module importing
-    the architecture client at load time. It is also the seam a test can replace
-    to pin a stamp the fixture architecture cannot express.
+    the architecture client at load time. The REAL augmentation always runs; a
+    test that needs a stamp the fixture architecture cannot express patches the
+    LOOKUP it reads, never this function.
     """
     from _cmd_client import _augment_resolved as augment
 
@@ -851,7 +1000,13 @@ def _resolve_runtime_stamp(harness: str) -> tuple[dict[str, str], str | None]:
     executor_version = info.get('executor_version')
     if isinstance(executor_version, str) and executor_version.strip():
         stamp['executor_version'] = executor_version.strip()
-    return stamp, None
+    # The collector's own omission reason travels beside the stamp: a fact it
+    # could not measure (an OpenCode run with no session id) is `unknown` WITH a
+    # reason, never a silent unknown. A self-reported model is not substituted —
+    # only a measurement is a stamp.
+    omission = info.get('model_omission_reason')
+    reason = omission.strip() if isinstance(omission, str) and omission.strip() else None
+    return stamp, reason
 
 
 #: The CI directory a workflow lives under, relative to the project root. A
@@ -1103,6 +1258,14 @@ def _architecture_module_prefixes(project_dir: Path) -> list[str] | None:
         return None
 
 
+class _GlobHelperUnavailable(Exception):
+    """The shared glob translator could not even be imported.
+
+    Raised from the ONE import seam, so the classifier's fail-closed answer
+    names a missing translator rather than any defect in classification itself.
+    """
+
+
 def _glob_to_regex(pattern: str) -> re.Pattern[str]:
     """Compile *pattern* as a ROOT-ANCHORED path glob.
 
@@ -1120,7 +1283,13 @@ def _glob_to_regex(pattern: str) -> re.Pattern[str]:
     semantics (a matched DIRECTORY covers its contents), and it would let
     ``docs/*`` match ``docs/a/b.md`` and skip a build the CI runs.
     """
-    from _cmd_manage import _gitignore_pattern_to_regex
+    try:
+        from _cmd_manage import _gitignore_pattern_to_regex
+    except Exception as exc:
+        # A partial install (ImportError) and a translator whose own import
+        # raises something else are one fact for the caller: there is no
+        # translator, so nothing may be read as "no path matches".
+        raise _GlobHelperUnavailable(type(exc).__name__) from exc
 
     translated = _gitignore_pattern_to_regex(f'/{pattern}').pattern
     if translated.endswith(_GITIGNORE_DIR_TAIL):
@@ -1185,6 +1354,30 @@ def _classify_path(
     return 'docs-only' if _is_project_doc(path, doc_surfaces) else 'buildable'
 
 
+def cmd_build_routing(args: argparse.Namespace) -> dict[str, Any]:
+    """Decide whether a routed build may be submitted or must run in-process.
+
+    A routed job re-runs the WORKTREE's own ``.plan/execute-script.py``, and the
+    routing submits without checking that it exists — so an absent executor ends
+    the job terminal (exit 2) with no in-process fallback. Worktree creation does
+    not supply one, so the lane asks this before its first routed build:
+    ``auto`` means submit normally; ``in_process`` carries the named reason the
+    run records, and the mode it passes for that build.
+    """
+    worktree = Path(getattr(args, 'worktree', None) or '.').resolve()
+    executor = worktree / '.plan' / 'execute-script.py'
+    result: dict[str, Any] = {
+        'status': 'success',
+        'operation': 'build-routing',
+        'worktree': worktree.as_posix(),
+        'execution_mode': 'auto',
+    }
+    if not executor.is_file():
+        result['execution_mode'] = 'in_process'
+        result['reason'] = 'executor_absent_from_worktree'
+    return result
+
+
 def cmd_build_classify(args: argparse.Namespace) -> dict[str, Any]:
     """Classify the changed paths so the build gate can skip a docs-only change.
 
@@ -1220,12 +1413,15 @@ def cmd_build_classify(args: argparse.Namespace) -> dict[str, Any]:
                 }
                 for path in paths
             ]
-        except ImportError as exc:
-            # The shared glob translator is unavailable (a partial install).
+        except _GlobHelperUnavailable as exc:
+            # The shared glob translator is unavailable: absent from a partial
+            # install, or raising something other than ImportError while it is
+            # imported (a missing dependency of its own, a broken module body).
             # Build everything and name the cause: a broken translator must never
-            # be read as "no path matches", which for a skip rule would skip.
+            # be read as "no path matches", which for a skip rule would skip, and
+            # an uncaught non-ImportError must not abort the classifier.
             rows = [{'path': path, 'kind': 'buildable'} for path in paths]
-            reason = f'glob helper unavailable: {type(exc).__name__}'
+            reason = f'glob helper unavailable: {exc}'
     buildable = any(row['kind'] == 'buildable' for row in rows)
     result: dict[str, Any] = {
         'status': 'success',
@@ -1490,7 +1686,7 @@ def cmd_resolve(args: argparse.Namespace) -> dict[str, Any]:
     try:
         marshal = _read_marshal(project_dir)
         required, optional = _resolve_bots(marshal)
-        build, probed = _resolve_build(project_dir)
+        build, probed, missing_gate = _resolve_build(project_dir)
         build_timeout_seconds = _resolve_build_timeout(probed, project_dir)
         base_branch = _resolve_base_branch(marshal)
         deliverable_state = _resolve_deliverable_skills(spec)
@@ -1498,13 +1694,24 @@ def cmd_resolve(args: argparse.Namespace) -> dict[str, Any]:
         # The read's budget is resolved only for a project that will make the read:
         # a broken ceiling seam must not block a lane with no Sonar read to make.
         sonar_ce_wait = _resolve_sonar_ce_wait(project_dir) if sonar_state['state'] == 'configured' else None
+    except _ArchitectureUnavailable as exc:
+        # Nothing was resolved because the architecture itself is absent or
+        # unreadable: naming that cause keeps it distinct from a project that
+        # publishes no gate canonical.
+        return {
+            'status': 'error',
+            'error': 'architecture_unavailable',
+            'message': str(exc),
+            'spec': args.spec,
+            'plan': plan_id,
+        }
     except _BuildCommandUnresolvable as exc:
         # Fail closed and name the gate canonicals that could not be resolved:
         # the lane never falls back to a composed string or to a default build.
         return {
             'status': 'error',
             'error': 'build_command_unresolvable',
-            'canonicals': ', '.join(exc.canonicals),
+            'canonicals': list(exc.canonicals),
             'spec': args.spec,
             'plan': plan_id,
         }
@@ -1569,6 +1776,12 @@ def cmd_resolve(args: argparse.Namespace) -> dict[str, Any]:
         'sonar': sonar_state['state'],
         'skills_note': deliverable_state['skills_note'],
     }
+    # A project can publish only one gate canonical (npm publishes each
+    # conditionally), so the missing one is NAMED rather than silently dropped.
+    # Presence-gated: an empty population would read like a parsed-but-empty
+    # answer on every fully-populated project.
+    if missing_gate:
+        resolved['build_missing_canonicals'] = list(missing_gate)
     # The read's budget rides only when there is a read to make: an empty row
     # would read like a parsed-but-empty answer on a project without Sonar.
     if sonar_ce_wait is not None:
@@ -1607,6 +1820,34 @@ def main() -> int:
         '--spec', required=True, help='Staged spec path: .plan/orchestrator/{slug}/plans/PLAN-*.md'
     )
     resolve_parser.add_argument('--project-dir', default='.', help='Project root (default: current directory)')
+
+    skew_parser = subparsers.add_parser(
+        'executor-skew',
+        help='Compare the executor version with the lane text version',
+        allow_abbrev=False,
+    )
+    skew_parser.add_argument(
+        '--executor',
+        default=None,
+        help='Executor to read (default: .plan/execute-script.py)',
+    )
+    skew_parser.add_argument(
+        '--lane-dir',
+        dest='lane_dir',
+        default=None,
+        help="The lane skill's own directory (default: this script's skill dir)",
+    )
+
+    routing_parser = subparsers.add_parser(
+        'build-routing',
+        help='Decide whether a routed build may be submitted or must run in-process',
+        allow_abbrev=False,
+    )
+    routing_parser.add_argument(
+        '--worktree',
+        required=True,
+        help='The worktree the build will run against',
+    )
 
     classify_parser = subparsers.add_parser(
         'build-classify', help='Classify changed paths as docs-only or buildable', allow_abbrev=False
@@ -1688,6 +1929,12 @@ def main() -> int:
             )
             return 0
         output_toon(data)
+        return 0
+    if args.command == 'executor-skew':
+        output_toon(cmd_executor_skew(args))
+        return 0
+    if args.command == 'build-routing':
+        output_toon(cmd_build_routing(args))
         return 0
     if args.command == 'build-classify':
         data = cmd_build_classify(args)

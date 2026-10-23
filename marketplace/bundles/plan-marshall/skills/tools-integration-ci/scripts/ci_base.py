@@ -2161,7 +2161,7 @@ def enrich_failing_checks_with_logs(
     filtered error-extraction variant under
     ``artifacts/ci-runs/{run_id}/{slug}.log`` and ``{slug}.filtered.log``
     through the ``manage-ci-artifacts`` storage layout, and appends the
-    plan-dir-relative ``log_file`` / ``filtered_log_file`` paths back onto the
+    ``.plan``-relative ``log_file`` / ``filtered_log_file`` paths back onto the
     entry. Two failing checks sharing one ``run_id`` get distinctly-slugged
     files and never collide.
 
@@ -2184,6 +2184,9 @@ def enrich_failing_checks_with_logs(
         The same list, with ``log_file`` / ``filtered_log_file`` set on each
         entry (empty strings on any entry whose ``run_id`` is missing or whose
         download/persist failed — per-entry graceful degradation, never raises).
+        When either pointer stays empty, ``log_unavailable_reason`` names why —
+        an empty pointer alone cannot tell a reader whether the log is missing
+        by design, was never requested, or failed to download.
     """
     persist = _load_persist() if plan_id else None
     filter_log, _slugify = _load_log_filter()
@@ -2192,15 +2195,28 @@ def enrich_failing_checks_with_logs(
         entry.setdefault('log_file', '')
         entry.setdefault('filtered_log_file', '')
         entry.setdefault('error_style', error_style)
+        # A re-enrichment must not carry a stale reason from an earlier attempt,
+        # nor a pointer from an earlier run: reset both before re-deriving them.
+        entry.pop('log_unavailable_reason', None)
+        entry['log_file'] = ''
+        entry['filtered_log_file'] = ''
 
         run_id = entry.get('run_id') or ''
-        if not plan_id or not run_id or persist is None or filter_log is None or _slugify is None:
+        if not plan_id:
+            entry['log_unavailable_reason'] = 'no_plan_id'
+            continue
+        if not run_id:
+            entry['log_unavailable_reason'] = 'no_run_id'
+            continue
+        if persist is None or filter_log is None or _slugify is None:
+            entry['log_unavailable_reason'] = 'persist_unavailable'
             continue
 
         try:
             slug = _slugify(entry.get('job_name') or entry.get('name') or '')
             raw_log = raw_log_fetcher(run_id, entry.get('job_id') or '')
             if raw_log is None:
+                entry['log_unavailable_reason'] = 'log_fetch_failed'
                 continue
             filtered = filter_log(raw_log, error_style)
             job = {
@@ -2224,12 +2240,16 @@ def enrich_failing_checks_with_logs(
                 jobs=[job],
             )
             if result.get('status') != 'success':
+                entry['log_unavailable_reason'] = 'persist_failed'
                 continue
             entry['log_file'] = _select_slug_path(result.get('log_paths'), slug, '.log')
             entry['filtered_log_file'] = _select_slug_path(result.get('filtered_log_paths'), slug, '.filtered.log')
+            if not entry['log_file'] or not entry['filtered_log_file']:
+                entry['log_unavailable_reason'] = 'log_path_missing'
         except Exception:
             # Per-entry graceful degradation: a single failure must never
             # abort enrichment of the remaining entries or raise.
+            entry['log_unavailable_reason'] = 'enrich_failed'
             continue
 
     return failing_checks

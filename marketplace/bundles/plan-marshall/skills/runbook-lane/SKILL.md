@@ -48,6 +48,30 @@ resolves no gate build command (naming the gate canonicals it could not resolve)
 skill/persona name in a flat install with no recorded bundle identity
 (`flat_skill_identity_missing`).
 
+### executor-skew
+
+```bash
+python3 .plan/execute-script.py plan-marshall:runbook-lane:runbook_lane executor-skew \
+  [--executor .plan/execute-script.py] [--lane-dir DIR]
+```
+
+Compares the version the executor carries with the version of the lane text it will run, reading the
+executor through the shared `plugin_registry` reader rather than parsing it. It answers `match`,
+`skew` or `could_not_check` and names both versions; `skew` also carries the remedy. The lane runs it
+before `resolve` (section 0), because a stale executor's own `resolve` cannot perform the check.
+
+### build-routing
+
+```bash
+python3 .plan/execute-script.py plan-marshall:runbook-lane:runbook_lane build-routing \
+  --worktree {worktree}
+```
+
+Decides whether the next build may be submitted to the daemon or must run in-process, from whether
+the worktree carries its own `.plan/execute-script.py`. It answers `auto` (submit with no execution
+flag) or `in_process` with the `executor_absent_from_worktree` reason. Section 4 runs it before the
+first routed build.
+
 ### build-classify
 
 ```bash
@@ -100,7 +124,23 @@ The invocation names a spec:
 /plan-marshall-runbook-lane plan=.plan/orchestrator/{slug}/plans/PLAN-NN-{slug}.md
 ```
 
-Read it from the **main checkout**; it is git-tracked there. Then **resolve** every value the run
+**Before `resolve`, check that the executor is not older than this text.** Compare the version the
+executor carries with the version of the lane text this run read:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:runbook-lane:runbook_lane executor-skew
+```
+
+It answers `match`, `skew` or `could_not_check`, naming both versions. A `skew` — or an
+`unknown_verb`/argparse rejection that shows the executor predates this text — stops the run as
+**blocked**, naming both versions and the remedy: regenerate the executor (`/marshall-steward`, or
+the project's equivalent generate step). A `could_not_check` (the executor is unreadable, its
+version is absent, or the lane text's own version cannot be derived) is reported as **could not
+check** and the operator is asked; it is never read as no skew. The check cannot live inside
+`resolve`: a stale executor runs the stale `resolve`, which is exactly the code that lacks it, while
+this text is loaded from the installed plugin and is current when the executor is not.
+
+Read the spec from the **main checkout**; it is git-tracked there. Then **resolve** every value the run
 uses, and read the result before doing anything else:
 
 ```bash
@@ -114,13 +154,15 @@ The result supplies, and nothing below is spelled from anywhere else:
 | epic slug | `slug` |
 | `{plan}` | `plan` |
 | worktree | `worktree` |
-| branch | `{branch} = {prefix}{plan}`; the canonical prefix set is closed — `feature/` (a new capability), `fix/` (a bug fix), `chore/` (docs or maintenance) — and the project's configured `working_prefixes` is its only extension, never a replacement: the chosen prefix must be one the project's configured `working_prefixes` declares |
+| branch | `{branch} = {prefix}{plan}`; one closed set supplies the prefix — the canonical `feature/` (a new capability), `fix/` (a bug fix) and `chore/` (docs or maintenance), plus a prefix the project's configured `working_prefixes` declares. The two sources are one set with no precedence between them |
 | base branch | `base_branch` (the project's own base branch, never a spelling of it) |
 | inbox sender id | `sender_id` |
 | progress file | `progress_file` |
 | landing file | `landing_file` |
 | build commands | `build` |
+| gate canonicals the project does not publish | `build_missing_canonicals`, present only when one is missing |
 | build timeout (seconds) | `build_timeout_seconds` |
+| runtime stamp reason | `runtime_stamp_reason`, present when a stamp fact could not be measured |
 | required and optional reviewers, with their trigger comments | `required_bots`, `optional_bots` |
 | commit trailer | `commit_trailer` |
 | `inbox write` command | `inbox_write_command` |
@@ -134,7 +176,8 @@ The branch row is derived from the project's configuration rather than returned 
 other row names a field of the resolve result.
 
 The verb **fails closed**: a spec outside `.plan/orchestrator/{slug}/plans/`, an unreadable
-configuration, an unreadable Sonar block (`sonar_config_unreadable`) or a Sonar block with no project
+configuration, a missing or unreadable project architecture (`architecture_unavailable`), an
+unreadable Sonar block (`sonar_config_unreadable`) or a Sonar block with no project
 key (`sonar_config_incomplete`), a missing automatic-review
 step, an empty required-reviewer list, no gate build
 command (`quality-gate` or `verify`) the project's architecture can resolve, or a bare
@@ -160,8 +203,9 @@ value.
 
 ## 0a. Progress file and resume (do this first, every session)
 
-**Re-read this skill in full** at every session start, after every server restart and after every
-context compaction. It can change during a run; the current version binds.
+**Re-read this skill in full** at every session start, after every server restart, after every
+context compaction and after any idle gap. It can change during a run; the current version binds.
+Record the re-read in the progress file with its timestamp and what triggered it.
 
 **Check for a resume first.** If `{progress_file}` exists, this session is a resume:
 
@@ -179,8 +223,9 @@ item below and before starting the next. One line per entry, newest last:
 ```text
 setup: worktree {worktree}, branch {branch}, pushed
 build-server: {ready|disabled|down}{ (reason)}; fallback: {none|in_process|degraded}, {reason or none}
+re-read: lane text loaded at {timestamp} ({session start|compaction|restart|idle gap})
 D{n} hypothesis: {claim} — confirmed|refuted, {file:line}
-D{n} test: {test name} — failed before fix ({evidence}), passed after
+D{n} test: {test name} — order {test-first|mutation-after|none}; failing run {commit} {output identifier}; passed at {sha}
 D{n} done: commit {sha}
 sonar: {configured (project key)}|{not_configured}; read at {sha}: {count} confirmed|{undecidable, retried}|{not_configured}; dismissals: {issue-key: reason, … or none}
 gate: {quality-gate|module-tests|verify} at {sha} — {result}
@@ -203,13 +248,20 @@ so git alone shows which deliverables are committed.
 - **Scope.** Implement exactly the spec. Every deliverable stays a separate deliverable, and every
   Done-when is met as written. Never merge, narrow or reword a criterion. A deliverable you cannot
   meet is reported as not met, with the reason.
-- **Evidence.**
-  - A test that a Done-when says "fails at `{sha}`" must be **seen failing**. Write it first, run it
-    against the unfixed code, and record the failing output. Then fix, and see it pass.
-  - A green run at HEAD is never evidence that a test fails without the fix.
-  - A Done-when whose "fails at `{sha}`" clause was not seen failing is reported **not met as
-    written**, with the reason, so its deliverable is **not** fully met — and `deliverables_done`
-    counts only fully met deliverables.
+- **Evidence.** Every Done-when's evidence carries an `order` — exactly one of `test-first`,
+  `mutation-after` or `none` — and this rule is the ONE place a Done-when is graded by it:
+  - `test-first` is met: the test was written and seen failing against the unfixed code, and the
+    failing output is recorded.
+  - `mutation-after` is met with the order stated: the failing output came from mutating or
+    reverting the committed fix, and the test, commit and output identifier are reported.
+  - `none` on a Done-when whose clause says "fails at `{sha}`" is reported **not met as written**,
+    with the reason, so its deliverable is **not** fully met — and `deliverables_done` counts only
+    fully met deliverables.
+  - A green run at HEAD is never evidence that a test fails without the fix. The words "fail-first"
+    and "observed failing before the fix" are reserved for `test-first`; a `mutation-after` or
+    `none` order says so instead.
+  - The failing run is reported by its commit and output identifier wherever the order is not
+    `none`.
   - Never cite a test, file or log you have not just read or run.
 - **Executor only.**
   - Every script: `python3 .plan/execute-script.py {bundle}:{skill}:{script} …`.
@@ -340,12 +392,14 @@ is submitted to the build daemon.
      `disabled` for an unenrolled project, so the builds run in-process.
    - `down` — the daemon was unreachable at setup. Record the reason. The builds still run with the
      default routing, which preflights again per build, so the `mechanism` a build result reports is
-     the authority for how THAT build ran — record it (a daemon that recovered mid-run can route).
+     the authority for how THAT build ran. The `build-routing` check (section 4) decides whether a
+     build may be routed at all.
    - `ready` — routing is available. A routed job re-runs the worktree's own `.plan/execute-script.py`,
-     which worktree creation supplies: that executor is what the daemon uses, never the main
-     checkout's. A missing executor is a worktree defect, not a routing reason — record
-     `executor_absent_from_worktree`, report it, and run that build in-process with
-     `--execution-mode in_process` so the gate still runs.
+     never the main checkout's. Worktree creation does NOT supply it: its
+     `_ensure_worktree_plan_local_real` creates only `.plan/local`, and the executor is moved in by
+     `prepare_execute`, which this lane never runs. Section 4 therefore runs the `build-routing` check
+     before the first routed build and answers `in_process` with
+     `executor_absent_from_worktree` when it is absent.
 
 ## 3. Implement, deliverable by deliverable
 
@@ -360,8 +414,7 @@ For each deliverable, in the spec's order:
    landing report then says `skills: none named`.
 1. Confirm the spec's HYPOTHESIS lines for this deliverable by reading the code. Write down
    confirmed or refuted, with `file:line`.
-2. Write the Done-when tests. Run them on the unfixed code and record the failing output (step 4
-   command, scoped).
+2. Write the Done-when tests and capture their evidence under the `order` §1 defines.
 3. Implement. Run the tests; record them passing.
 4. If any `*.py` changed, run the quality gate (step 4) until clean.
 5. Commit with the deliverable paths staged by name, then push. Record `D{n} done` in the progress
@@ -381,9 +434,12 @@ publishes no test part supplies no `{build.module-tests}`:
 ```
 
 - **Routing.** `auto` submits the job to the build daemon when the setup preflight found it `ready`,
-  and runs in-process otherwise. A routed job re-runs the worktree's own executor; the
-  `executor_absent_from_worktree` fallback from setup applies only when that executor is genuinely
-  missing, and is recorded with its reason. The daemon applies its OWN supervisory bound, which
+  and runs in-process otherwise. Before the first routed build, run
+  `python3 .plan/execute-script.py plan-marshall:runbook-lane:runbook_lane build-routing --worktree {worktree}`:
+  `auto` means submit with no execution flag; `in_process` means pass `--execution-mode in_process`
+  for that build and record the `executor_absent_from_worktree` reason it names, so the gate still
+  runs instead of ending terminal on an executor worktree creation never supplied. A routed job
+  re-runs the worktree's own executor. The daemon applies its OWN supervisory bound, which
   `--timeout` can only raise; a bound expiry comes back as `timeout` naming `timeout_used_seconds`
   and `timeout_source`, and the client's rules for it are cited, not restated. Record a bound
   expiry and continue with the split form below rather than re-submitting the same bound.
@@ -397,9 +453,11 @@ publishes no test part supplies no `{build.module-tests}`:
   bounded wait — are stated in `build-server-client/SKILL.md` and bind here as written, not
   restated. A second concurrent submission is the case that client cannot see: two routed builds
   from one worktree can interleave, and a result can carry its sibling job's counts.
-- **Shell timeout, in-process fallback only:** an in-process build holds the shell call for its whole
-  duration. Give each call the shell tool's `timeout` parameter, set at or above the build's own
-  timeout.
+- **Shell timeout:** an in-process build holds the shell call for its whole duration, and a routed
+  build also holds the call — its wait is bounded and re-polled inside the same call, never
+  backgrounded. Give each call the shell tool's `timeout` parameter, set at or above the build's own
+  timeout; on a harness whose default shell timeout is shorter than the build, raise that parameter
+  or run the split form below. The routing choice does not shorten the call.
   - If the tool cannot wait that long, run the gate's parts as separate calls, in the order
     `{build.split}` states, running each canonical the resolve result supplies — for example
     `{build.quality-gate}`, `{build.test-compile}` and `{build.module-tests}` where the project
@@ -410,7 +468,10 @@ publishes no test part supplies no `{build.module-tests}`:
     publishes them conditionally, so the resolve result carries at least one; a project that
     resolves neither has already failed `resolve`. Where `split` names nothing, run the gate
     canonical the resolve result supplies — `{build.quality-gate}` where supplied, otherwise
-    `{build.verify}` — because the project publishes no separable part.
+    `{build.verify}` — because the project publishes no separable part. Where the only candidate
+    parts are gate canonicals, the split cannot be shorter than `verify` (Maven's `quality-gate` IS
+    `verify -Ppre-commit`), so `resolve` answers an empty `split` and the lane runs the gate
+    canonical itself.
   - A daemon-routed build is waited on in the same call, never moved to the background.
 - **Read the result, not the exit code.** The TOON must show `status: success` and an empty
   `errors[]`. Open the `log_file` it names for the test summary.
@@ -419,7 +480,9 @@ publishes no test part supplies no `{build.module-tests}`:
   pass them to the `build-classify` verb. When it answers `kind: docs-only`, run **no** full
   `verify`: check the changed docs instead (format, internal links and references, and a
   `git status` showing only doc files) and record `build-gate: docs-only` in the progress file and
-  the landing message. `kind: buildable` runs the gate below as usual. The classifier applies the
+  the landing message. A docs-only head runs no `module-tests` and no `test-compile`: the build was
+  skipped, so there is no test part to run, and CI's required checks still gate the head.
+  `kind: buildable` runs the gate below as usual. The classifier applies the
   PROJECT's own footprint rule rather than assuming a `.py` file is the only thing that builds. Its
   non-building class is the project's CI rule where the checkout HOLDS it: a `paths-ignore` block in
   the workflow that carries the `skip-on-docs-only` opt-in. Where it does not — the rule lives in a
@@ -437,6 +500,9 @@ publishes no test part supplies no `{build.module-tests}`:
   `{build.module-tests}` where the resolve result supplies it, plus `{build.test-compile}` where the
   project publishes one; a project that supplies neither is gated by the gate canonical it
   publishes. Record the sha of each run; a head that was not tested is not a green head.
+- **A single gate canonical is a complete gate.** The merge gate's `verify` condition (section 7)
+  names what replaces it when the project publishes no `verify` or the routed run hit the daemon's
+  bound.
 - **Failures that already fail on the base branch:** environment-dependent tests can fail in a
   project's local module-tests run. They are not yours. Only a failure in a module you touched, or
   one the base branch does not show, is yours.
@@ -473,11 +539,9 @@ whether to continue at the limit. Record every finding and its disposition.
 1. **Open the PR.**
    - `python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr prepare-body --plan-id NO_PLAN`
      returns a path.
-   - Write the body there: Summary; Changes, grouped per deliverable; Test evidence, naming the
-     failing-then-passing tests. The evidence carries, per Done-when, an `order` field with exactly
-     one of `test-first`, `mutation-after` or `none`, plus the failing run's commit and output
-     identifier. The words "fail-first" and "observed failing before the fix" are reserved for
-     `test-first`; a `mutation-after` or `none` order says so instead. No footer.
+   - Write the body there: Summary; Changes, grouped per deliverable; Test evidence. The evidence
+     carries, per Done-when, the `order` and verdict §1 defines, the test name, and the failing
+     run's commit and output identifier only where the order is not `none`. No footer.
    - Then: `python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr create --plan-id NO_PLAN --head {branch} --base {base_branch} --title "{conventional title}"`
 2. **Trigger each reviewer** with a PR comment (`ci pr prepare-comment` + `ci pr reply`), posting
    its resolved `trigger_comment`.
@@ -540,8 +604,12 @@ Merge only when all of these hold:
   authorization, quota-limited reviewers only.** For a required reviewer that the resolve result
   marks `quota_limited`, "reviewed the current head" may be replaced by ALL of:
   1. **a qualifying review exists** — a formal review by that reviewer on one of this PR's heads,
-     listed by `ci pr reviews` with its commit id. Rate-limit notices, summary comments and thread
-     replies do not count;
+     listed by `ci pr reviews` with its commit id, or, where the reviewer publishes a clean review
+     only as a summary comment, the marker-bearing summary comment whose `sourceCommitId` /
+     `coveredCommitId` name one of this PR's heads and whose `kind=reviewed` (the
+     `final_review_risk_coverage` marker the reviewer's summary comment carries; read it from the
+     comment itself, because the marker names the head the review covered).
+     Rate-limit notices, marker-less walkthroughs and thread replies do not count;
   2. **every finding is handled** — each finding from that review and from any later one is fixed in
      a pushed commit, or answered with a reason, and every one of that reviewer's threads is
      resolved;
@@ -549,7 +617,10 @@ Merge only when all of these hold:
   4. **every other gate condition holds on the current head** — every reviewer that is not
      quota-limited reviewed it, every comment is handled, the build gate is green, CI is green.
 - Every comment is handled.
-- `verify` (the full build, step 4) is green on the current head.
+- `verify` (the full build, step 4) is green on the current head. Where the project publishes no
+  `verify`, the gate canonical it does publish is green instead — a single gate canonical is a
+  complete gate (section 4). Where the routed `verify` hit the daemon's supervisory bound, the split
+  form's parts are the run that must be green.
 - CI is green on the current head.
 - The Sonar state of the current head admits the merge: `sonar-gate` reports `merge_allowed: true`
   on a read taken after the last push — its open new-code issue count is `0` confirmed, or every
@@ -561,17 +632,27 @@ The reviewer quota policy (§ 6 step 7) applies only while no qualifying review 
 authorization never applies to a reviewer that is not quota-limited, and never to a PR without a
 qualifying review.
 
-**Any question that bears on the merge** states, per required reviewer, which head it last reviewed,
-and whether that is the current head. It states the CI status, the `verify` status and the Sonar
-state only from a result obtained on that head AFTER the last push; where no such result exists it
-reports `pending`, never an older run's answer — and the Sonar state it reports is the gate's
-verdict for that head alone. Its options never mark a rule-bending
-choice "Recommended". A false or incomplete statement in such a question fails the run.
+**An unresolved review thread or an unhandled outside-diff finding on the merge head blocks the
+standing authorization.** A reviewer's thread that is still open, or an outside-diff finding the run
+neither fixed nor answered, means a finding is not handled, so the second condition fails however
+strong the review credit is.
+
+**Any question that bears on the merge** first re-reads the review surfaces — `ci pr comments`,
+`ci pr reviews`, and the reviewer's summary comment — in the same step as the question, and again
+immediately before the enqueue, and states only facts read in that step: per required reviewer,
+which head it last reviewed, and whether that is the current head; the CI status, the `verify`
+status and the Sonar state only from a result obtained on that head AFTER the last push, reporting
+`pending` where no such result exists, with the Sonar state as the gate's verdict for that head
+alone. Its options never mark a rule-bending choice "Recommended". A review of the current head that
+arrived after the question was asked invalidates the answer: ask the question again. A false or
+incomplete statement in such a question fails the run.
 
 **Immediately before enqueue,** fetch the base branch again. **If it moved:**
-`git -C {worktree} fetch origin {base_branch}`, then `git -C {worktree} merge origin/{base_branch}`. Run the build
-gate again, push, re-trigger the reviewers, re-read the Sonar issues, and repeat the reviewer quota
-policy (§ 6 step 7).
+`git -C {worktree} fetch origin {base_branch}`, then
+`git -C {worktree} merge origin/{base_branch} -m "merge: origin/{base_branch} into {branch}" -m "{commit_trailer}"`,
+so the merge commit it creates ends with the resolved `{commit_trailer}` line the Commit trailer rule
+requires. Run the build gate again, push, re-trigger the reviewers, re-read the Sonar issues, and
+repeat the reviewer quota policy (§ 6 step 7).
 
 **Before enqueue, re-check the authorization rule:** merge only when every condition above holds, or
 when the operator **selected** an option in a question-tool call that names the exact gap (which
@@ -683,14 +764,19 @@ step.sonar-roundtrip.open_issue_rules={rules left open|none|unknown|n/a}
      harness offered no question tool at all, this section says `no question tool was available`. If
      no question was needed and none was asked, write "none asked".
   7. **Rule check** — every section 1 rule that you or a sub-agent did not keep, and every guard
-     refusal: read `{guard_log}` (the path `resolve` returns) for this run's sessions and list each
-     line. "All kept" is allowed only when that log has no line for the run — and never on a harness
-     whose resolve result reported `guard: none`.
+     refusal. The check counts the run's OWN actions, not only what the guard recorded: every shell
+     file operation the run issued — the read-class ones included — every routed build including a
+     failed one, and every operator message including a model switch. Read `{guard_log}` (the path
+     `resolve` returns) for this run's sessions; a count taken from the guard log alone is labelled
+     as such. Attribute a refusal by the run's own session tree, never by a time window, and list
+     every restart, every killed sub-agent and every re-dispatch with what it re-ran. "All kept" is
+     allowed only when the log has no line for the run — and never on a harness whose resolve
+     result reported `guard: none`.
   8. **Build server** — the setup preflight's state (`ready`, `disabled` or `down`, with its reason),
      the fallback each build used and why (`degraded` with its `reason`, or
      `executor_absent_from_worktree`), and any `killed` job with its disposition. Add any
-     `runtime_stamp_reason` the resolve result carried: it names a runtime-info seam that failed
-     and left the stamp at `unknown`.
+     `runtime_stamp_reason` the resolve result carried: it names a runtime-info seam that failed, or
+     a fact nothing could measure, and marks the stamp as `unknown` rather than silently absent.
   9. **Residue** — anything left open.
 
 Then tell the operator the PR number, the merge commit, and that the landing message was written.

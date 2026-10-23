@@ -486,7 +486,7 @@ def test_no_checks_returns_distinct_ci_final_status(plan_context):
     """``final_status: none`` from ``ci wait`` MUST surface as
     ``ci_final_status: no_checks`` so the dispatcher can distinguish
     "CI never ran" from a real failure and route to the
-    ``ci-verify-missing`` producer.
+    ``ci_no_checks`` subtype.
     """
     plan_id = 'ci-precond-no-checks'
     git_stub = _StubGitHead(_SHA_A)
@@ -512,7 +512,7 @@ def test_no_checks_returns_distinct_ci_final_status(plan_context):
     assert result['status'] == 'wait_failed'
     assert result['ci_final_status'] == 'no_checks', (
         'no_checks must be distinct from failure so the dispatcher can '
-        'route to ci-verify-missing instead of ci-verify-build'
+        'file the ci_no_checks subtype instead of a build failure'
     )
     assert result['failing_checks'] == []
     # Cache MUST remain absent — no_checks is a non-cacheable verdict.

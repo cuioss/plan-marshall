@@ -79,12 +79,13 @@ The executor's steps:
    when that mark was refused (see "Return shape" below).
 5. **Red CI**: file exactly one taxonomy finding per failing check (plus
    the `ci_no_checks` finding on `final_status == none`) and return
-   `outcome: needs_triage` carrying the distinct per-producer strings.
-   The executor does NOT mark the step `done` on the red path and does
-   NOT dispatch `verification-feedback` itself — it returns the
-   per-producer needs-triage signal and the dispatcher runs
-   `verification-feedback` (the sole LLM step, red-CI only), then records
-   the terminal step outcome.
+   `outcome: needs_triage` carrying the single producer value
+   `producers: [ci-verify]`. The per-row distinction rides each finding's
+   `[subtype]` tag. The executor does NOT mark the step `done` on the red
+   path and does NOT dispatch `verification-feedback` itself — it returns
+   the needs-triage signal and the dispatcher runs exactly ONE
+   `verification-feedback` invocation with `producer=ci-verify` (the sole
+   LLM step, red-CI only), then records the terminal step outcome.
 
 The green-early-return / no-dispatch bypass is documented BEFORE the
 red-CI triage dispatch it bypasses (steps 4 → 5 above).
@@ -101,7 +102,7 @@ head_sha: <str>
 persisted: true | false
 persist_skipped_reason: <field>   # present only when persisted == false
 findings_filed: <int>
-producers: [str, ...]             # present only when outcome == needs_triage
+producers: [ci-verify]           # present only when outcome == needs_triage
 step_marked_done: true | false    # true only when the mark returned success
 step_mark_error: <str>            # present only when outcome == green_unrecorded
 step_mark_message: <str>          # present only when outcome == green_unrecorded
@@ -206,16 +207,16 @@ this order per failing check.
 
 | Row | Failure mode | Detection source | Producer string | Subtype tag | Typical fix path |
 |-----|--------------|------------------|------------------|-------------|------------------|
-| a | Sonar quality-gate failure | Sonar provider (NOT a GitHub check) | n/a (out of ci-verify scope) | n/a | `sonar-roundtrip` triage; ci-verify MUST NOT double-report |
-| b | Build / test / lint / coverage failure | CI check whose `workflow_name` matches a build profile | `ci-verify-build` | `ci_build_failure` | Open fix-task on failing module; loop_back |
-| c | Policy-workflow failure (license/cla, dep-review, codeql) | CI check whose `workflow_name` does NOT match a build profile | `ci-verify-policy` | `ci_policy_failure` | Depends on policy: accept / suppress / fix |
-| d | Explicit `conclusion=failure` | per-check conclusion | (b) or (c) above | (b) or (c) above | per-row |
-| e | Cancelled (`conclusion=cancelled`) | per-check conclusion | `ci-verify-cancelled` | `ci_cancelled` | accept (manual cancellation) / retry |
-| f | Action required | per-check conclusion | `ci-verify-action-required` | `ci_action_required` | operator approval; accept after approval |
-| g | Stale (`conclusion=stale`) | per-check conclusion | `ci-verify-stale` | `ci_stale` | re-run CI (HEAD advanced past check's commit) |
-| h | Timeout (`conclusion=timed_out`, OR a run still not terminal) | per-check conclusion / `wait_outcome=deadline_exceeded` with no definitively failed check | `ci-verify-timeout` | `ci_timeout` | retry / accept (flaky infra) |
-| i | No checks reported (`final_status=none`) | zero checks across PR | `ci-verify-missing` | `ci_no_checks` | confirm CI is configured; accept if intentional |
-| j | CI never ran vs CI ran red | distinguished by (i) vs (b..h) | n/a — handled by row choice | n/a | covered by per-row producer split |
+| a | Sonar quality-gate failure inside a build job | The persisted job log of the failing check carries the sonar-scanner marker `QUALITY GATE STATUS: FAILED`, AND the plan's execution manifest carries the `sonar-roundtrip` step | `ci-verify` | `ci_sonar_gate` | Deferral: `sonar-roundtrip` owns the gate and triages it; ci-verify files the deferral only and MUST NOT double-report it as a build or policy failure |
+| b | Build / test / lint / coverage failure | A failing check whose workflow name AND job name match no policy pattern — the DEFAULT | `ci-verify` | `ci_build_failure` | Open fix-task on failing module; loop_back |
+| c | Policy-workflow failure (licence/CLA, dependency review, CodeQL, labels/title) | CI check whose workflow OR job name matches the closed policy list | `ci-verify` | `ci_policy_failure` | Depends on policy: accept / suppress / fix |
+| d | Explicit `conclusion=failure` | per-check conclusion | `ci-verify` | (a), (b) or (c) above | per-row |
+| e | Cancelled (`conclusion=cancelled`) | per-check conclusion | `ci-verify` | `ci_cancelled` | accept (manual cancellation) / retry |
+| f | Action required | per-check conclusion | `ci-verify` | `ci_action_required` | operator approval; accept after approval |
+| g | Stale (`conclusion=stale`) | per-check conclusion | `ci-verify` | `ci_stale` | re-run CI (HEAD advanced past check's commit) |
+| h | Timeout (`conclusion=timed_out`, OR a run still not terminal) | per-check conclusion / `wait_outcome=deadline_exceeded` with no definitively failed check | `ci-verify` | `ci_timeout` | retry / accept (flaky infra) |
+| i | No checks reported (`final_status=none`) | zero checks across PR | `ci-verify` | `ci_no_checks` | confirm CI is configured; accept if intentional |
+| j | CI never ran vs CI ran red | distinguished by (i) vs (b..h) | n/a — handled by row choice | n/a | covered by the per-row subtype tag |
 
 ### Notes on the taxonomy
 
@@ -225,7 +226,7 @@ this order per failing check.
   `wait_outcome=deadline_exceeded` signal in addition to a per-check
   `timed_out` conclusion. A check that concluded `cancelled` /
   `action_required` / `stale` before the run hit its wait deadline keeps
-  its own definitive producer; only a check WITHOUT a definitive
+  its own definitive subtype; only a check WITHOUT a definitive
   failure/cancel/action/stale conclusion (e.g. still pending) falls
   through to the timeout row under `deadline_exceeded`.
 
@@ -241,43 +242,64 @@ this order per failing check.
   still-running checks kept and classified under row (h). The same rule
   applies to a failing set threaded in from the precondition.
 
-- **Row (a) is explicitly excluded** from ci-verify's scope. Sonar's
-  quality-gate is fetched by `sonar-roundtrip` from the Sonar API, not
-  from the GitHub-checks surface. If a project has wired Sonar as a
-  GitHub status check, that check appears under row (c)
-  `ci_policy_failure` — ci-verify still files a finding but
-  `sonar-roundtrip` remains the authoritative consumer of the Sonar
-  quality gate.
+- **Row (a) is a deferral, not a second report.** A Sonar quality gate
+  surfaced inside a Maven build job carries the scanner's own marker in the
+  job log (`QUALITY GATE STATUS: FAILED`). When the plan's execution manifest
+  carries the `sonar-roundtrip` step, that step owns the gate, so ci-verify
+  files a `ci_sonar_gate` deferral instead of a build or policy finding. When
+  the manifest does not carry the step — or cannot be read at all — no owner
+  exists in this run and the same check stays a build failure, the safe
+  direction. A check that failed in the same job for
+  any other reason (a compile error, for example) carries no marker and stays
+  a build failure.
 
-- **Build profile membership** (row b vs row c) is determined by the
-  architecture-resolved build-command canonical names (`verify`,
-  `quality-gate`, `module-tests`, `coverage`). A failing check whose
-  `workflow_name` contains one of those tokens produces a
-  `ci-verify-build` finding; non-matching names produce
-  `ci-verify-policy` findings. The match rule is single-sourced in the
-  executor; projects whose CI labels diverge from the
-  architecture-resolved names override the match rule via the
-  `architecture` skill's configuration, not here.
+- **Build versus policy is a closed policy list, not a build list.** A failing
+  check is a `ci_build_failure` unless its workflow or job name matches one of
+  the policy patterns — licence/CLA, dependency review, CodeQL, labels/title.
+  An unrecognised name therefore fails toward a fix rather than toward an
+  "accept"; so does a failing check whose conclusion is not one of the
+  recognised failing conclusions. The list is single-sourced in the executor
+  (`_POLICY_PROFILE_PATTERNS`); no configuration overrides it. Job names are
+  matched too, so a build job whose name happens to carry one of those words
+  (for example `license-check`) is classed as policy — the spec asks for
+  workflow OR job name, and the marker words are the policy workflows' own.
 
-- **Distinct producer strings** are the dispatch keys for the triage
-  workflow. Each producer is registered with `ext-triage-{domain}`
-  separately so domain plugins can attach producer-specific triage
-  hints (e.g., `ext-triage-plugin` can short-circuit `ci_no_checks`
-  to "accept" for plans that opt out of CI). Adding new producers
-  does NOT require new finding-types in `tools-file-ops/constants.py`;
-  all of them resolve to `triage`.
+- **One producer value; subtypes carry the row.** The executor returns the
+  single producer string `ci-verify`, which `verification-feedback` accepts in
+  its one accept-set. A taxonomy row is told apart by the finding's `[subtype]`
+  title tag, never by a second producer string, so no taxonomy label can be
+  refused as an `unknown_producer`.
 
-- **Finding subtype** is carried in the finding's `message` body as a
-  prefix tag `[ci_build_failure]`, `[ci_policy_failure]`, etc., so
-  retrospectives and `manage-findings list --type triage` can grep
-  for specific subtypes without a schema change.
+- **Finding subtype** is carried in the finding's title as a prefix tag
+  `[ci_build_failure]`, `[ci_policy_failure]`, `[ci_sonar_gate]`, etc., so
+  retrospectives and `manage-findings list --type triage` can grep for specific
+  subtypes without a schema change.
 
-- **One finding per failing check.** A PR with three build-failure
-  checks plus one stale check produces four findings (three under
-  `ci-verify-build` + one under `ci-verify-stale`), each carrying the
-  appropriate producer + subtype. The executor returns the distinct
-  producer strings; the dispatcher runs ONE `verification-feedback`
-  invocation per producer string, NOT per finding.
+- **One finding per failing check.** A PR with three build-failure checks plus
+  one stale check produces four findings (three tagged `[ci_build_failure]` and
+  one `[ci_stale]`), each carrying its own subtype. The executor returns
+  `producers: [ci-verify]` for all of them, so the dispatcher runs ONE
+  `verification-feedback` invocation with `producer=ci-verify` — one dispatch
+  per run, NOT per finding.
+
+- **Every finding is keyed on the run of its own check.** The failing-check
+  finding's `--file-path` is `artifacts/ci-runs/{check_run_id}/{slug}.log`,
+  where `{check_run_id}` is the run id of the CHECK that failed, not the
+  run-level id of the first check, and `{slug}` is the check name slugified as
+  `manage-ci-artifacts` names it (lowercase, non-alphanumeric runs collapsed to
+  `-`). A check carrying no run id falls back to the
+  run-level id, and to `no-run-id` when neither is known. Two failing runs at
+  one head therefore file under two directories and neither overwrites the
+  other's evidence. The `final_status == none` finding is the one exception: it
+  names the run's manifest (`artifacts/ci-runs/{run_id}/manifest.toon`), because
+  no check exists to key on. When the check carries a persisted `log_file`, that
+  real pointer is the finding's `--file-path`; otherwise the constructed path is
+  used. `ci checks status` fills the failing
+  entry's `log_file` / `filtered_log_file`; when it cannot, it names the reason
+  in `log_unavailable_reason` — the values and their discriminations are owned
+  by [`api-contract.md`](../../tools-integration-ci/standards/api-contract.md) §
+  "Transport shape: per-entry, NOT scalar top-level" — so an empty pointer is
+  never mistaken for a log that was not needed.
 
 ## Eager-fetch and persist contract
 

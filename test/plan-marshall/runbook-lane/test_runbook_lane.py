@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import argparse
 import ast
+import builtins
 import json
 import re
 import shutil
@@ -191,6 +192,11 @@ def _section(heading: str) -> str:
     return ' '.join((heading + (rest if end == -1 else rest[:end])).split())
 
 
+def _sentences(text: str) -> list[str]:
+    """Split whitespace-normalised prose into sentences at ``.``/``!``/``?``."""
+    return [part.strip() for part in re.split(r'(?<=[.!?])\s+', text) if part.strip()]
+
+
 #: The four conditions the standing authorization replaces "reviewed the current
 #: head" with. Each is a distinct requirement, so each is asserted separately.
 _STANDING_CONDITIONS = (
@@ -232,6 +238,171 @@ def test_standing_authorization_stays_repository_neutral() -> None:
     lowered = gate.lower()
     for literal in _FORBIDDEN_LITERALS:
         assert literal.lower() not in lowered, f'repository-specific literal in the merge gate: {literal}'
+
+
+# -----------------------------------------------------------------------------
+# PLAN-LB-73 — each rule is stated once, and a clean summary review qualifies
+# -----------------------------------------------------------------------------
+
+
+def _branch_row() -> str:
+    """Return the ``| branch |`` row of the section 0 field table."""
+    for line in _raw_section('## 0. Input').splitlines():
+        if line.startswith('| branch |'):
+            return ' '.join(line.split())
+    raise AssertionError('section 0 carries no branch row')
+
+
+def test_branch_rule_states_one_set_of_prefixes() -> None:
+    """The row names ONE set: the canonical prefixes PLUS the project's own.
+
+    A row that calls the canonical set closed and then requires the chosen
+    prefix to be declared by ``working_prefixes`` makes the project's list the
+    sole source, which is the contradiction this closes.
+    """
+    row = _branch_row()
+
+    for prefix in ('feature/', 'fix/', 'chore/'):
+        assert prefix in row, f'the branch row drops the canonical prefix {prefix}'
+    assert "the project's configured `working_prefixes`" in row
+    assert 'plus' in row, 'the branch row does not join the two sets into one'
+    assert 'must be one the project' not in row, 'the row still makes working_prefixes the sole source'
+    assert 'only extension' not in row, 'the row still calls working_prefixes a mere extension'
+    assert 'own set wins' not in row, 'the row lets the project set replace the canonical prefixes'
+
+
+def test_progress_template_carries_the_order_slot() -> None:
+    """The §0a template records the evidence ORDER, not a bare "failed before fix"."""
+    progress = _raw_section('## 0a. Progress file and resume (do this first, every session)')
+    template = next(
+        (block for block in _fenced_blocks(progress) if 'setup: worktree' in block),
+        None,
+    )
+    assert template is not None, 'section 0a carries no progress template'
+    test_lines = [line for line in template.splitlines() if line.startswith('D{n} test:')]
+    assert test_lines, 'the template carries no per-Done-when test line'
+    for line in test_lines:
+        assert 'order' in line, f'the template line omits the order slot: {line}'
+        assert 'failed before fix' not in line, f'the template words every order as a pre-fix failure: {line}'
+    assert 'test-first' in template and 'mutation-after' in template and 'none' in template
+
+
+def test_rules_state_the_order_grading_once() -> None:
+    """§1 owns the grading rule; §3 and §6 refer to it instead of restating it."""
+    rules = _section('## 1. Rules (every one binds; breaking one fails the run)')
+    for phrase in ('`test-first` is met', '`mutation-after` is met', '`none`', 'not met as written'):
+        assert phrase in rules, f'§1 does not state the grading rule for {phrase!r}'
+    assert 'reserved' in rules, '§1 does not reserve the fail-first wording for test-first'
+
+    for heading in ('## 3. Implement, deliverable by deliverable', '## 6. Pull request and reviews'):
+        section = _section(heading)
+        # Backticked and anchored to §1: a bare 'order' also matches §3's own
+        # "in the spec's order" opening, which would make the assertion vacuous.
+        assert '`order`' in section and '§1' in section, f'{heading} does not refer to the §1 order rule'
+        assert 'not met as written' not in section, f'{heading} restates the §1 grading rule'
+        assert '`test-first` is met' not in section, f'{heading} restates the §1 grading rule'
+
+    implementation = _section('## 3. Implement, deliverable by deliverable')
+    assert 'test-first' not in implementation, '§3 still mandates test-first as the only order'
+
+
+def test_pr_body_requires_the_failing_run_only_for_orders_that_have_one() -> None:
+    pr_body = _section('## 6. Pull request and reviews')
+    assert 'failing run' in pr_body
+    assert 'only where' in pr_body, '§6 still requires a failing run for every order'
+    assert 'not `none`' in pr_body, '§6 does not exempt the `none` order'
+
+
+def test_build_gate_states_the_docs_only_test_compile_rule() -> None:
+    gate = _section('## 4. Build gate')
+    assert 'docs-only head' in gate, '§4 does not state the rule for a docs-only head'
+    assert 'no `module-tests` and no `test-compile`' in gate, '§4 does not say whether test-compile applies'
+
+
+def test_merge_gate_counts_the_marker_bearing_summary_comment() -> None:
+    """A clean CodeRabbit review is published only as a marker-bearing summary comment."""
+    gate = _section('## 7. Merge gate')
+
+    assert 'marker-bearing summary comment' in gate
+    for field in ('sourceCommitId', 'coveredCommitId', 'kind=reviewed'):
+        assert field in gate, f'the gate does not name the summary marker field {field}'
+    assert 'not quota-limited' in gate and 'current head' in gate
+
+
+#: The merge-gate state PLAN-LB-72 shipped: both required bots reported clean,
+#: ``ci pr reviews`` is empty, and CodeRabbit's clean-review summary comment
+#: covers the head. A clean review has no formal review body, so the comment is
+#: the only artifact that names the reviewed head.
+_PLAN_LB_72_GATE_STATE: dict[str, Any] = {
+    'head': 'cf28a05db',
+    'review_count': 0,
+    'reviews': [],
+    'summary_comments': [
+        {
+            'author': 'coderabbitai',
+            'body': (
+                '<!-- final_review_risk_coverage:'
+                '{"sourceCommitId":"cf28a05db","coveredCommitId":"cf28a05db",'
+                '"kind":"reviewed"} -->'
+            ),
+        }
+    ],
+}
+
+
+def _summary_review_state_qualifies(state: dict[str, Any]) -> bool:
+    """Whether a pull request's review state satisfies the summary-comment leg.
+
+    Derived from the state ALONE: a formal review is absent, and one summary
+    comment carries the marker whose covered commit is the head and whose kind
+    is ``reviewed``.
+    """
+    if state['review_count'] or state['reviews']:
+        return False
+    for comment in state['summary_comments']:
+        marker = re.search(r'final_review_risk_coverage:(\{.*?\})', comment['body'])
+        if marker is None:
+            continue
+        fields = json.loads(marker.group(1))
+        if fields.get('coveredCommitId') == state['head'] and fields.get('kind') == 'reviewed':
+            return True
+    return False
+
+
+def test_the_plan_lb_72_merge_gate_state_qualifies_as_a_review() -> None:
+    assert _PLAN_LB_72_GATE_STATE['review_count'] == 0, 'the fixture must model an empty ci pr reviews'
+    assert _summary_review_state_qualifies(_PLAN_LB_72_GATE_STATE), 'the fixture is not a qualifying state'
+
+    gate = _section('## 7. Merge gate')
+    # The text must accept exactly the shape the fixture models.
+    assert 'a qualifying review exists' in gate
+    assert 'marker-bearing summary comment' in gate
+    assert '`ci pr reviews`' in gate, 'the formal-review leg is gone'
+
+
+def test_merge_gate_question_rereads_the_review_surfaces() -> None:
+    gate = _section('## 7. Merge gate')
+
+    assert '`ci pr comments`' in gate and '`ci pr reviews`' in gate
+    assert 'in the same step as the question' in gate
+    assert 'immediately before the enqueue' in gate
+    assert 'invalidate' in gate, 'a review that arrived after the question does not invalidate the answer'
+
+
+def test_merge_gate_blocks_on_an_open_thread_or_outside_diff_finding() -> None:
+    gate = _section('## 7. Merge gate')
+
+    assert 'unresolved review thread' in gate
+    assert 'outside-diff' in gate
+    assert 'blocks the standing authorization' in gate
+
+
+def test_base_moved_merge_carries_the_commit_trailer() -> None:
+    gate = _section('## 7. Merge gate')
+
+    assert '{commit_trailer}' in gate, 'the base-moved merge commit carries no trailer'
+    assert 'merge origin/{base_branch}' in gate
+    assert '-m "' in gate, 'the merge instruction carries no message argument'
 
 
 # =============================================================================
@@ -498,7 +669,7 @@ def test_resolve_unresolvable_gate_canonical_fails_closed_and_names_it(tmp_path:
 
     assert data['status'] == 'error'
     assert data['error'] == 'build_command_unresolvable'
-    assert data['canonicals'] == 'quality-gate, verify'
+    assert data['canonicals'] == ['quality-gate', 'verify'], 'the canonicals are a list, not a joined string'
     assert 'build' not in data
 
 
@@ -521,6 +692,7 @@ def test_resolve_accepts_a_project_that_publishes_only_one_gate_canonical(tmp_pa
     assert data['status'] == 'success', data
     assert set(data['build']) == {'verify', 'module-tests', 'split'}
     assert data['build']['split'] == ['module-tests']
+    assert data['build_missing_canonicals'] == ['quality-gate']
 
 
 def test_resolve_pyproject_commands_stay_on_the_pyproject_wrapper(tmp_path: Path) -> None:
@@ -562,7 +734,9 @@ def test_resolve_omits_a_test_conditional_canonical_the_project_does_not_publish
 
     assert data['status'] == 'success', data
     assert set(data['build']) == {'quality-gate', 'verify', 'split'}
-    assert data['build']['split'] == ['quality-gate']
+    # No test-conditional part resolved, so the split cannot be shorter than
+    # `verify` and is answered empty.
+    assert data['build']['split'] == []
 
 
 # -----------------------------------------------------------------------------
@@ -740,16 +914,17 @@ def _fenced_blocks(section: str) -> list[str]:
 
 
 def test_skill_does_not_forbid_the_build_daemon() -> None:
-    """The old blanket prohibition and its wrong premise are gone."""
+    """The old blanket prohibition is gone and the executor premise is true."""
     text = _skill_text()
     lowered = text.lower()
     assert 'Never use the daemon' not in text
     assert 'never drop `--execution-mode in_process`' not in text
     assert 'worktree has no executor' not in lowered
-    assert 'has no executor' not in lowered
-    # The positive premise, not just the absence of the wrong one: a routed job
-    # re-runs the worktree's OWN executor, which worktree creation supplies.
+    # The positive premise: a routed job re-runs the worktree's OWN executor, and
+    # the lane checks for it before the first routed build because creation does
+    # NOT supply it.
     assert "the worktree's own `.plan/execute-script.py`" in text
+    assert 'does NOT supply' in text
 
 
 def test_skill_does_not_require_a_test_conditional_canonical() -> None:
@@ -908,14 +1083,7 @@ def test_resolve_opencode_with_guard_js_reports_present(tmp_path: Path) -> None:
 
 def test_resolve_unresolvable_build_is_an_error(tmp_path: Path) -> None:
     """A project whose architecture resolves no build command fails closed."""
-    _write(
-        tmp_path / '.plan' / 'marshal.json',
-        json.dumps(
-            {'plan': {'phase-6-finalize': {'steps': {'plan-marshall:automatic-review': {'required_bots': 'x'}}}}}
-        ),
-    )
-    spec = tmp_path / '.plan' / 'orchestrator' / 'demo-epic' / 'plans' / 'PLAN-LB-66-runbook-lane-skill.md'
-    _write(spec, '# staged spec\n')
+    spec = _seed_fixture(tmp_path, required_bots='x', commands={})
     data = _run_resolve(spec, tmp_path)
     assert data['status'] == 'error'
     assert data['error'] == 'build_command_unresolvable'
@@ -1488,7 +1656,10 @@ def test_resolve_missing_skill_names_every_probed_layout(tmp_path: Path) -> None
     assert data['error'] == 'named_skill_not_found'
     probed = data['probed']
     assert 'skills/plan-marshall-absent-everywhere/SKILL.md' in probed, 'the flat layout is not named'
-    assert 'plan-marshall/skills/absent-everywhere/SKILL.md' in probed, 'the nested layout is not named'
+    assert 'plan-marshall/0.1.0/skills/absent-everywhere/SKILL.md' in probed, 'the VERSIONED nested layout is not named'
+    assert 'plan-marshall/skills/absent-everywhere/SKILL.md' not in probed, (
+        'the unversioned fallback is named for a versioned cache'
+    )
 
     module = load_script_module('plan-marshall', _SKILL_NAME, 'runbook_lane.py', register=False)
     tree_probed = [
@@ -1583,6 +1754,367 @@ def test_build_classify_architecture_fallback_treats_a_doc_module_as_prose(tmp_p
     assert data['kind'] == 'docs-only'
 
 
+def _classify_with_a_failing_glob_import(tmp_path: Path, monkeypatch, error: BaseException) -> dict:
+    """Classify two paths while the shared glob translator cannot be imported.
+
+    The import is blocked at the INTERPRETER primitive, so the failure happens
+    where the real helper is imported rather than by replacing the lane's own
+    wrapper with a stub.
+    """
+    project = _seed_footprint(tmp_path)
+    module = load_script_module('plan-marshall', _SKILL_NAME, 'runbook_lane.py', register=False)
+    real_import = builtins.__import__
+
+    def _blocked(name: str, *args: Any, **kwargs: Any) -> Any:
+        if name == '_cmd_manage':
+            raise error
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, '__import__', _blocked)
+    # Bind to a typed local: the module is loaded dynamically, so its return is
+    # `Any` and a bare `return` from this typed helper trips ``no-any-return``.
+    result: dict[str, Any] = module.cmd_build_classify(
+        argparse.Namespace(
+            paths='doc/developer/build.adoc,marketplace/bundles/plan-marshall/skills/x/SKILL.md',
+            project_dir=str(project),
+        )
+    )
+    return result
+
+
+def test_build_classify_builds_every_path_when_the_glob_helper_is_absent(tmp_path: Path, monkeypatch) -> None:
+    data = _classify_with_a_failing_glob_import(tmp_path, monkeypatch, ImportError("No module named '_cmd_manage'"))
+
+    assert all(row['kind'] == 'buildable' for row in data['paths']), 'an absent translator skipped a build'
+    assert data['reason'] == 'glob helper unavailable: ImportError'
+
+
+def test_build_classify_builds_every_path_when_the_glob_helper_import_fails_otherwise(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """A non-ImportError failure at import is named, not propagated."""
+    data = _classify_with_a_failing_glob_import(tmp_path, monkeypatch, RuntimeError('translator exploded'))
+
+    assert all(row['kind'] == 'buildable' for row in data['paths']), 'a broken translator skipped a build'
+    assert data['reason'] == 'glob helper unavailable: RuntimeError'
+
+
+# =============================================================================
+# PLAN-LB-73 D3 — the executor may not predate the lane text it runs
+# =============================================================================
+
+
+def _executor_with_version(path: Path, version: str) -> Path:
+    _write(path, f"MARSHALL_VERSION = '{version}'\n")
+    return path
+
+
+def _versioned_lane_dir(tmp_path: Path, version: str) -> Path:
+    """Lay out one versioned bundle cache entry carrying the lane skill."""
+    version_dir = tmp_path / 'cache' / 'plan-marshall' / version
+    _write(version_dir / '.claude-plugin' / 'plugin.json', '{}\n')
+    lane = version_dir / 'skills' / _SKILL_NAME
+    _write(lane / 'SKILL.md', f'---\nname: {_SKILL_NAME}\n---\n\n# Runbook Lane\n')
+    return lane
+
+
+def test_input_checks_executor_skew_before_resolve() -> None:
+    section = _raw_section('## 0. Input')
+
+    assert 'executor-skew' in section, 'section 0 carries no executor-skew check'
+    assert section.index('executor-skew') < section.index('runbook_lane resolve --spec'), (
+        'the skew check does not run before the resolve call'
+    )
+    assert 'blocked' in section, 'the skew outcome is not named as blocked'
+    assert 'regenerate the executor' in section, 'the check names no remedy'
+    assert 'could_not_check' in section
+    assert 'never read as' in section, 'an unmakeable comparison is not distinguished from no skew'
+
+
+def test_executor_skew_detects_an_older_executor(tmp_path: Path) -> None:
+    module = load_script_module('plan-marshall', _SKILL_NAME, 'runbook_lane.py', register=False)
+    executor = _executor_with_version(tmp_path / 'execute-script.py', '0.1.1961')
+    lane = _versioned_lane_dir(tmp_path, '0.1.1977')
+
+    assert module._executor_skew(executor, lane) == 'skew'
+
+
+def test_executor_skew_compares_against_the_live_install_not_the_executing_script(tmp_path: Path) -> None:
+    """A stale executor runs a stale script; the lane text compared is the LIVE one.
+
+    The executor's embedded path points at the version it was generated for, so
+    reading the executing script's own directory would compare that stale
+    version with itself and report ``match``. The live version dir is the text a
+    harness actually loads.
+    """
+    module = load_script_module('plan-marshall', _SKILL_NAME, 'runbook_lane.py', register=False)
+    executor = _executor_with_version(tmp_path / 'execute-script.py', '0.1.1961')
+    stale_skill_dir = _versioned_lane_dir(tmp_path, '0.1.1961')
+    _versioned_lane_dir(tmp_path, '0.1.1977')
+
+    assert module._executor_skew(executor, stale_skill_dir) == 'skew'
+
+
+def test_executor_skew_matches_equal_versions(tmp_path: Path) -> None:
+    module = load_script_module('plan-marshall', _SKILL_NAME, 'runbook_lane.py', register=False)
+    executor = _executor_with_version(tmp_path / 'execute-script.py', '0.1.1977')
+    lane = _versioned_lane_dir(tmp_path, '0.1.1977')
+
+    assert module._executor_skew(executor, lane) == 'match'
+
+
+def test_executor_skew_cannot_check_an_unreadable_executor(tmp_path: Path) -> None:
+    module = load_script_module('plan-marshall', _SKILL_NAME, 'runbook_lane.py', register=False)
+    lane = _versioned_lane_dir(tmp_path, '0.1.1977')
+
+    verdict = module._executor_skew(tmp_path / 'absent-execute-script.py', lane)
+
+    assert verdict == 'could_not_check'
+    assert verdict != 'match', 'an unreadable executor is read as no skew'
+
+
+def test_executor_skew_names_a_read_but_versionless_executor(tmp_path: Path) -> None:
+    """A file that was READ and carries no usable version is not "unreadable"."""
+    module = load_script_module('plan-marshall', _SKILL_NAME, 'runbook_lane.py', register=False)
+    lane = _versioned_lane_dir(tmp_path, '0.1.1977')
+    executor = tmp_path / 'execute-script.py'
+    _write(executor, '# no version assignment\n')
+
+    data = module.cmd_executor_skew(argparse.Namespace(executor=str(executor), lane_dir=str(lane)))
+
+    assert data['verdict'] == 'could_not_check'
+    assert data['reason'] == 'executor version missing or empty'
+
+
+def test_executor_skew_names_an_unreadable_executor(tmp_path: Path) -> None:
+    module = load_script_module('plan-marshall', _SKILL_NAME, 'runbook_lane.py', register=False)
+    lane = _versioned_lane_dir(tmp_path, '0.1.1977')
+
+    data = module.cmd_executor_skew(argparse.Namespace(executor=str(tmp_path / 'absent.py'), lane_dir=str(lane)))
+
+    assert data['verdict'] == 'could_not_check'
+    assert data['reason'] == 'executor version unreadable'
+
+
+# =============================================================================
+# PLAN-LB-73 D4 — the build gate and resolve state only what is true
+# =============================================================================
+
+
+def test_skill_no_longer_claims_worktree_creation_supplies_the_executor() -> None:
+    text = _skill_text()
+    setup = _section('## 2. Set up the worktree')
+    gate = _section('## 4. Build gate')
+
+    assert 'which worktree creation supplies' not in text, 'the false executor premise survives'
+    assert 'supplies' not in setup or 'does NOT supply' in setup, 'section 2 still claims creation supplies it'
+    assert 'before the first routed build' in gate.lower(), 'section 4 carries no pre-routing check'
+    assert 'build-routing' in gate
+    assert 'executor_absent_from_worktree' in gate
+
+
+def test_build_routing_answers_in_process_when_the_worktree_has_no_executor(tmp_path: Path) -> None:
+    """The lane's own decision names the mode and the reason it records."""
+    module = load_script_module('plan-marshall', _SKILL_NAME, 'runbook_lane.py', register=False)
+    worktree = tmp_path / 'worktree'
+    (worktree / '.plan').mkdir(parents=True)
+
+    data = module.cmd_build_routing(argparse.Namespace(worktree=str(worktree)))
+
+    assert data['execution_mode'] == 'in_process'
+    assert data['reason'] == 'executor_absent_from_worktree'
+
+
+def test_the_executor_absent_verdict_runs_the_build_in_process(tmp_path: Path, monkeypatch) -> None:
+    """The verdict for an executor-less worktree runs the real build in-process.
+
+    The build is driven through the wrapper's OWN execute handler with the mode
+    the lane derived. A mode other than ``in_process`` reaches
+    ``_route_to_daemon``; this mode must not, and the build must complete
+    instead of ending terminal on an executor the worktree does not carry.
+    """
+    from contextlib import contextmanager
+
+    from conftest import parse_ns
+
+    lane = load_script_module('plan-marshall', _SKILL_NAME, 'runbook_lane.py', register=False)
+    pyproject = load_script_module(
+        'plan-marshall', 'build-pyproject', '_pyproject_execute.py', '_rb_lb73_pyproject_execute'
+    )
+    worktree = tmp_path / 'worktree'
+    (worktree / '.plan').mkdir(parents=True)
+
+    verdict = lane.cmd_build_routing(argparse.Namespace(worktree=str(worktree)))
+    assert verdict['execution_mode'] == 'in_process'
+
+    args = parse_ns(
+        'plan-marshall',
+        'build-pyproject',
+        'pyproject_build.py',
+        'run',
+        '--command-args',
+        'verify',
+        '--plan-id',
+        'P',
+        '--execution-mode',
+        verdict['execution_mode'],
+        register=False,
+    )
+    globals_ = pyproject.cmd_run.__globals__
+    routed = {'called': False}
+
+    def _must_not_route(*_args: Any, **_kwargs: Any) -> Any:
+        routed['called'] = True
+        return (None, 'no_notation')
+
+    @contextmanager
+    def _slot(plan_id: str, *, routed: bool = False):
+        yield
+
+    monkeypatch.setitem(globals_, '_route_to_daemon', _must_not_route)
+    monkeypatch.setitem(
+        globals_,
+        'execute_direct_base',
+        lambda **_kwargs: {'status': 'success', 'exit_code': 0, 'duration_seconds': 1, 'log_file': 'l', 'command': 'c'},
+    )
+    monkeypatch.setitem(globals_, 'build_queue_slot', _slot)
+    monkeypatch.setitem(globals_, 'cmd_run_common', lambda **_kwargs: 0)
+    # The build's own bookkeeping must not touch a real ledger from a unit test.
+    monkeypatch.setitem(globals_, '_record_resolution', lambda *_args, **_kwargs: None)
+    monkeypatch.setitem(globals_, '_append_gate_build_row', lambda **_kwargs: None)
+
+    assert pyproject.cmd_run(args) == 0
+    assert routed['called'] is False, 'an executor-less worktree still consulted the daemon route'
+
+
+def test_build_routing_leaves_a_supplied_executor_on_auto(tmp_path: Path) -> None:
+    module = load_script_module('plan-marshall', _SKILL_NAME, 'runbook_lane.py', register=False)
+    worktree = tmp_path / 'worktree'
+    (worktree / '.plan').mkdir(parents=True)
+    _write(worktree / '.plan' / 'execute-script.py', '# executor\n')
+
+    data = module.cmd_build_routing(argparse.Namespace(worktree=str(worktree)))
+
+    assert data['execution_mode'] == 'auto'
+    assert 'reason' not in data
+
+
+def test_skill_states_routing_once_and_the_no_verify_rule() -> None:
+    setup = _section('## 2. Set up the worktree')
+    gate = _section('## 4. Build gate')
+    merge = _section('## 7. Merge gate')
+
+    assert '--execution-mode' not in setup, 'section 2 still prescribes an execution mode'
+    assert 'preflights again per build' in setup, 'section 2 no longer explains the down-setup routing'
+    assert 'build-routing' in setup, 'section 2 does not defer the routing decision to the check'
+    assert 'recovered mid-run' not in setup, 'section 2 still claims a recovered daemon can route'
+    assert 'runs in-process otherwise' in gate, 'section 4 lost the default-routing rule'
+    assert 'routed build also holds the call' in gate, 'section 4 omits the routed-build shell-timeout rule'
+    assert 'publishes no `verify`' in gate, 'section 4 omits the no-verify cross-reference'
+    assert 'publishes no `verify`' in merge, 'section 7 does not say what replaces verify'
+    assert 'split form' in merge, 'section 7 does not name the bound-expiry run'
+
+
+def test_resolve_names_the_missing_gate_canonical(tmp_path: Path) -> None:
+    cases = (('quality-gate', 'verify'), ('verify', 'quality-gate'))
+    for present, missing in cases:
+        case = tmp_path / present
+        commands = {present: _PYPROJECT_EXEC.format(args=present)}
+        spec = _seed_fixture(case, required_bots='some-bot', commands=commands)
+
+        data = _run_resolve(spec, case)
+
+        assert data['status'] == 'success', data
+        assert data['build_missing_canonicals'] == [missing], f'{present}-only fixture lost {missing}'
+
+
+def test_resolve_reports_a_missing_or_broken_architecture_as_such(tmp_path: Path) -> None:
+    """No persisted architecture is an architecture problem, never an unresolvable build.
+
+    The fixture carries a build file, so the answer cannot rest on a tree that
+    looks unbuilding: it must rest on the PERSISTED architecture
+    ``resolve_command`` actually reads.
+    """
+    for case, project_json in (('absent', None), ('broken', b'{not json')):
+        case_root = tmp_path / case
+        _write(
+            case_root / '.plan' / 'marshal.json',
+            json.dumps(
+                {'plan': {'phase-6-finalize': {'steps': {'plan-marshall:automatic-review': {'required_bots': 'x'}}}}}
+            ),
+        )
+        _write(case_root / 'pyproject.toml', '[project]\nname = "fixture"\n')
+        if project_json is not None:
+            (case_root / '.plan' / 'project-architecture').mkdir(parents=True)
+            (case_root / '.plan' / 'project-architecture' / '_project.json').write_bytes(project_json)
+        spec = case_root / '.plan' / 'orchestrator' / 'demo-epic' / 'plans' / 'PLAN-LB-66-x.md'
+        _write(spec, '# staged spec\n')
+
+        data = _run_resolve(spec, case_root)
+
+        assert data['status'] == 'error', f'{case}: {data}'
+        assert data['error'] == 'architecture_unavailable', f'{case}: {data}'
+        assert data['error'] != 'build_command_unresolvable'
+
+
+def test_resolve_maven_split_is_empty_when_the_gate_cannot_be_shorter(tmp_path: Path) -> None:
+    """Maven's root gate IS ``verify -Ppre-commit``, so there is no shorter split."""
+    prefix = 'python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args'
+    commands = {'quality-gate': f'{prefix} "verify -Ppre-commit"'}
+    spec = _seed_fixture(tmp_path, build_systems=('maven',), required_bots='some-bot', commands=commands)
+
+    data = _run_resolve(spec, tmp_path)
+
+    assert data['status'] == 'success', data
+    assert data['build']['split'] == []
+
+
+def test_resolve_opencode_without_a_session_id_returns_the_omission_reason(tmp_path: Path, monkeypatch) -> None:
+    """A stamp nothing measured travels with the collector's own reason."""
+    for name in ('ANTIGRAVITY_AGENT', 'OPENCODE', 'CLAUDE_CODE_SESSION_ID', 'OPENCODE_SESSION_ID', 'MODEL_NAME'):
+        monkeypatch.delenv(name, raising=False)
+    _write(
+        tmp_path / '.plan' / 'local' / 'harness' / 'opencode.json',
+        json.dumps({'schema_version': 1, 'harness': 'opencode'}),
+    )
+    monkeypatch.setenv('OPENCODE_DB_PATH', str(tmp_path / 'absent.db'))
+    monkeypatch.setenv('PLAN_MARSHALL_HOME', str(tmp_path / '.machine-home'))
+    spec = _seed_fixture(tmp_path, executable=_PYPROJECT_EXEC, required_bots='x')
+    module = load_script_module('plan-marshall', _SKILL_NAME, 'runbook_lane.py', register=False)
+
+    data = module.cmd_resolve(argparse.Namespace(spec=str(spec), project_dir=str(tmp_path)))
+
+    assert data['status'] == 'success', data
+    assert data['model'] == 'unknown'
+    assert data['runtime_stamp_reason'] == 'no_session_id'
+
+
+def test_progress_protocol_requires_the_lane_text_reread() -> None:
+    progress = _raw_section('## 0a. Progress file and resume (do this first, every session)')
+    template = next((block for block in _fenced_blocks(progress) if 'setup: worktree' in block), '')
+
+    for trigger in ('compaction', 'restart', 'idle gap'):
+        assert trigger in progress, f'section 0a does not require a re-read after a {trigger}'
+    assert 're-read:' in template, 'the progress template carries no re-read slot'
+    assert 'timestamp' in template
+
+
+def test_landing_rule_check_counts_the_run_own_actions() -> None:
+    landing = _section('## 8. Landing message (the last step, after the merge)')
+
+    for phrase in (
+        'read-class',
+        'routed build',
+        'operator message',
+        'model switch',
+        'session tree',
+        'killed sub-agent',
+        're-dispatch',
+        'guard log alone',
+    ):
+        assert phrase in landing, f'section 8 does not name {phrase!r} in its rule check'
+
+
 def test_extra_buildable_globs_drops_a_block_indicator_and_unwraps_quotes() -> None:
     module = load_script_module('plan-marshall', _SKILL_NAME, 'runbook_lane.py', register=False)
 
@@ -1654,16 +2186,17 @@ def test_prose_extensions_do_not_leak_across_documentation_modules() -> None:
 
 
 def test_evidence_order_field_is_closed_and_reserved() -> None:
-    """Both evidence surfaces name a closed ``order``, and reserve "fail-first".
+    """The order vocabulary is closed and the reserved wording lives in §1.
 
     A run that produced its failing output by mutating or reverting the fix must
     have a label that says so; the words "fail-first" and "observed failing
-    before the fix" are truthful only for ``test-first``.
+    before the fix" are truthful only for ``test-first``. §1 owns the rule; §8
+    consumes it and §6 refers to it.
     """
+    rules = _section('## 1. Rules (every one binds; breaking one fails the run)')
     landing = _section('## 8. Landing message (the last step, after the merge)')
-    pr_body = _section('## 6. Pull request and reviews')
 
-    for name, section in (('§8', landing), ('the PR-body rule', pr_body)):
+    for name, section in (('§1', rules), ('§8', landing)):
         assert '`order`' in section, f'{name} does not require an order field'
         for value in ('`test-first`', '`mutation-after`', '`none`'):
             assert value in section, f'{name} does not name the order value {value}'
@@ -1684,8 +2217,12 @@ def test_a_test_runs_at_every_pushed_head_and_is_reported() -> None:
     assert '{build.module-tests}` where the resolve result supplies it' in gate, (
         'the per-head rule does not say the test command is the one the project publishes'
     )
-    assert 'test-compile' in landing, 'the landing does not report the per-head test runs'
-    assert 'sha' in landing, 'the landing does not report the sha of each per-head test run'
+    # The `test-compile` token must sit beside the sha requirement, not merely
+    # appear somewhere in the section where a pre-existing `{sha}` placeholder
+    # would satisfy a bare word check.
+    per_head = [sentence for sentence in _sentences(landing) if 'test-compile' in sentence]
+    assert per_head, 'the landing does not report the per-head test-compile run'
+    assert any('sha' in sentence for sentence in per_head), 'the test-compile token is not beside the sha placeholder'
 
 
 def test_self_review_clear_is_not_permitted_with_an_open_finding() -> None:
@@ -1723,17 +2260,13 @@ def test_guard_state_has_one_location_in_rules_and_landing() -> None:
     assert 'facts block' not in rules, 'the rules section still places the guard state in the facts block'
 
 
-def test_branch_rule_states_the_canonical_prefix_set_as_closed() -> None:
-    section = _section('## 0. Input')
+def test_branch_rule_keeps_the_closed_set_neutral() -> None:
+    row = _branch_row()
 
     for prefix in ('feature/', 'fix/', 'chore/'):
-        assert prefix in section
-    assert 'prefix set is closed' in section, 'the branch rule no longer calls the canonical prefix set closed'
-    assert "the project's configured `working_prefixes`" in section, (
-        'the branch rule does not say WHICH set the prefix must come from'
-    )
-    assert 'only extension' in section
-    assert 'own set wins' not in section, 'the branch rule lets the project set replace the canonical prefixes'
+        assert prefix in row
+    assert 'closed set' in row, 'the branch rule no longer states that the prefix set is closed'
+    assert 'own set wins' not in row, 'the branch rule lets the project set replace the canonical prefixes'
 
 
 def test_quota_policy_step_names_the_no_qualifying_review_condition() -> None:
@@ -1754,19 +2287,21 @@ def test_sleep_parity_keyword_is_the_qualifier_free_sentence() -> None:
 def test_build_timeout_comes_from_the_architecture_stamp(tmp_path: Path, monkeypatch) -> None:
     """``resolve`` reports the stamp the REAL delegation reads.
 
-    The test drives ``cmd_resolve``, not the extracted seam, and replaces the
-    DELEGATION TARGET — ``_cmd_client._augment_resolved`` — so a broken or
-    raising delegation is caught: either one leaves the lane's 1800 fallback in
-    place, and the assertion below fails. The target is obtained through the
-    loader (never a plain ``import``) so it is the very object the lane's
-    deferred ``from _cmd_client import …`` resolves.
+    The test drives ``cmd_resolve`` and leaves the REAL
+    ``_cmd_client._augment_resolved`` in place; only the lookup it READS —
+    ``_lookup_bash_timeout`` — is replaced, so the function's own augmentation
+    still runs. A raising real function leaves the lane's 1800 fallback in place
+    and the assertion below fails, which a fixed-value stub of the function
+    could never show.
     """
     client = load_script_module('plan-marshall', 'manage-architecture', '_cmd_client.py')
     spec = _seed_fixture(tmp_path, executable=_PYPROJECT_EXEC, required_bots='x')
-    monkeypatch.setattr(
-        client,
-        '_augment_resolved',
-        lambda resolved, project_dir: {'bash_timeout_seconds': 1234},
+    # Patch the lookup in the globals of the REAL function the lane calls, so the
+    # real augmentation still runs and only what it READS is replaced.
+    monkeypatch.setitem(
+        client._augment_resolved.__globals__,
+        '_lookup_bash_timeout',
+        lambda tool, args, project: (1234, True),
     )
     module = load_script_module('plan-marshall', _SKILL_NAME, 'runbook_lane.py', register=False)
 

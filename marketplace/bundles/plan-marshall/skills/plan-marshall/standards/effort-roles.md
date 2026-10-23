@@ -46,7 +46,7 @@ A **sixth role group — `orchestrator`** — sits OUTSIDE `plan`: it is rooted 
 | `phase-3-outline` | `plan-marshall:phase-3-outline` | Single primary workflow (outline; `track={simple|complex}` is a runtime input). Dispatched on phase-3-outline entry. |
 | `phase-4-plan` | `plan-marshall:phase-4-plan` | Single primary workflow (plan-all-tasks; Steps 5+6 bundled). Dispatched on phase-4-plan entry. |
 | `phase-5-execute` | `plan-marshall:phase-5-execute` | Per-task execute body, plus `verification-feedback` for build-runner / quality-gate triage. |
-| `phase-6-finalize` | `plan-marshall:phase-6-finalize` | Several workflows with distinct cost profiles — finalize body + verification-feedback (sonar / pr-comment / plugin-doctor / pr-state) + post-run-review (retrospective + lessons-capture). |
+| `phase-6-finalize` | `plan-marshall:phase-6-finalize` | Several workflows with distinct cost profiles — finalize body + verification-feedback (phase-6-finalize producers; see [`../workflow/verification-feedback.md`](../workflow/verification-feedback.md) § Producer modes) + post-run-review (retrospective + lessons-capture). |
 
 ## Per-phase sub-keys
 
@@ -61,7 +61,7 @@ A **sixth role group — `orchestrator`** — sits OUTSIDE `plan`: it is rooted 
 | Sub-key | LLM-judgement workflow | Where it fires |
 |---------|------------------------|----------------|
 | `default` | The phase's primary workflow body (or any sub-workflow without its own sub-key — see "Workflow → resolver-key mapping" below). Also covers research dispatched from inside the phase, q-gate-validation, manage-architecture-enrich-module, create-pr, functional-review, code-review, etc. | Every dispatch under that phase that does NOT pass `--role <subkey>`. |
-| `verification-feedback` | Per-finding FIX / SUPPRESS / ACCEPT / AskUserQuestion triage with smart grouping. Producer-mode runtime input branches the data source: `build-runner`, `sonar`, `pr-comment`, `plugin-doctor`, `pr-state`. | phase-5-execute Step 11 + Step 11b (producer=build-runner); phase-6-finalize sonar-roundtrip (sonar), automated-review (pr-comment), `project:finalize-step-plugin-doctor` (plugin-doctor), `/workflow-pr-doctor` slash command (pr-state). |
+| `verification-feedback` | Per-finding FIX / SUPPRESS / ACCEPT / AskUserQuestion triage with smart grouping. Producer-mode runtime input branches the data source: `build-runner`, `sonar`, `pr-comment`, `plugin-doctor`, `pr-state`, `finalize-feedback`, `ci-verify`. | phase-5-execute Step 11 + Step 11b (producer=build-runner); phase-6-finalize sonar-roundtrip (sonar), automated-review (pr-comment), `project:finalize-step-plugin-doctor` (plugin-doctor), `/workflow-pr-doctor` slash command (pr-state), the wait-region unified pass (finalize-feedback), and the red-CI pass after `default:ci-verify` (ci-verify). |
 | `post-run-review` | Retrospective (eight analytical aspects) plus lessons extraction — both look back at the full plan history and ride the same level. | Opt-in `default:retrospective` / `default:lessons-capture` finalize steps AND the user-invokable `/plan-retrospective` slash command. |
 
 ## Orchestrator role group (sibling `orchestrator.effort` block)
@@ -107,7 +107,7 @@ Every dispatch site computes the level via `manage-config effort read --phase <c
 | research (in-phase) | any phase | calling phase's `default` *(no sub-key)* |
 | research (`/research` standalone) | none | `--default` (zero-role fallback) |
 | verification-feedback (`producer=build-runner`) | phase-5-execute | `plan.phase-5-execute.effort.verification-feedback` → `plan.phase-5-execute.effort.default` → `plan.effort` |
-| verification-feedback (`producer=sonar` / `pr-comment` / `plugin-doctor` / `pr-state`) | phase-6-finalize | `plan.phase-6-finalize.effort.verification-feedback` → `plan.phase-6-finalize.effort.default` → `plan.effort` |
+| verification-feedback (phase-6-finalize producers; accept-set in [`../workflow/verification-feedback.md`](../workflow/verification-feedback.md) § Producer modes) | phase-6-finalize | `plan.phase-6-finalize.effort.verification-feedback` → `plan.phase-6-finalize.effort.default` → `plan.effort` |
 | post-run-review (retrospective + lessons-capture) | phase-6-finalize | `plan.phase-6-finalize.effort.post-run-review` → `plan.phase-6-finalize.effort.default` → `plan.effort` |
 | orchestrator analyze dispatches (landing corroboration; landing-report, disposition and spec-body drafts) | plan-orchestrator (analyze) | `orchestrator.effort.analyze` → `orchestrator.effort.default` → `plan.effort` → `inherit`, then `max` clamp |
 | orchestrator decompose dispatches (context research and candidate mapping; spec-body draft) | plan-orchestrator (decompose) | `orchestrator.effort.decompose` → `orchestrator.effort.default` → `plan.effort` → `inherit`, then `max` clamp |

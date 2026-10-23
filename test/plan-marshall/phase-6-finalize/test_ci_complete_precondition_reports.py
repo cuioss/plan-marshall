@@ -476,7 +476,7 @@ def test_source_script_has_no_self_bootstrap():
 def test_timeout_forwards_wait_outcome_deadline_exceeded(plan_context):
     """A wait-deadline exhaustion MUST forward
     ``wait_outcome: deadline_exceeded`` and the still-running checks so the
-    dispatcher routes to the ``ci-verify-timeout`` producer.
+    dispatcher classifies them under the ``ci_timeout`` subtype.
     """
     plan_id = 'ci-precond-timeout-forward'
     git_stub = _StubGitHead(_SHA_A)
