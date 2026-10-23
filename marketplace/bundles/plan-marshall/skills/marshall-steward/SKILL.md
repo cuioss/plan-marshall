@@ -1001,9 +1001,7 @@ The executor's failure output prints the exact command; run it verbatim. It name
 the newest cache's script by absolute path, which is what works when
 `.plan/execute-script.py` cannot start:
 
-```bash
-python3 {newest_cache}/skills/tools-script-executor/scripts/generate_executor.py recover --project-dir . --target <active-target>
-```
+`python3 {newest_cache}/skills/tools-script-executor/scripts/generate_executor.py recover --project-dir . --target <active-target>`
 
 Once a working executor exists, `plan-marshall:tools-script-executor:generate_executor recover`
 is the same verb through the executor (from a meta-project checkout, use the

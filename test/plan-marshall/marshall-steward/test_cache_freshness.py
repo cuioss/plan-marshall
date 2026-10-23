@@ -567,14 +567,24 @@ def test_a_resolved_manifest_stamps_provisioned_version(tmp_path: Path, monkeypa
     (plan_dir / 'marshal.json').write_text('{}\n', encoding='utf-8')
     monkeypatch.setenv('PLAN_BASE_DIR', str(plan_dir))
 
-    # ``_config_core`` computes MARSHAL_PATH at import time; point the already
-    # imported module at the fixture so the Stage 2 handler writes here, not into
-    # the checkout the test process happens to run from.
-    config_core = load_script_module('plan-marshall', 'manage-config', '_config_core.py')
-    monkeypatch.setattr(config_core, 'MARSHAL_PATH', plan_dir / 'marshal.json')
-    monkeypatch.setattr(config_core, 'TRACKED_CONFIG_DIR', plan_dir)
+    # The Stage 2 handler imports the path-bound read/write helpers at module
+    # load; bind them to the fixture file so the handler writes here rather than
+    # into the checkout the test process runs from. Loading with register=False
+    # keeps the shared module registry free of a second `_config_core` /
+    # `_cmd_sync_defaults` entry.
+    sync_defaults = load_script_module(
+        'plan-marshall', 'manage-config', '_cmd_sync_defaults.py', register=False
+    )
+    marshal = plan_dir / 'marshal.json'
+    monkeypatch.setattr(sync_defaults, 'is_initialized', lambda: marshal.is_file())
+    monkeypatch.setattr(
+        sync_defaults, 'load_config', lambda: json.loads(marshal.read_text(encoding='utf-8'))
+    )
 
-    sync_defaults = load_script_module('plan-marshall', 'manage-config', '_cmd_sync_defaults.py')
+    def _save_config(config: dict) -> None:
+        marshal.write_text(json.dumps(config), encoding='utf-8')
+
+    monkeypatch.setattr(sync_defaults, 'save_config', _save_config)
     sync_defaults.cmd_sync_defaults(Namespace())
 
     saved = json.loads((plan_dir / 'marshal.json').read_text(encoding='utf-8'))
