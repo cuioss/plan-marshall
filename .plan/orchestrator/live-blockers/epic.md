@@ -124,7 +124,7 @@ derive, for rows still live.
   through the lifecycle's own seam (`prepare_execute._generate_worktree_executor`), adds a refresh verb so a plan's new script
   verb runs without a direct interpreter call, and routes lane builds through it. Root fix of the "plan cannot run the verb it
   introduces" Open Defect (PLAN-LB-85, PLAN-LB-88). Overlap prompt answered 2026-10-23: **hold until PLAN-LB-73 lands** (4 shared
-  files with it). **Unblocked 2026-10-23: PLAN-LB-73 shipped (#1843), so the shared surface is no longer in flight.**
+  files with it). **Unblocked 2026-10-23: the PLAN-LB-73 landing has arrived (#1843), so the shared surface is no longer in flight.**
   PLAN-LB-73's own run is the live evidence for the defect this plan fixes: every build answered
   `executor_absent_from_worktree` and ran `in_process`.
 
@@ -383,7 +383,7 @@ derive, for rows still live.
 
 ## Decisions
 
-- 2026-10-23 — **PLAN-LB-73 landed and was reconciled from the inbox, not from a paste.** The drain-completeness check
+- 2026-10-23 — **The PLAN-LB-73 landing was reconciled from the inbox, not from a paste.** The drain-completeness check
   reported `complete: false` on `total_tokens` alone, which the ruling above puts out of scope, so no defect was opened. The
   corroboration that mattered: merge sha `3873b6695` on `origin/main`, both CodeRabbit finding rounds at 10:47:35Z and
   12:00:34Z, the guard line at `guard.log:175`, a Sonar re-read of `0 confirmed` agreeing with the landing, and
@@ -893,12 +893,12 @@ derive, for rows still live.
   workflow, `worktree_unresolved` hides every plan without a worktree, per-function matching misses
   class methods and delete-and-compensate moves, and `triage.md` and `review-rubric.md` contradict the
   code.
-- **RETIRED 2026-10-23 (PLAN-LB-73 shipped #1843: §7's question step now re-reads `ci pr comments`,
+- **RETIRED 2026-10-23 (the PLAN-LB-73 landing, #1843: §7's question step now re-reads `ci pr comments`,
   `ci pr reviews` and the marker-bearing summary comment in the same step and again before the enqueue, and a
   late review of the current head invalidates the answer).** **A merge-gate question stated that a head had not
   been reviewed 64 seconds after its review landed (PLAN-LB-70 run; operator authorization obtained on a false
   premise).** Folded into PLAN-LB-73 D1. The operator's selection is treated as no authorization for that merge.
-- **RETIRED 2026-10-23 (PLAN-LB-73 shipped #1843: §7 now counts a reviewer's marker-bearing summary comment
+- **RETIRED 2026-10-23 (the PLAN-LB-73 landing, #1843: §7 now counts a reviewer's marker-bearing summary comment
   — `final_review_risk_coverage` with `sourceCommitId` / `coveredCommitId` / `kind=reviewed` — as a qualifying
   review for a quota-limited reviewer, and keeps the current-head rule for the others). The retirement is
   demonstrated on this very landing: PLAN-LB-73's standing authorization rests on exactly such a summary
