@@ -800,6 +800,7 @@ def test_every_recorded_row_absent_from_head_is_a_rewrite_even_when_partially_un
         f'Every recorded SHA outside HEAD must report a rewrite, got {refusal!r}.'
     )
     assert 'remap_invocation' in refusal
+    assert 'append_invocations' in refusal, 'the same state also carries the append repair'
 
 
 def test_a_live_recorded_row_keeps_a_partial_gap_plain(plan_context, monkeypatch) -> None:

@@ -558,15 +558,15 @@ def _rewrite_evidence(
     unrecorded: list[str],
     branch_shas: list[str],
     recorded: set[str],
-) -> tuple[bool, bool, bool]:
-    """Return ``(is_rewrite, every_row_stale, any_row_stale)``.
+) -> tuple[bool, bool]:
+    """Return ``(is_rewrite, any_row_stale)`` for the unrecorded set.
 
     Two conditions identify a rewrite rather than a skipped settlement:
 
     - the unrecorded set is the WHOLE branch — no recorded row matches any branch
       commit; or
     - every recorded row's commit is no longer an ancestor of HEAD — the ledger
-      describes a history that HEAD replaced.
+      describes a history HEAD replaced.
 
     A ``bookkeeping_gap`` beside at least one stale row is the MIXED state: part
     of the branch is recorded, part is missing, and at least one recorded row is
@@ -574,12 +574,12 @@ def _rewrite_evidence(
     remap remedy beside the append one even though it is not the rewrite
     signature.
 
-    Only ``every_row_stale`` proves that the recorded rows describe a history
-    HEAD replaced; the whole-branch condition alone does not — a ledger that
-    holds a landed plan's rows is exactly that case, and a branch whose
-    settlement simply never ran there would be sent to a remap that maps nothing.
-    A row whose ancestry probe could not be answered makes the claim UNPROVEN,
-    so it never counts as stale.
+    No condition proves the CAUSE: the ledger is shared, so the whole-branch
+    state is equally a rewrite and a settlement that never ran, and the
+    all-stale state says only that the rows describe a history HEAD does not.
+    The caller therefore never asserts which of the two happened. A row whose
+    ancestry probe could not be answered makes staleness unproven, so it never
+    counts as stale.
 
     The prefix rule in :func:`_sha_is_recorded` does not absorb any of this: it
     compares a row's SHA against a branch SHA as a prefix, and a rewritten
@@ -595,7 +595,7 @@ def _rewrite_evidence(
         else:
             every_row_stale = False
     whole_branch = bool(unrecorded) and len(unrecorded) == len(branch_shas)
-    return (bool(whole_branch or every_row_stale), every_row_stale, any_row_stale)
+    return (bool(whole_branch or every_row_stale), any_row_stale)
 
 
 def _recorded_change_shas() -> set[str] | None:
@@ -668,8 +668,9 @@ def _phase_end_marker_refusal(plan_id: str, status: dict[str, Any]) -> dict[str,
       The whole-branch state is inherently AMBIGUOUS: no row is attributable to
       this branch, so the ledger may describe a rewrite or may hold other work
       while this settlement never ran. It therefore carries BOTH repairs and a
-      message that names both possibilities; only a partial gap beside rows
-      proven stale asserts a rewrite as the cause.
+      message that names both possibilities. The stale-rows condition reports the
+      same signature and the same two repairs — it proves the rows describe a
+      history HEAD does not, never which rewrite produced it.
     - ``None`` (pass) — no worktree in play, no persisted path, an empty
       range, or full coverage. Each pass-through is a distinct unevaluable
       state, never a clean verdict over an examined store. An unreadable
@@ -775,30 +776,16 @@ def _phase_end_marker_refusal(plan_id: str, status: dict[str, Any]) -> dict[str,
         )
         remedy: dict[str, Any] = {}
     else:
-        is_rewrite, every_row_stale, any_row_stale = _rewrite_evidence(worktree_path, unrecorded, branch_shas, recorded)
+        is_rewrite, any_row_stale = _rewrite_evidence(worktree_path, unrecorded, branch_shas, recorded)
         whole_branch = len(unrecorded) == len(branch_shas)
         append_invocations = [_append_invocation(worktree_path, sha) for sha in unrecorded]
         if is_rewrite:
             error = EXECUTE_COMMITS_UNRECORDED_ERROR
             remap_invocation = _remap_invocation(worktree_path)
-            if every_row_stale and not whole_branch:
-                message = (
-                    f'{len(unrecorded)} of {len(branch_shas)} worktree-branch commit(s) since diverging from '
-                    f'{base_branch} carry no kind=change ledger row, and every recorded row points at a commit '
-                    "that is no longer in HEAD's history: the branch history was rewritten (rebase, amend or "
-                    'cherry-pick), not left unrecorded. Map the recorded rows onto their rewritten counterparts, '
-                    f'then retry the transition: {remap_invocation}'
-                )
-                remedy = {
-                    'signature': 'history_rewritten',
-                    'remap_invocation': remap_invocation,
-                }
-            else:
-                # The whole branch is unrecorded, so NO row can be attributed to
-                # this branch. That is the signature D2 names, but it is equally
-                # the signature of a settlement that never ran — the ledger is
-                # shared, and its rows may belong to other work. Carry BOTH
-                # repairs rather than assert a cause the evidence cannot separate.
+            if whole_branch:
+                # No row is attributable to this branch, so the state is equally a
+                # rewrite and a settlement that never ran — the ledger is shared.
+                # Name both possibilities and carry BOTH repairs.
                 message = (
                     f'{len(unrecorded)} of {len(branch_shas)} worktree-branch commit(s) since diverging from '
                     f'{base_branch} carry no kind=change ledger row and no branch commit matches a recorded '
@@ -807,12 +794,24 @@ def _phase_end_marker_refusal(plan_id: str, status: dict[str, Any]) -> dict[str,
                     f'not rewritten, record the unrecorded commits ({_REPLACE_PLACEHOLDERS}): '
                     f'{append_invocations[0]}'
                 )
-                remedy = {
-                    'signature': 'history_rewritten',
-                    'remap_invocation': remap_invocation,
-                    'append_invocations': append_invocations,
-                    'append_invocation': append_invocations[0],
-                }
+            else:
+                # The second D2 condition: the rows describe a history HEAD does
+                # not. That is a stale store, not proof of a rebase, so the
+                # message states the observation and the payload carries both
+                # repairs.
+                message = (
+                    f'{len(unrecorded)} of {len(branch_shas)} worktree-branch commit(s) since diverging from '
+                    f'{base_branch} carry no kind=change ledger row, and every recorded row points at a commit '
+                    "outside HEAD's history. Map the recorded rows onto their rewritten counterparts: "
+                    f'{remap_invocation} Or record the unrecorded commits ({_REPLACE_PLACEHOLDERS}): '
+                    f'{append_invocations[0]}'
+                )
+            remedy = {
+                'signature': 'history_rewritten',
+                'remap_invocation': remap_invocation,
+                'append_invocations': append_invocations,
+                'append_invocation': append_invocations[0],
+            }
         else:
             error = EXECUTE_COMMITS_UNRECORDED_ERROR
             message = (
