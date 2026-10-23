@@ -313,7 +313,7 @@ def test_session_root_names_no_row_for_an_unknown_session() -> None:
 
 def test_session_tree_returns_the_root_and_every_descendant() -> None:
     """The walk covers the root plus all transitive descendants."""
-    rows = {**_chain_rows(), 'ses-sibling': ('ses-root', _model('m'))}
+    rows = {**_chain_rows(), 'ses-sibling': ('ses-root', _model('m'), None)}
 
     tree = opencode_sessions.session_tree('ses-root', rows)
 
