@@ -234,6 +234,169 @@ def test_standing_authorization_stays_repository_neutral() -> None:
         assert literal.lower() not in lowered, f'repository-specific literal in the merge gate: {literal}'
 
 
+# -----------------------------------------------------------------------------
+# PLAN-LB-73 — each rule is stated once, and a clean summary review qualifies
+# -----------------------------------------------------------------------------
+
+
+def _branch_row() -> str:
+    """Return the ``| branch |`` row of the section 0 field table."""
+    for line in _raw_section('## 0. Input').splitlines():
+        if line.startswith('| branch |'):
+            return ' '.join(line.split())
+    raise AssertionError('section 0 carries no branch row')
+
+
+def test_branch_rule_states_one_set_of_prefixes() -> None:
+    """The row names ONE set: the canonical prefixes PLUS the project's own.
+
+    A row that calls the canonical set closed and then requires the chosen
+    prefix to be declared by ``working_prefixes`` makes the project's list the
+    sole source, which is the contradiction this closes.
+    """
+    row = _branch_row()
+
+    for prefix in ('feature/', 'fix/', 'chore/'):
+        assert prefix in row, f'the branch row drops the canonical prefix {prefix}'
+    assert "the project's configured `working_prefixes`" in row
+    assert 'plus' in row, 'the branch row does not join the two sets into one'
+    assert 'must be one the project' not in row, 'the row still makes working_prefixes the sole source'
+    assert 'only extension' not in row, 'the row still calls working_prefixes a mere extension'
+    assert 'own set wins' not in row, 'the row lets the project set replace the canonical prefixes'
+
+
+def test_progress_template_carries_the_order_slot() -> None:
+    """The §0a template records the evidence ORDER, not a bare "failed before fix"."""
+    progress = _raw_section('## 0a. Progress file and resume (do this first, every session)')
+    template = next(
+        (block for block in _fenced_blocks(progress) if 'setup: worktree' in block),
+        None,
+    )
+    assert template is not None, 'section 0a carries no progress template'
+    test_lines = [line for line in template.splitlines() if line.startswith('D{n} test:')]
+    assert test_lines, 'the template carries no per-Done-when test line'
+    for line in test_lines:
+        assert 'order' in line, f'the template line omits the order slot: {line}'
+        assert 'failed before fix' not in line, f'the template words every order as a pre-fix failure: {line}'
+    assert 'test-first' in template and 'mutation-after' in template and 'none' in template
+
+
+def test_rules_state_the_order_grading_once() -> None:
+    """§1 owns the grading rule; §3 and §6 refer to it instead of restating it."""
+    rules = _section('## 1. Rules (every one binds; breaking one fails the run)')
+    for phrase in ('`test-first` is met', '`mutation-after` is met', '`none`', 'not met as written'):
+        assert phrase in rules, f'§1 does not state the grading rule for {phrase!r}'
+    assert 'reserved' in rules, '§1 does not reserve the fail-first wording for test-first'
+
+    for heading in ('## 3. Implement, deliverable by deliverable', '## 6. Pull request and reviews'):
+        section = _section(heading)
+        assert 'order' in section, f'{heading} does not refer to the order rule'
+        assert 'not met as written' not in section, f'{heading} restates the §1 grading rule'
+        assert '`test-first` is met' not in section, f'{heading} restates the §1 grading rule'
+
+    implementation = _section('## 3. Implement, deliverable by deliverable')
+    assert 'test-first' not in implementation, '§3 still mandates test-first as the only order'
+
+
+def test_pr_body_requires_the_failing_run_only_for_orders_that_have_one() -> None:
+    pr_body = _section('## 6. Pull request and reviews')
+    assert 'failing run' in pr_body
+    assert 'only where' in pr_body, '§6 still requires a failing run for every order'
+    assert 'not `none`' in pr_body, '§6 does not exempt the `none` order'
+
+
+def test_build_gate_states_the_docs_only_test_compile_rule() -> None:
+    gate = _section('## 4. Build gate')
+    assert 'docs-only head' in gate, '§4 does not state the rule for a docs-only head'
+    assert 'no `module-tests` and no `test-compile`' in gate, '§4 does not say whether test-compile applies'
+
+
+def test_merge_gate_counts_the_marker_bearing_summary_comment() -> None:
+    """A clean CodeRabbit review is published only as a marker-bearing summary comment."""
+    gate = _section('## 7. Merge gate')
+
+    assert 'marker-bearing summary comment' in gate
+    for field in ('sourceCommitId', 'coveredCommitId', 'kind=reviewed'):
+        assert field in gate, f'the gate does not name the summary marker field {field}'
+    assert 'not quota-limited' in gate and 'current head' in gate
+
+
+#: The merge-gate state PLAN-LB-72 shipped: both required bots reported clean,
+#: ``ci pr reviews`` is empty, and CodeRabbit's clean-review summary comment
+#: covers the head. A clean review has no formal review body, so the comment is
+#: the only artifact that names the reviewed head.
+_PLAN_LB_72_GATE_STATE: dict[str, Any] = {
+    'head': 'cf28a05db',
+    'review_count': 0,
+    'reviews': [],
+    'summary_comments': [
+        {
+            'author': 'coderabbitai',
+            'body': (
+                '<!-- final_review_risk_coverage:'
+                '{"sourceCommitId":"cf28a05db","coveredCommitId":"cf28a05db",'
+                '"kind":"reviewed"} -->'
+            ),
+        }
+    ],
+}
+
+
+def _summary_review_state_qualifies(state: dict[str, Any]) -> bool:
+    """Whether a pull request's review state satisfies the summary-comment leg.
+
+    Derived from the state ALONE: a formal review is absent, and one summary
+    comment carries the marker whose covered commit is the head and whose kind
+    is ``reviewed``.
+    """
+    if state['review_count'] or state['reviews']:
+        return False
+    for comment in state['summary_comments']:
+        marker = re.search(r'final_review_risk_coverage:(\{.*?\})', comment['body'])
+        if marker is None:
+            continue
+        fields = json.loads(marker.group(1))
+        if fields.get('coveredCommitId') == state['head'] and fields.get('kind') == 'reviewed':
+            return True
+    return False
+
+
+def test_the_plan_lb_72_merge_gate_state_qualifies_as_a_review() -> None:
+    assert _PLAN_LB_72_GATE_STATE['review_count'] == 0, 'the fixture must model an empty ci pr reviews'
+    assert _summary_review_state_qualifies(_PLAN_LB_72_GATE_STATE), 'the fixture is not a qualifying state'
+
+    gate = _section('## 7. Merge gate')
+    # The text must accept exactly the shape the fixture models.
+    assert 'a qualifying review exists' in gate
+    assert 'marker-bearing summary comment' in gate
+    assert '`ci pr reviews`' in gate, 'the formal-review leg is gone'
+
+
+def test_merge_gate_question_rereads_the_review_surfaces() -> None:
+    gate = _section('## 7. Merge gate')
+
+    assert '`ci pr comments`' in gate and '`ci pr reviews`' in gate
+    assert 'in the same step as the question' in gate
+    assert 'immediately before the enqueue' in gate
+    assert 'invalidate' in gate, 'a review that arrived after the question does not invalidate the answer'
+
+
+def test_merge_gate_blocks_on_an_open_thread_or_outside_diff_finding() -> None:
+    gate = _section('## 7. Merge gate')
+
+    assert 'unresolved review thread' in gate
+    assert 'outside-diff' in gate
+    assert 'blocks the standing authorization' in gate
+
+
+def test_base_moved_merge_carries_the_commit_trailer() -> None:
+    gate = _section('## 7. Merge gate')
+
+    assert '{commit_trailer}' in gate, 'the base-moved merge commit carries no trailer'
+    assert 'merge origin/{base_branch}' in gate
+    assert '-m "' in gate, 'the merge instruction carries no message argument'
+
+
 # =============================================================================
 # D2 — the resolve verb
 # =============================================================================
@@ -1654,16 +1817,17 @@ def test_prose_extensions_do_not_leak_across_documentation_modules() -> None:
 
 
 def test_evidence_order_field_is_closed_and_reserved() -> None:
-    """Both evidence surfaces name a closed ``order``, and reserve "fail-first".
+    """The order vocabulary is closed and the reserved wording lives in §1.
 
     A run that produced its failing output by mutating or reverting the fix must
     have a label that says so; the words "fail-first" and "observed failing
-    before the fix" are truthful only for ``test-first``.
+    before the fix" are truthful only for ``test-first``. §1 owns the rule; §8
+    consumes it and §6 refers to it.
     """
+    rules = _section('## 1. Rules (every one binds; breaking one fails the run)')
     landing = _section('## 8. Landing message (the last step, after the merge)')
-    pr_body = _section('## 6. Pull request and reviews')
 
-    for name, section in (('§8', landing), ('the PR-body rule', pr_body)):
+    for name, section in (('§1', rules), ('§8', landing)):
         assert '`order`' in section, f'{name} does not require an order field'
         for value in ('`test-first`', '`mutation-after`', '`none`'):
             assert value in section, f'{name} does not name the order value {value}'
@@ -1723,17 +1887,13 @@ def test_guard_state_has_one_location_in_rules_and_landing() -> None:
     assert 'facts block' not in rules, 'the rules section still places the guard state in the facts block'
 
 
-def test_branch_rule_states_the_canonical_prefix_set_as_closed() -> None:
-    section = _section('## 0. Input')
+def test_branch_rule_keeps_the_closed_set_neutral() -> None:
+    row = _branch_row()
 
     for prefix in ('feature/', 'fix/', 'chore/'):
-        assert prefix in section
-    assert 'prefix set is closed' in section, 'the branch rule no longer calls the canonical prefix set closed'
-    assert "the project's configured `working_prefixes`" in section, (
-        'the branch rule does not say WHICH set the prefix must come from'
-    )
-    assert 'only extension' in section
-    assert 'own set wins' not in section, 'the branch rule lets the project set replace the canonical prefixes'
+        assert prefix in row
+    assert 'closed set' in row, 'the branch rule no longer states that the prefix set is closed'
+    assert 'own set wins' not in row, 'the branch rule lets the project set replace the canonical prefixes'
 
 
 def test_quota_policy_step_names_the_no_qualifying_review_condition() -> None:
