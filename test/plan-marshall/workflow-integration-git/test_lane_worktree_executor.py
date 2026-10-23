@@ -356,6 +356,18 @@ class TestWorktreeCreationProducesTheExecutor:
 
 
 class TestWorktreeExecutorRefresh:
+    def test_the_verb_is_registered_on_the_scripts_own_parser(self) -> None:
+        """Registration IS reachability: the executor derives its surface from this parser.
+
+        A verb absent here is absent from every generated executor's embedded
+        surface, and a generated executor refuses a subcommand its surface does
+        not list — so this asserts the half of "reachable through the executor"
+        that the parser owns, without needing a vendored bundle tree.
+        """
+        ns = parse_ns(*_GIT_WF, 'worktree-executor-refresh', '--plan-id', 'P')
+
+        assert ns.plan_id == 'P'
+
     def test_a_branch_added_verb_is_refused_before_the_refresh_and_runs_after(
         self, generated_repo: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:

@@ -536,7 +536,9 @@ exists: true
 
 Run `git worktree add <resolved-path> <branch>` against the main checkout, materialize a REAL `.plan/local`, produce the worktree's own executor, best-effort bootstrap pyprojectx, and persist the resolved path/branch via `manage-status metadata --set` so subsequent verbs can resolve through the canonical channel. The path is computed from `get_worktree_root() / <plan-id>`.
 
-**The executor is produced here, not only at the phase-5 move-in.** A routed build re-runs the worktree's own `.plan/execute-script.py`, and a plan whose lane text calls verb it introduced in its branch needs that slot to resolve the call — so an absent slot costs every build its routed path and the plan its own new verbs. Production goes through the same seam the move-in uses (`prepare_execute`'s generate-with-`--marketplace-root-{worktree}` then copy-from-main), with the verdict taken from the file on disk. It is non-fatal: a worktree that cannot get an executor is still a usable worktree.
+**The executor is produced here, not only at the phase-5 move-in.** A routed build re-runs the worktree's own `.plan/execute-script.py`, and a plan whose lane text calls verb it introduced in its branch needs that slot to resolve the call — so an absent slot costs every build its routed path and the plan its own new verbs. Production goes through the same seam the move-in uses (`prepare_execute`'s generate with `--marketplace-root {worktree}`, then the copy-from-main fallback), with the verdict taken from the file on disk. It is non-fatal: a worktree that cannot get an executor is still a usable worktree.
+
+A `present` slot is not a promise about its CONTENT: the copy-from-main fallback carries main's embedded surface, so a verb the worktree's branch introduces still needs `worktree-executor-refresh`.
 
 It runs for **every** plan, not behind a lane-only flag: the executor is per-tree derived state every worktree consumer needs, generation is idempotent and non-fatal, and a flag would add a second path a future caller can forget — the defect class this closes. The phase-5 move-in still generates its own copy, so the lifecycle's outcome is unchanged either way.
 

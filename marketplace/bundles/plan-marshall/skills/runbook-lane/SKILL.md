@@ -435,6 +435,11 @@ For each deliverable, in the spec's order:
    Then run the new verb **through the worktree's executor**, with the shell in the worktree and the
    same relative form (`python3 .plan/execute-script.py …`): that executor is the only one whose
    surface the refresh rebuilt, and it is the same one a routed build re-runs.
+   - **The plan that introduces this refresh verb itself** cannot call it: no executor's surface
+     carries it yet. Bootstrap that one case through the registered generator notation, from the
+     worktree: `python3 .plan/execute-script.py plan-marshall:tools-script-executor:generate_executor generate --marketplace-root .`
+     with the shell in the worktree. It is a notation like any other, never the generator's path, and
+     every plan landing after this one finds the verb already in its own executor.
 6. Commit with the deliverable paths staged by name, then push. Record `D{n} done` in the progress
    file.
 

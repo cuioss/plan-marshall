@@ -1878,13 +1878,13 @@ def _resolve_worktree_path_for_plan(plan_id: str) -> tuple[Path | None, dict | N
 def _produce_worktree_executor(worktree_path: Path, plan_id: str) -> dict[str, Any]:
     """Produce the worktree executor through ``prepare_execute``'s shared seam.
 
-    Imported lazily rather than at module scope so this module's own body stays
-    free of a load-time cycle: ``prepare_execute`` loads THIS file by path
-    (``_load_git_workflow``) to reuse ``cmd_worktree_create``, so a module-scope
-    import would make that load re-enter ``prepare_execute``'s import while its
-    body is still executing. Deferring it also means the copy that a
-    ``prepare_execute`` entrypoint resolves at call time is a second, stateless
-    module instance — harmless, because the seam keeps no module state.
+    Imported at call time rather than at module scope. ``prepare_execute`` can be
+    the process entrypoint and then loads THIS module by path
+    (``_load_git_workflow``) to reuse ``cmd_worktree_create``; a module-scope
+    import would therefore pull a second ``prepare_execute`` instance in while the
+    first is still executing. Deferring keeps this module's body free of that
+    reentrancy. The call-time import can still land on a second instance when the
+    caller IS ``prepare_execute`` — inert, because the seam keeps no module state.
 
     Returns ``{executor_in_worktree, executor_produced, executor_detail,
     executor_reason?}`` exactly as the seam reports it; the caller decides which
@@ -2316,7 +2316,10 @@ def cmd_worktree_create(args):
         # Resume path, and it heals the same slot: a worktree created before this
         # verb produced executors carries none, and reporting that state without
         # filling it would leave every later run on the degraded routing path.
-        # Idempotent by construction — the seam re-derives the verdict from disk.
+        # Ordering mirrors the creation path — the slot's own .plan/local exists
+        # first, so the generator's cwd-derived output root lands in the worktree
+        # instead of resolving to the caller's tree.
+        _ensure_worktree_plan_local_real(target)
         executor_verdict = _produce_worktree_executor(target, args.plan_id)
         return {
             'status': 'error',
