@@ -1468,6 +1468,22 @@ def _read_module_context(project_dir: str) -> dict[str, Any]:
     modules_list: list[dict[str, Any]] = []
     context: dict[str, Any] = {'status': 'success', 'module_count': len(module_names), 'modules': modules_list}
 
+    # The map returned here is the same map the architecture path serves, so the
+    # repository's exclusion veto binds it too: placement decisions must not see
+    # a skill the repository forbids. An unreadable configuration is an error,
+    # never an unfiltered context.
+    try:
+        from extension_base import all_excluded_skills, filter_skill_map
+
+        exclusions = all_excluded_skills(project_dir)
+    except Exception as e:
+        return {
+            'status': 'error',
+            'error': 'skill_exclusions_unreadable',
+            'file': str(meta_path.parent),
+            'message': str(e),
+        }
+
     for name in module_names:
         try:
             derived = load_module_derived(name, project_dir)
@@ -1516,7 +1532,10 @@ def _read_module_context(project_dir: str) -> dict[str, Any]:
         if enriched.get('best_practices'):
             module_info['best_practices'] = enriched['best_practices']
         if enriched.get('skills_by_profile'):
-            module_info['skills_by_profile'] = enriched['skills_by_profile']
+            served = enriched['skills_by_profile']
+            if exclusions:
+                served = filter_skill_map(served, exclusions)
+            module_info['skills_by_profile'] = served
         modules_list.append(module_info)
 
     return context

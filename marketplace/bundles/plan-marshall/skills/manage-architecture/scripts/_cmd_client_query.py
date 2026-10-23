@@ -708,16 +708,15 @@ def _apply_repository_skill_exclusions(module: dict[str, Any], project_dir: str 
     later phase reads, not only a fresh enrichment.
 
     The persisted map carries no domain attribution, so this seam applies the
-    repository-level union (see ``extension_base.all_excluded_skills``). Every
-    read failure leaves the module untouched rather than blanking its skills.
+    repository-level union (see ``extension_base.all_excluded_skills``). An
+    unreadable exclusion configuration is an ERROR the caller sees: serving the
+    unfiltered map is the fail-open this seam exists to close.
     """
     skills_by_profile = module.get('skills_by_profile')
     if not isinstance(skills_by_profile, dict) or not skills_by_profile:
         return module
-    try:
-        from extension_base import all_excluded_skills, filter_skill_map
-    except Exception:
-        return module
+    from extension_base import all_excluded_skills, filter_skill_map
+
     exclusions = all_excluded_skills(project_dir)
     if not exclusions:
         return module

@@ -17,6 +17,11 @@ Persona frontmatter (``profiles:`` + ``composes:``) is the binding source of
 truth — there is no hardcoded persona->profile or persona->composition table,
 and composed personas are flattened here, never loaded by nested skill loading.
 
+The ``resolve-task-skills`` verb is the scripted form of that derivation for a
+task whose only identity is its profile: it derives the persona (the one whose
+FIRST ``profiles:`` entry equals the task's profile) and returns the same
+flattened ``skills[]``, so the workflow names a call a script makes.
+
 Output is TOON via ``serialize_toon``. Stdlib-only plus the marketplace
 ``toon_parser`` / ``marketplace_bundles`` shared modules (PYTHONPATH set by the
 executor).
@@ -147,13 +152,20 @@ def _excluded_skills(domain: str) -> set[str]:
 
     Delegates to the shared reader in ``extension_base`` so the resolver and the
     architecture path consult ONE exclusion definition rather than two copies
-    that can drift. An unimportable shared module degrades to "no exclusions"
-    exactly as an unreadable config does — resolution never aborts on it.
+    that can drift.
+
+    An unimportable shared module is NOT "no exclusions": the exclusion list is a
+    prohibition, and a reader that cannot be loaded must not answer "nothing is
+    forbidden" — that reading lets a forbidden skill reach the task while looking
+    like a clean configuration. The failure is raised with the reader's own
+    ``skill_exclusions_unreadable`` code so callers report it as such.
     """
     try:
         from extension_base import excluded_skills
-    except Exception:
-        return set()
+    except Exception as exc:
+        raise RuntimeError(
+            f'skill_exclusions_unreadable: the shared exclusion reader is not importable: {exc}'
+        ) from exc
 
     return excluded_skills(domain)
 
@@ -162,12 +174,15 @@ def _is_excluded(skill: str, exclusions: set[str]) -> bool:
     """True when ``skill`` matches an exclusion in full or bare-name form.
 
     Delegates to the shared matcher in ``extension_base`` for the same
-    single-definition reason as :func:`_excluded_skills`.
+    single-definition reason as :func:`_excluded_skills`, and fails the same way:
+    an unimportable matcher is an error, never a silent "not excluded".
     """
     try:
         from extension_base import is_excluded
-    except Exception:
-        return False
+    except Exception as exc:
+        raise RuntimeError(
+            f'skill_exclusions_unreadable: the shared exclusion matcher is not importable: {exc}'
+        ) from exc
 
     return is_excluded(skill, exclusions)
 
@@ -435,7 +450,35 @@ def _flatten(
 
 
 def cmd_resolve(args) -> dict:
-    """Resolve a persona's composition DAG into a flat, deduped skills[]."""
+    """Resolve a persona's composition DAG into a flat, deduped skills[].
+
+    Fails closed on an unreadable exclusion configuration: the prohibition is
+    reported (``skill_exclusions_unreadable``) instead of being read as "no
+    exclusions", which would serve a forbidden skill.
+    """
+    try:
+        return _resolve_persona(args)
+    except Exception as exc:
+        if _is_exclusion_read_failure(exc):
+            return {'status': 'error', 'error': 'skill_exclusions_unreadable', 'detail': str(exc)}
+        raise
+
+
+def _is_exclusion_read_failure(exc: Exception) -> bool:
+    """Whether ``exc`` is the exclusion reader's typed failure.
+
+    Both carriers are recognised: the shared reader's own
+    :class:`SkillExclusionReadError` (``code`` attribute) and the
+    ``RuntimeError`` raised when that reader cannot even be imported, which
+    carries the same code in its message.
+    """
+    return getattr(exc, 'code', '') == 'skill_exclusions_unreadable' or str(exc).startswith(
+        'skill_exclusions_unreadable'
+    )
+
+
+def _resolve_persona(args) -> dict:
+    """The ``resolve`` implementation, without the exclusion-failure boundary."""
     persona_key = args.persona_key
     domains = [d.strip() for d in args.domains.split(',')] if args.domains else []
     domains = [d for d in domains if d]
@@ -501,6 +544,95 @@ def cmd_resolve(args) -> dict:
     }
 
 
+def _iter_persona_keys(bundles_root: Path) -> list[str]:
+    """Return every installed persona's ``bundle:skill`` key.
+
+    Handles both installed layouts: the source tree's ``{bundle}/skills/`` and a
+    deployed bundle's ``{bundle}/{version}/skills/``.
+    """
+    keys: list[str] = []
+    if not bundles_root.is_dir():
+        return keys
+    for bundle_dir in sorted(path for path in bundles_root.iterdir() if path.is_dir()):
+        candidates: list[Path] = []
+        skills_root = bundle_dir / 'skills'
+        if skills_root.is_dir():
+            candidates.extend(sorted(skills_root.glob('persona-*')))
+        if not candidates:
+            for version_dir in sorted(path for path in bundle_dir.iterdir() if path.is_dir()):
+                version_skills = version_dir / 'skills'
+                if version_skills.is_dir():
+                    candidates.extend(sorted(version_skills.glob('persona-*')))
+        keys.extend(f'{bundle_dir.name}:{candidate.name}' for candidate in candidates)
+    return sorted(set(keys))
+
+
+def persona_for_profile(bundles_root: Path, profile: str) -> str | None:
+    """Return the persona whose FIRST ``profiles:`` entry is ``profile``.
+
+    The first-entry rule is the identity binding phase-4 used to perform by hand:
+    a profile may appear in several personas' lists, and only the persona that
+    claims it as its PRIMARY profile owns the task's persona shell.
+    """
+    if not profile:
+        return None
+    for key in _iter_persona_keys(bundles_root):
+        frontmatter = _read_persona_frontmatter(bundles_root, key)
+        if frontmatter is None or not frontmatter['is_persona']:
+            continue
+        profiles = frontmatter['profiles']
+        if profiles and profiles[0] == profile:
+            return key
+    return None
+
+
+def cmd_resolve_task_skills(args) -> dict:
+    """Derive a task's persona from its profile and resolve its flattened skills.
+
+    The scripted form of the phase-4-plan persona augmentation: the profile ->
+    persona derivation (the first-entry reverse lookup over persona frontmatter)
+    and the resolver call are one executed step, so the workflow names a call a
+    script makes instead of a scan the agent is asked to perform by hand.
+    """
+    profile = (getattr(args, 'profile', '') or '').strip()
+    if not profile:
+        return {'status': 'error', 'error': 'profile_required'}
+
+    try:
+        bundles_root = resolve_bundles_root(Path(__file__))
+    except Exception as exc:  # pragma: no cover - import-time misconfiguration
+        return {'status': 'error', 'error': 'bundles_root_unresolved', 'detail': str(exc)}
+
+    persona_key = persona_for_profile(bundles_root, profile)
+    if persona_key is None:
+        return {
+            'status': 'success',
+            'profile': profile,
+            'persona_key': '',
+            'skills': [],
+            'reason': 'no_persona_for_profile',
+        }
+
+    resolved = cmd_resolve(
+        argparse.Namespace(
+            persona_key=persona_key,
+            domains=getattr(args, 'domains', '') or '',
+            module=getattr(args, 'module', '') or '',
+        )
+    )
+    if resolved.get('status') != 'success':
+        return resolved
+
+    return {
+        'status': 'success',
+        'profile': profile,
+        'persona_key': persona_key,
+        'module': resolved['module'],
+        'module_status': resolved['module_status'],
+        'skills': resolved['skills'],
+    }
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Build the argparse surface (allow_abbrev=False per the script contract)."""
     parser = argparse.ArgumentParser(
@@ -534,6 +666,30 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
 
+    p_task = subparsers.add_parser(
+        'resolve-task-skills',
+        help="Derive a task's persona from its primary profile and resolve its flattened skills",
+        allow_abbrev=False,
+    )
+    p_task.add_argument(
+        '--profile',
+        required=True,
+        help="The task's primary profile (implementation, module_testing, documentation, ...)",
+    )
+    p_task.add_argument(
+        '--domains',
+        default='',
+        help='Comma-separated domain names whose profile x domain skills are merged',
+    )
+    p_task.add_argument(
+        '--module',
+        default='',
+        help=(
+            "Task's module name. Profile x domain optionals are admitted only when "
+            'this module qualifies for them; omit it to admit defaults only.'
+        ),
+    )
+
     return parser
 
 
@@ -544,6 +700,8 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == 'resolve':
         result = cmd_resolve(args)
+    elif args.command == 'resolve-task-skills':
+        result = cmd_resolve_task_skills(args)
     else:  # pragma: no cover - argparse enforces required subcommand
         parser.error(f'Unknown command: {args.command}')
         return 2
