@@ -235,7 +235,7 @@ def _stub_generation(monkeypatch: pytest.MonkeyPatch, body: str | None) -> list[
     """
     calls: list[str] = []
 
-    def fake_generate(worktree_path: Path, plan_id: str) -> tuple[bool, str]:
+    def fake_generate(worktree_path: Path, plan_id: str, *, allow_copy: bool = True) -> tuple[bool, str]:
         calls.append(plan_id)
         if body is None:
             return False, 'generation exited 1: no marketplace tree in this fixture'
@@ -388,6 +388,22 @@ class TestWorktreeCreationProducesTheExecutor:
         assert calls == [], 'the seam must not run without the worktree plan-local directory'
         assert not _worktree_executor(stray).exists()
 
+    def test_resume_refuses_a_symlinked_plan_local(self, main_repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """A symlinked ``.plan/local`` is refused: the walk behind it leaves the worktree."""
+        stray = main_repo / '.plan' / 'local' / 'worktrees' / _PLAN_ID
+        elsewhere = main_repo / 'elsewhere'
+        (stray / '.plan').mkdir(parents=True)
+        elsewhere.mkdir()
+        (stray / '.plan' / 'local').symlink_to(elsewhere, target_is_directory=True)
+        calls = _stub_generation(monkeypatch, _CREATION_MARKER)
+
+        payload = _create_worktree()
+
+        assert payload['executor_in_worktree'] == 'absent'
+        assert payload['executor_reason'] == 'worktree_plan_local_absent'
+        assert calls == []
+        assert not (elsewhere / 'execute-script.py').exists(), 'a write escaped through the symlink'
+
 
 # =============================================================================
 # D2 — the refresh verb resolves the plan's own new script
@@ -467,3 +483,48 @@ class TestWorktreeExecutorRefresh:
         assert payload['executor_regenerated'] is False
         assert payload['executor_in_worktree'] == 'present'
         assert 'generation exited 1' in payload['executor_detail']
+        # The old slot must survive: a refresh that falls back to main's copy
+        # would restore exactly the staleness it was asked to remove.
+        assert _worktree_executor(worktree).read_text(encoding='utf-8') == _CREATION_MARKER
+
+    def test_the_refresh_forbids_the_copy_fallback(self, main_repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """The verb calls the seam with ``allow_copy=False`` and leaves the slot alone.
+
+        Copying main's executor over the worktree's would restore main's surface —
+        the staleness a refresh exists to remove — while reporting a regeneration.
+        """
+        _stub_generation(monkeypatch, _CREATION_MARKER)
+        created = _create_worktree()
+        worktree = Path(created['worktree_path'])
+        executor = _worktree_executor(worktree)
+        _stub_generation(monkeypatch, None)
+        seam = _live_prepare_execute().produce_worktree_executor
+        seen: dict[str, bool] = {}
+
+        def spy(path: Path, plan_id: str, *, allow_copy: bool = True) -> dict:
+            seen['allow_copy'] = allow_copy
+            verdict: dict = seam(path, plan_id, allow_copy=allow_copy)
+            return verdict
+
+        monkeypatch.setattr(git_workflow, '_produce_worktree_executor', spy)
+        monkeypatch.setattr(git_workflow, '_resolve_worktree_path_for_plan', lambda _plan_id: (worktree, None))
+
+        payload = git_workflow.cmd_worktree_executor_refresh(Namespace(plan_id=_PLAN_ID))
+
+        assert seen['allow_copy'] is False, 'the refresh allowed the copy fallback'
+        assert payload['executor_regenerated'] is False
+        assert executor.read_text(encoding='utf-8') == _CREATION_MARKER
+
+    def test_refresh_refuses_a_path_that_is_not_a_worktree(
+        self, main_repo: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A stale recorded path is reported, never re-created as an empty worktree."""
+        stray = main_repo / 'not-a-worktree'
+        stray.mkdir()
+
+        monkeypatch.setattr(git_workflow, '_resolve_worktree_path_for_plan', lambda _plan_id: (stray, None))
+        payload = git_workflow.cmd_worktree_executor_refresh(Namespace(plan_id=_PLAN_ID))
+
+        assert payload['executor_regenerated'] is False
+        assert payload['executor_in_worktree'] == 'absent'
+        assert not (stray / '.plan' / 'execute-script.py').exists()

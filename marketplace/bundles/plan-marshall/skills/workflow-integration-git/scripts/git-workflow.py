@@ -1875,7 +1875,7 @@ def _resolve_worktree_path_for_plan(plan_id: str) -> tuple[Path | None, dict | N
         }
 
 
-def _produce_worktree_executor(worktree_path: Path, plan_id: str) -> dict[str, Any]:
+def _produce_worktree_executor(worktree_path: Path, plan_id: str, *, allow_copy: bool = True) -> dict[str, Any]:
     """Produce the worktree executor through ``prepare_execute``'s shared seam.
 
     Imported at call time rather than at module scope. ``prepare_execute`` can be
@@ -1886,13 +1886,17 @@ def _produce_worktree_executor(worktree_path: Path, plan_id: str) -> dict[str, A
     reentrancy. The call-time import can still land on a second instance when the
     caller IS ``prepare_execute`` — inert, because the seam keeps no module state.
 
+    ``allow_copy`` is forwarded unchanged: creation may fall back to main's
+    executor, a refresh may not (it would restore the very staleness it is asked
+    to remove).
+
     Returns ``{executor_in_worktree, executor_produced, executor_detail,
     executor_reason?}`` exactly as the seam reports it; the caller decides which
     fields belong in its own payload.
     """
     from prepare_execute import produce_worktree_executor
 
-    return produce_worktree_executor(worktree_path, plan_id)
+    return produce_worktree_executor(worktree_path, plan_id, allow_copy=allow_copy)
 
 
 def cmd_worktree_executor_refresh(args):
@@ -1909,10 +1913,13 @@ def cmd_worktree_executor_refresh(args):
     phase-5 move-in use, so one mechanism produces the artifact.
 
     Reports ``executor_regenerated`` taken from the file on disk (never from
-    generation intent) and ``executor_detail``. Non-fatal by contract: the
-    verdict rides the payload instead of an error status, so a caller that only
-    checks the exit code is told the truth by the boolean rather than by a
-    success that means "the verb ran".
+    generation intent) and ``executor_detail``. **The copy-from-main fallback is
+    disabled here**: it would restore main's older surface over the branch's, which
+    is the staleness this verb is called to remove, and a caller told
+    "regenerated" would run the new verb against a map that does not know it.
+    Non-fatal by contract: the verdict rides the payload instead of an error
+    status, so a caller that only checks the exit code is told the truth by the
+    boolean rather than by a success that means "the verb ran".
 
     A worktree that cannot be resolved (no plan record, no worktree opted in)
     returns the resolver's own error payload unchanged.
@@ -1921,7 +1928,7 @@ def cmd_worktree_executor_refresh(args):
     worktree, error = _resolve_worktree_path_for_plan(plan_id)
     if error is not None:
         return error
-    verdict = _produce_worktree_executor(worktree, plan_id)
+    verdict = _produce_worktree_executor(worktree, plan_id, allow_copy=False)
     executor_path = worktree_executor_path(worktree)
     return {
         'status': 'success',
@@ -2316,18 +2323,9 @@ def cmd_worktree_create(args):
         # Resume path, and it heals the same slot: a worktree created before this
         # verb produced executors carries none, and reporting that state without
         # filling it would leave every later run on the degraded routing path.
-        # The heal is guard-clause gated on the worktree's own `.plan/local`
-        # rather than materialized here: the generator resolves its output by
-        # walking up from cwd, so without that directory it can land in the
-        # CALLER's tree — and turning `worktree_exists` into a .plan writer for
-        # any pre-existing directory is not this verb's business.
-        if (target / _PLAN_DIR_NAME / 'local').is_dir():
-            executor_verdict = _produce_worktree_executor(target, args.plan_id)
-        else:
-            executor_verdict = {
-                'executor_in_worktree': 'absent',
-                'executor_reason': 'worktree_plan_local_absent',
-            }
+        # The seam owns the "is this a real worktree" guard, so no write can land
+        # outside one whatever the caller passes.
+        executor_verdict = _produce_worktree_executor(target, args.plan_id)
         return {
             'status': 'error',
             'plan_id': args.plan_id,
