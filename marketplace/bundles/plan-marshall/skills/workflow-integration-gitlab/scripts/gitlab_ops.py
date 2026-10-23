@@ -1741,7 +1741,7 @@ def cmd_ci_wait(args: argparse.Namespace) -> dict:
 
     # A remaining wait partition after the tail is a timeout: enumerate every
     # still-waiting job as a ``failing_checks`` entry so deliverables 6 and 7 can
-    # route the timeout into the ``ci-verify-timeout`` producer.
+    # classify it under the ``ci_timeout`` subtype.
     _f2, wait_rows2, _nf2 = _classify_check_buckets(jobs)
     if wait_rows2:
         wait_entries = [_build_failing_check_entry(c) for c in wait_rows2]

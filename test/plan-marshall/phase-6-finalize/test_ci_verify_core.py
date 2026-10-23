@@ -84,7 +84,6 @@ verify = _mod.verify
 classify_check = _mod.classify_check
 _extract_run_id_from_url = _mod._extract_run_id_from_url
 _normalize_check_entry = _mod._normalize_check_entry
-_matches_build_profile = _mod._matches_build_profile
 _first_missing_required_field = _mod._first_missing_required_field
 _resolve_failing_set = _mod._resolve_failing_set
 
@@ -241,28 +240,28 @@ class _StubCiWait:
 @pytest.mark.parametrize(
     ('conclusion', 'workflow', 'wait_outcome', 'expected'),
     [
-        ('failure', 'verify / verify', 'completed', ('ci-verify-build', 'ci_build_failure')),
-        ('failed', 'quality-gate', 'completed', ('ci-verify-build', 'ci_build_failure')),
-        ('failure', 'license/cla', 'completed', ('ci-verify-policy', 'ci_policy_failure')),
-        ('failure', 'codeql', 'completed', ('ci-verify-policy', 'ci_policy_failure')),
-        ('timed_out', 'verify', 'completed', ('ci-verify-timeout', 'ci_timeout')),
-        ('pending', 'verify', 'deadline_exceeded', ('ci-verify-timeout', 'ci_timeout')),
-        ('cancelled', 'verify', 'completed', ('ci-verify-cancelled', 'ci_cancelled')),
-        ('canceled', 'verify', 'completed', ('ci-verify-cancelled', 'ci_cancelled')),
-        ('action_required', 'verify', 'completed', ('ci-verify-action-required', 'ci_action_required')),
-        ('stale', 'verify', 'completed', ('ci-verify-stale', 'ci_stale')),
-        ('some_unknown', 'verify', 'completed', ('ci-verify-policy', 'ci_policy_failure')),
+        ('failure', 'verify / verify', 'completed', ('ci-verify', 'ci_build_failure')),
+        ('failed', 'quality-gate', 'completed', ('ci-verify', 'ci_build_failure')),
+        ('failure', 'license/cla', 'completed', ('ci-verify', 'ci_policy_failure')),
+        ('failure', 'codeql', 'completed', ('ci-verify', 'ci_policy_failure')),
+        ('timed_out', 'verify', 'completed', ('ci-verify', 'ci_timeout')),
+        ('pending', 'verify', 'deadline_exceeded', ('ci-verify', 'ci_timeout')),
+        ('cancelled', 'verify', 'completed', ('ci-verify', 'ci_cancelled')),
+        ('canceled', 'verify', 'completed', ('ci-verify', 'ci_cancelled')),
+        ('action_required', 'verify', 'completed', ('ci-verify', 'ci_action_required')),
+        ('stale', 'verify', 'completed', ('ci-verify', 'ci_stale')),
+        ('some_unknown', 'verify', 'completed', ('ci-verify', 'ci_policy_failure')),
         # A definitive cancelled/action_required/stale conclusion wins over the
         # run-level deadline_exceeded fallback — it must NOT be misrouted to the
-        # timeout producer.
-        ('cancelled', 'verify', 'deadline_exceeded', ('ci-verify-cancelled', 'ci_cancelled')),
-        ('action_required', 'verify', 'deadline_exceeded', ('ci-verify-action-required', 'ci_action_required')),
-        ('stale', 'verify', 'deadline_exceeded', ('ci-verify-stale', 'ci_stale')),
+        # timeout subtype.
+        ('cancelled', 'verify', 'deadline_exceeded', ('ci-verify', 'ci_cancelled')),
+        ('action_required', 'verify', 'deadline_exceeded', ('ci-verify', 'ci_action_required')),
+        ('stale', 'verify', 'deadline_exceeded', ('ci-verify', 'ci_stale')),
         # A build failure also stays a build failure under a wait deadline.
-        ('failure', 'verify / verify', 'deadline_exceeded', ('ci-verify-build', 'ci_build_failure')),
+        ('failure', 'verify / verify', 'deadline_exceeded', ('ci-verify', 'ci_build_failure')),
         # Only a non-definitive (still-pending) conclusion falls through to the
         # timeout row under deadline_exceeded.
-        ('pending', 'verify', 'deadline_exceeded', ('ci-verify-timeout', 'ci_timeout')),
+        ('pending', 'verify', 'deadline_exceeded', ('ci-verify', 'ci_timeout')),
     ],
 )
 def test_classify_check_taxonomy_rows(conclusion, workflow, wait_outcome, expected):
@@ -280,6 +279,214 @@ def test_extract_run_id_from_url():
     assert _extract_run_id_from_url('https://gitlab.com/o/r/-/pipelines/5') == ''
     assert _extract_run_id_from_url('') == ''
     assert _extract_run_id_from_url(None) == ''
+
+
+# ---------------------------------------------------------------------------
+# D2 — a failing check is classed by what it ran
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ('workflow', 'job', 'expected_subtype'),
+    [
+        ('Integration Tests', 'Integration Tests', 'ci_build_failure'),
+        ('build', 'sonar-build', 'ci_build_failure'),
+        ('an-unrecognised-workflow', 'an-unrecognised-job', 'ci_build_failure'),
+        ('license/cla', 'license/cla', 'ci_policy_failure'),
+        ('Dependency Review', 'Dependency Review', 'ci_policy_failure'),
+        ('CodeQL', 'CodeQL', 'ci_policy_failure'),
+        ('labeler', 'labeler', 'ci_policy_failure'),
+        ('PR title check', 'PR title check', 'ci_policy_failure'),
+    ],
+)
+def test_a_failing_check_is_classed_by_what_it_ran(workflow, job, expected_subtype):
+    """Build/workflow failures default to build; only the closed policy list is policy."""
+    # Arrange
+    check = {'conclusion': 'failure', 'workflow_name': workflow, 'job_name': job}
+
+    # Act
+    producer, subtype = classify_check(check, 'completed')
+
+    # Assert
+    assert producer == 'ci-verify'
+    assert subtype == expected_subtype
+
+
+_SONAR_JOB_LOG = (
+    '[INFO] Scanning for projects...\n'
+    '[ERROR] Failed to execute goal org.sonarsource.scanner.maven:sonar-maven-plugin:5.1.0.4751:sonar\n'
+    '[ERROR] QUALITY GATE STATUS: FAILED - View details on https://sonarcloud.io/dashboard?id=x\n'
+)
+_COMPILE_JOB_LOG = (
+    '[INFO] BUILD FAILURE\n[ERROR] /src/Main.java:[12,5] cannot find symbol\n[ERROR] COMPILATION ERROR :\n'
+)
+
+
+def _write_execution_manifest(tmp_path, plan_id: str, phase_6_steps: list[str]) -> None:
+    """Write the real plan-local execution manifest the executor reads."""
+    from toon_parser import serialize_toon
+
+    plan_dir = tmp_path / '.plan' / 'local' / 'plans' / plan_id
+    plan_dir.mkdir(parents=True, exist_ok=True)
+    body = {'plan_id': plan_id, 'phase_6': {'steps': phase_6_steps}}
+    (plan_dir / 'execution.toon').write_text(serialize_toon(body), encoding='utf-8')
+
+
+def _write_job_log(tmp_path, plan_id: str, log_file: str, content: str) -> None:
+    """Write a persisted job log where ``manage-ci-artifacts`` put it."""
+    target = tmp_path / '.plan' / 'local' / 'plans' / plan_id / log_file
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(content, encoding='utf-8')
+
+
+def _sonar_job_envelope(log_file: str) -> dict:
+    """A ``build / sonar-build`` failure whose persisted log path is reported."""
+    return {
+        'status': 'success',
+        'overall_status': 'failure',
+        'checks': [
+            {
+                'name': 'build / sonar-build',
+                'status': 'FAILURE',
+                'workflow': 'build',
+                'url': _RUN_URL,
+            }
+        ],
+        'failing_checks': [
+            {
+                'name': 'build / sonar-build',
+                'job_name': 'build / sonar-build',
+                'workflow_name': 'build',
+                'conclusion': 'failure',
+                'run_id': '987654',
+                'run_url': _RUN_URL,
+                'log_file': log_file,
+            }
+        ],
+    }
+
+
+def _run_sonar_case(tmp_path, plan_id: str, manifest_steps: list[str], log_content: str):
+    log_file = 'artifacts/ci-runs/987654/build-sonar-build.log'
+    _write_execution_manifest(tmp_path, plan_id, manifest_steps)
+    _write_job_log(tmp_path, plan_id, log_file, log_content)
+    findings = _StubFindings()
+    result = verify(
+        plan_id=plan_id,
+        pr_number=_PR,
+        worktree_path=str(tmp_path),
+        provider='github',
+        final_status='failure',
+        wait_outcome='completed',
+        head_sha=_HEAD_SHA,
+        ci_status_runner=_StubCiStatus(_sonar_job_envelope(log_file)),
+        persist_runner=_StubPersist(),
+        findings_runner=findings,
+        mark_done_runner=_StubMarkDone(),
+        git_head_resolver=_StubGitHead('x'),
+    )
+    return result, findings
+
+
+def test_a_sonar_quality_gate_failure_in_a_build_job_defers_to_sonar_roundtrip(tmp_path):
+    """The scanner's quality-gate marker is row (a), filed as a deferral."""
+    # Arrange — the manifest carries sonar-roundtrip, so the deferral has an owner.
+    result, findings = _run_sonar_case(
+        tmp_path,
+        'ci-verify-sonar-gate',
+        ['create-pr', 'ci-verify', 'sonar-roundtrip'],
+        _SONAR_JOB_LOG,
+    )
+
+    # Assert — one finding, tagged as the deferral, and never reported as policy.
+    assert result['findings_filed'] == 1
+    assert result['producers'] == ['ci-verify']
+    assert len(findings.calls) == 1
+    assert findings.calls[0]['title'].startswith('[ci_sonar_gate]')
+    assert 'sonar-roundtrip' in findings.calls[0]['detail']
+    assert 'ci_policy_failure' not in findings.calls[0]['title']
+
+
+def test_the_same_job_with_a_compile_error_stays_a_build_failure(tmp_path):
+    """A failure in the same job for any other reason is a build failure."""
+    # Arrange / Act
+    result, findings = _run_sonar_case(
+        tmp_path,
+        'ci-verify-sonar-gate-compile',
+        ['create-pr', 'ci-verify', 'sonar-roundtrip'],
+        _COMPILE_JOB_LOG,
+    )
+
+    # Assert
+    assert result['findings_filed'] == 1
+    assert findings.calls[0]['title'].startswith('[ci_build_failure]')
+
+
+def test_the_sonar_marker_without_the_manifest_step_stays_a_build_failure(tmp_path):
+    """Matched negative control: the manifest must carry sonar-roundtrip."""
+    # Arrange / Act
+    result, findings = _run_sonar_case(
+        tmp_path,
+        'ci-verify-sonar-gate-no-owner',
+        ['create-pr', 'ci-verify'],
+        _SONAR_JOB_LOG,
+    )
+
+    # Assert
+    assert result['findings_filed'] == 1
+    assert findings.calls[0]['title'].startswith('[ci_build_failure]')
+
+
+# ---------------------------------------------------------------------------
+# D3 — each finding is filed under the run of its own check
+# ---------------------------------------------------------------------------
+
+
+def test_two_failing_runs_at_one_head_file_findings_under_each_runs_path(tmp_path):
+    """A check's artifact path is keyed on that check's own run id."""
+    # Arrange — two failing checks from two different runs at one head.
+    envelope = {
+        'status': 'success',
+        'overall_status': 'failure',
+        'checks': [
+            {
+                'name': 'verify',
+                'status': 'FAILURE',
+                'workflow': 'verify',
+                'url': 'https://github.com/o/r/actions/runs/111/job/1',
+            },
+            {
+                'name': 'integration',
+                'status': 'FAILURE',
+                'workflow': 'Integration Tests',
+                'url': 'https://github.com/o/r/actions/runs/222/job/2',
+            },
+        ],
+    }
+    findings = _StubFindings()
+
+    # Act
+    result = verify(
+        plan_id='ci-verify-two-runs',
+        pr_number=_PR,
+        worktree_path=str(tmp_path),
+        provider='github',
+        final_status='failure',
+        wait_outcome='completed',
+        head_sha=_HEAD_SHA,
+        ci_status_runner=_StubCiStatus(envelope),
+        persist_runner=_StubPersist(),
+        findings_runner=findings,
+        mark_done_runner=_StubMarkDone(),
+        git_head_resolver=_StubGitHead('x'),
+    )
+
+    # Assert — one finding per run, under that run's own artifact directory.
+    assert result['findings_filed'] == 2
+    assert {call['file_path'] for call in findings.calls} == {
+        'artifacts/ci-runs/111/verify.log',
+        'artifacts/ci-runs/222/integration.log',
+    }
 
 
 def test_required_field_guard_skips_persist_on_empty_head_sha(tmp_path):
@@ -361,7 +568,7 @@ def test_failure_producer_aggregation_dedupes(tmp_path):
     )
 
     # Assert — the build producer appears exactly once.
-    assert result['producers'] == ['ci-verify-build']
+    assert result['producers'] == ['ci-verify']
     assert result['findings_filed'] == 2
 
 
@@ -414,7 +621,7 @@ def test_empty_conclusion_is_failing_on_completed_path():
     assert len(failing) == 1
     assert failing[0]['name'] == 'mystery'
     # And it classifies to the fail-closed policy row.
-    assert classify_check(failing[0], 'completed') == ('ci-verify-policy', 'ci_policy_failure')
+    assert classify_check(failing[0], 'completed') == ('ci-verify', 'ci_policy_failure')
 
 
 def test_build_parser_accepts_run_subcommand():
@@ -527,7 +734,7 @@ def test_deadline_with_one_failed_and_one_running_check_files_one_finding(tmp_pa
 
     assert result['outcome'] == 'needs_triage'
     assert result['findings_filed'] == 1
-    assert result['producers'] == ['ci-verify-build']
+    assert result['producers'] == ['ci-verify']
     assert len(findings.calls) == 1
     assert findings.calls[0]['title'] == '[ci_build_failure] verify failed'
 
@@ -542,7 +749,7 @@ def test_deadline_with_a_timed_out_conclusion_still_files_ci_timeout(tmp_path):
     result, findings = _verify_deadline(tmp_path, 'ci-verify-deadline-timed-out', failing)
 
     assert result['findings_filed'] == 1
-    assert result['producers'] == ['ci-verify-timeout']
+    assert result['producers'] == ['ci-verify']
     assert [call['title'] for call in findings.calls] == ['[ci_timeout] verify failed']
 
 
@@ -556,7 +763,7 @@ def test_deadline_with_only_running_checks_files_ci_timeout_for_each(tmp_path):
     result, findings = _verify_deadline(tmp_path, 'ci-verify-deadline-only-running', failing)
 
     assert result['findings_filed'] == 2
-    assert result['producers'] == ['ci-verify-timeout']
+    assert result['producers'] == ['ci-verify']
     assert [call['title'] for call in findings.calls] == [
         '[ci_timeout] build failed',
         '[ci_timeout] slow-deploy failed',
@@ -617,11 +824,12 @@ def test_skill_md_consumes_the_derived_fact_and_drops_the_literal():
     )
 
 
-def test_standards_enumerates_all_seven_subtype_tags():
+def test_standards_enumerates_all_subtype_tags():
     content = _STANDARDS_PATH.read_text(encoding='utf-8')
     expected_subtypes = (
         'ci_build_failure',
         'ci_policy_failure',
+        'ci_sonar_gate',
         'ci_timeout',
         'ci_cancelled',
         'ci_action_required',
@@ -630,6 +838,7 @@ def test_standards_enumerates_all_seven_subtype_tags():
     )
     for subtype in expected_subtypes:
         assert subtype in content, f'Standards file must enumerate subtype tag {subtype}'
+    assert 'ci-verify' in content, 'Standards file must name the single producer value'
 
 
 def test_executor_persists_artifacts_before_classification():
@@ -639,12 +848,12 @@ def test_executor_persists_artifacts_before_classification():
     """
     content = _CI_VERIFY_SCRIPT.read_text(encoding='utf-8')
     # Anchor against the persist call site (``persist_fn(``) and the
-    # classification CALL site (``classify_check(check, wait_outcome)``) —
-    # NOT the ``def classify_check(check: dict, ...)`` definition, which is
-    # declared earlier in the module — so the ordering check reflects the
-    # executor's control flow, not source declaration order.
+    # classification CALL site (``producer, subtype = classify_check(``) —
+    # NOT the ``def classify_check(`` definition, which is declared earlier in
+    # the module — so the ordering check reflects the executor's control flow,
+    # not source declaration order.
     persist_pos = content.find('persist_fn(')
-    classify_pos = content.find('classify_check(check, wait_outcome)')
+    classify_pos = content.find('producer, subtype = classify_check(')
     assert persist_pos != -1, 'executor must call the persist seam'
     assert classify_pos != -1, 'executor must call classify_check on each check'
     assert persist_pos < classify_pos, (

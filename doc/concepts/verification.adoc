@@ -21,8 +21,8 @@ If a future capability genuinely needs an external tool to confirm something, th
 
 == Producer vocabulary and dispatch roster contract
 
-The `producer` runtime input carries a single accept-set: `build-runner`, `sonar`, `pr-comment`, `plugin-doctor`, `pr-state`, `finalize-feedback` (see `verification-feedback.md` Inputs table).
-`ci-verify-timeout` is rejected on every producer path — it is a `default:ci-verify` taxonomy producer string (row h, Timeout), not a `producer` value; the owning producer of the rejection is `default:ci-verify` (see `ci-verify.md` Failure-mode taxonomy).
+The `producer` runtime input carries a single accept-set: `build-runner`, `sonar`, `pr-comment`, `plugin-doctor`, `pr-state`, `finalize-feedback`, `ci-verify` (see `verification-feedback.md` Inputs table).
+The `ci-verify` taxonomy's row labels (`ci_build_failure`, `ci_policy_failure`, `ci_sonar_gate`, `ci_timeout`, `ci_cancelled`, `ci_action_required`, `ci_stale`, `ci_no_checks`) travel as finding subtype tags in each finding's title, never as `producer` values — the executor returns the one producer value `ci-verify` (see `ci-verify.md` Failure-mode taxonomy).
 The finalize dispatch roster (`dispatch-inline-split.md` Dispatched steps) carries each dispatched step's explicit prompt skill set as its `skills:` column, and the `plan-retrospective` roster entry carries the record-before-return completion guard.
 Lesson evidence: 2026-09-17-19-007 (producer vocabulary), 2026-09-17-19-008 (dispatch roster).
 

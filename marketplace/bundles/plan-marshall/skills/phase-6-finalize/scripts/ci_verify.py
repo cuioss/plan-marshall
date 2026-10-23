@@ -32,10 +32,11 @@ Responsibilities (all deterministic Python — no dispatch here):
   returned success, ``green_unrecorded`` when it was refused.
 * Non-green → file exactly ONE taxonomy finding per failing check (plus the
   ``ci_no_checks`` finding on ``final_status == none``) and return a
-  per-producer needs-triage signal so the dispatcher runs
-  ``verification-feedback`` (the sole LLM step, red-CI only). The script does
-  NOT mark the step done on the red path — the dispatcher marks it after the
-  triage returns. Under ``wait_outcome == deadline_exceeded`` a still-running
+  needs-triage signal carrying the single :data:`PRODUCER` value so the
+  dispatcher runs ``verification-feedback`` once (the sole LLM step, red-CI
+  only). The per-row distinction rides each finding's subtype tag. The script
+  does NOT mark the step done on the red path — the dispatcher marks it after
+  the triage returns. Under ``wait_outcome == deadline_exceeded`` a still-running
   check is a failing check only when nothing has definitively failed: beside
   a real failure it is dropped and produces no finding.
 
@@ -88,7 +89,7 @@ import sys
 from pathlib import Path
 
 from file_ops import get_executor_path
-from toon_parser import parse_toon, serialize_toon
+from toon_parser import ToonParseError, parse_toon, serialize_toon
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -110,21 +111,40 @@ _PHASE_KEY: str = '6-finalize'
 #: Finding component notation for every ci-verify finding.
 _COMPONENT: str = 'plan-marshall:phase-6-finalize'
 
-#: The architecture-resolved build-command canonical names. A CI check whose
-#: ``workflow_name`` contains one of these tokens is a build-profile failure
-#: (row b); everything else is a policy failure (row c). The match rule is
-#: single-sourced here per ``standards/ci-verify.md``; projects whose CI labels
-#: diverge override it via the architecture skill's config, not here.
-_BUILD_PROFILE_NAMES: frozenset[str] = frozenset({'verify', 'quality-gate', 'module-tests', 'coverage'})
+#: The single producer value the dispatcher hands to ``verification-feedback``.
+#: ``verification-feedback`` accepts it in its one accept-set, and the per-row
+#: distinction rides the finding's subtype tag (see :data:`_SUBTYPE_*`), never a
+#: second producer string per taxonomy row.
+PRODUCER: str = 'ci-verify'
 
-#: The seven distinct producer strings the taxonomy classifier emits.
-_PRODUCER_MISSING: str = 'ci-verify-missing'
-_PRODUCER_BUILD: str = 'ci-verify-build'
-_PRODUCER_POLICY: str = 'ci-verify-policy'
-_PRODUCER_TIMEOUT: str = 'ci-verify-timeout'
-_PRODUCER_CANCELLED: str = 'ci-verify-cancelled'
-_PRODUCER_ACTION_REQUIRED: str = 'ci-verify-action-required'
-_PRODUCER_STALE: str = 'ci-verify-stale'
+#: The closed policy-workflow list. A failing check whose workflow or job name
+#: matches one of these patterns is a policy failure; EVERY other failing check
+#: is a build failure, so an unknown name fails toward a fix.
+_POLICY_PROFILE_PATTERNS: tuple[re.Pattern[str], ...] = tuple(
+    re.compile(pattern)
+    for pattern in (
+        r'\blicen[cs]e\b',
+        r'\bcla\b',
+        r'\bdependency[- ]review\b',
+        r'\bcodeql\b',
+        r'\blabel(?:s|er)?\b',
+        r'\btitles?\b',
+    )
+)
+
+#: The sonar-maven-plugin marker that identifies a Sonar quality-gate failure
+#: inside a Maven build job (sonar-plugin ``QUALITY GATE STATUS: FAILED``).
+_SONAR_QUALITY_GATE_MARKER: str = 'QUALITY GATE STATUS: FAILED'
+
+#: Finding subtype tags — the per-row distinction carried in the title.
+_SUBTYPE_MISSING: str = 'ci_no_checks'
+_SUBTYPE_BUILD: str = 'ci_build_failure'
+_SUBTYPE_POLICY: str = 'ci_policy_failure'
+_SUBTYPE_TIMEOUT: str = 'ci_timeout'
+_SUBTYPE_CANCELLED: str = 'ci_cancelled'
+_SUBTYPE_ACTION_REQUIRED: str = 'ci_action_required'
+_SUBTYPE_STALE: str = 'ci_stale'
+_SUBTYPE_SONAR_GATE: str = 'ci_sonar_gate'
 
 #: The required-field set for the ``manage-ci-artifacts persist`` guard.
 _REQUIRED_PERSIST_FIELDS: tuple[str, ...] = (
@@ -162,20 +182,30 @@ _RUN_ID_MARKER: str = '/actions/runs/'
 # ---------------------------------------------------------------------------
 
 
-def _matches_build_profile(workflow_name: str) -> bool:
-    """Return True when ``workflow_name`` names a build-profile workflow.
+def _matches_policy_profile(workflow_name: str, job_name: str = '') -> bool:
+    """Return True when the check names a policy workflow.
 
-    A workflow name matches when any architecture-resolved build-command
-    canonical token (:data:`_BUILD_PROFILE_NAMES`) appears in the lower-cased
-    name. GitHub workflow names such as ``"verify / verify"`` therefore match
-    the ``verify`` canonical; ``"license/cla"`` matches none and lands in the
-    policy row.
+    The list is closed: licence/CLA, dependency review, CodeQL, and
+    labels/title. Everything else — including a name this rule has never seen —
+    is a build failure, so an unrecognised workflow fails toward a fix rather
+    than toward an "accept".
     """
-    lowered = (workflow_name or '').lower()
-    return any(token in lowered for token in _BUILD_PROFILE_NAMES)
+    haystack = f'{workflow_name or ""} {job_name or ""}'.lower()
+    return any(pattern.search(haystack) for pattern in _POLICY_PROFILE_PATTERNS)
 
 
-def classify_check(check: dict, wait_outcome: str) -> tuple[str, str]:
+def _has_sonar_quality_gate_failure(job_log: str) -> bool:
+    """Return True when a persisted job log carries the Sonar gate marker."""
+    return bool(job_log) and _SONAR_QUALITY_GATE_MARKER in job_log
+
+
+def classify_check(
+    check: dict,
+    wait_outcome: str,
+    *,
+    sonar_roundtrip_enabled: bool = False,
+    job_log: str = '',
+) -> tuple[str, str]:
     """Classify a single failing check into ``(producer, subtype)``.
 
     The rows are evaluated in the exact order of the taxonomy table in
@@ -186,37 +216,47 @@ def classify_check(check: dict, wait_outcome: str) -> tuple[str, str]:
 
     Args:
         check: A normalized check entry (see :func:`_normalize_check_entry`).
-            Reads ``conclusion`` (lower-cased) and ``workflow_name``.
+            Reads ``conclusion`` (lower-cased), ``workflow_name`` and
+            ``job_name``.
         wait_outcome: The run-level wait outcome — ``completed`` or
             ``deadline_exceeded``. ``deadline_exceeded`` routes any check
             without a definitive failure/cancel/action/stale conclusion into
             the timeout row.
+        sonar_roundtrip_enabled: True only when the plan's execution manifest
+            carries the ``sonar-roundtrip`` step, so the Sonar deferral has an
+            owner in this run.
+        job_log: The persisted log of the failing check. A log carrying the
+            Sonar quality-gate marker is row (a): a deferral to
+            ``sonar-roundtrip``, filed with the ``ci_sonar_gate`` subtype.
 
     Returns:
-        A ``(producer_string, subtype_tag)`` pair. The subtype tag is carried
-        verbatim (without brackets) — callers wrap it as ``[subtype]``.
+        A ``(producer_string, subtype_tag)`` pair. The producer is always the
+        single :data:`PRODUCER` value; the subtype tag carries the row. Callers
+        wrap the tag as ``[subtype]``.
     """
     conclusion = (check.get('conclusion') or '').strip().lower()
 
     if conclusion in ('failure', 'failed'):
-        if _matches_build_profile(check.get('workflow_name') or ''):
-            return _PRODUCER_BUILD, 'ci_build_failure'
-        return _PRODUCER_POLICY, 'ci_policy_failure'
+        if sonar_roundtrip_enabled and _has_sonar_quality_gate_failure(job_log):
+            return PRODUCER, _SUBTYPE_SONAR_GATE
+        if _matches_policy_profile(check.get('workflow_name') or '', check.get('job_name') or ''):
+            return PRODUCER, _SUBTYPE_POLICY
+        return PRODUCER, _SUBTYPE_BUILD
     # A definitive cancelled / action_required / stale conclusion wins over the
     # run-level deadline_exceeded fallback below: only a check WITHOUT a
     # definitive failure/cancel/action/stale conclusion (e.g. still pending)
     # should be routed to the timeout row when the wait hit its deadline.
     if conclusion in ('cancelled', 'canceled'):
-        return _PRODUCER_CANCELLED, 'ci_cancelled'
+        return PRODUCER, _SUBTYPE_CANCELLED
     if conclusion == 'action_required':
-        return _PRODUCER_ACTION_REQUIRED, 'ci_action_required'
+        return PRODUCER, _SUBTYPE_ACTION_REQUIRED
     if conclusion == 'stale':
-        return _PRODUCER_STALE, 'ci_stale'
+        return PRODUCER, _SUBTYPE_STALE
     if conclusion in ('timed_out', 'timeout') or wait_outcome == 'deadline_exceeded':
-        return _PRODUCER_TIMEOUT, 'ci_timeout'
+        return PRODUCER, _SUBTYPE_TIMEOUT
     # Defense in depth: an unknown non-success conclusion is a policy failure,
     # never silently accepted as green.
-    return _PRODUCER_POLICY, 'ci_policy_failure'
+    return PRODUCER, _SUBTYPE_POLICY
 
 
 def _extract_run_id_from_url(url: str | None) -> str:
@@ -250,7 +290,9 @@ def _normalize_check_entry(check: dict) -> dict:
 
     Returns a dict carrying the union schema the classifier and the persist
     jobs file both consume: ``name``, ``conclusion``, ``workflow_name``,
-    ``job_name``, ``started_at``, ``completed_at``, ``run_url``, ``run_id``.
+    ``job_name``, ``started_at``, ``completed_at``, ``run_url``, ``run_id``,
+    plus the persisted ``log_file`` / ``filtered_log_file`` pointers when the
+    provider reported them.
     """
     name = check.get('name') or check.get('job_name') or 'unknown'
     conclusion = check.get('conclusion') or check.get('status') or check.get('state') or check.get('result') or ''
@@ -266,7 +308,35 @@ def _normalize_check_entry(check: dict) -> dict:
         'completed_at': check.get('completed_at') or check.get('completedAt') or '',
         'run_url': run_url,
         'run_id': run_id,
+        'log_file': check.get('log_file') or '',
+        'filtered_log_file': check.get('filtered_log_file') or '',
     }
+
+
+def _attach_log_pointers(normalized_checks: list[dict], envelope: dict) -> None:
+    """Copy the failing checks' persisted log pointers onto their normalized rows.
+
+    ``ci checks status`` reports ``failing_checks[]`` with the downloaded
+    ``log_file`` plus the compact ``checks[]`` array without it. The executor
+    classifies from ``checks[]``, so the pointer is matched back by
+    ``(run_id, job_name)`` — the pair that identifies one check in one run.
+    """
+    rows = envelope.get('failing_checks')
+    if not isinstance(rows, list):
+        return
+    pointers: dict[tuple[str, str], str] = {}
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        key = (str(row.get('run_id') or ''), str(row.get('job_name') or row.get('name') or ''))
+        pointers[key] = str(row.get('log_file') or '')
+    if not pointers:
+        return
+    for entry in normalized_checks:
+        if entry.get('log_file'):
+            continue
+        key = (str(entry.get('run_id') or ''), str(entry.get('job_name') or ''))
+        entry['log_file'] = pointers.get(key, entry.get('log_file') or '')
 
 
 def _derive_run_id(normalized_checks: list[dict]) -> str:
@@ -275,6 +345,45 @@ def _derive_run_id(normalized_checks: list[dict]) -> str:
         if entry.get('run_id'):
             return str(entry['run_id'])
     return ''
+
+
+def _plan_artifact_root(plan_id: str, worktree_path: str) -> Path:
+    """Return the plan directory the persisted CI artifacts live under.
+
+    ``manage-ci-artifacts`` writes to ``.plan/local/plans/{plan_id}/`` and
+    reports its paths relative to that plan directory. The worktree's ``.plan``
+    entry is the shared plan store, so reading through it reaches the same files
+    the persist step wrote.
+    """
+    return Path(worktree_path or '.') / '.plan' / 'local' / 'plans' / plan_id
+
+
+def _sonar_roundtrip_in_manifest(plan_id: str, worktree_path: str) -> bool:
+    """Return True when the plan's execution manifest carries ``sonar-roundtrip``.
+
+    The deferral in :func:`classify_check` only applies when the run has an
+    owner for it. An unreadable or absent manifest is not an owner: the check
+    stays a build failure rather than being handed to a step this plan never
+    selected.
+    """
+    manifest_path = _plan_artifact_root(plan_id, worktree_path) / 'execution.toon'
+    try:
+        body = parse_toon(manifest_path.read_text(encoding='utf-8'))
+    except (OSError, ToonParseError, ValueError):
+        return False
+    phase_6 = body.get('phase_6') if isinstance(body, dict) else None
+    steps = phase_6.get('steps') if isinstance(phase_6, dict) else None
+    return isinstance(steps, list) and 'sonar-roundtrip' in steps
+
+
+def _read_persisted_job_log(plan_id: str, log_file: str, worktree_path: str) -> str:
+    """Return a persisted check log's text, or ``''`` when it cannot be read."""
+    if not log_file:
+        return ''
+    try:
+        return (_plan_artifact_root(plan_id, worktree_path) / log_file).read_text(encoding='utf-8')
+    except (OSError, ValueError):
+        return ''
 
 
 # ---------------------------------------------------------------------------
@@ -611,6 +720,7 @@ def verify(
             'plan_id': plan_id,
             'error': f'Malformed checks structure: {exc}',
         }
+    _attach_log_pointers(normalized_all, envelope)
 
     # Resolve run_id from the normalized checks (first non-empty run URL).
     run_id = _derive_run_id(normalized_all)
@@ -684,13 +794,13 @@ def verify(
     if final_status == 'none':
         findings_fn(
             plan_id=plan_id,
-            title='[ci_no_checks] CI run produced zero checks',
-            detail=(f'[ci_no_checks] CI run produced zero checks for PR {pr_number} at HEAD {head_sha}'),
+            title=f'[{_SUBTYPE_MISSING}] CI run produced zero checks',
+            detail=(f'[{_SUBTYPE_MISSING}] CI run produced zero checks for PR {pr_number} at HEAD {head_sha}'),
             file_path=f'artifacts/ci-runs/{run_id}/manifest.toon',
             worktree_path=worktree_path,
         )
         findings_filed = 1
-        producers = [_PRODUCER_MISSING]
+        producers = [PRODUCER]
         return {
             'status': 'success',
             'plan_id': plan_id,
@@ -714,15 +824,31 @@ def verify(
     )
 
     seen_producers: list[str] = []
+    sonar_roundtrip_enabled = _sonar_roundtrip_in_manifest(plan_id, worktree_path)
     for check in failing_set:
-        producer, subtype = classify_check(check, wait_outcome)
+        job_log = ''
+        if sonar_roundtrip_enabled:
+            job_log = _read_persisted_job_log(plan_id, str(check.get('log_file') or ''), worktree_path)
+        producer, subtype = classify_check(
+            check,
+            wait_outcome,
+            sonar_roundtrip_enabled=sonar_roundtrip_enabled,
+            job_log=job_log,
+        )
         check_name = check.get('name') or 'unknown'
         job_name = check.get('job_name') or check_name
+        # Key the artifact path on the run THIS check belongs to: two failing
+        # runs at one head then file under two directories instead of the first
+        # run's directory twice.
+        check_run_id = str(check.get('run_id') or '') or run_id or 'no-run-id'
+        detail = f'[{subtype}] {check_name} failed on PR {pr_number} at HEAD {head_sha}'
+        if subtype == _SUBTYPE_SONAR_GATE:
+            detail += ' — deferred to sonar-roundtrip, which owns the Sonar quality gate'
         findings_fn(
             plan_id=plan_id,
             title=f'[{subtype}] {check_name} failed',
-            detail=(f'[{subtype}] {check_name} failed on PR {pr_number} at HEAD {head_sha}'),
-            file_path=f'artifacts/ci-runs/{run_id}/{job_name}.log',
+            detail=detail,
+            file_path=f'artifacts/ci-runs/{check_run_id}/{job_name}.log',
             worktree_path=worktree_path,
         )
         findings_filed += 1

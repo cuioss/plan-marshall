@@ -423,7 +423,7 @@ def cmd_ci_wait(args: argparse.Namespace) -> dict:
 
     # A remaining wait partition after the tail is a timeout: enumerate every
     # still-waiting CI check as a ``failing_checks`` entry so deliverables 6 and 7
-    # can route the timeout into the ``ci-verify-timeout`` producer. A review-bot
+    # can classify it under the ``ci_timeout`` subtype. A review-bot
     # status still pending is not a CI timeout — it is reported, not counted.
     ci_rows, review_bot_rows = _split_review_bot_rows(checks, review_bot_names)
     review_bot_checks = [_build_review_bot_check_entry(c) for c in review_bot_rows]

@@ -22,12 +22,13 @@ The exit-code contract for every `python3 .plan/execute-script.py` call in this 
 | `plugin-doctor` | `project:finalize-step-plugin-doctor` + `/plugin-doctor` slash command | Marketplace static analysis — **LLM-heavy**, runs inside this envelope as Step 1: iterate the plugin-doctor rule catalog in-context, scope-filter, emit one finding per violation to the store. | None — analysis IS the producer step. |
 | `pr-state` | `/workflow-pr-doctor` slash command | Wait for CI checks; fetch build status, PR comments, and Sonar issues sequentially; emit each finding-type to the store. Step 1 here orchestrates the multi-source sweep, then the unified triage in Steps 3-6 processes the aggregated set. | None — the producer always runs; Steps 3-6 short-circuit on zero findings. |
 | `finalize-feedback` | phase-6-finalize dispatcher (wait-region), after both `plan-marshall:automatic-review` and `default:sonar-roundtrip` have FILED | **No producer FIND** — the two wait-region producers already filed their `pr-comment` / `sonar-issue` findings via their own per-signal-gated FIND steps. Step 1 here is a single store-only union query over pending `pr-comment` ∪ `sonar-issue`. Collapses the retired per-producer `producer=pr-comment` and `producer=sonar` finalize triage dispatches into ONE pass over the union, mirroring the `pr-state` multi-source→one-triage precedent. | None — the producers already filed; Steps 3-6 short-circuit on zero findings. |
+| `ci-verify` | phase-6-finalize dispatcher, on red CI right after the `default:ci-verify` executor | **No producer FIND** — the deterministic `ci_verify.py` executor already filed one `triage` finding per failing check under component `plan-marshall:phase-6-finalize`. Step 1 here is a single store-only query over those pending findings. | None — the executor already filed; Steps 3-6 short-circuit on zero findings. |
 
 ## Inputs
 
 | Prompt-body field | Required | Description |
 |-------------------|:--------:|-------------|
-| `producer` | Yes | Single accept-set: one of `build-runner`, `sonar`, `pr-comment`, `plugin-doctor`, `pr-state`, `finalize-feedback`. Selects the Step 1 branch and which `ext-triage-{domain}` skills are pre-loaded in Step 2. `ci-verify-timeout` is rejected on every producer path — it is a `default:ci-verify` taxonomy producer string (row h, Timeout), not a `producer` value; the owning producer of the rejection is `default:ci-verify`. |
+| `producer` | Yes | Single accept-set: one of `build-runner`, `sonar`, `pr-comment`, `plugin-doctor`, `pr-state`, `finalize-feedback`, `ci-verify`. Selects the Step 1 branch and which `ext-triage-{domain}` skills are pre-loaded in Step 2. `ci-verify`'s taxonomy tags (`ci_build_failure`, `ci_policy_failure`, `ci_sonar_gate`, `ci_timeout`, `ci_cancelled`, `ci_action_required`, `ci_stale`, `ci_no_checks`) are finding SUBTYPES carried in each finding's title, never `producer` values — the executor returns the one producer value `ci-verify`. |
 | `plan_id` | Yes | Forwarded to every `manage-findings` / `manage-tasks` / `tools-integration-ci` call. |
 | `WORKTREE` | Yes | Used verbatim for `git -C {WORKTREE}` and as the root for every Edit/Write/Read. |
 | `pr_number` | Conditional | Required for `pr-comment` (thread replies) and for `pr-state` (CI wait + multi-source fetch). |
@@ -60,7 +61,7 @@ Several command templates below interpolate free text into a shell argument — 
 
 ### Guard: `producer` input validation (input boundary)
 
-Validate the `producer` runtime input against the accept-set (`build-runner`, `sonar`, `pr-comment`, `plugin-doctor`, `pr-state`, `finalize-feedback`) BEFORE entering any Step 1 branch. When the value is outside the accept-set, STOP — do not enter the shared ingestion/triage flow — and return:
+Validate the `producer` runtime input against the accept-set (`build-runner`, `sonar`, `pr-comment`, `plugin-doctor`, `pr-state`, `finalize-feedback`, `ci-verify`) BEFORE entering any Step 1 branch. When the value is outside the accept-set, STOP — do not enter the shared ingestion/triage flow — and return:
 
 ```toon
 status: error
@@ -69,7 +70,18 @@ producer: {received value}
 display_detail: "unknown producer: {received value}"
 ```
 
-`ci-verify-timeout` is rejected here on every producer path — it is a `default:ci-verify` taxonomy producer string, not a `producer` value; the owning producer of the rejection is `default:ci-verify` (see the Inputs table note).
+The `ci-verify` taxonomy's row labels (`ci_build_failure`, `ci_policy_failure`, `ci_sonar_gate`, `ci_timeout`, `ci_cancelled`, `ci_action_required`, `ci_stale`, `ci_no_checks`) are finding subtype tags, not `producer` values: the executor returns the single `ci-verify` producer and carries the row in the finding title, so no taxonomy label is ever the value validated here.
+
+### Branch: `producer=ci-verify` (store-only query)
+
+The `default:ci-verify` executor filed one `triage` finding per failing check under component `plan-marshall:phase-6-finalize` before the dispatcher reached this workflow; its `producers: [ci-verify]` is the signal that this pass is owed. Read those pending findings — the artifact-path filter is what scopes the query to the executor's own findings, whose `--file-path` is always under `artifacts/ci-runs/`:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings list \
+  --plan-id {plan_id} --type triage --resolution pending --file-pattern 'artifacts/ci-runs/*'
+```
+
+If the store is empty (a sibling pass already triaged them), return immediately with `status: success`, `display_detail: "0 finding(s) — nothing to triage"`, `loop_back_needed: false`. Otherwise fall through to Step 1.4 (batched ingestion), Step 1.5 (optional verify pre-stage), Step 2 (extension load), and Steps 3-6 (per-finding triage). Each finding's `[subtype]` title tag is the row: the FIX path for a build or Sonar-deferral finding differs from the ACCEPT path for a policy finding, and the `ci_sonar_gate` row is the deferral to `sonar-roundtrip`, which owns the Sonar quality gate.
 
 ### Branch: `producer=build-runner` | `sonar` | `pr-comment` (store-only query)
 

@@ -84,7 +84,6 @@ verify = _mod.verify
 classify_check = _mod.classify_check
 _extract_run_id_from_url = _mod._extract_run_id_from_url
 _normalize_check_entry = _mod._normalize_check_entry
-_matches_build_profile = _mod._matches_build_profile
 _first_missing_required_field = _mod._first_missing_required_field
 _resolve_failing_set = _mod._resolve_failing_set
 
@@ -268,7 +267,7 @@ def test_classify_check_failure_precedes_deadline_exceeded():
     # Act
     result = classify_check(check, 'deadline_exceeded')
     # Assert — failure row is evaluated before the timeout row.
-    assert result == ('ci-verify-build', 'ci_build_failure')
+    assert result == ('ci-verify', 'ci_build_failure')
 
 
 def test_normalize_check_entry_accepts_compact_shape():
@@ -413,7 +412,7 @@ def test_no_checks_files_single_ci_no_checks_finding(tmp_path):
     assert result['outcome'] == 'needs_triage'
     assert result['step_marked_done'] is False
     assert result['findings_filed'] == 1
-    assert result['producers'] == ['ci-verify-missing']
+    assert result['producers'] == ['ci-verify']
     assert len(findings.calls) == 1
     assert '[ci_no_checks]' in findings.calls[0]['title']
     # No dispatch and no green mark-done on the red path.
@@ -452,7 +451,7 @@ def test_failure_set_derived_from_status_envelope_when_not_threaded(tmp_path):
     # Assert — only the failing check (lint) produces a finding; the green
     # check is dropped from the failing set.
     assert result['findings_filed'] == 1
-    assert result['producers'] == ['ci-verify-policy']
+    assert result['producers'] == ['ci-verify']
 
 
 def test_status_fn_error_envelope_short_circuits_to_empty_checks(tmp_path):
@@ -485,7 +484,7 @@ def test_status_fn_error_envelope_short_circuits_to_empty_checks(tmp_path):
     # Assert — the error envelope did not crash; the threaded check classified.
     assert result['status'] == 'success'
     assert result['findings_filed'] == 1
-    assert result['producers'] == ['ci-verify-build']
+    assert result['producers'] == ['ci-verify']
     # run_id is empty because the error envelope carried no usable checks.
     assert result['run_id'] == ''
 

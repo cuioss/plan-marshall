@@ -54,7 +54,7 @@ The inline steps are pure scripts or trivial orchestration that earn no envelope
 - `project:finalize-step-deploy-target` — generate every harness target tree (`target/claude/`, `target/opencode/`, `target/antigravity/`) via the multi-target generator
 - `project:finalize-step-sync-plugin-cache` — sync every harness install (Claude plugin cache, OpenCode, Antigravity) from `target/` via the unified sync engine; the step id names the Claude cache, the step syncs all three
 
-`default:ci-verify` deserves a note: its green pass-through (`final_status == success` AND no failing checks) marks the step done with ZERO dispatch, and only genuinely-red CI files one taxonomy finding per failing check and returns a per-producer needs-triage signal that the dispatcher routes to `verification-feedback` (the sole LLM step, red-CI only). This green-early-return / no-dispatch bypass is documented BEFORE the red-CI triage dispatch it bypasses.
+`default:ci-verify` deserves a note: its green pass-through (`final_status == success` AND no failing checks) marks the step done with ZERO dispatch, and only genuinely-red CI files one taxonomy finding per failing check and returns the single `ci-verify` producer needs-triage signal that the dispatcher routes to exactly ONE `verification-feedback` invocation (the sole LLM step, red-CI only). This green-early-return / no-dispatch bypass is documented BEFORE the red-CI triage dispatch it bypasses.
 
 CI completion is no longer a sibling step in this roster — it is a dispatcher-resolved precondition (`requires: [ci-complete]`) checked inline before any consumer step runs; see the SKILL.md Execute Step Pipeline step § "Precondition resolution".
 
