@@ -88,15 +88,17 @@ derive, for rows still live.
   (`runtime_info.py`, the recursive-query hypothesis is obsolete), PLAN-LB-83 (`opencode_runtime.py`, +222 lines),
   PLAN-LB-73 (`runtime_info.py`). PLAN-LB-84 is no longer held on PLAN-LB-49; it now sequences after PLAN-LB-86.
 
-- **PLAN-LB-85** (staged 2026-10-22, WS-04, runbook lane, **high**) — from the consumer-epic finding
-  `pm-mcp-core-m2-m4-005`: the runbook lane never reads a pull request's open SonarCloud issues, so "quality gate
-  passed" is reported over issues the gate does not count. Corroborated in source: no Sonar text in the lane
-  skill or its scripts, and no Sonar condition in the § 7 merge gate. The sender's suggested vehicle does not fit as
-  is: `fetch_findings` is plan-scoped (plan id, plan-local manifest, plan ledger) and the lane has no plan, so D1 is
-  a plan-less read. The consumer's counts (38 open over eight merges, 118 on its `main`) are an unverified lead
-  (SonarCloud not queried here). Sequence AFTER PLAN-LB-73 (same lane sections); overlaps PLAN-LB-58 on `sonar.py`
-  and PLAN-LB-84/69 on `landing-payload-spec.md`; the gate will ask. D4 is the orchestrator's half: the plan-spec
-  template asks for the open-issue read where the project uses Sonar.
+- **PLAN-LB-85** (shipped #1839, 2026-10-22, runbook lane, `deepseek-v4.1-flash/high` as reported) — provisional
+  grade B−; see `landings/PLAN-LB-85.md`. D1, D2 and D4 delivered; D3 is 2 of 3 clauses, clause 3 being a
+  preservation claim that cannot fail (a spec error). The lane now resolves its Sonar state, reads a pull request's open
+  issues through the plan-less `read_open_issues` verb and gates the merge on `sonar-gate`. **The Sonar figure for its
+  own PR is `unknown`** (the verbs were unreachable through the stale executor and the bootstrap was refused by the
+  guard). The landing is the first runbook landing whose guard-log attribution matched `guard.log`; session-tree facts
+  were not verified (the session store was not readable in this analysis). Realized footprint moved `runbook-lane/SKILL.md`
+  and `runbook_lane.py` (PLAN-LB-73, 89, 69), `sonar.py` and the sonar `SKILL.md` (PLAN-LB-58) and
+  `landing-payload-spec.md`, `landing-analysis.md`, `plan-spec.md` (PLAN-LB-84, 69): re-read their line references at
+  outline. Added surface outside the declaration: `ext-point-triage.md`, `findings-pipeline.md` (one line each, the
+  provider contract is now three verbs). PLAN-LB-73 and PLAN-LB-89 are unblocked on this plan.
 
 - **PLAN-LB-79** (shipped #1835, 2026-10-22, runbook lane, DeepSeek `deepseek-v4.1-flash/high`) — grade C+; see
   `landings/PLAN-LB-79.md`. D1-D4 delivered with 17 named tests and CodeRabbit's five findings fixed, but the
@@ -690,6 +692,28 @@ derive, for rows still live.
 
 ## Open Defects
 
+- **The Sonar read the lane now requires has never been taken on a real pull request (PLAN-LB-85 landing,
+  2026-10-23; high; owner: the next runbook run, and an operator step).** `lb-85-lane-sonar-issues` shipped the
+  verbs and could not run them on its own PR: the main checkout's executor predates the change, the worktree has none,
+  and the only route that writes a worktree executor is a direct `generate_executor.py` call, which the guard refused
+  (R5, `guard.log` 16:35:56Z). The landing carries `step.sonar-roundtrip.open_issue_count=unknown`. Until a run reads
+  a PR with the merged lane text, the gate's verdicts on a real analysis are unobserved; `resolve` on the merged tree
+  reports `sonar: configured`, project `cuioss_plan-marshall`. Retire when one landing carries a measured count.
+- **A plan whose own lane text calls a verb it introduces cannot run it, and the guard refuses the bootstrap
+  (PLAN-LB-85 landing, 2026-10-23; medium; owner PLAN-LB-89, which already declares `generate_executor.py`).**
+  Either the guard admits the generator verb, or worktree creation generates the per-tree executor. The build-server
+  fallback `executor_absent_from_worktree` is the same gap seen from the build side (every build ran `in_process`).
+  Retire when PLAN-LB-89 ships and a worktree can run a verb added by its own plan.
+- **`plugin_version` is recorded as `0.1` beside `executor_version` `0.1.1986` (PLAN-LB-85 landing, 2026-10-23;
+  medium; lead, owner PLAN-LB-84 once confirmed).** The landing copied what its stamp source reported;
+  `platform_runtime runtime-info` run here (Claude) also returns `bundle_version: "0.1"`, while PLAN-LB-49's landing
+  carried `0.1.1983`. Confirm under OpenCode first: if `runtime-info` truncates the bundle version, PLAN-LB-84's
+  `plugin_version` bullet (source-manifest version) must cover it and its test must pin a three-part value. Retire when
+  a runbook landing's `plugin_version` equals the installed bundle version.
+- **The runbook landing's `complete: false` on `total_tokens` is now the only missing key (PLAN-LB-85 landing,
+  2026-10-23; recurrence of the PLAN-LB-86 D2 contract collision, not a new defect).** `effort` and `plugin_version`
+  are supplied under the post-sync lane text, so PLAN-LB-78 D3's fix reached the run. `surface_delta` measured:
+  `expansion_detected` (2 added, 3 missing).
 - **The R5 enforcement merged by PLAN-LB-79 is still walkable, and the hook it made binding refuses a command
   the repository prescribes (PLAN-LB-79 landing, 2026-10-22; high; fix-forward PLAN-LB-88).** By code reading,
   not executed: the spliced-string walk splits on `; & | newline` only, so a grouping keyword, `-o pipefail` before
@@ -1462,7 +1486,9 @@ entries below are OpenCode 1 assumptions in plan-marshall that OpenCode 2 broke.
   stay on `deepseek-v4.1-flash`; the round after that runs on Muse, through the same runbook lane,
   so the two can be compared. DeepSeek so far under the runbook lane: LB-61 C+, LB-66 F, LB-67 C,
   LB-71 C−, LB-72 B−, LB-70 F, LB-59 C, LB-74 C, LB-68 C−, LB-76 C+, LB-45 C−, LB-77 B−, LB-48 B−, LB-81 C+, LB-78 B−, LB-79 C+ ($1.76, 5 sessions, 19 h 40 min, `deepseek-v4.1-flash/high` throughout, no switch; code
-  graded on its work, report graded down for the undisclosed shell and clone conduct). Note the
+  graded on its work, report graded down for the undisclosed shell and clone conduct), LB-85 B− (provisional: tokens, cost and the session tree
+  were not readable in the analysis; the report matched every piece of evidence that could be re-read, `deepseek-v4.1-flash/high`
+  as reported). Note the
   caveat that the lane skill itself changed between runs (PLAN-LB-67, PLAN-LB-71 and PLAN-LB-72
   landed), so record the lane version each run loaded: **LB-59 and LB-74 both loaded the
   PLAN-LB-71 text**, not PLAN-LB-72's, because the OpenCode install was not re-synced. Retire when
