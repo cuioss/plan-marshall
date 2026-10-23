@@ -145,6 +145,15 @@ derive, for rows still live.
   below the multi-file threshold. Nothing is wrong with the plan; the decision is capacity, so the row stays `staged`
   and sequenced rather than parked. Its emit form for this harness is the plan-marshall lane's OpenCode command.
 
+- **PLAN-LB-91** (shipped #1847, 2026-10-23, runbook lane, `deepseek-v4.1-flash/high`) — see `landings/PLAN-LB-91.md`.
+  D1-D2 landed on the **narrowest footprint in the epic: 7 declared, 7 realized, symmetric difference 0**. A history
+  rewrite now remaps ledger rows instead of invalidating them, and the 5-execute boundary names `history_rewritten`
+  versus `bookkeeping_gap` and hands back the repair. Both disclosed R5 refusals are in `guard.log:190-191` exactly as
+  reported, and the run acted on the orchestrator's collision notice by confining its `_cmd_lifecycle.py` change. Three
+  CI false-reds came from the mypy cache-freshness heuristic (204/211 files/s against a 200 ceiling), one of which cost an
+  operator question; not staged under the focus rule, but it is a recurring cost. The operator-authorized executor
+  regeneration took the main checkout to `0.1.1996`, which closes the "surface cache predates the new verbs" residue.
+
 - **PLAN-LB-80** (staged 2026-10-23, WS-01, runbook lane) — **started by the operator 2026-10-23 (row `running`).**
   `lb-76-completion`, the fix-forward for PLAN-LB-76's residue: the repository skill veto fails open on every
   unreadable-configuration path, a bundle-qualified exclusion removes another bundle's bare skill, module qualification
@@ -165,6 +174,10 @@ derive, for rows still live.
   disclose the stray write in the landing's rule check — into all three sessions (LB-43, LB-92, LB-91). The stray-file
   half is therefore closed; the `_cmd_lifecycle.py` overlap stays **open** until LB-43 answers whether that edit is in
   scope, because if it is, its spec's Expected Surface must be widened and the conflict with LB-91 handled at merge.
+  **Update 2026-10-23 (LB-91 shipped #1847): the overlap is now half-realized.** `main` carries LB-91's D2 refusal region
+  in `_cmd_lifecycle.py`; LB-43's worktree still holds its own uncommitted change to that file on a base that predates it.
+  LB-43 must rebase and resolve, and the resolution both sides state is the same: keep LB-91's refusal logic and re-apply
+  LB-43's change on top. Check it at LB-43's landing.
 
 - **Parked by the focus rule (2026-10-23, operator-accepted split):** PLAN-LB-87 (token recording), LB-84, LB-69, LB-89,
   LB-83, LB-75, LB-41, LB-46, LB-51, LB-57. They stay in the corpus and resume on the surface they declare. Blocking set kept
@@ -421,6 +434,12 @@ derive, for rows still live.
 
 ## Decisions
 
+- 2026-10-23 — **The PLAN-LB-91 landing frees the first slot since the epic filled.** Shipped (#1847) on an exact 7/7
+  footprint; the row is `shipped` with its PR, landing and plan id stamped. With LB-43, LB-80 and LB-92 still running the
+  epic is back to **3 of `parallelization_scope` 4**, so one slot is open — the block below says what fills it and why.
+  The lesson the plan came from (`lessons-routing-046`) is closed by the merge: a rewrite remaps instead of invalidating.
+  Note also that the operator-authorized executor regeneration in that run (main checkout to `0.1.1996`) closes the
+  executor-surface residue recorded against the PLAN-LB-73 landing.
 - 2026-10-23 — **PLAN-LB-53 held back by the operator; PLAN-LB-80 took the slot instead.** The plan was emitted from a clean
   gate verdict (declarative surface, determinate comparison, one shared file — below the prompt threshold), and the
   operator declined to start it with three plans already running. Recorded as a capacity decision, not a gate refusal:
