@@ -4,10 +4,12 @@ sender_id=pm-mcp-core-m2-m4
 epic=live-blockers
 kind=finding
 created=2026-10-23T08:01:02Z
+revision=2
+amended=2026-10-23T08:12:34Z
 
-# Requirement: the runbook lane reads the spec from the ledger worktree first when told to, because that copy is the more recent one
+# Requirement (HIGH PRIORITY): the runbook lane reads the spec from the ledger worktree first when told to, because that copy is the more recent one
 
-Source: epic `pm-mcp-core-m2-m4`, 2026-10-23, from the landing of PLAN-25 (`rb-25-waits-001.md`, #145) and a test of `runbook_lane resolve` on the same day. Requested by the operator ("read from worktree first, assuming it is more recent, steered with a parameter"). Priority: medium, it costs one ledger land per round of emits.
+Source: epic `pm-mcp-core-m2-m4`, 2026-10-23, from the landing of PLAN-25 (`rb-25-waits-001.md`, #145) and a test of `runbook_lane resolve` on the same day. Requested by the operator ("read from worktree first, assuming it is more recent, steered with a parameter"). Priority: high (set by the operator on 2026-10-23), a lane can run on a spec other than the one the orchestrator reports, and the workaround costs one ledger land per round of emits.
 
 ## Observed
 

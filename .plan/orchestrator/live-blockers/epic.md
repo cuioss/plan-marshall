@@ -350,6 +350,18 @@ derive, for rows still live.
 
 ## Decisions
 
+- 2026-10-23 — **Operator rulings on the review quota, the standing authorization, Sourcery and token usage,
+  and a focus rule for the whole epic.** (1) *CodeRabbit quota:* when the quota refuses a review, wait. Other plans
+  draw on the same quota, so there is nothing sensible to do about it; no cap on concurrent plans, no escalated trigger
+  ahead of the 90-minute floor. (2) *Selection covering later heads / a semantic fix after a qualifying review:* keep the
+  standing authorization as written. The plan tries to get a re-review of the later head, and asks the operator when the
+  quota prevents it. (3) *Sourcery:* optional, because it has a weekly limit. (4) *Token usage:* out of scope. This
+  version of plan-marshall is replaced completely, so no token total, reasoning, cost or measurement aspect is worth
+  work here. (5) *Focus:* fix high and blocking issues only; fine-tuning is not this epic's job (it restates the founding
+  decision below: critical and high only). Every open aspect is revisited against that rule; the result is recorded in
+  the entries that follow it. Consequences already applied: a landing that is `complete: false` on `total_tokens` alone is
+  no longer recorded as an Open Defect or a recurrence; the `plugin_version` / `bundle_version` lead is not pursued; the
+  Claude PreToolUse hook stays unset by choice.
 - 2026-10-07 — **Epic created by operator instruction** ("create an orchestrator for the
   critical / high; remove them from the current orchestrator; archive / dormant the other
   orchestrators beside lessons-routing"). Scope is the 21 high-priority clusters of the
@@ -710,7 +722,7 @@ derive, for rows still live.
   Either the guard admits the generator verb, or worktree creation generates the per-tree executor. The build-server
   fallback `executor_absent_from_worktree` is the same gap seen from the build side (every build ran `in_process`).
   Retire when PLAN-LB-89 ships and a worktree can run a verb added by its own plan.
-- **`plugin_version` is recorded as `0.1` beside `executor_version` `0.1.1986` (PLAN-LB-85 landing, 2026-10-23;
+- **OUT OF SCOPE since 2026-10-23 (measurement; see Decisions) — `plugin_version` is recorded as `0.1` beside `executor_version` `0.1.1986` (PLAN-LB-85 landing, 2026-10-23;
   medium; lead, owner PLAN-LB-84 once confirmed).** The landing copied what its stamp source reported;
   `platform_runtime runtime-info` run here (Claude) also returns `bundle_version: "0.1"`, while PLAN-LB-49's landing
   carried `0.1.1983`. **Cause found (2026-10-23):** `read_bundle_version` (`runtime_info.py:455`) returns the `version` of the bundle manifest
@@ -719,7 +731,7 @@ derive, for rows still live.
   truncation bug. Open: which copy a runbook run executes. Original note: confirm under OpenCode first: if `runtime-info` truncates the bundle version, PLAN-LB-84's
   `plugin_version` bullet (source-manifest version) must cover it and its test must pin a three-part value. Retire when
   a runbook landing's `plugin_version` equals the installed bundle version.
-- **The runbook landing's `complete: false` on `total_tokens` is now the only missing key (PLAN-LB-85 landing,
+- **OUT OF SCOPE since 2026-10-23 (token usage; see Decisions) — the runbook landing's `complete: false` on `total_tokens` is now the only missing key (PLAN-LB-85 landing,
   2026-10-23; recurrence of the PLAN-LB-86 D2 contract collision, not a new defect).** `effort` and `plugin_version`
   are supplied under the post-sync lane text, so PLAN-LB-78 D3's fix reached the run. `surface_delta` measured:
   `expansion_detected` (2 added, 3 missing). The store holds the total the lane wrote as `unknown` (2,099,576 input+output,
