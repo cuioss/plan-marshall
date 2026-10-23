@@ -653,7 +653,7 @@ def _seed_rewrite_gate_plan(plan_context, plan_id: str) -> None:
     )
 
 
-def _rewrite_refusal(plan_id: str) -> dict:
+def _rewrite_refusal(plan_id: str):
     return _lifecycle._phase_end_marker_refusal(
         plan_id, {'metadata': {'use_worktree': True, 'worktree_path': '/tmp/any-worktree'}}
     )

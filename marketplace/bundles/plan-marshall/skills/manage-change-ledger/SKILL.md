@@ -278,10 +278,10 @@ needs the explicit append path. A SHA that does not resolve in the repository is
 reported in `unresolved` for the same reason, and an explicit-map key that names
 no recorded row is reported in `unmapped` — a typo'd map is never a silent
 success. A line of a hand-written map that does not name two SHAs is refused,
-not dropped. Rows appended by an earlier run
-are skipped by their `remapped_from` / `commit_sha` pair, so re-running after an
-interruption appends nothing twice. `--dry-run` reports the map without
-appending; `--emit-map PATH` writes the applied map as JSON.
+not dropped. A row that already carries the same `remapped_from` / `commit_sha`
+pair is skipped, so re-running the verb after an interruption appends nothing
+twice. `--dry-run` reports the map without appending; `--emit-map PATH` writes
+the applied map as JSON.
 
 The mapped row preserves the source row's recorded facts (`deliverable_id`,
 `changed_paths`, …) and adds `remapped_from` — the row's original `commit_sha` —
