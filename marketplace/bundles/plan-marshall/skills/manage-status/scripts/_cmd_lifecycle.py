@@ -7,6 +7,7 @@ Lifecycle command handlers for manage-status: create, transition, archive, delet
 import argparse
 import json
 import os
+import shlex
 import shutil
 import subprocess
 from pathlib import Path
@@ -476,6 +477,81 @@ def _sha_is_recorded(branch_sha: str, recorded: set[str]) -> bool:
     return False
 
 
+def _sha_is_ancestor_of_head(worktree_path: str, sha: str) -> bool:
+    """Return True when ``sha`` is reachable from HEAD in ``worktree_path``.
+
+    A SHA that does not exist in this repository (or a worktree whose git state
+    cannot answer) answers False: it cannot be shown to be part of HEAD's
+    history, which is exactly the fact the rewrite signature rests on.
+    """
+    proc = subprocess.run(
+        ['git', '-C', worktree_path, 'merge-base', '--is-ancestor', sha, 'HEAD'],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return proc.returncode == 0
+
+
+def _ready_to_run(parts: list[str]) -> str:
+    """Compose one copy-pasteable invocation from its argv parts."""
+    return ' '.join(shlex.quote(part) for part in parts)
+
+
+#: The prefix every remedy invocation shares — the executor form the guard
+#: reports, never a direct script path. ``shlex.quote`` is applied per part, so a
+#: worktree path carrying a space stays one argument when the caller runs it.
+_EXECUTOR_PREFIX = ('python3', '.plan/execute-script.py', 'plan-marshall:manage-change-ledger:manage-change-ledger')
+
+#: The one value the boundary cannot know: which deliverable a missing commit
+#: belongs to. It is left as a literal placeholder rather than omitted, because
+#: ``--deliverable-id`` (or ``--task-id``) is required — an invocation missing it
+#: would not run, and calling that "ready-to-run" would be false.
+_DELIVERABLE_ID_PLACEHOLDER = 'DELIVERABLE_ID'
+
+
+def _remap_invocation(worktree_path: str) -> str:
+    """The ready-to-run remap invocation for a rewritten branch."""
+    return _ready_to_run([*_EXECUTOR_PREFIX, 'remap', '--worktree-root', worktree_path])
+
+
+def _append_invocation(worktree_path: str, commit_sha: str) -> str:
+    """The ready-to-run append invocation for one missing commit."""
+    return _ready_to_run(
+        [
+            *_EXECUTOR_PREFIX,
+            'append',
+            '--kind',
+            'change',
+            '--deliverable-id',
+            _DELIVERABLE_ID_PLACEHOLDER,
+            '--commit-sha',
+            commit_sha,
+            '--worktree-root',
+            worktree_path,
+        ]
+    )
+
+
+def _is_history_rewrite(worktree_path: str, unrecorded: list[str], branch_shas: list[str], recorded: set[str]) -> bool:
+    """Whether the unrecorded set carries a history rewrite's signature.
+
+    Two conditions identify a rewrite rather than a skipped settlement:
+
+    - the unrecorded set is the WHOLE branch — no recorded row matches any branch
+      commit; or
+    - every recorded row's commit is no longer an ancestor of HEAD — the ledger
+      describes a history that HEAD replaced.
+
+    A partial gap beside at least one live recorded row is neither: that branch
+    was not rewritten, and appending the missing rows is the repair. The check
+    is ordered so the whole-branch case costs no git calls.
+    """
+    if unrecorded and len(unrecorded) == len(branch_shas):
+        return True
+    return not any(_sha_is_ancestor_of_head(worktree_path, sha) for sha in recorded)
+
+
 def _recorded_change_shas() -> set[str] | None:
     """Return every ``commit_sha`` carried by a ``kind=change`` ledger row.
 
@@ -536,6 +612,13 @@ def _phase_end_marker_refusal(plan_id: str, status: dict[str, Any]) -> dict[str,
       store holds zero rows at all the markers are wholly missing (the Step 10a
       bookkeeping never ran); when it holds some the recording is partial.
       ``recorded_count`` names which of the two the reader is looking at.
+      Among the partial cases the payload distinguishes two conditions by
+      ``signature``: ``history_rewritten`` when the unrecorded set is the whole
+      branch or every recorded row's commit left HEAD's history (rebase, amend,
+      cherry-pick) — carrying ``remap_invocation`` — and ``bookkeeping_gap``
+      otherwise, carrying ``append_invocations`` (plus the first as
+      ``append_invocation``). The remedy differs because the cause does:
+      remapping stale rows is not the same repair as appending skipped ones.
     - ``None`` (pass) — no worktree in play, no persisted path, an empty
       range, or full coverage. Each pass-through is a distinct unevaluable
       state, never a clean verdict over an examined store. An unreadable
@@ -639,13 +722,37 @@ def _phase_end_marker_refusal(plan_id: str, status: dict[str, Any]) -> dict[str,
             'and the change-ledger holds zero kind=change rows: no 5-execute deliverable commit was '
             'recorded. Run the phase-5-execute Step 10a settlement bookkeeping, then retry the transition.'
         )
+        remedy: dict[str, Any] = {}
+    elif _is_history_rewrite(worktree_path, unrecorded, branch_shas, recorded):
+        error = EXECUTE_COMMITS_UNRECORDED_ERROR
+        remap_invocation = _remap_invocation(worktree_path)
+        message = (
+            f'{len(unrecorded)} of {len(branch_shas)} worktree-branch commit(s) since diverging from '
+            f'{base_branch} carry no kind=change ledger row, and every recorded row points at a commit '
+            "that is no longer in HEAD's history: the branch history was rewritten (rebase, amend or "
+            'cherry-pick), not left unrecorded. Map the recorded rows onto their rewritten counterparts, '
+            f'then retry the transition: {remap_invocation}'
+        )
+        remedy = {
+            'signature': 'history_rewritten',
+            'rewrite_detected': True,
+            'remap_invocation': remap_invocation,
+        }
     else:
         error = EXECUTE_COMMITS_UNRECORDED_ERROR
+        append_invocations = [_append_invocation(worktree_path, sha) for sha in unrecorded]
         message = (
             f'{len(unrecorded)} of {len(branch_shas)} worktree-branch commit(s) since diverging from '
             f'{base_branch} carry no kind=change ledger row. Run the phase-5-execute Step 10a '
-            'settlement bookkeeping for the unrecorded commits, then retry the transition.'
+            f'settlement bookkeeping for the unrecorded commits, then retry the transition: '
+            f'{append_invocations[0]}'
         )
+        remedy = {
+            'signature': 'bookkeeping_gap',
+            'rewrite_detected': False,
+            'append_invocations': append_invocations,
+            'append_invocation': append_invocations[0],
+        }
     return {
         'status': 'error',
         'plan_id': plan_id,
@@ -656,6 +763,7 @@ def _phase_end_marker_refusal(plan_id: str, status: dict[str, Any]) -> dict[str,
         'branch_commit_count': len(branch_shas),
         'recorded_count': len(recorded),
         'message': message,
+        **remedy,
     }
 
 
