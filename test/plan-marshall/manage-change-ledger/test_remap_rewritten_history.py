@@ -372,6 +372,56 @@ def test_abbreviated_row_sha_does_not_duplicate_on_rerun(rewrite_env) -> None:
     assert len(rewrite_env.change_rows()) == 2
 
 
+def test_superseded_originals_are_not_reported_on_a_second_rewrite(rewrite_env) -> None:
+    """A second rewrite never re-reports the first rewrite's originals."""
+    rewrite_env.record_all()
+    rewrite_env.advance_main()
+    rewrite_env.rebase_onto_main()
+    first = rewrite_env.run('remap', '--worktree-root', str(rewrite_env.repo), '--old-head', rewrite_env.shas[2])
+    assert first.toon()['remap_count'] == 3
+    first_rebased_tip = _git(rewrite_env.repo, 'rev-parse', 'HEAD')
+
+    _git(rewrite_env.repo, 'checkout', '-q', 'main')
+    _commit(rewrite_env.repo, 'upstream2.txt', 'upstream2\n', 'second upstream work')
+    _git(rewrite_env.repo, 'checkout', '-q', 'feature')
+    rewrite_env.rebase_onto_main()
+
+    second = rewrite_env.run('remap', '--worktree-root', str(rewrite_env.repo), '--old-head', first_rebased_tip)
+
+    assert second.success, second.stderr
+    data = second.toon()
+    assert data['remap_count'] == 3
+    assert not (set(rewrite_env.shas) & set(data['unmapped'])), (
+        f'Already-superseded originals must not be reported again, got {data!r}'
+    )
+
+
+def test_two_rows_for_one_commit_append_once_each(rewrite_env) -> None:
+    """Rows sharing one old commit map once each, not once per pair."""
+    for deliverable in ('3a', '3b'):
+        appended = rewrite_env.run(
+            'append',
+            '--kind',
+            'change',
+            '--deliverable-id',
+            deliverable,
+            '--commit-sha',
+            rewrite_env.shas[2],
+            '--changed-paths',
+            'f3.txt',
+        )
+        assert appended.success, appended.stderr
+    _git(rewrite_env.repo, 'commit', '-q', '--amend', '-m', 'commit 3, reworded')
+
+    result = rewrite_env.run('remap', '--worktree-root', str(rewrite_env.repo))
+
+    assert result.success, result.stderr
+    data = result.toon()
+    assert data['remap_count'] == 2, f'Each source row maps once, got {data!r}; rows={rewrite_env.change_rows()!r}'
+    assert len(data['mappings']) == 2
+    assert len(rewrite_env.change_rows()) == 4, 'two originals plus exactly two mapped rows'
+
+
 def test_unparseable_map_line_is_refused(rewrite_env) -> None:
     """A typo'd map line fails loud instead of reading as a clean no-op."""
     rewrite_env.record_all()

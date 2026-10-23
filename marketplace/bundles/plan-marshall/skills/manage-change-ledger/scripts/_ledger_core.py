@@ -487,12 +487,16 @@ def _derive_patch_id_map(
     worktree_root: str,
     resolved_rows: list[tuple[dict[str, Any], str]],
     old_head: str | None,
+    superseded: set[str],
 ) -> tuple[list[tuple[str, str, str]], list[str]]:
     """Derive ``(old_raw, old_full, new_full)`` pairs by stable patch-id.
 
     Returns the pairs plus the recorded SHAs left unmapped. An unmapped rewrite
     is a real outcome that needs the explicit append path, not a silent omission:
-    a patch that changed during conflict resolution has no counterpart.
+    a patch that changed during conflict resolution has no counterpart. A SHA in
+    ``superseded`` already carries a mapped row, so it is never reported again —
+    originals stay in the append-only ledger forever, and a second rewrite would
+    otherwise re-report every one of them.
     """
     rewritten = [(row, full) for row, full in resolved_rows if commit_ancestry(worktree_root, full) is False]
 
@@ -509,7 +513,9 @@ def _derive_patch_id_map(
                 if commit_ancestry(worktree_root, full, old_head_full) is True:
                     attributable.append((row, full))
                 else:
-                    unscoped.append(str(row.get('commit_sha', '')).strip())
+                    raw = str(row.get('commit_sha', '')).strip()
+                    if raw not in superseded:
+                        unscoped.append(raw)
             rewritten = attributable
             candidate_shas.update(_rev_list(worktree_root, f'{old_head_full}..HEAD'))
     else:
@@ -537,7 +543,7 @@ def _derive_patch_id_map(
         new_full = new_by_patch.get(patch_id, '') if patch_id is not None else ''
         if new_full and new_full != full:
             pairs.append((raw, full, new_full))
-        else:
+        elif raw not in superseded:
             unmapped.append(raw)
     return pairs, unmapped
 
@@ -561,10 +567,11 @@ def remap_change_rows(
     row outside the pre-rewrite head belongs to another history and is reported
     in ``unmapped`` instead of being offered a counterpart.
 
-    A pair that is already recorded — a row whose ``remapped_from`` and
-    ``commit_sha`` are exactly this pair — is skipped, so re-running the verb
+    A source row that already has a mapped row — same ``remapped_from``,
+    ``deliverable_id`` and target commit — is skipped, so re-running the verb
     after an interrupted run appends nothing twice. Appending is therefore
-    idempotent at the pair level even though the ledger itself stays pure-append.
+    idempotent at the row level even though the ledger itself stays pure-append.
+    Two rows that share one old commit are distinct records and each maps once.
 
     Returns ``remap_count`` (rows mapped — appended unless ``dry_run``),
     ``mappings`` (the pairs applied, as ``old_commit_sha`` / ``new_commit_sha``),
@@ -582,10 +589,15 @@ def remap_change_rows(
         else:
             resolved_rows.append((row, full))
     existing_pairs = {
-        (str(row.get('remapped_from', '')).strip(), str(row.get('commit_sha', '')).strip())
+        (
+            str(row.get('remapped_from', '')).strip(),
+            str(row.get('deliverable_id', '')).strip(),
+            str(row.get('commit_sha', '')).strip(),
+        )
         for row in rows
         if row.get('remapped_from')
     }
+    superseded = {old for old, _deliverable, _new in existing_pairs}
     by_full: dict[str, list[dict[str, Any]]] = {}
     for row, full in resolved_rows:
         by_full.setdefault(full, []).append(row)
@@ -609,9 +621,11 @@ def remap_change_rows(
         for row, full in resolved_rows:
             if full in covered or commit_ancestry(worktree_root, full) is not False:
                 continue
-            unmapped.append(str(row.get('commit_sha', '')).strip())
+            raw = str(row.get('commit_sha', '')).strip()
+            if raw not in superseded:
+                unmapped.append(raw)
     else:
-        pairs, unmapped = _derive_patch_id_map(worktree_root, resolved_rows, old_head)
+        pairs, unmapped = _derive_patch_id_map(worktree_root, resolved_rows, old_head, superseded)
 
     mappings: list[dict[str, str]] = []
     appended = 0
@@ -623,8 +637,6 @@ def remap_change_rows(
             # would present a typo'd map as a completed repair.
             unmapped.append(old_raw)
             continue
-        if (old_raw, new_full) in existing_pairs:
-            continue
         for source in sources:
             # The pair key uses the SOURCE ROW's own raw SHA, because that is
             # what `remap_record` writes into `remapped_from`. A hand-written map
@@ -632,7 +644,8 @@ def remap_change_rows(
             # abbreviated one; comparing the map key instead would miss the
             # recorded pair and append a duplicate on every re-run.
             source_raw = str(source.get('commit_sha', '')).strip()
-            if (source_raw, new_full) in existing_pairs:
+            source_pair = (source_raw, str(source.get('deliverable_id', '')).strip(), new_full)
+            if source_pair in existing_pairs:
                 continue
             record = remap_record(
                 source=source,
@@ -641,6 +654,12 @@ def remap_change_rows(
             )
             if not dry_run:
                 append_entry(record, ledger_path)
+            # Track the pair immediately: two rows can share one old commit (the
+            # derivation emits one pair per row), and a later pair would iterate
+            # the same siblings again without this update. The key carries the
+            # deliverable id as well, because rows for one commit are distinct
+            # records and each must be mapped once.
+            existing_pairs.add(source_pair)
             appended += 1
             mappings.append({'old_commit_sha': old_raw, 'new_commit_sha': new_full})
 

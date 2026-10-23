@@ -237,7 +237,7 @@ python3 .plan/execute-script.py plan-marshall:manage-change-ledger:manage-change
 
 If either call returns `status: error`, ABORT the step with `outcome=failed`: log the returned `error` and `message`, do not run the append, and record the failure via **Mark Step Complete (Failure)**. A remap that did not run leaves the ledger stale, and `outcome=done` would record a repair that never happened.
 
-Read the first invocation's `unmapped` list before continuing. A commit whose patch changed during the rebase (a conflict resolution) has no patch-id counterpart and therefore no map entry: append its row explicitly rather than letting the remap guess, and record why the append was needed. `{deliverable_id}` is the deliverable the rewritten commit belonged to — read it off the stale row the `unmapped` entry names, which is still in the ledger:
+Read the first invocation's `unmapped` list before continuing. Append only entries whose stale SHA is an ancestor of `{pre_sha}` (check with `git merge-base --is-ancestor {stale_sha} {pre_sha}`): those are the rows attributable to this rebase whose patches changed during conflict resolution, and each needs its row appended explicitly rather than letting the remap guess. Do NOT append an `unmapped` entry outside that ancestry — it belongs to another history (another plan, or an earlier rewrite whose replacement row already exists), and appending it would create an unrelated replacement row in the shared ledger. `{deliverable_id}` and `{changed_paths}` come from the stale row itself:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-change-ledger:manage-change-ledger append \
