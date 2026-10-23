@@ -296,7 +296,9 @@ def test_rules_state_the_order_grading_once() -> None:
 
     for heading in ('## 3. Implement, deliverable by deliverable', '## 6. Pull request and reviews'):
         section = _section(heading)
-        assert 'order' in section, f'{heading} does not refer to the order rule'
+        # Backticked and anchored to §1: a bare 'order' also matches §3's own
+        # "in the spec's order" opening, which would make the assertion vacuous.
+        assert '`order`' in section and '§1' in section, f'{heading} does not refer to the §1 order rule'
         assert 'not met as written' not in section, f'{heading} restates the §1 grading rule'
         assert '`test-first` is met' not in section, f'{heading} restates the §1 grading rule'
 
@@ -1808,8 +1810,11 @@ def _executor_with_version(path: Path, version: str) -> Path:
 
 
 def _versioned_lane_dir(tmp_path: Path, version: str) -> Path:
-    lane = tmp_path / 'cache' / 'plan-marshall' / version / 'skills' / _SKILL_NAME
-    lane.mkdir(parents=True, exist_ok=True)
+    """Lay out one versioned bundle cache entry carrying the lane skill."""
+    version_dir = tmp_path / 'cache' / 'plan-marshall' / version
+    _write(version_dir / '.claude-plugin' / 'plugin.json', '{}\n')
+    lane = version_dir / 'skills' / _SKILL_NAME
+    _write(lane / 'SKILL.md', f'---\nname: {_SKILL_NAME}\n---\n\n# Runbook Lane\n')
     return lane
 
 
@@ -1832,6 +1837,22 @@ def test_executor_skew_detects_an_older_executor(tmp_path: Path) -> None:
     lane = _versioned_lane_dir(tmp_path, '0.1.1977')
 
     assert module._executor_skew(executor, lane) == 'skew'
+
+
+def test_executor_skew_compares_against_the_live_install_not_the_executing_script(tmp_path: Path) -> None:
+    """A stale executor runs a stale script; the lane text compared is the LIVE one.
+
+    The executor's embedded path points at the version it was generated for, so
+    reading the executing script's own directory would compare that stale
+    version with itself and report ``match``. The live version dir is the text a
+    harness actually loads.
+    """
+    module = load_script_module('plan-marshall', _SKILL_NAME, 'runbook_lane.py', register=False)
+    executor = _executor_with_version(tmp_path / 'execute-script.py', '0.1.1961')
+    stale_skill_dir = _versioned_lane_dir(tmp_path, '0.1.1961')
+    _versioned_lane_dir(tmp_path, '0.1.1977')
+
+    assert module._executor_skew(executor, stale_skill_dir) == 'skew'
 
 
 def test_executor_skew_matches_equal_versions(tmp_path: Path) -> None:

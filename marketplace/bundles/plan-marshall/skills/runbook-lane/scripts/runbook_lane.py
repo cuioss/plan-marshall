@@ -307,28 +307,42 @@ def _skill_exists(notation: str, lane_bundle: str) -> bool:
     return any(path.is_file() for path in _skill_probe_paths(notation, lane_bundle))
 
 
-#: The version-directory grammar a deployed bundle cache uses, shaped exactly as
-#: ``plugin_registry`` and ``marketplace_bundles`` select version dirs by.
-_VERSION_DIR_RE = re.compile(r'^\d+\.\d+')
-
 _EXECUTOR_SKEW_MATCH = 'match'
 _EXECUTOR_SKEW_SKEW = 'skew'
 _EXECUTOR_SKEW_UNCHECKED = 'could_not_check'
 
 
 def _lane_text_version(skill_dir: Path | None = None) -> str | None:
-    """Return the version directory the lane text was loaded from, or ``None``.
+    """Return the version of the lane text a harness would load, or ``None``.
 
-    A deployed bundle lives under ``{bundle}/{version}/skills/{skill}``, so the
-    version is the first version-shaped path segment above the skill. The source
-    tree carries no version directory; that is an UNMAKEABLE comparison, never
-    "no skew".
+    The version is read from the LIVE installed bundle, never from the executing
+    script's own path: a stale executor runs an older ``runbook_lane.py`` from
+    its embedded path, so reading ``__file__``'s version would compare that stale
+    version with itself and report ``match``. ``select_live_version_dir`` is the
+    shared selector the harness's resolution follows, so the comparison names the
+    text an agent actually reads.
+
+    A deployed bundle lives under ``{bundle}/{version}/skills/{skill}``. The
+    source tree and a flat install carry no version directory; either is an
+    UNMAKEABLE comparison, never "no skew".
     """
+    from marketplace_bundles import resolve_bundles_root, select_live_version_dir
+
     root = (skill_dir or _lane_skill_dir()).resolve()
-    for part in root.parts:
-        if _VERSION_DIR_RE.match(part):
-            return part
-    return None
+    bundle = _lane_bundle()
+    if not bundle:
+        return None
+    try:
+        bundles_root = resolve_bundles_root(root / 'SKILL.md')
+    except Exception:
+        return None
+    bundle_dir = bundles_root / bundle
+    if not bundle_dir.is_dir():
+        return None
+    live = select_live_version_dir(
+        bundle_dir, lambda version_dir: (version_dir / 'skills' / root.name / 'SKILL.md').is_file()
+    )
+    return live.name if live is not None else None
 
 
 def _executor_skew(executor: Path, lane_skill_dir: Path | None = None) -> str:
