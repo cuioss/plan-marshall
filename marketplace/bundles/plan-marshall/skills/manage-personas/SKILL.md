@@ -50,7 +50,7 @@ skills[N]:
 
 `module` echoes the `--module` value (empty when omitted). `module_status` is `resolved` (the module was read wherever a cell had optionals to qualify, and no cell reported it unreadable), `not_requested` (no `--module` supplied), or `unreadable` (at least one cell could not read the module's data or its domain extension's applicability, so that cell contributes no optionals).
 
-On error: `status: error` with an `error` discriminator (`persona_not_found`, `not_a_persona`, `composition_cycle`, `composed_persona_not_found`).
+On error: `status: error` with an `error` discriminator (`persona_not_found`, `not_a_persona`, `composition_cycle`, `composed_persona_not_found`, `profile_required`, `skill_exclusions_unreadable`). `skill_exclusions_unreadable` means the repository's exclusion list exists but could not be read — the call is refused rather than answered with an unfiltered skill list.
 
 ## Canonical invocations
 

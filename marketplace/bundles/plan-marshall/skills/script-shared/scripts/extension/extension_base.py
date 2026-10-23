@@ -1404,11 +1404,14 @@ class ExtensionBase(ABC):
     def qualifies_optional(self, profile: str, skill: str, module_data: dict) -> bool:
         """Decide whether an optional skill is applicable to a specific module.
 
-        Profile x domain cells list optionals that MAY apply to a module. A
-        resolver that expands a cell for a concrete module asks this hook per
-        optional, so a domain can exclude optionals its module-level signals
-        disqualify — the Java extension, for example, excludes its CDI-dependent
-        optionals for a module with no CDI dependency.
+        Profile x domain cells list optionals that MAY apply to a module. Both
+        producers of a task's skills ask this hook per optional when they expand
+        a cell for a concrete module — the persona resolver (``resolve --module``,
+        and ``resolve-task-skills`` through it) and the architecture path's
+        ``_build_applicable_result`` — so a domain can exclude optionals its
+        module-level signals disqualify once, and neither path offers them. The
+        Java extension, for example, excludes its CDI-dependent optionals for a
+        module with no CDI dependency.
 
         The default returns ``True``: a domain that does not override this hook
         has no module-level optional signal, so its optionals stay eligible.

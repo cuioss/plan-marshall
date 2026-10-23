@@ -187,15 +187,15 @@ def _effective_skills_by_profile(enriched: dict[str, Any], project_dir: str = '.
 
     The render reads the persisted enriched document directly, so without this
     it would display a skill the served module and every task have already
-    dropped. An unreadable exclusion config renders the stored map unchanged.
+    dropped. The read fails closed like every other seam: an unreadable
+    exclusion configuration raises, and the rendering verb reports it, rather
+    than displaying a map whose prohibition could not be read.
     """
     skills_by_profile = enriched.get('skills_by_profile')
     if not isinstance(skills_by_profile, dict) or not skills_by_profile:
         return {}
-    try:
-        from extension_base import all_excluded_skills, filter_skill_map
-    except Exception:
-        return skills_by_profile
+    from extension_base import all_excluded_skills, filter_skill_map
+
     exclusions = all_excluded_skills(project_dir)
     if not exclusions:
         return skills_by_profile

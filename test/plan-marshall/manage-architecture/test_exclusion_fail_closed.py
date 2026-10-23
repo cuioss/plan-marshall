@@ -105,12 +105,6 @@ def _notations(entries: list) -> list[str]:
     return [entry['skill'] if isinstance(entry, dict) else entry for entry in entries]
 
 
-def _optionals(project_dir: str, module: str = 'module-a') -> list[str]:
-    """Return the served implementation optionals of ``module``."""
-    payload = _cmd_client_query.get_module_info(module, project_dir=project_dir)
-    return _notations(payload['skills_by_profile']['implementation']['optionals'])
-
-
 def _java_extension():
     """Load the real pm-dev-java extension — its qualification is under test."""
     return load_skill_module(
@@ -186,13 +180,24 @@ def test_malformed_marshal_is_not_reported_as_no_exclusions():
 
 
 def test_absent_marshal_still_means_no_exclusions():
-    """Regression guard: a repository with no configuration resolves cleanly."""
+    """Regression guard: a repository with no configuration serves its skills."""
     with tempfile.TemporaryDirectory() as project_dir:
         _seed(project_dir)
 
         payload = _cmd_client_query.get_module_info('module-a', project_dir=project_dir)
 
-    assert payload.get('status') != 'error'
+    assert QUARKUS in json.dumps(payload['skills_by_profile'])
+
+
+def test_overview_reports_an_unreadable_configuration():
+    """The rendered surface fails closed like every other exclusion reader."""
+    with tempfile.TemporaryDirectory() as project_dir:
+        _seed(project_dir)
+        _write_malformed_marshal(project_dir)
+
+        result = _cmd_client_handlers.cmd_overview(Namespace(project_dir=project_dir, budget=200))
+
+    assert result['status'] == 'error'
 
 
 def test_enrich_reports_an_unreadable_configuration_instead_of_persisting():
