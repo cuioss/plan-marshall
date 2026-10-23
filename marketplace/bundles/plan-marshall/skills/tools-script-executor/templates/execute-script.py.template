@@ -256,6 +256,11 @@ def _check_executor_target() -> None:
         return
     if not observed or observed == _EXECUTOR_TARGET:
         return
+    if not _EXECUTOR_TARGET:
+        # An unstamped executor (a test render, a pre-stamp file) carries no
+        # expected target to disagree with. It is not evidence of a foreign
+        # regeneration.
+        return
     from toon_parser import serialize_toon
 
     print(

@@ -68,7 +68,8 @@ def render_executor_template(
     cache_recovery_roots: str = NO_DIRS,
     extra_script_dirs: str = '',
     plan_dir_name: str = '.plan',
-    executor_target: str = 'claude',
+    executor_target: str = '',
+    executor_plugin_root: str = '',
     bootstrap_bundle: str = BOOTSTRAP_BUNDLE,
     generated_version: str = '0.0.0-test',
     mappings_fingerprint: str = 'test-fingerprint',
@@ -88,7 +89,11 @@ def render_executor_template(
         cache_recovery_roots: The entries of the cache-recovery roots.
         extra_script_dirs: The entries of the baked extra script dirs.
         plan_dir_name: The plan directory name.
-        executor_target: The target the executor was generated for.
+        executor_target: The target the executor was generated for; the empty
+            default marks a test-rendered executor as unstamped, so the
+            target-mismatch refusal does not fire on the harness running the
+            test suite.
+        executor_plugin_root: The plugin root stamped beside the target.
         bootstrap_bundle: The bundle the bootstrap skills belong to.
         generated_version: The stamped version; ``''`` is the fresh-install
             sentinel.
@@ -109,6 +114,7 @@ def render_executor_template(
         '{{EXTRA_SCRIPT_DIRS}}': extra_script_dirs,
         '{{PLAN_DIR_NAME}}': plan_dir_name,
         '{{EXECUTOR_TARGET}}': executor_target,
+        '{{EXECUTOR_PLUGIN_ROOT}}': executor_plugin_root,
         '{{BOOTSTRAP_BUNDLE}}': bootstrap_bundle,
         '{{GENERATED_VERSION}}': generated_version,
         '{{MAPPINGS_FINGERPRINT}}': mappings_fingerprint,

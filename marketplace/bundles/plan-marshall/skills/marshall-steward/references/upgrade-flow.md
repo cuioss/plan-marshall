@@ -79,6 +79,10 @@ repository-relative path:
 python3 marketplace/bundles/plan-marshall/skills/tools-script-executor/scripts/generate_executor.py recover --project-dir . --target <active-target>
 ```
 
+In a consumer checkout the executor's printed command names the newest deployed
+cache's `{newest_cache}/skills/tools-script-executor/scripts/generate_executor.py`;
+run the printed command as-is.
+
 `recover` reports `action: regenerated` only after the regenerated executor
 passes its own import probe. A regenerated executor that still fails to import
 reports `action: regenerate_failed` with the probe's reason, never

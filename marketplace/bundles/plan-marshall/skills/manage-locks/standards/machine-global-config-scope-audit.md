@@ -89,14 +89,15 @@ exclusions.
 | `workflow-integration-git/scripts/integrate_into_main.py` | 1 (`_assert_cwd_unchanged`) | **EXCLUDE — a cwd RESTORE, not a cwd move.** The call fires only when the script's own never-change-the-caller-cwd invariant has already been violated: it restores the entry cwd and returns an error payload. Nothing is resolved after it, so no key can be read against a moved root. |
 | `workflow-integration-git/scripts/prepare_execute.py` | 1 (`_assert_cwd_unchanged`) | **EXCLUDE — same restore-and-fail guard**, with the same reasoning. |
 | `script-shared/scripts/build/_machine_config.py` | 0 | **EXCLUDE — text-only residue, and the counter-example that decides the method.** Both occurrences are module-docstring prose describing the daemon's `chdir('/')` as the hazard this module exists to remove. A criterion that counted text would place the module that CLOSES shape A inside shape A. |
+| `tools-script-executor/scripts/generate_executor.py` | 1 (`cmd_recover`) | **IN POPULATION — JUSTIFIED.** `cmd_recover` pins the process cwd to the project it recovers, so `cmd_generate` writes that project's `.plan/execute-script.py` and discovers its local scripts under the intended root, then restores the entry cwd in `finally`. The config read that follows the move is the project's own, not a machine-global key applied against a moved root. |
 
-**Shape A figures.** 4 candidate files; 3 call sites over 3 files; **1 file in the
+**Shape A figures.** 5 candidate files; 4 call sites over 4 files; **2 files in the
 population**. The population is published beside the count so a shrunken
-derivation cannot pass as a clean one: three of the four candidates are
+derivation cannot pass as a clean one: three of the five candidates are
 dispositioned out on stated evidence, not dropped.
 
 In current state, the number of sites where a cwd-moved process reads a
-cwd-anchored config key is **0 out of 1 population member**. That zero is
+machine-global config key is **0 out of 2 population members**. That zero is
 reportable only because the population it is drawn from is published with it.
 
 ### Shape B — stage 1, candidate set (text, superset by construction)
@@ -148,10 +149,10 @@ mention-only files excluded.
 
 | Set | Files |
 |-----|-------|
-| Shape A population | **1** |
+| Shape A population | **2** |
 | Shape B population | **9** |
 | In both (intersection) | **1** |
-| **Union — the machine-global config-scope population** | **9** |
+| **Union — the machine-global config-scope population** | **10** |
 
 The intersection is `manage-build-server/scripts/marshalld.py`, so the union is
 1 + 9 − 1 = **9 distinct script files**.
