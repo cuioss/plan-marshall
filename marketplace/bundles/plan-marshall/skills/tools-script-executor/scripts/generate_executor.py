@@ -2124,6 +2124,8 @@ def generate_executor(
     # the raw bytes so an encoding-only difference still counts as a change.
     template_sha256 = hashlib.sha256(executor_template.read_bytes()).hexdigest()
 
+    plugin_root = base_path.resolve().as_posix()
+
     def _substitute(surfaces_code: str) -> str:
         content = template.replace('{{SCRIPT_MAPPINGS}}', mappings_code)
         content = content.replace('{{SCRIPT_SURFACES}}', surfaces_code)
@@ -2135,6 +2137,7 @@ def generate_executor(
         content = content.replace('{{PLAN_DIR_NAME}}', PLAN_DIR_NAME)
         content = content.replace('{{TARGET_AWARE_RESOLVER}}', resolver_code)
         content = content.replace('{{EXECUTOR_TARGET}}', resolved_target)
+        content = content.replace('{{EXECUTOR_PLUGIN_ROOT}}', plugin_root)
         content = content.replace('{{GENERATED_VERSION}}', generated_version)
         content = content.replace('{{MAPPINGS_FINGERPRINT}}', mappings_fingerprint)
         content = content.replace('{{TEMPLATE_SHA256}}', template_sha256)

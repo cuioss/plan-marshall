@@ -47,6 +47,25 @@ def test_create_status(plan_context, monkeypatch):
     assert result['plan']['current_phase'] == '1-init'
 
 
+def test_create_records_executor_target_stamp(plan_context):
+    """The serving executor's harness/plugin-root stamp lands in status.metadata."""
+    from file_ops import get_tracked_config_dir
+
+    plan_dir = get_tracked_config_dir()
+    plan_dir.mkdir(parents=True, exist_ok=True)
+    (plan_dir / 'execute-script.py').write_text(
+        "_EXECUTOR_TARGET = 'opencode'\nEXECUTOR_PLUGIN_ROOT = '/fixture/tree'\n",
+        encoding='utf-8',
+    )
+
+    result = cmd_create(Namespace(plan_id='stamp-plan', title='Stamped', phases='1-init', force=False))
+    status = json.loads(_lifecycle.get_status_path('stamp-plan').read_text(encoding='utf-8'))
+
+    assert result['status'] == 'success'
+    assert status['metadata']['executor_target'] == 'opencode'
+    assert status['metadata']['executor_plugin_root'] == '/fixture/tree'
+
+
 def test_create_status_custom_phases(plan_context):
     """Test creating a status.json with custom phases."""
     result = cmd_create(

@@ -86,6 +86,11 @@ MAPPINGS_FINGERPRINT = '{{MAPPINGS_FINGERPRINT}}'
 # generation time like every stamp; the residue guard refuses an unsubstituted
 # generation.
 _EXECUTOR_TARGET = '{{EXECUTOR_TARGET}}'
+# The plugin root the executor was generated against — the bundles/cache root its
+# embedded script paths resolve under. Recorded with the target so a plan's
+# status metadata can name the tree, and so a mismatch refusal names where the
+# executor came from.
+EXECUTOR_PLUGIN_ROOT = '{{EXECUTOR_PLUGIN_ROOT}}'
 # SHA-256 of this template file's content at generation time. The
 # generate_executor bootstrap verb compares it against the live template to
 # detect template-content staleness (a template fix that shipped without a
@@ -203,16 +208,20 @@ def _newest_cache_scripts_dir(skill: str) -> str | None:
     return None
 
 
-def _recovery_command() -> str:
+def _recovery_command(target: str | None = None) -> str:
     """The exact command that restores this executor from the newest cache.
 
     Names the newest cache's ``generate_executor.py`` — resolved with the same
     pruned-version self-heal the bootstrap uses — so the printed command is
     runnable by any harness from the error text alone, with no working executor.
-    Falls back to the checkout-source form only when no cache copy resolves.
+    ``target`` defaults to this executor's stamp; a mismatch refusal passes the
+    OBSERVED runtime target so the command repairs the executor for the harness
+    that is actually running it. Falls back to the checkout-source form only when
+    no cache copy resolves.
     """
     import shlex
 
+    resolved_target = target or _EXECUTOR_TARGET
     scripts = _newest_cache_scripts_dir('tools-script-executor')
     project_root = Path(__file__).resolve().parent.parent
     if scripts:
@@ -220,12 +229,51 @@ def _recovery_command() -> str:
         if generator.is_file():
             return (
                 f'python3 {shlex.quote(str(generator))} recover '
-                f'--project-dir {shlex.quote(str(project_root))} --target {_EXECUTOR_TARGET}'
+                f'--project-dir {shlex.quote(str(project_root))} --target {resolved_target}'
             )
     return (
         'python3 marketplace/bundles/plan-marshall/skills/tools-script-executor/scripts/'
-        'generate_executor.py bootstrap --marketplace --marketplace-root .'
+        f'generate_executor.py recover --project-dir {shlex.quote(str(project_root))} '
+        f'--target {resolved_target}'
     )
+
+
+def _check_executor_target() -> None:
+    """Refuse a shared executor generated for a different harness.
+
+    A concurrent regeneration of ``.plan/execute-script.py`` by another harness
+    rewrites every embedded script path into that harness's tree. The stamp
+    catches it by name here — before any notation is resolved — instead of
+    letting the run fail later against a script from the wrong installation.
+    No env signal means no observable target (a plain terminal caller), so the
+    check stays silent rather than guessing.
+    """
+    try:
+        from target_context import detect_target_from_env
+
+        observed = detect_target_from_env()
+    except Exception:
+        return
+    if not observed or observed == _EXECUTOR_TARGET:
+        return
+    from toon_parser import serialize_toon
+
+    print(
+        serialize_toon(
+            {
+                'status': 'error',
+                'error': 'executor_target_mismatch',
+                'observed_target': observed,
+                'expected_target': _EXECUTOR_TARGET,
+                'plugin_root': EXECUTOR_PLUGIN_ROOT,
+                'regenerate_command': _recovery_command(target=observed),
+                'display_detail': (
+                    f'executor targets {_EXECUTOR_TARGET} but {observed} is running; regenerate it'
+                ),
+            }
+        )
+    )
+    sys.exit(2)
 
 
 def _checkout_source_scripts_dir(skill: str) -> str | None:
@@ -1713,6 +1761,7 @@ def _drop_stray_empty_args(args: list[str]) -> list[str]:
 
 
 def main():
+    _check_executor_target()
     if len(sys.argv) < 2:
         print("Usage: execute-script.py <notation> [subcommand] [args...]", file=sys.stderr)
         print("\nNotation format: {bundle}:{skill}:{script}", file=sys.stderr)
