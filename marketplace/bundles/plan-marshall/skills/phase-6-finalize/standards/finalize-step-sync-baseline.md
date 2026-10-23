@@ -216,6 +216,42 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:phase-6-finalize) Sync baseline: rebased onto origin/{base_branch} (action={action}, upstream_commits={upstream_commit_count})"
 ```
 
+### Remap the change-ledger after a rewrite
+
+Only a rebase that actually replayed commits (`action: rebased`) rewrites the branch's SHAs. Every `kind=change` row recorded against a pre-rebase commit is then stale, and the 5-execute end-marker guard reports the whole branch unrecorded at the next boundary. This step is the rewriting step, so it repairs the ledger here, before the phase advances: the guard carries the same remap invocation in its refusal, but that path exists for a rewrite performed OUTSIDE this step (a manual amend or a cherry-pick), where no rewriting step knows to repair.
+
+An `action: noop` replayed nothing, so there is no map to emit and this section is skipped.
+
+The step emits the old-to-new map first — no rows are appended — and then consumes that map:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-change-ledger:manage-change-ledger remap \
+  --worktree-root {worktree_path} --old-head {pre_sha} \
+  --emit-map .plan/temp/sync-baseline-sha-map-{plan_id}.json --dry-run
+python3 .plan/execute-script.py plan-marshall:manage-change-ledger:manage-change-ledger remap \
+  --worktree-root {worktree_path} \
+  --map-file .plan/temp/sync-baseline-sha-map-{plan_id}.json
+```
+
+`{pre_sha}` is the `pre_sha` field of the successful `worktree-rebase-to` result — the head before the rebase, so the derivation matches only the commits this rebase replayed. The map is derived by stable `git patch-id`, which hashes a commit's patch rather than its message.
+
+Read the first invocation's `unmapped` list before continuing. A commit whose patch changed during the rebase (a conflict resolution) has no patch-id counterpart and therefore no map entry: append its row explicitly rather than letting the remap guess, and record why the append was needed:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-change-ledger:manage-change-ledger append \
+  --kind change --deliverable-id {deliverable_id} --commit-sha {rebased_sha} \
+  --worktree-root {worktree_path}
+```
+
+Log the remap outcome:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:phase-6-finalize) Sync baseline ledger remap: remapped={remap_count}, unmapped={unmapped}, map=.plan/temp/sync-baseline-sha-map-{plan_id}.json"
+```
+
+The originals stay in the ledger, and the mapped rows carry `remapped_from`, so the rewrite remains visible in the record instead of erasing it.
+
 ## Mark Step Complete
 
 Record the outcome on the live plan so the `phase_steps_complete` handshake invariant is satisfied at phase transition time.

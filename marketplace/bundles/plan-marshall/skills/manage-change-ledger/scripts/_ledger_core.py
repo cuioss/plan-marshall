@@ -7,13 +7,16 @@ append_entry, read_entries, build_record, change_record, resolve_ledger_path``.
 NOT an executor entry point.
 
 This module is the single read/write/construct surface for the one append-only
-change-ledger (``.plan/work/change-ledger.jsonl``). The ledger is the unified
-``worktree_sha``-stamped record of working-tree transitions; it subsumes the
-former "build-registry" idea entirely (there is NO separate ``builds.jsonl``).
+change-ledger (``.plan/work/change-ledger.jsonl``), and the rewrite-remap that
+maps ``kind=change`` rows of rewritten commits onto their rewritten
+counterparts. The ledger is the unified ``worktree_sha``-stamped record of
+working-tree transitions; it subsumes the former "build-registry" idea entirely
+(there is NO separate ``builds.jsonl``).
 Both writers — the executor dispatch-boundary ``kind=build`` writer and the
 phase-5 ``kind=change`` writer — and both readers — the ``query`` verb and the
 ``pre-commit-verify-freshness`` gate — go through this core so entries are
-shaped identically and parsed identically.
+shaped identically and parsed identically. The rewrite-remap writes through the
+same :func:`append_entry`, so it is a third writer, never a second write path.
 
 **Tracked-config-dir resolution, NOT plan-scoped.** The ledger resolves via
 :func:`file_ops.get_tracked_config_dir` (modeled on ``manage-locks``), so it
@@ -36,6 +39,7 @@ shape avoids the window entirely.)
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -289,4 +293,311 @@ def job_record(
         'notation': notation,
         'worktree_sha': worktree_sha,
         'timestamp_iso': timestamp_iso if timestamp_iso is not None else now_utc_iso(),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Rewrite mapping — map the rows of rewritten commits onto their counterparts
+# ---------------------------------------------------------------------------
+#
+# A history rewrite (rebase, amend, cherry-pick) gives every replayed commit a
+# new SHA. The ledger is keyed by ``commit_sha`` and is pure-append, so a rewrite
+# leaves every earlier ``kind=change`` row pointing at a commit that is no longer
+# part of HEAD's history and the 5-execute end-marker guard reports the whole
+# branch unrecorded. Remapping APPENDS one row per rewritten row that points at
+# the rewritten SHA, preserving the original rows: append-only holds, and the
+# history of the ledger stays a record of what happened rather than a rewritten
+# copy of it.
+#
+# The mapping has two sources, both legitimate:
+#
+# * the rewrite knows what it did — a rebase reports its ``pre_sha`` / ``post_sha``
+#   and a rewriting step can emit an explicit old-to-new map, which ``--map-file``
+#   consumes; and
+# * a rewrite performed OUTSIDE this tool (a manual amend, a cherry-pick) has no
+#   emitted map, so the mapping is derived from the recorded rows themselves by
+#   ``git patch-id``. Patch-id hashes the COMMIT'S PATCH, not its message, so a
+#   rebased commit and a message-only amend both match their original. A patch
+#   that changed during conflict resolution has no counterpart — it is reported
+#   as ``unmapped`` and needs the explicit append path rather than a guessed
+#   mapping.
+
+#: The patch-id ``git patch-id`` reports for a commit with an empty diff. It is
+#: shared by every empty commit, so it never identifies one, and matching on it
+#: would pair unrelated empty commits.
+EMPTY_PATCH_ID = '0000000000000000000000000000000000000000'
+
+
+def _run_git(worktree_root: str | Path, *args: str) -> subprocess.CompletedProcess[str]:
+    """Run one ``git -C worktree_root`` command without raising on failure."""
+    return subprocess.run(
+        ['git', '-C', str(worktree_root), *args],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+def resolve_commit(worktree_root: str | Path, sha: str) -> str | None:
+    """Resolve ``sha`` (full or abbreviated) to a full commit SHA, or ``None``.
+
+    ``None`` means the object is not in this repository: a row written by a
+    different worktree, a sha whose objects were garbage-collected. That is not a
+    rewrite match, so callers must not treat it as one.
+    """
+    proc = _run_git(worktree_root, 'rev-parse', '--verify', '--quiet', f'{sha}^{{commit}}')
+    if proc.returncode != 0:
+        return None
+    resolved = proc.stdout.strip()
+    return resolved or None
+
+
+def commit_is_ancestor(worktree_root: str | Path, sha: str) -> bool:
+    """Return True when ``sha`` is reachable from HEAD."""
+    return _run_git(worktree_root, 'merge-base', '--is-ancestor', sha, 'HEAD').returncode == 0
+
+
+def _commit_patch_id(worktree_root: str | Path, sha: str) -> str | None:
+    """Return the stable patch-id of one commit, or ``None`` when it has none.
+
+    A commit with an empty diff (or an unreadable one) yields ``None`` rather
+    than :data:`EMPTY_PATCH_ID`, because that value is shared by every empty
+    commit and cannot identify one.
+    """
+    show = _run_git(worktree_root, 'show', '--pretty=format:', '--no-ext-diff', '-p', sha)
+    if show.returncode != 0:
+        return None
+    patch = subprocess.run(
+        ['git', 'patch-id', '--stable'],
+        input=show.stdout,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if patch.returncode != 0 or not patch.stdout.strip():
+        return None
+    patch_id = patch.stdout.split()[0]
+    return None if patch_id == EMPTY_PATCH_ID else patch_id
+
+
+def _rev_list(worktree_root: str | Path, rev_range: str) -> list[str]:
+    """Return the commit SHAs in ``rev_range``, or ``[]`` when it cannot be read."""
+    proc = _run_git(worktree_root, 'rev-list', rev_range)
+    if proc.returncode != 0:
+        return []
+    return [line.strip() for line in proc.stdout.splitlines() if line.strip()]
+
+
+def _split_sha_pair(line: str) -> tuple[str, str] | None:
+    """Split one ``old new`` / ``old:new`` / ``old=new`` map line."""
+    for separator in (':', '='):
+        if separator in line:
+            old, _, new = line.partition(separator)
+            if old.strip() and new.strip():
+                return old.strip(), new.strip()
+            return None
+    parts = line.split()
+    if len(parts) == 2:
+        return parts[0], parts[1]
+    return None
+
+
+def parse_sha_map_text(text: str) -> dict[str, str]:
+    """Parse an old-to-new SHA map from JSON or line-oriented text.
+
+    Accepts the JSON object ``--emit-map`` writes (``{"old": "new", ...}``), and
+    the human form the rewriting step may hand-write: one pair per line, as
+    ``old new``, ``old:new`` or ``old=new``. Blank lines and ``#`` comments are
+    ignored. An unparseable line is skipped rather than guessed at — the map is
+    an explicit assertion, so a line that does not name two SHAs cannot be
+    honoured as one.
+    """
+    stripped = text.strip()
+    if not stripped:
+        return {}
+    if stripped.startswith('{'):
+        parsed = json.loads(stripped)
+        if not isinstance(parsed, dict):
+            raise ValueError('a SHA map JSON document must be an object of old-to-new pairs')
+        return {
+            str(old).strip(): str(new).strip() for old, new in parsed.items() if str(old).strip() and str(new).strip()
+        }
+    mapping: dict[str, str] = {}
+    for line in stripped.splitlines():
+        candidate = line.strip()
+        if not candidate or candidate.startswith('#'):
+            continue
+        pair = _split_sha_pair(candidate)
+        if pair is not None:
+            mapping[pair[0]] = pair[1]
+    return mapping
+
+
+def remap_record(
+    *,
+    source: dict[str, Any],
+    new_commit_sha: str,
+    worktree_sha: str | None,
+    timestamp_iso: str | None = None,
+) -> dict[str, Any]:
+    """Construct the mapped ``kind=change`` row for one rewritten commit.
+
+    The source row is preserved field-for-field (``deliverable_id``,
+    ``changed_paths`` and any other recorded fact), except for the identity and
+    currency fields the remap replaces. ``remapped_from`` is the rewritten row's
+    original ``commit_sha``, so the pair is recoverable from the appended row
+    alone — a reader never has to diff two rows to learn what was rewritten.
+    """
+    record = {
+        key: value
+        for key, value in source.items()
+        if key not in ('commit_sha', 'worktree_sha', 'timestamp_iso', 'remapped_from')
+    }
+    record['commit_sha'] = new_commit_sha
+    record['worktree_sha'] = worktree_sha
+    record['timestamp_iso'] = timestamp_iso if timestamp_iso is not None else now_utc_iso()
+    record['remapped_from'] = str(source.get('commit_sha', '')).strip()
+    return record
+
+
+def _change_rows(path: Path | None) -> list[dict[str, Any]]:
+    """Return the ``kind=change`` rows that carry a non-empty ``commit_sha``."""
+    return [
+        entry
+        for entry in read_entries(path)
+        if entry.get('kind') == KIND_CHANGE and isinstance(entry.get('commit_sha'), str) and entry['commit_sha'].strip()
+    ]
+
+
+def _derive_patch_id_map(
+    worktree_root: str,
+    resolved_rows: list[tuple[dict[str, Any], str]],
+    old_head: str | None,
+) -> tuple[list[tuple[str, str, str]], list[str]]:
+    """Derive ``(old_raw, old_full, new_full)`` pairs by stable patch-id.
+
+    Returns the pairs plus the recorded SHAs left unmapped. An unmapped rewrite
+    is a real outcome that needs the explicit append path, not a silent omission:
+    a patch that changed during conflict resolution has no counterpart.
+    """
+    rewritten = [(row, full) for row, full in resolved_rows if not commit_is_ancestor(worktree_root, full)]
+
+    candidate_shas: set[str] = set()
+    if old_head is not None:
+        old_head_full = resolve_commit(worktree_root, old_head)
+        if old_head_full is not None:
+            candidate_shas.update(_rev_list(worktree_root, f'{old_head_full}..HEAD'))
+    else:
+        for _row, full in rewritten:
+            candidate_shas.update(_rev_list(worktree_root, f'{full}..HEAD'))
+
+    new_by_patch: dict[str, str] = {}
+    for candidate in sorted(candidate_shas):
+        patch_id = _commit_patch_id(worktree_root, candidate)
+        # A patch-id seen twice among the candidates is ambiguous: two commits can
+        # carry the same patch (a cherry-pick replayed twice), and picking one
+        # would guess. Such a commit is never recorded as a target.
+        if patch_id is None:
+            continue
+        if patch_id in new_by_patch:
+            new_by_patch[patch_id] = ''
+        else:
+            new_by_patch[patch_id] = candidate
+
+    pairs: list[tuple[str, str, str]] = []
+    unmapped: list[str] = []
+    for row, full in rewritten:
+        raw = str(row.get('commit_sha', '')).strip()
+        patch_id = _commit_patch_id(worktree_root, full)
+        new_full = new_by_patch.get(patch_id, '') if patch_id is not None else ''
+        if new_full and new_full != full:
+            pairs.append((raw, full, new_full))
+        else:
+            unmapped.append(raw)
+    return pairs, unmapped
+
+
+def remap_change_rows(
+    *,
+    worktree_root: str,
+    worktree_sha: str | None,
+    explicit_map: dict[str, str] | None = None,
+    old_head: str | None = None,
+    ledger_path: Path | None = None,
+    dry_run: bool = False,
+) -> dict[str, Any]:
+    """Append mapped ``kind=change`` rows for rewritten commits.
+
+    ``explicit_map`` (an old-to-new map the rewriting step emitted) is consumed
+    verbatim; without it, the map is derived by stable patch-id from the rows
+    whose recorded commit is no longer an ancestor of HEAD. ``old_head`` scopes
+    the derivation to the commits a known rewrite replayed.
+
+    A pair that is already recorded — a row whose ``remapped_from`` and
+    ``commit_sha`` are exactly this pair — is skipped, so re-running the verb
+    after an interrupted run appends nothing twice. Appending is therefore
+    idempotent at the pair level even though the ledger itself stays pure-append.
+
+    Returns ``remap_count`` (rows appended), ``mappings`` (the pairs applied, as
+    ``old_commit_sha`` / ``new_commit_sha``), ``unmapped`` (recorded SHAs with no
+    counterpart) and ``ledger_path``.
+    """
+    rows = _change_rows(ledger_path)
+    resolved_rows: list[tuple[dict[str, Any], str]] = []
+    unresolved: list[str] = []
+    for row in rows:
+        raw_sha = str(row.get('commit_sha', '')).strip()
+        full = resolve_commit(worktree_root, raw_sha)
+        if full is None:
+            unresolved.append(raw_sha)
+        else:
+            resolved_rows.append((row, full))
+    existing_pairs = {
+        (str(row.get('remapped_from', '')).strip(), str(row.get('commit_sha', '')).strip())
+        for row in rows
+        if row.get('remapped_from')
+    }
+    by_full: dict[str, list[dict[str, Any]]] = {}
+    for row, full in resolved_rows:
+        by_full.setdefault(full, []).append(row)
+
+    if explicit_map is not None:
+        pairs: list[tuple[str, str, str]] = []
+        unmapped: list[str] = []
+        for old_raw, new_raw in explicit_map.items():
+            old_full = resolve_commit(worktree_root, old_raw)
+            new_full = resolve_commit(worktree_root, new_raw)
+            if old_full is None:
+                unresolved.append(old_raw.strip())
+            elif new_full is None:
+                unmapped.append(old_raw.strip())
+            elif old_full != new_full:
+                pairs.append((old_raw.strip(), old_full, new_full))
+    else:
+        pairs, unmapped = _derive_patch_id_map(worktree_root, resolved_rows, old_head)
+
+    mappings: list[dict[str, str]] = []
+    appended = 0
+    for old_raw, old_full, new_full in pairs:
+        if (old_raw, new_full) in existing_pairs:
+            continue
+        for source in by_full.get(old_full, []):
+            record = remap_record(
+                source=source,
+                new_commit_sha=new_full,
+                worktree_sha=worktree_sha,
+            )
+            if not dry_run:
+                append_entry(record, ledger_path)
+            appended += 1
+            mappings.append({'old_commit_sha': old_raw, 'new_commit_sha': new_full})
+
+    return {
+        'status': 'success',
+        'remap_count': appended,
+        'mappings': mappings,
+        'unmapped': unmapped,
+        'unresolved': unresolved,
+        'dry_run': dry_run,
+        'ledger_path': str(ledger_path if ledger_path is not None else resolve_ledger_path()),
     }
