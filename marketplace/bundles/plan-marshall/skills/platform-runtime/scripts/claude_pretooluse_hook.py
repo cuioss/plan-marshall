@@ -683,17 +683,35 @@ def _consume_wrapper_option(spec: dict[str, Any], token: str, tokens: list[str],
     return False, '', (2 if token in values else 1)
 
 
+def _shell_tokens(command: str) -> list[str]:
+    """Shell-lexical tokens with redirection operators split off.
+
+    ``shlex.split`` does not split ``<``/``>``, so an ATTACHED redirect kept the
+    operator inside the program token (``zsh<<<'python3 -c x'`` was one word), and
+    every first-token check missed both the wrapper and the shell spawn. The shell
+    parses such an operator as its own token, so this splitter does too — the same
+    shape the guard's ``shellSplit`` produces.
+    """
+    lexer = shlex.shlex(command, posix=True, punctuation_chars='<>')
+    lexer.whitespace_split = True
+    try:
+        return list(lexer)
+    except ValueError:
+        return command.split()
+
+
 def _r5_stripped_tokens(command: str) -> list[str]:
     """Return shell-lexical tokens of *command* minus R5-transparent prefixes.
 
-    Shell-lexical (``shlex``) like the other R5 helpers, falling back to the
+    Shell-lexical (``_shell_tokens``, which splits redirection operators like the
+    shell does) like the other R5 helpers, falling back to the
     whitespace split on malformed quoting rather than returning early, then
     walked by :func:`_strip_wrapper_tokens`. A ``find … -exec`` program hidden
     behind a wrapper (``env find . -exec python3 -c x {} +``) is spliced AFTER the
     wrapper walk, so the wrapper prefix cannot hide it.
     """
     try:
-        tokens = shlex.split(command)
+        tokens = _shell_tokens(command)
     except ValueError:
         tokens = command.split()
     stripped = _strip_wrapper_tokens(tokens)
@@ -833,7 +851,7 @@ def _executed_texts(command: str, cwd: str | None) -> list[tuple[str, str | None
     program position ends the walk.
     """
     try:
-        tokens = shlex.split(command)
+        tokens = _shell_tokens(command)
     except ValueError:
         tokens = command.split()
     table = _wrapper_table()
@@ -883,6 +901,11 @@ def _executed_texts(command: str, cwd: str | None) -> list[tuple[str, str | None
                 if option.startswith('-') and len(option) > 1:
                     index += 1
                     continue
+                if option in ('<', '>', '>>'):
+                    # A file redirection is not an operand: the NEXT token is the
+                    # file the shell reads (or writes), scanned below.
+                    index += 1
+                    continue
                 content = _read_text_if_file(option, current_cwd)
                 if content:
                     texts.append((content, current_cwd))
@@ -922,7 +945,7 @@ def _text_interpreter_verdict(text: str, root: str | None, base_cwd: str | None)
     admitted = False
     for segment in _spliced_segments(text):
         try:
-            tokens = shlex.split(segment)
+            tokens = _shell_tokens(segment)
         except ValueError:
             tokens = segment.split()
         next_cwd = _apply_segment_cwd(tokens, current)
@@ -962,14 +985,14 @@ def _command_names_interpreter_deep(command: str) -> bool:
     count, not by a depth cap.
     """
     try:
-        raw = shlex.split(command)
+        raw = _shell_tokens(command)
     except ValueError:
         raw = command.split()
     for token in raw:
         if _PYTHON_PROGRAM_RE.match(_wrapper_basename(token).lower()):
             return True
         try:
-            inner = shlex.split(token)
+            inner = _shell_tokens(token)
         except ValueError:
             inner = token.split()
         if len(inner) > 1 and _command_names_interpreter_deep(' '.join(inner)):

@@ -323,6 +323,25 @@ function shellSplit(command) {
       i++
       continue
     }
+    // A REDIRECTION operator is its own token even when it is attached to the
+    // program (`zsh<<<'…'`, `bash<fixture.sh`). The shell parses it that way, so
+    // a tokenizer that kept `zsh<<<…` as one word hid both the wrapper and the
+    // shell spawn from every first-token check.
+    if (ch === "<" || ch === ">") {
+      if (started) {
+        tokens.push(current)
+        current = ""
+        started = false
+      }
+      let op = ch
+      while (i + 1 < n && command[i + 1] === ch && op.length < 3) {
+        op += ch
+        i++
+      }
+      tokens.push(op)
+      i++
+      continue
+    }
     current += ch
     started = true
     i++
@@ -838,6 +857,12 @@ function executedTexts(command, cwd) {
           break
         }
         if (option.startsWith("-") && option.length > 1) {
+          i++
+          continue
+        }
+        if (option === "<" || option === ">" || option === ">>") {
+          // A file redirection is not an operand: the NEXT token is the file the
+          // shell reads (or writes), and a readable one is scanned below.
           i++
           continue
         }

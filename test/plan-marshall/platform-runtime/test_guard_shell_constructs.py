@@ -203,6 +203,45 @@ def test_a_table_shell_given_a_script_file_names_its_interpreter(tmp_path_factor
     assert _hook_refused(row, cwd=str(hook_dir)), 'the hook must refuse the same script file'
 
 
+def test_attached_redirection_forms_are_refused(tmp_path_factory) -> None:
+    """A redirection operator attached to the program is still an operator.
+
+    The shell parses `zsh<<<'…'` and `bash<fixture.sh` without whitespace, so a
+    tokenizer that kept them glued to the program hid both the wrapper and the
+    shell spawn from every first-token check (CodeRabbit, f058d4e43).
+    """
+    harness = build_harness(tmp_path_factory.mktemp('guard-attached-redirect'))
+    fixture = harness.root / 'fixture.sh'
+    fixture.write_text('python3 -c x\n', encoding='utf-8')
+    hook_dir = tmp_path_factory.mktemp('hook-attached-redirect')
+    (hook_dir / 'fixture.sh').write_text('python3 -c x\n', encoding='utf-8')
+
+    inline_rows = ["zsh<<<'python3 -c x'", 'zsh<<<"python3 -c x"']
+    file_rows = ['bash<fixture.sh', 'zsh<fixture.sh', 'zsh <fixture.sh']
+
+    for row in inline_rows:
+        blocked, message = harness.blocks(shell_event(row, agent=SUB_AGENT_AGENT))
+        assert blocked, f'guard.js admitted {row!r}'
+        assert 'R5' in message, f'{row!r} must be refused as R5; message={message!r}'
+        assert _hook_refused(row), f'the hook admitted {row!r}'
+
+    for row in file_rows:
+        blocked, message = harness.blocks(shell_event(row, agent=SUB_AGENT_AGENT))
+        assert blocked, f'guard.js admitted {row!r}'
+        assert 'R5' in message or 'R2' in message, f'{row!r} must be refused; message={message!r}'
+        assert (
+            _HOOK.evaluate(
+                {
+                    'agent_type': SUB_AGENT_AGENT,
+                    'tool_name': 'Bash',
+                    'tool_input': {'command': row},
+                    'cwd': str(hook_dir),
+                }
+            )
+            is not None
+        ), f'the hook admitted {row!r}'
+
+
 def test_r2_spawn_set_is_derived_from_the_shared_table(tmp_path_factory) -> None:
     """Neither implementation carries a second literal shell list."""
     table_shells = set(_SHELLS)
