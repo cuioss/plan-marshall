@@ -235,7 +235,7 @@ python3 .plan/execute-script.py plan-marshall:manage-change-ledger:manage-change
 
 `{pre_sha}` is the `pre_sha` field of the successful `worktree-rebase-to` result — the head before the rebase, so the derivation matches only the commits this rebase replayed. The map is derived by stable `git patch-id`, which hashes a commit's patch rather than its message.
 
-Read the first invocation's `unmapped` list before continuing. A commit whose patch changed during the rebase (a conflict resolution) has no patch-id counterpart and therefore no map entry: append its row explicitly rather than letting the remap guess, and record why the append was needed:
+Read the first invocation's `unmapped` list before continuing. A commit whose patch changed during the rebase (a conflict resolution) has no patch-id counterpart and therefore no map entry: append its row explicitly rather than letting the remap guess, and record why the append was needed. `{deliverable_id}` is the deliverable the rewritten commit belonged to — read it off the stale row the `unmapped` entry names, which is still in the ledger:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-change-ledger:manage-change-ledger append \

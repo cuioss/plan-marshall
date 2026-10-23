@@ -16,7 +16,7 @@ Both writers — the executor dispatch-boundary ``kind=build`` writer and the
 phase-5 ``kind=change`` writer — and both readers — the ``query`` verb and the
 ``pre-commit-verify-freshness`` gate — go through this core so entries are
 shaped identically and parsed identically. The rewrite-remap writes through the
-same :func:`append_entry`, so it is a third writer, never a second write path.
+same :func:`append_entry`, so it is never a second write path.
 
 **Tracked-config-dir resolution, NOT plan-scoped.** The ledger resolves via
 :func:`file_ops.get_tracked_config_dir` (modeled on ``manage-locks``), so it
@@ -408,9 +408,9 @@ def parse_sha_map_text(text: str) -> dict[str, str]:
     Accepts the JSON object ``--emit-map`` writes (``{"old": "new", ...}``), and
     the human form the rewriting step may hand-write: one pair per line, as
     ``old new``, ``old:new`` or ``old=new``. Blank lines and ``#`` comments are
-    ignored. An unparseable line is skipped rather than guessed at — the map is
-    an explicit assertion, so a line that does not name two SHAs cannot be
-    honoured as one.
+    ignored. A line that does not name two SHAs raises instead of being dropped:
+    the map is an explicit assertion, and silently discarding part of it would
+    turn a typo into a clean no-op that reports success and repairs nothing.
     """
     stripped = text.strip()
     if not stripped:
@@ -428,8 +428,9 @@ def parse_sha_map_text(text: str) -> dict[str, str]:
         if not candidate or candidate.startswith('#'):
             continue
         pair = _split_sha_pair(candidate)
-        if pair is not None:
-            mapping[pair[0]] = pair[1]
+        if pair is None:
+            raise ValueError(f'unparseable SHA map line (expected old new, old:new or old=new): {candidate!r}')
+        mapping[pair[0]] = pair[1]
     return mapping
 
 
@@ -538,9 +539,10 @@ def remap_change_rows(
     after an interrupted run appends nothing twice. Appending is therefore
     idempotent at the pair level even though the ledger itself stays pure-append.
 
-    Returns ``remap_count`` (rows appended), ``mappings`` (the pairs applied, as
-    ``old_commit_sha`` / ``new_commit_sha``), ``unmapped`` (recorded SHAs with no
-    counterpart) and ``ledger_path``.
+    Returns ``remap_count`` (rows mapped — appended unless ``dry_run``),
+    ``mappings`` (the pairs applied, as ``old_commit_sha`` / ``new_commit_sha``),
+    ``unmapped`` (recorded SHAs with no counterpart, plus explicit-map keys that
+    name no recorded row) and ``ledger_path``.
     """
     rows = _change_rows(ledger_path)
     resolved_rows: list[tuple[dict[str, Any], str]] = []
@@ -579,9 +581,16 @@ def remap_change_rows(
     mappings: list[dict[str, str]] = []
     appended = 0
     for old_raw, old_full, new_full in pairs:
+        sources = by_full.get(old_full, [])
+        if not sources:
+            # The explicit map named a commit no ledger row records: there is
+            # nothing to remap, and reporting success without naming the key
+            # would present a typo'd map as a completed repair.
+            unmapped.append(old_raw)
+            continue
         if (old_raw, new_full) in existing_pairs:
             continue
-        for source in by_full.get(old_full, []):
+        for source in sources:
             record = remap_record(
                 source=source,
                 new_commit_sha=new_full,
@@ -596,8 +605,8 @@ def remap_change_rows(
         'status': 'success',
         'remap_count': appended,
         'mappings': mappings,
-        'unmapped': unmapped,
-        'unresolved': unresolved,
+        'unmapped': list(dict.fromkeys(unmapped)),
+        'unresolved': list(dict.fromkeys(unresolved)),
         'dry_run': dry_run,
         'ledger_path': str(ledger_path if ledger_path is not None else resolve_ledger_path()),
     }

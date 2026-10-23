@@ -675,13 +675,41 @@ def test_whole_branch_unrecorded_reports_rewrite_signature_with_remap(plan_conte
     assert refusal['signature'] == 'history_rewritten', (
         f'A fully rewritten branch must report the rewrite signature, got {refusal!r}.'
     )
-    assert refusal['rewrite_detected'] is True
     assert refusal['unrecorded_commits'] == new_shas, 'the exact unrecorded SHAs must be enumerated'
     assert 'plan-marshall:manage-change-ledger:manage-change-ledger remap' in refusal['remap_invocation'], (
         f'The rewrite refusal must carry the ready-to-run remap invocation, got {refusal!r}.'
     )
     assert '--worktree-root' in refusal['remap_invocation']
-    assert 'append_invocation' not in refusal, 'a rewrite must not be repaired by a blind append'
+    assert 'append_invocation' not in refusal, (
+        'a proven rewrite (every recorded row left HEAD) must not offer a blind append'
+    )
+
+
+def test_whole_branch_with_live_ledger_rows_carries_both_remedies(plan_context, monkeypatch) -> None:
+    """The whole branch unrecorded beside live rows cannot be proven a rewrite.
+
+    A ledger that still holds a landed plan's rows makes "the unrecorded set is
+    the whole branch" true for a branch whose settlement simply never ran. The
+    guard must not then claim every recorded row left HEAD (it did not) or send
+    the reader to a remap that would map nothing: it carries both repairs.
+    """
+    plan_id = 'rewrite-whole-branch-live-rows'
+    _seed_rewrite_gate_plan(plan_context, plan_id)
+    new_shas = ['1' * 40, '2' * 40, '3' * 40]
+    monkeypatch.setattr(_lifecycle, '_branch_commit_shas', lambda _p, _b: new_shas)
+    monkeypatch.setattr(_lifecycle, '_recorded_change_shas', lambda: {'a' * 40})
+    monkeypatch.setattr(_lifecycle, '_sha_is_ancestor_of_head', lambda _w, _s: True)
+
+    refusal = _rewrite_refusal(plan_id)
+
+    assert refusal is not None
+    assert refusal['signature'] == 'history_rewritten'
+    assert 'remap_invocation' in refusal, 'the rewrite signature must still offer the remap'
+    assert refusal['append_invocations'], f'The unprovable case must also offer the append repair, got {refusal!r}.'
+    assert 'every recorded row points at a commit' not in refusal['message'], (
+        f'The message must not assert staleness the guard did not establish, got {refusal["message"]!r}.'
+    )
+    assert 'If it was not rewritten' in refusal['message']
 
 
 def test_one_missing_row_reports_plain_gap_with_append_invocation(plan_context, monkeypatch) -> None:
@@ -701,7 +729,6 @@ def test_one_missing_row_reports_plain_gap_with_append_invocation(plan_context, 
     assert refusal['signature'] == 'bookkeeping_gap', (
         f'A partial gap with a live recorded row must stay a plain gap, got {refusal!r}.'
     )
-    assert refusal['rewrite_detected'] is False
     assert refusal['unrecorded_commits'] == [missing]
     assert missing in refusal['append_invocation'], (
         f'The plain-gap refusal must carry the append invocation for the missing commit, got {refusal!r}.'
@@ -715,24 +742,29 @@ def test_every_recorded_row_absent_from_head_is_a_rewrite_even_when_partially_un
 ) -> None:
     """Every recorded SHA missing from HEAD's history is the rewrite signature.
 
-    The unrecorded set here is ONE commit, not the whole branch — but the rows
-    that exist all point outside HEAD's history, so the store is a stale record of
-    a branch that was rewritten, not a partially-settled branch.
+    One branch commit still matches a recorded row, so the unrecorded set is TWO
+    of three, not the whole branch — the whole-branch arm cannot fire here. The
+    rows that do exist all point outside HEAD's history, so the store is a stale
+    record of a branch that was rewritten. This is the case that reaches the
+    second criterion.
     """
     plan_id = 'rewrite-all-rows-absent'
     _seed_rewrite_gate_plan(plan_context, plan_id)
-    new_shas = ['1' * 40, '2' * 40, '3' * 40]
+    live = '1' * 40
+    new_shas = [live, '2' * 40, '3' * 40]
     monkeypatch.setattr(_lifecycle, '_branch_commit_shas', lambda _p, _b: new_shas)
-    monkeypatch.setattr(_lifecycle, '_recorded_change_shas', lambda: {'a' * 40, 'b' * 40})
+    monkeypatch.setattr(_lifecycle, '_recorded_change_shas', lambda: {live})
     monkeypatch.setattr(_lifecycle, '_sha_is_ancestor_of_head', lambda _w, _s: False)
 
     refusal = _rewrite_refusal(plan_id)
 
     assert refusal is not None
+    assert refusal['unrecorded_commits'] == ['2' * 40, '3' * 40], (
+        'the fixture must not be the whole branch, or the whole-branch arm fires first'
+    )
     assert refusal['signature'] == 'history_rewritten', (
         f'Every recorded SHA outside HEAD must report a rewrite, got {refusal!r}.'
     )
-    assert refusal['unrecorded_commits'] == new_shas
     assert 'remap_invocation' in refusal
 
 

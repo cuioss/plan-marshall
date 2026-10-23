@@ -516,7 +516,13 @@ def _remap_invocation(worktree_path: str) -> str:
 
 
 def _append_invocation(worktree_path: str, commit_sha: str) -> str:
-    """The ready-to-run append invocation for one missing commit."""
+    """The append invocation for one missing commit.
+
+    ``--deliverable-id`` carries the documented :data:`_DELIVERABLE_ID_PLACEHOLDER`
+    rather than a guessed id: the boundary knows the commit has no row, but not
+    which deliverable produced it. Omitting the flag would yield an invocation
+    argparse rejects, so the placeholder is the only honest form.
+    """
     return _ready_to_run(
         [
             *_EXECUTOR_PREFIX,
@@ -533,8 +539,13 @@ def _append_invocation(worktree_path: str, commit_sha: str) -> str:
     )
 
 
-def _is_history_rewrite(worktree_path: str, unrecorded: list[str], branch_shas: list[str], recorded: set[str]) -> bool:
-    """Whether the unrecorded set carries a history rewrite's signature.
+def _rewrite_evidence(
+    worktree_path: str,
+    unrecorded: list[str],
+    branch_shas: list[str],
+    recorded: set[str],
+) -> tuple[bool, bool]:
+    """Return ``(is_rewrite, every_recorded_row_stale)`` for the unrecorded set.
 
     Two conditions identify a rewrite rather than a skipped settlement:
 
@@ -544,12 +555,18 @@ def _is_history_rewrite(worktree_path: str, unrecorded: list[str], branch_shas: 
       describes a history that HEAD replaced.
 
     A partial gap beside at least one live recorded row is neither: that branch
-    was not rewritten, and appending the missing rows is the repair. The check
-    is ordered so the whole-branch case costs no git calls.
+    was not rewritten, and appending the missing rows is the repair.
+
+    The second return value separates the two conditions, because they support
+    different claims. Only ``every_recorded_row_stale`` proves that the recorded
+    rows describe a history HEAD replaced; the whole-branch condition alone does
+    not — a ledger that holds a landed plan's rows is exactly that case, and a
+    branch whose settlement simply never ran there would be sent to a remap that
+    maps nothing.
     """
-    if unrecorded and len(unrecorded) == len(branch_shas):
-        return True
-    return not any(_sha_is_ancestor_of_head(worktree_path, sha) for sha in recorded)
+    stale = not any(_sha_is_ancestor_of_head(worktree_path, sha) for sha in recorded)
+    whole_branch = bool(unrecorded) and len(unrecorded) == len(branch_shas)
+    return (bool(whole_branch or stale), stale)
 
 
 def _recorded_change_shas() -> set[str] | None:
@@ -619,6 +636,10 @@ def _phase_end_marker_refusal(plan_id: str, status: dict[str, Any]) -> dict[str,
       otherwise, carrying ``append_invocations`` (plus the first as
       ``append_invocation``). The remedy differs because the cause does:
       remapping stale rows is not the same repair as appending skipped ones.
+      When the whole branch is unrecorded but the ledger still holds live rows
+      for other work, the guard cannot tell a rewrite from a settlement that
+      never ran, so the rewrite signature carries BOTH repairs rather than send
+      the reader to a remap that would map nothing.
     - ``None`` (pass) — no worktree in play, no persisted path, an empty
       range, or full coverage. Each pass-through is a distinct unevaluable
       state, never a clean verdict over an examined store. An unreadable
@@ -723,36 +744,56 @@ def _phase_end_marker_refusal(plan_id: str, status: dict[str, Any]) -> dict[str,
             'recorded. Run the phase-5-execute Step 10a settlement bookkeeping, then retry the transition.'
         )
         remedy: dict[str, Any] = {}
-    elif _is_history_rewrite(worktree_path, unrecorded, branch_shas, recorded):
-        error = EXECUTE_COMMITS_UNRECORDED_ERROR
-        remap_invocation = _remap_invocation(worktree_path)
-        message = (
-            f'{len(unrecorded)} of {len(branch_shas)} worktree-branch commit(s) since diverging from '
-            f'{base_branch} carry no kind=change ledger row, and every recorded row points at a commit '
-            "that is no longer in HEAD's history: the branch history was rewritten (rebase, amend or "
-            'cherry-pick), not left unrecorded. Map the recorded rows onto their rewritten counterparts, '
-            f'then retry the transition: {remap_invocation}'
-        )
-        remedy = {
-            'signature': 'history_rewritten',
-            'rewrite_detected': True,
-            'remap_invocation': remap_invocation,
-        }
     else:
-        error = EXECUTE_COMMITS_UNRECORDED_ERROR
+        is_rewrite, every_row_stale = _rewrite_evidence(worktree_path, unrecorded, branch_shas, recorded)
         append_invocations = [_append_invocation(worktree_path, sha) for sha in unrecorded]
-        message = (
-            f'{len(unrecorded)} of {len(branch_shas)} worktree-branch commit(s) since diverging from '
-            f'{base_branch} carry no kind=change ledger row. Run the phase-5-execute Step 10a '
-            f'settlement bookkeeping for the unrecorded commits, then retry the transition: '
-            f'{append_invocations[0]}'
-        )
-        remedy = {
-            'signature': 'bookkeeping_gap',
-            'rewrite_detected': False,
-            'append_invocations': append_invocations,
-            'append_invocation': append_invocations[0],
-        }
+        if is_rewrite:
+            error = EXECUTE_COMMITS_UNRECORDED_ERROR
+            remap_invocation = _remap_invocation(worktree_path)
+            if every_row_stale:
+                message = (
+                    f'{len(unrecorded)} of {len(branch_shas)} worktree-branch commit(s) since diverging from '
+                    f'{base_branch} carry no kind=change ledger row, and every recorded row points at a commit '
+                    "that is no longer in HEAD's history: the branch history was rewritten (rebase, amend or "
+                    'cherry-pick), not left unrecorded. Map the recorded rows onto their rewritten counterparts, '
+                    f'then retry the transition: {remap_invocation}'
+                )
+                remedy = {
+                    'signature': 'history_rewritten',
+                    'remap_invocation': remap_invocation,
+                }
+            else:
+                # Whole branch unrecorded, but the ledger still holds live rows
+                # for other work: either this branch was rewritten or its
+                # settlement never ran, and this guard cannot tell which. Carry
+                # BOTH repairs rather than send the reader to a remap that would
+                # map nothing.
+                message = (
+                    f'{len(unrecorded)} of {len(branch_shas)} worktree-branch commit(s) since diverging from '
+                    f'{base_branch} carry no kind=change ledger row and no branch commit matches a recorded '
+                    'row: the whole branch is unrecorded. If it was rewritten (rebase, amend or cherry-pick), '
+                    f'map the recorded rows onto their rewritten counterparts: {remap_invocation} If it was '
+                    f'not rewritten, record the unrecorded commits: {append_invocations[0]}'
+                )
+                remedy = {
+                    'signature': 'history_rewritten',
+                    'remap_invocation': remap_invocation,
+                    'append_invocations': append_invocations,
+                    'append_invocation': append_invocations[0],
+                }
+        else:
+            error = EXECUTE_COMMITS_UNRECORDED_ERROR
+            message = (
+                f'{len(unrecorded)} of {len(branch_shas)} worktree-branch commit(s) since diverging from '
+                f'{base_branch} carry no kind=change ledger row. Run the phase-5-execute Step 10a '
+                f'settlement bookkeeping for the unrecorded commits, then retry the transition: '
+                f'{append_invocations[0]}'
+            )
+            remedy = {
+                'signature': 'bookkeeping_gap',
+                'append_invocations': append_invocations,
+                'append_invocation': append_invocations[0],
+            }
     return {
         'status': 'error',
         'plan_id': plan_id,

@@ -240,3 +240,79 @@ def test_second_remap_appends_nothing(rewrite_env) -> None:
     assert second.success, second.stderr
     assert second.toon()['remap_count'] == 0
     assert len(rewrite_env.change_rows()) == 6
+
+
+def test_emit_map_dry_run_writes_the_map_without_appending_then_the_map_is_consumed(rewrite_env, monkeypatch) -> None:
+    """The rewriting step's emit → consume flow maps the ledger in two passes.
+
+    The first invocation proves the map and the ledger state are separate: it
+    writes the map, appends nothing, and the boundary still refuses. The second
+    consumes the emitted map and clears the boundary.
+    """
+    rewrite_env.record_all()
+    rewrite_env.advance_main()
+    rewrite_env.rebase_onto_main()
+    rebased_shas = _git(rewrite_env.repo, 'rev-list', '--reverse', 'main..HEAD').splitlines()
+    map_path = rewrite_env.base / 'sync-baseline-sha-map.json'
+
+    emitted = rewrite_env.run(
+        'remap',
+        '--worktree-root',
+        str(rewrite_env.repo),
+        '--old-head',
+        rewrite_env.shas[2],
+        '--emit-map',
+        str(map_path),
+        '--dry-run',
+    )
+
+    assert emitted.success, emitted.stderr
+    data = emitted.toon()
+    assert data['remap_count'] == 3
+    assert data['dry_run'] is True
+    assert data['map_file'] == str(map_path)
+    assert len(rewrite_env.change_rows()) == 3, 'a dry run must append nothing'
+    applied = json.loads(map_path.read_text(encoding='utf-8'))
+    assert set(applied) == set(rewrite_env.shas)
+    assert set(applied.values()) == set(rebased_shas)
+    assert _boundary_refusal(rewrite_env, monkeypatch) is not None, 'nothing was repaired yet'
+
+    consumed = rewrite_env.run('remap', '--worktree-root', str(rewrite_env.repo), '--map-file', str(map_path))
+
+    assert consumed.success, consumed.stderr
+    assert consumed.toon()['remap_count'] == 3
+    assert _boundary_refusal(rewrite_env, monkeypatch) is None
+
+
+def test_inline_map_is_consumed(rewrite_env) -> None:
+    """The comma-separated ``--map`` form maps an explicit old-to-new pair."""
+    rewrite_env.record_all()
+    (rewrite_env.repo / 'f3.txt').write_text('3, edited\n', encoding='utf-8')
+    _git(rewrite_env.repo, 'add', 'f3.txt')
+    _git(rewrite_env.repo, 'commit', '-q', '--amend', '-m', 'commit 3, changed content')
+    amended = _git(rewrite_env.repo, 'rev-parse', 'HEAD')
+
+    result = rewrite_env.run(
+        'remap',
+        '--worktree-root',
+        str(rewrite_env.repo),
+        '--map',
+        f'{rewrite_env.shas[2]}:{amended}',
+    )
+
+    assert result.success, result.stderr
+    assert result.toon()['remap_count'] == 1
+
+
+def test_unparseable_map_line_is_refused(rewrite_env) -> None:
+    """A typo'd map line fails loud instead of reading as a clean no-op."""
+    rewrite_env.record_all()
+    map_path = rewrite_env.base / 'broken-map.txt'
+    map_path.write_text('not-a-sha-pair\n', encoding='utf-8')
+
+    result = rewrite_env.run('remap', '--worktree-root', str(rewrite_env.repo), '--map-file', str(map_path))
+
+    data = result.toon()
+    assert data['status'] == 'error'
+    assert data['error_code'] == 'INVALID_INPUT'
+    assert len(rewrite_env.change_rows()) == 3, 'a refused map must append nothing'

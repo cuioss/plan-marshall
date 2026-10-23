@@ -272,7 +272,10 @@ The old-to-new map has two sources:
 An old commit whose patch changed (a conflict resolved during the rebase) has no
 patch-id counterpart: it is reported in `unmapped` rather than guessed at, and
 needs the explicit append path. A SHA that does not resolve in the repository is
-reported in `unresolved` for the same reason. Rows appended by an earlier run
+reported in `unresolved` for the same reason, and an explicit-map key that names
+no recorded row is reported in `unmapped` — a typo'd map is never a silent
+success. A line of a hand-written map that does not name two SHAs is refused,
+not dropped. Rows appended by an earlier run
 are skipped by their `remapped_from` / `commit_sha` pair, so re-running after an
 interruption appends nothing twice. `--dry-run` reports the map without
 appending; `--emit-map PATH` writes the applied map as JSON.
@@ -366,7 +369,7 @@ from _ledger_core import (
 - `build_record(...)` / `change_record(...)` / `job_record(...)` — constructors that stamp `kind`, `worktree_sha`, `timestamp_iso` and the kind-specific fields, so every writer and the CLI produce identically-shaped entries. `build_record` keeps the two invocation layers apart (`args` = executor argv, `command` = wrapper-resolved command) and carries the wrapper-reported `duration_seconds` / `outcome`; those three are keyword-only with a `None` default, so the payload-less CLI writer needs no change. `change_record` stores the caller-supplied `changed_paths` verbatim — it does NOT compute changed paths. `job_record` persists a submit-time `job_id` (+ `fingerprint` / `notation`) for build re-attach.
 - `remap_change_rows(...)` — the rewrite-remap: derive or consume an old-to-new map, then append one `remap_record` per affected row. Returns `remap_count`, `mappings`, `unmapped` / `unresolved` and the ledger path. Idempotent at the `(remapped_from, commit_sha)` pair level, so a repeated run appends nothing.
 - `remap_record(...)` — the mapped-row constructor: copies the source row's recorded facts and stamps `commit_sha` / `worktree_sha` / `timestamp_iso` / `remapped_from`.
-- `parse_sha_map_text(...)` — parse the map from JSON (`--emit-map` output) or lines of `old new` / `old:new` / `old=new`; unparseable lines are skipped, never guessed at.
+- `parse_sha_map_text(...)` — parse the map from JSON (`--emit-map` output) or lines of `old new` / `old:new` / `old=new`; a line that does not name two SHAs is refused rather than dropped, so a typo cannot read as a clean no-op.
 - `commit_is_ancestor(...)` / `resolve_commit(...)` — the git primitives the derivation shares, so no consumer re-implements the ancestry or rev-parse check.
 
 
