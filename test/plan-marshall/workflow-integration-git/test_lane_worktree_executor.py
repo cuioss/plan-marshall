@@ -192,7 +192,7 @@ def _create_worktree() -> dict:
 
 
 def _prepare_ns() -> Namespace:
-    return parse_ns(
+    ns: Namespace = parse_ns(
         'plan-marshall',
         'workflow-integration-git',
         'prepare_execute.py',
@@ -202,6 +202,7 @@ def _prepare_ns() -> Namespace:
         '--branch',
         f'fix/{_PLAN_ID}',
     )
+    return ns
 
 
 def _live_prepare_execute():
