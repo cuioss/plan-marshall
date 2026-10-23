@@ -109,13 +109,24 @@ derive, for rows still live.
   `landings/PLAN-LB-86.md`. OpenCode measurement chain: out of scope by the focus rule, so only the process was analysed.
   Lane text not re-read across a restart; a killed round-3 self-review sub-agent is missing from the report. Fix-forward: none.
 
+- **PLAN-LB-73** (shipped #1843, 2026-10-23, runbook lane, `deepseek-v4.1-flash/high`) — see
+  `landings/PLAN-LB-73.md`. D1-D4 all landed; the merged tree carries `executor-skew`, `build-routing`,
+  `build_missing_canonicals` and the `executor_absent_from_worktree` reason. Sonar `0 confirmed` re-read on the PR and
+  agreeing with the landing. Declared 7 entries, realized 3, **no expansion** (the four untouched declarations are
+  over-declaration, not under-declaration), so no spec surface needed correcting. The report is accurate where checkable:
+  two CodeRabbit findings rounds, the guard line, the commit trailer and the merge sha all corroborate. Debit: the landing
+  is `complete: false` on `total_tokens` (recurrence 2 of the PLAN-LB-49 entry), and it reports two shell file reads the
+  guard cannot see. Grading deferred to the audit pass; the report's disclosures are the strongest of any runbook run so far.
+
 - **PLAN-LB-92** (staged 2026-10-23, WS-04, runbook lane, operator-prioritised **next plan**) — a lane worktree has its own
-  executor. Not running: PLAN-LB-73 D4 (PR #1843, open) chose to check for the missing executor and record
+  executor. Not running: PLAN-LB-73 D4 chose to check for the missing executor and record
   `executor_absent_from_worktree`, a disclosure that leaves the worktree without one. LB-92 produces it at worktree creation
   through the lifecycle's own seam (`prepare_execute._generate_worktree_executor`), adds a refresh verb so a plan's new script
   verb runs without a direct interpreter call, and routes lane builds through it. Root fix of the "plan cannot run the verb it
   introduces" Open Defect (PLAN-LB-85, PLAN-LB-88). Overlap prompt answered 2026-10-23: **hold until PLAN-LB-73 lands** (4 shared
-  files with it); emit first in the next block once the LB-73 landing arrives.
+  files with it). **Unblocked 2026-10-23: PLAN-LB-73 shipped (#1843), so the shared surface is no longer in flight.**
+  PLAN-LB-73's own run is the live evidence for the defect this plan fixes: every build answered
+  `executor_absent_from_worktree` and ran `in_process`.
 
 - **Parked by the focus rule (2026-10-23, operator-accepted split):** PLAN-LB-87 (token recording), LB-84, LB-69, LB-89,
   LB-83, LB-75, LB-41, LB-46, LB-51, LB-57. They stay in the corpus and resume on the surface they declare. Blocking set kept
@@ -372,6 +383,15 @@ derive, for rows still live.
 
 ## Decisions
 
+- 2026-10-23 — **PLAN-LB-73 landed and was reconciled from the inbox, not from a paste.** The drain-completeness check
+  reported `complete: false` on `total_tokens` alone, which the ruling above puts out of scope, so no defect was opened. The
+  corroboration that mattered: merge sha `3873b6695` on `origin/main`, both CodeRabbit finding rounds at 10:47:35Z and
+  12:00:34Z, the guard line at `guard.log:175`, a Sonar re-read of `0 confirmed` agreeing with the landing, and
+  `surface_delta` measured **clean** (7 declared, 3 realized, `added_count=0`). Two Open Defects retired on the evidence
+  (§7's summary-comment rule; the merge-gate re-read), one landing residue **contradicted** rather than folded (the
+  `executor-skew` / `build-routing` "unknown_verb" claim does not reproduce: both resolve here), and one Watch narrowed
+  (the install-lag trigger is satisfied for this cycle by content). **PLAN-LB-92's hold is released**: its four shared
+  files with PLAN-LB-73 are no longer in flight.
 - 2026-10-23 — **Operator rulings on the review quota, the standing authorization, Sourcery and token usage,
   and a focus rule for the whole epic.** (1) *CodeRabbit quota:* when the quota refuses a review, wait. Other plans
   draw on the same quota, so there is nothing sensible to do about it; no cap on concurrent plans, no escalated trigger
@@ -873,14 +893,19 @@ derive, for rows still live.
   workflow, `worktree_unresolved` hides every plan without a worktree, per-function matching misses
   class methods and delete-and-compensate moves, and `triage.md` and `review-rubric.md` contradict the
   code.
-- **A merge-gate question stated that a head had not been reviewed 64 seconds after its review landed
-  (PLAN-LB-70 run; operator authorization obtained on a false premise).** Folded into PLAN-LB-73 D1
-  (re-read the review surfaces in the same step as the question and before the enqueue). The
-  operator's selection is treated as no authorization for that merge.
-- **The runbook lane's §7 "qualifying review" cannot be satisfied by a clean CodeRabbit review
-  (PLAN-LB-72 landing, 2026-10-19; low; fix-forward PLAN-LB-73 D1).** §7 excludes a summary comment,
+- **RETIRED 2026-10-23 (PLAN-LB-73 shipped #1843: §7's question step now re-reads `ci pr comments`,
+  `ci pr reviews` and the marker-bearing summary comment in the same step and again before the enqueue, and a
+  late review of the current head invalidates the answer).** **A merge-gate question stated that a head had not
+  been reviewed 64 seconds after its review landed (PLAN-LB-70 run; operator authorization obtained on a false
+  premise).** Folded into PLAN-LB-73 D1. The operator's selection is treated as no authorization for that merge.
+- **RETIRED 2026-10-23 (PLAN-LB-73 shipped #1843: §7 now counts a reviewer's marker-bearing summary comment
+  — `final_review_risk_coverage` with `sourceCommitId` / `coveredCommitId` / `kind=reviewed` — as a qualifying
+  review for a quota-limited reviewer, and keeps the current-head rule for the others). The retirement is
+  demonstrated on this very landing: PLAN-LB-73's standing authorization rests on exactly such a summary
+  marker on `39701dea8`.** **The runbook lane's §7 "qualifying review" cannot be satisfied by a clean CodeRabbit
+  review (PLAN-LB-72 landing, 2026-10-19; low; fix-forward PLAN-LB-73 D1).** §7 excluded a summary comment,
   while CodeRabbit publishes a clean review only as a marker-bearing summary comment. The standing
-  authorization therefore keys on reviews that had findings, and `ci pr reviews` was empty on #1819
+  authorization therefore keyed on reviews that had findings, and `ci pr reviews` was empty on #1819
   although both bots reviewed the merge head. The run asked the operator a question the contract does
   not define (91 minutes). The main condition ("reviewed the current head") held.
 - **Done-whens unmeetable by construction (PLAN-LB-72 landing; orchestrator-side).** A preservation or
@@ -905,7 +930,14 @@ derive, for rows still live.
 - **The main executor does not know `build-classify` (2026-10-19).** `.plan/execute-script.py`
   lists only the `resolve` child for the lane (digest `2caadbf…`); the installed OpenCode lane text
   is still pre-PLAN-LB-67. Operator action: regenerate the executor (`marshall-steward`), then
-  `/sync-harnesses`.
+  `/sync-harnesses`. **Recurrence 2 (PLAN-LB-73 landing, 2026-10-23) — REPORTED, THEN CONTRADICTED:**
+  the landing's Residue says `executor-skew` and `build-routing` "are not in any deployed executor's
+  surface cache yet" and that invoking either "still answers `unknown_verb`". Re-checked at analysis on
+  this machine, both resolve: `runbook_lane executor-skew --help` and `runbook_lane build-routing --help`
+  return their real argument surfaces. So the claim was already stale when the landing was drained — the
+  executor was regenerated or recovered the subcommand in between — and it is **not** an open defect.
+  The genuine half of the observation stands and is what PLAN-LB-92 owns: a runbook worktree carries no
+  executor at all, which is why every one of this run's builds answered `executor_absent_from_worktree`.
 - **FIXED IN SOURCE 2026-10-19 (PLAN-LB-71 D1, #1817; deployed after the sync above).** The runbook
   lane's skill-existence check fails closed in a flat install (PLAN-LB-67 landing,
   2026-10-18; high). `runbook_lane.py:167-202` resolves a bare name and
@@ -1618,6 +1650,12 @@ entries below are OpenCode 1 assumptions in plan-marshall that OpenCode 2 broke.
   equals `cf28a05db`; its mtime is the sync, 06:39Z) and, like LB-45, did not re-read it after its server
   restart. **Source has moved again (#1802, #1824, #1826): sync before PLAN-LB-78 is emitted.** Retire when
   `/sync-harnesses --target opencode` has run and the installed lane has been read against `main`.
+  **2026-10-23 check (PLAN-LB-73 landing): met for this cycle — the installed OpenCode lane
+  (`~/.config/opencode/skills/plan-marshall-runbook-lane/SKILL.md`) carries `### executor-skew` and
+  `### build-routing`, the two verbs #1843 introduced, so it is at least as new as the merged source. The
+  watch stays open rather than retired: the sync itself was not observed, only its effect, and the next
+  lane change re-opens the same gap. Trigger narrowed — re-run the content check (not a blind sync) before
+  each runbook emit.**
 - **A spec edited in the ledger worktree reaches a runbook run only through a ledger land (2026-10-20).**
   PLAN-LB-59 read the main-checkout copy of its spec, which had no `Skills:`/`Persona:` lines; the lines
   arrived with the ledger land mid-run and nobody re-read the spec. PLAN-LB-74's precursor session and
