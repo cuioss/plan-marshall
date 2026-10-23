@@ -68,9 +68,10 @@ python3 .plan/execute-script.py plan-marshall:runbook-lane:runbook_lane build-ro
 ```
 
 Decides whether the next build may be submitted to the daemon or must run in-process, from whether
-the worktree carries its own `.plan/execute-script.py`. It answers `auto` (submit with no execution
-flag) or `in_process` with the `executor_absent_from_worktree` reason. Section 4 runs it before the
-first routed build.
+the worktree carries a usable `.plan/execute-script.py`. It answers `executor_in_worktree:
+present|absent`, then `auto` (submit with no execution flag) or `in_process` with the
+`executor_absent_from_worktree` reason for the degraded case. Section 4 runs it before the first
+routed build.
 
 ### build-classify
 
@@ -171,6 +172,7 @@ The result supplies, and nothing below is spelled from anywhere else:
 | build server state | `build_server`, plus `build_server_reason` when the state is `down` |
 | Sonar state, and the project key when configured | `sonar` (`configured` \| `not_configured`), plus `sonar_project_key` when it is `configured` |
 | Sonar CE-readiness wait budget (seconds) | `sonar_ce_wait_timeout_seconds`, present only when `sonar` is `configured`: the harness's Bash ceiling less a teardown margin (the provider's own 600s default when the target imposes no ceiling). An unreadable ceiling is `sonar_ce_ceiling_unreadable`, never a 600s fallback that a lower ceiling would kill |
+| worktree executor state | `executor_in_worktree` (`present` \| `absent`), plus `executor_reason` when `absent`: `worktree_not_created` for a resolve taken before setup, `executor_absent_from_worktree` for a worktree whose slot was never filled |
 
 The branch row is derived from the project's configuration rather than returned by `resolve`; every
 other row names a field of the resolve result.
@@ -356,6 +358,9 @@ All commands run from the main checkout (the repository root).
    - The verb also prepares the worktree's plan-local directory and its build tool. Bookkeeping
      warnings about a missing plan status are expected; ignore them.
    - `error: worktree_exists` means this is a resume: reuse the worktree.
+   - It PRODUCES the worktree's own `.plan/execute-script.py` and reports `executor_in_worktree:
+     present`, or `absent` with the reason. Record the verdict; an `absent` slot is a degradation the
+     build gate has to route around (section 4), never a reason to fail the creation.
 4. `git -C {worktree} push -u origin {branch}`. Make no edit before this push.
 5. **Check every named skill and persona exists.** The resolve result carries one row per spec
    deliverable with its `Skills:` and `Persona:` declarations. A `Skills:` entry is a
@@ -395,11 +400,11 @@ is submitted to the build daemon.
      the authority for how THAT build ran. The `build-routing` check (section 4) decides whether a
      build may be routed at all.
    - `ready` — routing is available. A routed job re-runs the worktree's own `.plan/execute-script.py`,
-     never the main checkout's. Worktree creation does NOT supply it: its
-     `_ensure_worktree_plan_local_real` creates only `.plan/local`, and the executor is moved in by
-     `prepare_execute`, which this lane never runs. Section 4 therefore runs the `build-routing` check
-     before the first routed build and answers `in_process` with
-     `executor_absent_from_worktree` when it is absent.
+     never the main checkout's. Worktree creation PRODUCES that executor through the same seam the
+     phase-5 move-in uses, and its payload reports `executor_in_worktree: present`, or `absent` with
+     the reason. Read that verdict and record it; a `present` slot is what lets a routed build submit.
+     Section 4 still runs the `build-routing` check before the first routed build, and only an
+     `absent` slot degrades it to `in_process` with the `executor_absent_from_worktree` reason.
 
 ## 3. Implement, deliverable by deliverable
 
@@ -417,7 +422,14 @@ For each deliverable, in the spec's order:
 2. Write the Done-when tests and capture their evidence under the `order` §1 defines.
 3. Implement. Run the tests; record them passing.
 4. If any `*.py` changed, run the quality gate (step 4) until clean.
-5. Commit with the deliverable paths staged by name, then push. Record `D{n} done` in the progress
+5. **Refresh the worktree executor after adding, removing or renaming a script verb**, before running
+   the new verb in this worktree:
+   `python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow worktree-executor-refresh --plan-id {plan}`.
+   The executor embeds the script map and argparse surface it derived when the worktree was created,
+   so a verb the branch adds is refused as `unknown_verb` until that surface is rebuilt — and the
+   rebuild goes through this verb, never through a direct interpreter call to the generator by path.
+   Record `executor_regenerated` and its detail; a `false` is a blocker, not a warning.
+6. Commit with the deliverable paths staged by name, then push. Record `D{n} done` in the progress
    file.
 
 ## 4. Build gate
@@ -436,10 +448,11 @@ publishes no test part supplies no `{build.module-tests}`:
 - **Routing.** `auto` submits the job to the build daemon when the setup preflight found it `ready`,
   and runs in-process otherwise. Before the first routed build, run
   `python3 .plan/execute-script.py plan-marshall:runbook-lane:runbook_lane build-routing --worktree {worktree}`:
-  `auto` means submit with no execution flag; `in_process` means pass `--execution-mode in_process`
-  for that build and record the `executor_absent_from_worktree` reason it names, so the gate still
-  runs instead of ending terminal on an executor worktree creation never supplied. A routed job
-  re-runs the worktree's own executor. The daemon applies its OWN supervisory bound, which
+  `auto` means the worktree carries its own executor and the build submits with no execution flag, so
+  the daemon re-runs that executor; `in_process` is the DEGRADED answer for an `absent` slot, where
+  the run passes `--execution-mode in_process` for that build and records the
+  `executor_absent_from_worktree` reason, so the gate still runs instead of ending terminal on an
+  executor the worktree does not carry. The daemon applies its OWN supervisory bound, which
   `--timeout` can only raise; a bound expiry comes back as `timeout` naming `timeout_used_seconds`
   and `timeout_source`, and the client's rules for it are cited, not restated. Record a bound
   expiry and continue with the split form below rather than re-submitting the same bound.

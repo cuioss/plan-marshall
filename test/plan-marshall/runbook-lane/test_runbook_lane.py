@@ -914,17 +914,18 @@ def _fenced_blocks(section: str) -> list[str]:
 
 
 def test_skill_does_not_forbid_the_build_daemon() -> None:
-    """The old blanket prohibition is gone and the executor premise is true."""
+    """The old blanket prohibition is gone and the executor premise is current."""
     text = _skill_text()
     lowered = text.lower()
     assert 'Never use the daemon' not in text
     assert 'never drop `--execution-mode in_process`' not in text
     assert 'worktree has no executor' not in lowered
     # The positive premise: a routed job re-runs the worktree's OWN executor, and
-    # the lane checks for it before the first routed build because creation does
-    # NOT supply it.
+    # creation PRODUCES that executor, so the pre-routing check exists only to
+    # route the degraded case.
     assert "the worktree's own `.plan/execute-script.py`" in text
-    assert 'does NOT supply' in text
+    assert 'Worktree creation PRODUCES that executor' in text
+    assert 'does NOT supply' not in text
 
 
 def test_skill_does_not_require_a_test_conditional_canonical() -> None:
@@ -1901,16 +1902,52 @@ def test_executor_skew_names_an_unreadable_executor(tmp_path: Path) -> None:
 # =============================================================================
 
 
-def test_skill_no_longer_claims_worktree_creation_supplies_the_executor() -> None:
-    text = _skill_text()
+def test_skill_states_that_worktree_creation_produces_the_executor() -> None:
+    """The setup section states the D1 fact, not the pre-fix premise.
+
+    Before, section 2 told the run that worktree creation does NOT supply an
+    executor — true then, false now, and a false premise is what makes a lane
+    ask the operator for something the machinery already handled.
+    """
     setup = _section('## 2. Set up the worktree')
+
+    assert 'executor_in_worktree' in setup
+    assert 'does NOT supply' not in setup, 'section 2 still carries the pre-fix premise'
+    assert 'worktree-create' in setup
+
+
+def test_skill_keeps_the_in_process_fallback_as_the_degraded_case() -> None:
+    """The gate keeps the pre-routing check, framed as a fallback only."""
     gate = _section('## 4. Build gate')
 
-    assert 'which worktree creation supplies' not in text, 'the false executor premise survives'
-    assert 'supplies' not in setup or 'does NOT supply' in setup, 'section 2 still claims creation supplies it'
-    assert 'before the first routed build' in gate.lower(), 'section 4 carries no pre-routing check'
     assert 'build-routing' in gate
     assert 'executor_absent_from_worktree' in gate
+    assert 'degraded' in gate.lower(), 'the absent-executor path is not framed as the degraded case'
+
+
+def test_skill_names_the_worktree_executor_refresh_verb() -> None:
+    """A plan that changes the script set has a spelled-out route to refresh it."""
+    section = _section('## 3. Implement, deliverable by deliverable')
+
+    assert 'worktree-executor-refresh' in section
+    assert 'after adding, removing or renaming a script verb' in section.lower()
+
+
+def test_no_lane_instruction_runs_the_generator_by_path() -> None:
+    """No fenced instruction in the lane text invokes ``generate_executor.py``.
+
+    The generator is reachable through the executor like every other script. A
+    lane that spells its path ships a direct interpreter call, which the guard
+    refuses — the exact dead end this verb exists to remove.
+    """
+    invocations = [
+        block
+        for block in _fenced_blocks(_skill_text())
+        for line in block.splitlines()
+        if 'generate_executor' in line and line.strip().startswith(('python', './', 'pw '))
+    ]
+
+    assert invocations == [], f'the lane text runs the generator by path: {invocations}'
 
 
 def test_build_routing_answers_in_process_when_the_worktree_has_no_executor(tmp_path: Path) -> None:
@@ -1922,7 +1959,67 @@ def test_build_routing_answers_in_process_when_the_worktree_has_no_executor(tmp_
     data = module.cmd_build_routing(argparse.Namespace(worktree=str(worktree)))
 
     assert data['execution_mode'] == 'in_process'
+    assert data['executor_in_worktree'] == 'absent'
     assert data['reason'] == 'executor_absent_from_worktree'
+
+
+def test_build_routing_answers_auto_when_the_worktree_has_its_executor(tmp_path: Path) -> None:
+    """A worktree carrying its own executor is routed, with nothing to record.
+
+    ``auto`` is the only mode that lets the daemon re-run the worktree's own
+    executor, so the absence reason must not appear beside it.
+    """
+    module = load_script_module('plan-marshall', _SKILL_NAME, 'runbook_lane.py', register=False)
+    worktree = tmp_path / 'worktree'
+    (worktree / '.plan').mkdir(parents=True)
+    (worktree / '.plan' / 'execute-script.py').write_text('#!/usr/bin/env python3\n', encoding='utf-8')
+
+    data = module.cmd_build_routing(argparse.Namespace(worktree=str(worktree)))
+
+    assert data['execution_mode'] == 'auto'
+    assert data['executor_in_worktree'] == 'present'
+    assert 'reason' not in data
+
+
+def test_build_routing_treats_a_zero_byte_executor_as_absent(tmp_path: Path) -> None:
+    """Presence is a non-empty file on disk, not the path existing.
+
+    An empty executor cannot dispatch anything, so routing a build to it would
+    trade the in-process fallback for a terminal job.
+    """
+    module = load_script_module('plan-marshall', _SKILL_NAME, 'runbook_lane.py', register=False)
+    worktree = tmp_path / 'worktree'
+    (worktree / '.plan').mkdir(parents=True)
+    (worktree / '.plan' / 'execute-script.py').write_text('', encoding='utf-8')
+
+    data = module.cmd_build_routing(argparse.Namespace(worktree=str(worktree)))
+
+    assert data['execution_mode'] == 'in_process'
+    assert data['executor_in_worktree'] == 'absent'
+
+
+def test_resolve_states_the_worktree_executor_state(tmp_path: Path) -> None:
+    """Resolve reports the slot as it stands, so setup needs no extra read."""
+    spec = _seed_fixture(tmp_path, required_bots='x')
+    executor = tmp_path / '.plan' / 'local' / 'worktrees' / 'lb-66-runbook-lane-skill' / '.plan' / 'execute-script.py'
+    _write(executor, '#!/usr/bin/env python3\n')
+
+    data = _run_resolve(spec, tmp_path)
+
+    assert data['status'] == 'success', data
+    assert data['executor_in_worktree'] == 'present'
+    assert 'executor_reason' not in data
+
+
+def test_resolve_reports_an_absent_worktree_executor_with_its_reason(tmp_path: Path) -> None:
+    """A worktree created before the slot is filled reports why, not just absent."""
+    spec = _seed_fixture(tmp_path, required_bots='x')
+
+    data = _run_resolve(spec, tmp_path)
+
+    assert data['status'] == 'success', data
+    assert data['executor_in_worktree'] == 'absent'
+    assert data['executor_reason'] == 'worktree_not_created'
 
 
 def test_the_executor_absent_verdict_runs_the_build_in_process(tmp_path: Path, monkeypatch) -> None:

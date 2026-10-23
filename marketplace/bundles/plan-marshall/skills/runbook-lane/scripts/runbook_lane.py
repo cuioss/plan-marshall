@@ -12,6 +12,8 @@ so the lane contract itself carries no project-specific literal.
 Verb surface::
 
     runbook_lane resolve --spec PATH [--project-dir DIR]
+    runbook_lane executor-skew [--executor PATH] [--lane-dir DIR]
+    runbook_lane build-routing --worktree PATH
     runbook_lane build-classify --paths P1,P2 [--project-dir DIR]
     runbook_lane sonar-gate --state STATE [--count-status STATUS] [--open-count N]
                              [--open-keys K1,K2] [--dismissed-keys K1,K2]
@@ -1354,27 +1356,58 @@ def _classify_path(
     return 'docs-only' if _is_project_doc(path, doc_surfaces) else 'buildable'
 
 
+def _worktree_executor_state(worktree_dir: Path) -> tuple[str, str | None]:
+    """Report whether ``worktree_dir`` carries a usable executor, and why not.
+
+    The rule is the one the PRODUCER applies when it fills the slot
+    (``workflow-integration-git``'s ``_executor_slot.executor_landed``): a
+    regular, non-symlink, non-empty file. A symlink is the retired layout, and an
+    empty file is the "generation exited 0 and wrote nothing" shape — neither can
+    dispatch a call, so both are ``absent``.
+
+    Stated here rather than imported because that module is private to the
+    producing skill: the lane reads the slot as a CONTRACT, not by reaching into
+    another skill's internals. The pair is the whole vocabulary — ``present``
+    carries no reason, and ``absent`` always names one, so a run records what it
+    saw instead of a bare word.
+    """
+    executor = worktree_dir / '.plan' / 'execute-script.py'
+    try:
+        present = executor.is_file() and not executor.is_symlink() and executor.stat().st_size > 0
+    except OSError:
+        present = False
+    if present:
+        return 'present', None
+    if not worktree_dir.is_dir():
+        return 'absent', 'worktree_not_created'
+    return 'absent', 'executor_absent_from_worktree'
+
+
 def cmd_build_routing(args: argparse.Namespace) -> dict[str, Any]:
     """Decide whether a routed build may be submitted or must run in-process.
 
     A routed job re-runs the WORKTREE's own ``.plan/execute-script.py``, and the
     routing submits without checking that it exists — so an absent executor ends
-    the job terminal (exit 2) with no in-process fallback. Worktree creation does
-    not supply one, so the lane asks this before its first routed build:
-    ``auto`` means submit normally; ``in_process`` carries the named reason the
-    run records, and the mode it passes for that build.
+    the job terminal (exit 2) with no in-process fallback. ``worktree-create``
+    now fills that slot, so the normal answer is ``auto``: submit, and the daemon
+    re-runs the worktree's own executor.
+
+    ``in_process`` is the DEGRADED answer, taken only when the slot is absent,
+    and it carries the named reason the run records. ``executor_in_worktree``
+    reports the read itself, so the mode and the state cannot disagree.
     """
     worktree = Path(getattr(args, 'worktree', None) or '.').resolve()
-    executor = worktree / '.plan' / 'execute-script.py'
+    state, reason = _worktree_executor_state(worktree)
     result: dict[str, Any] = {
         'status': 'success',
         'operation': 'build-routing',
         'worktree': worktree.as_posix(),
+        'executor_in_worktree': state,
         'execution_mode': 'auto',
     }
-    if not executor.is_file():
+    if state == 'absent':
         result['execution_mode'] = 'in_process'
-        result['reason'] = 'executor_absent_from_worktree'
+        result['reason'] = reason
     return result
 
 
@@ -1744,6 +1777,7 @@ def cmd_resolve(args: argparse.Namespace) -> dict[str, Any]:
     progress_file = f'.plan/temp/rb-{plan_id}/progress.md'
     sender_id = f'rb-{plan_id}'
     landing_file = f'.plan/temp/landing-{plan_id}.md'
+    executor_state, executor_reason = _worktree_executor_state(project_dir / worktree)
     inbox_write_command = (
         'python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator inbox write '
         f'--slug {slug} --sender-type plan --sender-id {sender_id} --kind landing --payload-file {landing_file}'
@@ -1775,7 +1809,12 @@ def cmd_resolve(args: argparse.Namespace) -> dict[str, Any]:
         'build_server': build_server,
         'sonar': sonar_state['state'],
         'skills_note': deliverable_state['skills_note'],
+        'executor_in_worktree': executor_state,
     }
+    # A reason exists only for ``absent``: the present row carries no absence
+    # explanation, which would read like a qualified success.
+    if executor_reason is not None:
+        resolved['executor_reason'] = executor_reason
     # A project can publish only one gate canonical (npm publishes each
     # conditionally), so the missing one is NAMED rather than silently dropped.
     # Presence-gated: an empty population would read like a parsed-but-empty
