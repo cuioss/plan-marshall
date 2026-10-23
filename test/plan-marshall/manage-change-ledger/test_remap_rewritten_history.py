@@ -60,10 +60,11 @@ def _commit(repo: Path, path: str, content: str, message: str) -> str:
 class RewriteEnv:
     """A real git repo with a three-commit feature branch plus an isolated ledger."""
 
-    def __init__(self, repo: Path, base: Path, shas: list[str]) -> None:
+    def __init__(self, repo: Path, base: Path, shas: list[str], base_sha: str) -> None:
         self.repo = repo
         self.base = base
         self.shas = shas
+        self.base_sha = base_sha
         self.overrides = {'PLAN_BASE_DIR': str(base)}
         self.ledger_path = base / 'work' / 'change-ledger.jsonl'
 
@@ -109,12 +110,12 @@ def rewrite_env(tmp_path: Path) -> RewriteEnv:
     subprocess.run(['git', 'init', '-q', '-b', 'main', str(repo)], check=True)
     _git(repo, 'config', 'user.email', 't@t.test')
     _git(repo, 'config', 'user.name', 'Test')
-    _commit(repo, 'base.txt', 'base\n', 'base')
+    base_sha = _commit(repo, 'base.txt', 'base\n', 'base')
     _git(repo, 'checkout', '-q', '-b', 'feature')
     shas = [_commit(repo, f'f{index}.txt', f'{index}\n', f'commit {index}') for index in (1, 2, 3)]
     base = tmp_path / 'base'
     base.mkdir()
-    return RewriteEnv(repo=repo, base=base, shas=shas)
+    return RewriteEnv(repo=repo, base=base, shas=shas, base_sha=base_sha)
 
 
 def _boundary_refusal(env: RewriteEnv, monkeypatch, plan_id: str = 'lb91-rewrite-fixture'):
@@ -316,3 +317,71 @@ def test_unparseable_map_line_is_refused(rewrite_env) -> None:
     assert data['status'] == 'error'
     assert data['error_code'] == 'INVALID_INPUT'
     assert len(rewrite_env.change_rows()) == 3, 'a refused map must append nothing'
+
+
+def test_unresolvable_recorded_row_is_reported_not_dropped(rewrite_env) -> None:
+    """A row whose SHA is not in this repository is named, never silently skipped."""
+    rewrite_env.record_all()
+    ghost = 'f' * 40
+    appended = rewrite_env.run(
+        'append',
+        '--kind',
+        'change',
+        '--deliverable-id',
+        '99',
+        '--commit-sha',
+        ghost,
+        '--changed-paths',
+        'ghost.txt',
+    )
+    assert appended.success, appended.stderr
+
+    result = rewrite_env.run('remap', '--worktree-root', str(rewrite_env.repo))
+
+    assert result.success, result.stderr
+    data = result.toon()
+    assert data['remap_count'] == 0
+    assert ghost in data['unresolved'], f'The unresolvable row must be reported, got {data!r}'
+
+
+def test_partial_explicit_map_reports_the_rows_it_left_stale(rewrite_env) -> None:
+    """An explicit map covering part of the branch is a partial repair, and says so."""
+    rewrite_env.record_all()
+    rewrite_env.advance_main()
+    rewrite_env.rebase_onto_main()
+    rebased_shas = _git(rewrite_env.repo, 'rev-list', '--reverse', 'main..HEAD').splitlines()
+
+    result = rewrite_env.run(
+        'remap',
+        '--worktree-root',
+        str(rewrite_env.repo),
+        '--map',
+        f'{rewrite_env.shas[0]}:{rebased_shas[0]}',
+    )
+
+    assert result.success, result.stderr
+    data = result.toon()
+    assert data['remap_count'] == 1
+    assert set(data['unmapped']) == {rewrite_env.shas[1], rewrite_env.shas[2]}, (
+        f'The rows the map left stale must be reported, got {data!r}'
+    )
+
+
+def test_explicit_map_key_with_no_recorded_row_is_reported(rewrite_env) -> None:
+    """A map key that names no ledger row cannot be a completed repair."""
+    rewrite_env.record_all()
+
+    result = rewrite_env.run(
+        'remap',
+        '--worktree-root',
+        str(rewrite_env.repo),
+        '--map',
+        f'{rewrite_env.base_sha}:{rewrite_env.shas[0]}',
+    )
+
+    assert result.success, result.stderr
+    data = result.toon()
+    assert data['remap_count'] == 0
+    assert rewrite_env.base_sha in data['unmapped'], (
+        f'A resolvable map key with no ledger row must be reported, got {data!r}'
+    )

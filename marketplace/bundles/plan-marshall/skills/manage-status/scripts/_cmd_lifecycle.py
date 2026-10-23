@@ -477,20 +477,21 @@ def _sha_is_recorded(branch_sha: str, recorded: set[str]) -> bool:
     return False
 
 
-def _sha_is_ancestor_of_head(worktree_path: str, sha: str) -> bool:
-    """Return True when ``sha`` is reachable from HEAD in ``worktree_path``.
+def _sha_is_ancestor_of_head(worktree_path: str, sha: str) -> bool | None:
+    """Whether ``sha`` is reachable from HEAD, or ``None`` when git cannot answer.
 
-    A SHA that does not exist in this repository (or a worktree whose git state
-    cannot answer) answers False: it cannot be shown to be part of HEAD's
-    history, which is exactly the fact the rewrite signature rests on.
+    Delegates to the single shared implementation in ``_ledger_core`` — the same
+    predicate the remap derives its map with — so the guard and the repair cannot
+    disagree about what "no longer an ancestor" means. ``None`` is the third
+    answer: the probe could not reach git, so ancestry was never established.
+    Collapsing it into ``False`` would let an unreadable worktree be reported as
+    a proven rewrite.
     """
-    proc = subprocess.run(
-        ['git', '-C', worktree_path, 'merge-base', '--is-ancestor', sha, 'HEAD'],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    return proc.returncode == 0
+    try:
+        from _ledger_core import commit_ancestry
+    except ImportError:
+        return None
+    return commit_ancestry(worktree_path, sha)
 
 
 def _ready_to_run(parts: list[str]) -> str:
@@ -503,11 +504,20 @@ def _ready_to_run(parts: list[str]) -> str:
 #: worktree path carrying a space stays one argument when the caller runs it.
 _EXECUTOR_PREFIX = ('python3', '.plan/execute-script.py', 'plan-marshall:manage-change-ledger:manage-change-ledger')
 
-#: The one value the boundary cannot know: which deliverable a missing commit
-#: belongs to. It is left as a literal placeholder rather than omitted, because
-#: ``--deliverable-id`` (or ``--task-id``) is required — an invocation missing it
-#: would not run, and calling that "ready-to-run" would be false.
+#: The values the boundary cannot know: which deliverable a missing commit
+#: belongs to, and the paths that commit changed. They are left as literal
+#: placeholders rather than omitted, because ``--deliverable-id`` is required and
+#: ``--changed-paths`` is the git-sourced fact the ledger must record — omitting
+#: either yields a row that is wrong (an empty path list) or an invocation
+#: argparse rejects. Calling that "ready-to-run" without saying so would be false,
+#: so every message that carries this invocation says to replace both.
 _DELIVERABLE_ID_PLACEHOLDER = 'DELIVERABLE_ID'
+_CHANGED_PATHS_PLACEHOLDER = 'CHANGED_PATHS'
+
+_REPLACE_PLACEHOLDERS = (
+    f'replace {_DELIVERABLE_ID_PLACEHOLDER} and {_CHANGED_PATHS_PLACEHOLDER} '
+    "with the missing commit's deliverable and git-sourced paths"
+)
 
 
 def _remap_invocation(worktree_path: str) -> str:
@@ -518,10 +528,12 @@ def _remap_invocation(worktree_path: str) -> str:
 def _append_invocation(worktree_path: str, commit_sha: str) -> str:
     """The append invocation for one missing commit.
 
-    ``--deliverable-id`` carries the documented :data:`_DELIVERABLE_ID_PLACEHOLDER`
-    rather than a guessed id: the boundary knows the commit has no row, but not
-    which deliverable produced it. Omitting the flag would yield an invocation
-    argparse rejects, so the placeholder is the only honest form.
+    ``--deliverable-id`` and ``--changed-paths`` carry their documented
+    placeholders rather than guessed values: the boundary knows the commit has no
+    row, but not which deliverable produced it or which paths it touched. Both
+    flags are mandatory facts on a ``kind=change`` row, so omitting them would
+    either be rejected by argparse or record an empty path list — the placeholder
+    plus :data:`_REPLACE_PLACEHOLDERS` in the message is the only honest form.
     """
     return _ready_to_run(
         [
@@ -533,6 +545,8 @@ def _append_invocation(worktree_path: str, commit_sha: str) -> str:
             _DELIVERABLE_ID_PLACEHOLDER,
             '--commit-sha',
             commit_sha,
+            '--changed-paths',
+            _CHANGED_PATHS_PLACEHOLDER,
             '--worktree-root',
             worktree_path,
         ]
@@ -562,11 +576,22 @@ def _rewrite_evidence(
     rows describe a history HEAD replaced; the whole-branch condition alone does
     not — a ledger that holds a landed plan's rows is exactly that case, and a
     branch whose settlement simply never ran there would be sent to a remap that
-    maps nothing.
+    maps nothing. A row whose ancestry probe could not be answered makes the
+    claim UNPROVEN, so it never counts as stale.
+
+    The prefix rule in :func:`_sha_is_recorded` does not absorb either case: it
+    compares a row's SHA against a branch SHA as a prefix, and a rewritten
+    commit's new SHA shares no prefix with the old one, so a rebase, amend or
+    cherry-pick is always a mismatch under that rule.
     """
-    stale = not any(_sha_is_ancestor_of_head(worktree_path, sha) for sha in recorded)
+    every_row_stale = True
+    for sha in recorded:
+        answer = _sha_is_ancestor_of_head(worktree_path, sha)
+        if answer is not False:
+            every_row_stale = False
+            break
     whole_branch = bool(unrecorded) and len(unrecorded) == len(branch_shas)
-    return (bool(whole_branch or stale), stale)
+    return (bool(whole_branch or every_row_stale), every_row_stale)
 
 
 def _recorded_change_shas() -> set[str] | None:
@@ -773,7 +798,8 @@ def _phase_end_marker_refusal(plan_id: str, status: dict[str, Any]) -> dict[str,
                     f'{base_branch} carry no kind=change ledger row and no branch commit matches a recorded '
                     'row: the whole branch is unrecorded. If it was rewritten (rebase, amend or cherry-pick), '
                     f'map the recorded rows onto their rewritten counterparts: {remap_invocation} If it was '
-                    f'not rewritten, record the unrecorded commits: {append_invocations[0]}'
+                    f'not rewritten, record the unrecorded commits ({_REPLACE_PLACEHOLDERS}): '
+                    f'{append_invocations[0]}'
                 )
                 remedy = {
                     'signature': 'history_rewritten',
@@ -786,8 +812,8 @@ def _phase_end_marker_refusal(plan_id: str, status: dict[str, Any]) -> dict[str,
             message = (
                 f'{len(unrecorded)} of {len(branch_shas)} worktree-branch commit(s) since diverging from '
                 f'{base_branch} carry no kind=change ledger row. Run the phase-5-execute Step 10a '
-                f'settlement bookkeeping for the unrecorded commits, then retry the transition: '
-                f'{append_invocations[0]}'
+                f'settlement bookkeeping for the unrecorded commits, then retry the transition '
+                f'({_REPLACE_PLACEHOLDERS}): {append_invocations[0]}'
             )
             remedy = {
                 'signature': 'bookkeeping_gap',

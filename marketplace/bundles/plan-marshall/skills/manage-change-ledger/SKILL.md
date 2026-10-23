@@ -267,7 +267,10 @@ The old-to-new map has two sources:
   and matches them to the commits they became by **stable `git patch-id`**.
   Patch-id hashes the patch, not the message, so a rebased commit and a
   message-only amend both match. `--old-head` scopes the derivation to the
-  commits a known rewrite replayed.
+  commits a known rewrite replayed; without it the candidate window is each
+  stale row's `<stale>..HEAD`, which can also contain upstream commits, so a
+  caller that knows the pre-rewrite head should pass it. A patch-id carried by
+  two candidates is ambiguous and left unmapped rather than guessed.
 
 An old commit whose patch changed (a conflict resolved during the rebase) has no
 patch-id counterpart: it is reported in `unmapped` rather than guessed at, and
@@ -379,7 +382,8 @@ from _ledger_core import (
 |---------------------|-----------|----------|
 | `tools-script-executor` dispatch boundary | produces | `append --kind build` (executor template `kind=build` writer) |
 | `phase-5-execute` Step 10a chain-tail | produces | `append --kind change` after each per-deliverable commit |
-| `phase-6-finalize` `sync-baseline` (and the 5-execute boundary's refusal) | produces | `remap` after a rebase/cherry-pick rewrote the branch's SHAs |
+| `phase-6-finalize` `sync-baseline` | produces | `remap` after a rebase rewrote the branch's SHAs (emit the map, then consume it) |
+| `manage-status` 5-execute boundary | reports (never writes) | carries the ready-to-run `remap` invocation in its `execute_commits_unrecorded` refusal; appends nothing itself |
 | `build-server-client` `submit` verb | produces | imports `job_record` + `append_entry`; writes `kind=job` at submit time for re-attach |
 | `build-server-client` `wait` re-attach | consumes | imports `read_entries`; reads the latest `kind=job` for the plan to recover `job_id` |
 | `manage-tasks:pre-commit-verify-freshness` gate | consumes | imports `read_entries` + `compute_worktree_sha`; scans `kind=build` by `status == success` + `worktree_sha`, then cross-checks each matching row's `notation` against the project's architecture-resolved build notations. This is the gate's ledger-reading route only — an exempted footprint returns before the scan and consumes no entry at all |

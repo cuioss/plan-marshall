@@ -352,9 +352,30 @@ def resolve_commit(worktree_root: str | Path, sha: str) -> str | None:
     return resolved or None
 
 
+def commit_ancestry(worktree_root: str | Path, sha: str) -> bool | None:
+    """Whether HEAD can reach ``sha``.
+
+    ``True`` / ``False`` are git's own answers (``merge-base --is-ancestor``
+    exits 0 / 1). ``None`` is the third answer a gate must not collapse into
+    either: git could not answer at all (a missing object store, an unreadable
+    worktree, a SHA this repository does not hold), so nothing was established
+    about ancestry.
+    """
+    proc = _run_git(worktree_root, 'merge-base', '--is-ancestor', sha, 'HEAD')
+    if proc.returncode == 0:
+        return True
+    if proc.returncode == 1:
+        return False
+    return None
+
+
 def commit_is_ancestor(worktree_root: str | Path, sha: str) -> bool:
-    """Return True when ``sha`` is reachable from HEAD."""
-    return _run_git(worktree_root, 'merge-base', '--is-ancestor', sha, 'HEAD').returncode == 0
+    """Return True only when ``sha`` is PROVEN reachable from HEAD.
+
+    The unevaluable answer is False here, so a caller that treats this as a plain
+    predicate never takes a positive branch on a question git did not answer.
+    """
+    return commit_ancestry(worktree_root, sha) is True
 
 
 def _commit_patch_id(worktree_root: str | Path, sha: str) -> str | None:
@@ -575,6 +596,14 @@ def remap_change_rows(
                 unmapped.append(old_raw.strip())
             elif old_full != new_full:
                 pairs.append((old_raw.strip(), old_full, new_full))
+        # An explicit map may cover only part of the branch. Report the recorded
+        # rows it left stale, so a partial map is not a silent partial repair —
+        # `unmapped` means the same thing on both branches.
+        covered = {old_full for _old, old_full, _new in pairs}
+        for row, full in resolved_rows:
+            if full in covered or commit_is_ancestor(worktree_root, full):
+                continue
+            unmapped.append(str(row.get('commit_sha', '')).strip())
     else:
         pairs, unmapped = _derive_patch_id_map(worktree_root, resolved_rows, old_head)
 

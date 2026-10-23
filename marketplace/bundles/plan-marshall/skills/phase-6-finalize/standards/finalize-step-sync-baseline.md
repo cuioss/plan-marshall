@@ -183,7 +183,7 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workf
 
 Parse the returned TOON and branch on `status`:
 
-- `status: success` → continue to **Mark Step Complete (Success)**. The `action` field distinguishes `noop` (the branch was already at `origin/{base_branch}`, nothing to rebase) from `rebased` (the rebase produced a new history). Both are success.
+- `status: success` → continue to **Mark Step Complete (Success)**, after running **Remap the change-ledger after a rewrite** below when `action` is `rebased`. The `action` field distinguishes `noop` (the branch was already at `origin/{base_branch}`, nothing to rebase) from `rebased` (the rebase produced a new history). Both are success.
 
   A rebase at this order is exactly where upstream commits can change the bundle **script set**, which would leave the worktree's `.plan/execute-script.py` describing a tree that no longer exists — every later dispatch in this finalize run resolving notations against a stale map. `worktree-rebase-to` refreshes it as part of the rebase and reports the outcome on `executor_drift` / `executor_regenerated` / `executor_detail`; this step consumes those fields, it does not re-derive them. The refresh is non-fatal by contract, so an `executor_regenerated: false` alongside a non-empty `executor_detail` is a reported degradation, not a step failure — log it and proceed:
 
@@ -240,8 +240,11 @@ Read the first invocation's `unmapped` list before continuing. A commit whose pa
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-change-ledger:manage-change-ledger append \
   --kind change --deliverable-id {deliverable_id} --commit-sha {rebased_sha} \
+  --changed-paths {changed_paths} \
   --worktree-root {worktree_path}
 ```
+
+`{changed_paths}` is the same git-sourced list the stale row carries (and `git diff-tree --no-commit-id --name-only -r {rebased_sha}` reproduces); omitting it would record an empty path list, a fact the ledger is supposed to hold.
 
 Log the remap outcome:
 

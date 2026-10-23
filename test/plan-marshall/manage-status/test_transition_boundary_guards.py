@@ -712,6 +712,24 @@ def test_whole_branch_with_live_ledger_rows_carries_both_remedies(plan_context, 
     assert 'If it was not rewritten' in refusal['message']
 
 
+def test_unanswerable_ancestry_does_not_claim_a_proven_rewrite(plan_context, monkeypatch) -> None:
+    """An ancestry probe that cannot answer is not evidence that rows are stale."""
+    plan_id = 'rewrite-ancestry-unevaluable'
+    _seed_rewrite_gate_plan(plan_context, plan_id)
+    monkeypatch.setattr(_lifecycle, '_branch_commit_shas', lambda _p, _b: ['1' * 40, '2' * 40, '3' * 40])
+    monkeypatch.setattr(_lifecycle, '_recorded_change_shas', lambda: {'a' * 40})
+    monkeypatch.setattr(_lifecycle, '_sha_is_ancestor_of_head', lambda _w, _s: None)
+
+    refusal = _rewrite_refusal(plan_id)
+
+    assert refusal is not None
+    assert refusal['signature'] == 'history_rewritten', 'the whole-branch condition still holds'
+    assert 'every recorded row points at a commit' not in refusal['message'], (
+        f'An unanswered probe must not be reported as a proven rewrite, got {refusal["message"]!r}.'
+    )
+    assert 'append_invocations' in refusal, 'the unproven case must also offer the append repair'
+
+
 def test_one_missing_row_reports_plain_gap_with_append_invocation(plan_context, monkeypatch) -> None:
     """A single skipped settlement is a bookkeeping gap, repaired by appending."""
     plan_id = 'rewrite-plain-gap'
@@ -734,19 +752,24 @@ def test_one_missing_row_reports_plain_gap_with_append_invocation(plan_context, 
         f'The plain-gap refusal must carry the append invocation for the missing commit, got {refusal!r}.'
     )
     assert 'append --kind change' in refusal['append_invocation']
+    assert 'CHANGED_PATHS' in refusal['append_invocation'], (
+        'the append remedy must carry the changed-paths fact, not record an empty list'
+    )
     assert 'remap_invocation' not in refusal, 'a plain gap must not be reported as a rewrite'
 
 
 def test_every_recorded_row_absent_from_head_is_a_rewrite_even_when_partially_unrecorded(
     plan_context, monkeypatch
 ) -> None:
-    """Every recorded SHA missing from HEAD's history is the rewrite signature.
+    """Pin the stale-rows DISJUNCT of the rewrite signature at the unit level.
 
-    One branch commit still matches a recorded row, so the unrecorded set is TWO
-    of three, not the whole branch — the whole-branch arm cannot fire here. The
-    rows that do exist all point outside HEAD's history, so the store is a stale
-    record of a branch that was rewritten. This is the case that reaches the
-    second criterion.
+    A partial gap beside rows that all left HEAD's history is the second
+    condition D2 names. Healthy git on this repository cannot produce it — a
+    branch sha is by construction an ancestor of HEAD, so a recorded row that
+    matches one can never be stale, which makes the whole-branch arm the one
+    production reaches. This test pins the disjunction and its payload anyway,
+    so removing the second condition turns it red; the fixture states what the
+    guard would see, not what a repository would.
     """
     plan_id = 'rewrite-all-rows-absent'
     _seed_rewrite_gate_plan(plan_context, plan_id)
