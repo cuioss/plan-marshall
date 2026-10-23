@@ -60,6 +60,22 @@ def _worktree_cwd() -> str:
     return f'/home/dev/project/{gate.WORKTREE_PATH_SEGMENT}/my-plan'
 
 
+def _worktree_executor_payload(command: str, root: str) -> dict:
+    """A Signal-2 payload whose worktree belongs to *root*.
+
+    The relative-executor permit resolves the root from ``CLAUDE_PROJECT_DIR`` (or
+    the hook's own location when unset) and admits only that root or one of its
+    OWN ``.plan/local/worktrees/{plan}`` directories. A synthetic worktree under a
+    foreign root is deliberately refused, so a test that expects the documented
+    executor to pass must name a worktree of the root it pins.
+    """
+    return {
+        gate.CWD_FIELD: f'{root}/{gate.WORKTREE_PATH_SEGMENT}/my-plan',
+        'tool_name': 'Bash',
+        'tool_input': _bash(command),
+    }
+
+
 def _signal1_payload(tool_name: str, tool_input: dict) -> dict:
     """Payload satisfying the gate via Signal 1 only (sub-agent identity)."""
     return {
@@ -728,11 +744,12 @@ def test_r4_denies_hard_coded_build_invocations(command: str) -> None:
     assert hook.evaluate(payload) == hook._R4_REASON
 
 
-def test_r4_not_fired_on_resolved_build() -> None:
+def test_r4_not_fired_on_resolved_build(tmp_path, monkeypatch) -> None:
     # The architecture-resolved executor call is a plain python3 invocation and
     # trips no rule.
+    monkeypatch.setenv('CLAUDE_PROJECT_DIR', str(tmp_path))
     cmd = 'python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run'
-    assert hook.evaluate(_signal2_payload('Bash', _bash(cmd))) is None
+    assert hook.evaluate(_worktree_executor_payload(cmd, str(tmp_path))) is None
 
 
 # =============================================================================
@@ -768,10 +785,11 @@ def test_r5_denies_direct_interpreter_calls(command: str) -> None:
     assert hook.evaluate(payload) == hook._R5_REASON, command
 
 
-def test_r5_not_fired_on_executor_permit() -> None:
+def test_r5_not_fired_on_executor_permit(tmp_path, monkeypatch) -> None:
     # The sole allow is the executor invocation itself.
+    monkeypatch.setenv('CLAUDE_PROJECT_DIR', str(tmp_path))
     cmd = 'python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks list --plan-id x'
-    assert hook.evaluate(_signal2_payload('Bash', _bash(cmd))) is None
+    assert hook.evaluate(_worktree_executor_payload(cmd, str(tmp_path))) is None
 
 
 def test_r5_not_fired_on_flag_only_invocation() -> None:
@@ -858,10 +876,11 @@ def test_r5_denies_wrapper_prefixed_interpreter_calls(command: str) -> None:
         assert hook.evaluate(payload) == hook._R5_REASON, command
 
 
-def test_r5_wrapper_prefixed_executor_permit_stays_exempt() -> None:
+def test_r5_wrapper_prefixed_executor_permit_stays_exempt(tmp_path, monkeypatch) -> None:
     """The executor permit survives wrapper stripping — guard parity."""
+    monkeypatch.setenv('CLAUDE_PROJECT_DIR', str(tmp_path))
     cmd = 'env python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks list --plan-id x'
-    assert hook.evaluate(_signal2_payload('Bash', _bash(cmd))) is None
+    assert hook.evaluate(_worktree_executor_payload(cmd, str(tmp_path))) is None
 
 
 def test_r5_wrapper_prefixed_benign_command_stays_allowed() -> None:
@@ -1080,10 +1099,11 @@ def test_r5_denies_versioned_and_uppercase_interpreters(command: str) -> None:
     assert hook.evaluate(_signal2_payload('Bash', _bash(command))) == hook._R5_REASON, command
 
 
-def test_r5_allows_documented_sync_engine() -> None:
+def test_r5_allows_documented_sync_engine(tmp_path, monkeypatch) -> None:
     """The documented sync engine is on the shared allow-list — R5 must allow it."""
+    monkeypatch.setenv('CLAUDE_PROJECT_DIR', str(tmp_path))
     command = 'python3 marketplace/targets/sync.py --target opencode'
-    assert hook.evaluate(_signal2_payload('Bash', _bash(command))) is None
+    assert hook.evaluate(_signal1_payload('Bash', _bash(command))) is None
 
 
 def test_r5_allows_nested_allowlist_path(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1104,10 +1124,11 @@ def test_r5_refuses_an_allowlist_basename_outside_the_repository(monkeypatch: py
     assert hook.evaluate(payload) == hook._R5_REASON
 
 
-def test_r5_allows_relative_executor() -> None:
+def test_r5_allows_relative_executor(tmp_path, monkeypatch) -> None:
     """The documented RELATIVE executor form is the executor permit — R5 allows it."""
+    monkeypatch.setenv('CLAUDE_PROJECT_DIR', str(tmp_path))
     command = 'python3 .plan/execute-script.py a:b:c verb'
-    assert hook.evaluate(_signal2_payload('Bash', _bash(command))) is None
+    assert hook.evaluate(_worktree_executor_payload(command, str(tmp_path))) is None
 
 
 def test_r5_allows_absolute_executor_under_the_project_root(tmp_path, monkeypatch) -> None:
@@ -1125,16 +1146,19 @@ def test_r5_refuses_absolute_executor_outside_the_project_root(monkeypatch) -> N
     assert hook.evaluate(_signal2_payload('Bash', _bash(command))) == hook._R5_REASON
 
 
-def test_r5_absent_allowlist_falls_back_to_base_table(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_r5_absent_allowlist_falls_back_to_base_table(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
     """With no allow-list file, the built-in base table still allows the sync engine.
 
     The base table is deliberately narrow, so a script that only the data file
     names (``generate.py``) is refused on the absent-file path — the fallback is
     the base table, never "allow everything".
     """
+    monkeypatch.setenv('CLAUDE_PROJECT_DIR', str(tmp_path))
     monkeypatch.setattr(hook, '_r5_allowlist_path', lambda: '/nonexistent/r5-allowlist.json')
-    assert hook.evaluate(_signal2_payload('Bash', _bash('python3 marketplace/targets/sync.py'))) is None
-    assert hook.evaluate(_signal2_payload('Bash', _bash('python3 marketplace/targets/generate.py'))) == hook._R5_REASON
+    allowed = 'python3 marketplace/targets/sync.py'
+    assert hook.evaluate(_signal1_payload('Bash', _bash(allowed))) is None
+    refused = 'python3 marketplace/targets/generate.py'
+    assert hook.evaluate(_signal1_payload('Bash', _bash(refused))) == hook._R5_REASON
 
 
 def test_r5_allowlist_path_resolves_to_the_shared_data_file() -> None:

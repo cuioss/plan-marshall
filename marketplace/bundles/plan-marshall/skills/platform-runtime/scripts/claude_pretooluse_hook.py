@@ -25,12 +25,15 @@ of its own. The only logic it owns is the R1-R6 rule matchers and the
   rule; a command substitution still trips it inside DOUBLE quotes, where the
   shell still executes it.
 - **R2 Bash file-ops** — a Bash command whose program is ``cat`` / ``grep`` /
-  ``head`` / ``tail`` / ``find`` / ``ls``, or ``git`` whose subcommand (after any
-  global options) is ``grep``.
+  ``head`` / ``tail`` / ``find`` / ``ls``, a SHELL SPAWN (the shared wrapper
+  table's ``shells`` plus the ``source`` builtin — never a second literal list),
+  or ``git`` whose subcommand (after any global options) is ``grep``.
 - **R3 generated-executor edit** — an Edit/Write whose path is the generated
   ``.plan/execute-script.py``.
 - **R4 hard-coded build** — a Bash command invoking ``./pw`` or a bare ``mvn`` /
-  ``npm`` / ``gradle``.
+  ``npm`` / ``gradle``. The ``./pw`` verdict is the shared table's
+  ``build_wrapper_admission`` (``generate*`` and ``--*`` admitted today), so it is
+  the SAME decision the OpenCode guard applies.
 - **R5 direct interpreter call** — a Bash command invoking an interpreter
   (``python`` / ``python3`` / ``pypy`` / ``pypy3`` / a versioned spelling such as
   ``python3.12``, case-insensitively) as ``-c``, a script path, a bare ``-``
@@ -39,10 +42,12 @@ of its own. The only logic it owns is the R1-R6 rule matchers and the
   repository; in a consumer repository outside a plan context it does not refuse
   a consumer's ordinary Python work. Admissions: the ``python3
   .plan/execute-script.py`` executor permit (the RELATIVE form admitted only from
-  the repository root — a leading ``cd``, an ``env -C``/``--chdir``/``sudo -D``
-  directory change and the shell workdir are resolved first — or an ABSOLUTE form
-  resolving to ``{repository root}/.plan/execute-script.py``); the shared
-  allow-list of documented non-executor invocations read from
+  the repository root — a leading ``cd`` (including a ``cd`` inside a spliced
+  command string, applied segment by segment), an ``env -C``/``--chdir``/``sudo
+  -D`` directory change and the shell workdir are resolved first, and the root is
+  the project directory or the hook's OWN location, never the payload ``cwd`` — or
+  an ABSOLUTE form resolving to ``{repository root}/.plan/execute-script.py``); the
+  shared allow-list of documented non-executor invocations read from
   ``standards/r5-allowlist.json``, whose REPOSITORY-RELATIVE entries are matched
   EXACTLY against the invocation's script path resolved against the repository
   root; and that file's BUNDLE-RELATIVE entries, matched EXACTLY against the
@@ -54,7 +59,14 @@ of its own. The only logic it owns is the R1-R6 rule matchers and the
   walked letter by letter, ``timeout`` / ``flock`` / ``chrt`` / ``taskset``
   consume their leading positional, ``env -S``, a shell's ``-c`` and ``watch`` /
   ``parallel`` splice their command string back into the walk, and
-  ``find … -exec`` is walked from the program it runs. The allow set is otherwise
+  ``find … -exec`` is walked from the program it runs. The FAIL-CLOSED FLOOR runs
+  before R2: a wrapper handed a command string, stdin (a here-string or
+  here-document) or a SCRIPT FILE is refused when that text names an interpreter
+  ANYWHERE, so a grouping keyword, a shell option before ``-c``, a here-string or
+  a script file cannot hide the call behind the segment walk; the walk decides
+  only whether the text is the admitted executor. With the table absent, the
+  check scans each raw token's own content, so ``zsh -c "python3 -c x"`` is
+  refused rather than read as an opaque token. The allow set is otherwise
   executor-only, so every ``-m`` form refuses.
 - **R6 raw finalize commit** — a raw ``git commit`` while the enclosing plan, in
   phase ``6-finalize``. The plan is NAMED from every commit form: the
@@ -75,12 +87,15 @@ Control flow:
 1. Parse stdin via ``gate.parse`` (empty/malformed → emit nothing, exit 0).
 2. Evaluate the scope: ``gate.context_gate(payload)`` (``Signal1 OR Signal2``) OR
    the runbook-lane marker OR this project IS the plan-marshall source
-   repository. Inside it, run the R1-R5 matchers; on the FIRST match, append one
-   ``guard.log`` audit line (best-effort) and emit the deny envelope with a
+   repository. Inside it, run R1, then the fail-closed floor; on a match append
+   one ``guard.log`` audit line (best-effort) and emit the deny envelope with a
    one-line redirect reason.
 3. Run the R6 raw-finalize-commit rule unconditionally — it is NOT
-   context-gated — and on a match audit and deny.
-4. No match → emit nothing, exit 0.
+   context-gated — and on a match audit and deny. R6 runs AFTER R1 and BEFORE
+   R2-R5, so the shell-spawn and interpreter classes cannot shadow the specific
+   raw-commit rule for a commit wrapped in a shell string.
+4. Inside the scope, run R2-R5 and on a match audit and deny.
+5. No match → emit nothing, exit 0.
 
 The whole leaf is best-effort/no-raise: any internal error degrades to a silent
 no-op (emit nothing, exit 0).
@@ -191,12 +206,20 @@ _R1_FAMILIES: tuple[tuple[str, str, Callable[[str], bool]], ...] = (
 #: ``test_r1_r2_r4_matchers_do_not_strip_wrappers``).
 _R2_FILE_OPS = ('cat', 'grep', 'head', 'tail', 'find', 'ls')
 
-#: R2 — SHELL SPAWNS. A shell that re-executes a string can carry any bypass
-#: (``bash -c "python3 -c ..."``), so this class is refused exactly as the
-#: OpenCode guard's mutation class refuses ``sh`` / ``bash`` / ``source``. Unlike
-#: the file-op class, a spawn is ALSO read after R5 wrapper stripping, so
-#: ``env bash -c "python3 -c ..."`` cannot hide behind a wrapper.
-_R2_SHELL_SPAWNS = ('sh', 'bash', 'source')
+#: R2 — SHELL SPAWNS, derived from the ONE shared wrapper table (``standards/
+#: r5-wrappers.json``): its ``shells`` plus the ``source`` builtin. A shell that
+#: re-executes a string can carry any bypass (``bash -c "python3 -c ..."``), so
+#: this class is refused exactly as the OpenCode guard's R2 class refuses a shell
+#: spawn. Neither implementation carries a second literal shell list, so a shell
+#: added to the table is a spawn on both harnesses.
+_R2_SOURCE_BUILTIN = 'source'
+
+
+def _r2_shell_spawns() -> tuple[str, ...]:
+    """The R2 shell-spawn set: the shared table's shells plus ``source``."""
+    shells = _wrapper_table().get('shells') or ()
+    return tuple(sorted({*shells, _R2_SOURCE_BUILTIN}))
+
 
 #: R2 — ``git`` global options that consume a SEPARATE following token as their
 #: value. Only the detached spellings need naming: ``_git_subcommand`` skips any
@@ -231,7 +254,7 @@ _R1_REASON = (
 )
 _R2_REASON = (
     'plan-marshall: use the Read/Glob/Grep tools, not Bash, for file '
-    'operations (cat/grep/head/tail/find/ls, sh/bash/source, git grep). For a '
+    'operations (cat/grep/head/tail/find/ls, a shell spawn, git grep). For a '
     'content sweep run: architecture search --content --pattern P.'
 )
 _R3_REASON = (
@@ -483,15 +506,16 @@ def _match_r2_file_ops(tool_name: str | None, tool_input: dict[str, Any]) -> str
     command = _bash_command(tool_name, tool_input)
     if command is None:
         return None
+    spawns = {spawn.lower() for spawn in _r2_shell_spawns()}
     program = _program_name(command)
-    if program in _R2_FILE_OPS or program in _R2_SHELL_SPAWNS:
+    if program in _R2_FILE_OPS or program in spawns:
         return _R2_REASON
     # A shell spawn is read a SECOND time after R5 wrapper stripping, so a
     # wrapper prefix (`env bash -c "python3 -c ..."`) cannot hide it. The
     # file-op class keeps its un-stripped read (see ``_R2_FILE_OPS``).
     stripped = _r5_stripped_tokens(command)
     stripped_program = _strip_matched_quotes(stripped[0]).rsplit('/', 1)[-1] if stripped else ''
-    if stripped_program in _R2_SHELL_SPAWNS:
+    if stripped_program.lower() in spawns:
         return _R2_REASON
     if program == 'git' and _git_subcommand(command) == 'grep':
         return _R2_REASON
@@ -511,13 +535,33 @@ def _match_r3_generated_executor(tool_name: str | None, tool_input: dict[str, An
     return None
 
 
+def _pw_admitted(verb: str) -> bool:
+    """Whether ``./pw``'s verb is admitted by the shared table's R4 data.
+
+    The decision lives once, in ``r5-wrappers.json`` under
+    ``build_wrapper_admission``, so the hook and the OpenCode guard cannot
+    disagree on ``./pw generate`` (the command ``CLAUDE.md`` prescribes).
+    """
+    admission = _wrapper_table().get('build_wrapper_admission') or {}
+    if not verb:
+        return False
+    candidate = _strip_matched_quotes(verb.strip())
+    verbs = admission.get('pw_admitted_verbs') or []
+    prefixes = admission.get('pw_admitted_prefixes') or []
+    return any(candidate.startswith(str(allowed)) for allowed in verbs) or any(
+        candidate.startswith(str(prefix)) for prefix in prefixes
+    )
+
+
 def _match_r4_hardcoded_build(tool_name: str | None, tool_input: dict[str, Any]) -> str | None:
     """R4 — Bash command invoking ./pw or a bare mvn/npm/gradle/uv.
 
     The program is read BOTH un-stripped (``./pw`` is matched as a literal) and
     after R5 wrapper stripping, mirroring the OpenCode guard's first-token check
     on its wrapper-stripped ``commandTokens``: ``env uv run python -c ...`` is
-    refused here exactly as the guard refuses it.
+    refused here exactly as the guard refuses it. A ``./pw`` invocation is judged
+    by the shared table's ``build_wrapper_admission``, never by a verb literal
+    here, so ``./pw generate`` gets one verdict on both harnesses.
     """
     command = _bash_command(tool_name, tool_input)
     if command is None:
@@ -526,13 +570,10 @@ def _match_r4_hardcoded_build(tool_name: str | None, tool_input: dict[str, Any])
     stripped = _r5_stripped_tokens(command)
     stripped_first = _strip_matched_quotes(stripped[0]) if stripped else ''
     stripped_program = stripped_first.rsplit('/', 1)[-1] if stripped_first else ''
-    if (
-        first == './pw'
-        or stripped_first == './pw'
-        or stripped_program == 'pw'
-        or _program_name(command) in _R4_BUILD_PROGRAMS
-        or stripped_program in _R4_BUILD_PROGRAMS
-    ):
+    if first == './pw' or stripped_first == './pw' or stripped_program == 'pw':
+        verb = stripped[1] if len(stripped) > 1 else ''
+        return None if _pw_admitted(verb) else _R4_REASON
+    if _program_name(command) in _R4_BUILD_PROGRAMS or stripped_program in _R4_BUILD_PROGRAMS:
         return _R4_REASON
     return None
 
@@ -583,14 +624,19 @@ def _wrapper_table() -> dict[str, Any]:
     try:
         data = json.loads(_wrapper_table_path().read_text(encoding='utf-8'))
     except (OSError, ValueError):
-        return {'wrappers': {}, 'find_exec': (), 'missing': True}
+        return {'wrappers': {}, 'find_exec': (), 'shells': (), 'missing': True}
     wrappers = data.get('wrappers') if isinstance(data, dict) else None
     if not isinstance(wrappers, dict) or not wrappers:
-        return {'wrappers': {}, 'find_exec': (), 'missing': True}
+        return {'wrappers': {}, 'find_exec': (), 'shells': (), 'missing': True}
     find_exec = data.get('find_exec_options')
+    shells = data.get('shells')
     return {
         'wrappers': wrappers,
         'find_exec': tuple(str(option) for option in find_exec) if isinstance(find_exec, list) else (),
+        'shells': tuple(str(shell) for shell in shells) if isinstance(shells, list) else (),
+        'build_wrapper_admission': (
+            data.get('build_wrapper_admission') if isinstance(data.get('build_wrapper_admission'), dict) else {}
+        ),
         'missing': False,
     }
 
@@ -637,17 +683,35 @@ def _consume_wrapper_option(spec: dict[str, Any], token: str, tokens: list[str],
     return False, '', (2 if token in values else 1)
 
 
+def _shell_tokens(command: str) -> list[str]:
+    """Shell-lexical tokens with redirection operators split off.
+
+    ``shlex.split`` does not split ``<``/``>``, so an ATTACHED redirect kept the
+    operator inside the program token (``zsh<<<'python3 -c x'`` was one word), and
+    every first-token check missed both the wrapper and the shell spawn. The shell
+    parses such an operator as its own token, so this splitter does too — the same
+    shape the guard's ``shellSplit`` produces.
+    """
+    lexer = shlex.shlex(command, posix=True, punctuation_chars='<>')
+    lexer.whitespace_split = True
+    try:
+        return list(lexer)
+    except ValueError:
+        return command.split()
+
+
 def _r5_stripped_tokens(command: str) -> list[str]:
     """Return shell-lexical tokens of *command* minus R5-transparent prefixes.
 
-    Shell-lexical (``shlex``) like the other R5 helpers, falling back to the
+    Shell-lexical (``_shell_tokens``, which splits redirection operators like the
+    shell does) like the other R5 helpers, falling back to the
     whitespace split on malformed quoting rather than returning early, then
     walked by :func:`_strip_wrapper_tokens`. A ``find … -exec`` program hidden
     behind a wrapper (``env find . -exec python3 -c x {} +``) is spliced AFTER the
     wrapper walk, so the wrapper prefix cannot hide it.
     """
     try:
-        tokens = shlex.split(command)
+        tokens = _shell_tokens(command)
     except ValueError:
         tokens = command.split()
     stripped = _strip_wrapper_tokens(tokens)
@@ -700,6 +764,240 @@ def _spliced_segments(value: str) -> list[str]:
 def _is_interpreter_program_token(token: str) -> bool:
     """Whether *token* names an interpreter program (basename, case-insensitive)."""
     return _PYTHON_PROGRAM_RE.match(_wrapper_basename(token).lower()) is not None
+
+
+# ---- R5: the fail-closed floor for a wrapper that RUNS a command string ----
+# The segment walk models the first level of shell grammar only, so a grouping
+# keyword, a shell option before ``-c``, a here-string or a script file hides the
+# interpreter from it. Extending the walk to C-like shell grammar would restate
+# the problem as a longer list, so the floor is the decision: a wrapper handed a
+# command string, stdin or a SCRIPT FILE is refused when that text names an
+# interpreter ANYWHERE — except the one text the segment walk admits, the
+# documented executor call. The walk decides only that admission.
+
+#: A file read for the script-file arm is bounded, so a shell handed a huge or
+#: binary file cannot turn every tool call into a full-file read.
+_R5_SCRIPT_SCAN_MAX_BYTES = 1024 * 1024
+
+
+def _read_text_if_file(value: str, cwd: str | None) -> str:
+    """The contents of a script file a shell was handed, or ``''``.
+
+    A missing or unreadable file yields ``''``: the shell itself fails too, so
+    there is nothing to refuse.
+    """
+    if not value or '\n' in value:
+        return ''
+    try:
+        resolved = pathlib.Path(value) if value.startswith('/') else pathlib.Path(cwd or '.') / value
+        if not resolved.is_file():
+            return ''
+        if resolved.stat().st_size > _R5_SCRIPT_SCAN_MAX_BYTES:
+            return ''
+        return resolved.read_text(encoding='utf-8', errors='replace')
+    except OSError:
+        return ''
+
+
+def _wrapper_directory_value(wrapper: str, option: str, tokens: list[str], index: int) -> str | None:
+    """The directory a wrapper OPTION changes to, or ``None``.
+
+    WHICH options change directory is TABLE DATA (each wrapper's ``dir_options``),
+    so a wrapper added later declares its own and neither implementation carries a
+    second literal mapping. A short CLUSTER is walked letter by letter with the
+    table's value-letter rule, so ``env -iC/tmp/x`` and ``sudo -D/tmp/x`` are read
+    exactly like their detached spellings. This is the ONE rule
+    :func:`_effective_cwd` and the floor both use.
+    """
+    spec = _wrapper_table()['wrappers'].get(wrapper)
+    if not isinstance(spec, dict):
+        return None
+    dir_options = [str(option_name) for option_name in (spec.get('dir_options') or [])]
+    if not dir_options:
+        return None
+    for form in dir_options:
+        if not form.startswith('--'):
+            continue
+        if option == form or option.startswith(f'{form}='):
+            value = option.split('=', 1)[1] if '=' in option else ''
+            if not value:
+                value = _strip_matched_quotes(tokens[index + 1]) if index + 1 < len(tokens) else ''
+            return value or None
+    if not option.startswith('-') or option.startswith('--') or len(option) < 2:
+        return None
+    value_letters = set(spec.get('value_letters') or [])
+    letters = option[1:]
+    for position, letter in enumerate(letters):
+        if f'-{letter}' in dir_options:
+            rest = letters[position + 1 :]
+            value = rest or (_strip_matched_quotes(tokens[index + 1]) if index + 1 < len(tokens) else '')
+            return value or None
+        # A value-taking letter before this point consumes the REST of the cluster,
+        # so a later directory letter is that option's VALUE, not a flag.
+        if letter in value_letters:
+            return None
+    return None
+
+
+def _executed_texts(command: str, cwd: str | None) -> list[tuple[str, str | None]]:
+    """Every ``(text, cwd)`` a wrapper in PROGRAM POSITION is asked to execute.
+
+    The wrapper chain is walked so ``env -i zsh -c '…'`` is reached; a shell
+    contributes its ``-c`` string (wherever it sits among its options, so ``zsh
+    -o pipefail -c '…'`` is read), a here-string / here-document operand and every
+    readable script file it is handed; a splice wrapper (``env -S``, ``script
+    -c``, ``watch``, ``parallel``) contributes its command string. A wrapper's
+    directory option moves the directory the later texts run from. A non-wrapper
+    program position ends the walk.
+    """
+    try:
+        tokens = _shell_tokens(command)
+    except ValueError:
+        tokens = command.split()
+    table = _wrapper_table()
+    wrappers = table['wrappers']
+    shells = set(table['shells'])
+    texts: list[tuple[str, str | None]] = []
+    current_cwd = cwd
+    index = 0
+    total = len(tokens)
+    while index < total:
+        token = _strip_matched_quotes(tokens[index])
+        if _R5_ASSIGNMENT_RE.match(token):
+            index += 1
+            continue
+        wrapper = _wrapper_basename(token)
+        spec = wrappers.get(wrapper)
+        if not isinstance(spec, dict):
+            return texts
+        is_shell = wrapper.lower() in {shell.lower() for shell in shells}
+        index += 1
+        spliced: str | None = None
+        positionals = int(spec.get('leading_positionals') or 0)
+        while index < total:
+            option = _strip_matched_quotes(tokens[index])
+            if _R5_ASSIGNMENT_RE.match(option):
+                index += 1
+                continue
+            if option.startswith('<<'):
+                operand = _strip_matched_quotes(tokens[index + 1]) if index + 1 < total else ''
+                if operand:
+                    texts.append((operand, current_cwd))
+                rest = ' '.join(_strip_matched_quotes(candidate) for candidate in tokens[index + 1 :])
+                if rest:
+                    texts.append((rest, current_cwd))
+                return texts
+            if is_shell:
+                if option == '-c':
+                    if index + 1 < total:
+                        texts.append((_strip_matched_quotes(tokens[index + 1]), current_cwd))
+                    return texts
+                if option.startswith('-c') and len(option) > 2 and not option.startswith('--'):
+                    texts.append((_strip_matched_quotes(option[2:]), current_cwd))
+                    return texts
+                if option == '--':
+                    index += 1
+                    break
+                if option.startswith('-') and len(option) > 1:
+                    index += 1
+                    continue
+                if option in ('<', '>', '>>'):
+                    # A file redirection is not an operand: the NEXT token is the
+                    # file the shell reads (or writes), scanned below.
+                    index += 1
+                    continue
+                content = _read_text_if_file(option, current_cwd)
+                if content:
+                    texts.append((content, current_cwd))
+                index += 1
+                continue
+            if not (option.startswith('-') and len(option) > 1):
+                # A wrapper's LEADING POSITIONAL (flock's lock file, timeout's
+                # duration) is consumed where it really sits and the option walk
+                # CONTINUES — the table's shape is `flock {lock} -c {command}`,
+                # so stopping at the positional would never reach the splice.
+                if positionals > 0:
+                    index += 1
+                    positionals -= 1
+                    continue
+                break
+            directory_value = _wrapper_directory_value(wrapper, option, tokens, index)
+            if directory_value is not None and current_cwd:
+                current_cwd = _resolve_against(current_cwd, directory_value)
+            is_splice, value, consumed = _consume_wrapper_option(spec, option, tokens, index)
+            index += consumed
+            if is_splice:
+                spliced = value
+                break
+        if spliced is not None:
+            if spliced:
+                texts.append((spliced, current_cwd))
+            return texts
+        if spec.get('splice_positional') and index < total:
+            texts.append((_strip_matched_quotes(tokens[index]), current_cwd))
+            return texts
+    return texts
+
+
+def _text_interpreter_verdict(text: str, root: str | None, base_cwd: str | None) -> str:
+    """``refused`` / ``admitted`` / ``clear`` for one executed text."""
+    current = base_cwd or ''
+    admitted = False
+    for segment in _spliced_segments(text):
+        try:
+            tokens = _shell_tokens(segment)
+        except ValueError:
+            tokens = segment.split()
+        next_cwd = _apply_segment_cwd(tokens, current)
+        if any(_token_names_interpreter(token) for token in tokens):
+            if not next_cwd or not _is_executor_permit(segment, root, next_cwd):
+                return 'refused'
+            admitted = True
+        elif _command_names_interpreter_deep(segment):
+            # An interpreter hidden INSIDE a token (`sh -c 'python3 -c x'` is
+            # three outer tokens, with the call inside the third) is not the
+            # admitted executor, so it is refused.
+            return 'refused'
+        if next_cwd:
+            current = next_cwd
+    return 'admitted' if admitted else 'clear'
+
+
+def _executed_text_verdict(command: str, root: str | None, cwd: str | None) -> str:
+    """The whole-command floor verdict over every executed text."""
+    admitted = False
+    for text, text_cwd in _executed_texts(command, cwd):
+        verdict = _text_interpreter_verdict(text, root, text_cwd)
+        if verdict == 'refused':
+            return 'refused'
+        if verdict == 'admitted':
+            admitted = True
+    return 'admitted' if admitted else 'clear'
+
+
+def _command_names_interpreter_deep(command: str) -> bool:
+    """Whether a command names an interpreter ANYWHERE, including inside a token.
+
+    ``zsh -c "python3 -c x"`` shlex-splits to the single token ``python3 -c x``,
+    so a raw-token check is blind to it. Used by the MISSING-TABLE branch, where
+    no wrapper can be stripped, and by the fail-closed floor for a segment that
+    names no interpreter at token level. The recursion is bounded by the token
+    count, not by a depth cap.
+    """
+    try:
+        raw = _shell_tokens(command)
+    except ValueError:
+        raw = command.split()
+    for token in raw:
+        if _PYTHON_PROGRAM_RE.match(_wrapper_basename(token).lower()):
+            return True
+        try:
+            inner = _shell_tokens(token)
+        except ValueError:
+            inner = token.split()
+        if len(inner) > 1 and _command_names_interpreter_deep(' '.join(inner)):
+            return True
+    return False
 
 
 def _strip_wrapper_tokens(tokens: list[str]) -> list[str]:
@@ -792,17 +1090,19 @@ def _is_executor_permit(command: str, root: str | None, cwd: str | None) -> bool
     guard exempts it. The RELATIVE form ``.plan/execute-script.py`` is the
     canonical documented invocation and is admitted only when the command's
     EFFECTIVE working directory IS a repository root: the repository itself, or
-    one of ITS plan worktrees under ``.plan/local/worktrees/`` (phase-5+ pins the
-    shell cwd to the worktree, where ``.plan`` is the same executor through the
-    worktree's symlink). A leading ``cd``, an ``env -C`` / ``--chdir`` /
-    ``sudo -D`` directory change and the payload ``cwd`` are resolved first, so
-    the same relative path run from anywhere else — ``/tmp/x``, another checkout
-    — is refused.
-    (``git -C`` is not a shell directory change: it moves git's own working
-    directory for that one invocation, never the directory a following program
-    runs in.) An ABSOLUTE form is admitted only when it equals
-    ``{repository root}/.plan/execute-script.py`` after path normalization.
-    Used only by the R5 matcher.
+    one of ITS plan worktrees under ``.plan/local/worktrees/{plan}`` (one level,
+    and not the orchestrator's ``_orchestrator`` ledger worktree). A leading
+    ``cd`` (including one inside a spliced command string), an ``env -C`` /
+    ``--chdir`` / ``sudo -D`` directory change and the payload ``cwd`` are
+    resolved first, so the same relative path run from anywhere else — ``/tmp/x``,
+    another checkout — is refused. *root* here is the EXECUTOR root
+    (:func:`_executor_root`), never the payload ``cwd``: the cwd is the directory
+    the executor would run from, so using it as the root made the admission
+    vacuous. (``git -C`` is not a shell directory change: it moves git's own
+    working directory for that one invocation, never the directory a following
+    program runs in.) An ABSOLUTE form is admitted only when it equals
+    ``{executor root}/.plan/execute-script.py`` after path normalization — never
+    when it merely matches the payload cwd. Used only by the R5 matcher.
     """
     stripped = _r5_stripped_tokens(command)
     if len(stripped) < 2:
@@ -818,7 +1118,10 @@ def _is_executor_permit(command: str, root: str | None, cwd: str | None) -> bool
         return _is_repository_root_or_plan_worktree(effective, root)
     if not second.startswith('/'):
         return False
-    repo_root = (root or cwd or '').replace('\\', '/').rstrip('/')
+    # The ABSOLUTE arm resolves against the EXECUTOR root only: a payload cwd used
+    # as the root would admit `{cwd}/.plan/execute-script.py` from anywhere, the
+    # same vacuity the relative arm closed.
+    repo_root = (root or '').replace('\\', '/').rstrip('/')
     if not repo_root:
         return False
     return posixpath.normpath(second) == repo_root + '/.plan/execute-script.py'
@@ -829,17 +1132,21 @@ def _is_repository_root_or_plan_worktree(effective: str, root: str) -> bool:
 
     Phase-5+ pins the shell cwd to the plan worktree, where the relative
     ``.plan/execute-script.py`` is the same executor through the worktree's
-    symlink — refusing it would break the documented execution flow. A directory
-    that is neither the root nor one of that root's own
-    ``.plan/local/worktrees/{plan}`` paths stays refused. Both sides are compared
-    after ``realpath``.
+    symlink — refusing it would break the documented execution flow. The worktree
+    form is EXACTLY one level, ``.plan/local/worktrees/{plan}``: the orchestrator's
+    shared ledger worktree (``_orchestrator``) and any SUB-DIRECTORY of a plan
+    worktree are not that directory, so the relative executor stays refused there.
+    Both sides are compared after ``realpath``.
     """
     resolved_root = _real_path(root)
     resolved = _real_path(effective)
     if resolved == resolved_root:
         return True
     worktree_base = posixpath.normpath(resolved_root + '/.plan/local/worktrees') + '/'
-    return resolved.startswith(worktree_base)
+    if not resolved.startswith(worktree_base):
+        return False
+    plan_segment = resolved[len(worktree_base) :]
+    return bool(plan_segment) and '/' not in plan_segment and plan_segment != '_orchestrator'
 
 
 def _real_path(value: str) -> str:
@@ -894,25 +1201,63 @@ def _effective_cwd(command: str, base: str | None) -> str:
                 continue
             if not (option.startswith('-') and len(option) > 1):
                 break
-            is_directory_option = (
-                option in ('-C', '--chdir')
-                or option.startswith('--chdir=')
-                or (wrapper == 'sudo' and (option in ('-D', '--directory') or option.startswith('--directory=')))
-                or (wrapper == 'env' and option.startswith('-C') and len(option) > 2)
-            )
-            if is_directory_option:
-                value = option.split('=', 1)[1] if '=' in option else ''
-                if not value and option.startswith('-C') and len(option) > 2 and not option.startswith('--'):
-                    value = option[2:]
-                if not value:
-                    value = _strip_matched_quotes(tokens[index + 1]) if index + 1 < len(tokens) else ''
-                if value:
-                    current = _resolve_against(current, value)
-            _is_splice, _value, consumed = _consume_wrapper_option(spec, option, tokens, index)
+            directory_value = _wrapper_directory_value(wrapper, option, tokens, index)
+            if directory_value is not None:
+                current = _resolve_against(current, directory_value)
+            _is_splice, value, consumed = _consume_wrapper_option(spec, option, tokens, index)
             index += consumed
             if _is_splice:
+                current = _apply_spliced_cwd(value, current)
                 break
     return current
+
+
+def _apply_spliced_cwd(value: str, base: str) -> str:
+    """The cwd a wrapper's spliced COMMAND STRING leaves in force.
+
+    The ``cd``s of its segments are applied in order, so the executor inside
+    ``zsh -c "cd /tmp/x; python3 …"`` is judged from ``/tmp/x`` instead of from
+    the shell's cwd. Empty when a segment's ``cd`` names no directory, which no
+    caller treats as "the repository root".
+    """
+    current = base
+    for segment in _spliced_segments(value):
+        try:
+            tokens = shlex.split(segment)
+        except ValueError:
+            tokens = segment.split()
+        current = _apply_segment_cwd(tokens, current)
+        if not current:
+            return ''
+    return current
+
+
+def _apply_segment_cwd(tokens: list[str], base: str) -> str:
+    """The cwd ONE segment's leading ``cd`` leaves in force (base when it does not)."""
+    index = 0
+    while index < len(tokens) and _R5_ASSIGNMENT_RE.match(_strip_matched_quotes(tokens[index])):
+        index += 1
+    if index >= len(tokens) or _strip_matched_quotes(tokens[index]) != 'cd':
+        return base
+    target = _strip_matched_quotes(tokens[index + 1]) if index + 1 < len(tokens) else ''
+    if not target:
+        return ''
+    return _resolve_against(base, target)
+
+
+#: Shell GROUPING punctuation that can sit on the token naming the program:
+#: ``(python3 -c x)``, ``{ python3 -c x; }``, ``! python3 -c x``, ``x) python3``.
+_TEXT_PUNCTUATION_RE = re.compile(r'^[!(){}\[\];|&]+|[!(){}\[\];|&]+$')
+
+
+def _token_names_interpreter(token: str) -> bool:
+    """Whether a token that may carry grouping punctuation names an interpreter.
+
+    The floor must not depend on the segment walk having split the punctuation
+    off, so it is stripped here before the program check.
+    """
+    trimmed = _TEXT_PUNCTUATION_RE.sub('', _strip_matched_quotes(str(token)))
+    return bool(trimmed) and _is_interpreter_program_token(trimmed)
 
 
 def _resolve_against(base: str, value: str) -> str:
@@ -1011,9 +1356,12 @@ def _is_this_repository(payload: dict[str, Any]) -> bool:
     A consumer session on a machine that also carries the source tree is judged
     by its own project directory, never by where the hook file happens to live —
     while a payload with no project directory at all (a bare test/probe call)
-    still inherits the location's stricter scope.
+    still inherits the location's stricter scope. This precedence is deliberately
+    DIFFERENT from :func:`_allow_list_root`, which never reads the payload cwd:
+    scope may name a consumer checkout, but the root a relative PATH resolves
+    against may not.
     """
-    project = _allow_list_root(payload)
+    project = os.environ.get('CLAUDE_PROJECT_DIR') or gate.cwd(payload)
     roots = (project,) if project else (_repo_root_from_hook_location(),)
     for root in roots:
         if root and pathlib.Path(root).joinpath(*_R5_REPO_MARKER.split('/')).is_file():
@@ -1237,9 +1585,27 @@ def _repo_relative_path(raw: str, root: str | None, cwd: str | None = None) -> s
         if not normalized_root:
             return None
         prefix = normalized_root + '/'
-        if not token.startswith(prefix):
+        worktree_prefix = f'{prefix}.plan/local/worktrees/'
+        if token.startswith(worktree_prefix):
+            # A plan worktree is the same checkout through the worktree's `.plan`
+            # symlink, so a relative allow-listed token run from there resolves to
+            # the SAME repository-relative path — but only when the worktree
+            # directory really resolves inside this root's own worktrees. A
+            # symlink pointing out of the tree is refused, exactly as
+            # `_is_repository_root_or_plan_worktree` refuses it for the executor.
+            rest = token[len(worktree_prefix) :]
+            head, separator, tail = rest.partition('/')
+            if not separator or not head:
+                return None
+            resolved_base = posixpath.normpath(_real_path(normalized_root) + '/.plan/local/worktrees') + '/'
+            resolved_plan = _real_path(f'{worktree_prefix}{head}')
+            if not resolved_plan.startswith(resolved_base) or resolved_plan == resolved_base.rstrip('/'):
+                return None
+            token = tail
+        elif token.startswith(prefix):
+            token = token[len(prefix) :]
+        else:
             return None
-        token = token[len(prefix) :]
     parts: list[str] = []
     for segment in token.split('/'):
         if segment in ('', '.'):
@@ -1254,13 +1620,31 @@ def _repo_relative_path(raw: str, root: str | None, cwd: str | None = None) -> s
 
 
 def _allow_list_root(payload: dict[str, Any]) -> str | None:
-    """The repository root the allow-list resolves against.
+    """The repository root the shared allow-list resolves against.
 
     ``CLAUDE_PROJECT_DIR`` pins the session's project directory independently of
     the shell's working directory, so a command cannot move the root by running
-    from elsewhere; the payload ``cwd`` is the fallback.
+    from elsewhere. With it unset the root is the running hook's OWN location —
+    the repository whose source tree this hook belongs to — and NEVER the payload
+    ``cwd``: a cwd-based root makes the exact-path match vacuous, because a
+    planted ``{cwd}/marketplace/targets/sync.py`` would resolve to an allow-list
+    entry. A relative token run from one of the root's OWN plan worktrees still
+    resolves, because :func:`_repo_relative_path` strips the worktree prefix.
     """
-    return os.environ.get('CLAUDE_PROJECT_DIR') or gate.cwd(payload)
+    return os.environ.get('CLAUDE_PROJECT_DIR') or _repo_root_from_hook_location()
+
+
+def _executor_root() -> str | None:
+    """The root the RELATIVE executor permit resolves against.
+
+    ``CLAUDE_PROJECT_DIR`` when set; otherwise the running hook's OWN location —
+    the repository whose source tree this hook belongs to. It is NEVER the payload
+    ``cwd``: using the cwd made the check vacuous, since the cwd is exactly the
+    directory the executor would run from. A deployed hook (a plugin cache or a
+    consumer install) carries no such ancestor chain, so the root is ``None`` and
+    the relative form is refused as unresolvable.
+    """
+    return os.environ.get('CLAUDE_PROJECT_DIR') or _repo_root_from_hook_location()
 
 
 def _is_allow_listed(command: str, root: str | None, cwd: str | None) -> bool:
@@ -1351,23 +1735,21 @@ def _match_r5_interpreter_call(
     every later token is scanned with the same fail-closed rule. R1 matches
     against the unstripped command; R2's shell-spawn class and R4's build class
     also read the stripped program, so a wrapper cannot hide a shell spawn or a
-    build tool from them. *root* is the
-    repository root the allow-list match resolves against (the payload ``cwd``).
+    build tool from them. *root* is the allow-list root (:func:`_allow_list_root`:
+    ``CLAUDE_PROJECT_DIR`` or the hook's own location, never the payload ``cwd``).
     """
     command = _bash_command(tool_name, tool_input)
     if command is None:
         return None
-    if _is_executor_permit(command, root, cwd):
+    if _is_executor_permit(command, _executor_root(), cwd):
         return None
     if _wrapper_table()['missing']:
         # Fail CLOSED: without the shared wrapper table no wrapper can be
         # stripped, so refuse any command that names an interpreter anywhere —
-        # EXCEPT the executor permit above, the one sanctioned path.
-        try:
-            raw = shlex.split(command)
-        except ValueError:
-            raw = command.split()
-        if any(_PYTHON_PROGRAM_RE.match(_wrapper_basename(token).lower()) for token in raw):
+        # INCLUDING inside a quoted command string, which a raw-token check is
+        # blind to (`zsh -c "python3 -c x"` is one token) — EXCEPT the executor
+        # permit above, the one sanctioned path.
+        if _command_names_interpreter_deep(command):
             return _R5_REASON
     stripped = _r5_stripped_tokens(command)
     first = stripped[0].strip().lower() if stripped else ''
@@ -1744,8 +2126,9 @@ def _match_r6_raw_finalize_commit(
 
     Refuses the raw form so every plan commit passes through the gate-bearing
     ``git-workflow commit`` verb. A commit in any other phase, a non-``git``
-    program, and a non-``commit`` subcommand all pass through. Runs after the
-    R1-R5 chain, so a command R1-R5 already refuse keeps its own rule label.
+    program, and a non-``commit`` subcommand all pass through. Runs after R1 and
+    BEFORE the R2-R5 chain: the shell-spawn and interpreter classes would
+    otherwise shadow this specific rule for a commit wrapped in a shell string.
     Wrapper prefixes are stripped, matching the guard's ``gitCommitTarget``.
     """
     command = _bash_command(tool_name, tool_input)
@@ -1765,13 +2148,13 @@ def _match_r6_raw_finalize_commit(
     return _R6_REASON
 
 
-#: Ordered ``(rule name, matcher)`` chain — the first matcher returning a reason
+#: Contextual ``(rule name, matcher)`` chain — the first matcher returning a reason
 #: wins. The name is stamped into the ``guard.log`` audit line, matching the
-#: OpenCode guard's ``rule=Rn`` field. R5 is NOT here: it runs when the gate is
-#: satisfied OR this project IS the plan-marshall source repository. R6 is NOT
-#: here either: it runs unconditionally.
+#: OpenCode guard's ``rule=Rn`` field. R1 is NOT here (it runs first, before R6),
+#: R5 is NOT here (it runs after this chain), and R6 is NOT here either (it runs
+#: unconditionally, between R1 and this chain, so the shell-spawn class cannot
+#: shadow the specific raw-finalize rule).
 _RULES: tuple[tuple[str, Callable[[str | None, dict[str, Any]], str | None]], ...] = (
-    ('R1', _match_r1_shell_construct),
     ('R2', _match_r2_file_ops),
     ('R3', _match_r3_generated_executor),
     ('R4', _match_r4_hardcoded_build),
@@ -1838,7 +2221,7 @@ def _is_lane_run(payload: dict[str, Any]) -> bool:
     (:data:`_LANE_MARKER_MAX_AGE_SECONDS`); a stale one would otherwise bind
     R1-R5 in a consumer checkout forever.
     """
-    root = _allow_list_root(payload) or gate.cwd(payload)
+    root = os.environ.get('CLAUDE_PROJECT_DIR') or gate.cwd(payload)
     if not root:
         return False
     temp_dir = pathlib.Path(root) / '.plan' / 'temp'
@@ -1887,26 +2270,57 @@ def evaluate(payload: dict[str, Any]) -> str | None:
     # the guard refuses — the parity divergence D3 closes. A consumer repository
     # outside a plan context is still untouched (the two-tier permission map
     # governs it).
-    if gated or _is_this_repository(payload):
+    scoped = gated or _is_this_repository(payload)
+    floor_admitted = False
+    if scoped:
+        # R1 is the first-line rule (one command per call); it keeps its own rule
+        # label ahead of everything else.
+        reason = _match_r1_shell_construct(tool_name, tool_input)
+        if reason is not None:
+            _append_guard_log(payload, 'R1', _refusal_detail(payload))
+            return reason
+        # D1 fail-closed floor: a wrapper handed a command string, stdin or a
+        # script file is refused when that text names an interpreter the segment
+        # walk does not admit. It runs BEFORE R2 so a shell's own text decides
+        # the rule, and it is inside the same scope R5 binds in.
+        floor_command = _bash_command(tool_name, tool_input)
+        if floor_command is not None:
+            floor_verdict = _executed_text_verdict(
+                floor_command,
+                _executor_root(),
+                gate.cwd(payload) or _executor_root(),
+            )
+            if floor_verdict == 'refused':
+                _append_guard_log(payload, 'R5', _refusal_detail(payload))
+                return _R5_REASON
+            floor_admitted = floor_verdict == 'admitted'
+    # R6 is NOT context-gated, and it runs AFTER R1 but BEFORE R2-R5: the
+    # shell-spawn and interpreter classes would otherwise shadow the specific
+    # raw-finalize rule for a commit wrapped in a shell string, and R6's
+    # naming-from-every-form contract would be lost even though the verdict is
+    # still a refusal.
+    reason = _match_r6_raw_finalize_commit(payload, tool_name, tool_input)
+    if reason is not None:
+        _append_guard_log(payload, 'R6', _refusal_detail(payload))
+        return reason
+    if scoped:
         for rule_name, rule in _RULES:
             reason = rule(tool_name, tool_input)
             if reason is not None:
                 _append_guard_log(payload, rule_name, _refusal_detail(payload))
                 return reason
-    # R5 binds inside a plan context and in EVERY session of THIS repository; in
-    # a consumer repository outside a plan context it does not refuse a
-    # consumer's ordinary Python work.
-    if gated or _is_this_repository(payload):
+        # The floor may have decided this command IS the admitted executor behind
+        # a splicing wrapper (`env -S "python3 .plan/execute-script.py …"`); R2
+        # and R4 have already run, so it is admitted exactly as the bare form is.
+        if floor_admitted:
+            return None
+        # R5 binds inside a plan context and in EVERY session of THIS repository;
+        # in a consumer repository outside a plan context it does not refuse a
+        # consumer's ordinary Python work.
         reason = _match_r5_interpreter_call(tool_name, tool_input, _allow_list_root(payload), gate.cwd(payload))
         if reason is not None:
             _append_guard_log(payload, 'R5', _refusal_detail(payload))
             return reason
-    # R6 is NOT context-gated: a main-context session committing into a
-    # 6-finalize worktree is refused too, exactly as the OpenCode guard refuses.
-    reason = _match_r6_raw_finalize_commit(payload, tool_name, tool_input)
-    if reason is not None:
-        _append_guard_log(payload, 'R6', _refusal_detail(payload))
-        return reason
     return None
 
 
