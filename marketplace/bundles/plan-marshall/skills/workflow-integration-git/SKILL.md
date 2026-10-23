@@ -203,7 +203,8 @@ pushed: true
 | `prune-local-and-remote-ref` | `(--plan-id \| --project-dir --head) [--mode local_and_remote\|local_only]` | Delete local feature branch and optionally prune the remote-tracking ref after merge. Internal `show-ref` guard skips ref deletion when already absent. Default mode `local_and_remote`; use `local_only` in local-only plans. |
 | `branch-sync-state` | `--plan-id` | Report push parity of the plan's feature branch vs its `origin/{branch}` tracking ref: `ahead` \| `synced` \| `remote_absent_landed` \| `remote_absent_unverified` (a missing ref is disambiguated so a merged-and-deleted branch is never re-pushed), plus the `barrier_action` (`re-fire` \| `skip`) the push barrier's consumer branches on. Pure read-only comparison (`git rev-parse HEAD` vs `git rev-parse origin/{branch}`), no fetch. Resolves branch from `metadata.worktree_branch` and the tree via the canonical worktree-resolution channel. |
 | `worktree-path` | `--plan-id` | Resolve the persisted worktree path via `manage-status get-worktree-path` |
-| `worktree-create` | `--plan-id --branch [--base]` | Run `git worktree add` plus project-state bookkeeping (`metadata.use_worktree`/`worktree_path`/`worktree_branch`) |
+| `worktree-create` | `--plan-id --branch [--base]` | Run `git worktree add`, project-state bookkeeping (`metadata.use_worktree`/`worktree_path`/`worktree_branch`), and produce the worktree's own executor (`executor_in_worktree`) |
+| `worktree-executor-refresh` | `--plan-id` | Regenerate the worktree's executor through the production seam, reporting `executor_regenerated` and its detail (after a plan changes the script set) |
 | `worktree-remove` | `--plan-id [--force]` | Remove the worktree first, then delete the branch ref |
 | `worktree-list` | _(none)_ | List plans whose `status.metadata.use_worktree == true` |
 | `locate-plan-checkout` | `--plan-id` | Report where a plan's directory currently lives (`current` \| `worktree` \| `not_found`). The `worktree` probe resolves by two paths: the canonical `_resolve_worktree_path_for_plan` (manage-status) channel for not-yet-moved plans, then a structural `get_worktree_root() / {plan_id}` filesystem probe for the moved-in-from-main case (phase-5+, ADR-002). Reuses the uniform cwd walk-up for the current-checkout probe — no inline `git worktree list --porcelain` re-parsing. Used by the cross-session re-entry preflight at the `/plan-marshall` entry sites. |
@@ -533,7 +534,9 @@ exists: true
 
 ### worktree-create
 
-Run `git worktree add <resolved-path> <branch>` against the main checkout, set up `.plan/local` and `.plan/execute-script.py` symlinks, best-effort bootstrap pyprojectx, and persist the resolved path/branch via `manage-status metadata --set` so subsequent verbs can resolve through the canonical channel. The path is computed from `get_worktree_root() / <plan-id>`.
+Run `git worktree add <resolved-path> <branch>` against the main checkout, materialize a REAL `.plan/local`, produce the worktree's own executor, best-effort bootstrap pyprojectx, and persist the resolved path/branch via `manage-status metadata --set` so subsequent verbs can resolve through the canonical channel. The path is computed from `get_worktree_root() / <plan-id>`.
+
+**The executor is produced here, not only at the phase-5 move-in.** A routed build re-runs the worktree's own `.plan/execute-script.py`, and a plan whose lane text calls verb it introduced in its branch needs that slot to resolve the call — so an absent slot costs every build its routed path and the plan its own new verbs. Production goes through the same seam the move-in uses (`prepare_execute`'s generate-with-`--marketplace-root-{worktree}` then copy-from-main), with the verdict taken from the file on disk. It is non-fatal: a worktree that cannot get an executor is still a usable worktree.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow worktree-create \
@@ -553,7 +556,31 @@ worktree_path: /repo/.plan/local/worktrees/EXAMPLE-PLAN
 branch: feature/EXAMPLE-PLAN
 plan_symlink: /repo/.plan/local/worktrees/EXAMPLE-PLAN/.plan
 bootstrap: ok
+executor_in_worktree: present
 ```
+
+`executor_in_worktree` is `present` only when the slot holds a non-empty, non-symlink file. When it is `absent`, `executor_reason` names which mechanism was tried and why neither produced one.
+
+### worktree-executor-refresh
+
+Regenerate the worktree's executor through the same production seam, for the case `worktree-create` cannot cover: a plan that adds, removes or renames a script verb in its own branch. The executor embeds the script map and the argparse surface it derived when the worktree was created, so a verb the branch introduces is refused as `unknown_verb` until that surface is rebuilt. The rebuild must not be a direct interpreter call to `generate_executor.py` — this verb is the sanctioned route.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow worktree-executor-refresh \
+  --plan-id EXAMPLE-PLAN
+```
+
+**Output** (TOON):
+```toon
+status: success
+plan_id: EXAMPLE-PLAN
+worktree: /repo/.plan/local/worktrees/EXAMPLE-PLAN
+executor_path: /repo/.plan/local/worktrees/EXAMPLE-PLAN/.plan/execute-script.py
+executor_regenerated: true
+executor_detail: worktree executor regenerated at /repo/.plan/local/worktrees/EXAMPLE-PLAN/.plan/execute-script.py
+```
+
+`executor_regenerated` is taken from the file on disk, never from generation intent, and a `false` carries the reason in `executor_detail`. The verb is non-fatal by contract: the caller judges the boolean. A plan whose worktree cannot be resolved returns the plan-context resolver's own `plan_resolution_failed` error.
 
 ### worktree-remove
 
@@ -909,6 +936,13 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workf
 ```bash
 python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow worktree-remove \
   --plan-id PLAN_ID [--force]
+```
+
+### worktree-executor-refresh
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow worktree-executor-refresh \
+  --plan-id PLAN_ID
 ```
 
 ### worktree-list

@@ -15,6 +15,7 @@ Usage:
     git-workflow.py branch-sync-state --plan-id <plan-id>
     git-workflow.py worktree-path --plan-id <plan-id>
     git-workflow.py worktree-create --plan-id <plan-id> --branch <branch> [--base <ref>]
+    git-workflow.py worktree-executor-refresh --plan-id <plan-id>
     git-workflow.py worktree-remove --plan-id <plan-id> [--force]
     git-workflow.py worktree-list
     git-workflow.py worktree-rebase-to --plan-id <plan-id> --base <branch>
@@ -34,7 +35,10 @@ Subcommands:
                               tracking ref (ahead | synced | remote_absent_landed |
                               remote_absent_unverified); read-only, no fetch
     worktree-path             Resolve the persisted worktree path for a plan
-    worktree-create           Create a worktree + feature branch + .plan symlink for a plan
+    worktree-create           Create a worktree + feature branch + .plan symlink for a plan,
+                              and produce the worktree's own executor
+    worktree-executor-refresh Regenerate the worktree's executor through the production
+                              seam (after a plan changes the script set)
     worktree-remove           Remove a worktree (worktree first, then branch ref)
     worktree-list             Enumerate plans whose status.json declares a worktree
     worktree-rebase-to        Rebase the worktree's branch onto --base, dispatching
@@ -1871,6 +1875,66 @@ def _resolve_worktree_path_for_plan(plan_id: str) -> tuple[Path | None, dict | N
         }
 
 
+def _produce_worktree_executor(worktree_path: Path, plan_id: str) -> dict[str, Any]:
+    """Produce the worktree executor through ``prepare_execute``'s shared seam.
+
+    Imported lazily because ``prepare_execute`` loads THIS module by file path
+    (``_load_git_workflow``) to reuse ``cmd_worktree_create``: a module-level
+    import would instantiate a second ``prepare_execute`` module whenever that
+    script is the entrypoint, leaving two copies of the seam's state depending
+    on which script the executor dispatched.
+
+    Returns ``{executor_in_worktree, executor_reason?}`` exactly as the seam
+    reports it; the caller merges it into its own payload unchanged.
+    """
+    from prepare_execute import produce_worktree_executor
+
+    return produce_worktree_executor(worktree_path, plan_id)
+
+
+def cmd_worktree_executor_refresh(args):
+    """Regenerate this plan's worktree executor through the production seam.
+
+    A plan may add, remove or rename a script verb in its own branch. The
+    executor embeds a notation map generated from the bundle tree as it stood
+    when the worktree was materialised, so a notation the branch introduces
+    cannot resolve until that map is rebuilt. The rebuild must not be a direct
+    interpreter call to ``generate_executor.py``: the guard refuses that shape,
+    and no caller should spell the generator by path. This verb is the
+    sanctioned route — it resolves the worktree through the canonical
+    plan-context channel and re-runs the SAME seam ``worktree-create`` and the
+    phase-5 move-in use, so one mechanism produces the artifact.
+
+    Reports ``executor_regenerated`` taken from the file on disk (never from
+    generation intent) and ``executor_detail``. Non-fatal by contract: the
+    verdict rides the payload instead of an error status, so a caller that only
+    checks the exit code is told the truth by the boolean rather than by a
+    success that means "the verb ran".
+
+    A worktree that cannot be resolved (no plan record, no worktree opted in)
+    returns the resolver's own error payload unchanged.
+    """
+    plan_id = args.plan_id
+    worktree, error = _resolve_worktree_path_for_plan(plan_id)
+    if error is not None:
+        return error
+    verdict = _produce_worktree_executor(worktree, plan_id)
+    executor_path = worktree_executor_path(worktree)
+    regenerated = verdict['executor_in_worktree'] == 'present'
+    return {
+        'status': 'success',
+        'plan_id': plan_id,
+        'worktree': str(worktree),
+        'executor_path': str(executor_path),
+        'executor_regenerated': regenerated,
+        'executor_detail': (
+            f'worktree executor regenerated at {executor_path}'
+            if regenerated
+            else verdict.get('executor_reason', 'no reason reported')
+        ),
+    }
+
+
 def _detect_pw_wrapper(worktree: Path) -> Path | None:
     """Locate a pyprojectx wrapper in the worktree, preferring Unix `pw`."""
     for name in ('pw', 'pw.bat', 'pwx'):
@@ -2204,6 +2268,15 @@ def cmd_worktree_create(args):
     ``manage-status metadata --set`` so subsequent verbs can resolve the
     path through the canonical channel.
 
+    The worktree gets its OWN executor here, not only at the phase-5 move-in:
+    the runbook lane builds inside this worktree, and a daemon-routed build
+    re-runs the WORKTREE's ``.plan/execute-script.py``, so an absent slot forces
+    every lane build in-process (and leaves the lane unable to run a verb its
+    own branch adds). Production goes through the same seam the move-in uses,
+    with the verdict taken from the file on disk and reported as
+    ``executor_in_worktree``. Non-fatal: a worktree that cannot get an executor
+    is still a usable worktree, and the lane records ``absent`` plus its reason.
+
     The reserved shared orchestrator ledger key
     (:data:`marketplace_paths.ORCHESTRATOR_WORKTREE_KEY`) is refused BEFORE any
     path resolution, filesystem touch, or git call: that tree is a non-plan
@@ -2278,6 +2351,11 @@ def cmd_worktree_create(args):
 
     bootstrap_status, bootstrap_detail = _bootstrap_pyprojectx(target)
 
+    # The executor slot is filled HERE so the worktree can run scripts the moment
+    # it exists. Same seam as the phase-5 move-in (which keeps producing its own
+    # copy exactly as before), same on-disk verdict, non-fatal by contract.
+    executor_verdict = _produce_worktree_executor(target, args.plan_id)
+
     # Project-state bookkeeping: persist the resolved path/branch via
     # manage-status so subsequent verbs can resolve through the canonical
     # channel. The ``use_worktree`` field is a string here (manage-status
@@ -2311,6 +2389,7 @@ def cmd_worktree_create(args):
         'branch': args.branch,
         'plan_symlink': str(target / _PLAN_DIR_NAME),
         'bootstrap': bootstrap_status,
+        **executor_verdict,
     }
     if bootstrap_status == 'warning':
         payload['bootstrap_warning'] = bootstrap_detail
@@ -3734,6 +3813,19 @@ Examples:
                     {
                         'flags': ['--base'],
                         'help': 'Base ref for the new branch (default: current HEAD)',
+                    },
+                ],
+            },
+            {
+                'name': 'worktree-executor-refresh',
+                'help': "Regenerate this plan's worktree executor (after the plan changes the script set)",
+                'handler': cmd_worktree_executor_refresh,
+                'args': [
+                    {
+                        'flags': ['--plan-id'],
+                        'dest': 'plan_id',
+                        'required': True,
+                        'help': 'Plan identifier (mandatory — the worktree is resolved from it)',
                     },
                 ],
             },

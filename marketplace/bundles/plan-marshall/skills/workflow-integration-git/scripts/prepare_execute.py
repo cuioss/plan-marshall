@@ -560,6 +560,33 @@ def _generate_worktree_executor(worktree_path: Path, plan_id: str) -> tuple[bool
     return False, f'{launch_detail}; {copy_detail}'
 
 
+def produce_worktree_executor(worktree_path: Path, plan_id: str) -> dict[str, Any]:
+    """Produce ``{worktree}/.plan/execute-script.py`` and report the ON-DISK verdict.
+
+    The public half of the seam :func:`_generate_worktree_executor` implements,
+    for the producers that are NOT the phase-5 move-in: ``git-workflow``'s
+    ``worktree-create`` (the worktree must be able to run a script the moment it
+    exists) and its ``worktree-executor-refresh`` verb (a plan that changes the
+    script set re-runs it). Exposed as one function rather than duplicated so
+    ONE mechanism produces the artifact every consumer reads — the same rule
+    ``_executor_slot`` states for where the slot lives and what counts as
+    landed.
+
+    ``executor_in_worktree`` is the vocabulary the runbook lane records, and it
+    is derived from the file on disk, never from generation intent: ``present``
+    only once :func:`executor_landed` confirms a non-empty, non-symlink file.
+    ``executor_reason`` rides only on ``absent``, naming which mechanism was
+    tried and why neither produced a file — a ``present`` row carrying a reason
+    would read like a qualified success.
+    """
+    produced, detail = _generate_worktree_executor(worktree_path, plan_id)
+    present = produced and executor_landed(worktree_executor_path(worktree_path))
+    verdict: dict[str, Any] = {'executor_in_worktree': 'present' if present else 'absent'}
+    if not present:
+        verdict['executor_reason'] = detail
+    return verdict
+
+
 # ---------------------------------------------------------------------------
 # project-declared worktree setup commands
 # ---------------------------------------------------------------------------
