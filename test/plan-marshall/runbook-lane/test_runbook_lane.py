@@ -259,6 +259,7 @@ def _seed_fixture(
     documentation_files: tuple[str, ...] = ('doc/developer/build.adoc', 'doc/user/usage.md'),
     commands: dict[str, str] | None = None,
     build_systems: tuple[str, ...] = ('pyproject',),
+    credentials_config: dict[str, Any] | None = None,
 ) -> Path:
     """Seed a project fixture and return the staged spec path.
 
@@ -291,6 +292,7 @@ def _seed_fixture(
                     }
                 },
                 **({'project': {'default_base_branch': base_branch}} if base_branch else {}),
+                **({'credentials_config': credentials_config} if credentials_config is not None else {}),
             }
         ),
     )
@@ -2051,6 +2053,8 @@ _TEMPLATE_FACT_VALUES: dict[str, str] = {
     'plugin_version': '0.1.1919',
     'executor_version': '0.1.1919',
     'steps': 'setup:done,implement:done,build-gate:done,self-review:clear,pr:done,reviews:done,merge:done',
+    'step.sonar-roundtrip.open_issue_count': '0',
+    'step.sonar-roundtrip.open_issue_rules': 'none',
 }
 
 
