@@ -673,21 +673,21 @@ def _resolve_build(project_dir: Path) -> tuple[dict[str, Any], dict[str, Any], l
     system), and the gate canonicals this project does NOT publish — named
     rather than silently absent.
     """
-    from _architecture_core import DataNotFoundError, ModuleNotFoundInProjectError
+    from _architecture_core import DataNotFoundError, ModuleNotFoundInProjectError, load_project_meta
     from _cmd_client_query import resolve_command
 
     # The PERSISTED architecture is what ``resolve_command`` reads, so it is what
-    # this check reads: a missing or unreadable project file answers
-    # "architecture unavailable", never "this project publishes no gate" — the
+    # this check reads — through the owner's own loader rather than a hand-parse
+    # of its filename and schema. A missing or unreadable project file answers
+    # "architecture unavailable", never "this project publishes no gate": the
     # latter would name a build defect for a crawl that never ran.
-    project_file = project_dir / '.plan' / 'project-architecture' / '_project.json'
     try:
-        project_data = json.loads(project_file.read_text(encoding='utf-8'))
-    except FileNotFoundError as exc:
-        raise _ArchitectureUnavailable(f'no project architecture at {project_file.as_posix()}') from exc
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        project_meta = load_project_meta(str(project_dir))
+    except DataNotFoundError as exc:
+        raise _ArchitectureUnavailable(str(exc)) from exc
+    except Exception as exc:
         raise _ArchitectureUnavailable(f'{type(exc).__name__}: {exc}') from exc
-    if not isinstance(project_data, dict) or not project_data.get('modules'):
+    if not isinstance(project_meta, dict) or not project_meta.get('modules'):
         raise _ArchitectureUnavailable('the project architecture declares no modules')
 
     # The exceptions ``resolve_command`` uses for "this project does not publish

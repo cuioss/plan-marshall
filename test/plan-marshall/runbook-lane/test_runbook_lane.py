@@ -1932,6 +1932,9 @@ def test_the_executor_absent_verdict_runs_the_build_in_process(tmp_path: Path, m
     )
     monkeypatch.setitem(globals_, 'build_queue_slot', _slot)
     monkeypatch.setitem(globals_, 'cmd_run_common', lambda **_kwargs: 0)
+    # The build's own bookkeeping must not touch a real ledger from a unit test.
+    monkeypatch.setitem(globals_, '_record_resolution', lambda *_args, **_kwargs: None)
+    monkeypatch.setitem(globals_, '_append_gate_build_row', lambda **_kwargs: None)
 
     assert pyproject.cmd_run(args) == 0
     assert routed['called'] is False, 'an executor-less worktree still consulted the daemon route'

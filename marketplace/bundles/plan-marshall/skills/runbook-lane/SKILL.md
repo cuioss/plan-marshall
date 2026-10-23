@@ -606,8 +606,9 @@ Merge only when all of these hold:
   1. **a qualifying review exists** — a formal review by that reviewer on one of this PR's heads,
      listed by `ci pr reviews` with its commit id, or, where the reviewer publishes a clean review
      only as a summary comment, the marker-bearing summary comment whose `sourceCommitId` /
-     `coveredCommitId` name one of this PR's heads and whose `kind=reviewed` (the reviewer's own
-     standard under `plan-marshall:automatic-review`, § "Participation evidence").
+     `coveredCommitId` name one of this PR's heads and whose `kind=reviewed` (the
+     `final_review_risk_coverage` marker the reviewer's summary comment carries; read it from the
+     comment itself, because the marker names the head the review covered).
      Rate-limit notices, marker-less walkthroughs and thread replies do not count;
   2. **every finding is handled** — each finding from that review and from any later one is fixed in
      a pushed commit, or answered with a reason, and every one of that reviewer's threads is
