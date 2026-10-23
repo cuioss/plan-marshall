@@ -22,8 +22,35 @@ workstream: WS-NN
 presumptively split before its command is emitted — record the split-or-proceed
 rationale as an epic decision.}
 
+⛔ **A deliverable that serves an existing consumer unchanged** ("keep the consumer as is")
+enumerates that consumer's consumer-visible field and edge set in the deliverable, with one
+verification criterion per element: the fields a reader or a downstream verb sees, and the edges
+each can carry (empty, single, duplicate, boundary, stale). A deliverable that cannot enumerate the
+set says so — that is the signal that the consumer boundary is not yet understood, and it is a
+finding about the spec rather than a licence to write prose.
+
+⛔ **Where the project analyses its pull requests with Sonar** — `runbook_lane resolve` reports
+`sonar: configured` — the spec's Done-when lists the open-issue read at the head (the pull request's
+open-issue count and the rules left open, with `unknown` for a failed read and never `0`), and the
+Standing Constraints below say how a dismissal is recorded.
+
 1. {deliverable}
 2. {deliverable}
+
+## Standing Constraints
+
+{The constraints that bind every deliverable of this plan, stated once here instead of repeated per
+deliverable: the rules the implementation must not break, the mechanisms it must use, and the record
+it must leave.}
+
+- {constraint}
+- Where the project analyses its pull requests with Sonar (`resolve` reports `sonar: configured`): an
+  open Sonar issue is fixed in a pushed commit, or dismissed with a stated reason recorded as
+  `{issue-key}: {reason}` in the run's progress record and transmitted through the plan-less
+  transition verb, `plan-marshall:workflow-integration-sonar:sonar_rest transition --issue-key {key}
+  --transition {falsepositive|wontfix}`. A dismissal the run cannot transmit is a blocker, never a
+  silent pass. The merge gate reads the open-issue count at the head — `0` confirmed, or every
+  remaining issue dismissed — and an `undecidable` read blocks.
 
 ## Claim Labels
 

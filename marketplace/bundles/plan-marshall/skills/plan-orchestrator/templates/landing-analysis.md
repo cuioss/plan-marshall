@@ -37,6 +37,11 @@ collisions observed here feed the next pairing decision.}
 
 - Review: {bots, actionable findings, dispositions}
 - CI/merge: {outcome, path, conflicts}
+- Sonar: {the landing's `step.sonar-roundtrip.open_issue_count` and `open_issue_rules` against what
+  this analysis can see of the merge head — the measured figure, or `unknown` for a failed read
+  (never `0`), or `n/a` for a project without Sonar. Compare the measured figure with the lane's own
+  claim: a landing that reports a clean run beside a non-zero count, or a `0` the read never
+  measured, is an anomaly.}
 
 ## Reconciliation Actions
 

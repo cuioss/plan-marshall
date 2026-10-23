@@ -12,6 +12,10 @@ so the lane contract itself carries no project-specific literal.
 Verb surface::
 
     runbook_lane resolve --spec PATH [--project-dir DIR]
+    runbook_lane build-classify --paths P1,P2 [--project-dir DIR]
+    runbook_lane sonar-gate --state STATE [--count-status STATUS] [--open-count N]
+                             [--open-keys K1,K2] [--dismissed-keys K1,K2]
+    runbook_lane sonar-facts --state STATE [--count-status STATUS] [--open-count N] [--rules R1,R2]
 
 ``--spec`` must name a staged spec, i.e. a file below
 ``.plan/orchestrator/{slug}/plans/``. Anything else is refused: the lane exists
@@ -20,10 +24,13 @@ else. ``--project-dir`` defaults to the current directory and anchors every
 project-scoped read (marshal.json, the project architecture, the guard marker).
 
 **Fail closed.** An empty ``required_bots`` list, a missing automatic-review
-step, an unreadable ``marshal.json`` and an unresolvable build command are all
+step, an unreadable ``marshal.json``, an unreadable Sonar block
+(``sonar_config_unreadable``) or one carrying no project key
+(``sonar_config_incomplete``), and an unresolvable build command are all
 errors carrying a specific code. There is never a fall-back to a default
-reviewer list or a default build: a lane that quietly reviews with nobody, or
-builds with the wrong tool, would report a green run over work nobody checked.
+reviewer list or a default build: a lane that
+quietly reviews with nobody, or builds with the wrong tool, would report a green
+run over work nobody checked.
 """
 
 from __future__ import annotations
@@ -39,6 +46,34 @@ from file_ops import output_toon, output_toon_error
 
 #: The step whose ``required_bots`` / ``optional_bots`` the lane drives.
 _REVIEW_STEP_ID = 'plan-marshall:automatic-review'
+
+#: The provider block whose presence makes the project a Sonar project. The
+#: non-secret ``credentials_config`` key is canonicalized to the prefix-stripped
+#: form (``manage-providers``), so the bundle-prefixed spelling is accepted as a
+#: fallback read.
+_SONAR_CONFIG_KEY = 'workflow-integration-sonar'
+
+#: The two states the lane resolves for Sonar, and the three the read can answer
+#: with. ``unconfigured`` is a READ answer (the credential is missing at read
+#: time), never a resolve state: a project that carries a project key but cannot
+#: authenticate must block, not silently skip a check resolve said it needed.
+_SONAR_STATES = ('configured', 'not_configured')
+_SONAR_COUNT_STATUSES = ('confirmed', 'undecidable', 'unconfigured')
+
+#: The landing's optional Sonar facts, on the per-step typed-fact channel the
+#: lifecycle's ``sonar-roundtrip`` step already uses, so one measurement rides one
+#: channel.
+_SONAR_FACT_STEP = 'sonar-roundtrip'
+
+#: The provider's own CE-readiness default, used when the active target imposes no
+#: Bash ceiling (the seam answers ``no-op``).
+_SONAR_CE_DEFAULT_SECONDS = 600
+
+#: Margin kept below the harness's Bash ceiling. The plan-less read polls in-process
+#: and returns its own typed ``undecidable`` when the budget expires; a budget at or
+#: above the ceiling would have the harness kill the call first, leaving the lane a
+#: tool timeout instead of a state it can classify.
+_SONAR_CE_CEILING_MARGIN_SECONDS = 60
 
 #: The build canons the lane runs, each resolved on its own through the
 #: architecture: no composed ``--command-args "<canonical>"`` form exists, because
@@ -153,8 +188,8 @@ def _read_marshal(project_dir: Path) -> dict[str, Any]:
     return data
 
 
-def _split_bots(value: Any) -> list[str]:
-    """Split a CSV bot list, dropping blanks, preserving declared order."""
+def _split_csv(value: Any) -> list[str]:
+    """Split a comma-separated list, dropping blanks, preserving declared order."""
     if not isinstance(value, str):
         return []
     return [part.strip() for part in value.split(',') if part.strip()]
@@ -377,6 +412,81 @@ def _resolve_deliverable_skills(spec: Path) -> dict[str, Any]:
     }
 
 
+def _resolve_sonar(marshal: dict[str, Any]) -> dict[str, Any]:
+    """Resolve the project's Sonar state from its own configuration.
+
+    Returns ``{'state': 'configured', 'project_key': ...}`` for a project that
+    analyses its pull requests with Sonar, and ``{'state': 'not_configured'}``
+    for one that does not — the state in which the lane skips the open-issue read
+    and nothing blocks. Read from ``credentials_config.{provider}``, the
+    non-secret block ``manage-providers credentials edit --extra`` writes, so the
+    resolve stays offline: no REST call, no credential-file read.
+
+    Fails closed on a configuration it cannot read: a ``credentials_config``
+    section or provider block that is not an object is ``sonar_config_unreadable``,
+    and a provider block that carries no usable ``project_key`` is
+    ``sonar_config_incomplete`` — never a silent ``not_configured``. A corrupt or
+    half-written Sonar block must not drain as "this project does not use Sonar",
+    which is the one state in which the open-issue read is skipped.
+    """
+    credentials = marshal.get('credentials_config')
+    if credentials is None:
+        credentials = {}
+    if not isinstance(credentials, dict):
+        raise ValueError('sonar_config_unreadable')
+    block = credentials.get(_SONAR_CONFIG_KEY)
+    if block is None:
+        # A pre-normalization key carries the bundle prefix; reads accept either
+        # spelling (``manage-providers`` canonicalizes on the next access).
+        block = credentials.get(f'plan-marshall:{_SONAR_CONFIG_KEY}')
+    if block is None:
+        return {'state': 'not_configured'}
+    if not isinstance(block, dict):
+        raise ValueError('sonar_config_unreadable')
+    project_key = block.get('project_key')
+    if not isinstance(project_key, str) or not project_key.strip():
+        # The block exists, so this project INTENDS to analyse with Sonar; a
+        # missing project key is a configuration defect, and skipping the read on
+        # it would silently disable the merge gate on exactly the project that
+        # asked for it. Fail closed instead.
+        raise ValueError('sonar_config_incomplete')
+    return {'state': 'configured', 'project_key': project_key.strip()}
+
+
+def _resolve_sonar_ce_wait(project_dir: Path) -> int:
+    """Resolve a CE-readiness budget that returns inside the harness's Bash ceiling.
+
+    The plan-less read polls in-process until the analysis settles, so its budget
+    must expire BEFORE the harness's Bash timeout: a budget at or above the ceiling
+    gets the call killed with no typed answer, and the lane has no state to
+    classify. The ceiling comes from the platform-runtime ``harness
+    bash-timeout-ceiling`` seam (per active target), and the margin below it leaves
+    room for the enumeration and the process teardown.
+
+    A target that imposes no ceiling answers ``no-op``; the provider's own 600s
+    default then applies. A ceiling that could not be READ is a different state,
+    and it fails closed (``sonar_ce_ceiling_unreadable``): falling back to 600s
+    would hand a 120s harness a budget it kills before the read can answer, which
+    is the failure this budget exists to prevent. Only a project that analyses
+    with Sonar calls this, so a broken seam does not block a lane that has no Sonar
+    read to make.
+    """
+    from platform_runtime import _runtime_for_target
+    from toon_parser import parse_toon
+
+    try:
+        parsed = parse_toon(_runtime_for_target(str(project_dir)).harness_bash_timeout_ceiling())
+    except Exception:
+        raise ValueError('sonar_ce_ceiling_unreadable') from None
+    if parsed.get('status') == 'no-op':
+        return _SONAR_CE_DEFAULT_SECONDS
+    try:
+        ceiling = int(parsed['ceiling_seconds'])
+    except (KeyError, TypeError, ValueError):
+        raise ValueError('sonar_ce_ceiling_unreadable') from None
+    return max(1, ceiling - _SONAR_CE_CEILING_MARGIN_SECONDS)
+
+
 def _resolve_bots(marshal: dict[str, Any]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """Resolve the required and optional reviewers with their trigger comments.
 
@@ -410,10 +520,10 @@ def _resolve_bots(marshal: dict[str, Any]) -> tuple[list[dict[str, Any]], list[d
             for bot in names
         ]
 
-    required = _split_bots(step.get('required_bots'))
+    required = _split_csv(step.get('required_bots'))
     if not required:
         raise ValueError('required_bots_empty')
-    return _rows(required), _rows(_split_bots(step.get('optional_bots')))
+    return _rows(required), _rows(_split_csv(step.get('optional_bots')))
 
 
 class _BuildCommandUnresolvable(Exception):
@@ -1132,6 +1242,243 @@ def cmd_build_classify(args: argparse.Namespace) -> dict[str, Any]:
     return result
 
 
+def _sonar_gate_verdict(
+    state: str,
+    count_status: str | None,
+    open_count: int | None,
+    open_keys: list[str],
+    dismissed_keys: list[str],
+) -> dict[str, Any]:
+    """Decide whether the Sonar read admits the merge (section 7's condition).
+
+    The verdict is a pure function of the read and the run's recorded dismissals,
+    so the lane's merge condition is a decision a script makes rather than a
+    judgement a reader re-derives:
+
+    - ``not_configured`` — the project does not analyse with Sonar, so there is
+      no open-issue condition to satisfy.
+    - ``undecidable`` — the read never settled. This is a BLOCKER, never a ``0``:
+      no count and no key set were observed, so "no open issues" is unknowable.
+    - ``unconfigured`` — resolve said ``configured`` and the read could not
+      authenticate. Also a blocker: the credentials the project claims are not
+      usable, which is a defect nobody would otherwise see.
+    - ``confirmed`` — admitted when the count is ``0``, or when every open issue
+      the read enumerated is covered by a recorded dismissal. A count with no
+      enumerated key set cannot be verified key by key, so it is refused rather
+      than passed on the count alone.
+    """
+    if state == 'not_configured':
+        return {
+            'status': 'success',
+            'operation': 'sonar-gate',
+            'merge_allowed': True,
+            'reason': 'not_configured',
+        }
+    if count_status == 'undecidable':
+        return {
+            'status': 'success',
+            'operation': 'sonar-gate',
+            'merge_allowed': False,
+            'reason': 'undecidable_read',
+            'open_issue_count': None,
+        }
+    if count_status == 'unconfigured':
+        return {
+            'status': 'success',
+            'operation': 'sonar-gate',
+            'merge_allowed': False,
+            'reason': 'unconfigured_read',
+        }
+
+    count = open_count if isinstance(open_count, int) and open_count >= 0 else None
+    if count is None:
+        return {
+            'status': 'success',
+            'operation': 'sonar-gate',
+            'merge_allowed': False,
+            'reason': 'confirmed_read_without_count',
+            'open_issue_count': None,
+        }
+    if count == 0:
+        if open_keys:
+            # Mirror of the count guard above: a measured zero enumerates no key,
+            # so keys beside it describe some other read.
+            return {
+                'status': 'success',
+                'operation': 'sonar-gate',
+                'merge_allowed': False,
+                'reason': 'confirmed_zero_with_open_keys',
+                'open_issue_count': 0,
+            }
+        return {
+            'status': 'success',
+            'operation': 'sonar-gate',
+            'merge_allowed': True,
+            'reason': 'no_open_issues',
+            'open_issue_count': 0,
+        }
+    if len(set(open_keys)) < count:
+        # Distinct keys, not list length: a repeated key enumerates one issue
+        # twice, so `--open-count 2 --open-keys K1,K1` would otherwise pass a
+        # check whose whole purpose is to refuse a count it cannot verify.
+        return {
+            'status': 'success',
+            'operation': 'sonar-gate',
+            'merge_allowed': False,
+            'reason': 'open_issue_keys_missing',
+            'open_issue_count': count,
+        }
+    dismissed = set(dismissed_keys)
+    undismissed = [key for key in open_keys if key not in dismissed]
+    if undismissed:
+        return {
+            'status': 'success',
+            'operation': 'sonar-gate',
+            'merge_allowed': False,
+            'reason': 'open_issues_undismissed',
+            'open_issue_count': count,
+            'undismissed_keys': undismissed,
+        }
+    return {
+        'status': 'success',
+        'operation': 'sonar-gate',
+        'merge_allowed': True,
+        'reason': 'all_open_issues_dismissed',
+        'open_issue_count': count,
+        'dismissed_count': len(dismissed),
+    }
+
+
+def cmd_sonar_gate(args: argparse.Namespace) -> dict[str, Any]:
+    """Report whether the pull request's Sonar state admits the merge."""
+    state = getattr(args, 'state', None)
+    count_status = getattr(args, 'count_status', None)
+    open_count = getattr(args, 'open_count', None)
+    if state not in _SONAR_STATES:
+        return {
+            'status': 'error',
+            'error': 'invalid_sonar_state',
+            'message': f'--state must be one of {", ".join(_SONAR_STATES)}; got {state!r}',
+        }
+    if state == 'not_configured':
+        # A read state supplied beside `not_configured` is a contradiction: a
+        # project with no Sonar has no read to report. Refuse it rather than let a
+        # stale count ride an "allowed" verdict.
+        if count_status is not None or open_count is not None:
+            return {
+                'status': 'error',
+                'error': 'state_contradicts_read',
+                'message': 'a not_configured state carries no read; drop --count-status and --open-count',
+            }
+        return _sonar_gate_verdict(state, None, None, [], [])
+    if count_status not in _SONAR_COUNT_STATUSES:
+        return {
+            'status': 'error',
+            'error': 'invalid_count_status',
+            'message': (
+                f'--count-status must be one of {", ".join(_SONAR_COUNT_STATUSES)} '
+                f'when --state configured; got {count_status!r}'
+            ),
+        }
+    return _sonar_gate_verdict(
+        state,
+        count_status,
+        open_count,
+        _split_csv(getattr(args, 'open_keys', None)),
+        _split_csv(getattr(args, 'dismissed_keys', None)),
+    )
+
+
+def cmd_sonar_facts(args: argparse.Namespace) -> dict[str, Any]:
+    """Render the landing's optional Sonar facts from the read taken at the merge head.
+
+    Two facts on the per-step typed-fact channel the lifecycle's
+    ``sonar-roundtrip`` step already uses — one measurement, one channel:
+    ``step.sonar-roundtrip.open_issue_count`` and
+    ``step.sonar-roundtrip.open_issue_rules``.
+
+    The two sentinels are the point of the verb. A confirmed read carries the
+    MEASURED count. An ``undecidable`` read carries ``unknown`` — a failed read
+    asserts that nothing was observed and never collapses into ``0``, which is a
+    claim the run did not earn. A project without Sonar carries ``n/a``, the
+    answered absence. Both facts are OPTIONAL in the landing, so the required key
+    set is untouched and no earlier landing becomes incomplete.
+    """
+    state = getattr(args, 'state', None)
+    if state not in _SONAR_STATES:
+        return {
+            'status': 'error',
+            'error': 'invalid_sonar_state',
+            'message': f'--state must be one of {", ".join(_SONAR_STATES)}; got {state!r}',
+        }
+
+    if state == 'not_configured':
+        # Symmetric with the gate: a read supplied beside `not_configured` is a
+        # contradiction, and rendering `n/a` over it would hide that the caller
+        # read one project's issues and reported another project's state.
+        if any(getattr(args, name, None) is not None for name in ('count_status', 'open_count', 'rules')):
+            return {
+                'status': 'error',
+                'error': 'state_contradicts_read',
+                'message': 'a not_configured state carries no read; drop --count-status, --open-count and --rules',
+            }
+        count, rules = 'n/a', 'n/a'
+    else:
+        count_status = getattr(args, 'count_status', None)
+        if count_status not in _SONAR_COUNT_STATUSES:
+            return {
+                'status': 'error',
+                'error': 'invalid_count_status',
+                'message': (
+                    f'--count-status must be one of {", ".join(_SONAR_COUNT_STATUSES)} when --state configured; '
+                    f'got {count_status!r}'
+                ),
+            }
+        if count_status in ('undecidable', 'unconfigured'):
+            # Both are failed reads: nothing was observed, so the figure is
+            # `unknown` — never `0`, which is a measured clean answer.
+            count, rules = 'unknown', 'unknown'
+        else:
+            open_count = getattr(args, 'open_count', None)
+            if not isinstance(open_count, int) or open_count < 0:
+                return {
+                    'status': 'error',
+                    'error': 'confirmed_read_without_count',
+                    'message': '--open-count is required for a confirmed read',
+                }
+            count = str(open_count)
+            declared = _split_csv(getattr(args, 'rules', None))
+            if not declared and open_count > 0:
+                # A non-zero count with no rules would render as "3 open issues,
+                # no rule left open" — a figure whose other half is missing. The
+                # read enumerates the rules, so the lane can always pass them.
+                return {
+                    'status': 'error',
+                    'error': 'confirmed_read_without_rules',
+                    'message': '--rules is required for a confirmed count above zero',
+                }
+            rules = ','.join(declared) if declared else 'none'
+            if declared and open_count == 0:
+                # The mirror of the guard above: a measured zero leaves no rule
+                # open, so a rule beside it describes some other read.
+                return {
+                    'status': 'error',
+                    'error': 'confirmed_zero_with_rules',
+                    'message': 'a confirmed count of zero carries no rule left open',
+                }
+
+    return {
+        'status': 'success',
+        'operation': 'sonar-facts',
+        'open_issue_count': count,
+        'open_issue_rules': rules,
+        'fact_lines': [
+            f'step.{_SONAR_FACT_STEP}.open_issue_count={count}',
+            f'step.{_SONAR_FACT_STEP}.open_issue_rules={rules}',
+        ],
+    }
+
+
 def cmd_resolve(args: argparse.Namespace) -> dict[str, Any]:
     """Resolve every project-specific value the runbook lane needs."""
     project_dir = Path(getattr(args, 'project_dir', '.') or '.').resolve()
@@ -1147,6 +1494,10 @@ def cmd_resolve(args: argparse.Namespace) -> dict[str, Any]:
         build_timeout_seconds = _resolve_build_timeout(probed, project_dir)
         base_branch = _resolve_base_branch(marshal)
         deliverable_state = _resolve_deliverable_skills(spec)
+        sonar_state = _resolve_sonar(marshal)
+        # The read's budget is resolved only for a project that will make the read:
+        # a broken ceiling seam must not block a lane with no Sonar read to make.
+        sonar_ce_wait = _resolve_sonar_ce_wait(project_dir) if sonar_state['state'] == 'configured' else None
     except _BuildCommandUnresolvable as exc:
         # Fail closed and name the gate canonicals that could not be resolved:
         # the lane never falls back to a composed string or to a default build.
@@ -1215,8 +1566,17 @@ def cmd_resolve(args: argparse.Namespace) -> dict[str, Any]:
         'guard': guard,
         'guard_log': '/'.join(_GUARD_LOG_PARTS),
         'build_server': build_server,
+        'sonar': sonar_state['state'],
         'skills_note': deliverable_state['skills_note'],
     }
+    # The read's budget rides only when there is a read to make: an empty row
+    # would read like a parsed-but-empty answer on a project without Sonar.
+    if sonar_ce_wait is not None:
+        resolved['sonar_ce_wait_timeout_seconds'] = sonar_ce_wait
+    # The project key rides only when there is one: an empty row would read like a
+    # parsed-but-empty answer on a project that does not use Sonar at all.
+    if 'project_key' in sonar_state:
+        resolved['sonar_project_key'] = sonar_state['project_key']
     # The executor version is OPTIONAL in the landing, so it is present only when
     # the seam actually read one — never an `unknown` line the template must drop.
     if 'executor_version' in runtime_stamp:
@@ -1254,6 +1614,69 @@ def main() -> int:
     classify_parser.add_argument('--paths', required=True, help='Comma-separated changed paths')
     classify_parser.add_argument('--project-dir', default='.', help='Project root (default: current directory)')
 
+    gate_parser = subparsers.add_parser(
+        'sonar-gate', help="Decide whether the pull request's Sonar state admits the merge", allow_abbrev=False
+    )
+    gate_parser.add_argument(
+        '--state',
+        required=True,
+        help='The state resolve reported: configured, or not_configured',
+    )
+    gate_parser.add_argument(
+        '--count-status',
+        dest='count_status',
+        default=None,
+        help="The read's count_status: confirmed, undecidable, or unconfigured (required when configured)",
+    )
+    gate_parser.add_argument(
+        '--open-count',
+        dest='open_count',
+        type=int,
+        default=None,
+        help="The read's confirmed open-issue count",
+    )
+    gate_parser.add_argument(
+        '--open-keys',
+        dest='open_keys',
+        default=None,
+        help='Comma-separated issue keys the read enumerated',
+    )
+    gate_parser.add_argument(
+        '--dismissed-keys',
+        dest='dismissed_keys',
+        default=None,
+        help='Comma-separated issue keys this run dismissed with a stated reason',
+    )
+
+    facts_parser = subparsers.add_parser(
+        'sonar-facts',
+        help="Render the landing's optional Sonar facts from the merge-head read",
+        allow_abbrev=False,
+    )
+    facts_parser.add_argument(
+        '--state',
+        required=True,
+        help='The state resolve reported: configured, or not_configured',
+    )
+    facts_parser.add_argument(
+        '--count-status',
+        dest='count_status',
+        default=None,
+        help="The read's count_status: confirmed, undecidable, or unconfigured (required when configured)",
+    )
+    facts_parser.add_argument(
+        '--open-count',
+        dest='open_count',
+        type=int,
+        default=None,
+        help="The read's confirmed open-issue count",
+    )
+    facts_parser.add_argument(
+        '--rules',
+        default=None,
+        help='Comma-separated rules of the issues left open at the merge head',
+    )
+
     args = parser.parse_args()
     if args.command == 'resolve':
         data = cmd_resolve(args)
@@ -1268,6 +1691,20 @@ def main() -> int:
         return 0
     if args.command == 'build-classify':
         data = cmd_build_classify(args)
+        if data.get('status') == 'error':
+            output_toon_error(data['error'], data.get('message', data['error']))
+            return 0
+        output_toon(data)
+        return 0
+    if args.command == 'sonar-gate':
+        data = cmd_sonar_gate(args)
+        if data.get('status') == 'error':
+            output_toon_error(data['error'], data.get('message', data['error']))
+            return 0
+        output_toon(data)
+        return 0
+    if args.command == 'sonar-facts':
+        data = cmd_sonar_facts(args)
         if data.get('status') == 'error':
             output_toon_error(data['error'], data.get('message', data['error']))
             return 0

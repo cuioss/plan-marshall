@@ -220,6 +220,45 @@ review, or whose review never produced findings — is still COMPLETE. A consume
 three reads "no code-review result was recorded", never "the review found nothing"; a recorded
 `blocking_count` of `0` is the clean answer, and only a recorded one.
 
+## Sonar open-issue facts
+
+Whether the pull request was clean of open Sonar issues rides the landing as two typed facts on the
+optional per-step channel, under the step name the plan lifecycle's own Sonar roundtrip already
+uses — one measurement, one channel. The two keys are the RUNBOOK lane's rendering of the read it
+took on the merge head:
+
+| Optional key | Value |
+|--------------|-------|
+| `step.sonar-roundtrip.open_issue_count` | The open new-code issue count the read measured at the merge head |
+| `step.sonar-roundtrip.open_issue_rules` | The rules of the issues left open there, or `none` at a measured `0` |
+
+The count is scoped to the pull request's analysis — the issues Sonar found on that head — not a
+whole-project total. A lifecycle landing's `sonar-roundtrip` step records its own fact names on the
+same channel (`count_status`, `new_code_issue_count`, and so on), so a drain reading a lifecycle
+landing finds no `open_issue_count` and reads "no Sonar figure was recorded" — never "the pull
+request had no open issues". The two key sets are distinct measurements of the same platform, and
+neither is inferred from the other.
+
+Two sentinels are legal, and they are different claims — beside the measured figure itself, and
+`none` for the rules fact at a measured `0`:
+
+- `unknown` — a read that failed: `undecidable` (the analysis never settled, or the REST call
+  failed) or `unconfigured` (the credential resolve said existed could not authenticate). It asserts
+  that nothing was observed. **It is never `0`**: `0` is a measured figure that says the pull request
+  is clean, and a failed read has not earned that claim. A drain that reads `unknown` reads a gap,
+  exactly as `total_tokens=unknown` does.
+- `n/a` — a project that does not analyse its pull requests with Sonar (the runbook lane's
+  `sonar: not_configured`), a real end state rather than a failed read.
+
+`none` is not a sentinel: it is the rules fact's measured answer at a confirmed count of `0`, where
+no rule is left open. A confirmed count above zero always carries the rules it left open, because the
+read enumerates them.
+
+The two keys are OPTIONAL: the required key set above is unchanged, so a landing without them — an
+earlier landing, or a run that recorded none — is still COMPLETE. A consumer that finds neither reads
+"no Sonar figure was recorded", never "the pull request had no open issues"; a recorded `0` is the
+clean answer, and only a recorded one.
+
 ## The narrative residue section
 
 Below the fenced block, the landing MAY carry a `## Residue` markdown section for the NARRATIVE-ONLY
