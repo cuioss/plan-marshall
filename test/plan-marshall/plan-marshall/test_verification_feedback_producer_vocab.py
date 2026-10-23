@@ -135,6 +135,9 @@ def test_ci_verify_branch_reaches_the_shared_ingestion_step():
         'the store query must use the leading wildcard: persisted pointers are '
         'anchored at `.plan` (`local/plans/{plan_id}/artifacts/...`)'
     )
+    assert '--component plan-marshall:phase-6-finalize' in branch, (
+        "the branch must scope the query to the executor's component"
+    )
 
 
 def test_single_accept_set_without_second_list():

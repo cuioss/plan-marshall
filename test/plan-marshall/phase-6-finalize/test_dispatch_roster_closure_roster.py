@@ -218,6 +218,25 @@ _PLAN_MARSHALL_SKILLS = MARKETPLACE_ROOT / 'plan-marshall' / 'skills'
 
 _ROSTER_DOC = _SKILL_DIR / 'standards' / 'dispatch-inline-split.md'
 _SKILL_DOC = _SKILL_DIR / 'SKILL.md'
+
+#: The workflow that owns the single producer accept-set. The roster test reads
+#: the vocabulary from here rather than keeping a copy that can drift.
+_WORKFLOW_DOC = (
+    MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'plan-marshall' / 'workflow' / 'verification-feedback.md'
+)
+
+_ACCEPT_SET_SENTENCE = re.compile(r'Single accept-set: one of (?P<members>[^.]+)\.')
+
+
+def _workflow_accept_set() -> set[str]:
+    """Return the producer values the workflow's Inputs table accepts."""
+    match = _ACCEPT_SET_SENTENCE.search(_WORKFLOW_DOC.read_text(encoding='utf-8'))
+    assert match is not None, 'verification-feedback must declare the single accept-set'
+    members = set(re.findall(r'`([^`]+)`', match.group('members')))
+    assert members, 'the accept-set sentence names no producer value'
+    return members
+
+
 _MARSHAL_JSON = PROJECT_ROOT / '.plan' / 'marshal.json'
 
 _DISPATCHED_HEADING = '## Dispatched steps'
@@ -1311,15 +1330,7 @@ def test_producer_rows_use_the_single_accept_set_vocabulary():
     text = _ROSTER_DOC.read_text(encoding='utf-8')
     producer_values = re.findall(r'`producer=([^`]+)`', text)
     assert producer_values, 'No producer runtime input found on the roster.'
-    accept_set = {
-        'build-runner',
-        'sonar',
-        'pr-comment',
-        'plugin-doctor',
-        'pr-state',
-        'finalize-feedback',
-        'ci-verify',
-    }
+    accept_set = _workflow_accept_set()
     outside = sorted(set(producer_values) - accept_set)
     assert not outside, f'Producer value(s) outside the single accept-set: {outside}'
     assert 'ci-verify-timeout' not in producer_values, 'ci-verify-timeout is rejected, never a producer value'

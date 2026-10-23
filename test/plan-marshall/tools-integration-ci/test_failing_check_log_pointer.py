@@ -117,6 +117,20 @@ def test_a_re_enrichment_clears_a_stale_reason(monkeypatch):
     assert 'log_unavailable_reason' not in enriched
 
 
+def test_a_failed_re_enrichment_clears_a_stale_pointer(monkeypatch):
+    """A pointer from an earlier attempt never survives a failed re-enrichment."""
+    monkeypatch.setattr(ci_base, '_load_persist', lambda: _stub_persist({'status': 'success'}))
+    entry = _check()
+    entry['log_file'] = 'local/plans/p/artifacts/ci-runs/1/build.log'
+    entry['filtered_log_file'] = 'local/plans/p/artifacts/ci-runs/1/build.filtered.log'
+
+    enriched = _enrich(entry, plan_id='p', fetcher=lambda *_args: None)
+
+    assert enriched['log_file'] == ''
+    assert enriched['filtered_log_file'] == ''
+    assert enriched['log_unavailable_reason'] == 'log_fetch_failed'
+
+
 def test_a_missing_filtered_path_is_reported(monkeypatch):
     """One filled pointer beside one empty one is still an explained empty."""
     paths = {

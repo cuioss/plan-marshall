@@ -484,6 +484,15 @@ def test_a_fallback_path_slugifies_a_reusable_workflow_name(tmp_path):
     assert findings.calls[0]['file_path'] == 'artifacts/ci-runs/111/verify-verify.log'
 
 
+def test_fallback_slug_matches_the_persistence_rule():
+    """The fallback path uses the same slug the persistence layer writes."""
+    from conftest import load_script_module
+
+    log_filter = load_script_module('plan-marshall', 'tools-integration-ci', '_ci_log_filter.py', '_ci_slug_parity')
+    for name in ('verify / verify', 'Build (3.12)', 'build / sonar-build', 'simple', '', '///'):
+        assert _mod._slugify_job_name(name) == log_filter.slugify_check_name(name)
+
+
 def test_a_finding_points_at_the_persisted_log_when_the_status_reported_one(tmp_path):
     """The finding's file path is the real evidence the status payload named."""
     result, findings = _run_sonar_case(

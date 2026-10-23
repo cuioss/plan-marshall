@@ -79,10 +79,11 @@ The `default:ci-verify` executor filed one `triage` finding per failing check un
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings list \
   --plan-id {plan_id} --type triage --resolution pending \
+  --component plan-marshall:phase-6-finalize \
   --file-pattern '*artifacts/ci-runs/*'
 ```
 
-The file pattern is what scopes the query to the executor's own findings: every one names an `artifacts/ci-runs/` log or manifest. The leading `*` is load-bearing — `manage-ci-artifacts` reports its path relative to the `.plan` directory (`local/plans/{plan_id}/artifacts/ci-runs/...`), so an anchored pattern without it would match only the fallback shape and would silently find nothing on the normal path.
+The file pattern is what scopes the query to the executor's own findings: every one names an `artifacts/ci-runs/` log or manifest. The leading `*` is load-bearing — `manage-ci-artifacts` reports its path relative to the `.plan` directory (`local/plans/{plan_id}/artifacts/ci-runs/...`), so an anchored pattern without it would match only the fallback shape and would silently find nothing on the normal path. The `--component` filter is the second half of the scope: another step's `triage` finding that happened to use an `artifacts/ci-runs/` path is not this producer's to ingest.
 
 If the store is empty (a sibling pass already triaged them), return immediately with `status: success`, `display_detail: "0 finding(s) — nothing to triage"`, `loop_back_needed: false`. Otherwise fall through to Step 1.4 (batched ingestion), Step 1.5 (optional verify pre-stage), Step 2 (extension load), and Steps 3-6 (per-finding triage). Each finding's `[subtype]` title tag is the row: the FIX path for a build or Sonar-deferral finding differs from the ACCEPT path for a policy finding, and the `ci_sonar_gate` row is the deferral to `sonar-roundtrip`, which owns the Sonar quality gate.
 

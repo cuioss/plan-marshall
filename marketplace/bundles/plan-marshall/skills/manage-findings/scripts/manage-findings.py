@@ -205,6 +205,7 @@ def cmd_query(args: argparse.Namespace) -> dict:
         author=args.author,
         kind=args.kind,
         bot_kind=args.bot_kind,
+        component=getattr(args, 'component', None),
         preference_admissible=bool(getattr(args, 'preference_admissible', False)),
         any_checkout=_any_checkout(args),
     )
@@ -418,6 +419,7 @@ def main() -> int:
     query_parser.add_argument('--resolution', choices=RESOLUTIONS, help='Filter by resolution')
     query_parser.add_argument('--promoted', help='Filter by promoted (true/false)')
     query_parser.add_argument('--file-pattern', help='Glob pattern for file_path')
+    add_component_arg(query_parser, required=False)
     query_parser.add_argument('--author', help='Filter by comment-author login')
     query_parser.add_argument('--kind', choices=PR_COMMENT_KINDS, help='Filter by pr-comment kind')
     query_parser.add_argument('--bot-kind', dest='bot_kind', choices=BOT_KINDS, help='Filter by reviewer-bot identity')

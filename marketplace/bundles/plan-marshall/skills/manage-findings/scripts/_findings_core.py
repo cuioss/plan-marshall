@@ -722,14 +722,16 @@ def query_findings(
     bot_kind: str | None = None,
     any_checkout: bool = False,
     *,
+    component: str | None = None,
     preference_admissible: bool = False,
 ) -> dict[str, Any]:
     """Query findings across all per-type files, merging results.
 
     Storage is split into findings/{type}.jsonl. The full record set across all
     per-type files is always loaded (in canonical FINDING_TYPES order) so
-    `total_count` reflects the entire store; type/resolution/file_pattern/promoted
-    filters then narrow the result to `filtered_count`. This preserves the
+    `total_count` reflects the entire store;
+    type/resolution/file_pattern/promoted/component filters then narrow the
+    result to `filtered_count`. This preserves the
     CLI-surface semantics from the pre-split single-file layout.
 
     ``preference_admissible`` is an opt-in narrowing (default OFF, so every
@@ -767,6 +769,7 @@ def query_findings(
         kind=kind,
         bot_kind=bot_kind,
         any_checkout=any_checkout,
+        component=component,
         admissibility=_resolve_preference_admissibility(preference_admissible),
     )
 
@@ -783,6 +786,7 @@ def _query_findings(
     bot_kind: str | None,
     any_checkout: bool,
     admissibility: PreferenceAdmissibility,
+    component: str | None = None,
 ) -> dict[str, Any]:
     """Query the per-plan store against an ALREADY-RESOLVED admissibility context.
 
@@ -801,7 +805,13 @@ def _query_findings(
     type_filter = {t.strip() for t in finding_type.split(',')} if finding_type else None
     filtered = _filter_records(
         records,
-        exact_filters={'resolution': resolution, 'author': author, 'kind': kind, 'bot_kind': bot_kind},
+        exact_filters={
+            'resolution': resolution,
+            'author': author,
+            'kind': kind,
+            'bot_kind': bot_kind,
+            'component': component,
+        },
         type_filter=type_filter,
         file_pattern=file_pattern,
         promoted=promoted,
@@ -831,6 +841,7 @@ def query_findings_unified(
     bot_kind: str | None = None,
     any_checkout: bool = False,
     *,
+    component: str | None = None,
     preference_admissible: bool = False,
     include_qgate: bool = True,
 ) -> dict[str, Any]:
@@ -843,9 +854,10 @@ def query_findings_unified(
 
     Returns the union of:
     - the per-PLAN findings (via `query_findings`, honouring the same
-      type/resolution/promoted/file_pattern/author/kind/bot_kind filters), and
+      type/resolution/promoted/file_pattern/author/kind/bot_kind/component filters), and
     - the PENDING Q-Gate findings across every phase in `QGATE_PHASES`, with the
-      same `finding_type` / `file_pattern` / `author` / `kind` / `bot_kind` filters applied for parity.
+      same `finding_type` / `file_pattern` / `author` / `kind` / `bot_kind` /
+      `component` filters applied for parity.
 
     ``preference_admissible`` narrows BOTH slices, not just the per-plan one. The
     flag is a single opt-in on one read verb, so applying it to only half of what
@@ -881,6 +893,7 @@ def query_findings_unified(
         kind=kind,
         bot_kind=bot_kind,
         any_checkout=any_checkout,
+        component=component,
         admissibility=admissibility,
     )
     plan_findings = plan_result['findings']
@@ -911,7 +924,12 @@ def query_findings_unified(
             _narrow_to_preference_admissible(
                 _filter_records(
                     records,
-                    exact_filters={'author': author, 'kind': kind, 'bot_kind': bot_kind},
+                    exact_filters={
+                        'author': author,
+                        'kind': kind,
+                        'bot_kind': bot_kind,
+                        'component': component,
+                    },
                     type_filter=type_filter,
                     file_pattern=file_pattern,
                 ),

@@ -210,7 +210,7 @@ this order per failing check.
 | a | Sonar quality-gate failure inside a build job | The persisted job log of the failing check carries the sonar-scanner marker `QUALITY GATE STATUS: FAILED`, AND the plan's execution manifest carries the `sonar-roundtrip` step | `ci-verify` | `ci_sonar_gate` | Deferral: `sonar-roundtrip` owns the gate and triages it; ci-verify files the deferral only and MUST NOT double-report it as a build or policy failure |
 | b | Build / test / lint / coverage failure | A failing check whose workflow name AND job name match no policy pattern — the DEFAULT | `ci-verify` | `ci_build_failure` | Open fix-task on failing module; loop_back |
 | c | Policy-workflow failure (licence/CLA, dependency review, CodeQL, labels/title) | CI check whose workflow OR job name matches the closed policy list | `ci-verify` | `ci_policy_failure` | Depends on policy: accept / suppress / fix |
-| d | Explicit `conclusion=failure` | per-check conclusion | `ci-verify` | (b) or (c) above | per-row |
+| d | Explicit `conclusion=failure` | per-check conclusion | `ci-verify` | (a), (b) or (c) above | per-row |
 | e | Cancelled (`conclusion=cancelled`) | per-check conclusion | `ci-verify` | `ci_cancelled` | accept (manual cancellation) / retry |
 | f | Action required | per-check conclusion | `ci-verify` | `ci_action_required` | operator approval; accept after approval |
 | g | Stale (`conclusion=stale`) | per-check conclusion | `ci-verify` | `ci_stale` | re-run CI (HEAD advanced past check's commit) |

@@ -2195,8 +2195,11 @@ def enrich_failing_checks_with_logs(
         entry.setdefault('log_file', '')
         entry.setdefault('filtered_log_file', '')
         entry.setdefault('error_style', error_style)
-        # A re-enrichment must not carry a stale reason from an earlier attempt.
+        # A re-enrichment must not carry a stale reason from an earlier attempt,
+        # nor a pointer from an earlier run: reset both before re-deriving them.
         entry.pop('log_unavailable_reason', None)
+        entry['log_file'] = ''
+        entry['filtered_log_file'] = ''
 
         run_id = entry.get('run_id') or ''
         if not plan_id:
