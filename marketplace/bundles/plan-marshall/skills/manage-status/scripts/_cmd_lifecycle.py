@@ -7,6 +7,7 @@ Lifecycle command handlers for manage-status: create, transition, archive, delet
 import argparse
 import json
 import os
+import shlex
 import shutil
 import subprocess
 from pathlib import Path
@@ -476,6 +477,127 @@ def _sha_is_recorded(branch_sha: str, recorded: set[str]) -> bool:
     return False
 
 
+def _sha_is_ancestor_of_head(worktree_path: str, sha: str) -> bool | None:
+    """Whether ``sha`` is reachable from HEAD, or ``None`` when git cannot answer.
+
+    Delegates to the single shared implementation in ``_ledger_core`` — the same
+    predicate the remap derives its map with — so the guard and the repair cannot
+    disagree about what "no longer an ancestor" means. ``None`` is the third
+    answer: the probe could not reach git, so ancestry was never established.
+    Collapsing it into ``False`` would let an unreadable worktree be reported as
+    a proven rewrite.
+    """
+    try:
+        from _ledger_core import commit_ancestry
+    except ImportError:
+        return None
+    return commit_ancestry(worktree_path, sha)
+
+
+def _ready_to_run(parts: list[str]) -> str:
+    """Compose one copy-pasteable invocation from its argv parts."""
+    return ' '.join(shlex.quote(part) for part in parts)
+
+
+#: The prefix every remedy invocation shares — the executor form the guard
+#: reports, never a direct script path. ``shlex.quote`` is applied per part, so a
+#: worktree path carrying a space stays one argument when the caller runs it.
+_EXECUTOR_PREFIX = ('python3', '.plan/execute-script.py', 'plan-marshall:manage-change-ledger:manage-change-ledger')
+
+#: The values the boundary cannot know: which deliverable a missing commit
+#: belongs to, and the paths that commit changed. They are left as literal
+#: placeholders rather than omitted, because ``--deliverable-id`` is required and
+#: ``--changed-paths`` is the git-sourced fact the ledger must record — omitting
+#: either yields a row that is wrong (an empty path list) or an invocation
+#: argparse rejects. Calling that "ready-to-run" without saying so would be false,
+#: so every message that carries this invocation says to replace both.
+_DELIVERABLE_ID_PLACEHOLDER = 'DELIVERABLE_ID'
+_CHANGED_PATHS_PLACEHOLDER = 'CHANGED_PATHS'
+
+_REPLACE_PLACEHOLDERS = (
+    f'replace {_DELIVERABLE_ID_PLACEHOLDER} and {_CHANGED_PATHS_PLACEHOLDER} '
+    "with the missing commit's deliverable and git-sourced paths"
+)
+
+
+def _remap_invocation(worktree_path: str) -> str:
+    """The ready-to-run remap invocation for a rewritten branch."""
+    return _ready_to_run([*_EXECUTOR_PREFIX, 'remap', '--worktree-root', worktree_path])
+
+
+def _append_invocation(worktree_path: str, commit_sha: str) -> str:
+    """The append invocation for one missing commit.
+
+    ``--deliverable-id`` and ``--changed-paths`` carry their documented
+    placeholders rather than guessed values: the boundary knows the commit has no
+    row, but not which deliverable produced it or which paths it touched. Both
+    flags are mandatory facts on a ``kind=change`` row, so omitting them would
+    either be rejected by argparse or record an empty path list — the placeholder
+    plus :data:`_REPLACE_PLACEHOLDERS` in the message is the only honest form.
+    """
+    return _ready_to_run(
+        [
+            *_EXECUTOR_PREFIX,
+            'append',
+            '--kind',
+            'change',
+            '--deliverable-id',
+            _DELIVERABLE_ID_PLACEHOLDER,
+            '--commit-sha',
+            commit_sha,
+            '--changed-paths',
+            _CHANGED_PATHS_PLACEHOLDER,
+            '--worktree-root',
+            worktree_path,
+        ]
+    )
+
+
+def _rewrite_evidence(
+    worktree_path: str,
+    unrecorded: list[str],
+    branch_shas: list[str],
+    recorded: set[str],
+) -> tuple[bool, bool]:
+    """Return ``(is_rewrite, any_row_stale)`` for the unrecorded set.
+
+    Two conditions identify a rewrite rather than a skipped settlement:
+
+    - the unrecorded set is the WHOLE branch — no recorded row matches any branch
+      commit; or
+    - every recorded row's commit is no longer an ancestor of HEAD — the ledger
+      describes a history HEAD replaced.
+
+    A ``bookkeeping_gap`` beside at least one stale row is the MIXED state: part
+    of the branch is recorded, part is missing, and at least one recorded row is
+    a rewritten commit. ``any_row_stale`` reports it, so that state can carry the
+    remap remedy beside the append one even though it is not the rewrite
+    signature.
+
+    No condition proves the CAUSE: the ledger is shared, so the whole-branch
+    state is equally a rewrite and a settlement that never ran, and the
+    all-stale state says only that the rows describe a history HEAD does not.
+    The caller therefore never asserts which of the two happened. A row whose
+    ancestry probe could not be answered makes staleness unproven, so it never
+    counts as stale.
+
+    The prefix rule in :func:`_sha_is_recorded` does not absorb any of this: it
+    compares a row's SHA against a branch SHA as a prefix, and a rewritten
+    commit's new SHA shares no prefix with the old one, so a rebase, amend or
+    cherry-pick is always a mismatch under that rule.
+    """
+    every_row_stale = True
+    any_row_stale = False
+    for sha in recorded:
+        answer = _sha_is_ancestor_of_head(worktree_path, sha)
+        if answer is False:
+            any_row_stale = True
+        else:
+            every_row_stale = False
+    whole_branch = bool(unrecorded) and len(unrecorded) == len(branch_shas)
+    return (bool(whole_branch or every_row_stale), any_row_stale)
+
+
 def _recorded_change_shas() -> set[str] | None:
     """Return every ``commit_sha`` carried by a ``kind=change`` ledger row.
 
@@ -536,6 +658,19 @@ def _phase_end_marker_refusal(plan_id: str, status: dict[str, Any]) -> dict[str,
       store holds zero rows at all the markers are wholly missing (the Step 10a
       bookkeeping never ran); when it holds some the recording is partial.
       ``recorded_count`` names which of the two the reader is looking at.
+      Among the partial cases the payload distinguishes two conditions by
+      ``signature``: ``history_rewritten`` when the unrecorded set is the whole
+      branch or every recorded row's commit left HEAD's history (rebase, amend,
+      cherry-pick) — carrying ``remap_invocation`` — and ``bookkeeping_gap``
+      otherwise, carrying ``append_invocations`` (plus the first as
+      ``append_invocation``). The remedy differs because the cause does:
+      remapping stale rows is not the same repair as appending skipped ones.
+      The whole-branch state is inherently AMBIGUOUS: no row is attributable to
+      this branch, so the ledger may describe a rewrite or may hold other work
+      while this settlement never ran. It therefore carries BOTH repairs and a
+      message that names both possibilities. The stale-rows condition reports the
+      same signature and the same two repairs — it proves the rows describe a
+      history HEAD does not, never which rewrite produced it.
     - ``None`` (pass) — no worktree in play, no persisted path, an empty
       range, or full coverage. Each pass-through is a distinct unevaluable
       state, never a clean verdict over an examined store. An unreadable
@@ -639,13 +774,69 @@ def _phase_end_marker_refusal(plan_id: str, status: dict[str, Any]) -> dict[str,
             'and the change-ledger holds zero kind=change rows: no 5-execute deliverable commit was '
             'recorded. Run the phase-5-execute Step 10a settlement bookkeeping, then retry the transition.'
         )
+        remedy: dict[str, Any] = {}
     else:
-        error = EXECUTE_COMMITS_UNRECORDED_ERROR
-        message = (
-            f'{len(unrecorded)} of {len(branch_shas)} worktree-branch commit(s) since diverging from '
-            f'{base_branch} carry no kind=change ledger row. Run the phase-5-execute Step 10a '
-            'settlement bookkeeping for the unrecorded commits, then retry the transition.'
-        )
+        is_rewrite, any_row_stale = _rewrite_evidence(worktree_path, unrecorded, branch_shas, recorded)
+        whole_branch = len(unrecorded) == len(branch_shas)
+        append_invocations = [_append_invocation(worktree_path, sha) for sha in unrecorded]
+        if is_rewrite:
+            error = EXECUTE_COMMITS_UNRECORDED_ERROR
+            remap_invocation = _remap_invocation(worktree_path)
+            if whole_branch:
+                # No row is attributable to this branch, so the state is equally a
+                # rewrite and a settlement that never ran — the ledger is shared.
+                # Name both possibilities and carry BOTH repairs.
+                message = (
+                    f'{len(unrecorded)} of {len(branch_shas)} worktree-branch commit(s) since diverging from '
+                    f'{base_branch} carry no kind=change ledger row and no branch commit matches a recorded '
+                    'row: the whole branch is unrecorded. If it was rewritten (rebase, amend or cherry-pick), '
+                    f'map the recorded rows onto their rewritten counterparts: {remap_invocation} If it was '
+                    f'not rewritten, record the unrecorded commits ({_REPLACE_PLACEHOLDERS}): '
+                    f'{append_invocations[0]}'
+                )
+            else:
+                # The second D2 condition: the rows describe a history HEAD does
+                # not. That is a stale store, not proof of a rebase, so the
+                # message states the observation and the payload carries both
+                # repairs.
+                message = (
+                    f'{len(unrecorded)} of {len(branch_shas)} worktree-branch commit(s) since diverging from '
+                    f'{base_branch} carry no kind=change ledger row, and every recorded row points at a commit '
+                    "outside HEAD's history. Map the recorded rows onto their rewritten counterparts: "
+                    f'{remap_invocation} Or record the unrecorded commits ({_REPLACE_PLACEHOLDERS}): '
+                    f'{append_invocations[0]}'
+                )
+            remedy = {
+                'signature': 'history_rewritten',
+                'remap_invocation': remap_invocation,
+                'append_invocations': append_invocations,
+                'append_invocation': append_invocations[0],
+            }
+        else:
+            error = EXECUTE_COMMITS_UNRECORDED_ERROR
+            message = (
+                f'{len(unrecorded)} of {len(branch_shas)} worktree-branch commit(s) since diverging from '
+                f'{base_branch} carry no kind=change ledger row. Run the phase-5-execute Step 10a '
+                f'settlement bookkeeping for the unrecorded commits, then retry the transition '
+                f'({_REPLACE_PLACEHOLDERS}): {append_invocations[0]}'
+            )
+            remedy = {
+                'signature': 'bookkeeping_gap',
+                'append_invocations': append_invocations,
+                'append_invocation': append_invocations[0],
+            }
+            if any_row_stale:
+                # Mixed state: part of the branch is recorded, part is missing,
+                # and at least one recorded row is a rewritten commit (a manual
+                # amend beside a skipped settlement). The append covers the
+                # missing commit and the remap covers the stale row, so the
+                # reader is not left to discover the rewrite at the next attempt.
+                remap_invocation = _remap_invocation(worktree_path)
+                message = (
+                    f"{message} A recorded row also points at a commit outside HEAD's history — a "
+                    f'rewritten commit. Map the rewritten rows: {remap_invocation}'
+                )
+                remedy['remap_invocation'] = remap_invocation
     return {
         'status': 'error',
         'plan_id': plan_id,
@@ -656,6 +847,7 @@ def _phase_end_marker_refusal(plan_id: str, status: dict[str, Any]) -> dict[str,
         'branch_commit_count': len(branch_shas),
         'recorded_count': len(recorded),
         'message': message,
+        **remedy,
     }
 
 

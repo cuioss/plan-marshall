@@ -16,8 +16,10 @@ that is NOT plan-scoped, so it serves plan-less orchestrator builds as well as
 plan-scoped task builds.
 
 There is exactly ONE ledger file, ONE `worktree_sha` primitive (a single shared
-implementation), and ONE append verb. Entries are **pure-append** — no
-find-and-update, no in-place mutation. There is no separate registry file anywhere.
+implementation), and ONE write path: every row — appended directly or appended
+by the rewrite-remap — goes through `append_entry`. Entries are **pure-append** —
+no find-and-update, no in-place mutation. There is no separate registry file
+anywhere.
 
 ## The `worktree_sha` primitive — working-tree currency, not HEAD currency
 
@@ -239,6 +241,56 @@ python3 .plan/execute-script.py plan-marshall:manage-change-ledger:manage-change
   [--kind build|change|job] [--exit-code EXIT_CODE]
 ```
 
+### manage-change-ledger — remap
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-change-ledger:manage-change-ledger remap \
+  [--worktree-root WORKTREE_ROOT] [--old-head SHA] \
+  [--map OLD:NEW,...] [--map-file PATH] [--emit-map PATH] [--dry-run] \
+  [--worktree-sha WORKTREE_SHA]
+```
+
+Maps the `kind=change` rows of rewritten commits onto their rewritten
+counterparts and **appends** the mapped rows; the original rows are never
+edited or removed. A history rewrite (the `sync-baseline` rebase, an amend, a
+cherry-pick) gives every replayed commit a new SHA, so every earlier row stops
+matching the branch and the 5-execute end-marker guard reports the whole branch
+unrecorded. The remap is the repair, and it costs one append per row.
+
+The old-to-new map has two sources:
+
+- **Explicit** — `--map` (`old:new` pairs, comma-separated) or `--map-file`
+  (the JSON `--emit-map` writes, or lines of `old new` / `old:new` / `old=new`).
+  A rewriting step that knows what it did emits this map.
+- **Derived** — with no explicit map, the verb resolves each recorded
+  `commit_sha`, keeps the rows whose commit is no longer an ancestor of `HEAD`,
+  and matches them to the commits they became by **stable `git patch-id`**.
+  Patch-id hashes the patch, not the message, so a rebased commit and a
+  message-only amend both match. `--old-head` narrows the candidate window to
+  commits reachable from HEAD but not from the pre-rewrite head, and drops stale
+  rows outside that head (reported in `unmapped`) so a foreign history is never
+  offered a counterpart. It does not identify which of the window's commits the
+  rewrite replayed, and the window still includes any upstream commits fetched
+  with the rebase. A patch-id carried by two candidates is ambiguous and left
+  unmapped rather than guessed.
+
+An old commit whose patch changed (a conflict resolved during the rebase) has no
+patch-id counterpart: it is reported in `unmapped` rather than guessed at, and
+needs the explicit append path. A SHA that does not resolve in the repository is
+reported in `unresolved` for the same reason, and an explicit-map key that names
+no recorded row is reported in `unmapped` — a typo'd map is never a silent
+success. A line of a hand-written map that does not name two SHAs is refused,
+not dropped. A source row that already has a mapped row — same `remapped_from`,
+`deliverable_id`, sorted `changed_paths` and target commit — is skipped, so
+re-running the verb after an interruption appends nothing twice; two rows that
+share one old commit (even one deliverable) are distinct records and each maps
+once. `--dry-run` reports the map without appending; `--emit-map PATH` writes
+the applied map as JSON.
+
+The mapped row preserves the source row's recorded facts (`deliverable_id`,
+`changed_paths`, …) and adds `remapped_from` — the row's original `commit_sha` —
+so the pair is recoverable from one row.
+
 ### manage-change-ledger — classify-outcome
 
 ```bash
@@ -310,6 +362,11 @@ from _ledger_core import (
     build_record,
     change_record,
     job_record,
+    commit_ancestry,
+    parse_sha_map_text,
+    remap_change_rows,
+    remap_record,
+    resolve_commit,
 )
 ```
 
@@ -317,6 +374,11 @@ from _ledger_core import (
 - `append_entry(record)` — append exactly one `json.dumps(record) + '\n'` line. Pure-append; no read-modify-write.
 - `read_entries()` — parse the JSONL line-by-line, skip malformed lines, return `[]` when absent. The library reader the gate imports directly.
 - `build_record(...)` / `change_record(...)` / `job_record(...)` — constructors that stamp `kind`, `worktree_sha`, `timestamp_iso` and the kind-specific fields, so every writer and the CLI produce identically-shaped entries. `build_record` keeps the two invocation layers apart (`args` = executor argv, `command` = wrapper-resolved command) and carries the wrapper-reported `duration_seconds` / `outcome`; those three are keyword-only with a `None` default, so the payload-less CLI writer needs no change. `change_record` stores the caller-supplied `changed_paths` verbatim — it does NOT compute changed paths. `job_record` persists a submit-time `job_id` (+ `fingerprint` / `notation`) for build re-attach.
+- `remap_change_rows(...)` — the rewrite-remap: derive or consume an old-to-new map, then append one `remap_record` per affected row. Returns `remap_count`, `mappings`, `unmapped` / `unresolved` and the ledger path. Idempotent at the `(remapped_from, commit_sha)` pair level, so a repeated run appends nothing.
+- `remap_record(...)` — the mapped-row constructor: copies the source row's recorded facts and stamps `commit_sha` / `worktree_sha` / `timestamp_iso` / `remapped_from`.
+- `parse_sha_map_text(...)` — parse the map from JSON (`--emit-map` output) or lines of `old new` / `old:new` / `old=new`; a line that does not name two SHAs is refused rather than dropped, so a typo cannot read as a clean no-op.
+- `commit_ancestry(...)` / `resolve_commit(...)` — the git primitives the derivation and the 5-execute guard share, so no consumer re-implements the ancestry or rev-parse check. `commit_ancestry` is tri-state: `True`/`False` are git's answers, `None` means git could not answer and must never be read as proof that a commit is stale.
+
 
 ## Integration
 
@@ -324,6 +386,8 @@ from _ledger_core import (
 |---------------------|-----------|----------|
 | `tools-script-executor` dispatch boundary | produces | `append --kind build` (executor template `kind=build` writer) |
 | `phase-5-execute` Step 10a chain-tail | produces | `append --kind change` after each per-deliverable commit |
+| `phase-6-finalize` `sync-baseline` | produces | `remap` after a rebase rewrote the branch's SHAs (emit the map, then consume it) |
+| `manage-status` 5-execute boundary | reports (never writes) | carries the ready-to-run `remap` invocation in its `execute_commits_unrecorded` refusal; appends nothing itself |
 | `build-server-client` `submit` verb | produces | imports `job_record` + `append_entry`; writes `kind=job` at submit time for re-attach |
 | `build-server-client` `wait` re-attach | consumes | imports `read_entries`; reads the latest `kind=job` for the plan to recover `job_id` |
 | `manage-tasks:pre-commit-verify-freshness` gate | consumes | imports `read_entries` + `compute_worktree_sha`; scans `kind=build` by `status == success` + `worktree_sha`, then cross-checks each matching row's `notation` against the project's architecture-resolved build notations. This is the gate's ledger-reading route only — an exempted footprint returns before the scan and consumes no entry at all |
