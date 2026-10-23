@@ -49,7 +49,13 @@ This plan gives red CI one accepted triage route and classifies a failing check 
 
    At HEAD the first and third are policy.
 
-Split guard: two deliverables, one surface (the `ci-verify` → `verification-feedback` route).
+3. **Each CI finding is filed under the run of its own check, and a failing check carries a log pointer or a stated reason.** Added 2026-10-23 from `lessons-routing-053` item 2, graded **high**.
+   - `ci_verify` keys each finding's artifact path on the run id of the check that failed, so two failing runs at one head yield findings under two paths.
+   - `ci checks status` fills `log_file` / `filtered_log_file` for a failing check, or reports why it cannot.
+
+   *Done when:* a two-run fixture at one head files each finding under its own run's path, and a failing check in the status payload carries a log pointer or a named reason. At HEAD both fail (HYPOTHESIS, see Claim Labels).
+
+Split guard: three deliverables, one surface (the `ci-verify` → `verification-feedback` route).
 
 ## Claim Labels
 
@@ -64,8 +70,12 @@ Split guard: two deliverables, one surface (the `ci-verify` → `verification-fe
 - Verify-first clause: choose one producer value (`ci-verify`, recommended) or the seven-member family. Do not ship both. The finding subtype tag in the title keeps the per-row distinction either way.
 - Verify-first clause: before the edit, read PLAN-LB-26's landed `verification-feedback.md` and its return-field change, and keep the new branch outside its sections.
 
+- HYPOTHESIS (D3): two failing runs at one head are filed under the first run's artifact path, and `ci checks status` returns empty `log_file` / `filtered_log_file` for failing checks (`lessons-routing-053` item 2, one consumer plan; not re-verified at HEAD) — confirm at `ci_verify.py`'s artifact-path keying and the `checks status` payload builder (verify-at-outline).
+
 ## Expected Surface
 
+- HYPOTHESIS: `marketplace/bundles/plan-marshall/skills/tools-integration-ci/scripts/ci_base.py` — the `checks status` payload's `log_file` fields (D3, verify-at-outline)
+- HYPOTHESIS: `test/plan-marshall/tools-integration-ci/` (D3, verify-at-outline)
 - OBSERVED: `marketplace/bundles/plan-marshall/skills/plan-marshall/workflow/verification-feedback.md` — Producer modes table, Inputs, Step 1 guard, new branch (D1)
 - OBSERVED: `marketplace/bundles/plan-marshall/skills/phase-6-finalize/scripts/ci_verify.py` — shared producer constant, classification (D1, D2)
 - OBSERVED: `marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/ci-verify.md` — taxonomy notes, dispatch shape (D1, D2)
