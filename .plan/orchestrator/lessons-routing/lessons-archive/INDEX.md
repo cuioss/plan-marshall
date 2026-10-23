@@ -368,3 +368,81 @@ Input was the epic's own inbox (corpus: 0). The 84 `pm-mcp-core-m2-m4` messages 
 ### `stale/` (0)
 
 No message refuted at ground truth this run; nothing filed as stale.
+
+## Sweep 2026-10-23 — 31 corpus lessons + 116 inbox messages
+
+Both refills were ingested in one run (operator decision): the corpus held 31 active lessons and the epic inbox held 116 live messages (`pm-mcp-core-m2-m4-287`..`-402`). Corpus: 0 active after the run (one pre-existing non-active record remains). Inbox: 0 live, 0 invalid after the run.
+
+`pm` below = `pm-mcp-core-m2-m4-NNN`.
+
+**Two operating constraints applied this run.**
+
+1. **`live-blockers`' FOCUS RULE (2026-10-23)** — "high and blocking issues only, no fine-tuning; token usage and measurement are out of scope" — governs what may be filed there. It outranks this sweep's own grading: a drafted filing for the head-dependent re-fire cost cluster (7 sources) was **withdrawn** rather than routed, and its members archived as `medium`. The withdrawal note is `filed-live-blockers/lessons-routing-047.md`, which is a record, not a message — the destination inbox allocated no `-047`.
+2. **Archive convention for messages.** Prior sweeps copied every message body into `medium/`/`low/`. This run keeps the authoritative verbatim body where the channel already puts it: `inbox/archive/{sender}/`. One consolidated body per FILED cluster lives in `filed-live-blockers/` (the filing payload itself). No message body was retyped, so nothing can drift; the mapping from message to level is this table.
+
+No fresh code re-verification was performed: filed items rest on the senders' own verification at the shas they cite, and the `medium`/`low` grades rest on the message text and the lessons' own ground-truth notes. The two `already-covered` corpus lessons were re-read against the live-blockers filings they name.
+
+### `filed-live-blockers/` (14 filings, 74 sources)
+
+| Message | Level | Sources | Subject | Owner today |
+|---|---|---|---|---|
+| `lessons-routing-044` | high | corpus `2026-10-22-12-001`; pm 298, 299, 303, 304, 305, 315, 316, 318, 319, 320, 343, 357, 360, 361, 362, 363, 379, 381, 382, 394, 402 | Script surface drift: documented verbs/flags the scripts do not declare; `--plan-id` treated as universal; parse-only executor mode + doc sweep | recurrence of `-023`/`-033` |
+| `lessons-routing-045` | high | pm 290, 306, 308, 321, 335, 388 | Executor version/target skew invisible; consumer repos silently run a stale executor; workflow notations resolved against `marketplace/bundles` | PLAN-LB-43 staged |
+| `lessons-routing-046` | high | pm 307, 344, 345, 350, 366, 380, 396 | A history rewrite invalidates the change ledger; guarded 5→6 transition refuses; no sha remap; delta base gone | none |
+| `lessons-routing-047` | — | (draft) | **Withdrawn, not filed** — head-dependent re-fire cost, excluded by the destination focus rule | — |
+| `lessons-routing-048` | high | pm 294, 352 | Task closes before its verification runs; the verification-owed hold is lost | none |
+| `lessons-routing-049` | high | corpus `2026-10-10-20-006`; pm 296, 297, 339, 369, 370, 371, 372 | Declared footprint omits what the plan will touch (referrers, restated names, read sets, developer guides, cross-module, write-replace targets) | none |
+| `lessons-routing-050` | high | corpus `2026-10-12-05-002`, `2026-10-13-14-001`, `2026-10-13-14-003`; pm 309, 323, 353, 365, 384 | Review-bot registry: Sourcery budget refusal, CodeRabbit size refusal, participation from an edited comment, cross-PR trigger-B, size caps before create-pr | recurrence of `-030`; PLAN-LB-46 staged |
+| `lessons-routing-051` | high | corpus `2026-10-10-20-008`; pm 292, 311, 337, 367, 385 | Leaves denied Grep have no sanctioned search over resource trees or sibling checkouts; false greens (security audit 5 of 17) | none |
+| `lessons-routing-052` | high | corpus `2026-10-11-06-003`, `2026-10-11-16-005`; pm 312, 328, 386 | Manifest composes unresolvable verification steps; tier oscillation and whole-tree hand-backs | none |
+| `lessons-routing-053` | high | corpus `2026-10-11-16-001`, `-002`, `-003` | Finalize verification integrity: ci-verify producer accept-set, finding attribution, root-level guards skipped | PLAN-LB-58 staged |
+| `lessons-routing-054` | high | corpus `2026-10-11-16-004` | Merge-lock ownership keyed on `plan_id`; a same-plan session can release another's lock | none |
+| `lessons-routing-055` | high | corpus `2026-10-11-06-001` | `format_toon` is a second projection; `to_dict` fields silently dropped from default output | none |
+| `lessons-routing-056` | high | corpus `2026-10-13-07-002` | Free-text placeholders in documented commands are not shell-quoted | partially shipped (LB-37) |
+| `lessons-routing-057` | low | pm 401 | Domain content (`pm-documents`): "declared once" is a claim about every consumer | none |
+
+### `medium/` (67 sources, grouped by cluster; not filed)
+
+| Sources | Subject |
+|---|---|
+| corpus `2026-10-13-07-001`; pm 288, 324, 333, 347, 383 | Head-dependent finalize steps re-fire on every HEAD advance (withdrawn filing — destination focus rule) |
+| corpus `2026-10-10-06-002`, `-003`, `-004` | Lessons-housekeeping empty-corpus dispatch; non-active population unnamed; `display_detail` 80-ASCII contract |
+| corpus `2026-10-10-20-005` | `manage-lessons consult` does not resolve a worktree-hosted plan directory |
+| corpus `2026-10-10-21-001`; pm 287, 336, 346 | Sonar: unconfigured vs `internal_error`; stale-analysis issue list; re-reported Sonar keys |
+| corpus `2026-10-10-21-002`, `2026-10-11-06-002`, `2026-10-11-16-006`; pm 291, 400 | Test adequacy: order-dependent load, inconsistent Maven fixture, xdist-suffixed ids, tests that pass on the old code, vacuous refusal-path assertion |
+| corpus `2026-10-10-06-001`; pm 329 | `manage-tasks`: no verification write-back; `deliverable: 0` rejected for fix tasks |
+| corpus `2026-10-11-06-004`; pm 300, 326, 373, 390, 391 | Footprint amendment during execution: prune on revise, sanctioned widening, create-then-delete, decision re-sync |
+| corpus `2026-10-11-16-007`; pm 314, 355 | Review grading discipline: over-graded blocking finding, nitpicks in summary bodies, no `superseded` criterion status |
+| corpus `2026-10-12-05-001`; pm 393 | Build hygiene: stale `uv.lock` on main; build-server wait-log spam |
+| corpus `2026-10-13-14-002` | Retrospective footprint over a stacked landing |
+| corpus `2026-10-13-14-004`; pm 302, 325, 334, 354, 364, 387, 392 | Dispatch-boundary/execution-log accounting: keyless rows, missing re-fires, zeros for uncaptured usage |
+| pm 289, 351, 374, 375, 376, 377, 378 | Success criteria that cannot be evidenced at review time (PR body, foreign-repo PR, external link check) |
+| pm 293, 330, 358, 359 | Worktree and sibling-repo path handling (`../{sibling}` breaks; cross-repo deliverable module) |
+| pm 313, 341, 398, 399 | False self-reports; guarantee restatements; verification-claim provenance |
+| pm 317 | Phase handshake reports drift when a Q-Gate was legitimately resolved after capture |
+| pm 332 | Baseline drift checked against committed files only, not pending tasks' declared files |
+| pm 338 | A Q-Gate premise about file locations verified against prose, not the tree |
+| pm 348, 349, 368 | Merge-queue body trimming; ADR duplicate-number gate scope; HEAD-bound merge consent reuse |
+| pm 356, 395, 397 | Retrospective: self-reported gh/grep not counted; compile-report section defects; inotify exhaustion misattributed |
+| pm 301 | Refine offers no concrete proposed names in a rename question (**low**) |
+
+### `already-covered/` (5 sources)
+
+| Source | Covered by |
+|---|---|
+| corpus `2026-10-13-07-003`; pm 295, 310, 327 | live-blockers `lessons-routing-039` (also `-024`): framework skills attached where the project forbids them; no project-level exclusion filter |
+| corpus `2026-10-13-07-004` | live-blockers `lessons-routing-025`: cui-http-testing needs single-use stubs and loopback-family rules |
+
+### `stale/` (0)
+
+Nothing refuted at ground truth this run.
+
+### Dispositions
+
+| Disposition | Count |
+|---|---|
+| clustered-into (14 filed clusters + 24 archived clusters) | 142 |
+| already-covered | 5 |
+| standalone | 0 |
+| stale | 0 |
+| **total** | **147** |
