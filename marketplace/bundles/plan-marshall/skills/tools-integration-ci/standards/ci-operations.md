@@ -61,7 +61,11 @@ artifacts/ci-runs/{run_id}/{slug}.filtered.log  # error-extraction filtered vari
 `{slug}` is the check name slugified (lowercased, non-alphanumeric runs collapsed to `-`;
 e.g. `verify / verify` → `verify-verify`). Each path is surfaced **per entry** inside the
 `failing_checks[]` array — as the entry's `log_file` and `filtered_log_file` fields — never
-as scalar top-level keys.
+as scalar top-level keys. When either path stays empty the entry carries
+`log_unavailable_reason` naming why (`no_plan_id`, `no_run_id`, `persist_unavailable`,
+`log_fetch_failed`, `persist_failed`, `log_path_missing`, `enrich_failed`); the reason is
+absent when both paths are filled. See
+[`api-contract.md`](api-contract.md) § "Transport shape: per-entry, NOT scalar top-level".
 
 For a **reusable-workflow** check (name contains `" / "`, e.g. `verify / verify`), the
 auto-download targets the nested **job id** — parsed from the check `link`'s `/job/{job_id}`
@@ -144,7 +148,9 @@ artifacts/ci-runs/{run_id}/{slug}.filtered.log  # error-extraction filtered vari
 `{slug}` is the check name slugified (lowercased, non-alphanumeric runs collapsed to `-`;
 e.g. `verify / verify` → `verify-verify`). Each path appears **per entry** in the
 `failing_checks[]` array as the entry's `log_file` / `filtered_log_file` fields — never as
-scalar top-level keys.
+scalar top-level keys. An empty path is paired with `log_unavailable_reason`, the same
+discriminator `checks status` emits; see [`api-contract.md`](api-contract.md) § "Transport
+shape: per-entry, NOT scalar top-level".
 
 For a **reusable-workflow** check (name contains `" / "`, e.g. `verify / verify`), the
 auto-download targets the nested **job id** — parsed from the check `link`'s `/job/{job_id}`

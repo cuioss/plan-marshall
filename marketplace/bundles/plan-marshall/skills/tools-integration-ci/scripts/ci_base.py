@@ -2195,6 +2195,8 @@ def enrich_failing_checks_with_logs(
         entry.setdefault('log_file', '')
         entry.setdefault('filtered_log_file', '')
         entry.setdefault('error_style', error_style)
+        # A re-enrichment must not carry a stale reason from an earlier attempt.
+        entry.pop('log_unavailable_reason', None)
 
         run_id = entry.get('run_id') or ''
         if not plan_id:
@@ -2239,7 +2241,7 @@ def enrich_failing_checks_with_logs(
                 continue
             entry['log_file'] = _select_slug_path(result.get('log_paths'), slug, '.log')
             entry['filtered_log_file'] = _select_slug_path(result.get('filtered_log_paths'), slug, '.filtered.log')
-            if not entry['log_file']:
+            if not entry['log_file'] or not entry['filtered_log_file']:
                 entry['log_unavailable_reason'] = 'log_path_missing'
         except Exception:
             # Per-entry graceful degradation: a single failure must never

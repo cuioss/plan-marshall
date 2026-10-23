@@ -226,7 +226,7 @@ this order per failing check.
   `wait_outcome=deadline_exceeded` signal in addition to a per-check
   `timed_out` conclusion. A check that concluded `cancelled` /
   `action_required` / `stale` before the run hit its wait deadline keeps
-  its own definitive producer; only a check WITHOUT a definitive
+  its own definitive subtype; only a check WITHOUT a definitive
   failure/cancel/action/stale conclusion (e.g. still pending) falls
   through to the timeout row under `deadline_exceeded`.
 
@@ -247,8 +247,9 @@ this order per failing check.
   job log (`QUALITY GATE STATUS: FAILED`). When the plan's execution manifest
   carries the `sonar-roundtrip` step, that step owns the gate, so ci-verify
   files a `ci_sonar_gate` deferral instead of a build or policy finding. When
-  the manifest does not carry the step, no owner exists in this run and the
-  same check stays a build failure. A check that failed in the same job for
+  the manifest does not carry the step — or cannot be read at all — no owner
+  exists in this run and the same check stays a build failure, the safe
+  direction. A check that failed in the same job for
   any other reason (a compile error, for example) carries no marker and stays
   a build failure.
 
@@ -256,8 +257,12 @@ this order per failing check.
   check is a `ci_build_failure` unless its workflow or job name matches one of
   the policy patterns — licence/CLA, dependency review, CodeQL, labels/title.
   An unrecognised name therefore fails toward a fix rather than toward an
-  "accept". The list is single-sourced in the executor (`_POLICY_PROFILE_PATTERNS`);
-  no configuration overrides it.
+  "accept"; so does a failing check whose conclusion is not one of the
+  recognised failing conclusions. The list is single-sourced in the executor
+  (`_POLICY_PROFILE_PATTERNS`); no configuration overrides it. Job names are
+  matched too, so a build job whose name happens to carry one of those words
+  (for example `license-check`) is classed as policy — the spec asks for
+  workflow OR job name, and the marker words are the policy workflows' own.
 
 - **One producer value; subtypes carry the row.** The executor returns the
   single producer string `ci-verify`, which `verification-feedback` accepts in
@@ -277,16 +282,20 @@ this order per failing check.
   `verification-feedback` invocation with `producer=ci-verify` — one dispatch
   per run, NOT per finding.
 
-- **Every finding is keyed on the run of its own check.** The finding's
-  `--file-path` is `artifacts/ci-runs/{check_run_id}/{job_name}.log`, where
-  `{check_run_id}` is the run id of the CHECK that failed, not the run-level id
-  of the first check. Two failing runs at one head therefore file under two
-  directories and neither overwrites the other's evidence. `ci checks status`
-  fills the failing entry's `log_file` / `filtered_log_file`; when it cannot,
-  it names the reason (`no_plan_id`, `no_run_id`, `persist_unavailable`,
-  `log_fetch_failed`, `persist_failed`, `log_path_missing`, `enrich_failed`)
-  in `log_unavailable_reason`, so an empty pointer is never mistaken for a log
-  that was not needed.
+- **Every finding is keyed on the run of its own check.** The failing-check
+  finding's `--file-path` is `artifacts/ci-runs/{check_run_id}/{job_name}.log`,
+  where `{check_run_id}` is the run id of the CHECK that failed, not the
+  run-level id of the first check; a check carrying no run id falls back to the
+  run-level id, and to `no-run-id` when neither is known. Two failing runs at
+  one head therefore file under two directories and neither overwrites the
+  other's evidence. The `final_status == none` finding is the one exception: it
+  names the run's manifest (`artifacts/ci-runs/{run_id}/manifest.toon`), because
+  no check exists to key on. `ci checks status` fills the failing entry's
+  `log_file` / `filtered_log_file`; when it cannot, it names the reason
+  (`no_plan_id`, `no_run_id`, `persist_unavailable`, `log_fetch_failed`,
+  `persist_failed`, `log_path_missing`, `enrich_failed`) in
+  `log_unavailable_reason`, so an empty pointer is never mistaken for a log that
+  was not needed.
 
 ## Eager-fetch and persist contract
 

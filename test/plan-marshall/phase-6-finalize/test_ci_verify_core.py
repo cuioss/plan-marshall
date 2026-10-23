@@ -250,7 +250,7 @@ class _StubCiWait:
         ('canceled', 'verify', 'completed', ('ci-verify', 'ci_cancelled')),
         ('action_required', 'verify', 'completed', ('ci-verify', 'ci_action_required')),
         ('stale', 'verify', 'completed', ('ci-verify', 'ci_stale')),
-        ('some_unknown', 'verify', 'completed', ('ci-verify', 'ci_policy_failure')),
+        ('some_unknown', 'verify', 'completed', ('ci-verify', 'ci_build_failure')),
         # A definitive cancelled/action_required/stale conclusion wins over the
         # run-level deadline_exceeded fallback — it must NOT be misrouted to the
         # timeout subtype.
@@ -620,8 +620,8 @@ def test_empty_conclusion_is_failing_on_completed_path():
     # Assert — the empty-conclusion check falls through to the failing set.
     assert len(failing) == 1
     assert failing[0]['name'] == 'mystery'
-    # And it classifies to the fail-closed policy row.
-    assert classify_check(failing[0], 'completed') == ('ci-verify', 'ci_policy_failure')
+    # And it classifies toward a fix (build), the fail-closed direction.
+    assert classify_check(failing[0], 'completed') == ('ci-verify', 'ci_build_failure')
 
 
 def test_build_parser_accepts_run_subcommand():

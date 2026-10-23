@@ -248,6 +248,8 @@ def test_matches_policy_profile_is_a_closed_list():
     # Everything else is a build failure, including the build canonicals.
     assert _matches_policy_profile('verify / verify') is False
     assert _matches_policy_profile('Quality-Gate') is False
+    assert _matches_policy_profile('module-tests') is False
+    assert _matches_policy_profile('coverage') is False
     assert _matches_policy_profile('Integration Tests') is False
     assert _matches_policy_profile('') is False
 
@@ -594,21 +596,24 @@ def test_ci_verify_declares_head_dependent_frontmatter_fact():
     )
 
 
-def test_standards_enumerates_the_single_producer_and_every_subtype_tag():
+def test_standards_retires_the_per_row_producer_strings():
+    """The standards doc names the single producer and carries no per-row producer.
+
+    A per-row producer string reappearing in the doc is the defect this change
+    removed: it invites a dispatch the workflow refuses as `unknown_producer`.
+    """
     content = _STANDARDS_PATH.read_text(encoding='utf-8')
-    assert 'ci-verify' in content, 'Standards file must enumerate the single producer value'
-    expected_subtypes = (
-        'ci_build_failure',
-        'ci_policy_failure',
-        'ci_sonar_gate',
-        'ci_timeout',
-        'ci_cancelled',
-        'ci_action_required',
-        'ci_stale',
-        'ci_no_checks',
-    )
-    for subtype in expected_subtypes:
-        assert subtype in content, f'Standards file must enumerate subtype tag {subtype}'
+    assert '`ci-verify`' in content, 'Standards file must name the single producer value'
+    for retired in (
+        'ci-verify-build',
+        'ci-verify-policy',
+        'ci-verify-timeout',
+        'ci-verify-cancelled',
+        'ci-verify-action-required',
+        'ci-verify-stale',
+        'ci-verify-missing',
+    ):
+        assert retired not in content, f'retired per-row producer string reintroduced: {retired}'
 
 
 def test_standards_references_consume_failures_mode():

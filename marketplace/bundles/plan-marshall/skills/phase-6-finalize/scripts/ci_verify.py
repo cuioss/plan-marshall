@@ -254,9 +254,9 @@ def classify_check(
         return PRODUCER, _SUBTYPE_STALE
     if conclusion in ('timed_out', 'timeout') or wait_outcome == 'deadline_exceeded':
         return PRODUCER, _SUBTYPE_TIMEOUT
-    # Defense in depth: an unknown non-success conclusion is a policy failure,
-    # never silently accepted as green.
-    return PRODUCER, _SUBTYPE_POLICY
+    # Defense in depth: an unrecognised non-success conclusion is a build
+    # failure — the fail-toward-a-fix direction, never an "accept".
+    return PRODUCER, _SUBTYPE_BUILD
 
 
 def _extract_run_id_from_url(url: str | None) -> str:
@@ -351,11 +351,16 @@ def _plan_artifact_root(plan_id: str, worktree_path: str) -> Path:
     """Return the plan directory the persisted CI artifacts live under.
 
     ``manage-ci-artifacts`` writes to ``.plan/local/plans/{plan_id}/`` and
-    reports its paths relative to that plan directory. The worktree's ``.plan``
-    entry is the shared plan store, so reading through it reaches the same files
-    the persist step wrote.
+    reports its paths relative to that plan directory. The persist call runs
+    with the worktree as its cwd, so its root is the nearest ancestor of the
+    worktree holding ``.plan/local`` — mirrored here rather than assumed to be
+    the worktree root, so the reader and the writer resolve the same directory.
     """
-    return Path(worktree_path or '.') / '.plan' / 'local' / 'plans' / plan_id
+    start = Path(worktree_path or '.').resolve()
+    for candidate in (start, *start.parents):
+        if (candidate / '.plan' / 'local').is_dir():
+            return candidate / '.plan' / 'local' / 'plans' / plan_id
+    return start / '.plan' / 'local' / 'plans' / plan_id
 
 
 def _sonar_roundtrip_in_manifest(plan_id: str, worktree_path: str) -> bool:
@@ -999,8 +1004,8 @@ def build_parser() -> argparse.ArgumentParser:
         description=(
             'Deterministic ci-verify finalize-step executor. Classifies CI '
             'run failures into the multi-failure-mode taxonomy, persists CI '
-            'run artifacts, marks the step done on green, and returns a '
-            'per-producer needs-triage signal on red CI.'
+            'run artifacts, marks the step done on green, and returns the '
+            'single `ci-verify` producer needs-triage signal on red CI.'
         ),
         allow_abbrev=False,
     )

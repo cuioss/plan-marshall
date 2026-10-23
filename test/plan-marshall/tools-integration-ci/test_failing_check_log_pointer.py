@@ -99,3 +99,35 @@ def test_a_persisted_log_fills_both_pointers_and_drops_the_reason(monkeypatch):
     assert entry['log_file'].endswith('artifacts/ci-runs/987654/build.log')
     assert entry['filtered_log_file'].endswith('artifacts/ci-runs/987654/build.filtered.log')
     assert not entry.get('log_unavailable_reason', '')
+
+
+def test_a_re_enrichment_clears_a_stale_reason(monkeypatch):
+    """A later success must not keep the reason an earlier attempt recorded."""
+    paths = {
+        'status': 'success',
+        'log_paths': ['artifacts/ci-runs/987654/build.log'],
+        'filtered_log_paths': ['artifacts/ci-runs/987654/build.filtered.log'],
+    }
+    monkeypatch.setattr(ci_base, '_load_persist', lambda: _stub_persist(paths))
+    entry = _check()
+    entry['log_unavailable_reason'] = 'log_fetch_failed'
+
+    enriched = _enrich(entry, plan_id='p', fetcher=lambda *_args: 'raw log')
+
+    assert 'log_unavailable_reason' not in enriched
+
+
+def test_a_missing_filtered_path_is_reported(monkeypatch):
+    """One filled pointer beside one empty one is still an explained empty."""
+    paths = {
+        'status': 'success',
+        'log_paths': ['artifacts/ci-runs/987654/build.log'],
+        'filtered_log_paths': [],
+    }
+    monkeypatch.setattr(ci_base, '_load_persist', lambda: _stub_persist(paths))
+
+    entry = _enrich(_check(), plan_id='p', fetcher=lambda *_args: 'raw log')
+
+    assert entry['log_file'].endswith('artifacts/ci-runs/987654/build.log')
+    assert entry['filtered_log_file'] == ''
+    assert entry['log_unavailable_reason'] == 'log_path_missing'

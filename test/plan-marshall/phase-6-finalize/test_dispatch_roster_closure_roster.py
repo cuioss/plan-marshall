@@ -1318,6 +1318,7 @@ def test_producer_rows_use_the_single_accept_set_vocabulary():
         'plugin-doctor',
         'pr-state',
         'finalize-feedback',
+        'ci-verify',
     }
     outside = sorted(set(producer_values) - accept_set)
     assert not outside, f'Producer value(s) outside the single accept-set: {outside}'
