@@ -105,6 +105,18 @@ derive, for rows still live.
 - **PLAN-LB-88** (shipped #1840, 2026-10-23, runbook lane, `deepseek-v4.1-flash/high`) — grade B; see
   `landings/PLAN-LB-88.md`. D1-D4 delivered. Residual guard boundaries (a `git -C ... grep` in the OpenCode guard, a script
   run by a script, an absent table) are accepted under the focus rule. Fix-forward: none.
+- **PLAN-LB-86** (shipped #1841, 2026-10-23, runbook lane, `deepseek-v4.1-flash/high`) — grade B−; see
+  `landings/PLAN-LB-86.md`. OpenCode measurement chain: out of scope by the focus rule, so only the process was analysed.
+  Lane text not re-read across a restart; a killed round-3 self-review sub-agent is missing from the report. Fix-forward: none.
+
+- **PLAN-LB-92** (staged 2026-10-23, WS-04, runbook lane, operator-prioritised **next plan**) — a lane worktree has its own
+  executor. Not running: PLAN-LB-73 D4 (PR #1843, open) chose to check for the missing executor and record
+  `executor_absent_from_worktree`, a disclosure that leaves the worktree without one. LB-92 produces it at worktree creation
+  through the lifecycle's own seam (`prepare_execute._generate_worktree_executor`), adds a refresh verb so a plan's new script
+  verb runs without a direct interpreter call, and routes lane builds through it. Root fix of the "plan cannot run the verb it
+  introduces" Open Defect (PLAN-LB-85, PLAN-LB-88). Overlap prompt answered 2026-10-23: **hold until PLAN-LB-73 lands** (4 shared
+  files with it); emit first in the next block once the LB-73 landing arrives.
+
 - **Parked by the focus rule (2026-10-23, operator-accepted split):** PLAN-LB-87 (token recording), LB-84, LB-69, LB-89,
   LB-83, LB-75, LB-41, LB-46, LB-51, LB-57. They stay in the corpus and resume on the surface they declare. Blocking set kept
   staged: LB-55, LB-58, LB-53, LB-44, LB-43, LB-80, LB-82, plus the two staged on 2026-10-23: **PLAN-LB-90** (WS-04, runbook,
@@ -746,7 +758,7 @@ derive, for rows still live.
   the live service, and the landing's `unknown` was a missed measurement, not a hidden finding. Still open until a runbook
   landing carries the measured count itself (the lane's own read step, not the orchestrator's).
 - **A plan whose own lane text calls a verb it introduces cannot run it, and the guard refuses the bootstrap
-  (PLAN-LB-85 landing, 2026-10-23; medium; owner PLAN-LB-89, which already declares `generate_executor.py`).**
+  (PLAN-LB-85 landing, 2026-10-23; raised to high by the operator on 2026-10-23; owner now PLAN-LB-92, the next plan).**
   Either the guard admits the generator verb, or worktree creation generates the per-tree executor. The build-server
   fallback `executor_absent_from_worktree` is the same gap seen from the build side (every build ran `in_process`).
   Retire when PLAN-LB-89 ships and a worktree can run a verb added by its own plan. **Recurrence 1 (PLAN-LB-88,
@@ -1544,7 +1556,8 @@ entries below are OpenCode 1 assumptions in plan-marshall that OpenCode 2 broke.
   stay on `deepseek-v4.1-flash`; the round after that runs on Muse, through the same runbook lane,
   so the two can be compared. DeepSeek so far under the runbook lane: LB-61 C+, LB-66 F, LB-67 C,
   LB-71 C−, LB-72 B−, LB-70 F, LB-59 C, LB-74 C, LB-68 C−, LB-76 C+, LB-45 C−, LB-77 B−, LB-48 B−, LB-81 C+, LB-78 B−, LB-79 C+ ($1.76, 5 sessions, 19 h 40 min, `deepseek-v4.1-flash/high` throughout, no switch; code
-  graded on its work, report graded down for the undisclosed shell and clone conduct), LB-88 B (4 sessions, 16 h 47 min, `deepseek-v4.1-flash/high`
+  graded on its work, report graded down for the undisclosed shell and clone conduct), LB-86 B− (5 sessions, 18 h, `deepseek-v4.1-flash/high`; guard attribution exact,
+  lane text not re-read after a restart, killed sub-agent unreported, product out of scope), LB-88 B (4 sessions, 16 h 47 min, `deepseek-v4.1-flash/high`
   throughout; all four deliverables, guard attribution exact, lane text not re-read after a restart, last head unreviewed
   new logic), LB-85 B ($1.00, 4 sessions, 8 h 37 min,
   `deepseek-v4.1-flash/high` throughout; the report matched the store on attribution, restart handling and questions;
