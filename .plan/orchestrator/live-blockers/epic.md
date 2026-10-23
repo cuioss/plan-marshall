@@ -151,6 +151,16 @@ derive, for rows still live.
   still does not bind the architecture path, and four enrich/query verbs bypass the veto (see the PLAN-LB-76 residue
   entry below, which this plan owns). Admitted with `max_shared 0` against everything in flight.
 
+- **PLAN-LB-43 and PLAN-LB-92 each left one stray test file in the MAIN checkout (2026-10-23, observed during the
+  main-dirty check).** `test/plan-marshall/extension-api/test_extension_api_resolve_workflow.py` (LB-43's D1 test) and
+  `test/plan-marshall/workflow-integration-git/test_lane_worktree_executor.py` (LB-92's D1/D2 test) are **untracked** in
+  the main checkout while the authoritative copies are committed inside the two worktrees. They are stale drafts, not the
+  live work: main's copies hash differently from both the committed blob and the worktree's working file (LB-43 differs by
+  2 lines from its committed version; LB-92 has three distinct states — HEAD, worktree working tree, main draft). LB-91 and
+  LB-80 left nothing. **PLAN-LB-43 also carries an uncommitted change to `manage-status/scripts/_cmd_lifecycle.py` (+32) —
+  a file it did not declare and that PLAN-LB-91 declares**, so the two running plans now share a file the gate scored as
+  disjoint; that is a live merge-collision risk to check when either lands.
+
 - **Parked by the focus rule (2026-10-23, operator-accepted split):** PLAN-LB-87 (token recording), LB-84, LB-69, LB-89,
   LB-83, LB-75, LB-41, LB-46, LB-51, LB-57. They stay in the corpus and resume on the surface they declare. Blocking set kept
   staged: LB-55, LB-58, LB-53, LB-44, LB-43, LB-80, LB-82, plus the two staged on 2026-10-23: **PLAN-LB-90** (WS-04, runbook,
@@ -2110,6 +2120,16 @@ entries below are OpenCode 1 assumptions in plan-marshall that OpenCode 2 broke.
   `total_tokens`; if it lands and a consumer still reports `unknown`, the reader does not reach
   the consumer's harness. — source: inbox message `pm-mcp-core-m2-m4-002.md`.
 - **On a harness with no guard, the lane's main-checkout and merge-head rules are unenforced.**
+  **Recurrence 1 (2026-10-23, this repository, guard PRESENT):** PLAN-LB-43 and PLAN-LB-92 each left an untracked
+  test file in the main checkout (see the Queue annotation naming both files). The mechanism is not a missing guard but
+  the guard's SCOPE: `.opencode/plugin/guard.js` inspects `edit` / `write` / `patch` / `apply_patch` only for **R3** — a
+  write targeting `.plan/execute-script.py` — and returns immediately for every other write target (guard.js L1729-1737).
+  Every other R-rule is keyed on a `shell` command string. So "every repository edit inside the worktree" is enforced for
+  the shell class and NOT for the write-tool class, on a harness that otherwise reports `guard: present`. A plan can
+  therefore dirty the main checkout with a Write/Edit call and see no refusal, and the lane's start-only main-checkout
+  check (L255) will not catch it at the end. Not staged: the focus rule takes high and blocking only, and the damage here
+  is two stray untracked files. — trigger: retire when a guard revision enforces worktree scope for the write-tool class,
+  or when a landing reports a main-checkout write refused.
   The same consumer epic reports (plan-reported, confirmed in its own landing text) a run that
   edited six files in the main checkout before creating its worktree and corrected them by hand
   (`guard: none on this harness`), a merge of `origin/main` after the last review that the
