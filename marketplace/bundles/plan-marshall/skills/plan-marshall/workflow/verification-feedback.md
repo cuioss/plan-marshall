@@ -74,12 +74,15 @@ The `ci-verify` taxonomy's row labels are finding subtype tags, not `producer` v
 
 ### Branch: `producer=ci-verify` (store-only query)
 
-The `default:ci-verify` executor filed one `triage` finding per failing check under component `plan-marshall:phase-6-finalize` before the dispatcher reached this workflow; its `producers: [ci-verify]` is the signal that this pass is owed. Read those pending findings — the artifact-path filter is what scopes the query to the executor's own findings, whose `--file-path` is always under `artifacts/ci-runs/`:
+The `default:ci-verify` executor filed one `triage` finding per failing check under component `plan-marshall:phase-6-finalize` before the dispatcher reached this workflow; its `producers: [ci-verify]` is the signal that this pass is owed. Read those pending findings:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings list \
-  --plan-id {plan_id} --type triage --resolution pending --file-pattern 'artifacts/ci-runs/*'
+  --plan-id {plan_id} --type triage --resolution pending \
+  --file-pattern '*artifacts/ci-runs/*'
 ```
+
+The file pattern is what scopes the query to the executor's own findings: every one names an `artifacts/ci-runs/` log or manifest. The leading `*` is load-bearing — `manage-ci-artifacts` reports its path relative to the `.plan` directory (`local/plans/{plan_id}/artifacts/ci-runs/...`), so an anchored pattern without it would match only the fallback shape and would silently find nothing on the normal path.
 
 If the store is empty (a sibling pass already triaged them), return immediately with `status: success`, `display_detail: "0 finding(s) — nothing to triage"`, `loop_back_needed: false`. Otherwise fall through to Step 1.4 (batched ingestion), Step 1.5 (optional verify pre-stage), Step 2 (extension load), and Steps 3-6 (per-finding triage). Each finding's `[subtype]` title tag is the row: the FIX path for a build or Sonar-deferral finding differs from the ACCEPT path for a policy finding, and the `ci_sonar_gate` row is the deferral to `sonar-roundtrip`, which owns the Sonar quality gate.
 

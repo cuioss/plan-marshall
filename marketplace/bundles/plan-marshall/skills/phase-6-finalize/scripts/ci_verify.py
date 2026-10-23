@@ -317,26 +317,27 @@ def _attach_log_pointers(normalized_checks: list[dict], envelope: dict) -> None:
     """Copy the failing checks' persisted log pointers onto their normalized rows.
 
     ``ci checks status`` reports ``failing_checks[]`` with the downloaded
-    ``log_file`` plus the compact ``checks[]`` array without it. The executor
-    classifies from ``checks[]``, so the pointer is matched back by
-    ``(run_id, job_name)`` — the pair that identifies one check in one run.
+    ``log_file`` / ``filtered_log_file`` plus the compact ``checks[]`` array
+    without them. The executor classifies from ``checks[]``, so the pointers are
+    matched back by ``(run_id, job_name)`` — the pair that identifies one check
+    in one run.
     """
     rows = envelope.get('failing_checks')
     if not isinstance(rows, list):
         return
-    pointers: dict[tuple[str, str], str] = {}
+    pointers: dict[tuple[str, str], tuple[str, str]] = {}
     for row in rows:
         if not isinstance(row, dict):
             continue
         key = (str(row.get('run_id') or ''), str(row.get('job_name') or row.get('name') or ''))
-        pointers[key] = str(row.get('log_file') or '')
+        pointers[key] = (str(row.get('log_file') or ''), str(row.get('filtered_log_file') or ''))
     if not pointers:
         return
     for entry in normalized_checks:
-        if entry.get('log_file'):
-            continue
         key = (str(entry.get('run_id') or ''), str(entry.get('job_name') or ''))
-        entry['log_file'] = pointers.get(key, entry.get('log_file') or '')
+        log_file, filtered_log_file = pointers.get(key, ('', ''))
+        entry['log_file'] = entry.get('log_file') or log_file
+        entry['filtered_log_file'] = entry.get('filtered_log_file') or filtered_log_file
 
 
 def _derive_run_id(normalized_checks: list[dict]) -> str:
@@ -345,6 +346,18 @@ def _derive_run_id(normalized_checks: list[dict]) -> str:
         if entry.get('run_id'):
             return str(entry['run_id'])
     return ''
+
+
+def _slugify_job_name(name: str) -> str:
+    """Derive the log-file stem ``manage-ci-artifacts`` writes for a check name.
+
+    The rule is owned by ``tools-integration-ci:_ci_log_filter.slugify_check_name``
+    (lowercase, collapse each non-alphanumeric run to ``-``, trim, fall back to
+    ``check``); it is mirrored here only for the fallback evidence path of a
+    check whose log was never persisted, and the two must stay in step.
+    """
+    slug = re.sub(r'[^a-z0-9]+', '-', (name or '').lower()).strip('-')
+    return slug or 'check'
 
 
 def _plan_store_anchor(worktree_path: str) -> Path:
@@ -870,7 +883,7 @@ def verify(
             plan_id=plan_id,
             title=f'[{subtype}] {check_name} failed',
             detail=detail,
-            file_path=pointer or f'artifacts/ci-runs/{check_run_id}/{job_name}.log',
+            file_path=pointer or f'artifacts/ci-runs/{check_run_id}/{_slugify_job_name(job_name)}.log',
             worktree_path=worktree_path,
         )
         findings_filed += 1

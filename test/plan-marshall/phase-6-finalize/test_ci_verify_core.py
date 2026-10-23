@@ -450,6 +450,40 @@ def test_a_pointer_from_the_plan_dir_anchor_is_still_read(tmp_path):
     assert _mod._read_persisted_job_log(plan_id, plan_relative, str(tmp_path)) == _SONAR_JOB_LOG
 
 
+def test_a_fallback_path_slugifies_a_reusable_workflow_name(tmp_path):
+    """Without a persisted pointer the fallback names the file persist would write."""
+    envelope = {
+        'status': 'success',
+        'overall_status': 'failure',
+        'checks': [
+            {
+                'name': 'verify / verify',
+                'status': 'FAILURE',
+                'workflow': 'CI',
+                'url': 'https://github.com/o/r/actions/runs/111/job/1',
+            }
+        ],
+    }
+    findings = _StubFindings()
+
+    verify(
+        plan_id='ci-verify-slug-fallback',
+        pr_number=_PR,
+        worktree_path=str(tmp_path),
+        provider='github',
+        final_status='failure',
+        wait_outcome='completed',
+        head_sha=_HEAD_SHA,
+        ci_status_runner=_StubCiStatus(envelope),
+        persist_runner=_StubPersist(),
+        findings_runner=findings,
+        mark_done_runner=_StubMarkDone(),
+        git_head_resolver=_StubGitHead('x'),
+    )
+
+    assert findings.calls[0]['file_path'] == 'artifacts/ci-runs/111/verify-verify.log'
+
+
 def test_a_finding_points_at_the_persisted_log_when_the_status_reported_one(tmp_path):
     """The finding's file path is the real evidence the status payload named."""
     result, findings = _run_sonar_case(

@@ -292,8 +292,8 @@ this order per failing check.
   names the run's manifest (`artifacts/ci-runs/{run_id}/manifest.toon`), because
   no check exists to key on. When the check carries a persisted `log_file`, that
   real pointer is the finding's `--file-path`; otherwise the constructed path is
-  used, whose file name is the raw job name rather than the slug
-  `manage-ci-artifacts` sanitises to. `ci checks status` fills the failing
+  used, whose file name is the check name slugified exactly as
+  `manage-ci-artifacts` names it. `ci checks status` fills the failing
   entry's `log_file` / `filtered_log_file`; when it cannot, it names the reason
   in `log_unavailable_reason` — the values and their discriminations are owned
   by [`api-contract.md`](../../tools-integration-ci/standards/api-contract.md) §

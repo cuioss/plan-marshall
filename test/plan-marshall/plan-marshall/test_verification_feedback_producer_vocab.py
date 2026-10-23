@@ -131,6 +131,10 @@ def test_ci_verify_branch_reaches_the_shared_ingestion_step():
     branch = text.split('producer=ci-verify', 1)[1].split('\n### ', 1)[0]
     assert 'Step 1.4' in branch, 'the ci-verify branch must fall through to the shared ingestion step'
     assert 'plan-marshall:phase-6-finalize' in branch, 'the branch must scope its store query to ci-verify findings'
+    assert "--file-pattern '*artifacts/ci-runs/*'" in branch, (
+        'the store query must use the leading wildcard: persisted pointers are '
+        'anchored at `.plan` (`local/plans/{plan_id}/artifacts/...`)'
+    )
 
 
 def test_single_accept_set_without_second_list():

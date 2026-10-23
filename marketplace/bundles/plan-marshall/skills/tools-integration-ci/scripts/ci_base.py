@@ -2161,7 +2161,7 @@ def enrich_failing_checks_with_logs(
     filtered error-extraction variant under
     ``artifacts/ci-runs/{run_id}/{slug}.log`` and ``{slug}.filtered.log``
     through the ``manage-ci-artifacts`` storage layout, and appends the
-    plan-dir-relative ``log_file`` / ``filtered_log_file`` paths back onto the
+    ``.plan``-relative ``log_file`` / ``filtered_log_file`` paths back onto the
     entry. Two failing checks sharing one ``run_id`` get distinctly-slugged
     files and never collide.
 

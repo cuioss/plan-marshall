@@ -58,6 +58,8 @@ artifacts/ci-runs/{run_id}/{slug}.log           # raw downloaded failing-job log
 artifacts/ci-runs/{run_id}/{slug}.filtered.log  # error-extraction filtered variant
 ```
 
+(the payload expresses these relative to the `.plan` directory — `local/plans/{plan_id}/artifacts/...`; see the anchor contract in [`api-contract.md`](api-contract.md) § "CI Failure Log Download & Filtering")
+
 `{slug}` is the check name slugified (lowercased, non-alphanumeric runs collapsed to `-`;
 e.g. `verify / verify` → `verify-verify`). Each path is surfaced **per entry** inside the
 `failing_checks[]` array — as the entry's `log_file` and `filtered_log_file` fields — never
@@ -84,8 +86,8 @@ verify / verify	completed	failure	180	https://github.com/org/repo/actions/runs/1
 lint	completed	failure	40	https://github.com/org/repo/actions/runs/113	Lint
 
 failing_checks[2]{name,run_id,error_style,log_file,filtered_log_file}:
-verify / verify	112	generic	artifacts/ci-runs/112/verify-verify.log	artifacts/ci-runs/112/verify-verify.filtered.log
-lint	113	generic	artifacts/ci-runs/113/lint.log	artifacts/ci-runs/113/lint.filtered.log
+verify / verify	112	generic	local/plans/my-plan/artifacts/ci-runs/112/verify-verify.log	local/plans/my-plan/artifacts/ci-runs/112/verify-verify.filtered.log
+lint	113	generic	local/plans/my-plan/artifacts/ci-runs/113/lint.log	local/plans/my-plan/artifacts/ci-runs/113/lint.filtered.log
 ```
 
 The normative spec for this transport shape, the `--error-style` heuristics, and the slug
@@ -143,6 +145,8 @@ artifacts/ci-runs/{run_id}/{slug}.log           # raw downloaded failing-job log
 artifacts/ci-runs/{run_id}/{slug}.filtered.log  # error-extraction filtered variant
 ```
 
+(the payload expresses these relative to the `.plan` directory — `local/plans/{plan_id}/artifacts/...`; see the anchor contract in [`api-contract.md`](api-contract.md) § "CI Failure Log Download & Filtering")
+
 `{slug}` is the check name slugified (lowercased, non-alphanumeric runs collapsed to `-`;
 e.g. `verify / verify` → `verify-verify`). Each path appears **per entry** in the
 `failing_checks[]` array as the entry's `log_file` / `filtered_log_file` fields — never as
@@ -170,8 +174,8 @@ verify / verify	completed	failure	180	https://github.com/org/repo/actions/runs/1
 lint	completed	failure	40	https://github.com/org/repo/actions/runs/113	Lint
 
 failing_checks[2]{name,run_id,error_style,log_file,filtered_log_file}:
-verify / verify	112	generic	artifacts/ci-runs/112/verify-verify.log	artifacts/ci-runs/112/verify-verify.filtered.log
-lint	113	generic	artifacts/ci-runs/113/lint.log	artifacts/ci-runs/113/lint.filtered.log
+verify / verify	112	generic	local/plans/my-plan/artifacts/ci-runs/112/verify-verify.log	local/plans/my-plan/artifacts/ci-runs/112/verify-verify.filtered.log
+lint	113	generic	local/plans/my-plan/artifacts/ci-runs/113/lint.log	local/plans/my-plan/artifacts/ci-runs/113/lint.filtered.log
 ```
 
 The normative spec for this transport shape, the `--error-style` heuristics, and the slug
