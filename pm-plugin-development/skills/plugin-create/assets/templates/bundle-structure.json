@@ -1,0 +1,23 @@
+{
+  "directories": [
+    "skills",
+    "commands",
+    "agents"
+  ],
+  "plugin_json_template": {
+    "name": "{bundle-name}",
+    "display_name": "{display-name}",
+    "description": "{description}",
+    "version": "{version}",
+    "author": "{author}",
+    "components": []
+  },
+  "readme_sections": [
+    "Overview",
+    "What This Bundle Provides",
+    "Components",
+    "Installation",
+    "Usage Examples",
+    "Integration Notes"
+  ]
+}
