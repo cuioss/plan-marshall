@@ -769,6 +769,14 @@ def test_scheduled_loop_back_basis_is_refused_when_no_marker_schedules_the_drift
     assert result['error'] == 'scheduled_override_without_marker'
 
 
+def test_an_unknown_override_basis_is_refused():
+    """Only the two named bases exist; anything else would persist an unnameable authority."""
+    result = cmd_capture(_capture_args(override_basis='other'))
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'unknown_override_basis'
+
+
 def test_operator_answer_without_an_override_is_refused():
     """An ordinary capture records no override, so an answer on it would describe a grant that never happened."""
     result = cmd_capture(_capture_args(override=False, reason=None, operator_answer='yes, go ahead'))

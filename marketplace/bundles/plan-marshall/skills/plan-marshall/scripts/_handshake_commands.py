@@ -475,6 +475,17 @@ def cmd_capture(args: Any) -> dict[str, Any]:
     # observing the marker itself. A caller-chosen flag would be a second spelling
     # of "override without asking" — the very thing the answer gate removes.
     override_basis = getattr(args, 'override_basis', 'operator') or 'operator'
+    if override_basis not in ('operator', 'scheduled_loop_back'):
+        return {
+            'status': 'error',
+            'error': 'unknown_override_basis',
+            'message': (
+                f'override_basis {override_basis!r} is not a basis this verb records. The only two '
+                'are "operator" (an answer the operator gave) and "scheduled_loop_back" (the '
+                'in-process loop-back auto-override); anything else would persist an override '
+                'whose authority nobody can name. Nothing was written.'
+            ),
+        }
     scheduled_marker = bool(getattr(args, 'loop_back_marker', False))
     if override_basis == 'scheduled_loop_back' and not scheduled_marker:
         return {
