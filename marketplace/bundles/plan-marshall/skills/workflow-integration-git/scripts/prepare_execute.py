@@ -478,7 +478,15 @@ def _copy_main_executor(worktree_path: Path, plan_id: str) -> tuple[bool, str]:
     return True, f'worktree executor copied from main ({main_executor} -> {wt_executor})'
 
 
-def _generate_worktree_executor(worktree_path: Path, plan_id: str) -> tuple[bool, str]:
+def _mtime_ns(path: Path) -> int | None:
+    """Return ``path``'s modification time in nanoseconds, or ``None`` when absent."""
+    try:
+        return path.stat().st_mtime_ns
+    except OSError:
+        return None
+
+
+def _generate_worktree_executor(worktree_path: Path, plan_id: str, *, allow_copy: bool = True) -> tuple[bool, str]:
     """Produce ``worktree_path/.plan/execute-script.py`` and confirm it on disk.
 
     Two production mechanisms, tried in order, with the verdict ALWAYS derived
@@ -518,12 +526,19 @@ def _generate_worktree_executor(worktree_path: Path, plan_id: str) -> tuple[bool
 
     if not _GENERATE_EXECUTOR_PATH.exists():
         # Generation is unavailable — go straight to the copy-from-main fallback.
+        if not allow_copy:
+            return False, f'generator not found at {_GENERATE_EXECUTOR_PATH}; copy-from-main is disabled here'
         copied, copy_detail = _copy_main_executor(worktree_path, plan_id)
         if copied:
             return True, copy_detail
         return False, f'generator not found at {_GENERATE_EXECUTOR_PATH}; {copy_detail}'
 
     launch_detail: str | None = None
+    # The slot's state BEFORE the subprocess runs. On a refresh an older executor
+    # is already on disk, so "a file exists afterwards" cannot answer whether THIS
+    # call produced one — the generator's plugin-cache failure mode exits 0 having
+    # written nothing, and the pre-existing file would satisfy the landed test.
+    before_mtime = _mtime_ns(wt_executor)
     try:
         result = subprocess.run(
             [
@@ -545,19 +560,89 @@ def _generate_worktree_executor(worktree_path: Path, plan_id: str) -> tuple[bool
             lines = (result.stderr or result.stdout or '').strip().splitlines()
             tail = lines[-1] if lines else f'exit {result.returncode}'
             launch_detail = f'generation exited {result.returncode}: {tail}'
-        elif _executor_landed(wt_executor):
-            # FIX 1: only report success after the file is confirmed on disk.
+        elif _executor_landed(wt_executor) and _mtime_ns(wt_executor) != before_mtime:
+            # FIX 1: only report success after the file is confirmed on disk AND
+            # newer than it was before this call — a file that was already there
+            # proves nothing about what this call wrote.
             return True, f'worktree executor generated at {wt_executor}'
         else:
-            # returncode 0 but no file landed (plugin-cache "exited 0, wrote
-            # nothing" condition) — do NOT report a generation that did not land.
-            launch_detail = f'generation exited 0 but no file landed at {wt_executor}'
+            # returncode 0 but no NEW file landed (the plugin-cache "exited 0,
+            # wrote nothing" condition) — do NOT report a generation that did not
+            # land, and do not let an older executor stand in for one.
+            launch_detail = f'generation exited 0 but wrote nothing new at {wt_executor}'
 
     # FIX 2: generation did not produce a usable executor — copy from main.
+    if not allow_copy:
+        return False, f'{launch_detail}; copy-from-main is disabled for this caller'
     copied, copy_detail = _copy_main_executor(worktree_path, plan_id)
     if copied:
         return True, copy_detail
     return False, f'{launch_detail}; {copy_detail}'
+
+
+def produce_worktree_executor(worktree_path: Path, plan_id: str, *, allow_copy: bool = True) -> dict[str, Any]:
+    """Produce ``{worktree}/.plan/execute-script.py`` and report the ON-DISK verdict.
+
+    The public half of the seam :func:`_generate_worktree_executor` implements,
+    for the producers that are NOT the phase-5 move-in: ``git-workflow``'s
+    ``worktree-create`` (the worktree must be able to run a script the moment it
+    exists) and its ``worktree-executor-refresh`` verb (a plan that changes the
+    script set re-runs it). Exposed as one function rather than duplicated so
+    ONE mechanism produces the artifact every consumer reads — the same rule
+    ``_executor_slot`` states for where the slot lives and what counts as
+    landed.
+
+    **The slot is only writable inside a real worktree.** Both mechanisms below
+    derive their target from ``worktree_path``, and the copy fallback creates
+    missing parents — so a stale recorded path (the directory already removed)
+    would be re-created as an empty "worktree" that a later ``worktree-create``
+    then refuses. A ``.plan/local`` that is a SYMLINK is refused for the same
+    class of reason the generator's cwd pin exists: the walk behind it resolves
+    into another tree, and generating through it writes there. A caller gets
+    ``absent`` with the reason instead of a write in the wrong place.
+
+    ``allow_copy`` is the caller's statement about what the slot is FOR. Creation
+    uses the copy (main's executor is byte-equivalent and the goal is only that
+    *something* dispatchable exists), while a refresh must NOT: replacing a
+    worktree executor with main's older surface is exactly the staleness the
+    refresh exists to remove, and reporting it as a regeneration would claim work
+    the call did not do.
+
+    ``executor_in_worktree`` is the vocabulary the runbook lane records, and it
+    is derived from the file on disk, never from generation intent: ``present``
+    only once :func:`executor_landed` confirms a non-empty, non-symlink file.
+    ``executor_reason`` rides only on ``absent``, naming which mechanism was
+    tried and why neither produced a file — a ``present`` row carrying a reason
+    would read like a qualified success.
+
+    ``executor_produced`` answers a DIFFERENT question from ``present``: whether
+    THIS call produced the slot (either mechanism) or left an older one in
+    place. They diverge exactly when a regeneration fails over a usable existing
+    executor — present and usable, but stale — and a caller that needs to know
+    whether a refresh achieved anything reads this field, not the presence one.
+    """
+    plan_local = worktree_path / PLAN_DIR_NAME / 'local'
+    if not worktree_path.is_dir() or plan_local.is_symlink() or not plan_local.is_dir():
+        detail = (
+            f'no real {PLAN_DIR_NAME}/local under {worktree_path}; refusing to produce an executor outside a worktree'
+        )
+        return {
+            'executor_in_worktree': 'absent',
+            'executor_produced': False,
+            'executor_detail': detail,
+            'executor_reason': 'worktree_plan_local_absent',
+        }
+
+    produced, detail = _generate_worktree_executor(worktree_path, plan_id, allow_copy=allow_copy)
+    present = executor_landed(worktree_executor_path(worktree_path))
+    verdict: dict[str, Any] = {
+        'executor_in_worktree': 'present' if present else 'absent',
+        'executor_produced': produced,
+        'executor_detail': detail,
+    }
+    if not present:
+        verdict['executor_reason'] = detail
+    return verdict
 
 
 # ---------------------------------------------------------------------------

@@ -183,7 +183,7 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workf
 
 Parse the returned TOON and branch on `status`:
 
-- `status: success` → continue to **Mark Step Complete (Success)**. The `action` field distinguishes `noop` (the branch was already at `origin/{base_branch}`, nothing to rebase) from `rebased` (the rebase produced a new history). Both are success.
+- `status: success` → continue to **Mark Step Complete (Success)**, after running **Remap the change-ledger after a rewrite** below when `action` is `rebased`. The `action` field distinguishes `noop` (the branch was already at `origin/{base_branch}`, nothing to rebase) from `rebased` (the rebase produced a new history). Both are success.
 
   A rebase at this order is exactly where upstream commits can change the bundle **script set**, which would leave the worktree's `.plan/execute-script.py` describing a tree that no longer exists — every later dispatch in this finalize run resolving notations against a stale map. `worktree-rebase-to` refreshes it as part of the rebase and reports the outcome on `executor_drift` / `executor_regenerated` / `executor_detail`; this step consumes those fields, it does not re-derive them. The refresh is non-fatal by contract, so an `executor_regenerated: false` alongside a non-empty `executor_detail` is a reported degradation, not a step failure — log it and proceed:
 
@@ -215,6 +215,51 @@ Log the successful rebase:
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:phase-6-finalize) Sync baseline: rebased onto origin/{base_branch} (action={action}, upstream_commits={upstream_commit_count})"
 ```
+
+### Remap the change-ledger after a rewrite
+
+Only a rebase that actually replayed commits (`action: rebased`) rewrites the branch's SHAs. Every `kind=change` row recorded against a pre-rebase commit is then stale, and the 5-execute end-marker guard reports the whole branch unrecorded at the next boundary. This step is the rewriting step, so it repairs the ledger here, before the phase advances: the guard carries the same remap invocation in its refusal, but that path exists for a rewrite performed OUTSIDE this step (a manual amend or a cherry-pick), where no rewriting step knows to repair.
+
+An `action: noop` replayed nothing, so there is no map to emit and this section is skipped.
+
+The step emits the old-to-new map first — no rows are appended — and then consumes that map:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-change-ledger:manage-change-ledger remap \
+  --worktree-root {worktree_path} --old-head {pre_sha} \
+  --emit-map .plan/temp/sync-baseline-sha-map-{plan_id}.json --dry-run
+python3 .plan/execute-script.py plan-marshall:manage-change-ledger:manage-change-ledger remap \
+  --worktree-root {worktree_path} \
+  --map-file .plan/temp/sync-baseline-sha-map-{plan_id}.json
+```
+
+`{pre_sha}` is the `pre_sha` field of the successful `worktree-rebase-to` result — the head before the rebase. It narrows the candidate window to the commits HEAD gained since then (the replayed commits plus any upstream commits fetched with them), and attributes the stale rows to this rewrite; patch-id still decides every match. The map is derived by stable `git patch-id`, which hashes a commit's patch rather than its message.
+
+If either call returns `status: error`, ABORT the step with `outcome=failed`: log the returned `error` and `message`, do not run the append, and record the failure via **Mark Step Complete (Failure)**. A remap that did not run leaves the ledger stale, and `outcome=done` would record a repair that never happened.
+
+Read the first invocation's `unmapped` list before continuing. Append only entries whose stale SHA is an ancestor of `{pre_sha}` (check with `git merge-base --is-ancestor {stale_sha} {pre_sha}`): those are the rows attributable to this rebase whose patches changed during conflict resolution, and each needs its row appended explicitly rather than letting the remap guess. Do NOT append an `unmapped` entry outside that ancestry — it belongs to another history (another plan, or a rewrite whose replacement row already exists), and appending it would create an unrelated replacement row in the shared ledger.
+
+Resolve the replacement SHA for each eligible entry from `git range-diff --no-color {pre_sha}...{post_sha}`: its pair lines name the replayed commit that corresponds to each stale one, including a commit whose conflict resolution changed its patch. `{post_sha}` is the `post_sha` field of the same `worktree-rebase-to` result. Never guess `{rebased_sha}` from position or from `HEAD`: a wrong SHA would record a fact about a commit that did not carry the work. If range-diff names no counterpart, the commit was dropped by the rebase — report that in the step log and do not append a row for it.
+
+`{deliverable_id}` comes from the stale row; `{changed_paths}` is git-sourced from the REBASED commit — `git diff-tree --no-commit-id --name-only -r {rebased_sha}`, comma-joined — because a conflict resolution can change which paths the replayed commit touches, and the stale row's list describes the pre-rewrite commit:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-change-ledger:manage-change-ledger append \
+  --kind change --deliverable-id {deliverable_id} --commit-sha {rebased_sha} \
+  --changed-paths {changed_paths} \
+  --worktree-root {worktree_path}
+```
+
+Omitting `--changed-paths` would record an empty path list, a fact the ledger is supposed to hold.
+
+Log the remap outcome:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:phase-6-finalize) Sync baseline ledger remap: remapped={remap_count}, unmapped={unmapped}, map=.plan/temp/sync-baseline-sha-map-{plan_id}.json"
+```
+
+The originals stay in the ledger, and the mapped rows carry `remapped_from`, so the rewrite remains visible in the record instead of erasing it.
 
 ## Mark Step Complete
 
