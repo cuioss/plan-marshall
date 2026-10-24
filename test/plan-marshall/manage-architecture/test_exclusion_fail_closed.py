@@ -214,6 +214,22 @@ def test_malformed_marshal_is_reported_even_when_no_module_has_a_skill_map():
     assert result['status'] == 'error'
 
 
+def test_non_utf8_marshal_is_reported_as_the_typed_error():
+    """A file that cannot be decoded is a read failure, not a raw exception."""
+    with tempfile.TemporaryDirectory() as project_dir:
+        _seed(project_dir)
+        plan_dir = Path(project_dir) / '.plan'
+        plan_dir.mkdir(parents=True, exist_ok=True)
+        (plan_dir / 'marshal.json').write_bytes(b'\xff\xfe\x00{')
+
+        result = _cmd_client_handlers.cmd_module(
+            Namespace(module='module-a', project_dir=project_dir, full=False, budget=None)
+        )
+
+    assert result['status'] == 'error'
+    assert 'skill_exclusions_unreadable' in str(result)
+
+
 def test_global_active_profiles_sibling_is_not_a_malformed_domain():
     """The global active-profile list lives beside the domains; it is not one."""
     with tempfile.TemporaryDirectory() as project_dir:

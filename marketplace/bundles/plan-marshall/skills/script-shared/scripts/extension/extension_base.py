@@ -848,7 +848,7 @@ def _load_config_mapping(project_dir: str | None) -> dict:
             raw = path.read_text(encoding='utf-8')
         except FileNotFoundError:
             return {}
-        except OSError as exc:
+        except (OSError, UnicodeDecodeError) as exc:
             raise SkillExclusionReadError(f'{path} could not be read: {exc}') from exc
         try:
             config = json.loads(raw)

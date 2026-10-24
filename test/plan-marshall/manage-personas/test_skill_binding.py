@@ -141,12 +141,19 @@ def _architecture_services(module_data: dict, project_dir: Path, excluded: list[
     query = load_script_module('plan-marshall', 'manage-architecture', '_cmd_client_query.py', '_arch_query_binding')
 
     produced = _java_extension().applies_to_module(module_data)
+    # The extension already applies the execution-context veto, so persist a
+    # STALE copy of the excluded skill: only the read seam can remove it, and the
+    # test would otherwise stay green with that seam deleted.
+    stored = produced['skills_by_profile']
+    stored.setdefault('implementation', {'defaults': [], 'optionals': []})['optionals'].append(
+        {'skill': JAVA_QUARKUS, 'description': 'stale persisted entry'}
+    )
     core.save_project_meta(
         {'name': 'demo', 'description': '', 'description_reasoning': '', 'extensions_used': [], 'modules': {'m': {}}},
         str(project_dir),
     )
     core.save_module_derived('m', {**module_data, 'paths': {'module': 'm'}, 'commands': {}}, str(project_dir))
-    core.save_module_enriched('m', {'skills_by_profile': produced['skills_by_profile']}, str(project_dir))
+    core.save_module_enriched('m', {'skills_by_profile': stored}, str(project_dir))
     create_marshal_json(project_dir, config=_exclusions(*excluded), nest_in_plan_dir=True)
 
     served = query.get_module_info('m', project_dir=str(project_dir))

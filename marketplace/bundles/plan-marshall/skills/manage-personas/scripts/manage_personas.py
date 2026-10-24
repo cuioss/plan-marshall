@@ -556,7 +556,8 @@ def _resolve_persona(args) -> dict:
         domain_exclusions = _excluded_skills(domain)
         if not domain_exclusions:
             continue
-        ordered = [skill for skill in ordered if not _is_excluded(skill, domain_exclusions, _domain_bundle(domain))]
+        owner_bundle = _domain_bundle(domain)
+        ordered = [skill for skill in ordered if not _is_excluded(skill, domain_exclusions, owner_bundle)]
 
     if not module:
         module_status = MODULE_STATUS_NOT_REQUESTED
