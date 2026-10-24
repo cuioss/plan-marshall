@@ -461,7 +461,7 @@ python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks pre-comm
   --plan-id {plan_id}
 ```
 
-Only `status: fresh` and `status: exempt` admit the push. `stale` / `undecidable` STOP it with the returned `reason` surfaced: re-run the project's pre-push quality gate against the rebased head and re-check, rather than pushing a tree no successful build has observed. (PLAN-LB-55 D1's push refusal is the intended backstop at the verb boundary; this gate is the call-site guard that holds until it lands.)
+Only `status: fresh` and `status: exempt` admit the push. `stale` / `undecidable` STOP it with the returned `reason` surfaced: re-run the project's pre-push quality gate against the rebased head and re-check, rather than pushing a tree no successful build has observed. The push-refusal gate at the verb boundary is the backstop beside this one (see `workflow-integration-git` § "Push refusal"); this check is the call-site guard that runs before it.
 
 With both gates passed, push the rewritten history with a lease guard via the `force-push-with-lease` verb (see `workflow-integration-git` Canonical invocations → `force-push-with-lease`):
 
