@@ -51,9 +51,8 @@ import argparse
 import json
 import os
 import re
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 import orchestrator_worktree
 from file_ops import output_toon, output_toon_error
@@ -164,9 +163,14 @@ def _plan_id_from_spec(spec: Path) -> str:
     return stem.lower()
 
 
-@dataclass(frozen=True)
-class _SpecChoice:
-    """The copy of a staged spec ``resolve`` will read, and what it must report."""
+class _SpecChoice(NamedTuple):
+    """The copy of a staged spec ``resolve`` will read, and what it must report.
+
+    A ``NamedTuple`` rather than a dataclass on purpose: the suite loads this
+    module with ``register=False``, and ``dataclasses`` resolves a class's own
+    module through ``sys.modules`` — which is empty for that load — so a dataclass
+    here raises ``AttributeError`` on import in every test that takes that path.
+    """
 
     path: Path
     slug: str
@@ -1821,7 +1825,7 @@ def cmd_resolve(args: argparse.Namespace) -> dict[str, Any]:
     project_dir = Path(getattr(args, 'project_dir', '.') or '.').resolve()
 
     try:
-        choice = _resolve_spec(args.spec, project_dir, from_ledger=args.spec_from_ledger)
+        choice = _resolve_spec(args.spec, project_dir, from_ledger=getattr(args, 'spec_from_ledger', False))
     except ValueError as exc:
         return {'status': 'error', 'error': str(exc), 'spec': args.spec}
     spec, slug, plan_id = choice.path, choice.slug, choice.plan_id
