@@ -34,31 +34,32 @@ def _create_plan(plan_id: str, title: str, phases: str) -> None:
 
 
 def _record_branch_commits_in_the_plan_ledger(plan_context, plan_id: str) -> None:
-    """Seed the sandbox change-ledger with the commits the guard will enumerate.
+    """Seed the sandbox change-ledger with the commits the guard can enumerate.
 
     The 5-execute end-marker guard covers MAIN-CHECKOUT plans too, and these cases
     transition a plan whose checkout is a feature branch: every commit in the range
     the guard computes has to carry a ``kind=change`` row or it refuses — correctly,
     since a transition is not where that bookkeeping gets skipped. Seeding the
-    ``PLAN_BASE_DIR`` ledger (the sandbox, never the repository) is what models a
-    plan whose Step 10a settlement ran.
+    ``PLAN_BASE_DIR`` ledger (the sandbox, never the repository) models a plan whose
+    Step 10a settlement ran.
 
-    The range is taken from ``git rev-list HEAD`` rather than ``origin/main..HEAD``:
-    a CI checkout may carry no ``origin/main`` ref at all, where the narrower form
-    exits 128 and the case fails for a reason that has nothing to do with the
-    transition. Ancestors are a SUPERSET of any range the guard computes, so the
-    coverage claim holds either way, and a bounded count keeps the fixture small.
+    The rows are taken from ``git rev-list HEAD`` rather than ``origin/main..HEAD``:
+    a CI checkout may carry neither ref, where the narrower form exits 128 and the
+    case fails for a reason unrelated to the transition. Ancestors are a SUPERSET of
+    any range the guard computes — whichever base ref resolves — so the coverage
+    claim holds either way; the bound keeps the fixture small.
     """
     repo = subprocess.run(
         ['git', 'rev-parse', '--show-toplevel'], capture_output=True, text=True, check=True
     ).stdout.strip()
     listing = subprocess.run(
-        ['git', '-C', repo, 'rev-list', 'HEAD', '--max-count=500'], capture_output=True, text=True, check=False
+        ['git', '-C', repo, 'rev-list', 'HEAD', '--max-count=2000'],
+        capture_output=True,
+        text=True,
+        check=False,
     )
     shas = listing.stdout.split() if listing.returncode == 0 else []
     if not shas:
-        # No readable history in this checkout: nothing to record and nothing the
-        # guard could enumerate, so the transition is not gated by this fixture.
         return
     base = plan_context.plan_dir_for(plan_id).parent.parent
     work = base / 'work'
@@ -288,9 +289,16 @@ def test_transition_5_execute_does_not_seed_modified_files(plan_context):
     for completed in ('1-init', '2-refine', '3-outline', '4-plan'):
         run_script(LIFECYCLE_SCRIPT, 'transition', '--plan-id', 'no-seed-5exec-plan', '--completed', completed)
 
-    # references.json with base_branch but no modified_files.
+    # references.json with a base that always resolves in this checkout.
+    #
+    # The base is HEAD, not 'main': the end-marker guard enumerates commits between
+    # HEAD and the base, and a CI checkout may carry neither a local 'main' nor an
+    # 'origin/main' ref. A base of HEAD is a resolvable base with an EMPTY range, so
+    # this case is about references.json and not gated by the guard's range at all —
+    # while remaining honest, because an empty range is a legitimate guard pass
+    # rather than a bypass.
     refs_path = plan_dir / 'references.json'
-    refs_path.write_text(json.dumps({'base_branch': 'main'}, indent=2))
+    refs_path.write_text(json.dumps({'base_branch': 'HEAD'}, indent=2))
     _record_branch_commits_in_the_plan_ledger(plan_context, 'no-seed-5exec-plan')
 
     result = run_script(LIFECYCLE_SCRIPT, 'transition', '--plan-id', 'no-seed-5exec-plan', '--completed', '5-execute')
@@ -320,7 +328,7 @@ def test_transition_never_touches_modified_files_for_any_phase(plan_context):
     )
 
     refs_path = plan_dir / 'references.json'
-    refs_path.write_text(json.dumps({'base_branch': 'main', 'modified_files': ['legacy.py']}, indent=2))
+    refs_path.write_text(json.dumps({'base_branch': 'HEAD', 'modified_files': ['legacy.py']}, indent=2))
 
     # Non-5-execute transition leaves the legacy ledger exactly as-is.
     result = run_script(LIFECYCLE_SCRIPT, 'transition', '--plan-id', 'untouched-ledger-plan', '--completed', '1-init')
@@ -330,7 +338,9 @@ def test_transition_never_touches_modified_files_for_any_phase(plan_context):
         f'Non-5-execute transition mutated a legacy modified_files key: {refs!r}.'
     )
 
-    # Advance to 5-execute, then the 5-execute transition is equally hands-off.
+    # Advance to 5-execute, then the 5-execute transition is equally hands-off. The
+    # base is HEAD for the reason stated in the sibling case: an empty, resolvable
+    # range keeps this case about references.json rather than about the guard.
     for completed in ('2-refine', '3-outline', '4-plan'):
         run_script(LIFECYCLE_SCRIPT, 'transition', '--plan-id', 'untouched-ledger-plan', '--completed', completed)
     _record_branch_commits_in_the_plan_ledger(plan_context, 'untouched-ledger-plan')
