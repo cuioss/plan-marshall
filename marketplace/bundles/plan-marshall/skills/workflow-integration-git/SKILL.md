@@ -173,10 +173,13 @@ A **raw** `git commit` is refused by the enforcement guard in phase `6-finalize`
 
 **Step 6: Push (Optional)**
 
-If `push` parameter:
+If `push` parameter, push through the gated verb — never a bare `git push`:
 ```bash
-git -C {worktree_path} push
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow push \
+  --plan-id {plan_id} --project-dir {worktree_path}
 ```
+
+Both selectors are passed on purpose: `--plan-id` resolves the plan's own working tree and is what makes the gate apply (the verb also derives the plan id from the path, but only a plan-worktree path carries one). The verb reads the plan's `6-finalize` record for the pre-push quality gate and refuses a HEAD the gate did not validate (`head_not_validated_by_gate`). This is the path the finalize push step takes when the tree is already clean — the case a raw `git push` served before — so the barrier covers it too.
 
 ### Output
 
@@ -198,7 +201,8 @@ pushed: true
 | `format-commit` | `--type --subject [--scope] [--body] [--breaking] [--footer]` | Format commit message (Co-Authored-By NOT appended — caller adds it at `git commit` time per project convention) |
 | `analyze-diff` | `(--plan-id \| --project-dir) [--cached]` | Capture and analyze the worktree diff for commit suggestions. Resolves working tree path from plan metadata when `--plan-id` is used. |
 | `detect-artifacts` | `[--root]` | Scan for committable artifacts |
-| `force-push-with-lease` | `(--plan-id \| --project-dir --branch)` | Force-push feature branch to origin with `--force-with-lease` guard (post-rebase). Resolves branch and worktree path from plan metadata when `--plan-id` is used. |
+| `force-push-with-lease` | `(--plan-id \| --project-dir --branch)` | Force-push feature branch to origin with `--force-with-lease` guard (post-rebase). Resolves branch and worktree path from plan metadata when `--plan-id` is used. Refuses (`error_type: head_not_validated_by_gate`) when the HEAD being pushed is not the HEAD the plan's pre-push quality gate recorded. |
+| `push` | `[--plan-id] [--project-dir]` | Push the current branch through the pre-push gate-head barrier — the push path the finalize push step uses when the settled tree is already clean. Refuses (`error: head_not_validated_by_gate`) when the HEAD being pushed differs from the `pre-push-quality-gate` record; a plan with no record is not blocked. |
 | `switch-and-pull` | `(--plan-id \| --project-dir) --base` | Checkout `--base` on the main checkout and pull from origin. Under `--plan-id` the plan id is a **validity gate, not a path source** — the target is the MAIN checkout root, resolved by `git rev-parse --git-common-dir` (`marketplace_paths.main_checkout_root`), not read from plan metadata and not the cwd-relative checkout. Main-anchoring is what makes the verb work from phase-5 onward, where cwd is pinned to the plan's worktree: a cwd-relative target would aim `git checkout` at the worktree and refuse with `main is already used by worktree` at exactly the moment main is stale. A failure to resolve the common dir is reported as `error_type: project_dir_not_a_git_repo`. `--project-dir` remains the explicit override for callers that already know the path. |
 | `prune-local-and-remote-ref` | `(--plan-id \| --project-dir --head) [--mode local_and_remote\|local_only]` | Delete local feature branch and optionally prune the remote-tracking ref after merge. Internal `show-ref` guard skips ref deletion when already absent. Default mode `local_and_remote`; use `local_only` in local-only plans. |
 | `branch-sync-state` | `--plan-id` | Report push parity of the plan's feature branch vs its `origin/{branch}` tracking ref: `ahead` \| `synced` \| `remote_absent_landed` \| `remote_absent_unverified` (a missing ref is disambiguated so a merged-and-deleted branch is never re-pushed), plus the `barrier_action` (`re-fire` \| `skip`) the push barrier's consumer branches on. Pure read-only comparison (`git rev-parse HEAD` vs `git rev-parse origin/{branch}`), no fetch. Resolves branch from `metadata.worktree_branch` and the tree via the canonical worktree-resolution channel. |

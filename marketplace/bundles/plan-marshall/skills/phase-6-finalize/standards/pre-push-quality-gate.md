@@ -59,20 +59,27 @@ This gate sorts LAST in the settle band (`order: 10`, immediately before `defaul
 
 ## Pushed-head gate refusal
 
-The gate refuses a push whose head outruns the last gate stamp. Immediately
-before the per-bundle loop, resolve the current worktree HEAD
-(`git -C {worktree_path} rev-parse HEAD` — worktree-scoped, never bare
-`git rev-parse HEAD`: after finalize returns to the main checkout a bare
-read reports the main checkout while the stamp belongs to the worktree)
-and compare it against the last gate stamp the ledger records for this
-worktree (the newest `kind=build` row whose `worktree_sha` the freshness
-crosscheck admitted, read through `manage-tasks pre-commit-verify-freshness`):
+The gate refuses a push whose head outruns the last gate stamp, and that refusal
+is now ENFORCED BY THE PUSH VERBS rather than by this document. The rule was prose
+only — nothing compared the recorded stamp with the HEAD a push would ship — so a
+fix commit after the gate, an amend, or a rebase was pushed as "gated" when no gate
+had seen it. All three push paths — `git-workflow push` (the finalize push step's
+own path when the tree is already clean), `git-workflow commit --push` and
+`git-workflow force-push-with-lease`, which is the post-rebase path — read the
+plan's `6-finalize` record for this step — `head_at_completion` under
+`metadata.phase_steps`, via the plan's own status through `manage-status read` —
+and refuse a push whose HEAD differs, with `head_not_validated_by_gate` naming the
+recorded SHA, the pushed SHA and the step. A plan with no record (an early phase,
+a plan that never ran finalize) carries no barrier: nothing was validated, so there
+is nothing to compare. The single source of truth is
+`workflow-integration-git/scripts/_push_gate.py`; the residue this leaves is that a
+push made outside the `push` verb, `commit --push` and `force-push-with-lease` — a
+bare `git push` — is still ungated, which is why the finalize push step calls the
+`push` verb rather than `git push`.
 
-- **Head matches the stamp** — proceed into the arms below.
-- **Head outruns the stamp** — STOP the step and refuse the push. The tree
-  advanced past the last certified state, so no arm below may certify the new
-  head on the old stamp's evidence. Re-run the gate against the new HEAD
-  instead; a push on drifted evidence is never permitted.
+**The gate does not re-check its own recorded anchor.** A re-fired gate — the dispatcher re-runs it when HEAD advanced past its `done` record — must never stop on the OLD SHA it is about to replace: the anchor is the record the run is there to refresh, so comparing against it would refuse every re-fire and the record would never move. What detects drift DURING a run is the start/end capture described below; what refuses a stale push is the push verb's own comparison against the recorded anchor. Those two are the mechanisms; a third, gate-side comparison against the same record is not.
+
+When a push verb answers `head_not_validated_by_gate` — the tree moved after this gate recorded its anchor — **STOP the step and refuse the push**: the tree advanced past the last certified state, so no arm below may certify the new head on the old stamp's evidence. Re-run the gate against the new HEAD instead; a push on drifted evidence is never permitted.
 
 For coverage-mandating plans, a fresh exit under
 `required_coverage_unknown` is likewise refused. When the freshness
