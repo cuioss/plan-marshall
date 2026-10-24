@@ -459,7 +459,7 @@ def qualifies_optional(self, profile: str, skill: str, module_data: dict) -> boo
     """
 ```
 
-`manage-personas resolve --module` asks this hook once per optional in a `profile × domain` cell, so a domain can exclude optionals its module-level signals disqualify. The Java extension overrides it to exclude its CDI-dependent optionals (`java-cdi`, `java-quarkus`, `junit-weld-testing`) for a module with no CDI dependency and `java-lombok` without Lombok. A module-data dependency list is read from the resolved `dependencies` when present, else the cheap crawl's `declared_dependencies`.
+Both producers of a task's skills ask this hook once per optional in a `profile × domain` cell: `manage-personas resolve --module` (and `resolve-task-skills`, which delegates to it) and the architecture path's `_build_applicable_result`, whose result phase-4 reads. A domain can thus exclude optionals its module-level signals disqualify without the exclusion having to be repeated by a consumer. The Java extension overrides it to exclude its CDI-dependent optionals (`java-cdi`, `java-quarkus`, `junit-weld-testing`) for a module with no CDI dependency and `java-lombok` without Lombok. A module-data dependency list is read from the resolved `dependencies` when present, else the cheap crawl's `declared_dependencies`.
 
 ---
 

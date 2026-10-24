@@ -82,10 +82,22 @@ def suggest_domains(module_name: str, project_dir: str = '.') -> dict[str, Any]:
         if not domain_keys:
             continue
 
-        # Call applies_to_module once per extension
+        # Call applies_to_module once per extension. The scope pins the
+        # exclusion reads inside the extension to THIS project, so suggestions
+        # are derived from the configuration the caller asked about.
         try:
-            result = ext_module.applies_to_module(module_data)
+            from extension_base import exclusion_scope
+
+            with exclusion_scope(project_dir):
+                result = ext_module.applies_to_module(module_data)
         except Exception as e:
+            # An unreadable prohibition is not "this extension contributed
+            # nothing": report it instead of returning a plausible empty
+            # suggestion set built from a guard that could not look.
+            if getattr(e, 'code', '') == 'skill_exclusions_unreadable' or str(e).startswith(
+                'skill_exclusions_unreadable'
+            ):
+                raise
             from plan_logging import log_entry
 
             log_entry('script', None, 'WARNING', f'[SUGGEST] applies_to_module() failed for extension: {e}')

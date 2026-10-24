@@ -394,8 +394,14 @@ def enrich_add_domain(
     # Resolve active profiles (three-layer: CLI > config > signal detection)
     active = _resolve_active_profiles(domain_key, project_dir, profiles)
 
-    # Get resolved skills from extension
-    result = target_ext.applies_to_module(module_data, active_profiles=active)
+    # Get resolved skills from extension. The scope pins every exclusion read
+    # inside the architecture path to THIS project: a caller that names its
+    # project_dir must not have its map filtered with another project's
+    # configuration.
+    from extension_base import exclusion_scope
+
+    with exclusion_scope(project_dir):
+        result = target_ext.applies_to_module(module_data, active_profiles=active)
     skills_by_profile = result.get('skills_by_profile', {})
 
     enriched = load_module_enriched_or_empty(module_name, project_dir)
@@ -407,19 +413,19 @@ def enrich_add_domain(
     # excluded it would survive every re-enrichment. Prune this domain's veto
     # from the stored map first; the read seam applies the repository-wide
     # union, this write path keeps the store honest for the domain it owns.
-    try:
-        from extension_base import excluded_skills, filter_skill_map
+    # An unreadable configuration is an ERROR here — persisting the unfiltered
+    # map is the fail-open this guard exists to prevent.
+    from extension_base import domain_bundle, excluded_skills, filter_skill_map
 
-        exclusions = excluded_skills(domain_key, project_dir)
-        if exclusions:
-            current = filter_skill_map(current, exclusions)
-            enriched['skills_by_profile'] = current
-            # The incoming map is filtered too: an extension that overrides
-            # applies_to_module and builds skills_by_profile itself never passes
-            # through ExtensionBase._build_applicable_result.
-            skills_by_profile = filter_skill_map(skills_by_profile, exclusions)
-    except Exception:
-        pass
+    exclusions = excluded_skills(domain_key, project_dir)
+    owner_bundle = domain_bundle(domain_key, project_dir)
+    if exclusions:
+        current = filter_skill_map(current, exclusions, owner_bundle)
+        enriched['skills_by_profile'] = current
+        # The incoming map is filtered too: an extension that overrides
+        # applies_to_module and builds skills_by_profile itself never passes
+        # through ExtensionBase._build_applicable_result.
+        skills_by_profile = filter_skill_map(skills_by_profile, exclusions, owner_bundle)
     profiles_updated = []
 
     for profile_name, profile_data in skills_by_profile.items():
@@ -580,10 +586,22 @@ def enrich_all(project_dir: str = '.', include_optionals: bool = False, reasonin
 def enrich_skills_by_profile(
     module_name: str, skills_by_profile: dict[str, Any], project_dir: str = '.', reasoning: str | None = None
 ) -> dict[str, Any]:
-    """Update skills organized by profile."""
+    """Update skills organized by profile.
+
+    The caller's map is filtered through the repository veto before it is
+    persisted: this verb writes the very map a later phase reads, so persisting
+    a skill the repository forbids here would bypass every other seam. An
+    unreadable exclusion configuration is an error, not an unfiltered write.
+    """
     _load_module_or_raise(module_name, project_dir)
 
     warnings = _validate_skills_by_profile_structure(skills_by_profile)
+
+    from extension_base import all_excluded_skills, filter_skill_map
+
+    exclusions = all_excluded_skills(project_dir)
+    if exclusions:
+        skills_by_profile = filter_skill_map(skills_by_profile, exclusions)
 
     enriched = load_module_enriched_or_empty(module_name, project_dir)
 
