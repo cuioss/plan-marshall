@@ -149,8 +149,9 @@ Read the spec from the **main checkout** by default; it is git-tracked there. Ad
 the worktree holds none. The flag is set per emit, so a round of emits needs no ledger land; with
 `orchestrator.use_worktree` off there is no second copy and it is a no-op rather than an error.
 `resolve` reports which copy it read (`spec_source`) and, when both copies exist and differ, the
-`spec_differ` marker, so a read of the older copy is never silent. Then **resolve** every value the
-run uses, and read the result before doing anything else:
+`spec_differ` marker, so a read of the older copy is never silent. The worktree copy is READ ONLY
+either way. Then **resolve** every value the run uses, and read the result before doing anything
+else:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:runbook-lane:runbook_lane resolve --spec {spec} [--spec-from-ledger]

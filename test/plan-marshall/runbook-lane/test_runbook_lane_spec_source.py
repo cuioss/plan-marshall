@@ -28,6 +28,7 @@ from conftest import MARKETPLACE_ROOT, get_scripts_dir, run_script
 
 _SKILL_NAME = 'runbook-lane'
 _SCRIPT = get_scripts_dir('plan-marshall', _SKILL_NAME) / 'runbook_lane.py'
+_SKILL_TEXT = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / _SKILL_NAME / 'SKILL.md'
 
 SLUG = 'demo-epic'
 SPEC_NAME = 'PLAN-LB-90-lane-reads-ledger-spec.md'
@@ -265,8 +266,41 @@ def test_the_no_op_mode_reports_one_copy_and_no_marker(tmp_path: Path) -> None:
 
 def test_lane_text_names_the_ledger_read_and_what_it_reports() -> None:
     """The lane instructs the run to record which copy it read, and whether they differ."""
-    text = (MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / _SKILL_NAME / 'SKILL.md').read_text(encoding='utf-8')
+    text = (_SKILL_TEXT).read_text(encoding='utf-8')
 
     assert '--spec-from-ledger' in text
     assert 'spec_source' in text
     assert 'spec_differ' in text
+
+
+# =============================================================================
+# D3 — the new read does not soften the write rule
+# =============================================================================
+
+
+def _snapshot(root: Path) -> dict[str, tuple[int, bytes]]:
+    """Every file under ``root`` with its mtime and bytes — a write shows up here."""
+    return {
+        path.relative_to(root).as_posix(): (path.stat().st_mtime_ns, path.read_bytes())
+        for path in sorted(root.rglob('*'))
+        if path.is_file()
+    }
+
+
+def test_reading_the_ledger_copy_writes_nothing(tmp_path: Path) -> None:
+    """The worktree copy is READ ONLY: the resolve leaves the tree byte-identical."""
+    _seed_copies(tmp_path, use_worktree=True, main_body=_spec_body(MAIN_TITLE), ledger_body=_spec_body(LEDGER_TITLE))
+    before = _snapshot(tmp_path)
+
+    data = _run_resolve(tmp_path, SPEC_REL, from_ledger=True)
+
+    assert data['status'] == 'success', data
+    assert _snapshot(tmp_path) == before
+
+
+def test_lane_text_keeps_the_write_rule_verbatim() -> None:
+    """The rule the new read must not soften, quoted as the lane states it."""
+    text = _SKILL_TEXT.read_text(encoding='utf-8')
+
+    assert 'Never edit the spec or any file under `.plan/orchestrator/`' in text
+    assert 'The worktree copy is READ ONLY' in text
