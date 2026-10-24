@@ -13,6 +13,9 @@ PLAN-LB-80 D1/D2/D3 from the persona-resolver side:
 """
 
 import os
+import sys
+import types
+from argparse import Namespace
 from pathlib import Path
 
 import pytest
@@ -49,14 +52,18 @@ def _write_malformed_marshal() -> Path:
     return path
 
 
-def _write_persona(bundles_root: Path, key: str, composes: list[str]) -> Path:
+def _write_persona(bundles_root: Path, key: str, composes: list[str], profiles: list[str] | None = None) -> Path:
     """Write a synthetic persona whose composition edges are ``composes``."""
     bundle, skill = key.split(':', 1)
     skill_dir = bundles_root / bundle / 'skills' / skill
     skill_dir.mkdir(parents=True, exist_ok=True)
     path = skill_dir / 'SKILL.md'
     path.write_text(
-        '---\nimplements: persona\nprofiles: []\ncomposes: [' + ', '.join(composes) + ']\n---\n',
+        '---\nimplements: persona\nprofiles: ['
+        + ', '.join(profiles or [])
+        + ']\ncomposes: ['
+        + ', '.join(composes)
+        + ']\n---\n',
         encoding='utf-8',
     )
     return path
@@ -166,11 +173,63 @@ def test_bare_exclusion_still_removes_a_bare_skill():
     assert 'java-cdi' not in _architecture_optionals()
 
 
+def _install_multi_domain_cells(monkeypatch) -> None:
+    """The python cell carries a BARE java-cdi; the java cell carries nothing."""
+
+    def resolve(ns):
+        if ns.domain == 'python':
+            return {'status': 'success', 'defaults': {}, 'optionals': {'java-cdi': {}}}
+        return {'status': 'success', 'defaults': {}, 'optionals': {}}
+
+    class _Extension:
+        def applies_to_module(self, module_data):
+            return {'applicable': True, 'skills_by_profile': {}}
+
+        def qualifies_optional(self, profile, skill, module_data):
+            return True
+
+    fake = types.ModuleType('_cmd_skill_resolution')
+    fake.cmd_resolve_domain_skills = resolve
+    monkeypatch.setitem(sys.modules, '_cmd_skill_resolution', fake)
+    monkeypatch.setattr(_mp, '_find_domain_extension', lambda domain: _Extension())
+    monkeypatch.setattr(_mp, '_resolve_module_data', lambda module: ({}, 'resolved'))
+
+
+def _resolve_two_domains(tmp_path, monkeypatch, java_exclusions: list[str]) -> dict:
+    """Resolve one persona over java+python with the given java exclusion list."""
+    _write_persona(tmp_path, 'plan-marshall:persona-x', composes=[], profiles=['implementation'])
+    monkeypatch.setattr(_mp, 'resolve_bundles_root', lambda _script: tmp_path)
+    _install_multi_domain_cells(monkeypatch)
+    _write_marshal(
+        {
+            'skill_domains': {
+                'java': {'bundle': 'pm-dev-java', 'excluded_skills': java_exclusions},
+                'python': {'bundle': 'pm-dev-python'},
+            }
+        }
+    )
+
+    return _mp.cmd_resolve(
+        Namespace(persona_key='plan-marshall:persona-x', domains='java,python', module='sample-module')
+    )
+
+
+def test_one_domains_qualified_exclusion_spares_another_domains_bare_cell_skill(tmp_path, monkeypatch):
+    """A qualified java exclusion must not strip the python cell's bare skill."""
+    result = _resolve_two_domains(tmp_path, monkeypatch, ['pm-dev-java:java-cdi'])
+
+    assert 'java-cdi' in result['skills']
+
+
+def test_a_bare_exclusion_still_reaches_another_domains_bare_cell_skill(tmp_path, monkeypatch):
+    """A bare-name exclusion stays bundle-agnostic, whichever cell carries it."""
+    result = _resolve_two_domains(tmp_path, monkeypatch, ['java-cdi'])
+
+    assert 'java-cdi' not in result['skills']
+
+
 def test_resolver_keeps_a_bare_cell_skill_excluded_by_another_bundle(monkeypatch):
     """The resolver narrows the same way: another bundle's entry spares the cell's skill."""
-    import sys
-    import types
-
     fake = types.ModuleType('_cmd_skill_resolution')
     fake.cmd_resolve_domain_skills = lambda ns: {
         'status': 'success',

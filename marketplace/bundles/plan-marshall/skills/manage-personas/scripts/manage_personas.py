@@ -549,16 +549,22 @@ def _resolve_persona(args) -> dict:
 
     # The veto binds the flattened result too, not only the profile x domain
     # cells: a composed ref or the always-added base can name a skill the
-    # repository excludes for one of the requested domains. Each domain vetoes
-    # with its own owner bundle, so a bundle-qualified exclusion narrows here
-    # exactly as it does per cell.
+    # repository excludes for one of the requested domains.
+    #
+    # A BARE skill in ``ordered`` came from a cell, and that cell already applied
+    # its own domain's veto with that cell's owner (``_resolve_profile_domain_skills``).
+    # Re-testing it with THIS domain's owner would let a qualified exclusion of
+    # one domain strip another domain's cell skill, so only the bundle-agnostic
+    # (bare-name) exclusions are applied to a bare entry here. A qualified entry
+    # carries its own bundle in the notation and is matched exactly.
     for domain in domains:
         domain_exclusions = _excluded_skills(domain)
         if not domain_exclusions:
             continue
-        owner_bundle = _domain_bundle(domain)
-        ordered = [skill for skill in ordered if not _is_excluded(skill, domain_exclusions, owner_bundle)]
-
+        bare_exclusions = {exclusion for exclusion in domain_exclusions if ':' not in exclusion}
+        ordered = [skill for skill in ordered if ':' not in skill or not _is_excluded(skill, domain_exclusions)]
+        if bare_exclusions:
+            ordered = [skill for skill in ordered if not _is_excluded(skill, bare_exclusions)]
     if not module:
         module_status = MODULE_STATUS_NOT_REQUESTED
     elif any(status == MODULE_STATUS_UNREADABLE for status in module_statuses):

@@ -918,9 +918,9 @@ def _skill_domain_exclusions(project_dir: str | None = None) -> dict[str, set[st
     than reading as "nothing is forbidden".
     """
     config = _load_config_mapping(project_dir)
-    skill_domains = config.get('skill_domains')
-    if skill_domains is None:
+    if 'skill_domains' not in config:
         return {}
+    skill_domains = config['skill_domains']
     if not isinstance(skill_domains, dict):
         raise SkillExclusionReadError(f'skill_domains is not a mapping: {type(skill_domains).__name__}')
     exclusions: dict[str, set[str]] = {}

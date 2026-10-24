@@ -86,7 +86,7 @@ def _seed(project_dir: str, dependencies: list[str] | None = None) -> None:
     )
 
 
-def _write_marshal(project_dir: str, skill_domains: dict) -> Path:
+def _write_marshal(project_dir: str, skill_domains: dict | None) -> Path:
     """Write a well-formed ``.plan/marshal.json`` under ``project_dir``."""
     return Path(create_marshal_json(Path(project_dir), config={'skill_domains': skill_domains}, nest_in_plan_dir=True))
 
@@ -242,6 +242,20 @@ def test_global_active_profiles_sibling_is_not_a_malformed_domain():
         payload = _cmd_client_query.get_module_info('module-a', project_dir=project_dir)
 
     assert QUARKUS in json.dumps(payload['skills_by_profile'])
+
+
+def test_null_skill_domains_is_an_error_not_an_absent_key():
+    """An explicit null is a malformed block, not "no domains declared"."""
+    with tempfile.TemporaryDirectory() as project_dir:
+        _seed(project_dir)
+        _write_marshal(project_dir, None)
+
+        result = _cmd_client_handlers.cmd_module(
+            Namespace(module='module-a', project_dir=project_dir, full=False, budget=None)
+        )
+
+    assert result['status'] == 'error'
+    assert 'skill_exclusions_unreadable' in str(result)
 
 
 def test_enrich_reports_an_unreadable_configuration_instead_of_persisting():
