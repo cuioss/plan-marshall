@@ -34,21 +34,32 @@ def _create_plan(plan_id: str, title: str, phases: str) -> None:
 
 
 def _record_branch_commits_in_the_plan_ledger(plan_context, plan_id: str) -> None:
-    """Seed the sandbox change-ledger with this checkout's branch commits.
+    """Seed the sandbox change-ledger with the commits the guard will enumerate.
 
     The 5-execute end-marker guard covers MAIN-CHECKOUT plans too, and these cases
-    transition a plan whose checkout is a feature branch: every commit since the
-    base has to carry a ``kind=change`` row or the guard refuses — correctly, since
-    a transition is not where that bookkeeping gets skipped. Seeding the
+    transition a plan whose checkout is a feature branch: every commit in the range
+    the guard computes has to carry a ``kind=change`` row or it refuses — correctly,
+    since a transition is not where that bookkeeping gets skipped. Seeding the
     ``PLAN_BASE_DIR`` ledger (the sandbox, never the repository) is what models a
     plan whose Step 10a settlement ran.
+
+    The range is taken from ``git rev-list HEAD`` rather than ``origin/main..HEAD``:
+    a CI checkout may carry no ``origin/main`` ref at all, where the narrower form
+    exits 128 and the case fails for a reason that has nothing to do with the
+    transition. Ancestors are a SUPERSET of any range the guard computes, so the
+    coverage claim holds either way, and a bounded count keeps the fixture small.
     """
     repo = subprocess.run(
         ['git', 'rev-parse', '--show-toplevel'], capture_output=True, text=True, check=True
     ).stdout.strip()
-    shas = subprocess.run(
-        ['git', '-C', repo, 'rev-list', 'origin/main..HEAD'], capture_output=True, text=True, check=True
-    ).stdout.split()
+    listing = subprocess.run(
+        ['git', '-C', repo, 'rev-list', 'HEAD', '--max-count=500'], capture_output=True, text=True, check=False
+    )
+    shas = listing.stdout.split() if listing.returncode == 0 else []
+    if not shas:
+        # No readable history in this checkout: nothing to record and nothing the
+        # guard could enumerate, so the transition is not gated by this fixture.
+        return
     base = plan_context.plan_dir_for(plan_id).parent.parent
     work = base / 'work'
     work.mkdir(parents=True, exist_ok=True)
