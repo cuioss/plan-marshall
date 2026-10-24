@@ -512,6 +512,75 @@ def test_a_failed_outcome_never_overwrites_an_unanswered_escalation(plan_context
     assert _mark(plan_id, 'done')['error'] == 'escalation_unanswered'
 
 
+def test_a_halt_cannot_replace_an_unanswered_escalation(plan_context):
+    """Re-recording a halt must not erase the decision the operator has not made yet."""
+    plan_id = 'halt-replace-escalation'
+    _make_plan(plan_id)
+    _record(plan_id, escalate=True, outcome='halted')
+
+    result = cmd_halt_record(
+        Namespace(
+            plan_id=plan_id,
+            phase=_PHASE,
+            step=_STEP,
+            outcome='failed',
+            reason='post-dispatch guard fired again',
+            escalate_ask=False,
+            option=None,
+        )
+    )
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'escalation_open'
+    # The escalation stands, so the resolution is still refused.
+    assert _mark(plan_id, 'done')['error'] == 'escalation_unanswered'
+
+
+def test_a_halt_answering_a_question_nobody_asked_is_refused_by_the_record_itself(plan_context):
+    """Options belong to an escalation: recording them on a silent halt invents a question."""
+    plan_id = 'halt-options-without-escalation'
+    _make_plan(plan_id)
+
+    result = cmd_halt_record(
+        Namespace(
+            plan_id=plan_id,
+            phase=_PHASE,
+            step=_STEP,
+            outcome='failed',
+            reason='post-dispatch guard: no terminal record',
+            escalate_ask=False,
+            option=['Yes'],
+        )
+    )
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'invalid_argument'
+
+
+def test_an_escalation_without_offered_options_cannot_be_answered(plan_context):
+    """A record that claims an escalation but offers no labels refuses every answer."""
+    plan_id = 'halt-words-escalation-no-options'
+    _make_plan(plan_id)
+    status = read_status(plan_id)
+    status.setdefault('metadata', {})['halts'] = {
+        _PHASE: {
+            _STEP: {
+                'outcome': 'halted',
+                'reason': 'escalate_ask{reason: re_review_timeout}',
+                'escalate_ask': True,
+                'recorded_at': '2026-01-01T00:00:00Z',
+                'answer': None,
+            }
+        }
+    }
+    _status_core.write_status(plan_id, status)
+
+    result = cmd_halt_answer(Namespace(plan_id=plan_id, phase=_PHASE, step=_STEP, selected='anything'))
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'options_missing'
+
+
 def test_a_halt_recorded_under_another_key_spelling_is_found_by_the_read_seam(plan_context):
     """Write and read canonicalize the step key identically, so no spelling hides a halt."""
     plan_id = 'halt-key-canonical'
@@ -661,9 +730,40 @@ def test_scheduled_loop_back_basis_is_refused_when_no_marker_schedules_the_drift
     assert result['error'] == 'scheduled_override_without_marker'
 
 
-def test_the_handshake_row_declares_both_the_answer_and_its_basis():
+def test_the_handshake_row_field_list_declares_both_columns():
     """The persisted row shape keeps the answer and what authorized it apart."""
     fields = _handshake_store.HANDSHAKE_FIELDS
 
     assert 'operator_answer' in fields
     assert 'override_basis' in fields
+
+
+def test_the_capture_row_records_the_basis_and_withholds_a_scheduled_answer():
+    """The scheduled auto-override's row carries NO answer — the claim is pinned at the row."""
+    scheduled = _handshake._row_for_capture(
+        'row-shape',
+        '5-execute',
+        {},
+        {},
+        override=True,
+        override_reason='loop-back re-entry auto-override (scheduled by 5-execute loop_back)',
+        operator_answer='',
+        override_basis='scheduled_loop_back',
+    )
+
+    assert scheduled['override_basis'] == 'scheduled_loop_back'
+    assert scheduled['operator_answer'] == ''
+
+    answered = _handshake._row_for_capture(
+        'row-shape',
+        '5-execute',
+        {},
+        {},
+        override=True,
+        override_reason='operator accepted the drift',
+        operator_answer='yes, the drift is legitimate',
+        override_basis='operator',
+    )
+
+    assert answered['override_basis'] == 'operator'
+    assert answered['operator_answer'] == 'yes, the drift is legitimate'

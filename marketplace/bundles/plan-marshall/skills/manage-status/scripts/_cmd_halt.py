@@ -127,14 +127,22 @@ def read_halt_record(status: dict[str, Any], phase: str, step: str) -> dict[str,
     caller asking for ``create-pr`` — and, more importantly, the escalation guard
     cannot miss an escalation because the two sides spelled the key differently.
 
-    A present entry that is not a mapping returns :data:`MALFORMED` rather than
-    ``None``: "the record is there and cannot be read" is a different fact from
-    "no halt was ever recorded", and collapsing the first into the second would
-    let a corrupted store admit a resolution (the fail-open the continuation seam
-    already refuses).
+    A container or record that is PRESENT but not a mapping returns
+    :data:`MALFORMED` rather than ``None``, at every level: ``metadata.halts``,
+    ``halts[phase]`` and the step entry itself. "The record is there and cannot be
+    read" is a different fact from "no halt was ever recorded", and collapsing the
+    first into the second would let a corrupted store admit a resolution — at
+    whichever level the corruption sits.
     """
     if not isinstance(status, dict):
         return None
+    metadata = status.get('metadata')
+    if isinstance(metadata, dict) and HALTS_KEY in metadata:
+        store = metadata.get(HALTS_KEY)
+        if not isinstance(store, dict):
+            return dict(MALFORMED)
+        if phase in store and not isinstance(store.get(phase), dict):
+            return dict(MALFORMED)
     phase_entry = _phase_entry(status, phase, create=False)
     key = canonicalize_step_key(step) if step else step
     if key not in phase_entry and step in phase_entry:
@@ -252,6 +260,35 @@ def cmd_halt_record(args: argparse.Namespace) -> dict[str, Any] | None:
             'offered. Without the offered labels, `halt answer --selected` could not tell the '
             "operator's choice from a sentence the caller wrote.",
         )
+    if not escalate and options:
+        return _invalid(
+            args.plan_id,
+            '--option is meaningful only beside --escalate-ask: a halt that asks nothing offers no '
+            'options, and recording them would describe a question nobody was asked.',
+        )
+
+    existing = read_halt_record(status, phase, step)
+    if (
+        existing is not None
+        and not existing.get('malformed')
+        and existing.get('escalate_ask')
+        and not isinstance(existing.get('answer'), dict)
+        and not bool(getattr(args, 'replace_escalation', False))
+    ):
+        return {
+            'status': 'error',
+            'plan_id': args.plan_id,
+            'error': 'escalation_open',
+            'phase': phase,
+            'step': step,
+            'halt_outcome': existing.get('outcome'),
+            'message': (
+                f'Step {step!r} in phase {phase!r} already carries an unanswered operator '
+                'escalation, and replacing it would erase the decision the operator has not made '
+                'yet. Leave it standing and stop, or — once the operator has answered — pass '
+                '--replace-escalation with the reason that makes the replacement legitimate.'
+            ),
+        }
 
     written = record_halt(
         status,
@@ -344,26 +381,40 @@ def cmd_halt_answer(args: argparse.Namespace) -> dict[str, Any] | None:
 
     # The answer must be an option the halt RECORDED as offered. A free-text
     # answer is not a selection: accepting one would let the caller write the
-    # operator's decision in its own words and then act on that wording.
+    # operator's decision in its own words and then act on that wording. A record
+    # that claims an escalation but offers no labels is unusable for the same
+    # reason, so it refuses rather than accepting anything.
     offered = [str(option) for option in (record.get('options') or [])]
-    if offered:
-        normalized = {_normalize(option): option for option in offered}
-        match = normalized.get(_normalize(selected))
-        if match is None:
-            return {
-                'status': 'error',
-                'plan_id': args.plan_id,
-                'error': 'selected_not_offered',
-                'phase': phase,
-                'step': step,
-                'offered_options': offered,
-                'message': (
-                    f'--selected {selected!r} is not one of the options this halt offers '
-                    f'({offered}). The answer is the label the operator chose, not a paraphrase '
-                    'of it; nothing was written.'
-                ),
-            }
-        selected = match
+    if not offered:
+        return {
+            'status': 'error',
+            'plan_id': args.plan_id,
+            'error': 'options_missing',
+            'phase': phase,
+            'step': step,
+            'message': (
+                f'The recorded halt for step {step!r} in phase {phase!r} claims an operator '
+                'escalation but records no offered options, so no answer can be matched against '
+                'it. Re-record the halt with its --option labels; nothing was written.'
+            ),
+        }
+    normalized = {_normalize(option): option for option in offered}
+    match = normalized.get(_normalize(selected))
+    if match is None:
+        return {
+            'status': 'error',
+            'plan_id': args.plan_id,
+            'error': 'selected_not_offered',
+            'phase': phase,
+            'step': step,
+            'offered_options': offered,
+            'message': (
+                f'--selected {selected!r} is not one of the options this halt offers '
+                f'({offered}). The answer is the label the operator chose, not a paraphrase '
+                'of it; nothing was written.'
+            ),
+        }
+    selected = match
 
     record['answer'] = {'selected': selected, 'answered_at': now_utc_iso()}
     write_status(args.plan_id, status)
@@ -402,14 +453,20 @@ def cmd_halt_read(args: argparse.Namespace) -> dict[str, Any] | None:
             'phase': phase,
             'step': canonicalize_step_key(step),
             'recorded': record is not None,
+            'unreadable': bool(record is not None and record.get('malformed')),
             'record': record,
             'escalation_unanswered': unanswered_escalation(status, phase, step) is not None,
         }
 
     rows: list[dict[str, Any]] = []
+    unreadable_phases: list[str] = []
     for stored_phase in sorted(store):
         phase_entry = store[stored_phase]
         if not isinstance(phase_entry, dict):
+            # A phase entry that is not a mapping is REPORTED, never skipped: a
+            # reader that dropped it would answer `count: 0` for a store that is
+            # demonstrably corrupt, which is the one state an operator needs told.
+            unreadable_phases.append(stored_phase)
             continue
         for stored_step in sorted(phase_entry):
             record = phase_entry[stored_step]
@@ -428,4 +485,5 @@ def cmd_halt_read(args: argparse.Namespace) -> dict[str, Any] | None:
         'plan_id': args.plan_id,
         'count': len(rows),
         'records': rows,
+        'unreadable_phases': unreadable_phases,
     }

@@ -3,7 +3,7 @@
 """Phase handshake: capture and verify cross-phase invariants.
 
 Usage:
-    phase_handshake.py capture        --plan-id X --phase P [--override --reason R]
+    phase_handshake.py capture        --plan-id X --phase P [--override --reason R --operator-answer A]
     phase_handshake.py verify         --plan-id X --phase P [--strict]
     phase_handshake.py findings-check --plan-id X --phase P
     phase_handshake.py list           --plan-id X

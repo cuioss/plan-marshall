@@ -38,6 +38,8 @@ _HANDSHAKE_FIELDS = [
     'captured_at',
     'override',
     'override_reason',
+    'operator_answer',
+    'override_basis',
     'main_sha',
     'main_dirty',
     'worktree_sha',

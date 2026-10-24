@@ -171,7 +171,7 @@ def decide(
 
     if record.get('malformed'):
         return _refused(
-            {**payload, 'halted': False, 'escalate_ask': False},
+            {**payload, 'halted': True, 'escalate_ask': False},
             ERROR_HALT_UNREADABLE,
             (
                 f'The halt recorded for step {step!r} cannot be read, so no continuation can be '
@@ -385,7 +385,11 @@ def build_parser() -> argparse.ArgumentParser:
         dest='max_attempts',
         type=int,
         default=None,
-        help='For retry: the documented bound this attempt is measured against. Required with retry.',
+        help=(
+            'Optional for retry: a bound wider than the documented one is refused. Omit it — the '
+            'documented bound (once per finalize invocation) is applied, and it is the workflow\u2019s '
+            'constant, not a caller parameter.'
+        ),
     )
     check_parser.set_defaults(func=cmd_check)
     return parser

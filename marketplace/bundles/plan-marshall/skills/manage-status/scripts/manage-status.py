@@ -763,6 +763,16 @@ def main() -> int:
             'choice against the options that were actually shown.'
         ),
     )
+    halt_record_parser.add_argument(
+        '--replace-escalation',
+        dest='replace_escalation',
+        action='store_true',
+        help=(
+            'Replace an existing halt whose operator escalation is still unanswered. Refused '
+            'without it (escalation_open), because replacing that record erases a decision the '
+            'operator has not made yet.'
+        ),
+    )
     halt_record_parser.set_defaults(func=cmd_halt_record)
 
     halt_answer_parser = halt_subparsers.add_parser(

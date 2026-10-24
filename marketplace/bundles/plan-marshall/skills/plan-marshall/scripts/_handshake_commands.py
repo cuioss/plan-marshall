@@ -507,6 +507,16 @@ def cmd_capture(args: Any) -> dict[str, Any]:
                 'the operator, then re-run with their answer quoted.'
             ),
         }
+    if not args.override and operator_answer:
+        return {
+            'status': 'error',
+            'error': 'operator_answer_without_override',
+            'message': (
+                '--operator-answer is meaningful only beside --override: an ordinary capture '
+                'records no override, so persisting an answer on it would describe an authorization '
+                'that never happened. Nothing was written.'
+            ),
+        }
     plan_id = args.plan_id
     phase = args.phase
     metadata = _load_status_metadata(plan_id)

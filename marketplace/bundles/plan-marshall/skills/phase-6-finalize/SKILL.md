@@ -1242,13 +1242,12 @@ FOR each step_id in manifest.phase_6.steps:
              --plan-id {plan_id} --phase 6-finalize --step {step_id} --outcome failed \
              --reason "post-dispatch guard: step returned without a terminal record"
 
-           Then check the continuation this halt admits, with the token naming what the
-           dispatcher is about to do (§ "Halt continuation roster"). Here that is the stop
-           itself — anything else (a retry, a loop-back, an improvised harness recovery verb)
-           must be checked with its own token and is refused unless the roster names it:
-
-           python3 .plan/execute-script.py plan-marshall:phase-6-finalize:halt_continuation check \
-             --plan-id {plan_id} --phase 6-finalize --step {step_id} --continuation operator_question
+           Then check the continuation this halt admits. Here the dispatcher STOPS —
+           and a stop is not a continuation, so no check is issued: the halt is
+           recorded, the pipeline halts, and the next finalize entry takes its
+           continuation through item 1's check. If this call is refused because the
+           step already carries an unanswered escalation (`error: escalation_open`),
+           leave that escalation standing and stop — it is the operator's to resolve.
         b. Log the attributed error:
            python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
              work --plan-id {plan_id} --level ERROR \
@@ -1666,6 +1665,11 @@ FOR each step_id in manifest.phase_6.steps:
 
       Capture `admitted`, `iteration` and `effective_ceiling` from the returned TOON. `iteration` is the round this call decided on (the source's spent count plus one), and `effective_ceiling` is the bound it was compared against. On any `status` other than `success`, log the returned `error` and `message` at ERROR and STOP — an unreadable budget is not an admission.
 
+      **The loop-back is a named continuation, so it is checked as one before the round is spent.** On `admitted == true`, issue the `loop_back` check (§ "Halt continuation roster"); a refusal (`halt_continuation_refused`, `escalation_unanswered`, `halt_unreadable`) STOPs here with the refusal surfaced, and the admitted round is not spent:
+
+         python3 .plan/execute-script.py plan-marshall:phase-6-finalize:halt_continuation check \
+           --plan-id {plan_id} --phase 6-finalize --step {step_ref} --continuation loop_back
+
       **In-flight rule.** A status that still carries the retired scalar `loop_back_iteration` is not read: the scalar is attributed to no source, and every source starts at zero.
 
       **The comparison is an ADMISSION test over the round about to be spent, not a report on one already spent.** Branch on `admitted`:
@@ -2046,7 +2050,7 @@ The **closed** set of continuations a halted step may take. A *halt* is any stop
 
 | continuation | What it is | Bound |
 |---|---|---|
-| `retry` | the resumable re-entry check (item 1) re-runs the failed step from scratch | **once per finalize invocation** (item 1) — `check` requires the attempt and the bound, and refuses a retry past it |
+| `retry` | the resumable re-entry check (item 1) re-runs the failed step from scratch | **once per finalize invocation** (item 1) — the bound is the workflow's constant, and a retry that states a wider one is refused |
 | `loop_back` | the step handed control upstream through its recorded `loop_back_target` (item 7b) | the per-source `max_iterations` budget (item 7b) |
 | `operator_question` | the operator is asked and their selected option is executed as worded | the operator's answer |
 
@@ -2064,7 +2068,9 @@ python3 .plan/execute-script.py plan-marshall:phase-6-finalize:halt_continuation
 
 `check` answers `allowed: true` for a named continuation, and refuses with `error: halt_continuation_refused` naming all three otherwise; `retry_bound_required` when a retry states no attempt, `retry_bound_not_documented` when it claims a bound wider than the documented one, `retry_bound_exhausted` when the attempt exceeds it, `escalation_unanswered` while the halt carries an unanswered `escalate_ask`, and `halt_unreadable` when the stored record cannot be parsed. The retry bound is the workflow's (`DOCUMENTED_RETRY_BOUND = 1`, item 1's "exactly one retry per invocation") and is not a caller parameter — a bound the party it binds can widen is no bound. A step with no halt record admits every continuation — there is nothing to constrain.
 
-**It is checked at BOTH sites that take a continuation**, not only when someone remembers: item 1's `failed` retry issues the `retry` check before re-dispatching, and item 5d.b issues it before the pipeline moves on. The refusal names the way forward, so a halt cannot be resumed by an unnamed verb even when the caller never read this section.
+**It is checked at every site that CONTINUES the step**, not at the site that stops it: item 1 issues the `retry` check before re-dispatching a failed step, item 7b issues the `loop_back` check before it replays or rolls back, and item 7a issues the `operator_question` check before it fires the prompt. Stopping and handing control back is not a continuation, so item 5d.b records its halt and stops without one. The refusal names the way forward, so a halt cannot be resumed by an unnamed verb even when the caller never read this section.
+
+**A halt never erases an unanswered escalation.** `halt record` replaces the previous record, so it REFUSES to replace one whose `escalate_ask` is still unanswered (`error: escalation_open`) unless `--replace-escalation` is passed, which only the operator's own answer can justify. A guard that fires on such a step leaves the escalation standing and stops.
 
 **Undocumented harness recovery verbs are not continuations.** `session_move` (OpenCode), a session resume, or an ad-hoc re-dispatch is named nowhere in the roster, so `check` refuses it — by construction, because the set is closed, not because a blocklist happens to list it. A halt the log calls "halted" ends the step: the only ways forward are the three above.
 
