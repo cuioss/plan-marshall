@@ -164,4 +164,7 @@ def test_the_push_verb_pushes_the_gated_head(repo, monkeypatch):
     result = git_workflow.cmd_push(type('Args', (), {'plan_id': None, 'project_dir': str(repo)})())
 
     assert result['status'] == 'success', f'the gated head must push, got {result!r}'
-    assert any('push' in argv for argv in calls)
+    push_argv = next(argv for argv in calls if 'push' in argv)
+    assert f'{head}:refs/heads/feature/x' in push_argv, (
+        f'the push must ship the validated SHA to an explicit refspec, got {push_argv}'
+    )

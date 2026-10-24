@@ -1240,7 +1240,7 @@ Neither barrier mode offers the re-triage remedy:
 - **`{barrier_mode} == ask`** → fire the **structural** prompt below instead of the unhandled-comment prompt. ⛔ Its option set does NOT contain "Re-triage now": that option asks the reviewer again, which is the one thing that cannot work here.
 - **`{barrier_mode} == fail_into_loopback` (the default, and the headless path)** → take the SAME `loop_back` disposition the sibling blocked paths use, with a structurally-labelled record. Use the existing semantic verbatim; do not invent a new one.
 
-  ⚠ **Why a loop-back here is bounded and clearable rather than futile.** A loop-back re-runs the review — which for this member IS futile, the diff being unchanged — but it also re-runs § "Authorization check", which is NOT. Every remedy for this member is an operator action (`merge-authorization grant`, a split, a reclassification to `optional_bots`), and the authorization re-check is what lets the next pass see one and proceed. The defect this branch closes was never the loop-back itself: it was a loop-back that rendered **`"{count} bot comment(s) are still unhandled"` with `{count}` = 0**, offering re-triage, naming no cap, no measured size, and no remedy — a loop nothing could clear because nothing told the operator what to do. Labelling the record and the message structurally is what turns it from futile into actionable.
+  ⚠ **Why a loop-back here is bounded and clearable rather than futile.** A loop-back re-runs the review — which for this member IS futile, the diff being unchanged — but it also re-runs § "Authorization check", which is NOT. Every remedy for this member is an operator action (`merge-authorization grant` or a split), and the authorization re-check is what lets the next pass see one and proceed. The defect this branch closes was never the loop-back itself: it was a loop-back that rendered **`"{count} bot comment(s) are still unhandled"` with `{count}` = 0**, offering re-triage, naming no cap, no measured size, and no remedy — a loop nothing could clear because nothing told the operator what to do. Labelling the record and the message structurally is what turns it from futile into actionable.
 
   ⛔ **Do NOT settle this with a terminal `done` record (Branch C).** Branch C is correct where an OPERATOR declined the merge — the UNKNOWN and pending-findings "Defer merge" arms — because a decision was made and the plan has stopped asking. Here nobody decided anything: the run is blocked awaiting a remedy, so settling would record a decision that was never taken. It also lets the FOR loop continue through to `archive-plan` — archiving the plan with the PR unmerged, the worktree unremoved, and the branch undeleted. Worse, an already-`done` `branch-cleanup` is SKIPPED by the resumable re-entry check, so the very remedies the message names ("grant at the HEAD the next pass will see", "reclassify then re-enter") would point at a pass that never runs.
 
@@ -1414,9 +1414,11 @@ Branch on the operator's selection:
   ```
 
   The last two flags are what make this a grant rather than a record: the verb refuses a
-  `barrier-ask-override` that does not carry the option label the operator actually selected,
-  so free text ("try now", "wait another round") can never be minted into an authorization.
-  Pass the label the prompt rendered for the selected option, verbatim.
+  `barrier-ask-override` whose caller-supplied values are missing, empty, or unequal after
+  whitespace and case normalization. ⚠ That check does NOT verify which option the operator
+  selected — it compares two caller-supplied values — so the caller must pass the label the
+  prompt rendered for the selected option, verbatim. Passing the same free text as both values
+  satisfies the equality and is a caller error the verb cannot detect.
 
   `--granted-over` carries the gap AS THE BARRIER REPORTED IT, so a later reader can re-evaluate the ruling against a later delta rather than re-deriving what the operator was shown. `--gap-class review-barrier-gap` is the machine token for the same fact — this row's `authorizes:` claim, and the ONE class the check above admits, which is why this is the only ruling that can bypass this barrier's disposition. A re-grant at a new HEAD overwrites this record — that overwrite IS the sanctioned re-seek.
 

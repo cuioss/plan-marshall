@@ -142,14 +142,15 @@ def cmd_set_phase(args: argparse.Namespace) -> dict[str, Any] | None:
     if args.phase == '6-finalize':
         from _cmd_lifecycle import _phase_boundary_refusal, _phase_end_marker_refusal
 
-        # The boundary being ADVANCED OVER is the one being LEFT, not the target: the
-        # target phase has not started recording yet, so passing it here would compare
-        # the still-open phase the plan is in and refuse every valid entry.
+        # The boundary being ADVANCED OVER is the phase being LEFT — but only when the
+        # plan is moving forward from its own predecessor. A DIRECT jump (e.g.
+        # 4-plan → 6-finalize) must still evaluate every phase it skips, so the
+        # predecessor narrowing applies only to the normal adjacent move.
         target_names = [str(phase.get('name') or '') for phase in status.get('phases', []) if isinstance(phase, dict)]
         leaving = args.phase
         if args.phase in target_names:
             index = target_names.index(args.phase)
-            if index > 0:
+            if index > 0 and previous == target_names[index - 1]:
                 leaving = target_names[index - 1]
         boundary_refusal = _phase_boundary_refusal(args.plan_id, status, leaving)
         if boundary_refusal is not None:
