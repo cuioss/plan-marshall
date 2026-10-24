@@ -3259,6 +3259,9 @@ _RECOVERY_IMPORT_MARKERS = (
 )
 
 _RECOVERY_PROBE_TIMEOUT_SECONDS = 30
+#: Bound for the selected generator's subprocess. Generation derives the argparse
+#: surfaces and can take tens of seconds on a full cache.
+_RECOVERY_REGENERATE_TIMEOUT_SECONDS = 300
 
 
 def _probe_executor_import(executor_path: Path) -> str:
@@ -3303,19 +3306,18 @@ def cmd_recover(args: argparse.Namespace) -> dict:
     """Recover a broken executor through a direct-path script that needs no executor.
 
     The single deterministic recovery entry. It resolves the newest installed
-    cache's generator, probes the project's executor, regenerates the executor
-    from that cache, and RE-PROBES the regenerated file. A regenerated executor
-    that still fails to import is reported as ``regenerate_failed`` with the
-    probe's reason — never as ``regenerated``.
+    cache's generator, probes the project's executor, EXECUTES that selected
+    generator (as a subprocess — so an older running copy of this verb still
+    regenerates from the newest one), and RE-PROBES the regenerated file. A
+    regenerated executor that still fails to import is reported as
+    ``regenerate_failed`` with the probe's reason — never as ``regenerated``.
 
     The verb itself runs by direct script path, so it works when
     ``.plan/execute-script.py`` cannot start. ``--project-dir`` names the
-    checkout whose executor is recovered (default: cwd); the process cwd is
-    pinned there for the generation so the output lands in the right ``.plan``.
+    checkout whose executor is recovered (default: cwd); the generation runs
+    with cwd and ``PLAN_BASE_DIR`` pinned there so the output lands in that
+    project's ``.plan``.
     """
-    from contextlib import redirect_stdout
-    from io import StringIO
-
     project_dir = Path(getattr(args, 'project_dir', None) or '.').resolve()
     executor = project_dir / '.plan' / 'execute-script.py'
     try:
@@ -3339,56 +3341,49 @@ def cmd_recover(args: argparse.Namespace) -> dict:
         }
 
     probe_before = _probe_executor_import(executor)
-    original_cwd = Path.cwd()
-    captured = StringIO()
-    try:
-        os.chdir(project_dir)
-        with redirect_stdout(captured):
-            regen = cmd_generate(
-                argparse.Namespace(
-                    force=True,
-                    dry_run=False,
-                    marketplace=False,
-                    marketplace_root=ctx['marketplace_root'],
-                    target=target,
-                )
-            )
-    finally:
-        os.chdir(original_cwd)
-
+    before_mtime = executor.stat().st_mtime_ns if executor.is_file() else None
     base = {
         'target': target,
         'executor': str(executor),
         'generator': str(generator),
         'probe_before': probe_before,
-        'generator_output': captured.getvalue()[-2000:],
     }
-    if regen.get('status') != 'success':
+
+    env = {key: value for key, value in os.environ.items() if key != 'PYTHONPATH'}
+    env['PLAN_BASE_DIR'] = str(project_dir / '.plan')
+    env.pop('PM_MARKETPLACE_ROOT', None)
+    if ctx['marketplace_root'] is not None:
+        env['PM_MARKETPLACE_ROOT'] = str(ctx['marketplace_root'])
+
+    try:
+        result = subprocess.run(
+            [sys.executable, str(generator), 'generate', '--target', target],
+            cwd=str(project_dir),
+            capture_output=True,
+            text=True,
+            timeout=_RECOVERY_REGENERATE_TIMEOUT_SECONDS,
+            env=env,
+        )
+        base['generator_output'] = ((result.stdout or '') + (result.stderr or ''))[-2000:]
+    except (OSError, subprocess.TimeoutExpired) as exc:
         return {
             'status': 'error',
             'action': 'regenerate_failed',
-            'error': str(regen.get('error', 'generation failed')),
-            # The on-disk executor is still the broken one; its probe reason is
-            # the fact that names WHY recovery was needed, even when generation
-            # itself refused.
+            'error': str(exc),
             'probe_reason': _probe_executor_import(executor),
             **base,
         }
 
-    # The generation's OUTPUT is the authority, not the cwd assumption: an
-    # ambient PLAN_BASE_DIR can redirect `get_tracked_config_dir()` away from the
-    # project, so confirm the file the generator wrote IS the one about to be
-    # probed before claiming a recovery.
-    generated = str(regen.get('executor_generated') or '')
-    if not generated or Path(generated).resolve() != executor.resolve() or not executor.is_file():
+    # The SELECTED generator's write is the authority. A generator that refused
+    # (its own fail-open guard, an under-covered discovery) leaves the previous
+    # file in place, and an mtime that did not move is a refusal to claim.
+    after_mtime = executor.stat().st_mtime_ns if executor.is_file() else None
+    if not executor.is_file() or after_mtime == before_mtime:
         return {
             'status': 'error',
             'action': 'regenerate_failed',
-            'detail': (
-                f'the generator wrote {generated or "no executor"}, not {executor}; '
-                'the project executor was not regenerated'
-            ),
-            'probe_reason': '',
+            'detail': 'the selected generator did not write the project executor',
+            'probe_reason': _probe_executor_import(executor),
             **base,
         }
 
@@ -3404,7 +3399,7 @@ def cmd_recover(args: argparse.Namespace) -> dict:
     return {
         'status': 'success',
         'action': 'regenerated',
-        'detail': 'executor regenerated from the newest cache and re-probed clean',
+        'detail': 'executor regenerated by the newest cache generator and re-probed clean',
         **base,
     }
 
