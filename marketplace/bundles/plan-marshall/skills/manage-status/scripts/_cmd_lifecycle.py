@@ -1116,6 +1116,13 @@ def _phase_artifact_refusal(args: argparse.Namespace, status: dict[str, Any]) ->
     return None
 
 
+#: The fields ``cmd_set_phase`` writes into ``metadata.loop_back_reentry`` when a
+#: backward phase move schedules a loop-back. The auto-override treats the marker
+#: as authority, so it requires this exact shape rather than a truthy value: a
+#: malformed marker authorizes nothing and the drift refusal stands.
+_MARKER_FIELDS: tuple[str, ...] = ('from_phase', 'to_phase', 'at')
+
+
 def _loop_back_auto_override(
     args: argparse.Namespace,
     status: dict[str, Any],
@@ -1146,10 +1153,16 @@ def _loop_back_auto_override(
     """
     metadata = normalize_metadata(status)
     marker = metadata.get('loop_back_reentry')
-    if verify_result.get('status') != 'drift' or not marker:
+    # The marker is the ONLY authority the scheduled basis has, so a truthy value
+    # is not enough: it must be the mapping `cmd_set_phase` writes, with all three
+    # non-empty string fields. A malformed marker authorizes nothing, and the
+    # original drift refusal is returned unchanged.
+    if verify_result.get('status') != 'drift' or not isinstance(marker, dict):
+        return verify_result
+    if not all(isinstance(marker.get(field), str) and marker[field].strip() for field in _MARKER_FIELDS):
         return verify_result
 
-    from_phase = marker.get('from_phase', 'unknown') if isinstance(marker, dict) else 'unknown'
+    from_phase = marker['from_phase']
     recapture = cmd_capture(
         argparse.Namespace(
             plan_id=args.plan_id,

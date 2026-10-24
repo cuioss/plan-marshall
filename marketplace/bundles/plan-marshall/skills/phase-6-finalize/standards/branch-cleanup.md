@@ -196,7 +196,7 @@ Extract the details of other open PRs (excluding the current PR), and read `tota
 
 ### Conflict-Severity Classifier
 
-**Only runs when `state == open`** (when `state == merged` no rebase is planned and the classifier is skipped — proceed directly to the User Confirmation Gate, which the merged branch already treats as a routine local-cleanup confirmation).
+**Only runs when `state == open`** (when `state == merged` no rebase is planned and the classifier is skipped). On that merged path bind `{classification} = unclassified` and `{decision} = needs_user` before the gate call below, so the local-cleanup confirmation is composed rather than refused for an unbound input; the gate then asks its merged-state question and plans local cleanup only.
 
 This section dispatches the existing `baseline-reconcile` probe to classify the upcoming rebase against `origin/{base_branch}` and decide whether the User Confirmation Gate below must fire interactively or may be bypassed.
 
@@ -398,7 +398,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-6-finalize) Branch cleanup pre-merge rebase routing: use_merge_queue={use_merge_queue} (provenance: default:branch-cleanup step-params object, Conflict-Severity Classifier one-stop read) — running {rebase SKIPPED, the merge queue rebases and re-tests as the authoritative gate | worktree-rebase-to + force-push-with-lease, authoritative}"
 ```
 
-- **`use_merge_queue == true`** — SKIP the rebase and the force-push-with-lease below, and proceed directly to the CI gate. The queue rebases-and-re-tests the branch against the latest base as its own authoritative gate and refuses a still-red result, so a rebase here duplicates it while re-staling every recorded head-dependent verdict.
+- **`use_merge_queue == true`** — SKIP the rebase and the force-push-with-lease below, and proceed directly to the CI gate. The queue rebases-and-re-tests the branch against the latest base as its own authoritative gate and refuses a still-red result, so a rebase here duplicates it while re-staling every recorded head-dependent verdict. **One exception, and it comes first: a `queue_wait: forbidden` verdict from the conflict gate OVERRIDES this skip.** That verdict means the operator was asked about a conflict the queue cannot resolve, so the run takes the immediate-merge preparation instead — the authorized `worktree-rebase-to` + `force-push-with-lease` + authoritative `ci checks wait` — and merges directly rather than enqueueing (§ "Merge routing"). The skip above is a statement about what the queue can do; a conflict it cannot rebase is outside it.
 
 - **`use_merge_queue == false`** (default) — the rebase is **unconditional**: it runs every time the PR is still open, regardless of whether the branch was already up to date. The immediate `pr safe-merge` path below has no queue re-test, so this rebase plus the authoritative CI wait after it ARE what make the merged history linear and verified; nothing else discharges those purposes on this path. Proceed with the dispatch below.
 
@@ -1575,7 +1575,7 @@ Both routes below return the entry point's TOON, and it exits 0 on every outcome
 
 The routing itself:
 
-- **A `queue_wait: forbidden` verdict suppresses the merge-queue route for this invocation.** The pre-rebase conflict gate's return is carried forward (`queue_wait`), and while it is `forbidden` the merge goes through `pre_merge_gate merge --route safe-merge` even when `use_merge_queue == true`. The reason is the one the gate states: the queue rebases and re-tests, which is exactly what a run that has just resolved a content conflict locally must not hand back — the enqueue would re-enter the same conflict the operator just answered, and any queue-landing wait would be the wait the question forbade.
+- **A `queue_wait: forbidden` verdict suppresses the merge-queue route for this invocation.** The pre-rebase conflict gate's return is carried forward (`queue_wait`), and while it is `forbidden` the merge goes through `pre_merge_gate merge --route safe-merge` even when `use_merge_queue == true`. This is the merge-side half of the exception stated in § "Rebase Branch onto Base": that verdict already put the run on the immediate-merge preparation (authorized rebase + force-push + authoritative CI), so the head reaching this section IS reconciled, and the queue would re-enter the very conflict the operator just answered — any queue-landing wait would be the wait the pre-rebase question forbade.
 
   Read `use_merge_queue` off the same one-stop `step-params get` `params` object resolved in the **Conflict-Severity Classifier** section above, beside the `queue_wait` verdict the gate returned, and emit the reroute line before the dispatch below.
 
