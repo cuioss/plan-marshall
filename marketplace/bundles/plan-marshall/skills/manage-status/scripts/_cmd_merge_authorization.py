@@ -143,7 +143,7 @@ def cmd_merge_authorization_grant(args: argparse.Namespace) -> dict | None:
                     'supplied: an answer with no option to compare it against proves nothing'
                 ),
             }
-        if _normalize_option(answer) != _normalize_option(label):
+        if _normalize_option(answer) != _normalize_option(label) or not _normalize_option(answer):
             return {
                 'status': 'error',
                 'plan_id': args.plan_id,
@@ -153,7 +153,7 @@ def cmd_merge_authorization_grant(args: argparse.Namespace) -> dict | None:
                 'message': (
                     f'The recorded answer ({answer!r}) is not the override option ({label!r}). '
                     'A merge authorization exists only for the option the operator selected; '
-                    'free text is never a grant.'
+                    'free text — including text that normalises to nothing — is never a grant.'
                 ),
             }
 
