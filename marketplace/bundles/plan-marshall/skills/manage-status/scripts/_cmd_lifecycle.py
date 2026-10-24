@@ -1055,6 +1055,7 @@ def _loop_back_auto_override(
             override=True,
             reason=f'loop-back re-entry auto-override (scheduled by {from_phase} loop_back)',
             override_basis='scheduled_loop_back',
+            loop_back_marker=True,
             operator_answer=None,
             strict=False,
         )

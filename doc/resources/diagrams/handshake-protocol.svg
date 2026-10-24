@@ -121,6 +121,6 @@
 
   <!-- ============= Footer caption ============= -->
   <text x="450" y="615" class="col-sub">On the guarded 5-execute → 6-finalize boundary, `manage-status transition --completed 5-execute` inlines the strict verify — refusal and advance are one atomic call.</text>
-  <text x="450" y="635" class="col-sub">Drift is a signal, not a nuisance. Valid responses: authorized override (capture --override --reason X) or manual investigation.</text>
+  <text x="450" y="635" class="col-sub">Drift is a signal, not a nuisance. Valid responses: authorized override (capture --override --reason X --operator-answer Y) or manual investigation.</text>
 
 </svg>

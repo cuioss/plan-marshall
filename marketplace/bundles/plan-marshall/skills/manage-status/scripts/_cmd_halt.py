@@ -21,7 +21,8 @@ The record shape is::
         "reason":       "<why the step stopped>",
         "escalate_ask": true | false,
         "recorded_at":  "<iso-8601 UTC>",
-        "answer":       null | {"selected": "<option label>", "answered_at": "<iso>"},
+        "options":      ["<option label>", ...],   # present only on an escalated halt
+        "answer":       null | {"selected": "<offered option label>", "answered_at": "<iso>"},
     }
 
 ``outcome`` is the two-value halt vocabulary, distinct from
@@ -29,20 +30,32 @@ The record shape is::
 this skill records — it names a stop that produced no phase-steps write at all
 (an ``escalate_ask`` return, or a harness cancellation).
 
-Three verbs, and one read seam the rest of the tree consumes:
+Every read and write canonicalizes the step key through the shared
+``canonicalize_step_key`` resolver, the same one ``mark-step-done`` uses, so a halt
+recorded under one spelling is found by the other and the escalation guard cannot
+miss a record because the two sides disagreed about the key. A stored entry that
+is not a mapping reads as :data:`MALFORMED` rather than as "no halt": the two are
+different facts, and only the second may admit a resolution.
+
+Three verbs, and three seams the rest of the tree consumes:
 
 * ``record`` — the dispatch guard or step gate writes the halt. A new record
   REPLACES the previous one wholesale, so a re-halt is a fresh, unanswered stop
-  rather than a stale escalation carried forward.
+  rather than a stale escalation carried forward. An escalated halt MUST name the
+  options the operator will be offered (``--option``): without them the answer verb
+  could not tell the operator's choice from a sentence the caller wrote.
 * ``answer`` — records the operator's selected option on an ``escalate_ask``
-  halt. This is the ONLY writer of ``answer``, and it refuses a halt that
-  raised no escalation: an answer to a question nobody asked would read as
-  consent for a decision the operator never saw.
+  halt, matched against the offered labels. This is the ONLY writer of ``answer``,
+  and it refuses a halt that raised no escalation: an answer to a question nobody
+  asked would read as consent for a decision the operator never saw.
 * ``read`` — reports one halt record, or every record in the plan.
+* :func:`record_halt` — the write seam ``mark-step-done`` uses to record the
+  ``failed`` halt its own outcome IS, so the store is not blind on that path.
 * :func:`unanswered_escalation` — the read seam ``mark-step-done`` and the
-  phase-6-finalize continuation check consume. A halt whose
-  ``escalate_ask`` is true and whose ``answer`` is null is an operator
-  decision that has not been made yet.
+  phase-6-finalize continuation check consume. A halt whose ``escalate_ask`` is
+  true and whose ``answer`` is null is an operator decision that has not been
+  made yet; a malformed record is reported here too, so it refuses rather than
+  admits.
 
 **Why the store exists.** A strategist reading only prose could record
 ``failed``, log "halted", and then improvise a recovery the workflow does not
@@ -57,9 +70,11 @@ skill's output contract. A non-zero exit is reserved for a genuine crash.
 """
 
 import argparse
+import re
 from typing import Any
 
 from _status_core import require_status, write_status
+from _step_key_canonical import canonicalize_step_key
 from file_ops import now_utc_iso
 
 #: The metadata key holding the halt store, beside ``phase_steps``.
@@ -74,6 +89,11 @@ HALT_OUTCOMES: tuple[str, ...] = ('failed', 'halted')
 #: finished. ``failed`` and ``loop_back`` are progress, not resolution, so they
 #: never consult an open escalation.
 RESOLUTION_OUTCOMES: tuple[str, ...] = ('done', 'skipped')
+
+#: The marker a stored-but-unreadable halt entry carries. It is deliberately a
+#: VALUE rather than ``None``: a store nobody can read must not read as "no halt",
+#: which is the difference between a failed read and a clean bill of health.
+MALFORMED: dict[str, Any] = {'malformed': True}
 
 
 def _phase_entry(status: dict[str, Any], phase: str, *, create: bool) -> dict[str, Any]:
@@ -102,16 +122,27 @@ def _phase_entry(status: dict[str, Any], phase: str, *, create: bool) -> dict[st
 def read_halt_record(status: dict[str, Any], phase: str, step: str) -> dict[str, Any] | None:
     """Return the halt record for ``(phase, step)``, or ``None`` when absent.
 
-    Read-only, and tolerant of a malformed store: a phase entry that is not a
-    mapping, or a step entry that is not one, reads as "no halt" rather than
-    raising. A malformed record is not a halt anyone can act on, and inventing
-    one would make the continuation check answer for a state nobody wrote.
+    The step is canonicalized on read exactly as ``mark-step-done`` canonicalizes
+    it on write, so a halt recorded under ``default:create-pr`` is found by a
+    caller asking for ``create-pr`` — and, more importantly, the escalation guard
+    cannot miss an escalation because the two sides spelled the key differently.
+
+    A present entry that is not a mapping returns :data:`MALFORMED` rather than
+    ``None``: "the record is there and cannot be read" is a different fact from
+    "no halt was ever recorded", and collapsing the first into the second would
+    let a corrupted store admit a resolution (the fail-open the continuation seam
+    already refuses).
     """
     if not isinstance(status, dict):
         return None
     phase_entry = _phase_entry(status, phase, create=False)
-    record = phase_entry.get(step)
-    return record if isinstance(record, dict) else None
+    key = canonicalize_step_key(step) if step else step
+    if key not in phase_entry and step in phase_entry:
+        key = step
+    if key not in phase_entry:
+        return None
+    record = phase_entry[key]
+    return record if isinstance(record, dict) else dict(MALFORMED)
 
 
 def unanswered_escalation(status: dict[str, Any], phase: str, step: str) -> dict[str, Any] | None:
@@ -119,16 +150,55 @@ def unanswered_escalation(status: dict[str, Any], phase: str, step: str) -> dict
 
     This is the read seam every resolution path consumes. ``None`` means either
     there is no halt, the halt raised no escalation, or the escalation has been
-    answered — all three are states in which a resolution may be recorded.
+    answered — all three are states in which a resolution may be recorded. A
+    record that cannot be READ (:data:`MALFORMED`) is returned as an escalation
+    the caller must refuse on: a store nobody can parse must not admit a
+    resolution, and reporting it as "no halt" would do exactly that.
     """
     record = read_halt_record(status, phase, step)
     if record is None:
         return None
+    if record.get('malformed'):
+        return record
     if not record.get('escalate_ask'):
         return None
     if isinstance(record.get('answer'), dict):
         return None
     return record
+
+
+def record_halt(
+    status: dict[str, Any],
+    phase: str,
+    step: str,
+    *,
+    outcome: str,
+    reason: str,
+    escalate_ask: bool = False,
+    options: list[str] | None = None,
+) -> dict[str, Any]:
+    """Write one halt into ``status`` in place; the caller persists it.
+
+    Split from :func:`cmd_halt_record` so the OTHER writer of a halt — the
+    ``mark-step-done --outcome failed`` path, whose outcome the roster calls a
+    halt — records it through the same shape instead of leaving the store blind on
+    that path. The step is canonicalized exactly as the read seam canonicalizes
+    it, so the two sides of the lookup cannot disagree about the key.
+    """
+    phase_entry = _phase_entry(status, phase, create=True)
+    key = canonicalize_step_key(step) if step else step
+    previous = phase_entry.get(key) if isinstance(phase_entry.get(key), dict) else None
+    record: dict[str, Any] = {
+        'outcome': outcome,
+        'reason': reason,
+        'escalate_ask': escalate_ask,
+        'recorded_at': now_utc_iso(),
+        'answer': None,
+    }
+    if options:
+        record['options'] = list(options)
+    phase_entry[key] = record
+    return {'record': record, 'previous': previous, 'key': key}
 
 
 def _invalid(plan_id: str, message: str) -> dict[str, Any]:
@@ -138,6 +208,19 @@ def _invalid(plan_id: str, message: str) -> dict[str, Any]:
         'error': 'invalid_argument',
         'message': message,
     }
+
+
+_WHITESPACE_RE = re.compile(r'\s+')
+
+
+def _normalize(text: str) -> str:
+    """Normalize an answer or option label for matching: case-folded, space-collapsed.
+
+    Labels reach the caller through a prompt UI, so an answer may differ in case
+    or in the exact run of spaces. Nothing else is normalized: a paraphrase is
+    NOT the option, and matching one would record a decision in the caller's words.
+    """
+    return _WHITESPACE_RE.sub(' ', text).strip().casefold()
 
 
 def cmd_halt_record(args: argparse.Namespace) -> dict[str, Any] | None:
@@ -150,6 +233,8 @@ def cmd_halt_record(args: argparse.Namespace) -> dict[str, Any] | None:
     step = args.step
     outcome = args.outcome
     reason = (args.reason or '').strip()
+    escalate = bool(getattr(args, 'escalate_ask', False))
+    options = [str(option).strip() for option in (getattr(args, 'option', None) or []) if str(option).strip()]
     if not phase or not step:
         return _invalid(args.plan_id, '--phase and --step are required and must be non-empty')
     if outcome not in HALT_OUTCOMES:
@@ -160,28 +245,37 @@ def cmd_halt_record(args: argparse.Namespace) -> dict[str, Any] | None:
             '--reason is required and must be non-empty: a halt nobody can explain is '
             'indistinguishable from an ordinary skip',
         )
+    if escalate and not options:
+        return _invalid(
+            args.plan_id,
+            '--escalate-ask requires at least one --option naming an option the operator will be '
+            'offered. Without the offered labels, `halt answer --selected` could not tell the '
+            "operator's choice from a sentence the caller wrote.",
+        )
 
-    phase_entry = _phase_entry(status, phase, create=True)
-    previous = phase_entry.get(step) if isinstance(phase_entry.get(step), dict) else None
-    record: dict[str, Any] = {
-        'outcome': outcome,
-        'reason': reason,
-        'escalate_ask': bool(getattr(args, 'escalate_ask', False)),
-        'recorded_at': now_utc_iso(),
-        'answer': None,
-    }
-    phase_entry[step] = record
+    written = record_halt(
+        status,
+        phase,
+        step,
+        outcome=outcome,
+        reason=reason,
+        escalate_ask=escalate,
+        options=options,
+    )
+    record = written['record']
+    previous = written['previous']
     write_status(args.plan_id, status)
 
     result: dict[str, Any] = {
         'status': 'success',
         'plan_id': args.plan_id,
         'phase': phase,
-        'step': step,
+        'step': written['key'],
         'halted': True,
         'outcome': outcome,
         'reason': reason,
         'escalate_ask': record['escalate_ask'],
+        'options': record.get('options', []),
         'recorded_at': record['recorded_at'],
     }
     if previous is not None:
@@ -220,6 +314,19 @@ def cmd_halt_answer(args: argparse.Namespace) -> dict[str, Any] | None:
                 'escalation to answer. Record the halt first (`halt record --escalate-ask`).'
             ),
         }
+    if record.get('malformed'):
+        return {
+            'status': 'error',
+            'plan_id': args.plan_id,
+            'error': 'halt_unreadable',
+            'phase': phase,
+            'step': step,
+            'message': (
+                f'The recorded halt for step {step!r} in phase {phase!r} cannot be read, so no '
+                'answer can be attached to it. Repair `status.metadata.halts` and re-record the '
+                'halt; nothing was written.'
+            ),
+        }
     if not record.get('escalate_ask'):
         return {
             'status': 'error',
@@ -234,6 +341,29 @@ def cmd_halt_answer(args: argparse.Namespace) -> dict[str, Any] | None:
                 'asked, so nothing was written.'
             ),
         }
+
+    # The answer must be an option the halt RECORDED as offered. A free-text
+    # answer is not a selection: accepting one would let the caller write the
+    # operator's decision in its own words and then act on that wording.
+    offered = [str(option) for option in (record.get('options') or [])]
+    if offered:
+        normalized = {_normalize(option): option for option in offered}
+        match = normalized.get(_normalize(selected))
+        if match is None:
+            return {
+                'status': 'error',
+                'plan_id': args.plan_id,
+                'error': 'selected_not_offered',
+                'phase': phase,
+                'step': step,
+                'offered_options': offered,
+                'message': (
+                    f'--selected {selected!r} is not one of the options this halt offers '
+                    f'({offered}). The answer is the label the operator chose, not a paraphrase '
+                    'of it; nothing was written.'
+                ),
+            }
+        selected = match
 
     record['answer'] = {'selected': selected, 'answered_at': now_utc_iso()}
     write_status(args.plan_id, status)
@@ -270,7 +400,7 @@ def cmd_halt_read(args: argparse.Namespace) -> dict[str, Any] | None:
             'status': 'success',
             'plan_id': args.plan_id,
             'phase': phase,
-            'step': step,
+            'step': canonicalize_step_key(step),
             'recorded': record is not None,
             'record': record,
             'escalation_unanswered': unanswered_escalation(status, phase, step) is not None,
@@ -283,16 +413,14 @@ def cmd_halt_read(args: argparse.Namespace) -> dict[str, Any] | None:
             continue
         for stored_step in sorted(phase_entry):
             record = phase_entry[stored_step]
-            if not isinstance(record, dict):
-                continue
             rows.append(
                 {
                     'phase': stored_phase,
                     'step': stored_step,
-                    'outcome': record.get('outcome'),
-                    'escalate_ask': bool(record.get('escalate_ask')),
+                    'outcome': record.get('outcome') if isinstance(record, dict) else None,
+                    'escalate_ask': bool(record.get('escalate_ask')) if isinstance(record, dict) else False,
                     'escalation_unanswered': unanswered_escalation(status, stored_phase, stored_step) is not None,
-                    'recorded_at': record.get('recorded_at'),
+                    'recorded_at': record.get('recorded_at') if isinstance(record, dict) else None,
                 }
             )
     return {

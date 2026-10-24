@@ -814,26 +814,31 @@ status.metadata.halts[{phase}][{step}] = {
   "reason": "<why the step stopped>",
   "escalate_ask": true | false,
   "recorded_at": "<iso-8601 UTC>",
-  "answer": null | {"selected": "<option label>", "answered_at": "<iso-8601 UTC>"}
+  "options": ["<option label>", "..."],
+  "answer": null | {"selected": "<offered option label>", "answered_at": "<iso-8601 UTC>"}
 }
 ```
 
+`options` is present only on an escalated halt. Every read and write canonicalizes the step key through the shared resolver `mark-step-done` uses, so a halt recorded under one spelling is found by the other. A stored entry that is not a mapping reads as **unreadable**, never as "no halt" — the two are different facts, and only the second may admit a resolution.
+
 `outcome` is a two-value vocabulary of its own, deliberately narrower than the `mark-step-done` outcomes: `failed` means the step ended without a completion and produced a phase-steps record, while `halted` means it stopped without recording any outcome (an `escalate_ask` return, a harness cancellation). `halted` is not a `mark-step-done` outcome and is refused there.
+
+**Two writers, one shape.** `halt record` is the explicit writer. `mark-step-done --outcome failed` is the other: the finalize roster counts that outcome as a halt, so the handler stamps a non-escalating halt beside the phase-steps record whenever the step holds none. An existing halt always wins — an unanswered escalation is the operator's to resolve, and no failure overwrites it.
 
 **Operations**:
 
-- `record` — written by a dispatch guard or a step gate. Required: `--phase`, `--step`, `--outcome`, `--reason` (non-empty — a halt nobody can explain is indistinguishable from an ordinary skip). `--escalate-ask` marks a stop that hands the decision to the operator. A new record **replaces** the previous one wholesale, so a re-halt is a fresh, unanswered stop rather than a stale escalation carried forward.
-- `answer` — records the option the operator selected on an escalated halt. This is the only writer of `answer`, and it refuses both a halt that does not exist (`no_halt_record`) and one that raised no escalation (`no_escalation`): an answer to a question nobody asked would record consent nobody gave.
+- `record` — written by a dispatch guard or a step gate. Required: `--phase`, `--step`, `--outcome`, `--reason` (non-empty — a halt nobody can explain is indistinguishable from an ordinary skip). `--escalate-ask` marks a stop that hands the decision to the operator and REQUIRES at least one `--option`: the offered labels are what makes the answer checkable. A new record **replaces** the previous one wholesale, so a re-halt is a fresh, unanswered stop rather than a stale escalation carried forward.
+- `answer` — records the option the operator selected on an escalated halt, matched against the recorded `options` (case- and whitespace-insensitive only; a paraphrase is refused with `selected_not_offered`). This is the only writer of `answer`, and it refuses a halt that does not exist (`no_halt_record`), one that raised no escalation (`no_escalation`), and one that cannot be read (`halt_unreadable`): an answer to a question nobody asked would record consent nobody gave.
 - `read` — read-only. With `--phase` and `--step` it reports that record, `recorded`, and `escalation_unanswered`; with neither it reports every record in the plan.
 
-**The unanswered escalation is a gate, not a note.** A halt whose `escalate_ask` is true and whose `answer` is null is an operator decision that has not been made. `mark-step-done` reads that state and refuses a `done` or `skipped` resolution with `error: escalation_unanswered` — writing nothing — until `halt answer` records the selection. `failed` and `loop_back` stay writable, because they record further trouble rather than a completion claim. There is no `--force` override: `--force` governs outcome conflicts, not authority to resolve an operator's decision.
+**The unanswered escalation is a gate, not a note.** A halt whose `escalate_ask` is true and whose `answer` is null is an operator decision that has not been made. `mark-step-done` reads that state and refuses a `done` or `skipped` resolution with `error: escalation_unanswered` — writing nothing — until `halt answer` records the selection; an unreadable halt record refuses the same resolution with `error: halt_unreadable`. `failed` and `loop_back` stay writable, because they record further trouble rather than a completion claim. There is no `--force` override: `--force` governs outcome conflicts, not authority to resolve an operator's decision.
 
 **Consumers.** The continuation decision over this state — which continuations a halt admits, and the closed set that names them — is `plan-marshall:phase-6-finalize:halt_continuation check`, declared in `phase-6-finalize/SKILL.md` § "Halt continuation roster". This skill owns the state and its one write-boundary refusal; the roster that reads it lives there.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status halt record \
   --plan-id {plan_id} --phase {phase} --step {step} --outcome {failed|halted} \
-  --reason "{why the step stopped}" [--escalate-ask]
+  --reason "{why the step stopped}" [--escalate-ask --option "OPTION LABEL" ...]
 ```
 
 ```bash
@@ -2048,10 +2053,10 @@ Returns `any_authorized`, `any_admissible`, `authorized_kinds[]`, `lapsed_kinds[
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status halt record \
   --plan-id PLAN_ID --phase PHASE --step STEP --outcome {failed|halted} \
-  --reason TEXT [--escalate-ask]
+  --reason TEXT [--escalate-ask --option "OPTION LABEL" ...]
 ```
 
-Persists `metadata.halts[PHASE][STEP]`, replacing any previous halt for that step. Returns `halted`, `outcome`, `reason`, `escalate_ask`, `recorded_at`, and `previous_outcome` when a record was replaced. A blank `--reason` is refused with `invalid_argument` and writes nothing. See § [halt](#halt) under Operations for the record shape and for why the store is not a `phase_steps` entry.
+Persists `metadata.halts[PHASE][STEP]`, replacing any previous halt for that step. Returns `halted`, `outcome`, `reason`, `escalate_ask`, `options`, `recorded_at`, and `previous_outcome` when a record was replaced. A blank `--reason` is refused with `invalid_argument`, and `--escalate-ask` without at least one `--option` with the same code — the offered labels are what makes the operator's answer checkable. See § [halt](#halt) under Operations for the record shape and for why the store is not a `phase_steps` entry.
 
 ### halt — answer
 
@@ -2060,7 +2065,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status halt a
   --plan-id PLAN_ID --phase PHASE --step STEP --selected "OPTION LABEL"
 ```
 
-Records the operator's selected option as the halt's `answer` (`{selected, answered_at}`). Refuses `no_halt_record` when no halt exists and `no_escalation` when the halt raised none — an answer to a question nobody asked would record consent nobody gave — and `invalid_argument` on a blank `--selected`. Until an answer is recorded, `mark-step-done` refuses a `done`/`skipped` resolution over that halt with `escalation_unanswered`.
+Records the operator's selected option as the halt's `answer` (`{selected, answered_at}`), matched against the recorded `options` (case- and whitespace-insensitive only). Refuses `no_halt_record` when no halt exists, `no_escalation` when the halt raised none — an answer to a question nobody asked would record consent nobody gave — `halt_unreadable` when the stored record cannot be parsed, `selected_not_offered` when the label is a paraphrase rather than one of the offered options, and `invalid_argument` on a blank `--selected`. Until an answer is recorded, `mark-step-done` refuses a `done`/`skipped` resolution over that halt with `escalation_unanswered`.
 
 ### halt — read
 

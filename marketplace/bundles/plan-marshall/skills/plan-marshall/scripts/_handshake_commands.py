@@ -460,15 +460,43 @@ def cmd_capture(args: Any) -> dict[str, Any]:
         }
     # A drift override is the OPERATOR's ruling, not the main context's. --reason
     # states the rationale and can be written by the caller; --operator-answer is
-    # the operator's own answer, quoted. Requiring both keeps "the main context
-    # overrode a drift refusal with its own reason" — an observed failure — from
-    # being expressible through this verb at all. The ONE reserved exception is
-    # the scheduled loop-back re-entry auto-override, whose drift is produced by
-    # construction: it declares that basis explicitly and must record NO operator
-    # answer, because fabricating one would report consent for a question that was
-    # never asked.
+    # the operator's own answer, quoted. Requiring both makes "the main context
+    # overrode a drift refusal with its own reason" — an observed failure —
+    # unrepresentable on the operator basis. The ONE reserved exception is the
+    # scheduled loop-back re-entry auto-override, whose drift is produced by
+    # construction: it declares that basis, records NO operator answer (fabricating
+    # one would report consent for a question never asked), and is honored only
+    # while the loop-back marker that schedules it is actually present on the plan
+    # — otherwise the flag would be a second, caller-chosen spelling of "override
+    # without asking".
     operator_answer = (getattr(args, 'operator_answer', None) or '').strip()
+    # The reserved basis has NO CLI spelling: it is reachable only from the
+    # in-process loop-back auto-override, which passes `loop_back_marker` after
+    # observing the marker itself. A caller-chosen flag would be a second spelling
+    # of "override without asking" — the very thing the answer gate removes.
     override_basis = getattr(args, 'override_basis', 'operator') or 'operator'
+    scheduled_marker = bool(getattr(args, 'loop_back_marker', False))
+    if override_basis == 'scheduled_loop_back' and not scheduled_marker:
+        return {
+            'status': 'error',
+            'error': 'scheduled_override_without_marker',
+            'message': (
+                'The scheduled_loop_back override basis is reachable only from the in-process '
+                'loop-back auto-override, which observes the plan\u2019s loop_back_reentry marker '
+                'itself. No caller can assert it: ask the operator and pass --operator-answer, '
+                'or investigate the drift.'
+            ),
+        }
+    if operator_answer and override_basis != 'operator':
+        return {
+            'status': 'error',
+            'error': 'operator_answer_on_scheduled_override',
+            'message': (
+                'An operator answer is refused on the scheduled_loop_back basis: that drift is '
+                'scheduled by the loop-back marker, so recording an operator answer would report '
+                'consent for a question nobody asked.'
+            ),
+        }
     if args.override and override_basis == 'operator' and not operator_answer:
         return {
             'status': 'error',
@@ -479,17 +507,6 @@ def cmd_capture(args: Any) -> dict[str, Any]:
                 'the operator, then re-run with their answer quoted.'
             ),
         }
-    if operator_answer and override_basis != 'operator':
-        return {
-            'status': 'error',
-            'error': 'operator_answer_on_scheduled_override',
-            'message': (
-                '--operator-answer is refused on --override-basis scheduled_loop_back: that drift '
-                'is scheduled by the loop-back marker, so recording an operator answer would '
-                'report consent for a question nobody asked.'
-            ),
-        }
-
     plan_id = args.plan_id
     phase = args.phase
     metadata = _load_status_metadata(plan_id)

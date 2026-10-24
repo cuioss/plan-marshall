@@ -83,6 +83,7 @@ def _record(plan_id: str, *, escalate: bool = False, step: str = _STEP, outcome:
             outcome=outcome,
             reason='post-dispatch guard: step returned without a terminal record',
             escalate_ask=escalate,
+            option=['Wait another 600s', 'Defer merge'] if escalate else None,
         )
     )
 
@@ -180,8 +181,8 @@ def test_a_step_with_no_halt_record_admits_every_continuation(plan_context):
     assert result['reason'] == 'no_halt_record'
 
 
-def test_retry_requires_its_documented_bound(plan_context):
-    """A retry without an attempt and a bound is refused, naming the bound's source."""
+def test_retry_requires_its_attempt(plan_context):
+    """A retry without an attempt is refused, naming the workflow's bound."""
     plan_id = 'halt-retry-bound'
     _make_plan(plan_id)
     _record(plan_id)
@@ -191,6 +192,19 @@ def test_retry_requires_its_documented_bound(plan_context):
     assert result['status'] == 'error'
     assert result['error'] == 'retry_bound_required'
     assert 'once per finalize invocation' in result['message']
+
+
+def test_a_retry_bound_wider_than_the_documented_one_is_refused(plan_context):
+    """The bound belongs to the workflow: a caller cannot widen the bound it is bound by."""
+    plan_id = 'halt-retry-widened'
+    _make_plan(plan_id)
+    _record(plan_id)
+
+    result = _check(plan_id, 'retry', attempt=2, max_attempts=2)
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'retry_bound_not_documented'
+    assert result['allowed'] is False
 
 
 def test_retry_past_its_bound_is_refused(plan_context):
@@ -205,6 +219,20 @@ def test_retry_past_its_bound_is_refused(plan_context):
     assert result['error'] == 'retry_bound_exhausted'
     assert result['attempt'] == 2
     assert result['max_attempts'] == 1
+
+
+def test_retry_with_no_max_attempts_measures_against_the_documented_bound(plan_context):
+    """Omitting --max-attempts uses the workflow's bound rather than meaning "no bound"."""
+    plan_id = 'halt-retry-default-bound'
+    _make_plan(plan_id)
+    _record(plan_id)
+
+    admitted = _check(plan_id, 'retry', attempt=1)
+    assert admitted['status'] == 'success'
+    assert admitted['max_attempts'] == 1
+
+    refused = _check(plan_id, 'retry', attempt=2)
+    assert refused['error'] == 'retry_bound_exhausted'
 
 
 def test_the_check_refuses_a_phase_it_has_no_roster_for(plan_context):
@@ -317,6 +345,8 @@ def test_the_continuation_check_narrows_to_operator_question_while_unanswered(pl
     assert refused['status'] == 'error'
     assert refused['error'] == 'escalation_unanswered'
     assert refused['allowed_continuations'] == ['operator_question']
+    # The refusal names the step it is about, so a reader is not left guessing.
+    assert _STEP in refused['message']
 
     admitted = _check(plan_id, 'operator_question')
     assert admitted['status'] == 'success'
@@ -369,11 +399,129 @@ def test_halt_record_requires_a_reason(plan_context):
     _make_plan(plan_id)
 
     result = cmd_halt_record(
-        Namespace(plan_id=plan_id, phase=_PHASE, step=_STEP, outcome='failed', reason='   ', escalate_ask=False)
+        Namespace(
+            plan_id=plan_id,
+            phase=_PHASE,
+            step=_STEP,
+            outcome='failed',
+            reason='   ',
+            escalate_ask=False,
+            option=None,
+        )
     )
 
     assert result['status'] == 'error'
     assert result['error'] == 'invalid_argument'
+
+
+def test_an_escalated_halt_must_name_the_options_it_offers(plan_context):
+    """Without the offered labels the answer verb could not tell a choice from a paraphrase."""
+    plan_id = 'halt-escalate-no-options'
+    _make_plan(plan_id)
+
+    result = cmd_halt_record(
+        Namespace(
+            plan_id=plan_id,
+            phase=_PHASE,
+            step=_STEP,
+            outcome='halted',
+            reason='escalate_ask{reason: re_review_timeout}',
+            escalate_ask=True,
+            option=None,
+        )
+    )
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'invalid_argument'
+    assert '--option' in result['message']
+
+
+def test_halt_answer_refuses_a_label_that_was_not_offered(plan_context):
+    """The operator's decision is the label they chose, not the caller's summary of it."""
+    plan_id = 'halt-answer-not-offered'
+    _make_plan(plan_id)
+    _record(plan_id, escalate=True, outcome='halted')
+
+    result = cmd_halt_answer(Namespace(plan_id=plan_id, phase=_PHASE, step=_STEP, selected='yes, go ahead'))
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'selected_not_offered'
+    assert result['offered_options'] == ['Wait another 600s', 'Defer merge']
+    # ... and the halt is still unanswered, so no resolution may be recorded.
+    assert _mark(plan_id, 'done')['error'] == 'escalation_unanswered'
+
+
+def test_halt_answer_tolerates_case_and_spacing_but_records_the_offered_label(plan_context):
+    """A UI may return the label with different case or spacing; the stored answer is canonical."""
+    plan_id = 'halt-answer-normalized'
+    _make_plan(plan_id)
+    _record(plan_id, escalate=True, outcome='halted')
+
+    result = cmd_halt_answer(Namespace(plan_id=plan_id, phase=_PHASE, step=_STEP, selected='  wait   ANOTHER 600s '))
+
+    assert result['status'] == 'success', result
+    assert result['selected'] == 'Wait another 600s'
+
+
+def test_a_malformed_halt_record_refuses_both_the_resolution_and_the_continuation(plan_context):
+    """An unreadable store is a failed read, never a clean bill of health."""
+    plan_id = 'halt-malformed'
+    _make_plan(plan_id)
+    status = read_status(plan_id)
+    status.setdefault('metadata', {})['halts'] = {_PHASE: {_STEP: 'not-a-record'}}
+    _status_core.write_status(plan_id, status)
+
+    refused_resolution = _mark(plan_id, 'done')
+    assert refused_resolution['status'] == 'error'
+    assert refused_resolution['error'] == 'halt_unreadable'
+
+    refused_continuation = _check(plan_id, 'operator_question')
+    assert refused_continuation['status'] == 'error'
+    assert refused_continuation['error'] == 'halt_unreadable'
+    assert refused_continuation['allowed'] is False
+
+
+def test_mark_step_done_failed_records_the_halt_the_roster_calls_one(plan_context):
+    """A `failed` outcome IS a halt, so the store must not stay blind on that path.
+
+    Without this, a step failed by a precondition or a timeout wrapper leaves only a
+    phase-steps record and `check` answers ``no_halt_record`` for a step that stopped.
+    """
+    plan_id = 'halt-failed-stamps'
+    _make_plan(plan_id)
+
+    result = _mark(plan_id, 'failed')
+    assert result['status'] == 'success', result
+
+    continuation = _check(plan_id, 'session_move')
+    assert continuation['halted'] is True, 'the failed outcome left no halt for the check to read'
+    assert continuation['error'] == 'halt_continuation_refused'
+
+
+def test_a_failed_outcome_never_overwrites_an_unanswered_escalation(plan_context):
+    """The escalation is the operator's to resolve; a later failure must not clear it."""
+    plan_id = 'halt-failed-preserves'
+    _make_plan(plan_id)
+    _record(plan_id, escalate=True, outcome='halted')
+
+    assert _mark(plan_id, 'failed')['status'] == 'success'
+
+    stored = cmd_halt_read(Namespace(plan_id=plan_id, phase=_PHASE, step=_STEP))
+    assert stored['record']['escalate_ask'] is True
+    assert stored['escalation_unanswered'] is True
+    assert _mark(plan_id, 'done')['error'] == 'escalation_unanswered'
+
+
+def test_a_halt_recorded_under_another_key_spelling_is_found_by_the_read_seam(plan_context):
+    """Write and read canonicalize the step key identically, so no spelling hides a halt."""
+    plan_id = 'halt-key-canonical'
+    _make_plan(plan_id)
+    _record(plan_id, escalate=True, outcome='halted', step='default:create-pr')
+
+    stored = cmd_halt_read(Namespace(plan_id=plan_id, phase=_PHASE, step=_STEP))
+    assert stored['recorded'] is True
+    assert stored['escalation_unanswered'] is True
+    assert _mark(plan_id, 'done')['error'] == 'escalation_unanswered'
 
 
 def test_halt_read_reports_the_record_and_its_escalation_state(plan_context):
@@ -443,6 +591,7 @@ def _capture_args(**overrides):
         'reason': 'the caller believes the drift is legitimate',
         'operator_answer': None,
         'override_basis': 'operator',
+        'loop_back_marker': False,
         'strict': False,
     }
     base.update(overrides)
@@ -478,12 +627,38 @@ def test_scheduled_loop_back_override_refuses_a_fabricated_operator_answer():
     result = cmd_capture(
         _capture_args(
             override_basis='scheduled_loop_back',
+            loop_back_marker=True,
             operator_answer='pretend the operator said yes',
         )
     )
 
     assert result['status'] == 'error'
     assert result['error'] == 'operator_answer_on_scheduled_override'
+
+
+def test_the_scheduled_basis_is_admitted_only_with_the_in_process_marker():
+    """With the marker observed in-process, the basis passes its own gate.
+
+    The capture itself then fails in this fixture (no plan, no invariants); the
+    assertion is that neither override-authority refusal fired, not that the
+    capture succeeded.
+    """
+    result = cmd_capture(_capture_args(override_basis='scheduled_loop_back', loop_back_marker=True))
+
+    assert result.get('error') not in ('scheduled_override_without_marker', 'missing_operator_answer')
+
+
+def test_scheduled_loop_back_basis_is_refused_when_no_marker_schedules_the_drift():
+    """The reserved basis is a fact about the plan, not a flag the caller may choose.
+
+    Without this half, ``--override-basis scheduled_loop_back`` would be a second
+    spelling of "override without asking" — exactly what the operator-answer gate
+    exists to remove.
+    """
+    result = cmd_capture(_capture_args(override_basis='scheduled_loop_back'))
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'scheduled_override_without_marker'
 
 
 def test_the_handshake_row_declares_both_the_answer_and_its_basis():

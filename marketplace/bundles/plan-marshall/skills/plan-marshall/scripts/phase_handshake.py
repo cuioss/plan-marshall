@@ -111,26 +111,14 @@ def _build_parser() -> argparse.ArgumentParser:
     capture.add_argument('--override', action='store_true', help='Mark as override capture')
     capture.add_argument('--reason', help='Reason required when --override is set')
     capture.add_argument(
-        '--override-basis',
-        dest='override_basis',
-        choices=['operator', 'scheduled_loop_back'],
-        default='operator',
-        help=(
-            'What authorizes the override. operator (default) requires --operator-answer: a drift '
-            'override is the operator\u2019s decision, and --reason alone records only the caller\u2019s '
-            'rationale. scheduled_loop_back is the reserved basis of the loop-back re-entry '
-            'auto-override, where the marker schedules the drift by construction and no operator '
-            'decision exists to record.'
-        ),
-    )
-    capture.add_argument(
         '--operator-answer',
         dest='operator_answer',
         default=None,
         help=(
-            'The operator answer that authorizes the override, quoted from the operator. Required '
-            'on the operator basis and refused on scheduled_loop_back, which records no operator '
-            'decision and must not fabricate one.'
+            'The operator answer that authorizes the override, quoted from the operator. '
+            'Required when --override is set: a drift override is the operator\u2019s decision, so '
+            'the answer is persisted on the handshake row beside --reason. The reason alone is the '
+            'caller\u2019s rationale and is never an answer.'
         ),
     )
 

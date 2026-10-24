@@ -272,10 +272,10 @@ The canonical argparse surface for `phase_handshake.py` (the skill's CLI entry-p
 ```bash
 python3 .plan/execute-script.py plan-marshall:plan-marshall:phase_handshake capture \
   --plan-id PLAN_ID --phase {1-init,2-refine,3-outline,4-plan,5-execute,6-finalize} \
-  [--override] [--reason REASON]
+  [--override --reason REASON --operator-answer ANSWER]
 ```
 
-`--reason` is required when `--override` is set.
+`--reason` is required when `--override` is set, and so is `--operator-answer`: a drift override is the operator's ruling, and `--reason` alone records only the caller's own rationale. The one other override basis — the loop-back re-entry auto-override — has no CLI spelling at all: `manage-status transition` reaches it in-process after observing the plan's `loop_back_reentry` marker, and records no operator answer, because fabricating one would report consent for a question nobody asked.
 
 ### verify
 

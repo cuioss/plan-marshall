@@ -505,7 +505,7 @@ Consumer projects do not own bundle sources, so they do not register
 either step. Their finalize dispatches load whatever the host plugin
 cache holds, which is exactly the published bundle definitions.
 
-**Resumable re-entry semantics**: Before dispatching each step, read the current step record from `status.metadata.phase_steps["6-finalize"]`. If the step is already marked `done`, skip dispatch entirely (no re-run, no log noise — the previous run completed it). If the step is marked `failed`, retry it from scratch. If the step has no record (or any other outcome), dispatch it as a fresh run. This makes finalize safe to re-enter after a partial run, a crash, or an explicit retry — completed steps stay completed, failed steps get exactly one retry per invocation.
+**Resumable re-entry semantics**: Before dispatching each step, read the current step record from `status.metadata.phase_steps["6-finalize"]`. If the step is already marked `done`, skip dispatch entirely (no re-run, no log noise — the previous run completed it). If the step is marked `failed`, retry it from scratch — the retry is a NAMED continuation and is checked as one before the re-dispatch: `halt_continuation check --continuation retry --attempt {n}` (§ "Halt continuation roster"), whose refusal (`retry_bound_exhausted`, `retry_bound_not_documented`, `escalation_unanswered`, `halt_unreadable`) stops the re-entry and is surfaced instead of retried. If the step has no record (or any other outcome), dispatch it as a fresh run. This makes finalize safe to re-enter after a partial run, a crash, or an explicit retry — completed steps stay completed, failed steps get exactly one retry per invocation.
 
 **Precondition resolution**: before dispatching any step in the FOR loop, parse the step's frontmatter `requires:` list (if present) and resolve each entry against its mapped resolver. The only precondition currently defined is `ci-complete`, mapped to the dispatcher-internal helper `scripts/ci_complete_precondition.py` (notation `plan-marshall:phase-6-finalize:ci_complete_precondition`). The resolver is invoked inline through the executor proxy (no Task agent dispatch — the helper clamps its inner `ci wait --timeout` so the outer subprocess call stays strictly below the host platform's per-call Bash ceiling, and past that bound returns a structured `deadline_exceeded` envelope for the dispatcher to re-poll on re-entry rather than being killed mid-call).
 
@@ -1241,6 +1241,14 @@ FOR each step_id in manifest.phase_6.steps:
            python3 .plan/execute-script.py plan-marshall:manage-status:manage-status halt record \
              --plan-id {plan_id} --phase 6-finalize --step {step_id} --outcome failed \
              --reason "post-dispatch guard: step returned without a terminal record"
+
+           Then check the continuation this halt admits, with the token naming what the
+           dispatcher is about to do (§ "Halt continuation roster"). Here that is the stop
+           itself — anything else (a retry, a loop-back, an improvised harness recovery verb)
+           must be checked with its own token and is refused unless the roster names it:
+
+           python3 .plan/execute-script.py plan-marshall:phase-6-finalize:halt_continuation check \
+             --plan-id {plan_id} --phase 6-finalize --step {step_id} --continuation operator_question
         b. Log the attributed error:
            python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
              work --plan-id {plan_id} --level ERROR \
@@ -1451,7 +1459,7 @@ FOR each step_id in manifest.phase_6.steps:
 
       The three asking rate-window reasons (`rate_window_timeout`, `rate_window_not_awaitable`, `rate_window_exhausted`) and `refusal_structural` (see `../automatic-review/SKILL.md` § "Rate-limit refusal recovery (opt-in)") always carry `action: ask` and consult NO policy knob — they always fire the AskUserQuestion. `rate_window_await` consults no policy knob either, and fires none.
 
-      **Every `escalate_ask` return is a recorded halt.** Before firing the prompt this hook records the halt (`halt record --outcome halted --escalate-ask --reason "escalate_ask{reason: {reason}}"`), and after the operator selects an option it records that answer (`halt answer --selected "{option label}"`). `rate_window_await` asks nothing, so its halt is recorded WITHOUT `--escalate-ask`; the `defer` branch asks nothing either, so it records a non-escalating halt and owes no answer. Both calls are stated once, with their full verb spellings, in § "Halt continuation roster" — and because `mark-step-done` refuses a `done`/`skipped` resolution over an unanswered escalation, a missed `halt answer` blocks the completion instead of being silently skipped.
+      **Every `escalate_ask` return is a recorded halt.** Before firing the prompt this hook records the halt (`halt record --outcome halted --escalate-ask --reason "escalate_ask{reason: {reason}}"`, with one `--option "{label}"` per label in the envelope's `prompt_options[]`), and after the operator selects an option it records that answer (`halt answer --selected "{option label}"`). `rate_window_await` asks nothing, so its halt is recorded WITHOUT `--escalate-ask` (and therefore with no options); the `defer` branch asks nothing either, so it records a non-escalating halt and owes no answer. Both calls are stated once, with their full verb spellings, in § "Halt continuation roster" — and because `mark-step-done` refuses a `done`/`skipped` resolution over an unanswered escalation, a missed `halt answer` blocks the completion instead of being silently skipped.
 
       The full field set of the `escalate_ask` return TOON (all six `reason` variants) is defined in [`../automatic-review/SKILL.md`](../automatic-review/SKILL.md) § "`escalate_ask` return (timeout escalations)" — read it there; do NOT restate the field set here.
 
@@ -2047,18 +2055,20 @@ Record the halt, then check the continuation before taking it:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status halt record \
   --plan-id {plan_id} --phase 6-finalize --step {step_id} --outcome {failed|halted} \
-  --reason "{why the step stopped}" [--escalate-ask]
+  --reason "{why the step stopped}" [--escalate-ask --option "{option label}" ...]
 
 python3 .plan/execute-script.py plan-marshall:phase-6-finalize:halt_continuation check \
   --plan-id {plan_id} --phase 6-finalize --step {step_id} --continuation {retry|loop_back|operator_question} \
   [--attempt {n} --max-attempts {bound}]
 ```
 
-`check` answers `allowed: true` for a named continuation, and refuses with `error: halt_continuation_refused` naming all three otherwise; `retry_bound_required` when a retry states no bound, `retry_bound_exhausted` when it exceeds it, and `escalation_unanswered` while the halt carries an unanswered `escalate_ask` (see below). A step with no halt record admits every continuation — there is nothing to constrain.
+`check` answers `allowed: true` for a named continuation, and refuses with `error: halt_continuation_refused` naming all three otherwise; `retry_bound_required` when a retry states no attempt, `retry_bound_not_documented` when it claims a bound wider than the documented one, `retry_bound_exhausted` when the attempt exceeds it, `escalation_unanswered` while the halt carries an unanswered `escalate_ask`, and `halt_unreadable` when the stored record cannot be parsed. The retry bound is the workflow's (`DOCUMENTED_RETRY_BOUND = 1`, item 1's "exactly one retry per invocation") and is not a caller parameter — a bound the party it binds can widen is no bound. A step with no halt record admits every continuation — there is nothing to constrain.
+
+**It is checked at BOTH sites that take a continuation**, not only when someone remembers: item 1's `failed` retry issues the `retry` check before re-dispatching, and item 5d.b issues it before the pipeline moves on. The refusal names the way forward, so a halt cannot be resumed by an unnamed verb even when the caller never read this section.
 
 **Undocumented harness recovery verbs are not continuations.** `session_move` (OpenCode), a session resume, or an ad-hoc re-dispatch is named nowhere in the roster, so `check` refuses it — by construction, because the set is closed, not because a blocklist happens to list it. A halt the log calls "halted" ends the step: the only ways forward are the three above.
 
-**An operator escalation is recorded, asked, and answered.** When a halt hands the decision to the operator, record it with `--escalate-ask`, fire the question, and record the option the operator selected with `plan-marshall:manage-status:manage-status halt answer --selected "{option label}"`. Until that answer exists, `mark-step-done` refuses a `done` / `skipped` resolution (`error: escalation_unanswered`) and `halt_continuation check` admits only `operator_question`. No step therefore completes on a decision the operator never made — the leaf cannot mark past an escalation, and neither can the dispatcher.
+**An operator escalation is recorded, asked, and answered.** When a halt hands the decision to the operator, record it with `--escalate-ask` and one `--option` per option the operator will be shown (for item 7a, the envelope's own `prompt_options[]` labels — the envelope is the authority on the option set), fire the question, and record the option the operator selected with `plan-marshall:manage-status:manage-status halt answer --selected "{option label}"`. The answer is matched against the recorded options: a paraphrase or a free-text "ok" is refused with `selected_not_offered`, because the operator's decision is the label they chose, not the caller's summary of it. Until that answer exists, `mark-step-done` refuses a `done` / `skipped` resolution (`error: escalation_unanswered`) and `halt_continuation check` admits only `operator_question`. No step therefore completes on a decision the operator never made — the leaf cannot mark past an escalation, and neither can the dispatcher.
 
 **The option the operator selected is executed as worded.** The selected option names the branch it selects (the option-text-names-the-branch rule), and that branch is the one that runs — a different branch is a refused run, not a cheaper equivalent. "Wait another 600s" waits; it does not stand in for a CI wait.
 

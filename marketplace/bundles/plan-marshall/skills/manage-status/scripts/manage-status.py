@@ -29,6 +29,7 @@ Usage:
     python3 .plan/execute-script.py plan-marshall:manage-status:manage-status merge-authorization grant --plan-id EXAMPLE-PLAN --kind barrier-ask-override --head 76c7200b6 --gap-class review-barrier-gap --granted-over "2 unhandled, unproven_bots=cuioss-review-bot" --reason "operator accepted the gap"
     python3 .plan/execute-script.py plan-marshall:manage-status:manage-status merge-authorization check --plan-id EXAMPLE-PLAN --head 76c7200b6 --gap-class review-barrier-gap
     python3 .plan/execute-script.py plan-marshall:manage-status:manage-status halt record --plan-id EXAMPLE-PLAN --phase 6-finalize --step create-pr --outcome failed --reason "post-dispatch guard: no terminal record"
+    python3 .plan/execute-script.py plan-marshall:manage-status:manage-status halt record --plan-id EXAMPLE-PLAN --phase 6-finalize --step automatic-review --outcome halted --escalate-ask --option "Wait another 600s" --option "Defer merge" --reason "escalate_ask{reason: re_review_timeout}"
     python3 .plan/execute-script.py plan-marshall:manage-status:manage-status halt answer --plan-id EXAMPLE-PLAN --phase 6-finalize --step automatic-review --selected "Wait another 600s"
     python3 .plan/execute-script.py plan-marshall:manage-status:manage-status halt read --plan-id EXAMPLE-PLAN --phase 6-finalize --step create-pr
     python3 .plan/execute-script.py plan-marshall:manage-status:manage-status loop-back admit --plan-id EXAMPLE-PLAN --source automatic-review --ceiling 3
@@ -747,7 +748,19 @@ def main() -> int:
         help=(
             'The halt handed the decision to the operator. Until an operator answer is '
             'recorded with `halt answer`, every resolution recorded over this halt is '
-            'refused and the step may only continue through an operator question.'
+            'refused and the step may only continue through an operator question. Requires '
+            'at least one --option.'
+        ),
+    )
+    halt_record_parser.add_argument(
+        '--option',
+        action='append',
+        default=None,
+        metavar='LABEL',
+        help=(
+            'Repeatable: one option the operator will be offered. Required with --escalate-ask '
+            'and recorded on the halt, so `halt answer --selected` can match the operator\u2019s '
+            'choice against the options that were actually shown.'
         ),
     )
     halt_record_parser.set_defaults(func=cmd_halt_record)
@@ -764,8 +777,9 @@ def main() -> int:
         '--selected',
         required=True,
         help=(
-            'The option label the operator selected, verbatim. Persisted as the answer; '
-            'the continuation the answer authorizes is the one its own label names.'
+            'The option label the operator selected, verbatim. Matched against the labels the '
+            'halt recorded as offered; a label that was never offered (a paraphrase, a '
+            'free-text "ok") is refused with selected_not_offered and nothing is written.'
         ),
     )
     halt_answer_parser.set_defaults(func=cmd_halt_answer)
