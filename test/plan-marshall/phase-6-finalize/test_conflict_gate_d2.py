@@ -168,6 +168,54 @@ def test_the_immediate_merge_route_reports_the_actions_it_will_perform():
     assert payload['plan_actions'] == ['rebase', 'force-push', 'ci-wait', 'local-cleanup']
 
 
+def test_an_unclassified_verdict_still_produces_a_usable_question():
+    """The two classifier-bypass paths force needs_user with no verdict to pass.
+
+    The gate therefore admits the literal ``unclassified`` — otherwise those paths
+    could never reach the prompt they exist to raise — and asks with the plain
+    rebase options, because there is no conflict to name.
+    """
+    payload = evaluate_gate(
+        classification='unclassified',
+        decision='needs_user',
+        conflicts=[],
+        base=_BASE,
+        threshold='never',
+        use_merge_queue=False,
+        state='open',
+    )
+
+    assert payload['status'] == 'success', payload
+    assert payload['classification'] == 'unclassified'
+    assert payload['question_required'] is True
+    assert payload['queue_wait'] == 'forbidden'
+    labels = ' '.join(option['label'].lower() for option in payload['options'])
+    assert 'conflict' not in labels, f'an unclassified run was offered a conflict option: {labels!r}'
+    assert any('force-push' in option['authorizes'] for option in payload['options'])
+
+
+def test_an_overlap_without_a_content_conflict_offers_rebase_options_not_conflict_options():
+    """The option labels name what actually happens — no conflict text where none exists."""
+    payload = _content_conflict_gate(classification='overlap_no_content_conflict', conflicts=[])
+
+    assert payload['status'] == 'success', payload
+    labels = [option['label'] for option in payload['options']]
+    assert labels, 'the gate offered no options'
+    assert not any('conflict' in label.lower() for label in labels), labels
+    authorizing = [option for option in payload['options'] if 'force-push' in option['authorizes']]
+    assert len(authorizing) == 1
+    # ... and that option is the one the answer check admits.
+    assert authorize_push(authorizing[0]['label'], 'force-push')['authorized'] is True
+
+
+def test_a_content_conflict_still_offers_the_conflict_options():
+    """The classification still selects the population: the content path keeps its files. ."""
+    payload = _content_conflict_gate()
+
+    labels = [option['label'] for option in payload['options']]
+    assert any('resolving the conflicts' in label for label in labels), labels
+
+
 def test_a_merged_pr_asks_only_about_local_cleanup():
     """``state == merged`` has no conflict to route — it confirms cleanup, not a rebase."""
     payload = evaluate_gate(

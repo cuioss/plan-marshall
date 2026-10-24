@@ -88,8 +88,18 @@ from typing import Any
 from input_validation import add_boolean_arg
 from toon_parser import BlockScalar, serialize_toon
 
-#: The classifier's closed verdict vocabulary (``baseline-reconcile``).
-CLASSIFICATIONS: tuple[str, ...] = ('no_overlap', 'overlap_no_content_conflict', 'overlap_with_content_conflict')
+#: The classifier's closed verdict vocabulary (``baseline-reconcile``), plus the
+#: one value the classifier does NOT produce: ``unclassified``. It exists for the
+#: two documented bypass paths — ``threshold == never`` and ``status: skipped`` —
+#: which force ``needs_user`` with no classification at all. Those paths must still
+#: ask the operator, so the gate admits the absence explicitly rather than being
+#: unreachable on them (or worse: having a caller invent a classification).
+CLASSIFICATIONS: tuple[str, ...] = (
+    'no_overlap',
+    'overlap_no_content_conflict',
+    'overlap_with_content_conflict',
+    'unclassified',
+)
 
 #: The gate decision the classifier threshold produces.
 DECISIONS: tuple[str, ...] = ('auto_proceed', 'needs_user')
@@ -157,6 +167,26 @@ _CONFLICT_OPTIONS: tuple[dict[str, Any], ...] = (
     },
 )
 
+#: The option population for a ``needs_user`` gate over an overlap WITHOUT a
+#: content conflict (the default ``no_overlap_only`` threshold, and the
+#: ``auto_resolvable`` opt-out). Its labels name the actions that actually happen:
+#: offering "resolving the conflicts" here would describe work there is none of.
+_OVERLAP_OPTIONS: tuple[dict[str, Any], ...] = (
+    {
+        'label': 'Rebase and force-push onto the base',
+        'description': (
+            'Rebases onto the base in the worktree, runs the pre-push quality gate on the rebased '
+            'head, then force-pushes with lease. CI runs on the rebased head afterwards.'
+        ),
+        'authorizes': ['rebase', 'force-push'],
+    },
+    {
+        'label': 'Stop — leave the branch and PR as they stand',
+        'description': 'No rebase, no push and no merge-queue wait. The branch and the PR are left as they are.',
+        'authorizes': [],
+    },
+)
+
 #: The option population for the ``state == merged`` local-cleanup confirmation.
 #: Neither option authorizes a remote action: a merged PR has nothing to rebase or
 #: push, so ``authorizes`` is empty on both rather than naming an action this
@@ -173,6 +203,11 @@ _MERGED_OPTIONS: tuple[dict[str, Any], ...] = (
         'authorizes': [],
     },
 )
+
+#: Every option population, for answer matching. Labels are unique across the
+#: populations, so a selection resolves without the caller having to say which
+#: question it answered — and a label that is not here authorizes nothing.
+_ALL_OPTIONS: tuple[dict[str, Any], ...] = _CONFLICT_OPTIONS + _OVERLAP_OPTIONS + _MERGED_OPTIONS
 
 #: Why a queue wait is refused on the ``needs_user`` path. Rendered beside the
 #: verdict so the refusal is explained, not merely stated.
@@ -196,9 +231,21 @@ def _normalize_answer(answer: str) -> str:
     return _WHITESPACE_RE.sub(' ', answer).strip().casefold()
 
 
-def _options_for(state: str) -> tuple[dict[str, Any], ...]:
-    """The option population for one gate state."""
-    return _MERGED_OPTIONS if state == 'merged' else _CONFLICT_OPTIONS
+def _options_for(state: str, classification: str) -> tuple[dict[str, Any], ...]:
+    """The option population for one gate state AND one classifier verdict.
+
+    Three populations, chosen by what the operator is actually being asked: the
+    local-cleanup pair on a merged PR, the conflict pair when a content conflict
+    was reported, and the plain rebase pair otherwise (an overlap without a
+    conflict, or an unclassified bypass). The labels are the authorization
+    vocabulary, so a label that names a conflict must never be offered where no
+    conflict exists.
+    """
+    if state == 'merged':
+        return _MERGED_OPTIONS
+    if classification == CONTENT_CONFLICT:
+        return _CONFLICT_OPTIONS
+    return _OVERLAP_OPTIONS
 
 
 def _planned_actions(use_merge_queue: bool, state: str) -> list[str]:
@@ -228,6 +275,7 @@ def _description_lines(
     conflicts: list[str],
     head_branch: str | None,
     pr_url: str | None,
+    classification: str,
 ) -> list[str]:
     """Compose the question's description, naming the conflict and its files."""
     lines: list[str] = []
@@ -249,8 +297,12 @@ def _description_lines(
             'choose, and nothing is queued: the options below say exactly what each one does.'
         )
     else:
-        lines.append('**Overlap against the base** — no content conflict was reported, but the')
-        lines.append('rebase threshold asks before proceeding.')
+        if classification == 'unclassified':
+            lines.append('**Classification: not run** — the threshold or the classifier declined,')
+            lines.append('which is not evidence that the rebase is safe.')
+        else:
+            lines.append(f'**Overlap against {base}** — no content conflict was reported, but the')
+            lines.append('rebase threshold asks before proceeding.')
     return lines
 
 
@@ -333,13 +385,16 @@ def evaluate_gate(
     elif classification == CONTENT_CONFLICT:
         payload['prompt_header'] = _CONFLICT_HEADER
         payload['prompt_question'] = f'Resolve the content conflict with {base} before proceeding?'
+    elif classification == 'unclassified':
+        payload['prompt_header'] = 'Branch Cleanup — Rebase'
+        payload['prompt_question'] = f'The branch could not be classified. Rebase onto {base} before proceeding?'
     else:
         payload['prompt_header'] = 'Branch Cleanup — Rebase'
         payload['prompt_question'] = f'Rebase onto {base} before proceeding? (the overlap threshold asks)'
     payload['prompt_description'] = BlockScalar(
-        '\n'.join(_description_lines(state, base, conflicts, head_branch, pr_url))
+        '\n'.join(_description_lines(state, base, conflicts, head_branch, pr_url, classification))
     )
-    payload['options'] = [dict(option) for option in _options_for(state)]
+    payload['options'] = [dict(option) for option in _options_for(state, classification)]
     return payload
 
 
@@ -366,7 +421,11 @@ def authorize_push(answer: str, action: str, state: str = 'open') -> dict[str, A
         )
 
     normalized = _normalize_answer(answer)
-    for option in _options_for(state):
+    # Match across EVERY population, not just the one `state` selects: the answer
+    # is a label the operator saw on a question whose classification the caller may
+    # not have kept, and a label is unique across the populations. Matching only
+    # one of them would refuse a real selection for a bookkeeping reason.
+    for option in _ALL_OPTIONS:
         if _normalize_answer(str(option['label'])) != normalized:
             continue
         authorizes = list(option.get('authorizes') or [])
@@ -392,7 +451,7 @@ def authorize_push(answer: str, action: str, state: str = 'open') -> dict[str, A
             ),
         }
 
-    authorizing = [str(option['label']) for option in _options_for(state) if action in (option.get('authorizes') or [])]
+    authorizing = [str(option['label']) for option in _ALL_OPTIONS if action in (option.get('authorizes') or [])]
     return {
         'status': 'error',
         'error': ERROR_PUSH_NOT_AUTHORIZED,

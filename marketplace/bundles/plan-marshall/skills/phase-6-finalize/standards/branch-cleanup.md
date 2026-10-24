@@ -219,7 +219,7 @@ The param's lifecycle: the default is declared in this step's `configurable:` fr
 
 #### Threshold-driven bypass (when `{threshold} == never`)
 
-When `{threshold} == never`, skip the classifier dispatch entirely and force `{decision} = needs_user`. Log the bypass:
+When `{threshold} == never`, skip the classifier dispatch entirely and force `{decision} = needs_user` with `{classification} = unclassified` (no classification was produced, and the gate is told that rather than given an invented one). Log the bypass:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
@@ -242,7 +242,8 @@ Parse the TOON return for fields `classification`, `auto_reconcilable`, `conflic
 Branch on the returned `status` **before** parsing `classification` — the wrapper prints the payload through a helper that always exits 0, so an "if the script exits non-zero" test never fires and a skipped or errored payload carries no `classification` field to parse:
 
 - **`status: error`** → STOP and return the error TOON to the dispatcher verbatim. Do NOT silently fall back to `needs_user` on classifier failure — a broken probe is a different signal than a real conflict and must surface as an error so the user can repair the environment.
-- **`status: skipped`** → force `{decision} = needs_user` and log the returned `reason`. A skip is the probe declining to classify (no worktree, no remote, a failed fetch, an unresolvable HEAD, or an unresolvable merge base), which is not evidence that the rebase is safe.
+- **`status: skipped`** → force `{decision} = needs_user` with `{classification} = unclassified`, and log the returned `reason`. A skip is the probe declining to classify (no worktree, no remote, a failed fetch, an unresolvable HEAD, or an unresolvable merge base), which is not evidence that the rebase is safe — and it is not a classification, so the gate is told so explicitly rather than given an invented one.
+- **`status: success`** → proceed to parse `classification`.
 - **`status: success`** → proceed to parse `classification`.
 
 #### Compute the gate decision
@@ -253,6 +254,8 @@ Apply the following rules in order; the first match wins:
 - `classification == overlap_no_content_conflict` AND `auto_reconcilable == true` AND `{threshold} == auto_resolvable` → `{decision} = auto_proceed`.
 - `classification == overlap_no_content_conflict` AND `{threshold} == no_overlap_only` → `{decision} = needs_user` (the threshold opts out even for an auto-reconcilable overlap — `auto_reconcilable` is a non-mutating capability signal, so an `overlap_no_content_conflict` always reports `auto_reconcilable == true`; the probe never performs the reconcile itself, that is `worktree-rebase-to`'s job).
 - `classification == overlap_with_content_conflict` → `{decision} = needs_user` (genuine conflict requiring human resolution).
+
+`{classification}` is therefore always one of the classifier's three verdicts **or** the literal `unclassified`, which the two bypass paths above set: `{threshold} == never` (the classifier is skipped) and `status: skipped` (the classifier declined). Those paths must still ask the operator, and the gate accepts `unclassified` as the honest answer rather than requiring a classification nobody produced.
 
 #### Compose the gate question (the gate script owns the prompt)
 
@@ -1542,6 +1545,18 @@ Both routes below return the entry point's TOON, and it exits 0 on every outcome
 
 The routing itself:
 
+- **A `queue_wait: forbidden` verdict suppresses the merge-queue route for this invocation.** The pre-rebase conflict gate's return is carried forward (`queue_wait`), and while it is `forbidden` the merge goes through `pre_merge_gate merge --route safe-merge` even when `use_merge_queue == true`. The reason is the one the gate states: the queue rebases and re-tests, which is exactly what a run that has just resolved a content conflict locally must not hand back — the enqueue would re-enter the same conflict the operator just answered, and any queue-landing wait would be the wait the question forbade.
+
+  Read `use_merge_queue` off the same one-stop `step-params get` `params` object resolved in the **Conflict-Severity Classifier** section above, beside the `queue_wait` verdict the gate returned, and emit the reroute line before the dispatch below.
+
+  **Observability (mandatory)** — the line names both values and their provenance:
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+    decision --plan-id {plan_id} --level WARNING --message "(plan-marshall:phase-6-finalize) Branch cleanup merge routing: use_merge_queue={use_merge_queue} (provenance: default:branch-cleanup step-params object) but the conflict gate answered queue_wait={queue_wait} (provenance: conflict_gate gate return, Conflict-Severity Classifier read) — routing pre_merge_gate merge --route safe-merge instead of merge-queue for PR #{pr_number}"
+  ```
+
+  Once the authorized rebase and force-push have run and CI is green on that head, the immediate merge is the correct route; nothing waits for a queue. When the operator's answer authorized no action the run has already ended at the pre-rebase gate, so it never reaches this section.
 - **`use_merge_queue == false`** (default) → issue the `pre_merge_gate merge --route safe-merge` call below. The plan merges the PR itself under the widened mutex.
 - **`use_merge_queue == true`** → route the merge through the platform merge queue via the `pr merge-queue` verb INSTEAD of `pr safe-merge`, so the platform rebases, re-tests and merges against the latest base and serializes a truly-external commit the session-scoped mutex cannot. The widened D4 mutex still guards the window up to and including the enqueue; the two mechanisms compose. It is NOT guarding a rebase or force-push on this path — § "Rebase Branch onto Base" routes both away precisely because the queue performs them. The enqueue takes no `--strategy` or `--delete-branch` flag — unchanged: the platform merges queued PRs with the method configured on the queue itself, GitHub rejects `--delete-branch` when a merge queue is enabled, and the platform auto-deletes the head branch after the queue merge. The queue's configured method is no longer an independent knob, though — `repo merge-queue enable` provisions and reconciles it from `pr_merge_strategy`, and the mismatch warn below catches residual drift. All engagement is routed through the `ci` abstraction — NEVER a direct `gh`/`glab` call.
 
