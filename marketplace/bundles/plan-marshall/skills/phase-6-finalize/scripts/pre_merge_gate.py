@@ -123,7 +123,12 @@ def _read_plan_status(plan_id: str) -> dict[str, Any] | None:
     is that skill's own, so a plan whose directory moved into its worktree is still
     found. ``None`` is the declared unknown, never an empty plan.
     """
-    executor = get_executor_path()
+    try:
+        executor = get_executor_path()
+    except RuntimeError:
+        # ``get_executor_path`` raises when no plan root resolves; an unresolvable
+        # executor is the declared unknown here, never a crash inside the gate.
+        return None
     if executor is None:
         return None
     try:

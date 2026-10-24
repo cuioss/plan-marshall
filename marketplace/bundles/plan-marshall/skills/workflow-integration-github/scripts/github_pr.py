@@ -1210,6 +1210,8 @@ def _reviewed_at_merge_candidate(
     bot_kind: str,
     merge_candidate_sha: str,
     merge_candidate_committed_at: str = '',
+    *,
+    allow_first_observation: bool = True,
 ) -> bool:
     """Return True when ``comment`` proves a review of the MERGE CANDIDATE commit.
 
@@ -1282,6 +1284,14 @@ def _reviewed_at_merge_candidate(
     if record is None:
         # First observation — credit only when the merge candidate is resolvable AND
         # the comment does not predate the commit it would be credited against.
+        #
+        # ``allow_first_observation`` is the refusal-path bound: an unanchored comment
+        # observed for the first time proves it existed, not which commit it reviewed,
+        # so beside a refusal it must not be credited on observation alone — the very
+        # inference a refusal is a statement against. A caller that has no refusal to
+        # weigh keeps the arm.
+        if not allow_first_observation:
+            return False
         if not merge_candidate_sha:
             return False
         return not _comment_predates_commit(comment, merge_candidate_committed_at)
@@ -2047,6 +2057,7 @@ def cmd_fetch_findings(args):
                         _bot_kind,
                         reviewed_commit_sha,
                         merge_candidate_committed_at,
+                        allow_first_observation=False,
                     )
             elif _requires_update:
                 _current = _reviewed_at_merge_candidate(

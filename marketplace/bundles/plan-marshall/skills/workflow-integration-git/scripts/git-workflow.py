@@ -146,6 +146,12 @@ from triage_helpers import (
 # CONFIGURATION
 # ============================================================================
 
+#: A network push gets its own, larger bound: ``_DEFAULT_TIMEOUT_SECONDS`` is the floor
+#: for short LOCAL git calls, and a push over a slow network (or one that runs pre-push
+#: hooks) can exceed it. A timed-out push also leaves the remote's state unknown, which
+#: a 60-second floor would report as an ordinary failure.
+_PUSH_TIMEOUT_SECONDS = 300
+
 _COMMIT_CONFIG = load_skill_config(__file__, 'git-commit-config.json')
 VALID_TYPES: list[str] = _COMMIT_CONFIG['valid_types']
 _IMPERATIVE_ALLOWLIST: set[str] = set(_COMMIT_CONFIG.get('imperative_allowlist', []))
@@ -741,7 +747,7 @@ def _source_gate_finding_texts(plan_dir: Path | None) -> tuple[list[str], int]:
     return texts, len(texts)
 
 
-def _run_git_nul_verbatim(args: list[str]) -> tuple[int, str, str]:
+def _run_git_nul_verbatim(args: list[str], timeout: int | None = None) -> tuple[int, str, str]:
     """Run ``git <args>`` preserving NUL-separated path spellings verbatim.
 
     Mirrors :func:`git_provider.run_git` except stdout is NOT stripped:
@@ -758,13 +764,13 @@ def _run_git_nul_verbatim(args: list[str]) -> tuple[int, str, str]:
             capture_output=True,
             encoding='utf-8',
             errors='surrogateescape',
-            timeout=_DEFAULT_TIMEOUT_SECONDS,
+            timeout=_DEFAULT_TIMEOUT_SECONDS if timeout is None else timeout,
             check=False,
         )
     except FileNotFoundError:
         return 127, '', 'git executable not found on PATH'
     except subprocess.TimeoutExpired:
-        return 124, '', f'git timed out after {_DEFAULT_TIMEOUT_SECONDS} seconds'
+        return 124, '', f'git timed out after {_DEFAULT_TIMEOUT_SECONDS if timeout is None else timeout} seconds'
     return completed.returncode, completed.stdout, completed.stderr.strip()
 
 
@@ -949,8 +955,12 @@ def cmd_push(args):
     assert worktree is not None  # narrowing
 
     plan_id = getattr(args, 'plan_id', None) or _plan_id_from_worktree_path(worktree)
-    rc, head, _head_err = _run_git_nul_verbatim(['-C', str(worktree), 'rev-parse', 'HEAD'])
+    rc, head, head_err = _run_git_nul_verbatim(['-C', str(worktree), 'rev-parse', 'HEAD'])
     current_head = head.strip() if rc == 0 else ''
+    if not current_head:
+        # An unreadable HEAD cannot be compared against the gate record, and a push
+        # that skips the comparison is exactly what this verb exists to prevent.
+        return make_error(f'git rev-parse HEAD failed: {head_err or f"exit {rc}"}', code=ErrorCode.FETCH_FAILURE)
 
     from _push_gate import head_gate_refusal
 
@@ -959,7 +969,13 @@ def cmd_push(args):
         gate_refusal.update({'operation': 'push', 'worktree': str(worktree)})
         return gate_refusal
 
-    rc, _out, push_err = _run_git_nul_verbatim(['-C', str(worktree), 'push'])
+    # Bind the refspec to the validated commit: an unqualified ``git push`` obeys
+    # ``remote.origin.push``, which can name a DIFFERENT branch, so the gate could pass
+    # on one commit while another shipped. ``HEAD`` on the command line is the commit
+    # just validated.
+    rc, _out, push_err = _run_git_nul_verbatim(
+        ['-C', str(worktree), 'push', 'origin', 'HEAD'], timeout=_PUSH_TIMEOUT_SECONDS
+    )
     if rc != 0:
         return make_error(f'git push failed: {push_err or f"exit {rc}"}', code=ErrorCode.FETCH_FAILURE)
     return {

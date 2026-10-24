@@ -50,7 +50,13 @@ def read_plan_status(plan_id: str) -> dict[str, Any] | None:
     resolution is the skill's own — a plan that moved into its worktree is still
     found. ``None`` is the declared unknown: no record, nothing to compare.
     """
-    executor = get_executor_path()
+    try:
+        executor = get_executor_path()
+    except RuntimeError:
+        # ``get_executor_path`` RAISES when no plan root resolves; it does not return
+        # ``None``. An unresolvable executor is the declared unknown here — no status
+        # to read, nothing to compare — and must not escape the push verb.
+        return None
     if executor is None:
         return None
     try:

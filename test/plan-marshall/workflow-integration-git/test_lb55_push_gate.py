@@ -103,12 +103,11 @@ def test_force_push_of_the_gated_head_proceeds_past_the_gate_check(repo, monkeyp
         calls.append(list(argv))
         if 'push' in argv:
             return 1, '', 'no remote configured'
-        if argv[-1] == 'HEAD':
+        if '--verify' in argv:
             return 0, f'{head}\n', ''
         return 0, 'feature/x\n', ''
 
     monkeypatch.setattr(force_push, 'run_git', _fake_run_git)
-
     result = force_push.cmd_force_push(
         type('Args', (), {'plan_id': 'lb55-push-gate-ok', 'project_dir': None, 'branch': None})()
     )
@@ -131,7 +130,7 @@ def test_the_push_verb_refuses_a_head_the_gate_did_not_validate(repo, monkeypatc
     head = _git(repo, 'rev-parse', 'HEAD')
     calls: list[list[str]] = []
 
-    def _fake(argv):
+    def _fake(argv, timeout=None):
         calls.append(list(argv))
         return (0, f'{head}\n', '') if 'rev-parse' in argv else (1, '', 'must not be reached')
 
@@ -152,11 +151,9 @@ def test_the_push_verb_pushes_the_gated_head(repo, monkeypatch):
     monkeypatch.setattr(git_workflow, '_plan_id_from_worktree_path', lambda _path: 'lb55-push-verb-ok')
     calls: list[list[str]] = []
 
-    def _fake(argv):
+    def _fake(argv, timeout=None):
         calls.append(list(argv))
-        if 'rev-parse' in argv:
-            return 0, f'{head}\n', ''
-        return 0, '', ''
+        return (0, f'{head}\n', '') if 'rev-parse' in argv else (0, '', '')
 
     monkeypatch.setattr(git_workflow, '_run_git_nul_verbatim', _fake)
 

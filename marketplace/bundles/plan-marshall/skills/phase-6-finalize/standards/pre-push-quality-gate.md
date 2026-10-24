@@ -77,18 +77,9 @@ push made outside the `push` verb, `commit --push` and `force-push-with-lease` �
 bare `git push` — is still ungated, which is why the finalize push step calls the
 `push` verb rather than `git push`.
 
-Before the per-bundle loop the gate resolves the current worktree HEAD
-(`git -C {worktree_path} rev-parse HEAD` — worktree-scoped, never bare
-`git rev-parse HEAD`: after finalize returns to the main checkout a bare read
-reports the main checkout while the stamp belongs to the worktree) and compares it
-against the gate's OWN `head_at_completion` anchor — the SHA this step persisted on
-its last `done` record, which is what the push verbs read too:
+**The gate does not re-check its own recorded anchor.** A re-fired gate — the dispatcher re-runs it when HEAD advanced past its `done` record — must never stop on the OLD SHA it is about to replace: the anchor is the record the run is there to refresh, so comparing against it would refuse every re-fire and the record would never move. What detects drift DURING a run is the start/end capture described below; what refuses a stale push is the push verb's own comparison against the recorded anchor. Those two are the mechanisms; a third, gate-side comparison against the same record is not.
 
-- **Head matches the anchor** — proceed into the arms below.
-- **Head outruns the anchor** — STOP the step and refuse the push. The tree
-  advanced past the last certified state, so no arm below may certify the new
-  head on the old stamp's evidence. Re-run the gate against the new HEAD
-  instead; a push on drifted evidence is never permitted.
+When a push verb answers `head_not_validated_by_gate` — the tree moved after this gate recorded its anchor — **STOP the step and refuse the push**: the tree advanced past the last certified state, so no arm below may certify the new head on the old stamp's evidence. Re-run the gate against the new HEAD instead; a push on drifted evidence is never permitted.
 
 For coverage-mandating plans, a fresh exit under
 `required_coverage_unknown` is likewise refused. When the freshness

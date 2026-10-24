@@ -2201,7 +2201,7 @@ def test_an_older_review_beside_a_quota_refusal_is_refused_not_participated(bot_
                 bot_kind,
                 _REVIEW_BODY,
                 'refusal-1',
-                _RATE_LIMIT_NOTICES[bot_kind],
+                _RATE_LIMIT_NOTICES.get(bot_kind, _RATE_LIMIT_NOTICES['unknown']),
                 created_at=_at(2),
                 updated_at=_at(2),
             ),
