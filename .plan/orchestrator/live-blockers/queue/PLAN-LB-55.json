@@ -3,6 +3,7 @@
   "slug": "gate-head-truth",
   "workstream": "WS-01",
   "status": "staged",
+  "lane": "runbook",
   "plan_marshall_plan_id": "",
   "pr": "",
   "landing": "",
