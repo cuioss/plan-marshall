@@ -590,7 +590,7 @@ _SKILLS_WITHOUT_LEDGER = tuple(
     skill for skill in (*_BOOTSTRAP_SHARED_SKILLS, _BOOTSTRAP_LOGGING_SKILL) if skill != _LEDGER_SKILL
 )
 
-_REGENERATE_COMMAND = 'generate_executor.py bootstrap --marketplace --marketplace-root .'
+_REGENERATE_COMMAND = 'generate_executor.py recover'
 
 
 def test_a_failing_name_import_reports_the_unresolved_directory(tmp_path: Path) -> None:
@@ -618,12 +618,14 @@ def test_a_failing_name_import_reports_the_unresolved_directory(tmp_path: Path) 
     assert 'Traceback' not in result.stderr
 
 
-def test_a_failing_name_import_propagates_when_every_directory_resolved(tmp_path: Path) -> None:
-    """Matched control: the same failing import with nothing unresolved is not rewritten.
+def test_a_failing_name_import_with_every_directory_resolved_is_guarded(tmp_path: Path) -> None:
+    """The same failing import with nothing unresolved is GUARDED, not re-raised.
 
-    Here the cache does supply a ``manage-change-ledger`` scripts dir, holding the
-    same empty ``_ledger_core.py``. No directory is unresolved, so the message
-    would name a cause that does not exist and the ``ImportError`` is left as it is.
+    The cache supplies a ``manage-change-ledger`` scripts dir holding an empty
+    ``_ledger_core.py``, so no directory is unresolved. The import still fails
+    (the module has none of the imported names), and that failure is exactly as
+    unrecoverable by hand as the unresolved case: it now prints the same one-line
+    message and the exact recovery command instead of a bare traceback.
     """
     pruned_base = tmp_path / 'pruned-cache'
     home = tmp_path / 'fakehome'
@@ -639,8 +641,9 @@ def test_a_failing_name_import_propagates_when_every_directory_resolved(tmp_path
     assert result.returncode != 0
     assert 'ImportError' in result.stderr
     assert '_ledger_core' in result.stderr
-    assert 'execute-script.py cannot start' not in result.stderr
-    assert _REGENERATE_COMMAND not in result.stderr
+    assert 'execute-script.py cannot start' in result.stderr
+    assert _REGENERATE_COMMAND in result.stderr
+    assert 'Traceback' not in result.stderr
 
 
 # =============================================================================
@@ -754,5 +757,5 @@ def test_an_orphaned_executor_with_no_sources_names_the_directory_and_the_comman
     missing = _bundle_skills_dir(worktree) / _BOOTSTRAP_LOGGING_SKILL / 'scripts'
     assert result.returncode != 0
     assert str(missing) in result.stderr
-    assert 'generate_executor.py bootstrap --marketplace --marketplace-root .' in result.stderr
+    assert _REGENERATE_COMMAND in result.stderr
     assert 'Traceback' not in result.stderr

@@ -412,3 +412,40 @@ def test_sync_opencode_empty_source_returns_error(tmp_path: Path):
     data = parse_toon(result.stdout)
     assert data['status'] == 'error'
     assert 'contains no emit output' in data['summary_message']
+
+
+# ---------------------------------------------------------------------------
+# The installed dist-manifest at the flat root
+# ---------------------------------------------------------------------------
+
+
+def test_sync_opencode_deploys_the_dist_manifest(tmp_path: Path):
+    """A flat install carries its emitted manifest at the config root."""
+    source = tmp_path / 'src' / 'opencode'
+    dest = tmp_path / 'dest'
+    _make_source(source)
+    _write(source / 'dist-manifest.json', '{"version": "0.1.100"}\n')
+
+    result = _run('--source', str(source), '--target-dir', str(dest))
+
+    assert result.returncode == 0, result.stderr
+    assert (dest / 'dist-manifest.json').is_file()
+    assert '0.1.100' in (dest / 'dist-manifest.json').read_text(encoding='utf-8')
+
+
+def test_sync_opencode_removes_a_stale_dist_manifest(tmp_path: Path):
+    """A source that omitted its manifest removes the previous install's copy.
+
+    Otherwise the staleness reads would report the previous version as the
+    installed one — the generator skips the manifest when its stamping step
+    fails, while the emitted skills still deploy.
+    """
+    source = tmp_path / 'src' / 'opencode'
+    dest = tmp_path / 'dest'
+    _make_source(source)
+    _write(dest / 'dist-manifest.json', '{"version": "0.0.1"}\n')
+
+    result = _run('--source', str(source), '--target-dir', str(dest))
+
+    assert result.returncode == 0, result.stderr
+    assert not (dest / 'dist-manifest.json').exists()

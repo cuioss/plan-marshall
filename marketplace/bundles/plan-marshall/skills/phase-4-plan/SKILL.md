@@ -365,15 +365,14 @@ skills_by_profile:
 
 The persona / ref / profile identity model binds each work-activity profile to a persona shell whose `composes:` frontmatter declares the cross-cutting `ref-*` and `persona-*` concerns that profile carries. Phase-4-plan resolves that persona's flattened skill set and unions it into the task's resolved `skills[]` so every task carries its persona-declared concerns (e.g. an `implementation` task carries `ref-code-quality` via `persona-implementer`).
 
-1. **Derive the persona from the task's primary profile** via a reverse-lookup over persona frontmatter: scan the `profiles:` frontmatter of each `persona-*` skill and select the persona whose **first** `profiles:` entry (the primary identity profile) equals the task's profile `P`. The first-entry rule makes the binding unambiguous when a profile appears in multiple personas' lists. When no persona's primary profile matches `P`, skip augmentation for the task (the architecture-resolved defaults/optionals are the complete skill set).
-2. **Run the resolver as an executed step** (not a description of one) and union its flattened skills into `task.skills`:
+1. **Derive the persona and resolve it in one scripted step.** `resolve-task-skills` derives the persona from the task's primary profile — the persona whose **first** `profiles:` entry (the primary identity profile) equals the task's profile `P`; the first-entry rule makes the binding unambiguous when a profile appears in multiple personas' lists — and returns that persona's flattened `skills[]`:
 
    ```bash
-   python3 .plan/execute-script.py plan-marshall:manage-personas:manage_personas resolve \
-     --persona-key {persona_key} --domains {D.domain} --module {D.module}
+   python3 .plan/execute-script.py plan-marshall:manage-personas:manage_personas resolve-task-skills \
+     --profile {P} --domains {D.domain} --module {D.module}
    ```
 
-   Parse the returned `skills[]` and add each entry to `task.skills` that is not already present (dedup is idempotent — the base `persona-plan-marshall-agent` and any already-resolved skill are not duplicated). `--module {D.module}` is the task's module: the resolver admits a domain cell's optionals only when that module qualifies for them through the domain extension's module-level applicability, and removes any skill a repository-level exclusion names. When `module_status` is `unreadable`, log a WARNING naming the module and keep each affected cell's defaults-only result — never substitute the cell's full optional list. On `status: error` (e.g. `composition_cycle`, `composed_persona_not_found`), log a WARNING and continue with the architecture-resolved skills only — persona augmentation is additive and never plan-blocking.
+2. Parse the returned `skills[]` and add each entry to `task.skills` that is not already present (dedup is idempotent — the base `persona-plan-marshall-agent` and any already-resolved skill are not duplicated). An empty `persona_key` with `reason: no_persona_for_profile` means no persona claims `P` as its primary profile: skip augmentation for the task (the architecture-resolved defaults/optionals are the complete skill set). `--module {D.module}` is the task's module: the resolver admits a domain cell's optionals only when that module qualifies for them through the domain extension's module-level applicability, and removes any skill a repository-level exclusion names. When `module_status` is `unreadable`, log a WARNING naming the module and keep each affected cell's defaults-only result — never substitute the cell's full optional list. On `status: error` (e.g. `composition_cycle`, `composed_persona_not_found`, `skill_exclusions_unreadable`), log a WARNING and continue with the architecture-resolved skills only — persona augmentation is additive and never plan-blocking.
 
 **Example Reasoning** (for JSON→TOON migration task):
 ```text

@@ -7,6 +7,7 @@ Lifecycle command handlers for manage-status: create, transition, archive, delet
 import argparse
 import json
 import os
+import re
 import shlex
 import shutil
 import subprocess
@@ -40,7 +41,7 @@ from constants import (
     PHASE_STATUS_IN_PROGRESS,
     PHASE_STATUS_PENDING,
 )
-from file_ops import get_plan_dir
+from file_ops import get_plan_dir, get_tracked_config_dir
 
 # Result-status values that indicate the strict-verify gate refuses to advance.
 # Mirrors the ``--strict`` exit-1 conditions in ``phase_handshake.py`` main()
@@ -1424,6 +1425,30 @@ def _exempt_archive_findings_report(plan_id: str, status: dict[str, Any], reason
     return {'findings_gate': 'exempted_by_reason', 'pending_actionable_count': pending}
 
 
+def _executor_target_stamp() -> dict[str, str]:
+    """Read the serving executor's harness / plugin-root stamp, or ``{}``.
+
+    The stamp is recorded in ``status.metadata`` at plan creation so a later
+    reader can tell which harness and which plugin tree the plan started under.
+    An absent or unstamped executor yields no keys rather than an empty-string
+    claim — the same "an absent identity is a stated sentinel, never an assumed
+    one" rule the target resolver applies.
+    """
+    executor = get_tracked_config_dir() / 'execute-script.py'
+    try:
+        text = executor.read_text(encoding='utf-8')
+    except (OSError, UnicodeDecodeError):
+        return {}
+    stamp: dict[str, str] = {}
+    target = re.search(r"^_EXECUTOR_TARGET\s*=\s*'([^']*)'", text, re.MULTILINE)
+    plugin_root = re.search(r"^EXECUTOR_PLUGIN_ROOT\s*=\s*'([^']*)'", text, re.MULTILINE)
+    if target and target.group(1):
+        stamp['executor_target'] = target.group(1)
+    if plugin_root and plugin_root.group(1):
+        stamp['executor_plugin_root'] = plugin_root.group(1)
+    return stamp
+
+
 def cmd_create(args: argparse.Namespace) -> dict[str, Any]:
     """Create status.json for a new plan.
 
@@ -1493,6 +1518,11 @@ def cmd_create(args: argparse.Namespace) -> dict[str, Any]:
         # absence-of-metadata as "main-checkout". Keeps the contract
         # symmetric.
         status['metadata'] = {'use_worktree': False}
+
+    # Record the serving executor's harness/plugin-root stamp. A plan that
+    # later sees a different stamp knows another harness regenerated the shared
+    # executor underneath it.
+    status['metadata'].update(_executor_target_stamp())
 
     write_status(args.plan_id, status)
     # Persisted-title-state-write drive seam (best-effort, fire-and-forget):

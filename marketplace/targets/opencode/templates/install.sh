@@ -470,6 +470,13 @@ def get_bundle_managed_files(
         if (source_dir / 'bundle-components.json').is_file():
             items.append((source_dir / 'bundle-components.json', '.plan-marshall-components.json'))
             managed_files.append('.plan-marshall-components.json')
+        # A flat install has no plugin-cache version dir, so the only place it
+        # can carry its installed version is the dist-manifest at the config root.
+        # `generate_executor preflight` and `cache_freshness check` probe
+        # `{cache_root}/../dist-manifest.json`, i.e. exactly this file.
+        if (source_dir / 'dist-manifest.json').is_file():
+            items.append((source_dir / 'dist-manifest.json', 'dist-manifest.json'))
+            managed_files.append('dist-manifest.json')
 
     return items, sorted(set(managed_files))
 

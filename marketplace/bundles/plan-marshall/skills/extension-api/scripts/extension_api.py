@@ -18,12 +18,13 @@ resolvers exist, which are active, and over which files — every field read fro
 the resolver or the store that owns it rather than transcribed into a menu
 document that would go stale the moment a resolver changed.
 
-Registered as notation ``plan-marshall:extension-api:extension_api`` exposing the
-``resolve-skills --profile {profile} --plan-id {plan_id}`` and
-``derivation-resolvers list`` subcommands.
+Registered as notation ``plan-marshall:extension-api:extension_api``. The
+registered subcommands are whatever the parser declares — run the module's
+``--help`` for the live list; this docstring deliberately does not mirror it.
 """
 
 import argparse
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
@@ -35,6 +36,8 @@ from input_validation import (
     add_plan_id_arg,
     parse_args_with_toon_errors,
 )
+from marketplace_bundles import resolve_bundle_path
+from marketplace_paths import get_bundle_cache_roots
 
 
 def resolve_security_skills(plan_id: str, profile: str) -> dict[str, Any]:
@@ -191,6 +194,149 @@ def cmd_derivation_resolvers_list(args) -> dict[str, Any]:
     return list_derivation_resolvers()
 
 
+#: The notation separator vocabulary for a workflow document.
+_WORKFLOW_NOTATION_SEPARATOR = ':'
+_WORKFLOW_PATH_SEPARATOR = '/'
+_WORKFLOW_SUFFIX = '.md'
+_WORKFLOW_NOT_FOUND = 'workflow_not_found'
+
+
+def _is_single_component(name: str) -> bool:
+    """Whether *name* is one directory component, not a path.
+
+    A notation is a bundle-relative address. An absolute or ``..`` segment in
+    ``bundle`` or ``skill`` would reset the join to an arbitrary path (pathlib
+    discards the left side when the right side is absolute), so both components
+    are constrained to a single, non-traversing name here rather than trusted
+    into the resolver.
+    """
+    return bool(name) and name not in ('.', '..') and '/' not in name and '\\' not in name
+
+
+def parse_workflow_notation(notation: str) -> tuple[str, str, str] | None:
+    """Split ``{bundle}:{skill}/{relative path}.md`` into its three components.
+
+    Returns ``None`` for any shape a workflow document cannot take, so the caller
+    reports one ``workflow_not_found`` error instead of constructing a path from
+    a malformed notation. Rejected shapes: a missing ``:`` or ``/``, an empty
+    ``bundle`` or ``skill``, a component that is not a single directory name
+    (absolute, ``.``/``..``, or carrying a separator), a path that does not end
+    in ``.md`` or does not live at the skill root / under ``workflow/`` or
+    ``standards/``, and any ``.``/``..``/empty path segment. The location
+    restriction keeps a reference or contract document from being dispatched as
+    a workflow body.
+    """
+    bundle, separator, remainder = notation.partition(_WORKFLOW_NOTATION_SEPARATOR)
+    if not separator or not _is_single_component(bundle):
+        return None
+    skill, path_separator, relative = remainder.partition(_WORKFLOW_PATH_SEPARATOR)
+    if not path_separator or not _is_single_component(skill) or not relative:
+        return None
+    if not relative.endswith(_WORKFLOW_SUFFIX):
+        return None
+    if not (relative == 'SKILL.md' or relative.startswith(('workflow/', 'standards/'))):
+        return None
+    if any(segment in ('', '.', '..') for segment in relative.split(_WORKFLOW_PATH_SEPARATOR)):
+        return None
+    return bundle, skill, relative
+
+
+def resolve_workflow(
+    notation: str,
+    worktree: str,
+    cache_roots: tuple[str, ...] | None = None,
+) -> dict[str, Any]:
+    """Resolve a workflow notation to a verified absolute path.
+
+    Resolution order, in this order and nowhere else:
+
+    1. the worktree's own source tree —
+       ``{worktree}/marketplace/bundles/{bundle}/skills/{skill}/{relative}`` —
+       when that file exists. A bundle-owning checkout (this repository and any
+       other) therefore resolves to the code the worktree actually carries, so a
+       leaf sees worktree edits instead of a stale installed copy;
+    2. the installed copy, through the platform-runtime ``layout
+       bundle-cache-root`` roots (:func:`get_bundle_cache_roots`) and
+       ``marketplace_bundles.resolve_bundle_path`` — the shared resolver that
+       already handles the nested versioned cache (newest eligible version) and
+       the flat OpenCode/Antigravity layout. A consumer repository has no
+       ``marketplace/bundles`` tree, so this is the leg that serves it.
+
+    No path logic is written here: both probes delegate to the resolvers above.
+
+    Args:
+        notation: ``{bundle}:{skill}/{relative path}.md``.
+        worktree: The leaf's working directory (``.`` for the main checkout).
+        cache_roots: Explicit installed-bundle roots, for a caller that has
+            already resolved them (tests, and a future target-addressed caller).
+            ``None`` reads the ambient platform-runtime result.
+
+    Returns:
+        On success, ``{status, notation, path, source, worktree_probe,
+        installed_probes}`` where ``source`` is ``worktree`` or ``installed``.
+        When neither probe carries the file, a ``status: error`` dict with
+        ``error: workflow_not_found`` naming the worktree probe and every
+        installed probe.
+    """
+    parsed = parse_workflow_notation(notation)
+    worktree_root = Path(worktree).resolve()
+    if parsed is None:
+        return {
+            'status': 'error',
+            'error': _WORKFLOW_NOT_FOUND,
+            'notation': notation,
+            'detail': (
+                'a workflow notation must be {bundle}:{skill}/{relative path}.md '
+                '(e.g. plan-marshall:phase-6-finalize/standards/push.md)'
+            ),
+            'worktree_probe': '',
+            'installed_probes': [],
+            'probed': [],
+        }
+
+    bundle, skill, relative = parsed
+    bundle_subpath = f'skills/{skill}/{relative}'
+    worktree_probe = worktree_root / 'marketplace' / 'bundles' / bundle / bundle_subpath
+
+    if worktree_probe.is_file():
+        return {
+            'status': 'success',
+            'notation': notation,
+            'path': str(worktree_probe.resolve()),
+            'source': 'worktree',
+            'worktree_probe': str(worktree_probe),
+            'installed_probes': [],
+        }
+
+    roots = cache_roots if cache_roots is not None else tuple(get_bundle_cache_roots())
+    installed_probes: list[str] = []
+    for root in roots:
+        candidate = resolve_bundle_path(Path(root).expanduser(), bundle, bundle_subpath)
+        installed_probes.append(str(candidate))
+        if candidate.is_file():
+            return {
+                'status': 'success',
+                'notation': notation,
+                'path': str(candidate.resolve()),
+                'source': 'installed',
+                'worktree_probe': str(worktree_probe),
+                'installed_probes': installed_probes,
+            }
+
+    return {
+        'status': 'error',
+        'error': _WORKFLOW_NOT_FOUND,
+        'notation': notation,
+        'worktree_probe': str(worktree_probe),
+        'installed_probes': installed_probes,
+        'probed': [str(worktree_probe), *installed_probes],
+    }
+
+
+def cmd_resolve_workflow(args) -> dict[str, Any]:
+    return resolve_workflow(args.notation, args.worktree)
+
+
 def cmd_resolve_skills(args) -> dict[str, Any]:
     return resolve_security_skills(args.plan_id, args.profile)
 
@@ -228,6 +374,23 @@ def main() -> int:
         allow_abbrev=False,
     )
     dr_list.set_defaults(func=cmd_derivation_resolvers_list)
+
+    workflow_parser = subparsers.add_parser(
+        'resolve-workflow',
+        help='Resolve a {bundle}:{skill}/{path}.md workflow notation to a verified absolute path',
+        allow_abbrev=False,
+    )
+    workflow_parser.add_argument(
+        '--notation',
+        required=True,
+        help='Workflow notation, e.g. plan-marshall:phase-6-finalize/standards/push.md',
+    )
+    workflow_parser.add_argument(
+        '--worktree',
+        required=True,
+        help="The leaf's working directory; '.' for the main checkout",
+    )
+    workflow_parser.set_defaults(func=cmd_resolve_workflow)
 
     args = parse_args_with_toon_errors(parser)
 

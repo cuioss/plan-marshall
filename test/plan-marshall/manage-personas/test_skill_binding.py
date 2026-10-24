@@ -86,18 +86,6 @@ def _install_cell(monkeypatch, *, defaults, optionals):
     monkeypatch.setattr(_mp, '_find_domain_extension', lambda domain: _java_extension())
 
 
-def _architecture_skills(module_data: dict) -> set[str]:
-    """Collect every skill the architecture path surfaces for a module."""
-    result = _java_extension().applies_to_module(module_data)
-    return {
-        entry['skill']
-        for profile in result['skills_by_profile'].values()
-        for key in ('defaults', 'optionals')
-        for entry in profile[key]
-        if isinstance(entry, dict)
-    }
-
-
 def _write_persona(bundles_root: Path, key: str, composes: list[str]) -> Path:
     """Write a synthetic persona whose composition edges are ``composes``."""
     bundle, skill = key.split(':', 1)
@@ -142,7 +130,43 @@ def _write_pom(root: Path, *, dependencies: list[tuple[str, str]]) -> Path:
 # =============================================================================
 
 
-def test_final_task_skills_drop_a_repository_excluded_skill(monkeypatch):
+def _architecture_services(module_data: dict, project_dir: Path, excluded: list[str]) -> set[str]:
+    """Persist what the architecture path produced and read it back as phase-4 does.
+
+    The union this test builds must not be the only evidence: the architecture
+    half has to come back through ``get_module_info``, the seam a later phase
+    actually reads, or deleting the read seam would leave the test green.
+    """
+    core = load_script_module('plan-marshall', 'manage-architecture', '_architecture_core.py', '_arch_core_binding')
+    query = load_script_module('plan-marshall', 'manage-architecture', '_cmd_client_query.py', '_arch_query_binding')
+
+    produced = _java_extension().applies_to_module(module_data)
+    # The extension already applies the execution-context veto, so persist a
+    # STALE copy of the excluded skill: only the read seam can remove it, and the
+    # test would otherwise stay green with that seam deleted.
+    stored = produced['skills_by_profile']
+    stored.setdefault('implementation', {'defaults': [], 'optionals': []})['optionals'].append(
+        {'skill': JAVA_QUARKUS, 'description': 'stale persisted entry'}
+    )
+    core.save_project_meta(
+        {'name': 'demo', 'description': '', 'description_reasoning': '', 'extensions_used': [], 'modules': {'m': {}}},
+        str(project_dir),
+    )
+    core.save_module_derived('m', {**module_data, 'paths': {'module': 'm'}, 'commands': {}}, str(project_dir))
+    core.save_module_enriched('m', {'skills_by_profile': stored}, str(project_dir))
+    create_marshal_json(project_dir, config=_exclusions(*excluded), nest_in_plan_dir=True)
+
+    served = query.get_module_info('m', project_dir=str(project_dir))
+    return {
+        entry['skill']
+        for profile in served['skills_by_profile'].values()
+        for key in ('defaults', 'optionals')
+        for entry in profile[key]
+        if isinstance(entry, dict)
+    }
+
+
+def test_final_task_skills_drop_a_repository_excluded_skill(monkeypatch, tmp_path):
     """The union of the architecture and persona paths never carries an excluded skill."""
     _write_marshal(_exclusions(JAVA_QUARKUS))
     module_data = _java_module('jakarta.enterprise:jakarta.enterprise.cdi-api:4.0')
@@ -150,7 +174,7 @@ def test_final_task_skills_drop_a_repository_excluded_skill(monkeypatch):
     monkeypatch.setattr(_mp, '_resolve_module_data', lambda module: (module_data, 'resolved'))
 
     persona = _mp._resolve_profile_domain_skills('implementation', 'java', module='sample-module')
-    final = _architecture_skills(module_data) | set(persona['skills'])
+    final = _architecture_services(module_data, tmp_path, [JAVA_QUARKUS]) | set(persona['skills'])
 
     assert JAVA_QUARKUS not in final
     assert JAVA_CDI in final

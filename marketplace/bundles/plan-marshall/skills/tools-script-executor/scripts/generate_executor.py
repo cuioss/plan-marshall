@@ -7,6 +7,7 @@ Usage:
     python3 generate_executor.py generate [--force] [--dry-run] [--marketplace] [--marketplace-root PATH] [--target TARGET]
     python3 generate_executor.py verify [--target TARGET]
     python3 generate_executor.py bootstrap [--marketplace] [--marketplace-root PATH] [--target TARGET]
+    python3 generate_executor.py recover [--project-dir PATH] [--marketplace-root PATH] [--target TARGET]
     python3 generate_executor.py drift [--marketplace] [--marketplace-root PATH] [--target TARGET]
     python3 generate_executor.py preflight [--marketplace] [--marketplace-root PATH] [--target TARGET]
     python3 generate_executor.py paths [--target TARGET]
@@ -16,6 +17,7 @@ Subcommands:
     generate    Generate executor with script mappings
     verify      Verify existing executor is valid
     bootstrap   Sanctioned direct-path bootstrap (see below)
+    recover     Recover a broken executor: find newest cache, probe, regenerate, re-probe
     drift       Compare executor mappings with current marketplace state
     preflight   Report the preconditions a regeneration depends on
     paths       Verify all mapped paths exist
@@ -2124,6 +2126,8 @@ def generate_executor(
     # the raw bytes so an encoding-only difference still counts as a change.
     template_sha256 = hashlib.sha256(executor_template.read_bytes()).hexdigest()
 
+    plugin_root = base_path.resolve().as_posix()
+
     def _substitute(surfaces_code: str) -> str:
         content = template.replace('{{SCRIPT_MAPPINGS}}', mappings_code)
         content = content.replace('{{SCRIPT_SURFACES}}', surfaces_code)
@@ -2135,6 +2139,7 @@ def generate_executor(
         content = content.replace('{{PLAN_DIR_NAME}}', PLAN_DIR_NAME)
         content = content.replace('{{TARGET_AWARE_RESOLVER}}', resolver_code)
         content = content.replace('{{EXECUTOR_TARGET}}', resolved_target)
+        content = content.replace('{{EXECUTOR_PLUGIN_ROOT}}', plugin_root)
         content = content.replace('{{GENERATED_VERSION}}', generated_version)
         content = content.replace('{{MAPPINGS_FINGERPRINT}}', mappings_fingerprint)
         content = content.replace('{{TEMPLATE_SHA256}}', template_sha256)
@@ -2607,39 +2612,18 @@ def check_paths_exist(mappings: dict[str, str]) -> tuple[list, list]:
 # ============================================================================
 
 
-def find_installed_manifest_path(base_path: Path | None = None, target: str = 'claude') -> Path | None:
-    """Locate the installed ``dist-manifest.json``, or ``None`` when absent.
+def installed_manifest_probe_paths(base_path: Path | None = None, target: str = 'claude') -> list[Path]:
+    """Return the ordered paths :func:`find_installed_manifest_path` probes.
 
-    The manifest is emitted by the target generator at the target output root
-    (meta-project: ``target/{target}/``). On a meta-project install it is
-    copied into the plugin-cache tree; on a marketplace install it stays at the
-    marketplace clone root (``.../plugins/marketplaces/<marketplace>/``) and is
-    NOT copied into ``.../plugins/cache/<marketplace>/``. Search order:
-
-    1. ``$PM_DIST_MANIFEST`` — explicit override (tests + alternate installs).
-    2. The meta-project target tree (``<repo>/target/{target}/dist-manifest.json``)
-       when ``base_path`` points inside a ``marketplace/bundles`` checkout.
-    3. ``base_path/dist-manifest.json`` and its parent (cache / target root).
-    4. The marketplace clone root: when ``base_path`` resolves inside a
-       plugin-cache layout (``.../plugins/cache/<marketplace>/...``), the
-       ``/plugins/cache/<marketplace>`` segment is mapped to
-       ``/plugins/marketplaces/<marketplace>`` and ``dist-manifest.json`` is
-       appended — where a marketplace install actually keeps its manifest.
-
-    Args:
-        base_path: The resolved bundles/cache root, or ``None`` when it could
-            not be resolved (fresh install).
-        target: The resolved platform target (``claude`` or ``opencode``) whose
-            manifest to look up under the meta-project target tree. Defaults to
-            ``claude`` for callers that have no resolved target in hand.
-
-    Returns:
-        Path to an existing manifest file, or ``None``.
+    The single construction of the candidate set, shared by the lookup and by
+    callers that must REPORT what was probed when nothing resolves. A lookup
+    that fails without naming its probes makes "the manifest is missing" and
+    "the lookup could not look" indistinguishable, which is exactly the
+    ambiguity the flat-install defect rested on.
     """
     env_manifest = os.environ.get('PM_DIST_MANIFEST')
     if env_manifest:
-        candidate = Path(env_manifest)
-        return candidate if candidate.is_file() else None
+        return [Path(env_manifest)]
 
     candidates: list[Path] = []
     if base_path is not None:
@@ -2677,6 +2661,42 @@ def find_installed_manifest_path(base_path: Path | None = None, target: str = 'c
             )
             if is_safe_segment:
                 candidates.append(Path(prefix) / 'plugins' / 'marketplaces' / marketplace_name / 'dist-manifest.json')
+    return candidates
+
+
+def find_installed_manifest_path(base_path: Path | None = None, target: str = 'claude') -> Path | None:
+    """Locate the installed ``dist-manifest.json``, or ``None`` when absent.
+
+    The manifest is emitted by the target generator at the target output root
+    (meta-project: ``target/{target}/``). On a meta-project install it is
+    copied into the plugin-cache tree; on a marketplace install it stays at the
+    marketplace clone root (``.../plugins/marketplaces/<marketplace>/``) and is
+    NOT copied into ``.../plugins/cache/<marketplace>/``. Search order:
+
+    1. ``$PM_DIST_MANIFEST`` — explicit override (tests + alternate installs).
+    2. The meta-project target tree (``<repo>/target/{target}/dist-manifest.json``)
+       when ``base_path`` points inside a ``marketplace/bundles`` checkout.
+    3. ``base_path/dist-manifest.json`` and its parent (cache / target root).
+    4. The marketplace clone root: when ``base_path`` resolves inside a
+       plugin-cache layout (``.../plugins/cache/<marketplace>/...``), the
+       ``/plugins/cache/<marketplace>`` segment is mapped to
+       ``/plugins/marketplaces/<marketplace>`` and ``dist-manifest.json`` is
+       appended — where a marketplace install actually keeps its manifest.
+
+    The candidate set is built by :func:`installed_manifest_probe_paths`, which
+    callers also use to report what was probed when nothing resolves.
+
+    Args:
+        base_path: The resolved bundles/cache root, or ``None`` when it could
+            not be resolved (fresh install).
+        target: The resolved platform target (``claude`` or ``opencode``) whose
+            manifest to look up under the meta-project target tree. Defaults to
+            ``claude`` for callers that have no resolved target in hand.
+
+    Returns:
+        Path to an existing manifest file, or ``None``.
+    """
+    candidates = installed_manifest_probe_paths(base_path, target=target)
 
     # Highest-version-wins selection over the existing candidates: a stale
     # cache-root manifest must never shadow a newer clone-root manifest just
@@ -3209,6 +3229,239 @@ def cmd_bootstrap(args: argparse.Namespace) -> dict:
     }
 
 
+def _newest_cache_generator(target: str) -> Path | None:
+    """Return the newest installed cache's ``generate_executor.py``, or ``None``.
+
+    Probes the target's deployed bundle roots through the shared resolver
+    (``resolve_bundle_path``), which already selects the newest eligible version
+    directory for a nested cache and reconstructs the flat OpenCode / Antigravity
+    name. The returned script is the one an executor must name in its recovery
+    line: it is reachable without a working executor, by construction.
+    """
+    for root in _shared_bundle_cache_roots_for(target):
+        candidate = resolve_bundle_path(
+            Path(root).expanduser(),
+            BOOTSTRAP_BUNDLE,
+            'skills/tools-script-executor/scripts/generate_executor.py',
+        )
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+#: Import-failure markers shared with ``upgrade._IMPORT_FAILURE_MARKERS``: the
+#: Python import-error phrases and the executor's exact bootstrap-guard prefix.
+_RECOVERY_IMPORT_MARKERS = (
+    'ModuleNotFoundError',
+    'ImportError',
+    'No module named',
+    'execute-script.py cannot start:',
+)
+
+_RECOVERY_PROBE_TIMEOUT_SECONDS = 30
+#: Bound for the selected generator's subprocess. Generation derives the argparse
+#: surfaces and can take tens of seconds on a full cache.
+_RECOVERY_REGENERATE_TIMEOUT_SECONDS = 300
+
+
+def _probe_executor_import(executor_path: Path) -> str:
+    """Probe an executor's module-level imports in a fresh-shell environment.
+
+    Runs ``<executor> --list`` with ``PYTHONPATH`` REMOVED: the probe must
+    observe the on-disk executor the way a new shell starts it, never the
+    parent's injected path. A probe that inherited the parent's ``PYTHONPATH``
+    could import a module the executor itself cannot find, masking exactly the
+    broken executor recovery exists to fix.
+
+    Returns a short reason when an IMPORT failure is observed, and ``''`` for a
+    healthy executor, a missing file, or any non-import failure.
+    """
+    if not executor_path.is_file():
+        return ''
+    env = {key: value for key, value in os.environ.items() if key != 'PYTHONPATH'}
+    try:
+        result = subprocess.run(
+            [sys.executable, str(executor_path), '--list'],
+            cwd=str(executor_path.parent.parent),
+            capture_output=True,
+            text=True,
+            timeout=_RECOVERY_PROBE_TIMEOUT_SECONDS,
+            env=env,
+        )
+    except (OSError, subprocess.TimeoutExpired, UnicodeDecodeError):
+        return ''
+    if result.returncode == 0:
+        return ''
+    stderr = result.stderr or ''
+    if not any(marker in stderr for marker in _RECOVERY_IMPORT_MARKERS):
+        return ''
+    lines = [line.strip() for line in stderr.splitlines() if line.strip()]
+    for line in lines:
+        if any(marker in line for marker in _RECOVERY_IMPORT_MARKERS):
+            return line[:200]
+    return (lines[-1] if lines else 'import failure')[:200]
+
+
+def _executor_start_failure(executor_path: Path) -> str:
+    """Strict post-regeneration check: ``''`` only when ``<executor> --list`` exits 0.
+
+    The lenient import probe is right for deciding WHETHER to recover (it only
+    distinguishes an import failure from another non-zero exit). After a
+    regeneration the promise is stronger: the executor must actually start. A
+    timeout, a spawn failure, a syntax error, or any other non-zero exit is a
+    failure here, never a clean probe.
+    """
+    if not executor_path.is_file():
+        return 'executor absent'
+    env = {key: value for key, value in os.environ.items() if key != 'PYTHONPATH'}
+    try:
+        result = subprocess.run(
+            [sys.executable, str(executor_path), '--list'],
+            cwd=str(executor_path.parent.parent),
+            capture_output=True,
+            text=True,
+            timeout=_RECOVERY_PROBE_TIMEOUT_SECONDS,
+            env=env,
+        )
+    except (OSError, subprocess.TimeoutExpired, UnicodeDecodeError) as exc:
+        return f'executor could not start: {exc}'[:200]
+    if result.returncode == 0:
+        return ''
+    lines = [line.strip() for line in (result.stderr or '').splitlines() if line.strip()]
+    for line in lines:
+        if any(marker in line for marker in _RECOVERY_IMPORT_MARKERS):
+            return line[:200]
+    detail = lines[-1] if lines else 'no output'
+    return f'executor --list exited {result.returncode}: {detail}'[:200]
+
+
+def _read_executor_target_stamp(executor_path: Path) -> str:
+    """Read the existing executor's ``_EXECUTOR_TARGET`` stamp, or ``''``."""
+    try:
+        text = executor_path.read_text(encoding='utf-8')
+    except (OSError, UnicodeDecodeError):
+        return ''
+    match = re.search(r"^_EXECUTOR_TARGET\s*=\s*'([^']*)'", text, re.MULTILINE)
+    return match.group(1) if match else ''
+
+
+def cmd_recover(args: argparse.Namespace) -> dict:
+    """Recover a broken executor through a direct-path script that needs no executor.
+
+    The single deterministic recovery entry. It resolves the newest installed
+    cache's generator, probes the project's executor, EXECUTES that selected
+    generator (as a subprocess — so an older running copy of this verb still
+    regenerates from the newest one), and RE-PROBES the regenerated file. A
+    regenerated executor that still fails to import is reported as
+    ``regenerate_failed`` with the probe's reason — never as ``regenerated``.
+
+    The verb itself runs by direct script path, so it works when
+    ``.plan/execute-script.py`` cannot start. ``--project-dir`` names the
+    checkout whose executor is recovered (default: cwd); the generation runs
+    with cwd and ``PLAN_BASE_DIR`` pinned there so the output lands in that
+    project's ``.plan``.
+    """
+    project_dir = Path(getattr(args, 'project_dir', None) or '.').resolve()
+    executor = project_dir / '.plan' / 'execute-script.py'
+    try:
+        ctx = resolve_verb_context(args)
+    except ValueError as exc:
+        return {'status': 'error', 'error': 'invalid_context', 'action': 'regenerate_failed', 'detail': str(exc)}
+    target = ctx['target']
+
+    generator = _newest_cache_generator(target)
+    if generator is None:
+        return {
+            'status': 'error',
+            'error': 'recovery_generator_missing',
+            'action': 'regenerate_failed',
+            'target': target,
+            'executor': str(executor),
+            'detail': (
+                'no installed cache carries tools-script-executor/scripts/generate_executor.py; '
+                'run /marshall-steward to restore the plugin cache'
+            ),
+        }
+
+    probe_before = _probe_executor_import(executor)
+    before_mtime = executor.stat().st_mtime_ns if executor.is_file() else None
+    previous_target = _read_executor_target_stamp(executor)
+    base = {
+        'target': target,
+        'executor': str(executor),
+        'generator': str(generator),
+        'probe_before': probe_before,
+        # A pre-existing foreign stamp is a D5 repair, not a reason to refuse:
+        # the whole point of `recover --target <observed>` is to rewrite the
+        # executor for the harness that is running it. The field makes the
+        # repair explicit instead of silent.
+        'previous_target': previous_target,
+    }
+
+    env = {key: value for key, value in os.environ.items() if key != 'PYTHONPATH'}
+    env['PLAN_BASE_DIR'] = str(project_dir / '.plan')
+    env.pop('PM_MARKETPLACE_ROOT', None)
+    if ctx['marketplace_root'] is not None:
+        env['PM_MARKETPLACE_ROOT'] = str(ctx['marketplace_root'])
+
+    try:
+        result = subprocess.run(
+            [sys.executable, str(generator), 'generate', '--target', target],
+            cwd=str(project_dir),
+            capture_output=True,
+            text=True,
+            timeout=_RECOVERY_REGENERATE_TIMEOUT_SECONDS,
+            env=env,
+        )
+        base['generator_output'] = ((result.stdout or '') + (result.stderr or ''))[-2000:]
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return {
+            'status': 'error',
+            'action': 'regenerate_failed',
+            'error': str(exc),
+            'probe_reason': _probe_executor_import(executor),
+            **base,
+        }
+
+    if result.returncode != 0:
+        return {
+            'status': 'error',
+            'action': 'regenerate_failed',
+            'error': f'the selected generator exited {result.returncode}',
+            'probe_reason': _probe_executor_import(executor),
+            **base,
+        }
+
+    # The SELECTED generator's write is the authority. A generator that refused
+    # (its own fail-open guard, an under-covered discovery) leaves the previous
+    # file in place, and an mtime that did not move is a refusal to claim.
+    after_mtime = executor.stat().st_mtime_ns if executor.is_file() else None
+    if not executor.is_file() or after_mtime == before_mtime:
+        return {
+            'status': 'error',
+            'action': 'regenerate_failed',
+            'detail': 'the selected generator did not write the project executor',
+            'probe_reason': _probe_executor_import(executor),
+            **base,
+        }
+
+    probe_after = _executor_start_failure(executor)
+    if probe_after:
+        return {
+            'status': 'error',
+            'action': 'regenerate_failed',
+            'detail': 'the regenerated executor still cannot start',
+            'probe_reason': probe_after,
+            **base,
+        }
+    return {
+        'status': 'success',
+        'action': 'regenerated',
+        'detail': 'executor regenerated by the newest cache generator and re-probed clean',
+        **base,
+    }
+
+
 def _flip_notation_separators(segment: str) -> str:
     """Return ``segment`` with hyphens and underscores swapped.
 
@@ -3465,14 +3718,16 @@ def cmd_preflight(args: argparse.Namespace) -> dict:
       route the user to ``/marshall-steward``; a resolvable, non-stale manifest
       reports ``marshal_status: fresh``.
 
-    - **Fail CLOSED on an unresolvable manifest.** When the installed
-      ``dist-manifest.json`` cannot be resolved (``read_installed_manifest``
-      returned ``{}``, so ``installed_version == 'unknown'``), no version-based
-      staleness verdict can be substantiated. Rather than report a vacuous
-      ``fresh`` it can neither confirm nor deny, the verb reports
-      ``marshal_status: unknown`` and emits a legible warning to stderr (also
-      surfaced in the return's ``warning`` field). The verdict never claims a
-      freshness it cannot prove.
+    - **An unresolvable manifest is `unknown` only when no drift is measurable.**
+      When the installed ``dist-manifest.json`` cannot be resolved
+      (``read_installed_manifest`` returned ``{}``, so ``installed_version ==
+      'unknown'``) the verb names every path it probed. If ``marshal_version``
+      and ``executor_version`` are both readable, it derives ``marshal_status``
+      from that pair — ``stale`` when the executor is ahead of the provisioned
+      config seed, ``fresh`` otherwise — instead of reporting ``unknown`` over a
+      measurable drift. Only when neither version is readable does it report
+      ``marshal_status: unknown``. The warning is emitted on stderr and carried
+      in the return, and no verdict claims a freshness it cannot substantiate.
 
     Multiple plugin-cache version dirs no longer trigger a preflight
     regeneration or any marker write: the executor resolves bundle script paths
@@ -3481,10 +3736,6 @@ def cmd_preflight(args: argparse.Namespace) -> dict:
     a stale version dir left on disk can never shadow the current scripts and
     there is nothing for the preflight to contain. Pruning the superseded dirs is
     the ``marshall-steward`` ``cache_retention sweep``'s union-keep job.
-
-    A fresh install with no manifest resolves ``installed_version`` to the
-    ``unknown`` sentinel, so the verb fails closed and reports
-    ``marshal_status: unknown`` with a warning rather than a vacuous ``fresh``.
 
     Returns:
         A single nine-field TOON dict: ``status``, ``executor_action``
@@ -3540,18 +3791,30 @@ def cmd_preflight(args: argparse.Namespace) -> dict:
     if config_changed_at and _version_tuple(marshal_version) < _version_tuple(config_changed_at):
         marshal_status = 'stale'
 
-    # Fail CLOSED on an unresolvable manifest. read_installed_manifest returned
-    # {} (installed_version is the 'unknown' sentinel), so no version-based
-    # staleness verdict can be substantiated. Never report a vacuous 'fresh' the
-    # verb can neither confirm nor deny: report the dedicated 'unknown' verdict
-    # and emit a legible warning (surfaced both on stderr and in the return).
+    # An unresolvable manifest is not automatically "unknown": when the
+    # marshal-config seed and the executor version ARE readable, their pair is a
+    # measurable drift signal and the verdict is derived from it. Never report a
+    # vacuous 'fresh' AND never report 'unknown' where a fact exists.
     warning = ''
     if installed_version == 'unknown':
-        marshal_status = 'unknown'
-        warning = (
-            'installed dist-manifest.json could not be resolved; version-based '
-            'staleness cannot be determined (marshal_status=unknown)'
-        )
+        probe_paths = installed_manifest_probe_paths(base_path, target=resolved_target)
+        probed = ', '.join(str(path) for path in probe_paths)
+        if marshal_version not in ('', 'unknown') and executor_version not in ('', 'unknown'):
+            # The executor is the artifact a cache advance rewrites; an executor
+            # ahead of the provisioned config seed is the drift the manifest
+            # comparison would otherwise have measured.
+            marshal_status = 'stale' if _version_tuple(marshal_version) < _version_tuple(executor_version) else 'fresh'
+            warning = (
+                'installed dist-manifest.json could not be resolved; marshal_status derived from the '
+                f'readable pair marshal_version={marshal_version}, executor_version={executor_version} '
+                f'(marshal_status={marshal_status}). probed: {probed}'
+            )
+        else:
+            marshal_status = 'unknown'
+            warning = (
+                'installed dist-manifest.json could not be resolved; version-based staleness cannot '
+                f'be determined (marshal_status=unknown). probed: {probed}'
+            )
         print(f'WARNING: {warning}', file=sys.stderr)
 
     return {
@@ -3680,6 +3943,31 @@ def build_parser() -> argparse.ArgumentParser:
     # (absent, invalid, or template-stale executor) raises AttributeError
     # instead of generating.
     bootstrap_parser.set_defaults(func=cmd_bootstrap, dry_run=False)
+
+    # recover subcommand — the direct-path recovery entry an executor's own
+    # failure output names. Finds the newest cache, probes, regenerates,
+    # re-probes. Needs no working executor.
+    recover_parser = subparsers.add_parser(
+        'recover',
+        help='Recover a broken executor from the newest cache: probe, regenerate, re-probe',
+        allow_abbrev=False,
+    )
+    recover_parser.add_argument(
+        '--project-dir',
+        type=Path,
+        default=None,
+        metavar='PATH',
+        help='Checkout whose .plan/execute-script.py is recovered (default: current directory)',
+    )
+    recover_parser.add_argument(
+        '--marketplace-root',
+        type=Path,
+        default=None,
+        metavar='PATH',
+        help='Explicit marketplace anchor directory (must contain marketplace/bundles)',
+    )
+    add_target_argument(recover_parser)
+    recover_parser.set_defaults(func=cmd_recover)
 
     # drift subcommand
     drift_parser = subparsers.add_parser('drift', help='Compare with current bundles state', allow_abbrev=False)

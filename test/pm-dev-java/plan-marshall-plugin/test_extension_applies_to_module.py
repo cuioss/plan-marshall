@@ -2,11 +2,12 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for the pm-dev-java extension's applies_to_module() conditional defaults.
 
-Guards the dependency-driven promotion/demotion of java-cdi and java-lombok
-between a profile's defaults and optionals lists. When a CDI dependency is
-present the java-cdi skill must be promoted from optionals to defaults; when
-absent it must remain (or be demoted back to) optionals. The same conditional
-applies to java-lombok with a Lombok dependency.
+Guards the dependency-driven promotion of java-cdi and java-lombok from optionals
+to defaults. When a CDI dependency is present the java-cdi skill is promoted to
+defaults; when absent, module qualification keeps the CDI-gated optional out of
+the result entirely (the architecture path consults ``qualifies_optional`` the
+way the resolver does), so it is neither a default nor an optional. The same
+conditional applies to java-lombok with a Lombok dependency.
 
 Tier 2 (direct import): loads the bundle extension.py and inspects the
 applies_to_module() return value directly.
@@ -59,8 +60,13 @@ def test_java_cdi_promoted_to_defaults_when_cdi_dep_present():
     assert not _skill_in(impl['optionals'], 'java-cdi')
 
 
-def test_java_cdi_remains_optional_when_cdi_dep_absent():
-    """With no CDI dependency, java-cdi stays optional for implementation (no regression)."""
+def test_java_cdi_is_not_offered_when_cdi_dep_absent():
+    """With no CDI dependency the architecture path never offers java-cdi.
+
+    Module qualification binds this path the way it binds the resolver, so a
+    CDI-gated optional a non-CDI module does not qualify for is not handed to
+    phase-4's description match at all.
+    """
     # Arrange
     extension = _load_extension()
     module_data = _module_data(['org.apache.commons:commons-lang3:3.14.0'])
@@ -70,7 +76,7 @@ def test_java_cdi_remains_optional_when_cdi_dep_absent():
 
     # Assert
     impl = result['skills_by_profile']['implementation']
-    assert _skill_in(impl['optionals'], 'java-cdi')
+    assert not _skill_in(impl['optionals'], 'java-cdi')
     assert not _skill_in(impl['defaults'], 'java-cdi')
 
 
@@ -149,8 +155,12 @@ def test_architecture_path_surfaces_skill_without_an_exclusion():
     assert _skill_in(_all_entries(result), 'java-quarkus')
 
 
-def test_java_lombok_remains_optional_when_lombok_dep_absent():
-    """With no Lombok dependency, java-lombok stays optional (no regression)."""
+def test_java_lombok_is_not_offered_when_lombok_dep_absent():
+    """With no Lombok dependency the architecture path never offers java-lombok.
+
+    Same rule as java-cdi: a ``requires: lombok`` optional is not offered to a
+    module that carries no Lombok signal.
+    """
     # Arrange
     extension = _load_extension()
     module_data = _module_data(['org.apache.commons:commons-lang3:3.14.0'])
@@ -160,7 +170,7 @@ def test_java_lombok_remains_optional_when_lombok_dep_absent():
 
     # Assert
     impl = result['skills_by_profile']['implementation']
-    assert _skill_in(impl['optionals'], 'java-lombok')
+    assert not _skill_in(impl['optionals'], 'java-lombok')
     assert not _skill_in(impl['defaults'], 'java-lombok')
 
 

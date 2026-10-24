@@ -2,9 +2,9 @@
   "id": "PLAN-LB-43",
   "slug": "consumer-leaf-workflow-resolution",
   "workstream": "WS-04",
-  "status": "staged",
-  "plan_marshall_plan_id": "",
-  "pr": "",
-  "landing": "",
+  "status": "shipped",
+  "plan_marshall_plan_id": "lb-43-consumer-leaf-workflow-resolution",
+  "pr": "1851",
+  "landing": "landings/PLAN-LB-43.md",
   "seq": 43
 }

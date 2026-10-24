@@ -33,14 +33,18 @@ name the exact operator commands to run. ``unknown`` is terminal: there is no
 age-based, mtime-based, or otherwise-inferred fallback that downgrades it to a
 guessed ``fresh``/``stale``. The verdict set is exactly these three values.
 
-Every verdict stamps ``compared_against: local_clone_manifest``. This verb has NO
-upstream leg, so a ``fresh`` verdict means "the cache is current with the LOCAL
-marketplace clone", never "current with the actual upstream": a clone that is
-itself behind upstream can still read ``fresh`` here. The field declares that
-scope so ``fresh`` is never mistakable for an upstream-currency claim — fetching
-the git remote belongs to the separately-owned version-resolution surface, not to
-this read-only deterministic emitter. The refusing verdicts' remediation already
-leads the operator through refreshing the clone.
+Every verdict stamps ``compared_against``: a versioned-cache verdict stamps
+``local_clone_manifest``, while a flat install (whose cache version is read from
+the installed ``dist-manifest.json`` itself) stamps ``installed_manifest`` and
+says so in ``warning``. This verb has NO upstream leg, so a ``fresh`` verdict
+means "the cache is current with the LOCAL marketplace clone" (or, on a flat
+install, "the install is internally consistent"), never "current with the actual
+upstream": a clone that is itself behind upstream can still read ``fresh`` here.
+The field declares that scope so ``fresh`` is never mistakable for an upstream-
+currency claim — fetching the git remote belongs to the separately-owned
+version-resolution surface, not to this read-only deterministic emitter. The
+refusing verdicts' remediation already leads the operator through refreshing the
+clone.
 
 Subcommand:
     check  Emit the freshness verdict. ``--cache-root`` optionally overrides the
@@ -82,6 +86,7 @@ from pathlib import Path
 from generate_executor import (
     _version_tuple,
     find_installed_manifest_path,
+    installed_manifest_probe_paths,
     read_installed_manifest,
 )
 from marketplace_bundles import _version_sort_key
@@ -127,7 +132,7 @@ UNKNOWN = 'unknown'
 COMPARED_AGAINST = 'local_clone_manifest'
 
 
-def newest_cache_version(cache_root: Path) -> str:
+def newest_cache_version(cache_root: Path, *, target: str = 'claude') -> str:
     """Return the newest version-dir name under ``cache_root``, or ``''``.
 
     The plugin cache is laid out as ``<cache_root>/<bundle>/<version>/``. Every
@@ -136,8 +141,14 @@ def newest_cache_version(cache_root: Path) -> str:
     ``_version_sort_key`` — the same numeric tuple sort the bundle resolver uses
     — so ``0.1.9`` never shadows ``0.1.10``.
 
+    An unversioned / flat install (Antigravity, OpenCode) has no version dir, so
+    its version comes from the same installed-manifest candidate set the lookup
+    uses — ``installed_manifest_probe_paths``, which honors ``PM_DIST_MANIFEST``
+    and the target-specific locations. One resolver, not a second filename list.
+
     Args:
         cache_root: The plugin-cache root directory.
+        target: The resolved platform target, for the flat-install fallback.
 
     Returns:
         The newest version directory name, or ``''`` when the root carries none.
@@ -157,34 +168,69 @@ def newest_cache_version(cache_root: Path) -> str:
         # Fallback for unversioned / flat target installations (Antigravity, OpenCode)
         import json
 
-        for candidate_dir in (cache_root, cache_root.parent):
-            for fname in ('dist-manifest.json', 'plugin.json', 'opencode.json'):
-                manifest_file = candidate_dir / fname
-                if manifest_file.is_file():
-                    try:
-                        data = json.loads(manifest_file.read_text(encoding='utf-8'))
-                        if isinstance(data, dict) and 'version' in data and data['version']:
-                            return str(data['version'])
-                    except (OSError, ValueError):
-                        pass
+        for manifest_file in installed_manifest_probe_paths(cache_root, target=target):
+            if not manifest_file.is_file():
+                continue
+            try:
+                data = json.loads(manifest_file.read_text(encoding='utf-8'))
+                if isinstance(data, dict) and 'version' in data and data['version']:
+                    return str(data['version'])
+            except (OSError, ValueError):
+                pass
         return ''
     return max(version_dirs, key=_version_sort_key)
 
 
-def _unknown(reason: str, cache_root: Path | None, cache_version: str) -> dict:
-    """Build the ``unknown`` verdict — refusing, never downgraded to a guess."""
+def _unknown(reason: str, cache_root: Path | None, cache_version: str, probed: list[Path] | None = None) -> dict:
+    """Build the ``unknown`` verdict — refusing, never downgraded to a guess.
+
+    ``probed`` names every path the installed-manifest lookup visited. It is
+    appended to the warning so a could-not-look result (a lookup that found
+    nothing where a manifest could live) is distinguishable from a missing
+    install — ADR-019's "state what was probed" rule.
+    """
+    warning = reason
+    if probed:
+        warning = f'{reason}. probed: {", ".join(str(path) for path in probed)}'
     return {
         'status': 'success',
         'freshness': UNKNOWN,
         'refuses_upgrade': True,
         'cache_version': cache_version or UNKNOWN,
         'manifest_version': UNKNOWN,
-        'compared_against': COMPARED_AGAINST,
+        # Keep the label consistent with a flat success verdict for the same root:
+        # both read the installed manifest, so neither claims a clone comparison.
+        'compared_against': (
+            FLAT_COMPARED_AGAINST
+            if cache_root is not None and cache_root.is_dir() and _is_flat_root(cache_root)
+            else COMPARED_AGAINST
+        ),
         'cache_root': str(cache_root) if cache_root is not None else '',
         'manifest_path': '',
         'remediation': REMEDIATION,
-        'warning': reason,
+        'warning': warning,
     }
+
+
+#: The ``compared_against`` value for a flat install, where the cache version and
+#: the manifest version are read from the SAME installed ``dist-manifest.json``.
+#: Named separately so the verdict never claims a clone-manifest comparison it
+#: did not perform (ADR-009).
+FLAT_COMPARED_AGAINST = 'installed_manifest'
+
+
+def _is_flat_root(cache_root: Path) -> bool:
+    """Whether ``cache_root`` deploys the flat (unversioned) shape."""
+    try:
+        for bundle_dir in cache_root.iterdir():
+            if not bundle_dir.is_dir():
+                continue
+            for child in bundle_dir.iterdir():
+                if child.is_dir() and _VERSION_DIR_RE.match(child.name):
+                    return False
+    except OSError:
+        return False
+    return True
 
 
 def check_freshness(cache_root: Path | None) -> dict:
@@ -207,15 +253,6 @@ def check_freshness(cache_root: Path | None) -> dict:
             '',
         )
 
-    cache_version = newest_cache_version(cache_root)
-    if not cache_version:
-        return _unknown(
-            f'no version directory found under the plugin-cache root {cache_root}; '
-            'cache freshness cannot be substantiated',
-            cache_root,
-            '',
-        )
-
     # The active target comes from the shared resolver, so this verb inherits
     # the env tier it never had: on a machine whose only deployment is OpenCode
     # the manifest lookup below addresses that target's published
@@ -223,6 +260,22 @@ def check_freshness(cache_root: Path | None) -> dict:
     # produced the answer is available from the same call; the verdict's own
     # shape is unchanged, so no consumer has to learn a new field to read it.
     target = resolve_target()['target']
+    # One probe list, shared by both refusing branches below: a flat install
+    # with no version marker AND a flat install whose manifest is missing both
+    # name what the lookup visited, so "absent" is distinguishable from
+    # "could not look" (ADR-019).
+    probe_paths = installed_manifest_probe_paths(cache_root, target=target)
+
+    cache_version = newest_cache_version(cache_root, target=target)
+    if not cache_version:
+        return _unknown(
+            f'no version directory found under the plugin-cache root {cache_root}; '
+            'cache freshness cannot be substantiated',
+            cache_root,
+            '',
+            probed=probe_paths,
+        )
+
     manifest_path = find_installed_manifest_path(cache_root, target=target)
     manifest = read_installed_manifest(cache_root, target=target)
     manifest_version = str(manifest.get('version', '') or '')
@@ -231,20 +284,28 @@ def check_freshness(cache_root: Path | None) -> dict:
             'marketplace-clone-root dist-manifest.json could not be resolved; cache freshness cannot be substantiated',
             cache_root,
             cache_version,
+            probed=probe_paths,
         )
 
     is_fresh = _version_tuple(cache_version) >= _version_tuple(manifest_version)
+    flat = _is_flat_root(cache_root)
     return {
         'status': 'success',
         'freshness': FRESH if is_fresh else STALE,
         'refuses_upgrade': not is_fresh,
         'cache_version': cache_version,
         'manifest_version': manifest_version,
-        'compared_against': COMPARED_AGAINST,
+        'compared_against': FLAT_COMPARED_AGAINST if flat else COMPARED_AGAINST,
         'cache_root': str(cache_root),
         'manifest_path': str(manifest_path),
         'remediation': '' if is_fresh else REMEDIATION,
-        'warning': '',
+        'warning': (
+            'flat install: the cache version is read from the installed dist-manifest itself, '
+            'so a fresh verdict states that the install is internally consistent, not that it '
+            'matches a separate clone manifest'
+            if flat
+            else ''
+        ),
     }
 
 
