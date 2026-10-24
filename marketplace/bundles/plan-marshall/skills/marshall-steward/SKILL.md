@@ -995,6 +995,21 @@ python3 .plan/execute-script.py plan-marshall:marshall-steward:bootstrap_plugin 
 python3 .plan/execute-script.py plan-marshall:marshall-steward:gitignore_setup [--project-root PROJECT_ROOT] [--dry-run]
 ```
 
+### recover — broken executor
+
+The executor's failure output prints the exact command; run it verbatim. It names
+the newest cache's script by absolute path, which is what works when
+`.plan/execute-script.py` cannot start:
+
+`python3 {newest_cache}/skills/tools-script-executor/scripts/generate_executor.py recover --project-dir . --target <active-target>`
+
+Once a working executor exists, `plan-marshall:tools-script-executor:generate_executor recover`
+is the same verb through the executor (from a meta-project checkout, use the
+repository-relative direct path in `tools-script-executor` § Recovery). It finds
+the newest installed cache, probes, regenerates, and re-probes.
+`references/upgrade-flow.md` Step 0 calls it first; `upgrade plan`'s
+`--bootstrap` path is the in-place stale rewrite, not this recovery.
+
 ### upgrade — plan
 
 ```bash

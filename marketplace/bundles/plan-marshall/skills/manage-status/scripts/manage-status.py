@@ -26,7 +26,7 @@ Usage:
     python3 .plan/execute-script.py plan-marshall:manage-status:manage-status get-routing-context --plan-id EXAMPLE-PLAN
     python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done --plan-id EXAMPLE-PLAN --phase 5-execute --step discovery --outcome done
     python3 .plan/execute-script.py plan-marshall:manage-status:manage-status assert-step-recorded --plan-id EXAMPLE-PLAN --phase 6-finalize --step ci-verify --require-terminal
-    python3 .plan/execute-script.py plan-marshall:manage-status:manage-status merge-authorization grant --plan-id EXAMPLE-PLAN --kind barrier-ask-override --head 76c7200b6 --gap-class review-barrier-gap --granted-over "2 unhandled, unproven_bots=cuioss-review-bot" --reason "operator accepted the gap"
+    python3 .plan/execute-script.py plan-marshall:manage-status:manage-status merge-authorization grant --plan-id EXAMPLE-PLAN --kind barrier-ask-override --head 76c7200b6 --gap-class review-barrier-gap --granted-over "2 unhandled, unproven_bots=cuioss-review-bot" --reason "operator accepted the gap" --operator-answer "Merge anyway (record reason)" --override-label "Merge anyway (record reason)"
     python3 .plan/execute-script.py plan-marshall:manage-status:manage-status merge-authorization check --plan-id EXAMPLE-PLAN --head 76c7200b6 --gap-class review-barrier-gap
     python3 .plan/execute-script.py plan-marshall:manage-status:manage-status halt record --plan-id EXAMPLE-PLAN --phase 6-finalize --step create-pr --outcome failed --reason "post-dispatch guard: no terminal record"
     python3 .plan/execute-script.py plan-marshall:manage-status:manage-status halt record --plan-id EXAMPLE-PLAN --phase 6-finalize --step automatic-review --outcome halted --escalate-ask --option "Wait another 600s" --option "Defer merge" --reason "escalate_ask{reason: re_review_timeout}"
@@ -658,6 +658,25 @@ def main() -> int:
     )
     merge_authorization_grant_parser.add_argument(
         '--reason', required=True, help="The operator's (or policy's) stated reason."
+    )
+    merge_authorization_grant_parser.add_argument(
+        '--operator-answer',
+        dest='operator_answer',
+        default=None,
+        help=(
+            "The operator's answer VERBATIM, as the question offered it. Supplying it makes "
+            'the grant refuse unless the answer is the override option, so free text is never '
+            'minted into an authorization.'
+        ),
+    )
+    merge_authorization_grant_parser.add_argument(
+        '--override-label',
+        dest='override_label',
+        default=None,
+        help=(
+            'The override option label the operator was offered. Required whenever '
+            '--operator-answer is supplied; compared after whitespace/case normalisation.'
+        ),
     )
     merge_authorization_grant_parser.set_defaults(func=cmd_merge_authorization_grant)
 

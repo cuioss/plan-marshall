@@ -146,6 +146,12 @@ from triage_helpers import (
 # CONFIGURATION
 # ============================================================================
 
+#: A network push gets its own, larger bound: ``_DEFAULT_TIMEOUT_SECONDS`` is the floor
+#: for short LOCAL git calls, and a push over a slow network (or one that runs pre-push
+#: hooks) can exceed it. A timed-out push also leaves the remote's state unknown, which
+#: a 60-second floor would report as an ordinary failure.
+_PUSH_TIMEOUT_SECONDS = 300
+
 _COMMIT_CONFIG = load_skill_config(__file__, 'git-commit-config.json')
 VALID_TYPES: list[str] = _COMMIT_CONFIG['valid_types']
 _IMPERATIVE_ALLOWLIST: set[str] = set(_COMMIT_CONFIG.get('imperative_allowlist', []))
@@ -741,7 +747,7 @@ def _source_gate_finding_texts(plan_dir: Path | None) -> tuple[list[str], int]:
     return texts, len(texts)
 
 
-def _run_git_nul_verbatim(args: list[str]) -> tuple[int, str, str]:
+def _run_git_nul_verbatim(args: list[str], timeout: int | None = None) -> tuple[int, str, str]:
     """Run ``git <args>`` preserving NUL-separated path spellings verbatim.
 
     Mirrors :func:`git_provider.run_git` except stdout is NOT stripped:
@@ -758,13 +764,13 @@ def _run_git_nul_verbatim(args: list[str]) -> tuple[int, str, str]:
             capture_output=True,
             encoding='utf-8',
             errors='surrogateescape',
-            timeout=_DEFAULT_TIMEOUT_SECONDS,
+            timeout=_DEFAULT_TIMEOUT_SECONDS if timeout is None else timeout,
             check=False,
         )
     except FileNotFoundError:
         return 127, '', 'git executable not found on PATH'
     except subprocess.TimeoutExpired:
-        return 124, '', f'git timed out after {_DEFAULT_TIMEOUT_SECONDS} seconds'
+        return 124, '', f'git timed out after {_DEFAULT_TIMEOUT_SECONDS if timeout is None else timeout} seconds'
     return completed.returncode, completed.stdout, completed.stderr.strip()
 
 
@@ -931,6 +937,66 @@ def _plan_phase_6_steps(plan_dir: Path | None) -> frozenset[str]:
     return frozenset(str(step) for step in steps if isinstance(step, str) and step)
 
 
+def cmd_push(args):
+    """Push the current branch through the pre-push gate-head barrier.
+
+    The finalize push step needs a push with NO commit when the settled tree is
+    already clean (the commit was made by the settle step that preceded it). A bare
+    ``git push`` there bypassed the gate-head barrier entirely — the gate validated
+    one tree and that push could ship another. This verb is the gated form: it reads
+    the HEAD being pushed, consults the plan's ``pre-push-quality-gate`` record and
+    refuses a mismatch before any ref moves. A plan with no record (an early phase,
+    a plan that never ran finalize) is not blocked: nothing was validated, so there
+    is nothing to compare.
+    """
+    worktree, err = _resolve_analyze_diff_path(args)
+    if err is not None:
+        return err
+    assert worktree is not None  # narrowing
+
+    plan_id = getattr(args, 'plan_id', None) or _plan_id_from_worktree_path(worktree)
+    rc, head, head_err = _run_git_nul_verbatim(['-C', str(worktree), 'rev-parse', 'HEAD'])
+    current_head = head.strip() if rc == 0 else ''
+    if not current_head:
+        # An unreadable HEAD cannot be compared against the gate record, and a push
+        # that skips the comparison is exactly what this verb exists to prevent.
+        return make_error(f'git rev-parse HEAD failed: {head_err or f"exit {rc}"}', code=ErrorCode.FETCH_FAILURE)
+
+    from _push_gate import head_gate_refusal
+
+    gate_refusal = head_gate_refusal(plan_id or '', current_head)
+    if gate_refusal is not None:
+        gate_refusal.update({'operation': 'push', 'worktree': str(worktree)})
+        return gate_refusal
+
+    # Push the SHA just validated, to an explicit refspec: a HEAD that advances between
+    # the gate read and the push cannot ship an unvalidated commit, and no
+    # ``remote.origin.push`` configuration can redirect the push to another branch.
+    branch_rc, branch_out, _branch_err = _run_git_nul_verbatim(
+        ['-C', str(worktree), 'symbolic-ref', '--short', '--quiet', 'HEAD']
+    )
+    branch = branch_out.strip() if branch_rc == 0 else ''
+    if not branch:
+        return make_error(
+            'cannot push a detached HEAD: the validated commit has no branch to ship to',
+            code=ErrorCode.INVALID_INPUT,
+        )
+    rc, _out, push_err = _run_git_nul_verbatim(
+        ['-C', str(worktree), 'push', 'origin', f'{current_head}:refs/heads/{branch}'],
+        timeout=_PUSH_TIMEOUT_SECONDS,
+    )
+    if rc != 0:
+        return make_error(f'git push failed: {push_err or f"exit {rc}"}', code=ErrorCode.FETCH_FAILURE)
+    return {
+        'status': 'success',
+        'operation': 'push',
+        'plan_id': plan_id,
+        'worktree': str(worktree),
+        'head': current_head,
+        'pushed': True,
+    }
+
+
 def cmd_commit(args):
     """Handle the commit subcommand — the single gate-bearing commit path.
 
@@ -1001,7 +1067,34 @@ def cmd_commit(args):
 
     pushed = False
     if getattr(args, 'push', False):
-        rc, _out, push_err = _run_git_nul_verbatim(['-C', str(worktree), 'push'])
+        if not commit_hash:
+            return make_error(
+                'cannot push: the new commit SHA could not be read',
+                code=ErrorCode.FETCH_FAILURE,
+            )
+        # The push ships exactly the HEAD this commit created. When the plan's
+        # pre-push gate recorded a DIFFERENT head, that gate never saw this tree —
+        # refuse before the ref moves (see `_push_gate`).
+        if commit_hash:
+            from _push_gate import head_gate_refusal
+
+            gate_refusal = head_gate_refusal(plan_id or _plan_id_from_worktree_path(worktree) or '', commit_hash)
+            if gate_refusal is not None:
+                gate_refusal['commit_hash'] = commit_hash
+                return gate_refusal
+        branch_rc, branch_out, _branch_err = _run_git_nul_verbatim(
+            ['-C', str(worktree), 'symbolic-ref', '--short', '--quiet', 'HEAD']
+        )
+        branch = branch_out.strip() if branch_rc == 0 else ''
+        if not branch:
+            return make_error(
+                'cannot push a detached HEAD: the committed change has no branch to ship to',
+                code=ErrorCode.INVALID_INPUT,
+            )
+        rc, _out, push_err = _run_git_nul_verbatim(
+            ['-C', str(worktree), 'push', 'origin', f'{commit_hash}:refs/heads/{branch}'],
+            timeout=_PUSH_TIMEOUT_SECONDS,
+        )
         if rc != 0:
             return make_error(f'git push failed: {push_err or f"exit {rc}"}', code=ErrorCode.FETCH_FAILURE)
         pushed = True
@@ -3627,6 +3720,26 @@ Examples:
                         'flags': ['--changed-paths'],
                         'dest': 'changed_paths',
                         'help': 'Comma-separated changed paths (default: derived from git diff --name-only HEAD)',
+                    },
+                ],
+            },
+            {
+                'name': 'push',
+                'help': 'Push the current branch through the pre-push gate-head barrier',
+                'handler': cmd_push,
+                'args': [
+                    {
+                        'flags': ['--plan-id'],
+                        'dest': 'plan_id',
+                        'help': (
+                            'Plan identifier — resolves the working tree and the gate-head record '
+                            '(derived from the working tree when omitted)'
+                        ),
+                    },
+                    {
+                        'flags': ['--project-dir'],
+                        'dest': 'project_dir',
+                        'help': 'Explicit working tree path (escape hatch when plan-id is unavailable)',
                     },
                 ],
             },

@@ -1822,3 +1822,45 @@ def test_bootstrap_generate_anchors_discovery_via_env(tmp_path: Path, monkeypatc
     assert seen['argv'] == ['python3', str(generator), 'generate']
     assert seen['env_anchor'] == str(anchor)
     assert seen['cwd'] == str(project)
+
+
+def test_import_failure_warning_survives_a_post_regeneration_split(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """An import failure combined with a version split reports BOTH warnings.
+
+    The import failure is why the recovery ran; the split is what the recovery
+    could not close. Overwriting the first with the second would hide the cause.
+    """
+    cache = _fixture_cache(tmp_path, ['0.1.10'])
+    clone = tmp_path / 'clone'
+    _fixture_meta_generator(clone)
+    executor = _fixture_import_failing_executor(clone, '0.1.10', 'fixture_missing_module')
+
+    def _split_fake(generator: Path, anchor: Path, project_dir: Path) -> tuple[int, str, str]:
+        executor.write_text("MARSHALL_VERSION = '0.1.9'\n", encoding='utf-8')
+        return 0, 'status: success', ''
+
+    monkeypatch.chdir(clone)
+    report = upgrade.bootstrap_executor(
+        project_kind='meta', cache_root=cache, executor_path=executor, _run_generate=_split_fake
+    )
+
+    assert report['action'] == 'regenerated'
+    assert 'fails to import' in report['warning']
+    assert 'version split' in report['warning']
+
+
+def test_probe_ignores_the_parent_pythonpath(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """The probe observes the on-disk executor, not the parent's injected path.
+
+    A probe started from a working executor inherits the ``PYTHONPATH`` that
+    executor hands its scripts. If the probe kept it, a module the on-disk
+    executor cannot find would import successfully and mask the failure.
+    """
+    project = tmp_path / 'project'
+    executor = _fixture_import_failing_executor(project, '0.1.10', 'fixture_probe_module')
+    fake_lib = tmp_path / 'lib'
+    fake_lib.mkdir()
+    (fake_lib / 'fixture_probe_module.py').write_text('VALUE = 1\n', encoding='utf-8')
+    monkeypatch.setenv('PYTHONPATH', str(fake_lib))
+
+    assert upgrade._probe_executor_import(executor) != ''

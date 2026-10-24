@@ -144,6 +144,7 @@ reported as ``error_type: concurrent_modification`` at exit 0.
 from __future__ import annotations
 
 import argparse
+import os
 import re
 from pathlib import Path
 
@@ -730,7 +731,6 @@ def _run_bootstrap_generate(generator: Path, anchor: Path, project_dir: Path) ->
     DISCOVERY (see the section header). Returns
     ``(returncode, stdout, stderr)``.
     """
-    import os
     import subprocess
 
     env = dict(os.environ)
@@ -751,64 +751,20 @@ def _run_bootstrap_generate(generator: Path, anchor: Path, project_dir: Path) ->
     return result.returncode, result.stdout, result.stderr
 
 
-#: Import-failure markers in a probe's stderr: the Python import-error phrases
-#: and the executor's own bootstrap-guard prefix
-#: (``execute-script.py cannot start:``), which prints instead of a traceback
-#: when the failed import coincides with an unresolved bootstrap directory. The
-#: guard prefix is EXACT, not the bare ``cannot start:``: a generic substring
-#: would classify any unrelated stderr carrying those words as an import failure
-#: and rewrite the executor unconsented. ``ImportError`` covers the whole family —
-#: ``ModuleNotFoundError`` and every other subclass — and a subprocess probe
-#: wraps argparse errors in none of them, so no non-import failure is
-#: misclassified. The boundary is deliberate: only an IMPORT error (or the
-#: executor's guard form of one) is a recovery trigger. A module-level
-#: NON-import failure — a syntax error, or a direct ``SystemExit`` — carries
-#: none of these markers, so it stays inconclusive and is reported under the
-#: consent gate instead of forcing an ungated rewrite.
-_IMPORT_FAILURE_MARKERS = (
-    'ModuleNotFoundError',
-    'ImportError',
-    'No module named',
-    'execute-script.py cannot start:',
-)
-
-#: Timeout for the read-only executor import probe.
-_BOOTSTRAP_PROBE_TIMEOUT_SECONDS = 30
-
-
+#: The import-failure markers and the probe live in ONE place — the generator's
+#: ``_RECOVERY_IMPORT_MARKERS`` / ``_probe_executor_import`` — so ``recover`` and
+#: ``upgrade plan`` cannot disagree on whether an executor is broken. The wrapper
+#: below exists only to keep this module's callable seam monkeypatchable.
 def _probe_executor_import(executor_path: Path) -> str:
-    """Probe the serving executor's module-level imports. Never raises.
+    """Probe the serving executor via the generator's single definition.
 
-    Runs ``python3 <executor> --list`` — the executor's cheapest read-only entry
-    point: it exercises the module-level bootstrap import block (every import
-    the executor needs to start) and exits before any notation resolution or
-    dispatch, so a broken import is observed without running any verb. Returns a
-    short reason when the probe observed an IMPORT failure, and ``''`` for a
-    healthy executor, a missing file, or any other failure — a non-import
-    nonzero exit is NOT an import failure, and an inconclusive probe never
-    triggers a recovery.
+    Delegates to :func:`generate_executor._probe_executor_import`, which runs
+    ``<executor> --list`` with ``PYTHONPATH`` removed (a fresh-shell environment).
+    Returns a short reason on an observed import failure, ``''`` otherwise.
     """
-    import subprocess
+    from generate_executor import _probe_executor_import as _probe
 
-    if not executor_path.is_file():
-        return ''
-    try:
-        result = subprocess.run(
-            ['python3', str(executor_path), '--list'],
-            cwd=str(executor_path.parent.parent),
-            capture_output=True,
-            text=True,
-            timeout=_BOOTSTRAP_PROBE_TIMEOUT_SECONDS,
-        )
-    except (OSError, subprocess.TimeoutExpired, UnicodeDecodeError):
-        return ''
-    if result.returncode == 0:
-        return ''
-    stderr = result.stderr or ''
-    if not any(marker in stderr for marker in _IMPORT_FAILURE_MARKERS):
-        return ''
-    lines = [line.strip() for line in stderr.splitlines() if line.strip()]
-    return (lines[-1] if lines else 'import failure')[:200]
+    return _probe(executor_path)
 
 
 # A plugin-cache version directory name (``.../plan-marshall/0.1.1916/…``).
@@ -1152,9 +1108,14 @@ def bootstrap_executor(
         action = 'regenerated'
 
     if action == 'regenerated' and executor_version and executor_version != newest:
-        warning = (
+        # JOIN, never replace: an import-failure warning set earlier in this
+        # function is a distinct fact from the post-regeneration version split,
+        # and overwriting it would hide why the recovery happened at all. Both
+        # are reported.
+        warning = _join_warnings(
+            warning,
             f'skill/planner version split: planner at {executor_version} does not match the '
-            f'newest cache at {newest} after regeneration. {_VERSION_SPLIT_REMEDY}'
+            f'newest cache at {newest} after regeneration. {_VERSION_SPLIT_REMEDY}',
         )
     return {
         'status': 'success',

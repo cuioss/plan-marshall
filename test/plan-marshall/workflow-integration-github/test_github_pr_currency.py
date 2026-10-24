@@ -1271,8 +1271,8 @@ def test_the_contract_records_the_currency_blind_gap_rather_than_leaving_it_infe
     assert '`participation_requires_update: false`' in _CONTRACT_TEXT
     # The retired universal claim is gone — this is the sentence whose reach was wrong.
     assert 'This one rule governs' not in _CONTRACT_TEXT
-    # A bounded gap owes all three: why it is accepted, what bounds it, when it reopens.
-    assert 'Why the gap is accepted' in _CONTRACT_TEXT
+    # A bounded gap owes all three: what is enforced, what bounds it, when it reopens.
+    assert 'The refusal path IS enforced.' in _CONTRACT_TEXT
     assert 'What bounds it' in _CONTRACT_TEXT
     assert 'When it is revisited' in _CONTRACT_TEXT
 
@@ -1939,9 +1939,9 @@ def test_the_bots_the_disclosure_can_name_are_derived_from_the_registry():
 
 
 def test_the_contract_says_what_is_disclosed_and_what_is_still_not_tested():
-    """The rewritten section states the disclosure, that it is not enforced, and its limits."""
+    """The rewritten section states the disclosure, what is enforced, and its limits."""
     assert '**What is disclosed.**' in _CONTRACT_TEXT
-    assert '**The disclosure is not enforced.**' in _CONTRACT_TEXT
+    assert '**The disclosure is not enforced by itself — the REFUSAL path is.**' in _CONTRACT_TEXT
     assert '**What is still not tested.**' in _CONTRACT_TEXT
     assert '`reviewed_other_commit_bots[]`' in _CONTRACT_TEXT
 
@@ -2173,3 +2173,75 @@ def test_a_well_formed_newer_timestamp_does_displace_an_older_review():
     assert github_pr._reviews_at_another_commit([later, older, newest], [bot_kind], _HEAD_C) == [
         {'bot_kind': bot_kind, 'review_id': 'review-malformed', 'review_commit_sha': _HEAD_A}
     ]
+
+
+# =============================================================================
+# PLAN-LB-55 D3 — a refusal on the merge candidate outranks participation
+# evidence that cannot be placed at that candidate.
+#
+# The disclosure above names a review at another commit. Naming it is not enough:
+# the bot was still CREDITED, so a required bot that reviewed an older head and
+# then refused the merge candidate resolved ``participated`` — the false green this
+# deliverable closes. When a refusal is observed, credited evidence keeps its
+# credit only when the provider's reported ``commit_id`` places it at the candidate
+# (a review artifact), or — for the persistent comment a re-reviewer edits in place —
+# when the currency ledger places it there.
+# =============================================================================
+
+
+@pytest.mark.parametrize('bot_kind', _DISCLOSABLE_BOTS)
+def test_an_older_review_beside_a_quota_refusal_is_refused_not_participated(bot_kind, plan_context, monkeypatch):
+    """The PLAN-LB-26 shape: older-head review + current-head refusal resolves refused."""
+    result = _fetch_reviews(
+        monkeypatch,
+        f'gh-pr-lb55-older-review-refusal-{bot_kind}',
+        [
+            _review_at(bot_kind, 'review-1', _HEAD_A, created_at=_at(1)),
+            _evidence_comment(
+                bot_kind,
+                _REVIEW_BODY,
+                'refusal-1',
+                _RATE_LIMIT_NOTICES.get(bot_kind, _RATE_LIMIT_NOTICES['unknown']),
+                created_at=_at(2),
+                updated_at=_at(2),
+            ),
+        ],
+        head_sha=_HEAD_B,
+    )
+
+    assert result['participated_bots'] == [], (
+        f'{bot_kind} must not be credited for a review that does not cover the merge candidate'
+    )
+    assert bot_kind in result['refused_bots']
+
+
+def test_a_coderabbit_inline_only_credit_beside_a_quota_refusal_is_not_participation(plan_context, monkeypatch):
+    """Inline comments report no commit, so they cannot prove coverage of the candidate."""
+    plan_id = 'gh-pr-lb55-inline-only-refusal'
+    inline = {
+        'id': 'inline-1',
+        'author': 'coderabbitai',
+        'thread_id': 'PRRT_inline',
+        'kind': 'inline',
+        'body': 'This slice drops the final element; use len(items).',
+        'path': 'src/a.py',
+        'line': 4,
+        'resolved': False,
+        'created_at': _at(1),
+        'updated_at': _at(1),
+        'commit_id': '',
+    }
+    refusal = _evidence_comment(
+        'coderabbit',
+        'issue_comment',
+        'refusal-1',
+        _RATE_LIMIT_NOTICES['coderabbit'],
+        created_at=_at(2),
+        updated_at=_at(2),
+    )
+    _patch_provider(monkeypatch, [inline, refusal], head_sha=_HEAD_B)
+
+    result = _run_fetch(193, plan_id)
+
+    assert result['participated_bots'] == [], 'a commit-less inline comment proves no review of the candidate'
+    assert 'coderabbit' in result['refused_bots']

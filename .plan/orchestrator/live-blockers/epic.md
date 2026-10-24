@@ -199,6 +199,27 @@ derive, for rows still live.
   operator's cleanup; main is now clean (`git status --porcelain` empty on 2026-10-24). The residual finding is the guard
   scope gap already recorded on the Watch, not the file.
 
+- **PLAN-LB-80** (shipped #1854, 2026-10-24, runbook lane, `deepseek-v4.1-flash/high`) — grade B; see
+  `landings/PLAN-LB-80.md`. D1-D4 delivered: the repository's skill veto fails closed on an unreadable `marshal.json`, narrows
+  by bundle exactly and reaches every read seam. Five files outside the declared surface, all disclosed. The run took its own
+  Sonar reads (count 0) and re-read the lane text after both restarts; it never loaded the declared persona or domain skills,
+  and reports one restart where the store shows two. Residue accepted under the focus rule. Fix-forward: none.
+
+- **PLAN-LB-43** (shipped #1851, 2026-10-24, runbook lane, `deepseek-v4.1-flash/high`) — grade B−; see
+  `landings/PLAN-LB-43.md`. D1-D5 delivered (workflow-notation verb, Step 4, executor recovery, OpenCode freshness verdict,
+  foreign-target refusal). The best restart conduct so far (lane text re-read after each of three restarts) beside the worst
+  disclosure of main-checkout writes: twelve tracked-file edits, production code included, in the first 25 minutes. Fix-forward: none.
+
+- **PLAN-LB-55 (running, interim report 2026-10-24).** The run sent a landing message while PR #1856 is OPEN and unmerged
+  (`merge_state=open`, `cleanup_owed=true`): it stopped before the merge because the last head `3ead15d99` is unreviewed
+  (CodeRabbit quota; next allowed trigger 15:28Z) and it reports threads that `ci pr resolve-thread` marks resolved while the
+  comments listing still shows them open (a lead, not re-run). By its own count D1 is partial (bullets 3 and 4: armed
+  auto-merge not bound to its head; the participation check inside `pre_merge_gate merge`) and D4 is not met (five of seven
+  clauses: roster read error, stale-bot trigger-before-ask, generated option set, `merge_lock` quota recovery, the
+  merged-under-authorization record). The session was still working at 16:21Z after an operator message at 16:13Z. The row
+  stays `running`; a final landing will follow as a second message. If the final landing keeps those gaps, they are a
+  fix-forward plan: they are the gate-truth half of the epic.
+
 - **Parked by the focus rule (2026-10-23, operator-accepted split):** PLAN-LB-87 (token recording), LB-84, LB-69, LB-89,
   LB-83, LB-75, LB-41, LB-46, LB-51, LB-57. They stay in the corpus and resume on the surface they declare. Blocking set kept
   staged: LB-55, LB-58, LB-53, LB-44, LB-43, LB-80, LB-82, plus the two staged on 2026-10-23: **PLAN-LB-90** (WS-04, runbook,
@@ -871,6 +892,13 @@ derive, for rows still live.
 
 ## Open Defects
 
+- **The `test-compile` freshness backstop fails green builds on a fast runner (PLAN-LB-43 landing, 2026-10-24; medium; not
+  staged).** `build.py` L540-580 fails `verify` closed when mypy exits 0 faster than a plausibility bound (here 1801 files in
+  8.2 s, 205-220 files/s against a 200 files/s limit). It failed `verify / verify` three times on PR #1851 (twice on the PR
+  head, once in the first merge-group run) and passed on re-run each time, with mypy reporting no issues; it cost operator
+  questions and re-queue time. The bound is a heuristic against a stale-cache false-clean; CI runs cold, so the false-clean
+  risk it guards does not apply there. Decision for the operator: stage a fix (a CI-aware bound, or a retry-once) or accept
+  the reruns.
 - **RETIRED 2026-10-23: the PLAN-LB-88 landing carries `open_issue_count=0` from five reads the run took itself
   (`landings/PLAN-LB-88.md`).** **The Sonar read the lane now requires has never been taken on a real pull request (PLAN-LB-85 landing,
   2026-10-23; high; owner: the next runbook run, and an operator step).** `lb-85-lane-sonar-issues` shipped the
@@ -1702,16 +1730,33 @@ entries below are OpenCode 1 assumptions in plan-marshall that OpenCode 2 broke.
 
 ## Watches
 
+- **Runs write tracked files into the MAIN checkout before they switch to their worktree (2026-10-24).** From the session
+  store: PLAN-LB-43 made 12 edits (8 to `extension_api.py`, 2 to `extension-api/SKILL.md`, the new test) at 15:35-15:38Z on the
+  first day; PLAN-LB-55 edited a tracked test file twice and created an untracked draft at 08:34Z; PLAN-LB-85 edited `sonar.py` 14
+  times at 15:21Z (see its landing). Three of the six runs audited against the store (LB-85, LB-88, LB-86, LB-80, LB-43, LB-55; LB-88, LB-86 and LB-80 had none). Each landing discloses at most the untracked draft; the
+  operator had to clear the main checkout by hand each time, and a `uv.lock` drift travelled with them. The guard does not
+  refuse an Edit/Write tool call by path. Retire when two consecutive runs touch nothing outside their worktree; the candidate
+  fix is a path rule for the edit tools in the guard, which the operator has not asked for.
 - **PLAN-LB-88's last head carries unreviewed new logic in the guard (2026-10-23).** `c5a041315` fixes two MAJOR CodeRabbit
   findings (attached redirection operators bypassed the floor and R2) by changing both tokenizers; CodeRabbit refused the
   re-trigger on quota and the PR merged under the standing authorization. CI and the run's own rows cover it; no reviewer
   read it. By the 2026-10-23 rulings the next such case is retried and put to the operator if the quota blocks it. Retire
   when a later review of `main` covers the tokenizer change, or when the next guard change is reviewed.
+  **Second instance (PLAN-LB-80, 2026-10-24):** `5ad090512` fixed a CodeRabbit major finding (the flattening sweep applied one
+  domain's owner to another domain's bare skill) by changing resolver logic; the re-trigger was refused on quota and the PR
+  merged on the standing authorization without a question. The run followed the lane text as merged (`runbook-lane/SKILL.md`
+  § 7, standing authorization conditions 1-4: a qualifying review, every finding handled, one re-trigger after the last push
+  with the refusal recorded, every other gate green), which has no ask step. The 2026-10-23 ruling says both "keep it as it is"
+  and "the plan should try to re-review but ask me if it is not working (quota)"; the lane text implements the first and not
+  the second. Open point for the operator: does the ask apply when the last head changed logic after the qualifying review, or
+  to every refused re-trigger? Two instances in two days (LB-88, LB-80), both CI-green with the fix covered by mutation records.
 - **Model comparison round (operator, 2026-10-19).** The next four runs after the four in flight
   stay on `deepseek-v4.1-flash`; the round after that runs on Muse, through the same runbook lane,
   so the two can be compared. DeepSeek so far under the runbook lane: LB-61 C+, LB-66 F, LB-67 C,
   LB-71 C−, LB-72 B−, LB-70 F, LB-59 C, LB-74 C, LB-68 C−, LB-76 C+, LB-45 C−, LB-77 B−, LB-48 B−, LB-81 C+, LB-78 B−, LB-79 C+ ($1.76, 5 sessions, 19 h 40 min, `deepseek-v4.1-flash/high` throughout, no switch; code
-  graded on its work, report graded down for the undisclosed shell and clone conduct), LB-86 B− (5 sessions, 18 h, `deepseek-v4.1-flash/high`; guard attribution exact,
+  graded on its work, report graded down for the undisclosed shell and clone conduct), LB-43 B− (2 sessions in the store, 25 h, `deepseek-v4.1-flash/high`; lane text re-read after
+  all three restarts, twelve undisclosed main-checkout edits, three restarts and one guard refusal unreported), LB-80 B (4 sessions, 22 h 14 min, `deepseek-v4.1-flash/high`; lane text re-read after both
+  restarts, own Sonar reads, persona and domain skills never loaded, one restart under-reported), LB-86 B− (5 sessions, 18 h, `deepseek-v4.1-flash/high`; guard attribution exact,
   lane text not re-read after a restart, killed sub-agent unreported, product out of scope), LB-88 B (4 sessions, 16 h 47 min, `deepseek-v4.1-flash/high`
   throughout; all four deliverables, guard attribution exact, lane text not re-read after a restart, last head unreviewed
   new logic), LB-85 B ($1.00, 4 sessions, 8 h 37 min,
@@ -1786,6 +1831,17 @@ entries below are OpenCode 1 assumptions in plan-marshall that OpenCode 2 broke.
   resumed), at the cost of an operator question each time. — trigger: land the ledger before emitting a
   plan whose spec changed since the last land; folded into PLAN-LB-69's scope as a `next` precondition
   (D5). Retire when PLAN-LB-69 lands or the precondition is decided.
+  **Recurrence 1 (PLAN-LB-53 and PLAN-LB-55, 2026-10-24) — the trigger fired and was not honoured.** Both
+  specs were adapted in the ledger worktree (preamble + embedded hand-off command rewritten to
+  `/plan-marshall-runbook-lane`) and emitted from there, but the ledger was landed only *after* both runs
+  started. `main`'s copy of each spec still carried the pre-adaptation text at start time (`git log` on the
+  spec shows the previous land, #1786, then this one, #1855), so the two runs most likely read the stale
+  copy. The adaptation is cosmetic — preamble prose and the hand-off block; Objective, Deliverables,
+  Done-whens, Claim Labels and Expected Surface are byte-identical — so the brief is unaffected; the
+  hypothesis to confirm at each landing is whether the run recorded the plan-marshall lane or the lifecycle
+  from the stale copy. **Verify-at-landing:** read each run's progress file for the lane/hand-off it
+  recorded. The precondition itself is to land the ledger *before* emitting a plan whose spec changed —
+  this is the second occurrence and the precondition is still unimplemented.
 - **Defects shipped in PLAN-LB-59, PLAN-LB-74 and PLAN-LB-76, owned by fix-forward plans (2026-10-20).**
   PLAN-LB-59: the exclusion did not bind the architecture path, the `--module` call was documentation
   only, an extension without the hook admitted every optional, and the tests could not fail for their stated

@@ -1400,6 +1400,8 @@ FOR each step_id in manifest.phase_6.steps:
 
       **Post-PR re-push**: when a `mutates_source: true` step that runs AFTER `push` and BEFORE the merge gate commits via this instrumentation, the dispatcher re-invokes the `push` step so the PR HEAD advances (and, for review-bearing steps, re-review fires) inside the normal settle band instead of at the merge gate. The two wait-region producers (`plan-marshall:automatic-review`, `sonar-roundtrip`) are FIND-only and leave no edit for this instrumentation to commit: a fix the unified triage decides is committed by phase-5-execute when it is a fix task, and by the item 7c hook when it is an inline edit, and that hook re-invokes `push` the same way. A step ordered between `push` and `create-pr` is covered the same way: its re-push lands before the PR exists, and `create-pr` opens the PR on the advanced HEAD. The `push` step is a pure barrier (it carries no commit logic and is not head-dependent); the dispatcher re-invokes it explicitly here rather than relying on a HEAD-comparison re-fire. This explicit re-invocation is the **fast path**; the item-1 `branch-sync-state` parity check is the **structural backstop** — even if this re-invocation is missed (crash, session loss), the next re-entry observes `state: ahead` and re-fires the push rather than trusting the stale `done` record. Read-only (`mutates_source: false`) steps never reach item 5f's instrumentation and never trigger a re-push.
 
+      ⚠ **The re-invoked push refuses when the commit it just made invalidated the pre-push gate.** `pre-push-quality-gate` sorts LAST in the settle band, so a `mutates_source` step that commits after it advances HEAD past the gate's `head_at_completion`; the gated `push` verb then answers `head_not_validated_by_gate`. That refusal is the barrier working, not a broken fast path: treat it exactly as the rebase path does — record the `push` step's loop-back to `6-finalize`, let the re-entry table re-fire `pre-push-quality-gate` on the newer tree, and push on the next pass. Never retry the push and never fall back to a bare `git push`.
+
   6. Capture archive result (only when step_id == "archive-plan"):
      Record the returned `archive_path` into model context alongside the pre-archive snapshot — it is consumed by Step 4 (Render Final Output Template).
 
@@ -1609,29 +1611,13 @@ FOR each step_id in manifest.phase_6.steps:
             python3 .plan/execute-script.py plan-marshall:manage-status:manage-status merge-authorization grant \
               --plan-id {plan_id} --kind barrier-ask-override --head {sha} --gap-class review-barrier-gap \
               --granted-over "refused_structural={bot_kind}, cap={cap}, measured_diff_size={measured_diff_size}" \
-              --reason "{reason}"
+              --reason "{reason}" \
+              --operator-answer "Accept the coverage gap (record reason)" \
+              --override-label "Accept the coverage gap (record reason)"
             ```
 
             ⚠ The grant is HEAD-bound. If anything rebases between this hook and the barrier, it lapses and the barrier re-reports the gap — correct behaviour (the operator authorized a tree they saw), not a defect to work around.
-          - **"Disable this reviewer for this PR"** → move the bot from `required_bots` to `optional_bots`, then re-dispatch `plan-marshall:automatic-review` so the quorum is re-evaluated with the bot optional. Leave the step record ABSENT across the re-dispatch, exactly as the "wait again" branch does — the terminal record is written by the settling pass, not here. The reclassification is two writes, one per key, because `step-params set` takes a single `--param`/`--value` pair:
-
-            ```bash
-            python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-execution-manifest \
-              step-params set --plan-id {plan_id} --phase 6-finalize \
-              --step-id plan-marshall:automatic-review --param required_bots --value "{required_bots minus this bot}"
-            ```
-
-            ```bash
-            python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-execution-manifest \
-              step-params set --plan-id {plan_id} --phase 6-finalize \
-              --step-id plan-marshall:automatic-review --param optional_bots --value "{optional_bots plus this bot}"
-            ```
-
-            Then decision-log the reclassification at WARNING naming the bot and the cap.
-
-            ⛔ **The re-dispatch settles ONLY because the recovery is scoped to required bots.** That scoping is what `../automatic-review/SKILL.md` § "Rate-limit refusal recovery (opt-in)" declares: a refusal from a bot outside `required_bots` is an ordinary settle, never an escalation. Without it the re-dispatch would re-detect the same refusal, re-enter Branch 0, and re-escalate with the identical three options — an operator choosing the one remedy that resolves the block would loop on it forever. Do not weaken that scoping without removing this option.
-
-            ⭐ **The override is PLAN-LOCAL and the option label is therefore literal.** `step-params set` writes into this plan's persisted manifest snapshot and never touches `marshal.json`, so the reclassification expires with the plan and the reviewer stays required for every other plan and every future PR. Say that when presenting the option: an operator who believes they are permanently disabling a required reviewer will decline the one remedy that actually fits their situation.
+          - **No demotion arm.** The former "Disable this reviewer for this PR" option — moving a REQUIRED bot to `optional_bots` — is withdrawn, here and in the producer that renders the option list: a required reviewer is mandatory and is never demoted (`../automatic-review/standards/coderabbit.md` § 'Operator review policy'). A `required_bots` that lists a bot means its silence blocks until it reviews or an operator records an authorization over the gap, and `step-params set` reclassification is not a remedy this workflow offers.
 
   ### Loop-back Target Contract
 

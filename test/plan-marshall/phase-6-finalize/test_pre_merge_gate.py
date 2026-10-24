@@ -212,6 +212,11 @@ def test_production_runner_invokes_the_ci_router_through_the_executor(monkeypatc
         pr_number=42,
         project_dir=_PROJECT_DIR,
         findings_check=lambda _plan_id: dict(_CLEAN_VERDICT),
+        # The head-binding readers are stubbed away: this case asserts the argv the CI
+        # ROUTER receives, and those two production readers each spawn their own
+        # subprocess (the head-binding behaviour has its own cases).
+        status_reader=lambda _plan_id: None,
+        head_reader=lambda _dir: None,
         **flags,
     )
 

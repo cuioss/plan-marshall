@@ -724,7 +724,8 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status merge-
   --head {sha} \
   --gap-class {gap_class} \
   --granted-over {gap_description} \
-  --reason {reason}
+  --reason {reason} \
+  [--operator-answer {selected_option} --override-label {override_option}]
 ```
 
 **Parameters**:
@@ -734,6 +735,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status merge-
 - `--gap-class` (required): The gap class this ruling authorizes past — the machine token naming WHICH gate the operator was answering (e.g., `review-barrier-gap`, `merge-action`, `red-ci-gate`, `rereview-timeout`). Each roster row declares the token its site must pass, via that row's `authorizes:` claim.
 - `--granted-over` (required): What the authorization was granted over — the gap as the granting site saw it (e.g., the pending count and the `unproven_bots` list). Persisted verbatim so a later reader can re-evaluate the ruling against a later delta. This is the free-prose companion to `--gap-class`: prose for a human, token for routing. Routing never reads it.
 - `--reason` (required): The operator's (or policy's) stated reason
+- `--operator-answer` / `--override-label` (required for `--kind barrier-ask-override`; optional otherwise): the answer the operator gave, VERBATIM, and the override option label they were offered. A `barrier-ask-override` grant is refused with `error: operator_answer_required` when neither is supplied, and with `error: operator_answer_not_the_override_option` when the answer is not the label (compared after whitespace/case normalisation). This is what makes the record an authorization for a SELECTION rather than for whatever free text arrived: "try now" or "wait another round" can never be minted into one. Both values are persisted on the record as `operator_answer` / `override_label`.
 
 **Output** (TOON):
 ```toon
@@ -1311,16 +1313,37 @@ A legitimately artifact-free phase uses the explicit exemption form
 decision-logged for retrospectives. An exemption without a reason is refused
 with `missing_exempt_reason`.
 
+**Phase-boundary post-condition.** No transition may advance PAST a phase whose
+metrics boundary is half-stamped — the phase carries a `start_time` and no
+`end_time` in `work/metrics.toon`, i.e. it was opened in the record and never
+closed. Advancing past it silently drops that phase's token/duration attribution
+(the PLAN-41 case: `4-plan` no end, `5-execute` no start). The phases examined are
+the ones BEFORE `--completed` in the plan's own phase list: the phase being
+completed is legitimately unclosed at its own transition, because its
+`manage-metrics phase-boundary` stamp runs after the status advance by design. A
+phase with no metrics row never started recording and is `not_applicable`; a
+missing metrics store means the plan recorded no boundaries at all and passes. The
+refusal is `phase_boundary_unstamped` (exit 1 — a member of
+`VERIFY_REFUSAL_ERRORS`), carrying `boundaries[]` — one `{phase, missing}` record
+per offending phase.
+
 **5-execute end-marker post-condition.** Completing `5-execute` additionally
-requires every worktree-branch commit since the branch diverged from its base
+requires every branch commit since the branch diverged from its base
 to carry a `kind=change` change-ledger row (the Step 10a settlement
 bookkeeping). The clean-tree guard only reads *uncommitted* state, so a
 committed-but-unrecorded deliverable commit is the silent skip it cannot see —
-this gate closes it. The divergence base is `references.json:base_branch`
-(`main` when absent); an unestablishable commit range, an empty range, or full
-coverage pass or refuse per the gate (an unreadable `references.json` refuses
-fail-closed under `branch_range_unresolvable` — without a base no range is
-enumerable, so recording cannot be proven). Refusals are
+this gate closes it. **It applies to every plan**, not only the isolated-worktree
+ones: a main-checkout plan makes the same per-deliverable commits against the same
+ledger, and its checkout is the one that owns its plan directory. The divergence
+base is `references.json:base_branch` (`main` when absent), compared against
+**`origin/{base}` first** so a stale local base branch cannot pull already-landed
+base commits into the range; the ledger read is the union of the plan's OWN
+checkout ledger (`{root}/.plan/work/change-ledger.jsonl`) and the cwd-resolved one,
+so a transition run from another cwd reads the right rows. An unestablishable
+commit range refuses fail-closed under `branch_range_unresolvable`; an empty range
+or full coverage passes. A main-checkout plan with no readable `references.json`
+names no boundary and is `not_applicable` (an isolated-worktree plan keeps the
+fail-closed answer — its branch is structurally the plan's). Refusals are
 fail-closed with errors `phase_end_markers_missing` (the marker store could
 not be read, or holds zero rows while branch commits exist — `recorded_count`
 names which; the unreadable-store shape carries NO `unrecorded_commits` key)
@@ -1330,6 +1353,12 @@ enumerated in `unrecorded_commits`). Both are members of
 wrapper. The single source of truth is `_phase_end_marker_refusal` in
 `scripts/_cmd_lifecycle.py` — the refusal codes, payload shapes, and
 pass-through conditions are stated there and not restated here.
+
+**`set-phase` into `6-finalize` runs the same gate.** `set-phase` is the second
+door into finalize; a path that reaches it without the 5-execute settlement
+bookkeeping must be refused exactly as `transition` refuses it, or the weaker verb
+is the bypass. The refusal payload is `_phase_end_marker_refusal`'s own and
+nothing is written.
 
 #### Refusal surface
 
@@ -1348,6 +1377,7 @@ No refusal advances the plan: `current_phase` is unchanged and the payload carri
 | `error: open_done_when_criteria` | 0 | Completing `6-finalize` while the plan's frozen criteria snapshot still holds a Done-when criterion the functional review has not graded `met`. An empty findings queue beside an unmet criterion is not a clean exit; a plan with no snapshot carries no frozen clauses and is unaffected. Carries `open_count` and `open_criteria[]`. |
 | `error: phase_end_markers_missing` | 1 | Completing `5-execute` while the end-marker store cannot prove recording — either the change-ledger marker store could not be read at all (no `unrecorded_commits` key: nothing was enumerated), or the store holds zero `kind=change` rows while worktree-branch commits exist (the Step 10a bookkeeping never ran). |
 | `error: execute_commits_unrecorded` | 1 | Completing `5-execute` after both sides were read and named worktree-branch commits carry no `kind=change` ledger row, enumerated in `unrecorded_commits` with `recorded_count` / `branch_commit_count`. |
+| `error: phase_boundary_unstamped` | 1 | Advancing past a phase whose metrics boundary is half-stamped — the phase carries a `start_time` and no `end_time` in `work/metrics.toon`. `boundaries[]` names each offending phase and the marker it lacks. |
 
 A caller that reads only the exit code sees the exit-0 refusals as success; a caller that reads only an `error` key misses `status: drift`. The [refused-transition halt rule](../ref-workflow-architecture/standards/phase-lifecycle.md#refused-transition-halt-rule) is the single statement of what every caller does with any non-`success` result.
 
@@ -1827,7 +1857,7 @@ Phase set, transition rules, and phase-to-skill routing are defined in [standard
 | `title-token clear` | `--plan-id [--owner {build-hook\|merge-lock\|cli}]` | Remove the `status.title_token` record when `--owner` matches the recorded owner or the record is stale (>3600 s). A foreign-owned live record is left intact and reported as `cleared: false, reason: foreign_owner`. Idempotent — a no-op when already absent. |
 | `mark-step-done` | `--plan-id --phase --step --outcome [--display-detail] [--head-at-completion] [--loop-back-target] [--fact KEY=VALUE]... [--force]` | Record phase step outcome (+ optional display detail / HEAD SHA / loop-back target / repeatable structured `facts`) in `metadata.phase_steps` |
 | `assert-step-recorded` | `--plan-id --phase --step [--require-terminal]` | Read-only verdict: reports `recorded: true` iff a terminal `metadata.phase_steps[phase][step]` outcome exists. The phase-6-finalize post-dispatch guard. With `--require-terminal`, a near-miss orphan record under a different key returns `error: step_record_mismatched_key` (carrying `orphan_key`); a truly-absent record returns `error: step_record_missing`. Zero writes. |
-| `merge-authorization grant` | `--plan-id --kind --head --gap-class --granted-over --reason` | Persist a HEAD-bound merge authorization as `metadata.merge_authorizations[{kind}] = {head, gap_class, granted_over, reason, granted_at}`. A re-grant at a new HEAD overwrites the record — that overwrite IS the sanctioned re-seek, so there is no revoke verb. `--kind` and `--gap-class` accept any non-empty token; the population and each row's `authorizes:` class are declared by the Merge-Authorization Roster in `phase-6-finalize/standards/branch-cleanup.md`, not by the parser. |
+| `merge-authorization grant` | `--plan-id --kind --head --gap-class --granted-over --reason [--operator-answer --override-label]` | Persist a HEAD-bound merge authorization as `metadata.merge_authorizations[{kind}] = {head, gap_class, granted_over, reason, granted_at}` (plus `operator_answer` / `override_label` when supplied). A re-grant at a new HEAD overwrites the record — that overwrite IS the sanctioned re-seek, so there is no revoke verb. `--kind` and `--gap-class` accept any non-empty token; the population and each row's `authorizes:` class are declared by the Merge-Authorization Roster in `phase-6-finalize/standards/branch-cleanup.md`, not by the parser. **`--kind barrier-ask-override` requires the two operator flags**: the grant exists only for the option the operator selected (`error: operator_answer_required` when absent, `error: operator_answer_not_the_override_option` when the answer is not the label), so free text can never be minted into an authorization. |
 | `merge-authorization check` | `--plan-id --head --gap-class` | Return every authorization record with a HEAD verdict (`valid` when `record.head` equals `--head`, `lapsed` otherwise) AND an admissibility verdict (`valid` AND `record.gap_class` equals `--gap-class`), plus `authorized_kinds`, `lapsed_kinds`, `admissible_kinds`, `inadmissible_kinds`, `any_authorized` and `any_admissible`. Deliberately takes **no** `--kind` — a per-kind filter would let one valid authorization mask a lapsed sibling. `--gap-class` is required so no caller can route on HEAD-validity alone: several kinds are granted at earlier sites at the same HEAD over a different gap. Fail-closed: a malformed or superseded record is `lapsed`, a record with no `gap_class` matches no class, and an empty store returns both aggregates false with empty lists (`absent` is never collapsed into `valid`). |
 | `loop-back admit` | `--plan-id --source --ceiling` | Admit or refuse the next loop-back round against the source's own budget in `metadata.loop_back_budgets[{source}]`. Admits when `spent + 1 <= ceiling + granted` and persists the increment in the same call; a refusal returns `admitted: false` and writes nothing. |
 | `loop-back grant` | `--plan-id --source --reason [--rounds] [--granted-by]` | Add rounds (default one) to one source's `granted` total and append the grant record of who granted them and why. A blank reason or fewer than one round is refused and writes nothing. The grant admits no round itself. |

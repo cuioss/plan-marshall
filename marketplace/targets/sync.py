@@ -23,7 +23,9 @@ Target profiles:
   with only the stdlib and ``toon_parser``.
 * **opencode**: Source layout is singular (``skill/``, ``agent/``, ``command/``).
   Destination is ``~/.config/opencode/`` with plural layout (``skills/``,
-  ``agents/``, ``commands/``). Deploys ``opencode.json``.
+  ``agents/``, ``commands/``). Deploys ``opencode.json`` and the emitted
+  ``dist-manifest.json`` at the install root, so a flat install can resolve its
+  installed version (there is no plugin-cache version dir to read it from).
 * **antigravity**: Source layout is plural (``skills/``, ``agents/``,
   ``commands/``). Destination is ``~/.gemini/config/plugins/plan-marshall/``.
   Deploys root assets ``plugin.json``, ``install.sh`` (chmod 0o755), and ``README.adoc``.
@@ -291,7 +293,16 @@ TARGET_CONFIGS: dict[str, TargetSyncConfig] = {
         source_skills_dir='skill',
         source_agents_dir='agent',
         source_commands_dir='command',
-        root_assets=(('opencode.json', 'config', False),),
+        root_assets=(
+            ('opencode.json', 'config', False),
+            # Publish the emitted dist-manifest at the install root, mirroring the
+            # Claude cache sync. A flat OpenCode install has no
+            # marketplace/bundles tree and no plugin-cache version dir, so this
+            # is the one location the installed-manifest lookup can resolve
+            # (``{cache_root}/../dist-manifest.json``), and it is what makes
+            # ``check_freshness`` report fresh/stale instead of unknown.
+            ('dist-manifest.json', 'manifest', False),
+        ),
         extra_count_key='config_count',
     ),
 }
@@ -617,10 +628,10 @@ def _deploy_command(command_file: Path, dest: Path, *, dry_run: bool) -> None:
 
 def _deploy_root_assets(source: Path, dest: Path, config: TargetSyncConfig, *, dry_run: bool) -> int:
     count = 0
-    for asset_file, _kind, is_executable in config.root_assets:
+    for asset_file, kind, is_executable in config.root_assets:
         asset_src = source / asset_file
+        target = dest / asset_file
         if asset_src.is_file():
-            target = dest / asset_file
             if not dry_run:
                 _refuse_file_link(target, dest)
                 target.parent.mkdir(parents=True, exist_ok=True)
@@ -628,6 +639,15 @@ def _deploy_root_assets(source: Path, dest: Path, config: TargetSyncConfig, *, d
                 if is_executable:
                     target.chmod(0o755)
             count += 1
+        elif kind == 'manifest' and not dry_run:
+            # A source that omitted its manifest (a generator that failed before
+            # the stamping step) must not leave the PREVIOUS install's manifest
+            # in place: the staleness reads would then report the old version as
+            # the installed one. Unlinking removes the link itself, never its
+            # target, so this does not act through a symlink.
+            if target.is_dir():
+                raise DestinationLinkRefused(f'cannot remove manifest path because it is a directory: {target}')
+            target.unlink(missing_ok=True)
     return count
 
 
