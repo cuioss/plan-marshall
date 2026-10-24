@@ -41,7 +41,7 @@ invariants:
   config_hash: d4e5f6…
 ```
 
-`--override` without `--reason` returns `status: error, error: missing_reason`; without `--operator-answer` it returns `status: error, error: missing_operator_answer`. There is exactly one other override basis — the loop-back re-entry auto-override — and it has no CLI spelling: `manage-status transition` reaches it in-process after observing the plan's `loop_back_reentry` marker, so no caller can assert it and no operator answer is fabricated for it.
+`--override` without `--reason` returns `status: error, error: missing_reason`; without `--operator-answer` it returns `status: error, error: missing_operator_answer`; and `--operator-answer` WITHOUT `--override` returns `status: error, error: operator_answer_without_override`, because an ordinary capture records no override for an answer to authorize. There is exactly one other override basis — the loop-back re-entry auto-override — and it has no CLI spelling: `manage-status transition` reaches it in-process after observing the plan's `loop_back_reentry` marker, so no caller can assert it and no operator answer is fabricated for it.
 
 ### `verify`
 

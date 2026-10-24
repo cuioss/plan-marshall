@@ -40,10 +40,12 @@ different facts, and only the second may admit a resolution.
 Three verbs, and three seams the rest of the tree consumes:
 
 * ``record`` — the dispatch guard or step gate writes the halt. A new record
-  REPLACES the previous one wholesale, so a re-halt is a fresh, unanswered stop
-  rather than a stale escalation carried forward. An escalated halt MUST name the
-  options the operator will be offered (``--option``): without them the answer verb
-  could not tell the operator's choice from a sentence the caller wrote.
+  REPLACES the previous one, except that a halt whose operator escalation is
+  still unanswered is protected: replacing it would erase a decision the operator
+  has not made yet, so it is refused with ``escalation_open`` unless the caller
+  passes ``--replace-escalation``. An escalated halt MUST name the options the
+  operator will be offered (``--option``); without them the answer verb could not
+  tell the operator's choice from a sentence the caller wrote.
 * ``answer`` — records the operator's selected option on an ``escalate_ask``
   halt, matched against the offered labels. This is the ONLY writer of ``answer``,
   and it refuses a halt that raised no escalation: an answer to a question nobody
@@ -285,7 +287,7 @@ def cmd_halt_record(args: argparse.Namespace) -> dict[str, Any] | None:
             'message': (
                 f'Step {step!r} in phase {phase!r} already carries an unanswered operator '
                 'escalation, and replacing it would erase the decision the operator has not made '
-                'yet. Leave it standing and stop, or — once the operator has answered — pass '
+                'yet. Leave it standing and stop, or — on the operator\u2019s instruction — pass '
                 '--replace-escalation with the reason that makes the replacement legitimate.'
             ),
         }
@@ -443,6 +445,7 @@ def cmd_halt_read(args: argparse.Namespace) -> dict[str, Any] | None:
 
     metadata = status.get('metadata') if isinstance(status.get('metadata'), dict) else {}
     halts = metadata.get(HALTS_KEY) if isinstance(metadata, dict) else None
+    store_unreadable = bool(isinstance(metadata, dict) and HALTS_KEY in metadata and not isinstance(halts, dict))
     store: dict[str, Any] = halts if isinstance(halts, dict) else {}
 
     if phase and step:
@@ -486,4 +489,5 @@ def cmd_halt_read(args: argparse.Namespace) -> dict[str, Any] | None:
         'count': len(rows),
         'records': rows,
         'unreadable_phases': unreadable_phases,
+        'store_unreadable': store_unreadable,
     }

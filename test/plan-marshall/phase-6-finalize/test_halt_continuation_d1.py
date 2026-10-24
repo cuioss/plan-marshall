@@ -479,6 +479,8 @@ def test_a_malformed_halt_record_refuses_both_the_resolution_and_the_continuatio
     assert refused_continuation['status'] == 'error'
     assert refused_continuation['error'] == 'halt_unreadable'
     assert refused_continuation['allowed'] is False
+    # The record demonstrably EXISTS and cannot be read — not "never halted".
+    assert refused_continuation['halted'] is True
 
 
 def test_mark_step_done_failed_records_the_halt_the_roster_calls_one(plan_context):
@@ -534,6 +536,31 @@ def test_a_halt_cannot_replace_an_unanswered_escalation(plan_context):
     assert result['error'] == 'escalation_open'
     # The escalation stands, so the resolution is still refused.
     assert _mark(plan_id, 'done')['error'] == 'escalation_unanswered'
+
+
+def test_replace_escalation_admits_a_replacement_when_the_operator_instructs_it(plan_context):
+    """The protected record is replaceable on the operator's instruction, and only then."""
+    plan_id = 'halt-replace-on-instruction'
+    _make_plan(plan_id)
+    _record(plan_id, escalate=True, outcome='halted')
+
+    replaced = cmd_halt_record(
+        Namespace(
+            plan_id=plan_id,
+            phase=_PHASE,
+            step=_STEP,
+            outcome='halted',
+            reason='the operator asked for a fresh decision on the new evidence',
+            escalate_ask=True,
+            option=['Ship as is', 'Hold the merge'],
+            replace_escalation=True,
+        )
+    )
+
+    assert replaced['status'] == 'success', replaced
+    stored = cmd_halt_read(Namespace(plan_id=plan_id, phase=_PHASE, step=_STEP))
+    assert stored['record']['options'] == ['Ship as is', 'Hold the merge']
+    assert stored['escalation_unanswered'] is True
 
 
 def test_a_halt_answering_a_question_nobody_asked_is_refused_by_the_record_itself(plan_context):
@@ -728,6 +755,14 @@ def test_scheduled_loop_back_basis_is_refused_when_no_marker_schedules_the_drift
 
     assert result['status'] == 'error'
     assert result['error'] == 'scheduled_override_without_marker'
+
+
+def test_operator_answer_without_an_override_is_refused():
+    """An ordinary capture records no override, so an answer on it would describe a grant that never happened."""
+    result = cmd_capture(_capture_args(override=False, reason=None, operator_answer='yes, go ahead'))
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'operator_answer_without_override'
 
 
 def test_the_handshake_row_field_list_declares_both_columns():
