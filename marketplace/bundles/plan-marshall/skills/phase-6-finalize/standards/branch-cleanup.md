@@ -296,6 +296,8 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-6-finalize) Branch cleanup classifier: classification={classification}, auto_reconcilable={auto_reconcilable}, threshold={threshold}, decision={decision}, upstream_commits={upstream_commit_count}"
 ```
 
+**On the two bypass paths those metric fields are `n/a`, never interpolated.** `{threshold} == never` and `status: skipped` produce no classifier metrics at all, so the two log lines above emit `classification=unclassified`, `auto_reconcilable=n/a`, `conflict_count=n/a` and `upstream_commits=n/a`. A line that interpolated a field the run never measured would read as a measurement — the same false-signal class this section exists to remove.
+
 ### Pre-Rebase Confirmation Gate
 
 The pre-rebase gate decides whether the upcoming pre-merge preparation fires silently or prompts the operator for confirmation. What that preparation IS depends on `use_merge_queue` (§ "Rebase Branch onto Base"): `worktree-rebase-to → force-push-with-lease → ci checks wait` on the default `false` path, and a `ci checks status` snapshot alone on the `true` path, which performs neither rebase nor force-push. The gate is driven by the `auto_rebase_threshold` knob (read above in the **Conflict-Severity Classifier** section) and the classifier's `{decision}`; it is retained on both paths because the classifier's upstream-overlap reading informs the merge decision either way.
