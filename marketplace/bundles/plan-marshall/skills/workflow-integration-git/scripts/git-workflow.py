@@ -969,12 +969,21 @@ def cmd_push(args):
         gate_refusal.update({'operation': 'push', 'worktree': str(worktree)})
         return gate_refusal
 
-    # Bind the refspec to the validated commit: an unqualified ``git push`` obeys
-    # ``remote.origin.push``, which can name a DIFFERENT branch, so the gate could pass
-    # on one commit while another shipped. ``HEAD`` on the command line is the commit
-    # just validated.
+    # Push the SHA just validated, to an explicit refspec: a HEAD that advances between
+    # the gate read and the push cannot ship an unvalidated commit, and no
+    # ``remote.origin.push`` configuration can redirect the push to another branch.
+    branch_rc, branch_out, _branch_err = _run_git_nul_verbatim(
+        ['-C', str(worktree), 'symbolic-ref', '--short', '--quiet', 'HEAD']
+    )
+    branch = branch_out.strip() if branch_rc == 0 else ''
+    if not branch:
+        return make_error(
+            'cannot push a detached HEAD: the validated commit has no branch to ship to',
+            code=ErrorCode.INVALID_INPUT,
+        )
     rc, _out, push_err = _run_git_nul_verbatim(
-        ['-C', str(worktree), 'push', 'origin', 'HEAD'], timeout=_PUSH_TIMEOUT_SECONDS
+        ['-C', str(worktree), 'push', 'origin', f'{current_head}:refs/heads/{branch}'],
+        timeout=_PUSH_TIMEOUT_SECONDS,
     )
     if rc != 0:
         return make_error(f'git push failed: {push_err or f"exit {rc}"}', code=ErrorCode.FETCH_FAILURE)
@@ -1058,6 +1067,11 @@ def cmd_commit(args):
 
     pushed = False
     if getattr(args, 'push', False):
+        if not commit_hash:
+            return make_error(
+                'cannot push: the new commit SHA could not be read',
+                code=ErrorCode.FETCH_FAILURE,
+            )
         # The push ships exactly the HEAD this commit created. When the plan's
         # pre-push gate recorded a DIFFERENT head, that gate never saw this tree —
         # refuse before the ref moves (see `_push_gate`).
@@ -1068,7 +1082,19 @@ def cmd_commit(args):
             if gate_refusal is not None:
                 gate_refusal['commit_hash'] = commit_hash
                 return gate_refusal
-        rc, _out, push_err = _run_git_nul_verbatim(['-C', str(worktree), 'push'])
+        branch_rc, branch_out, _branch_err = _run_git_nul_verbatim(
+            ['-C', str(worktree), 'symbolic-ref', '--short', '--quiet', 'HEAD']
+        )
+        branch = branch_out.strip() if branch_rc == 0 else ''
+        if not branch:
+            return make_error(
+                'cannot push a detached HEAD: the committed change has no branch to ship to',
+                code=ErrorCode.INVALID_INPUT,
+            )
+        rc, _out, push_err = _run_git_nul_verbatim(
+            ['-C', str(worktree), 'push', 'origin', f'{commit_hash}:refs/heads/{branch}'],
+            timeout=_PUSH_TIMEOUT_SECONDS,
+        )
         if rc != 0:
             return make_error(f'git push failed: {push_err or f"exit {rc}"}', code=ErrorCode.FETCH_FAILURE)
         pushed = True

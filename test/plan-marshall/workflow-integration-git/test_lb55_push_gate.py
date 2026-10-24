@@ -153,7 +153,11 @@ def test_the_push_verb_pushes_the_gated_head(repo, monkeypatch):
 
     def _fake(argv, timeout=None):
         calls.append(list(argv))
-        return (0, f'{head}\n', '') if 'rev-parse' in argv else (0, '', '')
+        if 'rev-parse' in argv:
+            return 0, f'{head}\n', ''
+        if 'symbolic-ref' in argv:
+            return 0, 'feature/x\n', ''
+        return 0, '', ''
 
     monkeypatch.setattr(git_workflow, '_run_git_nul_verbatim', _fake)
 

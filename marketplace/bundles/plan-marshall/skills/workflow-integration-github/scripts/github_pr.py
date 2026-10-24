@@ -1212,6 +1212,7 @@ def _reviewed_at_merge_candidate(
     merge_candidate_committed_at: str = '',
     *,
     allow_first_observation: bool = True,
+    require_sha_currency: bool = False,
 ) -> bool:
     """Return True when ``comment`` proves a review of the MERGE CANDIDATE commit.
 
@@ -1299,6 +1300,12 @@ def _reviewed_at_merge_candidate(
     if merge_candidate_sha and recorded_sha == merge_candidate_sha:
         return True
     if not merge_candidate_sha:
+        return False
+    if require_sha_currency:
+        # The refusal path's bound: an edit proves the comment MOVED, not which commit
+        # it moved to. An edit made at A, followed by commit B and a refusal, would
+        # otherwise credit B on evidence that predates it — so beside a refusal only
+        # the recorded SHA names the reviewed commit.
         return False
     updated_at = str(comment.get('updated_at') or '')
     return bool(updated_at) and updated_at != recorded_updated_at
@@ -1978,6 +1985,11 @@ def cmd_fetch_findings(args):
     # statement that it will not review that candidate.
     refusing_bots: set[str] = set()
     for _refusal_comment in raw_comments:
+        if _refusal_comment.get('resolved'):
+            # A refusal in a RESOLVED thread is already answered: the filing pass skips
+            # it, so it never reaches ``refused_bots``. Counting it here would deny
+            # credit for a refusal nobody reports, which is a one-sided subtraction.
+            continue
         _refusal_bot = bot_kind_for_author(_refusal_comment.get('author') or 'unknown')
         if _refusal_bot and _is_refusal_notice(str(_refusal_comment.get('body') or ''), _refusal_bot):
             refusing_bots.add(_refusal_bot)
@@ -2058,6 +2070,7 @@ def cmd_fetch_findings(args):
                         reviewed_commit_sha,
                         merge_candidate_committed_at,
                         allow_first_observation=False,
+                        require_sha_currency=True,
                     )
             elif _requires_update:
                 _current = _reviewed_at_merge_candidate(
