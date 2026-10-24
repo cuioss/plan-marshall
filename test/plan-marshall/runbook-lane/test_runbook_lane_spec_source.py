@@ -24,7 +24,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from conftest import get_scripts_dir, run_script
+from conftest import MARKETPLACE_ROOT, get_scripts_dir, run_script
 
 _SKILL_NAME = 'runbook-lane'
 _SCRIPT = get_scripts_dir('plan-marshall', _SKILL_NAME) / 'runbook_lane.py'
@@ -203,3 +203,70 @@ def test_flag_is_a_no_op_with_use_worktree_off(tmp_path: Path) -> None:
 
     assert data['status'] == 'success', data
     assert _titles(data) == [MAIN_TITLE]
+
+
+# =============================================================================
+# D2 — the result says which copy was read
+# =============================================================================
+
+
+def test_resolve_reports_the_copy_it_read(tmp_path: Path) -> None:
+    """Each mode names its own source, and the flag's source is the worktree."""
+    _seed_copies(tmp_path, use_worktree=True, main_body=_spec_body(MAIN_TITLE), ledger_body=_spec_body(LEDGER_TITLE))
+
+    main_read = _run_resolve(tmp_path, SPEC_REL)
+    ledger_read = _run_resolve(tmp_path, SPEC_REL, from_ledger=True)
+
+    assert main_read['spec_source'] == 'main_checkout'
+    assert ledger_read['spec_source'] == 'ledger_worktree'
+
+
+def test_two_differing_copies_carry_the_differ_marker(tmp_path: Path) -> None:
+    """A silent read of the older copy is what the marker removes."""
+    _seed_copies(tmp_path, use_worktree=True, main_body=_spec_body(MAIN_TITLE), ledger_body=_spec_body(LEDGER_TITLE))
+
+    main_read = _run_resolve(tmp_path, SPEC_REL)
+    ledger_read = _run_resolve(tmp_path, SPEC_REL, from_ledger=True)
+
+    assert main_read.get('spec_differ') is True
+    assert ledger_read.get('spec_differ') is True
+
+
+def test_a_single_copy_carries_no_differ_marker(tmp_path: Path) -> None:
+    """One copy cannot differ from itself, so the marker is absent rather than false."""
+    _seed_copies(tmp_path, use_worktree=True, main_body=_spec_body(MAIN_TITLE), ledger_body=None)
+
+    data = _run_resolve(tmp_path, SPEC_REL, from_ledger=True)
+
+    assert data['status'] == 'success', data
+    assert 'spec_differ' not in data
+
+
+def test_identical_copies_carry_no_differ_marker(tmp_path: Path) -> None:
+    """Two copies that agree are not a discrepancy worth reporting."""
+    body = _spec_body(MAIN_TITLE)
+    _seed_copies(tmp_path, use_worktree=True, main_body=body, ledger_body=body)
+
+    data = _run_resolve(tmp_path, SPEC_REL, from_ledger=True)
+
+    assert data['status'] == 'success', data
+    assert 'spec_differ' not in data
+
+
+def test_the_no_op_mode_reports_one_copy_and_no_marker(tmp_path: Path) -> None:
+    """A project with no second copy reports the main checkout and no differ marker."""
+    _seed_copies(tmp_path, use_worktree=False, main_body=_spec_body(MAIN_TITLE), ledger_body=None)
+
+    data = _run_resolve(tmp_path, SPEC_REL, from_ledger=True)
+
+    assert data['spec_source'] == 'main_checkout'
+    assert 'spec_differ' not in data
+
+
+def test_lane_text_names_the_ledger_read_and_what_it_reports() -> None:
+    """The lane instructs the run to record which copy it read, and whether they differ."""
+    text = (MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / _SKILL_NAME / 'SKILL.md').read_text(encoding='utf-8')
+
+    assert '--spec-from-ledger' in text
+    assert 'spec_source' in text
+    assert 'spec_differ' in text

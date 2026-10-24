@@ -30,7 +30,10 @@ worktree first — ``{epic_dir}/plans/{spec name}``, where ``epic_dir`` follows 
 store seam the orchestrator publishes — and falls back to the main checkout's copy
 when the worktree holds none. The flag is set per emit, so a round of emits needs
 no ledger land; with ``orchestrator.use_worktree`` off there is no second copy and
-the flag is a no-op rather than an error.
+the flag is a no-op rather than an error. ``resolve`` always reports which copy it
+read (``spec_source``: ``ledger_worktree`` | ``main_checkout``) and, when both
+copies exist and differ, ``spec_differ: true`` — the marker a silent read of the
+older copy would leave out.
 
 **Fail closed.** An empty ``required_bots`` list, a missing automatic-review
 step, an unreadable ``marshal.json``, an unreadable Sonar block
@@ -163,11 +166,13 @@ def _plan_id_from_spec(spec: Path) -> str:
 
 @dataclass(frozen=True)
 class _SpecChoice:
-    """The copy of a staged spec ``resolve`` will read."""
+    """The copy of a staged spec ``resolve`` will read, and what it must report."""
 
     path: Path
     slug: str
     plan_id: str
+    source: str
+    differs: bool
 
 
 def _ledger_store_dir() -> Path | None:
@@ -238,7 +243,8 @@ def _resolve_spec(spec_value: str, project_dir: Path, *, from_ledger: bool = Fal
     Without the flag this is the unchanged read — the main checkout's copy, and
     ``invalid_spec`` when it holds none. With it the ledger worktree's copy wins
     when it exists and the main checkout's is the fallback, so a spec that exists
-    only in the worktree is readable.
+    only in the worktree is readable. The choice is reported as ``source``, and
+    ``differs`` says whether the copy NOT read would have answered differently.
 
     Raised as ``ValueError`` carrying the refusal code so the caller can emit a
     structured error rather than a traceback.
@@ -249,6 +255,9 @@ def _resolve_spec(spec_value: str, project_dir: Path, *, from_ledger: bool = Fal
     slug, name = _staged_spec_shape(spec, project_dir, from_ledger=from_ledger)
 
     main_copy = project_dir / '.plan' / 'orchestrator' / slug / 'plans' / name
+    # The ledger copy is resolved on BOTH paths: the flag decides whether it is
+    # READ, while the differ marker exists precisely to report a default read that
+    # left the newer copy unread.
     ledger_copy: Path | None = None
     store = _ledger_store_dir()
     if store is not None:
@@ -257,18 +266,19 @@ def _resolve_spec(spec_value: str, project_dir: Path, *, from_ledger: bool = Fal
             ledger_copy = candidate
 
     if from_ledger and ledger_copy is not None:
-        chosen = ledger_copy
+        chosen, source = ledger_copy, 'ledger_worktree'
     elif main_copy.is_file():
-        chosen = main_copy
+        chosen, source = main_copy, 'main_checkout'
     elif spec.is_file():
         # The caller named the ONLY copy. It survived the shape check above, so it
         # is either the main checkout's own file or, under the flag, the ledger
         # worktree's.
-        chosen = spec.resolve()
+        chosen, source = spec.resolve(), ('ledger_worktree' if from_ledger else 'main_checkout')
     else:
         raise ValueError('invalid_spec')
 
-    return _SpecChoice(chosen, slug, _plan_id_from_spec(chosen))
+    differs = ledger_copy is not None and main_copy.is_file() and ledger_copy.read_bytes() != main_copy.read_bytes()
+    return _SpecChoice(chosen, slug, _plan_id_from_spec(chosen), source, differs)
 
 
 def _read_marshal(project_dir: Path) -> dict[str, Any]:
@@ -1886,6 +1896,7 @@ def cmd_resolve(args: argparse.Namespace) -> dict[str, Any]:
         'status': 'success',
         'operation': 'resolve',
         'spec': spec.as_posix(),
+        'spec_source': choice.source,
         'slug': slug,
         'plan': plan_id,
         'worktree': worktree,
@@ -1914,6 +1925,11 @@ def cmd_resolve(args: argparse.Namespace) -> dict[str, Any]:
     # explanation, which would read like a qualified success.
     if executor_reason is not None:
         resolved['executor_reason'] = executor_reason
+    # The differ marker is PRESENCE-gated rather than always-false: it exists to
+    # say "the copy you did not read says something else", and a `false` row would
+    # invite a consumer to treat "no marker" and "no second copy" as one state.
+    if choice.differs:
+        resolved['spec_differ'] = True
     # A project can publish only one gate canonical (npm publishes each
     # conditionally), so the missing one is NAMED rather than silently dropped.
     # Presence-gated: an empty population would read like a parsed-but-empty

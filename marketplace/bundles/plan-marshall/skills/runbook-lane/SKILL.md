@@ -147,8 +147,10 @@ Read the spec from the **main checkout** by default; it is git-tracked there. Ad
 `{epic_dir}/plans/{spec name}`, where `epic_dir` follows the same store seam
 `orchestrator resolve-path --slug {slug}` publishes — falling back to the main checkout's copy when
 the worktree holds none. The flag is set per emit, so a round of emits needs no ledger land; with
-`orchestrator.use_worktree` off there is no second copy and it is a no-op rather than an error. Then
-**resolve** every value the run uses, and read the result before doing anything else:
+`orchestrator.use_worktree` off there is no second copy and it is a no-op rather than an error.
+`resolve` reports which copy it read (`spec_source`) and, when both copies exist and differ, the
+`spec_differ` marker, so a read of the older copy is never silent. Then **resolve** every value the
+run uses, and read the result before doing anything else:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:runbook-lane:runbook_lane resolve --spec {spec} [--spec-from-ledger]
@@ -158,6 +160,7 @@ The result supplies, and nothing below is spelled from anywhere else:
 
 | Name | Field of the resolve result |
 |------|-----------------------------|
+| spec copy read, and whether the other copy differs | `spec_source` (`ledger_worktree` \| `main_checkout`), plus `spec_differ: true` when both copies exist and differ |
 | epic slug | `slug` |
 | `{plan}` | `plan` |
 | worktree | `worktree` |
@@ -804,7 +807,9 @@ step.sonar-roundtrip.open_issue_rules={rules left open|none|unknown|n/a}
      as such. Attribute a refusal by the run's own session tree, never by a time window, and list
      every restart, every killed sub-agent and every re-dispatch with what it re-ran. "All kept" is
      allowed only when the log has no line for the run — and never on a harness whose resolve
-     result reported `guard: none`.
+     result reported `guard: none`. Record the spec read's own two facts here as well — which copy
+     `resolve` read (`spec_source`) and, when it carried one, the `spec_differ` marker — because a
+     silent read of the older copy is the failure the ledger flag and this record exist to remove.
   8. **Build server** — the setup preflight's state (`ready`, `disabled` or `down`, with its reason),
      the fallback each build used and why (`degraded` with its `reason`, or
      `executor_absent_from_worktree`), and any `killed` job with its disposition. Add any
