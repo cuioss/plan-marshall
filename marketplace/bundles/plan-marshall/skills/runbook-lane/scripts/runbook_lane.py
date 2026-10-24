@@ -11,7 +11,7 @@ so the lane contract itself carries no project-specific literal.
 
 Verb surface::
 
-    runbook_lane resolve --spec PATH [--project-dir DIR]
+    runbook_lane resolve --spec PATH [--project-dir DIR] [--spec-from-ledger]
     runbook_lane executor-skew [--executor PATH] [--lane-dir DIR]
     runbook_lane build-routing --worktree PATH
     runbook_lane build-classify --paths P1,P2 [--project-dir DIR]
@@ -24,6 +24,13 @@ Verb surface::
 to run a staged orchestrator plan, and a path outside that tree names something
 else. ``--project-dir`` defaults to the current directory and anchors every
 project-scoped read (marshal.json, the project architecture, the guard marker).
+
+``--spec-from-ledger`` reads that same logical spec from the shared ledger
+worktree first — ``{epic_dir}/plans/{spec name}``, where ``epic_dir`` follows the
+store seam the orchestrator publishes — and falls back to the main checkout's copy
+when the worktree holds none. The flag is set per emit, so a round of emits needs
+no ledger land; with ``orchestrator.use_worktree`` off there is no second copy and
+the flag is a no-op rather than an error.
 
 **Fail closed.** An empty ``required_bots`` list, a missing automatic-review
 step, an unreadable ``marshal.json``, an unreadable Sonar block
@@ -41,10 +48,13 @@ import argparse
 import json
 import os
 import re
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import orchestrator_worktree
 from file_ops import output_toon, output_toon_error
+from marketplace_paths import PLAN_DIR_NAME
 
 #: The step whose ``required_bots`` / ``optional_bots`` the lane drives.
 _REVIEW_STEP_ID = 'plan-marshall:automatic-review'
@@ -151,14 +161,84 @@ def _plan_id_from_spec(spec: Path) -> str:
     return stem.lower()
 
 
-def _resolve_spec(spec_value: str, project_dir: Path) -> tuple[Path, str, str]:
-    """Validate ``--spec`` and return ``(spec, slug, plan_id)``.
+@dataclass(frozen=True)
+class _SpecChoice:
+    """The copy of a staged spec ``resolve`` will read."""
+
+    path: Path
+    slug: str
+    plan_id: str
+
+
+def _ledger_store_dir() -> Path | None:
+    """The shared ledger worktree's ``.plan`` directory, or ``None`` when there is none.
+
+    COMPUTED from the same store seam the orchestrator publishes
+    (``orchestrator_worktree``: the ``orchestrator.use_worktree`` knob plus the
+    main-anchored worktree path), so the lane reads the tree the orchestrator
+    reports rather than a second copy of the rule.
+
+    Deliberately NOT the store resolver's ``ensure_...`` form: the lane only ever
+    READS the spec, so a read must never create the ledger worktree as a side
+    effect. An unresolvable anchor (no git checkout and no override) answers
+    ``None``, which leaves the main checkout's copy as the only one — the knob-off
+    behaviour, in the one situation where there is provably no second copy.
+    """
+    try:
+        if not orchestrator_worktree.orchestrator_use_worktree():
+            return None
+        return orchestrator_worktree.orchestrator_worktree_path() / PLAN_DIR_NAME
+    except (RuntimeError, OSError):
+        return None
+
+
+def _staged_spec_shape(spec: Path, project_dir: Path, *, from_ledger: bool) -> tuple[str, str]:
+    """Return ``(slug, file name)`` for a spec path, or refuse it.
+
+    The file name carries its ``.md`` extension, because the caller rebuilds both
+    copies' paths from it — the regex group that matches it deliberately stops
+    before the extension.
+
+    The project-relative path is matched as a WHOLE against :data:`_SPEC_RE`, so a
+    same-shaped file nested elsewhere (an archive, a fixture tree) never
+    qualifies. Under the ledger flag one further spelling is accepted: a path
+    inside the ledger worktree's own store, which is exactly the form a caller
+    reaches for when the worktree copy is the one it wants. Every other path is
+    the ``spec_outside_orchestrator`` refusal.
+    """
+    try:
+        relative = spec.resolve().relative_to(project_dir.resolve())
+    except ValueError:
+        relative = None
+    if relative is not None:
+        match = _SPEC_RE.fullmatch(relative.as_posix())
+        if match is not None:
+            return match.group('slug'), f'{match.group("name")}.md'
+    if from_ledger:
+        store = _ledger_store_dir()
+        if store is not None:
+            try:
+                inside = spec.resolve().relative_to(store.resolve())
+            except ValueError:
+                inside = None
+            if inside is not None:
+                match = _SPEC_RE.fullmatch(f'{PLAN_DIR_NAME}/{inside.as_posix()}')
+                if match is not None:
+                    return match.group('slug'), f'{match.group("name")}.md'
+    raise ValueError('spec_outside_orchestrator')
+
+
+def _resolve_spec(spec_value: str, project_dir: Path, *, from_ledger: bool = False) -> _SpecChoice:
+    """Validate ``--spec`` and select the copy of it to read.
 
     A RELATIVE spec is resolved against ``--project-dir``, not against the
     process's working directory: the flag names the project the whole resolution
-    is about, so a caller that passes both must get the spec file it named. The
-    project-relative path is then matched as a WHOLE against :data:`_SPEC_RE`, so
-    only a spec at the root of the orchestrator tree qualifies.
+    is about, so a caller that passes both must get the spec file it named.
+
+    Without the flag this is the unchanged read — the main checkout's copy, and
+    ``invalid_spec`` when it holds none. With it the ledger worktree's copy wins
+    when it exists and the main checkout's is the fallback, so a spec that exists
+    only in the worktree is readable.
 
     Raised as ``ValueError`` carrying the refusal code so the caller can emit a
     structured error rather than a traceback.
@@ -166,16 +246,29 @@ def _resolve_spec(spec_value: str, project_dir: Path) -> tuple[Path, str, str]:
     spec = Path(spec_value)
     if not spec.is_absolute():
         spec = project_dir / spec
-    if not spec.is_file():
+    slug, name = _staged_spec_shape(spec, project_dir, from_ledger=from_ledger)
+
+    main_copy = project_dir / '.plan' / 'orchestrator' / slug / 'plans' / name
+    ledger_copy: Path | None = None
+    store = _ledger_store_dir()
+    if store is not None:
+        candidate = store / 'orchestrator' / slug / 'plans' / name
+        if candidate.is_file():
+            ledger_copy = candidate
+
+    if from_ledger and ledger_copy is not None:
+        chosen = ledger_copy
+    elif main_copy.is_file():
+        chosen = main_copy
+    elif spec.is_file():
+        # The caller named the ONLY copy. It survived the shape check above, so it
+        # is either the main checkout's own file or, under the flag, the ledger
+        # worktree's.
+        chosen = spec.resolve()
+    else:
         raise ValueError('invalid_spec')
-    try:
-        rel = spec.resolve().relative_to(project_dir.resolve())
-    except ValueError:
-        raise ValueError('spec_outside_orchestrator') from None
-    match = _SPEC_RE.fullmatch(rel.as_posix())
-    if match is None:
-        raise ValueError('spec_outside_orchestrator')
-    return spec, match.group('slug'), _plan_id_from_spec(spec)
+
+    return _SpecChoice(chosen, slug, _plan_id_from_spec(chosen))
 
 
 def _read_marshal(project_dir: Path) -> dict[str, Any]:
@@ -1718,9 +1811,10 @@ def cmd_resolve(args: argparse.Namespace) -> dict[str, Any]:
     project_dir = Path(getattr(args, 'project_dir', '.') or '.').resolve()
 
     try:
-        spec, slug, plan_id = _resolve_spec(args.spec, project_dir)
+        choice = _resolve_spec(args.spec, project_dir, from_ledger=args.spec_from_ledger)
     except ValueError as exc:
         return {'status': 'error', 'error': str(exc), 'spec': args.spec}
+    spec, slug, plan_id = choice.path, choice.slug, choice.plan_id
     try:
         marshal = _read_marshal(project_dir)
         required, optional = _resolve_bots(marshal)
@@ -1864,6 +1958,12 @@ def main() -> int:
         '--spec', required=True, help='Staged spec path: .plan/orchestrator/{slug}/plans/PLAN-*.md'
     )
     resolve_parser.add_argument('--project-dir', default='.', help='Project root (default: current directory)')
+    resolve_parser.add_argument(
+        '--spec-from-ledger',
+        dest='spec_from_ledger',
+        action='store_true',
+        help='Read the spec from the shared ledger worktree first, falling back to the main checkout',
+    )
 
     skew_parser = subparsers.add_parser(
         'executor-skew',

@@ -142,11 +142,16 @@ check** and the operator is asked; it is never read as no skew. The check cannot
 `resolve`: a stale executor runs the stale `resolve`, which is exactly the code that lacks it, while
 this text is loaded from the installed plugin and is current when the executor is not.
 
-Read the spec from the **main checkout**; it is git-tracked there. Then **resolve** every value the run
-uses, and read the result before doing anything else:
+Read the spec from the **main checkout** by default; it is git-tracked there. Add
+`--spec-from-ledger` to read it from the shared ledger worktree first —
+`{epic_dir}/plans/{spec name}`, where `epic_dir` follows the same store seam
+`orchestrator resolve-path --slug {slug}` publishes — falling back to the main checkout's copy when
+the worktree holds none. The flag is set per emit, so a round of emits needs no ledger land; with
+`orchestrator.use_worktree` off there is no second copy and it is a no-op rather than an error. Then
+**resolve** every value the run uses, and read the result before doing anything else:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:runbook-lane:runbook_lane resolve --spec {spec}
+python3 .plan/execute-script.py plan-marshall:runbook-lane:runbook_lane resolve --spec {spec} [--spec-from-ledger]
 ```
 
 The result supplies, and nothing below is spelled from anywhere else:
