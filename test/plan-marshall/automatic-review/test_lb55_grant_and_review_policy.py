@@ -50,7 +50,8 @@ def _grant(plan_id: str, **overrides) -> dict | None:
         'override_label': None,
     }
     values.update(overrides)
-    return merges.cmd_merge_authorization_grant(argparse.Namespace(**values))
+    result: dict | None = merges.cmd_merge_authorization_grant(argparse.Namespace(**values))
+    return result
 
 
 def test_free_text_is_not_a_grant(plan_context):

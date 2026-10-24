@@ -92,10 +92,9 @@ def _seed_plan(plan_context, plan_id: str, metadata: dict) -> Path:
     status = json.loads(status_path.read_text(encoding='utf-8'))
     status['metadata'] = metadata
     status_path.write_text(json.dumps(status), encoding='utf-8')
-    (plan_context.plan_dir_for(plan_id) / 'references.json').write_text(
-        json.dumps({'base_branch': 'main'}), encoding='utf-8'
-    )
-    return plan_context.plan_dir_for(plan_id)
+    plan_dir: Path = plan_context.plan_dir_for(plan_id)
+    (plan_dir / 'references.json').write_text(json.dumps({'base_branch': 'main'}), encoding='utf-8')
+    return plan_dir
 
 
 def _write_metrics(plan_dir: Path, rows: dict[str, dict[str, str]]) -> None:
