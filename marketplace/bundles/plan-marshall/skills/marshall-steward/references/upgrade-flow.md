@@ -67,22 +67,29 @@ Step 0 does **not** require a working `.plan/execute-script.py`.
 **Recovery first — a missing or broken executor.** When `.plan/execute-script.py`
 is absent, or invoking it fails with a `ModuleNotFoundError` (the executor still
 points at a pruned or partial cache), do NOT hand-repair it and do NOT stop.
-Restore it from the newest plugin-cache version by running the generator
-**directly, by its admitted script path** — the same direct-path surface
-Stage 1's `regenerate-executor` uses, which needs no working executor. The
-generator script is on the shared R5 allow-list in BOTH its repository-relative
-and its deployed bundle-relative form:
+The executor's own failure output prints the exact recovery command — the newest
+cache's `generate_executor.py recover --project-dir <checkout> --target
+<active-target>` — and that command needs no working executor. Run it verbatim:
+it finds the newest cache, probes, regenerates, and re-probes.
+
+From a checkout that carries the sources, the same entry runs by its
+repository-relative path:
 
 ```bash
-python3 marketplace/bundles/plan-marshall/skills/tools-script-executor/scripts/generate_executor.py generate
+python3 marketplace/bundles/plan-marshall/skills/tools-script-executor/scripts/generate_executor.py recover --project-dir . --target <active-target>
 ```
 
-In a consumer checkout that lacks the `marketplace/` tree, invoke the same
-script by its deployed bundle-relative path — the newest version directory under
-the deployed plan-marshall plugin cache, `{newest_cache}/skills/tools-script-executor/scripts/generate_executor.py`
-— which the shared allow-list admits equally. Once the executor is restored,
-continue with the normal call below — restoring it first is what makes every
-downstream stage resolve current-version scripts.
+In a consumer checkout the executor's printed command names the newest deployed
+cache's `{newest_cache}/skills/tools-script-executor/scripts/generate_executor.py`;
+run the printed command as-is.
+
+`recover` reports `action: regenerated` only after the regenerated executor
+passes its own import probe. A regenerated executor that still fails to import
+reports `action: regenerate_failed` with the probe's reason, never
+`regenerated`. Both the repository-relative and the deployed bundle-relative
+forms are on the shared R5 allow-list. Once the executor is restored, continue
+with the normal call below — restoring it first is what makes every downstream
+stage resolve current-version scripts.
 
 **Normal — the executor resolves.** Validate the serving executor against the
 newest plugin-cache version and report its currency BEFORE requesting the stage
@@ -228,10 +235,13 @@ plan emitted for the resolved kind:
   with the local marketplace clone? — and preflight is unchanged. Neither sub-step
   has an upstream leg: whether the clone itself is current with the actual upstream
   is not verified here, and the `cache_freshness` verdict stamps
-  `compared_against: local_clone_manifest` to declare that scope. A `fresh` verdict
-  is therefore a clone-currency claim, not an upstream-currency one; keeping the
-  clone current with upstream (a separate `/plugin marketplace update`) is an
-  operator action this gate does not perform.
+  `compared_against` to declare that scope: `local_clone_manifest` on a versioned
+  cache, `installed_manifest` on a flat install (whose cache version is read from
+  the installed `dist-manifest.json` itself). A `fresh` verdict is therefore a
+  clone-currency claim (or, on a flat install, an internal-consistency claim),
+  never an upstream-currency one; keeping the clone current with upstream (a
+  separate `/plugin marketplace update`) is an operator action this gate does not
+  perform.
 
 - **`regenerate-target-tree`** (meta only — absent from a consumer plan) —
   regenerate the target tree for the project's target:

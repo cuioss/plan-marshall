@@ -263,4 +263,4 @@ def test_step0_documents_the_missing_or_broken_executor_recovery():
     assert 'not** require a working' in block
     assert 'ModuleNotFoundError' in block
     assert 'newest' in block
-    assert 'generate_executor.py generate' in block
+    assert 'generate_executor.py recover' in block

@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import json
 import os
+from argparse import Namespace
 from pathlib import Path
 
 import pytest
@@ -495,3 +496,92 @@ def test_cli_check_emits_parseable_toon(tmp_path: Path, capsys: pytest.CaptureFi
         'compared_against',
         'remediation',
     }.issubset(parsed.keys())
+
+
+# ============================================================================
+# Flat OpenCode installs
+# ============================================================================
+
+
+def _make_flat_install(tmp_path: Path, version: str | None = None) -> Path:
+    """Build a flat OpenCode-shaped install and return its skill root.
+
+    The skill root is ``{config}/skills`` (what ``layout bundle-cache-root``
+    returns for OpenCode) and the sync publishes ``dist-manifest.json`` at the
+    config root, beside ``opencode.json`` — the location the flat-install lookup
+    probes through ``{cache_root}/../dist-manifest.json``.
+    """
+    config = tmp_path / 'opencode'
+    skill_root = config / 'skills'
+    (skill_root / 'plan-marshall-demo' / 'scripts').mkdir(parents=True)
+    (config / 'opencode.json').write_text(json.dumps({'name': 'plan-marshall'}), encoding='utf-8')
+    if version is not None:
+        (config / 'dist-manifest.json').write_text(json.dumps({'version': version}), encoding='utf-8')
+    return skill_root
+
+
+def test_flat_install_with_manifest_reports_fresh_not_unknown(tmp_path: Path):
+    """A flat install carrying its published manifest reaches a real verdict."""
+    skill_root = _make_flat_install(tmp_path, version='0.1.100')
+
+    result = cache_freshness.check_freshness(skill_root)
+
+    assert result['freshness'] in {'fresh', 'stale'}
+    assert result['freshness'] != 'unknown'
+    assert result['manifest_version'] == '0.1.100'
+    assert result['manifest_path'].endswith('dist-manifest.json')
+    assert result['compared_against'] == 'installed_manifest'
+    assert 'flat install' in result['warning']
+
+
+def test_flat_install_without_manifest_names_every_probe(tmp_path: Path):
+    """An unresolvable flat manifest names what the lookup probed."""
+    skill_root = _make_flat_install(tmp_path)
+
+    result = cache_freshness.check_freshness(skill_root)
+
+    assert result['freshness'] == 'unknown'
+    assert 'probed:' in result['warning']
+    assert str(skill_root / 'dist-manifest.json') in result['warning']
+    assert str(skill_root.parent / 'dist-manifest.json') in result['warning']
+
+
+def test_a_resolved_manifest_stamps_provisioned_version(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """The fixture that passes Stage 1 also reaches the Stage 2 re-stamp.
+
+    Stage 1's gate opens once ``check_freshness`` resolves the installed manifest;
+    Stage 2's handler (``sync-defaults``) then re-stamps
+    ``system.provisioned_version`` from the executor's embedded version (itself
+    stamped from that manifest at generation time).
+    """
+    version = '0.1.2000'
+    skill_root = _make_flat_install(tmp_path, version=version)
+    gate = cache_freshness.check_freshness(skill_root)
+    assert gate['freshness'] == 'fresh'
+    assert gate['refuses_upgrade'] is False
+
+    project = tmp_path / 'project'
+    plan_dir = project / '.plan'
+    plan_dir.mkdir(parents=True)
+    (plan_dir / 'execute-script.py').write_text(f"MARSHALL_VERSION = '{version}'\n", encoding='utf-8')
+    (plan_dir / 'marshal.json').write_text('{}\n', encoding='utf-8')
+    monkeypatch.setenv('PLAN_BASE_DIR', str(plan_dir))
+
+    # The Stage 2 handler imports the path-bound read/write helpers at module
+    # load; bind them to the fixture file so the handler writes here rather than
+    # into the checkout the test process runs from. Loading with register=False
+    # keeps the shared module registry free of a second `_config_core` /
+    # `_cmd_sync_defaults` entry.
+    sync_defaults = load_script_module('plan-marshall', 'manage-config', '_cmd_sync_defaults.py', register=False)
+    marshal = plan_dir / 'marshal.json'
+    monkeypatch.setattr(sync_defaults, 'is_initialized', lambda: marshal.is_file())
+    monkeypatch.setattr(sync_defaults, 'load_config', lambda: json.loads(marshal.read_text(encoding='utf-8')))
+
+    def _save_config(config: dict) -> None:
+        marshal.write_text(json.dumps(config), encoding='utf-8')
+
+    monkeypatch.setattr(sync_defaults, 'save_config', _save_config)
+    sync_defaults.cmd_sync_defaults(Namespace())
+
+    saved = json.loads((plan_dir / 'marshal.json').read_text(encoding='utf-8'))
+    assert saved['system']['provisioned_version'] == version

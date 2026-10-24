@@ -517,6 +517,13 @@ def test_install_core_only(multi_bundle_repo: Path, tmp_path: Path, opencode_con
     assert len(manifest['dist_manifest_sha']) == 64
     assert 'skills/plan-marshall-core-skill/SKILL.md' in manifest['managed_files']
     assert 'agents/core-agent.md' in manifest['managed_files']
+    # The emitted dist-manifest is installed at the config root, beside
+    # opencode.json. A flat install has no version dir, so this is the one file
+    # `generate_executor preflight` and `cache_freshness check` can resolve the
+    # installed version from.
+    assert (dest / 'dist-manifest.json').is_file()
+    assert json.loads((dest / 'dist-manifest.json').read_text(encoding='utf-8'))['version'] == '1.0.0'
+    assert 'dist-manifest.json' in manifest['managed_files']
 
 
 def test_install_bundles_and_aliases(multi_bundle_repo: Path, tmp_path: Path, opencode_config_dir: Path):
@@ -641,9 +648,11 @@ def test_install_uninstall_full_with_manifest_preserves_user_files(
 ):
     out = tmp_path / 'out'
     emit_bundles(multi_bundle_repo, out, opencode_config_dir)
+    _write(out / 'dist-manifest.json', json.dumps({'version': '1.0.0'}) + '\n')
 
     dest = tmp_path / 'installed'
     subprocess.run([str(out / 'install.sh'), '--target-dir', str(dest), '--all'], check=True)
+    assert (dest / 'dist-manifest.json').is_file()
 
     # Add user custom files
     user_skill_1 = dest / 'skills' / 'my-custom-skill' / 'SKILL.md'
@@ -660,6 +669,9 @@ def test_install_uninstall_full_with_manifest_preserves_user_files(
     assert not (dest / 'skills' / 'plan-marshall-core-skill').exists()
     assert not (dest / 'skills' / 'pm-dev-java-java-skill').exists()
     assert not (dest / '.plan-marshall-manifest.json').exists()
+    # The installed manifest is recorded in managed_files, so the manifest-driven
+    # uninstall removes it.
+    assert not (dest / 'dist-manifest.json').exists()
 
     # User custom components preserved
     assert user_skill_1.is_file()
@@ -672,9 +684,11 @@ def test_install_uninstall_full_fallback_without_manifest_preserves_user_files(
 ):
     out = tmp_path / 'out'
     emit_bundles(multi_bundle_repo, out, opencode_config_dir)
+    _write(out / 'dist-manifest.json', json.dumps({'version': '1.0.0'}) + '\n')
 
     dest = tmp_path / 'installed'
     subprocess.run([str(out / 'install.sh'), '--target-dir', str(dest), '--all'], check=True)
+    assert (dest / 'dist-manifest.json').is_file()
 
     # Remove manifest to test bundle-components.json fallback
     manifest_file = dest / '.plan-marshall-manifest.json'
@@ -695,6 +709,10 @@ def test_install_uninstall_full_fallback_without_manifest_preserves_user_files(
     # Managed components removed
     assert not (dest / 'skills' / 'plan-marshall-core-skill').exists()
     assert not (dest / 'skills' / 'pm-dev-java-java-skill').exists()
+    # Ownership is recorded only in the manifest; without it the fallback cannot
+    # prove the manifest is ours, so it PRESERVES the file rather than deleting a
+    # possibly user-owned document.
+    assert (dest / 'dist-manifest.json').is_file()
 
     # User custom components preserved
     assert user_skill_1.is_file()

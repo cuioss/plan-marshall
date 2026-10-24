@@ -3,9 +3,11 @@
 """Tests for manage-status.py create + JSON storage + worktree intent.
 
 Split from test_manage_status.py: covers cmd_create (incl. the use_worktree
-intent persistence) and on-disk JSON storage assertions. Create persists only
-``metadata.use_worktree``; the feature branch and the resolved worktree_path
-are derived and back-filled at phase-5-execute Step 2.5.
+intent persistence) and on-disk JSON storage assertions. Create persists
+``metadata.use_worktree`` and, when a serving executor is present, the
+executor's ``executor_target`` / ``executor_plugin_root`` stamp; the feature
+branch and the resolved worktree_path are derived and back-filled at
+phase-5-execute Step 2.5.
 """
 
 import json
@@ -45,6 +47,25 @@ def test_create_status(plan_context, monkeypatch):
     assert result['created'] is True
     assert result['plan']['title'] == 'Test Plan'
     assert result['plan']['current_phase'] == '1-init'
+
+
+def test_create_records_executor_target_stamp(plan_context):
+    """The serving executor's harness/plugin-root stamp lands in status.metadata."""
+    from file_ops import get_tracked_config_dir
+
+    plan_dir = get_tracked_config_dir()
+    plan_dir.mkdir(parents=True, exist_ok=True)
+    (plan_dir / 'execute-script.py').write_text(
+        "_EXECUTOR_TARGET = 'opencode'\nEXECUTOR_PLUGIN_ROOT = '/fixture/tree'\n",
+        encoding='utf-8',
+    )
+
+    result = cmd_create(Namespace(plan_id='stamp-plan', title='Stamped', phases='1-init', force=False))
+    status = json.loads(_lifecycle.get_status_path('stamp-plan').read_text(encoding='utf-8'))
+
+    assert result['status'] == 'success'
+    assert status['metadata']['executor_target'] == 'opencode'
+    assert status['metadata']['executor_plugin_root'] == '/fixture/tree'
 
 
 def test_create_status_custom_phases(plan_context):
@@ -170,12 +191,9 @@ def test_create_seeds_only_use_worktree_when_use_worktree_true(plan_context):
 
     # Verify status.json on disk persists ONLY the use_worktree intent.
     status = json.loads((plan_context.plan_dir_for(plan_id) / 'status.json').read_text(encoding='utf-8'))
-    assert status['metadata'] == {'use_worktree': True}, (
-        f'metadata must be exactly {{use_worktree: True}} at create, got '
-        f'{status["metadata"]!r}. B-strip removed the worktree_path sentinel '
-        f'and the early worktree_branch persistence — only use_worktree is '
-        f'durable at create.'
-    )
+    assert status['metadata']['use_worktree'] is True
+    assert 'worktree_path' not in status['metadata']
+    assert 'worktree_branch' not in status['metadata']
 
 
 def test_create_seeds_use_worktree_false_when_omitted(plan_context):
@@ -202,11 +220,13 @@ def test_create_seeds_use_worktree_false_when_omitted(plan_context):
     assert 'worktree_branch' not in result
 
     status = json.loads((plan_context.plan_dir_for(plan_id) / 'status.json').read_text(encoding='utf-8'))
-    assert status['metadata'] == {'use_worktree': False}, (
-        f'metadata must be exactly {{use_worktree: False}} when no worktree '
-        f'is seeded, got {status["metadata"]!r}. The false-state seeding '
-        f'contract prohibits writing path/branch keys.'
+    assert status['metadata']['use_worktree'] is False, (
+        f'metadata must seed use_worktree=False when no worktree is seeded, got '
+        f'{status["metadata"]!r}. The false-state seeding contract prohibits '
+        f'writing path/branch keys.'
     )
+    assert 'worktree_path' not in status['metadata']
+    assert 'worktree_branch' not in status['metadata']
 
 
 def test_create_ignores_stale_worktree_args_if_passed(plan_context):
@@ -230,10 +250,12 @@ def test_create_ignores_stale_worktree_args_if_passed(plan_context):
     )
     assert result['status'] == 'success'
     status = json.loads((plan_context.plan_dir_for(plan_id) / 'status.json').read_text(encoding='utf-8'))
-    assert status['metadata'] == {'use_worktree': True}, (
-        f'Stale worktree_path / worktree_branch args must be ignored — metadata '
-        f'must be exactly {{use_worktree: True}}, got {status["metadata"]!r}.'
+    assert status['metadata']['use_worktree'] is True, (
+        f'Stale worktree_path / worktree_branch args must be ignored — '
+        f'use_worktree must be True, got {status["metadata"]!r}.'
     )
+    assert 'worktree_path' not in status['metadata']
+    assert 'worktree_branch' not in status['metadata']
 
 
 # =============================================================================
@@ -264,9 +286,11 @@ def test_cli_create_with_use_worktree(plan_context):
     assert 'status: success' in create_result.stdout
 
     status = json.loads((plan_context.plan_dir_for(plan_id) / 'status.json').read_text(encoding='utf-8'))
-    assert status['metadata'] == {'use_worktree': True}, (
-        f'CLI create --use-worktree must persist only {{use_worktree: True}}, got {status["metadata"]!r}.'
+    assert status['metadata']['use_worktree'] is True, (
+        f'CLI create --use-worktree must persist use_worktree=True, got {status["metadata"]!r}.'
     )
+    assert 'worktree_path' not in status['metadata']
+    assert 'worktree_branch' not in status['metadata']
 
 
 def test_cli_create_rejects_removed_worktree_branch_flag(plan_context):

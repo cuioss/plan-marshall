@@ -327,6 +327,56 @@ def test_a_stale_lane_marker_does_not_bind(
         shutil.rmtree(hook_consumer, ignore_errors=True)
 
 
+_RECOVERY_SCRIPT = 'skills/plan-marshall-tools-script-executor/scripts/generate_executor.py'
+
+
+def test_the_executor_recovery_command_is_admitted_on_the_guard_and_the_hook(
+    tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The exact command the executor prints for recovery passes R5 on both surfaces.
+
+    The command runs a deployed cache script by its absolute path, so it must be
+    admitted through the BUNDLE-RELATIVE allow-list entry (the repository-relative
+    one cannot match outside the repository). A consumer plugin exists only in
+    the cache — the case the recovery exists for.
+    """
+    deployed = tmp_path_factory.mktemp('recovery-flat-root')
+    script = deployed / _RECOVERY_SCRIPT
+    script.parent.mkdir(parents=True, exist_ok=True)
+    script.write_text('# deployed generator\n', encoding='utf-8')
+    command = f'python3 {script} recover --project-dir /tmp/consumer --target opencode'
+
+    harness = build_harness(tmp_path_factory.mktemp('recovery-flat'), extra_env={'OPENCODE_CONFIG_DIR': str(deployed)})
+    blocked, message = harness.blocks(shell_event(command, agent=SUB_AGENT_AGENT))
+    assert not blocked, f'the recovery command must be admitted; message={message!r}'
+
+    monkeypatch.setenv('OPENCODE_CONFIG_DIR', str(deployed))
+    assert not _hook_refused(command), 'the hook must admit the recovery command too'
+
+    # Nested Claude cache — the erasure the defect was opened for. The cache root
+    # is the marketplace dir; the bundle is a child whose version dir carries the
+    # script, so the deployed admission must rebuild that full path.
+    claude_home = tmp_path_factory.mktemp('recovery-nested-home')
+    version_dir = claude_home / '.claude' / 'plugins' / 'cache' / 'plan-marshall' / 'plan-marshall' / '1.0.0'
+    nested_script = version_dir / 'skills' / 'tools-script-executor' / 'scripts' / 'generate_executor.py'
+    nested_script.parent.mkdir(parents=True)
+    nested_script.write_text('# deployed\n', encoding='utf-8')
+    (version_dir / '.claude-plugin').mkdir()
+    (version_dir / '.claude-plugin' / 'plugin.json').write_text('{"name": "plan-marshall"}\n', encoding='utf-8')
+    nested_command = f'python3 {nested_script} recover --project-dir /tmp/consumer --target claude'
+
+    nested_harness = build_harness(
+        tmp_path_factory.mktemp('recovery-nested'),
+        extra_env={'HOME': str(claude_home), 'CLAUDE_CODE_SESSION_ID': 'fixture'},
+    )
+    nested_blocked, nested_message = nested_harness.blocks(shell_event(nested_command, agent=SUB_AGENT_AGENT))
+    assert not nested_blocked, f'the nested-cache recovery command must be admitted; message={nested_message!r}'
+
+    monkeypatch.setenv('HOME', str(claude_home))
+    monkeypatch.setenv('CLAUDE_CODE_SESSION_ID', 'fixture')
+    assert not _hook_refused(nested_command), 'the hook must admit the nested-cache recovery command too'
+
+
 def test_the_layout_data_is_the_one_shared_file() -> None:
     """The deployed roots come from the shared layout data, not a literal list."""
     layout = layout_data()

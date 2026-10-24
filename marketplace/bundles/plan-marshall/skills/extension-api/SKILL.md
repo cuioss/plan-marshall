@@ -518,6 +518,19 @@ resolver, sorted by id, plus `count` and `enabled_count`. This is the roster the
 `marshall-steward` resolver-configuration menu renders. Discovery is deliberately **not** filtered by
 the binding: a disabled resolver must still be listed for the menu to offer re-enabling it.
 
+### extension_api — resolve-workflow
+
+```bash
+python3 .plan/execute-script.py plan-marshall:extension-api:extension_api resolve-workflow \
+  --notation NOTATION --worktree WORKTREE
+```
+
+Resolves `{bundle}:{skill}/{relative path}.md` (the `SKILL.md`, `workflow/` and `standards/` forms
+alike) to a verified absolute path: the worktree's `marketplace/bundles/…` copy when it exists,
+otherwise the installed copy through the platform-runtime `layout bundle-cache-root` roots and
+`marketplace_bundles.resolve_bundle_path`. When neither exists it returns
+`error: workflow_not_found` naming every probed path.
+
 ### configurable_contract — parse
 
 ```bash

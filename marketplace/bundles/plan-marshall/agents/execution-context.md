@@ -79,7 +79,7 @@ Skill: plan-marshall:persona-plan-marshall-agent
 
 For each entry in `skills[]`, in order, load that skill into context using the platform's skill-loading mechanism before continuing to the next entry. Each entry is a runtime `{bundle}:{skill}` notation substituted per iteration.
 
-**Workflow-doc de-dup (skip the double-load).** When `workflow` is present, resolve it to its filesystem path (Step 4's notation table) and skip loading any `skills[]` entry whose resolved `SKILL.md` path equals that resolved `workflow` path — that body is already loaded as the workflow in Step 5, so loading it again as a skill re-reads the same doc into the same envelope. Phase dispatches are the canonical trigger: the orchestrator passes both `skills=[plan-marshall:phase-N]` and `workflow=plan-marshall:phase-N/SKILL.md`, and the skill notation `{bundle}:{skill}` resolves to `.../{skill}/SKILL.md` — byte-identical to the `{bundle}:{skill}/SKILL.md` workflow path — so the phase SKILL body would otherwise load twice. Compare the resolved paths (not the raw notations): a `skills[]` entry `{bundle}:{skill}` matches when its resolved `marketplace/bundles/{bundle}/skills/{skill}/SKILL.md` equals the resolved `workflow` path. Skills that resolve to a different SKILL.md (the workflow's `skills[]` prerequisites) load normally.
+**Workflow-doc de-dup (skip the double-load).** When `workflow` is present, resolve it to its filesystem path (Step 4's `resolve-workflow` call) and skip loading any `skills[]` entry whose resolved `SKILL.md` path equals that resolved `workflow` path — that body is already loaded as the workflow in Step 5, so loading it again as a skill re-reads the same doc into the same envelope. Phase dispatches are the canonical trigger: the orchestrator passes both `skills=[plan-marshall:phase-N]` and `workflow=plan-marshall:phase-N/SKILL.md`, and the skill notation `{bundle}:{skill}` resolves to `.../{skill}/SKILL.md` — byte-identical to the `{bundle}:{skill}/SKILL.md` workflow path — so the phase SKILL body would otherwise load twice. Compare the resolved paths (not the raw notations). Skills that resolve to a different SKILL.md (the workflow's `skills[]` prerequisites) load normally.
 
 If any skill load fails, STOP and return:
 
@@ -104,14 +104,18 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 **When `workflow` is present:**
 
-The `workflow` value is a bundle-prefixed notation that the dispatcher resolves to a concrete filesystem path. Two notation forms are accepted (per `plan-marshall:extension-api/standards/ext-point-execution-context-workflow`):
+`workflow` is a bundle-prefixed notation. Resolve it with the single `resolve-workflow` verb and `Read` the absolute path it returns:
 
-| Notation | Resolves to |
-|----------|-------------|
-| `{bundle}:{skill}/SKILL.md` | `marketplace/bundles/{bundle}/skills/{skill}/SKILL.md` |
-| `{bundle}:{skill}/workflow/{file}.md` | `marketplace/bundles/{bundle}/skills/{skill}/workflow/{file}.md` |
+```bash
+python3 .plan/execute-script.py plan-marshall:extension-api:extension_api resolve-workflow \
+  --notation "{workflow}" --worktree {WORKTREE}
+```
 
-Read the resolved path with the `Read` tool. If the file does not exist or the notation is malformed, STOP and return:
+The verb accepts the `{bundle}:{skill}/SKILL.md`, `{bundle}:{skill}/workflow/{file}.md` and `{bundle}:{skill}/standards/{file}.md` forms alike, and resolves in the order stated once in [`plan-marshall:extension-api/standards/ext-point-execution-context-workflow`](../skills/extension-api/standards/ext-point-execution-context-workflow.md) § "Workflow-Resolution Root": the worktree's own `marketplace/bundles/…` copy when it exists, otherwise the installed copy in the active target's deployed bundle cache. Its `path` field is the verified absolute path — `Read` that path.
+
+Never construct a workflow path by hand and never map a notation only to `marketplace/bundles/`: a consumer repository has no such tree, and a hand-built path there either points at nothing or at a stale tree. The verb is the one resolution path on every target.
+
+If the verb returns `status: error` with `error: workflow_not_found` (the file exists neither in the worktree nor in the installed copy), STOP and return:
 
 ```toon
 status: error
@@ -119,6 +123,7 @@ display_detail: "execution-context: workflow doc not found: <notation>"
 error: workflow_not_found
 component: "plan-marshall:execution-context"
 workflow: "<notation>"
+probed: "<the verb's worktree and installed probe paths>"
 ```
 
 **When `instructions` is present:**
