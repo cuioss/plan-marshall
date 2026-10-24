@@ -6,7 +6,7 @@ Notation: ``plan-marshall:manage-change-ledger:manage-change-ledger``
 
 This standalone script is the executor-callable surface over the one append-only
 change-ledger (``.plan/work/change-ledger.jsonl``) and its ``worktree_sha``
-primitive. It exposes three verbs on the shared deterministic core
+primitive. It exposes the verbs below on the shared deterministic core
 (``_ledger_core.py``) and the shared hash helper (``worktree_sha.py``):
 
   * ``worktree-sha`` — the FIRST-CLASS reusable freshness API. Computes the
@@ -28,6 +28,10 @@ primitive. It exposes three verbs on the shared deterministic core
   * ``query`` — read the ledger (optional ``--kind`` / ``--exit-code`` filters),
     printing the matching entries as TOON. For inspection and tests; the
     freshness gate imports ``read_entries`` directly rather than shelling here.
+  * ``remap`` — map the ``kind=change`` rows of rewritten commits onto their
+    rewritten counterparts and APPEND the mapped rows (patch-id derivation, or
+    an explicit old-to-new map the rewriting step emitted). The original rows
+    stay: a rewrite costs an append, never a ledger edit.
   * ``classify-outcome`` — the deterministic killed-job classifier. A pure
     function of observable inputs (reported job status, output byte count,
     presence of a matching ``kind=build`` ledger row) returning a fixed
@@ -48,7 +52,9 @@ verb, the executor ``kind=build`` writer, and the gate.
 
 from __future__ import annotations
 
+import json
 from argparse import Namespace
+from pathlib import Path
 from typing import Any
 
 from _ledger_core import (
@@ -60,7 +66,10 @@ from _ledger_core import (
     build_record,
     change_record,
     job_record,
+    parse_sha_map_text,
     read_entries,
+    remap_change_rows,
+    resolve_commit,
     resolve_ledger_path,
 )
 from marketplace_paths import NO_PLAN_SENTINEL
@@ -322,8 +331,70 @@ def run_query(args: Namespace) -> dict[str, Any]:
     }
 
 
+def _explicit_sha_map(args: Namespace) -> dict[str, str] | None:
+    """Load the explicit old-to-new map from ``--map-file`` and/or ``--map``.
+
+    ``None`` means no explicit map was supplied, so the verb derives the map by
+    patch-id. An empty map is NOT the same as no map: it asserts that no commit
+    was rewritten, and the derivation must not run in its place.
+    """
+    if not args.map and not args.map_file:
+        return None
+    mapping: dict[str, str] = {}
+    if args.map_file:
+        mapping.update(parse_sha_map_text(Path(args.map_file).read_text(encoding='utf-8')))
+    if args.map:
+        # Inline form: comma-separated ``old:new`` pairs, one per line once split.
+        mapping.update(parse_sha_map_text(args.map.replace(',', '\n')))
+    return mapping
+
+
+def run_remap(args: Namespace) -> dict[str, Any]:
+    """``remap`` — append the mapped rows of rewritten commits.
+
+    The mapping comes from ``--map-file`` / ``--map`` when the rewriting step
+    emitted one, and from a stable patch-id derivation otherwise. ``--old-head``
+    scopes that derivation to the commits a known rewrite replayed. ``--dry-run``
+    reports the map without appending, and ``--emit-map`` writes the applied map
+    as JSON so a rewriting step can publish it beside the repair.
+    """
+    worktree_root = args.worktree_root or '.'
+    if args.old_head and resolve_commit(worktree_root, args.old_head) is None:
+        # An unresolvable pre-rewrite head would leave the candidate window empty
+        # and read as "every row is unmapped", sending the caller to hand-append
+        # rows for a typo. Refuse instead.
+        return make_error(
+            f'--old-head {args.old_head} does not resolve to a commit in {worktree_root}',
+            code=ErrorCode.INVALID_INPUT,
+            worktree_root=str(worktree_root),
+        )
+    try:
+        explicit_map = _explicit_sha_map(args)
+    except (OSError, ValueError) as exc:
+        return make_error(
+            f'the SHA map could not be read: {exc}',
+            code=ErrorCode.INVALID_INPUT,
+            worktree_root=str(worktree_root),
+        )
+    worktree_sha = args.worktree_sha if args.worktree_sha else compute_worktree_sha(worktree_root)
+    result = remap_change_rows(
+        worktree_root=worktree_root,
+        worktree_sha=worktree_sha,
+        explicit_map=explicit_map,
+        old_head=args.old_head,
+        dry_run=bool(args.dry_run),
+    )
+    if args.emit_map:
+        map_path = Path(args.emit_map)
+        map_path.parent.mkdir(parents=True, exist_ok=True)
+        applied = {entry['old_commit_sha']: entry['new_commit_sha'] for entry in result['mappings']}
+        map_path.write_text(json.dumps(applied, indent=2, sort_keys=True) + '\n', encoding='utf-8')
+        result['map_file'] = str(map_path)
+    return result
+
+
 def main() -> int:
-    """Entry point — ``worktree-sha`` / ``append`` / ``query`` verbs."""
+    """Entry point — ``worktree-sha`` / ``append`` / ``query`` / ``remap`` / ``classify-outcome`` verbs."""
     parser = create_workflow_cli(
         description='Unified change-ledger: first-class worktree-sha API + append + query',
         epilog="""
@@ -333,6 +404,7 @@ Examples:
   manage-change-ledger.py append --kind change --deliverable-id 2 --commit-sha SHA --changed-paths a,b,c
   manage-change-ledger.py append --kind job --job-id JOB_ID [--plan-id ID|NO_PLAN] [--fingerprint FP] [--notation NOTATION]
   manage-change-ledger.py query [--kind build|change|job] [--exit-code 0]
+  manage-change-ledger.py remap --worktree-root PATH [--old-head SHA] [--map OLD:NEW,...] [--map-file PATH] [--emit-map PATH] [--dry-run]
   manage-change-ledger.py classify-outcome --job-status killed --output-bytes 0 --worktree-sha SHA
 """,
         subcommands=[
@@ -432,6 +504,49 @@ Examples:
                         'flags': ['--fingerprint'],
                         'dest': 'fingerprint',
                         'help': 'job: the idempotent-submit fingerprint (plan + command + tree)',
+                    },
+                ],
+            },
+            {
+                'name': 'remap',
+                'help': 'Map the kind=change rows of rewritten commits onto their rewritten SHAs (append-only)',
+                'handler': run_remap,
+                'args': [
+                    {
+                        'flags': ['--worktree-root'],
+                        'dest': 'worktree_root',
+                        'help': 'Working-tree root whose history was rewritten (default: cwd)',
+                    },
+                    {
+                        'flags': ['--map'],
+                        'dest': 'map',
+                        'help': 'Explicit old-to-new SHA map, comma-separated pairs (old:new)',
+                    },
+                    {
+                        'flags': ['--map-file'],
+                        'dest': 'map_file',
+                        'help': "Path to the emitted map — JSON {old: new} or lines of 'old new' / 'old:new'",
+                    },
+                    {
+                        'flags': ['--old-head'],
+                        'dest': 'old_head',
+                        'help': 'Pre-rewrite HEAD; narrows patch-id candidates to commits reachable from HEAD but not from it',
+                    },
+                    {
+                        'flags': ['--emit-map'],
+                        'dest': 'emit_map',
+                        'help': 'Write the applied old-to-new map to this path as JSON',
+                    },
+                    {
+                        'flags': ['--dry-run'],
+                        'dest': 'dry_run',
+                        'action': 'store_true',
+                        'help': 'Report the map without appending any row',
+                    },
+                    {
+                        'flags': ['--worktree-sha'],
+                        'dest': 'worktree_sha',
+                        'help': 'Pre-computed worktree_sha for the appended rows (skips recomputation)',
                     },
                 ],
             },

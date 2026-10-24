@@ -373,8 +373,11 @@ class TestGenerateWorktreeExecutorSuccessAndFailurePaths:
 
         produced, detail = _REAL_GENERATE_WORKTREE_EXECUTOR(worktree_path, env['plan_id'])
         assert produced is False
-        # Both halves of the combined detail are present.
-        assert 'no file landed' in detail
+        # Both halves of the combined detail are present. The first half is
+        # "wrote nothing new", not "no file landed": since the freshness rule
+        # landed, a returncode-0 run over a PRE-EXISTING executor is also a
+        # non-production, and this message must describe both shapes.
+        assert 'wrote nothing new' in detail
         assert 'no main executor available' in detail
 
     def test_generator_absent_with_no_main_executor_reports_both(

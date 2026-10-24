@@ -2,10 +2,10 @@
   "id": "PLAN-LB-92",
   "slug": "lane-worktree-executor",
   "workstream": "WS-04",
-  "status": "staged",
+  "status": "shipped",
   "lane": "runbook",
-  "plan_marshall_plan_id": "",
-  "pr": "",
-  "landing": "",
+  "plan_marshall_plan_id": "lb-92-lane-worktree-executor",
+  "pr": "1850",
+  "landing": "landings/PLAN-LB-92.md",
   "seq": 92
 }
