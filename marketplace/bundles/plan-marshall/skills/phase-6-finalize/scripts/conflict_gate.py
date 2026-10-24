@@ -115,6 +115,7 @@ QUEUE_WAIT_FORBIDDEN = 'forbidden'
 # Error codes.
 ERROR_INVALID_DECISION = 'invalid_decision'
 ERROR_INVALID_CLASSIFICATION = 'invalid_classification'
+ERROR_DECISION_CONTRADICTS_CLASSIFICATION = 'decision_contradicts_classification'
 ERROR_CONFLICT_FILES_REQUIRED = 'conflict_files_required'
 ERROR_UNKNOWN_ACTION = 'unknown_action'
 ERROR_INVALID_ANSWER = 'invalid_answer'
@@ -157,11 +158,14 @@ _CONFLICT_OPTIONS: tuple[dict[str, Any], ...] = (
 )
 
 #: The option population for the ``state == merged`` local-cleanup confirmation.
+#: Neither option authorizes a remote action: a merged PR has nothing to rebase or
+#: push, so ``authorizes`` is empty on both rather than naming an action this
+#: script cannot check (``AUTHORIZABLE_ACTIONS`` is the push-preparation pair).
 _MERGED_OPTIONS: tuple[dict[str, Any], ...] = (
     {
         'label': 'Yes, clean up the local branch',
         'description': 'Switches to the base branch, pulls latest, and deletes the merged local branch.',
-        'authorizes': ['local-cleanup'],
+        'authorizes': [],
     },
     {
         'label': 'No, skip',
@@ -277,6 +281,19 @@ def evaluate_gate(
         return _invalid(None, ERROR_INVALID_DECISION, f'--decision must be one of {list(DECISIONS)}, got: {decision!r}')
     if state not in STATES:
         return _invalid(None, ERROR_INVALID_DECISION, f'--state must be one of {list(STATES)}, got: {state!r}')
+    # A content conflict is `needs_user` by the classifier's own rule. Refuse the
+    # contradiction instead of letting one half of the verdict override the other:
+    # a caller bug must not be able to turn a genuine conflict into an auto-proceed.
+    if state != 'merged' and classification == CONTENT_CONFLICT and decision != NEEDS_USER:
+        return _invalid(
+            None,
+            ERROR_DECISION_CONTRADICTS_CLASSIFICATION,
+            (
+                f'classification {CONTENT_CONFLICT!r} is a needs_user verdict, but --decision '
+                f'{decision!r} says otherwise. The gate refuses the pair rather than choosing a '
+                'reading: re-derive the decision from the classifier verdict.'
+            ),
+        )
 
     question_required = state == 'merged' or decision == NEEDS_USER
     if question_required and state != 'merged' and classification == CONTENT_CONFLICT and not conflicts:

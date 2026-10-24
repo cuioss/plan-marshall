@@ -323,12 +323,12 @@ Two things this path does NOT do, because both were observed on a real run:
 
 **Authorization binds both actions.** The selected option is checked against the action BEFORE the action runs — `push-authorization --action rebase` before the rebase and `--action force-push` before the push (§ "Rebase Branch onto Base"). An answer that authorizes neither (the "Stop" option) ends the run here: log it, release the merge admission per § "Merge-Mutex Hold Window" invariant 4, and return. A refusal from that check is a STOP, never a reason to proceed on a separate consent given at the question.
 
-**If user selects "No, skip"** (or, on the `state == merged` path, "No, skip"):
+**If the operator selects an option that authorizes no action** — "Stop — leave the branch and PR as they stand" on the conflict path, "No, skip" on the merged-cleanup path, or "Resolve the conflicts myself, then re-run finalize":
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-6-finalize) Branch cleanup skipped: user declined at pre-rebase gate"
 ```
-→ Done, return.
+→ Done, return. Nothing is rebased, pushed, queued or merged; the branch, the pull request and the checkout stay as they are, and finalize can be re-run later.
 
 ### Safety Check: Other Open PRs
 
@@ -396,6 +396,15 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 - **`use_merge_queue == false`** (default) — the rebase is **unconditional**: it runs every time the PR is still open, regardless of whether the branch was already up to date. The immediate `pr safe-merge` path below has no queue re-test, so this rebase plus the authoritative CI wait after it ARE what make the merged history linear and verified; nothing else discharges those purposes on this path. Proceed with the dispatch below.
 
 Note that "unconditional" governs whether the verb is *called*, not whether history *moves*: `worktree-rebase-to` returns `action: noop` with HEAD unchanged when the branch already contained the base, so a call on an already-current branch re-stales nothing.
+
+**On the `needs_user` route the rebase additionally needs the operator's authorization, checked here.** Before dispatching it, ask the gate for the action the run is about to take:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:phase-6-finalize:conflict_gate push-authorization \
+  --plan-id {plan_id} --answer "{the option label the operator selected}" --action rebase
+```
+
+`authorized: true` is the only admission; a refusal is a STOP (release the merge admission per § "Merge-Mutex Hold Window" invariant 4 and return) — it is never a licence to rebase "just locally". On the `auto_proceed` route no question fired, so the route itself is the authorization and this check is not issued: that is the only sense in which the rebase is unconditional.
 
 Dispatch the rebase via the structured `worktree-rebase-to` verb so the result is consumed as a TOON payload (rather than ad-hoc shell parsing):
 

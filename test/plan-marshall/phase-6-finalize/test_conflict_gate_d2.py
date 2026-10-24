@@ -182,7 +182,16 @@ def test_a_merged_pr_asks_only_about_local_cleanup():
     assert payload['question_required'] is True
     assert payload['queue_wait'] == 'forbidden'
     assert payload['plan_actions'] == []
-    assert [option['authorizes'] for option in payload['options']] == [['local-cleanup'], []]
+    # Neither merged option authorizes a push-preparation action: there is none to do.
+    assert [option['authorizes'] for option in payload['options']] == [[], []]
+
+
+def test_a_content_conflict_with_an_auto_proceed_decision_is_refused():
+    """The two halves of the verdict must agree — a caller bug cannot skip the question."""
+    payload = _content_conflict_gate(decision='auto_proceed')
+
+    assert payload['status'] == 'error'
+    assert payload['error'] == 'decision_contradicts_classification'
 
 
 def test_an_unknown_classification_is_refused():
