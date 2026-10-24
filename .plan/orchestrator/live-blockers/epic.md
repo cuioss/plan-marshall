@@ -1786,6 +1786,17 @@ entries below are OpenCode 1 assumptions in plan-marshall that OpenCode 2 broke.
   resumed), at the cost of an operator question each time. — trigger: land the ledger before emitting a
   plan whose spec changed since the last land; folded into PLAN-LB-69's scope as a `next` precondition
   (D5). Retire when PLAN-LB-69 lands or the precondition is decided.
+  **Recurrence 1 (PLAN-LB-53 and PLAN-LB-55, 2026-10-24) — the trigger fired and was not honoured.** Both
+  specs were adapted in the ledger worktree (preamble + embedded hand-off command rewritten to
+  `/plan-marshall-runbook-lane`) and emitted from there, but the ledger was landed only *after* both runs
+  started. `main`'s copy of each spec still carried the pre-adaptation text at start time (`git log` on the
+  spec shows the previous land, #1786, then this one, #1855), so the two runs most likely read the stale
+  copy. The adaptation is cosmetic — preamble prose and the hand-off block; Objective, Deliverables,
+  Done-whens, Claim Labels and Expected Surface are byte-identical — so the brief is unaffected; the
+  hypothesis to confirm at each landing is whether the run recorded the plan-marshall lane or the lifecycle
+  from the stale copy. **Verify-at-landing:** read each run's progress file for the lane/hand-off it
+  recorded. The precondition itself is to land the ledger *before* emitting a plan whose spec changed —
+  this is the second occurrence and the precondition is still unimplemented.
 - **Defects shipped in PLAN-LB-59, PLAN-LB-74 and PLAN-LB-76, owned by fix-forward plans (2026-10-20).**
   PLAN-LB-59: the exclusion did not bind the architecture path, the `--module` call was documentation
   only, an extension without the hook admitted every optional, and the tests could not fail for their stated
