@@ -338,6 +338,28 @@ than escalating a reviewer that never engaged.
 Note the ceiling this evidence carries: it proves CodeRabbit *participated*, never that the review
 was good. See [`bot-participation-contract.md`](bot-participation-contract.md) § "Evidence taxonomy".
 
+## Operator review policy — mandatory, never demoted
+
+The operator's standing ruling for this bot, which every consumer follows and none re-derives:
+
+- **CodeRabbit is mandatory.** It is a REQUIRED reviewer. A required bot is never moved to
+  `optional_bots`, never silently dropped from the roster, and never replaced by "the run looked
+  clean" — moving it is the one remedy the policy forbids outright, because it converts a missing
+  review into an accepted absence without anybody deciding that.
+- **A rate-window refusal is waited out, not routed around.** One window is **90 minutes**. Wait it
+  out and re-trigger `trigger_comment`; repeat up to **10 windows**. The wait is held by the workflow's
+  own bounded wait (a rate-window claim with a bounded wait), never by a raw `sleep`.
+- **No reaction after the windows are spent.** Close the PR **unmerged**, open a NEW PR from the same
+  branch, and trigger again. Nothing about a spent quota is a reason to merge without the review.
+- **The operator is asked only after those steps are spent**, and an answer that says "merge" or
+  "continue" does not shorten the policy.
+
+The remedy lists elsewhere in this document and in `branch-cleanup.md` do not carry "move CodeRabbit
+to `optional_bots`" as an option for a required bot. A bot that reviewed an older head and refused the
+current one is a refusal state, not a participation: see
+[`bot-participation-contract.md`](bot-participation-contract.md) § "The currency-blind path for
+append-per-review bots".
+
 ## Rate-limit class — `awaitable_window`
 
 CodeRabbit's review limit is a **rolling window that reopens on its own**, so `rate_limit_class` is

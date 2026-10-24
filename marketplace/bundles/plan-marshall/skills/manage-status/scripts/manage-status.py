@@ -649,6 +649,25 @@ def main() -> int:
     merge_authorization_grant_parser.add_argument(
         '--reason', required=True, help="The operator's (or policy's) stated reason."
     )
+    merge_authorization_grant_parser.add_argument(
+        '--operator-answer',
+        dest='operator_answer',
+        default=None,
+        help=(
+            "The operator's answer VERBATIM, as the question offered it. Supplying it makes "
+            'the grant refuse unless the answer is the override option, so free text is never '
+            'minted into an authorization.'
+        ),
+    )
+    merge_authorization_grant_parser.add_argument(
+        '--override-label',
+        dest='override_label',
+        default=None,
+        help=(
+            'The override option label the operator was offered. Required whenever '
+            '--operator-answer is supplied; compared after whitespace/case normalisation.'
+        ),
+    )
     merge_authorization_grant_parser.set_defaults(func=cmd_merge_authorization_grant)
 
     merge_authorization_check_parser = merge_authorization_subparsers.add_parser(
