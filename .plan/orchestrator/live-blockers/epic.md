@@ -135,9 +135,17 @@ derive, for rows still live.
   introduces" Open Defect (PLAN-LB-85, PLAN-LB-88). Overlap prompt answered 2026-10-23: **hold until PLAN-LB-73 lands** (4 shared
   files with it). **Unblocked 2026-10-23: the PLAN-LB-73 landing has arrived (#1843), so the shared surface is no longer in flight.**
   PLAN-LB-73's own run is the live evidence for the defect this plan fixes: every build answered
-  `executor_absent_from_worktree` and ran `in_process`. **Started by the operator 2026-10-23 (row `running`); its lane
-  worktree `lb-92-lane-worktree-executor` now exists.** No worktree was present at the moment the start was recorded —
-  expected, since the lane creates it during setup, and this plan's whole subject is what that setup must also produce.
+  `executor_absent_from_worktree` and ran `in_process`. **Started by the operator 2026-10-23; shipped #1850 on
+  2026-10-24 — see `landings/PLAN-LB-92.md`.** No worktree was present at the moment the start was recorded — expected,
+  since the lane creates it during setup, which is exactly what this plan's subject was.
+  **Outcome: 2 of 3 deliverables met.** D1 (worktree creation produces an executor) and D3 (builds route through it)
+  landed on an exact 9-file footprint. **D2's refresh verb shipped but its headline Done-when is unobservable** — the
+  generated executor's own tree-walking legs resolve a script the branch adds *before* the refresh is consulted, so
+  "stale before the verb" cannot be produced on any target; the run reported it rather than reworking the clause. Every
+  build in the run itself still answered `executor_absent_from_worktree`: the introducing plan living through its own bug.
+  Eight CodeRabbit findings (two major) were fixed; all three disclosed guard refusals are in `guard.log` at the stated
+  times, including the **R2 refusal of its own `rm`** on the stray main-checkout draft — which is why that file survived
+  until the operator removed it.
 
 - **PLAN-LB-53** (staged 2026-10-23, WS-01, plan-marshall lane) — **emitted 2026-10-23, then held back by the operator
   the same day: three plans are already running and the fourth slot was not taken.** The gate admitted it without a
@@ -178,6 +186,10 @@ derive, for rows still live.
   in `_cmd_lifecycle.py`; LB-43's worktree still holds its own uncommitted change to that file on a base that predates it.
   LB-43 must rebase and resolve, and the resolution both sides state is the same: keep LB-91's refusal logic and re-apply
   LB-43's change on top. Check it at LB-43's landing.
+  **Closed 2026-10-24:** PLAN-LB-92's own rule check reports the stray write and — corroborated at `guard.log` — its
+  attempt to remove it (`R2`, 15:43:16Z, `rm` of that exact path, refused). That refusal is why the file survived to the
+  operator's cleanup; main is now clean (`git status --porcelain` empty on 2026-10-24). The residual finding is the guard
+  scope gap already recorded on the Watch, not the file.
 
 - **Parked by the focus rule (2026-10-23, operator-accepted split):** PLAN-LB-87 (token recording), LB-84, LB-69, LB-89,
   LB-83, LB-75, LB-41, LB-46, LB-51, LB-57. They stay in the corpus and resume on the surface they declare. Blocking set kept
@@ -434,6 +446,14 @@ derive, for rows still live.
 
 ## Decisions
 
+- 2026-10-24 — **PLAN-LB-92 shipped with 2 of 3 deliverables, and the gap is recorded rather than smoothed.** D1
+  (worktree creation produces an executor) and D3 (builds route through it) landed; D2's refresh verb shipped but its
+  headline Done-when is unobservable because the executor's own tree-walking legs already resolve an added script. The
+  run reported "not met as written" instead of reworking the clause, which is the behaviour the evidence-order rules ask
+  for, and it ran every build `in_process` on itself — the introducing plan living through its own defect. Consequence:
+  the high "a plan cannot run the verb it introduces" defect is **narrowed, not retired**; only the introducing plan's
+  bootstrap remains. With LB-43 and LB-80 still running the epic is back to **2 of `parallelization_scope` 4**, so two
+  slots are open.
 - 2026-10-23 — **The PLAN-LB-91 landing frees the first slot since the epic filled.** Shipped (#1847) on an exact 7/7
   footprint; the row is `shipped` with its PR, landing and plan id stamped. With LB-43, LB-80 and LB-92 still running the
   epic is back to **3 of `parallelization_scope` 4**, so one slot is open — the block below says what fills it and why.
@@ -856,6 +876,15 @@ derive, for rows still live.
   Retire when PLAN-LB-89 ships and a worktree can run a verb added by its own plan. **Recurrence 1 (PLAN-LB-88,
   2026-10-23):** the run needed an operator question ("stale sonar surface") and a hand-run executor regeneration. PLAN-LB-89
   is parked by the focus rule; the cost is one operator question per affected run, not a failed run.
+  **NARROWED, STILL OPEN — 2026-10-24 (PLAN-LB-92 shipped #1850, 2 of 3 deliverables).** The *worktree-creation* half is
+  closed: `worktree-create` now produces `{worktree}/.plan/execute-script.py` for every plan, non-fatally and idempotently,
+  and `build-routing` answers `auto` when it is present. What survives is the **introducing plan's own bootstrap**: a plan
+  that adds a script verb cannot invoke it from its own worktree, because no executor's surface carries it yet. LB-92's D2
+  added a refresh verb for that case, but its Done-when ("stale before the verb") is unobservable — the generated
+  executor's tree-walking legs resolve an added script first — so D2 shipped as a tool, not as a proven remedy. The lane
+  text now names the one bootstrap route (the registered generator, run from the worktree) and treats a zero-executor
+  worktree as a blocker rather than hunting a path. The retire condition is unchanged and still unmet on its second
+  clause: a worktree still cannot run a verb *its own plan* adds.
 - **OUT OF SCOPE since 2026-10-23 (measurement; see Decisions) — `plugin_version` is recorded as `0.1` beside `executor_version` `0.1.1986` (PLAN-LB-85 landing, 2026-10-23;
   medium; lead, owner PLAN-LB-84 once confirmed).** The landing copied what its stamp source reported;
   `platform_runtime runtime-info` run here (Claude) also returns `bundle_version: "0.1"`, while PLAN-LB-49's landing
@@ -984,6 +1013,11 @@ derive, for rows still live.
   coverage clause carried "fails at {sha}", so the run reported two Done-whens "not met as written".
   Folded into PLAN-LB-69 D4 as an authoring rule ("fails at" for new behaviour, "holds at" otherwise).
   The spec also named the wrong path for the glob helper (`manage-architecture`, not `script-shared`).
+  **Second instance (PLAN-LB-92 landing, 2026-10-24):** D2's "a script the branch adds is stale before the verb, and
+  resolves after it" names a state the product's own resolution path makes unreachable — the executor's tree-walking legs
+  resolve an added script before the refresh is consulted, on every target. The run reported it as not met instead of
+  reworking the clause, which is the correct conduct; the authoring lesson is that a Done-when may not assume a defect
+  is still observable once an earlier leg of the same pipeline can satisfy the call. Feeds PLAN-LB-69 D4, no new entry.
 - **The classifier's architecture fallback can still say `docs-only` for a path a reusable CI workflow
   would build (`docs/x.asciidoc`; PLAN-LB-72 landing).** Only the local build is skipped and the PR's
   CI backstops it. Operator ruling wanted: accept, or fail closed (which defeats the docs-only path in
