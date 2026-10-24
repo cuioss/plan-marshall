@@ -90,6 +90,11 @@ def format_unattended_consent_prompt(
     return '\n'.join(lines)
 
 
+def _normalize_option(text: str) -> str:
+    """Normalize an operator answer / option label for equality comparison."""
+    return ' '.join(text.split()).strip().strip('"“”').casefold()
+
+
 def cmd_merge_authorization_grant(args: argparse.Namespace) -> dict | None:
     """Persist a HEAD-bound merge authorization into status.metadata."""
     status = require_status(args)
@@ -107,6 +112,51 @@ def cmd_merge_authorization_grant(args: argparse.Namespace) -> dict | None:
             'message': '--kind, --head and --gap-class are required and must be non-empty',
         }
 
+    # An authorization exists only for the option the operator SELECTED. A free-text
+    # reply ("try now", "wait another round", "continue with merge") is never that
+    # selection: PLAN-LB-47 minted ``barrier-ask-override`` from "try now", with a
+    # reason the operator never gave. When the call site states what the operator
+    # answered, the answer must BE the override option's label, compared after
+    # whitespace/case normalisation (the label is prose, not a token).
+    answer = getattr(args, 'operator_answer', None)
+    label = getattr(args, 'override_label', None)
+    if kind == 'barrier-ask-override' and answer is None and label is None:
+        return {
+            'status': 'error',
+            'plan_id': args.plan_id,
+            'error': 'operator_answer_required',
+            'message': (
+                '--kind barrier-ask-override requires --operator-answer and --override-label: '
+                'this authorization exists only for the override option the operator selected, '
+                'and a grant minted without one is the PLAN-LB-47 defect (free text treated as '
+                'a selection).'
+            ),
+        }
+    if answer is not None or label is not None:
+        if not answer or not label:
+            return {
+                'status': 'error',
+                'plan_id': args.plan_id,
+                'error': 'operator_answer_incomplete',
+                'message': (
+                    '--operator-answer and --override-label are both required when either is '
+                    'supplied: an answer with no option to compare it against proves nothing'
+                ),
+            }
+        if _normalize_option(answer) != _normalize_option(label) or not _normalize_option(answer):
+            return {
+                'status': 'error',
+                'plan_id': args.plan_id,
+                'error': 'operator_answer_not_the_override_option',
+                'operator_answer': answer,
+                'override_label': label,
+                'message': (
+                    f'The recorded answer ({answer!r}) is not the override option ({label!r}). '
+                    'A merge authorization exists only for the option the operator selected; '
+                    'free text — including text that normalises to nothing — is never a grant.'
+                ),
+            }
+
     metadata: dict[str, Any] = status.setdefault('metadata', {})
     authorizations = metadata.get('merge_authorizations')
     if not isinstance(authorizations, dict):
@@ -123,6 +173,9 @@ def cmd_merge_authorization_grant(args: argparse.Namespace) -> dict | None:
         'reason': args.reason,
         'granted_at': now_utc_iso(),
     }
+    if answer is not None and label is not None:
+        record['operator_answer'] = answer
+        record['override_label'] = label
     authorizations[kind] = record
     write_status(args.plan_id, status)
 

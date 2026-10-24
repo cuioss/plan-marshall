@@ -513,11 +513,14 @@ class TestNoAwaitOnTheStructuralBranch:
         assert block
         assert 'timeout_seconds' not in block.group('body')
 
-    def test_the_structural_shape_offers_the_three_real_remedies(self):
-        """Split, accept, and disable-for-this-PR — the contract's remedy set, rendered.
+    def test_the_structural_shape_offers_the_two_real_remedies(self):
+        """Split or accept — and NO demotion, which the operator's policy forbids.
 
         Asserting the ABSENCE of a wait alone would pass on an empty option list,
-        which would be a worse prompt than the one being replaced.
+        which would be a worse prompt than the one being replaced. The demotion
+        assertion is the same shape in the other direction: moving a REQUIRED bot to
+        ``optional_bots`` is not a remedy the workflow offers (PLAN-LB-55 D4), so the
+        rendered option set must not carry it.
         """
         skill = _AR_SKILL.read_text(encoding='utf-8')
         block = re.search(
@@ -529,7 +532,7 @@ class TestNoAwaitOnTheStructuralBranch:
         body = block.group('body').lower()
         assert 'split' in body
         assert 'accept' in body
-        assert 'disable' in body
+        assert 'disable' not in body, 'a required bot is never demoted; the option set carries no such remedy'
 
     def test_the_recovery_branches_on_cause_before_class(self):
         """Branch 0 is the CAUSE branch and it precedes the class branches.
@@ -658,7 +661,9 @@ class TestNoAwaitOnTheStructuralBranch:
         options = _barrier_structural_options().lower()
         assert 'split the pr' in options
         assert 'accept the coverage gap' in options
-        assert 'disable this reviewer' in options
+        assert 'disable this reviewer' not in options, (
+            'a REQUIRED bot is never demoted; the barrier option set must not offer it'
+        )
 
     def test_the_barriers_own_prompt_does_not_offer_a_retriage_remedy(self):
         """⛔ "Re-triage now" re-requests the review, and for this member that cannot work.
@@ -838,18 +843,30 @@ class TestNoAwaitOnTheStructuralBranch:
 
         This decision-log is the ONLY operator-facing surface on the default
         configuration. An earlier draft named the verbs but omitted required arguments
-        (`--plan-id`, `--granted-over`, `--reason`, `--param`, `--value`) and the
-        executor prefix, so copying either remedy verbatim is an argparse rejection.
+        (`--plan-id`, `--granted-over`, `--reason`) and the executor prefix, so copying
+        either remedy verbatim is an argparse rejection. The reclassification remedy is
+        GONE — a required bot is never demoted (PLAN-LB-55 D4) — so the assertion is
+        that no `step-params set` demotion remains beside the grant.
         """
         commands = _barrier_structural_commands()
         grant = commands[commands.index('merge-authorization grant') :]
-        for required in ('--plan-id', '--kind', '--head', '--gap-class', '--granted-over', '--reason'):
-            assert required in grant[:1400], f'the grant remedy omits {required}'
-        params = commands[commands.index('step-params set') :]
-        for required in ('--plan-id', '--param', '--value'):
-            assert required in params[:1400], f'the reclassify remedy omits {required}'
-        # Both remedies must be reachable through the executor, not by raw path.
-        assert commands.count('execute-script.py') >= 3
+        for required in (
+            '--plan-id',
+            '--kind',
+            '--head',
+            '--gap-class',
+            '--granted-over',
+            '--reason',
+            '--operator-answer',
+            '--override-label',
+        ):
+            assert required in grant[:1600], f'the grant remedy omits {required}'
+        assert 'step-params set' not in commands, (
+            'the structural path no longer offers a required-bot demotion, so it must not '
+            'carry the step-params remedy that performed it'
+        )
+        # The remedy must be reachable through the executor, not by raw path.
+        assert commands.count('execute-script.py') >= 2
 
     def test_the_structural_prompt_discloses_every_unproven_bot(self):
         """⛔ Accepting the gap authorizes past ALL of them, not just the refusing one.

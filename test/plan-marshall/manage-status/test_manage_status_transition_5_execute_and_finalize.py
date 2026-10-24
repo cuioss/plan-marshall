@@ -18,6 +18,9 @@ import _invariants as _inv
 import _ledger_core
 import pytest
 from _manage_status_transition_fixtures import (
+    _lifecycle as _fixtures_lifecycle,
+)
+from _manage_status_transition_fixtures import (
     _seed_execute_phase_plan,
     _seed_finalize_phase_plan,
     _seed_plan_with_4_plan_capture,
@@ -76,10 +79,15 @@ def _stubbed_invariants(monkeypatch):
     return state
 
 
-def test_transition_5_execute_does_not_write_modified_files(plan_context):
+def test_transition_5_execute_does_not_write_modified_files(plan_context, monkeypatch):
     """The 5-execute transition must NOT add modified_files to references.json."""
     plan_dir = plan_context.plan_dir_for('transition-no-seed')
     _seed_execute_phase_plan(plan_dir, 'transition-no-seed')
+    # The end-marker guard now also covers a MAIN-CHECKOUT plan; this case is about
+    # references.json, so it stubs an empty branch range rather than seeding a ledger.
+    # Patch the module ``cmd_transition`` was bound from (the shared fixtures module's
+    # load), not this test module's own copy — a second load is a second object.
+    monkeypatch.setattr(_fixtures_lifecycle, '_branch_commit_shas', lambda _p, _b: [])
 
     result = cmd_transition(Namespace(plan_id='transition-no-seed', completed='5-execute'))
 
@@ -92,13 +100,14 @@ def test_transition_5_execute_does_not_write_modified_files(plan_context):
     )
 
 
-def test_transition_5_execute_preserves_legacy_modified_files_untouched(plan_context):
+def test_transition_5_execute_preserves_legacy_modified_files_untouched(plan_context, monkeypatch):
     """A references.json that already carries a legacy modified_files key is
     left untouched by the transition — the transition neither reads nor
     rewrites the field.
     """
     plan_dir = plan_context.plan_dir_for('transition-legacy-untouched')
     _seed_execute_phase_plan(plan_dir, 'transition-legacy-untouched')
+    monkeypatch.setattr(_fixtures_lifecycle, '_branch_commit_shas', lambda _p, _b: [])
     # Inject a legacy ledger (as an archived/pre-migration plan might carry).
     refs_path = plan_dir / 'references.json'
     legacy = json.loads(refs_path.read_text(encoding='utf-8'))
@@ -353,12 +362,19 @@ def test_5_execute_end_markers_pass_on_full_coverage(plan_context, monkeypatch):
     assert _lifecycle._phase_end_marker_refusal(plan_id, status) is None
 
 
-def test_5_execute_end_markers_pass_without_worktree_metadata(plan_context):
-    """A plan with no worktree metadata carries no positive evidence — the gate passes."""
+def test_5_execute_end_markers_pass_without_worktree_metadata(plan_context, monkeypatch):
+    """A main-checkout plan with no branch work of its own carries no evidence — the gate passes.
+
+    PLAN-LB-55 D2 put main-checkout plans under this guard. What keeps such a plan out
+    of a refusal is the absence of a POSITIVE finding: an empty branch range. The empty
+    range is stubbed here because the test's own checkout is a feature branch, which a
+    plan that runs on the base branch never is.
+    """
     plan_id = 'end-marker-5exec-no-worktree'
     plan_dir = plan_context.plan_dir_for(plan_id)
     _seed_execute_phase_plan(plan_dir, plan_id)
     status = json.loads((plan_dir / 'status.json').read_text(encoding='utf-8'))
+    monkeypatch.setattr(_lifecycle, '_branch_commit_shas', lambda _p, _b: [])
 
     assert _lifecycle._phase_end_marker_refusal(plan_id, status) is None
 

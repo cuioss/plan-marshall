@@ -1549,10 +1549,9 @@ refusal_cause: size
 cap: {the ceiling the notice stated, or "unknown"}
 measured_diff_size: {how big the refused diff was, or "unknown"}
 pr_number: {pr_number}
-prompt_options[3]:
+prompt_options[2]:
   - "Split the PR into diffs under the cap"
   - "Accept the coverage gap (record reason)"
-  - "Disable this reviewer for this PR"
 ```
 
 ⛔ **No `timeout_seconds` and no wait option, deliberately.** Every other escalation in this document
@@ -1567,10 +1566,13 @@ gap" can reconcile it against the diff's measured size instead of accepting an u
 the literal `unknown` when the notice stated no figure — never a default, because a cap nobody
 observed would make the gap look audited when it was not.
 
-"Disable this reviewer for this PR" is offered because it is the one remedy that resolves the block
-without changing the diff or waiving the review: moving the bot to `optional_bots` records that this
-PR is knowingly outside that reviewer's declared reach. The three options are the `refused_structural`
-remedy set from the participation contract, verbatim.
+⛔ **No demotion option, and the set is closed at two.** Moving a REQUIRED bot to `optional_bots` is
+not offered: the operator's standing rule is that a required reviewer is mandatory and is never
+demoted (see `standards/coderabbit.md` § "Operator review policy"). What the two options encode is the
+two things an operator can actually decide here — change the diff so the reviewer can read it, or
+accept the gap under a recorded authorization. A third option that reclassifies the bot converts a
+missing review into an accepted absence without anybody deciding that, which is the disposition this
+rule forbids.
 
 Field contract:
 

@@ -774,9 +774,15 @@ _SOURCERY_SIZE_CEILING_REFUSAL = (
 )
 
 
-def _sourcery_review_body(comment_id, body):
-    """A Sourcery comment in its declared publish shape, ``review_body``."""
-    return {
+def _sourcery_review_body(comment_id, body, *, commit_id=None):
+    """A Sourcery comment in its declared publish shape, ``review_body``.
+
+    ``commit_id`` is the commit the provider says the review was submitted against.
+    It is passed where the case models a review OF the merge candidate: a refusal
+    observed beside credited evidence means the evidence has to be placeable at the
+    candidate to keep its credit (PLAN-LB-55 D3).
+    """
+    record = {
         'id': comment_id,
         'author': 'sourcery-ai',
         'thread_id': '',
@@ -784,6 +790,9 @@ def _sourcery_review_body(comment_id, body):
         'body': body,
         'resolved': False,
     }
+    if commit_id is not None:
+        record['commit_id'] = commit_id
+    return record
 
 
 @pytest.mark.parametrize(
@@ -864,9 +873,9 @@ def _human_acknowledgment():
     return _comment('human-ack', OTHER_AUTHOR, _BARE_ACKNOWLEDGMENT)
 
 
-def _sourcery_acknowledgment():
+def _sourcery_acknowledgment(commit_id=None):
     """A Sourcery review that found nothing — dropped as noise, credits Sourcery."""
-    return _sourcery_review_body('sr-ack', _BARE_ACKNOWLEDGMENT)
+    return _sourcery_review_body('sr-ack', _BARE_ACKNOWLEDGMENT, commit_id=commit_id)
 
 
 def test_the_three_zeros_render_differently_through_the_same_call(plan_context, monkeypatch):
@@ -885,7 +894,7 @@ def test_the_three_zeros_render_differently_through_the_same_call(plan_context, 
         ('gh-pr-zero-state-covered-clean', [_sourcery_acknowledgment()]),
         (
             'gh-pr-zero-state-unreachable-quota',
-            [_sourcery_acknowledgment(), _sourcery_review_body('sr-quota', _SOURCERY_WEEKLY_QUOTA_REFUSAL)],
+            [_sourcery_acknowledgment('deadbeef'), _sourcery_review_body('sr-quota', _SOURCERY_WEEKLY_QUOTA_REFUSAL)],
         ),
     ]
     results = {}

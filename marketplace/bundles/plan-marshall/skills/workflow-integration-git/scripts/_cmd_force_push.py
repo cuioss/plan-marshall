@@ -175,7 +175,7 @@ def cmd_force_push(args) -> dict:
             }
 
     # Invariant §5.1.2 — verify branch exists locally.
-    rc, _out, _err = run_git(['-C', str(worktree_path), 'rev-parse', '--verify', branch])
+    rc, branch_rev, _err = run_git(['-C', str(worktree_path), 'rev-parse', '--verify', branch])
     if rc != 0:
         return {
             **envelope,
@@ -197,7 +197,20 @@ def cmd_force_push(args) -> dict:
             'message': 'refusing to force-push to base branch',
         }
 
-    # Perform the push with --force-with-lease.
+    # The commit this push actually ships is the TIP OF ``branch``, not the worktree's
+    # HEAD: the two differ when the worktree is on another branch or detached. The
+    # value comes from the branch verification just above, so no extra git call is paid.
+    if plan_id:
+        from _push_gate import head_gate_refusal
+
+        branch_head = branch_rev.strip().splitlines()[0].strip() if branch_rev.strip() else ''
+        gate_refusal = head_gate_refusal(plan_id, branch_head)
+        if gate_refusal is not None:
+            gate_refusal.update(envelope)
+            gate_refusal['error_type'] = gate_refusal.pop('error')
+            gate_refusal['head'] = branch_head
+            return gate_refusal
+
     rc, _stdout, stderr = run_git(['-C', str(worktree_path), 'push', 'origin', branch, '--force-with-lease'])
 
     if rc == 0:

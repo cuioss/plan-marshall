@@ -134,6 +134,29 @@ def cmd_set_phase(args: argparse.Namespace) -> dict[str, Any] | None:
         }
 
     previous = status.get('current_phase')
+
+    # Entering 6-finalize runs the SAME end-marker guard the 5-execute completion runs
+    # (`_phase_end_marker_refusal`): set-phase is a second door into finalize, and a
+    # path that reaches it without the 5-execute settlement bookkeeping must be refused
+    # exactly as `transition` refuses it — otherwise the weaker verb is the bypass.
+    if args.phase == '6-finalize':
+        from _cmd_lifecycle import _phase_boundary_refusal, _phase_end_marker_refusal
+
+        # The boundary being ADVANCED OVER is the one being LEFT, not the target: the
+        # target phase has not started recording yet, so passing it here would compare
+        # the still-open phase the plan is in and refuse every valid entry.
+        target_names = [str(phase.get('name') or '') for phase in status.get('phases', []) if isinstance(phase, dict)]
+        leaving = args.phase
+        if args.phase in target_names:
+            index = target_names.index(args.phase)
+            if index > 0:
+                leaving = target_names[index - 1]
+        boundary_refusal = _phase_boundary_refusal(args.plan_id, status, leaving)
+        if boundary_refusal is not None:
+            return boundary_refusal
+        marker_refusal = _phase_end_marker_refusal(args.plan_id, status)
+        if marker_refusal is not None:
+            return marker_refusal
     status['current_phase'] = args.phase
 
     # Loop-back detection: a backward move (target phase precedes the current
