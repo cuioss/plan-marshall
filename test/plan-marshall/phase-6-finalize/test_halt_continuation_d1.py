@@ -32,6 +32,7 @@ from __future__ import annotations
 import re
 from argparse import Namespace
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
 
@@ -74,44 +75,55 @@ def _make_plan(plan_id: str) -> None:
     )
 
 
-def _record(plan_id: str, *, escalate: bool = False, step: str = _STEP, outcome: str = 'failed') -> dict:
-    return cmd_halt_record(
-        Namespace(
-            plan_id=plan_id,
-            phase=_PHASE,
-            step=step,
-            outcome=outcome,
-            reason='post-dispatch guard: step returned without a terminal record',
-            escalate_ask=escalate,
-            option=['Wait another 600s', 'Defer merge'] if escalate else None,
-        )
+def _record(plan_id: str, *, escalate: bool = False, step: str = _STEP, outcome: str = 'failed') -> dict[str, Any]:
+    return cast(
+        dict[str, Any],
+        cmd_halt_record(
+            Namespace(
+                plan_id=plan_id,
+                phase=_PHASE,
+                step=step,
+                outcome=outcome,
+                reason='post-dispatch guard: step returned without a terminal record',
+                escalate_ask=escalate,
+                option=['Wait another 600s', 'Defer merge'] if escalate else None,
+            )
+        ),
     )
 
 
-def _mark(plan_id: str, outcome: str, *, step: str = _STEP, loop_back_target: str | None = None) -> dict:
-    return cmd_mark_step_done(
-        Namespace(
-            plan_id=plan_id,
-            phase=_PHASE,
-            step=step,
-            outcome=outcome,
-            force=False,
-            display_detail='recorded by the halt-continuation guard test',
-            head_at_completion=None,
-            loop_back_target=loop_back_target,
-            fact=None,
-        )
+def _mark(plan_id: str, outcome: str, *, step: str = _STEP, loop_back_target: str | None = None) -> dict[str, Any]:
+    return cast(
+        dict[str, Any],
+        cmd_mark_step_done(
+            Namespace(
+                plan_id=plan_id,
+                phase=_PHASE,
+                step=step,
+                outcome=outcome,
+                force=False,
+                display_detail='recorded by the halt-continuation guard test',
+                head_at_completion=None,
+                loop_back_target=loop_back_target,
+                fact=None,
+            )
+        ),
     )
 
 
-def _check(plan_id: str, continuation: str, *, attempt: int | None = None, max_attempts: int | None = None) -> dict:
-    return _continuation.check_continuation(
-        plan_id=plan_id,
-        phase=_PHASE,
-        step=_STEP,
-        continuation=continuation,
-        attempt=attempt,
-        max_attempts=max_attempts,
+def _check(
+    plan_id: str, continuation: str, *, attempt: int | None = None, max_attempts: int | None = None
+) -> dict[str, Any]:
+    return cast(
+        dict[str, Any],
+        _continuation.check_continuation(
+            plan_id=plan_id,
+            phase=_PHASE,
+            step=_STEP,
+            continuation=continuation,
+            attempt=attempt,
+            max_attempts=max_attempts,
+        ),
     )
 
 

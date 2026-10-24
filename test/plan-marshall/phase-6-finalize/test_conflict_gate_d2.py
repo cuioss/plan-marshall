@@ -31,6 +31,7 @@ from __future__ import annotations
 
 from argparse import Namespace
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
 
@@ -51,7 +52,7 @@ _CONFLICT_FILES = ['src/main/java/de/cuioss/Api.java', 'src/main/java/de/cuioss/
 _BASE = 'main'
 
 
-def _content_conflict_gate(**overrides) -> dict:
+def _content_conflict_gate(**overrides) -> dict[str, Any]:
     kwargs = {
         'classification': 'overlap_with_content_conflict',
         'decision': 'needs_user',
@@ -62,7 +63,7 @@ def _content_conflict_gate(**overrides) -> dict:
         'state': 'open',
     }
     kwargs.update(overrides)
-    return evaluate_gate(**kwargs)
+    return cast(dict[str, Any], evaluate_gate(**kwargs))
 
 
 # ---------------------------------------------------------------------------
