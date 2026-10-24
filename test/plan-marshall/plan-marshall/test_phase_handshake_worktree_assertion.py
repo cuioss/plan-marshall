@@ -116,6 +116,8 @@ def _ns(**kwargs) -> types.SimpleNamespace:
     kwargs.setdefault('override', False)
     kwargs.setdefault('reason', None)
     kwargs.setdefault('strict', False)
+    kwargs.setdefault('override_basis', 'operator')
+    kwargs.setdefault('operator_answer', None)
     return types.SimpleNamespace(**kwargs)
 
 
