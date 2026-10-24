@@ -281,8 +281,23 @@ def _resolve_spec(spec_value: str, project_dir: Path, *, from_ledger: bool = Fal
     else:
         raise ValueError('invalid_spec')
 
-    differs = ledger_copy is not None and main_copy.is_file() and ledger_copy.read_bytes() != main_copy.read_bytes()
+    differs = ledger_copy is not None and main_copy.is_file() and _copies_differ(ledger_copy, main_copy)
     return _SpecChoice(chosen, slug, _plan_id_from_spec(chosen), source, differs)
+
+
+def _copies_differ(first: Path, second: Path) -> bool:
+    """Whether two spec copies hold different bytes.
+
+    An unreadable pair answers ``False``: the marker says "the copy you did not
+    read says something else", and it must never be raised on a read it could not
+    make — the refusal path is the spec READ, not this comparison, so a permission
+    or I/O fault here degrades the marker instead of turning a usable spec into a
+    traceback.
+    """
+    try:
+        return first.read_bytes() != second.read_bytes()
+    except OSError:
+        return False
 
 
 def _read_marshal(project_dir: Path) -> dict[str, Any]:

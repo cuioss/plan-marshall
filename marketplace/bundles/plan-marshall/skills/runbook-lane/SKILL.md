@@ -32,7 +32,7 @@ The canonical argparse surface for `runbook_lane.py`.
 ```bash
 python3 .plan/execute-script.py plan-marshall:runbook-lane:runbook_lane resolve \
   --spec .plan/orchestrator/{slug}/plans/PLAN-NN-{slug}.md \
-  [--project-dir DIR]
+  [--project-dir DIR] [--spec-from-ledger]
 ```
 
 Resolves the epic slug, the derived names, the build commands, the required and optional reviewers
@@ -40,6 +40,9 @@ with their trigger comments, the commit trailer, the harness and guard state, th
 preflight state (`build_server`, plus `build_server_reason` when it is `down`), the Sonar state
 (`sonar`, plus `sonar_project_key` when it is `configured`) and the `inbox write`
 command. `--project-dir` defaults to the current directory and anchors every project-scoped read.
+`--spec-from-ledger` reads the named spec from the shared ledger worktree first and falls back to the
+main checkout; the result always carries `spec_source` (`ledger_worktree` | `main_checkout`), plus
+`spec_differ: true` when both copies exist and differ.
 Fails closed with a specific error code for a spec outside the orchestrator tree, an unreadable
 configuration, an unreadable Sonar block (`sonar_config_unreadable`) or a Sonar block with no
 project key (`sonar_config_incomplete`), a missing automatic-review

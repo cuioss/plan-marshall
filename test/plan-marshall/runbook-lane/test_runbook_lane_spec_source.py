@@ -264,13 +264,31 @@ def test_the_no_op_mode_reports_one_copy_and_no_marker(tmp_path: Path) -> None:
     assert 'spec_differ' not in data
 
 
-def test_lane_text_names_the_ledger_read_and_what_it_reports() -> None:
-    """The lane instructs the run to record which copy it read, and whether they differ."""
-    text = (_SKILL_TEXT).read_text(encoding='utf-8')
+def test_the_knob_gate_ignores_a_ledger_copy_left_on_disk(tmp_path: Path) -> None:
+    """The knob decides, not the filesystem: a stale ledger tree is not read with it off."""
+    _seed_copies(
+        tmp_path,
+        use_worktree=False,
+        main_body=_spec_body(MAIN_TITLE),
+        ledger_body=_spec_body(LEDGER_TITLE),
+    )
 
-    assert '--spec-from-ledger' in text
-    assert 'spec_source' in text
-    assert 'spec_differ' in text
+    data = _run_resolve(tmp_path, SPEC_REL, from_ledger=True)
+
+    assert data['status'] == 'success', data
+    assert _titles(data) == [MAIN_TITLE]
+    assert data['spec_source'] == 'main_checkout'
+    assert 'spec_differ' not in data
+
+
+def test_lane_text_names_the_ledger_read_and_what_it_reports() -> None:
+    """The landing's RULE-CHECK section carries both facts, not just the setup text."""
+    text = _SKILL_TEXT.read_text(encoding='utf-8')
+    rule_check = text.split('**Rule check**', 1)
+
+    assert len(rule_check) == 2, 'the landing report has no rule-check section'
+    assert 'spec_source' in rule_check[1]
+    assert 'spec_differ' in rule_check[1]
 
 
 # =============================================================================
