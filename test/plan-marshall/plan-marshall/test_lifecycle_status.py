@@ -6,6 +6,7 @@ Tests plan discovery, transitions, archiving, and routing (formerly manage-lifec
 """
 
 import json
+import subprocess
 
 from conftest import get_script_path, run_script
 
@@ -30,6 +31,31 @@ def _create_plan(plan_id: str, title: str, phases: str) -> None:
         phases,
     )
     assert result.success, f'Failed to create plan: {result.stderr}'
+
+
+def _record_branch_commits_in_the_plan_ledger(plan_context, plan_id: str) -> None:
+    """Seed the sandbox change-ledger with this checkout's branch commits.
+
+    The 5-execute end-marker guard covers MAIN-CHECKOUT plans too, and these cases
+    transition a plan whose checkout is a feature branch: every commit since the
+    base has to carry a ``kind=change`` row or the guard refuses — correctly, since
+    a transition is not where that bookkeeping gets skipped. Seeding the
+    ``PLAN_BASE_DIR`` ledger (the sandbox, never the repository) is what models a
+    plan whose Step 10a settlement ran.
+    """
+    repo = subprocess.run(
+        ['git', 'rev-parse', '--show-toplevel'], capture_output=True, text=True, check=True
+    ).stdout.strip()
+    shas = subprocess.run(
+        ['git', '-C', repo, 'rev-list', 'origin/main..HEAD'], capture_output=True, text=True, check=True
+    ).stdout.split()
+    base = plan_context.plan_dir_for(plan_id).parent.parent
+    work = base / 'work'
+    work.mkdir(parents=True, exist_ok=True)
+    rows = [
+        json.dumps({'kind': 'change', 'commit_sha': sha, 'worktree_sha': sha, 'deliverable_id': 'D1'}) for sha in shas
+    ]
+    (work / 'change-ledger.jsonl').write_text('\n'.join(rows) + '\n', encoding='utf-8')
 
 
 # =============================================================================
@@ -254,6 +280,7 @@ def test_transition_5_execute_does_not_seed_modified_files(plan_context):
     # references.json with base_branch but no modified_files.
     refs_path = plan_dir / 'references.json'
     refs_path.write_text(json.dumps({'base_branch': 'main'}, indent=2))
+    _record_branch_commits_in_the_plan_ledger(plan_context, 'no-seed-5exec-plan')
 
     result = run_script(LIFECYCLE_SCRIPT, 'transition', '--plan-id', 'no-seed-5exec-plan', '--completed', '5-execute')
     assert result.success, f'Transition failed: {result.stderr}'
@@ -295,6 +322,7 @@ def test_transition_never_touches_modified_files_for_any_phase(plan_context):
     # Advance to 5-execute, then the 5-execute transition is equally hands-off.
     for completed in ('2-refine', '3-outline', '4-plan'):
         run_script(LIFECYCLE_SCRIPT, 'transition', '--plan-id', 'untouched-ledger-plan', '--completed', completed)
+    _record_branch_commits_in_the_plan_ledger(plan_context, 'untouched-ledger-plan')
     result = run_script(
         LIFECYCLE_SCRIPT, 'transition', '--plan-id', 'untouched-ledger-plan', '--completed', '5-execute'
     )
