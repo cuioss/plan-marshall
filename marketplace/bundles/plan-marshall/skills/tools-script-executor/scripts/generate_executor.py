@@ -3302,6 +3302,49 @@ def _probe_executor_import(executor_path: Path) -> str:
     return (lines[-1] if lines else 'import failure')[:200]
 
 
+def _executor_start_failure(executor_path: Path) -> str:
+    """Strict post-regeneration check: ``''`` only when ``<executor> --list`` exits 0.
+
+    The lenient import probe is right for deciding WHETHER to recover (it only
+    distinguishes an import failure from another non-zero exit). After a
+    regeneration the promise is stronger: the executor must actually start. A
+    timeout, a spawn failure, a syntax error, or any other non-zero exit is a
+    failure here, never a clean probe.
+    """
+    if not executor_path.is_file():
+        return 'executor absent'
+    env = {key: value for key, value in os.environ.items() if key != 'PYTHONPATH'}
+    try:
+        result = subprocess.run(
+            [sys.executable, str(executor_path), '--list'],
+            cwd=str(executor_path.parent.parent),
+            capture_output=True,
+            text=True,
+            timeout=_RECOVERY_PROBE_TIMEOUT_SECONDS,
+            env=env,
+        )
+    except (OSError, subprocess.TimeoutExpired, UnicodeDecodeError) as exc:
+        return f'executor could not start: {exc}'[:200]
+    if result.returncode == 0:
+        return ''
+    lines = [line.strip() for line in (result.stderr or '').splitlines() if line.strip()]
+    for line in lines:
+        if any(marker in line for marker in _RECOVERY_IMPORT_MARKERS):
+            return line[:200]
+    detail = lines[-1] if lines else 'no output'
+    return f'executor --list exited {result.returncode}: {detail}'[:200]
+
+
+def _read_executor_target_stamp(executor_path: Path) -> str:
+    """Read the existing executor's ``_EXECUTOR_TARGET`` stamp, or ``''``."""
+    try:
+        text = executor_path.read_text(encoding='utf-8')
+    except (OSError, UnicodeDecodeError):
+        return ''
+    match = re.search(r"^_EXECUTOR_TARGET\s*=\s*'([^']*)'", text, re.MULTILINE)
+    return match.group(1) if match else ''
+
+
 def cmd_recover(args: argparse.Namespace) -> dict:
     """Recover a broken executor through a direct-path script that needs no executor.
 
@@ -3342,11 +3385,17 @@ def cmd_recover(args: argparse.Namespace) -> dict:
 
     probe_before = _probe_executor_import(executor)
     before_mtime = executor.stat().st_mtime_ns if executor.is_file() else None
+    previous_target = _read_executor_target_stamp(executor)
     base = {
         'target': target,
         'executor': str(executor),
         'generator': str(generator),
         'probe_before': probe_before,
+        # A pre-existing foreign stamp is a D5 repair, not a reason to refuse:
+        # the whole point of `recover --target <observed>` is to rewrite the
+        # executor for the harness that is running it. The field makes the
+        # repair explicit instead of silent.
+        'previous_target': previous_target,
     }
 
     env = {key: value for key, value in os.environ.items() if key != 'PYTHONPATH'}
@@ -3374,6 +3423,15 @@ def cmd_recover(args: argparse.Namespace) -> dict:
             **base,
         }
 
+    if result.returncode != 0:
+        return {
+            'status': 'error',
+            'action': 'regenerate_failed',
+            'error': f'the selected generator exited {result.returncode}',
+            'probe_reason': _probe_executor_import(executor),
+            **base,
+        }
+
     # The SELECTED generator's write is the authority. A generator that refused
     # (its own fail-open guard, an under-covered discovery) leaves the previous
     # file in place, and an mtime that did not move is a refusal to claim.
@@ -3387,12 +3445,12 @@ def cmd_recover(args: argparse.Namespace) -> dict:
             **base,
         }
 
-    probe_after = _probe_executor_import(executor)
+    probe_after = _executor_start_failure(executor)
     if probe_after:
         return {
             'status': 'error',
             'action': 'regenerate_failed',
-            'detail': 'the regenerated executor still fails to import',
+            'detail': 'the regenerated executor still cannot start',
             'probe_reason': probe_after,
             **base,
         }

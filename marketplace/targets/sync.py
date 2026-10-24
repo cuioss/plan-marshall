@@ -645,6 +645,8 @@ def _deploy_root_assets(source: Path, dest: Path, config: TargetSyncConfig, *, d
             # in place: the staleness reads would then report the old version as
             # the installed one. Unlinking removes the link itself, never its
             # target, so this does not act through a symlink.
+            if target.is_dir():
+                raise DestinationLinkRefused(f'cannot remove manifest path because it is a directory: {target}')
             target.unlink(missing_ok=True)
     return count
 

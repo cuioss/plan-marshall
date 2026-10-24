@@ -18,10 +18,9 @@ resolvers exist, which are active, and over which files — every field read fro
 the resolver or the store that owns it rather than transcribed into a menu
 document that would go stale the moment a resolver changed.
 
-Registered as notation ``plan-marshall:extension-api:extension_api`` exposing the
-``resolve-skills --profile {profile} --plan-id {plan_id}``,
-``derivation-resolvers list`` and
-``resolve-workflow --notation {N} --worktree {W}`` subcommands.
+Registered as notation ``plan-marshall:extension-api:extension_api``. The
+registered subcommands are whatever the parser declares — run the module's
+``--help`` for the live list; this docstring deliberately does not mirror it.
 """
 
 import argparse

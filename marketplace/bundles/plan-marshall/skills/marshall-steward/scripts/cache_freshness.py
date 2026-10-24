@@ -132,7 +132,7 @@ UNKNOWN = 'unknown'
 COMPARED_AGAINST = 'local_clone_manifest'
 
 
-def newest_cache_version(cache_root: Path) -> str:
+def newest_cache_version(cache_root: Path, *, target: str = 'claude') -> str:
     """Return the newest version-dir name under ``cache_root``, or ``''``.
 
     The plugin cache is laid out as ``<cache_root>/<bundle>/<version>/``. Every
@@ -141,8 +141,14 @@ def newest_cache_version(cache_root: Path) -> str:
     ``_version_sort_key`` — the same numeric tuple sort the bundle resolver uses
     — so ``0.1.9`` never shadows ``0.1.10``.
 
+    An unversioned / flat install (Antigravity, OpenCode) has no version dir, so
+    its version comes from the same installed-manifest candidate set the lookup
+    uses — ``installed_manifest_probe_paths``, which honors ``PM_DIST_MANIFEST``
+    and the target-specific locations. One resolver, not a second filename list.
+
     Args:
         cache_root: The plugin-cache root directory.
+        target: The resolved platform target, for the flat-install fallback.
 
     Returns:
         The newest version directory name, or ``''`` when the root carries none.
@@ -162,16 +168,15 @@ def newest_cache_version(cache_root: Path) -> str:
         # Fallback for unversioned / flat target installations (Antigravity, OpenCode)
         import json
 
-        for candidate_dir in (cache_root, cache_root.parent):
-            for fname in ('dist-manifest.json', 'plugin.json', 'opencode.json'):
-                manifest_file = candidate_dir / fname
-                if manifest_file.is_file():
-                    try:
-                        data = json.loads(manifest_file.read_text(encoding='utf-8'))
-                        if isinstance(data, dict) and 'version' in data and data['version']:
-                            return str(data['version'])
-                    except (OSError, ValueError):
-                        pass
+        for manifest_file in installed_manifest_probe_paths(cache_root, target=target):
+            if not manifest_file.is_file():
+                continue
+            try:
+                data = json.loads(manifest_file.read_text(encoding='utf-8'))
+                if isinstance(data, dict) and 'version' in data and data['version']:
+                    return str(data['version'])
+            except (OSError, ValueError):
+                pass
         return ''
     return max(version_dirs, key=_version_sort_key)
 
@@ -261,7 +266,7 @@ def check_freshness(cache_root: Path | None) -> dict:
     # "could not look" (ADR-019).
     probe_paths = installed_manifest_probe_paths(cache_root, target=target)
 
-    cache_version = newest_cache_version(cache_root)
+    cache_version = newest_cache_version(cache_root, target=target)
     if not cache_version:
         return _unknown(
             f'no version directory found under the plugin-cache root {cache_root}; '
