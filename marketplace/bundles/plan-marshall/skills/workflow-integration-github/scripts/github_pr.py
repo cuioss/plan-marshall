@@ -1482,6 +1482,30 @@ def _reviews_at_another_commit(
     return disclosed
 
 
+def _reported_commit_matches_candidate(comment: dict, merge_candidate_sha: str) -> bool:
+    """Whether ``comment``'s OWN reported commit is the merge candidate.
+
+    A per-review artifact — a comment the bot publishes afresh for each pass, rather
+    than editing one comment in place — was submitted against exactly one commit, and
+    the provider reports that commit as ``commit_id``. Two answers are NOT evidence of
+    covering the merge candidate, and both are fail-closed:
+
+    - a reported commit that is some other commit: the artifact proves a review of an
+      earlier head, which is what ``stale_participation_bots`` exists to name; and
+    - NO reported commit: a review the provider could not place is not a review of the
+      merge candidate, so it cannot discharge a required reviewer's obligation. This is
+      the PLAN-LB-26 shape, where inline comments carrying ``commit_id: ''`` were
+      credited while the same bot refused the merge candidate for quota.
+
+    An unreadable merge candidate has nothing to compare against and returns ``False``;
+    the caller routes that case to ``undecidable_participation_bots`` rather than to
+    stale, because re-triggering cannot fix a failed head read.
+    """
+    candidate = (merge_candidate_sha or '').strip().lower()
+    reported = str(comment.get('commit_id') or '').strip().lower()
+    return bool(candidate) and bool(reported) and reported == candidate
+
+
 def cmd_fetch_findings(args):
     """Producer-side FIND verb: fetch + pre-filter + file one finding per surviving comment.
 
@@ -1936,6 +1960,17 @@ def cmd_fetch_findings(args):
     # A bot declaring no evidence shape resolves fail-closed: it can never be
     # proven a participant. There is no bot-name literal here — the evidence
     # shapes, their content markers, and the update requirement are registry data.
+    # Which bots published a REFUSAL in this fetch, read from the same predicate the
+    # filing pre-filter uses (stage 2) so the participation loop and the refusal
+    # accounting cannot disagree about what a refusal is. It is read here, before the
+    # loop, because a refusal changes what participation evidence can PROVE: evidence
+    # that cannot be placed at the merge candidate must not outrank the bot's own
+    # statement that it will not review that candidate.
+    refusing_bots: set[str] = set()
+    for _refusal_comment in raw_comments:
+        _refusal_bot = bot_kind_for_author(_refusal_comment.get('author') or 'unknown')
+        if _refusal_bot and _is_refusal_notice(str(_refusal_comment.get('body') or ''), _refusal_bot):
+            refusing_bots.add(_refusal_bot)
     participated: dict[str, str] = {}
     stale_participation: dict[str, str] = {}
     # The THIRD outcome: a currency-subject bot whose comment was ALREADY admissible
@@ -1990,13 +2025,39 @@ def cmd_fetch_findings(args):
             named_commit_currency(str(_comment.get('body') or ''), reviewed_commit_sha) if _requires_update else None
         )
         if _named_verdict is None:
-            _current = not _requires_update or _reviewed_at_merge_candidate(
-                _comment,
-                currency_records,
-                _bot_kind,
-                reviewed_commit_sha,
-                merge_candidate_committed_at,
-            )
+            # A REFUSAL changes what a comment can prove. The bot is saying, in this
+            # fetch, that it will not review the merge candidate; credited evidence that
+            # cannot be placed AT that candidate must not outrank that statement, or a
+            # bot that reviewed an older head and then refused the candidate resolves
+            # ``participated`` (the PLAN-LB-26 false green). Placement comes from the
+            # provider's reported ``commit_id`` on a per-review artifact, or from the
+            # currency ledger for the persistent comment a re-reviewer EDITS in place.
+            #
+            # With no refusal observed, the fetch's own judgement stands unchanged: the
+            # credit is the answer, and no statement exists for it to be weighed against.
+            if _bot_kind in refusing_bots:
+                _current = _reported_commit_matches_candidate(_comment, reviewed_commit_sha)
+                if not _current and _requires_update and bot_registry.participation_evidence_marker(_bot_kind, _kind):
+                    # The persistent comment a re-reviewer EDITS in place carries no
+                    # commit of its own; the ledger arms are its only placement, and they
+                    # are consulted here for that shape alone.
+                    _current = _reviewed_at_merge_candidate(
+                        _comment,
+                        currency_records,
+                        _bot_kind,
+                        reviewed_commit_sha,
+                        merge_candidate_committed_at,
+                    )
+            elif _requires_update:
+                _current = _reviewed_at_merge_candidate(
+                    _comment,
+                    currency_records,
+                    _bot_kind,
+                    reviewed_commit_sha,
+                    merge_candidate_committed_at,
+                )
+            else:
+                _current = True
         else:
             _current = _named_verdict
         if not _current:

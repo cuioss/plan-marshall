@@ -87,7 +87,7 @@ restates it.
 | `refused_unknown` | The bot posted a refusal about whose awaitability nothing is known. Reached two ways: the registry declares its class `unknown` (its refusal shape has never been observed), or **no arm of the recognition stack could read the notice at all** — which resolves here whatever class the bot declares. | A declared *we-do-not-know*, NEVER a positive hard quota. Rendering it as `refused_hard` steers an operator toward "waiting is futile, force it" for a refusal that might have been awaitable. Its own member so the ignorance reaches the reader as ignorance. |
 | `refused_structural` | The bot posted a refusal whose **cause is a ceiling on the diff itself** — the PR is over a per-PR size budget (an observed `cause: size`). Decided by the cause axis, whatever the bot's `rate_limit_class` declares. | **The only member whose refusal is not temporal.** The other three say *not now*; this one says *not this diff*, and the same request never succeeds while the diff is this size. Remedies: **split**, **accept the gap**, or **disable this reviewer for this PR** — ⛔ **never await.** The finding carries the **cap** the notice stated, so the gap is auditable against the measured diff size. |
 | `participated_but_empty` | The bot posted at least one comment, but every comment was filtered out (noise) so it stored zero findings. | **Accounted-for, not a failure.** The bot did its pass and had nothing actionable to say. |
-| `participated_stale` | The bot's comment was already admissible evidence — it matched a declared `participation_evidence` publish shape AND carried that shape's declared content marker where one is declared — but failed the `participation_requires_update` currency test — the currency ledger anchors the comment to a commit that is **not** the merge candidate, and its `updated_at` is unchanged from the value recorded at that credit — or the comment itself names a commit that is not the merge candidate. | The bot reviewed an **earlier** commit, so nothing has reviewed the current diff. Blocking, but the remedy is a re-review trigger. |
+| `participated_stale` | The bot's comment was already admissible evidence — it matched a declared `participation_evidence` publish shape AND carried that shape's declared content marker where one is declared — but failed the `participation_requires_update` currency test — the currency ledger anchors the comment to a commit that is **not** the merge candidate, and its `updated_at` is unchanged from the value recorded at that credit — or the comment itself names a commit that is not the merge candidate. A bot declaring `participation_requires_update: false` reaches this member too, but ONLY in a fetch that also observed it publishing a refusal: its evidence then has to be placed at the merge candidate by the provider-reported `commit_id`, and a comment whose commit was not reported is not placeable. | The bot reviewed an **earlier** commit, so nothing has reviewed the current diff. Blocking, but the remedy is a re-review trigger. |
 | `declined` | The bot was asked to review the merge candidate (a re-review was triggered) and answered without producing a review of it — an **incremental-review decline**: it responded with a comment that does not REFERENCE the merge candidate (`head_sha_verified: false`) rather than a review of this HEAD. `false` covers BOTH shapes — a comment naming no reviewed commit at all, and one naming a DIFFERENT commit — so neither may be described as the whole of it. | The bot engaged but **declined** to review this commit. Blocking, but re-triggering is futile — the productive action is to accept the decline (move the bot to `optional`, or record a merge-authorization), not to trigger again. |
 
 `participated_but_empty` is the member most often misread. A bot that reviewed and found nothing is a
@@ -454,18 +454,26 @@ re-review **arrived**; whether that review is current is decided against the com
 That is a recorded classification rather than a gap, and no follow-up is filed against the wait
 predicate.
 
-#### The currency-blind path for append-per-review bots — an accepted, bounded gap
+#### The currency-blind path for append-per-review bots
 
 A bot declaring `participation_requires_update: false` **re-reviews by posting a new comment**, so its
 credit is granted the moment a comment of its in a declared publish shape — carrying that shape's
 declared content marker where one is declared — is observed. No commit is
-compared, and the currency ledger holds no row for it. **The consequence, stated plainly: a comment
-such a bot posted against a commit that is no longer the merge candidate still credits it.** After a
-loop-back, rebase, or force-push, an append-per-review bot can therefore be counted toward the quorum
-on a review of a tree that is no longer the one being merged — the same false positive the currency
-rule closes for in-place re-reviewers, still open on this path. Two states are unreachable for such a
-bot in consequence: it never resolves `participated_stale`, and it never appears in
-`undecidable_participation_bots[]`.
+compared on that arm, and the currency ledger holds no row for it. **The consequence, stated plainly: a
+comment such a bot posted against a commit that is no longer the merge candidate still credits it when
+no refusal is observed in the same fetch.** After a loop-back, rebase, or force-push, an
+append-per-review bot can therefore be counted toward the quorum on a review of a tree that is no
+longer the one being merged — the same false positive the currency rule closes for in-place
+re-reviewers, still open on this path unless the bot also refuses.
+
+**The refusal path IS enforced.** When the same fetch observes the bot publishing a refusal, credited
+evidence has to be PLACED at the merge candidate to keep its credit: the provider-reported `commit_id`
+must be that candidate on a review artifact, or the currency ledger must place the in-place carrier
+comment there. Unplaced evidence moves to `stale_participation_bots[]`, and the bot resolves
+`participated_stale` — or its refusal member, since the refusal branches first. With no refusal
+observed, the presence-based credit stands and the disclosure below names it. A review whose commit the
+provider did not report (`inline` records, and any `issue_comment` without a commit) is never placeable,
+so it is treated exactly as a review of another commit on that path.
 
 **What is disclosed.** The over-credit is reported for the one publish shape that carries a commit. A
 `review_body` record carries `commit_id`, the commit the provider says the review was submitted
@@ -484,48 +492,48 @@ from the provider to confirm this. If the assumption is wrong and an edit does m
 only cost is a disclosure that could have been made and is not; no verdict depends on it, because the
 currency test already decides these bots.
 
-**The disclosure is not enforced.** A bot named in `reviewed_other_commit_bots[]` is still in
-`participated_bots[]`. It is not moved to `stale_participation_bots[]`, it does not resolve
-`participated_stale`, no `review_completeness` flag receives the list, and the pre-merge barrier does
-not block on it. A required bot named there satisfies the quorum exactly as it did before the field
-existed. The field tells the operator that the credit rests on a review of another commit; it does
-not act on that.
+**The disclosure is not enforced by itself — the REFUSAL path is.** A bot named in
+`reviewed_other_commit_bots[]` alone is still in `participated_bots[]`: the field tells the operator that
+the credit rests on a review of another commit, and acts on nothing.
 
-**What is still not tested.** The disclosure is narrower than the gap:
+What IS enforced is the interaction the false green came from: a bot that publishes a REFUSAL in the
+same fetch as its credited evidence. When a refusal is observed, credited evidence keeps its credit only
+when it can be PLACED at the merge candidate — the provider-reported `commit_id` equals the merge
+candidate on a review artifact, or, for the persistent comment a re-reviewer edits in place, the
+currency-ledger arms above place it there. Evidence that cannot be placed (a review at another commit,
+or a comment whose commit the provider did not report, which is what an `inline` record carries) is moved
+to `stale_participation_bots[]`, and the bot resolves `participated_stale` — or, because the refusal
+branches first in `classify_bot`, its refusal member.
 
-- A bot whose crediting evidence is an `inline` or `issue_comment` comment carries no review commit
-  on that record, so it is never named, whatever commit it reviewed.
-- A review whose commit the provider did not report is skipped. It is not evidence either way.
-- With an unreadable merge candidate nothing is named, because there is nothing to compare against.
+This is the PLAN-LB-26 shape: a review of an older head PLUS a current-head quota refusal, which used to
+resolve `participated` on the strength of the older review. With no refusal observed, the historical
+credit stands unchanged and the disclosure above names it.
+
+**What is still not tested.** The enforcement is conditioned on the refusal, so:
+
+- A credited review at another commit with NO refusal observed is still credited, and only disclosed.
+- A bot whose crediting evidence is an `inline` or `issue_comment` comment carries no review commit on
+  that record, so it is never named by the disclosure, whatever commit it reviewed.
+- With an unreadable merge candidate nothing is named and nothing is placed, because there is nothing to
+  compare against; the bot is reported `undecidable`, never stale.
 
 An empty `reviewed_other_commit_bots[]` therefore does **not** say that every credited review covers
 the merge candidate.
 
-**Why the gap is accepted rather than closed here.** Enforcing the disclosure means changing a
-verdict: a required append-per-review bot whose newest review was submitted against another commit
-would stop satisfying the quorum and resolve `participated_stale`. The currency ledger is not the
-missing piece — it exists because an in-place re-reviewer's comment identity does not change between
-reviews, and an append-per-review bot's reviews are already distinct records. The missing piece is the
-decision itself, and it is not uniform across this population: only `review_body` evidence carries a
-commit, so enforcement would test some append-per-review bots and leave the rest credited on presence
-alone. That is a **new** contract question rather than a wider application of this rule, and widening
-the reach without settling it would replace an over-credit with a verdict that holds for one publish
-shape and not for the others.
-
-**What bounds it.** The gap is bounded to bots declaring `participation_requires_update: false`, and
-this contract's other gates are unaffected by it: the `not_triggered` PR-wide observable, the refusal
+**What bounds it.** The enforcement is bounded to the fetch that observed the refusal, and this
+contract's other gates are unaffected by it: the `not_triggered` PR-wide observable, the refusal
 members, the pre-merge comment barrier, and the `declined` detection via `head_sha_verified` all still
-apply to such a bot. It is also self-limiting in the common case — an append-per-review bot that is
-re-triggered on the advanced HEAD posts a NEW comment, so the next fetch credits it on evidence that
-does post-date the merge candidate.
+apply. It is also self-limiting in the common case — an append-per-review bot that is re-triggered on
+the advanced HEAD posts a NEW comment carrying that head's commit, so the next fetch credits it on
+evidence that does post-date the merge candidate.
 
-**When it is revisited.** Either of two observations reopens enforcement: a required bot named in
-`reviewed_other_commit_bots[]` observed satisfying the quorum on a merge candidate it demonstrably did
-not review, or a decision to anchor every bot declaring `participation_evidence` — which is the
-alternative disposition, deliberately **not** taken here. That alternative changes the barrier verdict
-for every consumer project whose `required_bots` includes an append-per-review bot, so it is a
-contract change with its own blast radius, not an implementation detail of this rule. The disclosure
-is what makes the first observation possible without reading the PR by hand.
+**When it is revisited.** A required bot observed satisfying the quorum on a merge candidate it
+demonstrably did not review, with no refusal in the same fetch, reopens the unconditional form: anchoring
+every bot declaring `participation_evidence` regardless of a refusal observation. That alternative
+changes the barrier verdict for every consumer project whose `required_bots` includes an
+append-per-review bot, so it is a contract change with its own blast radius, not an implementation
+detail of this rule. The disclosure is what makes that observation possible without reading the PR by
+hand.
 
 ### Evidence for a bot that edits one comment in place
 
