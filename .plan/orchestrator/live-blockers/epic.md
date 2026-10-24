@@ -147,11 +147,19 @@ derive, for rows still live.
   times, including the **R2 refusal of its own `rm`** on the stray main-checkout draft — which is why that file survived
   until the operator removed it.
 
-- **PLAN-LB-53** (staged 2026-10-23, WS-01, plan-marshall lane) — **emitted 2026-10-23, then held back by the operator
-  the same day: three plans are already running and the fourth slot was not taken.** The gate admitted it without a
-  prompt — its only remaining overlap is a single file (`manage-status/scripts/_cmd_lifecycle.py` with LB-91), which is
-  below the multi-file threshold. Nothing is wrong with the plan; the decision is capacity, so the row stays `staged`
-  and sequenced rather than parked. Its emit form for this harness is the plan-marshall lane's OpenCode command.
+- **PLAN-LB-53** (WS-01) — **emitted 2026-10-23, held back the same day for capacity, then re-emitted 2026-10-24 in the
+  runbook lane and started by the operator (row `running`).** The gate admitted it without a prompt — its only remaining
+  overlap is a single file (`manage-status/scripts/_cmd_lifecycle.py` with LB-91, now landed), below the multi-file
+  threshold. On the operator's instruction the row's lane moved from plan-marshall to **runbook** and the spec was adapted
+  in place: the preamble declares the runbook lane, and its embedded hand-off command is now `/plan-marshall-runbook-lane`.
+  Validated through `runbook_lane resolve` (sender `rb-lb-53-halt-conflict-and-phase-time`).
+
+- **PLAN-LB-55** (WS-01) — **emitted 2026-10-24 in the runbook lane and started by the operator (row `running`).**
+  `gate-head-truth`, four deliverables: no push/merge of a head its gates have not seen, phase boundaries without
+  bypasses, a required bot's refusal outranking an older review, and an unreadable roster as an error. Same adaptation as
+  LB-53 — lane `runbook`, spec preamble and hand-off command rewritten in place, validated through `runbook_lane resolve`
+  (sender `rb-lb-55-gate-head-truth`). It overlaps LB-53 on `phase-6-finalize/scripts/` by declaration; the gate scored
+  that as one shared file and the operator emitted both anyway.
 
 - **PLAN-LB-91** (shipped #1847, 2026-10-23, runbook lane, `deepseek-v4.1-flash/high`) — see `landings/PLAN-LB-91.md`.
   D1-D2 landed on the **narrowest footprint in the epic: 7 declared, 7 realized, symmetric difference 0**. A history
@@ -446,6 +454,12 @@ derive, for rows still live.
 
 ## Decisions
 
+- 2026-10-24 — **Both lane-switched plans started; the epic is full again at 4 of 4.** PLAN-LB-53 and PLAN-LB-55 were
+  emitted in the runbook lane (operator instruction: emit the OpenCode lane, adapting only the plans being emitted) and
+  the operator started both, so the rows are `running`. With LB-43 and LB-80 still in flight that is
+  `parallelization_scope` 4 of 4: nothing further is emitted until a landing frees a slot. LB-58 remains the only
+  plan-marshall-lane row staged; LB-82 and LB-90 stay staged in the runbook lane. The manage-status concentration noted
+  earlier is now live: LB-53, LB-55 and LB-43 all touch that module, with LB-43's edit still undeclared.
 - 2026-10-24 — **PLAN-LB-92 shipped with 2 of 3 deliverables, and the gap is recorded rather than smoothed.** D1
   (worktree creation produces an executor) and D3 (builds route through it) landed; D2's refresh verb shipped but its
   headline Done-when is unobservable because the executor's own tree-walking legs already resolve an added script. The
