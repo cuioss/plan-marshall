@@ -1246,7 +1246,7 @@ completed is legitimately unclosed at its own transition, because its
 `manage-metrics phase-boundary` stamp runs after the status advance by design. A
 phase with no metrics row never started recording and is `not_applicable`; a
 missing metrics store means the plan recorded no boundaries at all and passes. The
-refusal is `phase_boundary_unstamped` (exit 0, a member of
+refusal is `phase_boundary_unstamped` (exit 1 — a member of
 `VERIFY_REFUSAL_ERRORS`), carrying `boundaries[]` — one `{phase, missing}` record
 per offending phase.
 

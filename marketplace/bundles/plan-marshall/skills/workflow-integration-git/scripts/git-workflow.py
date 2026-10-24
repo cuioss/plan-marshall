@@ -931,6 +931,47 @@ def _plan_phase_6_steps(plan_dir: Path | None) -> frozenset[str]:
     return frozenset(str(step) for step in steps if isinstance(step, str) and step)
 
 
+def cmd_push(args):
+    """Push the current branch through the pre-push gate-head barrier.
+
+    The finalize push step needs a push with NO commit when the settled tree is
+    already clean (the commit was made by the settle step that preceded it). A bare
+    ``git push`` there bypassed the gate-head barrier entirely — the gate validated
+    one tree and that push could ship another. This verb is the gated form: it reads
+    the HEAD being pushed, consults the plan's ``pre-push-quality-gate`` record and
+    refuses a mismatch before any ref moves. A plan with no record (an early phase,
+    a plan that never ran finalize) is not blocked: nothing was validated, so there
+    is nothing to compare.
+    """
+    worktree, err = _resolve_analyze_diff_path(args)
+    if err is not None:
+        return err
+    assert worktree is not None  # narrowing
+
+    plan_id = getattr(args, 'plan_id', None) or _plan_id_from_worktree_path(worktree)
+    rc, head, _head_err = _run_git_nul_verbatim(['-C', str(worktree), 'rev-parse', 'HEAD'])
+    current_head = head.strip() if rc == 0 else ''
+
+    from _push_gate import head_gate_refusal
+
+    gate_refusal = head_gate_refusal(plan_id or '', current_head)
+    if gate_refusal is not None:
+        gate_refusal.update({'operation': 'push', 'worktree': str(worktree)})
+        return gate_refusal
+
+    rc, _out, push_err = _run_git_nul_verbatim(['-C', str(worktree), 'push'])
+    if rc != 0:
+        return make_error(f'git push failed: {push_err or f"exit {rc}"}', code=ErrorCode.FETCH_FAILURE)
+    return {
+        'status': 'success',
+        'operation': 'push',
+        'plan_id': plan_id,
+        'worktree': str(worktree),
+        'head': current_head,
+        'pushed': True,
+    }
+
+
 def cmd_commit(args):
     """Handle the commit subcommand — the single gate-bearing commit path.
 
@@ -3637,6 +3678,26 @@ Examples:
                         'flags': ['--changed-paths'],
                         'dest': 'changed_paths',
                         'help': 'Comma-separated changed paths (default: derived from git diff --name-only HEAD)',
+                    },
+                ],
+            },
+            {
+                'name': 'push',
+                'help': 'Push the current branch through the pre-push gate-head barrier',
+                'handler': cmd_push,
+                'args': [
+                    {
+                        'flags': ['--plan-id'],
+                        'dest': 'plan_id',
+                        'help': (
+                            'Plan identifier — resolves the working tree and the gate-head record '
+                            '(derived from the working tree when omitted)'
+                        ),
+                    },
+                    {
+                        'flags': ['--project-dir'],
+                        'dest': 'project_dir',
+                        'help': 'Explicit working tree path (escape hatch when plan-id is unavailable)',
                     },
                 ],
             },

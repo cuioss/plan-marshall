@@ -90,11 +90,20 @@ def test_an_answer_without_an_option_label_refuses(plan_context):
 
 
 def test_a_grant_without_an_answer_keeps_its_legacy_shape(plan_context):
-    """The check is opt-in at the call site: no answer supplied, no answer compared."""
-    result = _grant('lb55-grant-plain')
+    """A non-override kind keeps its legacy shape: the answer check is the override's."""
+    result = _grant('lb55-grant-plain', kind='pre-merge-consent')
 
     assert result is not None
     assert result['status'] == 'success'
+
+
+def test_the_override_kind_requires_the_option_the_operator_selected(plan_context):
+    """``barrier-ask-override`` minted without an answer is the PLAN-LB-47 defect."""
+    result = _grant('lb55-grant-no-answer')
+
+    assert result is not None
+    assert result['status'] == 'error'
+    assert result['error'] == 'operator_answer_required'
 
 
 def test_the_operator_review_policy_is_in_the_coderabbit_standard():

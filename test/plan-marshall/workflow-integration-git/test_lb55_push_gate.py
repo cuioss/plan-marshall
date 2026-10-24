@@ -115,3 +115,52 @@ def test_force_push_of_the_gated_head_proceeds_past_the_gate_check(repo, monkeyp
 
     assert result.get('error_type') != push_gate.HEAD_NOT_GATED
     assert any('push' in argv for argv in calls), 'the push must have been attempted'
+
+
+# ---------------------------------------------------------------------------
+# The `push` verb — the finalize push step's own path (no commit on a clean tree).
+# ---------------------------------------------------------------------------
+
+git_workflow = load_script_module('plan-marshall', 'workflow-integration-git', 'git-workflow.py', '_lb55_git_workflow')
+
+
+def test_the_push_verb_refuses_a_head_the_gate_did_not_validate(repo, monkeypatch):
+    """The clean-tree push the finalize step issues is gated too — not only `commit --push`."""
+    monkeypatch.setattr(push_gate, 'read_plan_status', lambda _pid: _status_with_gate(GATED))
+    monkeypatch.setattr(git_workflow, '_plan_id_from_worktree_path', lambda _path: 'lb55-push-verb')
+    head = _git(repo, 'rev-parse', 'HEAD')
+    calls: list[list[str]] = []
+
+    def _fake(argv):
+        calls.append(list(argv))
+        return (0, f'{head}\n', '') if 'rev-parse' in argv else (1, '', 'must not be reached')
+
+    monkeypatch.setattr(git_workflow, '_run_git_nul_verbatim', _fake)
+
+    result = git_workflow.cmd_push(type('Args', (), {'plan_id': None, 'project_dir': str(repo)})())
+
+    assert result['status'] == 'error'
+    assert result['error'] == push_gate.HEAD_NOT_GATED
+    assert result['operation'] == 'push'
+    assert not any('push' in argv for argv in calls), 'the refusal must precede the push'
+
+
+def test_the_push_verb_pushes_the_gated_head(repo, monkeypatch):
+    """⛔ MATCHED CONTROL — a matching record lets the verb reach the actual push."""
+    head = _git(repo, 'rev-parse', 'HEAD')
+    monkeypatch.setattr(push_gate, 'read_plan_status', lambda _pid: _status_with_gate(head))
+    monkeypatch.setattr(git_workflow, '_plan_id_from_worktree_path', lambda _path: 'lb55-push-verb-ok')
+    calls: list[list[str]] = []
+
+    def _fake(argv):
+        calls.append(list(argv))
+        if 'rev-parse' in argv:
+            return 0, f'{head}\n', ''
+        return 0, '', ''
+
+    monkeypatch.setattr(git_workflow, '_run_git_nul_verbatim', _fake)
+
+    result = git_workflow.cmd_push(type('Args', (), {'plan_id': None, 'project_dir': str(repo)})())
+
+    assert result['status'] == 'success', f'the gated head must push, got {result!r}'
+    assert any('push' in argv for argv in calls)

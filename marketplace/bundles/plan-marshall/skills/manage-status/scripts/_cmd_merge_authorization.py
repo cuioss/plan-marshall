@@ -120,6 +120,18 @@ def cmd_merge_authorization_grant(args: argparse.Namespace) -> dict | None:
     # whitespace/case normalisation (the label is prose, not a token).
     answer = getattr(args, 'operator_answer', None)
     label = getattr(args, 'override_label', None)
+    if kind == 'barrier-ask-override' and answer is None and label is None:
+        return {
+            'status': 'error',
+            'plan_id': args.plan_id,
+            'error': 'operator_answer_required',
+            'message': (
+                '--kind barrier-ask-override requires --operator-answer and --override-label: '
+                'this authorization exists only for the override option the operator selected, '
+                'and a grant minted without one is the PLAN-LB-47 defect (free text treated as '
+                'a selection).'
+            ),
+        }
     if answer is not None or label is not None:
         if not answer or not label:
             return {

@@ -173,10 +173,16 @@ A **raw** `git commit` is refused by the enforcement guard in phase `6-finalize`
 
 **Step 6: Push (Optional)**
 
-If `push` parameter:
+If `push` parameter, push through the gated verb — never a bare `git push`:
 ```bash
-git -C {worktree_path} push
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow push \
+  --project-dir {worktree_path}
 ```
+
+The verb reads the plan's `6-finalize` record for the pre-push quality gate and
+refuses a HEAD the gate did not validate (`head_not_validated_by_gate`). This is
+the path the finalize push step takes when the tree is already clean — the case a
+raw `git push` served before — so the barrier covers it too.
 
 ### Output
 

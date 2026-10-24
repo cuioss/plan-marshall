@@ -50,7 +50,18 @@ def test_grant_persists_head_bound_record(plan_context):
     persisted = read_status(plan_id)['metadata']['merge_authorizations']['barrier-ask-override']
     assert persisted['head'] == HEAD_A
     assert persisted['gap_class'] == BARRIER_GAP
-    assert set(persisted) == {'head', 'gap_class', 'granted_over', 'reason', 'granted_at'}
+    # The record carries the operator's answer and the option it was compared against:
+    # a barrier grant is minted only from the override option (PLAN-LB-55 D4).
+    assert persisted['operator_answer'] == persisted['override_label']
+    assert set(persisted) == {
+        'head',
+        'gap_class',
+        'granted_over',
+        'reason',
+        'granted_at',
+        'operator_answer',
+        'override_label',
+    }
 
 
 # =============================================================================
