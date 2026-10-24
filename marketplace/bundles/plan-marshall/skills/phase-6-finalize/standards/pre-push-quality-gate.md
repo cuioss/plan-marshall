@@ -59,14 +59,28 @@ This gate sorts LAST in the settle band (`order: 10`, immediately before `defaul
 
 ## Pushed-head gate refusal
 
-The gate refuses a push whose head outruns the last gate stamp. Immediately
-before the per-bundle loop, resolve the current worktree HEAD
+The gate refuses a push whose head outruns the last gate stamp, and that refusal
+is now ENFORCED BY THE PUSH VERBS rather than by this document. The rule was prose
+only — nothing compared the recorded stamp with the HEAD a push would ship — so a
+fix commit after the gate, an amend, or a rebase was pushed as "gated" when no gate
+had seen it. Both push verbs (`git-workflow commit --push` and
+`git-workflow force-push-with-lease`, which is the post-rebase path) now read the
+plan's `6-finalize` record for this step — `head_at_completion` under
+`metadata.phase_steps`, via the plan's own status through `manage-status read` —
+and refuse a push whose HEAD differs, with `head_not_validated_by_gate` naming the
+recorded SHA, the pushed SHA and the step. A plan with no record (an early phase,
+a plan that never ran finalize) carries no barrier: nothing was validated, so there
+is nothing to compare. The single source of truth is
+`workflow-integration-git/scripts/_push_gate.py`; the residue this leaves is that a
+push made OUTSIDE those two verbs is still ungated.
+
+Before the per-bundle loop the gate resolves the current worktree HEAD
 (`git -C {worktree_path} rev-parse HEAD` — worktree-scoped, never bare
-`git rev-parse HEAD`: after finalize returns to the main checkout a bare
-read reports the main checkout while the stamp belongs to the worktree)
-and compare it against the last gate stamp the ledger records for this
-worktree (the newest `kind=build` row whose `worktree_sha` the freshness
-crosscheck admitted, read through `manage-tasks pre-commit-verify-freshness`):
+`git rev-parse HEAD`: after finalize returns to the main checkout a bare read
+reports the main checkout while the stamp belongs to the worktree) and compares it
+against the last gate stamp the ledger records for this worktree (the newest
+`kind=build` row whose `worktree_sha` the freshness crosscheck admitted, read
+through `manage-tasks pre-commit-verify-freshness`):
 
 - **Head matches the stamp** — proceed into the arms below.
 - **Head outruns the stamp** — STOP the step and refuse the push. The tree

@@ -88,9 +88,18 @@ REFUSAL_CATEGORY_FIELD = 'refusal_category'
 INVOCATION_REFUSAL = 'invocation'
 
 _CI_NOTATION = 'plan-marshall:tools-integration-ci:ci'
+_MANAGE_STATUS_NOTATION = 'plan-marshall:manage-status:manage-status'
+
+#: The phase whose step records carry gate heads.
+HEAD_BINDING_PHASE = '6-finalize'
+
+#: Refusal code for a merge candidate a head-dependent gate record never saw.
+MERGE_HEAD_NOT_GATED = 'merge_candidate_not_gated'
 
 FindingsCheck = Callable[[str], dict[str, Any]]
 MergeRunner = Callable[[list[str]], dict[str, Any]]
+StatusReader = Callable[[str], dict[str, Any] | None]
+HeadReader = Callable[[str], str | None]
 
 
 # ---------------------------------------------------------------------------
@@ -105,6 +114,121 @@ def _check_findings(plan_id: str) -> dict[str, Any]:
     verdict vocabulary is that verb's own.
     """
     return cmd_findings_check(argparse.Namespace(plan_id=plan_id, phase=FINDINGS_PHASE))
+
+
+def _read_plan_status(plan_id: str) -> dict[str, Any] | None:
+    """Return the plan's status payload, or ``None`` when it cannot be read.
+
+    Goes through the executor (``manage-status read``) — the plan-context resolution
+    is that skill's own, so a plan whose directory moved into its worktree is still
+    found. ``None`` is the declared unknown, never an empty plan.
+    """
+    executor = get_executor_path()
+    if executor is None:
+        return None
+    try:
+        completed = subprocess.run(
+            [sys.executable, str(executor), _MANAGE_STATUS_NOTATION, 'read', '--plan-id', plan_id],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=60,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if not (completed.stdout or '').strip():
+        return None
+    try:
+        parsed = parse_toon(completed.stdout)
+    except Exception:
+        return None
+    if parsed.get('status') != 'success':
+        return None
+    plan = parsed.get('plan')
+    return plan if isinstance(plan, dict) else None
+
+
+def _resolve_local_head(project_dir: str) -> str | None:
+    """Return the local HEAD of ``project_dir``, or ``None`` when git cannot answer.
+
+    The local HEAD IS the merge candidate on the immediate-merge route; the queue
+    route merges the platform's merge commit, whose content is this tree. An
+    unreadable HEAD is answered ``None`` and never as a mismatch.
+    """
+    try:
+        completed = subprocess.run(
+            ['git', '-C', project_dir, 'rev-parse', 'HEAD'],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError:
+        return None
+    out = (completed.stdout or '').strip()
+    return out.splitlines()[0].strip() if completed.returncode == 0 and out else None
+
+
+def _head_binding_refusal(
+    plan_id: str,
+    project_dir: str,
+    *,
+    status_reader: StatusReader | None = None,
+    head_reader: HeadReader | None = None,
+) -> dict[str, Any] | None:
+    """Refuse a merge candidate that any head-dependent gate record did not see.
+
+    MEMBERSHIP IS DERIVED FROM THE RECORD, not listed here: a finalize step is
+    head-dependent exactly when it persisted ``head_at_completion`` (the ext-point
+    contract makes that field mandatory for such a step and meaningless for the
+    others), so the field's PRESENCE is the population. A record with no SHA was
+    never anchored to a tree and is not consulted — the dispatcher's own re-entry
+    check owns that verdict.
+
+    Three unknown answers pass rather than refuse, and none is a claim that the
+    binding is sound: an unreadable plan status, an unreadable local HEAD, and a
+    record set that carries no head at all. Each is named in the payload of a
+    refusal only when an actual mismatch exists.
+
+    The PLAN-LB-26 case this closes: gates stamped ``3db65fc05`` while the PR head
+    merged was ``74e6bfda``. Nothing compared them, so the merge shipped a tree no
+    gate had seen.
+    """
+    status = (status_reader or _read_plan_status)(plan_id)
+    head = (head_reader or _resolve_local_head)(project_dir)
+    if not head or not isinstance(status, dict):
+        return None
+    metadata = status.get('metadata')
+    steps = metadata.get('phase_steps') if isinstance(metadata, dict) else None
+    phase_steps = steps.get(HEAD_BINDING_PHASE) if isinstance(steps, dict) else None
+    if not isinstance(phase_steps, dict):
+        return None
+    offending: list[dict[str, str]] = []
+    for step_id in sorted(phase_steps):
+        record = phase_steps[step_id]
+        if not isinstance(record, dict):
+            continue
+        recorded = record.get('head_at_completion')
+        if not recorded:
+            continue
+        recorded_sha = str(recorded).strip()
+        if recorded_sha != head:
+            offending.append({'step': step_id, 'recorded_head': recorded_sha, 'head': head})
+    if not offending:
+        return None
+    return {
+        'status': 'error',
+        'error': MERGE_HEAD_NOT_GATED,
+        'plan_id': plan_id,
+        'phase': HEAD_BINDING_PHASE,
+        'head': head,
+        'steps': offending,
+        'dispatched': False,
+        'message': (
+            'The merge candidate is not the HEAD the head-dependent gates validated '
+            f'({", ".join(item["step"] for item in offending)}). Re-run those steps on '
+            'the current tree, or re-grant the merge authorization against it.'
+        ),
+    }
 
 
 def _run_ci(ci_args: list[str]) -> dict[str, Any]:
@@ -231,6 +355,8 @@ def merge(
     admin_merge_on_stuck_state: bool = False,
     findings_check: FindingsCheck | None = None,
     merge_runner: MergeRunner | None = None,
+    status_reader: StatusReader | None = None,
+    head_reader: HeadReader | None = None,
 ) -> dict[str, Any]:
     """Issue the routed merge verb only when the findings store is proven clean.
 
@@ -284,6 +410,18 @@ def merge(
                 'was not proven clean; refusing to merge'
             ),
         }
+
+    # Head binding: the merge candidate must be the tree the head-dependent gates
+    # validated. Runs only on a clean findings store, so the cheaper verdict names
+    # the refusal first when both would fire.
+    head_refusal = _head_binding_refusal(
+        plan_id,
+        project_dir,
+        status_reader=status_reader,
+        head_reader=head_reader,
+    )
+    if head_refusal is not None:
+        return head_refusal
 
     ci_args = build_merge_args(
         route,

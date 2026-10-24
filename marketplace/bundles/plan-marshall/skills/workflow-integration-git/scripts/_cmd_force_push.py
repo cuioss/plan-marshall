@@ -197,7 +197,21 @@ def cmd_force_push(args) -> dict:
             'message': 'refusing to force-push to base branch',
         }
 
-    # Perform the push with --force-with-lease.
+    # Perform the push with --force-with-lease. The head being pushed is the commit
+    # the rebase produced; when the plan's pre-push gate recorded a different one,
+    # that gate never saw this tree — refuse before the force moves the ref.
+    if plan_id:
+        from _push_gate import head_gate_refusal
+
+        head_rc, head_out, _head_err = run_git(['-C', str(worktree_path), 'rev-parse', 'HEAD'])
+        current_head = head_out.strip().splitlines()[0].strip() if head_rc == 0 and head_out.strip() else ''
+        gate_refusal = head_gate_refusal(plan_id, current_head)
+        if gate_refusal is not None:
+            gate_refusal.update(envelope)
+            gate_refusal['error_type'] = gate_refusal.pop('error')
+            gate_refusal['head'] = current_head
+            return gate_refusal
+
     rc, _stdout, stderr = run_git(['-C', str(worktree_path), 'push', 'origin', branch, '--force-with-lease'])
 
     if rc == 0:

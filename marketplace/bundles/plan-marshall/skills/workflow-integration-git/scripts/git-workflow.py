@@ -1001,6 +1001,16 @@ def cmd_commit(args):
 
     pushed = False
     if getattr(args, 'push', False):
+        # The push ships exactly the HEAD this commit created. When the plan's
+        # pre-push gate recorded a DIFFERENT head, that gate never saw this tree —
+        # refuse before the ref moves (see `_push_gate`).
+        if commit_hash:
+            from _push_gate import head_gate_refusal
+
+            gate_refusal = head_gate_refusal(plan_id or _plan_id_from_worktree_path(worktree) or '', commit_hash)
+            if gate_refusal is not None:
+                gate_refusal['commit_hash'] = commit_hash
+                return gate_refusal
         rc, _out, push_err = _run_git_nul_verbatim(['-C', str(worktree), 'push'])
         if rc != 0:
             return make_error(f'git push failed: {push_err or f"exit {rc}"}', code=ErrorCode.FETCH_FAILURE)
