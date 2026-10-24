@@ -2,9 +2,9 @@
   "id": "PLAN-LB-44",
   "slug": "red-ci-triage-route",
   "workstream": "WS-01",
-  "status": "running",
-  "plan_marshall_plan_id": "",
-  "pr": "",
-  "landing": "",
+  "status": "shipped",
+  "plan_marshall_plan_id": "lb-44-red-ci-triage-route",
+  "pr": "1848",
+  "landing": "landings/PLAN-LB-44.md",
   "seq": 44
 }
