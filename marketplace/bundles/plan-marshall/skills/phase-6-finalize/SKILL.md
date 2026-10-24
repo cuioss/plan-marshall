@@ -1234,7 +1234,13 @@ FOR each step_id in manifest.phase_6.steps:
              work --plan-id {plan_id} --level ERROR --message "[ERROR] (plan-marshall:phase-6-finalize) Failed record for step {step_ref} was refused: {error} — {message}"
            The STOP returns control to the orchestrator; items b and c are reached only on
            `status: success`, so the (b) line never claims a `failed` record that was not
-           written.
+           written. On that same `status: success`, record the halt itself
+           (§ "Halt continuation roster") — the persisted halt is what makes the stop a fact
+           the continuation check can read, rather than a line in the log:
+
+           python3 .plan/execute-script.py plan-marshall:manage-status:manage-status halt record \
+             --plan-id {plan_id} --phase 6-finalize --step {step_id} --outcome failed \
+             --reason "post-dispatch guard: step returned without a terminal record"
         b. Log the attributed error:
            python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
              work --plan-id {plan_id} --level ERROR \
@@ -1444,6 +1450,8 @@ FOR each step_id in manifest.phase_6.steps:
       - **`reason: refusal_structural`** — ⛔ **the one asking reason whose option set is DISJOINT from that of the four temporal ones.** The refusing bot's refusal cause is a diff-SIZE ceiling, so it classified `refused_structural` and the limit is on the diff rather than on a window. Its `prompt_options[]` are *split / accept / disable-for-this-PR*, it carries `cap` and `measured_diff_size` instead of `timeout_seconds`, and **it must NEVER be offered a wait** — waiting is an action the operator can take that is guaranteed not to work, because the diff is the same size an hour later. See `../automatic-review/SKILL.md` § "Rate-limit refusal recovery (opt-in)" Branch 0.
 
       The three asking rate-window reasons (`rate_window_timeout`, `rate_window_not_awaitable`, `rate_window_exhausted`) and `refusal_structural` (see `../automatic-review/SKILL.md` § "Rate-limit refusal recovery (opt-in)") always carry `action: ask` and consult NO policy knob — they always fire the AskUserQuestion. `rate_window_await` consults no policy knob either, and fires none.
+
+      **Every `escalate_ask` return is a recorded halt.** Before firing the prompt this hook records the halt (`halt record --outcome halted --escalate-ask --reason "escalate_ask{reason: {reason}}"`), and after the operator selects an option it records that answer (`halt answer --selected "{option label}"`). `rate_window_await` asks nothing, so its halt is recorded WITHOUT `--escalate-ask`; the `defer` branch asks nothing either, so it records a non-escalating halt and owes no answer. Both calls are stated once, with their full verb spellings, in § "Halt continuation roster" — and because `mark-step-done` refuses a `done`/`skipped` resolution over an unanswered escalation, a missed `halt answer` blocks the completion instead of being silently skipped.
 
       The full field set of the `escalate_ask` return TOON (all six `reason` variants) is defined in [`../automatic-review/SKILL.md`](../automatic-review/SKILL.md) § "`escalate_ask` return (timeout escalations)" — read it there; do NOT restate the field set here.
 
@@ -2024,7 +2032,41 @@ The post-dispatch completion guard sub-step above (the `assert-step-recorded` ch
 
 The guard is scoped to dispatched (Task-agent) steps only, and within that scope it exempts three classes uniformly — inline steps record their mark synchronously in the main context, the item-5 timeout path already records `outcome=failed`, and `escalate_ask`-returning steps legitimately leave no terminal record because item 7a owns their continuation. All three are exempt under the same gate as items 5b/5c, extended in item 5d with the `escalate_ask` carve-out.
 
+#### Halt continuation roster
+
+The **closed** set of continuations a halted step may take. A *halt* is any stop that is not a completion: the post-dispatch guard's own `failed` record at item 5d.b, a step's `mark-step-done --outcome failed`, or an `escalate_ask` return (whose operator prompt item 7a owns). The roster below is the declaration; `plan-marshall:phase-6-finalize:halt_continuation check` mirrors it and refuses every other token, and the halt state itself is written with `plan-marshall:manage-status:manage-status halt`.
+
+| continuation | What it is | Bound |
+|---|---|---|
+| `retry` | the resumable re-entry check (item 1) re-runs the failed step from scratch | **once per finalize invocation** (item 1) — `check` requires the attempt and the bound, and refuses a retry past it |
+| `loop_back` | the step handed control upstream through its recorded `loop_back_target` (item 7b) | the per-source `max_iterations` budget (item 7b) |
+| `operator_question` | the operator is asked and their selected option is executed as worded | the operator's answer |
+
+Record the halt, then check the continuation before taking it:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status halt record \
+  --plan-id {plan_id} --phase 6-finalize --step {step_id} --outcome {failed|halted} \
+  --reason "{why the step stopped}" [--escalate-ask]
+
+python3 .plan/execute-script.py plan-marshall:phase-6-finalize:halt_continuation check \
+  --plan-id {plan_id} --phase 6-finalize --step {step_id} --continuation {retry|loop_back|operator_question} \
+  [--attempt {n} --max-attempts {bound}]
+```
+
+`check` answers `allowed: true` for a named continuation, and refuses with `error: halt_continuation_refused` naming all three otherwise; `retry_bound_required` when a retry states no bound, `retry_bound_exhausted` when it exceeds it, and `escalation_unanswered` while the halt carries an unanswered `escalate_ask` (see below). A step with no halt record admits every continuation — there is nothing to constrain.
+
+**Undocumented harness recovery verbs are not continuations.** `session_move` (OpenCode), a session resume, or an ad-hoc re-dispatch is named nowhere in the roster, so `check` refuses it — by construction, because the set is closed, not because a blocklist happens to list it. A halt the log calls "halted" ends the step: the only ways forward are the three above.
+
+**An operator escalation is recorded, asked, and answered.** When a halt hands the decision to the operator, record it with `--escalate-ask`, fire the question, and record the option the operator selected with `plan-marshall:manage-status:manage-status halt answer --selected "{option label}"`. Until that answer exists, `mark-step-done` refuses a `done` / `skipped` resolution (`error: escalation_unanswered`) and `halt_continuation check` admits only `operator_question`. No step therefore completes on a decision the operator never made — the leaf cannot mark past an escalation, and neither can the dispatcher.
+
+**The option the operator selected is executed as worded.** The selected option names the branch it selects (the option-text-names-the-branch rule), and that branch is the one that runs — a different branch is a refused run, not a cheaper equivalent. "Wait another 600s" waits; it does not stand in for a CI wait.
+
+**An operator-reported problem is a stop, not a trigger.** When the operator reports a failure ("the build is red", "CI is not green"), take no remedial action they did not choose: state the options and ask. Re-running the failed check or re-triggering the review unasked is a *remedial action*, and it is the one that let an unrelated auto-merge proceed.
+
 #### Pre-Archive Snapshot Hook
+
+
 
 When the NEXT step to dispatch is `default:archive-plan` (always the last CONFIGURED step), capture a snapshot of plan state BEFORE dispatching archive-plan. The archive step moves `.plan/local/plans/{plan_id}/` to `.plan/local/archived-plans/{date}-{plan_id}/` and invalidates subsequent `manage-status read` calls against the live path, so the renderer (Step 4) would be unable to read state after archive returns.
 

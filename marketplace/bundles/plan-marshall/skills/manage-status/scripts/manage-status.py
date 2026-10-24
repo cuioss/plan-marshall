@@ -28,6 +28,9 @@ Usage:
     python3 .plan/execute-script.py plan-marshall:manage-status:manage-status assert-step-recorded --plan-id EXAMPLE-PLAN --phase 6-finalize --step ci-verify --require-terminal
     python3 .plan/execute-script.py plan-marshall:manage-status:manage-status merge-authorization grant --plan-id EXAMPLE-PLAN --kind barrier-ask-override --head 76c7200b6 --gap-class review-barrier-gap --granted-over "2 unhandled, unproven_bots=cuioss-review-bot" --reason "operator accepted the gap"
     python3 .plan/execute-script.py plan-marshall:manage-status:manage-status merge-authorization check --plan-id EXAMPLE-PLAN --head 76c7200b6 --gap-class review-barrier-gap
+    python3 .plan/execute-script.py plan-marshall:manage-status:manage-status halt record --plan-id EXAMPLE-PLAN --phase 6-finalize --step create-pr --outcome failed --reason "post-dispatch guard: no terminal record"
+    python3 .plan/execute-script.py plan-marshall:manage-status:manage-status halt answer --plan-id EXAMPLE-PLAN --phase 6-finalize --step automatic-review --selected "Wait another 600s"
+    python3 .plan/execute-script.py plan-marshall:manage-status:manage-status halt read --plan-id EXAMPLE-PLAN --phase 6-finalize --step create-pr
     python3 .plan/execute-script.py plan-marshall:manage-status:manage-status loop-back admit --plan-id EXAMPLE-PLAN --source automatic-review --ceiling 3
     python3 .plan/execute-script.py plan-marshall:manage-status:manage-status loop-back grant --plan-id EXAMPLE-PLAN --source automatic-review --rounds 1 --reason "one more review round for the last fix"
     python3 .plan/execute-script.py plan-marshall:manage-status:manage-status loop-back close --plan-id EXAMPLE-PLAN --step code-review --head 76c7200b6f1d2c3a4b5e6f708192a3b4c5d6e7f8 --rationale "operator accepted the two residual findings" --accept a3f2c1 --accept b4e3d2 --waive-refire pre-push-quality-gate
@@ -42,6 +45,12 @@ from _cmd_aggregate_confidence import cmd_aggregate_confidence
 from _cmd_assert_step_recorded import cmd_assert_step_recorded
 from _cmd_change_type_heuristic import cmd_change_type_heuristic
 from _cmd_classification_validate import cmd_classification_validate
+from _cmd_halt import (
+    HALT_OUTCOMES,
+    cmd_halt_answer,
+    cmd_halt_read,
+    cmd_halt_record,
+)
 from _cmd_lifecycle import (
     cmd_archive,
     cmd_create,
@@ -680,6 +689,100 @@ def main() -> int:
         ),
     )
     merge_authorization_check_parser.set_defaults(func=cmd_merge_authorization_check)
+
+    # halt (record | answer | read) — the persisted stop state of a phase step.
+    halt_parser = subparsers.add_parser(
+        'halt',
+        help="Record, answer or read a step's halt state in status.metadata.halts",
+        description=(
+            'The persisted HALT state of a phase step, beside phase_steps and '
+            'deliberately not inside it: a halt is why a step stopped and what may '
+            'follow, while phase_steps is the roster the phase_steps_complete '
+            "handshake counts. 'record' is written by a dispatch guard or step gate "
+            'when a step ends without a completion (outcome failed|halted); a new '
+            'record replaces the previous one, so a re-halt is a fresh, unanswered '
+            "stop. 'answer' records the option the operator selected on a halt that "
+            'raised an escalate_ask, and refuses a halt that raised none — an answer '
+            "to a question nobody asked would record consent nobody gave. 'read' "
+            'reports one record or every record in the plan (read-only) and says, per '
+            'record, whether its escalation is still unanswered. That unanswered '
+            'state is also what mark-step-done refuses: a done or skipped resolution '
+            'recorded over an unanswered escalate_ask returns escalation_unanswered '
+            'and writes nothing. Every verb exits 0 on every verdict — the verdict '
+            'travels in the TOON.'
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        allow_abbrev=False,
+    )
+    halt_subparsers = halt_parser.add_subparsers(dest='halt_verb', required=True)
+
+    halt_record_parser = halt_subparsers.add_parser(
+        'record',
+        help="Persist a step's halt (replaces any previous halt for that step)",
+        allow_abbrev=False,
+    )
+    add_plan_id_arg(halt_record_parser)
+    add_phase_arg(halt_record_parser)
+    halt_record_parser.add_argument('--step', required=True, help='Step identifier within the phase')
+    halt_record_parser.add_argument(
+        '--outcome',
+        required=True,
+        choices=list(HALT_OUTCOMES),
+        help=(
+            'failed = the step ended without a completion and produced a phase-steps '
+            'record; halted = the step stopped without recording any outcome (an '
+            'escalate_ask return, a harness cancellation). Not the step-outcome '
+            'vocabulary: halted is not a mark-step-done outcome.'
+        ),
+    )
+    halt_record_parser.add_argument(
+        '--reason',
+        required=True,
+        help='Why the step stopped. Required and non-empty: a halt nobody can explain is indistinguishable from a skip.',
+    )
+    halt_record_parser.add_argument(
+        '--escalate-ask',
+        dest='escalate_ask',
+        action='store_true',
+        help=(
+            'The halt handed the decision to the operator. Until an operator answer is '
+            'recorded with `halt answer`, every resolution recorded over this halt is '
+            'refused and the step may only continue through an operator question.'
+        ),
+    )
+    halt_record_parser.set_defaults(func=cmd_halt_record)
+
+    halt_answer_parser = halt_subparsers.add_parser(
+        'answer',
+        help="Record the operator's selected option on an escalated halt",
+        allow_abbrev=False,
+    )
+    add_plan_id_arg(halt_answer_parser)
+    add_phase_arg(halt_answer_parser)
+    halt_answer_parser.add_argument('--step', required=True, help='Step identifier within the phase')
+    halt_answer_parser.add_argument(
+        '--selected',
+        required=True,
+        help=(
+            'The option label the operator selected, verbatim. Persisted as the answer; '
+            'the continuation the answer authorizes is the one its own label names.'
+        ),
+    )
+    halt_answer_parser.set_defaults(func=cmd_halt_answer)
+
+    halt_read_parser = halt_subparsers.add_parser(
+        'read',
+        help='Report one halt record or every record in the plan (read-only)',
+        allow_abbrev=False,
+    )
+    add_plan_id_arg(halt_read_parser)
+    add_phase_arg(halt_read_parser, required=False)
+    halt_read_parser.add_argument(
+        '--step',
+        default=None,
+        help='Step identifier; supplied together with --phase, omitted for a full read.',
+    )
+    halt_read_parser.set_defaults(func=cmd_halt_read)
 
     # loop-back (admit | grant | close)
     loop_back_parser = subparsers.add_parser(

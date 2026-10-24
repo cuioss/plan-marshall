@@ -79,6 +79,17 @@ list, so a typo'd or invented step name is refused with
 real can never enter the record. Phases without a centrally composed step
 list are recorded without a membership check, stated rather than hidden.
 
+A ``done`` or ``skipped`` RESOLUTION is additionally refused with
+``error: escalation_unanswered`` when the step carries a halt that raised an
+operator escalation and no operator answer is logged against it (see
+``_cmd_halt``). The escalation is the step's own statement that its next move
+is the operator's to choose, so a completion recorded over an unanswered one
+asserts a decision nobody made — the failure mode where a halted step was
+"halted" in the log and then completed anyway. ``failed`` and ``loop_back``
+stay writable: they record further trouble, not a completion claim. There is no
+``--force`` override, because ``--force`` governs outcome conflicts, not
+authority to resolve an operator's decision.
+
 ``display_detail`` is the progress channel and ``outcome`` /
 ``loop_back_target`` are the control channel: control rides closed
 vocabularies, progress rides free text, and the two must not trade places.
@@ -123,6 +134,7 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+from _cmd_halt import RESOLUTION_OUTCOMES, unanswered_escalation
 from _status_core import require_status, write_status
 from _step_completion_marker import format_completion_marker
 from _step_key_canonical import canonicalize_step_key
@@ -491,6 +503,37 @@ def cmd_mark_step_done(args: argparse.Namespace) -> dict | None:
                 '--loop-back-target, progress rides --display-detail.'
             ),
         }
+
+    # An escalate_ask hands the decision to the operator: the step stopped precisely
+    # because its next move is not the leaf's to choose. Recording a RESOLUTION over
+    # an unanswered escalation therefore asserts a decision nobody made — the observed
+    # failure where a halt was followed by an improvised recovery and a green
+    # completion. The halt store is read here, and `done` / `skipped` are refused
+    # until `halt answer` records the option the operator selected. `failed` and
+    # `loop_back` stay writable: they are progress, not a completion claim, and a
+    # step that fails again while an escalation is open must still be able to say so.
+    # No --force override: --force governs outcome conflicts, not authority to resolve.
+    if outcome in RESOLUTION_OUTCOMES:
+        escalation = unanswered_escalation(status, phase, step)
+        if escalation is not None:
+            return {
+                'status': 'error',
+                'plan_id': args.plan_id,
+                'error': 'escalation_unanswered',
+                'phase': phase,
+                'step': step,
+                'requested_outcome': outcome,
+                'halt_outcome': escalation.get('outcome'),
+                'halt_reason': escalation.get('reason'),
+                'message': (
+                    f'Step {step!r} in phase {phase!r} halted with an operator escalation '
+                    f'({escalation.get("outcome")!r}: {escalation.get("reason")!r}) and no '
+                    f'operator answer is recorded, so the {outcome!r} resolution was refused '
+                    'and nothing was written. Ask the operator, record the selected option '
+                    'with `manage-status halt answer --phase '
+                    f'{phase} --step {step} --selected "<option>"`, then record the outcome.'
+                ),
+            }
 
     # Loop-back target validation: required for loop_back outcomes, forbidden otherwise.
     # This is a breaking-change validation per Deliverable 3 of the finalize-loopback

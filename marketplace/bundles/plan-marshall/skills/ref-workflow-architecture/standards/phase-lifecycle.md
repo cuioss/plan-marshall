@@ -81,7 +81,7 @@ python3 .plan/execute-script.py plan-marshall:plan-marshall:phase_handshake veri
 **On `status: ok`**: Continue to the next step.
 
 **On `status: drift`**: Stop the phase immediately. Surface the `diffs[]` table to the user verbatim. **Do NOT rationalize the differences. Do NOT auto-continue.** The only valid responses are:
-- **Authorized override**: user confirms the drift is legitimate, then run `phase_handshake capture --override --reason "{user rationale}"` on the previous phase and re-enter the current phase.
+- **Authorized override**: user confirms the drift is legitimate, then run `phase_handshake capture --override --reason "{caller rationale}" --operator-answer "{the operator's answer, quoted}"` on the previous phase and re-enter the current phase. `--operator-answer` is REQUIRED on every override (`error: missing_operator_answer` otherwise): a drift override is the operator's ruling, so the verb records the answer they gave beside the caller's rationale, and a main-context rationale alone can never be recorded as an override.
 - **Manual investigation**: user investigates the root cause and corrects the drift before re-entry.
 
 Drift is a *signal*, not a *nuisance*. `--strict` makes the script exit non-zero so tooling that swallows TOON still sees the failure.

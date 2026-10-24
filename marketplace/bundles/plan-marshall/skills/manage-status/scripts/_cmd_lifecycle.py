@@ -1026,11 +1026,13 @@ def _loop_back_auto_override(
     change the invariants the earlier capture recorded, so ``cmd_verify``
     reports ``status: drift`` by construction at the next guarded boundary.
     When BOTH hold — the blocking verify result is invariant drift AND the
-    marker is present — re-capture the handshake with ``override=True`` and a
-    recorded reason, clear the marker (persisted immediately so the override
-    fires exactly once per scheduled loop-back), emit a decision-log WARNING
-    with the drift diff summary, and let the transition proceed by returning
-    ``None``.
+    marker is present — re-capture the handshake with ``override=True``, the
+    reserved ``override_basis='scheduled_loop_back'`` (which records NO operator
+    answer, because this drift is scheduled by construction rather than decided
+    by an operator) and a recorded reason, clear the marker (persisted
+    immediately so the override fires exactly once per scheduled loop-back),
+    emit a decision-log WARNING with the drift diff summary, and let the
+    transition proceed by returning ``None``.
 
     Every other blocking result returns the refusal unchanged: drift WITHOUT
     the marker keeps today's blocking behavior, and the worktree-resolution /
@@ -1052,6 +1054,8 @@ def _loop_back_auto_override(
             phase=args.completed,
             override=True,
             reason=f'loop-back re-entry auto-override (scheduled by {from_phase} loop_back)',
+            override_basis='scheduled_loop_back',
+            operator_answer=None,
             strict=False,
         )
     )
