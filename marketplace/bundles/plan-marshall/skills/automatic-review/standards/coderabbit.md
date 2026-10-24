@@ -354,8 +354,12 @@ The operator's standing ruling for this bot, which every consumer follows and no
 - **The operator is asked only after those steps are spent**, and an answer that says "merge" or
   "continue" does not shorten the policy.
 
-The remedy lists elsewhere in this document and in `branch-cleanup.md` do not carry "move CodeRabbit
-to `optional_bots`" as an option for a required bot. A bot that reviewed an older head and refused the
+The merge-path option sets do not carry "move CodeRabbit to `optional_bots`" as an option for a
+required bot: `branch-cleanup.md`'s structural-refusal and blocked paths offer split-or-accept, and
+`automatic-review/SKILL.md`'s structural escalation carries two options for the same reason. Any older
+remedy text elsewhere in this corpus that still says "move the bot to `optional`" describes the
+pre-policy posture and is SUPERSEDED by this section for a required bot — the demotion is not a remedy
+the workflow offers, whatever an older sentence says. A bot that reviewed an older head and refused the
 current one is a refusal state, not a participation: see
 [`bot-participation-contract.md`](bot-participation-contract.md) § "The currency-blind path for
 append-per-review bots".

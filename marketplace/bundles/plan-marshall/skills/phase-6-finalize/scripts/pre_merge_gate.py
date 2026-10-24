@@ -226,7 +226,8 @@ def _head_binding_refusal(
         'message': (
             'The merge candidate is not the HEAD the head-dependent gates validated '
             f'({", ".join(item["step"] for item in offending)}). Re-run those steps on '
-            'the current tree, or re-grant the merge authorization against it.'
+            'the current tree. A merge authorization does NOT cover this gap: it '
+            'authorizes a review or CI gap, never a tree the gates never examined.'
         ),
     }
 

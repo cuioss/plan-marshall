@@ -140,8 +140,11 @@ def cmd_set_phase(args: argparse.Namespace) -> dict[str, Any] | None:
     # path that reaches it without the 5-execute settlement bookkeeping must be refused
     # exactly as `transition` refuses it — otherwise the weaker verb is the bypass.
     if args.phase == '6-finalize':
-        from _cmd_lifecycle import _phase_end_marker_refusal
+        from _cmd_lifecycle import _phase_boundary_refusal, _phase_end_marker_refusal
 
+        boundary_refusal = _phase_boundary_refusal(args.plan_id, status, args.phase)
+        if boundary_refusal is not None:
+            return boundary_refusal
         marker_refusal = _phase_end_marker_refusal(args.plan_id, status)
         if marker_refusal is not None:
             return marker_refusal

@@ -26,7 +26,7 @@ Usage:
     python3 .plan/execute-script.py plan-marshall:manage-status:manage-status get-routing-context --plan-id EXAMPLE-PLAN
     python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done --plan-id EXAMPLE-PLAN --phase 5-execute --step discovery --outcome done
     python3 .plan/execute-script.py plan-marshall:manage-status:manage-status assert-step-recorded --plan-id EXAMPLE-PLAN --phase 6-finalize --step ci-verify --require-terminal
-    python3 .plan/execute-script.py plan-marshall:manage-status:manage-status merge-authorization grant --plan-id EXAMPLE-PLAN --kind barrier-ask-override --head 76c7200b6 --gap-class review-barrier-gap --granted-over "2 unhandled, unproven_bots=cuioss-review-bot" --reason "operator accepted the gap"
+    python3 .plan/execute-script.py plan-marshall:manage-status:manage-status merge-authorization grant --plan-id EXAMPLE-PLAN --kind barrier-ask-override --head 76c7200b6 --gap-class review-barrier-gap --granted-over "2 unhandled, unproven_bots=cuioss-review-bot" --reason "operator accepted the gap" --operator-answer "Merge anyway (record reason)" --override-label "Merge anyway (record reason)"
     python3 .plan/execute-script.py plan-marshall:manage-status:manage-status merge-authorization check --plan-id EXAMPLE-PLAN --head 76c7200b6 --gap-class review-barrier-gap
     python3 .plan/execute-script.py plan-marshall:manage-status:manage-status loop-back admit --plan-id EXAMPLE-PLAN --source automatic-review --ceiling 3
     python3 .plan/execute-script.py plan-marshall:manage-status:manage-status loop-back grant --plan-id EXAMPLE-PLAN --source automatic-review --rounds 1 --reason "one more review round for the last fix"
