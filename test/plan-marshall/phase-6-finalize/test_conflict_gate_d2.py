@@ -316,6 +316,10 @@ def test_branch_cleanup_dispatches_the_conflict_gate_before_composing_its_questi
     assert 'phase-6-finalize:conflict_gate push-authorization' in rebase_section, (
         'the force-push path no longer checks that the operator answer authorizes it'
     )
+    # Both actions are checked at the sites that take them, so the rebase-specific
+    # admission cannot quietly disappear while the force-push one keeps the test green.
+    assert '--action rebase' in rebase_section, 'the rebase itself is no longer authorized at its site'
+    assert '--action force-push' in rebase_section, 'the force-push is no longer authorized at its site'
     assert 'pre-commit-verify-freshness' in rebase_section, (
         'the force-push path no longer gates on pre-push freshness for the rebased head'
     )

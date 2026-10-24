@@ -323,7 +323,9 @@ Two things this path does NOT do, because both were observed on a real run:
 
 **Authorization binds both actions.** The selected option is checked against the action BEFORE the action runs — `push-authorization --action rebase` before the rebase and `--action force-push` before the push (§ "Rebase Branch onto Base"). An answer that authorizes neither (the "Stop" option) ends the run here: log it, release the merge admission per § "Merge-Mutex Hold Window" invariant 4, and return. A refusal from that check is a STOP, never a reason to proceed on a separate consent given at the question.
 
-**If the operator selects an option that authorizes no action** — "Stop — leave the branch and PR as they stand" on the conflict path, "No, skip" on the merged-cleanup path, or "Resolve the conflicts myself, then re-run finalize":
+**A content conflict changes the routing, and ONLY the routing.** On the conflict path the selected option is checked per action (§ "Rebase Branch onto Base"): an answer that names neither action ends the run, because nothing may be rebased or pushed on it. On the merged-cleanup path there is no remote action to authorize at all, so the branch taken is the selected LABEL itself — "Yes, clean up the local branch" runs the local cleanup, "No, skip" ends the run — never the emptiness of an `authorizes` list. A refusal from the per-action check is a STOP, never a reason to proceed on a separate consent given at the question.
+
+**If the operator declines** — "Stop — leave the branch and PR as they stand" or "Resolve the conflicts myself, then re-run finalize" on the conflict path, "No, skip" on the merged-cleanup path:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-6-finalize) Branch cleanup skipped: user declined at pre-rebase gate"
