@@ -90,6 +90,15 @@ def format_unattended_consent_prompt(
     return '\n'.join(lines)
 
 
+#: The ONLY option labels a ``barrier-ask-override`` may be granted from. The barrier's
+#: prompt offers exactly these two remedies, so a label outside the set names an option
+#: the operator was never shown — the PLAN-LB-47 defect, where free text became a grant.
+BARRIER_OVERRIDE_LABELS: tuple[str, ...] = (
+    'Merge anyway (record reason)',
+    'Accept the coverage gap (record reason)',
+)
+
+
 def _normalize_option(text: str) -> str:
     """Normalize an operator answer / option label for equality comparison."""
     return ' '.join(text.split()).strip().strip('"“”').casefold()
@@ -143,7 +152,25 @@ def cmd_merge_authorization_grant(args: argparse.Namespace) -> dict | None:
                     'supplied: an answer with no option to compare it against proves nothing'
                 ),
             }
-        if _normalize_option(answer) != _normalize_option(label) or not _normalize_option(answer):
+        normalized_answer = _normalize_option(answer)
+        normalized_label = _normalize_option(label)
+        allowed = {_normalize_option(option) for option in BARRIER_OVERRIDE_LABELS}
+        if not normalized_answer or not normalized_label or normalized_answer not in allowed:
+            return {
+                'status': 'error',
+                'plan_id': args.plan_id,
+                'error': 'operator_answer_not_the_override_option',
+                'operator_answer': answer,
+                'override_label': label,
+                'accepted_options': list(BARRIER_OVERRIDE_LABELS),
+                'message': (
+                    f'The recorded answer ({answer!r}) is not one of the override options the '
+                    f'barrier offers ({", ".join(BARRIER_OVERRIDE_LABELS)}). A merge authorization '
+                    'exists only for an option the operator was shown; free text — including text '
+                    'that normalises to nothing — is never a grant.'
+                ),
+            }
+        if normalized_answer != normalized_label:
             return {
                 'status': 'error',
                 'plan_id': args.plan_id,

@@ -1309,7 +1309,7 @@ AskUserQuestion:
       multiSelect: false
 ```
 
-⛔ **No option demotes a required reviewer.** Moving a bot from `required_bots` to `optional_bots` is never offered here: the operator's standing rule for a required reviewer is that it is mandatory and never demoted (`automatic-review/standards/coderabbit.md` § 'Operator review policy'). The option set above is therefore GENERATED from the two remedies that can actually close this gap — split, or record a ruling over the gap — and a caller that adds a demotion option has introduced an option the policy forbids.
+⛔ **No option demotes a required reviewer.** Moving a bot from `required_bots` to `optional_bots` is never offered here: the operator's standing rule for a required reviewer is that it is mandatory and never demoted (`automatic-review/standards/coderabbit.md` § 'Operator review policy'). The option set above is therefore a hand-written list of the two remedies that can actually close this gap — split, or record a ruling over the gap — and a caller that adds a demotion option has introduced an option the policy forbids.
 
 Branch on the operator's selection:
 
@@ -1377,6 +1377,13 @@ AskUserQuestion:
         A re-fetch against the current HEAD surfaced comment(s) that
         were never handled. Merging now would land the PR with open
         bot feedback.
+
+        {When a structural refusal is also present, APPEND: “Also
+        unreviewed: {structural_bots} refused over cap {cap} (measured
+        {measured_diff_size}) — merging accepts that gap as well. ALL
+        unproven required bots: {unproven_bots}.” The option below
+        authorizes past every bot on that list, not only the refusing
+        one.}
       options:
         - label: "Re-triage now (recommended)"
           description: "Works through the outstanding comments first — fixing, dismissing or accepting each — and then comes back here to merge"
@@ -1520,7 +1527,12 @@ Both routes below return the entry point's TOON, and it exits 0 on every outcome
 
   Then return control to the finalize dispatcher.
 - **`dispatched: false` with `refusal_category: invocation`** → the gate refused the call's construction before it read the findings store, so no store verdict exists to act on. Branch on the category field, never on the `error` code: every invocation refusal `pre_merge_gate` emits carries it, whatever its code, so any refusal code the gate gains lands here without this step having to name it. This is a caller-construction error in this step body, not a store state: release the merge mutex if held (§ "Merge-Mutex Hold Window" invariant 4), then STOP and surface the payload verbatim per the **Exit-code convention** at the top of this document. Do NOT record a loop-back — re-triaging findings cannot repair a malformed call, so a loop-back would re-enter the same refusal — and do NOT take the UNKNOWN disposition, which describes a store that could not be evaluated rather than a call that was never valid. The same STOP applies when the call is rejected by argparse (exit code 2 with usage text on stderr and no TOON payload): no gate ran, so there is no `dispatched` to branch on.
-- **`dispatched: false` with `error: merge_candidate_not_gated`** → the store was clean but the merge candidate is not the HEAD the head-dependent gates validated (`steps[]` names each mismatched step with `recorded_head` and `head`). Release the merge mutex if held (§ "Merge-Mutex Hold Window" invariant 4), log a WARNING decision line naming the steps and both SHAs, then STOP and surface the payload verbatim per the **Exit-code convention**. Do NOT merge, do NOT grant past it, and do NOT re-run the gate from here: the remedy is to re-run the named steps on the current tree (or re-grant against it) and re-enter the barrier.
+- **`dispatched: false` with `error: merge_candidate_not_gated`** → the store was clean but the merge candidate is not the HEAD the head-dependent gates validated (`steps[]` names each mismatched step with `recorded_head` and `head`). Release the merge mutex if held (§ "Merge-Mutex Hold Window" invariant 4), emit the WARNING decision line naming the steps and both SHAs, then STOP and surface the payload verbatim per the **Exit-code convention**. Do NOT merge, do NOT grant past it, and do NOT re-run the gate from here: the remedy is to re-run the named steps on the current tree, then re-enter the barrier.
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+    decision --plan-id {plan_id} --level WARNING --message "(plan-marshall:phase-6-finalize) Pre-merge HEAD binding: merge_candidate_not_gated — candidate {head}, ungated steps {steps} (recorded heads named in the payload); merge blocked, no dispatch"
+  ```
 - **`dispatched: false` WITHOUT `refusal_category: invocation`, any other error** — `error: query_failed` (the pending count could not be evaluated: executor unreachable / partial query failure), `error: findings_verdict_unrecognised` (the verdict source answered `status: success` without a measured `blocking_count: 0`), or any other store-verdict refusal the gate passes through → the store gate **fails closed**: take § "UNKNOWN disposition — blocked, and never authorizable" above, exactly as written there. A merge NEVER proceeds on an unevaluable store gate, and no `merge-authorization` grant covers this gap.
 - **`dispatched: true`** → the store was proven clean (`findings_gate: clean`) and the gate issued the routed verb. The rest of the payload IS that verb's payload, verbatim, so the existing route-specific branches below apply to it unchanged.
 
