@@ -444,11 +444,19 @@ def test_excluded_skills_absent_domain_or_key_is_empty(monkeypatch):
     assert _mp._excluded_skills('python') == set()
 
 
-def test_excluded_skills_malformed_value_is_ignored(monkeypatch):
-    """A non-list excluded_skills value is ignored rather than raising."""
+def test_excluded_skills_malformed_value_is_an_error(monkeypatch):
+    """A non-list excluded_skills value is an error, not an empty exclusion set.
+
+    The two readings must never be the same value: "the repository forbids
+    nothing" and "the prohibition could not be read" would otherwise let a
+    forbidden skill reach a task while looking like a clean configuration.
+    """
+    from extension_base import SkillExclusionReadError
+
     _install_config(monkeypatch, {'skill_domains': {'java': {'excluded_skills': 'pm-dev-java:java-cdi'}}})
 
-    assert _mp._excluded_skills('java') == set()
+    with pytest.raises(SkillExclusionReadError):
+        _mp._excluded_skills('java')
 
 
 def _write_real_marshal(config):

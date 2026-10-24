@@ -31,11 +31,35 @@ from marketplace_paths import (
 )
 
 
+def _entry_notation(entry: object) -> str:
+    """Return the skill notation of a domain profile entry."""
+    if isinstance(entry, dict):
+        return str(entry.get('skill') or '')
+    return str(entry)
+
+
+def _domain_veto(domain: str) -> tuple[set[str], str]:
+    """Return ``(exclusions, owner_bundle)`` for ``domain``.
+
+    The scope is the configuration this script already works against (the
+    execution context): these verbs carry no ``project_dir`` of their own, so the
+    shared reader's default scope is the one the rest of their reads use.
+    """
+    from extension_base import domain_bundle, excluded_skills
+
+    return excluded_skills(domain), domain_bundle(domain)
+
+
 def cmd_resolve_domain_skills(args) -> dict:
     """Handle resolve-domain-skills command.
 
     Loads profiles from extension.py via bundle reference, then aggregates
     core + profile skills with descriptions.
+
+    The repository's ``skill_domains.{domain}.excluded_skills`` veto is applied
+    to both lists: this verb feeds the recipe selection flow, whose defaults are
+    presented pre-checked, so an unfiltered list would offer a forbidden skill as
+    the default choice.
     """
     try:
         require_initialized()
@@ -79,6 +103,17 @@ def cmd_resolve_domain_skills(args) -> dict:
 
     defaults = core_config.get('defaults', []) + profile_config.get('defaults', [])
     optionals = core_config.get('optionals', []) + profile_config.get('optionals', [])
+
+    try:
+        exclusions, owner_bundle = _domain_veto(domain)
+    except Exception as exc:
+        return error_exit(str(exc))
+
+    if exclusions:
+        from extension_base import is_excluded
+
+        defaults = [entry for entry in defaults if not is_excluded(_entry_notation(entry), exclusions, owner_bundle)]
+        optionals = [entry for entry in optionals if not is_excluded(_entry_notation(entry), exclusions, owner_bundle)]
 
     # Build output with descriptions
     defaults_with_desc = _build_skill_dict_with_descriptions(defaults)
@@ -140,6 +175,10 @@ def cmd_get_skills_by_profile(args) -> dict:
 
     Returns all skills grouped by profile name, with core skills merged into each.
     Uses extension.py as the source for profile data (not marshal.json).
+
+    The repository's ``skill_domains.{domain}.excluded_skills`` veto is applied:
+    this verb supplies the finalize code-review rulebook, so a forbidden skill
+    must not reach it.
     """
     try:
         require_initialized()
@@ -155,6 +194,19 @@ def cmd_get_skills_by_profile(args) -> dict:
 
     domain_config = skill_domains[domain]
 
+    try:
+        exclusions, owner_bundle = _domain_veto(domain)
+    except Exception as exc:
+        return error_exit(str(exc))
+
+    def kept(skills: list[str]) -> list[str]:
+        """Drop a skill the repository forbids for this domain."""
+        if not exclusions:
+            return skills
+        from extension_base import is_excluded
+
+        return [skill for skill in skills if not is_excluded(skill, exclusions, owner_bundle)]
+
     # Get bundle reference
     bundle = domain_config.get('bundle')
     if not bundle:
@@ -164,7 +216,7 @@ def cmd_get_skills_by_profile(args) -> dict:
         return success_exit(
             {
                 'domain': domain,
-                'skills_by_profile': {'core': defaults + optionals},
+                'skills_by_profile': {'core': kept(defaults + optionals)},
             }
         )
 
@@ -208,7 +260,7 @@ def cmd_get_skills_by_profile(args) -> dict:
                     combined.append(skill)
                     seen.add(skill)
 
-        skills_by_profile[profile_name] = combined
+        skills_by_profile[profile_name] = kept(combined)
 
     return success_exit({'domain': domain, 'skills_by_profile': skills_by_profile})
 

@@ -3,7 +3,9 @@
 epic: live-blockers
 workstream: WS-01
 
-> Staged plan spec — one shippable unit of work, ready for `/plan-marshall` hand-off.
+> Staged plan spec — one shippable unit of work, ready for the runbook lane's hand-off.
+> Emitted 2026-10-24 through the **runbook lane** (operator instruction): this file is the whole
+> brief for one lane run, and the lane does not start the `/plan-marshall` lifecycle from it.
 > Lives at `plans/PLAN-LB-53-halt-conflict-and-phase-time.md` and is queued as one row file,
 > `queue/PLAN-LB-53.json`, in the epic ledger. The orchestrator EMITS the command below; it never
 > launches the plan inline. This spec is SELF-SUFFICIENT: the emitted command is a one-line pointer
@@ -98,7 +100,7 @@ Split guard: two deliverables.
 ## Hand-Off Command
 
 ```text
-/plan-marshall task="implement .plan/orchestrator/live-blockers/plans/PLAN-LB-53-halt-conflict-and-phase-time.md"
+/plan-marshall-runbook-lane plan=.plan/orchestrator/live-blockers/plans/PLAN-LB-53-halt-conflict-and-phase-time.md
 ```
 
 ## Write-Boundary
