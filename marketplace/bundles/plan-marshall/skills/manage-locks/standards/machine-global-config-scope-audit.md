@@ -89,7 +89,7 @@ exclusions.
 | `workflow-integration-git/scripts/integrate_into_main.py` | 1 (`_assert_cwd_unchanged`) | **EXCLUDE — a cwd RESTORE, not a cwd move.** The call fires only when the script's own never-change-the-caller-cwd invariant has already been violated: it restores the entry cwd and returns an error payload. Nothing is resolved after it, so no key can be read against a moved root. |
 | `workflow-integration-git/scripts/prepare_execute.py` | 1 (`_assert_cwd_unchanged`) | **EXCLUDE — same restore-and-fail guard**, with the same reasoning. |
 | `script-shared/scripts/build/_machine_config.py` | 0 | **EXCLUDE — text-only residue, and the counter-example that decides the method.** Both occurrences are module-docstring prose describing the daemon's `chdir('/')` as the hazard this module exists to remove. A criterion that counted text would place the module that CLOSES shape A inside shape A. |
-| `tools-script-executor/scripts/generate_executor.py` | 0 | **EXCLUDE — the call site is gone.** An earlier revision of `cmd_recover` pinned the cwd with `os.chdir`; it now runs the selected cache generator as a subprocess with `cwd`/`PLAN_BASE_DIR` set in the child environment, so this file no longer moves the process cwd and is absent from the derived population. |
+| `tools-script-executor/scripts/generate_executor.py` | 0 | **EXCLUDE — no cwd move.** `cmd_recover` runs the selected cache generator as a subprocess with `cwd`/`PLAN_BASE_DIR` set in the child environment; it does not move the process cwd, so the file is absent from the derived population. |
 
 **Shape A figures.** 4 candidate files; 3 call sites over 3 files; **1 file in the
 population**. The population is published beside the count so a shrunken
