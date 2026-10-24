@@ -224,6 +224,9 @@ def test_cmd_transition_fires_drive_seam_after_write(plan_context, monkeypatch):
     """cmd_transition fires _surface_drive exactly once (with the plan_id) on advance."""
     plan_id = 'drive-seam-transition'
     _seed_execute_phase_plan(plan_context.plan_dir_for(plan_id), plan_id)
+    # The end-marker guard also covers a main-checkout plan now; this case is about the
+    # drive seam, so the branch range is stubbed empty instead of seeding a ledger.
+    monkeypatch.setattr(_lifecycle, '_branch_commit_shas', lambda _p, _b: [])
 
     calls = []
     monkeypatch.setattr(_lifecycle, '_surface_drive', lambda pid: calls.append(pid))

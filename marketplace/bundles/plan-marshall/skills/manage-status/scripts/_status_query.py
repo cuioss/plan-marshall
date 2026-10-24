@@ -134,6 +134,17 @@ def cmd_set_phase(args: argparse.Namespace) -> dict[str, Any] | None:
         }
 
     previous = status.get('current_phase')
+
+    # Entering 6-finalize runs the SAME end-marker guard the 5-execute completion runs
+    # (`_phase_end_marker_refusal`): set-phase is a second door into finalize, and a
+    # path that reaches it without the 5-execute settlement bookkeeping must be refused
+    # exactly as `transition` refuses it — otherwise the weaker verb is the bypass.
+    if args.phase == '6-finalize':
+        from _cmd_lifecycle import _phase_end_marker_refusal
+
+        marker_refusal = _phase_end_marker_refusal(args.plan_id, status)
+        if marker_refusal is not None:
+            return marker_refusal
     status['current_phase'] = args.phase
 
     # Loop-back detection: a backward move (target phase precedes the current
