@@ -1,0 +1,574 @@
+# Plan Artifacts
+
+File formats and structures for plan data storage.
+
+## Plan Directory Structure
+
+```text
+.plan/local/plans/{plan_id}/
+│
+├── status.json              Phase: init
+├── request.md               Phase: init
+├── references.json          Phase: init
+│
+├── solution_outline.md      Phase: outline
+│
+├── work/                    Phase: outline+ (working files)
+│   ├── inventory_raw.toon       Raw inventory from scan
+│   └── inventory_filtered.toon  Filtered/transformed inventory
+│
+├── tasks/                   Phase: plan
+│   ├── TASK-001.json
+│   ├── TASK-002.json
+│   └── TASK-003.json
+│
+└── logs/                    Phase: all (logging)
+    ├── work.log                 Semantic progress tracking
+    ├── decision.log             Decision entries
+    └── script-execution.log     Technical script tracing
+```
+
+---
+
+## Artifact Overview
+
+```text
+┌─────────────────────────────────────────────────────────────────────┐
+│                        INIT PHASE                                    │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                      │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐               │
+│  │ status.json  │  │ request.md   │  │references.json│              │
+│  ├──────────────┤  ├──────────────┤  ├──────────────┤               │
+│  │ title        │  │ description  │  │ domains      │               │
+│  │ current_phase│  │ context      │  │ branch       │               │
+│  │ phases table │  │ constraints  │  │ issue        │               │
+│  │ timestamps   │  │              │  │              │               │
+│  └──────────────┘  └──────────────┘  └──────────────┘               │
+│                                                                      │
+├─────────────────────────────────────────────────────────────────────┤
+│                       OUTLINE PHASE                                  │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                      │
+│  ┌─────────────────────────────────────────────────────────────┐    │
+│  │                   solution_outline.md                        │    │
+│  ├─────────────────────────────────────────────────────────────┤    │
+│  │  ## Summary                                                  │    │
+│  │  ## Overview (ASCII diagram)                                 │    │
+│  │  ## Deliverables                                             │    │
+│  │    ### 1. Title                                              │    │
+│  │      Metadata: domain, module, change_type, depends          │    │
+│  │      Profiles: implementation, module_testing                │    │
+│  │      Affected files, Verification, Success criteria          │    │
+│  │    ### 2. Title                                              │    │
+│  │      ...                                                     │    │
+│  └─────────────────────────────────────────────────────────────┘    │
+│                                                                      │
+│  work/                                                               │
+│  ┌──────────────────────┐  ┌───────────────────────┐                │
+│  │ inventory_raw.toon   │  │ inventory_filtered    │                │
+│  ├──────────────────────┤  ├───────────────────────┤                │
+│  │ Raw scan output      │  │ Transformed paths     │                │
+│  │ from marketplace     │  │ grouped by type       │                │
+│  └──────────────────────┘  └───────────────────────┘                │
+│                                                                      │
+├─────────────────────────────────────────────────────────────────────┤
+│                        PLAN PHASE                                    │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                      │
+│  tasks/                                                              │
+│  ┌──────────────────┐ ┌──────────────────┐ ┌──────────────────┐     │
+│  │ TASK-001    │ │ TASK-002    │ │ TASK-003     │     │
+│  ├──────────────────┤ ├──────────────────┤ ├──────────────────┤     │
+│  │ title, status    │ │ title, status    │ │ title, status    │     │
+│  │ domain, profile  │ │ domain, profile  │ │ domain, profile  │     │
+│  │ skills           │ │ skills           │ │ skills           │     │
+│  │ steps (table)    │ │ steps (table)    │ │ steps (table)    │     │
+│  │ verification     │ │ verification     │ │ verification     │     │
+│  └──────────────────┘ └──────────────────┘ └──────────────────┘     │
+│                                                                      │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## status.json
+
+Plan lifecycle status with phase tracking.
+
+### Location
+
+```text
+.plan/local/plans/{plan_id}/status.json
+```
+
+### Format
+
+```toon
+title: Implement JWT Authentication
+current_phase: 5-execute
+
+phases[6]{name,status}:
+1-init,done
+2-refine,done
+3-outline,done
+4-plan,done
+5-execute,in_progress
+6-finalize,pending
+
+created: 2025-12-02T10:00:00Z
+updated: 2025-12-02T14:30:00Z
+```
+
+### Phase Table Visualization
+
+```text
+┌───────────┬─────────────┐
+│   Phase   │   Status    │
+├───────────┼─────────────┤
+│ init      │ done        │ PASS
+│ refine    │ done        │ PASS
+│ outline   │ done        │ PASS
+│ plan      │ done        │ PASS
+│ execute   │ in_progress │ ◄── current
+│ finalize  │ pending     │
+└───────────┴─────────────┘
+```
+
+### Status Values
+
+| Status | Meaning |
+|--------|---------|
+| `pending` | Not started |
+| `in_progress` | Currently active |
+| `done` | Completed |
+
+### Manager
+
+```bash
+# Status operations
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status \
+  {create|read|set-phase|update-phase|progress} --plan-id {id}
+
+# Lifecycle transitions (subcommands of manage-status)
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status \
+  {transition|list|archive|route} --plan-id {id}
+```
+
+---
+
+## request.md
+
+User request document in markdown format.
+
+### Location
+
+```text
+.plan/local/plans/{plan_id}/request.md
+```
+
+### Format
+
+```markdown
+# Request: {title}
+
+## Description
+
+{User's original request text}
+
+## Context
+
+{Additional context, constraints, or requirements}
+
+## Scope
+
+{What is in/out of scope}
+
+## Acceptance Criteria
+
+- {criterion 1}
+- {criterion 2}
+```
+
+### Manager
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-plan-documents:manage-plan-documents \
+  request {read|write|exists} --plan-id {id}
+```
+
+---
+
+## solution_outline.md
+
+Solution design document with deliverables.
+
+### Location
+
+```text
+.plan/local/plans/{plan_id}/solution_outline.md
+```
+
+### Structure Diagram
+
+```text
+┌─────────────────────────────────────────────────────────────┐
+│                    solution_outline.md                       │
+├─────────────────────────────────────────────────────────────┤
+│                                                              │
+│  # Solution: {title}                                         │
+│                                                              │
+│  plan_id: {plan_id}                                          │
+│  created: {timestamp}                                        │
+│                                                              │
+│  ┌─────────────────────────────────────────────────────────┐│
+│  │ ## Summary                                    REQUIRED  ││
+│  │ 2-3 sentence approach description                       ││
+│  └─────────────────────────────────────────────────────────┘│
+│                                                              │
+│  ┌─────────────────────────────────────────────────────────┐│
+│  │ ## Overview                                   REQUIRED  ││
+│  │ ASCII diagram showing component relationships           ││
+│  │                                                         ││
+│  │   ┌──────────┐       ┌──────────┐                       ││
+│  │   │ Service  │──────▶│ Handler  │                       ││
+│  │   └──────────┘       └──────────┘                       ││
+│  └─────────────────────────────────────────────────────────┘│
+│                                                              │
+│  ┌─────────────────────────────────────────────────────────┐│
+│  │ ## Deliverables                               REQUIRED  ││
+│  │                                                         ││
+│  │   ### 1. {Title}                                        ││
+│  │   **Metadata:**                                         ││
+│  │   - domain: java                                        ││
+│  │   - module: auth-service                                ││
+│  │   - change_type: feature                                ││
+│  │   - depends: none                                       ││
+│  │                                                         ││
+│  │   **Profiles:**                                         ││
+│  │   - implementation                                      ││
+│  │   - module_testing                                      ││
+│  │                                                         ││
+│  │   **Affected files:**                                   ││
+│  │   - `src/main/java/...`                                 ││
+│  │                                                         ││
+│  │   **Verification:**                                     ││
+│  │   - Command: `mvn test`                                 ││
+│  │                                                         ││
+│  │   ### 2. {Title}                                        ││
+│  │   ...                                                   ││
+│  └─────────────────────────────────────────────────────────┘│
+│                                                              │
+│  ## Approach               OPTIONAL                          │
+│  ## Dependencies           OPTIONAL                          │
+│  ## Risks and Mitigations  OPTIONAL                          │
+│                                                              │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Deliverable Fields
+
+| Field | Location | Description |
+|-------|----------|-------------|
+| `domain` | Metadata | Single domain from references.json domains |
+| `module` | Metadata | Target module name (from architecture) |
+| `change_type` | Metadata | One of: analysis, feature, enhancement, bug_fix, tech_debt, verification (see [change-types.md](change-types.md)) |
+| `execution_mode` | Metadata | automated, manual, mixed |
+| `depends` | Metadata | Dependencies: none, N. Title, N, M |
+| `**Profiles:**` | Block | List of profiles: implementation (always), module_testing (if applicable) |
+
+### Manager
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-solution-outline \
+  {write|read|validate|list-deliverables|exists} --plan-id {id}
+```
+
+---
+
+## work/ Directory
+
+Working files directory for intermediate data during outline and later phases.
+
+### Location
+
+```text
+.plan/local/plans/{plan_id}/work/
+```
+
+### Purpose
+
+The `work/` directory stores intermediate files that are:
+- Generated during outline phase (inventory scans, analysis results)
+- Referenced by other artifacts via `references.json`
+- Plan-specific working data (not archived artifacts)
+
+### Common Files
+
+| File | Phase | Description |
+|------|-------|-------------|
+| `inventory_raw.toon` | outline | Raw marketplace inventory from scan-marketplace-inventory |
+| `inventory_filtered.toon` | outline | Transformed inventory with file paths grouped by type |
+
+### Manager
+
+```bash
+# Create work directory
+python3 .plan/execute-script.py plan-marshall:manage-files:manage-files mkdir \
+  --plan-id {plan_id} --dir work
+
+# Read/write files in work directory
+python3 .plan/execute-script.py plan-marshall:manage-files:manage-files read \
+  --plan-id {plan_id} --file work/inventory_filtered.toon
+```
+
+---
+
+## TASK-NNN.json
+
+Individual task files in the tasks directory.
+
+### Location
+
+```text
+.plan/local/plans/{plan_id}/tasks/TASK-{NNN}.json
+```
+
+### Filename Format
+
+```text
+TASK-001.json
+     │
+     └── Sequential number (001, 002, ...)
+
+```
+
+### Format
+
+```toon
+number: 1
+title: Update misc agents to TOON output
+status: pending
+domain: plan-marshall-plugin-dev
+profile: implementation
+origin: plan
+created: 2025-12-02T10:30:00Z
+updated: 2025-12-02T10:30:00Z
+
+skills:
+  - pm-plugin-development:plugin-maintain
+  - pm-plugin-development:plugin-architecture
+
+deliverables[3]:
+- 1
+- 2
+- 4
+
+depends_on: TASK-1, TASK-2
+
+description: |
+  Migrate miscellaneous agents from JSON to TOON output format.
+
+steps[3]{number,target,status}:
+1,plan-marshall/agents/execution-context.md,pending
+2,pm-dev-builder/agents/gradle-builder.md,pending
+3,pm-dev-frontend/skills/javascript/SKILL.md,pending
+
+verification:
+  commands[1]:
+  - grep -L '```json' {files} | wc -l
+  criteria: No JSON blocks remain
+  manual: false
+
+current_step: 1
+```
+
+### Task Structure Diagram
+
+```text
+┌─────────────────────────────────────────────────────────────┐
+│                      TASK-001.json                            │
+├─────────────────────────────────────────────────────────────┤
+│ HEADER                                                       │
+│ ┌─────────────────────────────────────────────────────────┐ │
+│ │ number: 1                                                │ │
+│ │ title: Update misc agents...                             │ │
+│ │ status: pending → in_progress → done                     │ │
+│ │ domain: plan-marshall-plugin-dev                         │ │
+│ │ profile: implementation                                  │ │
+│ │ origin: plan | fix                                       │ │
+│ └─────────────────────────────────────────────────────────┘ │
+│                                                              │
+│ CONTEXT                                                      │
+│ ┌─────────────────────────────────────────────────────────┐ │
+│ │ skills:                   Loaded by agent before exec    │ │
+│ │   - pm-plugin-dev:plugin-maintain                        │ │
+│ │   - pm-plugin-dev:plugin-architecture                    │ │
+│ │                                                          │ │
+│ │ deliverables[3]: 1, 2, 4  References to solution outline │ │
+│ │ depends_on: TASK-1, TASK-2                               │ │
+│ └─────────────────────────────────────────────────────────┘ │
+│                                                              │
+│ STEPS TABLE                                                  │
+│ ┌──────┬───────────────────────────────────┬─────────────┐  │
+│ │ #    │ Title (file path)                 │ Status      │  │
+│ ├──────┼───────────────────────────────────┼─────────────┤  │
+│ │ 1    │ pm-plugin-dev/agents/agent1.md    │ done        │  │
+│ │ 2    │ pm-dev-builder/agents/builder.md  │ in_progress │  │
+│ │ 3    │ pm-dev-frontend/commands/cmd.md   │ pending     │  │
+│ └──────┴───────────────────────────────────┴─────────────┘  │
+│                                                              │
+│ VERIFICATION                                                 │
+│ ┌─────────────────────────────────────────────────────────┐ │
+│ │ verification:                                            │ │
+│ │   commands[1]:                                           │ │
+│ │     - grep -L '```json' {files} | wc -l                  │ │
+│ │   criteria: No JSON blocks remain                        │ │
+│ │   manual: false                                          │ │
+│ └─────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Status Flow
+
+```text
+TASK Status:
+  pending ──▶ in_progress ──▶ done
+                    │
+                    ▼
+                 blocked
+
+STEP Status:
+  pending ──▶ in_progress ──▶ done
+                    │
+                    ▼
+                 skipped
+```
+
+### Manager
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks \
+  {add|update|remove|list|get|next|finalize-step|add-step|remove-step} --plan-id {id}
+```
+
+---
+
+## references.json
+
+Plan references and domain configuration.
+
+### Location
+
+```text
+.plan/local/plans/{plan_id}/references.json
+```
+
+### Format
+
+```toon
+# References
+
+domains[1]:
+- java
+
+issue:
+  number: 123
+  url: https://github.com/owner/repo/issues/123
+  title: Add JWT validation
+  body: |
+    Issue description from GitHub
+
+pr:
+  number: 456
+  url: https://github.com/owner/repo/pull/456
+```
+
+### Manager
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-references:manage-references \
+  {read|set|append} --plan-id {id}
+```
+
+---
+
+## work.log
+
+Semantic work progress tracking across all phases.
+
+### Location
+
+```text
+.plan/local/plans/{plan_id}/logs/work.log
+```
+
+### Format
+
+```text
+[{timestamp}] [{level}] [{category}] {message}
+  phase: {phase}
+  [detail: {additional context}]
+```
+
+### Example
+
+```text
+[2025-12-11T11:14:30Z] [INFO] [PROGRESS] Starting init phase
+  phase: 1-init
+
+[2025-12-11T11:15:24Z] [INFO] [ARTIFACT] Created deliverable: auth module
+  phase: 3-outline
+  detail: Source: request.md, domain: java
+
+[2025-12-11T11:17:55Z] [INFO] [OUTCOME] Task completed: 3 files modified
+  phase: 5-execute
+```
+
+### Categories
+
+| Category | Purpose |
+|----------|---------|
+| `PROGRESS` | Phase/step start/end |
+| `ARTIFACT` | Files/documents created or modified |
+| `OUTCOME` | Results and summaries |
+| `FINDING` | Issues or observations |
+| `ERROR` | Failures with details |
+
+**Note**: Decision entries go to `decision.log`, not `work.log`.
+
+### Manager
+
+```bash
+# Write entry
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  work --plan-id {plan_id} --level {level} --message "{message}"
+
+# Read entries
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  read --plan-id {id} --type work [--limit N] [--phase PHASE]
+```
+
+---
+
+## decision.log
+
+Dedicated log for decision entries tracking reasoning and choices made during execution. Stored at `.plan/local/plans/{plan_id}/logs/decision.log`. Entries have the shape `[{timestamp}] [{level}] {message}` followed by indented `phase:` and optional `detail:` continuation lines (no `[DECISION]` prefix — the file itself identifies the entry type). Manage entries via `plan-marshall:manage-logging:manage-logging decision` to write and `read --type decision` to read.
+
+---
+
+## script-execution.log
+
+Technical script execution trace written automatically by the script executor at `.plan/local/plans/{plan_id}/logs/script-execution.log`. Entries have the shape `[{timestamp}] [{level}] [SCRIPT] {notation} {subcommand} ({duration}s)` with optional `exit_code`, `args`, and `stderr` continuation lines. The log powers debugging, performance analysis, and audit trails; skills never write to it directly. Read entries via:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  read --plan-id {id} --type script [--limit N]
+```
+
+---
+
+## Related
+
+- [phases.md](phases.md) — 6-phase execution model (includes artifact-to-phase mapping)
+- [data-layer.md](data-layer.md) — manage-* skills overview
