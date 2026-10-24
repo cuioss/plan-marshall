@@ -80,6 +80,7 @@ This document carries NO step-activation logic. Activation is controlled by the 
 - **Worktree removal is non-force**: Never pass `--force` to `git worktree remove`. Only clean worktrees may be removed. If the worktree has uncommitted changes, abort cleanup and surface the error — the user may still want to salvage the work.
 - **Failure leaves worktree in place**: On any plan abort or failure path, do NOT auto-remove the worktree. Worktree removal happens only during successful branch-cleanup.
 - **Confirmation gate is conditional on conflict severity**: The PR-mode `AskUserQuestion` confirmation gate is no longer mandatory on every `state == open` invocation. It is now driven by the **Conflict-Severity Classifier** section below, which dispatches `plan-marshall:workflow-integration-git:git-workflow baseline-reconcile --no-emit` to classify the rebase as `no_overlap`, `overlap_no_content_conflict`, or `overlap_with_content_conflict`. The classifier's safety properties: `baseline-reconcile --no-emit` is idempotent and **non-mutating on every classification** — it anchors its ranges on `merge-base(HEAD, origin/{base_branch})` recomputed per call, detects conflicts with a tree-level `git merge-tree` (no real merge, and the branch ref is never moved on any path — a post-probe assertion inside the script fails loud if HEAD changed), and emits no Q-Gate findings under `--no-emit`. The auto-proceed threshold is tunable via the `auto_rebase_threshold` param of the `default:branch-cleanup` step (read from the plan-local manifest step-params snapshot), declared in this step's `configurable:` frontmatter with default `no_overlap_only` (opt-in `auto_resolvable`; opt-out `never`) and resolved by the `plan-marshall:extension-api:configurable_contract` parser. All other safety properties (`--force-with-lease` only, worktree-first removal, targeted ref prune) remain unchanged on every code path.
+- **A conflict verdict reaches the operator before any action it would authorize**: `needs_user` from the classifier becomes an `AskUserQuestion` composed by `plan-marshall:phase-6-finalize:conflict_gate gate`, naming the conflicting files and the base, with `queue_wait: forbidden` — before any rebase, any push, and any merge-queue wait. The selected option then authorizes its own actions only (`push-authorization`), and the force-push additionally requires pre-push freshness on the rebased head.
 
 ## Worktree Awareness
 
@@ -253,6 +254,31 @@ Apply the following rules in order; the first match wins:
 - `classification == overlap_no_content_conflict` AND `{threshold} == no_overlap_only` → `{decision} = needs_user` (the threshold opts out even for an auto-reconcilable overlap — `auto_reconcilable` is a non-mutating capability signal, so an `overlap_no_content_conflict` always reports `auto_reconcilable == true`; the probe never performs the reconcile itself, that is `worktree-rebase-to`'s job).
 - `classification == overlap_with_content_conflict` → `{decision} = needs_user` (genuine conflict requiring human resolution).
 
+#### Compose the gate question (the gate script owns the prompt)
+
+The classifier verdict is read **before** any question is composed: `needs_user` is not a detail of the prompt, it is the reason the prompt exists. Hand the verdict to `plan-marshall:phase-6-finalize:conflict_gate gate`, which composes the question from it and returns the plan that question describes:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:phase-6-finalize:conflict_gate gate \
+  --plan-id {plan_id} --classification {classification} --decision {decision} \
+  --conflicts "{conflicts}" --base {base_branch} --threshold {threshold} \
+  --use-merge-queue {use_merge_queue} --state {state} \
+  [--head-branch {head_branch}] [--pr-url {pr_url}]
+```
+
+Branch on the returned `question_required`:
+
+- **`false`** (`{decision} == auto_proceed`): no prompt fires. Carry the returned `plan_actions` and `queue_wait: permitted` forward to the sections below.
+- **`true`** (`{decision} == needs_user`, or `state == merged`): fire the `AskUserQuestion` rendering the returned `prompt_header`, `prompt_question`, `prompt_description` and `options[]`. ⛔ **Render them verbatim — never compose a prompt of your own and never reword an option.** The option labels ARE the authorization vocabulary (§ "Rebase Branch onto Base" → the authorization gate), so a reworded label authorizes nothing and the push is refused.
+
+Three facts the return fixes, each closing an observed untruth:
+
+- **The question NAMES the conflict** — the conflicting files and the base. On `classification == overlap_with_content_conflict` with no `--conflicts` the verb refuses (`error: conflict_files_required`), because a prompt that cannot state the conflict is the prompt this gate exists to replace.
+- **`queue_wait: forbidden`.** On this path no merge-queue wait may follow the question — not as an offered option, not as the action the description names, and not as a wait after the answer. "Wait for the queue" is exactly what the operator was told to do while a PR that could not enter that queue was hand-rebased anyway.
+- **The options name the actions they authorize** (`options[].authorizes`). Only the selected option's actions may be performed.
+
+When the gate itself refuses, STOP and surface the refusal to the dispatcher — never fall back to a hand-written prompt, and never to the auto-proceed route.
+
 #### Log the classifier decision
 
 Emit both a `[STATUS]` work-log entry (for grep-ability during a run) and a `decision` log entry (so the retrospective phase can audit the call):
@@ -288,41 +314,16 @@ Then proceed directly to **Safety Check: Other Open PRs**.
 
 #### Interactive path (`{decision} == needs_user` OR `state == merged`)
 
-Present the **pre-merge-preparation** context and ask the user before any destructive action. The merge action is intentionally absent from this prompt — it is gated separately below, after the CI gate concludes.
+The prompt IS the `gate` verb's return, rendered verbatim (§ "Compose the gate question" just above): its `prompt_header`, `prompt_question` and `prompt_description` name the PR, the branch/base pair and — on a content conflict — every conflicting file, and its `options[]` are the operator's choices, each already carrying the actions it authorizes. Nothing is composed here by hand.
 
-Determine planned actions based on PR state **and on `use_merge_queue`** — a prompt listing a rebase and force-push the run will not perform asks the operator to authorize work that never happens, which is the same untruth the routing section and the `[STATUS]` line already guard against. Local cleanup (switch to base branch, pull, delete local feature branch) is uniform across every path; only the remote-side action differs (the merge itself is deferred to the pre-merge gate when `state == open`):
+Two things this path does NOT do, because both were observed on a real run:
 
-- **If `state == open` AND `use_merge_queue == false`** (default): Actions = rebase onto base, force-push with lease, authoritative CI wait; the post-CI merge is confirmed separately at the pre-merge gate. Local cleanup runs after the merge gate resolves.
-- **If `state == open` AND `use_merge_queue == true`**: Actions = CI snapshot only — no rebase and no force-push (§ "Rebase Branch onto Base"); the enqueue is confirmed separately at the pre-merge gate, and the queue rebases and re-tests. Local cleanup runs after the merge gate resolves.
-- **If `state == merged`**: Actions = switch to base branch, pull latest, delete local feature branch. No rebase or merge is planned; the pre-merge gate is skipped on this path.
+- **It never describes preparation the run will not perform.** A prompt may not state that nothing will happen while an unresolved content conflict is in fact hand-rebased and force-pushed later; the gate's `prompt_description` states the conflict instead.
+- **It never offers, or takes, a merge-queue wait** (`queue_wait: forbidden` on every `needs_user` return). Waiting for a queue is not an action the operator can choose on this path.
 
-```text
-AskUserQuestion:
-  questions:
-    - question: "{Rebase the feature branch onto {base_branch} and run CI? (if state == open AND use_merge_queue == false) | Check CI before enqueueing to the merge queue? (if state == open AND use_merge_queue == true) | Clean up the local branch for the already-merged PR? (if state == merged)} (Merge will be confirmed separately when one is still planned.)"
-      header: "{Branch Cleanup — Pre-rebase (if state == open AND use_merge_queue == false) | Branch Cleanup — Pre-enqueue (if state == open AND use_merge_queue == true) | Branch Cleanup — Local (if state == merged)}"
-      description: |
-        **PR**: {pr_url} ({state})
-        **Branch**: {head_branch} → {base_branch}
-        **Other open PRs for this branch**: {count} {details if any}
+**Authorization binds both actions.** The selected option is checked against the action BEFORE the action runs — `push-authorization --action rebase` before the rebase and `--action force-push` before the push (§ "Rebase Branch onto Base"). An answer that authorizes neither (the "Stop" option) ends the run here: log it, release the merge admission per § "Merge-Mutex Hold Window" invariant 4, and return. A refusal from that check is a STOP, never a reason to proceed on a separate consent given at the question.
 
-        **Actions** (this gate covers the pre-merge preparation only; merge is gated separately):
-        {- Rebase {head_branch} onto origin/{base_branch} (if state == open AND use_merge_queue == false)}
-        {- Force-push the rebased branch with --force-with-lease (if state == open AND use_merge_queue == false)}
-        {- Wait for CI checks to complete on the rebased branch (if state == open AND use_merge_queue == false)}
-        {- Take a CI snapshot; no rebase or force-push — the merge queue rebases and re-tests (if state == open AND use_merge_queue == true)}
-        - Switch to {base_branch}
-        - Pull latest
-        - Delete local branch {head_branch}
-      options:
-        - label: "Yes, proceed (recommended)"
-          description: "Runs the preparation listed above and stops there — you are asked again before anything is merged, so nothing lands on {base_branch} on the strength of this answer alone"
-        - label: "No, skip"
-          description: "Nothing is prepared and nothing is merged. Your branch, the pull request and the local checkout are all left exactly as they stand, and finalize can be re-run later"
-      multiSelect: false
-```
-
-**If user selects "No, skip"**:
+**If user selects "No, skip"** (or, on the `state == merged` path, "No, skip"):
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-6-finalize) Branch cleanup skipped: user declined at pre-rebase gate"
@@ -426,7 +427,27 @@ Parse the returned TOON and branch on `status`:
 
   Then return — do NOT proceed with force-push or merge. **Release-on-abort**: give up the merge admission before returning — release when this run holds the lock, `merge_lock dequeue` otherwise (§ "Merge-Mutex Hold Window" invariant 4).
 
-On a successful rebase, push the rewritten history to the remote with a lease guard via the `force-push-with-lease` verb (see `workflow-integration-git` Canonical invocations → `force-push-with-lease`):
+On a successful rebase, two gates run on the REBASED head before anything is pushed.
+
+**Gate 1 — the operator's authorization, checked per action.** The rebase and the force-push are performed only when they are what the operator selected. Check the selection against each action, immediately before that action:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:phase-6-finalize:conflict_gate push-authorization \
+  --plan-id {plan_id} --answer "{the option label the operator selected}" --action force-push
+```
+
+`status: success, authorized: true` is the only admission. `error: push_not_authorized` names what the answer DID authorize (`option_authorizes[]`) or, for an answer that resolves to no gate option, the labels that would authorize this action (`authorizing_options[]`); `unknown_action` / `invalid_answer` are invocation refusals. ⛔ **A refusal is a STOP: do not rebase, do not push, and do not treat a consent given at the gate question as covering this action.** A free-text answer ("ok", "yes", "go ahead") resolves to no option and therefore authorizes nothing — matching is against the gate's own option labels, so a paraphrase is refused rather than read generously. On the auto-proceed path no question fired, so the auto-proceed route itself is the authorization and this check is not issued.
+
+**Gate 2 — pre-push freshness on the rebased head.** The rebase moved HEAD, so the `default:pre-push-quality-gate` stamp taken before the rebase covers a tree that no longer exists:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks pre-commit-verify-freshness \
+  --plan-id {plan_id}
+```
+
+Only `status: fresh` and `status: exempt` admit the push. `stale` / `undecidable` STOP it with the returned `reason` surfaced: re-run the project's pre-push quality gate against the rebased head and re-check, rather than pushing a tree no successful build has observed. (PLAN-LB-55 D1's push refusal is the intended backstop at the verb boundary; this gate is the call-site guard that holds until it lands.)
+
+With both gates passed, push the rewritten history with a lease guard via the `force-push-with-lease` verb (see `workflow-integration-git` Canonical invocations → `force-push-with-lease`):
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow \
