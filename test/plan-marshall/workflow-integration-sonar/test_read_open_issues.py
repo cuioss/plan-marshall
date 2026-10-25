@@ -50,8 +50,20 @@ def _stub_sonar_configured():
     read would take the ``unconfigured`` branch. The test that exercises that
     branch re-patches the same target inside a ``with`` block, which takes
     precedence.
+
+    The analysis-revision gate is stubbed ``confirmed`` for the same reason: with
+    no real Sonar client in the sandbox, the gate would otherwise reach for one and
+    the read would never report a count. Revision truth itself is covered against a
+    stubbed Sonar API by ``test_sonar_analysis_revision.py``.
     """
-    with patch.object(sonar_mod, '_sonar_credential_missing', return_value=''):
+    with (
+        patch.object(sonar_mod, '_sonar_credential_missing', return_value=''),
+        patch.object(
+            sonar_mod,
+            '_verify_analysis_revision',
+            return_value={'count_status': 'confirmed', 'analysis_revision': 'a' * 40, 'head_revision': 'a' * 40},
+        ),
+    ):
         yield
 
 

@@ -37,12 +37,16 @@ same typed status for the same reason.
 
 The returned contract carries a verified ``new_code_issue_count`` and a
 ``count_status`` discriminator (``confirmed`` | ``undecidable``): a confirmed
-CE-DONE run reports the real PR-scoped count; a CE-still-processing-at-timeout
-or an auth/REST failure reports ``new_code_issue_count: null`` with
-``count_status: undecidable`` and a ``count_status_reason`` — NEVER a false
-``0``. Every fetch also writes one attestation row to
-``artifacts/findings/sonar-scan-summary.jsonl`` (written even at count==0 and
-on undecidable) so an absent file can never be confused with "not checked."
+run reports the real PR-scoped count — which requires BOTH a settled Compute
+Engine and an analysis of the counted revision, because a clean analysis of an
+older head reads exactly like a clean analysis of this one. A stale analysis
+(``stale_analysis``, with both SHAs), an unreported revision, a CE-still-
+processing-at-timeout or an auth/REST failure reports
+``new_code_issue_count: null`` with ``count_status: undecidable`` and a
+``count_status_reason`` — NEVER a false ``0``. Every fetch also writes one
+attestation row to ``artifacts/findings/sonar-scan-summary.jsonl`` (written even
+at count==0 and on undecidable, carrying ``analysis_revision`` beside
+``scanned_sha``) so an absent file can never be confused with "not checked."
 
 LLM consumers query findings via ``manage-findings query --type sonar-issue``.
 
@@ -304,18 +308,17 @@ def _wait_for_ce_ready(project: str, pr: str | None, timeout: int) -> dict[str, 
 # ============================================================================
 
 
-def _resolve_scanned_sha() -> str:
-    """Best-effort resolve the worktree HEAD SHA the scan attests to.
+def _git_rev_parse(ref: str) -> str:
+    """Best-effort ``git rev-parse --verify <ref>``; ``''`` when it does not resolve.
 
-    Returns the empty string when the SHA cannot be resolved (not a git tree,
-    git unavailable) — the marker row is still written; ``scanned_sha`` is
-    simply blank.
+    The single subprocess seam for every SHA these verbs compare, so ref
+    resolution can be exercised without a repository behind it.
     """
     import subprocess
 
     try:
         out = subprocess.run(
-            ['git', 'rev-parse', 'HEAD'],
+            ['git', 'rev-parse', '--verify', ref],
             capture_output=True,
             text=True,
             timeout=10,
@@ -327,6 +330,132 @@ def _resolve_scanned_sha() -> str:
     return ''
 
 
+def _resolve_scanned_sha() -> str:
+    """Best-effort resolve the worktree HEAD SHA the scan attests to.
+
+    Returns the empty string when the SHA cannot be resolved (not a git tree,
+    git unavailable) — the marker row is still written; ``scanned_sha`` is
+    simply blank.
+    """
+    return _git_rev_parse('HEAD')
+
+
+def _resolve_head_revision(branch: str | None) -> str:
+    """Resolve the commit an analysis revision is compared against.
+
+    ``branch`` is the pull request's source branch as the provider reports it.
+    Its refs are tried first — the local branch (shared by every worktree of one
+    clone), then the remote-tracking ref — because the caller's own working tree
+    is not always the head under review: the runbook lane reads a pull request
+    from the main checkout, whose HEAD is the base branch. With no branch the
+    working tree's HEAD is the comparison point.
+
+    Returns ``''`` when nothing resolves, which the verification reports as
+    ``head_revision_unavailable`` rather than comparing against a guess.
+    """
+    if branch:
+        for ref in (f'refs/heads/{branch}', f'refs/remotes/origin/{branch}'):
+            sha = _git_rev_parse(ref)
+            if sha:
+                return sha
+    return _git_rev_parse('HEAD')
+
+
+# ============================================================================
+# ANALYSIS-REVISION TRUTH (a count is only confirmed of the revision it counts)
+# ============================================================================
+
+#: A settled analysis of another commit: its issue set describes an older tree.
+_STALE_ANALYSIS = 'stale_analysis'
+#: The provider reported no SCM revision for the analysis it counted.
+_ANALYSIS_REVISION_UNAVAILABLE = 'analysis_revision_unavailable'
+#: The commit the count would be taken for could not be resolved locally.
+_HEAD_REVISION_UNAVAILABLE = 'head_revision_unavailable'
+
+
+def _read_analysis_revision(project: str, pr: str | None) -> dict[str, Any]:
+    """Read the SCM revision of the analysis a count would be taken over.
+
+    A pull request's analysis is described by ``/api/project_pull_requests/list``:
+    the entry for the pull request carries the analysed commit (``commit.sha``)
+    and the source branch. A branch analysis is described by
+    ``/api/project_analyses/search``, whose newest entry carries the ``revision``
+    the scanner recorded.
+
+    Returns ``{'revision': str, 'branch': str | None}`` — ``revision`` is ``''``
+    when the provider reports none for the analysis, which is not the same as an
+    analysis of an empty tree and is never confirmed — or ``{'error': str}`` on a
+    REST/auth failure.
+    """
+    from _providers_core import (
+        RestClientError,
+        get_authenticated_client,
+    )
+
+    client = get_authenticated_client(_SONAR_SKILL)
+    try:
+        if pr:
+            payload = client.get('/api/project_pull_requests/list', params={'project': project})
+        else:
+            payload = client.get('/api/project_analyses/search', params={'project': project, 'ps': '1'})
+    except RestClientError as e:
+        return {'error': f'Sonar API error: HTTP {e.status}'}
+    finally:
+        client.close()
+
+    if pr:
+        entries = payload.get('pullRequests') or []
+        entry = next((row for row in entries if str(row.get('key')) == str(pr)), None)
+        if entry is None:
+            return {'revision': '', 'branch': None}
+        commit = entry.get('commit') or {}
+        return {'revision': str(commit.get('sha') or '').strip(), 'branch': entry.get('branch')}
+
+    analyses = payload.get('analyses') or []
+    if not analyses:
+        return {'revision': '', 'branch': None}
+    return {'revision': str(analyses[0].get('revision') or '').strip(), 'branch': None}
+
+
+def _verify_analysis_revision(project: str, pr: str | None) -> dict[str, Any]:
+    """Decide whether the analysis a count would read is of the revision counted.
+
+    The count comes from the issue set the latest analysis produced. When that
+    analysis is of another commit — a push landed after the scan — the issue set
+    describes an older tree, and a ``0`` read from it is a clean analysis of the
+    wrong code. The revision the provider reports is therefore compared with the
+    head before anything is counted:
+
+    * equal revisions → ``confirmed``;
+    * unequal → ``undecidable`` with reason ``stale_analysis`` and both SHAs;
+    * no revision reported, or no head resolvable → ``undecidable``.
+
+    Both revisions travel beside the verdict either way, so a caller can record
+    what was compared even when the comparison could not decide.
+    """
+    resolved = _read_analysis_revision(project, pr)
+    verdict: dict[str, Any] = {
+        'analysis_revision': resolved.get('revision') or '',
+        'head_revision': '' if resolved.get('error') else _resolve_head_revision(resolved.get('branch')),
+    }
+    if resolved.get('error'):
+        verdict['count_status_reason'] = f'analysis revision unavailable: {resolved["error"]}'
+    elif not verdict['analysis_revision']:
+        verdict['count_status_reason'] = _ANALYSIS_REVISION_UNAVAILABLE
+    elif not verdict['head_revision']:
+        verdict['count_status_reason'] = _HEAD_REVISION_UNAVAILABLE
+    elif verdict['analysis_revision'] != verdict['head_revision']:
+        verdict['count_status_reason'] = (
+            f'{_STALE_ANALYSIS}: analysed {verdict["analysis_revision"]} != head {verdict["head_revision"]}'
+        )
+    else:
+        verdict['count_status'] = 'confirmed'
+        return verdict
+
+    verdict['count_status'] = 'undecidable'
+    return verdict
+
+
 def _write_scan_summary(
     plan_id: str,
     project: str,
@@ -334,12 +463,17 @@ def _write_scan_summary(
     count_status: str,
     new_code_issue_count: int | None,
     count_status_reason: str | None,
+    analysis_revision: str = '',
+    head_revision: str = '',
 ) -> str:
     """Append one attestation row to ``artifacts/findings/sonar-scan-summary.jsonl``.
 
     Written unconditionally for every fetch — including at count==0 and on
     ``undecidable`` — so a verified zero is a positive on-disk fact and an
-    absent file unambiguously means "not checked." Reuses the shared
+    absent file unambiguously means "not checked." The analysis revision the
+    count was read from is recorded beside ``scanned_sha`` (the local HEAD), so a
+    row states both what was scanned locally and what the provider said it
+    analysed. Reuses the shared
     findings-dir resolver (``_findings_core.get_findings_dir``) so the file
     lands in the same archive-surviving directory as ``pr-comment.jsonl``.
 
@@ -358,6 +492,8 @@ def _write_scan_summary(
         'pr': pr,
         'project': project,
         'scanned_sha': _resolve_scanned_sha(),
+        'analysis_revision': analysis_revision,
+        'head_revision': head_revision,
         'ts': datetime.now(UTC).isoformat(),
     }
     if count_status_reason:
@@ -482,6 +618,47 @@ def _fetch_issues(project: str, pr: str | None, severities: str | None, types: s
     return {'status': 'success', 'issues': formatted, 'total': total}
 
 
+def _undecidable_fetch(plan_id: str, project: str, pr: str | None, verdict: dict[str, Any]) -> dict[str, Any]:
+    """Build the ``undecidable`` fetch result and write its attestation row.
+
+    The single path for every way the count can fail to be confirmed — an
+    unsettled Compute Engine, a stale analysis, an unreadable revision — so the
+    returned shape and the written row cannot drift apart per reason. The
+    revisions travel beside the verdict; they are blank when the reason is not a
+    revision mismatch.
+    """
+    reason = verdict.get('count_status_reason')
+    analysis_revision = verdict.get('analysis_revision', '')
+    head_revision = verdict.get('head_revision', '')
+    marker_path = _write_scan_summary(
+        plan_id=plan_id,
+        project=project,
+        pr=pr,
+        count_status='undecidable',
+        new_code_issue_count=None,
+        count_status_reason=reason,
+        analysis_revision=analysis_revision,
+        head_revision=head_revision,
+    )
+    return {
+        'status': 'success',
+        'plan_id': plan_id,
+        'project': project,
+        'pull_request': pr or 'none',
+        'count_fetched': 0,
+        'count_skipped_suppressable': 0,
+        'count_stored': 0,
+        'stored_hash_ids': [],
+        'producer_mismatch_hash_id': None,
+        'new_code_issue_count': None,
+        'count_status': 'undecidable',
+        'count_status_reason': reason,
+        'analysis_revision': analysis_revision,
+        'head_revision': head_revision,
+        'scan_summary_path': marker_path,
+    }
+
+
 def cmd_fetch_findings(args):
     """Producer-side FIND verb: PR-scoped new-code issue enumeration → ledger.
 
@@ -536,30 +713,14 @@ def cmd_fetch_findings(args):
         # CE never settled (timeout) or the poll failed (auth/REST). Do NOT
         # enumerate — a count taken against an in-flight analysis would be
         # unreliable. Report undecidable and write the attestation marker.
-        reason = ce_result.get('count_status_reason')
-        marker_path = _write_scan_summary(
-            plan_id=plan_id,
-            project=project,
-            pr=pr,
-            count_status='undecidable',
-            new_code_issue_count=None,
-            count_status_reason=reason,
-        )
-        return {
-            'status': 'success',
-            'plan_id': plan_id,
-            'project': project,
-            'pull_request': pr or 'none',
-            'count_fetched': 0,
-            'count_skipped_suppressable': 0,
-            'count_stored': 0,
-            'stored_hash_ids': [],
-            'producer_mismatch_hash_id': None,
-            'new_code_issue_count': None,
-            'count_status': 'undecidable',
-            'count_status_reason': reason,
-            'scan_summary_path': marker_path,
-        }
+        return _undecidable_fetch(plan_id, project, pr, ce_result)
+
+    # 1b. Analysis-revision truth — a settled analysis of ANOTHER commit
+    #     describes an older tree, so its issue set is not this head's set and a
+    #     zero read from it is a clean analysis of the wrong code.
+    revision_result = _verify_analysis_revision(project, pr)
+    if revision_result['count_status'] != 'confirmed':
+        return _undecidable_fetch(plan_id, project, pr, revision_result)
 
     # 2. Fetch PR-scoped new-code issues.
     fetch_result = _fetch_issues(project, pr, getattr(args, 'severities', None), getattr(args, 'types', None))
@@ -573,10 +734,14 @@ def cmd_fetch_findings(args):
             count_status='undecidable',
             new_code_issue_count=None,
             count_status_reason=reason,
+            analysis_revision=revision_result['analysis_revision'],
+            head_revision=revision_result['head_revision'],
         )
         fetch_result['new_code_issue_count'] = None
         fetch_result['count_status'] = 'undecidable'
         fetch_result['count_status_reason'] = reason
+        fetch_result['analysis_revision'] = revision_result['analysis_revision']
+        fetch_result['head_revision'] = revision_result['head_revision']
         fetch_result['scan_summary_path'] = marker_path
         return fetch_result
 
@@ -687,6 +852,8 @@ def cmd_fetch_findings(args):
         count_status='confirmed',
         new_code_issue_count=new_code_issue_count,
         count_status_reason=None,
+        analysis_revision=revision_result['analysis_revision'],
+        head_revision=revision_result['head_revision'],
     )
 
     result: dict[str, Any] = {
@@ -701,6 +868,8 @@ def cmd_fetch_findings(args):
         'producer_mismatch_hash_id': qgate_hash,
         'new_code_issue_count': new_code_issue_count,
         'count_status': 'confirmed',
+        'analysis_revision': revision_result['analysis_revision'],
+        'head_revision': revision_result['head_revision'],
         'scan_summary_path': marker_path,
     }
     if qgate_persist_failure is not None:
@@ -714,16 +883,23 @@ def cmd_fetch_findings(args):
 # ============================================================================
 
 
-def _undecidable_read(project: str, pr: str | None, reason: str) -> dict[str, Any]:
+def _undecidable_read(
+    project: str,
+    pr: str | None,
+    reason: str,
+    analysis_revision: str = '',
+    head_revision: str = '',
+) -> dict[str, Any]:
     """Build the ``undecidable`` read result — a null count beside its reason.
 
     The single constructor for the state a caller must never read as a clean
-    zero: an analysis that did not settle, or a REST/auth failure, means the
-    issue set was never observed. ``open_issue_count`` is ``None`` on purpose
-    (never ``0``), so a consumer branching on the count cannot treat an
-    unobserved set as an empty one.
+    zero: an analysis that did not settle, an analysis of another commit, or a
+    REST/auth failure, means the issue set was never observed. ``open_issue_count``
+    is ``None`` on purpose (never ``0``), so a consumer branching on the count
+    cannot treat an unobserved set as an empty one. The revisions ride beside the
+    reason when the read was decided on them, and are omitted otherwise.
     """
-    return {
+    result: dict[str, Any] = {
         'status': 'success',
         'operation': 'read_open_issues',
         'provider': 'sonar',
@@ -733,6 +909,11 @@ def _undecidable_read(project: str, pr: str | None, reason: str) -> dict[str, An
         'open_issue_count': None,
         'count_status_reason': reason,
     }
+    if analysis_revision:
+        result['analysis_revision'] = analysis_revision
+    if head_revision:
+        result['head_revision'] = head_revision
+    return result
 
 
 def cmd_read_open_issues(args):
@@ -773,6 +954,19 @@ def cmd_read_open_issues(args):
             project,
             pr,
             ce_result.get('count_status_reason') or 'CE analysis did not settle',
+        )
+
+    # 1b. Gate the count on the analysis being of THIS revision — the same truth
+    #     the producer-side fetch applies, because a clean analysis of an older
+    #     head reads exactly like a clean analysis of this one.
+    revision_result = _verify_analysis_revision(project, pr)
+    if revision_result['count_status'] != 'confirmed':
+        return _undecidable_read(
+            project,
+            pr,
+            revision_result.get('count_status_reason') or 'analysis does not match the head being read',
+            analysis_revision=revision_result.get('analysis_revision', ''),
+            head_revision=revision_result.get('head_revision', ''),
         )
 
     # 2. Enumerate. The issue ``message`` is untrusted free text and stays out of
