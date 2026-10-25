@@ -1553,7 +1553,15 @@ def cmd_create(args: argparse.Namespace) -> dict[str, Any]:
     # executor underneath it.
     status['metadata'].update(_executor_target_stamp())
 
-    write_status(args.plan_id, status)
+    # The seed is a FRESH document, not a stale snapshot of an existing one, so it
+    # must not carry the protected keys of the plan it replaces: ``create --force``
+    # over an existing plan starts from a clean slate, inheriting neither
+    # ``criteria_integrity`` nor ``functional_review_override_heads``. The seed
+    # bypasses the carry here rather than clearing the keys inside the guard
+    # because there is nothing to carry FROM on a first create — the carry's whole
+    # input is the document being replaced, and a first create has none. See
+    # ``write_status``'s ``carry_protected_keys`` argument.
+    write_status(args.plan_id, status, carry_protected_keys=False)
     # Persisted-title-state-write drive seam (best-effort, fire-and-forget):
     # the first-phase seed is a current_phase write, so bind + repaint fire here
     # too — a delegation failure never changes this command's outcome.

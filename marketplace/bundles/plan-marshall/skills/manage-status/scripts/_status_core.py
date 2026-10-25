@@ -140,7 +140,13 @@ def read_status(plan_id: str) -> dict[Any, Any]:
     return cast(dict[Any, Any], read_json(get_status_path(plan_id)))
 
 
-def write_status(plan_id: str, status: dict[Any, Any], *, preserve_title_token: bool = True) -> None:
+def write_status(
+    plan_id: str,
+    status: dict[Any, Any],
+    *,
+    preserve_title_token: bool = True,
+    carry_protected_keys: bool = True,
+) -> None:
     """Write status.json for a plan inside the serialized ``rmw_json`` critical section.
 
     Every caller commits a WHOLE document assembled from a snapshot read taken
@@ -167,6 +173,17 @@ def write_status(plan_id: str, status: dict[Any, Any], *, preserve_title_token: 
     value is authoritative. The key names are imported from
     ``_criteria_snapshot`` so the owning definitions stay single-sourced.
 
+    **The carry needs a read that happened.** ``rmw_json`` reports a missing,
+    unreadable, corrupt or non-object document as an empty mapping, which is
+    indistinguishable from a document read and found to hold no protected keys.
+    Carrying on that mapping would make this function delete the very keys it
+    exists to preserve — the loss it prevents, committed by the mechanism that
+    prevents it. The guard is therefore taken with ``require_readable_state``
+    whenever the carry is on: a failed in-guard read raises
+    :class:`_locks_core.StateReadFailed`, nothing is written, and the on-disk
+    document keeps its keys. Only a read that SUCCEEDED can make a key's absence
+    authoritative.
+
     Guarding at this single seam rather than at individual phase-write call
     sites is deliberate: every full-document writer in this skill shares the
     hazard, so a per-call-site guard would be one call site short by
@@ -175,11 +192,21 @@ def write_status(plan_id: str, status: dict[Any, Any], *, preserve_title_token: 
     ``metadata --set``), ``_cmd_lifecycle`` (the create seed, ``transition``,
     loop-back marker writes, ``archive``), ``_cmd_planning_lane``,
     ``_cmd_change_type_heuristic``, ``_cmd_loop_back`` (admit/grant),
-    ``_cmd_aggregate_confidence``, ``_cmd_mark_step`` (``mark-step-done``) and
-    ``_cmd_merge_authorization``. Most reach the seam through ``require_status``;
-    the create seed writes a document this call creates, and the internal
-    recompute writers read it themselves, so the seam — not the ``require_status``
-    gate — is what covers them.
+    ``_cmd_aggregate_confidence``, ``_cmd_mark_step`` (``mark-step-done``),
+    ``_cmd_merge_authorization`` and ``_cmd_halt``. Most reach the seam through
+    ``require_status``; the create seed writes a document this call creates, and
+    the internal recompute writers read it themselves, so the seam — not the
+    ``require_status`` gate — is what covers them.
+
+    Two writers in other skills import this seam directly rather than committing
+    a whole document themselves: ``plan-orchestrator/scripts/orchestrator.py``
+    (``read_status``/``write_status`` imported at L6459, L6508 and L6886, called
+    at L6476, L6535, L6930 and L6965) and
+    ``manage-config/scripts/_cmd_finalize_steps.py`` (``finalize-steps set-lane``
+    with ``--plan-id``), which previously committed its read-modify-write
+    unguarded. A new full-document writer belongs in this list AND at this seam;
+    the test in ``test/plan-marshall/manage-status/test_lb77_integrity_carry_d1.py``
+    derives the caller set from the source and fails when one is missing here.
 
     Args:
         plan_id: Plan whose ``status.json`` is written.
@@ -194,6 +221,23 @@ def write_status(plan_id: str, status: dict[Any, Any], *, preserve_title_token: 
             coordination state worth arbitrating over), not an instance of the
             race above. The protected keys are carried regardless: their
             absence is never an intentional clear.
+        carry_protected_keys: When False the caller's document wins wholesale and
+            the live protected keys are NOT carried — they are dropped unless the
+            caller put them there itself. ``cmd_create`` is the sole intended
+            user: it seeds a fresh plan, and ``create --force`` over an existing
+            plan must start from a clean slate rather than inherit the
+            overwritten plan's ``criteria_integrity`` and
+            ``functional_review_override_heads``. The seed bypasses the carry
+            rather than clearing the keys inside the guard because a fresh
+            document is not a read-modify-write at all: the keys it must not
+            inherit are keys of a document it replaces, and the only reason to
+            read that document would be to carry from it. Disabling the carry is
+            therefore also what makes the seed's own write succeed on a first
+            create, where there is no readable state to demand.
+
+    Raises:
+        _locks_core.StateReadFailed: when ``carry_protected_keys`` is True and the
+            in-guard read produced no usable state. Nothing is committed.
     """
 
     def _apply(current: dict[str, Any]) -> dict[str, Any]:
@@ -203,11 +247,12 @@ def write_status(plan_id: str, status: dict[Any, Any], *, preserve_title_token: 
                 status.pop('title_token', None)
             else:
                 status['title_token'] = live
-        _carry_protected_keys(current, status)
+        if carry_protected_keys:
+            _carry_protected_keys(current, status)
         status['updated'] = now_utc_iso()
         return cast(dict[str, Any], status)
 
-    rmw_json(get_status_path(plan_id), _apply)
+    rmw_json(get_status_path(plan_id), _apply, require_readable_state=carry_protected_keys)
 
 
 #: The status-record keys whose only writers commit through their own guarded
@@ -225,6 +270,13 @@ def _carry_protected_keys(live: dict[Any, Any], status: dict[Any, Any]) -> None:
     longer carries is removed from the caller's stale copy rather than being
     resurrected by the write. Any other key of the caller's ``metadata`` is left
     untouched, so the caller's own mutation still commits.
+
+    ⛔ ``live`` must be a document that was READ. A failed read reaches this
+    function as ``{}``, in which case every protected key reads as "absent on
+    disk" and the carry deletes all of them — the exact loss it exists to
+    prevent. :func:`write_status` therefore asks its guard for a readable state
+    (``require_readable_state``) and refuses the write instead of calling this on
+    an empty mapping; only observed absence is authoritative here.
     """
     live_metadata = live.get('metadata')
     if not isinstance(live_metadata, dict):
