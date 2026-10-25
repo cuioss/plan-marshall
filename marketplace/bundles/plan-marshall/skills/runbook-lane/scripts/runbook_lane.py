@@ -56,7 +56,7 @@ from typing import Any, NamedTuple
 
 import orchestrator_worktree
 from file_ops import output_toon, output_toon_error
-from marketplace_paths import PLAN_DIR_NAME
+from marketplace_paths import PLAN_DIR_NAME, base_dir_override_active, main_checkout_root
 
 #: The step whose ``required_bots`` / ``optional_bots`` the lane drives.
 _REVIEW_STEP_ID = 'plan-marshall:automatic-review'
@@ -237,6 +237,42 @@ def _staged_spec_shape(spec: Path, project_dir: Path, *, from_ledger: bool) -> t
     raise ValueError('spec_outside_orchestrator')
 
 
+def _main_store_dir(project_dir: Path) -> Path:
+    """The ``.plan`` directory of the checkout the fallback copy belongs to.
+
+    The lane runs every command from the MAIN checkout, but ``--project-dir`` can
+    name a plan worktree, where ``{project_dir}/.plan`` is that worktree's own
+    config tier — NOT the copy a ``main_checkout`` answer claims to have read. The
+    fallback therefore anchors on the main checkout the ledger worktree is a
+    worktree OF (the git common dir), and stays on ``project_dir`` only where that
+    anchor does not exist: outside a git checkout, or under a base-dir override
+    that already stands in for main.
+    """
+    if not base_dir_override_active():
+        try:
+            return main_checkout_root() / PLAN_DIR_NAME
+        except RuntimeError:
+            pass
+    return project_dir / PLAN_DIR_NAME
+
+
+def _contained_file(path: Path, root: Path) -> bool:
+    """Whether ``path`` is a file whose RESOLVED location stays under ``root``.
+
+    A copy derived from the validated slug and name is not the caller's resolved
+    path, and ``is_file`` follows symlinks — so a link planted at the derived
+    location could otherwise hand the lane a file from outside the store while the
+    result claims a store copy. Requiring the resolution to stay under the store
+    root closes that without giving up the read.
+    """
+    if not path.is_file():
+        return False
+    try:
+        return path.resolve().is_relative_to(root.resolve())
+    except OSError:
+        return False
+
+
 def _resolve_spec(spec_value: str, project_dir: Path, *, from_ledger: bool = False) -> _SpecChoice:
     """Validate ``--spec`` and select the copy of it to read.
 
@@ -258,7 +294,8 @@ def _resolve_spec(spec_value: str, project_dir: Path, *, from_ledger: bool = Fal
         spec = project_dir / spec
     slug, name = _staged_spec_shape(spec, project_dir, from_ledger=from_ledger)
 
-    main_copy = project_dir / '.plan' / 'orchestrator' / slug / 'plans' / name
+    main_store = _main_store_dir(project_dir)
+    main_copy = main_store / 'orchestrator' / slug / 'plans' / name
     # The ledger copy is resolved on BOTH paths: the flag decides whether it is
     # READ, while the differ marker exists precisely to report a default read that
     # left the newer copy unread.
@@ -266,12 +303,12 @@ def _resolve_spec(spec_value: str, project_dir: Path, *, from_ledger: bool = Fal
     store = _ledger_store_dir()
     if store is not None:
         candidate = store / 'orchestrator' / slug / 'plans' / name
-        if candidate.is_file():
+        if _contained_file(candidate, store):
             ledger_copy = candidate
 
     if from_ledger and ledger_copy is not None:
         chosen, source = ledger_copy, 'ledger_worktree'
-    elif main_copy.is_file():
+    elif _contained_file(main_copy, main_store):
         chosen, source = main_copy, 'main_checkout'
     elif spec.is_file():
         # The caller named the ONLY copy. It survived the shape check above, so it
@@ -281,7 +318,9 @@ def _resolve_spec(spec_value: str, project_dir: Path, *, from_ledger: bool = Fal
     else:
         raise ValueError('invalid_spec')
 
-    differs = ledger_copy is not None and main_copy.is_file() and _copies_differ(ledger_copy, main_copy)
+    differs = (
+        ledger_copy is not None and _contained_file(main_copy, main_store) and _copies_differ(ledger_copy, main_copy)
+    )
     return _SpecChoice(chosen, slug, _plan_id_from_spec(chosen), source, differs)
 
 

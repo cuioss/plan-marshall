@@ -24,7 +24,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from conftest import MARKETPLACE_ROOT, get_scripts_dir, run_script
+from conftest import MARKETPLACE_ROOT, get_scripts_dir, load_script_module, run_script
 
 _SKILL_NAME = 'runbook-lane'
 _SCRIPT = get_scripts_dir('plan-marshall', _SKILL_NAME) / 'runbook_lane.py'
@@ -279,6 +279,44 @@ def test_the_knob_gate_ignores_a_ledger_copy_left_on_disk(tmp_path: Path) -> Non
     assert _titles(data) == [MAIN_TITLE]
     assert data['spec_source'] == 'main_checkout'
     assert 'spec_differ' not in data
+
+
+def test_the_fallback_is_the_main_checkout_not_the_project_dir(tmp_path: Path, monkeypatch) -> None:
+    """A --project-dir inside a plan worktree must not be reported as the main checkout.
+
+    The worktree has its own ``.plan`` tier and holds no spec of its own; the copy
+    labelled ``main_checkout`` must come from the checkout the ledger worktree lives
+    under, not from the directory the caller happened to run in.
+    """
+    main_root = tmp_path / 'main'
+    project = tmp_path / 'plan-worktree'
+    _write(main_root / SPEC_REL, _spec_body(MAIN_TITLE))
+    _write(project / '.plan' / 'marshal.json', json.dumps({}))
+
+    module = load_script_module('plan-marshall', _SKILL_NAME, 'runbook_lane.py', register=False)
+    monkeypatch.setattr(module, 'main_checkout_root', lambda: main_root)
+    monkeypatch.setattr(module, 'base_dir_override_active', lambda: False)
+    monkeypatch.setattr(module, '_ledger_store_dir', lambda: None)
+
+    choice = module._resolve_spec(SPEC_REL, project)
+
+    assert choice.path == main_root / SPEC_REL
+    assert choice.source == 'main_checkout'
+
+
+def test_a_symlinked_spec_cannot_escape_its_store(tmp_path: Path) -> None:
+    """A link planted at a store path must not hand the lane a file from outside it."""
+    outside = tmp_path / 'outside.md'
+    _write(outside, _spec_body(LEDGER_TITLE))
+    _seed_project(tmp_path, use_worktree=True)
+    staged = _main_spec(tmp_path)
+    staged.parent.mkdir(parents=True, exist_ok=True)
+    staged.symlink_to(outside)
+
+    data = _run_resolve(tmp_path, SPEC_REL)
+
+    assert data['status'] == 'error'
+    assert data['error'] == 'spec_outside_orchestrator'
 
 
 def test_lane_text_names_the_ledger_read_and_what_it_reports() -> None:
