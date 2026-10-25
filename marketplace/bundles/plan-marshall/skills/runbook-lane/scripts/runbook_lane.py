@@ -550,7 +550,17 @@ def cmd_executor_skew(args: argparse.Namespace) -> dict[str, Any]:
 
     executor = Path(getattr(args, 'executor', None) or '.plan/execute-script.py')
     lane_skill_dir = Path(getattr(args, 'lane_dir', None) or _lane_skill_dir())
-    state, executor_version = read_executor_version(executor)
+    # Ask as the RUNNING harness: a harness-independent executor carries a
+    # version per harness, and the question here is whether THIS harness's run
+    # would dispatch pre-fix code — not which harness wrote the file.
+    runtime_harness = None
+    try:
+        from target_context import detect_target_from_env
+
+        runtime_harness = detect_target_from_env()
+    except Exception:
+        runtime_harness = None
+    state, executor_version = read_executor_version(executor, target=runtime_harness)
     lane_version = _lane_text_version(lane_skill_dir)
     verdict = _executor_skew(executor, lane_skill_dir)
     result: dict[str, Any] = {

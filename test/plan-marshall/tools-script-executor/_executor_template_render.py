@@ -46,9 +46,24 @@ _gen = load_script_module(
 #: read from the generator rather than restated.
 BOOTSTRAP_BUNDLE: str = _gen.BOOTSTRAP_BUNDLE
 
-#: A target-aware resolver that never resolves, so resolution falls through to
-#: the embedded mapping and the cwd walk.
-INERT_TARGET_AWARE_RESOLVER = 'def _resolve_notation_by_target(notation):\n    return None\n'
+#: An inert resolver: the install walk resolves nothing, so resolution falls
+#: through to the embedded mapping and the cwd walk. It must carry the two
+#: helpers ``resolve_notation`` and the walk share (``_relative_script_path`` for
+#: a notation's suffix under ``scripts/``, ``_tree_probe`` for the live-checkout
+#: leg), because the production body is the only place those are defined.
+INERT_TARGET_AWARE_RESOLVER = (
+    'def _relative_script_path(notation):\n'
+    "    parts = notation.split(':')\n"
+    "    return f'{parts[2]}.py' if len(parts) == 3 else ''\n"
+    '\n'
+    '\n'
+    'def _tree_probe(notation):\n'
+    '    return None\n'
+    '\n'
+    '\n'
+    'def _resolve_notation_by_target(notation):\n'
+    '    return None\n'
+)
 
 #: An empty directory block — a comment, so the surrounding literal stays valid.
 NO_DIRS = '# (none in test)'
@@ -68,7 +83,9 @@ def render_executor_template(
     cache_recovery_roots: str = NO_DIRS,
     extra_script_dirs: str = '',
     plan_dir_name: str = '.plan',
-    executor_target: str = '',
+    generated_for: str = '',
+    installed_roots: str = NO_DIRS,
+    installed_versions: str = NO_DIRS,
     executor_plugin_root: str = '',
     bootstrap_bundle: str = BOOTSTRAP_BUNDLE,
     generated_version: str = '0.0.0-test',
@@ -89,11 +106,14 @@ def render_executor_template(
         cache_recovery_roots: The entries of the cache-recovery roots.
         extra_script_dirs: The entries of the baked extra script dirs.
         plan_dir_name: The plan directory name.
-        executor_target: The target the executor was generated for; the empty
-            default marks a test-rendered executor as unstamped, so the
-            target-mismatch refusal does not fire on the harness running the
-            test suite.
-        executor_plugin_root: The plugin root stamped beside the target.
+        generated_for: The informational harness stamp; the empty default marks
+            a test-rendered executor, and nothing reads it as a lock.
+        installed_roots: The ``(harness, root)`` entries of the installed roots.
+            Empty by default, so a rendered executor resolves no install unless
+            the test gives it one.
+        installed_versions: The ``(harness, version)`` entries of the per-harness
+            version map.
+        executor_plugin_root: The informational plugin root.
         bootstrap_bundle: The bundle the bootstrap skills belong to.
         generated_version: The stamped version; ``''`` is the fresh-install
             sentinel.
@@ -113,7 +133,9 @@ def render_executor_template(
         '{{CACHE_RECOVERY_ROOTS}}': cache_recovery_roots,
         '{{EXTRA_SCRIPT_DIRS}}': extra_script_dirs,
         '{{PLAN_DIR_NAME}}': plan_dir_name,
-        '{{EXECUTOR_TARGET}}': executor_target,
+        '{{GENERATED_FOR}}': generated_for,
+        '{{INSTALLED_ROOTS}}': installed_roots,
+        '{{INSTALLED_VERSIONS}}': installed_versions,
         '{{EXECUTOR_PLUGIN_ROOT}}': executor_plugin_root,
         '{{BOOTSTRAP_BUNDLE}}': bootstrap_bundle,
         '{{GENERATED_VERSION}}': generated_version,

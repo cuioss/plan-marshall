@@ -49,11 +49,12 @@ Examples:
     python3 .plan/execute-script.py pm-plugin-development:tools-marketplace-inventory:scan-marketplace-inventory --audit-plan-id EXAMPLE-PLAN --include-descriptions
 """
 
-# TEMPLATE_FORMAT_VERSION: 5
+# TEMPLATE_FORMAT_VERSION: 6
 # Deterministic decoupling contract between this template's placeholder shapes
 # (the double-brace-wrapped `SHARED_MODULE_DIRS`, `BOOTSTRAP_BUNDLE`,
-# `CACHE_RECOVERY_ROOTS`, `SCRIPT_MAPPINGS` and `SCRIPT_SURFACES` tokens) and
-# generate_executor.py's substitution logic. The token names are spelled here
+# `CACHE_RECOVERY_ROOTS`, `INSTALLED_ROOTS`, `INSTALLED_VERSIONS`, `GENERATED_FOR`,
+# `SCRIPT_MAPPINGS` and `SCRIPT_SURFACES` tokens) and generate_executor.py's
+# substitution logic. The token names are spelled here
 # WITHOUT their surrounding double braces on purpose: a literal double-brace token
 # in this comment would be matched by the global str.replace substitutions in both
 # generate_executor.py and the test harness, splicing generated code into the middle
@@ -71,25 +72,50 @@ from pathlib import Path
 # This constant enables consistent path construction across all scripts
 PLAN_DIR_NAME = '{{PLAN_DIR_NAME}}'
 
-# Provisioning stamps - injected at generation time from the installed
-# dist-manifest.json. MARSHALL_VERSION is the deterministic 0.1.N version the
-# executor was generated at; MAPPINGS_FINGERPRINT is the machine-portable
-# script-set fingerprint. Both are the empty sentinel on a fresh install (no
-# manifest yet). The generate_executor preflight verb reads MARSHALL_VERSION to
-# decide whether this executor is stale versus the installed manifest.
+# Provisioning stamps - injected at generation time. MARSHALL_VERSION is the
+# deterministic 0.1.N version this executor was generated at; MAPPINGS_FINGERPRINT
+# is the machine-portable script-set fingerprint. Both are the empty sentinel on a
+# fresh install (no manifest yet).
+#
+# MARSHALL_VERSION is the TREE's version when this checkout carries a marketplace
+# tree (the tree is the source of truth for a dev checkout), and the newest
+# installed harness version otherwise. It is deliberately NOT the invoking
+# harness's version: the bytes of this file do not depend on which harness
+# generated it. A reader that wants the version a specific harness would judge
+# staleness against reads _INSTALLED_VERSIONS for that harness (see
+# version_for_harness below) — the generate_executor preflight verb and the
+# runbook lane's executor-skew both do.
 MARSHALL_VERSION = '{{GENERATED_VERSION}}'
 MAPPINGS_FINGERPRINT = '{{MAPPINGS_FINGERPRINT}}'
-# Platform target this executor was generated for. Defined HERE (ahead of the
-# bootstrap block) because the executor's own failure message names the recovery
-# command, which must carry `--target`, even when a bootstrap import fails before
-# the target-aware resolver section further down is reached. Substituted at
-# generation time like every stamp; the residue guard refuses an unsubstituted
-# generation.
-_EXECUTOR_TARGET = '{{EXECUTOR_TARGET}}'
-# The plugin root the executor was generated against — the bundles/cache root its
-# embedded script paths resolve under. Recorded with the target so a plan's
-# status metadata can name the tree, and so a mismatch refusal names where the
-# executor came from.
+# Informational only: the harness this file was generated FOR. This executor is
+# harness-independent, so the value is a fixed sentinel rather than a harness
+# name, and NO code path reads it as a lock: any harness's call dispatches. It
+# survives because plan status metadata names it (manage-status's
+# `_executor_target_stamp`), where it means "generated for", never "restricted
+# to".
+GENERATED_FOR = '{{GENERATED_FOR}}'
+# The bundles/cache roots this executor may resolve scripts from, one entry per
+# installed harness, in a canonical order that does not depend on the harness
+# doing the resolving: (harness, root) pairs. A root that does not exist on this
+# machine is still listed — the probe is a no-op — so two generations of the same
+# checkout produce identical bytes whether or not one harness happens to be
+# installed at the time. Resolution prefers the RUNTIME harness's own root, then
+# the rest in this order.
+_INSTALLED_ROOTS = (
+{{INSTALLED_ROOTS}}
+)
+# Published version per installed harness, read from THAT harness's own
+# dist-manifest.json at generation time. Empty sentinel when a harness publishes
+# no manifest. version_for_harness() is the single reader; it lets staleness be
+# judged per runtime harness instead of against whichever harness happened to
+# generate the file.
+_INSTALLED_VERSIONS = (
+{{INSTALLED_VERSIONS}}
+)
+# The plugin root this executor was generated against, as one informational
+# string for status metadata: the checkout's marketplace tree when one exists,
+# else every installed harness root joined by commas. Written exactly as the
+# roots above are, so it never carries the invoking harness either.
 EXECUTOR_PLUGIN_ROOT = '{{EXECUTOR_PLUGIN_ROOT}}'
 # SHA-256 of this template file's content at generation time. The
 # generate_executor bootstrap verb compares it against the live template to
@@ -211,20 +237,56 @@ def _newest_cache_scripts_dir(skill: str) -> str | None:
     return None
 
 
+def _runtime_harness() -> str | None:
+    """Return the harness running THIS call, or ``None`` when nothing signals it.
+
+    Detected from the ambient environment at call time, because the point is the
+    harness that is executing the file now — not the one that generated it. The
+    single reader is the shared ``target_context`` resolver (its env tier knows
+    every platform signal), imported lazily because this sits on the bootstrap
+    path.
+
+    ``None`` (a plain terminal caller) is not an error: the resolution order then
+    falls to the declared order in ``_INSTALLED_ROOTS``.
+    """
+    try:
+        from target_context import detect_target_from_env
+
+        return detect_target_from_env() or None
+    except Exception:
+        return None
+
+
+def version_for_harness(harness: str | None = None) -> str:
+    """Return the published version of ``harness``'s install, or the tree's.
+
+    The per-harness half of the provisioning stamp. A reader that must judge
+    staleness as the RUNNING harness would reads here rather than from
+    ``MARSHALL_VERSION``, which is the tree's version. Falls back to
+    ``MARSHALL_VERSION`` when the harness has no published version, and to the
+    empty sentinel when nothing is known.
+    """
+    target = harness if harness is not None else _runtime_harness()
+    for name, version in _INSTALLED_VERSIONS:
+        if name == target and version:
+            return version
+    return MARSHALL_VERSION
+
+
 def _recovery_command(target: str | None = None) -> str:
     """The exact command that restores this executor from the newest cache.
 
     Names the newest cache's ``generate_executor.py`` — resolved with the same
     pruned-version self-heal the bootstrap uses — so the printed command is
     runnable by any harness from the error text alone, with no working executor.
-    ``target`` defaults to this executor's stamp; a mismatch refusal passes the
-    OBSERVED runtime target so the command repairs the executor for the harness
-    that is actually running it. Falls back to the checkout-source form only when
-    no cache copy resolves.
+    ``target`` defaults to the harness running this call (so the command repairs
+    the executor for the harness that is actually using it); it is a HINT for
+    which install to prefer, never a restriction — the regenerated file serves
+    every harness.
     """
     import shlex
 
-    resolved_target = target or _EXECUTOR_TARGET
+    resolved_target = target or _runtime_harness()
     target_flag = f' --target {resolved_target}' if resolved_target else ''
     scripts = _newest_cache_scripts_dir('tools-script-executor')
     project_root = Path(__file__).resolve().parent.parent
@@ -241,47 +303,33 @@ def _recovery_command(target: str | None = None) -> str:
     )
 
 
-def _check_executor_target() -> None:
-    """Refuse a shared executor generated for a different harness.
+# One-shot record of a foreign-install resolution, so the note is printed at most
+# once per process: the first dispatch that had to reach another harness's install
+# says so, and every later one stays quiet.
+_FOREIGN_NOTE_EMITTED = False
 
-    A concurrent regeneration of ``.plan/execute-script.py`` by another harness
-    rewrites every embedded script path into that harness's tree. The stamp
-    catches it by name here — before any notation is resolved — instead of
-    letting the run fail later against a script from the wrong installation.
-    No env signal means no observable target (a plain terminal caller), so the
-    check stays silent rather than guessing.
+
+def _note_foreign_install(notation: str, harness: str, path: str) -> None:
+    """Say ONCE on stderr that ``notation`` resolved from another harness's install.
+
+    A foreign install is the LAST resort in ``resolve_notation``, so this never
+    fires on the normal path (a live tree, or the runtime harness's own install).
+    stderr, not stdout: the note must not contaminate a caller's TOON payload.
+    Best-effort — a failure here never alters the dispatch.
     """
+    global _FOREIGN_NOTE_EMITTED
+    if _FOREIGN_NOTE_EMITTED:
+        return
+    _FOREIGN_NOTE_EMITTED = True
     try:
-        from target_context import detect_target_from_env
-
-        observed = detect_target_from_env()
-    except Exception:
-        return
-    if not observed or observed == _EXECUTOR_TARGET:
-        return
-    if not _EXECUTOR_TARGET:
-        # An unstamped executor (a test render, a pre-stamp file) carries no
-        # expected target to disagree with. It is not evidence of a foreign
-        # regeneration.
-        return
-    from toon_parser import serialize_toon
-
-    print(
-        serialize_toon(
-            {
-                'status': 'error',
-                'error': 'executor_target_mismatch',
-                'observed_target': observed,
-                'expected_target': _EXECUTOR_TARGET,
-                'plugin_root': EXECUTOR_PLUGIN_ROOT,
-                'regenerate_command': _recovery_command(target=observed),
-                'display_detail': (
-                    f'executor targets {_EXECUTOR_TARGET} but {observed} is running; regenerate it'
-                ),
-            }
+        running = _runtime_harness() or 'no harness'
+        print(
+            f'note: {notation} resolved from the {harness} install ({path}); '
+            f'the {running} install has no copy',
+            file=sys.stderr,
         )
-    )
-    sys.exit(2)
+    except (OSError, ValueError):
+        pass
 
 
 def _checkout_source_scripts_dir(skill: str) -> str | None:
@@ -440,7 +488,7 @@ SCRIPT_SURFACES = {
 }
 
 # ============================================================================
-# TARGET-AWARE RESOLVER (Generated by plan-marshall — target: {{EXECUTOR_TARGET}})
+# TARGET-AWARE RESOLVER (Generated by plan-marshall — harness-independent)
 # ============================================================================
 # Runtime fallback: resolves a notation to an absolute script path by walking
 # the target-specific skill discovery roots. Invoked when notation is absent
@@ -448,12 +496,10 @@ SCRIPT_SURFACES = {
 # All returned paths are absolute — never relative.
 {{TARGET_AWARE_RESOLVER}}
 
-# Platform target this executor was generated for. Gates the OpenCode
-# tree-first probe in resolve_notation below: only an OpenCode executor probes
-# the live checkout ahead of its embedded mappings, so Claude and Antigravity
-# executors keep their embedded-first resolution order. The value is defined
-# near the top of this file (ahead of the bootstrap block) so the failure path
-# can name it in the recovery command.
+# Harness independence: the resolver above probes the checkout's tree first and
+# then every installed harness's root, in one order, so the bytes of this file do
+# not depend on which harness generated it and a call from any harness dispatches.
+# GENERATED_FOR records which harness wrote the file; nothing reads it as a lock.
 
 # Runtime path-rewrite hook: when PM_MARKETPLACE_ROOT is set and points at a
 # marketplace tree that differs from the one embedded at generation time,
@@ -517,6 +563,95 @@ _TREE_SCRIPT_DIRS = sorted({p for p in _SCRIPT_DIRS_FROM_MAPPINGS + _ALL_SCRIPT_
 _CACHE_SCRIPT_DIRS = sorted({p for p in _SCRIPT_DIRS_FROM_MAPPINGS + _ALL_SCRIPT_DIRS if not _is_tree_script_dir(p)})
 _SCRIPT_DIRS = _TREE_SCRIPT_DIRS + _CACHE_SCRIPT_DIRS
 _PYTHONPATH = ':'.join(_SCRIPT_DIRS)
+
+
+def _root_family_of(_path: str) -> str:
+    """Return the root a script directory or script path belongs to.
+
+    ``'tree'`` for the checkout's own source, ``'install:<harness>'`` for a
+    deployed harness install, ``'other'`` for a project-local script. Used to
+    keep the PYTHONPATH the dispatch builds anchored on the SAME root the script
+    was resolved from, so a tree script is never fed a foreign install's helpers
+    ahead of its own tree modules.
+    """
+    if _is_tree_script_dir(_path):
+        return 'tree'
+    carrier = install_of_path(_path)
+    return f'install:{carrier}' if carrier else 'other'
+
+
+def _install_root_of(_path: str) -> tuple[str | None, str | None]:
+    """Return ``(harness, root)`` of the install that carries ``path``, or Nones."""
+    for _harness, _root in _INSTALLED_ROOTS:
+        if not _root:
+            continue
+        if _path.startswith(_root.rstrip('/') + '/'):
+            return _harness, _root
+    return None, None
+
+
+#: Per-process cache of an install root's script dirs, keyed by root. The
+#: directory listing is a property of the install, and one process dispatches
+#: many times; re-walking it per call would cost more than the guard it feeds.
+_SAME_ROOT_DIRS_CACHE: dict[str, tuple[str, ...]] = {}
+
+
+def _same_root_script_dirs(_path: str) -> list[str]:
+    """Return the script dirs of the install root that carries ``path``.
+
+    The baked ``_SCRIPT_DIRS`` are the GENERATING machine's dirs; a consumer
+    project (or a fixture) resolves a script from an install whose helpers were
+    never baked in. Reading them off the resolved script's own root is what makes
+    the PYTHONPATH follow the script instead of the generation-time layout. Both
+    deployed shapes are enumerated, bounded by explicit glob depth:
+
+    - nested: ``{root}/{bundle}/{version}/skills/{skill}/scripts`` and
+      ``{root}/{version}/skills/{skill}/scripts``;
+    - flat: ``{root}/{bundle}-{skill}/scripts``.
+    """
+    _harness, _root = _install_root_of(_path)
+    if not _root:
+        return []
+    cached = _SAME_ROOT_DIRS_CACHE.get(_root)
+    if cached is not None:
+        return list(cached)
+    found: list[str] = []
+    try:
+        base = Path(_root).expanduser()
+        for pattern in ('*/*/skills/*/scripts', '*/skills/*/scripts', '*/scripts'):
+            for candidate in base.glob(pattern):
+                try:
+                    if candidate.is_dir():
+                        found.append(str(candidate.resolve()))
+                except (OSError, ValueError):
+                    continue
+    except (OSError, ValueError, RuntimeError):
+        found = []
+    ordered = tuple(sorted(set(found)))
+    _SAME_ROOT_DIRS_CACHE[_root] = ordered
+    return list(ordered)
+
+
+def pythonpath_for(script_path: str) -> str:
+    """Build PYTHONPATH with the resolved script's own root family first.
+
+    The generation-time list already puts tree dirs ahead of deployed ones, but
+    that ordering is a property of the MACHINE that generated the file, not of
+    the script this call resolved. Anchoring on the resolved script's own root
+    makes the helpers come from the same root as the script: the script's own
+    directory and its install's script dirs first, then the baked same-family
+    dirs, then everything else as a last resort.
+    """
+    family = _root_family_of(script_path)
+    own_dir: list[str] = []
+    try:
+        own_dir = [str(Path(script_path).parent)]
+    except (OSError, ValueError):
+        own_dir = []
+    same = own_dir + [d for d in _same_root_script_dirs(script_path) if d not in own_dir]
+    same += [d for d in _SCRIPT_DIRS if _root_family_of(d) == family and d not in same]
+    rest = [d for d in _SCRIPT_DIRS if d not in same]
+    return ':'.join(same + rest)
 
 # ============================================================================
 # CONFIGURATION
@@ -1060,8 +1195,33 @@ _ALWAYS_ACCEPTED_FLAG_ARITY = {
 _ALWAYS_ACCEPTED_FLAGS = frozenset(_ALWAYS_ACCEPTED_FLAG_ARITY)
 
 
-def _surface_for(notation: str) -> dict | None:
-    """Return the embedded root node for ``notation``, or ``None`` when absent."""
+def _file_sha256(path: str) -> str | None:
+    """SHA-256 of a script file's bytes, or ``None`` when it cannot be read.
+
+    Cheap (one file, no directory walk) and only ever consulted when a surface
+    entry exists for the notation — the guard fires per dispatch that would
+    otherwise be validated, which is a few dozen kilobytes of reading.
+    """
+    import hashlib
+
+    try:
+        return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+    except (OSError, ValueError):
+        return None
+
+
+def _surface_for(notation: str, script_path: str | None = None) -> dict | None:
+    """Return the embedded root node for ``notation``, or ``None`` when absent.
+
+    A surface is applied ONLY to the script it was derived from. The entry
+    carries that script's path and its content hash at derivation time; when
+    either differs from what this call resolved — the same notation served by a
+    different install, or by a newer version of the same file — the surface is
+    ignored and the call spawns. That is the fail-open direction the template
+    already takes for an absent surface, and it closes the shape where a surface
+    derived from install A rejects a flag that the script resolved from install B
+    accepts.
+    """
     entry = SCRIPT_SURFACES.get(notation)
     if not isinstance(entry, dict):
         return None
@@ -1069,7 +1229,17 @@ def _surface_for(notation: str) -> dict | None:
     if not isinstance(surface, dict):
         return None
     root = surface.get('root')
-    return root if isinstance(root, dict) else None
+    if not isinstance(root, dict):
+        return None
+    if script_path is not None:
+        derived_from = entry.get('script')
+        if isinstance(derived_from, str) and derived_from != script_path:
+            return None
+        expected_sha = entry.get('script_sha256')
+        if isinstance(expected_sha, str) and expected_sha:
+            if _file_sha256(script_path) != expected_sha:
+                return None
+    return root
 
 
 def _mentions_help(script_args: list) -> bool:
@@ -1379,14 +1549,15 @@ def _resolve_invocation(notation: str, root: dict, script_args: list) -> tuple:
     return resolution, None
 
 
-def _validate_invocation(notation: str, script_args: list) -> dict | None:
+def _validate_invocation(notation: str, script_args: list, script_path: str | None = None) -> dict | None:
     """Return a rejection dict when the dispatch is provably invalid, else ``None``.
 
     ``None`` means "spawn" and covers BOTH "this call is valid" and "I do not
     know enough to judge" — the two are deliberately indistinguishable to the
-    caller, because both must dispatch.
+    caller, because both must dispatch. ``script_path`` is the file this call
+    resolved, so a surface derived from a different file is not consulted at all.
     """
-    root = _surface_for(notation)
+    root = _surface_for(notation, script_path)
     if root is None:
         return None
 
@@ -1578,25 +1749,28 @@ def _resolve_notation_by_cwd_walk(notation: str) -> str | None:
     """Resolve notation by walking up to a ``marketplace/bundles`` tree.
 
     Self-heal path for the dev-checkout case: when the embedded SCRIPTS path
-    is stale/relocated and the target-aware (plugin-cache / OpenCode) resolver
-    finds nothing, walk upward from two anchors looking for a live
-    ``marketplace/bundles/{bundle}/skills/{skill}/scripts/{script}.py``:
+    is stale/relocated and no install carries the script, walk upward from two
+    anchors looking for a live
+    ``marketplace/bundles/{bundle}/skills/{skill}/scripts/{relative}``:
 
     1. Each ancestor of ``Path.cwd()`` (covers an executor invoked from inside
        a checkout / worktree where cwd sits under the repo root).
     2. Each ancestor of this executor file's own location (covers an executor
        whose cwd is elsewhere but which itself lives under the checkout).
 
-    The first existing match is returned as an absolute path; ``None`` when no
-    anchor yields a live file. No glob, no env var — a pure upward directory
-    walk so a relocated checkout resolves without a regeneration or a
+    ``{relative}`` is the embedded mapping's own suffix under ``scripts/``, so a
+    nested script (``extension/extension_base.py``) resolves exactly as a flat
+    one does. The first existing match is returned as an absolute path; ``None``
+    when no anchor yields a live file. No glob, no env var — a pure upward
+    directory walk so a relocated checkout resolves without a regeneration or a
     hand-pinned ``PM_MARKETPLACE_ROOT``.
     """
     parts = notation.split(':')
     if len(parts) != 3:
         return None
     bundle, skill, script = parts
-    rel = Path('marketplace') / 'bundles' / bundle / 'skills' / skill / 'scripts' / f'{script}.py'
+    relative = _relative_script_path(notation) or f'{script}.py'
+    rel = Path('marketplace') / 'bundles' / bundle / 'skills' / skill / 'scripts' / relative
 
     anchors: list[Path] = []
     try:
@@ -1624,63 +1798,108 @@ def _resolve_notation_by_cwd_walk(notation: str) -> str | None:
     return None
 
 
+def install_of_path(path: str) -> str | None:
+    """Return the harness whose install root carries ``path``, or ``None``.
+
+    ``None`` means the path belongs to no install (a live tree, a project-local
+    script) — which is the normal case for a developer checkout and therefore
+    never worth a note. One reader for the whole executor: the embedded-path
+    locality guard, the foreign-install note, the root-family split and the
+    PYTHONPATH ordering all ask this same question, and four spellings of it
+    would be four chances to disagree.
+    """
+    for harness, root in _INSTALLED_ROOTS:
+        if not root:
+            continue
+        if path.startswith(root.rstrip('/') + '/'):
+            return harness
+    return None
+
+
+def _embedded_path_allowed(path: str) -> bool:
+    """Whether an embedded mapping value may be returned without a fallback.
+
+    The rule is the same for every harness: a tree path always counts (it is the
+    checkout's own source), and so does a path inside the RUNTIME harness's
+    install. A path inside ANOTHER harness's install does not — the runtime
+    harness's own install is consulted first and the foreign embedded path is
+    the last resort below. With no runtime signal there is nothing to prefer, so
+    every path counts and resolution stays embedded-first.
+    """
+    if '/marketplace/bundles/' in path:
+        return True
+    carrier = install_of_path(path)
+    if carrier is None:
+        return True
+    running = _runtime_harness()
+    if running is None:
+        return True
+    return carrier == running
+
+
+def _note_if_foreign(notation: str, path: str) -> None:
+    """Emit the one-line foreign-install note when ``path`` came from elsewhere."""
+    carrier = install_of_path(path)
+    running = _runtime_harness()
+    if carrier and running and carrier != running:
+        _note_foreign_install(notation, carrier, path)
+
+
 def resolve_notation(notation: str) -> str | None:
     """Resolve notation to absolute script path.
 
-    Resolution order:
-    0. OpenCode tree-first probe (OpenCode executors only) — walk up to a live
-       ``marketplace/bundles`` tree before consulting any embedded path. A
-       retained live cache path in SCRIPTS (kept because generation could not
-       resolve a tree base) still exists on disk, so the embedded checks below
-       would return it even when a checkout exists above this executor file.
-       Probing the tree first makes the generated executor resolve every
-       notation to tree code whenever a checkout is present, while preserving
-       the embedded fallbacks below when no tree file exists.
-    1. Direct lookup in SCRIPTS (embedded at generation time) — returned ONLY
-       when the embedded path still exists on disk. A stale/relocated embedded
-       path is skipped so resolution self-heals via the dynamic fallbacks
-       instead of returning a dead path (which previously forced operators to
-       hand-pin PM_MARKETPLACE_ROOT on every call).
-    2. Prefix/substring fallback in SCRIPTS (compatibility shim) — same
-       existence guard applies.
-    3. Target-aware dynamic resolver (_resolve_notation_by_target) —
-       returns an absolute path discovered by walking up from THIS executor
-       file's own location to a live ``marketplace/bundles`` tree, then, failing
-       that, from the target-specific skill discovery roots (Claude plugin
-       cache, OpenCode config roots, Antigravity roots). That tree-first leg is
-       present in EVERY target's template, but it runs at this position — after
-       the embedded checks above — so on a target other than OpenCode a live
-       embedded or cache path still wins; only leg 0 promotes tree code ahead of
-       it, and leg 0 is OpenCode-only.
-    4. cwd/executor-file upward walk to a live ``marketplace/bundles`` tree
+    ONE order for every harness — a call dispatches wherever it runs:
+
+    0. A live ``marketplace/bundles`` tree at or above this executor file. The
+       tree is the checkout's own source, so it outranks every deployed copy;
+       probing it first is what lets one executor serve a developer checkout and
+       a deployed project alike.
+    1. Direct lookup in SCRIPTS (embedded at generation time) — returned only
+       when the path still exists on disk AND is local to this call (the tree,
+       or the runtime harness's own install). A stale/relocated embedded path is
+       skipped so resolution self-heals through the dynamic fallbacks instead of
+       returning a dead path.
+    2. Prefix/substring fallback in SCRIPTS (compatibility shim) — the same
+       existence and locality guards apply.
+    3. The install walk: the runtime harness's own install first, then every
+       other installed harness, newest version first, nested and flat shapes
+       alike. A hit in another harness's install emits ONE note on stderr and
+       dispatches anyway — a foreign copy is a usable copy, never a refusal.
+    4. The embedded mapping's last resort: a still-existing path inside another
+       harness's install, noted the same way.
+    5. cwd/executor-file upward walk to a live ``marketplace/bundles`` tree
        (_resolve_notation_by_cwd_walk) — walks up from both ``Path.cwd()`` and
        this executor file's own location.
     """
-    # 0. OpenCode tree-first probe — only for OpenCode executors; every other
-    # target falls through to the embedded checks below unchanged.
-    if _EXECUTOR_TARGET == 'opencode':
-        tree_hit = _resolve_notation_by_cwd_walk(notation)
-        if tree_hit:
-            return tree_hit
+    # 0. Live tree above this executor file — the same leg every harness takes.
+    tree_hit = _tree_probe(notation)
+    if tree_hit:
+        return tree_hit
 
-    # 1. Direct lookup — only honour the embedded path when it still exists.
-    if notation in SCRIPTS:
-        direct = SCRIPTS[notation]
-        if Path(direct).is_file():
-            return direct
+    # 1. Direct lookup — honour the embedded path only when it exists and belongs
+    # to this call's own tree or install.
+    embedded = SCRIPTS.get(notation)
+    if embedded and Path(embedded).is_file() and _embedded_path_allowed(embedded):
+        return embedded
 
-    # 2. Prefix/substring compatibility shim — same existence guard.
+    # 2. Prefix/substring compatibility shim — same existence and locality guards.
     for key, path in SCRIPTS.items():
         if key.startswith(notation) or notation in key:
-            if Path(path).is_file():
+            if Path(path).is_file() and _embedded_path_allowed(path):
                 return path
 
-    # 3. Target-aware dynamic fallback (plugin-cache / OpenCode roots).
+    # 3. Install walk: own harness first, then the others.
     resolved = _resolve_notation_by_target(notation)
     if resolved:
+        _note_if_foreign(notation, resolved)
         return resolved
 
-    # 4. cwd / executor-file upward walk to a live marketplace/bundles tree.
+    # 4. Last resort: the embedded path, even from another harness's install.
+    if embedded and Path(embedded).is_file():
+        _note_if_foreign(notation, embedded)
+        return embedded
+
+    # 5. cwd / executor-file upward walk to a live marketplace/bundles tree.
     return _resolve_notation_by_cwd_walk(notation)
 
 
@@ -1769,7 +1988,6 @@ def _drop_stray_empty_args(args: list[str]) -> list[str]:
 
 
 def main():
-    _check_executor_target()
     if len(sys.argv) < 2:
         print("Usage: execute-script.py <notation> [subcommand] [args...]", file=sys.stderr)
         print("\nNotation format: {bundle}:{skill}:{script}", file=sys.stderr)
@@ -1830,7 +2048,7 @@ def main():
     #
     # Fail-open: `_validate_invocation` returns None both when the call is valid
     # and when the embedded surface cannot judge it, and both must dispatch.
-    _rejection = _validate_invocation(notation, script_args)
+    _rejection = _validate_invocation(notation, script_args, script_path)
     if _rejection is not None:
         _payload = _render_rejection_toon(notation, _rejection)
         # STDOUT, matching the canonical output contract: the caller reads the
@@ -1869,7 +2087,9 @@ def main():
     # Build environment with PYTHONPATH for cross-skill imports
     env = os.environ.copy()
     existing_pythonpath = env.get('PYTHONPATH', '')
-    env['PYTHONPATH'] = _PYTHONPATH + (':' + existing_pythonpath if existing_pythonpath else '')
+    # Same-root rule: the helpers come from the root the script resolved from
+    # (see pythonpath_for), never from a foreign install ahead of the script's own.
+    env['PYTHONPATH'] = pythonpath_for(script_path) + (':' + existing_pythonpath if existing_pythonpath else '')
     # Export PLAN_DIR_NAME so scripts can use it for path construction
     # Use setdefault to respect existing value (e.g., set by test infrastructure)
     env.setdefault('PLAN_DIR_NAME', PLAN_DIR_NAME)

@@ -87,15 +87,24 @@ def _load_generate_module():
     return module
 
 
-def _load_claude_resolver():
-    """Render and load the REAL embedded Claude target-aware resolver.
+def _load_claude_resolver(home: Path):
+    """Render and load the REAL embedded harness-independent resolver.
 
     Pulls the actual resolver body via ``generate_target_aware_resolver_code``
-    and execs it, so the production resolver source is what is under test.
+    and execs it, so the production resolver source is what is under test. The
+    body reads the installed roots from the generated file, so the fixture cache
+    under ``home`` is bound as the single Claude install and the runtime harness
+    is pinned to Claude — the axis these tests measure is newest-version
+    selection, not harness detection.
     """
     module = _load_generate_module()
     src = module.generate_target_aware_resolver_code('claude')
-    namespace: dict = {'Path': Path}
+    cache_root = home / '.claude' / 'plugins' / 'cache' / 'plan-marshall'
+    namespace: dict = {
+        'Path': Path,
+        '_INSTALLED_ROOTS': (('claude', str(cache_root)),),
+        '_runtime_harness': lambda: 'claude',
+    }
     exec(src, namespace)  # exec of generator-owned template source: that source is precisely what is under test
     return namespace['_resolve_notation_by_target']
 
@@ -161,7 +170,7 @@ def test_resolver_ignores_orphan_mark_and_selects_newest_carrying_the_script(tmp
 
     monkeypatch.setattr(Path, 'home', lambda: home)
 
-    resolve = _load_claude_resolver()
+    resolve = _load_claude_resolver(home)
     result = resolve('plan-marshall:manage-files:manage-files')
 
     assert result == str(newest_with_script.resolve()), (
@@ -182,7 +191,7 @@ def test_resolver_survives_deletion_of_generation_time_version(tmp_path, monkeyp
     newest = _make_cache_script(home, '0.1.10', 'manage-status', 'manage-status', marked=True)
 
     monkeypatch.setattr(Path, 'home', lambda: home)
-    resolve = _load_claude_resolver()
+    resolve = _load_claude_resolver(home)
 
     first = resolve('plan-marshall:manage-status:manage-status')
     assert first == str(newest.resolve()), f'expected newest {newest.resolve()!r}, got {first!r}'

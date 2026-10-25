@@ -883,344 +883,68 @@ def discover_local_scripts(cwd: Path | None = None) -> dict[str, str]:
 
 
 # ============================================================================
-# TARGET-AWARE RESOLVER GENERATION
+# RESOLVER GENERATION (harness-independent)
 # ============================================================================
 # The generated executor resolves a notation it has no embedded mapping for by
-# walking the layout ITS TARGET actually deploys. There are exactly TWO such
-# shapes, and the template below for each target probes every one of them that
-# target can encounter, so the emitted resolver agrees with the deployed tree
-# whichever of the two the machine carries:
+# walking, in ONE order for every harness: the checkout's live
+# ``marketplace/bundles`` tree, then the runtime harness's own install, then the
+# other installed harnesses. Two deployed shapes are probed inside each install:
 #
-# 1. The NESTED shape — ``{bundle}/skills/{skill}/scripts/{script}.py``. This is
-#    the marketplace source tree (``marketplace/bundles/{bundle}/skills/...``)
-#    and the Claude plugin cache (``.../cache/plan-marshall/<version>/skills/
-#    {skill}/scripts/...``, which is nested and single-bundle, so the ``bundle``
-#    component of the notation is not part of the path there).
-# 2. The FLAT deployed shape — ``skills/{bundle}-{skill}/scripts/{script}.py``,
-#    the dash-namespaced directory naming the OpenCode and Antigravity targets
+# 1. The NESTED shape — ``{root}/{bundle}/{version}/skills/{skill}/scripts/...``,
+#    the Claude plugin cache (single-bundle, versioned) and the tree.
+# 2. The FLAT deployed shape — ``{root}/{bundle}-{skill}/scripts/...``, the
+#    dash-namespaced directory naming the OpenCode and Antigravity targets
 #    deploy, used so a flat config directory needs no hierarchy.
 #
-# Probe order is NESTED first, in every template: a live ``marketplace/bundles``
-# checkout at or above the executor file wins over any deployed copy, which
-# mirrors the tree-first ordering :func:`generate_mappings_code` already emits
-# for the embedded mapping. The Claude template used to walk the plugin cache
-# only, and the Antigravity template the flat roots only, so on a machine whose
-# deployment was the shape the template did not model, the resolver found
-# nothing at all while reporting no error. Each template carries the NESTED
-# tree-first leg; the FLAT leg is carried only by the two targets that deploy
-# it, because a Claude installation has no flat root to find.
+# The body lives in ``templates/harness_independent_resolver.py.template``: one
+# plain Python file the generator reads verbatim, so what a reader sees is what
+# the executor runs. Per-target bodies would make the emitted bytes depend on
+# the generating harness — the defect this replaced.
 
-# Template for the Claude target-aware resolver.
-# Resolves ``{bundle}:{skill}:{script}`` tree-first against a live
-# ``marketplace/bundles`` checkout, then by globbing the plugin cache.
-# The bundle component is intentionally ignored for the plugin-cache leg
-# because the cache layout is
-# ``~/.claude/plugins/cache/plan-marshall/*/skills/{skill}/scripts/{script}.py``
-# (single-bundle installation); the bundle in the notation is used to generate
-# suggestions only.
-_CLAUDE_RESOLVER_TEMPLATE = '''\
-def _resolve_notation_by_target(notation: str) -> str | None:
-    """Claude target: resolve notation tree-first, then via plugin-cache glob.
 
-    Two shapes, probed in this order:
 
-      0. ``marketplace/bundles/{bundle}/skills/{skill}/scripts/{script}.py``
-         in a live checkout at or above THIS executor file (the NESTED shape).
-         Anchoring on the executor file rather than cwd ties the tree to the
-         artifact being run, and probing it first means a regen on a developer
-         machine resolves to tree code even with a stale cache present — the
-         same tree-first rule the embedded mapping is emitted under.
-      1. ``~/.claude/plugins/cache/plan-marshall/*/skills/{skill}/scripts/{script}.py``
-         (the deployed NESTED shape). Every version dir carrying the candidate
-         is collected and the NUMERICALLY-NEWEST is returned.  Selecting the
-         newest (rather than the first ``iterdir`` match) stops a stale older
-         version dir left on disk from shadowing the current scripts.  When the
-         currently-selected version dir is pruned, a later invocation
-         re-resolves at runtime to the newest surviving version dir carrying the
-         script.  The ``bundle`` component of the notation is not used for path
-         construction on THIS leg (the Claude plugin cache is a single-bundle
-         install) but may be useful for logging.
 
-    The plugin-cache ``.orphaned_at`` marker is NOT consulted.  The field has a
-    foreign co-producer — Claude Code's own plugin GC writes the same filename on
-    its own schedule — so it is a variable this repository neither owns nor can
-    version, and newest-wins needs no currency signal from it: a sync only ever
-    adds a *newer* version dir.  This agrees with
-    ``marketplace_bundles.select_live_version_dir`` by construction (both return
-    the newest eligible dir), but the resolver reaches that agreement on its own
-    terms rather than by importing the selector: the generated executor is
-    bootstrap-free and must resolve notations BEFORE any marketplace module is
-    importable, so the newest-wins body is duplicated here deliberately.
+
+
+
+def generate_target_aware_resolver_code(_target: str | None = None, templates_dir: Path | None = None) -> str:
+    """Return the Python source for the harness-independent resolver.
+
+    ONE body for every harness. The plan that made the executor
+    harness-independent removed the three per-target bodies that used to live
+    here: they differed in which installed roots they walked, which is exactly
+    what made two harnesses emit two different files from one checkout.
+
+    ``_target`` is accepted and ignored — the parameter survives so the
+    target-resolving verbs can keep calling this through one signature while the
+    value becomes a HINT for install preference (resolved at call time from the
+    environment) rather than a generation input.
+
+    The body lives in ``templates/harness_independent_resolver.py.template`` —
+    a plain Python file the generator reads verbatim — rather than in a string
+    literal here, so the resolver cannot drift from what a reader sees as code.
 
     Args:
-        notation: Three-part notation ``{bundle}:{skill}:{script}``.
-
-    Returns:
-        Absolute path string of the resolved script, or ``None`` when no match
-        is found.
-    """
-    import re
-
-    def _version_key(name: str) -> tuple[int, ...]:
-        # Same digit-run semantics as marketplace_bundles._version_sort_key:
-        # '0.1.1069' -> (0, 1, 1069); '0.1-BETA' -> (0, 1).  A name with no
-        # digits yields the empty tuple (sorts lowest).
-        return tuple(int(part) for part in re.findall(r'\\d+', name))
-
-    parts = notation.split(':')
-    if len(parts) != 3:
-        return None
-    bundle, skill, script = parts
-
-    try:
-        _executor_file = Path(__file__).resolve()
-    except (OSError, ValueError, NameError):
-        _executor_file = None
-    if _executor_file is not None:
-        _rel = Path('marketplace') / 'bundles' / bundle / 'skills' / skill / 'scripts' / f'{script}.py'
-        for _parent in [_executor_file.parent, *_executor_file.parents]:
-            try:
-                _candidate = _parent / _rel
-                if _candidate.is_file():
-                    return str(_candidate.resolve())
-            except (OSError, ValueError):
-                continue
-
-    try:
-        cache_root = Path.home() / '.claude' / 'plugins' / 'cache' / 'plan-marshall'
-        if not cache_root.is_dir():
-            return None
-        version_dirs = [d for d in cache_root.iterdir() if d.is_dir() and not d.name.startswith('.')]
-        if not version_dirs:
-            return None
-        candidates = []
-        for version_dir in version_dirs:
-            candidate = version_dir / 'skills' / skill / 'scripts' / f'{script}.py'
-            if candidate.is_file():
-                candidates.append((version_dir, candidate))
-        if candidates:
-            _dir, selected = max(candidates, key=lambda pair: _version_key(pair[0].name))
-            return str(selected.resolve())
-    except (OSError, ValueError, RuntimeError):
-        pass
-    return None
-'''
-
-# Template for the OpenCode target-aware resolver.
-# Resolves ``{bundle}:{skill}:{script}`` tree-first, then by walking 7 standard
-# OpenCode roots, using the dash-namespaced ``{bundle}-{skill}`` directory
-# layout emitted by the OpenCode build target. Paths are always converted to
-# absolute form before return to sidestep cwd ambiguity (anomalyco/opencode#9077).
-# User-global roots stay in the walk but behind the live tree, so a stale
-# user-global copy can never shadow tree code.
-_OPENCODE_RESOLVER_TEMPLATE = '''\
-def _resolve_notation_by_target(notation: str) -> str | None:
-    """OpenCode target: resolve notation tree-first, then via 7-root walk.
-
-    A live ``marketplace/bundles`` checkout above THIS executor file wins
-    over every deployed copy: the tree probe runs BEFORE the OpenCode skill
-    discovery roots, so a regen on an OpenCode machine resolves every
-    notation to tree code with a stale cache present.  Anchoring on the
-    executor file (rather than cwd) ties the tree to the artifact being run —
-    an executor generated into ``<checkout>/.plan/`` always sees its own
-    checkout — while a deployed executor with no checkout above it falls
-    through to the dash-namespaced ``{bundle}-{skill}/scripts/{script}.py``
-    roots below (project-local first, user-global last — the user-global
-    roots are deprioritised behind the tree, never ahead of it).  The first
-    match is returned as an absolute path (anomalyco/opencode#9077).
-
-    Roots searched in order:
-      0. marketplace/bundles tree above this executor file (tree-first probe)
-      1. $OPENCODE_CONFIG_DIR/skills/     (env-var override)
-      2. .opencode/skills/               (project-local)
-      3. .claude/skills/                 (project-local cross-compat)
-      4. .agents/skills/                 (project-local)
-      5. ~/.config/opencode/skills/      (user-global, deprioritised)
-      6. ~/.claude/skills/               (user-global cross-compat, deprioritised)
-      7. ~/.agents/skills/               (user-global, deprioritised)
-
-    Args:
-        notation: Three-part notation ``{bundle}:{skill}:{script}``.
-
-    Returns:
-        Absolute path string, or ``None`` when no match is found.
-    """
-    parts = notation.split(':')
-    if len(parts) != 3:
-        return None
-    bundle, skill, script = parts
-    dir_name = f'{bundle}-{skill}'
-    script_file = f'{script}.py'
-
-    try:
-        _executor_file = Path(__file__).resolve()
-    except (OSError, ValueError, NameError):
-        _executor_file = None
-    if _executor_file is not None:
-        _rel = Path('marketplace') / 'bundles' / bundle / 'skills' / skill / 'scripts' / script_file
-        for _parent in [_executor_file.parent, *_executor_file.parents]:
-            try:
-                _candidate = _parent / _rel
-                if _candidate.is_file():
-                    return str(_candidate.resolve())
-            except (OSError, ValueError):
-                continue
-
-    try:
-        home = Path.home()
-    except (OSError, RuntimeError):
-        return None
-
-    _env_config_dir = os.environ.get('OPENCODE_CONFIG_DIR', '')
-    roots = [
-        (str(Path(_env_config_dir) / 'skills') if _env_config_dir else ''),
-        '.opencode/skills',
-        '.claude/skills',
-        '.agents/skills',
-        str(home / '.config' / 'opencode' / 'skills'),
-        str(home / '.claude' / 'skills'),
-        str(home / '.agents' / 'skills'),
-    ]
-
-    for root in roots:
-        if not root:
-            continue
-        try:
-            candidate = Path(root) / dir_name / 'scripts' / script_file
-            if candidate.is_file():
-                return str(candidate.resolve())
-        except (OSError, ValueError):
-            continue
-
-    return None
-'''
-
-
-# Template for the Antigravity target-aware resolver.
-# Resolves ``{bundle}:{skill}:{script}`` tree-first against a live
-# ``marketplace/bundles`` checkout, then by walking standard Antigravity roots
-# using the dash-namespaced ``{bundle}-{skill}`` directory layout emitted by the
-# Antigravity build target. Paths are always converted to absolute form before
-# return to sidestep cwd ambiguity.
-_ANTIGRAVITY_RESOLVER_TEMPLATE = '''\
-def _resolve_notation_by_target(notation: str) -> str | None:
-    """Antigravity target: resolve notation tree-first, then via root walk.
-
-    Two shapes, probed in this order:
-
-      0. ``marketplace/bundles/{bundle}/skills/{skill}/scripts/{script}.py``
-         in a live checkout at or above THIS executor file (the NESTED shape).
-         This is the FIRST leg of this function, and this function runs at
-         position 3 of ``resolve_notation`` — after the embedded direct hit and
-         the prefix shim. So on an Antigravity executor a live embedded path
-         still wins, exactly as on Claude; only the OpenCode executor promotes
-         tree code ahead of the embedded checks, via its own leg-0 probe
-         outside this function.
-      1. ``{bundle}-{skill}/scripts/{script}.py`` under the Antigravity skill
-         discovery roots (the deployed FLAT shape). The first match is returned
-         as an absolute path.
-
-    Roots searched in order:
-      1. $GEMINI_CONFIG_DIR/plugins/plan-marshall/skills/  (env-var override)
-      2. .agents/skills/                                   (project-local)
-      3. .agents/plugins/plan-marshall/skills/             (project-local plugin)
-      4. ~/.gemini/config/plugins/plan-marshall/skills/    (user-global plugin)
-      5. ~/.gemini/antigravity/skills/                     (user-global cross-compat)
-      6. ~/.gemini/config/skills/                          (user-global skills)
-      7. .claude/skills/                                   (project-local cross-compat)
-
-    Args:
-        notation: Three-part notation ``{bundle}:{skill}:{script}``.
-
-    Returns:
-        Absolute path string, or ``None`` when no match is found.
-    """
-    parts = notation.split(':')
-    if len(parts) != 3:
-        return None
-    bundle, skill, script = parts
-    dir_name = f'{bundle}-{skill}'
-    script_file = f'{script}.py'
-
-    try:
-        _executor_file = Path(__file__).resolve()
-    except (OSError, ValueError, NameError):
-        _executor_file = None
-    if _executor_file is not None:
-        _rel = Path('marketplace') / 'bundles' / bundle / 'skills' / skill / 'scripts' / script_file
-        for _parent in [_executor_file.parent, *_executor_file.parents]:
-            try:
-                _candidate = _parent / _rel
-                if _candidate.is_file():
-                    return str(_candidate.resolve())
-            except (OSError, ValueError):
-                continue
-
-    try:
-        home = Path.home()
-    except (OSError, RuntimeError):
-        return None
-
-    _env_config_dir = os.environ.get('GEMINI_CONFIG_DIR', '')
-    roots = [
-        (str(Path(_env_config_dir) / 'plugins' / 'plan-marshall' / 'skills') if _env_config_dir else ''),
-        '.agents/skills',
-        '.agents/plugins/plan-marshall/skills',
-        str(home / '.gemini' / 'config' / 'plugins' / 'plan-marshall' / 'skills'),
-        str(home / '.gemini' / 'antigravity' / 'skills'),
-        str(home / '.gemini' / 'config' / 'skills'),
-        '.claude/skills',
-    ]
-
-    for root in roots:
-        if not root:
-            continue
-        try:
-            candidate = Path(root) / dir_name / 'scripts' / script_file
-            if candidate.is_file():
-                return str(candidate.resolve())
-        except (OSError, ValueError):
-            continue
-
-    return None
-'''
-
-
-def generate_target_aware_resolver_code(target: str) -> str:
-    """Return the Python source for the ``_resolve_notation_by_target`` function.
-
-    The body of the generated executor's ``resolve_notation`` function calls
-    ``_resolve_notation_by_target`` as a dynamic fallback when a notation is
-    absent from the embedded SCRIPTS dict.  Every implementation opens with the
-    NESTED ``{bundle}/skills/{skill}/scripts/{script}.py`` tree-first probe (a
-    live checkout at or above the executor file), then diverges: the two flat
-    targets add their own dash-namespaced deployed roots, while ``claude`` stops
-    at the nested plugin cache because a Claude installation has no flat root to
-    find.  The emitted resolver therefore agrees with whichever layout the
-    target actually ships.  They differ only in the roots searched after the
-    shared tree-first leg:
-
-    - ``claude``:  the plugin-cache newest-version-dir walk
-      (``~/.claude/plugins/cache/plan-marshall/*/skills/{skill}/scripts/{script}.py``).
-    - ``antigravity``:  7-root walk using the Antigravity dash-namespaced
-      directory layout (``{bundle}-{skill}/scripts/{script}.py``).
-    - ``opencode``:  7-root walk using the OpenCode dash-namespaced directory
-      layout (``{bundle}-{skill}/scripts/{script}.py``).
-
-    Unknown targets fall back to the Claude resolver.
-
-    Args:
-        target: Runtime target string (e.g. ``"claude"``, ``"antigravity"``, or ``"opencode"``).
+        _target: Ignored. Kept for call-site compatibility.
+        templates_dir: The templates directory to read the body from; the
+            caller's, so a test that redirects the template root sees its own.
 
     Returns:
         Python source code string (no leading/trailing blank lines).
     """
-    if target == 'opencode':
-        return _OPENCODE_RESOLVER_TEMPLATE.strip()
-    if target == 'antigravity':
-        return _ANTIGRAVITY_RESOLVER_TEMPLATE.strip()
-    # Default / unknown target → Claude resolver
-    return _CLAUDE_RESOLVER_TEMPLATE.strip()
+    # The body is read from the generator's OWN package, not from the caller's
+    # templates dir: a test that copies ``execute-script.py.template`` into a
+    # fixture redirects the template root, and the resolver body is source code
+    # of the generator, not of the project being generated. The caller's dir is
+    # the fallback for a relocated package.
+    own_dir = Path(__file__).resolve().parent.parent / 'templates'
+    candidates = [own_dir / 'harness_independent_resolver.py.template']
+    if templates_dir is not None:
+        candidates.append(templates_dir / 'harness_independent_resolver.py.template')
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate.read_text(encoding='utf-8').strip()
+    return candidates[0].read_text(encoding='utf-8').strip()
 
 
 # ============================================================================
@@ -1263,7 +987,7 @@ def generate_mappings_code(mappings: dict[str, str]) -> str:
 # v5: adds the BOOTSTRAP_BUNDLE placeholder (the bundle the bootstrap skills
 #     belong to, which the bootstrap needs to find a skill's scripts dir in the
 #     plugin cache and in the checkout's own sources).
-_SUPPORTED_TEMPLATE_FORMAT_VERSION = 5
+_SUPPORTED_TEMPLATE_FORMAT_VERSION = 6
 
 # Matches the template's ``# TEMPLATE_FORMAT_VERSION: N`` marker comment.
 _TEMPLATE_FORMAT_VERSION_RE = re.compile(r'^#\s*TEMPLATE_FORMAT_VERSION:\s*(\d+)\s*$', re.MULTILINE)
@@ -1747,7 +1471,15 @@ def derive_script_surfaces(
     for notation, digest in digests.items():
         carried = previous.get(notation)
         if isinstance(carried, dict) and carried.get('digest') == digest:
-            surfaces[notation] = carried
+            # Reuse the derived surface, but stamp the identity fields on every
+            # generation: the dispatch side drops a surface whose script path or
+            # file hash disagrees with what it resolved, and an entry carried
+            # over from a generator that predates those fields would skip that
+            # check entirely.
+            entry = dict(carried)
+            entry['script'] = mappings[notation]
+            entry['script_sha256'] = _script_sha256(mappings[notation])
+            surfaces[notation] = entry
             continue
         to_derive.append(notation)
 
@@ -1771,6 +1503,8 @@ def derive_script_surfaces(
                 continue
             surfaces[notation] = {
                 'digest': digests[notation],
+                'script': mappings[notation],
+                'script_sha256': _script_sha256(mappings[notation]),
                 'surface': result.to_dict(),
             }
             derived += 1
@@ -1782,6 +1516,21 @@ def derive_script_surfaces(
         'surfaces_not_derivable': len(mappings) - len(surfaces),
     }
     return surfaces, stats
+
+
+def _script_sha256(path: str) -> str:
+    """SHA-256 of one script file's bytes, or ``''`` when it cannot be read.
+
+    Recorded per surface entry so the DISPATCH side can tell whether the surface
+    still describes the file it will run. The existing ``digest`` is
+    directory-and-shared-module wide and is only consulted at the NEXT
+    regeneration (as a reuse cache key); a per-file hash is what makes "is this
+    surface still about this script?" answerable in one read.
+    """
+    try:
+        return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+    except (OSError, ValueError):
+        return ''
 
 
 def _canonical(value: object) -> object:
@@ -1862,6 +1611,100 @@ def _resolve_tree_bases(base_path: Path) -> list[Path]:
     return candidates
 
 
+#: The harness roster this generator knows, in canonical order. Not the same
+#: thing as ``TARGET_CHOICES`` (the ``--target`` accept-set): this is the set of
+#: installs a generated executor can dispatch into, and its order is the declared
+#: order every harness-independent artifact (roots, versions) is emitted in. A
+#: list fixed here, rather than derived from whatever is installed on the machine,
+#: is what keeps two generations of one checkout byte-identical.
+_HARNESS_ROSTER = ('claude', 'opencode', 'antigravity')
+
+
+def installed_harness_roots() -> list[tuple[str, str]]:
+    """Return ``(harness, root)`` for every harness in the roster.
+
+    One deploy root per harness, taken from the platform-runtime layout op the
+    shared resolver already uses (``_bundle_cache_roots_for``), in roster order.
+    A harness that resolves no root, or whose root does not exist on this
+    machine, still occupies its slot with an empty string: the emitted list must
+    be a function of the checkout and the ROSTER, never of which installs happen
+    to exist at generation time — otherwise two harnesses generating the same
+    checkout would emit different bytes.
+    """
+    pairs: list[tuple[str, str]] = []
+    for harness in _HARNESS_ROSTER:
+        root = ''
+        try:
+            for candidate in _shared_bundle_cache_roots_for(harness):
+                root = str(Path(candidate).expanduser())
+                break
+        except (OSError, ValueError, RuntimeError):
+            root = ''
+        pairs.append((harness, root))
+    return pairs
+
+
+def installed_harness_versions(roots: list[tuple[str, str]] | None = None) -> list[tuple[str, str]]:
+    """Return ``(harness, version)`` for every harness in the roster.
+
+    Each harness's version is read from that harness's OWN installed
+    ``dist-manifest.json`` — the root from :func:`installed_harness_roots` is the
+    probe anchor — so staleness can be judged per runtime harness instead of
+    against whichever harness generated the file. An unreadable or absent
+    manifest is the empty sentinel, never an error and never a guess. Roster
+    order, one entry per harness, so the emitted map is deterministic.
+    """
+    harness_roots = roots if roots is not None else installed_harness_roots()
+    pairs: list[tuple[str, str]] = []
+    for harness, root in harness_roots:
+        version = ''
+        if root:
+            try:
+                manifest = read_installed_manifest(Path(root), target=harness)
+                version = str(manifest.get('version', '') or '')
+            except (OSError, ValueError, RuntimeError):
+                version = ''
+        pairs.append((harness, version))
+    return pairs
+
+
+def newest_version(versions: list[tuple[str, str]]) -> str:
+    """Return the highest published version in ``versions``, or '' when none is readable.
+
+    The target-independent provisioning stamp: the bytes of an executor must not
+    depend on which harness generated them, so ``MARSHALL_VERSION`` cannot be
+    "the generating harness's version". The newest installed version is the
+    honest machine-level answer for a file that serves all of them, and each
+    harness's own answer travels beside it in the per-harness map.
+    """
+    best = ''
+    for _harness, version in versions:
+        if _version_tuple(version) > _version_tuple(best):
+            best = version
+    return best
+
+
+def _relative_script_under_scripts(path: str, skill: str) -> str | None:
+    """Return the part of ``path`` after ``/skills/{skill}/scripts/``.
+
+    The suffix — not the notation's script name — is what identifies the file
+    inside a skill's ``scripts`` directory. The four script-shared entries that
+    live in a sub-directory (``extension/``, ``query/``, ``workflow/``) carry a
+    flat notation name over a nested file, so a ``{script}.py`` join finds no
+    tree file for them and they keep the generating harness's install path. Using
+    the discovered path's own suffix rewrites them to the tree exactly like the
+    other 164 entries.
+    """
+    if not skill:
+        return None
+    marker = f'/skills/{skill}/scripts/'
+    idx = path.find(marker)
+    if idx < 0:
+        return None
+    suffix = path[idx + len(marker) :]
+    return suffix or None
+
+
 def _rewrite_mappings_to_tree(mappings: dict[str, str], base_path: Path) -> dict[str, str]:
     """Rewrite discovered mappings to marketplace tree paths where they exist.
 
@@ -1873,6 +1716,11 @@ def _rewrite_mappings_to_tree(mappings: dict[str, str], base_path: Path) -> dict
     ``default-bundle`` entries, genuinely cache-only scripts) keep their
     discovered path. Never raises: an unresolvable tree base returns the
     input unchanged.
+
+    The join uses the discovered path's OWN suffix under ``scripts/`` (see
+    :func:`_relative_script_under_scripts`), so an entry whose file sits in a
+    sub-directory is rewritten like any other — a ``{script}.py`` join silently
+    left exactly those entries pointing into the generating harness's install.
     """
     candidates = _resolve_tree_bases(base_path)
 
@@ -1892,9 +1740,10 @@ def _rewrite_mappings_to_tree(mappings: dict[str, str], base_path: Path) -> dict
         if bundle == 'default-bundle':
             rewritten[notation] = path
             continue
+        relative = _relative_script_under_scripts(path, skill) or f'{script}.py'
         replaced = False
         for tree_base in candidates:
-            candidate = tree_base / bundle / 'skills' / skill / 'scripts' / f'{script}.py'
+            candidate = tree_base / bundle / 'skills' / skill / 'scripts' / relative
             try:
                 if candidate.is_file():
                     rewritten[notation] = candidate.resolve().as_posix()
@@ -2034,12 +1883,30 @@ def generate_executor(
     tree_bases = _resolve_tree_bases(base_path)
     import_base = tree_bases[0] if tree_bases else base_path
 
-    # Resolve platform target for target-aware resolver injection. The caller
-    # resolves it through the shared resolver; only a direct programmatic call
-    # that supplied none falls back to the cascade here, and it falls back to
-    # the SAME resolver rather than to a private marshal.json reader.
+    # Resolve the platform target. It is a HINT here, not a generator input: the
+    # emitted resolver, the installed-root list and the version map are the same
+    # for every harness, so two harnesses regenerating this checkout produce
+    # byte-identical files. The value still travels into the return payload for
+    # the caller's report.
     resolved_target = target if target is not None else resolve_target()['target']
-    resolver_code = generate_target_aware_resolver_code(resolved_target)
+    resolver_code = generate_target_aware_resolver_code(resolved_target, templates_dir=templates_dir)
+
+    # ONE resolver for every harness, plus the installed-root and per-harness
+    # version maps that let a single file serve all of them. All three are a
+    # function of the checkout and the harness ROSTER, never of the invoking
+    # harness or of --target.
+    harness_roots = installed_harness_roots()
+    harness_versions = installed_harness_versions(harness_roots)
+    installed_roots_lines = (
+        '\n'.join(f'    ({harness!r}, {root!r}),' for harness, root in harness_roots)
+        if harness_roots
+        else '    # (no harness roots resolved)'
+    )
+    installed_versions_lines = (
+        '\n'.join(f'    ({harness!r}, {version!r}),' for harness, version in harness_versions)
+        if harness_versions
+        else '    # (no harness versions resolved)'
+    )
 
     # logging module location (unified logging skill). EXISTENCE-CHECKED: the
     # generated executor imports ``plan_logging`` from this path before it can
@@ -2081,13 +1948,12 @@ def generate_executor(
         else '    # (none detected)'
     )
 
-    # Cache-recovery roots for the template's pruned-version self-heal, resolved at
-    # generation time through the same runtime op the target-aware resolver family uses.
-    # The executor cannot import the shared resolver before its own bootstrap is done, so
-    # the recovered roots travel with the generated file. The roots are the RESOLVED
-    # target's, not the ambient one's: ``generate --target opencode`` on a Claude-ambient
-    # machine must not embed the Claude plugin-cache roots.
-    recovery_roots = _shared_bundle_cache_roots_for(resolved_target)
+    # Cache-recovery roots for the template's pruned-version self-heal. EVERY
+    # installed harness's root travels here, in roster order, so the file can
+    # bootstrap its shared modules from whichever install the runtime harness
+    # actually has. The list is a function of the roster, not of the invoking
+    # harness: a per-target list would make the bytes depend on the generator.
+    recovery_roots = tuple(root for _harness, root in harness_roots if root)
     cache_recovery_lines = (
         # repr() (not manual quotes) so a root path containing a quote cannot
         # emit invalid generated Python and trip the unsubstituted-placeholder
@@ -2112,12 +1978,24 @@ def generate_executor(
     resolved_dirs = [Path(d).resolve().as_posix() for d in all_script_dirs]
     extra_dirs_code = ', '.join(f"'{d}'" for d in _sort_script_dirs_tree_first(sorted(set(resolved_dirs))))
 
-    # Provisioning stamps: the version and script-set fingerprint the executor
-    # was generated at, read from the installed dist-manifest.json (emitted by
-    # the target generator). A fresh install has no manifest yet — the empty
-    # sentinel is substituted, never an error, so the executor still generates.
-    manifest = read_installed_manifest(base_path, target=resolved_target)
-    generated_version = str(manifest.get('version', '') or '')
+    # Provisioning stamps. MARSHALL_VERSION is the NEWEST published version among
+    # the installed harnesses — the only target-independent answer for a file that
+    # serves all of them — while each harness's own version travels in the map
+    # beside it (see version_for_harness in the template). The script-set
+    # fingerprint stays a property of the checkout. A fresh install has no
+    # manifest yet: the empty sentinel is substituted, never an error.
+    generated_version = newest_version(harness_versions)
+    manifest: dict = {}
+    for _harness, _root in harness_roots:
+        if not _root:
+            continue
+        try:
+            _candidate = read_installed_manifest(Path(_root), target=_harness)
+        except (OSError, ValueError, RuntimeError):
+            continue
+        if _candidate.get('executor_scripts_fingerprint'):
+            manifest = _candidate
+            break
     mappings_fingerprint = str(manifest.get('executor_scripts_fingerprint', '') or '')
 
     # Template-content stamp: SHA-256 of the template file bytes. The bootstrap
@@ -2126,7 +2004,10 @@ def generate_executor(
     # the raw bytes so an encoding-only difference still counts as a change.
     template_sha256 = hashlib.sha256(executor_template.read_bytes()).hexdigest()
 
-    plugin_root = base_path.resolve().as_posix()
+    # Informational only, and target-independent: every installed harness root,
+    # joined — never the invoking harness's own root. The checkout's tree is not
+    # named here because it is already visible in the embedded mappings.
+    plugin_root = ','.join(root for _harness, root in harness_roots if root)
 
     def _substitute(surfaces_code: str) -> str:
         content = template.replace('{{SCRIPT_MAPPINGS}}', mappings_code)
@@ -2138,7 +2019,9 @@ def generate_executor(
         content = content.replace('{{EXTRA_SCRIPT_DIRS}}', extra_dirs_code)
         content = content.replace('{{PLAN_DIR_NAME}}', PLAN_DIR_NAME)
         content = content.replace('{{TARGET_AWARE_RESOLVER}}', resolver_code)
-        content = content.replace('{{EXECUTOR_TARGET}}', resolved_target)
+        content = content.replace('{{GENERATED_FOR}}', 'any')
+        content = content.replace('{{INSTALLED_ROOTS}}', installed_roots_lines)
+        content = content.replace('{{INSTALLED_VERSIONS}}', installed_versions_lines)
         content = content.replace('{{EXECUTOR_PLUGIN_ROOT}}', plugin_root)
         content = content.replace('{{GENERATED_VERSION}}', generated_version)
         content = content.replace('{{MAPPINGS_FINGERPRINT}}', mappings_fingerprint)
@@ -2337,6 +2220,19 @@ def generate_executor(
     provenance_error = _check_emitted_path_provenance(emitted_paths, base_path)
     if provenance_error is not None:
         return provenance_error
+
+    # Converging regeneration (D5): when the rendered bytes are already what is on
+    # disk, leave the file untouched — modification time included. A harness-
+    # independent executor makes this the common case: two harnesses, or a
+    # repeated finalize step, regenerate the same bytes, and rewriting them would
+    # wake every mtime-based staleness signal for nothing. A byte comparison is
+    # the only honest "nothing changed" test: a checksum of the inputs would miss
+    # a template edit, and an mtime comparison would miss a hand edit.
+    try:
+        if real_executor.is_file() and real_executor.read_bytes() == content.encode('utf-8'):
+            return {'status': 'success', 'surface_stats': surface_stats, 'executor_action': 'unchanged'}
+    except OSError:
+        pass
 
     # Atomic write: write to a sibling temp path and os.replace() it onto the
     # real executor so a partial/broken write can never leave a corrupt executor
@@ -2774,8 +2670,14 @@ def _version_tuple(version: str) -> tuple[int, ...]:
     return tuple(parts)
 
 
-def read_executor_version() -> str:
-    """Read the embedded ``MARSHALL_VERSION`` from the generated executor.
+def read_executor_version(target: str | None = None) -> str:
+    """Read the version the generated executor stamps FOR ``target``.
+
+    The executor carries a per-harness version map (its ``_INSTALLED_VERSIONS``)
+    beside the single ``MARSHALL_VERSION`` literal, because one file serves every
+    harness: judging staleness against the literal alone would compare a Claude
+    install's version with an OpenCode run's expectations. With ``target`` given,
+    that harness's entry wins; ``MARSHALL_VERSION`` is the fallback.
 
     Returns ``unknown`` when the executor is absent, unreadable, or carries an
     empty stamp (fresh install / pre-versioning executor).
@@ -2787,10 +2689,40 @@ def read_executor_version() -> str:
         text = real_executor.read_text(encoding='utf-8')
     except (OSError, ValueError):
         return 'unknown'
+    if target:
+        for harness, version in read_executor_harness_versions(real_executor, text):
+            if harness == target and version:
+                return version
     match = re.search(r"^MARSHALL_VERSION\s*=\s*'([^']*)'", text, re.MULTILINE)
     if match and match.group(1):
         return match.group(1)
     return 'unknown'
+
+
+def read_executor_harness_versions(executor: Path | None = None, text: str | None = None) -> list[tuple[str, str]]:
+    """Read the embedded per-harness version map from the generated executor.
+
+    Returns ``(harness, version)`` pairs in the order the executor declares them.
+    An executor generated before the map existed yields an empty list, which
+    callers treat as "no per-harness answer" and fall back to the single stamp.
+    Tolerant by design: the map is read with a line-oriented scan rather than by
+    executing the file, so a malformed map yields an empty list, never an error.
+    """
+    if text is None:
+        target_executor = executor if executor is not None else executor_path()
+        if not target_executor.is_file():
+            return []
+        try:
+            text = target_executor.read_text(encoding='utf-8')
+        except (OSError, ValueError):
+            return []
+    match = re.search(r'^_INSTALLED_VERSIONS\s*=\s*\((.*?)^\)', text, re.MULTILINE | re.DOTALL)
+    if not match:
+        return []
+    pairs: list[tuple[str, str]] = []
+    for harness, version in re.findall(r"\(\s*'([^']*)'\s*,\s*'([^']*)'\s*\)", match.group(1)):
+        pairs.append((harness, version))
+    return pairs
 
 
 def read_executor_template_sha() -> str:
@@ -3091,6 +3023,7 @@ def cmd_generate(args: argparse.Namespace) -> dict:
         'executor_target': resolved_target,
         'target_source': ctx['target_source'],
         'logs_cleaned': logs_cleaned,
+        'executor_action': gen_result.get('executor_action', 'written'),
         **surface_stats,
     }
 
@@ -3434,9 +3367,14 @@ def cmd_recover(args: argparse.Namespace) -> dict:
 
     # The SELECTED generator's write is the authority. A generator that refused
     # (its own fail-open guard, an under-covered discovery) leaves the previous
-    # file in place, and an mtime that did not move is a refusal to claim.
+    # file in place, and an mtime that did not move is normally a refusal to
+    # claim. The ONE exception is a converging generation: when the generator
+    # reports ``executor_action: unchanged`` it deliberately left identical bytes
+    # alone (see generate_executor's byte comparison), which is a completed
+    # regeneration, not a refusal — so the probe below decides, not the mtime.
     after_mtime = executor.stat().st_mtime_ns if executor.is_file() else None
-    if not executor.is_file() or after_mtime == before_mtime:
+    unchanged = 'executor_action: unchanged' in (base.get('generator_output') or '')
+    if not executor.is_file() or (after_mtime == before_mtime and not unchanged):
         return {
             'status': 'error',
             'action': 'regenerate_failed',
@@ -3770,7 +3708,7 @@ def cmd_preflight(args: argparse.Namespace) -> dict:
     executor_changed_at = str(manifest.get('executor_changed_at_version', '') or '')
     config_changed_at = str(manifest.get('config_changed_at_version', '') or '')
 
-    executor_version = read_executor_version()
+    executor_version = read_executor_version(resolved_target)
     marshal_version = read_marshal_provisioned_version()
 
     # Executor staleness → safe in-place regeneration (derived state per ADR-002).
@@ -3784,7 +3722,7 @@ def cmd_preflight(args: argparse.Namespace) -> dict:
             }
         executor_action = 'regenerated'
         # Re-read the freshly stamped version so the report reflects the regen.
-        executor_version = read_executor_version()
+        executor_version = read_executor_version(resolved_target)
 
     # Config-seed staleness → advisory only (marshal.json is never auto-mutated).
     marshal_status = 'fresh'

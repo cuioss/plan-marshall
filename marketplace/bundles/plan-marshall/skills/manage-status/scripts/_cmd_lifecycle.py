@@ -1444,10 +1444,13 @@ def _exempt_archive_findings_report(plan_id: str, status: dict[str, Any], reason
 
 
 def _executor_target_stamp() -> dict[str, str]:
-    """Read the serving executor's harness / plugin-root stamp, or ``{}``.
+    """Read the serving executor's "generated for" stamp, or ``{}``.
 
     The stamp is recorded in ``status.metadata`` at plan creation so a later
-    reader can tell which harness and which plugin tree the plan started under.
+    reader can tell what harness wrote the executor and which plugin tree it was
+    generated against. Both keys keep their names and now mean "generated for":
+    the executor they describe serves EVERY harness, so neither value is a lock
+    or a restriction — nothing refuses a call because of the pair.
     An absent or unstamped executor yields no keys rather than an empty-string
     claim — the same "an absent identity is a stated sentinel, never an assumed
     one" rule the target resolver applies.
@@ -1458,7 +1461,12 @@ def _executor_target_stamp() -> dict[str, str]:
     except (OSError, UnicodeDecodeError):
         return {}
     stamp: dict[str, str] = {}
-    target = re.search(r"^_EXECUTOR_TARGET\s*=\s*'([^']*)'", text, re.MULTILINE)
+    # GENERATED_FOR is the current stamp; _EXECUTOR_TARGET is read as a fallback
+    # so a plan created against an executor generated before the rename still
+    # records the harness it was generated for.
+    target = re.search(r"^GENERATED_FOR\s*=\s*'([^']*)'", text, re.MULTILINE) or re.search(
+        r"^_EXECUTOR_TARGET\s*=\s*'([^']*)'", text, re.MULTILINE
+    )
     plugin_root = re.search(r"^EXECUTOR_PLUGIN_ROOT\s*=\s*'([^']*)'", text, re.MULTILINE)
     if target and target.group(1):
         stamp['executor_target'] = target.group(1)

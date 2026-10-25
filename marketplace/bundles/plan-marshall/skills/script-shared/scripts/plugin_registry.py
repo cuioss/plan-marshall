@@ -102,6 +102,28 @@ EXECUTOR_VERSION_EMPTY = 'empty'
 _DIGITS_RE = re.compile(r'\d+')
 _VERSION_DIR_RE = re.compile(r'^\d+\.\d+')
 _MARSHALL_VERSION_RE = re.compile(r'^MARSHALL_VERSION\s*=\s*([\'"])(.*?)\1\s*$', re.MULTILINE)
+#: The per-harness version map a harness-independent executor embeds:
+#: ``_INSTALLED_VERSIONS = (('claude', '0.1.5'), ('opencode', ''), ...)``.
+_INSTALLED_VERSIONS_RE = re.compile(r'^_INSTALLED_VERSIONS\s*=\s*\((.*?)^\)', re.MULTILINE | re.DOTALL)
+_INSTALLED_VERSION_PAIR_RE = re.compile(r"\(\s*'([^']*)'\s*,\s*'([^']*)'\s*\)")
+
+
+def _read_per_harness_versions(text: str) -> dict[str, str]:
+    """Return the executor's ``{harness: version}`` map, or ``{}`` when absent.
+
+    Tolerant by design: the map is scanned textually rather than executed, so a
+    malformed or absent map yields an empty dict and every caller falls back to
+    the single ``MARSHALL_VERSION`` stamp. An executor generated before the map
+    existed has no map at all, which is the same answer.
+    """
+    block = _INSTALLED_VERSIONS_RE.search(text)
+    if block is None:
+        return {}
+    return {
+        harness: version
+        for harness, version in _INSTALLED_VERSION_PAIR_RE.findall(block.group(1))
+        if harness and version
+    }
 
 
 def default_registry_path() -> Path:
@@ -221,8 +243,8 @@ def _text_or_none(value: object) -> str | None:
     return value if isinstance(value, str) and value else None
 
 
-def read_executor_version(executor_path: Path) -> tuple[str, str | None]:
-    """Read the value of the executor's ``MARSHALL_VERSION`` assignment.
+def read_executor_version(executor_path: Path, target: str | None = None) -> tuple[str, str | None]:
+    """Read the executor's version stamp, for ``target`` when it names one.
 
     Returns ``(state, version)``. ``version`` is set only for
     :data:`EXECUTOR_VERSION_FOUND`. The other states are distinct facts:
@@ -232,11 +254,23 @@ def read_executor_version(executor_path: Path) -> tuple[str, str | None]:
     - :data:`EXECUTOR_VERSION_NOT_FOUND` — it was read and carries no such assignment;
     - :data:`EXECUTOR_VERSION_EMPTY` — the assignment is present and empty, the
       sentinel of an executor generated before any manifest existed.
+
+    ``target`` names the harness the question is asked FOR. A harness-independent
+    executor carries a per-harness version map (``_INSTALLED_VERSIONS``) beside
+    the single ``MARSHALL_VERSION``; when the map has an entry for ``target``,
+    that entry is the answer, so staleness is judged as the RUNNING harness would
+    judge it rather than against whichever harness generated the file. An
+    executor generated before the map existed falls back to the single stamp.
     """
     try:
         text = executor_path.read_text(encoding='utf-8')
     except (OSError, UnicodeDecodeError):
         return EXECUTOR_VERSION_UNREADABLE, None
+    if target:
+        per_harness = _read_per_harness_versions(text)
+        version = per_harness.get(target)
+        if version:
+            return EXECUTOR_VERSION_FOUND, version
     match = _MARSHALL_VERSION_RE.search(text)
     if match is None:
         return EXECUTOR_VERSION_NOT_FOUND, None

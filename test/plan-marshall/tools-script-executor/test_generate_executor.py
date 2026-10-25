@@ -1747,18 +1747,26 @@ def test_preflight_help_listed_in_top_level_help():
 # Path.home, so the production resolver body is what is under test.
 
 
-def _load_claude_resolver():
-    """Render and load the real Claude target-aware resolver function.
+def _load_claude_resolver(home: Path):
+    """Render the unified resolver and bind it to ONE install root under ``home``.
 
-    Pulls the actual ``_CLAUDE_RESOLVER_TEMPLATE`` body via
+    Pulls the production resolver body via
     ``generate_target_aware_resolver_code('claude')`` and execs it into a fresh
-    namespace with ``Path`` available, returning the ``_resolve_notation_by_target``
-    callable. Unlike ``_load_template_module`` (which substitutes the resolver
-    token with a no-op stub), this exercises the production resolver source.
+    namespace that carries what the generated executor carries: the installed
+    roots and the runtime-harness reader. The roots are the fake
+    ``{home}/.claude/plugins/cache/plan-marshall`` the caller populated, so the
+    newest-version selection runs against a real directory tree. Unlike
+    ``_load_template_module`` (which substitutes the resolver token with a no-op
+    stub), this exercises the production resolver source.
     """
     module = load_module()
     src = module.generate_target_aware_resolver_code('claude')
-    namespace: dict = {'Path': Path}
+    cache_root = home / '.claude' / 'plugins' / 'cache' / 'plan-marshall'
+    namespace: dict = {
+        'Path': Path,
+        '_INSTALLED_ROOTS': (('claude', str(cache_root)),),
+        '_runtime_harness': lambda: 'claude',
+    }
     exec(src, namespace)  # exec of generator-owned template source: that source is precisely what is under test
     return namespace['_resolve_notation_by_target']
 
@@ -1791,9 +1799,7 @@ def test_claude_resolver_multi_version_pollution_returns_newest(tmp_path, monkey
     _make_cache_script(home, '0.1.100', 'manage-files', 'manage-files')
     newest = _make_cache_script(home, '0.1.200', 'manage-files', 'manage-files')
 
-    monkeypatch.setattr(Path, 'home', lambda: home)
-
-    resolve = _load_claude_resolver()
+    resolve = _load_claude_resolver(home)
     result = resolve('plan-marshall:manage-files:manage-files')
 
     assert result == str(newest.resolve()), (
@@ -1814,9 +1820,7 @@ def test_claude_resolver_reresolves_after_pinned_version_pruned(tmp_path, monkey
     older = _make_cache_script(home, '0.1.5', 'manage-status', 'manage-status')
     newest = _make_cache_script(home, '0.1.10', 'manage-status', 'manage-status')
 
-    monkeypatch.setattr(Path, 'home', lambda: home)
-
-    resolve = _load_claude_resolver()
+    resolve = _load_claude_resolver(home)
 
     # First resolution returns the newest version dir on disk.
     first = resolve('plan-marshall:manage-status:manage-status')
