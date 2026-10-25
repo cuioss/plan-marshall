@@ -327,6 +327,54 @@ def test_verify_links_missing_file_reports_error():
     assert result['status'] == 'error', 'Error when file does not exist'
 
 
+def test_verify_links_file_mode_refuses_a_markdown_file(tmp_path):
+    """A Markdown file is not an AsciiDoc file: the AsciiDoc grammar finds no links in it.
+
+    Reporting ``total_links: 0`` with ``status: success`` over such a file is a pass
+    over a file the checker never read. File mode refuses it with the same
+    ``no_files``-class error directory mode already returns for a directory that
+    holds no ``.adoc`` file.
+    """
+    md = tmp_path / 'notes.md'
+    md.write_text(
+        '# Title\n\nSee [the missing page](./missing.md) and [another](./nowhere.md).\n',
+        encoding='utf-8',
+    )
+
+    result = cmd_verify_links(_ns(_VERIFY_LINKS_NS, file=str(md), directory=None, recursive=False, report=None))
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'no_files'
+    assert 'data' not in result, 'a refused file must not report a link count'
+
+
+def test_verify_links_file_mode_refusal_is_the_directory_mode_error_class(tmp_path):
+    """The refusal is the same error the directory mode returns, not a new one."""
+    md = tmp_path / 'notes.md'
+    md.write_text('one [link](./gone.md)\n', encoding='utf-8')
+    empty_dir = tmp_path / 'docs'
+    empty_dir.mkdir()
+
+    file_mode = cmd_verify_links(_ns(_VERIFY_LINKS_NS, file=str(md), directory=None, recursive=False, report=None))
+    dir_mode = cmd_verify_links(
+        _ns(_VERIFY_LINKS_NS, file=None, directory=str(empty_dir), recursive=False, report=None)
+    )
+
+    assert file_mode['error'] == dir_mode['error'] == 'no_files'
+
+
+def test_verify_links_file_mode_still_reads_an_asciidoc_file(tmp_path):
+    """The refusal is scoped to non-AsciiDoc input; a real .adoc file is still checked."""
+    adoc = tmp_path / 'page.adoc'
+    adoc.write_text('= Title\n\nNo links here.\n', encoding='utf-8')
+
+    result = cmd_verify_links(_ns(_VERIFY_LINKS_NS, file=str(adoc), directory=None, recursive=False, report=None))
+
+    assert result['status'] == 'success'
+    assert result['data']['files_processed'] == 1
+    assert result['data']['total_links'] == 0
+
+
 def test_verify_links_rejects_both_file_and_directory():
     empty_file = LINK_VERIFY_FIXTURES / 'empty.adoc'
 
