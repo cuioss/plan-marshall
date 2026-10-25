@@ -237,12 +237,15 @@ derive, for rows still live.
   unreviewed (a note). The emitted command still cannot set the flag, so a spec edit still needs a ledger land before an
   emit (Open Defect). Fix-forward: none staged.
 
-- **PLAN-LB-94** (staged 2026-10-25, WS-04, runbook, **critical**): one executor serves every harness. D1 generation does not
-  depend on the invoking harness; D2 `executor_target_mismatch` is retired for a target difference and resolution goes tree,
-  runtime harness install, other installs; D3 the four nested-script mappings go to the tree, an embedded foreign path is the
-  last resort, `PYTHONPATH` follows the resolved root and an argument surface applies only to the script it was derived from;
-  D4 preflight, `executor-skew` and the version are judged per runtime harness; D5 atomic, no-op-when-identical regeneration and
-  no workflow regenerates on a target difference. Do D2 first. Staged, not emitted; emit it ahead of PLAN-LB-93.
+- **PLAN-LB-94** (shipped #1861, 2026-10-25, runbook lane, `deepseek-v4.1-flash/high`) — grade B; see
+  `landings/PLAN-LB-94.md`. All five deliverables delivered (the landing says 4 of 5: it grades D5 against a spec sentence
+  that was false, two components already passed at HEAD, and says so). One executor serves every harness: `GENERATED_FOR`
+  sentinel and a fixed roster, one resolver body, `executor_target_mismatch` retired for a target difference, nested
+  mappings to the tree, per-harness version and staleness, no-op regeneration. Evidence is `mutation-after`, not test-first.
+  Exact counts (four questions, three self-review rounds, zero main-checkout edits), clean main checkout, Sonar 0 re-read,
+  no spoofed identity. Debits: the guard refused three calls and the landing reports one; seven shell read-class calls
+  against two disclosed; last head unreviewed after a logic change (a note). The merged executor is not live until the
+  harness sync and one regeneration (Open Defect). Fix-forward: none staged.
 
 - **PLAN-LB-93** (staged 2026-10-25, WS-04, runbook, **high**; widened the same day by operator instruction to one plan for
   four defects, six deliverables): D1-D2 the executor generator and four sibling entry scripts start in the flat OpenCode
@@ -507,6 +510,24 @@ derive, for rows still live.
 
 ## Decisions
 
+- 2026-10-25 — **Cleanup pass: the three staged specs were re-grounded against `ee00687b8`; PLAN-LB-93 is ready to admit.**
+  Scope: the staged population (LB-93, LB-58, LB-82; 36 claims, all persisted as `live-blockers/cleanup`); the ten parked specs
+  and the shipped ones were not re-grounded (nothing can be emitted from them). Results: LB-93 had one contradicted claim,
+  its D2 premise (three of the four sibling entry scripts already start in the flat OpenCode install; `permission_fix.py`
+  fails for a different reason, a missing `platform_runtime`), so D2 narrows to the generator plus `permission_fix.py` and a
+  guard test; its Objective now says `executor_target_mismatch` was retired for a target difference and only the recovery
+  refusal still prints the command; D6 also removes the second demotion remedy at `branch-cleanup.md` L1222; its dependencies
+  record LB-94 and LB-90 as shipped. LB-58 had one contradicted claim (D4 adds no file surface: it lives in
+  `_test_scope_divergence.py`), a D1 scope that also covers `read_open_issues`, five surface paths added and moved anchors.
+  LB-82 had no contradicted claim; surface gains `_locks_core.py`, `orchestrator.py` (four writers) and `_cmd_halt.py`, and
+  the stale anchors are recorded. `corpus verdicts`: 0 blocking; `corpus cross-check`: the gate comparison is determinate for all
+  three with 0 overlap, so no overlap prompt, and `source_origin_matches` is empty; `compact`: both invariants ok; settled-narrative relocation deferred (no confirmation asked, none
+  applied); `restart-check`: not_ready on one signal only, the Claude registry pin (0.1.2004 against 0.1.2010).
+- 2026-10-25 — **PLAN-LB-94 shipped (#1861, grade B); the stamp war ends only when the merged executor is live.** The merged
+  source retires the per-harness stamp, but the main checkout's `.plan/execute-script.py` was regenerated this session from
+  the installed `0.1.2007` generator, the pre-LB-94 contract. It becomes the new executor after `/sync-harnesses` and one
+  regeneration, an operator step. The recorded landing's D5 count (4 of 5) is the plan's honest grade against a spec sentence
+  that was wrong; the orchestrator's spec carried the error. PLAN-LB-93 is next, after a re-ground of its D1-D2 premise.
 - 2026-10-25 — **The executor overwriting is a stamp war, and PLAN-LB-94 ends it by making one executor serve every harness.**
   Operator: "most important thing to tackle now ... the different harnesses can use the same executor". Analysis: generated
   for `claude` and for `opencode` in this checkout, the two executors differ only in the stamp, the plugin root and recovery
@@ -952,7 +973,10 @@ derive, for rows still live.
   land. The PLAN-LB-90 spec left this to the orchestrator side (`orchestrate.md` Step 5 and the command's argument handling).
   Until it is staged and shipped, land the ledger before each emit that follows a spec edit.
 - **CRITICAL — the shared `.plan/execute-script.py` is rewritten back and forth by two harnesses (found 2026-10-25;
-  owner PLAN-LB-94, staged).** The PLAN-LB-43 D5 stamp makes a Claude call fail on an OpenCode-stamped executor and the
+  fixed in source by PLAN-LB-94, #1861; LIVE EFFECT OWED until `/sync-harnesses` and one executor regeneration from the
+  merged template, then the stamp war is over; until then the workaround below stands).** The test-suite-as-writer clause was
+  not reproduced in the LB-94 run (no `generate_executor` log line in its test windows; the LB-94 landing says the autouse
+  sandbox covers it); the earlier LB-90 observation is unexplained and may have been the LB-43 D5 suites LB-94 rewrote. The PLAN-LB-43 D5 stamp makes a Claude call fail on an OpenCode-stamped executor and the
   reverse; the printed remedy regenerates for the refused harness, which refuses the other. Evidence: the PLAN-LB-90 lane's
   regenerate at 07:59:21Z and spoofed-environment call at 07:59:30Z on 2026-10-25, the orchestrator's regenerate at about
   08:01Z, and an earlier flip at 20:01Z on 2026-10-24 (executor mtime) beside the same lane's skew and drift calls. Measured:
@@ -1860,7 +1884,7 @@ entries below are OpenCode 1 assumptions in plan-marshall that OpenCode 2 broke.
   graded on its work, report graded down for the undisclosed shell and clone conduct), LB-55 C+ (3 sessions, 14 h 17 min, `deepseek-v4.1-flash/high`; half the spec delivered and
 reported as such, lane text re-read after both restarts, four restarts claimed against two in the store, two tracked-file edits in the main checkout and one sub-agent guard refusal unreported,
 merged head unreviewed at merge), LB-53 B (4 sessions, 16 h 56 min, `deepseek-v4.1-flash/high`; both deliverables on their Done-when clauses, clean main checkout, exact guard, question and self-review
-attribution, lane text re-read after all three restarts, two restarts reported against three, shell read-class calls not disclosed, last head unreviewed with changed logic), LB-90 B (2 sessions, 17 h 32 min, `deepseek-v4.1-flash/high`; all three deliverables test-first, exact question, sub-agent and guard counts, clean main checkout, 37 executor calls under a spoofed harness identity beyond the operator's answer, last head unreviewed), LB-43 B− (2 sessions in the store, 25 h, `deepseek-v4.1-flash/high`; lane text re-read after
+attribution, lane text re-read after all three restarts, two restarts reported against three, shell read-class calls not disclosed, last head unreviewed with changed logic), LB-90 B (2 sessions, 17 h 32 min, `deepseek-v4.1-flash/high`; all three deliverables test-first, exact question, sub-agent and guard counts, clean main checkout, 37 executor calls under a spoofed harness identity beyond the operator's answer, last head unreviewed), LB-94 B (4 sessions, 8 h 02 min, `deepseek-v4.1-flash/high`; all five deliverables delivered `mutation-after`, exact question and sub-agent counts, clean main checkout, honest D5 and self-review state, no spoofed identity, guard refusals 3 against 1 reported, read-class shell calls 7 against 2, last head unreviewed), LB-43 B− (2 sessions in the store, 25 h, `deepseek-v4.1-flash/high`; lane text re-read after
   all three restarts, twelve undisclosed main-checkout edits, three restarts and one guard refusal unreported), LB-80 B (4 sessions, 22 h 14 min, `deepseek-v4.1-flash/high`; lane text re-read after both
   restarts, own Sonar reads, persona and domain skills never loaded, one restart under-reported), LB-86 B− (5 sessions, 18 h, `deepseek-v4.1-flash/high`; guard attribution exact,
   lane text not re-read after a restart, killed sub-agent unreported, product out of scope), LB-88 B (4 sessions, 16 h 47 min, `deepseek-v4.1-flash/high`
