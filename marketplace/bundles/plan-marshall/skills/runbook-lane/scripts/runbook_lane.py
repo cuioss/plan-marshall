@@ -11,7 +11,7 @@ so the lane contract itself carries no project-specific literal.
 
 Verb surface::
 
-    runbook_lane resolve --spec PATH [--project-dir DIR]
+    runbook_lane resolve --spec PATH [--project-dir DIR] [--spec-from-ledger]
     runbook_lane executor-skew [--executor PATH] [--lane-dir DIR]
     runbook_lane build-routing --worktree PATH
     runbook_lane build-classify --paths P1,P2 [--project-dir DIR]
@@ -24,6 +24,16 @@ Verb surface::
 to run a staged orchestrator plan, and a path outside that tree names something
 else. ``--project-dir`` defaults to the current directory and anchors every
 project-scoped read (marshal.json, the project architecture, the guard marker).
+
+``--spec-from-ledger`` reads that same logical spec from the shared ledger
+worktree first — ``{epic_dir}/plans/{spec name}``, where ``epic_dir`` follows the
+store seam the orchestrator publishes — and falls back to the main checkout's copy
+when the worktree holds none. The flag is set per emit, so a round of emits needs
+no ledger land; with ``orchestrator.use_worktree`` off there is no second copy and
+the flag is a no-op rather than an error. ``resolve`` always reports which copy it
+read (``spec_source``: ``ledger_worktree`` | ``main_checkout``) and, when both
+copies exist and differ, ``spec_differ: true`` — the marker a silent read of the
+older copy would leave out.
 
 **Fail closed.** An empty ``required_bots`` list, a missing automatic-review
 step, an unreadable ``marshal.json``, an unreadable Sonar block
@@ -42,9 +52,11 @@ import json
 import os
 import re
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
+import orchestrator_worktree
 from file_ops import output_toon, output_toon_error
+from marketplace_paths import PLAN_DIR_NAME, base_dir_override_active, main_checkout_root
 
 #: The step whose ``required_bots`` / ``optional_bots`` the lane drives.
 _REVIEW_STEP_ID = 'plan-marshall:automatic-review'
@@ -151,14 +163,128 @@ def _plan_id_from_spec(spec: Path) -> str:
     return stem.lower()
 
 
-def _resolve_spec(spec_value: str, project_dir: Path) -> tuple[Path, str, str]:
-    """Validate ``--spec`` and return ``(spec, slug, plan_id)``.
+class _SpecChoice(NamedTuple):
+    """The copy of a staged spec ``resolve`` will read, and what it must report.
+
+    A ``NamedTuple`` rather than a dataclass on purpose: the suite loads this
+    module with ``register=False``, and ``dataclasses`` resolves a class's own
+    module through ``sys.modules`` — which is empty for that load — so a dataclass
+    here raises ``AttributeError`` on import in every test that takes that path.
+    """
+
+    path: Path
+    slug: str
+    plan_id: str
+    source: str
+    differs: bool
+
+
+def _ledger_store_dir() -> Path | None:
+    """The shared ledger worktree's ``.plan`` directory, or ``None`` when there is none.
+
+    COMPUTED from the same store seam the orchestrator publishes
+    (``orchestrator_worktree``: the ``orchestrator.use_worktree`` knob plus the
+    main-anchored worktree path), so the lane reads the tree the orchestrator
+    reports rather than a second copy of the rule.
+
+    Deliberately NOT the store resolver's ``ensure_...`` form: the lane only ever
+    READS the spec, so a read must never create the ledger worktree as a side
+    effect. An unresolvable anchor (no git checkout and no override) answers
+    ``None``, which leaves the main checkout's copy as the only one — the knob-off
+    behaviour, in the one situation where there is provably no second copy.
+    """
+    try:
+        if not orchestrator_worktree.orchestrator_use_worktree():
+            return None
+        return orchestrator_worktree.orchestrator_worktree_path() / PLAN_DIR_NAME
+    except (RuntimeError, OSError):
+        return None
+
+
+def _staged_spec_shape(spec: Path, project_dir: Path, *, from_ledger: bool) -> tuple[str, str]:
+    """Return ``(slug, file name)`` for a spec path, or refuse it.
+
+    The file name carries its ``.md`` extension, because the caller rebuilds both
+    copies' paths from it — the regex group that matches it deliberately stops
+    before the extension.
+
+    The project-relative path is matched as a WHOLE against :data:`_SPEC_RE`, so a
+    same-shaped file nested elsewhere (an archive, a fixture tree) never
+    qualifies. Under the ledger flag one further spelling is accepted: a path
+    inside the ledger worktree's own store, which is exactly the form a caller
+    reaches for when the worktree copy is the one it wants. Every other path is
+    the ``spec_outside_orchestrator`` refusal.
+    """
+    try:
+        relative = spec.resolve().relative_to(project_dir.resolve())
+    except ValueError:
+        relative = None
+    if relative is not None:
+        match = _SPEC_RE.fullmatch(relative.as_posix())
+        if match is not None:
+            return match.group('slug'), f'{match.group("name")}.md'
+    if from_ledger:
+        store = _ledger_store_dir()
+        if store is not None:
+            try:
+                inside = spec.resolve().relative_to(store.resolve())
+            except ValueError:
+                inside = None
+            if inside is not None:
+                match = _SPEC_RE.fullmatch(f'{PLAN_DIR_NAME}/{inside.as_posix()}')
+                if match is not None:
+                    return match.group('slug'), f'{match.group("name")}.md'
+    raise ValueError('spec_outside_orchestrator')
+
+
+def _main_store_dir(project_dir: Path) -> Path:
+    """The ``.plan`` directory of the checkout the fallback copy belongs to.
+
+    The lane runs every command from the MAIN checkout, but ``--project-dir`` can
+    name a plan worktree, where ``{project_dir}/.plan`` is that worktree's own
+    config tier — NOT the copy a ``main_checkout`` answer claims to have read. The
+    fallback therefore anchors on the main checkout the ledger worktree is a
+    worktree OF (the git common dir), and stays on ``project_dir`` only where that
+    anchor does not exist: outside a git checkout, or under a base-dir override
+    that already stands in for main.
+    """
+    if not base_dir_override_active():
+        try:
+            return main_checkout_root() / PLAN_DIR_NAME
+        except RuntimeError:
+            pass
+    return project_dir / PLAN_DIR_NAME
+
+
+def _contained_file(path: Path, root: Path) -> bool:
+    """Whether ``path`` is a file whose RESOLVED location stays under ``root``.
+
+    A copy derived from the validated slug and name is not the caller's resolved
+    path, and ``is_file`` follows symlinks — so a link planted at the derived
+    location could otherwise hand the lane a file from outside the store while the
+    result claims a store copy. Requiring the resolution to stay under the store
+    root closes that without giving up the read.
+    """
+    if not path.is_file():
+        return False
+    try:
+        return path.resolve().is_relative_to(root.resolve())
+    except OSError:
+        return False
+
+
+def _resolve_spec(spec_value: str, project_dir: Path, *, from_ledger: bool = False) -> _SpecChoice:
+    """Validate ``--spec`` and select the copy of it to read.
 
     A RELATIVE spec is resolved against ``--project-dir``, not against the
     process's working directory: the flag names the project the whole resolution
-    is about, so a caller that passes both must get the spec file it named. The
-    project-relative path is then matched as a WHOLE against :data:`_SPEC_RE`, so
-    only a spec at the root of the orchestrator tree qualifies.
+    is about, so a caller that passes both must get the spec file it named.
+
+    Without the flag this is the unchanged read — the main checkout's copy, and
+    ``invalid_spec`` when it holds none. With it the ledger worktree's copy wins
+    when it exists and the main checkout's is the fallback, so a spec that exists
+    only in the worktree is readable. The choice is reported as ``source``, and
+    ``differs`` says whether the copy NOT read would have answered differently.
 
     Raised as ``ValueError`` carrying the refusal code so the caller can emit a
     structured error rather than a traceback.
@@ -166,16 +292,54 @@ def _resolve_spec(spec_value: str, project_dir: Path) -> tuple[Path, str, str]:
     spec = Path(spec_value)
     if not spec.is_absolute():
         spec = project_dir / spec
-    if not spec.is_file():
+    slug, name = _staged_spec_shape(spec, project_dir, from_ledger=from_ledger)
+
+    main_store = _main_store_dir(project_dir)
+    main_copy = main_store / 'orchestrator' / slug / 'plans' / name
+    # The ledger copy is resolved on BOTH paths: the flag decides whether it is
+    # READ, while the differ marker exists precisely to report a default read that
+    # left the newer copy unread.
+    ledger_copy: Path | None = None
+    store = _ledger_store_dir()
+    if store is not None:
+        candidate = store / 'orchestrator' / slug / 'plans' / name
+        if _contained_file(candidate, store):
+            ledger_copy = candidate
+
+    if from_ledger and ledger_copy is not None:
+        chosen, source = ledger_copy, 'ledger_worktree'
+    elif _contained_file(main_copy, main_store):
+        chosen, source = main_copy, 'main_checkout'
+    elif spec.is_file():
+        # The caller named the ONLY copy. It survived the shape check above, so it
+        # is either the main checkout's own file or, under the flag, the ledger
+        # worktree's. The LABEL comes from where the file actually resolves, never
+        # from the flag alone: the flag says which copy to prefer, and a sole copy
+        # outside the ledger store is not one.
+        chosen = spec.resolve()
+        source = 'ledger_worktree' if store is not None and _contained_file(chosen, store) else 'main_checkout'
+    else:
         raise ValueError('invalid_spec')
+
+    differs = (
+        ledger_copy is not None and _contained_file(main_copy, main_store) and _copies_differ(ledger_copy, main_copy)
+    )
+    return _SpecChoice(chosen, slug, _plan_id_from_spec(chosen), source, differs)
+
+
+def _copies_differ(first: Path, second: Path) -> bool:
+    """Whether two spec copies hold different bytes.
+
+    An unreadable pair answers ``False``: the marker says "the copy you did not
+    read says something else", and it must never be raised on a read it could not
+    make — the refusal path is the spec READ, not this comparison, so a permission
+    or I/O fault here degrades the marker instead of turning a usable spec into a
+    traceback.
+    """
     try:
-        rel = spec.resolve().relative_to(project_dir.resolve())
-    except ValueError:
-        raise ValueError('spec_outside_orchestrator') from None
-    match = _SPEC_RE.fullmatch(rel.as_posix())
-    if match is None:
-        raise ValueError('spec_outside_orchestrator')
-    return spec, match.group('slug'), _plan_id_from_spec(spec)
+        return first.read_bytes() != second.read_bytes()
+    except OSError:
+        return False
 
 
 def _read_marshal(project_dir: Path) -> dict[str, Any]:
@@ -1718,9 +1882,10 @@ def cmd_resolve(args: argparse.Namespace) -> dict[str, Any]:
     project_dir = Path(getattr(args, 'project_dir', '.') or '.').resolve()
 
     try:
-        spec, slug, plan_id = _resolve_spec(args.spec, project_dir)
+        choice = _resolve_spec(args.spec, project_dir, from_ledger=getattr(args, 'spec_from_ledger', False))
     except ValueError as exc:
         return {'status': 'error', 'error': str(exc), 'spec': args.spec}
+    spec, slug, plan_id = choice.path, choice.slug, choice.plan_id
     try:
         marshal = _read_marshal(project_dir)
         required, optional = _resolve_bots(marshal)
@@ -1792,6 +1957,7 @@ def cmd_resolve(args: argparse.Namespace) -> dict[str, Any]:
         'status': 'success',
         'operation': 'resolve',
         'spec': spec.as_posix(),
+        'spec_source': choice.source,
         'slug': slug,
         'plan': plan_id,
         'worktree': worktree,
@@ -1820,6 +1986,11 @@ def cmd_resolve(args: argparse.Namespace) -> dict[str, Any]:
     # explanation, which would read like a qualified success.
     if executor_reason is not None:
         resolved['executor_reason'] = executor_reason
+    # The differ marker is PRESENCE-gated rather than always-false: it exists to
+    # say "the copy you did not read says something else", and a `false` row would
+    # invite a consumer to treat "no marker" and "no second copy" as one state.
+    if choice.differs:
+        resolved['spec_differ'] = True
     # A project can publish only one gate canonical (npm publishes each
     # conditionally), so the missing one is NAMED rather than silently dropped.
     # Presence-gated: an empty population would read like a parsed-but-empty
@@ -1864,6 +2035,12 @@ def main() -> int:
         '--spec', required=True, help='Staged spec path: .plan/orchestrator/{slug}/plans/PLAN-*.md'
     )
     resolve_parser.add_argument('--project-dir', default='.', help='Project root (default: current directory)')
+    resolve_parser.add_argument(
+        '--spec-from-ledger',
+        dest='spec_from_ledger',
+        action='store_true',
+        help='Read the spec from the shared ledger worktree first, falling back to the main checkout',
+    )
 
     skew_parser = subparsers.add_parser(
         'executor-skew',
