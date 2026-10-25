@@ -4,13 +4,13 @@ Standards for scripts that integrate with the executor and import from other ski
 
 ## PYTHONPATH Setup by Executor
 
-The executor (`execute-script.py`) automatically configures PYTHONPATH to include the script directories of the skill's own install root, and in a versioned plugin cache the directories of the version the script itself was resolved from. Scripts do NOT need to manipulate `sys.path` for cross-skill imports.
+The executor (`execute-script.py`) automatically configures PYTHONPATH to include the script directories of the skill's own install root, and in a versioned plugin cache the directories of the version the script itself was resolved from. A sibling bundle that is not installed at that version contributes the newest version it has. Scripts do NOT need to manipulate `sys.path` for cross-skill imports.
 
 ### How It Works
 
 When a script runs via the executor:
 
-1. Executor builds PYTHONPATH from the resolved script's install root — every `skills/*/scripts/` directory of the version the script lives in, and of the generating checkout's `marketplace/bundles/*/skills/*/scripts/` directories as a last resort
+1. Executor builds PYTHONPATH from the resolved script's install root — every `skills/*/scripts/` directory of the version the script lives in, a sibling bundle's newest version when that bundle is not installed at the script's version, and the generating checkout's `marketplace/bundles/*/skills/*/scripts/` directories after them
 2. Script inherits this PYTHONPATH
 3. Direct imports from any skill work automatically
 

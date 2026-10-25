@@ -599,6 +599,17 @@ def _visible_subdirs(_parent: Path) -> list[Path]:
         return []
 
 
+def _is_version_segment(_name: str) -> bool:
+    """Return whether a path segment names a version directory.
+
+    A version carries a number (``0.1.2010``), which ``_version_key`` reads. A
+    dot-prefixed name is accepted too: it is version-shaped by convention and
+    never a bundle name, and treating it as one is what keeps a hand-authored
+    hidden path off the root-wide walk.
+    """
+    return bool(_version_key(_name)) or _name.startswith('.')
+
+
 def _version_dir_of(_path: str, _root: str) -> tuple[str | None, str | None]:
     """Return ``(version, bundle)`` of the version directory ``_path`` sits in.
 
@@ -608,17 +619,20 @@ def _version_dir_of(_path: str, _root: str) -> tuple[str | None, str | None]:
     - ``{root}/{bundle}/{version}/skills/{skill}/scripts/...`` -> ``(version, bundle)``
     - ``{root}/{version}/skills/{skill}/scripts/...`` -> ``(version, None)``
 
-    A segment is read as a version only when :func:`_version_key` finds a number
-    in it, so an unversioned ``{root}/{bundle}/skills/...`` path is not mistaken
-    for one. A flat ``{root}/{bundle}-{skill}/scripts/...`` path has no ``skills``
-    segment at all. Both answer ``(None, None)``, as does a path outside
-    ``_root``; those keep the root-wide walk.
+    A segment is read as a version when :func:`_version_key` finds a number in
+    it, or when it is hidden — a dot-prefixed directory is version-shaped by
+    convention and never a bundle name. So an unversioned
+    ``{root}/{bundle}/skills/...`` path is not mistaken for one. A flat
+    ``{root}/{bundle}-{skill}/scripts/...`` path has no ``skills`` segment at all.
+    Both answer ``(None, None)``, as does a path outside ``_root``; those keep the
+    root-wide walk.
 
-    A HIDDEN version or bundle directory still answers its version. The selection
-    helpers (:func:`_visible_subdirs`, :func:`_newest_version_dir`) skip hidden
-    directories, so the walk for such a path finds no hidden copy — the
-    resolver's own rule — while the root-wide walk, which would hand the script
-    every cached version, stays closed.
+    A HIDDEN segment still answers its version, so the walk for such a path stays
+    scoped to that version instead of reopening the root-wide walk that would
+    hand the script every cached copy. Within that walk a hidden BUNDLE directory
+    is skipped (:func:`_visible_subdirs`), while a hidden VERSION is used — it is
+    the version the script itself lives in. The script's own directory leads
+    either way (:func:`pythonpath_for`).
     """
     try:
         _segments = Path(_path).resolve().relative_to(Path(_root).expanduser().resolve()).parts
@@ -627,9 +641,9 @@ def _version_dir_of(_path: str, _root: str) -> tuple[str | None, str | None]:
     if 'skills' not in _segments:
         return None, None
     _prefix = _segments[: _segments.index('skills')]
-    if len(_prefix) == 2 and _version_key(_prefix[1]):
+    if len(_prefix) == 2 and _is_version_segment(_prefix[1]):
         return _prefix[1], _prefix[0]
-    if len(_prefix) == 1 and _version_key(_prefix[0]):
+    if len(_prefix) == 1 and _is_version_segment(_prefix[0]):
         return _prefix[0], None
     return None, None
 
