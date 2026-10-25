@@ -77,45 +77,43 @@ PLAN_DIR_NAME = '{{PLAN_DIR_NAME}}'
 # is the machine-portable script-set fingerprint. Both are the empty sentinel on a
 # fresh install (no manifest yet).
 #
-# MARSHALL_VERSION is the TREE's version when this checkout carries a marketplace
-# tree (the tree is the source of truth for a dev checkout), and the newest
-# installed harness version otherwise. It is deliberately NOT the invoking
-# harness's version: the bytes of this file do not depend on which harness
-# generated it. A reader that wants the version a specific harness would judge
-# staleness against reads _INSTALLED_VERSIONS for that harness (see
-# version_for_harness below) — the generate_executor preflight verb and the
-# runbook lane's executor-skew both do.
+# MARSHALL_VERSION is the NEWEST version published by any installed harness — a
+# function of the machine's installs, never of the invoking harness. A reader that
+# wants the version a SPECIFIC harness would judge staleness against reads that
+# harness's entry in _INSTALLED_VERSIONS (the two version-check readers parse the
+# map textually: plugin_registry.read_executor_version and
+# generate_executor.read_executor_version).
 MARSHALL_VERSION = '{{GENERATED_VERSION}}'
 MAPPINGS_FINGERPRINT = '{{MAPPINGS_FINGERPRINT}}'
 # Informational only: the harness this file was generated FOR. This executor is
 # harness-independent, so the value is a fixed sentinel rather than a harness
-# name, and NO code path reads it as a lock: any harness's call dispatches. It
-# survives because plan status metadata names it (manage-status's
+# name, and NO code path reads it as a lock: any harness's call dispatches. It is
+# kept because plan status metadata names it (manage-status's
 # `_executor_target_stamp`), where it means "generated for", never "restricted
-# to".
+# to" — and because a constant is what keeps the file's bytes independent of the
+# harness that wrote them.
 GENERATED_FOR = '{{GENERATED_FOR}}'
 # The bundles/cache roots this executor may resolve scripts from, one entry per
-# installed harness, in a canonical order that does not depend on the harness
-# doing the resolving: (harness, root) pairs. A root that does not exist on this
-# machine is still listed — the probe is a no-op — so two generations of the same
-# checkout produce identical bytes whether or not one harness happens to be
-# installed at the time. Resolution prefers the RUNTIME harness's own root, then
-# the rest in this order.
+# harness in the roster, in a canonical order that does not depend on the harness
+# doing the resolving: (harness, root) pairs. A harness that resolves no root
+# keeps its slot with an empty string — the probe is a no-op — so the list depends
+# on the ROSTER, not on which harnesses are installed today. Resolution prefers
+# the RUNTIME harness's own root, then the rest in this order.
 _INSTALLED_ROOTS = (
 {{INSTALLED_ROOTS}}
 )
 # Published version per installed harness, read from THAT harness's own
 # dist-manifest.json at generation time. Empty sentinel when a harness publishes
-# no manifest. version_for_harness() is the single reader; it lets staleness be
-# judged per runtime harness instead of against whichever harness happened to
-# generate the file.
+# no manifest. Two textual readers parse this map at version-check time
+# (plugin_registry.read_executor_version and generate_executor's), which is what
+# lets staleness be judged per runtime harness instead of against whichever
+# harness happened to generate the file.
 _INSTALLED_VERSIONS = (
 {{INSTALLED_VERSIONS}}
 )
 # The plugin root this executor was generated against, as one informational
-# string for status metadata: the checkout's marketplace tree when one exists,
-# else every installed harness root joined by commas. Written exactly as the
-# roots above are, so it never carries the invoking harness either.
+# string for status metadata: every installed harness root, comma-joined. Written
+# exactly as the roots above are, so it never carries the invoking harness either.
 EXECUTOR_PLUGIN_ROOT = '{{EXECUTOR_PLUGIN_ROOT}}'
 # SHA-256 of this template file's content at generation time. The
 # generate_executor bootstrap verb compares it against the live template to
@@ -255,22 +253,6 @@ def _runtime_harness() -> str | None:
         return detect_target_from_env() or None
     except Exception:
         return None
-
-
-def version_for_harness(harness: str | None = None) -> str:
-    """Return the published version of ``harness``'s install, or the tree's.
-
-    The per-harness half of the provisioning stamp. A reader that must judge
-    staleness as the RUNNING harness would reads here rather than from
-    ``MARSHALL_VERSION``, which is the tree's version. Falls back to
-    ``MARSHALL_VERSION`` when the harness has no published version, and to the
-    empty sentinel when nothing is known.
-    """
-    target = harness if harness is not None else _runtime_harness()
-    for name, version in _INSTALLED_VERSIONS:
-        if name == target and version:
-            return version
-    return MARSHALL_VERSION
 
 
 def _recovery_command(target: str | None = None) -> str:
@@ -562,7 +544,6 @@ _ALL_SCRIPT_DIRS = [{{EXTRA_SCRIPT_DIRS}}]
 _TREE_SCRIPT_DIRS = sorted({p for p in _SCRIPT_DIRS_FROM_MAPPINGS + _ALL_SCRIPT_DIRS if _is_tree_script_dir(p)})
 _CACHE_SCRIPT_DIRS = sorted({p for p in _SCRIPT_DIRS_FROM_MAPPINGS + _ALL_SCRIPT_DIRS if not _is_tree_script_dir(p)})
 _SCRIPT_DIRS = _TREE_SCRIPT_DIRS + _CACHE_SCRIPT_DIRS
-_PYTHONPATH = ':'.join(_SCRIPT_DIRS)
 
 
 def _root_family_of(_path: str) -> str:
@@ -1865,11 +1846,12 @@ def resolve_notation(notation: str) -> str | None:
        other installed harness, newest version first, nested and flat shapes
        alike. A hit in another harness's install emits ONE note on stderr and
        dispatches anyway — a foreign copy is a usable copy, never a refusal.
-    4. The embedded mapping's last resort: a still-existing path inside another
-       harness's install, noted the same way.
-    5. cwd/executor-file upward walk to a live ``marketplace/bundles`` tree
+    4. cwd/executor-file upward walk to a live ``marketplace/bundles`` tree
        (_resolve_notation_by_cwd_walk) — walks up from both ``Path.cwd()`` and
-       this executor file's own location.
+       this executor file's own location. It runs BEFORE the foreign embedded
+       path, because a reachable tree is the checkout's own source.
+    5. The embedded mapping's last resort: a still-existing path inside another
+       harness's install, noted the same way.
     """
     # 0. Live tree above this executor file — the same leg every harness takes.
     tree_hit = _tree_probe(notation)
@@ -1894,13 +1876,20 @@ def resolve_notation(notation: str) -> str | None:
         _note_if_foreign(notation, resolved)
         return resolved
 
-    # 4. Last resort: the embedded path, even from another harness's install.
+    # 4. cwd / executor-file upward walk to a live marketplace/bundles tree.
+    #    BEFORE the foreign embedded path: a tree this call can reach is the
+    #    checkout's own source, which the resolution order puts ahead of any
+    #    deployed copy — including a deployed copy the mapping names.
+    cwd_hit = _resolve_notation_by_cwd_walk(notation)
+    if cwd_hit:
+        return cwd_hit
+
+    # 5. Last resort: the embedded path, even from another harness's install.
     if embedded and Path(embedded).is_file():
         _note_if_foreign(notation, embedded)
         return embedded
 
-    # 5. cwd / executor-file upward walk to a live marketplace/bundles tree.
-    return _resolve_notation_by_cwd_walk(notation)
+    return None
 
 
 def build_notation_error(notation: str) -> tuple[str, list[str]]:

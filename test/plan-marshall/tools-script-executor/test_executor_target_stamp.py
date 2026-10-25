@@ -4,8 +4,8 @@
 
 The PLAN-LB-43 D5 contract this file used to assert — "a foreign harness run is
 refused by name with ``executor_target_mismatch``" — is retired. One executor
-serves every harness: the stamp says only WHICH harness generated the file
-(``GENERATED_FOR``), and a call from any harness dispatches.
+serves every harness: ``GENERATED_FOR`` is a fixed sentinel (never a harness
+name), and a call from any harness dispatches.
 """
 
 from __future__ import annotations

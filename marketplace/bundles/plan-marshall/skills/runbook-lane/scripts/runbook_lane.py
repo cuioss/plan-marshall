@@ -511,11 +511,15 @@ def _lane_text_version(skill_dir: Path | None = None) -> str | None:
     return live.name if live is not None else None
 
 
-def _executor_skew(executor: Path, lane_skill_dir: Path | None = None) -> str:
+def _executor_skew(executor: Path, lane_skill_dir: Path | None = None, target: str | None = None) -> str:
     """Compare the executor's version with the lane text's version.
 
     The version is read through ``plugin_registry``'s shared executor reader,
-    never by parsing the executor here. Returns ``match`` when the executor is
+    never by parsing the executor here. ``target`` names the harness the
+    comparison is made FOR: a harness-independent executor carries a version per
+    harness, so the verdict must be the one the RUNNING harness would reach — the
+    same read that reports ``executor_version`` — or the reported fields and the
+    verdict can disagree. Returns ``match`` when the executor is
     the same version or newer, ``skew`` when it is OLDER than the text this run
     read — the dangerous direction, where the text names verbs the executor's
     mapped script does not have — and ``could_not_check`` when either version
@@ -524,7 +528,7 @@ def _executor_skew(executor: Path, lane_skill_dir: Path | None = None) -> str:
     """
     from plugin_registry import EXECUTOR_VERSION_FOUND, read_executor_version, version_key
 
-    state, executor_version = read_executor_version(executor)
+    state, executor_version = read_executor_version(executor, target=target)
     lane_version = _lane_text_version(lane_skill_dir)
     if state != EXECUTOR_VERSION_FOUND or executor_version is None or lane_version is None:
         return _EXECUTOR_SKEW_UNCHECKED
@@ -562,7 +566,7 @@ def cmd_executor_skew(args: argparse.Namespace) -> dict[str, Any]:
         runtime_harness = None
     state, executor_version = read_executor_version(executor, target=runtime_harness)
     lane_version = _lane_text_version(lane_skill_dir)
-    verdict = _executor_skew(executor, lane_skill_dir)
+    verdict = _executor_skew(executor, lane_skill_dir, target=runtime_harness)
     result: dict[str, Any] = {
         'status': 'success',
         'operation': 'executor-skew',

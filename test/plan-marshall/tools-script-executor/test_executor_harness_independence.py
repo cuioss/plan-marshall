@@ -110,9 +110,12 @@ def _nested_install_script(root: Path, bundle: str, version: str, skill: str, sc
     return _write_script(root / bundle / version / 'skills' / skill / 'scripts' / f'{script}.py', body)
 
 
-def _manifest(root: Path, version: str) -> None:
+def _manifest(root: Path, version: str, *, executor_changed_at: str = '0.1.0') -> None:
     root.mkdir(parents=True, exist_ok=True)
-    (root / 'dist-manifest.json').write_text(json.dumps({'version': version}), encoding='utf-8')
+    payload: dict[str, str] = {'version': version}
+    if executor_changed_at:
+        payload['executor_changed_at_version'] = executor_changed_at
+    (root / 'dist-manifest.json').write_text(json.dumps(payload), encoding='utf-8')
 
 
 # =============================================================================
@@ -512,3 +515,140 @@ def test_d5_no_shipped_text_regenerates_on_a_target_mismatch(path):
 
     assert 'executor_target_mismatch' not in text
     assert 'executor targets' not in text
+    if path.parent.name == 'runbook-lane':
+        # The positive rule, not only the absences: the lane must SAY that a
+        # target difference is not a regeneration trigger.
+        assert 'target difference is not a regeneration trigger' in text
+
+
+# =============================================================================
+# Review follow-ups: the cases the first pass left uncovered
+# =============================================================================
+
+
+def test_d3_rewrite_maps_a_nested_entry_to_the_tree(tmp_path, monkeypatch):
+    """The mapping rewrite resolves a sub-directory entry by its OWN suffix.
+
+    A ``{script}.py`` join silently leaves exactly these four entries pointing
+    into the generating harness's install, which is the D3 defect.
+    """
+    tree = tmp_path / 'checkout' / 'marketplace' / 'bundles'
+    tree_script = tree / 'demo' / 'skills' / 'skill' / 'scripts' / 'workflow' / 'tool.py'
+    tree_script.parent.mkdir(parents=True)
+    tree_script.write_text('# tree', encoding='utf-8')
+    monkeypatch.setattr(ge, '_shared_get_base_path', lambda *args, **kwargs: tree)
+    deployed = '/somewhere/install/demo/0.1.1/skills/skill/scripts/workflow/tool.py'
+
+    rewritten = ge._rewrite_mappings_to_tree({'demo:skill:tool': deployed}, tree)
+
+    assert rewritten['demo:skill:tool'] == str(tree_script.resolve())
+
+
+def test_d3_pythonpath_on_a_tree_script_never_puts_a_foreign_install_first(tmp_path, monkeypatch):
+    """A tree script's helpers come from the tree, never a foreign install's."""
+    checkout = tmp_path / 'checkout'
+    tree_script = _write_script(
+        checkout / 'marketplace' / 'bundles' / 'demo' / 'skills' / 'skill' / 'scripts' / 'tool.py',
+        ("import os\nprint('PYTHONPATH=' + os.environ.get('PYTHONPATH', '').split(':')[0])\n"),
+    )
+    foreign_root = tmp_path / 'foreign-install'
+    _flat_install_script(foreign_root, 'demo', 'skill', 'tool', 'print("foreign")\n')
+    roots = (('opencode', str(foreign_root)),)
+    executor = _generate(
+        monkeypatch,
+        checkout / '.plan',
+        'claude',
+        mappings={'demo:skill:tool': str(tree_script)},
+        roots=roots,
+    )
+
+    result = _run(executor, ['demo:skill:tool'], 'opencode')
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    first = result.stdout.strip().removeprefix('PYTHONPATH=')
+    assert str(checkout) in first, f'the tree must lead the PYTHONPATH, got {first}'
+    assert str(foreign_root) not in first
+
+
+def test_d4_executor_skew_judges_the_running_harness(tmp_path):
+    """One executor, two harnesses, two verdicts — the running harness decides."""
+    rl = load_script_module('plan-marshall', 'runbook-lane', 'runbook_lane.py', 'rl_skew_under_test')
+    executor = tmp_path / 'execute-script.py'
+    executor.write_text(
+        "MARSHALL_VERSION = '0.1.5'\n"
+        '_INSTALLED_VERSIONS = (\n'
+        "    ('claude', '0.1.5'),\n"
+        "    ('opencode', '0.1.2'),\n"
+        ')\n',
+        encoding='utf-8',
+    )
+    original = rl._lane_text_version
+    rl._lane_text_version = lambda *args, **kwargs: '0.1.4'
+    try:
+        assert rl._executor_skew(executor, target='claude') == 'match'
+        assert rl._executor_skew(executor, target='opencode') == 'skew'
+    finally:
+        rl._lane_text_version = original
+
+
+def test_d4_a_harness_without_its_own_version_still_resolves_a_valid_notation(tmp_path, monkeypatch):
+    """A valid notation with no copy anywhere resolves to nothing, not to a guess."""
+    ns = types.ModuleType('resolver_valid_but_absent')
+    module = load_script_module('plan-marshall', 'tools-script-executor', 'generate_executor.py', 'ge_absent')
+    code = module.generate_target_aware_resolver_code('claude')
+    ns.__dict__.update(
+        {
+            'Path': Path,
+            'os': os,
+            'SCRIPTS': {},
+            '_INSTALLED_ROOTS': (('claude', str(tmp_path / 'nowhere')),),
+            '_runtime_harness': lambda: 'claude',
+            '__file__': str(tmp_path / 'checkout' / '.plan' / 'execute-script.py'),
+        }
+    )
+    exec(compile(code, '<resolver>', 'exec'), ns.__dict__)
+
+    assert ns._resolve_notation_by_target('demo:skill:tool') is None
+
+
+def test_d4_hidden_version_dirs_are_skipped(tmp_path):
+    """A hidden version directory carrying the script is not selected."""
+    root = tmp_path / 'install'
+    hidden = root / 'demo' / '.hidden-version' / 'skills' / 'skill' / 'scripts'
+    hidden.mkdir(parents=True)
+    (hidden / 'tool.py').write_text('# hidden', encoding='utf-8')
+
+    ns = types.ModuleType('resolver_hidden_dir')
+    code = ge.generate_target_aware_resolver_code('claude')
+    ns.__dict__.update(
+        {
+            'Path': Path,
+            'os': os,
+            'SCRIPTS': {},
+            '_INSTALLED_ROOTS': (('claude', str(root)),),
+            '_runtime_harness': lambda: 'claude',
+            '__file__': str(tmp_path / 'x' / 'execute-script.py'),
+        }
+    )
+    exec(compile(code, '<resolver>', 'exec'), ns.__dict__)
+
+    assert ns._resolve_notation_by_target('demo:skill:tool') is None
+
+
+#: Snapshot of the checkout's own executor at module import, so the guards below
+#: can prove this module never wrote it. The suite-wide half of D5's last clause
+#: lives here because a shared-conftest guard would have to fail every session
+#: that touched it — including sessions this plan does not own.
+_CHECKOUT_EXECUTOR = Path(__file__).resolve().parents[3] / '.plan' / 'execute-script.py'
+_CHECKOUT_BEFORE = (
+    (_CHECKOUT_EXECUTOR.read_bytes(), _CHECKOUT_EXECUTOR.stat().st_mtime_ns) if _CHECKOUT_EXECUTOR.is_file() else None
+)
+
+
+def test_d5_zz_the_module_left_the_checkout_executor_untouched():
+    """Session guard: nothing in this module rewrote the live executor."""
+    if _CHECKOUT_BEFORE is None:
+        pytest.skip('no checkout executor in this checkout')
+    after = (_CHECKOUT_EXECUTOR.read_bytes(), _CHECKOUT_EXECUTOR.stat().st_mtime_ns)
+
+    assert after == _CHECKOUT_BEFORE, 'a test in this module rewrote the checkout executor'

@@ -3264,7 +3264,14 @@ def _executor_start_failure(executor_path: Path) -> str:
 
 
 def _read_executor_target_stamp(executor_path: Path) -> str:
-    """Read the existing executor's ``_EXECUTOR_TARGET`` stamp, or ``''``."""
+    """Read the LEGACY ``_EXECUTOR_TARGET`` stamp, or ``''``.
+
+    Kept only to describe an executor written BEFORE the harness-independent
+    change: current generation writes ``GENERATED_FOR`` (a fixed sentinel) and no
+    ``_EXECUTOR_TARGET`` at all, so a file written by this generator reports the
+    empty string. Nothing acts on the value — it is payload continuity for the
+    recovery report, never a lock.
+    """
     try:
         text = executor_path.read_text(encoding='utf-8')
     except (OSError, UnicodeDecodeError):

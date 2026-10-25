@@ -1447,10 +1447,11 @@ def _executor_target_stamp() -> dict[str, str]:
     """Read the serving executor's "generated for" stamp, or ``{}``.
 
     The stamp is recorded in ``status.metadata`` at plan creation so a later
-    reader can tell what harness wrote the executor and which plugin tree it was
-    generated against. Both keys keep their names and now mean "generated for":
-    the executor they describe serves EVERY harness, so neither value is a lock
-    or a restriction — nothing refuses a call because of the pair.
+    reader can tell what the serving executor declared about itself. Both keys
+    keep their names and now mean "generated for": the executor they describe
+    serves EVERY harness, and ``executor_target`` is the fixed sentinel the
+    generator writes (never a harness name), so neither value is a lock or a
+    restriction — nothing refuses a call because of the pair.
     An absent or unstamped executor yields no keys rather than an empty-string
     claim — the same "an absent identity is a stated sentinel, never an assumed
     one" rule the target resolver applies.

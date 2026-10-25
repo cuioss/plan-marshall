@@ -489,10 +489,10 @@ stale embedded path is never returned blindly:
    prints one `note:` line on stderr and dispatches anyway.
 5. **cwd upward walk** — walks up from `Path.cwd()` to the same live tree.
 
-The executor is harness-independent: `GENERATED_FOR` records which harness wrote
-the file and nothing reads it as a lock. `--target` is a hint for which install
-to PREFER, and two harnesses regenerating one checkout produce byte-identical
-files.
+The executor is harness-independent: `GENERATED_FOR` is a fixed sentinel that
+records that the file serves any harness (never a harness name), and nothing
+reads it as a lock. `--target` is a hint for which install to PREFER, and two
+harnesses regenerating one checkout produce byte-identical files.
 
 Because of this, `PM_MARKETPLACE_ROOT` is **not required** to recover from a
 stale/relocated embedded path — it remains only as an intentional explicit
