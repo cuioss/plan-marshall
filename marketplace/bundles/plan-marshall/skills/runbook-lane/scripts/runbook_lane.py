@@ -313,8 +313,11 @@ def _resolve_spec(spec_value: str, project_dir: Path, *, from_ledger: bool = Fal
     elif spec.is_file():
         # The caller named the ONLY copy. It survived the shape check above, so it
         # is either the main checkout's own file or, under the flag, the ledger
-        # worktree's.
-        chosen, source = spec.resolve(), ('ledger_worktree' if from_ledger else 'main_checkout')
+        # worktree's. The LABEL comes from where the file actually resolves, never
+        # from the flag alone: the flag says which copy to prefer, and a sole copy
+        # outside the ledger store is not one.
+        chosen = spec.resolve()
+        source = 'ledger_worktree' if store is not None and _contained_file(chosen, store) else 'main_checkout'
     else:
         raise ValueError('invalid_spec')
 

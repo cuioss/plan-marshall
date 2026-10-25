@@ -21,6 +21,7 @@ isolates the machine-global tier.
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -240,6 +241,8 @@ def test_a_single_copy_carries_no_differ_marker(tmp_path: Path) -> None:
     data = _run_resolve(tmp_path, SPEC_REL, from_ledger=True)
 
     assert data['status'] == 'success', data
+    assert _titles(data) == [MAIN_TITLE]
+    assert data['spec_source'] == 'main_checkout'
     assert 'spec_differ' not in data
 
 
@@ -320,13 +323,15 @@ def test_a_symlinked_spec_cannot_escape_its_store(tmp_path: Path) -> None:
 
 
 def test_lane_text_names_the_ledger_read_and_what_it_reports() -> None:
-    """The landing's RULE-CHECK section carries both facts, not just the setup text."""
+    """The landing's RULE-CHECK item carries both facts, not just the setup text."""
     text = _SKILL_TEXT.read_text(encoding='utf-8')
     rule_check = text.split('**Rule check**', 1)
 
     assert len(rule_check) == 2, 'the landing report has no rule-check section'
-    assert 'spec_source' in rule_check[1]
-    assert 'spec_differ' in rule_check[1]
+    # Stop at the next numbered report item, so only the rule-check item is searched.
+    item = re.split(r'^ {0,4}\d+\. \*\*', rule_check[1], maxsplit=1, flags=re.MULTILINE)[0]
+    assert 'spec_source' in item
+    assert 'spec_differ' in item
 
 
 # =============================================================================
