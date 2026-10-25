@@ -2,10 +2,10 @@
   "id": "PLAN-LB-94",
   "slug": "one-executor-all-harnesses",
   "workstream": "WS-04",
-  "status": "running",
+  "status": "shipped",
   "lane": "runbook",
-  "plan_marshall_plan_id": "",
-  "pr": "",
-  "landing": "",
+  "plan_marshall_plan_id": "rb-lb-94-one-executor-all-harnesses",
+  "pr": "1861",
+  "landing": "landings/PLAN-LB-94.md",
   "seq": 94
 }
