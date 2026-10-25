@@ -2,10 +2,10 @@
   "id": "PLAN-LB-90",
   "slug": "lane-reads-ledger-spec",
   "workstream": "WS-04",
-  "status": "running",
+  "status": "shipped",
   "lane": "runbook",
-  "plan_marshall_plan_id": "",
-  "pr": "",
-  "landing": "",
+  "plan_marshall_plan_id": "lb-90-lane-reads-ledger-spec",
+  "pr": "1859",
+  "landing": "landings/PLAN-LB-90.md",
   "seq": 90
 }
