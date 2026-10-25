@@ -579,12 +579,12 @@ def _install_root_of(_path: str) -> tuple[str | None, str | None]:
     return None, None
 
 
-#: Per-process cache of an install root's script dirs, keyed by the root AND the
-#: version the resolved script belongs to. The listing is a property of the
-#: install and of that version, and one process dispatches many times; re-walking
-#: it per call would cost more than the guard it feeds. The version is part of the
-#: key because the answer is that version's — a dispatch from another cached
-#: version must never be served the first one's answer.
+#: Per-process cache of an install root's script dirs, keyed by the root, the
+#: version and the bundle the resolved script belongs to. The listing is a
+#: property of the install and of that version, and one process dispatches many
+#: times; re-walking it per call would cost more than the guard it feeds. The
+#: key carries all three because the answer depends on all three — a dispatch
+#: from another cached version must never be served the first one's answer.
 _SAME_ROOT_DIRS_CACHE: dict[str, tuple[str, ...]] = {}
 
 
@@ -608,21 +608,28 @@ def _version_dir_of(_path: str, _root: str) -> tuple[str | None, str | None]:
     - ``{root}/{bundle}/{version}/skills/{skill}/scripts/...`` -> ``(version, bundle)``
     - ``{root}/{version}/skills/{skill}/scripts/...`` -> ``(version, None)``
 
-    A flat ``{root}/{bundle}-{skill}/scripts/...`` path has no ``skills`` segment
-    and answers ``(None, None)``, as does a path outside ``_root`` and a path
-    under a HIDDEN version directory — the resolver's own walk skips those, and a
-    hidden directory is not a version this executor serves.
+    A segment is read as a version only when :func:`_version_key` finds a number
+    in it, so an unversioned ``{root}/{bundle}/skills/...`` path is not mistaken
+    for one. A flat ``{root}/{bundle}-{skill}/scripts/...`` path has no ``skills``
+    segment at all. Both answer ``(None, None)``, as does a path outside
+    ``_root``; those keep the root-wide walk.
+
+    A HIDDEN version or bundle directory still answers its version. The selection
+    helpers (:func:`_visible_subdirs`, :func:`_newest_version_dir`) skip hidden
+    directories, so the walk for such a path finds no hidden copy — the
+    resolver's own rule — while the root-wide walk, which would hand the script
+    every cached version, stays closed.
     """
     try:
         _segments = Path(_path).resolve().relative_to(Path(_root).expanduser().resolve()).parts
-    except (OSError, ValueError):
+    except (OSError, ValueError, RuntimeError):
         return None, None
     if 'skills' not in _segments:
         return None, None
     _prefix = _segments[: _segments.index('skills')]
-    if len(_prefix) == 2 and not _prefix[1].startswith('.'):
+    if len(_prefix) == 2 and _version_key(_prefix[1]):
         return _prefix[1], _prefix[0]
-    if len(_prefix) == 1 and not _prefix[0].startswith('.'):
+    if len(_prefix) == 1 and _version_key(_prefix[0]):
         return _prefix[0], None
     return None, None
 
@@ -653,7 +660,7 @@ def _skills_script_dirs(_version_dir: Path) -> list[str]:
         try:
             if _scripts.is_dir():
                 _dirs.append(str(_scripts.resolve()))
-        except (OSError, ValueError):
+        except (OSError, ValueError, RuntimeError):
             continue
     return _dirs
 
@@ -666,6 +673,15 @@ def _version_script_dirs(_root: str, _version: str, _bundle: str | None) -> list
     bundle can never shadow it. A bundle that carries no directory at
     ``_version`` is not installed at it, so it contributes its NEWEST version
     instead, selected by :func:`_version_key` rather than by a string sort.
+
+    Newest, not "newest at or below ``_version``": there is no copy of that
+    bundle at the script's own version to prefer, so the choice is between the
+    bundle's newest copy and contributing nothing at all. Contributing nothing
+    strips that bundle's helpers from every consumer project whose bundles are not
+    all installed at one version, which is the common case; the newest copy is
+    the one the project runs day to day. The mirror risk this accepts — an old
+    pinned script reaching a newer helper — is the price of that, and it is the
+    same direction the resolver itself takes when it walks a bundle's versions.
 
     The ``{root}/{version}/skills/...`` shape names the version in the root's own
     first segment, so it has no sibling bundles to fall back FOR: it contributes
@@ -690,11 +706,13 @@ def _version_script_dirs(_root: str, _version: str, _bundle: str | None) -> list
 
 
 def _unversioned_script_dirs(_root: str) -> list[str]:
-    """Return every script dir under a root that carries no version directory.
+    """Return every script dir under ``_root``, for a path with no version.
 
     The flat deploy shape (``{root}/{bundle}-{skill}/scripts``) has no version
     segment, so there is nothing to bound the walk to: it keeps the handling it
-    had before a version could be read off the path.
+    had before a version could be read off the path. Any other path the version
+    reader could not place takes the same route, so an unrecognised root loses no
+    directory it used to serve.
     """
     found: list[str] = []
     try:

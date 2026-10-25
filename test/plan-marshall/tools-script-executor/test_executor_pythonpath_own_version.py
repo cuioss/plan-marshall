@@ -7,8 +7,10 @@ exists once per cached version. The dispatch ``PYTHONPATH`` must carry the
 version the script was resolved FROM, and no other: a helper imported from an
 older version either lacks a symbol the script needs (``ImportError``) or
 silently runs older code. Each case renders the real executor template into a
-consumer-project fixture that carries no marketplace tree, so every script and
-helper has to come from the fixture cache.
+project whose executor sits outside any marketplace tree, so resolution has to
+come from the fixture cache; the generating checkout's own script dirs ride
+along last, which is why every fixture module and skill name here is
+fixture-only — nothing in the real tree can satisfy these imports by accident.
 """
 
 from __future__ import annotations
@@ -111,6 +113,20 @@ def _consumer_fixture(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, versions:
     return _generate(monkeypatch, tmp_path / 'project' / '.plan', cache)
 
 
+def _assert_own_version_helper_import(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, versions: tuple[str, ...]
+) -> None:
+    """D1's check: the newest script imports the newest helper, over ``versions``."""
+    executor = _consumer_fixture(tmp_path, monkeypatch, versions)
+
+    result = _run(executor, ['plan-marshall:probe:tool'])
+
+    assert result.returncode == 0, f'ImportError naming {_MARKER}: {result.stdout}{result.stderr}'
+    pythonpath = ':'.join(_pythonpath(result))
+    assert f'{_MARKER}={_NEWEST}' in result.stdout, result.stdout
+    assert '0.1.1916' not in pythonpath, pythonpath
+
+
 # =============================================================================
 # D1 — the same-root walk returns only the resolved script's own version
 # =============================================================================
@@ -118,14 +134,7 @@ def _consumer_fixture(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, versions:
 
 def test_d1_a_cached_script_imports_its_own_versions_helper(tmp_path, monkeypatch):
     """A newest-version script imports the newest helper while an older one is cached."""
-    executor = _consumer_fixture(tmp_path, monkeypatch, ('0.1.1916', _NEWEST))
-
-    result = _run(executor, ['plan-marshall:probe:tool'])
-
-    assert result.returncode == 0, result.stdout + result.stderr
-    pythonpath = ':'.join(_pythonpath(result))
-    assert f'{_MARKER}={_NEWEST}' in result.stdout, result.stdout
-    assert '0.1.1916' not in pythonpath, pythonpath
+    _assert_own_version_helper_import(tmp_path, monkeypatch, ('0.1.1916', _NEWEST))
 
 
 # =============================================================================
@@ -204,7 +213,7 @@ def test_d3_no_skill_gets_an_older_copy_ahead_of_a_newer_one(tmp_path, monkeypat
     pythonpath = _pythonpath(result)
     for skill in ('platform-runtime', 'probe'):
         found = _versions_of(pythonpath, tmp_path / 'cache', skill)
-        assert len(found) <= 1, f'{skill} carries {found} — an older copy can shadow the newer one'
+        assert len(found) == 1, f"{skill} carries {found} — it must appear once, on the script's version"
 
 
 def test_d3_the_version_direct_nested_shape_uses_the_scripts_version(tmp_path, monkeypatch):
@@ -229,15 +238,9 @@ def test_d3_the_version_direct_nested_shape_uses_the_scripts_version(tmp_path, m
 
 
 def test_d4_eight_cached_versions_still_import_the_newest_helper(tmp_path, monkeypatch):
-    """The reported shape: eight cached versions, the helper gaining a symbol."""
-    executor = _consumer_fixture(
+    """D1's check on the reported shape: eight cached versions, the helper gaining a symbol."""
+    _assert_own_version_helper_import(
         tmp_path,
         monkeypatch,
         ('0.1.1916', '0.1.1965', '0.1.1969', '0.1.1989', '0.1.1996', '0.1.2004', '0.1.2007', _NEWEST),
     )
-
-    result = _run(executor, ['plan-marshall:probe:tool'])
-
-    assert result.returncode == 0, f'ImportError naming {_MARKER}: {result.stdout}{result.stderr}'
-    assert f'{_MARKER}={_NEWEST}' in result.stdout, result.stdout
-    assert '0.1.1916' not in ':'.join(_pythonpath(result))
