@@ -86,6 +86,13 @@
       "reason": "Stamps a lifecycle transition, and separately slices the first ten characters into a date prefix used as an identifier component. The prefix is the same trap the lessons-identifier entry names: it doubles as a sort key, so converting it would silently reorder records."
     },
     {
+      "file": "marketplace/bundles/plan-marshall/skills/manage-status/scripts/_cmd_halt.py",
+      "classification": "STORE",
+      "reached_via": "now_utc_iso",
+      "stored_as": "recorded_at, answered_at",
+      "reason": "Stamps recorded_at on a halt record and answered_at on the operator answer stored beside it. Both are persisted record fields a later read reports and orders firings by; neither is formatted into text an operator is shown as a wall-clock time."
+    },
+    {
       "file": "marketplace/bundles/plan-marshall/skills/manage-status/scripts/_cmd_loop_back.py",
       "classification": "STORE",
       "reached_via": "now_utc_iso",

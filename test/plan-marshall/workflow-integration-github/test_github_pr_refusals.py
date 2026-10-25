@@ -883,6 +883,10 @@ def test_fetch_findings_surfaces_rate_limit_refusals_bot_agnostically(plan_conte
             'path': 'src/a.py',
             'line': 3,
             'resolved': False,
+            # The commit the provider says this comment was submitted against. It names
+            # the patched merge candidate, so the review IS of the tree being merged —
+            # the condition under which a refusal observed beside it cannot displace it.
+            'commit_id': 'deadbeef',
         },
         {
             'id': 'sr-notice',
@@ -932,11 +936,13 @@ def test_fetch_findings_surfaces_rate_limit_refusals_bot_agnostically(plan_conte
     assert result['count_skipped_noise'] == 0
     # Only the two notices whose author resolves to a registered bot are attributable.
     assert result['refused_bots'] == ['coderabbit', 'sourcery']
-    # Participation is unaffected by the refusal it also posted: CodeRabbit's
-    # genuine inline comment is one of its declared publish shapes, so positive
-    # diff-derived evidence still outranks the refusal observation. Sourcery's
-    # genuine comment is `inline`, which is NOT its declared shape (`review_body`),
-    # so it is not credited — the evidence-typed contract, not a refusal effect.
+    # Participation survives the refusal the same bot also posted, because CodeRabbit's
+    # genuine inline comment is one of its declared publish shapes AND the provider
+    # reports it against the merge candidate — positive, placed, diff-derived evidence.
+    # A comment the provider could not place would not outrank the refusal (PLAN-LB-55
+    # D3). Sourcery's genuine comment is `inline`, which is NOT its declared shape
+    # (`review_body`), so it is not credited — the evidence-typed contract, not a
+    # refusal effect.
     assert result['participated_bots'] == [{'bot_kind': 'coderabbit', 'evidence_kind': 'inline'}]
     assert result['producer_mismatch_hash_id'] is None
 

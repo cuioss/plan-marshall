@@ -15,7 +15,7 @@ Phase skills occasionally drift between what they *report* they did and what the
 Executor notation: `plan-marshall:plan-marshall:phase_handshake`
 
 ```text
-phase_handshake capture        --plan-id X --phase P [--override --reason "text"]
+phase_handshake capture        --plan-id X --phase P [--override --reason "text" --operator-answer "text"]
 phase_handshake verify         --plan-id X --phase P [--strict]
 phase_handshake findings-check --plan-id X --phase P
 phase_handshake list           --plan-id X
@@ -26,7 +26,7 @@ All subcommands return TOON.
 
 ### `capture`
 
-Runs every applicable invariant and writes (or replaces) the row for `phase` in `handshakes.toon`. `--override --reason X` marks the row as an authorized override.
+Runs every applicable invariant and writes (or replaces) the row for `phase` in `handshakes.toon`. `--override --reason X --operator-answer Y` marks the row as an authorized override: `--reason` is the caller's rationale and `--operator-answer` is the answer the operator gave, and BOTH are required — a drift override is the operator's ruling, so a main-context rationale alone is not an override.
 
 ```toon
 status: success
@@ -41,7 +41,7 @@ invariants:
   config_hash: d4e5f6…
 ```
 
-`--override` without `--reason` returns `status: error, error: missing_reason`.
+`--override` without `--reason` returns `status: error, error: missing_reason`; without `--operator-answer` it returns `status: error, error: missing_operator_answer`; and `--operator-answer` WITHOUT `--override` returns `status: error, error: operator_answer_without_override`, because an ordinary capture records no override for an answer to authorize. There is exactly one other override basis — the loop-back re-entry auto-override — and it has no CLI spelling: `manage-status transition` reaches it in-process after observing the plan's `loop_back_reentry` marker, so no caller can assert it and no operator answer is fabricated for it.
 
 ### `verify`
 
@@ -72,7 +72,7 @@ diffs[2]{invariant,captured,observed}:
 
 A loop-back (`manage-status set-phase` to a phase that precedes the current one) guarantees drift by construction: the re-entered phases legitimately change the invariants recorded at the pre-loop-back capture, so the next guarded-boundary verify reports `status: drift` every time. `cmd_set_phase` therefore persists `metadata.loop_back_reentry = {from_phase, to_phase, at}` on every backward move, and `cmd_transition`'s inline guard consumes it at the **very next guarded boundary check, regardless of whether that check found drift** (the consume-on-next-guarded-verification contract):
 
-- **Drift + marker** (the expected case): the transition re-captures the handshake automatically with `override=True` and the recorded reason `loop-back re-entry auto-override (scheduled by {from_phase} loop_back)`, clears the marker (persisted immediately, so the override fires exactly once per scheduled loop-back), emits a decision-log WARNING carrying the drift diff summary, and proceeds.
+- **Drift + marker** (the expected case): the transition re-captures the handshake automatically with `override=True`, `override_basis=scheduled_loop_back` (the reserved basis: this drift is scheduled by construction, so no operator answer exists to record) and the recorded reason `loop-back re-entry auto-override (scheduled by {from_phase} loop_back)`, clears the marker (persisted immediately, so the override fires exactly once per scheduled loop-back), emits a decision-log WARNING carrying the drift diff summary, and proceeds.
 - **Clean verify + marker**: the marker is consumed without a recapture — the transition pops it, persists the cleared metadata, and emits a decision-log INFO line noting the marker was consumed on a clean guarded verification. This prevents a stale marker from surviving a clean boundary and incorrectly auto-overriding a later, genuinely unscheduled drift.
 
 Scope limits:
@@ -112,10 +112,12 @@ File: `<base>/plans/{plan_id}/handshakes.toon` (owned exclusively by `phase_hand
 
 ```toon
 plan_id: recipe-plugin-compliance
-handshakes[2]{phase,captured_at,override,override_reason,main_sha,main_dirty,main_dirty_files,main_dirty_exempted,worktree_sha,worktree_dirty,references_valid,task_state_hash,qgate_open_count,config_hash,unfinished_tasks_count,phase_steps_complete,pending_findings_by_type,pending_findings_blocking_count,pr_title_present}:
-  5-execute,2026-04-14T17:42:57Z,false,"",3823a0dd…,0,[],[],"","",b2c3d4…,a1b2c3…,0,d4e5f6…,0,"","build-error=0,test-failure=0,lint-issue=0,sonar-issue=0",0,9f8e7d…
-  6-finalize,2026-04-14T18:01:12Z,false,"",15efe821…,0,[],[],"","",b2c3d4…,a1b2c3…,0,d4e5f6…,0,e7f8a9…,"build-error=0,test-failure=0,lint-issue=0,sonar-issue=0,pr-comment=0",0,9f8e7d…
+handshakes[2]{phase,captured_at,override,override_reason,operator_answer,override_basis,main_sha,main_dirty,main_dirty_files,main_dirty_exempted,worktree_sha,worktree_dirty,references_valid,task_state_hash,qgate_open_count,config_hash,unfinished_tasks_count,phase_steps_complete,pending_findings_by_type,pending_findings_blocking_count,pr_title_present}:
+  5-execute,2026-04-14T17:42:57Z,false,"","",operator,3823a0dd…,0,[],[],"","",b2c3d4…,a1b2c3…,0,d4e5f6…,0,"","build-error=0,test-failure=0,lint-issue=0,sonar-issue=0",0,9f8e7d…
+  6-finalize,2026-04-14T18:01:12Z,false,"","",operator,15efe821…,0,[],[],"","",b2c3d4…,a1b2c3…,0,d4e5f6…,0,e7f8a9…,"build-error=0,test-failure=0,lint-issue=0,sonar-issue=0,pr-comment=0",0,9f8e7d…
 ```
+
+`operator_answer` and `override_basis` are the two override-authority columns: the answer the operator gave (empty on an ordinary capture and on the reserved `scheduled_loop_back` basis), and which of the two authorized the override. They are separate because a caller can write a rationale, and only the operator can give an answer.
 
 Rationale for flat TOON over nested: simpler parsing, one row per phase, direct diff-ability. Adding a new invariant adds a new column; captures missing a column are treated as "not captured, skip comparison" during verify, so new invariants can roll out without invalidating history.
 
@@ -375,7 +377,7 @@ The actual call sites for `capture` and `verify` are the orchestrator workflow f
 
 The abstract contract is documented in [`../../ref-workflow-architecture/standards/phase-lifecycle.md`](../../ref-workflow-architecture/standards/phase-lifecycle.md): the Phase Completion Protocol calls `capture` as its final step; the Phase Entry Protocol calls `verify --strict` immediately after the Q-Gate check. The orchestrator workflows are the canonical implementation of that contract — they wire capture/verify alongside the existing `manage-metrics phase-boundary` calls so a single workflow edit covers all six phases without touching any phase skill individually.
 
-On `drift`: stop the phase, surface `diffs[]` verbatim, do not rationalize. Valid responses are an authorized override (`capture --override --reason X` followed by re-entry) or manual investigation. Exception: expected-by-construction drift on a sanctioned loop-back re-entry is re-captured automatically with a recorded override reason (see [Loop-back auto-override](#loop-back-auto-override-sanctioned-re-entry-drift)) — the operator-facing drift protocol applies only to unscheduled drift. On `skipped`: log a warning and continue — first-time rollout and manual transitions produce this status; it is not an error.
+On `drift`: stop the phase, surface `diffs[]` verbatim, do not rationalize. Valid responses are an authorized override (`capture --override --reason X --operator-answer Y` followed by re-entry, where `--operator-answer` quotes the answer the operator gave and is required) or manual investigation. Exception: expected-by-construction drift on a sanctioned loop-back re-entry is re-captured automatically with a recorded override reason (see [Loop-back auto-override](#loop-back-auto-override-sanctioned-re-entry-drift)) — the operator-facing drift protocol applies only to unscheduled drift. On `skipped`: log a warning and continue — first-time rollout and manual transitions produce this status; it is not an error.
 
 ## Non-goals
 

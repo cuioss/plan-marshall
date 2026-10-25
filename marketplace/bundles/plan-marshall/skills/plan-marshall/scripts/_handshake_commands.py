@@ -435,12 +435,16 @@ def _row_for_capture(
     *,
     override: bool,
     override_reason: str,
+    operator_answer: str = '',
+    override_basis: str = 'operator',
 ) -> dict[str, Any]:
     row: dict[str, Any] = {
         'phase': phase,
         'captured_at': _now_iso(),
         'override': override,
         'override_reason': override_reason,
+        'override_basis': override_basis,
+        'operator_answer': operator_answer,
     }
     for name, _applies, _capture in INVARIANTS:
         row[name] = captured.get(name, '')
@@ -454,7 +458,76 @@ def cmd_capture(args: Any) -> dict[str, Any]:
             'error': 'missing_reason',
             'message': '--override requires --reason',
         }
-
+    # A drift override is the OPERATOR's ruling, not the main context's. --reason
+    # states the rationale and can be written by the caller; --operator-answer is
+    # the operator's own answer, quoted. Requiring both makes "the main context
+    # overrode a drift refusal with its own reason" — an observed failure —
+    # unrepresentable on the operator basis. The ONE reserved exception is the
+    # scheduled loop-back re-entry auto-override, whose drift is produced by
+    # construction: it declares that basis, records NO operator answer (fabricating
+    # one would report consent for a question never asked), and is honored only
+    # while the loop-back marker that schedules it is actually present on the plan
+    # — otherwise the flag would be a second, caller-chosen spelling of "override
+    # without asking".
+    operator_answer = (getattr(args, 'operator_answer', None) or '').strip()
+    # The reserved basis has NO CLI spelling: it is reachable only from the
+    # in-process loop-back auto-override, which passes `loop_back_marker` after
+    # observing the marker itself. A caller-chosen flag would be a second spelling
+    # of "override without asking" — the very thing the answer gate removes.
+    override_basis = getattr(args, 'override_basis', 'operator') or 'operator'
+    if override_basis not in ('operator', 'scheduled_loop_back'):
+        return {
+            'status': 'error',
+            'error': 'unknown_override_basis',
+            'message': (
+                f'override_basis {override_basis!r} is not a basis this verb records. The only two '
+                'are "operator" (an answer the operator gave) and "scheduled_loop_back" (the '
+                'in-process loop-back auto-override); anything else would persist an override '
+                'whose authority nobody can name. Nothing was written.'
+            ),
+        }
+    scheduled_marker = bool(getattr(args, 'loop_back_marker', False))
+    if override_basis == 'scheduled_loop_back' and not scheduled_marker:
+        return {
+            'status': 'error',
+            'error': 'scheduled_override_without_marker',
+            'message': (
+                'The scheduled_loop_back override basis is reachable only from the in-process '
+                'loop-back auto-override, which observes the plan\u2019s loop_back_reentry marker '
+                'itself. No caller can assert it: ask the operator and pass --operator-answer, '
+                'or investigate the drift.'
+            ),
+        }
+    if operator_answer and override_basis != 'operator':
+        return {
+            'status': 'error',
+            'error': 'operator_answer_on_scheduled_override',
+            'message': (
+                'An operator answer is refused on the scheduled_loop_back basis: that drift is '
+                'scheduled by the loop-back marker, so recording an operator answer would report '
+                'consent for a question nobody asked.'
+            ),
+        }
+    if args.override and override_basis == 'operator' and not operator_answer:
+        return {
+            'status': 'error',
+            'error': 'missing_operator_answer',
+            'message': (
+                '--override requires --operator-answer: a drift override is authorized by the '
+                "operator\u2019s answer, and --reason alone records the caller's own rationale. Ask "
+                'the operator, then re-run with their answer quoted.'
+            ),
+        }
+    if not args.override and operator_answer:
+        return {
+            'status': 'error',
+            'error': 'operator_answer_without_override',
+            'message': (
+                '--operator-answer is meaningful only beside --override: an ordinary capture '
+                'records no override, so persisting an answer on it would describe an authorization '
+                'that never happened. Nothing was written.'
+            ),
+        }
     plan_id = args.plan_id
     phase = args.phase
     metadata = _load_status_metadata(plan_id)
@@ -501,17 +574,22 @@ def cmd_capture(args: Any) -> dict[str, Any]:
         metadata,
         override=bool(args.override),
         override_reason=args.reason or '',
+        operator_answer=operator_answer,
+        override_basis=override_basis,
     )
     upsert_row(plan_id, row)
 
     invariants_out = {name: row[name] for name, _a, _c in INVARIANTS if row[name] != ''}
-    return {
+    result: dict[str, Any] = {
         'status': 'success',
         'plan_id': plan_id,
         'phase': phase,
         'override': row['override'],
         'invariants': invariants_out,
     }
+    if row['override']:
+        result['operator_answer'] = row['operator_answer']
+    return result
 
 
 def _diffs(

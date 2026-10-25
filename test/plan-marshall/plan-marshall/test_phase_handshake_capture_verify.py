@@ -80,13 +80,33 @@ def test_capture_override_requires_reason(plan_context, stubbed_invariants, stub
 
 
 def test_capture_override_with_reason_stores_flag(plan_context, stubbed_invariants, stub_metadata) -> None:
-    result = cmds.cmd_capture(_ns(plan_id='cap-d', phase='5-execute', override=True, reason='manual commit'))
+    result = cmds.cmd_capture(
+        _ns(
+            plan_id='cap-d',
+            phase='5-execute',
+            override=True,
+            reason='manual commit',
+            operator_answer='the drift is legitimate — proceed',
+        )
+    )
     assert result['status'] == 'success'
     assert result['override'] is True
     row = store.get_row('cap-d', '5-execute')
     assert row is not None
     assert row['override'] is True
     assert row['override_reason'] == 'manual commit'
+    # The operator's own answer is persisted beside the caller's rationale, and
+    # the basis records which of the two authorized the override.
+    assert row['operator_answer'] == 'the drift is legitimate — proceed'
+    assert row['override_basis'] == 'operator'
+
+
+def test_capture_override_without_operator_answer_is_refused(plan_context, stubbed_invariants, stub_metadata) -> None:
+    """A caller's rationale is not the operator's answer, and cannot stand in for one."""
+    result = cmds.cmd_capture(_ns(plan_id='cap-e', phase='5-execute', override=True, reason='manual commit'))
+    assert result['status'] == 'error'
+    assert result['error'] == 'missing_operator_answer'
+    assert store.get_row('cap-e', '5-execute') is None
 
 
 def test_verify_ok_no_drift(plan_context, stubbed_invariants, stub_metadata) -> None:

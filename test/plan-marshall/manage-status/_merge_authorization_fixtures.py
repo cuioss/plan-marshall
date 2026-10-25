@@ -63,6 +63,10 @@ HEAD_B = '76c7200b6f1e2d3c4b5a69788796a5b4c3d2e1f0'
 #: The gap class the pre-merge review barrier reports and checks for.
 BARRIER_GAP = 'review-barrier-gap'
 
+#: The barrier's override option label the operator selects. A
+#: ``barrier-ask-override`` grant must record this exact answer (PLAN-LB-55 D4).
+OVERRIDE_OPTION_LABEL = 'Merge anyway (record reason)'
+
 
 #: A DIFFERENT gap class, granted by a gate that runs earlier at the same HEAD.
 MERGE_ACTION_GAP = 'merge-action'
@@ -88,7 +92,16 @@ def _grant_args(
     gap_class: str = BARRIER_GAP,
     granted_over: str = '2 unhandled, unproven_bots=cuioss-review-bot',
     reason: str = 'operator accepted the gap',
+    operator_answer: str | None = None,
+    override_label: str | None = None,
 ) -> Namespace:
+    # A ``barrier-ask-override`` grant exists only for the option the operator
+    # selected: the verb refuses one minted without an answer, so the helper supplies
+    # the override label as the answer unless a case deliberately varies it
+    # (PLAN-LB-55 D4).
+    if kind == 'barrier-ask-override' and operator_answer is None and override_label is None:
+        operator_answer = OVERRIDE_OPTION_LABEL
+        override_label = OVERRIDE_OPTION_LABEL
     return Namespace(
         plan_id=plan_id,
         kind=kind,
@@ -96,6 +109,8 @@ def _grant_args(
         gap_class=gap_class,
         granted_over=granted_over,
         reason=reason,
+        operator_answer=operator_answer,
+        override_label=override_label,
     )
 
 

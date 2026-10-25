@@ -18,6 +18,8 @@ import json
 from argparse import Namespace
 from pathlib import Path
 
+from _handshake_store import HANDSHAKE_FIELDS as _handshake_field_list
+
 # The summarize-invariants script now reads ``<plan_dir>/handshakes.toon``
 # (canonical phase_handshake storage) instead of ``status.metadata.phase_handshake``.
 # Fixtures must materialize that file with the same TOON serialization the
@@ -29,25 +31,12 @@ from toon_parser import serialize_toon
 
 from conftest import MARKETPLACE_ROOT
 
-# Mirrors HANDSHAKE_FIELDS in
-# marketplace/bundles/plan-marshall/skills/plan-marshall/scripts/_handshake_store.py.
-# Kept in lock-step on purpose: if the column list drifts, fixtures stop
-# matching production rows and the retrospective tests would falsely pass.
-_HANDSHAKE_FIELDS = [
-    'phase',
-    'captured_at',
-    'override',
-    'override_reason',
-    'main_sha',
-    'main_dirty',
-    'worktree_sha',
-    'worktree_dirty',
-    'task_state_hash',
-    'qgate_open_count',
-    'config_hash',
-    'unfinished_tasks_count',
-    'phase_steps_complete',
-]
+# Derived from HANDSHAKE_FIELDS in
+# marketplace/bundles/plan-marshall/skills/plan-marshall/scripts/_handshake_store.py,
+# never restated: a hand-copied column list drifts from the production row shape,
+# and a fixture that drifts makes the retrospective tests pass over a record no
+# producer writes.
+_HANDSHAKE_FIELDS = list(_handshake_field_list)
 
 
 def write_handshakes(plan_dir: Path, plan_id: str, rows: list[dict]) -> Path:

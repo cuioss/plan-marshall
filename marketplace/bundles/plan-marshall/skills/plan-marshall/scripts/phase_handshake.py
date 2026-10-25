@@ -3,7 +3,7 @@
 """Phase handshake: capture and verify cross-phase invariants.
 
 Usage:
-    phase_handshake.py capture        --plan-id X --phase P [--override --reason R]
+    phase_handshake.py capture        --plan-id X --phase P [--override --reason R --operator-answer A]
     phase_handshake.py verify         --plan-id X --phase P [--strict]
     phase_handshake.py findings-check --plan-id X --phase P
     phase_handshake.py list           --plan-id X
@@ -110,6 +110,17 @@ def _build_parser() -> argparse.ArgumentParser:
     add_phase_arg(capture)
     capture.add_argument('--override', action='store_true', help='Mark as override capture')
     capture.add_argument('--reason', help='Reason required when --override is set')
+    capture.add_argument(
+        '--operator-answer',
+        dest='operator_answer',
+        default=None,
+        help=(
+            'The operator answer that authorizes the override, quoted from the operator. '
+            'Required when --override is set: a drift override is the operator\u2019s decision, so '
+            'the answer is persisted on the handshake row beside --reason. The reason alone is the '
+            'caller\u2019s rationale and is never an answer.'
+        ),
+    )
 
     verify = subparsers.add_parser('verify', help='Verify invariants against a capture', allow_abbrev=False)
     add_plan_id_arg(verify)

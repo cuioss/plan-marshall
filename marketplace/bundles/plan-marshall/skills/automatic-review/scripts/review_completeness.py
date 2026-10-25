@@ -800,14 +800,19 @@ def classify_bot(
     """Return the single state ``bot`` resolves to.
 
     The branches are evaluated in evidence-strength order, so exactly one state is
-    assigned. Proven participation is checked FIRST because it is positive,
-    diff-derived evidence the bot actually reviewed — it outranks the awaiting and
-    refusal signals, which are both statements about the absence of a review. The
-    same ordering logic settles the refusal-outranks-stale edge: a bot that has a
-    stale publish AND a refusal is classified refused, because the refusal is the
-    NEWER and more actionable signal — it names a reason the bot will not review now,
-    whereas a stale publish only says the last review predates this HEAD, and the two
-    call for different remedies (wait out or accept the refusal vs re-trigger).
+    assigned. Proven participation is checked FIRST, with ONE exception: participation
+    the producer itself reports as NOT covering the merge candidate
+    (``stale_participants``) does not outrank a refusal or a decline observed in the
+    same fetch. A refusal names a reason the bot will not review THIS candidate, while
+    a review at an earlier head says nothing about the tree being merged — positive
+    evidence about a different tree is not evidence about this one. Participation that
+    DOES cover the merge candidate still outranks both, because that review is exactly
+    what the quorum asks for and a later quota notice about a redundant re-trigger does
+    not contradict it. The same ordering logic settles the refusal-outranks-stale edge:
+    a bot that has a stale publish AND a refusal is classified refused, because the
+    refusal is the NEWER and more actionable signal — it names a reason the bot will not
+    review now, whereas a stale publish only says the last review predates this HEAD, and
+    the two call for different remedies (wait out or accept the refusal vs re-trigger).
 
     - **``participated``** — proven participant that filed at least one finding.
     - **``participated_but_empty``** — proven participant that filed none. It did
@@ -859,6 +864,26 @@ def classify_bot(
       also where a bot declaring NO evidence shape necessarily lands, since it can
       never be proven a participant.
     """
+    # Participation that the producer reports as NOT covering the merge candidate
+    # (``stale_participants``) is not evidence about this candidate: it names a
+    # review of an earlier head. A refusal or decline observed is the bot's own,
+    # NEWER statement that it will not review the candidate now, so it outranks
+    # that stale participation — the PLAN-LB-26 false green, where an older-head
+    # review and a current-head quota refusal resolved ``participated``.
+    #
+    # PARTICIPATION THAT DOES COVER THE CANDIDATE STILL WINS. A review of the exact
+    # tree being merged is the evidence the quorum exists to obtain, and a later
+    # quota notice about a redundant re-trigger does not contradict it.
+    participation_is_current = bot in proven_participants and bot not in (stale_participants or set())
+    refusal_observed = bot in refused or bot in (unrecognised_refusal or set())
+    if refusal_observed and not participation_is_current:
+        return _refusal_state(
+            bot_registry.rate_limit_class(bot),
+            (refused_causes or {}).get(bot),
+            bot in (unrecognised_refusal or set()),
+        )
+    if bot in (declined or set()) and not participation_is_current:
+        return STATE_DECLINED
     if bot in proven_participants:
         return STATE_PARTICIPATED if has_findings else STATE_PARTICIPATED_BUT_EMPTY
     # An unrecognised refusal is a refusal OBSERVATION in its own right, so it enters
@@ -870,7 +895,7 @@ def classify_bot(
     # the ONLY case it exists for: a bot whose sole refusal no arm could read fell
     # through to ``absent``, which this contract names as "the exact conflation that
     # let a PR with two refusing required bots report a complete review".
-    if bot in refused or bot in (unrecognised_refusal or set()):
+    if refusal_observed:
         return _refusal_state(
             bot_registry.rate_limit_class(bot),
             (refused_causes or {}).get(bot),

@@ -1210,6 +1210,9 @@ def _reviewed_at_merge_candidate(
     bot_kind: str,
     merge_candidate_sha: str,
     merge_candidate_committed_at: str = '',
+    *,
+    allow_first_observation: bool = True,
+    require_sha_currency: bool = False,
 ) -> bool:
     """Return True when ``comment`` proves a review of the MERGE CANDIDATE commit.
 
@@ -1282,6 +1285,14 @@ def _reviewed_at_merge_candidate(
     if record is None:
         # First observation — credit only when the merge candidate is resolvable AND
         # the comment does not predate the commit it would be credited against.
+        #
+        # ``allow_first_observation`` is the refusal-path bound: an unanchored comment
+        # observed for the first time proves it existed, not which commit it reviewed,
+        # so beside a refusal it must not be credited on observation alone — the very
+        # inference a refusal is a statement against. A caller that has no refusal to
+        # weigh keeps the arm.
+        if not allow_first_observation:
+            return False
         if not merge_candidate_sha:
             return False
         return not _comment_predates_commit(comment, merge_candidate_committed_at)
@@ -1289,6 +1300,12 @@ def _reviewed_at_merge_candidate(
     if merge_candidate_sha and recorded_sha == merge_candidate_sha:
         return True
     if not merge_candidate_sha:
+        return False
+    if require_sha_currency:
+        # The refusal path's bound: an edit proves the comment MOVED, not which commit
+        # it moved to. An edit made at A, followed by commit B and a refusal, would
+        # otherwise credit B on evidence that predates it — so beside a refusal only
+        # the recorded SHA names the reviewed commit.
         return False
     updated_at = str(comment.get('updated_at') or '')
     return bool(updated_at) and updated_at != recorded_updated_at
@@ -1480,6 +1497,30 @@ def _reviews_at_another_commit(
             }
         )
     return disclosed
+
+
+def _reported_commit_matches_candidate(comment: dict, merge_candidate_sha: str) -> bool:
+    """Whether ``comment``'s OWN reported commit is the merge candidate.
+
+    A per-review artifact — a comment the bot publishes afresh for each pass, rather
+    than editing one comment in place — was submitted against exactly one commit, and
+    the provider reports that commit as ``commit_id``. Two answers are NOT evidence of
+    covering the merge candidate, and both are fail-closed:
+
+    - a reported commit that is some other commit: the artifact proves a review of an
+      earlier head, which is what ``stale_participation_bots`` exists to name; and
+    - NO reported commit: a review the provider could not place is not a review of the
+      merge candidate, so it cannot discharge a required reviewer's obligation. This is
+      the PLAN-LB-26 shape, where inline comments carrying ``commit_id: ''`` were
+      credited while the same bot refused the merge candidate for quota.
+
+    An unreadable merge candidate has nothing to compare against and returns ``False``;
+    the caller routes that case to ``undecidable_participation_bots`` rather than to
+    stale, because re-triggering cannot fix a failed head read.
+    """
+    candidate = (merge_candidate_sha or '').strip().lower()
+    reported = str(comment.get('commit_id') or '').strip().lower()
+    return bool(candidate) and bool(reported) and reported == candidate
 
 
 def cmd_fetch_findings(args):
@@ -1936,6 +1977,22 @@ def cmd_fetch_findings(args):
     # A bot declaring no evidence shape resolves fail-closed: it can never be
     # proven a participant. There is no bot-name literal here — the evidence
     # shapes, their content markers, and the update requirement are registry data.
+    # Which bots published a REFUSAL in this fetch, read from the same predicate the
+    # filing pre-filter uses (stage 2) so the participation loop and the refusal
+    # accounting cannot disagree about what a refusal is. It is read here, before the
+    # loop, because a refusal changes what participation evidence can PROVE: evidence
+    # that cannot be placed at the merge candidate must not outrank the bot's own
+    # statement that it will not review that candidate.
+    refusing_bots: set[str] = set()
+    for _refusal_comment in raw_comments:
+        if _refusal_comment.get('resolved'):
+            # A refusal in a RESOLVED thread is already answered: the filing pass skips
+            # it, so it never reaches ``refused_bots``. Counting it here would deny
+            # credit for a refusal nobody reports, which is a one-sided subtraction.
+            continue
+        _refusal_bot = bot_kind_for_author(_refusal_comment.get('author') or 'unknown')
+        if _refusal_bot and _is_refusal_notice(str(_refusal_comment.get('body') or ''), _refusal_bot):
+            refusing_bots.add(_refusal_bot)
     participated: dict[str, str] = {}
     stale_participation: dict[str, str] = {}
     # The THIRD outcome: a currency-subject bot whose comment was ALREADY admissible
@@ -1990,13 +2047,41 @@ def cmd_fetch_findings(args):
             named_commit_currency(str(_comment.get('body') or ''), reviewed_commit_sha) if _requires_update else None
         )
         if _named_verdict is None:
-            _current = not _requires_update or _reviewed_at_merge_candidate(
-                _comment,
-                currency_records,
-                _bot_kind,
-                reviewed_commit_sha,
-                merge_candidate_committed_at,
-            )
+            # A REFUSAL changes what a comment can prove. The bot is saying, in this
+            # fetch, that it will not review the merge candidate; credited evidence that
+            # cannot be placed AT that candidate must not outrank that statement, or a
+            # bot that reviewed an older head and then refused the candidate resolves
+            # ``participated`` (the PLAN-LB-26 false green). Placement comes from the
+            # provider's reported ``commit_id`` on a per-review artifact, or from the
+            # currency ledger for the persistent comment a re-reviewer EDITS in place.
+            #
+            # With no refusal observed, the fetch's own judgement stands unchanged: the
+            # credit is the answer, and no statement exists for it to be weighed against.
+            if _bot_kind in refusing_bots:
+                _current = _reported_commit_matches_candidate(_comment, reviewed_commit_sha)
+                if not _current and _requires_update and bot_registry.participation_evidence_marker(_bot_kind, _kind):
+                    # The persistent comment a re-reviewer EDITS in place carries no
+                    # commit of its own; the ledger arms are its only placement, and they
+                    # are consulted here for that shape alone.
+                    _current = _reviewed_at_merge_candidate(
+                        _comment,
+                        currency_records,
+                        _bot_kind,
+                        reviewed_commit_sha,
+                        merge_candidate_committed_at,
+                        allow_first_observation=False,
+                        require_sha_currency=True,
+                    )
+            elif _requires_update:
+                _current = _reviewed_at_merge_candidate(
+                    _comment,
+                    currency_records,
+                    _bot_kind,
+                    reviewed_commit_sha,
+                    merge_candidate_committed_at,
+                )
+            else:
+                _current = True
         else:
             _current = _named_verdict
         if not _current:

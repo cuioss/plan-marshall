@@ -78,6 +78,7 @@ VERIFY_REFUSAL_ERRORS = frozenset(
         'phase_end_markers_missing',
         'execute_commits_unrecorded',
         'branch_range_unresolvable',
+        'phase_boundary_unstamped',
     }
 )
 
@@ -102,6 +103,24 @@ EXECUTE_COMMITS_UNRECORDED_ERROR = 'execute_commits_unrecorded'
 #: from the git side, so an empty list there would be a measured-zero claim
 #: about a range nobody computed, byte-identical to full coverage.
 BRANCH_RANGE_UNRESOLVABLE_ERROR = 'branch_range_unresolvable'
+
+#: Refusal code when a transition would advance past a phase whose metrics boundary is
+#: HALF-STAMPED — the phase carries a ``start_time`` and no ``end_time``. The boundary
+#: was opened and never closed, so a whole phase's attribution would be dropped
+#: silently (the PLAN-41 case: `4-plan` no end, `5-execute` no start). The remedy is
+#: the ``manage-metrics phase-boundary`` stamp, never a retry of the transition.
+PHASE_BOUNDARY_UNSTAMPED_ERROR = 'phase_boundary_unstamped'
+
+#: The change-ledger artifact name, relative to a checkout's tracked-config directory.
+#: The owner of the path is ``_ledger_core.resolve_ledger_path``; this literal names the
+#: same FILE inside a specific checkout, which that resolver cannot express because it
+#: resolves from the process cwd.
+_LEDGER_ARTIFACT = Path('work') / 'change-ledger.jsonl'
+
+#: The per-phase file ``manage-metrics`` persists. Read here for the ``start_time`` /
+#: ``end_time`` boundary markers ONLY — the format and every other field are owned by
+#: ``manage-metrics`` (see its ``standards/data-format.md``).
+_METRICS_FILE = 'work/metrics.toon'
 
 # Phases whose COMPLETION arms the finalize blocking-findings state assertion
 # (:func:`_finalize_findings_refusal`).
@@ -412,21 +431,23 @@ def _clean_tree_refusal(plan_id: str, status: dict[str, Any]) -> dict[str, Any] 
 def _branch_commit_shas(worktree_path: str, base_branch: str) -> list[str] | None:
     """Return the worktree-branch commits since the branch diverged from base.
 
-    Resolves the divergence point as ``git merge-base HEAD {ref}`` trying
-    the local ``{base_branch}`` first and ``origin/{base_branch}`` second, then
-    lists ``git rev-list {merge_base}..HEAD`` (oldest first). Returns ``None``
-    when the range cannot be established (no base ref, git failure) — the
-    caller treats that as a fail-closed refusal (``branch_range_unresolvable``),
-    never as unevaluable pass-through: an unestablished range is not evidence
-    of recorded work.
+    Resolves the divergence point as ``git merge-base HEAD {ref}`` trying the REMOTE
+    tracking ref ``origin/{base_branch}`` first and the local ``{base_branch}`` second,
+    then lists ``git rev-list {merge_base}..HEAD`` (oldest first). Returns ``None``
+    when the range cannot be established (no base ref, git failure) — the caller
+    treats that as a fail-closed refusal (``branch_range_unresolvable``), never as
+    unevaluable pass-through: an unestablished range is not evidence of recorded work.
+
+    REMOTE FIRST, deliberately. A local base branch is only as fresh as the last
+    fetch, and a stale one moves the divergence point OLDER than the true fork —
+    pulling already-landed base commits into the range, where they necessarily
+    carry no ``kind=change`` row and the guard reports a fully-recorded branch as
+    unrecorded. The remote tracking ref is what the base branch actually was when
+    the branch was cut; the local ref stays the fallback for a checkout that has
+    no remote configured.
     """
     merge_base: str | None = None
-    # Local base first: it reflects the landed tree including any rebase the
-    # run performed, while origin/{base} may be stale (no fetch since) and
-    # would then push the divergence point older than the true fork — pulling
-    # already-landed main commits into the range and refusing a fully-recorded
-    # transition. The remote ref stays the fallback for a missing local base.
-    for ref in (base_branch, f'origin/{base_branch}'):
+    for ref in (f'origin/{base_branch}', base_branch):
         proc = subprocess.run(
             ['git', '-C', worktree_path, 'merge-base', 'HEAD', ref],
             capture_output=True,
@@ -599,6 +620,32 @@ def _rewrite_evidence(
     return (bool(whole_branch or every_row_stale), any_row_stale)
 
 
+def _plan_checkout_root(plan_id: str) -> str | None:
+    """Return the checkout that OWNS ``plan_id``'s directory, or ``None``.
+
+    Proved by git — ``rev-parse --show-toplevel`` from the plan directory — rather
+    than assumed from a path depth, because the base directory a caller configures
+    need not sit at ``<checkout>/.plan/local/plans``. A plan with no dedicated
+    worktree runs in this checkout, so this is also the tree whose branch the
+    5-execute end-marker guard enumerates and whose ledger it reads. The process cwd
+    is the fallback when the plan directory itself cannot answer.
+    """
+    try:
+        plan_dir = get_plan_dir(plan_id)
+    except Exception:
+        return None
+    for target in (str(plan_dir), '.'):
+        proc = subprocess.run(
+            ['git', '-C', target, 'rev-parse', '--show-toplevel'],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if proc.returncode == 0 and proc.stdout.strip():
+            return proc.stdout.strip().splitlines()[0].strip()
+    return None
+
+
 def _recorded_change_shas() -> set[str] | None:
     """Return every ``commit_sha`` carried by a ``kind=change`` ledger row.
 
@@ -631,6 +678,40 @@ def _recorded_change_shas() -> set[str] | None:
         for entry in entries
         if isinstance(entry, dict) and entry.get('kind') == 'change' and entry.get('commit_sha')
     }
+
+
+def _plan_recorded_change_shas(worktree_root: str | None) -> set[str] | None:
+    """Return the union of the plan's own ledger rows and the cwd-resolved ones.
+
+    ``worktree_root`` names the plan's OWN checkout, whose ledger is
+    ``{root}/.plan/work/change-ledger.jsonl`` — the file ``_ledger_core``'s own
+    resolver describes, fixed to a checkout instead of to the process cwd. WHICH one
+    holds the rows depends on where the settlement bookkeeping ran, and the two can
+    differ: the guard runs from one checkout while the plan's Step 10a rows were
+    appended from another. Reading only the cwd-resolved ledger is the defect this
+    function closes — it reported a fully-recorded branch as unrecorded whenever the
+    transition ran from anywhere but the plan's own tree.
+
+    A row in EITHER ledger IS a recorded commit, so the union is the honest
+    population. ``None`` (unreadable) survives from the resolved read, because an
+    unreadable store must never be reported as an empty one.
+    """
+    resolved = _recorded_change_shas()
+    if resolved is None or not worktree_root:
+        return resolved
+    try:
+        from _ledger_core import read_entries
+    except ImportError:  # pragma: no cover — the resolved read already imported it
+        return resolved
+    own_path = Path(worktree_root) / '.plan' / _LEDGER_ARTIFACT
+    try:
+        own = read_entries(own_path)
+    except Exception:
+        return resolved
+    for entry in own if isinstance(own, list) else []:
+        if isinstance(entry, dict) and entry.get('kind') == 'change' and entry.get('commit_sha'):
+            resolved.add(str(entry['commit_sha']).strip())
+    return resolved
 
 
 def _phase_end_marker_refusal(plan_id: str, status: dict[str, Any]) -> dict[str, Any] | None:
@@ -672,32 +753,52 @@ def _phase_end_marker_refusal(plan_id: str, status: dict[str, Any]) -> dict[str,
       message that names both possibilities. The stale-rows condition reports the
       same signature and the same two repairs — it proves the rows describe a
       history HEAD does not, never which rewrite produced it.
-    - ``None`` (pass) — no worktree in play, no persisted path, an empty
-      range, or full coverage. Each pass-through is a distinct unevaluable
-      state, never a clean verdict over an examined store. An unreadable
-      ``references.json`` is NOT in this set: without a divergence base no
-      range is enumerable, so it refuses under
-      ``branch_range_unresolvable`` above. An unestablishable commit range
-      is likewise excluded: it refuses under
-      ``branch_range_unresolvable`` above.
+    - ``None`` (pass) — no worktree in play, a MAIN-CHECKOUT plan with no readable
+      ``references.json`` (naming no branch means naming no boundary: the
+      ``not_applicable`` state), no persisted path, an empty range, or full coverage.
+      Each pass-through is a distinct unevaluable state, never a clean verdict over an
+      examined store. For an ISOLATED-WORKTREE plan an unreadable ``references.json``
+      is NOT in this set: its worktree branch is structurally the plan's, so without a
+      divergence base no range is enumerable and it refuses under
+      ``branch_range_unresolvable`` above. An unestablishable commit range is likewise
+      excluded for every plan: it refuses under ``branch_range_unresolvable`` above.
 
     All three refusal codes are members of :data:`VERIFY_REFUSAL_ERRORS`, so all
     block the transition and both drive the CLI exit-1 wrapper.
     """
     metadata = normalize_metadata(status)
-    if not metadata.get('use_worktree'):
+    # The guard applies to EVERY plan, not only the isolated-worktree ones. A
+    # main-checkout plan performs the same per-deliverable commits against the same
+    # change-ledger, and skipping the guard for it left the largest population of plans
+    # ungated — the gap this branch removes. ``worktree_path`` is then the plan's own
+    # checkout: the worktree when there is one, otherwise the checkout that owns the
+    # plan directory, so the ledger read never falls back to the process cwd.
+    has_worktree = bool(metadata.get('use_worktree'))
+    worktree_path = metadata.get('worktree_path') if has_worktree else None
+    if has_worktree and not worktree_path:
+        # ``use_worktree: true`` with an EMPTY path is the strict-verify guard's
+        # refusal territory (``worktree_unresolved``): the worktree itself was never
+        # resolved, so this guard has no tree to enumerate and invents none.
         return None
-    worktree_path = metadata.get('worktree_path')
     if not worktree_path:
-        # Resolvability is asserted by the strict-verify guard that runs
-        # before this gate (``worktree_unresolved``); an empty path here
-        # means the verify guard already owns the refusal path.
-        return None
+        worktree_path = _plan_checkout_root(plan_id)
+        if not worktree_path:
+            return None
 
     try:
         references = json.loads((get_plan_dir(plan_id) / 'references.json').read_text(encoding='utf-8'))
         base_branch = references.get('base_branch') or 'main'
     except Exception:
+        # A MAIN-CHECKOUT plan with no readable base record has no boundary to prove:
+        # nothing names the branch this checkout is supposed to be, so the range
+        # between "this plan's commits" and "the base" is not expressible, and the
+        # checkout itself may simply BE the base branch. That is the
+        # ``not_applicable`` state, not a refusal. An ISOLATED-WORKTREE plan keeps
+        # the fail-closed answer below — its worktree branch is structurally the
+        # plan's, so a missing base record there is a real defect rather than an
+        # absence of any boundary to check.
+        if not has_worktree:
+            return None
         # Unreadable or malformed references: the divergence base cannot be
         # established, so no range is enumerable. Fail closed under
         # ``branch_range_unresolvable`` — passing through would let unrecorded
@@ -751,7 +852,7 @@ def _phase_end_marker_refusal(plan_id: str, status: dict[str, Any]) -> dict[str,
     if not branch_shas:
         return None
 
-    recorded = _recorded_change_shas()
+    recorded = _plan_recorded_change_shas(worktree_path)
     if recorded is None:
         return {
             'status': 'error',
@@ -1015,6 +1116,13 @@ def _phase_artifact_refusal(args: argparse.Namespace, status: dict[str, Any]) ->
     return None
 
 
+#: The fields ``cmd_set_phase`` writes into ``metadata.loop_back_reentry`` when a
+#: backward phase move schedules a loop-back. The auto-override treats the marker
+#: as authority, so it requires this exact shape rather than a truthy value: a
+#: malformed marker authorizes nothing and the drift refusal stands.
+_MARKER_FIELDS: tuple[str, ...] = ('from_phase', 'to_phase', 'at')
+
+
 def _loop_back_auto_override(
     args: argparse.Namespace,
     status: dict[str, Any],
@@ -1027,11 +1135,13 @@ def _loop_back_auto_override(
     change the invariants the earlier capture recorded, so ``cmd_verify``
     reports ``status: drift`` by construction at the next guarded boundary.
     When BOTH hold — the blocking verify result is invariant drift AND the
-    marker is present — re-capture the handshake with ``override=True`` and a
-    recorded reason, clear the marker (persisted immediately so the override
-    fires exactly once per scheduled loop-back), emit a decision-log WARNING
-    with the drift diff summary, and let the transition proceed by returning
-    ``None``.
+    marker is present — re-capture the handshake with ``override=True``, the
+    reserved ``override_basis='scheduled_loop_back'`` (which records NO operator
+    answer, because this drift is scheduled by construction rather than decided
+    by an operator) and a recorded reason, clear the marker (persisted
+    immediately so the override fires exactly once per scheduled loop-back),
+    emit a decision-log WARNING with the drift diff summary, and let the
+    transition proceed by returning ``None``.
 
     Every other blocking result returns the refusal unchanged: drift WITHOUT
     the marker keeps today's blocking behavior, and the worktree-resolution /
@@ -1043,16 +1153,25 @@ def _loop_back_auto_override(
     """
     metadata = normalize_metadata(status)
     marker = metadata.get('loop_back_reentry')
-    if verify_result.get('status') != 'drift' or not marker:
+    # The marker is the ONLY authority the scheduled basis has, so a truthy value
+    # is not enough: it must be the mapping `cmd_set_phase` writes, with all three
+    # non-empty string fields. A malformed marker authorizes nothing, and the
+    # original drift refusal is returned unchanged.
+    if verify_result.get('status') != 'drift' or not isinstance(marker, dict):
+        return verify_result
+    if not all(isinstance(marker.get(field), str) and marker[field].strip() for field in _MARKER_FIELDS):
         return verify_result
 
-    from_phase = marker.get('from_phase', 'unknown') if isinstance(marker, dict) else 'unknown'
+    from_phase = marker['from_phase']
     recapture = cmd_capture(
         argparse.Namespace(
             plan_id=args.plan_id,
             phase=args.completed,
             override=True,
             reason=f'loop-back re-entry auto-override (scheduled by {from_phase} loop_back)',
+            override_basis='scheduled_loop_back',
+            loop_back_marker=True,
+            operator_answer=None,
             strict=False,
         )
     )
@@ -1440,6 +1559,92 @@ def cmd_create(args: argparse.Namespace) -> dict[str, Any]:
     return result
 
 
+def _metrics_phase_boundaries(plan_id: str) -> dict[str, dict[str, str]] | None:
+    """Return each phase's ``start_time`` / ``end_time`` markers, or ``None``.
+
+    Reads the plan's ``work/metrics.toon`` for the TWO BOUNDARY MARKERS ONLY — the
+    file's format and every other field are owned by ``manage-metrics`` (see its
+    ``standards/data-format.md``). A missing or unreadable file answers ``None``: no
+    phase was ever instrumented, so there is no boundary to compare and the caller
+    passes. ``None`` is therefore "nothing to prove", never "proven stamped".
+    """
+    try:
+        content = (get_plan_dir(plan_id) / _METRICS_FILE).read_text(encoding='utf-8')
+    except (OSError, UnicodeDecodeError):
+        return None
+    rows: dict[str, dict[str, str]] = {}
+    current: str | None = None
+    for raw_line in content.splitlines():
+        stripped = raw_line.strip()
+        if not stripped:
+            continue
+        if stripped.startswith('[') and stripped.endswith(']'):
+            current = stripped[1:-1].strip()
+            rows.setdefault(current, {})
+            continue
+        if current is None or ':' not in stripped:
+            continue
+        key, _, value = stripped.partition(':')
+        field = key.strip()
+        if field in ('start_time', 'end_time'):
+            rows[current][field] = value.strip()
+    return rows
+
+
+def _phase_boundary_refusal(plan_id: str, status: dict[str, Any], completed: str) -> dict[str, Any] | None:
+    """Refuse to advance over a phase whose recorded boundary is HALF-STAMPED.
+
+    Advancing PAST a phase means the phase is over; a phase that carries a
+    ``start_time`` and no ``end_time`` was opened and never closed, so its whole
+    token/duration attribution is dropped from the record with nothing to notice it
+    (the PLAN-41 case: `4-plan` had no end and `5-execute` no start). The metrics store
+    is the only place that boundary is observable, so this is the guard that reads it.
+
+    Scope, stated precisely:
+
+    - The phases examined are the ones BEFORE ``completed`` in the plan's own phase
+      list. The phase being completed is legitimately unclosed at its own transition:
+      its boundary stamp runs AFTER the status advance by design (the orchestrator's
+      ``manage-metrics phase-boundary`` call), so requiring its own ``end_time`` here
+      would refuse every transition.
+    - A phase with NO metrics row never started recording; there is no boundary to
+      reconcile and it is skipped (the ``not_applicable`` answer that
+      ``manage-metrics boundary-status`` gives).
+    - A missing or unreadable metrics store answers :func:`_metrics_phase_boundaries`
+      as ``None``, which passes: the plan never recorded boundaries at all.
+
+    Returns ``None`` when the transition may proceed, else a ``phase_boundary_unstamped``
+    refusal naming every offending phase and the marker it is missing.
+    """
+    phase_rows = _metrics_phase_boundaries(plan_id)
+    if phase_rows is None:
+        return None
+    names = [str(phase.get('name') or '') for phase in status.get('phases', []) if isinstance(phase, dict)]
+    if completed not in names:
+        return None
+    offending: list[dict[str, str]] = []
+    for name in names[: names.index(completed)]:
+        row = phase_rows.get(name)
+        if not row or not row.get('start_time'):
+            continue
+        if not row.get('end_time'):
+            offending.append({'phase': name, 'missing': 'end_time'})
+    if not offending:
+        return None
+    return {
+        'status': 'error',
+        'plan_id': plan_id,
+        'error': PHASE_BOUNDARY_UNSTAMPED_ERROR,
+        'completed_phase': completed,
+        'boundaries': offending,
+        'message': (
+            'Refusing to advance past a phase whose metrics boundary was opened and never '
+            f'closed ({", ".join(item["phase"] for item in offending)}). Stamp it with '
+            '`manage-metrics phase-boundary` (or `end-phase`), then retry the transition.'
+        ),
+    }
+
+
 def cmd_transition(args: argparse.Namespace) -> dict[str, Any] | None:
     """Transition to next phase.
 
@@ -1487,6 +1692,15 @@ def cmd_transition(args: argparse.Namespace) -> dict[str, Any] | None:
     artifact_refusal = _phase_artifact_refusal(args, status)
     if artifact_refusal is not None:
         return artifact_refusal
+
+    # Phase-boundary post-condition (D2): a phase that was OPENED in the metrics record
+    # and never CLOSED is a boundary that was skipped, and advancing past it drops a
+    # whole phase's attribution silently. Runs for every transition, on the phases
+    # before the one being completed — see `_phase_boundary_refusal` for why the
+    # completed phase itself is exempt.
+    boundary_refusal = _phase_boundary_refusal(args.plan_id, status, args.completed)
+    if boundary_refusal is not None:
+        return boundary_refusal
 
     # Determine next phase early so the guard below can inspect it before any
     # state mutation. The standalone ``cmd_transition`` later computes the same

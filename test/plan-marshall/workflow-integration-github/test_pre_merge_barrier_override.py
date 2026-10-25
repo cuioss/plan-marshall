@@ -170,6 +170,10 @@ _MERGE_ACTION_GAP = 'merge-action'
 
 
 def _grant(plan_id, kind, head, gap_class, granted_over, reason):
+    # A ``barrier-ask-override`` grant is minted only from the override option the
+    # operator selected (PLAN-LB-55 D4), so the helper supplies that label as both the
+    # answer and the option. Other kinds carry no such requirement.
+    label = 'Merge anyway (record reason)' if kind == 'barrier-ask-override' else None
     return _merge_auth.cmd_merge_authorization_grant(
         argparse.Namespace(
             plan_id=plan_id,
@@ -178,6 +182,8 @@ def _grant(plan_id, kind, head, gap_class, granted_over, reason):
             gap_class=gap_class,
             granted_over=granted_over,
             reason=reason,
+            operator_answer=label,
+            override_label=label,
         )
     )
 

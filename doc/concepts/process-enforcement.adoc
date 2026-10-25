@@ -51,7 +51,7 @@ The four layers compose to a probabilistic-then-mechanical funnel. Most of the t
 
 Layer 1 is skill-loaded text, not kernel enforcement. Layer 2 narrows the surface but does not prevent the LLM from trying a prohibited operation — it surfaces a prompt as fallback. Layer 3 depends on the LLM actually invoking `manage-findings qgate query` at phase entry (the phase skill always does, but a rogue workflow body could skip it). Layer 4 is the most mechanical of the four and still depends on the orchestrator running `phase_handshake verify --strict` at the right moment (the lifecycle workflows always do; ad-hoc dispatches do not).
 
-The point is not "the LLM cannot break the process." The point is that breaking the process is *progressively harder* the deeper a violation tries to reach. Most violations terminate at Layer 1 or Layer 2 with a prompt the developer sees. The handful that reach Layer 4 surface as a `drift` TOON the developer reads on screen — at which point the choice is an authorised override (`capture --override --reason X`) or a manual fix, both of which leave an audit trail.
+The point is not "the LLM cannot break the process." The point is that breaking the process is *progressively harder* the deeper a violation tries to reach. Most violations terminate at Layer 1 or Layer 2 with a prompt the developer sees. The handful that reach Layer 4 surface as a `drift` TOON the developer reads on screen — at which point the choice is an authorised override (`capture --override --reason X --operator-answer Y`, where Y quotes the answer the developer gave and is required) or a manual fix, both of which leave an audit trail.
 ====
 
 == Related

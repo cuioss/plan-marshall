@@ -79,6 +79,24 @@ list, so a typo'd or invented step name is refused with
 real can never enter the record. Phases without a centrally composed step
 list are recorded without a membership check, stated rather than hidden.
 
+A ``done`` or ``skipped`` RESOLUTION is additionally refused with
+``error: escalation_unanswered`` when the step carries a halt that raised an
+operator escalation and no operator answer is logged against it (see
+``_cmd_halt``); a halt whose stored record cannot be read refuses the same
+resolution with ``error: halt_unreadable``. The escalation is the step's own
+statement that its next move is the operator's to choose, so a completion
+recorded over an unanswered one asserts a decision nobody made — the failure
+mode where a halted step was "halted" in the log and then completed anyway.
+``failed`` and ``loop_back`` stay writable: they record further trouble, not a
+completion claim. There is no ``--force`` override, because ``--force`` governs
+outcome conflicts, not authority to resolve an operator's decision.
+
+A ``failed`` outcome also WRITES a halt (see :func:`_stamp_failed_halt`), because
+the finalize roster counts exactly this outcome as a halt and the continuation
+check would otherwise read ``no_halt_record`` for a step that demonstrably
+stopped. It never overwrites an existing halt: an unanswered escalation must
+survive a later failure rather than being replaced by a retryable one.
+
 ``display_detail`` is the progress channel and ``outcome`` /
 ``loop_back_target`` are the control channel: control rides closed
 vocabularies, progress rides free text, and the two must not trade places.
@@ -123,6 +141,7 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+from _cmd_halt import RESOLUTION_OUTCOMES, read_halt_record, record_halt, unanswered_escalation
 from _status_core import require_status, write_status
 from _step_completion_marker import format_completion_marker
 from _step_key_canonical import canonicalize_step_key
@@ -384,6 +403,38 @@ def _emit_completion_marker(plan_id: str, phase: str, step: str, outcome: str, s
     )
 
 
+def _stamp_failed_halt(
+    status: dict[str, Any],
+    phase: str,
+    step: str,
+    outcome: str,
+    display_detail: str | None,
+) -> None:
+    """Record the halt a ``failed`` outcome IS, without ever clobbering another halt.
+
+    The roster in ``phase-6-finalize/SKILL.md`` calls a step's
+    ``mark-step-done --outcome failed`` a halt, so this writer must put the stop
+    into the store — otherwise a step failed by the item-5 precondition or the
+    timeout wrapper leaves ``phase_steps.failed`` and no halt, and the continuation
+    check reads ``no_halt_record`` for a step that demonstrably stopped.
+
+    It NEVER overwrites an existing record: an unanswered escalation is the
+    operator's decision to make, and a later ``failed`` write must not quietly
+    replace it with a non-escalating halt that would then admit a retry.
+    """
+    if outcome != 'failed':
+        return
+    if read_halt_record(status, phase, step) is not None:
+        return
+    record_halt(
+        status,
+        phase,
+        step,
+        outcome='failed',
+        reason=(display_detail or '').strip() or 'mark-step-done recorded failed without a display detail',
+    )
+
+
 def cmd_mark_step_done(args: argparse.Namespace) -> dict | None:
     """Mark a phase step with an outcome inside status.metadata.phase_steps."""
     status = require_status(args)
@@ -491,6 +542,52 @@ def cmd_mark_step_done(args: argparse.Namespace) -> dict | None:
                 '--loop-back-target, progress rides --display-detail.'
             ),
         }
+
+    # An escalate_ask hands the decision to the operator: the step stopped precisely
+    # because its next move is not the leaf's to choose. Recording a RESOLUTION over
+    # an unanswered escalation therefore asserts a decision nobody made — the observed
+    # failure where a halt was followed by an improvised recovery and a green
+    # completion. The halt store is read here, and `done` / `skipped` are refused
+    # until `halt answer` records the option the operator selected. `failed` and
+    # `loop_back` stay writable: they are progress, not a completion claim, and a
+    # step that fails again while an escalation is open must still be able to say so.
+    # No --force override: --force governs outcome conflicts, not authority to resolve.
+    if outcome in RESOLUTION_OUTCOMES:
+        escalation = unanswered_escalation(status, phase, step)
+        if escalation is not None and escalation.get('malformed'):
+            return {
+                'status': 'error',
+                'plan_id': args.plan_id,
+                'error': 'halt_unreadable',
+                'phase': phase,
+                'step': step,
+                'requested_outcome': outcome,
+                'message': (
+                    f'The halt recorded for step {step!r} in phase {phase!r} cannot be read, so '
+                    f'the {outcome!r} resolution was refused and nothing was written. Repair '
+                    '`status.metadata.halts` and re-record the halt — an unreadable store must '
+                    'not admit a completion.'
+                ),
+            }
+        if escalation is not None:
+            return {
+                'status': 'error',
+                'plan_id': args.plan_id,
+                'error': 'escalation_unanswered',
+                'phase': phase,
+                'step': step,
+                'requested_outcome': outcome,
+                'halt_outcome': escalation.get('outcome'),
+                'halt_reason': escalation.get('reason'),
+                'message': (
+                    f'Step {step!r} in phase {phase!r} halted with an operator escalation '
+                    f'({escalation.get("outcome")!r}: {escalation.get("reason")!r}) and no '
+                    f'operator answer is recorded, so the {outcome!r} resolution was refused '
+                    'and nothing was written. Ask the operator, record the selected option '
+                    'with `manage-status halt answer --phase '
+                    f'{phase} --step {step} --selected "<option>"`, then record the outcome.'
+                ),
+            }
 
     # Loop-back target validation: required for loop_back outcomes, forbidden otherwise.
     # This is a breaking-change validation per Deliverable 3 of the finalize-loopback
@@ -661,6 +758,7 @@ def cmd_mark_step_done(args: argparse.Namespace) -> dict | None:
             # unchanged re-call from appending a duplicate firing.
             _extend_firing_history(existing, new_entry)
             phase_entry[step] = new_entry
+            _stamp_failed_halt(status, phase, step, outcome, display_detail)
             write_status(args.plan_id, status)
             _emit_completion_marker(args.plan_id, phase, step, outcome, getattr(args, 'no_completion_log', False))
             return _with_warning(
@@ -720,6 +818,7 @@ def cmd_mark_step_done(args: argparse.Namespace) -> dict | None:
     # trail and the record keeps its historical shape.
     _extend_firing_history(existing, new_entry)
     phase_entry[step] = new_entry
+    _stamp_failed_halt(status, phase, step, outcome, display_detail)
     write_status(args.plan_id, status)
     _emit_completion_marker(args.plan_id, phase, step, outcome, getattr(args, 'no_completion_log', False))
 
