@@ -38,6 +38,7 @@ import argparse
 import json
 import os
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -1563,6 +1564,28 @@ def atomic_write_file(path: str | Path, content: str) -> None:
     atomic_write_bytes(path, payload)
 
 
+def _fsync_directory(directory: Path) -> None:
+    """Persist a completed rename in ``directory``, best-effort.
+
+    The rename that publishes a temp file is metadata, and a metadata change is
+    only durable once the DIRECTORY holding it is synced — the file's own fsync
+    covers the data, not the entry that now names it. A directory that cannot be
+    opened or synced (an exotic filesystem, a permission the platform refuses)
+    leaves the data itself durable, so this reports nothing rather than failing a
+    write that already landed.
+    """
+    try:
+        dir_fd = os.open(str(directory), os.O_RDONLY)
+    except OSError:
+        return
+    try:
+        os.fsync(dir_fd)
+    except OSError:
+        pass
+    finally:
+        os.close(dir_fd)
+
+
 def atomic_write_bytes(path: str | Path, content: bytes) -> None:
     """Write bytes atomically using a temp file + rename in the target directory.
 
@@ -1571,6 +1594,25 @@ def atomic_write_bytes(path: str | Path, content: bytes) -> None:
     decode is still restorable. The rename is atomic on the same filesystem, so a
     reader sees either the prior contents or the new ones; a failure before the
     rename leaves the target untouched and removes the temp file.
+
+    **The write is durable, not merely ordered.** The temp file is fsynced before
+    the rename, so a crash after the call returns cannot leave the target naming
+    bytes that never reached the device, and the containing directory is fsynced
+    after the rename, so the entry that now names the new file is durable too.
+    This matters most where the writer is a RESTORE (the criteria snapshot's
+    rollback): a restore that only reached the page cache has not restored
+    anything.
+
+    **The replaced file keeps its permission bits.** ``mkstemp`` creates at
+    ``0600``, and renaming that over an artifact silently re-permissions it for
+    every later reader. The prior mode is captured before the write and applied to
+    the temp file, so a rewrite preserves it. A target that does not exist yet has
+    no mode to preserve and keeps the temp file's ``0600``.
+
+    **The descriptor is closed on every path.** ``os.fdopen`` can itself raise
+    (an out-of-memory or a bad mode); when it does, the descriptor ``mkstemp``
+    returned is still open and is still this function's to close, and the temp file
+    it named is still this function's to remove.
 
     Args:
         path: Target file path
@@ -1581,11 +1623,28 @@ def atomic_write_bytes(path: str | Path, content: bytes) -> None:
     """
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        previous_mode: int | None = stat.S_IMODE(path.stat().st_mode)
+    except OSError:
+        # No target (a first write) — there is no mode to preserve.
+        previous_mode = None
     fd, temp_path = tempfile.mkstemp(suffix=path.suffix, prefix='.tmp_', dir=path.parent)
     try:
-        with os.fdopen(fd, 'wb') as f:
-            f.write(content)
+        try:
+            handle = os.fdopen(fd, 'wb')
+        except Exception:
+            # fdopen failed, so the descriptor is NOT owned by a handle. Close it
+            # here; the outer handler removes the temp file it named.
+            os.close(fd)
+            raise
+        with handle:
+            handle.write(content)
+            handle.flush()
+            os.fsync(handle.fileno())
+        if previous_mode is not None:
+            os.chmod(temp_path, previous_mode)
         os.replace(temp_path, path)
+        _fsync_directory(path.parent)
     except Exception:
         if Path(temp_path).exists():
             os.unlink(temp_path)
