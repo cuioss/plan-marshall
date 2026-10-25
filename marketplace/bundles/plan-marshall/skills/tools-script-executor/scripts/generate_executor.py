@@ -978,10 +978,16 @@ def generate_mappings_code(mappings: dict[str, str]) -> str:
 #     argv tokens a long flag binds as its value), which the executor's pre-spawn
 #     walk needs to tell a flag's VALUE from the next verb.
 # v4: adds the CACHE_RECOVERY_ROOTS placeholder (runtime-resolved bundle cache
-#     roots injected per target for the bootstrap's pruned-version self-heal).
+#     roots for the bootstrap's pruned-version self-heal).
 # v5: adds the BOOTSTRAP_BUNDLE placeholder (the bundle the bootstrap skills
 #     belong to, which the bootstrap needs to find a skill's scripts dir in the
 #     plugin cache and in the checkout's own sources).
+# v6: replaces EXECUTOR_TARGET with GENERATED_FOR (a fixed sentinel — the file is
+#     harness-independent), and adds _INSTALLED_ROOTS / _INSTALLED_VERSIONS
+#     (every roster harness's root and its published version, so one file can
+#     dispatch for all of them and staleness is judged per runtime harness).
+#     CACHE_RECOVERY_ROOTS now carries the whole roster rather than one target's
+#     roots, and the resolver body is read from its own template file.
 _SUPPORTED_TEMPLATE_FORMAT_VERSION = 6
 
 # Matches the template's ``# TEMPLATE_FORMAT_VERSION: N`` marker comment.
@@ -1615,28 +1621,47 @@ def _resolve_tree_bases(base_path: Path) -> list[Path]:
 _HARNESS_ROSTER = ('claude', 'opencode', 'antigravity')
 
 
+#: Environment variables a harness's deploy layout reads for a CONFIG-DIR
+#: OVERRIDE. Cleared while the stamped roots are resolved: a root that moved with
+#: a per-session variable would put an environment-derived value into the file and
+#: make two sessions on one machine emit different executors. The override is
+#: still honoured at DISPATCH time (the generated executor reads it itself), so a
+#: custom config dir keeps working without making the bytes session-dependent.
+_VOLATILE_ROOT_ENV = ('OPENCODE_CONFIG_DIR', 'XDG_CONFIG_HOME', 'GEMINI_CONFIG_DIR')
+
+
 def installed_harness_roots() -> list[tuple[str, str]]:
     """Return ``(harness, root)`` for every harness in the roster.
 
     One deploy root per harness, taken from the platform-runtime layout op the
     shared resolver already uses (``_bundle_cache_roots_for``), in roster order.
-    A harness that resolves no root, or whose root does not exist on this
-    machine, still occupies its slot with an empty string: the emitted list must
-    be a function of the checkout and the ROSTER, never of which installs happen
-    to exist at generation time — otherwise two harnesses generating the same
-    checkout would emit different bytes.
+    The first EXISTING declared root wins (falling back to the first declared), so
+    the slot names the install the runtime would actually find. A harness that
+    resolves no root occupies its slot with an empty string: the emitted list must
+    be a function of the checkout and the harness ROSTER — never of the invoking
+    harness or of ``--target``.
+
+    The per-session config-dir overrides are cleared for the duration of the
+    resolution, so the stamped root is the stable HOME-anchored one; the generated
+    executor reads the override itself at dispatch time.
     """
-    pairs: list[tuple[str, str]] = []
-    for harness in _HARNESS_ROSTER:
-        root = ''
-        try:
-            for candidate in _shared_bundle_cache_roots_for(harness):
-                root = str(Path(candidate).expanduser())
-                break
-        except (OSError, ValueError, RuntimeError):
+    saved = {name: os.environ.pop(name, None) for name in _VOLATILE_ROOT_ENV}
+    try:
+        pairs: list[tuple[str, str]] = []
+        for harness in _HARNESS_ROSTER:
             root = ''
-        pairs.append((harness, root))
-    return pairs
+            try:
+                declared = [str(Path(candidate).expanduser()) for candidate in _shared_bundle_cache_roots_for(harness)]
+                existing = [candidate for candidate in declared if Path(candidate).is_dir()]
+                root = (existing or declared or [''])[0]
+            except (OSError, ValueError, RuntimeError):
+                root = ''
+            pairs.append((harness, root))
+        return pairs
+    finally:
+        for name, value in saved.items():
+            if value is not None:
+                os.environ[name] = value
 
 
 def installed_harness_versions(roots: list[tuple[str, str]] | None = None) -> list[tuple[str, str]]:
@@ -1663,6 +1688,30 @@ def installed_harness_versions(roots: list[tuple[str, str]] | None = None) -> li
     return pairs
 
 
+def tree_published_versions(base_path: Path) -> list[tuple[str, str]]:
+    """Return ``(target, version)`` read from this checkout's own target trees.
+
+    A clone that has run the target generator but holds no installed harness
+    still publishes a version — in ``target/{target}/dist-manifest.json``. Read
+    as the FALLBACK behind :func:`installed_harness_versions`, so a tree-only
+    generation stamps a real version instead of the empty sentinel (which would
+    make every staleness check unanswerable and make ``preflight`` regenerate on
+    every call). Roster order, so the answer is deterministic.
+    """
+    pairs: list[tuple[str, str]] = []
+    for target in _HARNESS_ROSTER:
+        for tree_base in _resolve_tree_bases(base_path):
+            try:
+                manifest = read_installed_manifest(tree_base, target=target)
+            except (OSError, ValueError, RuntimeError):
+                continue
+            version = str(manifest.get('version', '') or '')
+            if version:
+                pairs.append((target, version))
+                break
+    return pairs
+
+
 def newest_version(versions: list[tuple[str, str]]) -> str:
     """Return the highest published version in ``versions``, or '' when none is readable.
 
@@ -1679,21 +1728,25 @@ def newest_version(versions: list[tuple[str, str]]) -> str:
     return best
 
 
-def _relative_script_under_scripts(path: str, skill: str) -> str | None:
-    """Return the part of ``path`` after ``/skills/{skill}/scripts/``.
+def _relative_script_under_scripts(path: str, _skill: str = '') -> str | None:
+    """Return the part of ``path`` after its LAST ``/scripts/`` segment.
 
     The suffix — not the notation's script name — is what identifies the file
-    inside a skill's ``scripts`` directory. The four script-shared entries that
-    live in a sub-directory (``extension/``, ``query/``, ``workflow/``) carry a
-    flat notation name over a nested file, so a ``{script}.py`` join finds no
-    tree file for them and they keep the generating harness's install path. Using
-    the discovered path's own suffix rewrites them to the tree exactly like the
-    other 164 entries.
+    inside a skill's ``scripts`` directory. Two shapes carry it:
+
+    - nested: ``.../skills/{skill}/scripts/{suffix}`` (tree, Claude cache);
+    - flat:   ``.../{bundle}-{skill}/scripts/{suffix}`` (OpenCode, Antigravity).
+
+    The four script-shared entries that live in a sub-directory (``extension/``,
+    ``query/``, ``workflow/``) carry a flat notation name over a nested file, so
+    a ``{script}.py`` join finds no tree file for them. Anchoring on ``/scripts/``
+    rather than on ``/skills/{skill}/scripts/`` is what makes the rewrite work for
+    a FLAT discovery source too — the flat deploy shape has no ``skills`` segment,
+    and a ``skills``-anchored helper returned ``None`` there, silently leaving
+    those four entries pointing into the generating harness's install.
     """
-    if not skill:
-        return None
-    marker = f'/skills/{skill}/scripts/'
-    idx = path.find(marker)
+    marker = '/scripts/'
+    idx = path.rfind(marker)
     if idx < 0:
         return None
     suffix = path[idx + len(marker) :]
@@ -1735,7 +1788,7 @@ def _rewrite_mappings_to_tree(mappings: dict[str, str], base_path: Path) -> dict
         if bundle == 'default-bundle':
             rewritten[notation] = path
             continue
-        relative = _relative_script_under_scripts(path, skill) or f'{script}.py'
+        relative = _relative_script_under_scripts(path) or f'{script}.py'
         replaced = False
         for tree_base in candidates:
             candidate = tree_base / bundle / 'skills' / skill / 'scripts' / relative
@@ -1944,7 +1997,7 @@ def generate_executor(
     )
 
     # Cache-recovery roots for the template's pruned-version self-heal. EVERY
-    # installed harness's root travels here, in roster order, so the file can
+    # harness in the roster contributes its root, in roster order, so the file can
     # bootstrap its shared modules from whichever install the runtime harness
     # actually has. The list is a function of the roster, not of the invoking
     # harness: a per-target list would make the bytes depend on the generator.
@@ -1974,12 +2027,13 @@ def generate_executor(
     extra_dirs_code = ', '.join(f"'{d}'" for d in _sort_script_dirs_tree_first(sorted(set(resolved_dirs))))
 
     # Provisioning stamps. MARSHALL_VERSION is the NEWEST published version among
-    # the installed harnesses — the only target-independent answer for a file that
-    # serves all of them — while each harness's own version travels in the map
-    # beside it (see version_for_harness in the template). The script-set
-    # fingerprint stays a property of the checkout. A fresh install has no
-    # manifest yet: the empty sentinel is substituted, never an error.
-    generated_version = newest_version(harness_versions)
+    # the installed harnesses (falling back to this checkout's own target trees on
+    # a machine with no install) — the only target-independent answer for a file
+    # that serves all of them — while each harness's own version travels in the map
+    # beside it. The script-set fingerprint stays a property of the checkout. A
+    # fresh install has no manifest yet: the empty sentinel is substituted, never
+    # an error.
+    generated_version = newest_version(harness_versions) or newest_version(tree_published_versions(base_path))
     manifest: dict = {}
     for _harness, _root in harness_roots:
         if not _root:
@@ -2685,9 +2739,14 @@ def read_executor_version(target: str | None = None) -> str:
     except (OSError, ValueError):
         return 'unknown'
     if target:
-        for harness, version in read_executor_harness_versions(real_executor, text):
-            if harness == target and version:
-                return version
+        per_harness = read_executor_harness_versions(real_executor, text)
+        if per_harness:
+            for harness, version in per_harness:
+                if harness != target:
+                    continue
+                # The map knows this harness: its entry is the answer, and an
+                # empty entry means "unknown", never another harness's version.
+                return version or 'unknown'
     match = re.search(r"^MARSHALL_VERSION\s*=\s*'([^']*)'", text, re.MULTILINE)
     if match and match.group(1):
         return match.group(1)
@@ -3643,10 +3702,11 @@ def cmd_cleanup(args: argparse.Namespace) -> dict:
 def cmd_preflight(args: argparse.Namespace) -> dict:
     """Deterministic executor / config staleness check.
 
-    Compares the executor's embedded ``MARSHALL_VERSION`` and
-    ``marshal.json``'s ``system.provisioned_version`` against the installed
-    ``dist-manifest.json``'s ``changed_at`` versions, and acts per the two
-    asymmetric ownership rules:
+    Compares the executor's version for the RUNNING harness (its
+    ``_INSTALLED_VERSIONS`` entry, falling back to the single ``MARSHALL_VERSION``
+    stamp) and ``marshal.json``'s ``system.provisioned_version`` against the
+    installed ``dist-manifest.json``'s ``changed_at`` versions, and acts per the
+    two asymmetric ownership rules:
 
     - **Executor is safe derived state (ADR-002).** When it is stale
       (``executor_version < executor_changed_at_version``) the verb regenerates

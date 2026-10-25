@@ -998,7 +998,17 @@ def bootstrap_executor(
             'detail': 'no plugin cache resolvable — nothing to regenerate from (fresh-install boundary)',
         }
 
-    state, current = read_executor_version(executor_path)
+    # Ask as the RUNNING harness: the executor carries a version per harness, and
+    # the "ahead of the cache" comparison below is against the Claude cache, so a
+    # newer foreign install must not be read as an executor that is ahead.
+    runtime_harness = None
+    try:
+        from target_context import detect_target_from_env
+
+        runtime_harness = detect_target_from_env()
+    except Exception:
+        runtime_harness = None
+    state, current = read_executor_version(executor_path, target=runtime_harness)
     executor_version = current if state == EXECUTOR_VERSION_FOUND else None
 
     # An executor can exist and carry the newest stamp and still fail to IMPORT:
@@ -1090,7 +1100,7 @@ def bootstrap_executor(
                 ),
                 'detail': 'regeneration attempted and failed; Stage 1 regenerate-executor remains the repair',
             }
-        reread_state, reread = read_executor_version(executor_path)
+        reread_state, reread = read_executor_version(executor_path, target=runtime_harness)
         if reread_state == EXECUTOR_VERSION_FOUND:
             executor_version = reread
         else:

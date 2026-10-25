@@ -198,6 +198,42 @@ def test_d2_one_generated_executor_dispatches_under_every_harness(tmp_path, monk
         assert 'executor_target_mismatch' not in result.stdout
 
 
+def test_d1_a_session_config_override_does_not_change_the_bytes(tmp_path, monkeypatch):
+    """A per-session config-dir override never reaches the stamped roots.
+
+    The override is honoured at dispatch (see the D2 case), never baked into the
+    file: an environment-derived root would make two sessions of one checkout emit
+    different executors.
+    """
+    baseline = _generate(monkeypatch, tmp_path / 'first' / '.plan', 'claude').read_bytes()
+
+    monkeypatch.setenv('OPENCODE_CONFIG_DIR', str(tmp_path / 'elsewhere' / 'opencode'))
+    monkeypatch.setenv('XDG_CONFIG_HOME', str(tmp_path / 'elsewhere' / 'xdg'))
+    monkeypatch.setenv('GEMINI_CONFIG_DIR', str(tmp_path / 'elsewhere' / 'gemini'))
+    overridden = _generate(monkeypatch, tmp_path / 'second' / '.plan', 'opencode').read_bytes()
+
+    assert overridden == baseline
+
+
+def test_d2_a_session_config_override_is_honoured_at_dispatch(tmp_path, monkeypatch):
+    """A root declared only by the environment still resolves at call time."""
+    custom = tmp_path / 'custom-config'
+    _flat_install_script(custom / 'skills', 'demo', 'skill', 'tool', "print('from the custom config dir')\n")
+    executor = _generate(
+        monkeypatch,
+        tmp_path / 'project' / '.plan',
+        'opencode',
+        roots=(),
+        versions=(('opencode', '0.1.2'),),
+    )
+
+    monkeypatch.setenv('OPENCODE_CONFIG_DIR', str(custom))
+    result = _run(executor, ['demo:skill:tool'], 'opencode')
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert 'from the custom config dir' in result.stdout
+
+
 def test_d2_a_foreign_install_resolves_with_one_note(tmp_path, monkeypatch):
     """With only the other harness's install present, the call resolves and notes it."""
     foreign_root = tmp_path / 'claude-install'
@@ -388,10 +424,24 @@ def test_d4_the_executor_carries_a_version_per_harness(tmp_path, monkeypatch):
 
     assert ge.read_executor_version('claude') == '0.1.5'
     assert ge.read_executor_version('opencode') == '0.1.2'
-    # A harness with no published version falls back to the single stamp, which
-    # is the newest installed version — never the generating harness's.
-    assert ge.read_executor_version('antigravity') == '0.1.5'
+    # A harness the map knows but with no published version is UNKNOWN — not the
+    # other harnesses' newest version. An unknown stamp must never read as
+    # agreement with the lane text.
+    assert ge.read_executor_version('antigravity') == 'unknown'
     assert executor.read_text(encoding='utf-8').count("('claude', '0.1.5')") == 1
+
+
+def test_d4_the_shared_reader_reports_no_version_as_empty(tmp_path):
+    """``plugin_registry`` answers EMPTY (not another harness's) for a blank entry."""
+    registry = load_script_module('plan-marshall', 'script-shared', 'plugin_registry.py', 'registry_empty_entry')
+    executor = tmp_path / 'execute-script.py'
+    executor.write_text(
+        "MARSHALL_VERSION = '0.1.5'\n_INSTALLED_VERSIONS = (\n    ('claude', '0.1.5'),\n    ('opencode', ''),\n)\n",
+        encoding='utf-8',
+    )
+
+    assert registry.read_executor_version(executor, target='opencode') == (registry.EXECUTOR_VERSION_EMPTY, None)
+    assert registry.read_executor_version(executor, target='claude') == (registry.EXECUTOR_VERSION_FOUND, '0.1.5')
 
 
 @pytest.mark.parametrize(('harness', 'version'), [('claude', '0.1.5'), ('opencode', '0.1.2')])
@@ -530,18 +580,24 @@ def test_d3_rewrite_maps_a_nested_entry_to_the_tree(tmp_path, monkeypatch):
     """The mapping rewrite resolves a sub-directory entry by its OWN suffix.
 
     A ``{script}.py`` join silently leaves exactly these four entries pointing
-    into the generating harness's install, which is the D3 defect.
+    into the generating harness's install, which is the D3 defect. Both discovery
+    shapes are covered: the nested one (``…/skills/{skill}/scripts/…``) and the
+    FLAT one (``…/{bundle}-{skill}/scripts/…``), because a flat source has no
+    ``skills`` segment to anchor the suffix on.
     """
     tree = tmp_path / 'checkout' / 'marketplace' / 'bundles'
     tree_script = tree / 'demo' / 'skills' / 'skill' / 'scripts' / 'workflow' / 'tool.py'
     tree_script.parent.mkdir(parents=True)
     tree_script.write_text('# tree', encoding='utf-8')
     monkeypatch.setattr(ge, '_shared_get_base_path', lambda *args, **kwargs: tree)
-    deployed = '/somewhere/install/demo/0.1.1/skills/skill/scripts/workflow/tool.py'
+    nested_source = '/somewhere/cache/demo/0.1.1/skills/skill/scripts/workflow/tool.py'
+    flat_source = '/somewhere/opencode/demo-skill/scripts/workflow/tool.py'
 
-    rewritten = ge._rewrite_mappings_to_tree({'demo:skill:tool': deployed}, tree)
+    nested = ge._rewrite_mappings_to_tree({'demo:skill:tool': nested_source}, tree)
+    flat = ge._rewrite_mappings_to_tree({'demo:skill:tool': flat_source}, tree)
 
-    assert rewritten['demo:skill:tool'] == str(tree_script.resolve())
+    assert nested['demo:skill:tool'] == str(tree_script.resolve())
+    assert flat['demo:skill:tool'] == str(tree_script.resolve())
 
 
 def test_d3_pythonpath_on_a_tree_script_never_puts_a_foreign_install_first(tmp_path, monkeypatch):
@@ -591,7 +647,43 @@ def test_d4_executor_skew_judges_the_running_harness(tmp_path):
         rl._lane_text_version = original
 
 
-def test_d4_a_harness_without_its_own_version_still_resolves_a_valid_notation(tmp_path, monkeypatch):
+def test_d4_executor_skew_follows_the_ambient_signal(tmp_path, monkeypatch):
+    """``cmd_executor_skew`` turns the ambient harness signal into the verdict.
+
+    The wiring under test is environment → runtime harness → per-harness version →
+    verdict: one executor, two signals, two answers.
+    """
+    rl = load_script_module('plan-marshall', 'runbook-lane', 'runbook_lane.py', 'rl_skew_env_under_test')
+    executor = tmp_path / 'execute-script.py'
+    executor.write_text(
+        "MARSHALL_VERSION = '0.1.5'\n"
+        '_INSTALLED_VERSIONS = (\n'
+        "    ('claude', '0.1.5'),\n"
+        "    ('opencode', '0.1.2'),\n"
+        ')\n',
+        encoding='utf-8',
+    )
+    original = rl._lane_text_version
+    rl._lane_text_version = lambda *args, **kwargs: '0.1.4'
+    try:
+        for signal in _SIGNALS:
+            monkeypatch.delenv(signal, raising=False)
+        monkeypatch.setenv('CLAUDE_CODE_SESSION_ID', '1')
+        claude_result = rl.cmd_executor_skew(types.SimpleNamespace(executor=str(executor), lane_dir=None))
+
+        monkeypatch.delenv('CLAUDE_CODE_SESSION_ID')
+        monkeypatch.setenv('OPENCODE', '1')
+        opencode_result = rl.cmd_executor_skew(types.SimpleNamespace(executor=str(executor), lane_dir=None))
+    finally:
+        rl._lane_text_version = original
+
+    assert claude_result['executor_version'] == '0.1.5'
+    assert claude_result['verdict'] == 'match'
+    assert opencode_result['executor_version'] == '0.1.2'
+    assert opencode_result['verdict'] == 'skew'
+
+
+def test_d3_a_valid_notation_with_no_copy_anywhere_resolves_to_nothing(tmp_path):
     """A valid notation with no copy anywhere resolves to nothing, not to a guess."""
     ns = types.ModuleType('resolver_valid_but_absent')
     module = load_script_module('plan-marshall', 'tools-script-executor', 'generate_executor.py', 'ge_absent')
@@ -611,7 +703,7 @@ def test_d4_a_harness_without_its_own_version_still_resolves_a_valid_notation(tm
     assert ns._resolve_notation_by_target('demo:skill:tool') is None
 
 
-def test_d4_hidden_version_dirs_are_skipped(tmp_path):
+def test_d3_hidden_version_dirs_are_skipped(tmp_path):
     """A hidden version directory carrying the script is not selected."""
     root = tmp_path / 'install'
     hidden = root / 'demo' / '.hidden-version' / 'skills' / 'skill' / 'scripts'
@@ -635,10 +727,13 @@ def test_d4_hidden_version_dirs_are_skipped(tmp_path):
     assert ns._resolve_notation_by_target('demo:skill:tool') is None
 
 
-#: Snapshot of the checkout's own executor at module import, so the guards below
-#: can prove this module never wrote it. The suite-wide half of D5's last clause
-#: lives here because a shared-conftest guard would have to fail every session
-#: that touched it — including sessions this plan does not own.
+#: Snapshot of the checkout's own executor at module import, so the guard below
+#: can prove this module never wrote it. The SUITE-wide half of D5's clause is the
+#: autouse ``_plan_base_dir_sandbox`` fixture in ``test/conftest.py``: it pins
+#: ``PLAN_BASE_DIR`` for every test (a real-tree test must opt out through
+#: ``allow_pollution``), so no generator test can reach the live executor. This
+#: module-level pair is the cheap assertion that the suite-wide guard is in force
+#: for the cases this plan added.
 _CHECKOUT_EXECUTOR = Path(__file__).resolve().parents[3] / '.plan' / 'execute-script.py'
 _CHECKOUT_BEFORE = (
     (_CHECKOUT_EXECUTOR.read_bytes(), _CHECKOUT_EXECUTOR.stat().st_mtime_ns) if _CHECKOUT_EXECUTOR.is_file() else None

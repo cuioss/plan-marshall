@@ -487,7 +487,11 @@ stale embedded path is never returned blindly:
    `{root}/{bundle}-{skill}/scripts/…`). ONE order for every harness, so a call
    from any harness resolves and dispatches; a hit in another harness's install
    prints one `note:` line on stderr and dispatches anyway.
-5. **cwd upward walk** — walks up from `Path.cwd()` to the same live tree.
+5. **cwd upward walk** — walks up from `Path.cwd()` and from the executor file's
+   own location to the same live tree. A tree this call can reach is the
+   checkout's own source, so it comes BEFORE the install walk.
+6. **Foreign embedded path** — the last resort: a mapping value that still exists
+   but lives in another harness's install, noted the same way.
 
 The executor is harness-independent: `GENERATED_FOR` is a fixed sentinel that
 records that the file serves any harness (never a harness name), and nothing

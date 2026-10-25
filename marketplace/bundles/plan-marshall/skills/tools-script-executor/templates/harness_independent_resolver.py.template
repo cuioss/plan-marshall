@@ -15,13 +15,19 @@ def _version_key(name: str) -> tuple[int, ...]:
 def _relative_script_path(notation: str) -> str:
     """Return the script's path relative to its ``scripts/`` directory.
 
-    ``{skill}`` from the notation names the skill directory; the remainder after
-    ``.../skills/{skill}/scripts/`` is what identifies the file inside it. That
-    remainder is NOT always ``{script}.py``: the four script-shared entries that
-    live in a sub-directory (``extension/``, ``query/``, ``workflow/``) carry a
-    flat notation name over a nested file. Using the embedded mapping's own
-    suffix keeps those resolvable in the tree and in every install, which a
-    ``{script}.py`` join silently loses.
+    The suffix after the LAST ``/scripts/`` segment — not ``{script}.py`` — is
+    what identifies the file inside a skill's ``scripts`` directory, and it is
+    the same suffix for both deployed shapes:
+
+    - nested: ``.../skills/{skill}/scripts/{suffix}`` (tree, Claude cache);
+    - flat:   ``.../{bundle}-{skill}/scripts/{suffix}`` (OpenCode, Antigravity).
+
+    The four script-shared entries that live in a sub-directory (``extension/``,
+    ``query/``, ``workflow/``) carry a flat notation name over a nested file, so a
+    ``{script}.py`` join makes them unresolvable in the tree and in every install.
+    Anchoring on ``/scripts/`` rather than on ``skills/{skill}/scripts/`` is what
+    keeps a FLAT-sourced mapping resolvable — the flat shape has no ``skills``
+    segment to anchor on.
 
     ``SCRIPTS`` is consulted defensively: the resolver body is also executed in
     isolation by tests that carry no embedded mapping, and a missing map must
@@ -33,10 +39,9 @@ def _relative_script_path(notation: str) -> str:
     except NameError:  # no embedded mapping in this namespace
         embedded = None
     if len(parts) == 3 and embedded:
-        marker = f'/skills/{parts[1]}/scripts/'
-        idx = embedded.find(marker)
+        idx = embedded.rfind('/scripts/')
         if idx >= 0:
-            return embedded[idx + len(marker) :]
+            return embedded[idx + len('/scripts/') :]
     return f'{parts[2]}.py' if len(parts) == 3 else ''
 
 
@@ -119,6 +124,27 @@ def _scripts_dirs_in_root(root: str, bundle: str, skill: str) -> list[str]:
     return dirs
 
 
+def _env_harness_roots() -> list[tuple[str, str]]:
+    """Return install roots declared by the ENVIRONMENT at call time.
+
+    Never stamped into the file: an environment-derived value in the bytes would
+    make two sessions on one machine emit different executors, which is exactly
+    what the harness-independent contract forbids. They are read HERE instead, so
+    a custom config dir still resolves at dispatch while the file stays stable.
+    """
+    pairs: list[tuple[str, str]] = []
+    try:
+        opencode_dir = os.environ.get('OPENCODE_CONFIG_DIR')
+        if opencode_dir:
+            pairs.append(('opencode', str(Path(opencode_dir) / 'skills')))
+        gemini_dir = os.environ.get('GEMINI_CONFIG_DIR')
+        if gemini_dir:
+            pairs.append(('antigravity', str(Path(gemini_dir) / 'plugins' / 'plan-marshall' / 'skills')))
+    except (OSError, ValueError):
+        return pairs
+    return pairs
+
+
 def _harness_search_order() -> list[tuple[str, str]]:
     """Return ``(harness, root)`` pairs in resolution order.
 
@@ -127,20 +153,26 @@ def _harness_search_order() -> list[tuple[str, str]]:
     own harness's code whenever that harness has a copy, and only reaches
     another harness's install as the last resort.
 
-    ``_runtime_harness`` is part of the executor's own bootstrap surface, so the
-    resolver body also runs in isolation (tests execute it standalone, with no
-    environment layer): a missing reader means "no runtime signal".
+    ``_runtime_harness`` and ``_INSTALLED_ROOTS`` are part of the executor's own
+    bootstrap surface, so the resolver body also runs in isolation (tests execute
+    it standalone, with no environment layer): a missing reader means "no runtime
+    signal", a missing root list means "no stamped installs".
     """
     try:
         running = _runtime_harness()
     except NameError:
         running = None
     try:
-        installed = _INSTALLED_ROOTS
+        installed = tuple(_INSTALLED_ROOTS)
     except NameError:
         installed = ()
-    own = [pair for pair in installed if pair[0] == running]
-    rest = [pair for pair in installed if pair[0] != running]
+    try:
+        declared = _env_harness_roots()
+    except NameError:
+        declared = []
+    pairs = list(installed) + list(declared)
+    own = [pair for pair in pairs if pair[0] == running]
+    rest = [pair for pair in pairs if pair[0] != running]
     return own + rest
 
 
