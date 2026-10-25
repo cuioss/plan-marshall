@@ -221,3 +221,23 @@ def test_d3_the_version_direct_nested_shape_uses_the_scripts_version(tmp_path, m
     pythonpath = ':'.join(_pythonpath(result))
     assert str((cache / _NEWEST).resolve()) in pythonpath, pythonpath
     assert '0.1.1916' not in pythonpath, pythonpath
+
+
+# =============================================================================
+# D4 — the regression is reproduced against the reported shape
+# =============================================================================
+
+
+def test_d4_eight_cached_versions_still_import_the_newest_helper(tmp_path, monkeypatch):
+    """The reported shape: eight cached versions, the helper gaining a symbol."""
+    executor = _consumer_fixture(
+        tmp_path,
+        monkeypatch,
+        ('0.1.1916', '0.1.1965', '0.1.1969', '0.1.1989', '0.1.1996', '0.1.2004', '0.1.2007', _NEWEST),
+    )
+
+    result = _run(executor, ['plan-marshall:probe:tool'])
+
+    assert result.returncode == 0, f'ImportError naming {_MARKER}: {result.stdout}{result.stderr}'
+    assert f'{_MARKER}={_NEWEST}' in result.stdout, result.stdout
+    assert '0.1.1916' not in ':'.join(_pythonpath(result))
