@@ -94,6 +94,10 @@ def _ns(**kwargs) -> types.SimpleNamespace:
     kwargs.setdefault('override', False)
     kwargs.setdefault('reason', None)
     kwargs.setdefault('strict', False)
+    # The override basis and the operator answer travel together: `operator`
+    # (the default) requires the answer, while `scheduled_loop_back` refuses one.
+    kwargs.setdefault('override_basis', 'operator')
+    kwargs.setdefault('operator_answer', None)
     return types.SimpleNamespace(**kwargs)
 
 

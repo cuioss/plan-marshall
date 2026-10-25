@@ -1116,6 +1116,13 @@ def _phase_artifact_refusal(args: argparse.Namespace, status: dict[str, Any]) ->
     return None
 
 
+#: The fields ``cmd_set_phase`` writes into ``metadata.loop_back_reentry`` when a
+#: backward phase move schedules a loop-back. The auto-override treats the marker
+#: as authority, so it requires this exact shape rather than a truthy value: a
+#: malformed marker authorizes nothing and the drift refusal stands.
+_MARKER_FIELDS: tuple[str, ...] = ('from_phase', 'to_phase', 'at')
+
+
 def _loop_back_auto_override(
     args: argparse.Namespace,
     status: dict[str, Any],
@@ -1128,11 +1135,13 @@ def _loop_back_auto_override(
     change the invariants the earlier capture recorded, so ``cmd_verify``
     reports ``status: drift`` by construction at the next guarded boundary.
     When BOTH hold — the blocking verify result is invariant drift AND the
-    marker is present — re-capture the handshake with ``override=True`` and a
-    recorded reason, clear the marker (persisted immediately so the override
-    fires exactly once per scheduled loop-back), emit a decision-log WARNING
-    with the drift diff summary, and let the transition proceed by returning
-    ``None``.
+    marker is present — re-capture the handshake with ``override=True``, the
+    reserved ``override_basis='scheduled_loop_back'`` (which records NO operator
+    answer, because this drift is scheduled by construction rather than decided
+    by an operator) and a recorded reason, clear the marker (persisted
+    immediately so the override fires exactly once per scheduled loop-back),
+    emit a decision-log WARNING with the drift diff summary, and let the
+    transition proceed by returning ``None``.
 
     Every other blocking result returns the refusal unchanged: drift WITHOUT
     the marker keeps today's blocking behavior, and the worktree-resolution /
@@ -1144,16 +1153,25 @@ def _loop_back_auto_override(
     """
     metadata = normalize_metadata(status)
     marker = metadata.get('loop_back_reentry')
-    if verify_result.get('status') != 'drift' or not marker:
+    # The marker is the ONLY authority the scheduled basis has, so a truthy value
+    # is not enough: it must be the mapping `cmd_set_phase` writes, with all three
+    # non-empty string fields. A malformed marker authorizes nothing, and the
+    # original drift refusal is returned unchanged.
+    if verify_result.get('status') != 'drift' or not isinstance(marker, dict):
+        return verify_result
+    if not all(isinstance(marker.get(field), str) and marker[field].strip() for field in _MARKER_FIELDS):
         return verify_result
 
-    from_phase = marker.get('from_phase', 'unknown') if isinstance(marker, dict) else 'unknown'
+    from_phase = marker['from_phase']
     recapture = cmd_capture(
         argparse.Namespace(
             plan_id=args.plan_id,
             phase=args.completed,
             override=True,
             reason=f'loop-back re-entry auto-override (scheduled by {from_phase} loop_back)',
+            override_basis='scheduled_loop_back',
+            loop_back_marker=True,
+            operator_answer=None,
             strict=False,
         )
     )

@@ -505,7 +505,14 @@ Consumer projects do not own bundle sources, so they do not register
 either step. Their finalize dispatches load whatever the host plugin
 cache holds, which is exactly the published bundle definitions.
 
-**Resumable re-entry semantics**: Before dispatching each step, read the current step record from `status.metadata.phase_steps["6-finalize"]`. If the step is already marked `done`, skip dispatch entirely (no re-run, no log noise — the previous run completed it). If the step is marked `failed`, retry it from scratch. If the step has no record (or any other outcome), dispatch it as a fresh run. This makes finalize safe to re-enter after a partial run, a crash, or an explicit retry — completed steps stay completed, failed steps get exactly one retry per invocation.
+**Resumable re-entry semantics**: Before dispatching each step, read the current step record from `status.metadata.phase_steps["6-finalize"]`. If the step is already marked `done`, skip dispatch entirely (no re-run, no log noise — the previous run completed it). If the step is marked `failed`, retry it from scratch — the retry is a NAMED continuation and is checked as one before the re-dispatch: `halt_continuation check --continuation retry --attempt {n}` (§ "Halt continuation roster"), whose refusal (`retry_bound_exhausted`, `retry_bound_not_documented`, `escalation_unanswered`, `halt_unreadable`) stops the re-entry and is surfaced instead of retried. If the step has no record, read its halt state BEFORE dispatching it as a fresh run: `manage-status halt read --phase 6-finalize --step {step_id}`, and branch on the four outcomes it distinguishes:
+
+- `recorded: false` — the one state that positively says the step holds no halt at all. Dispatch as a fresh run.
+- `unreadable: true` — the stored halt cannot be parsed. STOP with `halt_unreadable` rather than dispatching: a record nobody can read is a failed read, not the absence of a halt.
+- `escalation_unanswered: true` — the previous entry stopped on an operator question and recorded no phase-steps outcome, so re-running the leaf would ask again while the operator's decision is still open. The ONLY admitted continuation is `operator_question`: fire that question, record the answer, and let it settle before the step runs.
+- any other recorded halt — a non-escalating `failed` or `halted` record. Its own continuation applies and this read does not block it: a `failed` halt is retried by the branch above (bounded), while a `halted` halt names a stop with no step outcome to resume, so a fresh dispatch is the continuation — which is exactly the `rate_window_await` case, whose halt is recorded without an escalation and whose step is re-dispatched after the wait (§ item 7a).
+
+This makes finalize safe to re-enter after a partial run, a crash, or an explicit retry — completed steps stay completed, failed steps get exactly one retry per invocation, and an unanswered escalation is read instead of being run past.
 
 **Precondition resolution**: before dispatching any step in the FOR loop, parse the step's frontmatter `requires:` list (if present) and resolve each entry against its mapped resolver. The only precondition currently defined is `ci-complete`, mapped to the dispatcher-internal helper `scripts/ci_complete_precondition.py` (notation `plan-marshall:phase-6-finalize:ci_complete_precondition`). The resolver is invoked inline through the executor proxy (no Task agent dispatch — the helper clamps its inner `ci wait --timeout` so the outer subprocess call stays strictly below the host platform's per-call Bash ceiling, and past that bound returns a structured `deadline_exceeded` envelope for the dispatcher to re-poll on re-entry rather than being killed mid-call).
 
@@ -1234,7 +1241,20 @@ FOR each step_id in manifest.phase_6.steps:
              work --plan-id {plan_id} --level ERROR --message "[ERROR] (plan-marshall:phase-6-finalize) Failed record for step {step_ref} was refused: {error} — {message}"
            The STOP returns control to the orchestrator; items b and c are reached only on
            `status: success`, so the (b) line never claims a `failed` record that was not
-           written.
+           written. On that same `status: success`, record the halt itself
+           (§ "Halt continuation roster") — the persisted halt is what makes the stop a fact
+           the continuation check can read, rather than a line in the log:
+
+           python3 .plan/execute-script.py plan-marshall:manage-status:manage-status halt record \
+             --plan-id {plan_id} --phase 6-finalize --step {step_id} --outcome failed \
+             --reason "post-dispatch guard: step returned without a terminal record"
+
+           Then check the continuation this halt admits. Here the dispatcher STOPS —
+           and a stop is not a continuation, so no check is issued: the halt is
+           recorded, the pipeline halts, and the next finalize entry takes its
+           continuation through item 1's check. If this call is refused because the
+           step already carries an unanswered escalation (`error: escalation_open`),
+           leave that escalation standing and stop — it is the operator's to resolve.
         b. Log the attributed error:
            python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
              work --plan-id {plan_id} --level ERROR \
@@ -1447,6 +1467,8 @@ FOR each step_id in manifest.phase_6.steps:
 
       The three asking rate-window reasons (`rate_window_timeout`, `rate_window_not_awaitable`, `rate_window_exhausted`) and `refusal_structural` (see `../automatic-review/SKILL.md` § "Rate-limit refusal recovery (opt-in)") always carry `action: ask` and consult NO policy knob — they always fire the AskUserQuestion. `rate_window_await` consults no policy knob either, and fires none.
 
+      **Every `escalate_ask` return is a recorded halt.** Before firing the prompt this hook records the halt (`halt record --outcome halted --escalate-ask --reason "escalate_ask{reason: {reason}}"`, with one `--option "{label}"` per label in the envelope's `prompt_options[]`), and after the operator selects an option it records that answer (`halt answer --selected "{option label}"`). `rate_window_await` asks nothing, so its halt is recorded WITHOUT `--escalate-ask` (and therefore with no options); the `defer` branch asks nothing either, so it records a non-escalating halt and owes no answer. Both calls are stated once, with their full verb spellings, in § "Halt continuation roster" — and because `mark-step-done` refuses a `done`/`skipped` resolution over an unanswered escalation, a missed `halt answer` blocks the completion instead of being silently skipped. **If the `halt record` call is refused with `error: escalation_open`**, the step already carries an unanswered escalation: do NOT fire this reason's prompt over it, and do not pass `--replace-escalation` yourself — surface the refusal and stop, because the pending decision is the operator's and re-recording the halt would erase it.
+
       The full field set of the `escalate_ask` return TOON (all six `reason` variants) is defined in [`../automatic-review/SKILL.md`](../automatic-review/SKILL.md) § "`escalate_ask` return (timeout escalations)" — read it there; do NOT restate the field set here.
 
       **`reason: rate_window_await` — hold the wait here, ask nothing, then dispatch the step again.** Evaluate this branch FIRST: it is the only reason that produces no prompt and reads no policy, and a hook that fell through to the `action` branches below would find no `action` on the envelope to branch on.
@@ -1635,6 +1657,11 @@ FOR each step_id in manifest.phase_6.steps:
            --plan-id {plan_id} --source {step_ref} --ceiling {max_iterations}
 
       Capture `admitted`, `iteration` and `effective_ceiling` from the returned TOON. `iteration` is the round this call decided on (the source's spent count plus one), and `effective_ceiling` is the bound it was compared against. On any `status` other than `success`, log the returned `error` and `message` at ERROR and STOP — an unreadable budget is not an admission.
+
+      **The loop-back is a named continuation, so it is checked as one before the round is spent.** On `admitted == true`, issue the `loop_back` check (§ "Halt continuation roster"); a refusal (`halt_continuation_refused`, `escalation_unanswered`, `halt_unreadable`) STOPs here with the refusal surfaced, and the admitted round is not spent:
+
+         python3 .plan/execute-script.py plan-marshall:phase-6-finalize:halt_continuation check \
+           --plan-id {plan_id} --phase 6-finalize --step {step_ref} --continuation loop_back
 
       **In-flight rule.** A status that still carries the retired scalar `loop_back_iteration` is not read: the scalar is attributed to no source, and every source starts at zero.
 
@@ -2010,7 +2037,45 @@ The post-dispatch completion guard sub-step above (the `assert-step-recorded` ch
 
 The guard is scoped to dispatched (Task-agent) steps only, and within that scope it exempts three classes uniformly — inline steps record their mark synchronously in the main context, the item-5 timeout path already records `outcome=failed`, and `escalate_ask`-returning steps legitimately leave no terminal record because item 7a owns their continuation. All three are exempt under the same gate as items 5b/5c, extended in item 5d with the `escalate_ask` carve-out.
 
+#### Halt continuation roster
+
+The **closed** set of continuations a halted step may take. A *halt* is any stop that is not a completion: the post-dispatch guard's own `failed` record at item 5d.b, a step's `mark-step-done --outcome failed`, or an `escalate_ask` return (whose operator prompt item 7a owns). The roster below is the declaration; `plan-marshall:phase-6-finalize:halt_continuation check` mirrors it and refuses every other token, and the halt state itself is written with `plan-marshall:manage-status:manage-status halt`.
+
+| continuation | What it is | Bound |
+|---|---|---|
+| `retry` | the resumable re-entry check (item 1) re-runs the failed step from scratch | **once per finalize invocation** (item 1) — the bound is the workflow's constant, and a retry that states a wider one is refused |
+| `loop_back` | the step handed control upstream through its recorded `loop_back_target` (item 7b) | the per-source `max_iterations` budget (item 7b) |
+| `operator_question` | the operator is asked and their selected option is executed as worded | the operator's answer |
+
+Record the halt, then check the continuation before taking it:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status halt record \
+  --plan-id {plan_id} --phase 6-finalize --step {step_id} --outcome {failed|halted} \
+  --reason "{why the step stopped}" [--escalate-ask --option "{option label}" ...]
+
+python3 .plan/execute-script.py plan-marshall:phase-6-finalize:halt_continuation check \
+  --plan-id {plan_id} --phase 6-finalize --step {step_id} --continuation {retry|loop_back|operator_question} \
+  [--attempt {n} --max-attempts {bound}]
+```
+
+`check` answers `allowed: true` for a named continuation, and refuses with `error: halt_continuation_refused` naming all three otherwise; `retry_bound_required` when a retry states no attempt, `retry_bound_not_documented` when it claims a bound wider than the documented one, `retry_bound_exhausted` when the attempt exceeds it, `escalation_unanswered` while the halt carries an unanswered `escalate_ask`, and `halt_unreadable` when the stored record cannot be parsed. The retry bound is the workflow's (`DOCUMENTED_RETRY_BOUND = 1`, item 1's "exactly one retry per invocation") and is not a caller parameter — a bound the party it binds can widen is no bound. A step with no halt record admits every continuation — there is nothing to constrain.
+
+**It is checked at every site that CONTINUES the step**, not at the site that stops it: item 1 issues the `retry` check before re-dispatching a failed step, and item 7b issues the `loop_back` check before it replays or rolls back. Item 7a needs no check of its own: while an escalation is unanswered the only admitted continuation IS `operator_question`, which is what that hook fires, and once it is answered the answer's own branch runs. Stopping and handing control back is not a continuation, so item 5d.b records its halt and stops without one. The refusal names the way forward, so a halt cannot be resumed by an unnamed verb even when the caller never read this section.
+
+**A halt never erases an unanswered escalation.** `halt record` replaces the previous record, so it REFUSES to replace one whose `escalate_ask` is still unanswered (`error: escalation_open`) unless `--replace-escalation` is passed, which only the operator's own answer can justify. A guard that fires on such a step leaves the escalation standing and stops.
+
+**Undocumented harness recovery verbs are not continuations.** `session_move` (OpenCode), a session resume, or an ad-hoc re-dispatch is named nowhere in the roster, so `check` refuses it — by construction, because the set is closed, not because a blocklist happens to list it. A halt the log calls "halted" ends the step: the only ways forward are the three above.
+
+**An operator escalation is recorded, asked, and answered.** When a halt hands the decision to the operator, record it with `--escalate-ask` and one `--option` per option the operator will be shown (for item 7a, the envelope's own `prompt_options[]` labels — the envelope is the authority on the option set), fire the question, and record the option the operator selected with `plan-marshall:manage-status:manage-status halt answer --selected "{option label}"`. The answer is matched against the recorded options: a paraphrase or a free-text "ok" is refused with `selected_not_offered`, because the operator's decision is the label they chose, not the caller's summary of it. Until that answer exists, `mark-step-done` refuses a `done` / `skipped` resolution (`error: escalation_unanswered`) and `halt_continuation check` admits only `operator_question`. No step therefore completes on a decision the operator never made — the leaf cannot mark past an escalation, and neither can the dispatcher.
+
+**The option the operator selected is executed as worded.** The selected option names the branch it selects (the option-text-names-the-branch rule), and that branch is the one that runs — a different branch is a refused run, not a cheaper equivalent. "Wait another 600s" waits; it does not stand in for a CI wait.
+
+**An operator-reported problem is a stop, not a trigger.** When the operator reports a failure ("the build is red", "CI is not green"), take no remedial action they did not choose: state the options and ask. Re-running the failed check or re-triggering the review unasked is a *remedial action*, and it is the one that let an unrelated auto-merge proceed.
+
 #### Pre-Archive Snapshot Hook
+
+
 
 When the NEXT step to dispatch is `default:archive-plan` (always the last CONFIGURED step), capture a snapshot of plan state BEFORE dispatching archive-plan. The archive step moves `.plan/local/plans/{plan_id}/` to `.plan/local/archived-plans/{date}-{plan_id}/` and invalidates subsequent `manage-status read` calls against the live path, so the renderer (Step 4) would be unable to read state after archive returns.
 

@@ -20,6 +20,17 @@ HANDSHAKE_FIELDS = [
     'captured_at',
     'override',
     'override_reason',
+    # ``operator_answer`` is the operator's own answer authorizing an override,
+    # persisted beside ``override_reason`` (the caller's rationale). A drift
+    # override cannot be recorded without one: the two columns are deliberately
+    # separate because a caller can write a reason, and only the operator can
+    # give an answer.
+    'operator_answer',
+    # ``override_basis`` names WHAT authorized an override: ``operator`` (an
+    # answer the operator gave) or ``scheduled_loop_back`` (drift produced by
+    # construction by the loop-back re-entry marker, where no operator decision
+    # exists). It is the column that keeps the two from being conflated.
+    'override_basis',
     'main_sha',
     'main_dirty',
     # ``main_dirty_files`` is a TOON list field (sorted dirty-path set with the
