@@ -37,6 +37,7 @@ from __future__ import annotations
 
 import argparse
 from collections.abc import Callable
+from dataclasses import replace
 
 from _maven_cmd_discover import discover_maven_modules
 from _test_scope_divergence import resolve_test_scope
@@ -134,15 +135,16 @@ def cmd_resolve_test_scope(args: argparse.Namespace) -> int:
     if not footprint_resolvable or not modules_resolvable:
         # Nothing substantiates a scoped verdict: no module set, or no footprint.
         # Fail toward the whole tree rather than claim a scoped run is equivalent.
-        resolution = type(resolution)(
+        resolution = replace(
+            resolution,
             scoped_modules=(),
             divergence_possible=True,
             recommended_target=None,
-            unresolved_paths=resolution.unresolved_paths,
             narrow_units=(),
             narrow_units_unresolved=(),
             named_only_modules=(),
             narrow_unit_module=None,
+            excluded_population=(),
         )
 
     print(
@@ -153,6 +155,8 @@ def cmd_resolve_test_scope(args: argparse.Namespace) -> int:
                 'divergence_possible': resolution.divergence_possible,
                 'recommended_target': resolution.recommended_target,
                 'unresolved_paths': list(resolution.unresolved_paths),
+                'root_guards_required': resolution.root_guards_required,
+                'excluded_population': list(resolution.excluded_population),
                 'whole_tree_available': modules_resolvable,
                 'footprint_resolvable': footprint_resolvable,
                 'modules_resolvable': modules_resolvable,

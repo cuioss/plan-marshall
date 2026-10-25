@@ -377,6 +377,8 @@ def cmd_resolve_test_scope(args) -> int:
                 'narrow_units_unresolved': list(resolution.narrow_units_unresolved),
                 'named_only_modules': list(resolution.named_only_modules),
                 'narrow_unit_module': resolution.narrow_unit_module,
+                'root_guards_required': resolution.root_guards_required,
+                'excluded_population': list(resolution.excluded_population),
                 'whole_tree_available': whole_tree_available,
                 'footprint_resolvable': footprint_resolvable,
                 'modules_resolvable': modules_resolvable,

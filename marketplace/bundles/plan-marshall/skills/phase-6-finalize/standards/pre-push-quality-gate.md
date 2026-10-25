@@ -90,11 +90,21 @@ absence of evidence, never evidence of coverage; a fresh verdict on it would
 be the confident-empty signal this gate exists to refuse.
 
 Root-level test guards run unconditionally whenever the plan adds or edits
-test files. A scoped `module-tests` run never covers `test/*.py` at the
-repository root (no bundle owns that scope), so a footprint touching
-`test/*.py` always escalates the module-tests arm to the whole-tree branch
-regardless of what the scoped derivation would otherwise select. The
-population the scoped runs did not cover is stated in the run's log line.
+test files. A scoped `module-tests {module}` run never covers `test/*.py` at the
+repository root — no module owns that scope — so **any** footprint that adds or
+edits a test file escalates the module-tests arm to the whole-tree branch,
+regardless of what the scoped derivation would otherwise select. The seam
+reports this directly as `root_guards_required`, which forces
+`divergence_possible: true`; it is the same trigger whether the edited test file
+is a root-level guard or a module's own test file, because a scoped run of that
+module still leaves the root guards unexecuted. A production-only or docs-only
+footprint does not set it, so those stay scoped.
+
+When the verdict does stay scoped, the seam's `excluded_population` names the
+populations the run does not cover (every module outside the target, and the
+root-level test guards in a test-root-shaped project). The module-tests arm
+states it in the run's log line — a green scoped run reports what it left out
+rather than reading as coverage of the whole change.
 
 `head_at_completion` is captured at step start as well as at step end, both
 via `git -C {worktree_path} rev-parse HEAD`. When
@@ -488,6 +498,8 @@ The guards above run mypy + ruff over production sources and mypy over `test/` �
    **Do NOT build this invocation by appending `{recommended_target}` to branch 0's whole-tree `executable`.** How a build tool carries module scope is that tool's own convention, so an appended bare token is not a scope — it is string surgery on a resolved command, and it is wrong under both tools this repository can observe. Under the pyprojectx wrapper the module rides INSIDE a quoted value (`run --command-args "module-tests {module}"`), so a token appended to the resolved string lands outside the quotes entirely; under npm the scope is carried by a flag (`--prefix=` / `--workspace=`), so an appended token becomes an extra argument to the test script rather than a scope. This is the same rule § "Whole-tree test-compile gate" states when it fixes its probe order. The discriminator is whether the resolver can be asked for the form you want: here it can, so surgery is gratuitous. The one place this document still mutates a resolved string — that arm's module-argument REMOVAL — is reached only after the resolver has been asked for the wider form and proven to expose none, and is recorded as a deliberate widening in § "What this caveat does NOT license".
 
    Gate on its result the same way: `status: error` → **Mark Step Complete (Failure)** (halt before push); `status: success` → **Mark Step Complete (Success)**; `timeout`, `killed` or `indeterminate` → neither branch, STOP the step per § "Exit-code convention for every script call".
+
+   Before branching, record what the scoped run does not cover: emit one `[STATUS]` naming `excluded_population` from the seam's `status: success` payload (§ "Root-level test guards" above). A scoped green run that stays silent about its exclusions reads as coverage of the whole change, which it is not. When `excluded_population` is empty the run covers everything.
 
 The module-tests outcome folds into the Mark Step Complete branches below: Branch A covers a run in which the per-bundle `quality-gate` sweep, the whole-tree `quality-gate`, the whole-tree `test-compile` and the module-tests gate each returned `status: success` if it ran at all — which is not the same as all four having run, so read § "Mark Step Complete" for what the `display_detail` may then claim; Branch B (failure) covers a `status: error` from the per-bundle `quality-gate` OR the whole-tree `quality-gate` OR `test-compile` OR the module-tests run; and a `timeout`, `killed` or `indeterminate` from any arm is neither branch — the step has already STOPped at that arm per § "Exit-code convention for every script call".
 

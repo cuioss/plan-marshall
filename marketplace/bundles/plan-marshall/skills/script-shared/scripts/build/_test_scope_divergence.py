@@ -64,6 +64,7 @@ benign verdict is an EMPTY footprint - see :func:`resolve_test_scope`.
 
 from __future__ import annotations
 
+import fnmatch
 from collections.abc import Callable, Collection
 from dataclasses import dataclass
 
@@ -164,6 +165,16 @@ class TestScopeResolution:
             exactly when ``narrow_units`` is non-empty, which is what
             ``recommended_target`` is not: that one is null whenever a
             whole-tree run is warranted, while narrow units are still offered.
+        root_guards_required: True when the footprint adds or edits a test FILE.
+            The root-level guards (``test/*.py``) sit outside every module, so no
+            scoped ``module-tests {module}`` run executes them; a footprint that
+            touches a test file therefore forces ``divergence_possible`` and a
+            null ``recommended_target``. False for a production-only or docs-only
+            footprint, so those stay scoped.
+        excluded_population: The populations a SCOPED verdict does not cover,
+            named so a green scoped run states what it left out instead of
+            implying coverage of the whole change. Empty whenever the verdict is
+            whole-tree (nothing is left out) or there is nothing to run.
     """
 
     scoped_modules: tuple[str, ...]
@@ -174,6 +185,8 @@ class TestScopeResolution:
     narrow_units_unresolved: tuple[str, ...] = ()
     named_only_modules: tuple[str, ...] = ()
     narrow_unit_module: str | None = None
+    root_guards_required: bool = False
+    excluded_population: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -190,6 +203,25 @@ class DivergenceVerdict:
 
     divergent: bool
     caught: bool
+
+
+#: The test-file names the root-level guards assert on. A raw fixture under a
+#: test tree (``test/.../fixtures/*.java``) is data, not a test.
+_TEST_FILE_PATTERNS: tuple[str, ...] = ('test_*.py', '*_test.py', 'conftest.py')
+
+
+def _is_test_file(path: str) -> bool:
+    """Return True when ``path`` is a test FILE under a test root.
+
+    The root-level guards (``test/*.py``) assert on the project's test files, and
+    they sit outside every module. A footprint that adds or edits a test file
+    therefore demands them, while a raw fixture or a production file does not.
+    """
+    segments = path.split('/')
+    if len(segments) < 2 or segments[0] not in _TEST_ROOTS:
+        return False
+    name = segments[-1]
+    return any(fnmatch.fnmatch(name, pattern) for pattern in _TEST_FILE_PATTERNS)
 
 
 def _touches_shared_infra(path: str) -> bool:
@@ -509,8 +541,13 @@ def resolve_test_scope(
     unresolved_paths = tuple(unresolved)
     named_only_modules = tuple(sorted(named_only))
     shared_infra_touched = any(_touches_shared_infra(path) for path in footprint)
+    root_guards_required = any(_is_test_file(path) for path in footprint)
     divergence_possible = (
-        len(scoped_modules) > 1 or shared_infra_touched or bool(unresolved_paths) or bool(named_only_modules)
+        len(scoped_modules) > 1
+        or shared_infra_touched
+        or bool(unresolved_paths)
+        or bool(named_only_modules)
+        or root_guards_required
     )
 
     recommended_target: str | None
@@ -518,6 +555,16 @@ def resolve_test_scope(
         recommended_target = scoped_modules[0]
     else:
         recommended_target = None
+
+    excluded_population: tuple[str, ...] = ()
+    if recommended_target is not None:
+        exclusions = [f'every module outside {recommended_target}']
+        # The root-level guards exist in a test-root-shaped project; naming them
+        # as excluded is what keeps a scoped green run from reading as coverage
+        # of a change whose guards never ran.
+        if any(path.split('/')[0] in _TEST_ROOTS or path.startswith('marketplace/bundles/') for path in footprint):
+            exclusions.append('root-level test guards under each test root')
+        excluded_population = tuple(exclusions)
 
     narrow_units, narrow_units_unresolved = _resolve_narrow_units(
         footprint, scoped_modules, bundles, test_directories, existing_paths
@@ -532,6 +579,8 @@ def resolve_test_scope(
         narrow_units_unresolved=narrow_units_unresolved,
         named_only_modules=named_only_modules,
         narrow_unit_module=scoped_modules[0] if narrow_units else None,
+        root_guards_required=root_guards_required,
+        excluded_population=excluded_population,
     )
 
 

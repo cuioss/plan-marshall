@@ -170,7 +170,7 @@ python3 .plan/execute-script.py plan-marshall:build-maven:maven resolve-test-sco
   [--changed-paths CHANGED_PATHS] (--project-dir PROJECT_DIR | --plan-id PLAN_ID)
 ```
 
-The scoped-test answer the `pre-push-quality-gate` module-tests arm asks its resolved build skill: `scoped_modules`, `divergence_possible`, `recommended_target`, `unresolved_paths`, `whole_tree_available`. Module ownership is Maven's own — the longest module directory (`paths.module` from `discover`) containing a footprint path — so a reactor's modules, not `marketplace/bundles/<b>` segments, are the population. The reactor root owns no arbitrary file: a root-level `pom.xml` change is reported in `unresolved_paths` and routes the gate to the whole tree. `--changed-paths` is the task-scoped footprint and supersedes the whole-plan footprint from `--plan-id`; a blank value is refused.
+The scoped-test answer the `pre-push-quality-gate` module-tests arm asks its resolved build skill: `scoped_modules`, `divergence_possible`, `recommended_target`, `unresolved_paths`, `root_guards_required`, `excluded_population`, `whole_tree_available`. Module ownership is Maven's own — the longest module directory (`paths.module` from `discover`) containing a footprint path — so a reactor's modules, not `marketplace/bundles/<b>` segments, are the population. The reactor root owns no arbitrary file: a root-level `pom.xml` change is reported in `unresolved_paths` and routes the gate to the whole tree. `--changed-paths` is the task-scoped footprint and supersedes the whole-plan footprint from `--plan-id`; a blank value is refused.
 
 ### run-config-key
 
