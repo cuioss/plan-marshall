@@ -423,7 +423,9 @@ class TestCwdWalkResolver:
         sources: list[str] = []
         for node in tree.body:
             if isinstance(node, _ast.FunctionDef) and node.name in wanted:
-                sources.append(_ast.get_source_segment(template, node))
+                segment = _ast.get_source_segment(template, node)
+                assert segment is not None, 'the cwd-walk source segment could not be extracted'
+                sources.append(segment)
         assert sources, '_resolve_notation_by_cwd_walk not found in template'
 
         ns = types.ModuleType('cwd_walk_under_test')
