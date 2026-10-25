@@ -240,7 +240,9 @@ def _text_or_none(value: object) -> str | None:
     return value if isinstance(value, str) and value else None
 
 
-def read_executor_version(executor_path: Path, target: str | None = None) -> tuple[str, str | None]:
+def read_executor_version(
+    executor_path: Path, target: str | None = None, fallback_on_empty: bool = False
+) -> tuple[str, str | None]:
     """Read the executor's version stamp, for ``target`` when it names one.
 
     Returns ``(state, version)``. ``version`` is set only for
@@ -258,6 +260,13 @@ def read_executor_version(executor_path: Path, target: str | None = None) -> tup
     that entry is the answer, so staleness is judged as the RUNNING harness would
     judge it rather than against whichever harness generated the file. An
     executor generated before the map existed falls back to the single stamp.
+
+    ``fallback_on_empty`` decides what a PRESENT BUT EMPTY entry means. For a
+    version COMPARISON it must stay empty (an unknown stamp never reads as
+    agreement). For a caller deciding whether the executor is BROKEN — steward's
+    bootstrap — an empty entry only says that harness publishes no manifest, so
+    falling back to the global stamp is correct; treating it as "no version" would
+    make a healthy executor recovery-loop on every run.
     """
     try:
         text = executor_path.read_text(encoding='utf-8')
@@ -269,7 +278,7 @@ def read_executor_version(executor_path: Path, target: str | None = None) -> tup
             version = per_harness.get(target)
             if version:
                 return EXECUTOR_VERSION_FOUND, version
-            if target in per_harness:
+            if target in per_harness and not fallback_on_empty:
                 # The map knows this harness and carries no version for it: the
                 # harness publishes no manifest. That is EMPTY, never the other
                 # harnesses' newest version — an unknown stamp must not read as

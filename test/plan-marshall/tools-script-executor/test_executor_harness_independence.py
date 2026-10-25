@@ -307,6 +307,9 @@ def test_d1_generation_uses_the_canonical_base_for_every_target(tmp_path, monkey
         assert ge.cmd_generate(args)['status'] == 'success'
 
     assert seen == [str(opencode_root), str(opencode_root)], seen
+
+
+def test_d2_a_foreign_install_resolves_with_one_note(tmp_path, monkeypatch):
     """With only the other harness's install present, the call resolves and notes it."""
     foreign_root = tmp_path / 'claude-install'
     own_root = tmp_path / 'opencode-install'
@@ -514,6 +517,29 @@ def test_d4_the_shared_reader_reports_no_version_as_empty(tmp_path):
 
     assert registry.read_executor_version(executor, target='opencode') == (registry.EXECUTOR_VERSION_EMPTY, None)
     assert registry.read_executor_version(executor, target='claude') == (registry.EXECUTOR_VERSION_FOUND, '0.1.5')
+    # A caller deciding whether the executor is BROKEN must not read a harness
+    # that publishes no manifest as a missing stamp: it falls back to the global.
+    assert registry.read_executor_version(executor, target='opencode', fallback_on_empty=True) == (
+        registry.EXECUTOR_VERSION_FOUND,
+        '0.1.5',
+    )
+
+
+def test_d4_the_roster_matches_the_target_registry():
+    """The harness roster cannot silently drift from the target definitions.
+
+    The roster is a fixed literal on purpose (the emitted bytes must not move when
+    an upgraded ``target_context`` reorders or extends its signal list), so the
+    drift that enables is caught here instead: a target that gains env signals
+    without gaining a roster slot fails this test.
+    """
+    import target_context
+
+    roster = set(ge._HARNESS_ROSTER)
+    declared_targets = {target for _signal, target in target_context.TARGET_ENV_SIGNALS}
+
+    assert declared_targets <= roster, f'harnesses without a roster slot: {sorted(declared_targets - roster)}'
+    assert set(ge.TARGET_CHOICES) == roster, 'the --target accept-set and the roster must name the same harnesses'
 
 
 @pytest.mark.parametrize(('harness', 'version'), [('claude', '0.1.5'), ('opencode', '0.1.2')])

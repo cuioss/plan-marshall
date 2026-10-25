@@ -1800,6 +1800,12 @@ def _env_harness_roots() -> list[tuple[str, str]]:
         opencode_dir = os.environ.get('OPENCODE_CONFIG_DIR')
         if opencode_dir:
             pairs.append(('opencode', str(Path(opencode_dir) / 'skills')))
+        else:
+            # The layout op's second OpenCode override: $XDG_CONFIG_HOME/opencode.
+            # Missed here, an install declared only that way would never resolve.
+            xdg_dir = os.environ.get('XDG_CONFIG_HOME')
+            if xdg_dir:
+                pairs.append(('opencode', str(Path(xdg_dir) / 'opencode' / 'skills')))
         gemini_dir = os.environ.get('GEMINI_CONFIG_DIR')
         if gemini_dir:
             pairs.append(('antigravity', str(Path(gemini_dir) / 'plugins' / 'plan-marshall' / 'skills')))
