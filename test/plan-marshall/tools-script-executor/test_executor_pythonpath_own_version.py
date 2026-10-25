@@ -166,3 +166,58 @@ def test_d2_the_fallback_orders_versions_by_numeric_tuple(tmp_path, monkeypatch)
     # A string max()/sorted() picks 0.1.999 here; the numeric tuple picks 0.1.1000.
     expected = cache / 'pm-dev-python' / '0.1.1000' / 'skills' / 'python-core' / 'scripts'
     assert leading[0] == str(expected.resolve()), pythonpath
+
+
+# =============================================================================
+# D3 — every shape the walk served keeps working, and one version per skill leads
+# =============================================================================
+
+
+def _cached_direct(root: Path, version: str, skill: str, script: str, body: str) -> Path:
+    """Write ``{root}/{version}/skills/{skill}/scripts/{script}.py``."""
+    path = root / version / 'skills' / skill / 'scripts' / f'{script}.py'
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(body, encoding='utf-8')
+    return path
+
+
+def _versions_of(pythonpath: list[str], cache: Path, skill: str) -> list[tuple[int, str]]:
+    """Return ``(index, version)`` for every cached ``skill`` dir on ``pythonpath``."""
+    found: list[tuple[int, str]] = []
+    for index, entry in enumerate(pythonpath):
+        try:
+            parts = Path(entry).relative_to(cache.resolve()).parts
+        except ValueError:
+            continue
+        if len(parts) >= 4 and parts[2] == 'skills' and parts[3] == skill:
+            found.append((index, parts[1]))
+    return found
+
+
+def test_d3_no_skill_gets_an_older_copy_ahead_of_a_newer_one(tmp_path, monkeypatch):
+    """In a multi-version cache no skill is on PYTHONPATH twice, older or newer."""
+    executor = _consumer_fixture(tmp_path, monkeypatch, ('0.1.1916', '0.1.1969', '0.1.1996', '0.1.2004', _NEWEST))
+
+    result = _run(executor, ['plan-marshall:probe:tool'])
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    pythonpath = _pythonpath(result)
+    for skill in ('platform-runtime', 'probe'):
+        found = _versions_of(pythonpath, tmp_path / 'cache', skill)
+        assert len(found) <= 1, f'{skill} carries {found} — an older copy can shadow the newer one'
+
+
+def test_d3_the_version_direct_nested_shape_uses_the_scripts_version(tmp_path, monkeypatch):
+    """``{root}/{version}/skills/...`` keeps working and stays on one version."""
+    cache = tmp_path / 'cache'
+    for version in ('0.1.1916', _NEWEST):
+        _cached_direct(cache, version, 'platform-runtime', _HELPER, _helper_body(version))
+    _cached_direct(cache, _NEWEST, 'probe', 'tool', _IMPORT_PROBE)
+    executor = _generate(monkeypatch, tmp_path / 'project' / '.plan', cache)
+
+    result = _run(executor, ['plan-marshall:probe:tool'])
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    pythonpath = ':'.join(_pythonpath(result))
+    assert str((cache / _NEWEST).resolve()) in pythonpath, pythonpath
+    assert '0.1.1916' not in pythonpath, pythonpath
