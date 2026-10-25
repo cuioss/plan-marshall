@@ -102,6 +102,25 @@ EXECUTOR_VERSION_EMPTY = 'empty'
 _DIGITS_RE = re.compile(r'\d+')
 _VERSION_DIR_RE = re.compile(r'^\d+\.\d+')
 _MARSHALL_VERSION_RE = re.compile(r'^MARSHALL_VERSION\s*=\s*([\'"])(.*?)\1\s*$', re.MULTILINE)
+#: The per-harness version map a harness-independent executor embeds:
+#: ``_INSTALLED_VERSIONS = (('claude', '0.1.5'), ('opencode', ''), ...)``.
+_INSTALLED_VERSIONS_RE = re.compile(r'^_INSTALLED_VERSIONS\s*=\s*\((.*?)^\)', re.MULTILINE | re.DOTALL)
+_INSTALLED_VERSION_PAIR_RE = re.compile(r"\(\s*'([^']*)'\s*,\s*'([^']*)'\s*\)")
+
+
+def _read_per_harness_versions(text: str) -> dict[str, str]:
+    """Return the executor's ``{harness: version}`` map, or ``{}`` when absent.
+
+    Tolerant by design: the map is scanned textually rather than executed, so a
+    malformed or absent map yields an empty dict. An EMPTY version is kept as an
+    entry: "this harness publishes no manifest" is a fact the reader must be able
+    to see, and dropping it would let the caller fall through to another
+    harness's version — the exact cross-harness comparison the map exists to stop.
+    """
+    block = _INSTALLED_VERSIONS_RE.search(text)
+    if block is None:
+        return {}
+    return {harness: version for harness, version in _INSTALLED_VERSION_PAIR_RE.findall(block.group(1)) if harness}
 
 
 def default_registry_path() -> Path:
@@ -221,8 +240,10 @@ def _text_or_none(value: object) -> str | None:
     return value if isinstance(value, str) and value else None
 
 
-def read_executor_version(executor_path: Path) -> tuple[str, str | None]:
-    """Read the value of the executor's ``MARSHALL_VERSION`` assignment.
+def read_executor_version(
+    executor_path: Path, target: str | None = None, fallback_on_empty: bool = False
+) -> tuple[str, str | None]:
+    """Read the executor's version stamp, for ``target`` when it names one.
 
     Returns ``(state, version)``. ``version`` is set only for
     :data:`EXECUTOR_VERSION_FOUND`. The other states are distinct facts:
@@ -232,11 +253,37 @@ def read_executor_version(executor_path: Path) -> tuple[str, str | None]:
     - :data:`EXECUTOR_VERSION_NOT_FOUND` — it was read and carries no such assignment;
     - :data:`EXECUTOR_VERSION_EMPTY` — the assignment is present and empty, the
       sentinel of an executor generated before any manifest existed.
+
+    ``target`` names the harness the question is asked FOR. A harness-independent
+    executor carries a per-harness version map (``_INSTALLED_VERSIONS``) beside
+    the single ``MARSHALL_VERSION``; when the map has an entry for ``target``,
+    that entry is the answer, so staleness is judged as the RUNNING harness would
+    judge it rather than against whichever harness generated the file. An
+    executor generated before the map existed falls back to the single stamp.
+
+    ``fallback_on_empty`` decides what a PRESENT BUT EMPTY entry means. For a
+    version COMPARISON it must stay empty (an unknown stamp never reads as
+    agreement). For a caller deciding whether the executor is BROKEN — steward's
+    bootstrap — an empty entry only says that harness publishes no manifest, so
+    falling back to the global stamp is correct; treating it as "no version" would
+    make a healthy executor recovery-loop on every run.
     """
     try:
         text = executor_path.read_text(encoding='utf-8')
     except (OSError, UnicodeDecodeError):
         return EXECUTOR_VERSION_UNREADABLE, None
+    if target:
+        per_harness = _read_per_harness_versions(text)
+        if per_harness:
+            version = per_harness.get(target)
+            if version:
+                return EXECUTOR_VERSION_FOUND, version
+            if target in per_harness and not fallback_on_empty:
+                # The map knows this harness and carries no version for it: the
+                # harness publishes no manifest. That is EMPTY, never the other
+                # harnesses' newest version — an unknown stamp must not read as
+                # agreement.
+                return EXECUTOR_VERSION_EMPTY, None
     match = _MARSHALL_VERSION_RE.search(text)
     if match is None:
         return EXECUTOR_VERSION_NOT_FOUND, None

@@ -39,8 +39,12 @@ This step runs on the main checkout post-merge, after
 `project:finalize-step-deploy-target` has regenerated the three target
 trees from the merged source tree. Syncing the harness installs here
 means the next session boot and this sync read the same authoritative
-content. This step does not regenerate: the staleness guard below is
-the check that the Claude tree it consumes is current.
+content. This step does not regenerate the TARGET TREES: the staleness
+guard below is the check that the Claude tree it consumes is current.
+Its own step 3 does regenerate the on-main executor once the sync
+succeeds — with a harness-independent executor that is a no-op whenever
+the script set is unchanged, and it does not depend on which harness ran
+the sync.
 
 ## Staleness guard
 
@@ -195,12 +199,16 @@ not sync, surface that row's `summary_message`.
 
 When the `claude:` result block reports `cache_status: success`,
 regenerate `.plan/execute-script.py` against the freshly-synced host
-cache. This runs on the main checkout, so the generator's cwd-relative
-resolution writes main's executor with mappings that point at the
-just-synced cache — refreshing the on-main mapping after a plan that
-changed the marketplace script *set*. This step is the meta-project-only
-owner of on-main executor regeneration, and it runs in BOTH worktree and
-no-worktree finalize flows (closing the no-worktree staleness gap).
+cache. This runs on the main checkout, so the generator resolves against
+the checkout's own `marketplace/bundles` tree when one is present (a tree
+always outranks a deployed copy) and against the synced cache otherwise —
+refreshing the on-main mapping after a plan that changed the marketplace
+script *set*. This step is the meta-project-only owner of on-main executor
+regeneration, and it runs in BOTH worktree and no-worktree finalize flows
+(closing the no-worktree staleness gap). The executor it writes is
+harness-independent, so the regeneration does not depend on which harness
+ran the sync; a regeneration whose bytes are unchanged leaves the file
+untouched.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:tools-script-executor:generate_executor generate

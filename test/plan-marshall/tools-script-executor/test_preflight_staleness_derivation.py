@@ -26,7 +26,7 @@ def _args() -> argparse.Namespace:
 
 def _stub_readers(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, *, marshal: str, executor: str) -> None:
     monkeypatch.setattr(ge, 'read_installed_manifest', lambda base_path=None, target='claude': {})
-    monkeypatch.setattr(ge, 'read_executor_version', lambda: executor)
+    monkeypatch.setattr(ge, 'read_executor_version', lambda target=None: executor)
     monkeypatch.setattr(ge, 'read_marshal_provisioned_version', lambda cwd=None: marshal)
     monkeypatch.setattr(ge, 'get_base_path', lambda **kwargs: tmp_path)
 

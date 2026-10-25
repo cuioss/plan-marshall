@@ -472,21 +472,36 @@ paths can go stale when the checkout (or plugin cache) the executor was
 generated against is relocated. `resolve_notation` self-heals automatically — a
 stale embedded path is never returned blindly:
 
-1. **Direct embedded hit** — returned only when the embedded path still exists
-   on disk. A missing path is skipped, not returned.
-2. **Prefix/substring shim** — same existence guard.
-3. **Target-aware resolver** — walks up from the executor file's own location to
-   a live `marketplace/bundles/{bundle}/skills/{skill}/scripts/{script}.py`
-   first, so a checkout above the executor wins; failing that it probes the
-   target's deployed skill roots (Claude plugin cache
-   `~/.claude/plugins/cache/plan-marshall/*/skills/…`, the OpenCode config roots,
-   the Antigravity roots). Every target's template carries this leg — but it runs
-   at this position, after the embedded checks, so on a target other than OpenCode
-   a live embedded or cache path still wins. Only the OpenCode executor, whose own
-   tree-first probe runs *before* the embedded checks, promotes tree code ahead of
-   them.
-4. **cwd upward walk** — walks up from `Path.cwd()`, and from the executor
-   file's own location, to the same live tree.
+1. **Live tree** — the checkout's own `marketplace/bundles/{bundle}/skills/{skill}/scripts/…`
+   at or above the executor file. It outranks every deployed copy, so a
+   regeneration on a developer machine never leaves the executor on stale
+   deployed code.
+2. **Direct embedded hit** — returned only when the embedded path still exists
+   on disk AND belongs to this call's own tree or to the runtime harness's
+   install. A missing path is skipped, not returned; a path inside ANOTHER
+   harness's install is deferred to the last resort below.
+3. **Prefix/substring shim** — same existence and locality guards.
+4. **cwd upward walk** — walks up from `Path.cwd()` and from the executor file's
+   own location to the same live tree. A tree this call can reach is the
+   checkout's own source, so it comes BEFORE the install walk.
+5. **Install walk** — the runtime harness's own install first (an
+   environment-declared config dir before the stamped one), then every other
+   installed harness, newest version first, both deployed shapes (nested
+   `{root}/{bundle}/{version}/skills/{skill}/scripts/…` and flat
+   `{root}/{bundle}-{skill}/scripts/…`). ONE order for every harness, so a call
+   from any harness resolves and dispatches; a hit in another harness's install
+   prints one `note:` line on stderr and dispatches anyway.
+6. **Foreign embedded path** — the last resort: a mapping value that still exists
+   but lives in another harness's install, noted the same way.
+
+A live embedded path inside the RUNTIME harness's own install (step 2) still wins
+over a tree reachable only from cwd (step 4); the tree above the executor itself
+(step 1) wins over everything.
+
+The executor is harness-independent: `GENERATED_FOR` is a fixed sentinel that
+records that the file serves any harness (never a harness name), and nothing
+reads it as a lock. `--target` is a hint for which install to PREFER, and two
+harnesses regenerating one checkout produce byte-identical files.
 
 Because of this, `PM_MARKETPLACE_ROOT` is **not required** to recover from a
 stale/relocated embedded path — it remains only as an intentional explicit

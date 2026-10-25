@@ -145,6 +145,11 @@ check** and the operator is asked; it is never read as no skew. The check cannot
 `resolve`: a stale executor runs the stale `resolve`, which is exactly the code that lacks it, while
 this text is loaded from the installed plugin and is current when the executor is not.
 
+**A target difference is not a regeneration trigger.** One executor serves every harness: the
+generated file does not depend on which harness generated it, and a call from any harness resolves
+and dispatches. Only a changed script set or a stale version justifies a regeneration — never the
+fact that another harness last wrote the file.
+
 Read the spec from the **main checkout** by default; it is git-tracked there. Add
 `--spec-from-ledger` to read it from the shared ledger worktree first —
 `{epic_dir}/plans/{spec name}`, where `epic_dir` follows the same store seam

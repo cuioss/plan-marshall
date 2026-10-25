@@ -257,20 +257,20 @@ def test_marker_on_the_newest_dir_does_not_suppress_it(tmp_path):
 # executor the guard already certified.
 
 
-def _resolver_from_generated_executor(tmp_path: Path):
-    """Extract and load ``_resolve_notation_by_target`` from the GENERATED file.
+def _resolver_from_generated_executor(tmp_path: Path, cache_root: Path):
+    """Load ``_resolve_notation_by_target`` from the GENERATED file.
 
     Deliberately reads the function out of the written executor rather than the
-    ``_CLAUDE_RESOLVER_TEMPLATE`` constant, so substitution itself is covered.
+    template constant, so substitution itself is covered. The file is executed
+    whole (it is a complete module) and then bound to the fixture cache as its
+    single Claude install, because the resolver reads the roots the generation
+    wrote into it while this test's fixture lives under a fake ``home``.
     """
-    text = _executor_path(tmp_path).read_text(encoding='utf-8')
-    start = text.index('def _resolve_notation_by_target(')
-    rest = text[start:]
-    match = re.search(r'\n(?=\S)', rest[1:])
-    body = rest[: match.start() + 1] if match else rest
-
-    namespace: dict = {'Path': Path}
-    exec(body, namespace)  # exec of generator-owned source: that source is precisely what is under test
+    executor = _executor_path(tmp_path)
+    namespace: dict = {'__name__': 'generated_executor_under_test', '__file__': str(executor)}
+    exec(compile(executor.read_text(encoding='utf-8'), str(executor), 'exec'), namespace)
+    namespace['_INSTALLED_ROOTS'] = (('claude', str(cache_root)),)
+    namespace['_runtime_harness'] = lambda: 'claude'
     return namespace['_resolve_notation_by_target']
 
 
@@ -316,7 +316,7 @@ def test_generated_runtime_resolver_agrees_with_the_generation_time_selector(tmp
     )
     assert expected is not None
 
-    resolve = _resolver_from_generated_executor(tmp_path)
+    resolve = _resolver_from_generated_executor(tmp_path, runtime_cache)
     resolved = resolve(f'{BUNDLE}:miss-skill:absent')
 
     assert resolved is not None, 'the generated resolver must resolve a SCRIPTS-miss notation'

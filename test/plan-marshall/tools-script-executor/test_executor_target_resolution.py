@@ -1,21 +1,21 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for target-aware executor resolution in generate_executor.py.
+"""Target resolution for the executor — the cascade, and ONE resolver body.
 
-Covers:
-  - the six-verb propagation matrix: every target-resolving verb reaches the
-    same answer under each of the three cascade tiers
-  - generate_target_aware_resolver_code: emits correct resolver per target
-  - Claude resolver (_resolve_notation_by_target): tree-first, then plugin-cache
-  - OpenCode resolver (_resolve_notation_by_target): tree-first, then 7-root walk
-  - Absolute-path conversion for both targets
-  - Integration: resolver round-trip for a real notation on each target
+Two contracts live here:
+
+* the ``--target`` cascade every target-resolving verb shares (unchanged by the
+  harness-independent executor: a verb still resolves which install to PREFER),
+  and
+* the resolver body, which no longer varies by target. The per-target bodies
+  (Claude plugin-cache glob, OpenCode 7-root walk, Antigravity root walk) were
+  what made two harnesses emit two different executors from one checkout; the
+  replacement walks one order for every harness — tree, then the runtime
+  harness's own install, then the others.
 """
 
 import json  # noqa: I001
 import os
-import re
-import sys
 import types
 from pathlib import Path
 
@@ -27,8 +27,8 @@ from target_context import SOURCE_ENV, SOURCE_FALLBACK, SOURCE_LOCAL_CONFIG
 SCRIPTS_DIR = get_scripts_dir('plan-marshall', 'tools-script-executor')
 GENERATE_SCRIPT = SCRIPTS_DIR / 'generate_executor.py'
 
-#: The six verbs that resolve a target. Restated here so the parametrised matrix
-#: has a roster to iterate, and compared against the module's own parser by
+#: The verbs that resolve a target. Restated here so the parametrised matrix has
+#: a roster to iterate, and compared against the module's own parser by
 #: ``test_roster_matches_the_parser`` — so a verb that gains or loses
 #: ``--target`` fails that comparison instead of silently escaping the matrix.
 TARGET_RESOLVING_VERBS = ('generate', 'verify', 'bootstrap', 'recover', 'drift', 'preflight', 'paths')
@@ -60,17 +60,24 @@ def _load_generate_executor() -> types.ModuleType:
     return module
 
 
-def _exec_resolver(resolver_code: str) -> types.ModuleType:
-    """Execute resolver_code inside a minimal module namespace.
-
-    The resolver bodies reference ``Path`` and ``os``; we inject those.
-    Returns the module-like namespace so tests can call
-    ``ns._resolve_notation_by_target(notation)``.
-    """
+def _resolver_namespace(
+    roots: tuple[tuple[str, str], ...],
+    runtime: str | None,
+    executor_file: str | None = None,
+    scripts: dict[str, str] | None = None,
+) -> types.ModuleType:
+    """Exec the production resolver body with the maps a generated executor carries."""
+    module = _load_generate_executor()
+    code = module.generate_target_aware_resolver_code('claude')
     ns = types.ModuleType('resolver_under_test')
     ns.__dict__['Path'] = Path
     ns.__dict__['os'] = os
-    exec(compile(resolver_code, '<resolver>', 'exec'), ns.__dict__)
+    ns.__dict__['SCRIPTS'] = dict(scripts or {})
+    ns.__dict__['_INSTALLED_ROOTS'] = roots
+    ns.__dict__['_runtime_harness'] = lambda: runtime
+    if executor_file is not None:
+        ns.__dict__['__file__'] = executor_file
+    exec(compile(code, '<resolver>', 'exec'), ns.__dict__)
     return ns
 
 
@@ -198,12 +205,7 @@ class TestVerbTargetPropagationMatrix:
         ids=[name for name, _target in SIGNAL_CASES],
     )
     def test_every_env_signal_reaches_every_verb(self, no_platform_signal, monkeypatch, env_signal, expected):
-        """The tier is not one signal's privilege — all three reach all six verbs.
-
-        Without this row the matrix above would pass on a resolver that read only
-        ``OPENCODE``, which is the exact config-only-plus-one-signal shape the
-        shared resolver replaced.
-        """
+        """The tier is not one signal's privilege — all three reach all six verbs."""
         module = _load_generate_executor()
         monkeypatch.setenv(env_signal, '1')
 
@@ -221,39 +223,8 @@ class TestVerbTargetPropagationMatrix:
 
         assert set(answers.values()) == {'antigravity'}, answers
 
-    def test_no_verb_reaches_a_different_answer_than_another(self, no_platform_signal, monkeypatch, tmp_path):
-        """The pairwise guarantee, asserted as a set collapse over all three tiers.
-
-        One row per tier would fail on a disagreement in that tier alone; this
-        one asserts the invariant that makes all of them true — at every tier,
-        the six answers are ONE answer.
-        """
-        module = _load_generate_executor()
-        tiers = {}
-
-        monkeypatch.setenv('CLAUDE_CODE_SESSION_ID', '1')
-        tiers['env'] = set(self._resolve_all(module, {}).values())
-        monkeypatch.delenv('CLAUDE_CODE_SESSION_ID')
-
-        monkeypatch.chdir(tmp_path)
-        (tmp_path / '.plan' / 'local' / 'harness').mkdir(parents=True, exist_ok=True)
-        harness_cfg = tmp_path / '.plan' / 'local' / 'harness' / 'opencode.json'
-        harness_cfg.write_text(json.dumps({'schema_version': 1, 'harness': 'opencode'}), encoding='utf-8')
-        tiers['local_config'] = set(self._resolve_all(module, {}).values())
-        harness_cfg.unlink()
-        tiers['fallback'] = set(self._resolve_all(module, {}).values())
-
-        for tier, answers in tiers.items():
-            assert len(answers) == 1, f'{tier} tier: verbs disagreed — {answers}'
-
     def test_tier_is_reported_identically_for_every_verb(self, no_platform_signal, monkeypatch, tmp_path):
-        """The reported ``target_source`` agrees across verbs too, not only the value.
-
-        Two verbs can agree on the string and disagree on WHY: one read the env
-        tier, the other fell back. That disagreement is invisible to a
-        value-only assertion and is exactly what a consumer branching on
-        ``target_source`` would act on.
-        """
+        """The reported ``target_source`` agrees across verbs too, not only the value."""
         module = _load_generate_executor()
         parser = module.build_parser()
         monkeypatch.setenv('OPENCODE', '1')
@@ -265,12 +236,7 @@ class TestVerbTargetPropagationMatrix:
         assert sources == {SOURCE_ENV}
 
     def test_fallback_tier_is_reported_not_silently_assumed(self, no_platform_signal, monkeypatch, outside_repo_dir):
-        """With no signal anywhere, every verb reports the FALLBACK tier.
-
-        The value alone cannot tell a fallback apart from a real ``claude``
-        env-tier resolution; the reported source can, and a consumer branching
-        on it needs all six verbs to report it.
-        """
+        """With no signal anywhere, every verb reports the FALLBACK tier."""
         module = _load_generate_executor()
         parser = module.build_parser()
         bare = outside_repo_dir / 'bare'
@@ -304,24 +270,14 @@ class TestSharedResolverIsTheOnlyReader:
     """The config-only reader is gone and nothing re-introduces one."""
 
     def test_generate_executor_exposes_no_private_target_reader(self):
-        """``read_marshal_target`` is absent, not wrapped.
-
-        A wrapper would have left the config-only walk in the tree as the
-        implementation the wrapper delegates to — a second reader with its own
-        answer to the same question.
-        """
+        """``read_marshal_target`` is absent, not wrapped."""
         module = _load_generate_executor()
 
         assert not hasattr(module, 'read_marshal_target')
         assert not [name for name in dir(module) if 'marshal_target' in name]
 
     def test_generate_executor_routes_its_fallback_through_the_shared_resolver(self):
-        """Every target read the module binds IS the shared resolver's function.
-
-        Identity, not equality: a locally re-defined copy with the same behaviour
-        would pass an equality check and would be a second reader with its own
-        answer to the same question.
-        """
+        """Every target read the module binds IS the shared resolver's function."""
         module = _load_generate_executor()
 
         assert module.resolve_target is target_context.resolve_target
@@ -329,13 +285,7 @@ class TestSharedResolverIsTheOnlyReader:
 
     @pytest.mark.parametrize('verb', TARGET_RESOLVING_VERBS, ids=TARGET_RESOLVING_VERBS)
     def test_each_verb_context_goes_through_the_shared_resolver(self, verb, no_platform_signal, monkeypatch):
-        """A verb's own resolution reaches ``resolve_context`` and reports its source.
-
-        Driven through the production parser, so the row covers the flags the
-        verb actually registers — including the two (``verify`` and ``paths``)
-        that register ``--target`` but not ``--marketplace-root``, and must
-        therefore still resolve rather than fail on a missing attribute.
-        """
+        """A verb's own resolution reaches ``resolve_context`` and reports its source."""
         module = _load_generate_executor()
         monkeypatch.setenv('OPENCODE', '1')
         args = module.build_parser().parse_args([verb, '--target', 'opencode'])
@@ -346,13 +296,7 @@ class TestSharedResolverIsTheOnlyReader:
         assert ctx['target_source'] == target_context.SOURCE_EXPLICIT
 
     def test_a_verb_that_registers_no_marketplace_root_flag_still_resolves(self, no_platform_signal, monkeypatch):
-        """``paths`` registers only ``--target``, and still produces a full context.
-
-        The two verbs without ``--marketplace-root`` reach the resolver through
-        the same ``getattr``-with-default seam. A resolver that read the
-        attribute unconditionally would raise ``AttributeError`` here, which is
-        why this row names a verb rather than a generic namespace.
-        """
+        """``paths`` registers only ``--target``, and still produces a full context."""
         module = _load_generate_executor()
         args = module.build_parser().parse_args(['paths'])
 
@@ -360,404 +304,136 @@ class TestSharedResolverIsTheOnlyReader:
         assert module.resolve_verb_context(args)['marketplace_root'] is None
 
 
-class TestGenerateTargetAwareResolverCode:
-    """Tests for the resolver code generator."""
+class TestTheResolverIsHarnessIndependent:
+    """ONE body, one order: tree, own install, the other installs."""
 
-    def test_returns_string_for_claude_target(self):
-        """Returns a non-empty Python source string for target='claude'."""
+    def test_every_target_renders_the_same_body(self):
         module = _load_generate_executor()
-        code = module.generate_target_aware_resolver_code('claude')
-        assert isinstance(code, str)
-        assert len(code) > 0
+        bodies = {target: module.generate_target_aware_resolver_code(target) for target in ('claude', 'opencode')}
 
-    def test_returns_string_for_opencode_target(self):
-        """Returns a non-empty Python source string for target='opencode'."""
-        module = _load_generate_executor()
-        code = module.generate_target_aware_resolver_code('opencode')
-        assert isinstance(code, str)
-        assert len(code) > 0
+        assert bodies['claude'] == bodies['opencode']
+        assert 'def _resolve_notation_by_target(' in bodies['claude']
 
-    def test_claude_and_opencode_resolvers_differ(self):
-        """The Claude and OpenCode resolver bodies are different."""
+    def test_the_body_is_valid_python(self):
         module = _load_generate_executor()
-        claude_code = module.generate_target_aware_resolver_code('claude')
-        opencode_code = module.generate_target_aware_resolver_code('opencode')
-        assert claude_code != opencode_code
 
-    def test_unknown_target_returns_claude_resolver(self):
-        """An unknown target string falls back to the Claude resolver."""
-        module = _load_generate_executor()
-        claude_code = module.generate_target_aware_resolver_code('claude')
-        unknown_code = module.generate_target_aware_resolver_code('unknown-platform')
-        assert claude_code == unknown_code
+        compile(module.generate_target_aware_resolver_code('antigravity'), '<resolver>', 'exec')
 
-    def test_resolver_code_defines_function(self):
-        """Both resolvers define the ``_resolve_notation_by_target`` function."""
-        module = _load_generate_executor()
-        for target in ('claude', 'opencode'):
-            code = module.generate_target_aware_resolver_code(target)
-            assert 'def _resolve_notation_by_target(' in code, f'Target {target!r} resolver missing function definition'
+    def test_the_tree_wins_over_a_deployed_copy(self, tmp_path):
+        """A live checkout above the executor file outranks every installed root."""
+        checkout = tmp_path / 'checkout'
+        tree_script = checkout / 'marketplace' / 'bundles' / 'b' / 'skills' / 's' / 'scripts' / 'tool.py'
+        tree_script.parent.mkdir(parents=True)
+        tree_script.write_text('# tree', encoding='utf-8')
+        installed = tmp_path / 'install'
+        deployed = installed / 'b-s' / 'scripts' / 'tool.py'
+        deployed.parent.mkdir(parents=True)
+        deployed.write_text('# installed', encoding='utf-8')
 
-    def test_resolver_code_is_valid_python(self):
-        """Both resolver code strings compile without syntax errors."""
-        module = _load_generate_executor()
-        for target in ('claude', 'opencode'):
-            code = module.generate_target_aware_resolver_code(target)
-            try:
-                compile(code, f'<resolver-{target}>', 'exec')
-            except SyntaxError as exc:
-                pytest.fail(f'Resolver for {target!r} has syntax error: {exc}')
-
-    def test_claude_resolver_references_plugin_cache(self):
-        """Claude resolver body mentions the plugin-cache path."""
-        module = _load_generate_executor()
-        code = module.generate_target_aware_resolver_code('claude')
-        assert 'plugins' in code and 'cache' in code, 'Claude resolver must reference the plugin cache path'
-
-    def test_opencode_resolver_references_seven_roots(self):
-        """OpenCode resolver body references the 7 skill discovery roots."""
-        module = _load_generate_executor()
-        code = module.generate_target_aware_resolver_code('opencode')
-        # Check for a representative subset of the 7 roots
-        assert '.opencode/skills' in code, 'OpenCode resolver must include .opencode/skills root'
-        assert '.claude/skills' in code, 'OpenCode resolver must include .claude/skills root'
-        assert '.config/opencode/skills' in code, 'OpenCode resolver must include ~/.config/opencode/skills root'
-        assert 'OPENCODE_CONFIG_DIR' in code, 'OpenCode resolver must honour OPENCODE_CONFIG_DIR env var'
-
-    def test_opencode_resolver_uses_dash_namespaced_layout(self):
-        """OpenCode resolver uses ``{bundle}-{skill}`` directory naming."""
-        module = _load_generate_executor()
-        code = module.generate_target_aware_resolver_code('opencode')
-        # The dash-namespaced pattern must be present
-        assert "f'{bundle}-{skill}'" in code or 'bundle-skill' in code or 'dir_name' in code, (
-            'OpenCode resolver must construct dash-namespaced directory name'
+        ns = _resolver_namespace(
+            (('opencode', str(installed)),),
+            'opencode',
+            executor_file=str(checkout / '.plan' / 'execute-script.py'),
         )
 
+        assert ns._resolve_notation_by_target('b:s:tool') == str(tree_script.resolve())
 
-class TestClaudeResolver:
-    """Tests for the inline Claude resolver function."""
+    def test_the_runtime_harness_install_is_searched_first(self, tmp_path):
+        """With no tree, the runtime harness's own copy beats another harness's."""
+        claude_root = tmp_path / 'claude-install'
+        opencode_root = tmp_path / 'opencode-install'
+        claude_script = claude_root / 'b' / '0.1.1' / 'skills' / 's' / 'scripts' / 'tool.py'
+        opencode_script = opencode_root / 'b-s' / 'scripts' / 'tool.py'
+        for path in (claude_script, opencode_script):
+            path.parent.mkdir(parents=True)
+            path.write_text('# copy', encoding='utf-8')
 
-    @pytest.fixture()
-    def home_at_tmp(self, tmp_path, monkeypatch):
-        """Point HOME at an isolated tmp_path and return that root."""
-        monkeypatch.setenv('HOME', str(tmp_path))
-        return tmp_path
+        roots = (('claude', str(claude_root)), ('opencode', str(opencode_root)))
 
-    def test_returns_none_when_cache_dir_absent(self, home_at_tmp):
-        """Returns None when the plugin cache root does not exist."""
-        module = _load_generate_executor()
-        code = module.generate_target_aware_resolver_code('claude')
-        ns = _exec_resolver(code)
+        opencode_ns = _resolver_namespace(roots, 'opencode', executor_file=str(tmp_path / 'nope' / 'execute-script.py'))
+        claude_ns = _resolver_namespace(roots, 'claude', executor_file=str(tmp_path / 'nope' / 'execute-script.py'))
 
-        # Point HOME at tmp_path so ~/.claude/plugins/cache is absent
+        assert opencode_ns._resolve_notation_by_target('b:s:tool') == str(opencode_script.resolve())
+        assert claude_ns._resolve_notation_by_target('b:s:tool') == str(claude_script.resolve())
 
-        result = ns._resolve_notation_by_target('plan-marshall:manage-status:manage-status')
-        assert result is None
+    def test_the_newest_version_dir_wins_within_an_install(self, tmp_path):
+        """A stale version dir carrying the script cannot shadow the newest one."""
+        root = tmp_path / 'claude-install'
+        for version in ('0.1.9', '0.1.100', '0.1.200'):
+            script = root / 'b' / version / 'skills' / 's' / 'scripts' / 'tool.py'
+            script.parent.mkdir(parents=True)
+            script.write_text(f'# {version}', encoding='utf-8')
+        newest = root / 'b' / '0.1.200' / 'skills' / 's' / 'scripts' / 'tool.py'
 
-    def test_returns_none_for_unknown_notation(self, tmp_path, home_at_tmp):
-        """Returns None when the skill/script combination is not in the cache."""
-        module = _load_generate_executor()
-        code = module.generate_target_aware_resolver_code('claude')
-        ns = _exec_resolver(code)
+        ns = _resolver_namespace(
+            (('claude', str(root)),), 'claude', executor_file=str(tmp_path / 'nope' / 'execute-script.py')
+        )
 
-        # Create minimal plugin cache structure without the target script
-        cache_dir = tmp_path / '.claude' / 'plugins' / 'cache' / 'plan-marshall' / '1.0.0' / 'skills'
-        cache_dir.mkdir(parents=True)
+        assert ns._resolve_notation_by_target('b:s:tool') == str(newest.resolve())
 
-        result = ns._resolve_notation_by_target('no-bundle:no-skill:no-script')
-        assert result is None
+    def test_a_nested_script_is_found_by_its_embedded_suffix(self, tmp_path):
+        """The four sub-directory entries resolve: the mapping's suffix, not ``{script}.py``."""
+        root = tmp_path / 'install'
+        nested = root / 'b' / '0.1.1' / 'skills' / 's' / 'scripts' / 'workflow' / 'tool.py'
+        nested.parent.mkdir(parents=True)
+        nested.write_text('# nested', encoding='utf-8')
 
-    def test_finds_script_in_cache_and_returns_absolute_path(self, tmp_path, home_at_tmp):
-        """Discovers a script in the plugin cache and returns its absolute path."""
-        module = _load_generate_executor()
-        code = module.generate_target_aware_resolver_code('claude')
-        ns = _exec_resolver(code)
+        ns = _resolver_namespace(
+            (('opencode', str(root)),),
+            'opencode',
+            executor_file=str(tmp_path / 'nope' / 'execute-script.py'),
+            scripts={'b:s:tool': str(root / 'b' / '0.1.1' / 'skills' / 's' / 'scripts' / 'workflow' / 'tool.py')},
+        )
 
-        # Set up a minimal cache tree with a real script file
-        version_dir = tmp_path / '.claude' / 'plugins' / 'cache' / 'plan-marshall' / '1.2.3'
-        scripts_dir = version_dir / 'skills' / 'manage-status' / 'scripts'
-        scripts_dir.mkdir(parents=True)
-        script_file = scripts_dir / 'manage-status.py'
-        script_file.write_text('# stub', encoding='utf-8')
+        assert ns._resolve_notation_by_target('b:s:tool') == str(nested.resolve())
 
-        result = ns._resolve_notation_by_target('plan-marshall:manage-status:manage-status')
-        assert result is not None, 'Expected to find the script in the fake cache'
-        assert os.path.isabs(result), f'Returned path must be absolute, got {result!r}'
-        assert result.endswith('manage-status.py'), f'Expected manage-status.py, got {result!r}'
-
-    def test_skips_hidden_version_directories(self, tmp_path, home_at_tmp):
-        """Hidden directories (starting with '.') inside the cache are skipped."""
-        module = _load_generate_executor()
-        code = module.generate_target_aware_resolver_code('claude')
-        ns = _exec_resolver(code)
-
-        # Create only a hidden version dir — should not be discovered
-        hidden_version = tmp_path / '.claude' / 'plugins' / 'cache' / 'plan-marshall' / '.hidden-version'
-        scripts_dir = hidden_version / 'skills' / 'some-skill' / 'scripts'
-        scripts_dir.mkdir(parents=True)
-        (scripts_dir / 'some_script.py').write_text('# hidden', encoding='utf-8')
-
-        result = ns._resolve_notation_by_target('plan-marshall:some-skill:some_script')
-        assert result is None, 'Hidden version directories must be skipped'
-
-    def test_invalid_notation_returns_none(self, home_at_tmp):
-        """A notation with fewer or more than 3 parts returns None."""
-        module = _load_generate_executor()
-        code = module.generate_target_aware_resolver_code('claude')
-        ns = _exec_resolver(code)
+    def test_an_unknown_notation_resolves_to_nothing(self, tmp_path):
+        ns = _resolver_namespace(
+            (('claude', str(tmp_path / 'install')),), 'claude', executor_file=str(tmp_path / 'nope' / 'x.py')
+        )
 
         assert ns._resolve_notation_by_target('two:parts') is None
         assert ns._resolve_notation_by_target('too:many:parts:here') is None
         assert ns._resolve_notation_by_target('') is None
-
-
-class TestOpenCodeResolver:
-    """Tests for the inline OpenCode resolver function."""
-
-    @pytest.fixture()
-    def in_tmp_cwd(self, tmp_path, monkeypatch):
-        """Run with the process working directory inside an isolated tmp_path."""
-        monkeypatch.chdir(tmp_path)
-
-    @pytest.fixture()
-    def no_opencode_config_dir(self, monkeypatch):
-        """Clear OPENCODE_CONFIG_DIR so resolution falls through to its next source."""
-        monkeypatch.delenv('OPENCODE_CONFIG_DIR', raising=False)
-
-    @pytest.fixture()
-    def home_at_tmp(self, tmp_path, monkeypatch):
-        """Point HOME at an isolated tmp_path and return that root."""
-        monkeypatch.setenv('HOME', str(tmp_path))
-        return tmp_path
-
-    def test_returns_none_when_no_roots_exist(self, home_at_tmp, no_opencode_config_dir):
-        """Returns None when none of the 7 roots contain the script."""
-        module = _load_generate_executor()
-        code = module.generate_target_aware_resolver_code('opencode')
-        ns = _exec_resolver(code)
-
-        result = ns._resolve_notation_by_target('plan-marshall:manage-status:manage-status')
-        assert result is None
-
-    def test_finds_script_in_opencode_skills_dir(self, tmp_path, home_at_tmp, no_opencode_config_dir, in_tmp_cwd):
-        """Discovers a script in the .opencode/skills root (project-local)."""
-        module = _load_generate_executor()
-        code = module.generate_target_aware_resolver_code('opencode')
-        ns = _exec_resolver(code)
-
-        # Create the .opencode/skills/{bundle}-{skill}/scripts/{script}.py structure
-        skill_dir = tmp_path / '.opencode' / 'skills' / 'plan-marshall-manage-status' / 'scripts'
-        skill_dir.mkdir(parents=True)
-        script_file = skill_dir / 'manage-status.py'
-        script_file.write_text('# stub', encoding='utf-8')
-
-        # Change cwd to tmp_path so relative .opencode/skills resolves correctly
-
-        result = ns._resolve_notation_by_target('plan-marshall:manage-status:manage-status')
-        assert result is not None, 'Expected to find the script in .opencode/skills'
-        assert os.path.isabs(result), f'Returned path must be absolute, got {result!r}'
-        assert result.endswith('manage-status.py'), f'Expected manage-status.py, got {result!r}'
-
-    def test_finds_script_via_env_var_override(self, tmp_path, monkeypatch, home_at_tmp, in_tmp_cwd):
-        """$OPENCODE_CONFIG_DIR/skills root has highest priority."""
-        module = _load_generate_executor()
-        code = module.generate_target_aware_resolver_code('opencode')
-        ns = _exec_resolver(code)
-
-        # Set up OPENCODE_CONFIG_DIR root with the target script
-        config_dir = tmp_path / 'opencode-config'
-        skill_dir = config_dir / 'skills' / 'plan-marshall-manage-status' / 'scripts'
-        skill_dir.mkdir(parents=True)
-        script_file = skill_dir / 'manage-status.py'
-        script_file.write_text('# stub', encoding='utf-8')
-
-        # Also create a lower-priority root with a different file to verify priority
-        fallback_dir = tmp_path / '.opencode' / 'skills' / 'plan-marshall-manage-status' / 'scripts'
-        fallback_dir.mkdir(parents=True)
-        (fallback_dir / 'manage-status.py').write_text('# fallback', encoding='utf-8')
-
-        monkeypatch.setenv('OPENCODE_CONFIG_DIR', str(config_dir))
-
-        result = ns._resolve_notation_by_target('plan-marshall:manage-status:manage-status')
-        assert result is not None
-        assert os.path.isabs(result)
-        # Must have resolved through the env-var root (first match)
-        assert str(config_dir.resolve()) in result, (
-            f'Expected resolution through OPENCODE_CONFIG_DIR={config_dir}, got {result}'
-        )
-
-    def test_finds_script_in_user_global_config_root(self, tmp_path, home_at_tmp, no_opencode_config_dir, in_tmp_cwd):
-        """Discovers a script in ~/.config/opencode/skills (user-global root)."""
-        module = _load_generate_executor()
-        code = module.generate_target_aware_resolver_code('opencode')
-        ns = _exec_resolver(code)
-
-        # Create the user-global root
-        skill_dir = tmp_path / '.config' / 'opencode' / 'skills' / 'plan-marshall-manage-status' / 'scripts'
-        skill_dir.mkdir(parents=True)
-        (skill_dir / 'manage-status.py').write_text('# user-global', encoding='utf-8')
-
-        # cwd has no local .opencode/skills root
-
-        result = ns._resolve_notation_by_target('plan-marshall:manage-status:manage-status')
-        assert result is not None
-        assert os.path.isabs(result)
-
-    def test_uses_dash_namespaced_directory(self, tmp_path, home_at_tmp, no_opencode_config_dir, in_tmp_cwd):
-        """Resolver constructs ``{bundle}-{skill}`` directory name, not ``{bundle}/{skill}``."""
-        module = _load_generate_executor()
-        code = module.generate_target_aware_resolver_code('opencode')
-        ns = _exec_resolver(code)
-
-        # Create the WRONG (slash-namespaced) layout — must NOT be found
-        wrong_dir = tmp_path / '.opencode' / 'skills' / 'plan-marshall' / 'manage-status' / 'scripts'
-        wrong_dir.mkdir(parents=True)
-        (wrong_dir / 'manage-status.py').write_text('# wrong layout', encoding='utf-8')
-
-        result_wrong = ns._resolve_notation_by_target('plan-marshall:manage-status:manage-status')
-        assert result_wrong is None, 'Slash-namespaced layout must not be found; resolver uses dash-namespaced dirs'
-
-        # Create the CORRECT (dash-namespaced) layout — must be found
-        correct_dir = tmp_path / '.opencode' / 'skills' / 'plan-marshall-manage-status' / 'scripts'
-        correct_dir.mkdir(parents=True)
-        (correct_dir / 'manage-status.py').write_text('# correct layout', encoding='utf-8')
-
-        result_correct = ns._resolve_notation_by_target('plan-marshall:manage-status:manage-status')
-        assert result_correct is not None, 'Dash-namespaced layout must be found'
-        assert os.path.isabs(result_correct)
-
-    def test_returns_absolute_path(self, tmp_path, home_at_tmp, no_opencode_config_dir, in_tmp_cwd):
-        """Matched path is always converted to absolute before return."""
-        module = _load_generate_executor()
-        code = module.generate_target_aware_resolver_code('opencode')
-        ns = _exec_resolver(code)
-
-        # Create the dash-namespaced layout
-        skill_dir = tmp_path / '.opencode' / 'skills' / 'plan-marshall-manage-status' / 'scripts'
-        skill_dir.mkdir(parents=True)
-        (skill_dir / 'manage-status.py').write_text('# stub', encoding='utf-8')
-
-        result = ns._resolve_notation_by_target('plan-marshall:manage-status:manage-status')
-        assert result is not None
-        assert os.path.isabs(result), f'Path must be absolute, got {result!r}'
-
-    def test_invalid_notation_returns_none(self, home_at_tmp):
-        """A notation with fewer or more than 3 parts returns None."""
-        module = _load_generate_executor()
-        code = module.generate_target_aware_resolver_code('opencode')
-        ns = _exec_resolver(code)
-
-        assert ns._resolve_notation_by_target('two:parts') is None
-        assert ns._resolve_notation_by_target('too:many:parts:here') is None
-        assert ns._resolve_notation_by_target('') is None
-
-
-class TestGenerateExecutorInjectsResolver:
-    """Verify that the generator correctly replaces {{TARGET_AWARE_RESOLVER}} and {{EXECUTOR_TARGET}}."""
-
-    def _generate_to_tmp(
-        self,
-        tmp_path: Path,
-        module,
-        target: str,
-        monkeypatch,
-    ) -> Path:
-        """Run generate_executor → target file and return its path."""
-        plan_dir = tmp_path / '.plan'
-        plan_dir.mkdir(parents=True, exist_ok=True)
-        monkeypatch.setenv('PLAN_BASE_DIR', str(plan_dir))
-
-        # Use the real marketplace for base_path
-        base_path = module.get_base_path(use_marketplace=True)
-
-        # Run with empty mappings (we only care about the resolver injection)
-        ok = module.generate_executor({}, base_path, dry_run=False, target=target)
-        assert ok, 'generate_executor returned False'
-
-        generated = plan_dir / 'execute-script.py'
-        assert generated.exists(), f'Expected executor at {generated}'
-        return generated
-
-    def test_claude_executor_contains_plugin_cache_reference(self, tmp_path, monkeypatch):
-        """Generated Claude executor references the plugin-cache path."""
-        module = _load_generate_executor()
-        generated = self._generate_to_tmp(tmp_path, module, 'claude', monkeypatch)
-        content = generated.read_text(encoding='utf-8')
-        assert 'plugins' in content and 'cache' in content, (
-            'Claude executor must contain plugin-cache reference in resolver'
-        )
-
-    def test_opencode_executor_contains_opencode_roots(self, tmp_path, monkeypatch):
-        """Generated OpenCode executor contains the 7-root walk references."""
-        module = _load_generate_executor()
-        generated = self._generate_to_tmp(tmp_path, module, 'opencode', monkeypatch)
-        content = generated.read_text(encoding='utf-8')
-        assert '.opencode/skills' in content, 'OpenCode executor must reference .opencode/skills'
-        assert 'OPENCODE_CONFIG_DIR' in content, 'OpenCode executor must honour OPENCODE_CONFIG_DIR'
-
-    def test_executor_target_comment_injected(self, tmp_path, monkeypatch):
-        """The {{EXECUTOR_TARGET}} placeholder is replaced with the actual target."""
-        module = _load_generate_executor()
-        for target in ('claude', 'opencode'):
-            generated = self._generate_to_tmp(tmp_path, module, target, monkeypatch)
-            content = generated.read_text(encoding='utf-8')
-            assert f'target: {target}' in content, (
-                f'Expected "target: {target}" in executor header comment for {target!r}'
-            )
-
-    def test_no_unresolved_placeholders(self, tmp_path, monkeypatch):
-        """The generated executor must not contain any {{...}} template tokens."""
-        module = _load_generate_executor()
-        for target in ('claude', 'opencode'):
-            generated = self._generate_to_tmp(tmp_path, module, target, monkeypatch)
-            content = generated.read_text(encoding='utf-8')
-            unresolved = re.findall(r'\{\{[A-Z_]+\}\}', content)
-            assert unresolved == [], f'Target {target!r}: unresolved template tokens in executor: {unresolved}'
-
-    def test_resolve_notation_calls_target_resolver(self, tmp_path, monkeypatch):
-        """The generated executor's resolve_notation calls _resolve_notation_by_target."""
-        module = _load_generate_executor()
-        generated = self._generate_to_tmp(tmp_path, module, 'claude', monkeypatch)
-        content = generated.read_text(encoding='utf-8')
-        assert '_resolve_notation_by_target(' in content, (
-            'resolve_notation must delegate to _resolve_notation_by_target'
-        )
-
-
-EXECUTOR_TEMPLATE = (
-    MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'tools-script-executor' / 'templates' / 'execute-script.py.template'
-)
-
-
-def _extract_cwd_walk_resolver() -> types.ModuleType:
-    """Extract ``_resolve_notation_by_cwd_walk`` from the literal template.
-
-    The cwd-walk fallback lives in the literal template (not in the generated
-    target-aware resolver string), so it is parsed out of the rendered template
-    and executed in an isolated namespace with the names it references
-    (``Path``, ``os``) injected. Returns the namespace so tests can call
-    ``ns._resolve_notation_by_cwd_walk(notation)``.
-    """
-    import ast as _ast
-
-    template = EXECUTOR_TEMPLATE.read_text(encoding='utf-8')
-    tree = _ast.parse(template)
-    fn_src: str | None = None
-    for node in tree.body:
-        if isinstance(node, _ast.FunctionDef) and node.name == '_resolve_notation_by_cwd_walk':
-            fn_src = _ast.get_source_segment(template, node)
-            break
-    assert fn_src is not None, '_resolve_notation_by_cwd_walk not found in template'
-
-    ns = types.ModuleType('cwd_walk_under_test')
-    ns.__dict__['Path'] = Path
-    ns.__dict__['os'] = os
-    exec(compile(fn_src, '<cwd-walk>', 'exec'), ns.__dict__)
-    return ns
 
 
 class TestCwdWalkResolver:
     """Tests for the cwd-walk-to-marketplace fallback branch."""
+
+    def _extract_cwd_walk_resolver(self) -> types.ModuleType:
+        """Extract ``_resolve_notation_by_cwd_walk`` from the literal template.
+
+        The cwd-walk fallback lives in the literal template (not in the generated
+        resolver body), so it is parsed out of the template and executed in an
+        isolated namespace. The suffix helper it calls is supplied from the same
+        template, so the extraction measures the shipped pair.
+        """
+        import ast as _ast
+
+        template = (
+            MARKETPLACE_ROOT
+            / 'plan-marshall'
+            / 'skills'
+            / 'tools-script-executor'
+            / 'templates'
+            / 'execute-script.py.template'
+        ).read_text(encoding='utf-8')
+        tree = _ast.parse(template)
+        wanted = {'_resolve_notation_by_cwd_walk'}
+        sources: list[str] = []
+        for node in tree.body:
+            if isinstance(node, _ast.FunctionDef) and node.name in wanted:
+                segment = _ast.get_source_segment(template, node)
+                assert segment is not None, 'the cwd-walk source segment could not be extracted'
+                sources.append(segment)
+        assert sources, '_resolve_notation_by_cwd_walk not found in template'
+
+        ns = types.ModuleType('cwd_walk_under_test')
+        ns.__dict__['Path'] = Path
+        ns.__dict__['os'] = os
+        ns.__dict__['_relative_script_path'] = lambda notation: f'{notation.split(":")[2]}.py'
+        exec(compile(sources[0], '<cwd-walk>', 'exec'), ns.__dict__)
+        return ns
 
     def _make_marketplace_script(self, root: Path) -> Path:
         """Create marketplace/bundles/b/skills/s/scripts/sc.py under ``root``."""
@@ -769,38 +445,33 @@ class TestCwdWalkResolver:
 
     def test_finds_script_by_walking_up_from_cwd(self, tmp_path, monkeypatch):
         """Discovers a live marketplace tree by walking up from cwd."""
-        ns = _extract_cwd_walk_resolver()
+        ns = self._extract_cwd_walk_resolver()
 
         checkout = tmp_path / 'checkout'
         script = self._make_marketplace_script(checkout)
 
-        # cwd is a deep subdir of the checkout — the walk must climb to it.
         deep = checkout / 'a' / 'b' / 'c'
         deep.mkdir(parents=True)
         monkeypatch.chdir(deep)
 
         result = ns._resolve_notation_by_cwd_walk('plan-marshall:manage-status:manage-status')
         assert result is not None, 'Expected the cwd-walk to locate the marketplace script'
-        assert os.path.isabs(result), f'Returned path must be absolute, got {result!r}'
+        assert os.path.isabs(result)
         assert result == str(script.resolve())
 
     def test_returns_none_when_no_marketplace_tree(self, outside_repo_dir, monkeypatch):
         """Returns None when no marketplace/bundles tree is found above cwd."""
-        ns = _extract_cwd_walk_resolver()
+        ns = self._extract_cwd_walk_resolver()
 
-        # cwd must be OUTSIDE the repo: pytest's tmp_path now roots under the
-        # repo-local --basetemp, whose ancestry HAS a marketplace/bundles tree,
-        # so the cwd-walk would resolve a real script instead of returning None.
         empty = outside_repo_dir / 'empty'
         empty.mkdir()
         monkeypatch.chdir(empty)
 
-        result = ns._resolve_notation_by_cwd_walk('plan-marshall:manage-status:manage-status')
-        assert result is None
+        assert ns._resolve_notation_by_cwd_walk('plan-marshall:manage-status:manage-status') is None
 
     def test_invalid_notation_returns_none(self, tmp_path, monkeypatch):
         """A notation with other than 3 parts returns None."""
-        ns = _extract_cwd_walk_resolver()
+        ns = self._extract_cwd_walk_resolver()
         monkeypatch.chdir(tmp_path)
 
         assert ns._resolve_notation_by_cwd_walk('two:parts') is None
@@ -814,6 +485,7 @@ class TestCmdGenerateTargetFlag:
     def test_help_mentions_target_flag(self):
         """generate --help lists the --target flag."""
         import subprocess
+        import sys
 
         env = os.environ.copy()
         pythonpath = os.pathsep.join(_MARKETPLACE_SCRIPT_DIRS)
@@ -829,17 +501,16 @@ class TestCmdGenerateTargetFlag:
         assert '--target' in result.stdout, '--target flag must appear in generate --help'
 
     def test_executor_target_in_toon_output(self, tmp_path, monkeypatch):
-        """cmd_generate result dict contains executor_target key."""
+        """cmd_generate reports the target it resolved, as a hint for that run only."""
         module = _load_generate_executor()
 
         plan_dir = tmp_path / '.plan'
         plan_dir.mkdir()
         monkeypatch.setenv('PLAN_BASE_DIR', str(plan_dir))
 
-        # Build a minimal args namespace
         class FakeArgs:
             marketplace = True
-            marketplace_root = MARKETPLACE_ROOT.parent.parent  # project root
+            marketplace_root = MARKETPLACE_ROOT.parent.parent
             dry_run = False
             force = False
             target = 'opencode'

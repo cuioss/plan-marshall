@@ -219,34 +219,37 @@ def test_the_generator_reads_its_target_from_the_shared_resolver():
 
 
 # =============================================================================
-# generate_target_aware_resolver_code — per-target resolver selection
+# generate_target_aware_resolver_code — ONE body for every harness
 # =============================================================================
 
 
-def test_resolver_code_for_opencode_emits_opencode_walk():
-    """The opencode target emits the 7-root dash-namespaced resolver body."""
+def test_resolver_code_is_harness_independent():
+    """Every target renders the SAME resolver body, byte for byte.
+
+    The per-target bodies (an OpenCode 7-root walk, a Claude plugin-cache glob,
+    an Antigravity root walk) are gone: they walked different installs, which is
+    what made two harnesses emit two different executors from one checkout.
+    """
+    bodies = {
+        target: _gen.generate_target_aware_resolver_code(target)
+        for target in ('opencode', 'claude', 'antigravity', 'borg', None)
+    }
+
+    assert len(set(bodies.values())) == 1, 'the resolver body must not depend on the target'
+    code = bodies['claude']
+    assert 'def _resolve_notation_by_target(' in code
+    assert '_INSTALLED_ROOTS' in code
+
+
+def test_resolver_code_probes_the_tree_then_installs():
+    """The unified body keeps the tree-first leg and walks the installed roots."""
     code = _gen.generate_target_aware_resolver_code('opencode')
 
-    assert 'def _resolve_notation_by_target(' in code
-    assert 'OpenCode target' in code
-    assert '.opencode/skills' in code
-
-
-def test_resolver_code_for_claude_emits_plugin_cache_glob():
-    """The claude target emits the plugin-cache glob resolver body."""
-    code = _gen.generate_target_aware_resolver_code('claude')
-
-    assert 'def _resolve_notation_by_target(' in code
-    assert 'Claude target' in code
-    assert 'plugins' in code and 'cache' in code
-
-
-def test_resolver_code_for_unknown_target_falls_back_to_claude():
-    """An unrecognized target falls back to the Claude resolver."""
-    unknown = _gen.generate_target_aware_resolver_code('borg')
-    claude = _gen.generate_target_aware_resolver_code('claude')
-
-    assert unknown == claude
+    assert '_tree_probe(' in code
+    assert '_harness_search_order(' in code
+    tree_leg = code.index('tree_hit = _tree_probe(notation)')
+    install_leg = code.index('for _harness, root in _harness_search_order()')
+    assert tree_leg < install_leg, 'the tree must outrank every deployed install'
 
 
 # =============================================================================
@@ -358,7 +361,14 @@ _TEMPLATE_BODY = (
     ']\n'
     'EXTRA = [{{EXTRA_SCRIPT_DIRS}}]\n'
     'PLAN_DIR_NAME = "{{PLAN_DIR_NAME}}"\n'
-    'EXECUTOR_TARGET = "{{EXECUTOR_TARGET}}"\n'
+    'GENERATED_FOR = "{{GENERATED_FOR}}"\n'
+    '_INSTALLED_ROOTS = (\n'
+    '{{INSTALLED_ROOTS}}\n'
+    ')\n'
+    '_INSTALLED_VERSIONS = (\n'
+    '{{INSTALLED_VERSIONS}}\n'
+    ')\n'
+    'EXECUTOR_PLUGIN_ROOT = "{{EXECUTOR_PLUGIN_ROOT}}"\n'
     '{{TARGET_AWARE_RESOLVER}}\n'
 )
 
@@ -432,7 +442,7 @@ def test_generate_executor_writes_substituted_executor(tmp_path, monkeypatch):
     written = (plan_dir / 'execute-script.py').read_text(encoding='utf-8')
     # Mapping line, target token, and resolver body are all substituted.
     assert '"a:b:c": "/p/c.py"' in written
-    assert 'EXECUTOR_TARGET = "claude"' in written
+    assert 'GENERATED_FOR = "any"' in written
     assert 'def _resolve_notation_by_target(' in written
     # No raw substitution tokens survive.
     assert '{{' not in written
@@ -1644,13 +1654,24 @@ def test_opencode_resolver_code_carries_tree_first_probe():
     assert 'marketplace' in code and 'bundles' in code
 
 
-def _exec_opencode_resolver_with_executor_file(fake_file):
-    """Exec the OpenCode resolver with ``__file__`` pinned to a fake executor."""
+def _exec_opencode_resolver_with_executor_file(fake_file, home=None):
+    """Exec the unified resolver with ``__file__`` pinned to a fake executor.
+
+    The resolver is harness-independent now: it walks the injected
+    ``_INSTALLED_ROOTS`` in one order, runtime harness first. The helper injects
+    the OpenCode install root under ``home`` and an OpenCode runtime signal, so
+    the tree-vs-install ordering is what the callers measure.
+    """
     code = _gen.generate_target_aware_resolver_code('opencode')
     ns = types.ModuleType('opencode_resolver_tree_first')
     ns.__dict__['Path'] = Path
     ns.__dict__['os'] = os
     ns.__dict__['__file__'] = fake_file
+    roots = ()
+    if home is not None:
+        roots = (('opencode', str(home / '.config' / 'opencode' / 'skills')),)
+    ns.__dict__['_INSTALLED_ROOTS'] = roots
+    ns.__dict__['_runtime_harness'] = lambda: 'opencode'
     exec(compile(code, '<resolver>', 'exec'), ns.__dict__)
     return ns
 
@@ -1677,7 +1698,7 @@ def test_opencode_resolver_prefers_tree_over_user_global_stale_copy(tmp_path, mo
     monkeypatch.setenv('HOME', str(home))
     monkeypatch.delenv('OPENCODE_CONFIG_DIR', raising=False)
 
-    ns = _exec_opencode_resolver_with_executor_file(str(checkout / '.plan' / 'execute-script.py'))
+    ns = _exec_opencode_resolver_with_executor_file(str(checkout / '.plan' / 'execute-script.py'), home=home)
 
     assert ns._resolve_notation_by_target('d0-bundle:d0-skill:d0_script') == str(tree_script.resolve())
 
@@ -1692,6 +1713,6 @@ def test_opencode_resolver_user_global_still_serves_without_tree(tmp_path, monke
     monkeypatch.setenv('HOME', str(home))
     monkeypatch.delenv('OPENCODE_CONFIG_DIR', raising=False)
 
-    ns = _exec_opencode_resolver_with_executor_file(str(tmp_path / 'elsewhere' / 'execute-script.py'))
+    ns = _exec_opencode_resolver_with_executor_file(str(tmp_path / 'elsewhere' / 'execute-script.py'), home=home)
 
     assert ns._resolve_notation_by_target('d0-bundle:d0-skill:d0_script') == str(stale.resolve())
