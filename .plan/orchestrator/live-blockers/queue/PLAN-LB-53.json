@@ -2,10 +2,10 @@
   "id": "PLAN-LB-53",
   "slug": "halt-conflict-and-phase-time",
   "workstream": "WS-01",
-  "status": "running",
+  "status": "shipped",
   "lane": "runbook",
-  "plan_marshall_plan_id": "",
-  "pr": "",
-  "landing": "",
+  "plan_marshall_plan_id": "lb-53-halt-conflict-and-phase-time",
+  "pr": "1857",
+  "landing": "landings/PLAN-LB-53.md",
   "seq": 53
 }
