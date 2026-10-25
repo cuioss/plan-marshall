@@ -150,7 +150,9 @@ def _plan_with_both_keys(plan_context) -> Path:
 
 
 def _stored(plan_dir: Path) -> dict:
-    return json.loads((plan_dir / 'status.json').read_text(encoding='utf-8'))
+    parsed = json.loads((plan_dir / 'status.json').read_text(encoding='utf-8'))
+    assert isinstance(parsed, dict)
+    return parsed
 
 
 @pytest.mark.parametrize(

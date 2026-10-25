@@ -110,10 +110,12 @@ def test_an_id_bearing_row_whose_text_equals_another_frozen_criterion_is_reporte
     assert _snap._graded_status([row], FROZEN[0], 1, 1) == 'ungraded'
 
     grading = review_support.Grading()
+    snapshot = _snap.read_snapshot(PLAN_ID)
+    assert snapshot is not None
     reported = review_support.report_unmatched_rows(
         grading,
         verdict,
-        _snap.read_snapshot(PLAN_ID),
+        snapshot,
         [{'number': 1, 'success_criteria': [REWORDED]}],
     )
 

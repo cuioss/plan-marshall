@@ -365,7 +365,7 @@ def test_a_failed_digest_withdrawal_fails_closed_as_tampered(plan_context, monke
 
 def _frozen_record_bullet() -> str:
     """The rubric bullet that governs the frozen record, verbatim from the skill."""
-    rubric = (get_skill_dir('plan-marshall', 'phase-6-finalize') / 'standards' / 'review-rubric.md').read_text(
+    rubric: str = (get_skill_dir('plan-marshall', 'phase-6-finalize') / 'standards' / 'review-rubric.md').read_text(
         encoding='utf-8'
     )
     for line in rubric.splitlines():

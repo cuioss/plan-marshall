@@ -71,7 +71,7 @@ def test_the_temp_file_is_fsynced_before_the_replace(tmp_path: Path, monkeypatch
     """
     target = tmp_path / 'artifact.json'
     target.write_bytes(b'prior\n')
-    events: list[tuple[str, Any]] = []
+    events: list[tuple[Any, ...]] = []
     real_replace = os.replace
     real_fsync = os.fsync
 
