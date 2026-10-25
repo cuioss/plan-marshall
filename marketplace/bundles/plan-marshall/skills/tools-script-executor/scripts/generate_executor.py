@@ -1753,6 +1753,52 @@ def _relative_script_under_scripts(path: str, _skill: str = '') -> str | None:
     return suffix or None
 
 
+def canonical_install_base(base_path: Path) -> Path:
+    """Return a target-NEUTRAL discovery base for a checkout with no tree.
+
+    With a ``marketplace/bundles`` tree, discovery reads the tree and the mapping
+    rewrite normalises every path, so any harness emits the same file. A CONSUMER
+    project has no tree: discovery then reads an install, and the install it reads
+    used to be the ``--target`` harness's — so a claude run embedded cache paths
+    and an opencode run embedded flat-install paths, and the two harnesses kept
+    rewriting each other's file.
+
+    The rule here is the same one MARSHALL_VERSION follows: pick the install with
+    the NEWEST published version, roster order on a tie. That is a property of the
+    machine, not of the caller, so every harness regenerating this project emits
+    the same bytes.
+
+    Args:
+        base_path: The base the verb resolved for its own target.
+
+    Returns:
+        ``base_path`` unchanged when a tree resolves, else the canonical install
+        root (or ``base_path`` when no install root exists at all).
+    """
+    try:
+        if _resolve_tree_bases(base_path):
+            return base_path
+    except (OSError, ValueError):
+        return base_path
+    roots = installed_harness_roots()
+    versions = dict(installed_harness_versions(roots))
+    best: Path | None = None
+    best_key: tuple[int, ...] | None = None
+    for harness, root in roots:
+        if not root:
+            continue
+        try:
+            if not Path(root).is_dir():
+                continue
+        except (OSError, ValueError):
+            continue
+        key = _version_tuple(versions.get(harness, ''))
+        if best_key is None or key > best_key:
+            best = Path(root)
+            best_key = key
+    return best if best is not None else base_path
+
+
 def _rewrite_mappings_to_tree(mappings: dict[str, str], base_path: Path) -> dict[str, str]:
     """Rewrite discovered mappings to marketplace tree paths where they exist.
 
@@ -2950,6 +2996,12 @@ def cmd_generate(args: argparse.Namespace) -> dict:
     refusal = cross_checkout_refusal(base_path, executor_path())
     if refusal is not None:
         return {**refusal, 'executor_target': resolved_target, 'target_source': ctx['target_source']}
+
+    # With no marketplace tree, discovery reads an install — and WHICH install it
+    # reads must not be the caller's --target, or two harnesses keep emitting
+    # different files for one project. The canonical install is the one with the
+    # newest published version (roster order on a tie).
+    base_path = canonical_install_base(base_path)
 
     # Discover marketplace scripts
     print('Discovering marketplace scripts...')

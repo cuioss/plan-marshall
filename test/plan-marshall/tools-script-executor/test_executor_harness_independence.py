@@ -234,7 +234,79 @@ def test_d2_a_session_config_override_is_honoured_at_dispatch(tmp_path, monkeypa
     assert 'from the custom config dir' in result.stdout
 
 
-def test_d2_a_foreign_install_resolves_with_one_note(tmp_path, monkeypatch):
+def test_d1_a_consumer_project_generates_one_canonical_install(tmp_path, monkeypatch):
+    """With no tree, discovery reads the SAME install for every ``--target``.
+
+    This is the consumer-project half of D1: the mapping rewrite cannot normalise
+    an install-sourced path, so the base itself must be target-neutral or the two
+    harnesses rewrite each other's file forever.
+    """
+    installed = tmp_path / 'installed'
+    claude_root = installed / 'claude'
+    opencode_root = installed / 'opencode'
+    claude_root.mkdir(parents=True)
+    opencode_root.mkdir(parents=True)
+    roots = (('claude', str(claude_root)), ('opencode', str(opencode_root)))
+    versions = (('claude', '0.1.1'), ('opencode', '0.1.9'))
+    monkeypatch.setattr(ge, 'installed_harness_roots', lambda: list(roots))
+    monkeypatch.setattr(ge, 'installed_harness_versions', lambda _roots=None: list(versions))
+    monkeypatch.setattr(ge, '_resolve_tree_bases', lambda _base: [])
+
+    assert ge.canonical_install_base(claude_root) == opencode_root
+    assert ge.canonical_install_base(opencode_root) == opencode_root
+
+
+def test_d1_a_checkout_with_a_tree_keeps_its_own_base(tmp_path, monkeypatch):
+    """A checkout with a tree is never redirected to an install."""
+    checkout = tmp_path / 'checkout' / 'marketplace' / 'bundles'
+    (checkout / 'demo' / 'skills').mkdir(parents=True)
+
+    assert ge.canonical_install_base(checkout) == checkout
+
+
+def test_d1_generation_uses_the_canonical_base_for_every_target(tmp_path, monkeypatch):
+    """``cmd_generate`` hands discovery the same base under every ``--target``."""
+    claude_root = tmp_path / 'installed' / 'claude'
+    opencode_root = tmp_path / 'installed' / 'opencode'
+    claude_root.mkdir(parents=True)
+    opencode_root.mkdir(parents=True)
+    # The writer refuses a base with no logging module directory.
+    (opencode_root / 'plan-marshall' / 'skills' / 'manage-logging' / 'scripts').mkdir(parents=True)
+    roots = (('claude', str(claude_root)), ('opencode', str(opencode_root)))
+    versions = (('claude', '0.1.1'), ('opencode', '0.1.9'))
+    monkeypatch.setattr(ge, 'installed_harness_roots', lambda: list(roots))
+    monkeypatch.setattr(ge, 'installed_harness_versions', lambda _roots=None: list(versions))
+    monkeypatch.setattr(ge, '_resolve_tree_bases', lambda _base: [])
+    monkeypatch.setattr(ge, 'discover_local_scripts', lambda: {})
+    monkeypatch.setattr(
+        ge,
+        'assess_discovery_coverage',
+        lambda _base, _mappings: {
+            'coverage_ok': True,
+            'scripts_discovered': 0,
+            'scripts_expected': 0,
+            'scripts_enumerated': 0,
+            'missing_notations': [],
+        },
+    )
+    seen: list[str] = []
+    monkeypatch.setattr(ge, 'discover_scripts', lambda base: seen.append(str(base)) or {})
+
+    for target, own_root in (('claude', claude_root), ('opencode', opencode_root)):
+        plan_dir = tmp_path / target / '.plan'
+        plan_dir.mkdir(parents=True)
+        monkeypatch.setenv('PLAN_BASE_DIR', str(plan_dir))
+        monkeypatch.setattr(ge, 'get_base_path', lambda _own=own_root, **_kwargs: _own)
+        args = types.SimpleNamespace(
+            marketplace=False,
+            marketplace_root=None,
+            dry_run=False,
+            force=False,
+            target=target,
+        )
+        assert ge.cmd_generate(args)['status'] == 'success'
+
+    assert seen == [str(opencode_root), str(opencode_root)], seen
     """With only the other harness's install present, the call resolves and notes it."""
     foreign_root = tmp_path / 'claude-install'
     own_root = tmp_path / 'opencode-install'
