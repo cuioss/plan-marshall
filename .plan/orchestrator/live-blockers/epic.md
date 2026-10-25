@@ -247,6 +247,11 @@ derive, for rows still live.
   against two disclosed; last head unreviewed after a logic change (a note). The merged executor is not live until the
   harness sync and one regeneration (Open Defect). Fix-forward: none staged.
 
+- **PLAN-LB-95** (staged 2026-10-25, WS-04, runbook, **critical**): the executor puts only the resolved script's own plugin
+  version on PYTHONPATH. D1 the same-root walk returns the script's own version; D2 a sibling bundle without that version uses
+  its newest, ordered numerically; D3 the other shapes keep their PYTHONPATH and a guard keeps one version per skill ahead;
+  D4 the reproduction with eight cached versions. A regression of PLAN-LB-94 D3. Emit it first.
+
 - **PLAN-LB-93** (staged 2026-10-25, WS-04, runbook, **high**; widened the same day by operator instruction to one plan for
   four defects, six deliverables): D1-D2 the executor generator and four sibling entry scripts start in the flat OpenCode
   install, so the recovery command an `executor_target_mismatch` refusal prints is runnable (found when that exact command
@@ -510,6 +515,14 @@ derive, for rows still live.
 
 ## Decisions
 
+- 2026-10-25 — **PLAN-LB-95 staged at critical priority: the PLAN-LB-94 executor puts all cached plugin versions on PYTHONPATH.**
+  Operator, after meeting the failure on a second machine: "analyze carefully and create a plan for fixing with the highest
+  prio". Analysis: the cause the machine reported is confirmed in the template (`_same_root_script_dirs` L588-621, introduced
+  only by #1861) and reproduced on this machine's 15-version cache; the three ordering helpers the same file already uses
+  (`_version_key`, `_scripts_dirs_in_root`, the recovery probe) sort newest first, so the fix reuses them. Four deliverables:
+  the walk bounded to the script's own version, newest-first fallback for a sibling bundle without that version, the guards
+  for the other shapes, and the reproduction with eight cached versions. It goes ahead of PLAN-LB-93, PLAN-LB-58 and
+  PLAN-LB-82. PLAN-LB-94's grade stays B: its tests used one version per root, a blind spot recorded in its landing.
 - 2026-10-25 — **Cleanup pass: the three staged specs were re-grounded against `ee00687b8`; PLAN-LB-93 is ready to admit.**
   Scope: the staged population (LB-93, LB-58, LB-82; 36 claims, all persisted as `live-blockers/cleanup`); the ten parked specs
   and the shipped ones were not re-grounded (nothing can be emitted from them). Results: LB-93 had one contradicted claim,
@@ -985,6 +998,16 @@ derive, for rows still live.
   full `module-tests` run is a third writer (every `generate_executor` verb ran through the main executor at 08:04:51Z to
   08:05:46Z); both folded into PLAN-LB-94. Workaround until it ships: after a mismatch, regenerate with
   the repository-source generator (`recover --target claude` for the orchestrator), expecting the lane to flip it back.
+- **CRITICAL — the generated executor puts every cached plugin version on PYTHONPATH, oldest first (found 2026-10-25 on the
+  operator's second machine; regression of PLAN-LB-94 D3, #1861; owner PLAN-LB-95, staged).** `_same_root_script_dirs`
+  (`execute-script.py.template` L588-621) globs the whole install root and sorts the result as strings, so a script from
+  `0.1.2010` imports its helpers from the oldest cached version that has them: `marshall-steward` on a not yet enrolled
+  project stopped at Step 4 with `ImportError: cannot import name 'STANDING_RULES_BRIDGE_MARKER' from 'antigravity_runtime'`
+  (loaded from `0.1.1916`, eight versions cached). Scripts that need no newer helper run old helper code silently. Reproduced
+  here: 15 cached versions, 1065 directories, `platform-runtime` `0.1.1969` at index 38, `0.1.2010` at index 808. This checkout
+  and the PLAN-LB-94 lane did not see it because a developer checkout resolves scripts to the tree, and every PLAN-LB-94
+  fixture held one version per bundle. Affects every consumer project and every harness install with more than one cached
+  version. Workaround on the affected machine until it ships: delete the old cache version directories, leaving the newest.
 - **The `test-compile` freshness backstop fails green builds on a fast runner (PLAN-LB-43 landing, 2026-10-24; medium; not
   staged).** `build.py` L540-580 fails `verify` closed when mypy exits 0 faster than a plausibility bound (here 1801 files in
   8.2 s, 205-220 files/s against a 200 files/s limit). It failed `verify / verify` three times on PR #1851 (twice on the PR

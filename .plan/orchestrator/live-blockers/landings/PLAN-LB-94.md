@@ -117,6 +117,17 @@ a surface violation.
 - [x] epic.md: Queue annotation, model-comparison grade, the executor Open Defect marked shipped with the live-effect residue, a Decision entry
 - [x] inbox message `rb-lb-94-one-executor-all-harnesses-001` archived; resume anchor and `queue-view.md` regenerated
 
+## Post-landing finding
+
+- **A regression the landing's tests could not see (found the same day on a second machine; owner PLAN-LB-95, critical).**
+  D3 builds `PYTHONPATH` from the resolved script's root, and the shipped `_same_root_script_dirs`
+  (`execute-script.py.template` L588-621) takes "root" to be the whole plugin cache: it returns every cached version's script
+  directories, string-sorted, so helpers come from the oldest cached version. `marshall-steward` on a not yet enrolled
+  project failed with an `ImportError` from the `0.1.1916` copy while the script ran from `0.1.2010`. Every D3 fixture holds one
+  version per bundle, and a developer checkout resolves to the tree where no walk runs, which is why the lane, the suite and
+  this analysis (which read the landing's fixtures as sufficient and ran no multi-version case) did not see it. The grade
+  stays B; the miss is recorded here and in the epic's Open Defects.
+
 ## Follow-Ups
 
 - **Operator step:** `/sync-harnesses` (all three), then one regeneration of the main executor from the merged template; only
