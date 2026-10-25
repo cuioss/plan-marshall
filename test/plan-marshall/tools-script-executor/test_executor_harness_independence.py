@@ -446,7 +446,7 @@ def test_d4_the_shared_reader_reports_no_version_as_empty(tmp_path):
 
 @pytest.mark.parametrize(('harness', 'version'), [('claude', '0.1.5'), ('opencode', '0.1.2')])
 def test_d4_preflight_reports_the_running_harness_own_staleness(tmp_path, monkeypatch, harness, version):
-    """``preflight`` under each harness reports that harness's own version."""
+    """``preflight`` under each ambient harness reports that harness's own version."""
     claude_root = tmp_path / 'claude-install'
     opencode_root = tmp_path / 'opencode-install'
     _manifest(claude_root, '0.1.5')
@@ -456,14 +456,21 @@ def test_d4_preflight_reports_the_running_harness_own_staleness(tmp_path, monkey
     plan_dir = tmp_path / '.plan'
     _generate(monkeypatch, plan_dir, 'claude', roots=roots, versions=versions)
     monkeypatch.setenv('PLAN_BASE_DIR', str(plan_dir))
+    # AFTER the fixture generation, which clears the platform signals: the
+    # ambient signal alone must select the harness below.
+    for signal in _SIGNALS:
+        monkeypatch.delenv(signal, raising=False)
+    monkeypatch.setenv(*_ENV_SIGNAL[harness])
 
     harness_root = {'claude': claude_root, 'opencode': opencode_root}[harness]
     monkeypatch.setattr(ge, 'get_base_path', lambda **kwargs: harness_root)
-    args = types.SimpleNamespace(marketplace=False, marketplace_root=None, target=harness)
+    # No --target: the ambient signal alone must select the harness.
+    args = types.SimpleNamespace(marketplace=False, marketplace_root=None, target=None)
 
     result = ge.cmd_preflight(args)
 
     assert result['status'] == 'success', result
+    assert result['target'] == harness, result
     assert result['executor_version'] == version, result
     # Neither harness is stale merely because the other one generated the file.
     assert result['executor_action'] == 'fresh', result
@@ -554,6 +561,76 @@ _SHIPPED_TEXT = (
     / 'marshall-steward'
     / 'SKILL.md',
 )
+
+
+def test_d3_the_four_real_nested_notations_rewrite_to_the_tree(tmp_path, monkeypatch):
+    """The four real sub-directory entries rewrite from a FLAT source too.
+
+    They are the entries the defect was measured on, so they are asserted by
+    name rather than through a synthetic stand-in.
+    """
+    tree = MARKETPLACE_ROOT
+    monkeypatch.setattr(ge, '_shared_get_base_path', lambda *args, **kwargs: tree)
+    cases = {
+        'extension_base': 'extension/extension_base.py',
+        'query-architecture': 'query/query-architecture.py',
+        'query-config': 'query/query-config.py',
+        'triage_helpers': 'workflow/triage_helpers.py',
+    }
+    flat_sources = {
+        f'plan-marshall:script-shared:{script}': f'/installs/plan-marshall-script-shared/scripts/{suffix}'
+        for script, suffix in cases.items()
+    }
+
+    rewritten = ge._rewrite_mappings_to_tree(flat_sources, tree)
+
+    for script, suffix in cases.items():
+        expected = (tree / 'plan-marshall' / 'skills' / 'script-shared' / 'scripts' / suffix).resolve()
+        assert expected.is_file(), f'fixture precondition: {expected} must exist'
+        notation = f'plan-marshall:script-shared:{script}'
+        assert rewritten[notation] == str(expected), f'{notation} did not rewrite to the tree'
+
+
+def test_d3_a_script_from_an_env_declared_root_gets_that_root_on_pythonpath(tmp_path, monkeypatch):
+    """Helpers of a script resolved from a session config dir come from that root."""
+    custom = tmp_path / 'custom-config'
+    _flat_install_script(custom / 'skills', 'demo', 'skill', 'tool', 'import helper\nprint("helper", helper.MARK)\n')
+    _write_script(custom / 'skills' / 'demo-helpers' / 'scripts' / 'helper.py', "MARK = 'ok'\n")
+    executor = _generate(
+        monkeypatch,
+        tmp_path / 'project' / '.plan',
+        'opencode',
+        roots=(),
+        versions=(('opencode', '0.1.2'),),
+    )
+
+    monkeypatch.setenv('OPENCODE_CONFIG_DIR', str(custom))
+    result = _run(executor, ['demo:skill:tool'], 'opencode')
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert 'helper ok' in result.stdout
+
+
+def test_d2_the_env_declared_root_wins_over_the_stamped_one(tmp_path, monkeypatch):
+    """With both roots carrying the script, the session config dir is preferred."""
+    stamped = tmp_path / 'stamped-install'
+    custom = tmp_path / 'custom-config'
+    _flat_install_script(stamped, 'demo', 'skill', 'tool', "print('from the stamped root')\n")
+    _flat_install_script(custom / 'skills', 'demo', 'skill', 'tool', "print('from the custom root')\n")
+    executor = _generate(
+        monkeypatch,
+        tmp_path / 'project' / '.plan',
+        'opencode',
+        roots=(('opencode', str(stamped)),),
+        versions=(('opencode', '0.1.2'),),
+    )
+
+    monkeypatch.setenv('OPENCODE_CONFIG_DIR', str(custom))
+    result = _run(executor, ['demo:skill:tool'], 'opencode')
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert 'from the custom root' in result.stdout
+    assert 'from the stamped root' not in result.stdout
 
 
 @pytest.mark.parametrize('path', _SHIPPED_TEXT, ids=lambda p: p.parent.name)
@@ -704,11 +781,16 @@ def test_d3_a_valid_notation_with_no_copy_anywhere_resolves_to_nothing(tmp_path)
 
 
 def test_d3_hidden_version_dirs_are_skipped(tmp_path):
-    """A hidden version directory carrying the script is not selected."""
+    """A hidden version directory is skipped while its visible sibling is used."""
     root = tmp_path / 'install'
     hidden = root / 'demo' / '.hidden-version' / 'skills' / 'skill' / 'scripts'
     hidden.mkdir(parents=True)
-    (hidden / 'tool.py').write_text('# hidden', encoding='utf-8')
+    hidden_script = hidden / 'tool.py'
+    hidden_script.write_text('# hidden', encoding='utf-8')
+    visible = root / 'demo' / '0.1.1' / 'skills' / 'skill' / 'scripts'
+    visible.mkdir(parents=True)
+    visible_script = visible / 'tool.py'
+    visible_script.write_text('# visible', encoding='utf-8')
 
     ns = types.ModuleType('resolver_hidden_dir')
     code = ge.generate_target_aware_resolver_code('claude')
@@ -724,6 +806,9 @@ def test_d3_hidden_version_dirs_are_skipped(tmp_path):
     )
     exec(compile(code, '<resolver>', 'exec'), ns.__dict__)
 
+    assert ns._resolve_notation_by_target('demo:skill:tool') == str(visible_script.resolve())
+
+    visible_script.unlink()
     assert ns._resolve_notation_by_target('demo:skill:tool') is None
 
 

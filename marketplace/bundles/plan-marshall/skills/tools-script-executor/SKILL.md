@@ -481,17 +481,22 @@ stale embedded path is never returned blindly:
    install. A missing path is skipped, not returned; a path inside ANOTHER
    harness's install is deferred to the last resort below.
 3. **Prefix/substring shim** — same existence and locality guards.
-4. **Install walk** — the runtime harness's own install first, then every other
+4. **cwd upward walk** — walks up from `Path.cwd()` and from the executor file's
+   own location to the same live tree. A tree this call can reach is the
+   checkout's own source, so it comes BEFORE the install walk.
+5. **Install walk** — the runtime harness's own install first (an
+   environment-declared config dir before the stamped one), then every other
    installed harness, newest version first, both deployed shapes (nested
    `{root}/{bundle}/{version}/skills/{skill}/scripts/…` and flat
    `{root}/{bundle}-{skill}/scripts/…`). ONE order for every harness, so a call
    from any harness resolves and dispatches; a hit in another harness's install
    prints one `note:` line on stderr and dispatches anyway.
-5. **cwd upward walk** — walks up from `Path.cwd()` and from the executor file's
-   own location to the same live tree. A tree this call can reach is the
-   checkout's own source, so it comes BEFORE the install walk.
 6. **Foreign embedded path** — the last resort: a mapping value that still exists
    but lives in another harness's install, noted the same way.
+
+A live embedded path inside the RUNTIME harness's own install (step 2) still wins
+over a tree reachable only from cwd (step 4); the tree above the executor itself
+(step 1) wins over everything.
 
 The executor is harness-independent: `GENERATED_FOR` is a fixed sentinel that
 records that the file serves any harness (never a harness name), and nothing

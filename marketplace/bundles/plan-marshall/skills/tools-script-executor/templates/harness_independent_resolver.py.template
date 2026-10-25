@@ -124,56 +124,46 @@ def _scripts_dirs_in_root(root: str, bundle: str, skill: str) -> list[str]:
     return dirs
 
 
-def _env_harness_roots() -> list[tuple[str, str]]:
-    """Return install roots declared by the ENVIRONMENT at call time.
-
-    Never stamped into the file: an environment-derived value in the bytes would
-    make two sessions on one machine emit different executors, which is exactly
-    what the harness-independent contract forbids. They are read HERE instead, so
-    a custom config dir still resolves at dispatch while the file stays stable.
-    """
-    pairs: list[tuple[str, str]] = []
-    try:
-        opencode_dir = os.environ.get('OPENCODE_CONFIG_DIR')
-        if opencode_dir:
-            pairs.append(('opencode', str(Path(opencode_dir) / 'skills')))
-        gemini_dir = os.environ.get('GEMINI_CONFIG_DIR')
-        if gemini_dir:
-            pairs.append(('antigravity', str(Path(gemini_dir) / 'plugins' / 'plan-marshall' / 'skills')))
-    except (OSError, ValueError):
-        return pairs
-    return pairs
-
-
 def _harness_search_order() -> list[tuple[str, str]]:
     """Return ``(harness, root)`` pairs in resolution order.
 
-    The runtime harness's own install first, then the others in the declared
-    order. A first-match-wins walk in this order means a call resolves to its
-    own harness's code whenever that harness has a copy, and only reaches
-    another harness's install as the last resort.
+    The runtime harness's OWN roots first — the environment-declared one before
+    the stamped one, because the layout op puts a config-dir override first —
+    then every other harness in the declared order. A first-match-wins walk in
+    this order means a call resolves to its own harness's code whenever that
+    harness has a copy, and only reaches another harness's install as the last
+    resort.
 
-    ``_runtime_harness`` and ``_INSTALLED_ROOTS`` are part of the executor's own
-    bootstrap surface, so the resolver body also runs in isolation (tests execute
-    it standalone, with no environment layer): a missing reader means "no runtime
-    signal", a missing root list means "no stamped installs".
+    The reader is part of the executor's own bootstrap surface, so the resolver
+    body also runs in isolation (tests execute it standalone, with no environment
+    layer): a missing reader means "no runtime signal", and a missing root list
+    means "no stamped installs".
     """
     try:
         running = _runtime_harness()
     except NameError:
         running = None
     try:
-        installed = tuple(_INSTALLED_ROOTS)
+        pairs = _all_known_roots()
     except NameError:
-        installed = ()
+        # Standalone execution (tests run this body without the executor's own
+        # module): fall back to whatever roots the namespace injected.
+        try:
+            pairs = list(_INSTALLED_ROOTS)
+        except NameError:
+            pairs = []
+        try:
+            pairs = pairs + [pair for pair in _env_harness_roots() if pair not in pairs]
+        except NameError:
+            pass
     try:
         declared = _env_harness_roots()
     except NameError:
         declared = []
-    pairs = list(installed) + list(declared)
-    own = [pair for pair in pairs if pair[0] == running]
+    declared_own = [pair for pair in declared if pair[0] == running]
+    own = [pair for pair in pairs if pair[0] == running and pair not in declared_own]
     rest = [pair for pair in pairs if pair[0] != running]
-    return own + rest
+    return declared_own + own + rest
 
 
 def _resolve_notation_by_target(notation: str) -> str | None:

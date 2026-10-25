@@ -1451,7 +1451,9 @@ def _executor_target_stamp() -> dict[str, str]:
     keep their names and now mean "generated for": the executor they describe
     serves EVERY harness, and ``executor_target`` is the fixed sentinel the
     generator writes (never a harness name), so neither value is a lock or a
-    restriction — nothing refuses a call because of the pair.
+    restriction — nothing refuses a call because of the pair. The legacy
+    ``_EXECUTOR_TARGET`` fallback below only fires for an executor written before
+    the harness-independent change, whose value is a harness name.
     An absent or unstamped executor yields no keys rather than an empty-string
     claim — the same "an absent identity is a stated sentinel, never an assumed
     one" rule the target resolver applies.

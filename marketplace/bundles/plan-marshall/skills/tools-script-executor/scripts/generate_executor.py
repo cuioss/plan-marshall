@@ -3385,10 +3385,10 @@ def cmd_recover(args: argparse.Namespace) -> dict:
         'executor': str(executor),
         'generator': str(generator),
         'probe_before': probe_before,
-        # A pre-existing foreign stamp is a D5 repair, not a reason to refuse:
-        # the whole point of `recover --target <observed>` is to rewrite the
-        # executor for the harness that is running it. The field makes the
-        # repair explicit instead of silent.
+        # What the file used to be stamped for, reported for continuity. The
+        # executor this writes serves EVERY harness, and `--target` only names
+        # which install to prefer, so a pre-existing stamp is information — never
+        # a reason to refuse, and never something this run "repairs".
         'previous_target': previous_target,
     }
 

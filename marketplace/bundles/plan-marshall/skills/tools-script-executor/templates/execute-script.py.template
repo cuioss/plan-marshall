@@ -566,13 +566,15 @@ def _install_root_of(_path: str) -> tuple[str | None, str | None]:
 
     Delegates the membership test to :func:`install_of_path` rather than
     re-spelling the prefix comparison: one predicate for the whole executor, so
-    the two readers cannot disagree about which install a path belongs to.
+    the two readers cannot disagree about which install a path belongs to. The
+    root is looked up in the same known-root list that predicate searched, so an
+    environment-declared install yields its root here too.
     """
     _harness = install_of_path(_path)
     if _harness is None:
         return None, None
-    for _name, _root in _INSTALLED_ROOTS:
-        if _name == _harness and _root:
+    for _name, _root in _all_known_roots():
+        if _name == _harness and _root and _path.startswith(_root.rstrip('/') + '/'):
             return _name, _root
     return None, None
 
@@ -605,7 +607,7 @@ def _same_root_script_dirs(_path: str) -> list[str]:
     found: list[str] = []
     try:
         base = Path(_root).expanduser()
-        for pattern in ('*/*/skills/*/scripts', '*/skills/*/scripts', '*/scripts'):
+        for pattern in ('*/*/skills/*/scripts', '*/skills/*/scripts', '*/scripts', 'skills/*/scripts', 'skill/*/scripts'):
             for candidate in base.glob(pattern):
                 try:
                     if candidate.is_dir():
@@ -1785,6 +1787,51 @@ def _resolve_notation_by_cwd_walk(notation: str) -> str | None:
     return None
 
 
+def _env_harness_roots() -> list[tuple[str, str]]:
+    """Return install roots declared by the ENVIRONMENT at call time.
+
+    Never stamped into the file: an environment-derived value in the bytes would
+    make two sessions on one machine emit different executors, which is exactly
+    what the harness-independent contract forbids. They are read HERE instead, so
+    a custom config dir still resolves at dispatch while the file stays stable.
+    """
+    pairs: list[tuple[str, str]] = []
+    try:
+        opencode_dir = os.environ.get('OPENCODE_CONFIG_DIR')
+        if opencode_dir:
+            pairs.append(('opencode', str(Path(opencode_dir) / 'skills')))
+        gemini_dir = os.environ.get('GEMINI_CONFIG_DIR')
+        if gemini_dir:
+            pairs.append(('antigravity', str(Path(gemini_dir) / 'plugins' / 'plan-marshall' / 'skills')))
+    except (OSError, ValueError):
+        return pairs
+    return pairs
+
+
+def _all_known_roots() -> list[tuple[str, str]]:
+    """Every install root this call knows: the stamped ones plus the env-declared ones.
+
+    ONE root list for every question the executor asks about an install — which
+    harness a path belongs to (the locality guard, the foreign note, the
+    root-family split, the PYTHONPATH anchor) and which order to probe. A second
+    list that omitted the env-declared roots classified a script resolved from a
+    custom config dir as "no install", so its own helpers were never put on
+    PYTHONPATH — the mix the same-root rule exists to prevent.
+    """
+    try:
+        stamped = list(_INSTALLED_ROOTS)
+    except NameError:
+        stamped = []
+    seen: set[str] = set()
+    pairs: list[tuple[str, str]] = []
+    for harness, root in [*stamped, *_env_harness_roots()]:
+        if not root or root in seen:
+            continue
+        seen.add(root)
+        pairs.append((harness, root))
+    return pairs
+
+
 def install_of_path(path: str) -> str | None:
     """Return the harness whose install root carries ``path``, or ``None``.
 
@@ -1793,11 +1840,11 @@ def install_of_path(path: str) -> str | None:
     never worth a note. One reader for the whole executor: the embedded-path
     locality guard, the foreign-install note, the root-family split and the
     PYTHONPATH ordering all ask this same question, and four spellings of it
-    would be four chances to disagree.
+    would be four chances to disagree. It searches EVERY known root, including
+    the ones the environment declares, so a script resolved from a custom config
+    dir is classified like any other install.
     """
-    for harness, root in _INSTALLED_ROOTS:
-        if not root:
-            continue
+    for harness, root in _all_known_roots():
         if path.startswith(root.rstrip('/') + '/'):
             return harness
     return None
