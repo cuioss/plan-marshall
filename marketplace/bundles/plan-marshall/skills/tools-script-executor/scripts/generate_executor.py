@@ -902,11 +902,6 @@ def discover_local_scripts(cwd: Path | None = None) -> dict[str, str]:
 # the generating harness — the defect this replaced.
 
 
-
-
-
-
-
 def generate_target_aware_resolver_code(_target: str | None = None, templates_dir: Path | None = None) -> str:
     """Return the Python source for the harness-independent resolver.
 

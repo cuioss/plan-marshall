@@ -284,10 +284,7 @@ def test_d3_each_harness_resolves_its_own_install_and_its_own_pythonpath(tmp_pat
     """Two installs, one executor: each harness runs its own copy's helpers."""
     claude_root = tmp_path / 'claude-install'
     opencode_root = tmp_path / 'opencode-install'
-    probe = (
-        'import os\n'
-        "print('{origin}', os.environ.get('PYTHONPATH', '').split(':')[0])\n"
-    )
+    probe = "import os\nprint('{origin}', os.environ.get('PYTHONPATH', '').split(':')[0])\n"
     _nested_install_script(claude_root, 'demo', '0.1.9', 'skill', 'tool', probe.format(origin='claude'))
     _flat_install_script(opencode_root, 'demo', 'skill', 'tool', probe.format(origin='opencode'))
     roots = (('claude', str(claude_root)), ('opencode', str(opencode_root)))
@@ -307,7 +304,7 @@ def test_d3_each_harness_resolves_its_own_install_and_its_own_pythonpath(tmp_pat
         origin, first_pythonpath = result.stdout.split(None, 1)
         assert origin == harness, result.stdout
         assert str(own_root.resolve()) in first_pythonpath, (
-            f'{harness} ran its own script but fed it another root\'s helpers: {first_pythonpath}'
+            f"{harness} ran its own script but fed it another root's helpers: {first_pythonpath}"
         )
 
 
@@ -325,7 +322,7 @@ def test_d3_a_surface_is_only_applied_to_the_script_it_came_from(tmp_path, monke
         'tool',
         (
             'import argparse\n'
-            "parser = argparse.ArgumentParser()\n"
+            'parser = argparse.ArgumentParser()\n'
             "parser.add_argument('--old-flag')\n"
             'parser.parse_args()\n'
             "print('old-script')\n"
@@ -338,7 +335,7 @@ def test_d3_a_surface_is_only_applied_to_the_script_it_came_from(tmp_path, monke
         'tool',
         (
             'import argparse\n'
-            "parser = argparse.ArgumentParser()\n"
+            'parser = argparse.ArgumentParser()\n'
             "parser.add_argument('--old-flag')\n"
             "parser.add_argument('--new-flag', action='store_true')\n"
             'parser.parse_args()\n'
