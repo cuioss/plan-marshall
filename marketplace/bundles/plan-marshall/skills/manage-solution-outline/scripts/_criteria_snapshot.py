@@ -1365,14 +1365,22 @@ def verdict_row_matches(row: Any, criterion: str, index: int, deliverable: Any =
     graded something else, which is the failure this predicate exists to close. A
     deliverable-qualified id (``D2.C1``) answers only inside deliverable 2 when
     ``deliverable`` is supplied.
+
+    ⛔ **An id-bearing row is answered by its id and nothing else**, exactly as
+    :func:`_graded_status` reads it. The text fallback is for rows that name no
+    criterion by id. Letting a row graded ``C9`` match criterion 1 by text made
+    this predicate and the gate disagree: the gate refused to read the row as
+    criterion 1's grade, while the validator's ``unmatched_criterion`` check —
+    which asks this predicate — believed criterion 1 was answered and reported
+    nothing, so the criterion the gate left open was never named to the author.
     """
     if not isinstance(row, dict):
         return False
     named_deliverable, named_position = criterion_id_parts(row.get('criterion_id'))
-    if named_deliverable is not None and deliverable is not None and named_deliverable != deliverable:
-        return False
-    if named_position == index:
-        return True
+    if named_position is not None:
+        if named_position != index:
+            return False
+        return named_deliverable is None or deliverable is None or named_deliverable == deliverable
     return normalize_criterion(row.get('criterion')) == normalize_criterion(criterion)
 
 
