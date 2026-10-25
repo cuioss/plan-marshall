@@ -27,6 +27,7 @@ from _build_cli import (
 from _build_coverage_report import create_coverage_report_handler
 from _maven_cmd_discover import discover_maven_modules
 from _maven_cmd_parse import parse_log
+from _maven_cmd_resolve_scope import cmd_resolve_test_scope
 from _maven_cmd_rewrite_log import consume_rewrite_log
 from _maven_execute import _CONFIG, cmd_run
 
@@ -95,6 +96,32 @@ def _register_rewrite_log(subparsers) -> None:
     rewrite_parser.set_defaults(func=cmd_rewrite_log)
 
 
+def _register_resolve_test_scope(subparsers) -> None:
+    """Register the additive 'resolve-test-scope' subcommand.
+
+    The pre-push-quality-gate module-tests arm asks the resolved build skill this
+    question; a build skill without the verb makes the gate take its DEGRADED
+    path. Built here rather than through ``register_standard_subparsers`` so it
+    attaches the canonical ``--project-dir`` / ``--plan-id`` pair through the
+    shared ``add_project_dir_arg``, keeping one declaration site for the pair.
+    """
+    scope_parser = subparsers.add_parser(
+        'resolve-test-scope',
+        help='Resolve the scoped Maven module set and scoped-vs-whole-tree divergence risk',
+        allow_abbrev=False,
+    )
+    add_project_dir_arg(scope_parser)
+    scope_parser.add_argument(
+        '--changed-paths',
+        dest='changed_paths',
+        default=None,
+        help='Comma-separated task-scoped footprint; when set it IS the footprint '
+        '(supersedes the whole-plan live footprint resolved from --plan-id). A value '
+        'holding no path is refused with empty_changed_paths; omit the flag instead',
+    )
+    scope_parser.set_defaults(func=cmd_resolve_test_scope)
+
+
 def main() -> int:
     """Main entry point."""
     return build_main(
@@ -112,7 +139,7 @@ def main() -> int:
             discover_handler=discover_maven_modules,
             discover_help='Discover Maven modules',
             run_config_key_config=_CONFIG,
-            extra_register_fns=[_register_rewrite_log],
+            extra_register_fns=[_register_rewrite_log, _register_resolve_test_scope],
         ),
     )
 

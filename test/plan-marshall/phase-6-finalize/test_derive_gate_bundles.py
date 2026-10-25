@@ -490,6 +490,115 @@ def test_cli_refuses_neither_files_form():
 
 
 # ---------------------------------------------------------------------------
+# Architecture-backed module resolution for a non-marketplace layout (D3)
+# ---------------------------------------------------------------------------
+#
+# A consumer project is not a marketplace layout: its sources live under module
+# directories a Maven reactor names, not under ``marketplace/bundles/<b>``. Before
+# the fallback every such path reached rule 4 and landed in ``unresolved``, so the
+# gate iterated zero bundles and read as green over a population it never saw. The
+# seam now accepts a resolver — the architecture's ``which-module`` reader in
+# production — and the CLI supplies one only when the root carries no
+# ``marketplace/bundles`` directory.
+
+_MAVEN_GLOBS = ['**/*.java', '**/pom.xml', '**/*.md']
+
+
+def _prefix_resolver(prefixes: dict[str, str]):
+    """Stand-in for ``architecture which-module``: the longest matching prefix wins."""
+    ordered = sorted(prefixes.items(), key=lambda entry: len(entry[0]), reverse=True)
+
+    def resolve(path: str) -> str | None:
+        for prefix, name in ordered:
+            if prefix and (path == prefix or path.startswith(prefix + '/')):
+                return name
+        return None
+
+    return resolve
+
+
+def test_two_maven_modules_are_the_gate_population(tmp_path):
+    """Changes in two reactor modules yield exactly those two as the population."""
+    bundles, unresolved = derive_gate_bundles(
+        ['alpha/src/main/java/Alpha.java', 'beta/src/main/java/Beta.java'],
+        _MAVEN_GLOBS,
+        tmp_path / 'marketplace' / 'bundles',
+        module_resolver=_prefix_resolver({'alpha': 'alpha', 'beta': 'beta'}),
+    )
+
+    assert bundles == ['alpha', 'beta']
+    assert unresolved == []
+
+
+def test_a_path_no_module_owns_is_still_reported(tmp_path):
+    """A path the architecture cannot place is reported, never dropped."""
+    bundles, unresolved = derive_gate_bundles(
+        ['alpha/src/main/java/Alpha.java', 'docs/notes.md'],
+        _MAVEN_GLOBS,
+        tmp_path / 'marketplace' / 'bundles',
+        module_resolver=_prefix_resolver({'alpha': 'alpha'}),
+    )
+
+    assert bundles == ['alpha']
+    assert unresolved == ['docs/notes.md']
+
+
+def test_without_a_resolver_a_consumer_path_stays_unresolved(tmp_path):
+    """The marketplace rule is unchanged where no resolver is supplied."""
+    bundles, unresolved = derive_gate_bundles(
+        ['alpha/src/main/java/Alpha.java'],
+        _MAVEN_GLOBS,
+        tmp_path / 'marketplace' / 'bundles',
+    )
+
+    assert bundles == []
+    assert unresolved == ['alpha/src/main/java/Alpha.java']
+
+
+def test_the_resolver_is_never_consulted_for_a_classified_marketplace_path():
+    """Bundle-rooted and test-rooted paths are classified by the seam, not the architecture."""
+    calls: list[str] = []
+
+    def resolver(path: str) -> str | None:
+        calls.append(path)
+        return 'marketplace'
+
+    bundles, unresolved = derive_gate_bundles(
+        ['test/marketplace/targets/test_frontmatter.py', 'marketplace/bundles/plan-marshall/x.py'],
+        _ALL_GLOBS,
+        MARKETPLACE_ROOT / 'marketplace' / 'bundles',
+        module_resolver=resolver,
+    )
+
+    assert bundles == ['plan-marshall']
+    assert unresolved == ['test/marketplace/targets/test_frontmatter.py']
+    assert calls == []
+
+
+def test_cli_answers_unresolved_when_no_architecture_is_available(tmp_path):
+    """A consumer root with no architecture data reports the path, never a green zero."""
+    (tmp_path / 'alpha').mkdir()
+    script = get_script_path('plan-marshall', 'phase-6-finalize', 'derive_gate_bundles.py')
+
+    result = run_script(
+        script,
+        'derive',
+        '--files',
+        'alpha/src/main/java/Alpha.java',
+        '--globs',
+        '**/*.java',
+        '--marketplace-root',
+        str(tmp_path),
+    )
+
+    assert result.success, result.stderr
+    data = result.toon()
+    assert data['status'] == 'success'
+    assert _as_list(data['bundles']) == []
+    assert _as_list(data['unresolved']) == ['alpha/src/main/java/Alpha.java']
+
+
+# ---------------------------------------------------------------------------
 # Non-package directory guard
 # ---------------------------------------------------------------------------
 

@@ -28,10 +28,11 @@ The exit-code contract for every `python3 .plan/execute-script.py` call in this 
 | `_maven_cmd_discover.py` | Module discovery via pom.xml + Maven metadata commands |
 | `_maven_cmd_parse.py` | Log parsing with JVM base patterns + Maven-specific extensions |
 | `_maven_cmd_rewrite_log.py` | Additive OpenRewrite #118 log-parse consumption (Signal B) via the `rewrite-log-parse` domain verb, fail-closed |
+| `_maven_cmd_resolve_scope.py` | `resolve-test-scope` — the scoped module set and divergence risk, owned by Maven module directories |
 
 ## Subcommands
 
-Supports: **run**, **parse**, **coverage-report**, **check-warnings**, **discover**, **rewrite-log**.
+Supports: **run**, **parse**, **coverage-report**, **check-warnings**, **discover**, **rewrite-log**, **resolve-test-scope**.
 See `build-api-reference.md` for the full subcommand API and availability matrix.
 
 ### Maven-Specific Behavior
@@ -161,6 +162,15 @@ python3 .plan/execute-script.py plan-marshall:build-maven:maven rewrite-log \
 ```
 
 Consumes the OpenRewrite #118 log-parse signal from a captured build log, fail-closed. Returns a `rewrite_log.verdict` of `observed` / `not_observed` / `domain_inactive` / `parse_error` (see § "Additive OpenRewrite log-parse consumption").
+
+### resolve-test-scope
+
+```bash
+python3 .plan/execute-script.py plan-marshall:build-maven:maven resolve-test-scope \
+  [--changed-paths CHANGED_PATHS] (--project-dir PROJECT_DIR | --plan-id PLAN_ID)
+```
+
+The scoped-test answer the `pre-push-quality-gate` module-tests arm asks its resolved build skill: `scoped_modules`, `divergence_possible`, `recommended_target`, `unresolved_paths`, `whole_tree_available`. Module ownership is Maven's own — the longest module directory (`paths.module` from `discover`) containing a footprint path — so a reactor's modules, not `marketplace/bundles/<b>` segments, are the population. The reactor root owns no arbitrary file: a root-level `pom.xml` change is reported in `unresolved_paths` and routes the gate to the whole tree. `--changed-paths` is the task-scoped footprint and supersedes the whole-plan footprint from `--plan-id`; a blank value is refused.
 
 ### run-config-key
 

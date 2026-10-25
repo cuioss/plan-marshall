@@ -21,7 +21,14 @@ Derivation rules (applied per footprint path, in order):
    dropped, never a hard failure. This is what keeps a ``test/marketplace/**``
    path (e.g. ``test/marketplace/targets/test_frontmatter.py``) from deriving a
    phantom ``marketplace`` bundle.
-4. Any other shape resolves to no bundle and is appended to ``unresolved[]``.
+4. Any other shape resolves to no bundle and is appended to ``unresolved[]``,
+   **unless the caller supplied a module resolver** — which the CLI does for a
+   root that carries no ``marketplace/bundles`` directory. A consumer project's
+   modules are named by its architecture, not by a ``marketplace/bundles/<b>``
+   segment, so its sources reach this rule; the resolver (the architecture's
+   ``which-module`` reader) supplies the owning module name and that module joins
+   the population. A path the resolver cannot place is still appended to
+   ``unresolved[]`` — never dropped.
    Reaching this rule means the path already matched a ``build_map`` glob at
    rule 1 — the project itself declared it build-relevant — so it is a
    diagnosable-unresolvable, not something outside the derivation's remit. A
@@ -73,6 +80,7 @@ from __future__ import annotations
 import argparse
 import fnmatch
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
 from toon_parser import serialize_toon
@@ -93,6 +101,7 @@ def derive_gate_bundles(
     files: list[str],
     globs: list[str],
     bundles_root: Path,
+    module_resolver: Callable[[str], str | None] | None = None,
 ) -> tuple[list[str], list[str]]:
     """Derive the sorted unique bundle set and the unresolved-path list.
 
@@ -103,15 +112,21 @@ def derive_gate_bundles(
         bundles_root: Absolute path to the ``marketplace/bundles`` directory.
             A ``test/<b>/…`` path derives bundle ``<b>`` only when
             ``bundles_root / <b>`` is a real directory on disk.
+        module_resolver: Optional ``path -> module | None`` resolver consulted for
+            rule-4 paths only. The CLI supplies the architecture's
+            ``which-module`` reader when the root is not a marketplace layout, so a
+            consumer project's module directories become the population; the
+            marketplace shapes (rules 2 and 3) are classified by the seam itself
+            and never reach it. ``None`` keeps the marketplace-only derivation.
 
     Returns:
         A ``(bundles, unresolved)`` tuple. ``bundles`` is the sorted,
-        de-duplicated bundle-name list. ``unresolved`` preserves footprint
-        order and holds every glob-matching path that resolved to no bundle:
-        a ``test/<b>/…`` path whose ``<b>`` is not a real bundle directory,
-        and — by rule 4 — a path of any other shape. Every entry matched a
-        ``build_map`` glob, so each is a diagnosable signal, never an error
-        and never a silent drop.
+        de-duplicated bundle/module-name list. ``unresolved`` preserves footprint
+        order and holds every glob-matching path that resolved to no bundle: a
+        ``test/<b>/…`` path whose ``<b>`` is not a real bundle directory, and — by
+        rule 4 — a path of any other shape that the resolver could not place.
+        Every entry matched a ``build_map`` glob, so each is a diagnosable
+        signal, never an error and never a silent drop.
     """
     bundles: set[str] = set()
     unresolved: list[str] = []
@@ -134,11 +149,49 @@ def derive_gate_bundles(
                 unresolved.append(path)
         else:
             # Rule 4. The path matched a build_map glob but is neither a
-            # marketplace/bundles/<b>/… path nor a resolvable test/<b>/… one,
-            # so it resolves to no bundle and is REPORTED rather than dropped.
-            unresolved.append(path)
+            # marketplace/bundles/<b>/… path nor a resolvable test/<b>/… one. A
+            # consumer project's modules are named by its architecture rather than
+            # by a path segment, so the resolver — when the caller supplied one —
+            # is asked for the owning module. A path it cannot place resolves to
+            # no module and is REPORTED rather than dropped.
+            module = module_resolver(path) if module_resolver is not None else None
+            if module:
+                bundles.add(module)
+            else:
+                unresolved.append(path)
 
     return sorted(bundles), unresolved
+
+
+def architecture_module_resolver(project_root: Path) -> Callable[[str], str | None]:
+    """Build a ``path -> module`` resolver backed by the architecture's reader.
+
+    The production resolver for a non-marketplace layout: it asks
+    ``architecture which-module`` — the one place path attribution is decided —
+    rather than re-deriving module ownership here. Imported lazily because the
+    architecture handler lives in a sibling skill's script directory, which the
+    executor puts on ``PYTHONPATH`` but a bare interpreter invocation does not.
+
+    Fails soft in exactly one direction: an unavailable handler or an error
+    answer resolves nothing, so the path is reported in ``unresolved`` instead of
+    being counted as covered.
+    """
+    try:
+        from _cmd_client_handlers import cmd_which_module
+    except ImportError:
+        return lambda _path: None
+
+    def resolve(path: str) -> str | None:
+        try:
+            answer = cmd_which_module(argparse.Namespace(path=path, project_dir=str(project_root)))
+        except Exception:
+            return None
+        if not isinstance(answer, dict) or answer.get('status') == 'error':
+            return None
+        module = answer.get('module')
+        return module or None
+
+    return resolve
 
 
 def _split_csv(value: str) -> list[str]:
@@ -215,6 +268,7 @@ def cmd_derive(args: argparse.Namespace) -> int:
         files,
         _split_csv(args.globs),
         bundles_root,
+        module_resolver=None if bundles_root.is_dir() else architecture_module_resolver(marketplace_root),
     )
     payload = {
         'status': 'success',
@@ -293,4 +347,4 @@ if __name__ == '__main__':
     sys.exit(main())
 
 
-__all__ = ['derive_gate_bundles', 'read_files_file']
+__all__ = ['architecture_module_resolver', 'derive_gate_bundles', 'read_files_file']

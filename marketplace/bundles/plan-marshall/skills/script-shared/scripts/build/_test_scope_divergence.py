@@ -64,7 +64,7 @@ benign verdict is an EMPTY footprint - see :func:`resolve_test_scope`.
 
 from __future__ import annotations
 
-from collections.abc import Collection
+from collections.abc import Callable, Collection
 from dataclasses import dataclass
 
 # Footprint prefixes whose presence means a scoped run cannot observe a
@@ -393,6 +393,7 @@ def resolve_test_scope(
     test_directories: Collection[str] | None = None,
     bundle_modules: Collection[str] | None = None,
     existing_paths: Collection[str] | None = None,
+    module_for_path: Callable[[str], str | None] | None = None,
 ) -> TestScopeResolution:
     """Resolve the scoped module set and whether a whole-tree run is warranted.
 
@@ -472,6 +473,14 @@ def resolve_test_scope(
             files. Keyword-only, and consulted for one decision only: a changed
             test file is a narrow unit only when it is in this set. The default
             ``None`` establishes no file as existing, so no test file is a unit.
+        module_for_path: An optional ``path -> module | None`` ownership resolver
+            that REPLACES the segment/mapping derivation above. Keyword-only, and
+            for a build skill whose project names its modules by directory rather
+            than by a ``marketplace/bundles/<b>`` segment (Maven's reactor): the
+            caller enumerates its modules and answers ownership itself. A ``None``
+            answer is the same "no owning module" the built-in derivation reports,
+            so the path lands in ``unresolved_paths`` and the run fails closed to
+            the whole tree. The default ``None`` selects the built-in derivation.
 
     Returns:
         A frozen :class:`TestScopeResolution`.
@@ -481,7 +490,14 @@ def resolve_test_scope(
     named_only: set[str] = set()
     unresolved: list[str] = []
     for path in footprint:
-        module = _module_for_path(path, registered_modules)
+        # An injected resolver replaces the marketplace-shaped segment/mapping
+        # derivation; it is how a build skill whose project names modules by
+        # directory (Maven) answers the same question. ``None`` keeps the
+        # derivation this module owns.
+        if module_for_path is not None:
+            module = module_for_path(path)
+        else:
+            module = _module_for_path(path, registered_modules)
         if module is None:
             unresolved.append(path)
             continue
