@@ -9,6 +9,14 @@ before the commit, so a ``snapshot_busy`` refusal left a log line for an
 authorization that never happened. These tests drive the real code path over a
 sandboxed plan directory.
 
+``authorize_refreeze`` carried only half of that treatment: no snapshot guard, so
+a ``write_snapshot`` could consume an authorization whose decision line was never
+written, and a withdrawal that could not tell its own authorization from a newer
+one. Both halves are exercised here, together with the double-fault direction:
+an authorization whose line and whose digest re-record both fail is undone rather
+than left standing, and the snapshot is left reading ``tampered`` so it is refused
+until repaired.
+
 The concurrent tests use a bounded wait so the same test exercises both the
 correct interleaving (reads serialized under the guard) and the defective one
 (reads before the guard) without depending on wall-clock luck.
@@ -24,6 +32,8 @@ from typing import Any
 import _criteria_snapshot as _snap
 import _locks_core
 import plan_logging
+
+from conftest import get_skill_dir
 
 PLAN_ID = 'lb77-authorize-guard-d2'
 FROZEN = ['parser rejects garbage', 'parser accepts input']
@@ -54,9 +64,10 @@ def _snapshot_file(plan_dir: Path) -> Path:
 def test_a_refreeze_landing_before_the_guard_is_not_reverted(plan_context, monkeypatch) -> None:
     """A re-freeze that commits while the authorization waits is never undone.
 
-    The hook fires in the authorization's own read: with the read under the guard
-    the re-freeze is refused (``snapshot_busy``); with the read before the guard
-    it commits and the stale copy must not overwrite it.
+    The hook fires in the authorization's own read. BOTH writers take the same
+    plan-scoped guard, so the nested re-freeze is refused as ``snapshot_busy``; a
+    read before the guard would let it commit, and the stale copy must not
+    overwrite it.
     """
     plan_dir = _plan(plan_context, ['the old criterion'])
     monkeypatch.setattr(_locks_core, '_GUARD_TIMEOUT_SECONDS', 0.2)
@@ -68,9 +79,11 @@ def test_a_refreeze_landing_before_the_guard_is_not_reverted(plan_context, monke
         snapshot = real_read(plan_id)
         if not fired.is_set():
             fired.set()
-            assert _snap.authorize_refreeze(plan_id, 'operator: approve the refined criteria')['status'] == 'success'
-            (plan_dir / 'solution_outline.md').write_text(_outline(['the new criterion']), encoding='utf-8')
-            refreeze.update(_snap.write_snapshot(plan_id))
+            authorized = _snap.authorize_refreeze(plan_id, 'operator: approve the refined criteria')
+            refreeze.update(authorized)
+            if authorized['status'] == 'success':
+                (plan_dir / 'solution_outline.md').write_text(_outline(['the new criterion']), encoding='utf-8')
+                refreeze.update(_snap.write_snapshot(plan_id))
         return snapshot
 
     monkeypatch.setattr(_snap, 'read_snapshot', _read_then_refreeze)
@@ -177,21 +190,62 @@ def test_a_raising_decision_log_withdraws_the_refreeze_authorization(plan_contex
     assert 'refreeze_authorized' not in _snap.integrity_record(PLAN_ID)
 
 
-def test_a_consumed_authorization_is_not_resurrected_by_a_failed_log(plan_context, monkeypatch) -> None:
-    """A re-freeze that consumed the authorization before the log failed wins."""
-    _plan(plan_context)
+def test_a_write_snapshot_started_inside_the_log_window_consumes_nothing(plan_context, monkeypatch) -> None:
+    """A re-freeze that starts in the record-then-log window cannot consume it.
 
-    def _consume_then_fail(*args: Any, **kwargs: Any) -> dict[str, Any]:
-        assert _snap.write_snapshot(PLAN_ID)['status'] == 'success'
+    Both writers take the same plan-scoped snapshot guard, so a ``write_snapshot``
+    begun from inside the decision-log window — the widest point of the window —
+    is refused ``snapshot_busy`` instead of consuming an authorization whose
+    decision line then never lands.
+    """
+    plan_dir = _plan(plan_context)
+    before = _snapshot_file(plan_dir).read_bytes()
+    monkeypatch.setattr(_locks_core, '_GUARD_TIMEOUT_SECONDS', 0.2)
+    observed: dict[str, Any] = {}
+
+    def _refreeze_then_fail(*args: Any, **kwargs: Any) -> dict[str, Any]:
+        observed.update(_snap.write_snapshot(PLAN_ID))
         return {'status': 'error', 'error': 'injected'}
 
-    monkeypatch.setattr(plan_logging, 'log_decision', _consume_then_fail)
+    monkeypatch.setattr(plan_logging, 'log_decision', _refreeze_then_fail)
 
     result = _snap.authorize_refreeze(PLAN_ID, 'operator: approve the refined criteria')
 
     assert result['status'] == 'error', result
-    assert 'already consumed' in result['message']
-    assert _snap.integrity_record(PLAN_ID)['refreeze_authorized'] is False
+    assert result['error'] == 'decision_log_unavailable'
+    assert observed.get('error') == 'snapshot_busy', observed
+    assert _snapshot_file(plan_dir).read_bytes() == before
+    assert 'refreeze_authorized' not in _snap.integrity_record(PLAN_ID)
+
+
+def test_a_newer_authorization_survives_an_older_failed_log(plan_context, monkeypatch) -> None:
+    """A withdrawal removes only the authorization its own call set.
+
+    The newer authorization is installed from inside the log call, which is the
+    one point where a second writer can be observed between this call's record and
+    its withdrawal. Under the identity token the older call leaves it standing and
+    says so; without one it would delete the newer authorization along with its
+    decision line.
+    """
+
+    def _newer_authorization_then_fail(*args: Any, **kwargs: Any) -> dict[str, Any]:
+        def _set_newer(block: dict[str, Any]) -> None:
+            block['refreeze_authorized'] = True
+            block[_snap.REFREEZE_TOKEN_KEY] = 'newer-token'
+
+        assert _snap._merge_integrity(PLAN_ID, _set_newer)
+        return {'status': 'error', 'error': 'injected'}
+
+    _plan(plan_context)
+    monkeypatch.setattr(plan_logging, 'log_decision', _newer_authorization_then_fail)
+
+    result = _snap.authorize_refreeze(PLAN_ID, 'operator: approve the refined criteria')
+
+    assert result['status'] == 'error', result
+    assert 'a newer authorization replaced it' in result['message']
+    record = _snap.integrity_record(PLAN_ID)
+    assert record['refreeze_authorized'] is True
+    assert record[_snap.REFREEZE_TOKEN_KEY] == 'newer-token'
 
 
 def test_a_raising_decision_log_rolls_the_change_authorization_back(plan_context, monkeypatch) -> None:
@@ -237,10 +291,19 @@ def test_a_rollback_does_not_erase_a_newer_commit(plan_context, monkeypatch) -> 
     assert _snap.snapshot_state(PLAN_ID) == 'frozen'
 
 
-def test_a_failed_digest_withdrawal_keeps_the_committed_snapshot(plan_context, monkeypatch) -> None:
-    """When the prior digest cannot be restored, the bytes the record binds stay."""
+def test_a_failed_digest_withdrawal_fails_closed_as_tampered(plan_context, monkeypatch) -> None:
+    """The double fault leaves NO standing authorization, at the cost of a tamper flag.
+
+    The edit is undone, so no authorization stands without a decision line. The
+    status record still binds the committed bytes' digest, which the undo cannot
+    withdraw, so the snapshot reads ``tampered`` and every consumer refuses it
+    until the record is repaired. That is the fail-closed direction: the retired
+    behaviour re-committed the edit so the record matched its bytes, leaving an
+    unlogged authorization usable.
+    """
     plan_dir = _plan(plan_context)
     snapshot_file = _snapshot_file(plan_dir)
+    before = snapshot_file.read_bytes()
     real_record = _snap.record_snapshot_digest
     calls = {'count': 0}
 
@@ -254,7 +317,46 @@ def test_a_failed_digest_withdrawal_keeps_the_committed_snapshot(plan_context, m
     result = _snap.authorize_change(PLAN_ID, 1, FROZEN[0], 'operator: approve the wording')
 
     assert result['status'] == 'error', result
-    assert 'kept' in result['message']
+    assert 'tamper' in result['message']
+    assert snapshot_file.read_bytes() == before
     stored = json.loads(snapshot_file.read_text(encoding='utf-8'))
-    assert [entry['criterion'] for entry in stored['authorized_changes']] == [FROZEN[0]]
-    assert _snap.snapshot_state(PLAN_ID) == 'frozen'
+    assert stored['authorized_changes'] == []
+    assert _snap.snapshot_state(PLAN_ID) == 'tampered'
+
+
+# =============================================================================
+# The outcome vocabulary the code reports is the one its documents state
+# =============================================================================
+
+
+def _frozen_record_bullet() -> str:
+    """The rubric bullet that governs the frozen record, verbatim from the skill."""
+    rubric = (get_skill_dir('plan-marshall', 'phase-6-finalize') / 'standards' / 'review-rubric.md').read_text(
+        encoding='utf-8'
+    )
+    for line in rubric.splitlines():
+        if line.startswith('- A criterion the **frozen record**'):
+            return line
+    raise AssertionError('the frozen-record bullet is missing from review-rubric.md')
+
+
+def test_the_authorization_outcome_vocabulary_matches_its_documents() -> None:
+    """Every reported outcome is documented, and every documented outcome is reported.
+
+    Both failure directions matter: a term the code emits that the documents omit
+    leaves a reader without the state it must act on, and a term the tuple lists
+    that the code never produces documents a state that cannot happen. The module
+    source is checked as well as the tuple, so the tuple cannot drift from the
+    literals the two writers actually report.
+    """
+    source = Path(_snap.__file__).read_text(encoding='utf-8')
+    docstrings = f'{_snap.authorize_change.__doc__}\n{_snap.authorize_refreeze.__doc__}'
+    rubric_bullet = _frozen_record_bullet()
+
+    undocumented = [term for term in _snap.AUTHORIZATION_OUTCOMES if term not in docstrings]
+    unreported = [term for term in _snap.AUTHORIZATION_OUTCOMES if term not in source]
+    unrubricked = [term for term in _snap.AUTHORIZATION_OUTCOMES if term not in rubric_bullet]
+
+    assert not undocumented, f'outcomes the docstrings do not name: {undocumented}'
+    assert not unreported, f'outcomes the module source never reports: {unreported}'
+    assert not unrubricked, f'outcomes the frozen-record rubric bullet does not name: {unrubricked}'

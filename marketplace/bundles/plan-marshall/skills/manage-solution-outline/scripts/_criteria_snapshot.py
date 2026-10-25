@@ -48,6 +48,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import uuid
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from pathlib import Path
@@ -120,6 +121,41 @@ OVERRIDE_HEADS_KEY = 'functional_review_override_heads'
 #: set cannot drift into covering different keys as a third owner-written key is
 #: added.
 PROTECTED_STATUS_METADATA_KEYS: tuple[str, ...] = (INTEGRITY_KEY, OVERRIDE_HEADS_KEY)
+
+#: The key INSIDE the integrity block that carries the identity of the re-freeze
+#: authorization this process set. A withdrawal is conditioned on it, so a failed
+#: decision line removes only ITS OWN authorization and never a newer one another
+#: call has since recorded and logged.
+REFREEZE_TOKEN_KEY = 'refreeze_authorization_token'
+
+#: Every outcome the two authorization writers can report for what became of an
+#: authorization whose decision line could not be written. Single-sourced so the
+#: documents that describe them — ``authorize_change``'s docstring and
+#: ``phase-6-finalize/standards/review-rubric.md`` (the frozen-record finding) —
+#: are checked against the code by a test instead of by a reader's memory:
+#: ``test_the_authorization_outcome_vocabulary_matches_its_documents`` fails when a
+#: term here is missing from either document or from this module's own source.
+#:
+#: Nothing here judges a plan; the terms describe the STATE the artifact and its
+#: record were left in, which is what the operator needs to decide the repair.
+AUTHORIZATION_OUTCOMES: tuple[str, ...] = (
+    # authorize_refreeze: the withdrawal removed the authorization this call set.
+    'withdrawn',
+    'restored',
+    # authorize_refreeze: a re-freeze consumed it first — that decision wins.
+    'already_consumed',
+    # authorize_refreeze: a newer authorization replaced ours; it survives.
+    'superseded',
+    # authorize_refreeze: the withdrawal itself could not be written.
+    'not withdrawn',
+    # _commit_authorization: the edit was undone and its binding restored.
+    'rolled_back',
+    # _commit_authorization: the edit was undone but its binding could not be
+    # withdrawn, so the snapshot reads `tampered` — fail closed.
+    'tamper_flagged',
+    # _commit_authorization: the undo could not be completed at all.
+    'inconsistent',
+)
 
 
 def _status_doc(plan_id: str) -> dict[str, Any] | None:
@@ -308,10 +344,27 @@ def authorize_refreeze(plan_id: str, decision: str, phase: str = '3-outline') ->
     FIRST — its prior value captured in the same guarded merge — and the decision
     line is written only for an authorization that landed: the line used to be
     written before the record, so a record failure left a log line for an
-    authorization the status record does not carry. When the line cannot be
-    written after a successful record, the authorization is withdrawn back to its
-    prior value, conditioned on the value this call set; the result reports
-    whether the withdrawal landed rather than claiming an exact restore.
+    authorization the status record does not carry.
+
+    **The whole record-then-log sequence runs under the plan-scoped snapshot
+    guard**, exactly as ``authorize_change`` does. Without it a ``write_snapshot``
+    could start in the window between the record and the line, consume an
+    authorization whose decision line is never written, and leave a snapshot
+    re-frozen on a decision nobody recorded. With it, that ``write_snapshot``
+    either waits for the guard or is refused as ``snapshot_busy``, and the
+    withdraw-or-log decision below is made on state no other writer can change.
+    The lock order is the one every caller of this module uses: snapshot guard →
+    status guard.
+
+    When the line cannot be written after a successful record, the authorization
+    is withdrawn — **only its own**. The record carries a token this call set, and
+    the withdrawal is conditioned on it, so an authorization another call has
+    since recorded (and logged) survives: the result reports ``superseded`` rather
+    than claiming an exact restore. The other reported states are ``withdrawn``
+    (this call's authorization removed), ``restored`` (returned to the prior
+    authorization this call found), ``already_consumed`` (a re-freeze used it
+    first — that decision wins) and ``not withdrawn`` (the withdrawal itself could
+    not be written).
     """
     if not str(decision or '').strip():
         return {
@@ -320,6 +373,20 @@ def authorize_refreeze(plan_id: str, decision: str, phase: str = '3-outline') ->
             'error': 'decision_required',
             'message': 'a snapshot re-freeze is authorized only by a named operator decision',
         }
+    try:
+        with _snapshot_guard(plan_id):
+            return _authorize_refreeze_locked(plan_id, decision, phase)
+    except TimeoutError:
+        return {
+            'status': 'error',
+            'plan_id': plan_id,
+            'error': 'snapshot_busy',
+            'message': 'another writer holds the criteria snapshot; the authorization was not recorded',
+        }
+
+
+def _authorize_refreeze_locked(plan_id: str, decision: str, phase: str) -> dict[str, Any]:
+    """Record, log and (if the log fails) withdraw one authorization inside the guard."""
     try:
         import plan_logging
     except ImportError as exc:  # pragma: no cover - import-time environment failure
@@ -330,12 +397,18 @@ def authorize_refreeze(plan_id: str, decision: str, phase: str = '3-outline') ->
             'message': f'plan_logging could not be imported ({exc}); the authorization was not recorded',
         }
     already_authorized: dict[str, Any] = {}
+    #: Identifies the authorization THIS call sets. A withdrawal compares it with
+    #: the token on disk and removes only a match, so a newer authorization — and
+    #: the decision line that went with it — survives an older call's failed log.
+    token = uuid.uuid4().hex
 
     def _set_authorized(block: dict[str, Any]) -> None:
         # Capture the prior value in the SAME guarded merge that sets it, so a
         # withdrawal cannot restore a value read from an older document.
         already_authorized['previous'] = block.get('refreeze_authorized')
+        already_authorized['previous_token'] = block.get(REFREEZE_TOKEN_KEY)
         block['refreeze_authorized'] = True
+        block[REFREEZE_TOKEN_KEY] = token
 
     if not _merge_integrity(plan_id, _set_authorized):
         return {
@@ -356,20 +429,27 @@ def authorize_refreeze(plan_id: str, decision: str, phase: str = '3-outline') ->
         outcome: dict[str, str] = {}
 
         def _withdraw(block: dict[str, Any]) -> None:
-            # Best-effort undo, conditioned on the value this call set: a
-            # concurrent write_snapshot may already have consumed the
-            # authorization, and that decision must win. A newer authorization
-            # that also reads True is indistinguishable here; the result names
-            # which state was observed rather than claiming an exact restore.
+            # Best-effort undo of THIS call's authorization only. A newer
+            # authorization carries a different token, so it is left standing with
+            # its own decision line; a consumed one is gone and that decision wins.
+            if block.get(REFREEZE_TOKEN_KEY) != token:
+                outcome['state'] = 'superseded' if block.get('refreeze_authorized') is True else 'already_consumed'
+                return
             if block.get('refreeze_authorized') is not True:
+                # A re-freeze consumed THIS authorization; the re-freeze stands.
+                block.pop(REFREEZE_TOKEN_KEY, None)
                 outcome['state'] = 'already_consumed'
                 return
             previous = already_authorized.get('previous')
+            previous_token = already_authorized.get('previous_token')
+            block.pop(REFREEZE_TOKEN_KEY, None)
             if previous is None:
                 block.pop('refreeze_authorized', None)
                 outcome['state'] = 'withdrawn'
             else:
                 block['refreeze_authorized'] = previous
+                if previous_token is not None:
+                    block[REFREEZE_TOKEN_KEY] = previous_token
                 outcome['state'] = 'restored' if previous else 'withdrawn'
 
         withdrawn = _merge_integrity(plan_id, _withdraw)
@@ -377,6 +457,8 @@ def authorize_refreeze(plan_id: str, decision: str, phase: str = '3-outline') ->
             effect = 'NOT withdrawn; the status record may still authorize it'
         elif outcome.get('state') == 'already_consumed':
             effect = 'not withdrawn: a concurrent re-freeze already consumed it'
+        elif outcome.get('state') == 'superseded':
+            effect = 'not withdrawn: a newer authorization replaced it, and that one stands'
         elif outcome.get('state') == 'restored':
             effect = 'withdrawn back to its prior authorization, so a re-freeze remains authorized'
         else:
@@ -956,7 +1038,14 @@ def authorize_change(
     a ``snapshot_busy`` refusal — which is taken at the guard, before any read —
     writes no line for an authorization that never happened. When the line still
     cannot be written after a successful commit, the authorization is rolled back
-    rather than left as an unlogged edit.
+    rather than left as an unlogged edit — ``rolled_back``. A rollback whose
+    recorded digest cannot be withdrawn fails CLOSED (``tamper_flagged``: the edit
+    is gone, the record still binds it, so the snapshot reads ``tampered`` and is
+    refused until repaired) instead of keeping the edit standing with no decision
+    line, and a rollback that cannot be completed at all reports ``inconsistent``.
+    The whole vocabulary both authorization writers report is declared once in
+    :data:`AUTHORIZATION_OUTCOMES` and held to these docstrings by
+    ``test_the_authorization_outcome_vocabulary_matches_its_documents``.
     """
     if not str(decision or '').strip():
         return {
@@ -1031,7 +1120,18 @@ def _commit_authorization(
     phase: str,
     log_decision: Callable[..., dict[str, Any]],
 ) -> dict[str, Any]:
-    """Rewrite the snapshot with one authorization, re-record its digest, then log it."""
+    """Rewrite the snapshot with one authorization, re-record its digest, then log it.
+
+    The decision line is written only after the commit lands, and a failed line
+    undoes the commit. The outcome vocabulary this can report is the one
+    :data:`AUTHORIZATION_OUTCOMES` declares for this path — ``rolled_back`` when
+    the edit was undone and its binding restored, ``tamper_flagged`` when the edit
+    was undone but the binding could not be withdrawn (the snapshot then reads
+    ``tampered`` and is refused until repaired: fail closed, because the retired
+    alternative left the edit standing with no decision line), and
+    ``inconsistent`` when the undo itself could not be completed — the snapshot or
+    its record may still hold the edit.
+    """
     wanted = normalize_criterion(criterion)
     entries = [
         entry
@@ -1080,18 +1180,24 @@ def _commit_authorization(
         logged = {'status': 'error', 'error': type(exc).__name__, 'message': str(exc)}
     if logged.get('status') != 'success':
         rolled_back = _roll_back_snapshot(path, previous, expected=committed)
-        outcome = 'inconsistent'
-        if rolled_back:
-            if record_snapshot_digest(plan_id):
-                outcome = 'rolled_back'
-            elif _roll_back_snapshot(path, committed, expected=previous):
-                # The status record still binds the COMMITTED bytes (their digest
-                # was recorded above), so leaving the prior bytes in place would
-                # read as tampering. Keep the bytes the record names and report it.
-                outcome = 'kept'
+        if not rolled_back:
+            outcome = 'inconsistent'
+        elif record_snapshot_digest(plan_id):
+            outcome = 'rolled_back'
+        else:
+            # Fail closed. The edit is gone, but the status record still binds the
+            # COMMITTED bytes' digest, so the snapshot reads ``tampered`` and every
+            # consumer refuses it until an operator repairs the record. The retired
+            # branch re-committed the edit instead (``kept``) so the record matched
+            # its bytes — which left an authorization standing with no decision
+            # line, the fail-open this closes.
+            outcome = 'tamper_flagged'
         message = {
             'rolled_back': 'the authorization was rolled back',
-            'kept': 'the authorization was kept: its digest could not be withdrawn, so the snapshot still holds it',
+            'tamper_flagged': (
+                'the authorization was rolled back but its recorded digest could not be withdrawn, so the '
+                'snapshot now reads tampered and must be repaired before it is used again'
+            ),
             'inconsistent': 'the authorization was NOT fully rolled back; the snapshot or its record may hold the edit',
         }[outcome]
         return {
