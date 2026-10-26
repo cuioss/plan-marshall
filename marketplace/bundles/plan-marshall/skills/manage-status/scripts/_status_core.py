@@ -223,8 +223,10 @@ def write_status(
             is the sole intended user: its unconditional full clear is a
             deliberate design decision (an archived plan holds no live
             coordination state worth arbitrating over), not an instance of the
-            race above. The protected keys are carried regardless: their
-            absence is never an intentional clear.
+            race above. THIS flag never touches the protected keys: under
+            ``preserve_title_token=False`` alone they are still carried, because
+            their absence is not an intentional clear there. The flag that DOES
+            clear them deliberately is ``carry_protected_keys`` below.
         carry_protected_keys: When False the caller's document wins wholesale and
             the live protected keys are NOT carried — they are dropped unless the
             caller put them there itself. ``cmd_create`` is the sole intended

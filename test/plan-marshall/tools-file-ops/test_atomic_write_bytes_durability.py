@@ -63,11 +63,11 @@ def test_an_fdopen_failure_leaves_no_open_descriptor_and_no_temp_file(tmp_path: 
 
 
 def test_the_temp_file_is_fsynced_before_the_replace(tmp_path: Path, monkeypatch) -> None:
-    """Durability is ordered: data synced, then renamed, then the rename synced.
+    """Durability is ordered: the FILE synced, then renamed, then the DIRECTORY synced.
 
-    Recorded as a call log so the assertion is on order, not on call counts: an
-    implementation that replaces first and syncs the result has already published
-    bytes a crash can lose.
+    Recorded as a call log with each descriptor classified by ``os.fstat``, so the
+    assertion pins the identity and the order: a directory sync moved before the
+    rename, or the file's sync moved after it, fails.
     """
     target = tmp_path / 'artifact.json'
     target.write_bytes(b'prior\n')
@@ -76,7 +76,7 @@ def test_the_temp_file_is_fsynced_before_the_replace(tmp_path: Path, monkeypatch
     real_fsync = os.fsync
 
     def _record_fsync(fd: int) -> None:
-        events.append(('fsync', fd))
+        events.append(('fsync', 'dir' if stat.S_ISDIR(os.fstat(fd).st_mode) else 'file'))
         real_fsync(fd)
 
     def _record_replace(src: Any, dst: Any, *args: Any, **kwargs: Any) -> None:
@@ -89,8 +89,11 @@ def test_the_temp_file_is_fsynced_before_the_replace(tmp_path: Path, monkeypatch
     atomic_write_bytes(target, b'new\n')
 
     replace_index = next(index for index, event in enumerate(events) if event[0] == 'replace')
-    assert [event for event in events[:replace_index] if event[0] == 'fsync'], events
-    assert [event for event in events[replace_index + 1 :] if event[0] == 'fsync'], events
+    before = [event[1] for event in events[:replace_index] if event[0] == 'fsync']
+    after = [event[1] for event in events[replace_index + 1 :] if event[0] == 'fsync']
+
+    assert before == ['file'], events
+    assert after == ['dir'], events
     assert target.read_bytes() == b'new\n'
 
 

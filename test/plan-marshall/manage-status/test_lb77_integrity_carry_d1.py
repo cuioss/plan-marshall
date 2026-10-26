@@ -329,9 +329,13 @@ def test_a_malformed_override_map_is_refused_without_touching_the_document(plan_
 # The writer list in write_status's docstring stays true
 # =============================================================================
 
-#: ``write_status(`` at the start of a statement — a CALL. Prose and import lines
-#: are excluded, so the scan names only files that commit a whole document.
-_WRITE_CALL_RE = re.compile(r'^\s*write_status\(', re.MULTILINE)
+#: A ``write_status`` CALL, bare or qualified, at any position in a statement.
+#: The seam file itself is excluded by name — its ``def write_status(`` must not
+#: count as a writer, and an import line does not match either pattern.
+_WRITE_CALL_RES = (
+    re.compile(r'^\s*write_status\s*\(', re.MULTILINE),
+    re.compile(r'\.\s*write_status\s*\(', re.MULTILINE),
+)
 
 
 def test_every_full_document_writer_is_named_in_the_write_status_docstring() -> None:
@@ -345,9 +349,9 @@ def test_every_full_document_writer_is_named_in_the_write_status_docstring() -> 
     callers = {
         path.stem
         for path in MARKETPLACE_ROOT.glob('*/skills/*/scripts/*.py')
-        if _WRITE_CALL_RE.search(path.read_text(encoding='utf-8'))
+        if path.name != '_status_core.py'
+        and any(pattern.search(path.read_text(encoding='utf-8')) for pattern in _WRITE_CALL_RES)
     }
-    callers.discard('_status_core')  # the seam itself
 
     def _named(stem: str) -> bool:
         # A word-boundary match, not a substring: `_cmd_loop` is a substring of
@@ -357,3 +361,4 @@ def test_every_full_document_writer_is_named_in_the_write_status_docstring() -> 
     unnamed = sorted(stem for stem in callers if not _named(stem))
 
     assert not unnamed, f'write_status docstring does not name these callers: {unnamed}'
+    assert callers, 'the scan found no write_status caller at all — the pattern or the tree moved'
