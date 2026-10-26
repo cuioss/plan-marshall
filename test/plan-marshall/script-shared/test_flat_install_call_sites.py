@@ -22,6 +22,7 @@ from __future__ import annotations
 import ast
 import json
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
 from _flat_install_fixtures import (
@@ -211,11 +212,11 @@ def test_the_marketplace_authoring_tools_report_the_absent_tree_in_a_flat_instal
     assert Path(results['manifest_repo_root']) == flat_install.parent.parent
 
 
-def _run_behaviour_program(flat_install: Path, project_dir: Path) -> dict:
+def _run_behaviour_program(flat_install: Path, project_dir: Path) -> dict[str, Any]:
     """Import the three authoring modules from the flat tree and collect their answers."""
     completed = run_python_in_flat(flat_install, project_dir, _behaviour_program(flat_install))
     assert completed.returncode == 0, completed.stderr
-    return json.loads(completed.stdout)
+    return cast('dict[str, Any]', json.loads(completed.stdout))
 
 
 def _behaviour_program(flat_root: Path) -> str:
