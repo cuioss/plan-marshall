@@ -201,10 +201,10 @@ _AUTOMATIC_REVIEW_SKILL_MD = resolve_skills_root(Path(__file__)) / 'automatic-re
 
 # Anchor used to render a BUILT-IN standards path as a bundle-relative string in
 # the script output. ``resolve_bundles_root`` identity-walks to the root of the
-# deployed tree this script lives in, and its grandparent is the source-tree root
-# for the two NESTED shapes — ``marketplace/bundles`` -> the checkout, and the
-# versioned plugin cache -> ``~/.claude/plugins`` — so rendered paths start with
-# `marketplace/bundles/…` and match the documented contract. This anchors on
+# deployed tree this script lives in, and its grandparent is the anchor the
+# documented contract names for the two NESTED shapes (the marketplace checkout
+# and the versioned plugin cache), so rendered source-tree paths start with
+# `marketplace/bundles/…`. This anchors on
 # ``Path(__file__)`` on purpose: built-in step docs live in the SAME tree as this
 # script (source or plugin cache), so rendering them relative to that tree's root
 # is correct. It MUST NOT be used to locate PROJECT-LOCAL skills — those live in

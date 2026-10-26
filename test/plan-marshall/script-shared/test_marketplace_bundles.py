@@ -527,7 +527,7 @@ class TestResolveBundlesRootFlatDeployment:
         assert 'NOT an incomplete install' in message
         assert 'skills/plan-marshall-tools-script-executor' in message
         assert 'NOT skills/tools-script-executor' in message
-        assert 'tools-script-executor/SKILL.md' in message, 'the message must point at the one place the rule is stated'
+        assert 'tools-script-executor skill' in message, 'the message must point at the one place the rule is stated'
 
     def test_the_flat_name_rule_is_stated_once_where_the_message_points(self):
         """The documented home of the rule exists and carries the prefixed pattern."""

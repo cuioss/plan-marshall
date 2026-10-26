@@ -204,19 +204,36 @@ def test_the_marketplace_authoring_tools_report_the_absent_tree_in_a_flat_instal
     path that cannot exist. ``_manifest_validation`` keeps its documented
     ``parent.parent`` anchor derivation, with only its relativiser falling back.
     """
-    results = _run_behaviour_program(flat_install, tmp_path)
+    results = _run_behaviour_program(flat_install, _isolated_project(tmp_path))
 
     assert results['plugin_discover_modules'] == []
     assert results['doctor_marketplace_root'] is None
     assert results['extension_marketplace_root'] is None
     assert 'deployed (flat) install' in results['extension_absence']
     assert '--marketplace-root' in results['extension_absence']
+    # The scan's default branch returns its absence envelope — the behaviour, not
+    # just the message constant beside it.
+    assert results['extension_default_result']['status'] == 'error'
+    assert results['extension_default_result']['error'] == 'not_found'
     # The anchor is still ``resolve_bundles_root(...).parent.parent``: a flat root
     # is not special-cased, so the cache shape's derivation cannot drift.
     assert Path(results['manifest_repo_root']) == flat_install.parent.parent
     # ... and its one consumer still falls back to the absolute string for a path
     # the anchor does not contain, which is the documented cache-layout behaviour.
     assert results['render_outside'] == str(_OUTSIDE_PATH)
+
+
+def _isolated_project(tmp_path: Path) -> Path:
+    """Return a project directory whose ANCESTORS hold no marketplace tree.
+
+    ``find_marketplace_root``'s last resort probes ``cwd`` and ``cwd.parent``, so a
+    project placed directly at ``tmp_path`` could be poisoned by a sibling test
+    that happened to create ``marketplace/bundles`` one level up. One directory
+    deeper keeps the negative assertion independent.
+    """
+    project = tmp_path / 'project' / 'checkout'
+    project.mkdir(parents=True)
+    return project
 
 
 def _run_behaviour_program(flat_install: Path, project_dir: Path) -> dict[str, Any]:
@@ -254,6 +271,9 @@ results['extension_marketplace_root'] = (
     None if extension._MARKETPLACE_FROM_SCRIPT is None else str(extension._MARKETPLACE_FROM_SCRIPT)
 )
 results['extension_absence'] = extension._NO_MARKETPLACE_TREE_MESSAGE
+results['extension_default_result'] = extension.cmd_extension(
+    __import__('argparse').Namespace(extension_path=None, bundle_path=None, marketplace_path=None)
+)
 
 manifest = load('plan-marshall', 'manage-execution-manifest', '_manifest_validation.py', 'flat_manifest_validation')
 results['manifest_repo_root'] = str(manifest._REPO_ROOT)

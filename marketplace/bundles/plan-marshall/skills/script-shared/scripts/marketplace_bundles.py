@@ -321,7 +321,8 @@ def resolve_bundles_root(script_file: Path) -> Path:
         f'A flat skill directory is named "<bundle>-<skill>" — so '
         f'skills/plan-marshall-tools-script-executor, NOT skills/tools-script-executor; '
         f'an un-prefixed directory name is a different layout, and reinstalling does not '
-        f'change the shape. See tools-script-executor/SKILL.md § "Deployed (flat) installs".\n'
+        f'change the shape. See the tools-script-executor skill, section '
+        f'"Deployed (flat) installs".\n'
         f'Walked parents:\n  {chain}'
     )
 
