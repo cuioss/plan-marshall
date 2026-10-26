@@ -19,6 +19,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+import deployed_layout
 from _dep_detection import extract_frontmatter
 from file_ops import get_temp_dir
 from marketplace_bundles import resolve_bundles_root
@@ -92,9 +93,13 @@ def find_marketplace_root(marketplace_root_override: str | None = None) -> Path 
     2. ``PM_MARKETPLACE_ROOT`` environment variable — explicit override used
        by callers that cannot rely on script-relative resolution (tests with
        fake marketplaces, CLI invocations against alternate trees).
-    3. Script-relative resolution — walks up from ``__file__`` to the
-       ancestor ``marketplace`` directory. This is the canonical path when
-       the script lives inside a marketplace checkout.
+    3. Script-relative resolution — the root of the deployed tree the script
+       lives in, when that tree is a marketplace SOURCE/cache tree. This is the
+       canonical path when the script lives inside a marketplace checkout or the
+       versioned plugin cache. A FLAT deployment (OpenCode, Antigravity) resolves
+       to the directory holding its ``skills/`` tree, which carries no
+       ``bundles/`` — so it is refused here rather than handed to callers as a
+       bundles directory it is not, and discovery falls through.
     4. cwd fallback — only reached when the script is executed from outside
        a marketplace source tree (e.g. installed plugin cache). Kept last
        so production behavior does not depend on the caller's cwd.
@@ -106,7 +111,10 @@ def find_marketplace_root(marketplace_root_override: str | None = None) -> Path 
 
     Returns:
         Path to the ``bundles/`` directory inside the resolved marketplace
-        root, or ``None`` when no candidate is found.
+        root, or ``None`` when no candidate is found — including on a flat
+        deployed install, which has no marketplace tree at all. Callers report
+        that absence in their own terms (``doctor-marketplace`` answers its
+        ``not_found`` envelope); it is never a crash.
 
     Raises:
         ValueError: When the supplied override (function arg or env var)
@@ -122,8 +130,10 @@ def find_marketplace_root(marketplace_root_override: str | None = None) -> Path 
                 f'(parent of bundles/), but {override_path}/bundles does not exist'
             )
         return bundles_path
-    # Script-relative path is the canonical source-of-truth discovery.
-    if _BUNDLES_FROM_SCRIPT.is_dir():
+    # Script-relative path is the canonical source-of-truth discovery — but only
+    # for a tree that is actually a marketplace tree. A flat deployment carries a
+    # skill root and no bundle directory, so its root is not a candidate.
+    if _BUNDLES_FROM_SCRIPT.is_dir() and not deployed_layout.is_flat_root(_BUNDLES_FROM_SCRIPT):
         return _BUNDLES_FROM_SCRIPT
     # Last-resort cwd fallback for out-of-tree execution (plugin cache).
     cwd = Path.cwd()

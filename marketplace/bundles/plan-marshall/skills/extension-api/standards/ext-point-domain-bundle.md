@@ -90,7 +90,7 @@ def find_extension_path(bundle_dir: Path) -> Path | None:
     """
 ```
 
-`discover_all_extensions()` calls `find_extension_path()` for every bundle directory and loads each resolved `extension.py`. The frontmatter declaration is the only discovery key.
+`discover_all_extensions()` calls `find_extension_path()` for every bundle directory and loads each resolved `extension.py`, then adds the FLAT deployment's implementors through `discover_flat_extensions()` (identity-attributed, same `implements:` key). The frontmatter declaration is the only discovery key.
 
 ## Resolution
 

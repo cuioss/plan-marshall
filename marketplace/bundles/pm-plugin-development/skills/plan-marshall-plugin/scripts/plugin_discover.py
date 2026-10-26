@@ -25,6 +25,12 @@ Note: This extension is specific to the plan-marshall marketplace.
 It only provides modules when marketplace.json name is 'plan-marshall'.
 Other Python projects are handled by pm-dev-python instead.
 
+On a FLAT deployed install (OpenCode, Antigravity) the walk that roots this
+module lands on the deploy directory, which carries no marketplace tree at all.
+The module still imports — its extension-api scripts resolve through the flat
+layout — and discovery answers with its own terms: an empty module list, the
+same answer it gives for any project that is not this marketplace.
+
 Usage:
     python3 plugin_discover.py discover --root /path/to/project
 

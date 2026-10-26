@@ -226,6 +226,7 @@ A finalize-step declaration is discovered from exactly these locations:
 | `phase-6-finalize/workflow/*.md` | Built-in (`default:{bare}`) | Wins on name collision with a `standards/` doc of the same bare name. |
 | `phase-6-finalize/standards/*.md` | Built-in (`default:{bare}`) | Yields to a `workflow/` doc of the same bare name. |
 | Opt-in bundle `skills/*/SKILL.md` | Bundle-optional (`{bundle}:{skill}`) | n/a — full bundle:skill name is unique. |
+| Flat deployed `{root}/skills/{bundle}-{skill}/SKILL.md` (OpenCode, Antigravity) | Bundle-optional (`{bundle}:{skill}`), attributed from the emitted identity | n/a — the identity records the pair, so the dash-joined name is never split. |
 | Project-local `.claude/skills/finalize-step-*/SKILL.md` | Project (`project:finalize-step-{bare}`) | n/a — project namespace is unique. |
 
 The `workflow/` ⇒ `standards/` precedence rule mirrors `configurable_contract.resolve_step_doc_path`: when a built-in step has both a `workflow/{name}.md` and a `standards/{name}.md`, the `workflow/` doc is the canonical body and carries the frontmatter declaration. (In practice each built-in step has exactly one of the two; `push`, for example, lives only at `standards/push.md` with `name: default:push`, so no precedence conflict arises.)

@@ -49,6 +49,19 @@ Script execution notation: `{bundle}:{skill}:{script}`
 | `plan-marshall:build-maven:maven` |
 | `plan-marshall:tools-integration-ci:ci` |
 
+## Deployed (flat) installs
+
+A flat deployment puts one dash-joined directory per skill under the target's
+skill root; the deployed layout itself is stated once per target — see
+`plan-marshall-opencode:target-rules` § "Deployed Flat Layout" (and the
+Antigravity equivalent). What matters when a script cannot find its root: a
+plan-marshall script lives at `{root}/skills/plan-marshall-{skill}/scripts/`,
+**never** at `skills/{skill}`. An un-prefixed directory name is not this layout,
+and probing one reports a missing install that is not missing. A source checkout
+and the Claude Code plugin cache are unchanged: both keep
+`{bundle}/skills/{skill}/`, and the flat tree is the only shape with no `{bundle}/`
+directory at all.
+
 ## Examples
 
 ```bash

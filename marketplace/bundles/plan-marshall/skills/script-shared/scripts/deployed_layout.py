@@ -236,6 +236,22 @@ def is_bundle_skill_root(path: Path) -> bool:
     return (path.parent / '.claude-plugin' / 'plugin.json').is_file()
 
 
+def is_flat_skill_root(path: Path) -> bool:
+    """Return whether ``path`` IS a flat skill root in its own right.
+
+    A flat skill root is a directory named by :data:`SKILL_ROOT_NAMES` whose
+    parent carries no bundle marker — that is, the ``skills/`` (or generated
+    ``skill/``) directory a flat deployment puts its ``{bundle}-{skill}``
+    directories under. A NESTED bundle's own ``skills/`` directory is excluded
+    (:func:`is_bundle_skill_root`): its children are bare skill names.
+
+    The single spelling of the predicate. Both the root resolver
+    (``marketplace_bundles.resolve_bundles_root``) and :func:`skill_roots` consult
+    it, so the two cannot disagree about which directories count.
+    """
+    return path.name in SKILL_ROOT_NAMES and path.is_dir() and not is_bundle_skill_root(path)
+
+
 def skill_roots(root: Path) -> list[Path]:
     """Return the skill-root directories ``root`` actually carries, in probe order.
 
@@ -251,12 +267,12 @@ def skill_roots(root: Path) -> list[Path]:
       nothing on the base that ships.
 
     A NESTED bundle's own ``skills/`` directory is not a flat skill root and is
-    never returned for the second form (:func:`is_bundle_skill_root`). A root
+    never returned for the second form (:func:`is_flat_skill_root`). A root
     carrying neither yields an empty list, which every caller here reads as "this
     root does not deploy the flat shape" and falls through from.
     """
     roots: list[Path] = []
-    if root.name in SKILL_ROOT_NAMES and root.is_dir() and not is_bundle_skill_root(root):
+    if is_flat_skill_root(root):
         roots.append(root)
     roots.extend(root / name for name in SKILL_ROOT_NAMES if (root / name).is_dir())
     return roots

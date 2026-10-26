@@ -370,5 +370,35 @@ def test_contract_validation_filter_by_type():
 
 
 # =============================================================================
+# Default-branch scan root
+# =============================================================================
+
+
+def test_default_scan_passes_the_marketplace_root_not_the_bundles_dir(monkeypatch, tmp_path):
+    """``find_marketplace_root`` answers with ``bundles/``; the scan appends its own.
+
+    Handing the bundles directory through unchanged made the default scan probe
+    ``bundles/bundles`` and report the tree missing in every source checkout.
+    """
+    import _doctor_shared
+
+    bundles = tmp_path / 'marketplace' / 'bundles'
+    bundles.mkdir(parents=True)
+    seen: list[Path] = []
+
+    def _fake_scan(root):
+        seen.append(Path(root))
+        return {'summary': {'total_bundles': 0, 'with_extension': 0, 'valid': 0, 'invalid': 0, 'issues': 0}}
+
+    monkeypatch.setattr(_doctor_shared, 'find_marketplace_root', lambda *args: bundles)
+    monkeypatch.setattr(_cmd_extension_mod, 'scan_extensions', _fake_scan)
+
+    result = cmd_extension(_ns(_EXTENSION_NS, extension_path=None, bundle_path=None, marketplace_path=None))
+
+    assert result['status'] == 'success'
+    assert seen == [tmp_path / 'marketplace']
+
+
+# =============================================================================
 # Main
 # =============================================================================
