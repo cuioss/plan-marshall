@@ -252,6 +252,15 @@ derive, for rows still live.
   its newest, ordered numerically; D3 the other shapes keep their PYTHONPATH and a guard keeps one version per skill ahead;
   D4 the reproduction with eight cached versions. A regression of PLAN-LB-94 D3. Emit it first.
 
+- **PLAN-LB-96** (staged 2026-10-26, widened the same day to four deliverables, WS-04, runbook, **critical**): a flat OpenCode
+  install works end to end. D1 `resolve_bundles_root` gains a flat leg after the two nested probes; D2 the six import-time call
+  sites import in a marker-less flat tree and a guard covers every call site; D3 the failure message names the flat shape and
+  the flat directory pattern; D4 extension discovery finds the domain bundles in a flat tree (the OpenCode and Antigravity
+  emitters deploy `implements:`, and discovery enumerates the flat root through the recorded identity), so module discovery
+  and the build commands resolve. Found when a lane on the operator's second machine stopped at `runbook_lane resolve`, then
+  at empty `architecture modules`. Shares `test/plan-marshall/script-shared/` with the held PLAN-LB-93; no file with the
+  running plans.
+
 - **PLAN-LB-93** (staged 2026-10-25, WS-04, runbook, **high**; widened the same day by operator instruction to one plan for
   four defects, six deliverables): D1-D2 the executor generator and four sibling entry scripts start in the flat OpenCode
   install, so the recovery command an `executor_target_mismatch` refusal prints is runnable (found when that exact command
@@ -515,6 +524,21 @@ derive, for rows still live.
 
 ## Decisions
 
+- 2026-10-26 — **PLAN-LB-96 staged at critical priority: a flat OpenCode install cannot resolve its bundles root.**
+  Operator, asking whether PLAN-LB-95 fixes the second machine's `resolve_bundles_root` failure, then "stage it". It does not:
+  LB-95 bounds the nested-cache PYTHONPATH; this is the flat layout, where `resolve_bundles_root` (`marketplace_bundles.py`
+  L246-287) has no flat leg and six call sites raise at import time. Reproduced against the freshly generated OpenCode tree
+  (all six raise). This machine's installed tree hides it through a hand-made `plan-marshall/.claude-plugin/plugin.json` shim
+  that nothing in the repository writes. The fix reuses `deployed_layout`'s flat vocabulary and leaves the nested probes first.
+  PLAN-LB-93 D2 does not cover these scripts. A first probe reported `plugin_discover` failing on `_build_discover`; that was a
+  probe artifact (the module sits in a subdirectory the probe did not add), corrected in the spec.
+- 2026-10-26 — **PLAN-LB-96 widened to four deliverables: extension discovery in a flat install.** Operator: "that is to
+  complicated. Widen the plan now and we will continue when it landed". With the bundle marker in place the second machine's lane
+  passed `resolve_bundles_root` and stopped at `find_extension_path` finding no bundle (`architecture modules` empty, no
+  `quality-gate`, no `verify`). Two causes read in the code: `discover_all_extensions` and `_scan_skills_roots_for_implementors`
+  treat each directory under the root as a bundle, and the OpenCode and Antigravity emitters do not deploy the `implements:`
+  declaration `find_extension_path` reads. D4 fixes both. The operator's own instruction is to wait for the plan to land rather
+  than keep working around it on that machine; the environment-variable and Claude-Code fallbacks were offered and not taken.
 - 2026-10-25 — **PLAN-LB-95 staged at critical priority: the PLAN-LB-94 executor puts all cached plugin versions on PYTHONPATH.**
   Operator, after meeting the failure on a second machine: "analyze carefully and create a plan for fixing with the highest
   prio". Analysis: the cause the machine reported is confirmed in the template (`_same_root_script_dirs` L588-621, introduced
@@ -998,6 +1022,16 @@ derive, for rows still live.
   full `module-tests` run is a third writer (every `generate_executor` verb ran through the main executor at 08:04:51Z to
   08:05:46Z); both folded into PLAN-LB-94. Workaround until it ships: after a mismatch, regenerate with
   the repository-source generator (`recover --target claude` for the orchestrator), expecting the lane to flip it back.
+- **CRITICAL — a flat OpenCode install cannot resolve its bundles root (found 2026-10-26 on the operator's second machine;
+  owner PLAN-LB-96, staged).** `resolve_bundles_root` accepts only the marketplace and versioned-cache shapes, so six
+  import-time call sites (`_cmd_client_build`, `_config_core`, `_manifest_validation`, `plugin_discover`, `_doctor_shared`,
+  `_cmd_extension`) raise `could not locate a 'plan-marshall' bundle` and `runbook_lane resolve` never starts. Reproduced against
+  the generated tree; masked here by a hand-made bundle-identity shim in `~/.config/opencode/skills/plan-marshall/`. Behind it,
+  extension discovery finds no bundle in a flat tree (`architecture modules` empty, no `quality-gate` or `verify`): the
+  discovery loops treat each directory as a bundle and the OpenCode and Antigravity emitters do not deploy `implements:`.
+  Workaround on the affected machine: create `~/.config/opencode/skills/plan-marshall/.claude-plugin/plugin.json` (name
+  `plan-marshall`, a version, a description) and export `PM_MARKETPLACE_ROOT` at a plan-marshall checkout (untested); both
+  hide the defect. The operator chose to wait for the plan to land.
 - **CRITICAL — the generated executor puts every cached plugin version on PYTHONPATH, oldest first (found 2026-10-25 on the
   operator's second machine; regression of PLAN-LB-94 D3, #1861; owner PLAN-LB-95, staged).** `_same_root_script_dirs`
   (`execute-script.py.template` L588-621) globs the whole install root and sorts the result as strings, so a script from
