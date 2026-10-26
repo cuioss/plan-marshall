@@ -2,10 +2,10 @@
   "id": "PLAN-LB-95",
   "slug": "executor-pythonpath-own-version",
   "workstream": "WS-04",
-  "status": "running",
+  "status": "shipped",
   "lane": "runbook",
-  "plan_marshall_plan_id": "",
-  "pr": "",
-  "landing": "",
+  "plan_marshall_plan_id": "rb-lb-95-executor-pythonpath-own-version",
+  "pr": "1865",
+  "landing": "landings/PLAN-LB-95.md",
   "seq": 95
 }
