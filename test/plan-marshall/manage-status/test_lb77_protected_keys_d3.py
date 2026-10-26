@@ -42,23 +42,24 @@ def _metadata(plan_dir: Path) -> dict:
 
 
 def test_the_protected_set_is_exactly_the_keys_a_verb_writes_at_top_level(plan_context) -> None:
-    """Derived from what the owning verbs actually write, not from a pinned literal.
+    """Derived from the metadata delta produced by the owning verbs.
 
     Each protected key has an owner that writes it at the TOP level of
     ``status.metadata``; ``snapshot_frozen`` is an inner key of the
     ``criteria_integrity`` block, so no verb writes it there. The test runs the two
-    owners and compares the guard's set with the keys that appeared: a key added to
-    the guard with no owning writer fails it. (An owner added with no guard entry is
-    NOT covered here — the candidate set below is what bounds the comparison.)
+    owners and compares the guard's set with the top-level keys whose value is NEW
+    or CHANGED — not with a hard-coded candidate list, so an owner that writes a new
+    key with no guard entry fails it too. The unchanged ``use_worktree`` seed key is
+    excluded by construction. Only the owners invoked here are covered.
     """
     plan_dir = _plan(plan_context)
+    before = _metadata(plan_dir)
     assert _snap.write_snapshot(PLAN_ID)['status'] == 'success'
     changed, error = _loop_back._record_override_head(PLAN_ID, _loop_back.FUNCTIONAL_REVIEW_STEP, HEAD)
     assert (changed, error) == (True, None)
 
-    metadata = _metadata(plan_dir)
-    candidates = {_snap.INTEGRITY_KEY, _snap.OVERRIDE_HEADS_KEY, _snap.SNAPSHOT_FROZEN_KEY}
-    written_at_top_level = candidates & set(metadata)
+    after = _metadata(plan_dir)
+    written_at_top_level = {key for key, value in after.items() if key not in before or before[key] != value}
 
     assert written_at_top_level == {_snap.INTEGRITY_KEY, _snap.OVERRIDE_HEADS_KEY}
     assert _query.PROTECTED_METADATA_FIELDS == written_at_top_level

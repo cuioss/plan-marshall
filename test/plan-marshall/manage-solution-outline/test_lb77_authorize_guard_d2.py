@@ -496,8 +496,8 @@ def test_the_authorization_outcome_vocabulary_matches_its_documents() -> None:
     docstrings = f'{_snap.authorize_change.__doc__}\n{_snap.authorize_refreeze.__doc__}'
     rubric_bullet = _frozen_record_bullet()
 
-    undocumented = [term for term in _snap.AUTHORIZATION_OUTCOMES if term not in docstrings]
-    unrubricked = [term for term in _snap.AUTHORIZATION_OUTCOMES if term not in rubric_bullet]
+    undocumented = [term for term in _snap.AUTHORIZATION_OUTCOMES if f'`{term}`' not in docstrings]
+    unrubricked = [term for term in _snap.AUTHORIZATION_OUTCOMES if f'`{term}`' not in rubric_bullet]
 
     assert not undocumented, f'outcomes the docstrings do not name: {undocumented}'
     assert not unrubricked, f'outcomes the frozen-record rubric bullet does not name: {unrubricked}'
