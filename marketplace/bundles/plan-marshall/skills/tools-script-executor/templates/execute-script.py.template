@@ -603,9 +603,8 @@ def _is_version_segment(_name: str) -> bool:
     """Return whether a path segment names a version directory.
 
     A version carries a number (``0.1.2010``), which ``_version_key`` reads. A
-    dot-prefixed name is accepted too: it is version-shaped by convention and
-    never a bundle name, and treating it as one is what keeps a hand-authored
-    hidden path off the root-wide walk.
+    dot-prefixed segment counts too — it is version-shaped by convention, and a
+    bundle directory is never dot-prefixed.
     """
     return bool(_version_key(_name)) or _name.startswith('.')
 
@@ -619,13 +618,12 @@ def _version_dir_of(_path: str, _root: str) -> tuple[str | None, str | None]:
     - ``{root}/{bundle}/{version}/skills/{skill}/scripts/...`` -> ``(version, bundle)``
     - ``{root}/{version}/skills/{skill}/scripts/...`` -> ``(version, None)``
 
-    A segment is read as a version when :func:`_version_key` finds a number in
-    it, or when it is hidden — a dot-prefixed directory is version-shaped by
-    convention and never a bundle name. So an unversioned
-    ``{root}/{bundle}/skills/...`` path is not mistaken for one. A flat
-    ``{root}/{bundle}-{skill}/scripts/...`` path has no ``skills`` segment at all.
-    Both answer ``(None, None)``, as does a path outside ``_root``; those keep the
-    root-wide walk.
+    Every bundle name in this marketplace is digit-free and undotted, so the
+    single-segment form's bundle position is not read as a version and an
+    unversioned ``{root}/{bundle}/skills/...`` path answers ``(None, None)``. A
+    flat ``{root}/{bundle}-{skill}/scripts/...`` path has no ``skills`` segment at
+    all. Both answer ``(None, None)``, as does a path outside ``_root``; those
+    keep the root-wide walk.
 
     A HIDDEN segment still answers its version, so the walk for such a path stays
     scoped to that version instead of reopening the root-wide walk that would
@@ -686,7 +684,8 @@ def _version_script_dirs(_root: str, _version: str, _bundle: str | None) -> list
     from the version the SCRIPT belongs to and an older cached copy of the same
     bundle can never shadow it. A bundle that carries no directory at
     ``_version`` is not installed at it, so it contributes its NEWEST version
-    instead, selected by :func:`_version_key` rather than by a string sort.
+    instead — or nothing at all, when it carries no version directory either.
+    The choice is made by :func:`_version_key`, never by a string sort.
 
     Newest, not "newest at or below ``_version``": there is no copy of that
     bundle at the script's own version to prefer, so the choice is between the

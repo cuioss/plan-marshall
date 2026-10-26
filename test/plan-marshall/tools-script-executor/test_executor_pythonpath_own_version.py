@@ -9,8 +9,9 @@ older version either lacks a symbol the script needs (``ImportError``) or
 silently runs older code. Each case renders the real executor template into a
 project whose executor sits outside any marketplace tree, so resolution has to
 come from the fixture cache; the generating checkout's own script dirs ride
-along last, which is why every fixture module and skill name here is
-fixture-only — nothing in the real tree can satisfy these imports by accident.
+along last, so the fixture MODULE name is what keeps the real tree from
+satisfying these imports by accident (`platform-runtime` is a real skill, so the
+skill name alone would not).
 """
 
 from __future__ import annotations
@@ -65,7 +66,9 @@ def _helper_body(version: str) -> str:
     return f"VERSION = '{version}'\n{marker}"
 
 
-def _generate(monkeypatch: pytest.MonkeyPatch, plan_dir: Path, cache: Path) -> Path:
+def _generate(
+    monkeypatch: pytest.MonkeyPatch, plan_dir: Path, cache: Path, mappings: dict[str, str] | None = None
+) -> Path:
     """Generate a real executor whose only known install root is ``cache``."""
     plan_dir.mkdir(parents=True, exist_ok=True)
     monkeypatch.setenv('PLAN_BASE_DIR', str(plan_dir))
@@ -74,7 +77,7 @@ def _generate(monkeypatch: pytest.MonkeyPatch, plan_dir: Path, cache: Path) -> P
     monkeypatch.setenv('CLAUDE_CODE_SESSION_ID', '1')
     monkeypatch.setattr(ge, 'installed_harness_roots', lambda: [('claude', str(cache))])
     monkeypatch.setattr(ge, 'installed_harness_versions', lambda _roots=None: [('claude', _NEWEST)])
-    result = ge.generate_executor({}, MARKETPLACE_ROOT, dry_run=False, target='claude')
+    result = ge.generate_executor(mappings or {}, MARKETPLACE_ROOT, dry_run=False, target='claude')
     assert result['status'] == 'success', result
     executor = plan_dir / 'execute-script.py'
     assert executor.is_file()
@@ -229,6 +232,27 @@ def test_d3_the_version_direct_nested_shape_uses_the_scripts_version(tmp_path, m
     assert result.returncode == 0, result.stdout + result.stderr
     pythonpath = ':'.join(_pythonpath(result))
     assert str((cache / _NEWEST).resolve()) in pythonpath, pythonpath
+    assert '0.1.1916' not in pythonpath, pythonpath
+
+
+def test_d3_a_hidden_version_path_keeps_its_own_version(tmp_path, monkeypatch):
+    """A script reached from a hidden version dir is served that version, not the visible one."""
+    cache = tmp_path / 'cache'
+    hidden_script = _cached(cache, 'plan-marshall', '.hidden-version', 'probe', 'tool', _IMPORT_PROBE)
+    _cached(cache, 'plan-marshall', '.hidden-version', 'platform-runtime', _HELPER, _helper_body(_NEWEST))
+    _cached(cache, 'plan-marshall', '0.1.1916', 'platform-runtime', _HELPER, _helper_body('0.1.1916'))
+    executor = _generate(
+        monkeypatch,
+        tmp_path / 'project' / '.plan',
+        cache,
+        mappings={'plan-marshall:probe:tool': str(hidden_script)},
+    )
+
+    result = _run(executor, ['plan-marshall:probe:tool'])
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    pythonpath = ':'.join(_pythonpath(result))
+    assert '.hidden-version' in pythonpath, pythonpath
     assert '0.1.1916' not in pythonpath, pythonpath
 
 
