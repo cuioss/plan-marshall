@@ -262,6 +262,35 @@ def test_a_failed_log_restores_a_prior_authorization(plan_context, monkeypatch) 
     assert _snap.integrity_record(PLAN_ID)['refreeze_authorized'] is True
 
 
+def test_a_prior_unlogged_authorization_is_not_restored(plan_context, monkeypatch) -> None:
+    """Only a prior authorization whose own line landed may be restored.
+
+    Emulates the two-call double fault: the record already holds an authorization
+    that is still PENDING (its line never landed), and this call's line fails too.
+    Restoring the pending one would put a decision back on the record whose line was
+    never written — the fail-open this whole treatment exists to close — so the
+    withdrawal clears the record instead of restoring it.
+    """
+    _plan(plan_context)
+
+    def _pending_prior(block: dict[str, Any]) -> None:
+        block['refreeze_authorized'] = True
+        block[_snap.REFREEZE_TOKEN_KEY] = 'older-token'
+        block[_snap.REFREEZE_PENDING_KEY] = True
+
+    assert _snap._merge_integrity(PLAN_ID, _pending_prior)
+    monkeypatch.setattr(plan_logging, 'log_decision', lambda *args, **kwargs: {'status': 'error', 'error': 'injected'})
+
+    result = _snap.authorize_refreeze(PLAN_ID, 'operator: approve the refined criteria')
+
+    assert result['status'] == 'error', result
+    assert 'prior authorization' not in result['message']
+    record = _snap.integrity_record(PLAN_ID)
+    assert 'refreeze_authorized' not in record
+    assert _snap.REFREEZE_TOKEN_KEY not in record
+    assert _snap.REFREEZE_PENDING_KEY not in record
+
+
 def test_a_withdrawal_that_cannot_be_written_is_reported_as_not_withdrawn(plan_context, monkeypatch) -> None:
     """A failed withdrawal is never reported as one that landed."""
     _plan(plan_context)

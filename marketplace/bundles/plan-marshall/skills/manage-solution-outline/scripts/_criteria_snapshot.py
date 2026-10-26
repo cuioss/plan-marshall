@@ -128,6 +128,15 @@ PROTECTED_STATUS_METADATA_KEYS: tuple[str, ...] = (INTEGRITY_KEY, OVERRIDE_HEADS
 #: call has since recorded and logged.
 REFREEZE_TOKEN_KEY = 'refreeze_authorization_token'
 
+#: The key INSIDE the integrity block marking an authorization whose decision line
+#: has NOT been written yet. A call sets it with its authorization and clears it
+#: once the line lands; a withdrawal that finds a PRIOR authorization still
+#: carrying it must not restore that authorization, because doing so would put a
+#: decision back on the record whose line was never written — the fail-open this
+#: module exists to close. The marker is what makes a restoration safe across two
+#: calls whose lines both fail, including inside the guard's stale-reclaim window.
+REFREEZE_PENDING_KEY = 'refreeze_authorization_pending'
+
 #: Every outcome the two authorization writers can report for what became of an
 #: authorization whose decision line could not be written. Single-sourced so the
 #: documents that describe them — ``authorize_change``'s docstring and
@@ -302,9 +311,11 @@ def record_snapshot_digest(plan_id: str, *, consume_refreeze: bool = False) -> b
     def _consume(block: dict[str, Any]) -> None:
         block.update(fields)
         # The identity token names an authorization that no longer exists once the
-        # re-freeze it permitted has consumed it; leaving it behind makes the record
-        # describe a live authorization to every later reader.
+        # re-freeze it permitted has consumed it; leaving it (or a pending marker)
+        # behind makes the record describe a live authorization to every later
+        # reader.
         block.pop(REFREEZE_TOKEN_KEY, None)
+        block.pop(REFREEZE_PENDING_KEY, None)
 
     return _merge_integrity(plan_id, _consume)
 
@@ -369,11 +380,17 @@ def authorize_refreeze(plan_id: str, decision: str, phase: str = '3-outline') ->
     is withdrawn — **only its own**. The record carries a token this call set, and
     the withdrawal is conditioned on it, so an authorization another call has
     since recorded (and logged) survives: the result reports ``superseded`` rather
-    than claiming an exact restore. The other reported states are ``withdrawn``
-    (this call's authorization removed), ``restored`` (returned to the prior
-    authorization this call found), ``already_consumed`` (a re-freeze used it
-    first — that decision wins) and ``not withdrawn`` (the withdrawal itself could
-    not be written).
+    than claiming an exact restore. A PRIOR authorization is restored only when its
+    own decision line had already landed: the record marks an authorization as
+    pending until that line is written, and a withdrawal that found one still
+    pending does not put it back, because doing so would resurrect a decision whose
+    line was never written. That is the failure two calls can produce when both of
+    their lines fail inside the guard's stale-reclaim window, and it is the
+    fail-open this function is guarded against. The other reported states are
+    ``withdrawn`` (this call's authorization removed), ``restored`` (returned to the
+    prior, logged authorization this call found), ``already_consumed`` (a re-freeze
+    used it first — that decision wins) and ``not withdrawn`` (the withdrawal itself
+    could not be written).
     """
     if not str(decision or '').strip():
         return {
@@ -413,11 +430,16 @@ def _authorize_refreeze_locked(plan_id: str, decision: str, phase: str) -> dict[
 
     def _set_authorized(block: dict[str, Any]) -> None:
         # Capture the prior value in the SAME guarded merge that sets it, so a
-        # withdrawal cannot restore a value read from an older document.
+        # withdrawal cannot restore a value read from an older document. Whether
+        # that prior value was itself a LANDED decision is captured with it: an
+        # authorization still marked pending has no decision line, so restoring it
+        # would resurrect an unlogged decision.
         already_authorized['previous'] = block.get('refreeze_authorized')
         already_authorized['previous_token'] = block.get(REFREEZE_TOKEN_KEY)
+        already_authorized['previous_pending'] = bool(block.get(REFREEZE_PENDING_KEY))
         block['refreeze_authorized'] = True
         block[REFREEZE_TOKEN_KEY] = token
+        block[REFREEZE_PENDING_KEY] = True
 
     if not _merge_integrity(plan_id, _set_authorized):
         return {
@@ -434,51 +456,66 @@ def _authorize_refreeze_locked(plan_id: str, decision: str, phase: str) -> dict[
         )
     except Exception as exc:  # a log call that raised is a failed log, not a reason to skip the withdrawal
         logged = {'status': 'error', 'error': type(exc).__name__, 'message': str(exc)}
-    if logged.get('status') != 'success':
-        outcome: dict[str, str] = {}
+    if logged.get('status') == 'success':
+        # The decision line landed, so this authorization is no longer pending. The
+        # token check keeps a late success from clearing a NEWER call's marker: the
+        # guard's stale-reclaim window can let a successor record behind this one.
+        def _line_landed(block: dict[str, Any]) -> None:
+            if block.get(REFREEZE_TOKEN_KEY) == token:
+                block.pop(REFREEZE_PENDING_KEY, None)
 
-        def _withdraw(block: dict[str, Any]) -> None:
-            # Best-effort undo of THIS call's authorization only. The token decides:
-            # a newer authorization carries a different one and is left standing with
-            # its own decision line, and a re-freeze that consumed ours clears the
-            # token in the same merge that sets `refreeze_authorized` false
-            # (`record_snapshot_digest`), so both cases read as "not ours any more".
-            if block.get(REFREEZE_TOKEN_KEY) != token:
-                outcome['state'] = 'superseded' if block.get('refreeze_authorized') is True else 'already_consumed'
-                return
-            previous = already_authorized.get('previous')
-            previous_token = already_authorized.get('previous_token')
-            block.pop(REFREEZE_TOKEN_KEY, None)
-            if previous is None:
-                block.pop('refreeze_authorized', None)
-                outcome['state'] = 'withdrawn'
-            else:
-                block['refreeze_authorized'] = previous
-                if previous_token is not None:
-                    block[REFREEZE_TOKEN_KEY] = previous_token
-                outcome['state'] = 'restored' if previous else 'withdrawn'
+        _merge_integrity(plan_id, _line_landed)
+        return {'status': 'success', 'plan_id': plan_id, 'refreeze_authorized': True}
+    outcome: dict[str, str] = {}
 
-        withdrawn = _merge_integrity(plan_id, _withdraw)
-        if not withdrawn:
-            effect = 'NOT withdrawn; the status record may still authorize it'
-        elif outcome.get('state') == 'already_consumed':
-            effect = 'not withdrawn: a concurrent re-freeze already consumed it'
-        elif outcome.get('state') == 'superseded':
-            effect = 'not withdrawn: a newer authorization replaced it, and that one stands'
-        elif outcome.get('state') == 'restored':
-            effect = 'withdrawn back to its prior authorization, so a re-freeze remains authorized'
+    def _withdraw(block: dict[str, Any]) -> None:
+        # Best-effort undo of THIS call's authorization only. The token decides:
+        # a newer authorization carries a different one and is left standing with
+        # its own decision line, and a re-freeze that consumed ours clears the
+        # token in the same merge that sets `refreeze_authorized` false
+        # (`record_snapshot_digest`), so both cases read as "not ours any more".
+        if block.get(REFREEZE_TOKEN_KEY) != token:
+            outcome['state'] = 'superseded' if block.get('refreeze_authorized') is True else 'already_consumed'
+            return
+        previous = already_authorized.get('previous')
+        previous_token = already_authorized.get('previous_token')
+        prior_was_pending = bool(already_authorized.get('previous_pending'))
+        block.pop(REFREEZE_TOKEN_KEY, None)
+        block.pop(REFREEZE_PENDING_KEY, None)
+        if previous is None or prior_was_pending:
+            # Either there was no prior authorization, or the one we found was still
+            # waiting for ITS decision line. Restoring the latter would put a
+            # decision back on the record whose line was never written — exactly the
+            # fail-open this function is guarded against, and reachable when two
+            # calls both fail inside the guard's stale-reclaim window.
+            block.pop('refreeze_authorized', None)
+            outcome['state'] = 'withdrawn'
         else:
-            effect = 'withdrawn'
-        return {
-            'status': 'error',
-            'plan_id': plan_id,
-            'error': 'decision_log_unavailable',
-            'message': (
-                f'the operator decision could not be logged ({_log_failure_reason(logged)}), so the '
-                'authorization was ' + effect
-            ),
-        }
-    return {'status': 'success', 'plan_id': plan_id, 'refreeze_authorized': True}
+            block['refreeze_authorized'] = previous
+            if previous_token is not None:
+                block[REFREEZE_TOKEN_KEY] = previous_token
+            outcome['state'] = 'restored' if previous else 'withdrawn'
+
+    withdrawn = _merge_integrity(plan_id, _withdraw)
+    if not withdrawn:
+        effect = 'NOT withdrawn; the status record may still authorize it'
+    elif outcome.get('state') == 'already_consumed':
+        effect = 'not withdrawn: a concurrent re-freeze already consumed it'
+    elif outcome.get('state') == 'superseded':
+        effect = 'not withdrawn: a newer authorization replaced it, and that one stands'
+    elif outcome.get('state') == 'restored':
+        effect = 'withdrawn back to its prior authorization, so a re-freeze remains authorized'
+    else:
+        effect = 'withdrawn'
+    return {
+        'status': 'error',
+        'plan_id': plan_id,
+        'error': 'decision_log_unavailable',
+        'message': (
+            f'the operator decision could not be logged ({_log_failure_reason(logged)}), so the '
+            'authorization was ' + effect
+        ),
+    }
 
 
 def plan_uses_worktree(plan_id: str) -> bool:
