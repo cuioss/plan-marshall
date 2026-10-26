@@ -200,15 +200,26 @@ _PHASE_6_STANDARDS_DIR = _PHASE_6_SKILL_DIR / 'standards'
 _AUTOMATIC_REVIEW_SKILL_MD = resolve_skills_root(Path(__file__)) / 'automatic-review' / 'SKILL.md'
 
 # Anchor used to render a BUILT-IN standards path as a bundle-relative string in
-# the script output. ``resolve_bundles_root`` identity-walks to the
-# ``marketplace/bundles`` root (no index arithmetic); its grandparent is the
-# source-tree root, so rendered paths start with `marketplace/bundles/…` and
-# match the documented contract. This anchors on ``Path(__file__)`` on purpose:
-# built-in step docs live in the SAME tree as this script (source or plugin
-# cache), so rendering them relative to that tree's root is correct. It MUST NOT
-# be used to locate PROJECT-LOCAL skills — those live in the working tree, not
-# alongside this script; see ``_project_local_skills_root`` below.
-_REPO_ROOT = resolve_bundles_root(Path(__file__)).parent.parent
+# the script output. ``resolve_bundles_root`` identity-walks to the root of the
+# deployed tree this script lives in, and its grandparent is the source-tree root
+# for the two NESTED shapes — ``marketplace/bundles`` -> the checkout, and the
+# versioned plugin cache -> ``~/.claude/plugins`` — so rendered paths start with
+# `marketplace/bundles/…` and match the documented contract. This anchors on
+# ``Path(__file__)`` on purpose: built-in step docs live in the SAME tree as this
+# script (source or plugin cache), so rendering them relative to that tree's root
+# is correct. It MUST NOT be used to locate PROJECT-LOCAL skills — those live in
+# the working tree, not alongside this script; see
+# ``_project_local_skills_root`` below.
+#
+# A FLAT deployment (OpenCode/Antigravity) resolves to the directory containing
+# its ``skills/`` tree, whose grandparent is not a repository root at all; the
+# derivation is deliberately NOT special-cased, because the two nested shapes owe
+# their value and this anchor only ever feeds ``relative_to`` below — which falls
+# back to the absolute string when the path is not under it. Rendering a flat
+# path as ``opencode/skills/…`` is cosmetic; nothing is ever joined to it for a
+# project-local lookup.
+_BUNDLES_ROOT = resolve_bundles_root(Path(__file__))
+_REPO_ROOT = _BUNDLES_ROOT.parent.parent
 
 
 def _project_local_skills_root() -> Path:

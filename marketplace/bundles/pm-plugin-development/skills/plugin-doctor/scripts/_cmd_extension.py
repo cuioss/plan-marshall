@@ -19,9 +19,23 @@ import importlib.util
 from pathlib import Path
 from typing import Any
 
+import deployed_layout
 from marketplace_bundles import resolve_bundles_root
 
-_MARKETPLACE_FROM_SCRIPT = resolve_bundles_root(Path(__file__)).parent
+_BUNDLES_FROM_SCRIPT = resolve_bundles_root(Path(__file__))
+
+#: The marketplace ROOT (the parent of ``bundles/``) for a SOURCE checkout, or
+#: ``None`` when this skill runs from a FLAT deployment. A flat install carries
+#: ``skills/{bundle}-{skill}/`` and no ``bundles/`` directory at all, so there is
+#: no marketplace tree to scan; the scan reports that rather than probing a path
+#: that cannot exist on the machine.
+_MARKETPLACE_FROM_SCRIPT = None if deployed_layout.is_flat_root(_BUNDLES_FROM_SCRIPT) else _BUNDLES_FROM_SCRIPT.parent
+
+_NO_MARKETPLACE_TREE_MESSAGE = (
+    'No marketplace bundles tree found: this skill is running from a deployed (flat) '
+    'install, which carries no bundles/ directory. Run this verb from a plan-marshall '
+    'source checkout, or point --marketplace-root at one.'
+)
 
 # Required methods for Extension class (self is implicit, not listed)
 # Only get_skill_domains is required as an abstract method
@@ -972,9 +986,14 @@ def cmd_extension(args) -> dict:
         from _doctor_shared import find_marketplace_root
 
         discovered = find_marketplace_root()
-        marketplace_path = discovered if discovered is not None else _MARKETPLACE_FROM_SCRIPT
+        scan_root = discovered if discovered is not None else _MARKETPLACE_FROM_SCRIPT
+        if scan_root is None:
+            # A flat deployment: there is no marketplace tree to scan, and saying
+            # so is the answer — the previous fallback probed the deploy root's
+            # parent and reported a confusing "bundles directory not found".
+            return {'status': 'error', 'error': 'not_found', 'message': _NO_MARKETPLACE_TREE_MESSAGE}
 
-        result = scan_extensions(marketplace_path)
+        result = scan_extensions(scan_root)
 
         if 'error' in result:
             result['status'] = 'error'

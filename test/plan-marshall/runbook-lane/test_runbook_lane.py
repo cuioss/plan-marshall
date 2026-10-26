@@ -43,9 +43,12 @@ import threading
 from pathlib import Path
 from typing import Any
 
+from _flat_install_fixtures import flat_install_tree, run_script_in_flat
+
 from conftest import (
     MARKETPLACE_ROOT,
     PROJECT_ROOT,
+    ScriptResult,
     get_script_path,
     get_scripts_dir,
     load_script_module,
@@ -587,6 +590,39 @@ def test_resolve_pyproject_fixture(tmp_path: Path) -> None:
     assert set(required) == {'first-bot', 'second-bot'}
     assert all('trigger_comment' in row for row in data['required_bots'])
     assert {row['bot'] for row in data['optional_bots']} == {'third-bot'}
+
+
+def test_resolve_returns_its_envelope_when_run_from_a_flat_install(tmp_path: Path, flat_install_tree: Path) -> None:
+    """A marker-less flat install runs ``resolve`` to its envelope, not ``resolve_failed``.
+
+    This is the shape an OpenCode or Antigravity machine has: the deployed
+    ``runbook_lane.py`` executes from ``{root}/skills/plan-marshall-runbook-lane/``
+    with nothing but the flat tree on ``PYTHONPATH``. Before the flat leg of
+    ``resolve_bundles_root`` the import itself raised, so the verb never reached
+    its own error handling.
+    """
+    spec = _seed_fixture(tmp_path, executable=_PYPROJECT_EXEC, required_bots='first-bot')
+    flat_root = flat_install_tree
+    deployed = flat_root / 'skills' / 'plan-marshall-runbook-lane' / 'scripts' / 'runbook_lane.py'
+
+    completed = run_script_in_flat(
+        flat_root,
+        tmp_path,
+        deployed,
+        'resolve',
+        '--spec',
+        str(spec),
+        '--project-dir',
+        str(tmp_path),
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    data = ScriptResult(completed.returncode, completed.stdout, completed.stderr).toon()
+    assert data['status'] == 'success'
+    assert 'error' not in data
+    assert data['slug'] == 'demo-epic'
+    assert data['plan'] == 'lb-66-runbook-lane-skill'
+    assert 'build-pyproject' in data['build']['quality-gate']
 
 
 def test_resolve_maven_fixture_emits_maven_commands(tmp_path: Path) -> None:
