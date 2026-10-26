@@ -39,7 +39,12 @@ import sys
 from pathlib import Path
 
 import pytest
-from deployed_layout import flat_skill_dir_name
+from deployed_layout import (
+    IDENTITY_BUNDLE_KEY,
+    IDENTITY_METADATA_KEY,
+    IDENTITY_SKILL_KEY,
+    flat_skill_dir_name,
+)
 
 #: The marketplace source tree this repository authors, resolved from this file
 #: rather than from an env var or the cwd.
@@ -79,11 +84,50 @@ def identity_skill_md(bundle: str, skill: str) -> str:
     )
 
 
-def build_flat_install(root: Path) -> Path:
+def deployed_skill_md(bundle: str, skill: str) -> str:
+    """Return a flat ``SKILL.md`` carrying the SOURCE frontmatter plus the identity block.
+
+    The default :func:`identity_skill_md` is enough for the layout and registry
+    readers, but a reader that parses a skill's own ``configurable`` declaration
+    (``configurable_contract``) or its bot roster needs the REAL frontmatter. A
+    deployed tree carries the source frontmatter verbatim — the emitter copies it
+    and adds only the ``metadata`` identity block this function appends — so
+    reproducing that pair is enough for such a reader, and it stays decoupled from
+    the emitter's own target-specific rewrites.
+
+    Args:
+        bundle: Bundle name, e.g. ``plan-marshall``.
+        skill: Skill name, e.g. ``automatic-review``.
+
+    Returns:
+        The markdown text a flat install holds at
+        ``{root}/skills/{bundle}-{skill}/SKILL.md``.
+    """
+    source = MARKETPLACE_ROOT / bundle / 'skills' / skill / 'SKILL.md'
+    text = source.read_text(encoding='utf-8')
+    lines = text.splitlines()
+    if not lines or lines[0].strip() != '---':
+        return identity_skill_md(bundle, skill)
+    closing = next((index for index, line in enumerate(lines[1:], start=1) if line.strip() == '---'), None)
+    if closing is None:
+        return identity_skill_md(bundle, skill)
+    frontmatter = lines[1:closing]
+    body = lines[closing + 1 :]
+    identity = [f'{IDENTITY_METADATA_KEY}:', f'  {IDENTITY_BUNDLE_KEY}: {bundle}', f'  {IDENTITY_SKILL_KEY}: {skill}']
+    assembled = ['---', *frontmatter, *identity, '---', *body]
+    return '\n'.join(assembled) + '\n'
+
+
+def build_flat_install(root: Path, *, real_frontmatter: bool = False) -> Path:
     """Populate ``{root}/skills/{bundle}-{skill}/`` from the real bundle trees.
 
     Args:
         root: The deploy root to create (e.g. ``~/.config/opencode``).
+        real_frontmatter: Write each skill's SOURCE frontmatter plus the identity
+            block (:func:`deployed_skill_md`) instead of the minimal fixture
+            manifest. Needed by a reader that parses a skill's own declaration —
+            the step-doc ``configurable`` blocks and the ``automatic-review`` bot
+            roster — and still cheap enough to build per session.
 
     Returns:
         ``root``, so a caller can chain the build and the env construction.
@@ -100,7 +144,12 @@ def build_flat_install(root: Path) -> Path:
                 continue
             target = skills_root / flat_skill_dir_name(bundle_dir.name, skill_dir.name)
             target.mkdir()
-            (target / 'SKILL.md').write_text(identity_skill_md(bundle_dir.name, skill_dir.name), encoding='utf-8')
+            manifest = (
+                deployed_skill_md(bundle_dir.name, skill_dir.name)
+                if real_frontmatter
+                else identity_skill_md(bundle_dir.name, skill_dir.name)
+            )
+            (target / 'SKILL.md').write_text(manifest, encoding='utf-8')
             for subtree in COPIED_SUBTREES:
                 source = skill_dir / subtree
                 if source.is_dir():
@@ -176,12 +225,22 @@ def run_script_in_flat(
     script: Path,
     *args: str,
     timeout: int = 300,
+    env_overrides: dict[str, str] | None = None,
 ) -> subprocess.CompletedProcess[str]:
-    """Run a deployed script out of the flat fixture, with no source tree on the path."""
+    """Run a deployed script out of the flat fixture, with no source tree on the path.
+
+    ``env_overrides`` is applied AFTER the scrub, for a caller that must PIN a
+    location :data:`LOCATION_ENV_VARS` deliberately clears — a verb that resolves
+    its own plan root has to be told which project it is operating on, or it walks
+    up into the repository that hosts the pytest basetemp.
+    """
+    env = flat_env(root, project_dir)
+    if env_overrides:
+        env.update(env_overrides)
     return subprocess.run(
         [sys.executable, str(script), *args],
         cwd=project_dir,
-        env=flat_env(root, project_dir),
+        env=env,
         capture_output=True,
         text=True,
         timeout=timeout,
@@ -197,3 +256,15 @@ def flat_install_tree(tmp_path_factory: pytest.TempPathFactory) -> Path:
     isolated project directory.
     """
     return build_flat_install(tmp_path_factory.mktemp('flat-install'))
+
+
+@pytest.fixture(scope='session')
+def flat_install_tree_with_frontmatter(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """One marker-less flat deployment whose ``SKILL.md`` files carry the real frontmatter.
+
+    The twin of :func:`flat_install_tree` for readers that parse a skill's own
+    declaration rather than only its identity: the step-doc ``configurable`` blocks
+    (``manage-config``'s backend) and the ``automatic-review`` bot roster. Same
+    layout, same copied trees, real manifests.
+    """
+    return build_flat_install(tmp_path_factory.mktemp('flat-install-frontmatter'), real_frontmatter=True)
