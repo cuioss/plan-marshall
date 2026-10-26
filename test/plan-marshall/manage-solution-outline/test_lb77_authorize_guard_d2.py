@@ -9,6 +9,14 @@ before the commit, so a ``snapshot_busy`` refusal left a log line for an
 authorization that never happened. These tests drive the real code path over a
 sandboxed plan directory.
 
+``authorize_refreeze`` carried only half of that treatment: no snapshot guard, so
+a ``write_snapshot`` could consume an authorization whose decision line was never
+written, and a withdrawal that could not tell its own authorization from a newer
+one. Both halves are exercised here, together with the double-fault direction:
+an authorization whose line and whose digest re-record both fail is undone rather
+than left standing, and the snapshot is left reading ``tampered`` so it is refused
+until repaired.
+
 The concurrent tests use a bounded wait so the same test exercises both the
 correct interleaving (reads serialized under the guard) and the defective one
 (reads before the guard) without depending on wall-clock luck.
@@ -24,6 +32,8 @@ from typing import Any
 import _criteria_snapshot as _snap
 import _locks_core
 import plan_logging
+
+from conftest import get_skill_dir
 
 PLAN_ID = 'lb77-authorize-guard-d2'
 FROZEN = ['parser rejects garbage', 'parser accepts input']
@@ -51,12 +61,12 @@ def _snapshot_file(plan_dir: Path) -> Path:
     return plan_dir / 'work' / 'criteria-snapshot.json'
 
 
-def test_a_refreeze_landing_before_the_guard_is_not_reverted(plan_context, monkeypatch) -> None:
-    """A re-freeze that commits while the authorization waits is never undone.
+def test_a_refreeze_landing_before_the_guard_is_refused(plan_context, monkeypatch) -> None:
+    """A re-freeze started inside another writer's guarded window cannot land.
 
-    The hook fires in the authorization's own read: with the read under the guard
-    the re-freeze is refused (``snapshot_busy``); with the read before the guard
-    it commits and the stale copy must not overwrite it.
+    Both writers take the same plan-scoped guard, so the nested re-freeze is
+    refused ``snapshot_busy`` rather than committing into a window it would then
+    have to be reverted out of. The snapshot is left exactly as it was.
     """
     plan_dir = _plan(plan_context, ['the old criterion'])
     monkeypatch.setattr(_locks_core, '_GUARD_TIMEOUT_SECONDS', 0.2)
@@ -68,9 +78,7 @@ def test_a_refreeze_landing_before_the_guard_is_not_reverted(plan_context, monke
         snapshot = real_read(plan_id)
         if not fired.is_set():
             fired.set()
-            assert _snap.authorize_refreeze(plan_id, 'operator: approve the refined criteria')['status'] == 'success'
-            (plan_dir / 'solution_outline.md').write_text(_outline(['the new criterion']), encoding='utf-8')
-            refreeze.update(_snap.write_snapshot(plan_id))
+            refreeze.update(_snap.authorize_refreeze(plan_id, 'operator: approve the refined criteria'))
         return snapshot
 
     monkeypatch.setattr(_snap, 'read_snapshot', _read_then_refreeze)
@@ -78,12 +86,10 @@ def test_a_refreeze_landing_before_the_guard_is_not_reverted(plan_context, monke
     result = _snap.authorize_change(PLAN_ID, 1, 'the old criterion', 'operator: approve the wording')
 
     assert result['status'] == 'success', result
-    if refreeze.get('status') == 'success':
-        stored = json.loads(_snapshot_file(plan_dir).read_text(encoding='utf-8'))
-        assert stored['deliverables'][0]['criteria'] == ['the new criterion'], stored['deliverables'][0]
-        assert _snap.snapshot_state(PLAN_ID) == 'frozen'
-    else:
-        assert refreeze.get('error') == 'snapshot_busy', refreeze
+    assert refreeze.get('error') == 'snapshot_busy', refreeze
+    stored = json.loads(_snapshot_file(plan_dir).read_text(encoding='utf-8'))
+    assert stored['deliverables'][0]['criteria'] == ['the old criterion'], stored['deliverables'][0]
+    assert _snap.snapshot_state(PLAN_ID) == 'frozen'
 
 
 def test_two_concurrent_authorizations_both_keep_their_entry(plan_context, monkeypatch) -> None:
@@ -177,12 +183,147 @@ def test_a_raising_decision_log_withdraws_the_refreeze_authorization(plan_contex
     assert 'refreeze_authorized' not in _snap.integrity_record(PLAN_ID)
 
 
-def test_a_consumed_authorization_is_not_resurrected_by_a_failed_log(plan_context, monkeypatch) -> None:
-    """A re-freeze that consumed the authorization before the log failed wins."""
+def test_a_write_snapshot_started_inside_the_log_window_consumes_nothing(plan_context, monkeypatch) -> None:
+    """A re-freeze that starts in the record-then-log window cannot consume it.
+
+    Both writers take the same plan-scoped snapshot guard, so a ``write_snapshot``
+    begun from inside the decision-log window — the widest point of the window —
+    is refused ``snapshot_busy`` instead of consuming an authorization whose
+    decision line then never lands.
+    """
+    plan_dir = _plan(plan_context)
+    before = _snapshot_file(plan_dir).read_bytes()
+    monkeypatch.setattr(_locks_core, '_GUARD_TIMEOUT_SECONDS', 0.2)
+    observed: dict[str, Any] = {}
+
+    def _refreeze_then_fail(*args: Any, **kwargs: Any) -> dict[str, Any]:
+        observed.update(_snap.write_snapshot(PLAN_ID))
+        return {'status': 'error', 'error': 'injected'}
+
+    monkeypatch.setattr(plan_logging, 'log_decision', _refreeze_then_fail)
+
+    result = _snap.authorize_refreeze(PLAN_ID, 'operator: approve the refined criteria')
+
+    assert result['status'] == 'error', result
+    assert result['error'] == 'decision_log_unavailable'
+    assert observed.get('error') == 'snapshot_busy', observed
+    assert _snapshot_file(plan_dir).read_bytes() == before
+    assert 'refreeze_authorized' not in _snap.integrity_record(PLAN_ID)
+
+
+def test_a_newer_authorization_survives_an_older_failed_log(plan_context, monkeypatch) -> None:
+    """A withdrawal removes only the authorization its own call set.
+
+    The newer authorization is installed from inside the log call, which is the
+    one point where a second writer can be observed between this call's record and
+    its withdrawal. Under the identity token the older call leaves it standing and
+    says so; without one it would delete the newer authorization along with its
+    decision line.
+    """
+
+    def _newer_authorization_then_fail(*args: Any, **kwargs: Any) -> dict[str, Any]:
+        def _set_newer(block: dict[str, Any]) -> None:
+            block['refreeze_authorized'] = True
+            block[_snap.REFREEZE_TOKEN_KEY] = 'newer-token'
+
+        assert _snap._merge_integrity(PLAN_ID, _set_newer)
+        return {'status': 'error', 'error': 'injected'}
+
+    _plan(plan_context)
+    monkeypatch.setattr(plan_logging, 'log_decision', _newer_authorization_then_fail)
+
+    result = _snap.authorize_refreeze(PLAN_ID, 'operator: approve the refined criteria')
+
+    assert result['status'] == 'error', result
+    assert 'a newer authorization replaced it' in result['message']
+    record = _snap.integrity_record(PLAN_ID)
+    assert record['refreeze_authorized'] is True
+    assert record[_snap.REFREEZE_TOKEN_KEY] == 'newer-token'
+
+
+def test_a_failed_log_restores_a_prior_authorization(plan_context, monkeypatch) -> None:
+    """A call that found an authorization already recorded puts it back on failure.
+
+    ``restored`` is the state the operator needs: the withdrawal landed, but a
+    re-freeze is still authorized, because one was authorized before this call.
+    """
+
+    def _prior(block: dict[str, Any]) -> None:
+        block['refreeze_authorized'] = True
+
+    _plan(plan_context)
+    assert _snap._merge_integrity(PLAN_ID, _prior)
+    monkeypatch.setattr(plan_logging, 'log_decision', lambda *args, **kwargs: {'status': 'error', 'error': 'injected'})
+
+    result = _snap.authorize_refreeze(PLAN_ID, 'operator: approve the refined criteria')
+
+    assert result['status'] == 'error', result
+    assert 'prior authorization' in result['message']
+    assert _snap.integrity_record(PLAN_ID)['refreeze_authorized'] is True
+
+
+def test_a_prior_unlogged_authorization_is_not_restored(plan_context, monkeypatch) -> None:
+    """Only a prior authorization whose own line landed may be restored.
+
+    Emulates the two-call double fault: the record already holds an authorization
+    that is still PENDING (its line never landed), and this call's line fails too.
+    Restoring the pending one would put a decision back on the record whose line was
+    never written — the fail-open this whole treatment exists to close — so the
+    withdrawal clears the record instead of restoring it.
+    """
+    _plan(plan_context)
+
+    def _pending_prior(block: dict[str, Any]) -> None:
+        block['refreeze_authorized'] = True
+        block[_snap.REFREEZE_TOKEN_KEY] = 'older-token'
+        block[_snap.REFREEZE_PENDING_KEY] = True
+
+    assert _snap._merge_integrity(PLAN_ID, _pending_prior)
+    monkeypatch.setattr(plan_logging, 'log_decision', lambda *args, **kwargs: {'status': 'error', 'error': 'injected'})
+
+    result = _snap.authorize_refreeze(PLAN_ID, 'operator: approve the refined criteria')
+
+    assert result['status'] == 'error', result
+    assert 'prior authorization' not in result['message']
+    record = _snap.integrity_record(PLAN_ID)
+    assert 'refreeze_authorized' not in record
+    assert _snap.REFREEZE_TOKEN_KEY not in record
+    assert _snap.REFREEZE_PENDING_KEY not in record
+
+
+def test_a_withdrawal_that_cannot_be_written_is_reported_as_not_withdrawn(plan_context, monkeypatch) -> None:
+    """A failed withdrawal is never reported as one that landed."""
+    _plan(plan_context)
+    real_merge = _snap._merge_integrity
+    calls = {'count': 0}
+
+    def _fail_the_withdrawal(plan_id: str, merge: Any) -> bool:
+        calls['count'] += 1
+        return real_merge(plan_id, merge) if calls['count'] == 1 else False
+
+    monkeypatch.setattr(_snap, '_merge_integrity', _fail_the_withdrawal)
+    monkeypatch.setattr(plan_logging, 'log_decision', lambda *args, **kwargs: {'status': 'error', 'error': 'injected'})
+
+    result = _snap.authorize_refreeze(PLAN_ID, 'operator: approve the refined criteria')
+
+    assert result['status'] == 'error', result
+    assert 'NOT withdrawn' in result['message']
+    assert _snap.integrity_record(PLAN_ID)['refreeze_authorized'] is True
+
+
+def test_a_consumed_authorization_reports_already_consumed(plan_context, monkeypatch) -> None:
+    """A re-freeze that consumed this call's authorization wins over the failed log.
+
+    The consumption happens inside the log call, where a stale-guard window could
+    still let a re-freeze commit; the withdrawal must then report
+    ``already_consumed`` instead of restoring a decision the re-freeze already
+    spent, and must leave no identity token naming an authorization that no longer
+    exists.
+    """
     _plan(plan_context)
 
     def _consume_then_fail(*args: Any, **kwargs: Any) -> dict[str, Any]:
-        assert _snap.write_snapshot(PLAN_ID)['status'] == 'success'
+        assert _snap.record_snapshot_digest(PLAN_ID, consume_refreeze=True)
         return {'status': 'error', 'error': 'injected'}
 
     monkeypatch.setattr(plan_logging, 'log_decision', _consume_then_fail)
@@ -191,7 +332,88 @@ def test_a_consumed_authorization_is_not_resurrected_by_a_failed_log(plan_contex
 
     assert result['status'] == 'error', result
     assert 'already consumed' in result['message']
-    assert _snap.integrity_record(PLAN_ID)['refreeze_authorized'] is False
+    record = _snap.integrity_record(PLAN_ID)
+    assert record['refreeze_authorized'] is False
+    assert _snap.REFREEZE_TOKEN_KEY not in record
+
+
+def test_a_pending_authorization_does_not_permit_a_refreeze(plan_context) -> None:
+    """An authorization whose line has not landed is not a decision yet.
+
+    The record is left exactly as a stalled call leaves it (authorized + token +
+    pending), and a re-freeze must refuse rather than spend a decision whose line
+    may never be written.
+    """
+    plan_dir = _plan(plan_context, ['the old criterion'])
+    snapshot_file = _snapshot_file(plan_dir)
+    before = snapshot_file.read_bytes()
+
+    def _pending(block: dict[str, Any]) -> None:
+        block['refreeze_authorized'] = True
+        block[_snap.REFREEZE_TOKEN_KEY] = 'stalled-token'
+        block[_snap.REFREEZE_PENDING_KEY] = True
+
+    assert _snap._merge_integrity(PLAN_ID, _pending)
+
+    result = _snap.write_snapshot(PLAN_ID)
+
+    assert result['status'] == 'error', result
+    assert result['error'] == 'refreeze_requires_decision'
+    assert snapshot_file.read_bytes() == before
+
+
+def test_a_marker_clear_that_cannot_be_written_is_reported(plan_context, monkeypatch) -> None:
+    """A landed line whose marker clear fails is reported, never claimed as success.
+
+    The authorization is recorded and the decision line lands, but the record cannot
+    be marked usable. An authorization still marked pending authorizes nothing, so
+    reporting success would tell the operator to trust a state that refuses the very
+    next re-freeze.
+    """
+    _plan(plan_context)
+    real_merge = _snap._merge_integrity
+    calls = {'count': 0}
+
+    def _fail_the_second(plan_id: str, merge: Any) -> bool:
+        calls['count'] += 1
+        return real_merge(plan_id, merge) if calls['count'] == 1 else False
+
+    monkeypatch.setattr(_snap, '_merge_integrity', _fail_the_second)
+
+    result = _snap.authorize_refreeze(PLAN_ID, 'operator: approve the refined criteria')
+
+    assert result['status'] == 'error', result
+    assert result['error'] == 'status_record_unavailable'
+    assert 'not usable' in result['message']
+    assert _snap.integrity_record(PLAN_ID)[_snap.REFREEZE_PENDING_KEY] is True
+
+
+def test_a_late_success_does_not_clear_a_successors_pending_marker(plan_context, monkeypatch) -> None:
+    """The marker clear is token-gated, so a successor's request cannot be spent.
+
+    A success that lands after another call has recorded its own authorization must
+    not clear THAT call's marker: clearing it would make the successor's unlogged
+    authorization look like a landed decision to the next withdrawal.
+    """
+    _plan(plan_context)
+
+    def _successor_then_succeed(*args: Any, **kwargs: Any) -> dict[str, Any]:
+        def _set_successor(block: dict[str, Any]) -> None:
+            block['refreeze_authorized'] = True
+            block[_snap.REFREEZE_TOKEN_KEY] = 'successor-token'
+            block[_snap.REFREEZE_PENDING_KEY] = True
+
+        assert _snap._merge_integrity(PLAN_ID, _set_successor)
+        return {'status': 'success'}
+
+    monkeypatch.setattr(plan_logging, 'log_decision', _successor_then_succeed)
+
+    result = _snap.authorize_refreeze(PLAN_ID, 'operator: approve the refined criteria')
+
+    assert result['status'] == 'success', result
+    record = _snap.integrity_record(PLAN_ID)
+    assert record[_snap.REFREEZE_TOKEN_KEY] == 'successor-token'
+    assert record[_snap.REFREEZE_PENDING_KEY] is True
 
 
 def test_a_raising_decision_log_rolls_the_change_authorization_back(plan_context, monkeypatch) -> None:
@@ -237,10 +459,19 @@ def test_a_rollback_does_not_erase_a_newer_commit(plan_context, monkeypatch) -> 
     assert _snap.snapshot_state(PLAN_ID) == 'frozen'
 
 
-def test_a_failed_digest_withdrawal_keeps_the_committed_snapshot(plan_context, monkeypatch) -> None:
-    """When the prior digest cannot be restored, the bytes the record binds stay."""
+def test_a_failed_digest_withdrawal_fails_closed_as_tampered(plan_context, monkeypatch) -> None:
+    """The double fault leaves NO standing authorization, at the cost of a tamper flag.
+
+    The edit is undone, so no authorization stands without a decision line. The
+    status record still binds the committed bytes' digest, which the undo cannot
+    withdraw, so the snapshot reads ``tampered`` and every consumer refuses it
+    until the record is repaired. That is the fail-closed direction: the retired
+    behaviour re-committed the edit so the record matched its bytes, leaving an
+    unlogged authorization usable.
+    """
     plan_dir = _plan(plan_context)
     snapshot_file = _snapshot_file(plan_dir)
+    before = snapshot_file.read_bytes()
     real_record = _snap.record_snapshot_digest
     calls = {'count': 0}
 
@@ -254,7 +485,48 @@ def test_a_failed_digest_withdrawal_keeps_the_committed_snapshot(plan_context, m
     result = _snap.authorize_change(PLAN_ID, 1, FROZEN[0], 'operator: approve the wording')
 
     assert result['status'] == 'error', result
-    assert 'kept' in result['message']
+    assert 'tamper' in result['message']
+    assert snapshot_file.read_bytes() == before
     stored = json.loads(snapshot_file.read_text(encoding='utf-8'))
-    assert [entry['criterion'] for entry in stored['authorized_changes']] == [FROZEN[0]]
-    assert _snap.snapshot_state(PLAN_ID) == 'frozen'
+    assert stored['authorized_changes'] == []
+    assert _snap.snapshot_state(PLAN_ID) == 'tampered'
+
+
+# =============================================================================
+# The outcome vocabulary the code reports is the one its documents state
+# =============================================================================
+
+
+def _frozen_record_bullet() -> str:
+    """The rubric bullet that governs the frozen record, verbatim from the skill."""
+    rubric: str = (get_skill_dir('plan-marshall', 'phase-6-finalize') / 'standards' / 'review-rubric.md').read_text(
+        encoding='utf-8'
+    )
+    for line in rubric.splitlines():
+        if line.startswith('- A criterion the **frozen record**'):
+            return line
+    raise AssertionError('the frozen-record bullet is missing from review-rubric.md')
+
+
+def test_the_authorization_outcome_vocabulary_matches_its_documents() -> None:
+    """Every term the vocabulary declares appears in both documents that describe it.
+
+    Both assertions are ``AUTHORIZATION_OUTCOMES ⊆ document``: a term the code
+    reports that the writers' docstrings omit leaves the author without the state
+    it must act on, and the same term missing from the rubric bullet leaves the
+    reviewer without it. The reverse direction — a term a document describes that
+    the vocabulary never reports — is NOT checked here, because the vocabulary is
+    the declaration the check reads; each outcome is instead pinned by a test that
+    drives it, and a term listed with no such test is the drift to watch for.
+    """
+    docstrings = f'{_snap.authorize_change.__doc__}\n{_snap.authorize_refreeze.__doc__}'
+    rubric_bullet = _frozen_record_bullet()
+
+    undocumented = [term for term in _snap.AUTHORIZATION_OUTCOMES if f'`{term}`' not in docstrings]
+    unrubricked = [term for term in _snap.AUTHORIZATION_OUTCOMES if f'`{term}`' not in rubric_bullet]
+
+    assert not undocumented, f'outcomes the docstrings do not name: {undocumented}'
+    assert not unrubricked, f'outcomes the frozen-record rubric bullet does not name: {unrubricked}'
+    assert len(set(_snap.AUTHORIZATION_OUTCOMES)) == len(_snap.AUTHORIZATION_OUTCOMES), (
+        'the outcome vocabulary lists a term twice'
+    )
