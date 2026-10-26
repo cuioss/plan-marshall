@@ -460,6 +460,9 @@ def _authorize_refreeze_locked(plan_id: str, decision: str, phase: str) -> dict[
         # The decision line landed, so this authorization is no longer pending. The
         # token check keeps a late success from clearing a NEWER call's marker: the
         # guard's stale-reclaim window can let a successor record behind this one.
+        # The clear is best-effort: a write that fails leaves `authorized` +
+        # `pending` on the record, which authorizes nothing (the gate above reads the
+        # marker), so the cost is an operator re-authorizing, never an unlogged spend.
         def _line_landed(block: dict[str, Any]) -> None:
             if block.get(REFREEZE_TOKEN_KEY) == token:
                 block.pop(REFREEZE_PENDING_KEY, None)
@@ -872,11 +875,19 @@ def _write_snapshot_locked(plan_id: str) -> dict[str, Any]:
     record. A phase rollback alone is not such a decision — the retired check let
     ``set-phase 3-outline`` re-open the write, which let a plan re-freeze the
     criteria it was failing. The authorization is consumed by the re-freeze it
-    permits, so one decision authorizes exactly one re-freeze.
+    permits, so one decision authorizes exactly one re-freeze — and an authorization
+    still marked PENDING (its decision line has not landed) is not a decision at all:
+    it is refused here, so a re-freeze cannot spend an authorization whose line goes
+    on to fail.
     """
     existing = read_snapshot(plan_id)
     info = integrity_record(plan_id)
-    authorized = bool(info.get('refreeze_authorized'))
+    # An authorization whose decision line has NOT landed is not a decision yet, so
+    # it authorizes nothing: the pending marker is set from the record until the
+    # owning call clears it, and ignoring it here would let a re-freeze consume an
+    # authorization whose line goes on to fail (a stall past the guard's
+    # stale-reclaim threshold admits exactly that interleaving).
+    authorized = bool(info.get('refreeze_authorized')) and not info.get(REFREEZE_PENDING_KEY)
     # The status record is the gate, not the file: deleting or corrupting the
     # snapshot file makes read_snapshot return None, and `existing is not None`
     # would then treat the call as a first freeze and leak a re-freeze without a

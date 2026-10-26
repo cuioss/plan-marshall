@@ -337,6 +337,59 @@ def test_a_consumed_authorization_reports_already_consumed(plan_context, monkeyp
     assert _snap.REFREEZE_TOKEN_KEY not in record
 
 
+def test_a_pending_authorization_does_not_permit_a_refreeze(plan_context) -> None:
+    """An authorization whose line has not landed is not a decision yet.
+
+    The record is left exactly as a stalled call leaves it (authorized + token +
+    pending), and a re-freeze must refuse rather than spend a decision whose line
+    may never be written.
+    """
+    plan_dir = _plan(plan_context, ['the old criterion'])
+    snapshot_file = _snapshot_file(plan_dir)
+    before = snapshot_file.read_bytes()
+
+    def _pending(block: dict[str, Any]) -> None:
+        block['refreeze_authorized'] = True
+        block[_snap.REFREEZE_TOKEN_KEY] = 'stalled-token'
+        block[_snap.REFREEZE_PENDING_KEY] = True
+
+    assert _snap._merge_integrity(PLAN_ID, _pending)
+
+    result = _snap.write_snapshot(PLAN_ID)
+
+    assert result['status'] == 'error', result
+    assert result['error'] == 'refreeze_requires_decision'
+    assert snapshot_file.read_bytes() == before
+
+
+def test_a_late_success_does_not_clear_a_successors_pending_marker(plan_context, monkeypatch) -> None:
+    """The marker clear is token-gated, so a successor's request cannot be spent.
+
+    A success that lands after another call has recorded its own authorization must
+    not clear THAT call's marker: clearing it would make the successor's unlogged
+    authorization look like a landed decision to the next withdrawal.
+    """
+    _plan(plan_context)
+
+    def _successor_then_succeed(*args: Any, **kwargs: Any) -> dict[str, Any]:
+        def _set_successor(block: dict[str, Any]) -> None:
+            block['refreeze_authorized'] = True
+            block[_snap.REFREEZE_TOKEN_KEY] = 'successor-token'
+            block[_snap.REFREEZE_PENDING_KEY] = True
+
+        assert _snap._merge_integrity(PLAN_ID, _set_successor)
+        return {'status': 'success'}
+
+    monkeypatch.setattr(plan_logging, 'log_decision', _successor_then_succeed)
+
+    result = _snap.authorize_refreeze(PLAN_ID, 'operator: approve the refined criteria')
+
+    assert result['status'] == 'success', result
+    record = _snap.integrity_record(PLAN_ID)
+    assert record[_snap.REFREEZE_TOKEN_KEY] == 'successor-token'
+    assert record[_snap.REFREEZE_PENDING_KEY] is True
+
+
 def test_a_raising_decision_log_rolls_the_change_authorization_back(plan_context, monkeypatch) -> None:
     """The change path treats a raising log like a refused one and rolls back."""
     plan_dir = _plan(plan_context)
