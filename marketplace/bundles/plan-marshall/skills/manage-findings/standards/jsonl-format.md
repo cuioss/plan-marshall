@@ -273,7 +273,7 @@ Each line is a JSON object written by `sonar.py:_write_scan_summary`. This is a 
 |-------|------|:--------------:|-------------|
 | `count_status` | string | yes | `confirmed` (CE settled in budget **and** the analysis is of the counted revision) or `undecidable` (CE timeout, REST/auth failure, a stale analysis, or no reported revision) |
 | `new_code_issue_count` | int \| null | yes | Verified PR-scoped new-code total on `confirmed`; `null` on `undecidable` |
-| `count_status_reason` | string | no | Human-readable reason; emitted **only** on `undecidable` |
+| `count_status_reason` | string | no | Human-readable reason; emitted **only** on `undecidable`: `analysis_revision_unavailable`, `head_revision_unavailable`, or `stale_analysis: analysed {sha} != head {sha}` |
 | `pr` | string \| null | yes | PR number the fetch was scoped to (`null` for a non-PR / branch fetch) |
 | `project` | string | yes | Sonar project key the fetch enumerated |
 | `scanned_sha` | string | yes | Worktree HEAD SHA the scan attests to; `""` when the SHA cannot be resolved |

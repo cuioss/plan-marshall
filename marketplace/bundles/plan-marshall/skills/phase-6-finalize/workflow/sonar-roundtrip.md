@@ -114,7 +114,7 @@ Take the last (most recent) JSONL row as the verified-scan attestation for this 
 
 - **Clean pass (Branch A)** — the row exists AND `count_status == confirmed` AND `new_code_issue_count == 0`. Only this combination satisfies the new-code-zero success criterion. Proceed to "Mark Step Complete" Branch A.
 
-- **Fail closed (undecidable or absent marker)** — `count_status == undecidable` (the producer's CE wait timed out, an auth/REST failure blocked confirmation, the analysis is of another commit — `stale_analysis` — or no revision was reported), OR the marker file is absent / carries no row (`manage-files read` returns a not-found / empty result). An undecidable result MUST NOT be treated as a clean pass — an absent marker means "not checked," not "checked, zero issues." Fail closed: mark the step `failed`, recording the two facts this path honestly has — the count could not be decided, and no scan result was produced:
+- **Fail closed (undecidable or absent marker)** — `count_status == undecidable` (the producer's CE wait timed out, an auth/REST failure blocked confirmation, the analysis is of another commit — `stale_analysis` — no revision was reported, or the head could not be resolved), OR the marker file is absent / carries no row (`manage-files read` returns a not-found / empty result). An undecidable result MUST NOT be treated as a clean pass — an absent marker means "not checked," not "checked, zero issues." Fail closed: mark the step `failed`, recording the two facts this path honestly has — the count could not be decided, and no scan result was produced:
 
   ```bash
   python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \

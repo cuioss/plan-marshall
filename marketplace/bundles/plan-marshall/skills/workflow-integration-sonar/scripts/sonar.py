@@ -36,17 +36,20 @@ Both PERSISTING verbs FAIL LOUD when Sonar is not configured: a typed
 same typed status for the same reason.
 
 The returned contract carries a verified ``new_code_issue_count`` and a
-``count_status`` discriminator (``confirmed`` | ``undecidable``): a confirmed
-run reports the real PR-scoped count — which requires BOTH a settled Compute
-Engine and an analysis of the counted revision, because a clean analysis of an
-older head reads exactly like a clean analysis of this one. A stale analysis
+``count_status`` discriminator (``confirmed`` | ``undecidable``). On a
+PR-scoped run (``--pr``) a confirmed count requires BOTH a settled Compute
+Engine AND an analysis of the counted revision, because a clean analysis of an
+older head reads exactly like a clean analysis of this one: a stale analysis
 (``stale_analysis``, with both SHAs), an unreported revision, a CE-still-
 processing-at-timeout or an auth/REST failure reports
 ``new_code_issue_count: null`` with ``count_status: undecidable`` and a
-``count_status_reason`` — NEVER a false ``0``. Every fetch also writes one
-attestation row to ``artifacts/findings/sonar-scan-summary.jsonl`` (written even
-at count==0 and on undecidable, carrying ``analysis_revision`` beside
-``scanned_sha``) so an absent file can never be confused with "not checked."
+``count_status_reason`` — NEVER a false ``0``. A fetch with NO ``--pr`` is
+outside the revision comparison (the provider reports no analysed revision for
+a branch read), so it is confirmed on the CE state alone and leaves both
+revisions blank. Every fetch also writes one attestation row to
+``artifacts/findings/sonar-scan-summary.jsonl`` (written even at count==0 and on
+undecidable, carrying ``analysis_revision`` beside ``scanned_sha``) so an absent
+file can never be confused with "not checked."
 
 LLM consumers query findings via ``manage-findings query --type sonar-issue``.
 
@@ -475,7 +478,8 @@ def _write_scan_summary(
     absent file unambiguously means "not checked." The analysis revision the
     count was read from is recorded beside ``scanned_sha`` (the local HEAD), so a
     row states both what was scanned locally and what the provider said it
-    analysed. Reuses the shared
+    analysed; both revisions are blank when no comparison happened (a fetch with
+    no pull request). Reuses the shared
     findings-dir resolver (``_findings_core.get_findings_dir``) so the file
     lands in the same archive-surviving directory as ``pr-comment.jsonl``.
 
@@ -945,10 +949,10 @@ def cmd_read_open_issues(args):
 
     Fail-loud: a typed ``unconfigured`` status when no Sonar credential is
     configured (distinct from a read that failed). A CE timeout, a poll failure, a
-    stale or unreported analysis revision, a REST/auth failure, or a page
-    truncated below the server's reported total returns ``open_issue_count: None``
-    with ``count_status: undecidable`` and a ``count_status_reason`` — NEVER a
-    false ``0`` and never a short count.
+    stale or unreported analysis revision (PR-scoped reads), a REST/auth failure,
+    or a page truncated below the server's reported total returns
+    ``open_issue_count: None`` with ``count_status: undecidable`` and a
+    ``count_status_reason`` — NEVER a false ``0`` and never a short count.
     """
     project: str = args.project
     pr: str | None = getattr(args, 'pr', None)
@@ -1021,6 +1025,8 @@ def cmd_read_open_issues(args):
         'pull_request': pr or 'none',
         'count_status': 'confirmed',
         'open_issue_count': len(issues),
+        'analysis_revision': revision_result['analysis_revision'],
+        'head_revision': revision_result['head_revision'],
         'rules': sorted({issue['rule'] for issue in issues if issue['rule']}),
         'files': sorted({issue['file'] for issue in issues if issue['file']}),
         'issues': issues,

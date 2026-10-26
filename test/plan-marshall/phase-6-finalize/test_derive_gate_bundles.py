@@ -566,7 +566,7 @@ def test_the_resolver_is_never_consulted_for_a_classified_marketplace_path():
     bundles, unresolved = derive_gate_bundles(
         ['test/marketplace/targets/test_frontmatter.py', 'marketplace/bundles/plan-marshall/x.py'],
         _ALL_GLOBS,
-        MARKETPLACE_ROOT / 'marketplace' / 'bundles',
+        MARKETPLACE_ROOT,
         module_resolver=resolver,
     )
 
@@ -632,10 +632,11 @@ def _write_reactor(root: Path) -> None:
 def test_a_fixture_reactor_reaches_the_population_through_the_architecture_resolver(tmp_path, monkeypatch):
     """The PRODUCTION resolver joins a real Maven reactor to the gate population.
 
-    The architecture reader is the boundary here (its own rung logic is
-    ``manage-architecture``'s test surface); everything this plan adds — the
-    resolver factory, the per-path call and the join into ``bundles`` — runs for
-    real, over real module directories.
+    The architecture READER is the boundary here (its own rung logic is
+    ``manage-architecture``'s test surface), but it answers from the fixture's own
+    module directories — so the fixture drives the population: remove it and the
+    test fails. Everything this plan adds — the resolver factory, the per-path
+    call and the join into ``bundles`` — runs for real.
     """
     from conftest import add_skill_scripts_to_path
 
@@ -643,11 +644,16 @@ def test_a_fixture_reactor_reaches_the_population_through_the_architecture_resol
     import _cmd_client_handlers
 
     _write_reactor(tmp_path)
-    owners = {'alpha': 'alpha', 'beta': 'beta'}
 
     def fake_which_module(args):
-        for prefix, name in owners.items():
-            if args.path == prefix or args.path.startswith(prefix + '/'):
+        project = Path(args.project_dir)
+        owners = sorted(
+            (child.name for child in project.iterdir() if child.is_dir() and (child / 'pom.xml').is_file()),
+            key=len,
+            reverse=True,
+        )
+        for name in owners:
+            if args.path == name or args.path.startswith(name + '/'):
                 return {'status': 'success', 'module': name}
         return {'status': 'success', 'module': None}
 
@@ -663,6 +669,19 @@ def test_a_fixture_reactor_reaches_the_population_through_the_architecture_resol
 
     assert bundles == ['alpha', 'beta']
     assert unresolved == ['docs/notes.md']
+
+
+def test_a_consumer_test_root_path_resolves_through_the_resolver(tmp_path):
+    """A consumer project's ``test/<pkg>/…`` is a module path, not a phantom bundle."""
+    bundles, unresolved = derive_gate_bundles(
+        ['test/pkg/test_thing.py', 'test/nobody/test_orphan.py'],
+        ['**/*.py'],
+        tmp_path / 'marketplace' / 'bundles',
+        module_resolver=_prefix_resolver({'test/pkg': 'pkg'}),
+    )
+
+    assert bundles == ['pkg']
+    assert unresolved == ['test/nobody/test_orphan.py']
 
 
 def test_cli_builds_the_resolver_only_for_a_non_marketplace_root(tmp_path, monkeypatch, capsys):

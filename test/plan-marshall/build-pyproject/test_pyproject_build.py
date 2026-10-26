@@ -1032,6 +1032,7 @@ def test_resolve_test_scope_prints_the_narrow_units(capsys, case):
     )
 
     edits_a_test_file = _CHANGED_TEST_FILE in case.footprint
+    expected_target = None if edits_a_test_file else 'plan-marshall'
     assert out['status'] == 'success'
     assert out['narrow_units'] == list(case.narrow_units)
     assert out['narrow_units_unresolved'] == list(case.narrow_units_unresolved)
@@ -1039,7 +1040,7 @@ def test_resolve_test_scope_prints_the_narrow_units(capsys, case):
     assert out['scoped_modules'] == ['plan-marshall']
     assert out['root_guards_required'] is edits_a_test_file
     assert out['divergence_possible'] is edits_a_test_file
-    assert (out['recommended_target'] is None) is edits_a_test_file
+    assert out['recommended_target'] == expected_target
     assert out['unresolved_paths'] == []
 
 

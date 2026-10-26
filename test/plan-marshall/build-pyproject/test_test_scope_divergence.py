@@ -1156,6 +1156,19 @@ def test_a_module_test_file_edit_requires_the_root_guards():
     assert resolution.recommended_target is None
 
 
+def test_a_tests_rooted_test_file_edit_also_requires_the_root_guards():
+    """The ``tests/`` root is the same population as ``test/``."""
+    resolution = resolve_test_scope(
+        ['tests/plan-marshall/build-pyproject/test_example.py'],
+        _GLOBS,
+        _REGISTERED_MODULES,
+        bundle_modules=_REGISTERED_MODULES,
+    )
+
+    assert resolution.root_guards_required is True
+    assert resolution.divergence_possible is True
+
+
 def test_a_production_only_footprint_does_not_require_the_root_guards():
     """Editing production code alone does not pull the guards into the population."""
     resolution = resolve_test_scope(

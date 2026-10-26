@@ -20,7 +20,10 @@ Derivation rules (applied per footprint path, in order):
    is **not** a bundle: it is appended to ``unresolved[]`` — never silently
    dropped, never a hard failure. This is what keeps a ``test/marketplace/**``
    path (e.g. ``test/marketplace/targets/test_frontmatter.py``) from deriving a
-   phantom ``marketplace`` bundle.
+   phantom ``marketplace`` bundle. In a consumer layout no
+   ``marketplace/bundles/`` exists at all, so such a path is a module's test
+   directory and the supplied resolver is asked for it first; only an
+   unplaceable path takes the ``unresolved[]`` branch.
 4. Any other shape resolves to no bundle and is appended to ``unresolved[]``,
    **unless the caller supplied a module resolver** — which the CLI does for a
    root that carries no ``marketplace/bundles`` directory. A consumer project's
@@ -130,6 +133,16 @@ def derive_gate_bundles(
     """
     bundles: set[str] = set()
     unresolved: list[str] = []
+    # A resolver describes a CONSUMER layout, where module names come from the
+    # architecture instead of a path segment. In a marketplace layout the seam's
+    # own segment derivation is authoritative (and `test/marketplace/**` must
+    # never become a phantom bundle), so a resolver supplied there is inert.
+    consumer_layout = not bundles_root.is_dir()
+
+    def _resolve(path: str) -> str | None:
+        if not consumer_layout or module_resolver is None:
+            return None
+        return module_resolver(path)
 
     for raw in files:
         path = raw.strip()
@@ -146,7 +159,15 @@ def derive_gate_bundles(
             if (bundles_root / candidate).is_dir():
                 bundles.add(candidate)
             else:
-                unresolved.append(path)
+                # No ``marketplace/bundles/<candidate>`` on disk. In a marketplace
+                # layout that means the test tree is no bundle (reported, never
+                # silently dropped). In a consumer layout the path is a module's
+                # test directory, so the resolver is asked before giving up.
+                module = _resolve(path)
+                if module:
+                    bundles.add(module)
+                else:
+                    unresolved.append(path)
         else:
             # Rule 4. The path matched a build_map glob but is neither a
             # marketplace/bundles/<b>/… path nor a resolvable test/<b>/… one. A
@@ -154,7 +175,7 @@ def derive_gate_bundles(
             # by a path segment, so the resolver — when the caller supplied one —
             # is asked for the owning module. A path it cannot place resolves to
             # no module and is REPORTED rather than dropped.
-            module = module_resolver(path) if module_resolver is not None else None
+            module = _resolve(path)
             if module:
                 bundles.add(module)
             else:

@@ -199,7 +199,7 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-sonar:sonar r
   --project {project_key} --pr {pr} [--ce-wait-timeout {secs}]
 ```
 
-**Output:** TOON carrying `count_status` (`confirmed` | `undecidable`), `open_issue_count` (`0`-or-more on `confirmed`, `null` on `undecidable` — never a false `0`), `rules[]`, `files[]`, `issues[]` and `count_status_reason` on `undecidable` (with `analysis_revision` and `head_revision` beside it when the read was decided on a revision). An unconfigured provider returns the typed `unconfigured` status, distinct from a read that failed. The issue `message` is deliberately absent: the trusted structured fields are what a caller acts on.
+**Output:** TOON carrying `count_status` (`confirmed` | `undecidable`), `open_issue_count` (`0`-or-more on `confirmed`, `null` on `undecidable` — never a false `0`), `analysis_revision` and `head_revision` (the compared pair; both blank on a non-PR read, where no comparison happens), `rules[]`, `files[]`, `issues[]` and `count_status_reason` on `undecidable`. An unconfigured provider returns the typed `unconfigured` status, distinct from a read that failed. The issue `message` is deliberately absent: the trusted structured fields are what a caller acts on.
 
 ### Scan-Summary Marker (sonar-scan-summary.jsonl)
 
@@ -216,7 +216,7 @@ Row fields (written by `sonar.py:_write_scan_summary`):
 | `project` | string | yes | Sonar project key the fetch enumerated |
 | `scanned_sha` | string | yes | The worktree HEAD SHA the scan attests to; the empty string `""` when the SHA cannot be resolved (not a git tree / git unavailable) — the row is still written |
 | `analysis_revision` | string | yes | The SCM revision Sonar reports for the pull request's analysis (`commit.sha`); `""` when the provider reports none, and always `""` on a non-PR fetch (no revision is compared there) |
-| `head_revision` | string | yes | The commit the analysis revision was compared against — the pull request's source-branch ref, else the working tree's HEAD; `""` when it could not be resolved |
+| `head_revision` | string | yes | The commit the analysis revision was compared against — the pull request's source-branch ref, else the working tree's HEAD; `""` when it could not be resolved, and `""` on a non-PR fetch (no comparison happened) |
 | `ts` | string | yes | ISO-8601 UTC timestamp of the fetch |
 
 **Write-even-at-count==0 guarantee:** the row is appended on every `fetch_findings`, so a `confirmed` `new_code_issue_count: 0` is a positive on-disk attestation of a verified zero. **Survives-archive guarantee:** the file resolves through `_findings_core.get_findings_dir`, so it lives in and survives `manage-status archive` exactly like `pr-comment.jsonl`. Distinct artifact kind from `sonar-issue.jsonl`: this is a producer-written attestation file (append-only, not managed by the `manage-findings` add/resolve verbs). See [`manage-findings/standards/jsonl-format.md`](../manage-findings/standards/jsonl-format.md) § "Producer-Written Attestation Files" for the artifacts/findings/ inventory entry.

@@ -92,13 +92,15 @@ be the confident-empty signal this gate exists to refuse.
 Root-level test guards run unconditionally whenever the plan adds or edits
 test files. A scoped `module-tests {module}` run never covers `test/*.py` at the
 repository root — no module owns that scope — so **any** footprint that adds or
-edits a test file escalates the module-tests arm to the whole-tree branch,
-regardless of what the scoped derivation would otherwise select. The seam
-reports this directly as `root_guards_required`, which forces
-`divergence_possible: true`; it is the same trigger whether the edited test file
-is a root-level guard or a module's own test file, because a scoped run of that
-module still leaves the root guards unexecuted. A production-only or docs-only
-footprint does not set it, so those stay scoped.
+edits a test FILE under a test root (`test/`, `tests/`) escalates the
+module-tests arm to the whole-tree branch, regardless of what the scoped
+derivation would otherwise select. The seam reports this directly as
+`root_guards_required`, which forces `divergence_possible: true`; it is the same
+trigger whether the edited test file is a root-level guard or a module's own test
+file, because a scoped run of that module still leaves the root guards
+unexecuted. A Maven module's `src/test/…` is NOT this trigger: those tests live
+inside the module, so a module-scoped run covers them natively. A
+production-only or docs-only footprint sets no trigger, so those stay scoped.
 
 When the verdict does stay scoped, the seam's `excluded_population` names the
 populations the run does not cover (every module outside the target, and the

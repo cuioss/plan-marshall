@@ -611,8 +611,9 @@ whether to continue at the limit. Record every finding and its disposition.
      A dismissal the lane cannot transmit is a **blocker**, never a silent pass: record the failure
      and stop.
    - An `undecidable` read (the analysis did not settle, the analysis is of another commit —
-     `stale_analysis` — no revision was reported for it, or the REST/auth call failed) is a
-     **blocker**, never a `0`: retry the read, and if it stays undecidable do not merge. An
+     `stale_analysis` — no revision was reported for it, its head could not be resolved, or the
+     REST/auth call failed) is a **blocker**, never a `0`: retry the read, and if it stays
+     undecidable do not merge. An
      `unconfigured` read — the typed status the provider answers when the credential resolve said
      existed could not authenticate — is a blocker too; pass it to the gate and to `sonar-facts` as
      `--count-status unconfigured`.
