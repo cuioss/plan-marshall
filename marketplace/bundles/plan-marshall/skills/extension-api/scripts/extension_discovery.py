@@ -247,6 +247,11 @@ def read_implements_field(skill_md_path: Path) -> list[str]:
     stripped so a quoted declaration resolves to the same value as an unquoted
     one.
 
+    The inline form is SPLIT on commas. A flat emitter may only write a string
+    under ``metadata`` (the Agent Skills map is string-to-string), so it folds a
+    multi-value declaration into one comma-joined scalar; splitting here is what
+    keeps a deployed manifest's declaration list identical to the source's.
+
     Args:
         skill_md_path: Path to a candidate doc with ``---``-fenced frontmatter.
 
@@ -279,8 +284,10 @@ def read_implements_field(skill_md_path: Path) -> list[str]:
 
         inline = _strip_scalar_quotes(value)
         if inline:
-            # Inline-scalar form: implements: <value>
-            return [inline]
+            # Inline-scalar form: implements: <value>[, <value>…]. The comma split
+            # restores a multi-value declaration a flat emitter folded into one
+            # string (metadata values must be strings).
+            return [declared.strip() for declared in inline.split(',') if declared.strip()]
 
         # Block-sequence form: collect the following ``- value`` item lines.
         values: list[str] = []

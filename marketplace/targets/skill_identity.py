@@ -31,7 +31,7 @@ IMPLEMENTS_KEY: Final[str] = 'implements'
 
 
 def implements_metadata_lines(raw: str) -> list[str]:
-    """Return the ``metadata`` lines that carry a skill's ``implements:`` declaration.
+    """Return the ``metadata`` line that carries a skill's ``implements:`` declaration.
 
     The flat targets used to DROP the declaration: the frontmatter transform wrote
     a fixed key set, so a deployed ``SKILL.md`` declared no archetype and extension
@@ -46,22 +46,22 @@ def implements_metadata_lines(raw: str) -> list[str]:
     for exactly this kind of declaration — the same home the ``bundle``/``skill``
     identity already uses, and one no runtime has to learn a new top-level key for.
 
-    The parsed source value arrives flattened by ``parse_frontmatter`` (a block
-    sequence becomes a comma-joined string), so a declaration with more than one
-    value is re-emitted as a block sequence and a single value as an inline scalar.
-    Every VALUE is byte-identical to the source; only the YAML spelling of a
-    one-item block sequence collapses to the scalar form that means the same thing.
+    The VALUE is always a single string, comma-joined when the source declares
+    several, because the Agent Skills ``metadata`` map is string-to-string: a YAML
+    sequence there is out of spec and a strict loader may reject the whole skill.
+    ``read_implements_field`` splits the joined form back into its values, so a
+    multi-value declaration survives the round trip without putting a sequence in
+    the map.
 
     Args:
-        raw: The parsed ``implements`` value, or an empty string.
+        raw: The parsed ``implements`` value, or an empty string. ``parse_frontmatter``
+            has already flattened a block sequence to a comma-joined string.
 
     Returns:
-        The lines to append inside the ``metadata`` block, or ``[]`` when the
-        source declares no ``implements`` at all.
+        The line to append inside the ``metadata`` block, or ``[]`` when the source
+        declares no ``implements`` at all.
     """
     values = [value.strip() for value in raw.split(',') if value.strip()]
     if not values:
         return []
-    if len(values) == 1:
-        return [f'  {IMPLEMENTS_KEY}: {values[0]}']
-    return [f'  {IMPLEMENTS_KEY}:', *(f'    - {value}' for value in values)]
+    return [f'  {IMPLEMENTS_KEY}: {", ".join(values)}']

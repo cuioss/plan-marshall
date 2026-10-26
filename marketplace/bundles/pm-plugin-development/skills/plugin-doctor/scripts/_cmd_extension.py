@@ -986,7 +986,9 @@ def cmd_extension(args) -> dict:
         from _doctor_shared import find_marketplace_root
 
         discovered = find_marketplace_root()
-        scan_root = discovered if discovered is not None else _MARKETPLACE_FROM_SCRIPT
+        # ``find_marketplace_root`` answers with the BUNDLES directory; the scan
+        # wants the marketplace ROOT it hangs under (it appends ``bundles/``).
+        scan_root = discovered.parent if discovered is not None else _MARKETPLACE_FROM_SCRIPT
         if scan_root is None:
             # A flat deployment: there is no marketplace tree to scan, and saying
             # so is the answer — the previous fallback probed the deploy root's

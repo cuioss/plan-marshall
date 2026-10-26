@@ -161,7 +161,13 @@ def test_the_deployed_manifest_declares_the_archetype(target: str, two_bundle_so
 def test_a_block_sequence_declaration_survives_the_emitters(
     target: str, two_bundle_source: Path, tmp_path: Path
 ) -> None:
-    """A multi-value ``implements:`` block sequence keeps every value, in order."""
+    """A multi-value ``implements:`` block sequence keeps every value, in order.
+
+    The deployed ``metadata`` map is string-to-string in the Agent Skills spec, so
+    the values are folded into ONE scalar there and the reader splits them back.
+    A sequence in that map would be out of spec and a strict loader could reject
+    the whole skill.
+    """
     manifest = two_bundle_source / _DOMAIN_BUNDLE / 'skills' / _DOMAIN_SKILL / 'SKILL.md'
     manifest.write_text(
         '---\nname: plan-marshall-plugin\ndescription: demo domain bundle\nimplements:\n'
@@ -178,6 +184,9 @@ def test_a_block_sequence_declaration_survives_the_emitters(
         _DOMAIN_BUNDLE_ARCHETYPE,
         _FINALIZE_STEP_EXT_POINT,
     ]
+    metadata_block = (deployed / 'SKILL.md').read_text(encoding='utf-8').split('---')[1]
+    assert f'  implements: {_DOMAIN_BUNDLE_ARCHETYPE}, {_FINALIZE_STEP_EXT_POINT}' in metadata_block
+    assert '    - ' not in metadata_block, 'a YAML sequence in metadata is out of the Agent Skills spec'
 
 
 @pytest.mark.parametrize('target', sorted(_EMITTERS))
