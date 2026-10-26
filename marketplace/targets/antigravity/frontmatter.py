@@ -25,7 +25,11 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from marketplace.targets.skill_identity import implements_metadata_lines, skill_identity_metadata_lines
+from marketplace.targets.skill_identity import (
+    implements_metadata_lines,
+    skill_identity_metadata_lines,
+    step_metadata_lines,
+)
 
 # Lookup sentinel distinguishing "key absent from tool_permissions" from
 # "key present with a null value".
@@ -194,6 +198,7 @@ def transform_skill_frontmatter(
         'compatibility: Adapted from plan-marshall marketplace (Claude Code native)',
         *skill_identity_metadata_lines(bundle, skill_name),
         *implements_metadata_lines(fm.get('implements', '')),
+        *step_metadata_lines(fm),
         '---',
     ]
     return '\n'.join(lines)

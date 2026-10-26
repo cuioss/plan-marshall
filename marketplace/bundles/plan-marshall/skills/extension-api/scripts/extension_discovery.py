@@ -972,6 +972,12 @@ _IMPLEMENTOR_FRONTMATTER_KEYS: tuple[str, ...] = (
     'verification_profile',
 )
 
+#: The implementor fields whose value is a LIST. A flat emitter folds such a field
+#: into one comma-joined string (an Agent Skills ``metadata`` value must be a
+#: string), so a scalar value for these keys is split back into its items here —
+#: the one place a list-shaped field is read, on either layout.
+_LIST_FRONTMATTER_KEYS: frozenset[str] = frozenset({'presets', 'canonicals'})
+
 
 def _read_frontmatter_fields(doc_path: Path, keys: tuple[str, ...]) -> dict[str, Any]:
     """Read the named top-level frontmatter scalars/lists from ``doc_path``.
@@ -1097,6 +1103,15 @@ def _read_frontmatter_fields(doc_path: Path, keys: tuple[str, ...]) -> dict[str,
     # them shadow a top-level declaration of the same name.
     for meta_key, meta_val in metadata_fields.items():
         fields.setdefault(meta_key, meta_val)
+
+    # A flat emitter folds a list-valued field into ONE comma-joined string (an
+    # Agent Skills ``metadata`` value must be a string), so a scalar value for a
+    # list-shaped key is split back into its items. Without this a deployed
+    # ``presets: full, standard`` would read as a single-element list.
+    for list_key in _LIST_FRONTMATTER_KEYS:
+        list_value = fields.get(list_key)
+        if isinstance(list_value, str):
+            fields[list_key] = [item.strip() for item in list_value.split(',') if item.strip()]
 
     return fields
 

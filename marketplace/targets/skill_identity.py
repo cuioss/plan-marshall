@@ -29,6 +29,25 @@ def skill_identity_metadata_lines(bundle: str, skill_name: str) -> list[str]:
 #: The runtime reader is ``extension_discovery.read_implements_field``.
 IMPLEMENTS_KEY: Final[str] = 'implements'
 
+#: The ext-point step fields a flat deployment must carry for a discovered
+#: implementor to keep its meaning: ``order``/``default_on``/``presets`` decide
+#: whether a finalize step is a seeded default and where it sorts,
+#: ``canonicals``/``verification_profile`` carry the verify contract. The reader
+#: is ``extension_discovery._read_frontmatter_fields`` (it descends one level into
+#: ``metadata``), and the contracts are ext-point-finalize-step.md /
+#: ext-point-build-verify-step.md / ext-point-verify.md.
+STEP_METADATA_KEYS: Final[tuple[str, ...]] = (
+    'order',
+    'default_on',
+    'presets',
+    'canonicals',
+    'verification_profile',
+)
+
+#: The step fields whose source shape is a LIST; the emitted metadata value joins
+#: them because an Agent Skills ``metadata`` value must be a string.
+LIST_STEP_METADATA_KEYS: Final[frozenset[str]] = frozenset({'presets', 'canonicals'})
+
 
 def implements_metadata_lines(raw: str) -> list[str]:
     """Return the ``metadata`` line that carries a skill's ``implements:`` declaration.
@@ -65,3 +84,42 @@ def implements_metadata_lines(raw: str) -> list[str]:
     if not values:
         return []
     return [f'  {IMPLEMENTS_KEY}: {", ".join(values)}']
+
+
+def step_metadata_lines(fm: dict[str, str]) -> list[str]:
+    """Return the ``metadata`` lines carrying an ext-point step's own fields.
+
+    A skill that declares ``implements:`` is usually a step, and a step's meaning
+    lives in its other declarations: ``default_on`` decides whether a finalize step
+    is seeded into the default set, ``order`` where it sorts, ``presets`` which
+    postures include it. The emitters wrote none of them, so a flat install
+    discovered such a step but read every field as its default — ``automatic-review``
+    (``default_on: true``) came back ``bundle-optional`` and was never seeded, while
+    ``plan-retrospective`` lost its ``order``/``presets``.
+
+    The values go under ``metadata`` for the same reason ``implements`` does (it is
+    the Agent Skills map for non-standard declarations, and its values must be
+    strings), so a list-valued field is comma-joined here and split back by
+    ``extension_discovery._read_frontmatter_fields``. Only fields the SOURCE
+    declares are emitted: a step that declares no ``verification_profile`` keeps its
+    absence, which is the ext-point-verify non-participation signal.
+
+    Args:
+        fm: The parsed source frontmatter.
+
+    Returns:
+        The lines to append inside the ``metadata`` block, in
+        :data:`STEP_METADATA_KEYS` order.
+    """
+    lines: list[str] = []
+    for key in STEP_METADATA_KEYS:
+        value = (fm.get(key) or '').strip()
+        if not value:
+            continue
+        if key in LIST_STEP_METADATA_KEYS:
+            values = [item.strip() for item in value.split(',') if item.strip()]
+            if not values:
+                continue
+            value = ', '.join(values)
+        lines.append(f'  {key}: {value}')
+    return lines

@@ -36,12 +36,15 @@ _disc = load_script_module('plan-marshall', 'extension-api', 'extension_discover
 #: fixture implements. Both are read from the source tree's own vocabulary.
 _DOMAIN_BUNDLE_ARCHETYPE = 'plan-marshall:extension-api/standards/ext-point-domain-bundle'
 _FINALIZE_STEP_EXT_POINT = 'plan-marshall:extension-api/standards/ext-point-finalize-step'
+_WORKFLOW_EXT_POINT = 'plan-marshall:extension-api/standards/ext-point-execution-context-workflow'
 
 _DOMAIN_BUNDLE = 'demo-domain'
 _OPT_IN_BUNDLE = 'demo-opt'
+_DEFAULT_BUNDLE = 'demo-default'
 _UNDECLARED_BUNDLE = 'demo-undeclared'
 _DOMAIN_SKILL = 'plan-marshall-plugin'
 _OPT_IN_SKILL = 'plan-retrospective'
+_AUTO_REVIEW_SKILL = 'automatic-review'
 _UNDECLARED_SKILL = 'plain-skill'
 
 #: The extension the fixture's domain bundle ships. Standalone (no marketplace
@@ -114,7 +117,29 @@ def two_bundle_source(tmp_path: Path) -> Path:
                 f'description: demo opt-in step\n'
                 f'order: 995\n'
                 f'default_on: false\n'
+                f'presets:\n'
+                f'  - standard\n'
+                f'  - full\n'
                 f'implements: {_FINALIZE_STEP_EXT_POINT}\n'
+            )
+        },
+    )
+    # A default-on step: on a nested install the promotion rule turns this into a
+    # seeded built-in. The same rule must fire on a flat one, which it can only do
+    # if the emitters carry ``default_on``/``order``/``presets`` into the deployed
+    # manifest.
+    _write_bundle(
+        marketplace,
+        _DEFAULT_BUNDLE,
+        {
+            _AUTO_REVIEW_SKILL: (
+                f'name: {_AUTO_REVIEW_SKILL}\n'
+                f'description: demo default-on step\n'
+                f'order: 30\n'
+                f'default_on: true\n'
+                f'presets:\n'
+                f'  - full\n'
+                f'implements: {_WORKFLOW_EXT_POINT}\n'
             )
         },
     )
@@ -232,7 +257,12 @@ def test_discover_applicable_extensions_reports_modules_on_a_flat_tree(
 def test_the_opt_in_step_is_found_on_a_flat_tree(
     target: str, two_bundle_source: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """``_scan_skills_roots_for_implementors`` finds a bundle-optional implementor."""
+    """``_scan_skills_roots_for_implementors`` finds a bundle-optional implementor.
+
+    The record must also keep the step's OWN fields — ``order``, ``default_on`` and
+    ``presets`` — because a flat install otherwise reads every one of them as its
+    default and the promotion rule below can never fire.
+    """
     root = _emit(target, two_bundle_source, tmp_path)
     monkeypatch.setattr(_disc, 'get_marketplace_bundles_path', lambda: root)
     monkeypatch.setattr(_disc, 'get_bundle_cache_roots', lambda: ())
@@ -241,6 +271,27 @@ def test_the_opt_in_step_is_found_on_a_flat_tree(
 
     assert [record['name'] for record in records] == [f'{_OPT_IN_BUNDLE}:{_OPT_IN_SKILL}']
     assert records[0]['source'] == 'bundle-optional'
+    assert records[0]['order'] == 995
+    assert records[0]['default_on'] is False
+    assert records[0]['presets'] == ['standard', 'full']
+
+
+@pytest.mark.parametrize('target', sorted(_EMITTERS))
+def test_a_default_on_step_is_promoted_to_built_in_on_a_flat_tree(
+    target: str, two_bundle_source: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The ``default_on`` promotion fires on a flat tree, so a seeded step stays seeded."""
+    root = _emit(target, two_bundle_source, tmp_path)
+    monkeypatch.setattr(_disc, 'get_marketplace_bundles_path', lambda: root)
+    monkeypatch.setattr(_disc, 'get_bundle_cache_roots', lambda: ())
+
+    records = _disc._scan_skills_roots_for_implementors(_WORKFLOW_EXT_POINT)
+
+    assert [record['name'] for record in records] == [f'{_DEFAULT_BUNDLE}:{_AUTO_REVIEW_SKILL}']
+    assert records[0]['source'] == 'built-in', 'a default-on step must seed the default set on a flat install'
+    assert records[0]['default_on'] is True
+    assert records[0]['order'] == 30
+    assert records[0]['presets'] == ['full']
 
 
 # =============================================================================
