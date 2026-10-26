@@ -40,8 +40,7 @@ _HELPER_NAMES: frozenset[str] = frozenset({'resolve_sibling_skill_path', 'requir
 #: ``(module path relative to the repo root, skill literal)``. Each carries the
 #: reason it cannot fail on a flat tree, in one line.
 _FLAT_SAFE_LIB_LOOP = (
-    'the same import loop probes plan-marshall-{lib} immediately after the bare join, '
-    'which is the flat directory name'
+    'the same import loop probes plan-marshall-{lib} immediately after the bare join, which is the flat directory name'
 )
 
 _FLAT_SAFE_GENERATOR_BOOTSTRAP = (
@@ -250,7 +249,7 @@ def test_the_detector_finds_a_planted_join(tmp_path: Path) -> None:
         'from pathlib import Path\n'
         'from marketplace_bundles import resolve_skills_root\n'
         '_SKILLS_DIR = resolve_skills_root(Path(__file__))\n'
-        "_THIS_DIR = Path(__file__).resolve().parent\n"
+        '_THIS_DIR = Path(__file__).resolve().parent\n'
         "A = _SKILLS_DIR / 'phase-6-finalize'\n"
         "B = _THIS_DIR.parent.parent / 'tools-file-ops' / 'scripts'\n"
         "C = Path(__file__).resolve().parent.parent / 'manage-locks'\n"

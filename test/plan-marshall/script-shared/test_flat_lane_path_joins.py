@@ -39,7 +39,7 @@ _MODULES: dict[str, tuple[str, str, str]] = {
 def _program(root: Path) -> str:
     """Return the driver that asks each deployed module where its sibling join landed."""
     loads = '\n'.join(
-        f"    {key!r}: load({skill!r}, {relative!r}, {name!r})," for key, (skill, relative, name) in _MODULES.items()
+        f'    {key!r}: load({skill!r}, {relative!r}, {name!r}),' for key, (skill, relative, name) in _MODULES.items()
     )
     return f"""
 import importlib.util, json, sys

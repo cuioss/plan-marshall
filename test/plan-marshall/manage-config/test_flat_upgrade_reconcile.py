@@ -30,9 +30,9 @@ from _flat_install_fixtures import (
     run_python_in_flat,
     run_script_in_flat,
 )
+from toon_parser import parse_toon
 
 from conftest import PROJECT_ROOT, run_script
-from toon_parser import parse_toon
 
 _MANAGE_CONFIG = (
     PROJECT_ROOT
@@ -198,9 +198,7 @@ def test_the_manifest_loadability_path_imports_on_a_flat_install(flat_install: P
     """
     project = tmp_path / 'project'
     project.mkdir()
-    script = (
-        flat_install / 'skills' / 'plan-marshall-manage-execution-manifest' / 'scripts' / '_manifest_validation.py'
-    )
+    script = flat_install / 'skills' / 'plan-marshall-manage-execution-manifest' / 'scripts' / '_manifest_validation.py'
     program = f"""
 import importlib.util, json, sys
 path = {str(script)!r}

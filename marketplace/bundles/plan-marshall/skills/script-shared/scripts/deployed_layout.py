@@ -314,6 +314,29 @@ def split_skill_relative_path(relative_path: str) -> tuple[str, str] | None:
     return parts[1], (parts[2] if len(parts) > 2 else '')
 
 
+def flat_skill_paths(root: Path, bundle: str, relative_path: str) -> list[Path]:
+    """Return the flat candidates a skill-anchored subpath could have, in probe order.
+
+    The CONSTRUCTION half of :func:`resolve_skill_path`, split out so a caller that
+    must REPORT a miss can name the path a flat install would carry: the resolver
+    returns ``None`` on a miss and therefore carries no path to report.
+
+    Returns an empty list for a subpath that is not skill-anchored, or for a root
+    that deploys no flat shape (:func:`skill_roots`).
+    """
+    split = split_skill_relative_path(relative_path)
+    if split is None:
+        return []
+    skill, rest = split
+    candidates: list[Path] = []
+    for skills_root in skill_roots(root):
+        candidate = skills_root / flat_skill_dir_name(bundle, skill)
+        if rest:
+            candidate = candidate / rest
+        candidates.append(candidate)
+    return candidates
+
+
 def resolve_skill_path(root: Path, bundle: str, relative_path: str) -> Path | None:
     """Resolve a skill-anchored subpath against a flat root, or ``None``.
 
@@ -328,14 +351,7 @@ def resolve_skill_path(root: Path, bundle: str, relative_path: str) -> Path | No
     never-``None`` contract belongs to the callers that own a fallback
     construction (``marketplace_bundles.resolve_bundle_path``).
     """
-    split = split_skill_relative_path(relative_path)
-    if split is None:
-        return None
-    skill, rest = split
-    for skills_root in skill_roots(root):
-        candidate = skills_root / flat_skill_dir_name(bundle, skill)
-        if rest:
-            candidate = candidate / rest
+    for candidate in flat_skill_paths(root, bundle, relative_path):
         if candidate.exists():
             return candidate
     return None

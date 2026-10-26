@@ -80,6 +80,7 @@ from _build_server_protocol import STATUS_TIMEOUT as WIRE_STATUS_TIMEOUT  # noqa
 # accident of naming" hazard that made the explicit `killed` row necessary in
 # `_build_server_protocol._RESULT_STATUS_TO_WIRE`.
 from _build_shared import cmd_run_common  # noqa: E402
+from marketplace_bundles import resolve_sibling_skill_path  # noqa: E402
 from marketplace_paths import NO_PLAN_SENTINEL, home_root, names_real_plan  # noqa: E402
 from plan_logging import log_entry  # noqa: E402
 from toon_parser import serialize_toon  # noqa: E402
@@ -161,16 +162,20 @@ def routable_notations() -> tuple[str, ...]:
 # build_server.py (the build-server-client verbs) is NOT an executor-registered
 # notation reachable from this build subprocess's PYTHONPATH, so it is reused as
 # the single owner of the submit/wait/preflight contract via an in-process
-# file-path import, mirroring _build_queue_slot._load_build_queue. The sibling
-# scripts dirs it imports transitively are ensured on sys.path before the exec.
+# file-path import, mirroring _build_queue_slot._load_build_queue. Both sibling
+# skills are reached through the shared flat-aware join, so a flat install finds
+# ``skills/plan-marshall-build-server-client/…``. The sibling scripts dirs it
+# imports transitively are ensured on sys.path before the exec.
 _FACTORY_DIR = Path(__file__).resolve().parent
-_BUILD_SERVER_CLIENT_PATH = _FACTORY_DIR.parent.parent.parent / 'build-server-client' / 'scripts' / 'build_server.py'
+_BUILD_SERVER_CLIENT_PATH = resolve_sibling_skill_path(
+    Path(__file__), 'plan-marshall', 'skills/build-server-client/scripts/build_server.py'
+)
 _BUILD_SERVER_DEP_DIRS: tuple[Path, ...] = (
     _BUILD_SERVER_CLIENT_PATH.parent,  # build_server itself
     _FACTORY_DIR,  # _build_server_protocol/_registry
     _FACTORY_DIR.parent,  # marketplace_paths, worktree_sha
     _FACTORY_DIR.parent / 'workflow',  # triage_helpers
-    _FACTORY_DIR.parent.parent.parent / 'manage-change-ledger' / 'scripts',  # _ledger_core
+    resolve_sibling_skill_path(Path(__file__), 'plan-marshall', 'skills/manage-change-ledger/scripts'),
 )
 
 # Lazily-imported build_server client module (file-path import; see below).

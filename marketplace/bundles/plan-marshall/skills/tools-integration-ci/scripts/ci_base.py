@@ -2129,9 +2129,13 @@ def _load_persist():
     """
     import importlib.util
 
-    scripts_dir = Path(__file__).resolve().parent  # .../tools-integration-ci/scripts
-    skills_dir = scripts_dir.parent.parent  # .../skills
-    module_path = skills_dir / 'manage-ci-artifacts' / 'scripts' / 'manage-ci-artifacts.py'
+    # Local import: this module is loaded early by the CI entry points, and the
+    # join is needed only when persistence is actually consulted.
+    from marketplace_bundles import resolve_sibling_skill_path
+
+    module_path = resolve_sibling_skill_path(
+        Path(__file__), 'plan-marshall', 'skills/manage-ci-artifacts/scripts/manage-ci-artifacts.py'
+    )
     if not module_path.is_file():
         return None
     try:

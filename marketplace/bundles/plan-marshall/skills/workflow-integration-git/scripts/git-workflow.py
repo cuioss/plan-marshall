@@ -126,6 +126,7 @@ from git_provider import _DEFAULT_TIMEOUT_SECONDS, run_git
 # ``main_checkout_root`` is pure ``git rev-parse --git-common-dir``. It stays the
 # resolver for the ``git -C`` target, which must name a real git checkout — an
 # override directory is not one.
+from marketplace_bundles import resolve_sibling_skill_path
 from marketplace_paths import (
     ORCHESTRATOR_WORKTREE_KEY,
     _find_plan_root_from_cwd,
@@ -1717,8 +1718,8 @@ def _executor_path() -> Path | None:
 # that roster is illustrative, not a closed set, and the placement is chosen so a
 # NEW caller inherits the refresh without having to know it exists.
 
-_GENERATE_EXECUTOR_PATH = (
-    Path(__file__).resolve().parent.parent.parent / 'tools-script-executor' / 'scripts' / 'generate_executor.py'
+_GENERATE_EXECUTOR_PATH = resolve_sibling_skill_path(
+    Path(__file__), 'plan-marshall', 'skills/tools-script-executor/scripts/generate_executor.py'
 )
 
 _EXECUTOR_REFRESH_TIMEOUT_SECONDS = 120

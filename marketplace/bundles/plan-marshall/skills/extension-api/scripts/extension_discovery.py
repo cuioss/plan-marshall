@@ -17,7 +17,11 @@ import deployed_layout
 
 # Direct import - executor sets up PYTHONPATH for cross-skill imports
 import resolve_project_dir as _routing
-from marketplace_bundles import resolve_bundle_path, resolve_bundles_root, resolve_skills_root
+from marketplace_bundles import (
+    resolve_bundle_path,
+    resolve_bundles_root,
+    resolve_sibling_skill_path,
+)
 from marketplace_paths import (
     _resolve_skill_root,
     find_marketplace_path,
@@ -84,12 +88,14 @@ def get_extension_api_scripts_path() -> Path:
     """Get path to extension scripts directory (where extension_base.py lives).
 
     Extension base classes live in ``script-shared/scripts/extension/`` while
-    this discovery script lives in ``extension-api/scripts/``. The owning
-    bundle's ``skills`` directory is resolved via ``resolve_skills_root``
-    (identity walk, no index arithmetic), then descended into the sibling
-    ``script-shared`` skill.
+    this discovery script lives in ``extension-api/scripts/``. The sibling is
+    reached through the shared flat-aware join
+    (:func:`marketplace_bundles.resolve_sibling_skill_path`), so a flat install
+    answers ``skills/plan-marshall-script-shared/…`` and a nested one
+    (marketplace source or plugin cache) keeps answering
+    ``skills/script-shared/…`` in the tree this script runs from.
     """
-    return resolve_skills_root(Path(__file__)) / 'script-shared' / 'scripts' / 'extension'
+    return resolve_sibling_skill_path(Path(__file__), 'plan-marshall', 'skills/script-shared/scripts/extension')
 
 
 # The build skills whose ``scripts/extension.py`` ships a ``BuildExtensionBase``
@@ -110,19 +116,19 @@ def get_build_extension_paths() -> list[Path]:
 
     Each build skill (``build-pyproject`` / ``build-maven`` / ``build-gradle`` /
     ``build-npm``) ships a ``BuildExtensionBase`` subclass under
-    ``scripts/extension.py``. The skills directory is resolved via
-    ``resolve_skills_root`` (identity walk, the same anchor
-    :func:`get_extension_api_scripts_path` uses); each named build skill's
-    ``scripts/extension.py`` is included only when it exists on disk.
+    ``scripts/extension.py``. Every name is resolved through the shared
+    flat-aware sibling join (the same seam
+    :func:`get_extension_api_scripts_path` uses), so a flat install finds
+    ``skills/plan-marshall-build-maven/scripts/extension.py`` where a bare join
+    found nothing; each path is included only when it exists on disk.
 
     Returns:
         List of existing ``extension.py`` paths, one per build skill that ships
         one, in :data:`_BUILD_EXTENSION_SKILLS` order.
     """
-    skills_root = resolve_skills_root(Path(__file__))
     paths: list[Path] = []
     for skill in _BUILD_EXTENSION_SKILLS:
-        candidate = skills_root / skill / 'scripts' / 'extension.py'
+        candidate = resolve_sibling_skill_path(Path(__file__), 'plan-marshall', f'skills/{skill}/scripts/extension.py')
         if candidate.is_file():
             paths.append(candidate)
     return paths
@@ -1392,7 +1398,7 @@ def _scan_phase5_for_implementors(ext_point: str) -> list[dict[str, Any]]:
     Returns:
         One ``built-in`` record per matching ``phase-5-execute/standards/*.md``.
     """
-    docs_dir = resolve_skills_root(Path(__file__)) / 'phase-5-execute' / 'standards'
+    docs_dir = resolve_sibling_skill_path(Path(__file__), 'plan-marshall', 'skills/phase-5-execute/standards')
     if not docs_dir.is_dir():
         return []
 
@@ -1638,7 +1644,7 @@ def _implementor_scan_surfaces_resolve() -> list[bool]:
     except Exception:
         surfaces.append(False)
     try:
-        phase5_dir = resolve_skills_root(Path(__file__)) / 'phase-5-execute'
+        phase5_dir = resolve_sibling_skill_path(Path(__file__), 'plan-marshall', 'skills/phase-5-execute')
         surfaces.append(_step_doc_surface_resolves(phase5_dir, ('standards',)))
     except Exception:
         surfaces.append(False)

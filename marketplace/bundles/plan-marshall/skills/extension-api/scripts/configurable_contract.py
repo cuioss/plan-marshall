@@ -43,9 +43,13 @@ from pathlib import Path
 from typing import Any
 
 # Direct import - executor sets up PYTHONPATH for cross-skill imports.
-from marketplace_bundles import resolve_skills_root
+from marketplace_bundles import require_sibling_skill_path
 from marketplace_paths import _resolve_skill_root, get_project_skill_roots
 from toon_parser import serialize_toon
+
+# The bundle whose skills the built-in step docs live in.
+_BUNDLE = 'plan-marshall'
+
 
 # The three mandatory sub-fields every ``configurable`` entry MUST declare.
 _REQUIRED_SUBFIELDS: tuple[str, ...] = ('key', 'default', 'description')
@@ -57,8 +61,14 @@ _REQUIRED_SUBFIELDS: tuple[str, ...] = ('key', 'default', 'description')
 
 
 def _phase_6_skill_dir() -> Path:
-    """Return the ``phase-6-finalize`` skill directory in the owning bundle."""
-    return resolve_skills_root(Path(__file__)) / 'phase-6-finalize'
+    """Return the ``phase-6-finalize`` skill directory, as deployed beside this script.
+
+    Through the shared sibling join, so a flat install answers
+    ``skills/plan-marshall-phase-6-finalize`` and a nested one (source checkout or
+    plugin cache) keeps answering ``skills/phase-6-finalize`` in the tree this
+    script runs from.
+    """
+    return require_sibling_skill_path(Path(__file__), _BUNDLE, 'skills/phase-6-finalize')
 
 
 def _strip_default_prefix(step_id: str) -> str:
@@ -164,9 +174,9 @@ def resolve_step_doc_path(step_id: str) -> Path:
     # SKILL.md``. Both the bundle-prefixed id (the marshal seed key) and its
     # boundary-normalized bare form resolve here.
     if step_id in ('plan-marshall:automatic-review', 'automatic-review'):
-        skills_root = resolve_skills_root(Path(__file__))
-        candidate = skills_root / 'automatic-review' / 'SKILL.md'
-        return _guard_within(candidate, skills_root, step_id)
+        skill_dir = require_sibling_skill_path(Path(__file__), _BUNDLE, 'skills/automatic-review')
+        candidate = skill_dir / 'SKILL.md'
+        return _guard_within(candidate, skill_dir.parent, step_id)
 
     skill_dir = _phase_6_skill_dir()
     bare = _strip_default_prefix(step_id)

@@ -81,17 +81,21 @@ from pathlib import Path
 from typing import Any
 
 from file_ops import get_marshal_path, read_json
+from marketplace_bundles import resolve_sibling_skill_path
 from marketplace_paths import names_real_plan
 from plan_logging import log_entry
 
 logger = logging.getLogger(__name__)
 
-# build_queue.py lives in the sibling manage-locks skill. Resolve its path from
-# this file's location (…/script-shared/scripts/build/_build_queue_slot.py →
-# …/manage-locks/scripts/build_queue.py) so the SINGLE owner of the queue logic
-# is reused by file-path import, mirroring integrate_into_main._load_merge_lock.
+# build_queue.py lives in the sibling manage-locks skill. Reached through the
+# shared flat-aware join, so a flat install answers
+# ``skills/plan-marshall-manage-locks/…`` where the bare join named a path that
+# does not exist: the SINGLE owner of the queue logic is reused by file-path
+# import, mirroring integrate_into_main._load_merge_lock.
 _THIS_DIR = Path(__file__).resolve().parent
-_BUILD_QUEUE_PATH = _THIS_DIR.parent.parent.parent / 'manage-locks' / 'scripts' / 'build_queue.py'
+_BUILD_QUEUE_PATH = resolve_sibling_skill_path(
+    Path(__file__), 'plan-marshall', 'skills/manage-locks/scripts/build_queue.py'
+)
 
 # Seconds to sleep between blocked-acquire retries. A module constant (not a
 # parameter) so unit tests can monkeypatch it to 0 — the build wrapper never
@@ -113,7 +117,7 @@ _build_queue_mod: Any = None
 # the build subprocess's executor PYTHONPATH does not include manage-locks.
 _BUILD_QUEUE_DEP_DIRS: tuple[Path, ...] = (
     _BUILD_QUEUE_PATH.parent,  # manage-locks/scripts
-    _THIS_DIR.parent.parent.parent / 'tools-file-ops' / 'scripts',  # file_ops
+    resolve_sibling_skill_path(Path(__file__), 'plan-marshall', 'skills/tools-file-ops/scripts'),  # file_ops
     _THIS_DIR.parent / 'workflow',  # triage_helpers
     _THIS_DIR.parent,  # marketplace_paths, toon_parser
     _THIS_DIR,  # _machine_config (the machine-global cap resolver)

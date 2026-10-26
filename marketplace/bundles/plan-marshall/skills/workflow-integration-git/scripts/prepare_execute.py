@@ -64,6 +64,7 @@ from file_ops import (
     get_plan_dir,
     get_worktree_root,
 )
+from marketplace_bundles import resolve_sibling_skill_path
 from marketplace_paths import PLAN_DIR_NAME
 from triage_helpers import (
     ErrorCode,
@@ -233,7 +234,9 @@ def _restore_slot(src: Path, dst: Path) -> None:
 # ``plan.phase-5-execute.worktree_setup_commands`` seam below runs those commands
 # right after the executor is produced, on the same move-in and re-entry paths.
 
-_GENERATE_EXECUTOR_PATH = _THIS_DIR.parent.parent / 'tools-script-executor' / 'scripts' / 'generate_executor.py'
+_GENERATE_EXECUTOR_PATH = resolve_sibling_skill_path(
+    Path(__file__), 'plan-marshall', 'skills/tools-script-executor/scripts/generate_executor.py'
+)
 
 
 #: Re-exported under this module's historical private names so the many call
