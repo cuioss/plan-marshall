@@ -189,7 +189,7 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings li
   --plan-id {plan_id} --resolution pending --include-qgate
 ```
 
-If empty, return `status: success`, `display_detail: "PR #{pr_number} clean — nothing to triage"` — unless the Sonar producer answered `count_status: undecidable` (a stale analysis, an unreported revision or an unsettled Compute Engine): then the union's emptiness is not a clean pass, and the displayed verdict must say the Sonar result was undecidable rather than clean. Otherwise continue to Step 1.4.
+If empty, return `status: success`, `display_detail: "PR #{pr_number} clean — nothing to triage"` — unless the Sonar producer answered `count_status: undecidable` (a stale analysis, an unreported revision or an unsettled Compute Engine) or the typed `unconfigured` status: then the union's emptiness is not a clean pass, and the displayed verdict must say the Sonar result was undecidable/unconfigured rather than clean. Otherwise continue to Step 1.4.
 
 ### Branch: `producer=finalize-feedback` (store-only union over pr-comment ∪ sonar-issue)
 

@@ -128,7 +128,7 @@ Each provider producer exposes pure zero-LLM verbs — `fetch_findings` (FIND: f
 |---|---|---|---|
 | `workflow-integration-github` | `github_pr fetch_findings --pr-number N --plan-id P` | `pr-comment` | Pre-filter: `comment-patterns.json` drops automated/acknowledgment noise. Untrusted comment body quarantined under `raw_input.{body}`; source-specific metadata (thread_id, author, kind=inline\|review_body) indexed. |
 | `workflow-integration-gitlab` | `gitlab_pr fetch_findings --pr-number N --plan-id P` | `pr-comment` | Mirror of GitHub; provider-agnostic schema. |
-| `workflow-integration-sonar` | `sonar fetch_findings --plan-id P --project K` | `sonar-issue` | Pre-filter: `sonar-rules.json` drops issues already suppressed via NOSONAR. Untrusted issue message quarantined under `raw_input`; severity/rule from the issue. |
+| `workflow-integration-sonar` | `sonar fetch_findings --plan-id P --project K --pr N` | `sonar-issue` | Pre-filter: `sonar-rules.json` drops issues already suppressed via NOSONAR. Untrusted issue message quarantined under `raw_input`; severity/rule from the issue. `--pr` scopes the enumeration to that pull request and arms the analysis-revision gate; without it the count is confirmed on Compute-Engine state alone. |
 | `build-pyproject` / `build-maven` / `build-gradle` / `build-npm` | `run --command-args "…" --plan-id P` (always-on when `--plan-id` is set) | `build-error` / `test-failure` / `lint-issue` | Each parsed log entry self-files during the build run (no respond side). Build tool is the `module` field; issue category becomes `rule`. |
 
 For per-producer CLI specifics see each skill's SKILL.md:

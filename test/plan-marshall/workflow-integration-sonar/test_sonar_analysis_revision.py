@@ -270,6 +270,22 @@ class TestUnreportedRevision:
         assert result['count_status'] == 'undecidable'
         assert result['count_status_reason'] == 'analysis_revision_unavailable'
 
+    def test_a_pull_request_the_provider_has_not_analysed_is_undecidable(self, monkeypatch, plan_context):
+        """A PR Sonar has no analysis for reports no revision — never a confirmed count."""
+        plan_context.plan_dir_for('rev-unanalysed')
+        _install_api(monkeypatch, {_PR_LIST: {'pullRequests': [{'key': '7', 'branch': 'other'}]}})
+        ce, head = _settled()
+
+        with (
+            ce,
+            head,
+            patch.object(sonar_mod, '_fetch_issues', return_value={'status': 'success', 'issues': [], 'total': 0}),
+        ):
+            result = sonar_mod.cmd_fetch_findings(_fetch_args('rev-unanalysed'))
+
+        assert result['count_status'] == 'undecidable'
+        assert result['count_status_reason'] == 'analysis_revision_unavailable'
+
     def test_a_rejected_revision_read_is_undecidable(self, monkeypatch, plan_context):
         plan_context.plan_dir_for('rev-auth')
         _install_api(monkeypatch, {_PR_LIST: _providers_core.RestClientError(401, 'unauthorized')})

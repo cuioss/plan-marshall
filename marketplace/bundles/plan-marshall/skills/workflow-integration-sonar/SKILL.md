@@ -215,8 +215,8 @@ Row fields (written by `sonar.py:_write_scan_summary`):
 | `pr` | string \| null | yes | PR number the fetch was scoped to (`null` for a non-PR / branch fetch) |
 | `project` | string | yes | Sonar project key the fetch enumerated |
 | `scanned_sha` | string | yes | The worktree HEAD SHA the scan attests to; the empty string `""` when the SHA cannot be resolved (not a git tree / git unavailable) — the row is still written |
-| `analysis_revision` | string | yes | The SCM revision Sonar reports for the pull request's analysis (`commit.sha`); `""` when the provider reports none, and always `""` on a non-PR fetch (no revision is compared there) |
-| `head_revision` | string | yes | The commit the analysis revision was compared against — the pull request's source-branch ref, else the working tree's HEAD; `""` when it could not be resolved, and `""` on a non-PR fetch (no comparison happened) |
+| `analysis_revision` | string | yes | The SCM revision Sonar reports for the pull request's analysis (`commit.sha`); `""` when the provider reports none, when the revision read failed, on a CE timeout, and on a non-PR fetch |
+| `head_revision` | string | yes | The commit the analysis revision was compared against — the pull request's source-branch ref, else the working tree's HEAD; `""` when it could not be resolved, before a comparison was reached (CE timeout, failed read), and on a non-PR fetch |
 | `ts` | string | yes | ISO-8601 UTC timestamp of the fetch |
 
 **Write-even-at-count==0 guarantee:** the row is appended on every `fetch_findings`, so a `confirmed` `new_code_issue_count: 0` is a positive on-disk attestation of a verified zero. **Survives-archive guarantee:** the file resolves through `_findings_core.get_findings_dir`, so it lives in and survives `manage-status archive` exactly like `pr-comment.jsonl`. Distinct artifact kind from `sonar-issue.jsonl`: this is a producer-written attestation file (append-only, not managed by the `manage-findings` add/resolve verbs). See [`manage-findings/standards/jsonl-format.md`](../manage-findings/standards/jsonl-format.md) § "Producer-Written Attestation Files" for the artifacts/findings/ inventory entry.

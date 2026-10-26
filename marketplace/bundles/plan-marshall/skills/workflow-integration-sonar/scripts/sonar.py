@@ -354,7 +354,11 @@ def _resolve_head_revision(branch: str | None) -> str:
     working tree's HEAD is the comparison point.
 
     Returns ``''`` when nothing resolves, which the verification reports as
-    ``head_revision_unavailable`` rather than comparing against a guess.
+    ``head_revision_unavailable`` rather than comparing against a guess. The local
+    ref is preferred over the remote-tracking one, so a reading checkout whose
+    local branch lags the remote compares against the stale tip and reports
+    ``stale_analysis`` — a spurious blocker in that direction, never a false
+    ``confirmed``.
     """
     if branch:
         for ref in (f'refs/heads/{branch}', f'refs/remotes/origin/{branch}'):
@@ -1170,7 +1174,11 @@ Examples:
                     {'flags': ['--project'], 'required': True, 'help': 'SonarQube project key'},
                     {
                         'flags': ['--pr'],
-                        'help': 'Pull request ID — scopes the CE-status lookup and new-code enumeration',
+                        'help': (
+                            'Pull request ID — scopes the CE-status lookup, the new-code enumeration and '
+                            'the analysis-revision gate (omitting it leaves the fetch on the CE-state '
+                            'contract alone)'
+                        ),
                     },
                     {'flags': ['--severities'], 'help': 'Filter by severity (comma-separated)'},
                     {'flags': ['--types'], 'help': 'Filter by type (comma-separated)'},
@@ -1205,7 +1213,11 @@ Examples:
                     {'flags': ['--project'], 'required': True, 'help': 'SonarQube project key'},
                     {
                         'flags': ['--pr'],
-                        'help': 'Pull request ID — scopes the CE-status lookup and new-code enumeration',
+                        'help': (
+                            'Pull request ID — scopes the CE-status lookup, the new-code enumeration and '
+                            'the analysis-revision gate (omitting it leaves the fetch on the CE-state '
+                            'contract alone)'
+                        ),
                     },
                     {
                         'flags': ['--ce-wait-timeout'],

@@ -277,8 +277,8 @@ Each line is a JSON object written by `sonar.py:_write_scan_summary`. This is a 
 | `pr` | string \| null | yes | PR number the fetch was scoped to (`null` for a non-PR / branch fetch) |
 | `project` | string | yes | Sonar project key the fetch enumerated |
 | `scanned_sha` | string | yes | Worktree HEAD SHA the scan attests to; `""` when the SHA cannot be resolved |
-| `analysis_revision` | string | yes | The SCM revision Sonar reports for the pull request's analysis; `""` when the provider reports none and on a non-PR fetch |
-| `head_revision` | string | yes | The commit the analysis revision was compared against; `""` when it could not be resolved |
+| `analysis_revision` | string | yes | The SCM revision Sonar reports for the pull request's analysis; `""` when the provider reports none, when the revision read failed, on a CE timeout, and on a non-PR fetch |
+| `head_revision` | string | yes | The commit the analysis revision was compared against; `""` when it could not be resolved, before a comparison was reached, and on a non-PR fetch |
 | `ts` | string | yes | ISO-8601 UTC timestamp of the fetch |
 
 ## Hash ID Generation
