@@ -349,6 +349,11 @@ def test_every_full_document_writer_is_named_in_the_write_status_docstring() -> 
     }
     callers.discard('_status_core')  # the seam itself
 
-    unnamed = sorted(stem for stem in callers if stem not in docstring)
+    def _named(stem: str) -> bool:
+        # A word-boundary match, not a substring: `_cmd_loop` is a substring of
+        # `_cmd_loop_back`, and a new `_cmd_loop.py` must not pass on that.
+        return re.search(rf'(?<![A-Za-z0-9_]){re.escape(stem)}(?![A-Za-z0-9_])', docstring) is not None
+
+    unnamed = sorted(stem for stem in callers if not _named(stem))
 
     assert not unnamed, f'write_status docstring does not name these callers: {unnamed}'

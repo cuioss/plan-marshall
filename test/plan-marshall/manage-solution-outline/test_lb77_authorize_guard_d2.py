@@ -401,15 +401,15 @@ def _frozen_record_bullet() -> str:
 
 
 def test_the_authorization_outcome_vocabulary_matches_its_documents() -> None:
-    """Every reported outcome is documented, and every documented outcome is reported.
+    """Every term the vocabulary declares appears in both documents that describe it.
 
-    The two directions this can check are the two that can differ: a term the code
-    reports that the documents omit leaves a reader without the state it must act
-    on, and a term the rubric documents that the writers' docstrings do not
-    describes nothing the author can find. ``AUTHORIZATION_OUTCOMES`` itself is
-    declared in this same module, so a term listed there but never emitted is NOT
-    detectable by reading the module's source — it is caught by the tests that
-    drive each outcome instead.
+    Both assertions are ``AUTHORIZATION_OUTCOMES ⊆ document``: a term the code
+    reports that the writers' docstrings omit leaves the author without the state
+    it must act on, and the same term missing from the rubric bullet leaves the
+    reviewer without it. The reverse direction — a term a document describes that
+    the vocabulary never reports — is NOT checked here, because the vocabulary is
+    the declaration the check reads; each outcome is instead pinned by a test that
+    drives it, and a term listed with no such test is the drift to watch for.
     """
     docstrings = f'{_snap.authorize_change.__doc__}\n{_snap.authorize_refreeze.__doc__}'
     rubric_bullet = _frozen_record_bullet()

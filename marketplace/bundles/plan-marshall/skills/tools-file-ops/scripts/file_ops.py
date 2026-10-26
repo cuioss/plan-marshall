@@ -1598,13 +1598,13 @@ def atomic_write_bytes(path: str | Path, content: bytes) -> None:
     **The write is durable, not merely ordered.** The temp file is fsynced before
     the rename, so a crash after the call returns cannot leave the target naming
     bytes that never reached the device, and the containing directory is fsynced
-    after the rename, so the entry that now names the new file is durable too —
-    a directory that cannot be opened or synced is reported nowhere, because a
-    filesystem that refuses a directory fsync has already made the DATA durable
-    (see :func:`_fsync_directory`), and this function's contract is the bytes.
-    This matters most where the writer is a RESTORE (the criteria snapshot's
-    rollback): a restore that only reached the page cache has not restored
-    anything.
+    after the rename, so the entry that now names the new file is durable too. The
+    directory sync is best-effort by contract (:func:`_fsync_directory`): a
+    filesystem that refuses it still has the file's DATA durable from the first
+    sync, and what is at risk in that case is the rename's own durability, which
+    no write of these bytes can influence. This matters most where the writer is a
+    RESTORE (the criteria snapshot's rollback): a restore that only reached the
+    page cache has not restored anything.
 
     **The replaced file keeps its permission bits.** ``mkstemp`` creates at
     ``0600``, and renaming that over an artifact silently re-permissions it for

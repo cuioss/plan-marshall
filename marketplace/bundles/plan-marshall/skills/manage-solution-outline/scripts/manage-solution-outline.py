@@ -1275,8 +1275,12 @@ def cmd_criteria_authorize(args: argparse.Namespace) -> dict[str, Any]:
     blocking finding at the functional review. This verb is the single way that
     change is authorized: it records the decision against the snapshot and then
     writes the decision-log line. A log that cannot be written withdraws the
-    authorization; a withdrawal that itself fails is reported in the error
-    message rather than claimed.
+    authorization, and the error names what became of it: ``rolled_back`` (the
+    edit is gone and the record matches the file), ``tamper_flagged`` (the edit is
+    gone but the record could not be withdrawn, so the snapshot reads ``tampered``
+    until the operator repairs it) or ``inconsistent`` (the undo itself could not be
+    completed). A withdrawal that itself fails is reported in the error message
+    rather than claimed.
     """
     require_valid_plan_id(args)
 

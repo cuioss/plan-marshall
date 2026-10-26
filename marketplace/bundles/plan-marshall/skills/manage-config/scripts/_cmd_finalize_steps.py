@@ -331,6 +331,10 @@ def _set_lane_plan_local(plan_id: str, step_id: str, lane: str) -> dict:
         return error_exit(str(exc))
     except StateReadFailed as exc:
         return error_exit(f"status.json for plan '{plan_id}' could not be read under the guard: {exc}")
+    except TimeoutError:
+        return error_exit(
+            f"status.json for plan '{plan_id}' is held by another writer; the lane override was not written"
+        )
 
     return success_exit(
         {

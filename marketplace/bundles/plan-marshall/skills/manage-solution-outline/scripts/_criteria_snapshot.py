@@ -438,16 +438,13 @@ def _authorize_refreeze_locked(plan_id: str, decision: str, phase: str) -> dict[
         outcome: dict[str, str] = {}
 
         def _withdraw(block: dict[str, Any]) -> None:
-            # Best-effort undo of THIS call's authorization only. A newer
-            # authorization carries a different token, so it is left standing with
-            # its own decision line; a consumed one is gone and that decision wins.
+            # Best-effort undo of THIS call's authorization only. The token decides:
+            # a newer authorization carries a different one and is left standing with
+            # its own decision line, and a re-freeze that consumed ours clears the
+            # token in the same merge that sets `refreeze_authorized` false
+            # (`record_snapshot_digest`), so both cases read as "not ours any more".
             if block.get(REFREEZE_TOKEN_KEY) != token:
                 outcome['state'] = 'superseded' if block.get('refreeze_authorized') is True else 'already_consumed'
-                return
-            if block.get('refreeze_authorized') is not True:
-                # A re-freeze consumed THIS authorization; the re-freeze stands.
-                block.pop(REFREEZE_TOKEN_KEY, None)
-                outcome['state'] = 'already_consumed'
                 return
             previous = already_authorized.get('previous')
             previous_token = already_authorized.get('previous_token')
@@ -1205,9 +1202,10 @@ def _commit_authorization(
             'rolled_back': 'the authorization was rolled back',
             'tamper_flagged': (
                 'the authorization was rolled back but its recorded digest could not be withdrawn, so the '
-                'snapshot now reads tampered and must be repaired before it is used again: run '
-                'criteria-refreeze-authorize (it does not read the tampered artifact), then snapshot-criteria, '
-                'which re-records a digest matching what is on disk'
+                'snapshot now reads tampered and must be repaired before it is used again. Repair route: '
+                'criteria-refreeze-authorize (it never reads the tampered artifact), then snapshot-criteria, '
+                'which RE-FREEZES on the current outline and records the new digest — confirm the outline '
+                'carries only the change you mean to authorize'
             ),
             'inconsistent': 'the authorization was NOT fully rolled back; the snapshot or its record may hold the edit',
         }[outcome]
