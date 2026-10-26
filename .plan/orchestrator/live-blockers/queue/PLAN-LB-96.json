@@ -2,10 +2,10 @@
   "id": "PLAN-LB-96",
   "slug": "flat-install-bundles-root",
   "workstream": "WS-04",
-  "status": "running",
+  "status": "shipped",
   "lane": "runbook",
-  "plan_marshall_plan_id": "",
-  "pr": "",
-  "landing": "",
+  "plan_marshall_plan_id": "rb-lb-96-flat-install-bundles-root",
+  "pr": "1868",
+  "landing": "landings/PLAN-LB-96.md",
   "seq": 96
 }
