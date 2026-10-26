@@ -629,20 +629,18 @@ def _write_reactor(root: Path) -> None:
         )
 
 
-def test_a_fixture_reactor_reaches_the_population_through_the_architecture_resolver(tmp_path, monkeypatch):
+def test_a_fixture_reactor_reaches_the_population_through_the_architecture_resolver(tmp_path):
     """The PRODUCTION resolver joins a real Maven reactor to the gate population.
 
     The architecture READER is the boundary here (its own rung logic is
     ``manage-architecture``'s test surface), but it answers from the fixture's own
     module directories — so the fixture drives the population: remove it and the
     test fails. Everything this plan adds — the resolver factory, the per-path
-    call and the join into ``bundles`` — runs for real.
+    call and the join into ``bundles`` — runs for real. The handler is INJECTED
+    rather than imported: publishing ``_cmd_client_handlers`` into ``sys.modules``
+    from this module would collide with the shared-loader guard
+    (``test_conftest_loader_contract.py``).
     """
-    from conftest import add_skill_scripts_to_path
-
-    add_skill_scripts_to_path('plan-marshall', 'manage-architecture')
-    import _cmd_client_handlers
-
     _write_reactor(tmp_path)
 
     def fake_which_module(args):
@@ -657,9 +655,7 @@ def test_a_fixture_reactor_reaches_the_population_through_the_architecture_resol
                 return {'status': 'success', 'module': name}
         return {'status': 'success', 'module': None}
 
-    monkeypatch.setattr(_cmd_client_handlers, 'cmd_which_module', fake_which_module)
-
-    resolver = _mod.architecture_module_resolver(tmp_path)
+    resolver = _mod.architecture_module_resolver(tmp_path, which_module=fake_which_module)
     bundles, unresolved = _mod.derive_gate_bundles(
         ['alpha/src/main/java/Thing.java', 'beta/src/main/java/Thing.java', 'docs/notes.md'],
         _MAVEN_GLOBS,

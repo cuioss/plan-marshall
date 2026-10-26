@@ -85,6 +85,7 @@ import fnmatch
 import sys
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 from toon_parser import serialize_toon
 
@@ -184,27 +185,36 @@ def derive_gate_bundles(
     return sorted(bundles), unresolved
 
 
-def architecture_module_resolver(project_root: Path) -> Callable[[str], str | None]:
+def architecture_module_resolver(
+    project_root: Path,
+    *,
+    which_module: Callable[[Any], dict[str, Any]] | None = None,
+) -> Callable[[str], str | None]:
     """Build a ``path -> module`` resolver backed by the architecture's reader.
 
     The production resolver for a non-marketplace layout: it asks
     ``architecture which-module`` — the one place path attribution is decided —
-    rather than re-deriving module ownership here. Imported lazily because the
-    architecture handler lives in a sibling skill's script directory, which the
-    executor puts on ``PYTHONPATH`` but a bare interpreter invocation does not.
+    rather than re-deriving module ownership here. The handler is imported lazily
+    because it lives in a sibling skill's script directory, which the executor
+    puts on ``PYTHONPATH`` but a bare interpreter invocation does not; a caller
+    may inject it instead (``which_module=``), which is how tests exercise this
+    without publishing the handler's module name into ``sys.modules``.
 
     Fails soft in exactly one direction: an unavailable handler or an error
     answer resolves nothing, so the path is reported in ``unresolved`` instead of
     being counted as covered.
     """
-    try:
-        from _cmd_client_handlers import cmd_which_module
-    except ImportError:
-        return lambda _path: None
+    handler = which_module
+    if handler is None:
+        try:
+            from _cmd_client_handlers import cmd_which_module
+        except ImportError:
+            return lambda _path: None
+        handler = cmd_which_module
 
     def resolve(path: str) -> str | None:
         try:
-            answer = cmd_which_module(argparse.Namespace(path=path, project_dir=str(project_root)))
+            answer = handler(argparse.Namespace(path=path, project_dir=str(project_root)))
         except Exception:
             return None
         if not isinstance(answer, dict) or answer.get('status') == 'error':
