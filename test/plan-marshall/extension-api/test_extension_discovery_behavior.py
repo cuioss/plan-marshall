@@ -1037,7 +1037,11 @@ def test_readable_phase5_standards_root_resolves_the_surface(tmp_path, monkeypat
     """Positive control for surface 1 (the phase-5 verify-step standards root)."""
     skills_root = tmp_path / 'skills'
     (skills_root / 'phase-5-execute' / 'standards').mkdir(parents=True)
-    monkeypatch.setattr(_disc, 'resolve_skills_root', lambda _script_file: skills_root)
+    monkeypatch.setattr(
+        _disc,
+        'resolve_sibling_skill_path',
+        lambda _script_file, _bundle, _relative: skills_root / 'phase-5-execute',
+    )
 
     assert _disc._implementor_scan_surfaces_resolve()[_PHASE5_SURFACE_INDEX] is True
 
@@ -1051,7 +1055,11 @@ def test_unreadable_phase5_standards_root_leaves_the_surface_unresolved(tmp_path
     skills_root = tmp_path / 'skills'
     standards = skills_root / 'phase-5-execute' / 'standards'
     standards.mkdir(parents=True)
-    monkeypatch.setattr(_disc, 'resolve_skills_root', lambda _script_file: skills_root)
+    monkeypatch.setattr(
+        _disc,
+        'resolve_sibling_skill_path',
+        lambda _script_file, _bundle, _relative: skills_root / 'phase-5-execute',
+    )
 
     original_mode = standards.stat().st_mode
     try:
