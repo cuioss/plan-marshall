@@ -138,8 +138,9 @@ def _assert_resolved(results: dict[str, Any], expected_suffixes: dict[str, str])
     assert [Path(entry['path']).name for entry in extensions] == ['extension.py'] * len(_BUILD_SKILLS), extensions
     assert all(entry['is_file'] for entry in extensions), extensions
     found_skills = [Path(entry['path']).parent.parent.name for entry in extensions]
-    for skill in _BUILD_SKILLS:
-        assert any(name.endswith(skill) for name in found_skills), (skill, found_skills)
+    assert len(found_skills) == len(_BUILD_SKILLS), found_skills
+    for found, expected in zip(found_skills, _BUILD_SKILLS, strict=True):
+        assert found.endswith(expected), f'discovery order changed: {found_skills}'
 
     assert results['extension_api_scripts']['is_dir'], results['extension_api_scripts']
     assert results['phase5_implementors'] > 0, 'the phase-5 standards scan found no implementor on this shape'

@@ -125,16 +125,24 @@ def resolve_step_doc_path(step_id: str) -> Path:
     - Built-in steps (bare or ``default:``-prefixed) resolve to the
       ``phase-6-finalize`` body doc, searching ``workflow/`` first then
       ``standards/``. When neither exists the ``workflow/`` path is returned so
-      the caller's missing-file error names the preferred location.
+      the caller's missing-file error names the preferred location. A built-in
+      skill the deployed tree does not carry at ALL — the ``phase-6-finalize`` or
+      ``automatic-review`` skill directory itself — raises
+      :class:`marketplace_bundles.SkillPathNotFound`, whose message names both
+      deployed shapes the lookup probed.
 
     Args:
         step_id: The step identifier (``default:branch-cleanup``,
             ``default:automatic-review``, …).
 
     Returns:
-        The resolved body-doc path (may not exist on disk).
+        The resolved body-doc path. For a built-in step whose skill directory
+        exists but whose doc does not, the preferred (possibly absent) path is
+        returned, as documented above.
 
     Raises:
+        marketplace_bundles.SkillPathNotFound: When the skill that owns a
+            built-in step is absent from the deployed tree.
         ValueError: When the externally-controlled ``step_id`` resolves to a
             path that escapes its intended parent directory (path traversal).
     """
@@ -409,6 +417,8 @@ def resolve_step_defaults(step_id: str) -> dict[str, Any]:
     Raises:
         ValueError: On any malformed-declaration case (see
             :func:`parse_configurable`).
+        marketplace_bundles.SkillPathNotFound: When the skill that owns
+            ``step_id`` is absent from the deployed tree.
     """
     path = resolve_step_doc_path(step_id)
     schema = parse_configurable(path)
@@ -441,6 +451,8 @@ def resolve_step_defaults_optional(step_id: str) -> dict[str, Any] | None:
         ValueError: On a malformed (present-but-ill-formed) ``configurable:``
             block, or when the step body doc does not exist (see
             :func:`parse_configurable`).
+        marketplace_bundles.SkillPathNotFound: When the skill that owns
+            ``step_id`` is absent from the deployed tree.
     """
     path = resolve_step_doc_path(step_id)
     if not path.is_file():

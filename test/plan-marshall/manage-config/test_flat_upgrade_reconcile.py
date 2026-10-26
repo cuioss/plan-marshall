@@ -44,6 +44,7 @@ _MANAGE_CONFIG = (
     / 'scripts'
     / 'manage-config.py'
 )
+_SOURCES = PROJECT_ROOT / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills'
 _FLAT_RELATIVE = Path('skills') / 'plan-marshall-manage-config' / 'scripts' / 'manage-config.py'
 
 #: The bot roster the upgrade's opted-in back-fill writes. Both machines that met
@@ -145,7 +146,7 @@ def test_step_get_answers_on_a_flat_install(flat_install: Path, tmp_path: Path) 
     _write_marshal(flat_project)
     nested_project = tmp_path / 'nested-project'
     _write_marshal(nested_project)
-    _ = run_script_in_flat(
+    flat_sync = run_script_in_flat(
         flat_install,
         flat_project,
         _flat_script(flat_install),
@@ -153,9 +154,11 @@ def test_step_get_answers_on_a_flat_install(flat_install: Path, tmp_path: Path) 
         '--backfill-bot-roster',
         env_overrides=_pin(flat_project),
     )
-    _ = run_script(
+    nested_sync = run_script(
         _MANAGE_CONFIG, 'sync-defaults', '--backfill-bot-roster', cwd=nested_project, env_overrides=_pin(nested_project)
     )
+    assert flat_sync.returncode == 0, flat_sync.stderr
+    assert nested_sync.returncode == 0, nested_sync.stderr
 
     flat = run_script_in_flat(
         flat_install,
@@ -187,6 +190,72 @@ def test_step_get_answers_on_a_flat_install(flat_install: Path, tmp_path: Path) 
     nested_payload = parse_toon(nested.stdout)
     assert flat_payload.get('status') == 'success', flat_payload
     assert flat_payload.get('params') == nested_payload.get('params'), (flat_payload, nested_payload)
+
+
+def test_the_manifest_verbs_answer_on_a_flat_install(flat_install: Path, tmp_path: Path) -> None:
+    """``compose`` and ``validate-loadable`` answer identically on a flat and a nested install.
+
+    Both verbs run through the entry point that imports ``_manifest_validation`` at
+    module import, and both resolve each phase-6 step's body doc — the loadability
+    check is exactly the "does this step's standards file exist" surface a bare
+    sibling join turned into a false negative on a flat tree. The comparison is the
+    assertion: only the TOON ``status`` is compared, because the manifests' paths
+    differ by construction.
+    """
+    invocations = (
+        (
+            'manage-execution-manifest',
+            'compose',
+            '--plan-id',
+            'd4-probe',
+            '--plan-change-type',
+            'feature',
+            '--track',
+            'simple',
+            '--scope-estimate',
+            'surgical',
+        ),
+        ('manage-execution-manifest', 'validate-loadable', '--plan-id', 'd4-probe', '--all'),
+    )
+    flat_project = tmp_path / 'flat-project'
+    _write_marshal(flat_project)
+    nested_project = tmp_path / 'nested-project'
+    _write_marshal(nested_project)
+    for project, runner in ((flat_project, 'flat'), (nested_project, 'nested')):
+        if runner == 'flat':
+            seeded = run_script_in_flat(
+                flat_install,
+                project,
+                _flat_script(flat_install),
+                'sync-defaults',
+                '--backfill-bot-roster',
+                env_overrides=_pin(project),
+            )
+        else:
+            seeded = run_script(
+                _MANAGE_CONFIG,
+                'sync-defaults',
+                '--backfill-bot-roster',
+                cwd=project,
+                env_overrides=_pin(project),
+            )
+        assert seeded.returncode == 0, (runner, seeded.stderr)
+
+    for skill, *verb in invocations:
+        flat_script = flat_install / 'skills' / f'plan-marshall-{skill}' / 'scripts' / f'{skill}.py'
+        nested_script = _SOURCES / skill / 'scripts' / f'{skill}.py'
+        flat = run_script_in_flat(flat_install, flat_project, flat_script, *verb, env_overrides=_pin(flat_project))
+        nested = run_script(nested_script, *verb, cwd=nested_project, env_overrides=_pin(nested_project))
+
+        assert flat.returncode == 0, (verb[0], flat.stderr, flat.stdout)
+        assert nested.returncode == 0, (verb[0], nested.stderr, nested.stdout)
+        flat_payload = parse_toon(flat.stdout)
+        nested_payload = parse_toon(nested.stdout)
+        assert flat_payload.get('status') == nested_payload.get('status') == 'success', (
+            verb[0],
+            flat_payload,
+            nested_payload,
+        )
 
 
 def test_the_manifest_loadability_path_imports_on_a_flat_install(flat_install: Path, tmp_path: Path) -> None:

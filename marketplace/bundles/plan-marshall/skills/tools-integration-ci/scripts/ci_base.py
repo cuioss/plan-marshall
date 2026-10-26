@@ -2129,8 +2129,8 @@ def _load_persist():
     """
     import importlib.util
 
-    # Local import: this module is loaded early by the CI entry points, and the
-    # join is needed only when persistence is actually consulted.
+    # Local import: the join is needed only when persistence is actually
+    # consulted, and this module is loaded early by the CI entry points.
     from marketplace_bundles import resolve_sibling_skill_path
 
     module_path = resolve_sibling_skill_path(

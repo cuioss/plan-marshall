@@ -44,8 +44,10 @@ _FLAT_SAFE_LIB_LOOP = (
 )
 
 _FLAT_SAFE_GENERATOR_BOOTSTRAP = (
-    'sys.path hints only: every invocation is made with the executor PYTHONPATH, where the flat '
-    'dirs already resolve; exercised from the flat fixture by test_flat_lane_path_joins'
+    'sys.path hints only: the loop inserts directories WITHOUT probing them, so a flat install simply '
+    'inserts two absent paths and the imports resolve through the executor PYTHONPATH every caller '
+    "passes (the generator's three invokers run it in this process tree); the generator itself is "
+    'exercised from the flat fixture by test_flat_lane_path_joins'
 )
 
 FLAT_SAFE_JOINS: dict[tuple[str, str], str] = {
@@ -183,50 +185,114 @@ def _location_bound_names(tree: ast.Module) -> set[str]:
     return bound
 
 
-def _loop_bound_skills(tree: ast.Module, skill_names: frozenset[str]) -> dict[str, list[str]]:
+def _module_constant_skills(tree: ast.Module, skill_names: frozenset[str]) -> dict[str, list[str]]:
+    """Map a module-level constant name to the skill literals it holds.
+
+    ``_BUILD_EXTENSION_SKILLS = ('build-pyproject', …)`` is the shape the tree
+    uses for a skill ROSTER, and a ``for skill in _BUILD_EXTENSION_SKILLS`` join is
+    a sibling join like any other. Resolving the constant is what makes that shape
+    visible; an iterable that is neither a literal nor such a constant stays
+    invisible, which is the honest limit of a bounded AST scan.
+    """
+    constants: dict[str, list[str]] = {}
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.Assign, ast.AnnAssign)):
+            continue
+        value = node.value
+        if not isinstance(value, (ast.Tuple, ast.List)):
+            continue
+        literals = [
+            element.value
+            for element in value.elts
+            if isinstance(element, ast.Constant) and isinstance(element.value, str)
+        ]
+        skills = [literal for literal in literals if literal in skill_names]
+        if not skills:
+            continue
+        targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+        for target in targets:
+            if isinstance(target, ast.Name):
+                constants[target.id] = skills
+    return constants
+
+
+def _loop_bound_skills(
+    tree: ast.Module, skill_names: frozenset[str], constants: dict[str, list[str]]
+) -> dict[str, list[str]]:
     """Map a loop variable to the skill literals its ``for`` statement binds it to.
 
     The import-loop idiom this tree uses for a cross-skill ``sys.path`` entry walks
     a tuple of skill names and joins each one onto the skills root, so the join's
-    right operand is a NAME rather than a literal. Recording those bindings is what
-    lets the guard see that site at all; the predicate stays bounded because a
-    literal that is not a real skill directory is not recorded.
+    right operand is a NAME rather than a literal. The iterable is either a literal
+    tuple (the ``_lib`` loops) or a module constant (``_BUILD_EXTENSION_SKILLS``);
+    both are resolved. The predicate stays bounded because a literal that is not a
+    real skill directory is never recorded.
     """
     bound: dict[str, list[str]] = {}
     for node in ast.walk(tree):
         if not isinstance(node, ast.For) or not isinstance(node.target, ast.Name):
             continue
         iterable = node.iter
-        if not isinstance(iterable, (ast.Tuple, ast.List)):
+        if isinstance(iterable, (ast.Tuple, ast.List)):
+            values = [
+                element.value
+                for element in iterable.elts
+                if isinstance(element, ast.Constant) and isinstance(element.value, str)
+            ]
+            skills = [value for value in values if value in skill_names]
+        elif isinstance(iterable, ast.Name) and iterable.id in constants:
+            skills = list(constants[iterable.id])
+        else:
             continue
-        values = [
-            element.value
-            for element in iterable.elts
-            if isinstance(element, ast.Constant) and isinstance(element.value, str)
-        ]
-        skills = [value for value in values if value in skill_names]
         if skills:
             bound[node.target.id] = skills
     return bound
 
 
+def _right_operand_skills(node: ast.AST, constants: dict[str, list[str]], skill_names: frozenset[str]) -> list[str]:
+    """Return the skill literals a join's right operand names, if any.
+
+    Two spellings are covered beyond a plain literal: a loop variable bound to
+    skill names, and a ``Path(base, '<skill>')``/ ``base.joinpath('<skill>')``
+    argument. A computed name (f-string, concatenation) is out of scope for a
+    bounded AST scan and is recorded nowhere.
+    """
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return [node.value] if node.value in skill_names else []
+    if isinstance(node, ast.Name):
+        return list(constants.get(node.id, []))
+    return []
+
+
 def _joins(tree: ast.Module, skill_names: frozenset[str]) -> list[tuple[str, int]]:
     """Return ``(skill literal, line)`` for every sibling join in ``tree``."""
     bound = _location_bound_names(tree)
-    loop_skills = _loop_bound_skills(tree, skill_names)
+    constants = _module_constant_skills(tree, skill_names)
+    loop_skills = _loop_bound_skills(tree, skill_names, constants)
+    constants.update(loop_skills)
     found: list[tuple[str, int]] = []
+
+    def _left_is_location(node: ast.AST) -> bool:
+        return (isinstance(node, ast.Name) and node.id in bound) or _is_location_expression(node)
+
     for node in ast.walk(tree):
-        if not isinstance(node, ast.BinOp) or not isinstance(node.op, ast.Div):
-            continue
-        left = node.left
-        if not ((isinstance(left, ast.Name) and left.id in bound) or _is_location_expression(left)):
-            continue
-        right = node.right
-        if isinstance(right, ast.Constant) and isinstance(right.value, str):
-            if right.value in skill_names:
-                found.append((right.value, node.lineno))
-        elif isinstance(right, ast.Name) and right.id in loop_skills:
-            found.extend((skill, node.lineno) for skill in loop_skills[right.id])
+        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Div):
+            if not _left_is_location(node.left):
+                continue
+            found.extend((skill, node.lineno) for skill in _right_operand_skills(node.right, constants, skill_names))
+        elif isinstance(node, ast.Call):
+            func = node.func
+            name = func.id if isinstance(func, ast.Name) else func.attr if isinstance(func, ast.Attribute) else ''
+            if name == 'joinpath' and isinstance(func, ast.Attribute) and _left_is_location(func.value):
+                for argument in node.args:
+                    found.extend(
+                        (skill, node.lineno) for skill in _right_operand_skills(argument, constants, skill_names)
+                    )
+            elif name == 'Path' and node.args and _left_is_location(node.args[0]):
+                for argument in node.args[1:]:
+                    found.extend(
+                        (skill, node.lineno) for skill in _right_operand_skills(argument, constants, skill_names)
+                    )
     return found
 
 
@@ -250,16 +316,32 @@ def test_the_detector_finds_a_planted_join(tmp_path: Path) -> None:
         'from marketplace_bundles import resolve_skills_root\n'
         '_SKILLS_DIR = resolve_skills_root(Path(__file__))\n'
         '_THIS_DIR = Path(__file__).resolve().parent\n'
+        "_ROSTER = ('build-maven', 'not-a-skill')\n"
         "A = _SKILLS_DIR / 'phase-6-finalize'\n"
         "B = _THIS_DIR.parent.parent / 'tools-file-ops' / 'scripts'\n"
         "C = Path(__file__).resolve().parent.parent / 'manage-locks'\n"
         "for _lib in ('ref-toon-format', 'not-a-skill'):\n"
         "    D = _SKILLS_DIR / _lib / 'scripts'\n"
-        "E = some_dir / 'phase-6-finalize'\n"
-        'F = base / name\n',
+        'for _skill in _ROSTER:\n'
+        "    E = _SKILLS_DIR / _skill / 'scripts'\n"
+        "F = _SKILLS_DIR.joinpath('build-npm')\n"
+        "G = Path(_SKILLS_DIR, 'build-gradle')\n"
+        "H = some_dir / 'phase-6-finalize'\n"
+        'I = base / name\n'
+        "J = _SKILLS_DIR / f'dynamic-{name}'\n",
         encoding='utf-8',
     )
-    skills = frozenset({'phase-6-finalize', 'tools-file-ops', 'manage-locks', 'ref-toon-format'})
+    skills = frozenset(
+        {
+            'phase-6-finalize',
+            'tools-file-ops',
+            'manage-locks',
+            'ref-toon-format',
+            'build-maven',
+            'build-npm',
+            'build-gradle',
+        }
+    )
     tree = ast.parse(planted.read_text(encoding='utf-8'), filename=str(planted))
 
     assert {skill for skill, _line in _joins(tree, skills)} == {
@@ -267,6 +349,9 @@ def test_the_detector_finds_a_planted_join(tmp_path: Path) -> None:
         'tools-file-ops',
         'manage-locks',
         'ref-toon-format',
+        'build-maven',
+        'build-npm',
+        'build-gradle',
     }
 
 

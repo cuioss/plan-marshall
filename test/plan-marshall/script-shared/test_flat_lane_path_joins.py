@@ -33,6 +33,7 @@ _MODULES: dict[str, tuple[str, str, str]] = {
     'integrate_into_main': ('workflow-integration-git', 'integrate_into_main.py', 'probe_integrate_into_main'),
     'git_workflow': ('workflow-integration-git', 'git-workflow.py', 'probe_git_workflow'),
     'prepare_execute': ('workflow-integration-git', 'prepare_execute.py', 'probe_prepare_execute'),
+    'determine_mode': ('marshall-steward', 'determine_mode.py', 'probe_determine_mode'),
 }
 
 
@@ -75,6 +76,8 @@ results['git_workflow_generator'] = str(modules['git_workflow']._GENERATE_EXECUT
 results['git_workflow_generator_exists'] = modules['git_workflow']._GENERATE_EXECUTOR_PATH.is_file()
 results['prepare_execute_generator'] = str(modules['prepare_execute']._GENERATE_EXECUTOR_PATH)
 results['prepare_execute_generator_exists'] = modules['prepare_execute']._GENERATE_EXECUTOR_PATH.is_file()
+results['determine_mode_generator'] = str(modules['determine_mode']._generate_executor_script())
+results['determine_mode_generator_exists'] = modules['determine_mode']._generate_executor_script().is_file()
 results['maven_parse_log'] = modules['ci_log_filter']._load_parse_log('maven') is not None
 results['ci_persist'] = modules['ci_base']._load_persist() is not None
 print(json.dumps(results))
@@ -100,9 +103,37 @@ def test_every_lane_sibling_join_reaches_its_file(flat_install: Path, tmp_path: 
     assert results['merge_lock_exists'], results['merge_lock_path']
     assert results['git_workflow_generator_exists'], results['git_workflow_generator']
     assert results['prepare_execute_generator_exists'], results['prepare_execute_generator']
+    # The upgrade's own preflight entry point (D1): the generator path the steward
+    # resolves must exist in the deployment, or Stage 2 cannot regenerate at all.
+    assert results['determine_mode_generator_exists'], results['determine_mode_generator']
 
     absent_deps = {path: present for path, present in results['build_queue_dep_dirs'].items() if not present}
     assert not absent_deps, absent_deps
 
     assert results['maven_parse_log'], 'the CI log filter found no build parser on the flat tree'
     assert results['ci_persist'], 'the CI persistence layer did not load on the flat tree'
+
+
+def test_the_generator_runs_from_the_flat_tree(flat_install: Path, tmp_path: Path) -> None:
+    """The executor generator the upgrade invokes loads and parses its surface on a flat tree.
+
+    The generator's own ``sys.path`` bootstrap is nested-only (declared, with its
+    reason, in the D2 guard), so this exercises the ONE invocation shape it is
+    actually given: a ``python3 <path>`` run inside the deployed tree, with the
+    flat PYTHONPATH the executor would pass. ``--help`` stops at argparse, so no
+    output tree is touched.
+    """
+    project = tmp_path / 'project'
+    project.mkdir()
+    script = flat_install / 'skills' / 'plan-marshall-tools-script-executor' / 'scripts' / 'generate_executor.py'
+
+    completed = run_python_in_flat(
+        flat_install,
+        project,
+        f'import runpy, sys\nsys.argv = [{str(script)!r}, "--help"]\n'
+        f'try:\n    runpy.run_path({str(script)!r}, run_name="__main__")\n'
+        'except SystemExit as exc:\n    raise SystemExit(int(exc.code or 0))\n',
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert 'generate' in completed.stdout, completed.stdout

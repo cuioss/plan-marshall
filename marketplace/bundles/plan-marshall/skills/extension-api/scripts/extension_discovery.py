@@ -1346,13 +1346,22 @@ def _scan_phase6_for_implementors(ext_point: str) -> list[dict[str, Any]]:
     ``standards/{name}.md`` is represented by the ``workflow/`` doc only — mirroring
     ``configurable_contract.resolve_step_doc_path``).
 
+    A phase-6 skill the deployed tree does not carry yields no records rather than
+    raising: the sibling join is a fail-loud LOOKUP, but this scan's contract is
+    the same tolerance its phase-5 twin documents — an absent surface is "nothing
+    discovered", never a crash in the caller that merely enumerates implementors.
+
     Returns:
         One ``built-in`` record per matching step doc, de-duplicated by bare name
         with ``workflow/`` winning.
     """
     from configurable_contract import _phase_6_skill_dir
+    from marketplace_bundles import SkillPathNotFound
 
-    skill_dir = _phase_6_skill_dir()
+    try:
+        skill_dir = _phase_6_skill_dir()
+    except SkillPathNotFound:
+        return []
     records: list[dict[str, Any]] = []
     seen_bare: set[str] = set()
 
@@ -1389,11 +1398,13 @@ def _scan_phase5_for_implementors(ext_point: str) -> list[dict[str, Any]]:
     standard — see marketplace/bundles/plan-marshall/skills/extension-api/
     standards/ext-point-build-verify-step.md.
 
-    The phase-5-execute skill dir is resolved from ``__file__`` via the same
-    ``resolve_skills_root`` identity walk the phase-6 scan and the build-skill
-    discovery use, so the surface stays stable regardless of the process working
-    directory. Returns nothing when the standards dir is absent (a consumer
-    project resolving through a cache layout without the phase-5 standards docs).
+    The phase-5-execute skill dir is reached through the shared flat-aware sibling
+    join (:func:`marketplace_bundles.resolve_sibling_skill_path`), the same seam
+    the phase-6 scan and the build-skill discovery use, so the surface resolves on
+    a nested checkout and a flat install alike and stays stable regardless of the
+    process working directory. Returns nothing when the standards dir is absent (a
+    consumer project resolving through a cache layout without the phase-5 standards
+    docs).
 
     Returns:
         One ``built-in`` record per matching ``phase-5-execute/standards/*.md``.
