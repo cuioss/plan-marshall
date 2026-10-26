@@ -214,10 +214,12 @@ _AUTOMATIC_REVIEW_SKILL_MD = resolve_skills_root(Path(__file__)) / 'automatic-re
 # A FLAT deployment (OpenCode/Antigravity) resolves to the directory containing
 # its ``skills/`` tree, whose grandparent is not a repository root at all; the
 # derivation is deliberately NOT special-cased, because the two nested shapes owe
-# their value and this anchor only ever feeds ``relative_to`` below — which falls
-# back to the absolute string when the path is not under it. Rendering a flat
-# path as ``opencode/skills/…`` is cosmetic; nothing is ever joined to it for a
-# project-local lookup.
+# their value. The anchor feeds two readers and neither is fatal on a flat tree:
+# ``relative_to`` below falls back to the absolute string, and the two
+# ``project:``-step probes in ``manage-execution-manifest.py`` merely MISS, which
+# reads as "not lane-participating" / "not security-class" — the same
+# fail-closed shape ``_project_local_skills_root`` documents for an out-of-tree
+# run, not a new failure mode.
 _BUNDLES_ROOT = resolve_bundles_root(Path(__file__))
 _REPO_ROOT = _BUNDLES_ROOT.parent.parent
 

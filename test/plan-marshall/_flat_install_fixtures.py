@@ -124,14 +124,29 @@ def flat_pythonpath(root: Path) -> str:
     return os.pathsep.join(collect_script_dirs(root))
 
 
+#: Location variables that would let a flat run read a REAL tree instead of the
+#: fixture. Each is scrubbed rather than merely left unset by the caller: an
+#: ambient ``PM_MARKETPLACE_ROOT`` (the documented operator workaround for a flat
+#: install) is read FIRST by ``find_marketplace_root``, so carrying it through
+#: would decide the "no marketplace tree" assertions from the developer's machine.
+LOCATION_ENV_VARS = (
+    'PYTHONPATH',
+    'PM_MARKETPLACE_ROOT',
+    'PLAN_BASE_DIR',
+    'PLAN_DIR_NAME',
+    'PM_DIST_MANIFEST',
+)
+
+
 def flat_env(root: Path, project_dir: Path) -> dict[str, str]:
-    """Return a clean environment whose only import path is ``root``.
+    """Return a clean environment whose only import path and location is ``root``.
 
     ``PYTHONPATH`` is REPLACED, never extended: a test that inherited the source
     tree's script directories would import the source copies and prove nothing
-    about the flat deployment.
+    about the flat deployment. Every variable in :data:`LOCATION_ENV_VARS` is
+    dropped for the same reason.
     """
-    env = {key: value for key, value in os.environ.items() if key != 'PYTHONPATH'}
+    env = {key: value for key, value in os.environ.items() if key not in LOCATION_ENV_VARS}
     env['PYTHONPATH'] = flat_pythonpath(root)
     env['PLAN_MARSHALL_HOME'] = str(project_dir / '.machine-home')
     return env

@@ -223,6 +223,23 @@ def test_the_marketplace_authoring_tools_report_the_absent_tree_in_a_flat_instal
     assert results['render_outside'] == str(_OUTSIDE_PATH)
 
 
+def test_the_probe_ignores_an_ambient_marketplace_anchor(
+    flat_install: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An exported ``PM_MARKETPLACE_ROOT`` must not decide the negative answer.
+
+    The lane's own spec recommends that variable as a flat-install workaround, so a
+    developer's shell carrying it is the realistic ambient state for this probe —
+    and ``find_marketplace_root`` consults it FIRST. ``flat_env`` scrubs it, which
+    this case pins.
+    """
+    monkeypatch.setenv('PM_MARKETPLACE_ROOT', str(MARKETPLACE_ROOT))
+
+    results = _run_behaviour_program(flat_install, _isolated_project(tmp_path))
+
+    assert results['doctor_marketplace_root'] is None
+
+
 def _isolated_project(tmp_path: Path) -> Path:
     """Return a project directory whose ANCESTORS hold no marketplace tree.
 
