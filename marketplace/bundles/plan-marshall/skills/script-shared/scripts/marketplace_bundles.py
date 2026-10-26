@@ -413,12 +413,20 @@ def _nested_sibling_path(skills_root: Path, relative_path: str) -> Path:
     return path / rest if rest else path
 
 
-def _sibling_skill_candidates(script_file: Path, bundle: str, relative_path: str) -> tuple[Path, Path | None]:
-    """Return ``(nested, flat)`` for a skill-anchored subpath, both unprobed."""
+def _sibling_skill_candidates(script_file: Path, bundle: str, relative_path: str) -> tuple[Path, list[Path]]:
+    """Return ``(nested, flat_candidates)`` for a skill-anchored subpath, both unprobed.
+
+    The flat leg is probed only when this script's own skill root IS a flat skill
+    root. A nested tree's ``skills/`` sits beside its bundle manifest, which
+    :func:`deployed_layout.is_flat_skill_root` excludes, so a nested install yields
+    no flat candidate at all — the error text then names only the shape it has,
+    instead of a phantom ``{bundle}-{skill}`` directory.
+    """
     skills_root = resolve_skills_root(script_file)
     nested = _nested_sibling_path(skills_root, relative_path)
-    flat_candidates = deployed_layout.flat_skill_paths(skills_root.parent, bundle, relative_path)
-    return nested, (flat_candidates[0] if flat_candidates else None)
+    if not deployed_layout.is_flat_skill_root(skills_root):
+        return nested, []
+    return nested, deployed_layout.flat_skill_paths(skills_root.parent, bundle, relative_path)
 
 
 def resolve_sibling_skill_path(script_file: Path, bundle: str, relative_path: str) -> Path:
@@ -438,7 +446,8 @@ def resolve_sibling_skill_path(script_file: Path, bundle: str, relative_path: st
     ``{root}/skills/{bundle}-{skill}/``. When the nested probe misses, the flat leg
     (:func:`deployed_layout.resolve_skill_path`) constructs the dash-namespaced name
     through :func:`deployed_layout.flat_skill_dir_name` — never spelled here — and
-    answers only if it exists.
+    answers only if it exists. Every candidate :func:`deployed_layout.skill_roots`
+    yields is probed, in its order.
 
     **Never ``None``**: a miss returns the nested path, which is the deterministic
     path to report. A caller that must fail instead uses
@@ -452,10 +461,27 @@ def resolve_sibling_skill_path(script_file: Path, bundle: str, relative_path: st
     Returns:
         The existing path, or the nested path when neither shape carries it.
     """
-    nested, flat = _sibling_skill_candidates(script_file, bundle, relative_path)
+    nested, flat_candidates = _sibling_skill_candidates(script_file, bundle, relative_path)
     if nested.exists():
         return nested
-    return flat if flat is not None and flat.exists() else nested
+    for candidate in flat_candidates:
+        if candidate.exists():
+            return candidate
+    return nested
+
+
+def describe_sibling_skill_shapes(script_file: Path, bundle: str, relative_path: str) -> str:
+    """Describe the shapes a sibling-skill lookup probed, for a caller's own error text.
+
+    The shared wording :class:`SkillPathNotFound` uses, available to a caller that
+    reports the miss its own way (a TOON error rather than an exception) so both
+    surfaces name the same two candidates.
+    """
+    nested, flat_candidates = _sibling_skill_candidates(script_file, bundle, relative_path)
+    lines = [f'  nested (marketplace checkout / plugin cache): {nested}']
+    if flat_candidates:
+        lines.append(f'  flat (OpenCode / Antigravity): {flat_candidates[0]}')
+    return '\n'.join(lines)
 
 
 def require_sibling_skill_path(script_file: Path, bundle: str, relative_path: str) -> Path:
@@ -468,12 +494,13 @@ def require_sibling_skill_path(script_file: Path, bundle: str, relative_path: st
     Raises:
         SkillPathNotFound: when no candidate exists on disk.
     """
-    nested, flat = _sibling_skill_candidates(script_file, bundle, relative_path)
+    nested, flat_candidates = _sibling_skill_candidates(script_file, bundle, relative_path)
     if nested.exists():
         return nested
-    if flat is not None and flat.exists():
-        return flat
-    raise SkillPathNotFound(relative_path, nested, flat)
+    for candidate in flat_candidates:
+        if candidate.exists():
+            return candidate
+    raise SkillPathNotFound(relative_path, nested, flat_candidates[0] if flat_candidates else None)
 
 
 def build_pythonpath(base_path: Path) -> str:

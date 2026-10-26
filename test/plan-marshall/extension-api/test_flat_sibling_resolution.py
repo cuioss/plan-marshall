@@ -127,25 +127,6 @@ def _run_resolution(root: Path, project_dir: Path) -> dict[str, Any]:
     return cast('dict[str, Any]', json.loads(completed.stdout))
 
 
-def _assert_resolved(results: dict[str, Any], expected_suffixes: dict[str, str]) -> None:
-    """Every step doc and build-extension path exists and ends at the expected file."""
-    for step_id, suffix in expected_suffixes.items():
-        entry = results['step_docs'][step_id]
-        assert entry['is_file'], f'{step_id} resolved to {entry["path"]}, which does not exist'
-        assert entry['path'].endswith(suffix), f'{step_id} resolved to {entry["path"]}, expected …/{suffix}'
-
-    extensions = results['build_extensions']
-    assert [Path(entry['path']).name for entry in extensions] == ['extension.py'] * len(_BUILD_SKILLS), extensions
-    assert all(entry['is_file'] for entry in extensions), extensions
-    found_skills = [Path(entry['path']).parent.parent.name for entry in extensions]
-    assert len(found_skills) == len(_BUILD_SKILLS), found_skills
-    for found, expected in zip(found_skills, _BUILD_SKILLS, strict=True):
-        assert found.endswith(expected), f'discovery order changed: {found_skills}'
-
-    assert results['extension_api_scripts']['is_dir'], results['extension_api_scripts']
-    assert results['phase5_implementors'] > 0, 'the phase-5 standards scan found no implementor on this shape'
-
-
 # =============================================================================
 # FLAT — the tree that ships
 # =============================================================================
@@ -156,21 +137,52 @@ def flat_install(flat_install_tree: Path) -> Path:
     return flat_install_tree
 
 
+@pytest.fixture(scope='module')
+def flat_results(flat_install: Path, tmp_path_factory: pytest.TempPathFactory) -> dict[str, Any]:
+    """One pass of the flat-tree driver, shared by the per-clause assertions.
+
+    Built once per module so each clause below reports its OWN failure instead of
+    stopping at the first one — which is what makes the per-clause evidence
+    separable in a failing run.
+    """
+    project = tmp_path_factory.mktemp('flat-resolution-project')
+    return _run_resolution(flat_install, project)
+
+
 def test_the_flat_tree_carries_no_bundle_marker(flat_install: Path) -> None:
     """The fixture stays the shape under test: a flat skill root and no bundle dir."""
     assert (flat_install / 'skills').is_dir()
     assert not list(flat_install.rglob('.claude-plugin'))
 
 
-def test_every_named_reader_resolves_on_a_flat_tree(flat_install: Path, tmp_path: Path) -> None:
-    """Each doc, build extension and sibling scripts dir resolves under a flat install."""
-    project = tmp_path / 'project'
-    project.mkdir()
-    results = _run_resolution(flat_install, project)
-
-    _assert_resolved(results, _STEP_DOCS)
-    for entry in results['step_docs'].values():
+def test_every_named_step_doc_resolves_on_a_flat_tree(flat_results: dict[str, Any]) -> None:
+    """Each named step doc resolves to an existing file under the flat skill root."""
+    for step_id, suffix in _STEP_DOCS.items():
+        entry = flat_results['step_docs'][step_id]
+        assert entry['is_file'], f'{step_id} resolved to {entry["path"]}, which does not exist'
+        assert entry['path'].endswith(suffix), f'{step_id} resolved to {entry["path"]}, expected …/{suffix}'
         assert '/skills/plan-marshall-' in entry['path'], entry['path']
+
+
+def test_the_build_extensions_resolve_on_a_flat_tree(flat_results: dict[str, Any]) -> None:
+    """The four build skills' ``extension.py`` paths are found, in discovery order."""
+    extensions = flat_results['build_extensions']
+    assert len(extensions) == len(_BUILD_SKILLS), extensions
+    assert all(entry['is_file'] for entry in extensions), extensions
+    found_skills = [Path(entry['path']).parent.parent.name for entry in extensions]
+    for found, expected in zip(found_skills, _BUILD_SKILLS, strict=True):
+        assert found.endswith(expected), f'discovery order changed: {found_skills}'
+
+
+def test_the_extension_api_scripts_dir_resolves_on_a_flat_tree(flat_results: dict[str, Any]) -> None:
+    """The sibling ``script-shared/scripts/extension`` directory is found."""
+    entry = flat_results['extension_api_scripts']
+    assert entry['is_dir'], entry['path']
+
+
+def test_the_phase5_scan_finds_an_implementor_on_a_flat_tree(flat_results: dict[str, Any]) -> None:
+    """The phase-5 standards scan is not empty on a flat install."""
+    assert flat_results['phase5_implementors'] > 0, 'the phase-5 standards scan found no implementor on the flat tree'
 
 
 def test_a_missing_skill_names_both_shapes(flat_install: Path, tmp_path: Path) -> None:

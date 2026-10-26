@@ -192,9 +192,38 @@ def test_step_get_answers_on_a_flat_install(flat_install: Path, tmp_path: Path) 
     assert flat_payload.get('params') == nested_payload.get('params'), (flat_payload, nested_payload)
 
 
+def _write_finalize_marshal(project: Path) -> Path:
+    """Seed only the phase-6 step map the two manifest verbs need.
+
+    Deliberately NOT produced by ``sync-defaults``: the compose/loadability clause
+    must fail on its OWN surface — a step doc that does not resolve — and not on the
+    seeding verb, whose failure the tests above already assert.
+    """
+    plan_dir = project / '.plan'
+    plan_dir.mkdir(parents=True, exist_ok=True)
+    marshal = plan_dir / 'marshal.json'
+    marshal.write_text(
+        json.dumps(
+            {
+                'plan': {
+                    'phase-6-finalize': {
+                        'steps': {
+                            'plan-marshall:automatic-review': {},
+                            'default:push': {},
+                            'default:sonar-roundtrip': {},
+                        }
+                    }
+                }
+            }
+        )
+        + '\n',
+        encoding='utf-8',
+    )
+    return marshal
+
+
 def test_the_manifest_verbs_answer_on_a_flat_install(flat_install: Path, tmp_path: Path) -> None:
     """``compose`` and ``validate-loadable`` answer identically on a flat and a nested install.
-
     Both verbs run through the entry point that imports ``_manifest_validation`` at
     module import, and both resolve each phase-6 step's body doc — the loadability
     check is exactly the "does this step's standards file exist" surface a bare
@@ -214,32 +243,15 @@ def test_the_manifest_verbs_answer_on_a_flat_install(flat_install: Path, tmp_pat
             'simple',
             '--scope-estimate',
             'surgical',
+            '--phase-6-steps',
+            ','.join(('plan-marshall:automatic-review', 'default:push', 'default:sonar-roundtrip')),
         ),
         ('manage-execution-manifest', 'validate-loadable', '--plan-id', 'd4-probe', '--all'),
     )
     flat_project = tmp_path / 'flat-project'
-    _write_marshal(flat_project)
+    _write_finalize_marshal(flat_project)
     nested_project = tmp_path / 'nested-project'
-    _write_marshal(nested_project)
-    for project, runner in ((flat_project, 'flat'), (nested_project, 'nested')):
-        if runner == 'flat':
-            seeded = run_script_in_flat(
-                flat_install,
-                project,
-                _flat_script(flat_install),
-                'sync-defaults',
-                '--backfill-bot-roster',
-                env_overrides=_pin(project),
-            )
-        else:
-            seeded = run_script(
-                _MANAGE_CONFIG,
-                'sync-defaults',
-                '--backfill-bot-roster',
-                cwd=project,
-                env_overrides=_pin(project),
-            )
-        assert seeded.returncode == 0, (runner, seeded.stderr)
+    _write_finalize_marshal(nested_project)
 
     for skill, *verb in invocations:
         flat_script = flat_install / 'skills' / f'plan-marshall-{skill}' / 'scripts' / f'{skill}.py'
@@ -256,6 +268,14 @@ def test_the_manifest_verbs_answer_on_a_flat_install(flat_install: Path, tmp_pat
             flat_payload,
             nested_payload,
         )
+        # ``validate-loadable`` reports success with a non-zero unloadable count, so
+        # the status alone would not notice a doc that stopped resolving: the
+        # loadability clause is only load-bearing with the count asserted.
+        if verb[0] == 'validate-loadable':
+            assert flat_payload.get('unloadable_count') == nested_payload.get('unloadable_count') == 0, (
+                flat_payload,
+                nested_payload,
+            )
 
 
 def test_the_manifest_loadability_path_imports_on_a_flat_install(flat_install: Path, tmp_path: Path) -> None:

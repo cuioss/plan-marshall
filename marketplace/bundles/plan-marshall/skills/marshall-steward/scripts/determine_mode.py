@@ -165,7 +165,11 @@ for _ancestor in Path(__file__).resolve().parents:
                 break
         break
 
-from marketplace_bundles import resolve_sibling_skill_path, resolve_skills_root  # noqa: E402
+from marketplace_bundles import (  # noqa: E402
+    describe_sibling_skill_shapes,
+    resolve_sibling_skill_path,
+    resolve_skills_root,
+)
 from marketplace_paths import (  # noqa: E402
     agent_instructions_filename,
     iter_project_skill_dirs,
@@ -1222,7 +1226,10 @@ def run_preflight() -> dict:
 
     script = _generate_executor_script()
     if not script.is_file():
-        return {'status': 'error', 'error': f'generate_executor.py not found at {script}'}
+        shapes = describe_sibling_skill_shapes(
+            Path(__file__), 'plan-marshall', 'skills/tools-script-executor/scripts/generate_executor.py'
+        )
+        return {'status': 'error', 'error': f'generate_executor.py not found; probed:\n{shapes}'}
 
     try:
         result = subprocess.run(

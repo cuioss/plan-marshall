@@ -89,29 +89,48 @@ def flat_install(flat_install_tree: Path) -> Path:
     return flat_install_tree
 
 
-def test_every_lane_sibling_join_reaches_its_file(flat_install: Path, tmp_path: Path) -> None:
-    """Each module's own sibling-skill path exists in the flat deployment."""
-    project = tmp_path / 'project'
-    project.mkdir()
+@pytest.fixture(scope='module')
+def lane_results(flat_install: Path, tmp_path_factory: pytest.TempPathFactory) -> dict[str, Any]:
+    """One pass of the flat-tree driver, shared by the per-site assertions.
+
+    Each site below then reports its OWN failure, so a mutation that breaks all of
+    them yields one named failure per join rather than a single stop at the first.
+    """
+    project = tmp_path_factory.mktemp('flat-lane-project')
     completed = run_python_in_flat(flat_install, project, _program(flat_install))
     assert completed.returncode == 0, completed.stderr
-    results = cast('dict[str, Any]', json.loads(completed.stdout))
+    return cast('dict[str, Any]', json.loads(completed.stdout))
 
-    # Asserted individually so a failure names the join that broke.
-    assert results['build_queue_exists'], results['build_queue_path']
-    assert results['build_server_exists'], results['build_server_path']
-    assert results['merge_lock_exists'], results['merge_lock_path']
-    assert results['git_workflow_generator_exists'], results['git_workflow_generator']
-    assert results['prepare_execute_generator_exists'], results['prepare_execute_generator']
-    # The upgrade's own preflight entry point (D1): the generator path the steward
-    # resolves must exist in the deployment, or Stage 2 cannot regenerate at all.
-    assert results['determine_mode_generator_exists'], results['determine_mode_generator']
 
-    absent_deps = {path: present for path, present in results['build_queue_dep_dirs'].items() if not present}
+def test_the_build_queue_slot_reaches_its_owner(lane_results: dict[str, Any]) -> None:
+    """``build_queue.py`` and every sibling dir it imports transitively resolve."""
+    assert lane_results['build_queue_exists'], lane_results['build_queue_path']
+    absent_deps = {path: present for path, present in lane_results['build_queue_dep_dirs'].items() if not present}
     assert not absent_deps, absent_deps
 
-    assert results['maven_parse_log'], 'the CI log filter found no build parser on the flat tree'
-    assert results['ci_persist'], 'the CI persistence layer did not load on the flat tree'
+
+def test_the_build_server_client_reaches_its_owner(lane_results: dict[str, Any]) -> None:
+    """``build_server.py`` resolves from the build subprocess."""
+    assert lane_results['build_server_exists'], lane_results['build_server_path']
+
+
+def test_the_merge_lock_reaches_its_owner(lane_results: dict[str, Any]) -> None:
+    """The unified ``merge_lock.py`` resolves from the integrate path."""
+    assert lane_results['merge_lock_exists'], lane_results['merge_lock_path']
+
+
+def test_every_generator_path_resolves(lane_results: dict[str, Any]) -> None:
+    """All three generator consumers — the rebase refresh, move-in and the steward — agree."""
+    assert lane_results['git_workflow_generator_exists'], lane_results['git_workflow_generator']
+    assert lane_results['prepare_execute_generator_exists'], lane_results['prepare_execute_generator']
+    # The upgrade's own preflight entry point (D1).
+    assert lane_results['determine_mode_generator_exists'], lane_results['determine_mode_generator']
+
+
+def test_the_ci_parser_and_persistence_layer_load(lane_results: dict[str, Any]) -> None:
+    """The CI log filter finds its build parser and the persistence layer imports."""
+    assert lane_results['maven_parse_log'], 'the CI log filter found no build parser on the flat tree'
+    assert lane_results['ci_persist'], 'the CI persistence layer did not load on the flat tree'
 
 
 def test_the_generator_runs_from_the_flat_tree(flat_install: Path, tmp_path: Path) -> None:

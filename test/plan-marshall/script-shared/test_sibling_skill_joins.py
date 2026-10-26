@@ -326,8 +326,8 @@ def test_the_detector_finds_a_planted_join(tmp_path: Path) -> None:
         "    E = _SKILLS_DIR / _skill / 'scripts'\n"
         "F = _SKILLS_DIR.joinpath('build-npm')\n"
         "G = Path(_SKILLS_DIR, 'build-gradle')\n"
-        "H = some_dir / 'phase-6-finalize'\n"
-        'I = base / name\n'
+        "H = some_dir / 'build-server-client'\n"
+        'I = base / build_server_client\n'
         "J = _SKILLS_DIR / f'dynamic-{name}'\n",
         encoding='utf-8',
     )
@@ -340,6 +340,7 @@ def test_the_detector_finds_a_planted_join(tmp_path: Path) -> None:
             'build-maven',
             'build-npm',
             'build-gradle',
+            'build-server-client',
         }
     )
     tree = ast.parse(planted.read_text(encoding='utf-8'), filename=str(planted))
@@ -381,6 +382,19 @@ def test_every_declaration_carries_a_reason() -> None:
     unreasoned = sorted(site for site, reason in FLAT_SAFE_JOINS.items() if not reason.strip())
 
     assert not unreasoned, unreasoned
+
+
+def test_every_declared_join_appears_exactly_once() -> None:
+    """A SECOND bare join of an already-declared skill must still red.
+
+    The population is keyed by ``(module, skill)``, so re-introducing a second join
+    of the same skill in the same module changes no KEY. Every shipped site is a
+    single join, so pinning the count closes that hole without pinning line numbers
+    (which every edit would churn).
+    """
+    repeated = {site: lines for site, lines in _discovered_joins().items() if len(lines) != 1}
+
+    assert not repeated, f'joins counted more than once (a duplicate or a shadowed site): {repeated}'
 
 
 def test_every_routed_module_calls_the_helper() -> None:
