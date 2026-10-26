@@ -447,6 +447,16 @@ class TestResolveBundlesRootFlatDeployment:
     ``collect_script_dirs`` and ``deployed_layout.skill_roots`` already accept.
     """
 
+    @staticmethod
+    def test_the_skill_root_spellings_are_a_non_empty_population():
+        """Non-vacuity guard for the parametrize over ``SKILL_ROOT_NAMES``.
+
+        An empty tuple would collapse every parametrized flat case to zero cases
+        and leave this class green while testing nothing.
+        """
+        assert SKILL_ROOT_NAMES
+        assert len(SKILL_ROOT_NAMES) == 2
+
     @pytest.mark.parametrize('root_name', SKILL_ROOT_NAMES)
     def test_flat_tree_resolves_to_the_containing_directory(self, tmp_path, root_name):
         root = tmp_path / 'config' / 'opencode'
