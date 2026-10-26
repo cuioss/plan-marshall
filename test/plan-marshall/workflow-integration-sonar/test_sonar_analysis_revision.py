@@ -400,17 +400,36 @@ class TestBranchReadOutOfScope:
 class TestHeadResolution:
     """The comparison head is the branch under review, not the caller's checkout."""
 
-    def test_the_pulls_request_branch_is_tried_before_the_working_tree_head(self, monkeypatch):
+    def test_agreeing_refs_resolve_to_that_commit(self, monkeypatch):
         seen = []
 
         def fake_rev_parse(ref):
             seen.append(ref)
-            return _HEAD if ref == 'refs/heads/fix/x' else ''
+            return _HEAD
 
         monkeypatch.setattr(sonar_mod, '_git_rev_parse', fake_rev_parse)
 
         assert sonar_mod._resolve_head_revision('fix/x') == _HEAD
-        assert seen == ['refs/heads/fix/x']
+        assert seen == ['refs/heads/fix/x', 'refs/remotes/origin/fix/x']
+
+    def test_disagreeing_refs_report_no_head(self, monkeypatch):
+        """A push from elsewhere leaves the local tip behind: that is unknown, not confirmed."""
+        answers = {'refs/heads/fix/x': _STALE, 'refs/remotes/origin/fix/x': _HEAD}
+        monkeypatch.setattr(sonar_mod, '_git_rev_parse', lambda ref: answers.get(ref, ''))
+
+        assert sonar_mod._resolve_head_revision('fix/x') == ''
+
+    def test_a_known_branch_never_falls_back_to_the_working_tree_head(self, monkeypatch):
+        seen = []
+
+        def fake_rev_parse(ref):
+            seen.append(ref)
+            return ''
+
+        monkeypatch.setattr(sonar_mod, '_git_rev_parse', fake_rev_parse)
+
+        assert sonar_mod._resolve_head_revision('fork-only') == ''
+        assert seen == ['refs/heads/fork-only', 'refs/remotes/origin/fork-only']
 
     def test_the_remote_tracking_ref_answers_when_the_local_branch_is_absent(self, monkeypatch):
         seen = []
@@ -423,6 +442,26 @@ class TestHeadResolution:
 
         assert sonar_mod._resolve_head_revision('fix/x') == _STALE
         assert seen == ['refs/heads/fix/x', 'refs/remotes/origin/fix/x']
+
+    def test_git_runs_in_the_routed_checkout(self, monkeypatch):
+        """``--project-dir`` is a stored default, not a chdir: pass it to git explicitly."""
+        import subprocess
+
+        seen = {}
+
+        class _Completed:
+            returncode = 0
+            stdout = 'abc123\n'
+
+        def fake_run(args, **kwargs):
+            seen['cwd'] = kwargs.get('cwd')
+            return _Completed()
+
+        monkeypatch.setattr(subprocess, 'run', fake_run)
+        monkeypatch.setattr(sonar_mod, 'get_default_cwd', lambda: '/routed/tree')
+
+        assert sonar_mod._git_rev_parse('HEAD') == 'abc123'
+        assert seen['cwd'] == '/routed/tree'
 
     def test_no_branch_falls_back_to_the_working_tree_head(self, monkeypatch):
         seen = []

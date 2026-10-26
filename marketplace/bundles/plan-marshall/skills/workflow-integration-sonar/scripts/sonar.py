@@ -67,6 +67,7 @@ from typing import Any
 
 from ci_base import (
     extract_routing_args,
+    get_default_cwd,
     poll_until,
     register_subcommands,
     set_default_cwd,
@@ -315,13 +316,18 @@ def _git_rev_parse(ref: str) -> str:
     """Best-effort ``git rev-parse --verify <ref>``; ``''`` when it does not resolve.
 
     The single subprocess seam for every SHA these verbs compare, so ref
-    resolution can be exercised without a repository behind it.
+    resolution can be exercised without a repository behind it. It runs in the
+    ROUTED checkout — the router's ``--project-dir`` default — not in whatever
+    directory the process happens to hold: ``set_default_cwd`` stores that path
+    rather than changing the process directory, so passing it explicitly is what
+    keeps a PR-scoped comparison from inspecting another tree.
     """
     import subprocess
 
     try:
         out = subprocess.run(
             ['git', 'rev-parse', '--verify', ref],
+            cwd=get_default_cwd(),
             capture_output=True,
             text=True,
             timeout=10,
@@ -347,24 +353,25 @@ def _resolve_head_revision(branch: str | None) -> str:
     """Resolve the commit an analysis revision is compared against.
 
     ``branch`` is the pull request's source branch as the provider reports it.
-    Its refs are tried first — the local branch (shared by every worktree of one
-    clone), then the remote-tracking ref — because the caller's own working tree
-    is not always the head under review: the runbook lane reads a pull request
-    from the main checkout, whose HEAD is the base branch. With no branch the
-    working tree's HEAD is the comparison point.
+    When it is known, BOTH of its refs are resolved — the local branch (shared by
+    every worktree of one clone) and the remote-tracking ref — and the two must
+    agree. They disagree when a push landed from elsewhere (a bot commit, an
+    "update branch" click) and the reading checkout has not moved: the local tip
+    is then the analysed commit while the pushed head is not, and preferring either
+    one would report a confident verdict about the wrong commit. Disagreement, or
+    neither ref resolving, is therefore ``''`` — which the verification reports as
+    ``head_revision_unavailable`` and never as ``confirmed``.
 
-    Returns ``''`` when nothing resolves, which the verification reports as
-    ``head_revision_unavailable`` rather than comparing against a guess. The local
-    ref is preferred over the remote-tracking one, so a reading checkout whose
-    local branch lags the remote compares against the stale tip and reports
-    ``stale_analysis`` — a spurious blocker in that direction, never a false
-    ``confirmed``.
+    With no branch the working tree's HEAD is the comparison point; a known branch
+    never falls back to it, because in a reading checkout HEAD is the base branch
+    and comparing against it would be a guess about a different tree.
     """
     if branch:
-        for ref in (f'refs/heads/{branch}', f'refs/remotes/origin/{branch}'):
-            sha = _git_rev_parse(ref)
-            if sha:
-                return sha
+        local = _git_rev_parse(f'refs/heads/{branch}')
+        remote = _git_rev_parse(f'refs/remotes/origin/{branch}')
+        if local and remote and local != remote:
+            return ''
+        return local or remote
     return _git_rev_parse('HEAD')
 
 
