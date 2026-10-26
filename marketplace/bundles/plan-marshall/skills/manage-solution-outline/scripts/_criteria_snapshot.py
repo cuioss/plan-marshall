@@ -239,7 +239,7 @@ def _merge_integrity(plan_id: str, merge: Callable[[dict[str, Any]], None]) -> b
     return True
 
 
-def record_integrity(plan_id: str, **fields: Any) -> bool:
+def record_integrity(plan_id: str, *, drop: tuple[str, ...] = (), **fields: Any) -> bool:
     """Merge ``fields`` into the status record's integrity block; return success.
 
     The read, the merge and the write are one critical section on the guard the
@@ -249,10 +249,21 @@ def record_integrity(plan_id: str, **fields: Any) -> bool:
     committing in that window lost the digest — the frozen artifact then had
     nothing binding it.
 
+    ``drop`` names keys the same merge REMOVES. It exists for a caller that
+    retires part of the block's state in the same commit that writes the rest (the
+    consumed re-freeze authorization drops its identity and pending markers); a
+    second merge would trade one atomic update for two.
+
     A plan with no readable status record is left untouched and reports ``False``;
     the caller's artifact is rolled back rather than left only half-bound.
     """
-    return _merge_integrity(plan_id, lambda block: block.update(fields))
+
+    def _merge(block: dict[str, Any]) -> None:
+        block.update(fields)
+        for key in drop:
+            block.pop(key, None)
+
+    return _merge_integrity(plan_id, _merge)
 
 
 def path_digest(path: Path) -> str:
@@ -306,18 +317,11 @@ def record_snapshot_digest(plan_id: str, *, consume_refreeze: bool = False) -> b
     fields: dict[str, Any] = {SNAPSHOT_FROZEN_KEY: True, 'snapshot_digest': digest}
     if not consume_refreeze:
         return record_integrity(plan_id, **fields)
+    # The re-freeze this authorization permitted has consumed it: the flag goes
+    # false and the identity/pending markers go away in the SAME merge, so no later
+    # reader sees an authorization that no longer exists.
     fields['refreeze_authorized'] = False
-
-    def _consume(block: dict[str, Any]) -> None:
-        block.update(fields)
-        # The identity token names an authorization that no longer exists once the
-        # re-freeze it permitted has consumed it; leaving it (or a pending marker)
-        # behind makes the record describe a live authorization to every later
-        # reader.
-        block.pop(REFREEZE_TOKEN_KEY, None)
-        block.pop(REFREEZE_PENDING_KEY, None)
-
-    return _merge_integrity(plan_id, _consume)
+    return record_integrity(plan_id, drop=(REFREEZE_TOKEN_KEY, REFREEZE_PENDING_KEY), **fields)
 
 
 def record_verdict_digest(plan_id: str, kind: str, verdict_file: str | Path) -> bool:
