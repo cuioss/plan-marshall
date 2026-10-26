@@ -256,16 +256,18 @@ def resolve_bundles_root(script_file: Path) -> Path:
     Both probes run over the WHOLE chain first, so a tree that also carries a
     stray nested bundle keeps resolving to the nested root it resolved to before.
 
-    **Flat** — the ancestor IS a flat skill root (:data:`deployed_layout.SKILL_ROOT_NAMES`,
-    the deployed plural ``skills`` and the generated singular ``skill``) and is
-    not a nested bundle's own ``skills/`` (:func:`deployed_layout.is_bundle_skill_root`).
-    The directory CONTAINING that skill root is returned: the form
-    ``resolve_bundle_path``, ``collect_script_dirs`` and
+    **Flat** — the ancestor IS a flat skill root
+    (:func:`deployed_layout.is_flat_skill_root`: a ``skills``/``skill`` directory
+    that is not a nested bundle's own, per
+    :data:`deployed_layout.SKILL_ROOT_NAMES`). The directory CONTAINING that skill
+    root is returned: the form ``resolve_bundle_path``, ``collect_script_dirs`` and
     ``deployed_layout.skill_roots`` already accept, so every consumer of the
     returned root resolves flat paths unchanged. This is the shape OpenCode and
-    Antigravity actually deploy — ``{root}/skills/{bundle}-{skill}/`` — and it
-    carries no bundle directory and no manifest at all, so before this leg the
-    import-time walk raised on both targets.
+    Antigravity actually deploy — ``{root}/skills/{bundle}-{skill}/`` — which
+    carries no bundle directory and no bundle marker; the deploy root itself does
+    hold the target manifest (``opencode.json`` / ``plugin.json``), which is what
+    ``resolve_skills_root`` anchors on. Before this leg the import-time walk
+    raised on both targets.
 
     Uses identity walking (no index arithmetic). Raises ``RuntimeError`` with the
     full walked parent chain when neither shape is present, naming both shapes it
@@ -301,11 +303,7 @@ def resolve_bundles_root(script_file: Path) -> Path:
                 return ancestor
 
     for ancestor in walked:
-        if ancestor.name not in deployed_layout.SKILL_ROOT_NAMES or not ancestor.is_dir():
-            continue
-        if deployed_layout.is_bundle_skill_root(ancestor):
-            # A nested bundle's own ``skills/``: its children are bare skill
-            # names, so reading it as a flat root would answer one level too deep.
+        if not deployed_layout.is_flat_skill_root(ancestor):
             continue
         return ancestor.parent
 
