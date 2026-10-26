@@ -68,6 +68,10 @@ FUNCTION_LEVEL_MODULES: frozenset[str] = frozenset(
 
 _CALL_NAME = 'resolve_bundles_root'
 
+#: A path the manifest anchor cannot contain, used to exercise the documented
+#: absolute-string fallback of ``_render_standards_rel_path``.
+_OUTSIDE_PATH = '/definitely/outside/the/deployed/tree/x.md'
+
 
 def _call_sites(module_path: Path) -> list[bool]:
     """Return one entry per ``resolve_bundles_root`` call: ``True`` when module-level."""
@@ -210,6 +214,9 @@ def test_the_marketplace_authoring_tools_report_the_absent_tree_in_a_flat_instal
     # The anchor is still ``resolve_bundles_root(...).parent.parent``: a flat root
     # is not special-cased, so the cache shape's derivation cannot drift.
     assert Path(results['manifest_repo_root']) == flat_install.parent.parent
+    # ... and its one consumer still falls back to the absolute string for a path
+    # the anchor does not contain, which is the documented cache-layout behaviour.
+    assert results['render_outside'] == str(_OUTSIDE_PATH)
 
 
 def _run_behaviour_program(flat_install: Path, project_dir: Path) -> dict[str, Any]:
@@ -250,6 +257,7 @@ results['extension_absence'] = extension._NO_MARKETPLACE_TREE_MESSAGE
 
 manifest = load('plan-marshall', 'manage-execution-manifest', '_manifest_validation.py', 'flat_manifest_validation')
 results['manifest_repo_root'] = str(manifest._REPO_ROOT)
+results['render_outside'] = manifest._render_standards_rel_path(__import__('pathlib').Path({_OUTSIDE_PATH!r}))
 
 print(json.dumps(results))
 """

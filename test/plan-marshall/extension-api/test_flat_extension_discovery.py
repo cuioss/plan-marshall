@@ -39,6 +39,7 @@ _FINALIZE_STEP_EXT_POINT = 'plan-marshall:extension-api/standards/ext-point-fina
 
 _DOMAIN_BUNDLE = 'demo-domain'
 _OPT_IN_BUNDLE = 'demo-opt'
+_UNDECLARED_BUNDLE = 'demo-undeclared'
 _DOMAIN_SKILL = 'plan-marshall-plugin'
 _OPT_IN_SKILL = 'plan-retrospective'
 _UNDECLARED_SKILL = 'plain-skill'
@@ -117,6 +118,16 @@ def two_bundle_source(tmp_path: Path) -> Path:
             )
         },
     )
+    # The negative twin: a skill whose directory and file layout are exactly the
+    # shape a discovery heuristic would grab — the conventional manifest skill
+    # name AND an ``extension.py`` beside it — but which declares no archetype.
+    # Only the declaration may decide, so this bundle must never be discovered.
+    undeclared = _write_bundle(
+        marketplace,
+        _UNDECLARED_BUNDLE,
+        {_DOMAIN_SKILL: f'name: {_DOMAIN_SKILL}\ndescription: declares no archetype\n'},
+    )
+    (undeclared / 'skills' / _DOMAIN_SKILL / 'extension.py').write_text(_EXTENSION_SOURCE, encoding='utf-8')
     return marketplace
 
 
@@ -173,7 +184,13 @@ def test_a_block_sequence_declaration_survives_the_emitters(
 def test_discover_all_extensions_finds_the_domain_bundle_by_its_real_name(
     target: str, two_bundle_source: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The flat tree is the ONLY root, and the bundle is named from its identity."""
+    """The flat tree is the ONLY root, and the bundle is named from its identity.
+
+    The undeclared twin bundle carries the conventional manifest skill name and a
+    sibling ``extension.py`` but no archetype declaration, so its absence from the
+    result is what makes this declaration-driven discovery rather than a
+    name-or-file-presence heuristic.
+    """
     root = _emit(target, two_bundle_source, tmp_path)
     monkeypatch.setattr(_disc, 'get_marketplace_bundles_path', lambda: root)
     monkeypatch.setattr(_disc, 'get_bundle_cache_roots', lambda: ())

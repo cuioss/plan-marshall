@@ -2,18 +2,25 @@
 """Build a marker-less FLAT install fixture out of the real bundle trees.
 
 OpenCode and Antigravity deploy every skill as ``{root}/skills/{bundle}-{skill}/``
-— no ``{bundle}/`` directory, no ``.claude-plugin/plugin.json``, no manifest of
-any kind. A deployed tree of that shape is what a machine running either target
+— no ``{bundle}/`` directory, no ``.claude-plugin/plugin.json``, no bundle marker
+of any kind. A deployed tree of that shape is what a machine running either target
 actually has, and it is the shape an import-time walk over the script's parents
 must resolve.
 
-This builder copies every bundle skill's ``scripts/``, ``standards/`` and
-``workflow/`` trees into that layout and writes the one file the emitters
-synthesize: an identity-carrying ``SKILL.md``
-(:func:`deployed_layout.read_flat_skill_identity` is its reader). Nothing it
-produces carries a bundle marker, which is the property under test — a
+What this builder reproduces is the LAYOUT plus each skill's ``scripts/``,
+``standards/`` and ``workflow/`` trees. Two deliberate limits: the ``SKILL.md`` it
+writes is a minimal identity-carrying manifest of its own, not an emitter's
+output, and root-level skill files (``extension.py`` above all) are not copied.
+Those two limits are why the emitter-facing D4 tests build their fixtures by
+running the real emitters instead (:mod:`test_flat_extension_discovery`); this
+fixture exists for the import-time and registry readers, which only need the
+layout, the identity and the code.
+
+Nothing it produces carries a bundle marker, which is the property under test — a
 ``plan-marshall/.claude-plugin/plugin.json`` anywhere in the fixture would let
-the nested probes answer and the flat leg would never run.
+the nested probes answer and the flat leg would never run. It does write the
+TARGET manifest at the deploy root, because a real install has one (see
+:data:`TARGET_MANIFEST_NAME`).
 
 Usage (``test/plan-marshall/`` is on ``sys.path`` via the root conftest)::
 
@@ -54,7 +61,13 @@ TARGET_MANIFEST_NAME = 'opencode.json'
 
 
 def identity_skill_md(bundle: str, skill: str) -> str:
-    """Return the ``SKILL.md`` a flat emitter writes: identity plus a description."""
+    """Return a minimal identity-carrying ``SKILL.md`` for the fixture.
+
+    Deliberately NOT an emitter's output: it carries only what the flat readers in
+    this fixture need (the ``metadata`` identity block
+    ``deployed_layout.read_flat_skill_identity`` reads). A test that needs the
+    deployed frontmatter as an emitter writes it runs the real emitter instead.
+    """
     return (
         '---\n'
         f'name: {bundle}-{skill}\n'

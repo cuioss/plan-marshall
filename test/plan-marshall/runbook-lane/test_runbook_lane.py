@@ -593,13 +593,17 @@ def test_resolve_pyproject_fixture(tmp_path: Path) -> None:
 
 
 def test_resolve_returns_its_envelope_when_run_from_a_flat_install(tmp_path: Path, flat_install_tree: Path) -> None:
-    """A marker-less flat install runs ``resolve`` to its envelope, not ``resolve_failed``.
+    """The lane runs end-to-end from a deployed flat tree and returns its envelope.
 
     This is the shape an OpenCode or Antigravity machine has: the deployed
     ``runbook_lane.py`` executes from ``{root}/skills/plan-marshall-runbook-lane/``
-    with nothing but the flat tree on ``PYTHONPATH``. Before the flat leg of
-    ``resolve_bundles_root`` the import itself raised, so the verb never reached
-    its own error handling.
+    with nothing but the flat tree on ``PYTHONPATH``. It is a SMOKE test of the
+    whole resolve path on that shape, not the import-time regression anchor: this
+    verb's own ``resolve_bundles_root`` calls are function-level and
+    exception-guarded, so a pre-fix tree also reached its envelope here. The
+    regression anchor for the import-time break is
+    ``test_flat_install_call_sites.py``, whose six modules raised before the flat
+    leg existed.
     """
     spec = _seed_fixture(tmp_path, executable=_PYPROJECT_EXEC, required_bots='first-bot')
     flat_root = flat_install_tree
