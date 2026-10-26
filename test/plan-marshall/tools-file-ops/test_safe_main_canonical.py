@@ -14,16 +14,18 @@ failure) cannot silently drift between subsystems.
 These tests fail if a new ``def safe_main`` reappears anywhere else, catching a
 re-duplication at review time.
 
-The rendering half pins the one typed exception ``safe_main`` does NOT treat as a
-crash: the orchestrator store seam's ``OrchestratorStoreUnavailable`` renders its
-own ``error`` code and fields with exit 0, while every other exception keeps the
-``internal_error`` / exit 1 path.
+The rendering half pins the typed exceptions ``safe_main`` does NOT treat as a
+crash: the orchestrator store seam's ``OrchestratorStoreUnavailable`` and the
+state-read refusal ``StateReadFailed`` each render their own ``error`` code and
+fields with exit 0, while every other exception keeps the ``internal_error`` /
+exit 1 path.
 """
 
 import re
+from pathlib import Path
 
 import pytest
-from file_ops import OrchestratorStoreUnavailable, safe_main
+from file_ops import OrchestratorStoreUnavailable, StateReadFailed, safe_main
 from toon_parser import parse_toon
 
 from conftest import MARKETPLACE_ROOT
@@ -91,6 +93,20 @@ def test_store_refusal_renders_its_own_code_and_fields_with_exit_zero(capsys):
     assert payload['message'] == 'the main checkout holds 1 uncommitted or unlanded ledger path(s)'
     assert payload['dirty_paths'] == ['.plan/orchestrator/epic-a/epic.md']
     assert payload['branch'] == 'chore/orchestrator-ledger'
+
+
+def test_state_read_failure_renders_its_own_code_with_exit_zero(capsys):
+    """A state file that could not be read is a data condition, not a crash."""
+    refusal = StateReadFailed(Path('.plan/local/plans/demo/status.json'), 'corrupt')
+
+    code, payload = _run_wrapped(refusal, capsys)
+
+    assert code == 0
+    assert payload['status'] == 'error'
+    assert payload['error'] == 'state_unreadable'
+    assert payload['reason'] == 'corrupt'
+    assert payload['path'].endswith('status.json')
+    assert 'refusing to commit' in payload['message']
 
 
 @pytest.mark.parametrize(

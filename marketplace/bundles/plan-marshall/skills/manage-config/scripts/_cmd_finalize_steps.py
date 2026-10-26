@@ -46,9 +46,10 @@ from _config_core import (
     success_exit,
 )
 from _config_defaults import FINALIZE_STEP_EXT_POINT
+from _locks_core import StateReadFailed, rmw_json
 from command_forms import STEWARD_COMMAND
 from constants import FILE_STATUS
-from file_ops import get_plan_dir, read_json, write_json
+from file_ops import get_plan_dir
 from finalize_step_presets import (
     FinalizeStepPresets,
 )
@@ -81,6 +82,18 @@ _READER_LANE_VALUES: tuple[str, ...] = ('off', 'minimal', 'standard', 'full', 'a
 #: is unsupported" when the truth is "this verb does not write it, and another one
 #: does".
 _GENERIC_STEP_PARAM_ROUTE = 'plan phase-6-finalize step set --step-id <step-id> --param lane --value <value>'
+
+
+class _StatusShapeRefused(RuntimeError):
+    """A malformed status document aborted the guarded write.
+
+    Raised from INSIDE the ``rmw_json`` mutator: a mutator that raises commits
+    nothing, so the refusal leaves ``status.json`` byte-identical while still
+    carrying the named reason back to the CLI as an ``error_exit``. It replaces
+    the previous pre-write shape check, which validated a snapshot taken outside
+    the guard and therefore could not refuse a document that changed underneath
+    it.
+    """
 
 
 def _reject_lane_value(lane: str) -> str:
@@ -253,11 +266,22 @@ def _set_lane_plan_local(plan_id: str, step_id: str, lane: str) -> dict:
     into every later plan. Sibling params already on the step survive — only the
     ``lane`` knob is replaced — mirroring the marshal-side writer's behaviour.
 
+    **The write commits through the guarded seam**, not as a whole-document
+    overwrite. ``status.json`` has several writers (``manage-status`` owns the
+    document; the criteria writers and ``loop-back close`` own keys inside
+    ``metadata``), and a read-modify-write performed outside the guard can lose a
+    commit that lands between this function's read and its write. The mutation
+    therefore runs against the state read INSIDE ``manage-locks``' O_EXCL guard —
+    the same guard ``manage-status.write_status`` and the owning verbs take — and
+    commits atomically. That is also why no protected-key carry is needed here:
+    this function never holds a stale snapshot to carry from.
+
     An existing map that cannot be parsed as the documented shape is an EXPLICIT
     ERROR, never a silent overwrite: a non-dict ``metadata``, a non-dict override
     map, or a non-dict param object for the target step each abort the write with
     a named reason, so a malformed file is repaired deliberately rather than
-    destroyed by the next write.
+    destroyed by the next write. The refusal is raised from inside the mutator,
+    so nothing is committed either.
 
     Args:
         plan_id: The already-validated plan identifier to write into.
@@ -270,35 +294,47 @@ def _set_lane_plan_local(plan_id: str, step_id: str, lane: str) -> dict:
     status_path = get_plan_dir(plan_id) / FILE_STATUS
     if not status_path.exists():
         return error_exit(f"no status.json for plan '{plan_id}'; cannot set plan-local lane")
-    status = read_json(status_path, default=None)
-    if not isinstance(status, dict):
-        return error_exit(f"status.json for plan '{plan_id}' is not a JSON object; refusing to overwrite it")
-    metadata = status.get('metadata')
-    if metadata is None:
-        metadata = {}
-        status['metadata'] = metadata
-    if not isinstance(metadata, dict):
-        return error_exit(f"status.json metadata for plan '{plan_id}' is not a dict; refusing to overwrite it")
-    overrides = metadata.get(_PLAN_LOCAL_STEP_MAP_KEY)
-    if overrides is None:
-        overrides = {}
-        metadata[_PLAN_LOCAL_STEP_MAP_KEY] = overrides
-    if not isinstance(overrides, dict):
-        return error_exit(
-            f"status.metadata.{_PLAN_LOCAL_STEP_MAP_KEY} for plan '{plan_id}' is not a map; refusing to overwrite it"
-        )
-    params = overrides.get(step_id)
-    if params is None:
-        params = {}
-    if not isinstance(params, dict):
-        return error_exit(
-            f"status.metadata.{_PLAN_LOCAL_STEP_MAP_KEY}['{step_id}'] for plan '{plan_id}' is not a "
-            'param object; refusing to overwrite it'
-        )
-    params['lane'] = lane
-    overrides[step_id] = params
 
-    write_json(status_path, status)
+    def _apply(current: dict) -> dict:
+        metadata = current.get('metadata')
+        if metadata is None:
+            metadata = {}
+            current['metadata'] = metadata
+        if not isinstance(metadata, dict):
+            raise _StatusShapeRefused(
+                f"status.json metadata for plan '{plan_id}' is not a dict; refusing to overwrite it"
+            )
+        overrides = metadata.get(_PLAN_LOCAL_STEP_MAP_KEY)
+        if overrides is None:
+            overrides = {}
+            metadata[_PLAN_LOCAL_STEP_MAP_KEY] = overrides
+        if not isinstance(overrides, dict):
+            raise _StatusShapeRefused(
+                f"status.metadata.{_PLAN_LOCAL_STEP_MAP_KEY} for plan '{plan_id}' is not a map; "
+                'refusing to overwrite it'
+            )
+        params = overrides.get(step_id)
+        if params is None:
+            params = {}
+        if not isinstance(params, dict):
+            raise _StatusShapeRefused(
+                f"status.metadata.{_PLAN_LOCAL_STEP_MAP_KEY}['{step_id}'] for plan '{plan_id}' is not a "
+                'param object; refusing to overwrite it'
+            )
+        params['lane'] = lane
+        overrides[step_id] = params
+        return current
+
+    try:
+        rmw_json(status_path, _apply, require_readable_state=True)
+    except _StatusShapeRefused as exc:
+        return error_exit(str(exc))
+    except StateReadFailed as exc:
+        return error_exit(f"status.json for plan '{plan_id}' could not be read under the guard: {exc}")
+    except TimeoutError:
+        return error_exit(
+            f"status.json for plan '{plan_id}' is held by another writer; the lane override was not written"
+        )
 
     return success_exit(
         {

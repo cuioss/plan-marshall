@@ -20,7 +20,11 @@ pieces:
     state files. It serializes the read→mutate→write cycle with an ``O_EXCL``
     guard-file mutex and commits via an atomic temp-file replace, so two
     concurrent sessions cannot both observe the same pre-state and both claim a
-    slot/lock. A missing or corrupt state file is treated as empty (``{}``).
+    slot/lock. A missing or corrupt state file is treated as empty (``{}``),
+    except when the caller asks for a readable state: then the same read raises
+    :class:`StateReadFailed` and nothing is committed, so a caller that treats
+    absence as authoritative can never commit the absence a failed read
+    invented.
   * :func:`read_json_guarded` — the READ-ONLY counterpart to :func:`rmw_json`,
     for a verb contracted to REPORT state rather than change it. It takes the
     same ``O_EXCL`` guard on the same guard path, so the read cannot land
@@ -82,6 +86,7 @@ from datetime import date
 from pathlib import Path
 from typing import Any, Literal
 
+from file_ops import StateReadFailed
 from input_validation import is_valid_plan_id
 from marketplace_paths import (
     PLAN_DIR_NAME,
@@ -301,6 +306,49 @@ def holder_staleness(holder: str, project_root: str | Path | None = None) -> Lit
 # ---------------------------------------------------------------------------
 
 
+#: Why a read produced no state. A caller that must not treat "I could not read
+#: this" as "this holds nothing" branches on the value; a caller for which an
+#: absent or unreadable file is a legitimate first write ignores it.
+READ_OK = 'ok'
+READ_MISSING = 'missing'
+READ_UNREADABLE = 'unreadable'
+READ_CORRUPT = 'corrupt'
+READ_NOT_OBJECT = 'not_object'
+
+
+def _read_json_state(path: Path) -> tuple[dict[str, Any], str]:
+    """Read the JSON state file, reporting WHY no state was available.
+
+    The reason-reporting form of :func:`_read_json_or_empty`. Every
+    "no usable state" case answers an empty mapping, exactly as before; the
+    second element tells the caller whether that emptiness was read
+    (:data:`READ_OK`) or is a failed read wearing the same shape.
+
+    Only a dict is accepted; any other top-level JSON shape (list, scalar) is
+    reported as :data:`READ_NOT_OBJECT` rather than handed to a consumer
+    expecting dict semantics.
+
+    Returns:
+        ``(state, reason)``. ``state`` is ``{}`` whenever ``reason`` is not
+        :data:`READ_OK`.
+    """
+    try:
+        raw = path.read_text(encoding='utf-8')
+    except FileNotFoundError:
+        return {}, READ_MISSING
+    except OSError:
+        return {}, READ_UNREADABLE
+    except UnicodeDecodeError:
+        return {}, READ_UNREADABLE
+    try:
+        data = json.loads(raw)
+    except (json.JSONDecodeError, ValueError):
+        return {}, READ_CORRUPT
+    if not isinstance(data, dict):
+        return {}, READ_NOT_OBJECT
+    return data, READ_OK
+
+
 def _read_json_or_empty(path: Path) -> dict[str, Any]:
     """Read the JSON state file, treating missing or corrupt content as empty.
 
@@ -310,18 +358,13 @@ def _read_json_or_empty(path: Path) -> dict[str, Any]:
     state from scratch. Only a dict is accepted; any other top-level JSON shape
     (list, scalar) is also treated as empty so a malformed file cannot corrupt a
     consumer expecting dict semantics.
+
+    ⛔ An empty mapping here is AMBIGUOUS: it means "read and held nothing" and
+    "could not be read" alike. A caller that must tell those apart — a
+    full-document writer carrying keys the document owns — uses
+    :func:`_read_json_state` or asks :func:`rmw_json` for a readable state.
     """
-    try:
-        raw = path.read_text(encoding='utf-8')
-    except OSError:
-        return {}
-    try:
-        data = json.loads(raw)
-    except (json.JSONDecodeError, ValueError):
-        return {}
-    if not isinstance(data, dict):
-        return {}
-    return data
+    return _read_json_state(path)[0]
 
 
 def _acquire_guard(guard_path: Path) -> int:
@@ -469,17 +512,22 @@ def _atomic_write_json(path: Path, data: dict[str, Any]) -> None:
     os.replace(str(tmp_path), str(path))
 
 
-def rmw_json(path: Path, mutate: Callable[[dict[str, Any]], dict[str, Any]]) -> dict[str, Any]:
+def rmw_json(
+    path: Path,
+    mutate: Callable[[dict[str, Any]], dict[str, Any]],
+    *,
+    require_readable_state: bool = False,
+) -> dict[str, Any]:
     """Serialized read-modify-write of the JSON state file at ``path``.
 
     Admits exactly one mutator at a time via an ``O_EXCL`` guard-file mutex
     (``{path}{_GUARD_SUFFIX}``), reads the current state (missing/corrupt → empty
-    ``{}``), applies ``mutate`` to obtain the next state, and commits it with an
-    atomic temp-file replace. The guard is always removed in a ``finally`` so a
-    crashed mutator does not wedge the file; a stale guard is reclaimed by
-    :func:`_acquire_guard`. Two concurrent callers cannot both observe the same
-    pre-state and both write — the second blocks on the guard until the first
-    commits, then reads the first's committed state.
+    ``{}`` unless ``require_readable_state`` is set), applies ``mutate`` to obtain
+    the next state, and commits it with an atomic temp-file replace. The guard is
+    always removed in a ``finally`` so a crashed mutator does not wedge the file;
+    a stale guard is reclaimed by :func:`_acquire_guard`. Two concurrent callers
+    cannot both observe the same pre-state and both write — the second blocks on
+    the guard until the first commits, then reads the first's committed state.
 
     Args:
         path: The JSON state file (resolve via ``resolve_main_anchored_path`` at
@@ -488,15 +536,33 @@ def rmw_json(path: Path, mutate: Callable[[dict[str, Any]], dict[str, Any]]) -> 
             freshly-read state dict and returns the state to commit. It MUST NOT
             perform its own file I/O — the serialization guarantee only covers
             the state passed in and the state returned.
+        require_readable_state: When True, a read that produced no state —
+            missing, unreadable, corrupt, or not a JSON object — raises
+            :class:`StateReadFailed` and NOTHING is committed, instead of
+            handing ``mutate`` the empty mapping a failed read is otherwise
+            indistinguishable from. Set this whenever ``mutate`` derives its
+            result from the CURRENT state in a way that treats absence as
+            authoritative (a full-document writer carrying keys another writer
+            owns): the empty mapping would make it commit the very loss it exists
+            to prevent. Leave it False for a caller whose contract is to rebuild
+            the state from scratch on a first acquire.
 
     Returns:
         The committed next state (the dict ``mutate`` returned).
 
     Raises:
         TimeoutError: when the guard cannot be acquired within the budget.
+        StateReadFailed: when ``require_readable_state`` is set and the in-guard
+            read produced no state. The guard is released and the file is left
+            byte-identical.
     """
     with held_guard(path.with_name(f'{path.name}{_GUARD_SUFFIX}')):
-        current = _read_json_or_empty(path)
+        if require_readable_state:
+            current, reason = _read_json_state(path)
+            if reason != READ_OK:
+                raise StateReadFailed(path, reason)
+        else:
+            current = _read_json_or_empty(path)
         next_state = mutate(current)
         _atomic_write_json(path, next_state)
         return next_state

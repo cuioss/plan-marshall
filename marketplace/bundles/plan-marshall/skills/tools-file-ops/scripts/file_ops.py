@@ -38,6 +38,7 @@ import argparse
 import json
 import os
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -1563,6 +1564,28 @@ def atomic_write_file(path: str | Path, content: str) -> None:
     atomic_write_bytes(path, payload)
 
 
+def _fsync_directory(directory: Path) -> None:
+    """Persist a completed rename in ``directory``, best-effort.
+
+    The rename that publishes a temp file is metadata, and a metadata change is
+    only durable once the DIRECTORY holding it is synced — the file's own fsync
+    covers the data, not the entry that now names it. A directory that cannot be
+    opened or synced (an exotic filesystem, a permission the platform refuses)
+    leaves the data itself durable, so this reports nothing rather than failing a
+    write that already landed.
+    """
+    try:
+        dir_fd = os.open(str(directory), os.O_RDONLY)
+    except OSError:
+        return
+    try:
+        os.fsync(dir_fd)
+    except OSError:
+        pass
+    finally:
+        os.close(dir_fd)
+
+
 def atomic_write_bytes(path: str | Path, content: bytes) -> None:
     """Write bytes atomically using a temp file + rename in the target directory.
 
@@ -1571,6 +1594,28 @@ def atomic_write_bytes(path: str | Path, content: bytes) -> None:
     decode is still restorable. The rename is atomic on the same filesystem, so a
     reader sees either the prior contents or the new ones; a failure before the
     rename leaves the target untouched and removes the temp file.
+
+    **The write is durable, not merely ordered.** The temp file is fsynced before
+    the rename, so a crash after the call returns cannot leave the target naming
+    bytes that never reached the device, and the containing directory is fsynced
+    after the rename, so the entry that now names the new file is durable too. The
+    directory sync is best-effort by contract (:func:`_fsync_directory`): a
+    filesystem that refuses it still has the file's DATA durable from the first
+    sync, and what is at risk in that case is the rename's own durability, which
+    no write of these bytes can influence. This matters most where the writer is a
+    RESTORE (the criteria snapshot's rollback): a restore that only reached the
+    page cache has not restored anything.
+
+    **The replaced file keeps its permission bits.** ``mkstemp`` creates at
+    ``0600``, and renaming that over an artifact silently re-permissions it for
+    every later reader. The prior mode is captured before the write and applied to
+    the temp file, so a rewrite preserves it. A target that does not exist yet has
+    no mode to preserve and keeps the temp file's ``0600``.
+
+    **The descriptor is closed on every path.** ``os.fdopen`` can itself raise
+    (an out-of-memory or a bad mode); when it does, the descriptor ``mkstemp``
+    returned is still open and is still this function's to close, and the temp file
+    it named is still this function's to remove.
 
     Args:
         path: Target file path
@@ -1581,11 +1626,28 @@ def atomic_write_bytes(path: str | Path, content: bytes) -> None:
     """
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        previous_mode: int | None = stat.S_IMODE(path.stat().st_mode)
+    except OSError:
+        # No target (a first write) — there is no mode to preserve.
+        previous_mode = None
     fd, temp_path = tempfile.mkstemp(suffix=path.suffix, prefix='.tmp_', dir=path.parent)
     try:
-        with os.fdopen(fd, 'wb') as f:
-            f.write(content)
+        try:
+            handle = os.fdopen(fd, 'wb')
+        except Exception:
+            # fdopen failed, so the descriptor is NOT owned by a handle. Close it
+            # here; the outer handler removes the temp file it named.
+            os.close(fd)
+            raise
+        with handle:
+            handle.write(content)
+            handle.flush()
+            os.fsync(handle.fileno())
+        if previous_mode is not None:
+            os.chmod(temp_path, previous_mode)
         os.replace(temp_path, path)
+        _fsync_directory(path.parent)
     except Exception:
         if Path(temp_path).exists():
             os.unlink(temp_path)
@@ -1813,6 +1875,35 @@ def get_metadata_content_split(content: str) -> tuple[str, str]:
     return metadata_block, body
 
 
+class StateReadFailed(RuntimeError):
+    """A guarded state read produced no usable state, and the caller refused to commit.
+
+    The refusal :func:`_locks_core.rmw_json` raises when asked for a readable state
+    (``require_readable_state``). The distinction it carries is the whole point:
+    the ordinary state read reports every unreadable document as ``{}``, which is
+    indistinguishable from a document that was read and genuinely holds nothing. A
+    full-document writer cannot tell those apart, so it either resurrects stale
+    state it never read or drops state it never saw. A read that failed has to be
+    reportable, and this is the report.
+
+    It lives here, in the base module every layer imports, so :func:`safe_main` can
+    render it as a NAMED operation failure (``state_unreadable``, exit 0) rather
+    than the generic ``internal_error`` / exit 1 a genuine crash produces — a caller
+    that branches on the payload must not have to read a data condition as a bug.
+
+    Attributes:
+        path: The state file whose read failed.
+        reason: Why the read yielded no state — ``missing``, ``unreadable``,
+            ``corrupt`` or ``not_object`` (the vocabulary
+            ``_locks_core.READ_*`` declares).
+    """
+
+    def __init__(self, path: Path, reason: str) -> None:
+        super().__init__(f'cannot read {path} ({reason}); refusing to commit')
+        self.path = path
+        self.reason = reason
+
+
 def safe_main(main_fn: Any) -> Any:
     """Decorator for script entry points that catches unhandled exceptions.
 
@@ -1831,7 +1922,11 @@ def safe_main(main_fn: Any) -> Any:
     clause ahead of the generic handler as ``output_toon_error(exc.code,
     str(exc), **exc.fields)`` — its own code and structured fields — with exit
     0, because a refused store is an operation failure the caller can act on.
-    Every other exception keeps the ``internal_error`` / exit 1 path.
+    :class:`StateReadFailed` gets the same treatment: a state file that could not
+    be read is a data condition the caller acts on (nothing was committed), not a
+    programming error, and reporting it as ``internal_error`` would invite a retry
+    or an abort on the wrong signal. Every other exception keeps the
+    ``internal_error`` / exit 1 path.
 
     Usage:
         @safe_main
@@ -1854,6 +1949,9 @@ def safe_main(main_fn: Any) -> Any:
             raise
         except OrchestratorStoreUnavailable as exc:
             output_toon_error(exc.code, str(exc), **exc.fields)
+            sys.exit(0)
+        except StateReadFailed as exc:
+            output_toon_error('state_unreadable', str(exc), path=str(exc.path), reason=exc.reason)
             sys.exit(0)
         except Exception as e:
             output_toon_error('internal_error', str(e))
