@@ -362,6 +362,32 @@ def test_a_pending_authorization_does_not_permit_a_refreeze(plan_context) -> Non
     assert snapshot_file.read_bytes() == before
 
 
+def test_a_marker_clear_that_cannot_be_written_is_reported(plan_context, monkeypatch) -> None:
+    """A landed line whose marker clear fails is reported, never claimed as success.
+
+    The authorization is recorded and the decision line lands, but the record cannot
+    be marked usable. An authorization still marked pending authorizes nothing, so
+    reporting success would tell the operator to trust a state that refuses the very
+    next re-freeze.
+    """
+    _plan(plan_context)
+    real_merge = _snap._merge_integrity
+    calls = {'count': 0}
+
+    def _fail_the_second(plan_id: str, merge: Any) -> bool:
+        calls['count'] += 1
+        return real_merge(plan_id, merge) if calls['count'] == 1 else False
+
+    monkeypatch.setattr(_snap, '_merge_integrity', _fail_the_second)
+
+    result = _snap.authorize_refreeze(PLAN_ID, 'operator: approve the refined criteria')
+
+    assert result['status'] == 'error', result
+    assert result['error'] == 'status_record_unavailable'
+    assert 'not usable' in result['message']
+    assert _snap.integrity_record(PLAN_ID)[_snap.REFREEZE_PENDING_KEY] is True
+
+
 def test_a_late_success_does_not_clear_a_successors_pending_marker(plan_context, monkeypatch) -> None:
     """The marker clear is token-gated, so a successor's request cannot be spent.
 

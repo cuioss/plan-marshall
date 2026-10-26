@@ -464,14 +464,26 @@ def _authorize_refreeze_locked(plan_id: str, decision: str, phase: str) -> dict[
         # The decision line landed, so this authorization is no longer pending. The
         # token check keeps a late success from clearing a NEWER call's marker: the
         # guard's stale-reclaim window can let a successor record behind this one.
-        # The clear is best-effort: a write that fails leaves `authorized` +
-        # `pending` on the record, which authorizes nothing (the gate above reads the
-        # marker), so the cost is an operator re-authorizing, never an unlogged spend.
         def _line_landed(block: dict[str, Any]) -> None:
             if block.get(REFREEZE_TOKEN_KEY) == token:
                 block.pop(REFREEZE_PENDING_KEY, None)
 
-        _merge_integrity(plan_id, _line_landed)
+        if not _merge_integrity(plan_id, _line_landed):
+            # Fail CLOSED and say so. The line landed but the record could not be
+            # marked usable, and an authorization still marked pending authorizes
+            # nothing (the re-freeze gate reads the marker), so reporting success
+            # here would tell the operator to trust a state that refuses the next
+            # re-freeze with "run criteria-refreeze-authorize" — the verb they just
+            # ran.
+            return {
+                'status': 'error',
+                'plan_id': plan_id,
+                'error': 'status_record_unavailable',
+                'message': (
+                    'the decision line was logged, but the pending marker could not be cleared in the plan '
+                    'status record, so the authorization is not usable; run criteria-refreeze-authorize again'
+                ),
+            }
         return {'status': 'success', 'plan_id': plan_id, 'refreeze_authorized': True}
     outcome: dict[str, str] = {}
 
