@@ -49,6 +49,16 @@ Script execution notation: `{bundle}:{skill}:{script}`
 | `plan-marshall:build-maven:maven` |
 | `plan-marshall:tools-integration-ci:ci` |
 
+## Deployed (flat) installs
+
+An OpenCode or Antigravity install deploys every skill as one dash-joined
+directory, `{root}/skills/{bundle}-{skill}/` — a plan-marshall script therefore
+lives at `{root}/skills/plan-marshall-{skill}/scripts/`, **never** at
+`skills/{skill}`. An un-prefixed directory name is not this layout, and probing
+one reports a missing install that is not missing. A source checkout and the
+Claude Code plugin cache are unchanged: both keep `{bundle}/skills/{skill}/`, and
+the flat tree is the only shape with no `{bundle}/` directory at all.
+
 ## Examples
 
 ```bash

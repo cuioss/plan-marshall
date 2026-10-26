@@ -498,6 +498,46 @@ class TestResolveBundlesRootFlatDeployment:
         assert str(script) in message
         assert 'c.py' in message
 
+    def test_the_failure_is_actionable_for_an_operator(self, tmp_path):
+        """The message must not read as a broken install, and must name the flat rule.
+
+        The two reports behind the flat leg both read the old text as an
+        incomplete install and asked for a reinstall, and one probed a flat
+        directory by its un-prefixed name (``skills/tools-script-executor``,
+        where the deployed name is ``skills/plan-marshall-tools-script-executor``).
+        """
+        script = tmp_path / 'opt' / 'vendor' / 'scripts' / 'x.py'
+        script.parent.mkdir(parents=True)
+        script.write_text('# script')
+
+        with pytest.raises(RuntimeError) as excinfo:
+            resolve_bundles_root(script)
+        message = str(excinfo.value)
+
+        assert 'NOT an incomplete install' in message
+        assert 'skills/plan-marshall-tools-script-executor' in message
+        assert 'NOT skills/tools-script-executor' in message
+        assert 'tools-script-executor/SKILL.md' in message, 'the message must point at the one place the rule is stated'
+
+    def test_the_flat_name_rule_is_stated_once_where_the_message_points(self):
+        """The documented home of the rule exists and carries the prefixed pattern."""
+        skill_md = (
+            Path(__file__).resolve().parents[3]
+            / 'marketplace'
+            / 'bundles'
+            / 'plan-marshall'
+            / 'skills'
+            / 'tools-script-executor'
+            / 'SKILL.md'
+        )
+
+        text = skill_md.read_text(encoding='utf-8')
+
+        assert '## Deployed (flat) installs' in text
+        assert 'skills/plan-marshall-{skill}/scripts/' in text
+        assert 'never** at' in text
+        assert 'un-prefixed' in text
+
 
 class TestResolveSkillsRoot:
     def test_happy_path(self, tmp_path):

@@ -312,11 +312,18 @@ def resolve_bundles_root(script_file: Path) -> Path:
     skill_roots = ' or '.join(f'{name}/plan-marshall-<skill>/' for name in deployed_layout.SKILL_ROOT_NAMES)
     chain = '\n  '.join(str(p) for p in walked)
     raise RuntimeError(
-        f'resolve_bundles_root: could not locate a bundles root above {start}. '
-        f'A deployed tree is recognised in either shape, and neither was found:\n'
-        f'  nested: <ancestor>/plan-marshall/.claude-plugin/plugin.json\n'
-        f'  nested: <ancestor>/plan-marshall/<version>/.claude-plugin/plugin.json\n'
-        f'  flat:   <ancestor>/{skill_roots}\n'
+        f'resolve_bundles_root: could not locate a bundles root above {start}.\n'
+        f'This is NOT an incomplete install: a deployed tree is recognised in exactly two '
+        f'shapes, and neither of them contains this script:\n'
+        f'  nested (marketplace checkout or plugin cache):\n'
+        f'    <ancestor>/plan-marshall/.claude-plugin/plugin.json\n'
+        f'    <ancestor>/plan-marshall/<version>/.claude-plugin/plugin.json\n'
+        f'  flat (OpenCode, Antigravity):\n'
+        f'    <ancestor>/{skill_roots}\n'
+        f'A flat skill directory is named "<bundle>-<skill>" — so '
+        f'skills/plan-marshall-tools-script-executor, NOT skills/tools-script-executor; '
+        f'an un-prefixed directory name is a different layout, and reinstalling does not '
+        f'change the shape. See tools-script-executor/SKILL.md § "Deployed (flat) installs".\n'
         f'Walked parents:\n  {chain}'
     )
 
