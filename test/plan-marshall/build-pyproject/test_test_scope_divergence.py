@@ -962,7 +962,8 @@ def test_supplying_the_directory_set_changes_no_other_field(case):
     without = resolve_test_scope(list(case.footprint), _GLOBS, _REGISTERED_MODULES, bundle_modules=_REGISTERED_MODULES)
     supplied = _resolve_narrow(case.footprint)
 
-    assert supplied.recommended_target == without.recommended_target
+    expected_target = None if _CHANGED_TEST_FILE in case.footprint else 'plan-marshall'
+    assert supplied.recommended_target == without.recommended_target == expected_target
     assert supplied.scoped_modules == without.scoped_modules
     assert supplied.divergence_possible is without.divergence_possible
     assert supplied.unresolved_paths == without.unresolved_paths

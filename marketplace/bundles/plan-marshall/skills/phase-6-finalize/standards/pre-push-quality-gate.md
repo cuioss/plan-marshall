@@ -282,6 +282,10 @@ python3 .plan/execute-script.py plan-marshall:phase-6-finalize:derive_gate_bundl
 
 `--files` (the inline CSV form) remains available for a small footprint and is mutually exclusive with `--files-file`; it is not the prescribed form, because the gate's correctness depends on the derivation population being exactly the footprint. A footprint too large to pass as a file is a reason to STOP the step and report, never to pass a hand-picked subset — a narrowed list is indistinguishable from a clean gate once it is inside the loop.
 
+`--marketplace-root` is the project root: it both locates `marketplace/bundles/` (when the layout has one) and anchors the architecture read the non-marketplace fallback performs, so pass the worktree root, not the bundles directory.
+
+**Two ownership questions, deliberately two derivations.** This population answers "which modules must the `quality-gate` sweep cover", and the module-tests arm's `resolve-test-scope` answers "which tests could a scoped run miss". They agree on module identity and disagree on one input on purpose: `which-module` may attribute a root-level file to the project's root module, while the test-scope verb treats the reactor root as no owner (a root POM change can move every module, so it routes the whole tree). Neither answer is the other's substitute.
+
 Parse `bundles` and `unresolved` from the TOON output. Let `N = len(bundles)`.
 
 **Diagnosable-WARNING branch** — when `unresolved` is non-empty, emit exactly one `[WARNING]` naming the unresolved paths and continue. An unresolvable derivation is never a silent drop and never a hard fail; the gate hard-fails only on a real `quality-gate` red (ADR-009 fail-closed, unchanged):
@@ -499,7 +503,7 @@ The guards above run mypy + ruff over production sources and mypy over `test/` �
 
    Gate on its result the same way: `status: error` → **Mark Step Complete (Failure)** (halt before push); `status: success` → **Mark Step Complete (Success)**; `timeout`, `killed` or `indeterminate` → neither branch, STOP the step per § "Exit-code convention for every script call".
 
-   Before branching, record what the scoped run does not cover: emit one `[STATUS]` naming `excluded_population` from the seam's `status: success` payload (§ "Root-level test guards" above). A scoped green run that stays silent about its exclusions reads as coverage of the whole change, which it is not. When `excluded_population` is empty the run covers everything.
+   Before branching, record what the scoped run does not cover: emit one `[STATUS]` naming `excluded_population` from the seam's `status: success` payload (see the root-level-test-guard paragraph above). A scoped green run that stays silent about its exclusions reads as coverage of the whole change, which it is not. An empty `excluded_population` says the SCOPED run left nothing out of its own scope — it never says a run happened: branches 3 and 5 run no pytest at all and must say so in their own terms.
 
 The module-tests outcome folds into the Mark Step Complete branches below: Branch A covers a run in which the per-bundle `quality-gate` sweep, the whole-tree `quality-gate`, the whole-tree `test-compile` and the module-tests gate each returned `status: success` if it ran at all — which is not the same as all four having run, so read § "Mark Step Complete" for what the `display_detail` may then claim; Branch B (failure) covers a `status: error` from the per-bundle `quality-gate` OR the whole-tree `quality-gate` OR `test-compile` OR the module-tests run; and a `timeout`, `killed` or `indeterminate` from any arm is neither branch — the step has already STOPped at that arm per § "Exit-code convention for every script call".
 

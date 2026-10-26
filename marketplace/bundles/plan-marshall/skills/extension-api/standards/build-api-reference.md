@@ -41,7 +41,7 @@ All build skills share these subcommands. The table enumerates every subcommand 
 | `run-config-key` | Yes | Yes | Yes | Yes | Compute the canonical run-config key for a command-args string |
 | `find-project` | No | Yes | No | No | Find Gradle subproject path from name |
 | `rewrite-log` | Yes | No | No | No | Consume the OpenRewrite log-parse signal from a captured build log (fail-closed) |
-| `resolve-test-scope` | No | No | No | Yes | Resolve the scoped module set and scoped-vs-whole-tree divergence risk (`build-pyproject` and `build-maven`) |
+| `resolve-test-scope` | Yes | No | No | Yes | Resolve the scoped module set and scoped-vs-whole-tree divergence risk (`build-pyproject` and `build-maven`) |
 
 **Every row declares the `--plan-id` / `--project-dir` routing pair.** The pair is universal across the build-class surface, not per-subcommand: it is registered on every subcommand of every wrapper, so no row needs — or gets — an exception column. See [`run`](#run-primary-api) below for the pair's two-state semantics; the same semantics apply verbatim on every other subcommand.
 

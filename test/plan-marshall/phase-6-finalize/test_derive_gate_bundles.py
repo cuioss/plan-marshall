@@ -598,6 +598,117 @@ def test_cli_answers_unresolved_when_no_architecture_is_available(tmp_path):
     assert _as_list(data['unresolved']) == ['alpha/src/main/java/Alpha.java']
 
 
+def _write_reactor(root: Path) -> None:
+    """Two-module Maven reactor: modules ``alpha`` and ``beta`` under a root POM."""
+    (root / 'pom.xml').write_text(
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<project xmlns="http://maven.apache.org/POM/4.0.0">\n'
+        '    <modelVersion>4.0.0</modelVersion>\n'
+        '    <groupId>com.example</groupId>\n'
+        '    <artifactId>parent-project</artifactId>\n'
+        '    <version>1.0.0-SNAPSHOT</version>\n'
+        '    <packaging>pom</packaging>\n'
+        '    <modules><module>alpha</module><module>beta</module></modules>\n'
+        '</project>\n',
+        encoding='utf-8',
+    )
+    for name in ('alpha', 'beta'):
+        module = root / name
+        (module / 'src' / 'main' / 'java').mkdir(parents=True)
+        (module / 'src' / 'main' / 'java' / 'Thing.java').write_text('class Thing {}\n', encoding='utf-8')
+        (module / 'pom.xml').write_text(
+            '<?xml version="1.0" encoding="UTF-8"?>\n'
+            '<project xmlns="http://maven.apache.org/POM/4.0.0">\n'
+            '    <modelVersion>4.0.0</modelVersion>\n'
+            '    <groupId>com.example</groupId>\n'
+            f'    <artifactId>{name}</artifactId>\n'
+            '    <version>1.0.0-SNAPSHOT</version>\n'
+            '    <packaging>jar</packaging>\n'
+            '</project>\n',
+            encoding='utf-8',
+        )
+
+
+def test_a_fixture_reactor_reaches_the_population_through_the_architecture_resolver(tmp_path, monkeypatch):
+    """The PRODUCTION resolver joins a real Maven reactor to the gate population.
+
+    The architecture reader is the boundary here (its own rung logic is
+    ``manage-architecture``'s test surface); everything this plan adds — the
+    resolver factory, the per-path call and the join into ``bundles`` — runs for
+    real, over real module directories.
+    """
+    from conftest import add_skill_scripts_to_path
+
+    add_skill_scripts_to_path('plan-marshall', 'manage-architecture')
+    import _cmd_client_handlers
+
+    _write_reactor(tmp_path)
+    owners = {'alpha': 'alpha', 'beta': 'beta'}
+
+    def fake_which_module(args):
+        for prefix, name in owners.items():
+            if args.path == prefix or args.path.startswith(prefix + '/'):
+                return {'status': 'success', 'module': name}
+        return {'status': 'success', 'module': None}
+
+    monkeypatch.setattr(_cmd_client_handlers, 'cmd_which_module', fake_which_module)
+
+    resolver = _mod.architecture_module_resolver(tmp_path)
+    bundles, unresolved = _mod.derive_gate_bundles(
+        ['alpha/src/main/java/Thing.java', 'beta/src/main/java/Thing.java', 'docs/notes.md'],
+        _MAVEN_GLOBS,
+        tmp_path / 'marketplace' / 'bundles',
+        module_resolver=resolver,
+    )
+
+    assert bundles == ['alpha', 'beta']
+    assert unresolved == ['docs/notes.md']
+
+
+def test_cli_builds_the_resolver_only_for_a_non_marketplace_root(tmp_path, monkeypatch, capsys):
+    """The factory is consulted for a consumer root, and never for a marketplace one."""
+    import argparse
+
+    from toon_parser import parse_toon
+
+    calls: list[Path] = []
+
+    def fake_factory(root: Path):
+        calls.append(root)
+
+        def resolve(path: str) -> str | None:
+            return 'alpha' if path.startswith('alpha/') else None
+
+        return resolve
+
+    monkeypatch.setattr(_mod, 'architecture_module_resolver', fake_factory)
+    args = argparse.Namespace(
+        files='alpha/src/main/java/Thing.java',
+        files_file=None,
+        globs='**/*.java',
+        marketplace_root=str(tmp_path),
+    )
+
+    _mod.cmd_derive(args)
+    consumer = parse_toon(capsys.readouterr().out)
+
+    assert consumer['bundles'] == ['alpha']
+    assert calls == [tmp_path]
+
+    monkeypatch.setattr(_mod, 'architecture_module_resolver', lambda root: pytest.fail('resolver built'))
+    marketplace_args = argparse.Namespace(
+        files='test/plan-marshall/test_x.py',
+        files_file=None,
+        globs='test/*',
+        marketplace_root=str(PROJECT_ROOT),
+    )
+
+    _mod.cmd_derive(marketplace_args)
+    marketplace = parse_toon(capsys.readouterr().out)
+
+    assert marketplace['bundles'] == ['plan-marshall']
+
+
 # ---------------------------------------------------------------------------
 # Non-package directory guard
 # ---------------------------------------------------------------------------

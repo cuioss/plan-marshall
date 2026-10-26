@@ -128,8 +128,9 @@ class TestScopeResolution:
             whole-tree run fails - the footprint spans more than one module, it
             touches shared / cross-module test infrastructure, at least one
             footprint entry could not be mapped to a registered target (a bundle
-            or a test tree holding tests), or at least one scoped module is
-            named only (``named_only_modules`` is non-empty).
+            or a test tree holding tests), at least one scoped module is
+            named only (``named_only_modules`` is non-empty), or the footprint
+            adds/edits a test file (``root_guards_required``).
         recommended_target: The single BUNDLE module a scoped run should target
             when divergence is impossible (scoped-equals-whole-tree by
             equivalence); None when a whole-tree run is warranted, and also None
@@ -443,18 +444,21 @@ def resolve_test_scope(
     consulted for the span or for the empty-scope fallback, which is exactly the
     pre-filter whose removal this function's fail-closed behaviour depends on.
 
-    ``divergence_possible`` is True when ANY of four conditions holds: the
+    * ``divergence_possible`` is True when ANY of five conditions holds: the
     resolved set spans more than one module; any footprint entry touches shared /
     cross-module test infrastructure; ``unresolved_paths`` is non-empty (at
-    least one entry mapped to no registered target); or ``named_only_modules`` is
+    least one entry mapped to no registered target); ``named_only_modules`` is
     non-empty (a scoped module is a test tree that is no bundle, or was reached
-    through the declared mapping - see the module docstring). The third and
+    through the declared mapping - see the module docstring); or the footprint
+    adds/edits a test file (``root_guards_required``). The third and
     fourth are the fail-closed ones: coverage for an unmapped path cannot be
     determined, and a named-only module is one a scoped run can neither be
     resolved for nor shown equivalent to the whole tree, so the run falls back
-    to the whole tree rather than emitting a confident scoped target. A footprint
+    to the whole tree rather than emitting a confident scoped target. The fifth
+    is structural: the root-level test guards sit outside every module, so no
+    scoped ``module-tests {module}`` run executes them. A footprint
     of exactly one bundle module, every path of it owned by a path segment,
-    touching no shared infra and leaving nothing unresolved yields
+    touching no shared infra, editing no test file and leaving nothing unresolved yields
     ``divergence_possible = False`` with that module as the
     ``recommended_target`` (match by equivalence).
 

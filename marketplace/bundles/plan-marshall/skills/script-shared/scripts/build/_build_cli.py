@@ -28,9 +28,9 @@ def add_project_dir_arg(parser) -> None:
     so invocations from an isolated worktree (or any non-cwd directory)
     can pin subprocess cwd without relying on the caller's working
     directory. This helper is the SINGLE declaration site for the pair:
-    the shared registrations below call it, and the three wrapper-local
+    the shared registrations below call it, and the four wrapper-local
     registrations that build their subparsers outside this module
-    (``maven.py::_register_rewrite_log``,
+    (``maven.py::_register_rewrite_log``, ``maven.py::_register_resolve_test_scope``,
     ``gradle.py::_register_find_project`` and
     ``pyproject_build.py::_register_resolve_test_scope``) import it
     rather than re-declaring the flags. The universality of that claim is

@@ -74,30 +74,28 @@ def _pr_listing(sha=None, branch='fix/lb-58-verification-truth', key='42', with_
 
 
 def _fetch_args(plan_id, pr='42'):
+    argv = ['--plan-id', plan_id, '--project', _PROJECT]
+    if pr is not None:
+        argv += ['--pr', pr]
     return parse_ns(
         'plan-marshall',
         'workflow-integration-sonar',
         'sonar.py',
         'fetch_findings',
-        '--plan-id',
-        plan_id,
-        '--project',
-        _PROJECT,
-        '--pr',
-        pr,
+        *argv,
     )
 
 
 def _read_args(pr='42'):
+    argv = ['--project', _PROJECT]
+    if pr is not None:
+        argv += ['--pr', pr]
     return parse_ns(
         'plan-marshall',
         'workflow-integration-sonar',
         'sonar.py',
         'read_open_issues',
-        '--project',
-        _PROJECT,
-        '--pr',
-        pr,
+        *argv,
     )
 
 
@@ -338,6 +336,48 @@ class TestPlanlessReadRevision:
 
         assert result['count_status'] == 'confirmed'
         assert result['open_issue_count'] == 0
+
+
+class TestBranchReadOutOfScope:
+    """A fetch with no pull request keeps the CE contract, and says so.
+
+    The provider reports no analysed revision for a branch read
+    (``/api/project_analyses/search`` describes the DEFAULT branch, never the
+    branch being counted), so comparing it with the working tree's HEAD would
+    compare two unrelated trees and report every branch fetch undecidable. Such a
+    read answers ``confirmed`` on a settled CE and leaves both revisions blank.
+    """
+
+    def test_a_branch_fetch_consults_no_revision_endpoint(self, monkeypatch, plan_context):
+        plan_context.plan_dir_for('rev-branch')
+        client = _install_api(monkeypatch, {})
+
+        with (
+            patch.object(sonar_mod, '_wait_for_ce_ready', return_value={'count_status': 'confirmed'}),
+            patch.object(sonar_mod, '_fetch_issues', return_value={'status': 'success', 'issues': [], 'total': 0}),
+            patch.object(sonar_mod, '_resolve_head_revision') as head,
+        ):
+            result = sonar_mod.cmd_fetch_findings(_fetch_args('rev-branch', pr=None))
+
+        assert result['count_status'] == 'confirmed'
+        assert result['analysis_revision'] == ''
+        assert result['head_revision'] == ''
+        assert client.calls == [], 'a branch read has no reported revision to read'
+        head.assert_not_called()
+
+    def test_a_planless_branch_read_consults_no_revision_endpoint(self, monkeypatch, plan_context):
+        plan_context.plan_dir_for('rev-branch-read')
+        client = _install_api(monkeypatch, {})
+
+        with (
+            patch.object(sonar_mod, '_wait_for_ce_ready', return_value={'count_status': 'confirmed'}),
+            patch.object(sonar_mod, '_fetch_issues', return_value={'status': 'success', 'issues': [], 'total': 0}),
+        ):
+            result = sonar_mod.cmd_read_open_issues(_read_args(pr=None))
+
+        assert result['count_status'] == 'confirmed'
+        assert result['open_issue_count'] == 0
+        assert client.calls == []
 
 
 class TestHeadResolution:

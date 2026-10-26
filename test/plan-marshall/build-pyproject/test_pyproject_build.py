@@ -531,6 +531,7 @@ import pytest  # noqa: E402
 # The declared-mapping fixture is defined once, beside the pure-function cases,
 # and imported here so the handler cases assert on the same inputs.
 from test_test_scope_divergence import (  # noqa: E402
+    _CHANGED_TEST_FILE,
     DECLARED_MAPPING_FIXTURE,
     NARROW_UNIT_CASES,
     NARROW_UNIT_EXISTING_PATHS,
@@ -1030,7 +1031,7 @@ def test_resolve_test_scope_prints_the_narrow_units(capsys, case):
         directories=NARROW_UNIT_TEST_DIRECTORIES,
     )
 
-    edits_a_test_file = any(path.split('/')[-1].startswith('test_') for path in case.footprint)
+    edits_a_test_file = _CHANGED_TEST_FILE in case.footprint
     assert out['status'] == 'success'
     assert out['narrow_units'] == list(case.narrow_units)
     assert out['narrow_units_unresolved'] == list(case.narrow_units_unresolved)
