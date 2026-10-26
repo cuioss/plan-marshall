@@ -123,6 +123,22 @@ def test_an_id_bearing_row_whose_text_equals_another_frozen_criterion_is_reporte
     assert [(finding['kind'], finding['ref']) for finding in grading.findings] == [('unmatched_criterion', 'D1.C1')]
 
 
+def test_a_deliverable_qualified_id_leaves_the_other_position_open(plan_context, tmp_path) -> None:
+    """End to end: a ``D1.C2`` row answers position 2 and leaves position 1 open.
+
+    The row is inside its own deliverable, so the verdict seals; the gate must not
+    hand it criterion 1's status just because it sits first in the author's list.
+    """
+    plan_dir = _plan(plan_context)
+    _seal_into_plan(
+        plan_dir,
+        tmp_path,
+        [{'criterion': FROZEN[0], 'criterion_id': 'D1.C2', 'status': 'met', 'evidence': ['src/parser.py:2']}],
+    )
+
+    _assert_only_the_first_criterion_is_open(_snap.open_criteria(PLAN_ID))
+
+
 def test_a_deliverable_qualified_id_answers_only_inside_its_deliverable() -> None:
     """``D1.C2`` answers position 2 of deliverable 1 — and nothing of deliverable 2.
 
@@ -174,7 +190,7 @@ def test_a_fault_at_the_atomic_replace_leaves_the_committed_bytes_and_says_so(pl
 
 
 def test_a_write_snapshot_whose_digest_cannot_be_recorded_restores_the_prior_bytes(plan_context, monkeypatch) -> None:
-    """The ``write_snapshot``-site rollback is conditional on the bytes it wrote."""
+    """The ``write_snapshot``-site rollback restores the bytes it wrote over."""
     plan_dir = _plan(plan_context)
     snapshot_file = plan_dir / 'work' / 'criteria-snapshot.json'
     before = snapshot_file.read_bytes()
@@ -189,3 +205,32 @@ def test_a_write_snapshot_whose_digest_cannot_be_recorded_restores_the_prior_byt
     assert result['error'] == 'snapshot_integrity_unrecorded'
     assert snapshot_file.read_bytes() == before
     assert _snap.snapshot_state(PLAN_ID) == 'frozen'
+
+
+def test_the_write_snapshot_rollback_does_not_erase_a_newer_commit(plan_context, monkeypatch) -> None:
+    """The rollback is CONDITIONAL on the bytes this call wrote.
+
+    A newer snapshot is committed from inside the digest-recording stub — the one
+    point between this call's write and its rollback — and the rollback must refuse
+    to overwrite it. An unconditional restore would put the pre-freeze bytes back
+    and erase that writer's commit, which is what the ``expected`` check exists to
+    prevent.
+    """
+    plan_dir = _plan(plan_context)
+    snapshot_file = plan_dir / 'work' / 'criteria-snapshot.json'
+    newer = b'{"newer": "commit"}\n'
+    assert _snap.authorize_refreeze(PLAN_ID, 'operator: approve the refined criteria')['status'] == 'success'
+    (plan_dir / 'solution_outline.md').write_text(_outline([REWORDED, FROZEN[1]]), encoding='utf-8')
+
+    def _newer_commit_then_fail(*args: Any, **kwargs: Any) -> bool:
+        snapshot_file.write_bytes(newer)
+        return False
+
+    monkeypatch.setattr(_snap, 'record_snapshot_digest', _newer_commit_then_fail)
+
+    result = _snap.write_snapshot(PLAN_ID)
+
+    assert result['status'] == 'error', result
+    assert result['error'] == 'snapshot_integrity_unrecorded'
+    assert snapshot_file.read_bytes() == newer
+    assert 'could not be removed' in result['message']

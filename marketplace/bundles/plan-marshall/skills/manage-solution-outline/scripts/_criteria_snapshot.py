@@ -134,7 +134,7 @@ REFREEZE_TOKEN_KEY = 'refreeze_authorization_token'
 #: ``phase-6-finalize/standards/review-rubric.md`` (the frozen-record finding) —
 #: are checked against the code by a test instead of by a reader's memory:
 #: ``test_the_authorization_outcome_vocabulary_matches_its_documents`` fails when a
-#: term here is missing from either document or from this module's own source.
+#: term here is missing from either document.
 #:
 #: Nothing here judges a plan; the terms describe the STATE the artifact and its
 #: record were left in, which is what the operator needs to decide the repair.
@@ -295,9 +295,18 @@ def record_snapshot_digest(plan_id: str, *, consume_refreeze: bool = False) -> b
         # must report "not recorded" so the caller rolls its write back.
         return False
     fields: dict[str, Any] = {SNAPSHOT_FROZEN_KEY: True, 'snapshot_digest': digest}
-    if consume_refreeze:
-        fields['refreeze_authorized'] = False
-    return record_integrity(plan_id, **fields)
+    if not consume_refreeze:
+        return record_integrity(plan_id, **fields)
+    fields['refreeze_authorized'] = False
+
+    def _consume(block: dict[str, Any]) -> None:
+        block.update(fields)
+        # The identity token names an authorization that no longer exists once the
+        # re-freeze it permitted has consumed it; leaving it behind makes the record
+        # describe a live authorization to every later reader.
+        block.pop(REFREEZE_TOKEN_KEY, None)
+
+    return _merge_integrity(plan_id, _consume)
 
 
 def record_verdict_digest(plan_id: str, kind: str, verdict_file: str | Path) -> bool:
@@ -1196,7 +1205,9 @@ def _commit_authorization(
             'rolled_back': 'the authorization was rolled back',
             'tamper_flagged': (
                 'the authorization was rolled back but its recorded digest could not be withdrawn, so the '
-                'snapshot now reads tampered and must be repaired before it is used again'
+                'snapshot now reads tampered and must be repaired before it is used again: run '
+                'criteria-refreeze-authorize (it does not read the tampered artifact), then snapshot-criteria, '
+                'which re-records a digest matching what is on disk'
             ),
             'inconsistent': 'the authorization was NOT fully rolled back; the snapshot or its record may hold the edit',
         }[outcome]

@@ -282,6 +282,32 @@ def test_a_withdrawal_that_cannot_be_written_is_reported_as_not_withdrawn(plan_c
     assert _snap.integrity_record(PLAN_ID)['refreeze_authorized'] is True
 
 
+def test_a_consumed_authorization_reports_already_consumed(plan_context, monkeypatch) -> None:
+    """A re-freeze that consumed this call's authorization wins over the failed log.
+
+    The consumption happens inside the log call, where a stale-guard window could
+    still let a re-freeze commit; the withdrawal must then report
+    ``already_consumed`` instead of restoring a decision the re-freeze already
+    spent, and must leave no identity token naming an authorization that no longer
+    exists.
+    """
+    _plan(plan_context)
+
+    def _consume_then_fail(*args: Any, **kwargs: Any) -> dict[str, Any]:
+        assert _snap.record_snapshot_digest(PLAN_ID, consume_refreeze=True)
+        return {'status': 'error', 'error': 'injected'}
+
+    monkeypatch.setattr(plan_logging, 'log_decision', _consume_then_fail)
+
+    result = _snap.authorize_refreeze(PLAN_ID, 'operator: approve the refined criteria')
+
+    assert result['status'] == 'error', result
+    assert 'already consumed' in result['message']
+    record = _snap.integrity_record(PLAN_ID)
+    assert record['refreeze_authorized'] is False
+    assert _snap.REFREEZE_TOKEN_KEY not in record
+
+
 def test_a_raising_decision_log_rolls_the_change_authorization_back(plan_context, monkeypatch) -> None:
     """The change path treats a raising log like a refused one and rolls back."""
     plan_dir = _plan(plan_context)
@@ -377,20 +403,22 @@ def _frozen_record_bullet() -> str:
 def test_the_authorization_outcome_vocabulary_matches_its_documents() -> None:
     """Every reported outcome is documented, and every documented outcome is reported.
 
-    Both failure directions matter: a term the code emits that the documents omit
-    leaves a reader without the state it must act on, and a term the tuple lists
-    that the code never produces documents a state that cannot happen. The module
-    source is checked as well as the tuple, so the tuple cannot drift from the
-    literals the two writers actually report.
+    The two directions this can check are the two that can differ: a term the code
+    reports that the documents omit leaves a reader without the state it must act
+    on, and a term the rubric documents that the writers' docstrings do not
+    describes nothing the author can find. ``AUTHORIZATION_OUTCOMES`` itself is
+    declared in this same module, so a term listed there but never emitted is NOT
+    detectable by reading the module's source — it is caught by the tests that
+    drive each outcome instead.
     """
-    source = Path(_snap.__file__).read_text(encoding='utf-8')
     docstrings = f'{_snap.authorize_change.__doc__}\n{_snap.authorize_refreeze.__doc__}'
     rubric_bullet = _frozen_record_bullet()
 
     undocumented = [term for term in _snap.AUTHORIZATION_OUTCOMES if term not in docstrings]
-    unreported = [term for term in _snap.AUTHORIZATION_OUTCOMES if term not in source]
     unrubricked = [term for term in _snap.AUTHORIZATION_OUTCOMES if term not in rubric_bullet]
 
     assert not undocumented, f'outcomes the docstrings do not name: {undocumented}'
-    assert not unreported, f'outcomes the module source never reports: {unreported}'
     assert not unrubricked, f'outcomes the frozen-record rubric bullet does not name: {unrubricked}'
+    assert len(set(_snap.AUTHORIZATION_OUTCOMES)) == len(_snap.AUTHORIZATION_OUTCOMES), (
+        'the outcome vocabulary lists a term twice'
+    )

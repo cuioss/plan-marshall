@@ -198,15 +198,19 @@ def write_status(
     the internal recompute writers read it themselves, so the seam — not the
     ``require_status`` gate — is what covers them.
 
-    Two writers in other skills import this seam directly rather than committing
-    a whole document themselves: ``plan-orchestrator/scripts/orchestrator.py``
-    (``read_status``/``write_status`` imported at L6459, L6508 and L6886, called
-    at L6476, L6535, L6930 and L6965) and
+    Two writers in other skills reach a guarded commit rather than writing the
+    whole document themselves. ``plan-orchestrator/scripts/orchestrator.py`` imports
+    THIS seam (``read_status``/``write_status`` at L6459, L6508 and L6886, called at
+    L6476, L6535, L6930 and L6965).
     ``manage-config/scripts/_cmd_finalize_steps.py`` (``finalize-steps set-lane``
-    with ``--plan-id``), which previously committed its read-modify-write
-    unguarded. A new full-document writer belongs in this list AND at this seam;
-    the test in ``test/plan-marshall/manage-status/test_lb77_integrity_carry_d1.py``
-    derives the caller set from the source and fails when one is missing here.
+    with ``--plan-id``) instead calls ``_locks_core.rmw_json`` on the plan status
+    path — the same guard and the same atomic commit, with the mutation computed
+    from the state read INSIDE the guard, which is why it needs neither this
+    function nor its carry: it never holds a stale snapshot to carry from. A new
+    full-document writer belongs in this list AND at one of those two seams; the
+    test in ``test/plan-marshall/manage-status/test_lb77_integrity_carry_d1.py``
+    derives the ``write_status`` caller set from the source and fails when one is
+    missing here.
 
     Args:
         plan_id: Plan whose ``status.json`` is written.
@@ -224,14 +228,17 @@ def write_status(
         carry_protected_keys: When False the caller's document wins wholesale and
             the live protected keys are NOT carried — they are dropped unless the
             caller put them there itself. ``cmd_create`` is the sole intended
-            user: it seeds a fresh plan, and ``create --force`` over an existing
-            plan must start from a clean slate rather than inherit the
-            overwritten plan's ``criteria_integrity`` and
-            ``functional_review_override_heads``. The seed bypasses the carry
-            rather than clearing the keys inside the guard because a fresh
-            document is not a read-modify-write at all: the keys it must not
-            inherit are keys of a document it replaces, and the only reason to
-            read that document would be to carry from it. Disabling the carry is
+            user: it seeds a fresh ``status.json``, and ``create --force`` over an
+            existing plan must not inherit the overwritten plan's
+            ``criteria_integrity`` and ``functional_review_override_heads``. The
+            re-seed covers ``status.json`` ONLY: other artifacts of the plan
+            directory — ``work/criteria-snapshot.json`` among them — are left
+            alone, so a re-created plan can still be graded against a snapshot
+            this write did not touch. The seed bypasses the carry rather than
+            clearing the keys inside the guard because the keys it must not
+            inherit belong to a document it REPLACES: the only reason to read that
+            document is to carry from it, and on ``--force`` the caller has
+            explicitly declared the old document worthless. Disabling the carry is
             therefore also what makes the seed's own write succeed on a first
             create, where there is no readable state to demand.
 

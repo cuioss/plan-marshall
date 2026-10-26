@@ -86,6 +86,7 @@ from datetime import date
 from pathlib import Path
 from typing import Any, Literal
 
+from file_ops import StateReadFailed
 from input_validation import is_valid_plan_id
 from marketplace_paths import (
     PLAN_DIR_NAME,
@@ -313,30 +314,6 @@ READ_MISSING = 'missing'
 READ_UNREADABLE = 'unreadable'
 READ_CORRUPT = 'corrupt'
 READ_NOT_OBJECT = 'not_object'
-
-
-class StateReadFailed(RuntimeError):
-    """A guarded state read produced no usable state, and the caller refused to commit.
-
-    Raised by :func:`rmw_json` when ``require_readable_state`` is set. The
-    distinction it carries is the whole point: :func:`_read_json_or_empty`
-    reports every unreadable document as ``{}``, which is indistinguishable from
-    a document that was read and genuinely holds nothing. A full-document writer
-    cannot tell those apart, so it either resurrects stale state it never read or
-    drops state it never saw. A read that failed has to be reportable, and this
-    is the report.
-
-    Attributes:
-        path: The state file whose read failed.
-        reason: One of :data:`READ_MISSING`, :data:`READ_UNREADABLE`,
-            :data:`READ_CORRUPT`, :data:`READ_NOT_OBJECT` — why the read yielded
-            no state.
-    """
-
-    def __init__(self, path: Path, reason: str) -> None:
-        super().__init__(f'cannot read {path} ({reason}); refusing to commit')
-        self.path = path
-        self.reason = reason
 
 
 def _read_json_state(path: Path) -> tuple[dict[str, Any], str]:

@@ -1598,7 +1598,10 @@ def atomic_write_bytes(path: str | Path, content: bytes) -> None:
     **The write is durable, not merely ordered.** The temp file is fsynced before
     the rename, so a crash after the call returns cannot leave the target naming
     bytes that never reached the device, and the containing directory is fsynced
-    after the rename, so the entry that now names the new file is durable too.
+    after the rename, so the entry that now names the new file is durable too —
+    a directory that cannot be opened or synced is reported nowhere, because a
+    filesystem that refuses a directory fsync has already made the DATA durable
+    (see :func:`_fsync_directory`), and this function's contract is the bytes.
     This matters most where the writer is a RESTORE (the criteria snapshot's
     rollback): a restore that only reached the page cache has not restored
     anything.
@@ -1872,6 +1875,35 @@ def get_metadata_content_split(content: str) -> tuple[str, str]:
     return metadata_block, body
 
 
+class StateReadFailed(RuntimeError):
+    """A guarded state read produced no usable state, and the caller refused to commit.
+
+    The refusal :func:`_locks_core.rmw_json` raises when asked for a readable state
+    (``require_readable_state``). The distinction it carries is the whole point:
+    the ordinary state read reports every unreadable document as ``{}``, which is
+    indistinguishable from a document that was read and genuinely holds nothing. A
+    full-document writer cannot tell those apart, so it either resurrects stale
+    state it never read or drops state it never saw. A read that failed has to be
+    reportable, and this is the report.
+
+    It lives here, in the base module every layer imports, so :func:`safe_main` can
+    render it as a NAMED operation failure (``state_unreadable``, exit 0) rather
+    than the generic ``internal_error`` / exit 1 a genuine crash produces — a caller
+    that branches on the payload must not have to read a data condition as a bug.
+
+    Attributes:
+        path: The state file whose read failed.
+        reason: Why the read yielded no state — ``missing``, ``unreadable``,
+            ``corrupt`` or ``not_object`` (the vocabulary
+            ``_locks_core.READ_*`` declares).
+    """
+
+    def __init__(self, path: Path, reason: str) -> None:
+        super().__init__(f'cannot read {path} ({reason}); refusing to commit')
+        self.path = path
+        self.reason = reason
+
+
 def safe_main(main_fn: Any) -> Any:
     """Decorator for script entry points that catches unhandled exceptions.
 
@@ -1890,7 +1922,11 @@ def safe_main(main_fn: Any) -> Any:
     clause ahead of the generic handler as ``output_toon_error(exc.code,
     str(exc), **exc.fields)`` — its own code and structured fields — with exit
     0, because a refused store is an operation failure the caller can act on.
-    Every other exception keeps the ``internal_error`` / exit 1 path.
+    :class:`StateReadFailed` gets the same treatment: a state file that could not
+    be read is a data condition the caller acts on (nothing was committed), not a
+    programming error, and reporting it as ``internal_error`` would invite a retry
+    or an abort on the wrong signal. Every other exception keeps the
+    ``internal_error`` / exit 1 path.
 
     Usage:
         @safe_main
@@ -1913,6 +1949,9 @@ def safe_main(main_fn: Any) -> Any:
             raise
         except OrchestratorStoreUnavailable as exc:
             output_toon_error(exc.code, str(exc), **exc.fields)
+            sys.exit(0)
+        except StateReadFailed as exc:
+            output_toon_error('state_unreadable', str(exc), path=str(exc.path), reason=exc.reason)
             sys.exit(0)
         except Exception as e:
             output_toon_error('internal_error', str(e))

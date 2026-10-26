@@ -47,9 +47,9 @@ def test_the_protected_set_is_exactly_the_keys_a_verb_writes_at_top_level(plan_c
     Each protected key has an owner that writes it at the TOP level of
     ``status.metadata``; ``snapshot_frozen`` is an inner key of the
     ``criteria_integrity`` block, so no verb writes it there. The test runs the two
-    owners and compares the guard's set with the keys that appeared — a key added
-    to the guard without an owning writer, or an owner added without the guard,
-    fails it.
+    owners and compares the guard's set with the keys that appeared: a key added to
+    the guard with no owning writer fails it. (An owner added with no guard entry is
+    NOT covered here — the candidate set below is what bounds the comparison.)
     """
     plan_dir = _plan(plan_context)
     assert _snap.write_snapshot(PLAN_ID)['status'] == 'success'
