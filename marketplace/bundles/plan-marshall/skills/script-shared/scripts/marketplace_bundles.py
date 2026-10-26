@@ -246,29 +246,47 @@ def collect_script_dirs(base_path: Path) -> list[str]:
 def resolve_bundles_root(script_file: Path) -> Path:
     """Resolve the bundles root directory by walking up from a script file.
 
-    Walks parents of ``script_file`` and returns the first ancestor that
-    contains a ``plan-marshall`` bundle — detected by the presence of either:
+    Walks parents of ``script_file`` and returns the root of the first deployed
+    tree it finds. A tree is a bundles root in exactly two shapes, both read from
+    :mod:`deployed_layout` rather than re-spelled here:
 
-    - ``plan-marshall/.claude-plugin/plugin.json`` (marketplace/source layout)
-    - ``plan-marshall/<version>/.claude-plugin/plugin.json`` (plugin-cache layout)
+    **Nested** — the ancestor contains a ``plan-marshall`` bundle, detected by
+    ``plan-marshall/.claude-plugin/plugin.json`` (marketplace/source layout) or
+    ``plan-marshall/<version>/.claude-plugin/plugin.json`` (plugin-cache layout).
+    Both probes run over the WHOLE chain first, so a tree that also carries a
+    stray nested bundle keeps resolving to the nested root it resolved to before.
 
-    Uses identity walking (no index arithmetic). Raises ``RuntimeError`` with
-    the full walked parent chain if no such ancestor exists, so import-time
-    misconfiguration fails loudly instead of silently returning a wrong path.
+    **Flat** — the ancestor IS a flat skill root (:data:`deployed_layout.SKILL_ROOT_NAMES`,
+    the deployed plural ``skills`` and the generated singular ``skill``) and is
+    not a nested bundle's own ``skills/`` (:func:`deployed_layout.is_bundle_skill_root`).
+    The directory CONTAINING that skill root is returned: the form
+    ``resolve_bundle_path``, ``collect_script_dirs`` and
+    ``deployed_layout.skill_roots`` already accept, so every consumer of the
+    returned root resolves flat paths unchanged. This is the shape OpenCode and
+    Antigravity actually deploy — ``{root}/skills/{bundle}-{skill}/`` — and it
+    carries no bundle directory and no manifest at all, so before this leg the
+    import-time walk raised on both targets.
+
+    Uses identity walking (no index arithmetic). Raises ``RuntimeError`` with the
+    full walked parent chain when neither shape is present, naming both shapes it
+    looked for, so import-time misconfiguration fails loudly instead of silently
+    returning a wrong path.
 
     Args:
         script_file: Path to the calling script (typically ``Path(__file__)``).
 
     Returns:
-        The bundles root directory (e.g. ``.../marketplace/bundles``).
+        The bundles root directory: ``.../marketplace/bundles`` (source),
+        ``~/.claude/plugins/cache`` (versioned cache), or the directory containing
+        a flat deployment's skill root.
 
     Raises:
-        RuntimeError: If no ancestor contains a ``plan-marshall`` bundle.
+        RuntimeError: If no ancestor carries either shape.
     """
     start = Path(script_file).resolve()
-    walked: list[Path] = []
-    for ancestor in start.parents:
-        walked.append(ancestor)
+    walked: list[Path] = list(start.parents)
+
+    for ancestor in walked:
         candidate = ancestor / 'plan-marshall'
         if not candidate.is_dir():
             continue
@@ -281,9 +299,25 @@ def resolve_bundles_root(script_file: Path) -> Path:
                 and (version_dir / '.claude-plugin' / 'plugin.json').is_file()
             ):
                 return ancestor
+
+    for ancestor in walked:
+        if ancestor.name not in deployed_layout.SKILL_ROOT_NAMES or not ancestor.is_dir():
+            continue
+        if deployed_layout.is_bundle_skill_root(ancestor):
+            # A nested bundle's own ``skills/``: its children are bare skill
+            # names, so reading it as a flat root would answer one level too deep.
+            continue
+        return ancestor.parent
+
+    skill_roots = ' or '.join(f'{name}/plan-marshall-<skill>/' for name in deployed_layout.SKILL_ROOT_NAMES)
     chain = '\n  '.join(str(p) for p in walked)
     raise RuntimeError(
-        f"resolve_bundles_root: could not locate a 'plan-marshall' bundle above {start}. Walked parents:\n  {chain}"
+        f'resolve_bundles_root: could not locate a bundles root above {start}. '
+        f'A deployed tree is recognised in either shape, and neither was found:\n'
+        f'  nested: <ancestor>/plan-marshall/.claude-plugin/plugin.json\n'
+        f'  nested: <ancestor>/plan-marshall/<version>/.claude-plugin/plugin.json\n'
+        f'  flat:   <ancestor>/{skill_roots}\n'
+        f'Walked parents:\n  {chain}'
     )
 
 

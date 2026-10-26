@@ -437,6 +437,68 @@ class TestResolveBundlesRoot:
             resolve_bundles_root(script)
 
 
+class TestResolveBundlesRootFlatDeployment:
+    """The flat deployed tree resolves without a single bundle marker in it.
+
+    OpenCode and Antigravity deploy ``{root}/skills/{bundle}-{skill}/``: no
+    ``plan-marshall/`` directory exists at any depth, so the two nested probes
+    find nothing and the walk used to raise at import time. The flat leg returns
+    the directory CONTAINING the skill root — the form ``resolve_bundle_path``,
+    ``collect_script_dirs`` and ``deployed_layout.skill_roots`` already accept.
+    """
+
+    @pytest.mark.parametrize('root_name', SKILL_ROOT_NAMES)
+    def test_flat_tree_resolves_to_the_containing_directory(self, tmp_path, root_name):
+        root = tmp_path / 'config' / 'opencode'
+        skills_root = _make_flat_tree(root, root_name=root_name)
+        script = skills_root / flat_skill_dir_name(BUNDLE, 'skill-x') / 'scripts' / 'bar.py'
+
+        assert resolve_bundles_root(script) == root
+
+        # The fixture carries no marker in ANY shape: the nested probes had
+        # nothing to find, so this is not the shim case in disguise.
+        assert not list(root.rglob('.claude-plugin'))
+
+    def test_flat_tree_with_the_identity_shim_resolves_to_the_same_root(self, tmp_path):
+        # A machine that installed the hand-made shim must resolve exactly as it
+        # does today: the shim satisfies the nested probe, which runs first.
+        root = tmp_path / 'config' / 'opencode'
+        skills_root = _make_flat_tree(root)
+        shim = root / 'skills' / 'plan-marshall' / '.claude-plugin'
+        shim.mkdir(parents=True)
+        (shim / 'plugin.json').write_text('{}')
+        script = skills_root / flat_skill_dir_name(BUNDLE, 'skill-x') / 'scripts' / 'bar.py'
+
+        assert resolve_bundles_root(script) == root / 'skills'
+
+    def test_the_nested_probes_win_over_a_flat_leg_that_answers_deeper(self, tmp_path):
+        # A tree carrying BOTH a nested bundle and a flat skill root: the nested
+        # probes run first over the whole chain, so they answer with their own
+        # (outer) root rather than the deeper directory the flat leg would name.
+        outer = tmp_path / 'outer'
+        _create_bundle(outer, BUNDLE)
+        flat_root = outer / 'deploy'
+        skills_root = _make_flat_tree(flat_root)
+        script = skills_root / flat_skill_dir_name(BUNDLE, 'skill-x') / 'scripts' / 'bar.py'
+
+        assert resolve_bundles_root(script) == outer
+
+    def test_neither_shape_names_both_shapes_it_looked_for(self, tmp_path):
+        script = tmp_path / 'a' / 'b' / 'c.py'
+        script.parent.mkdir(parents=True)
+        script.write_text('# script')
+
+        with pytest.raises(RuntimeError) as excinfo:
+            resolve_bundles_root(script)
+        message = str(excinfo.value)
+
+        assert 'plan-marshall/.claude-plugin/plugin.json' in message
+        assert 'plan-marshall/<version>/.claude-plugin/plugin.json' in message
+        assert 'plan-marshall-<skill>' in message
+        assert str(script) in message
+        assert 'c.py' in message
+
+
 class TestResolveSkillsRoot:
     def test_happy_path(self, tmp_path):
         bundle = tmp_path / 'marketplace' / 'bundles' / 'plan-marshall'
