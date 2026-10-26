@@ -254,6 +254,8 @@ mkdir -p target/asciidoc-link-verifier
 python3 .plan/execute-script.py pm-documents:ref-asciidoc:asciidoc verify-links --file {file_path} --report target/asciidoc-link-verifier/links.md
 ```
 
+`--file` takes an `.adoc` file. A file of any other type is refused with the `no_files` error instead of being reported as link-free — the grammar is AsciiDoc's, so a Markdown file is not checked by this step at all.
+
 For directories:
 ```bash
 python3 .plan/execute-script.py pm-documents:ref-asciidoc:asciidoc verify-links --directory {directory} --report target/asciidoc-link-verifier/links.md
@@ -539,6 +541,8 @@ python3 .plan/execute-script.py pm-documents:ref-asciidoc:asciidoc format \
 python3 .plan/execute-script.py pm-documents:ref-asciidoc:asciidoc verify-links \
   [--file FILE] [--directory DIRECTORY] [--recursive] [--report REPORT]
 ```
+
+The link grammar is AsciiDoc's. File mode therefore accepts an `.adoc` file only: any other extension (a `.md` file, an extensionless file) is refused with the `no_files` error the directory mode returns for a directory holding no `.adoc` file, rather than parsed into a clean `total_links: 0` over a file the grammar cannot read. A Markdown file needs a Markdown link grammar, which this checker does not implement.
 
 ### classify-links
 

@@ -490,6 +490,241 @@ def test_cli_refuses_neither_files_form():
 
 
 # ---------------------------------------------------------------------------
+# Architecture-backed module resolution for a non-marketplace layout (D3)
+# ---------------------------------------------------------------------------
+#
+# A consumer project is not a marketplace layout: its sources live under module
+# directories a Maven reactor names, not under ``marketplace/bundles/<b>``. Before
+# the fallback every such path reached rule 4 and landed in ``unresolved``, so the
+# gate iterated zero bundles and read as green over a population it never saw. The
+# seam now accepts a resolver — the architecture's ``which-module`` reader in
+# production — and the CLI supplies one only when the root carries no
+# ``marketplace/bundles`` directory.
+
+_MAVEN_GLOBS = ['**/*.java', '**/pom.xml', '**/*.md']
+
+
+def _prefix_resolver(prefixes: dict[str, str]):
+    """Stand-in for ``architecture which-module``: the longest matching prefix wins."""
+    ordered = sorted(prefixes.items(), key=lambda entry: len(entry[0]), reverse=True)
+
+    def resolve(path: str) -> str | None:
+        for prefix, name in ordered:
+            if prefix and (path == prefix or path.startswith(prefix + '/')):
+                return name
+        return None
+
+    return resolve
+
+
+def test_two_maven_modules_are_the_gate_population(tmp_path):
+    """Changes in two reactor modules yield exactly those two as the population."""
+    bundles, unresolved = derive_gate_bundles(
+        ['alpha/src/main/java/Alpha.java', 'beta/src/main/java/Beta.java'],
+        _MAVEN_GLOBS,
+        tmp_path / 'marketplace' / 'bundles',
+        module_resolver=_prefix_resolver({'alpha': 'alpha', 'beta': 'beta'}),
+    )
+
+    assert bundles == ['alpha', 'beta']
+    assert unresolved == []
+
+
+def test_a_path_no_module_owns_is_still_reported(tmp_path):
+    """A path the architecture cannot place is reported, never dropped."""
+    bundles, unresolved = derive_gate_bundles(
+        ['alpha/src/main/java/Alpha.java', 'docs/notes.md'],
+        _MAVEN_GLOBS,
+        tmp_path / 'marketplace' / 'bundles',
+        module_resolver=_prefix_resolver({'alpha': 'alpha'}),
+    )
+
+    assert bundles == ['alpha']
+    assert unresolved == ['docs/notes.md']
+
+
+def test_without_a_resolver_a_consumer_path_stays_unresolved(tmp_path):
+    """The marketplace rule is unchanged where no resolver is supplied."""
+    bundles, unresolved = derive_gate_bundles(
+        ['alpha/src/main/java/Alpha.java'],
+        _MAVEN_GLOBS,
+        tmp_path / 'marketplace' / 'bundles',
+    )
+
+    assert bundles == []
+    assert unresolved == ['alpha/src/main/java/Alpha.java']
+
+
+def test_the_resolver_is_never_consulted_for_a_classified_marketplace_path():
+    """Bundle-rooted and test-rooted paths are classified by the seam, not the architecture."""
+    calls: list[str] = []
+
+    def resolver(path: str) -> str | None:
+        calls.append(path)
+        return 'marketplace'
+
+    bundles, unresolved = derive_gate_bundles(
+        ['test/marketplace/targets/test_frontmatter.py', 'marketplace/bundles/plan-marshall/x.py'],
+        _ALL_GLOBS,
+        MARKETPLACE_ROOT,
+        module_resolver=resolver,
+    )
+
+    assert bundles == ['plan-marshall']
+    assert unresolved == ['test/marketplace/targets/test_frontmatter.py']
+    assert calls == []
+
+
+def test_cli_answers_unresolved_when_no_architecture_is_available(tmp_path):
+    """A consumer root with no architecture data reports the path, never a green zero."""
+    (tmp_path / 'alpha').mkdir()
+    script = get_script_path('plan-marshall', 'phase-6-finalize', 'derive_gate_bundles.py')
+
+    result = run_script(
+        script,
+        'derive',
+        '--files',
+        'alpha/src/main/java/Alpha.java',
+        '--globs',
+        '**/*.java',
+        '--marketplace-root',
+        str(tmp_path),
+    )
+
+    assert result.success, result.stderr
+    data = result.toon()
+    assert data['status'] == 'success'
+    assert _as_list(data['bundles']) == []
+    assert _as_list(data['unresolved']) == ['alpha/src/main/java/Alpha.java']
+
+
+def _write_reactor(root: Path) -> None:
+    """Two-module Maven reactor: modules ``alpha`` and ``beta`` under a root POM."""
+    (root / 'pom.xml').write_text(
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<project xmlns="http://maven.apache.org/POM/4.0.0">\n'
+        '    <modelVersion>4.0.0</modelVersion>\n'
+        '    <groupId>com.example</groupId>\n'
+        '    <artifactId>parent-project</artifactId>\n'
+        '    <version>1.0.0-SNAPSHOT</version>\n'
+        '    <packaging>pom</packaging>\n'
+        '    <modules><module>alpha</module><module>beta</module></modules>\n'
+        '</project>\n',
+        encoding='utf-8',
+    )
+    for name in ('alpha', 'beta'):
+        module = root / name
+        (module / 'src' / 'main' / 'java').mkdir(parents=True)
+        (module / 'src' / 'main' / 'java' / 'Thing.java').write_text('class Thing {}\n', encoding='utf-8')
+        (module / 'pom.xml').write_text(
+            '<?xml version="1.0" encoding="UTF-8"?>\n'
+            '<project xmlns="http://maven.apache.org/POM/4.0.0">\n'
+            '    <modelVersion>4.0.0</modelVersion>\n'
+            '    <groupId>com.example</groupId>\n'
+            f'    <artifactId>{name}</artifactId>\n'
+            '    <version>1.0.0-SNAPSHOT</version>\n'
+            '    <packaging>jar</packaging>\n'
+            '</project>\n',
+            encoding='utf-8',
+        )
+
+
+def test_a_fixture_reactor_reaches_the_population_through_the_architecture_resolver(tmp_path):
+    """The PRODUCTION resolver joins a real Maven reactor to the gate population.
+
+    The architecture READER is the boundary here (its own rung logic is
+    ``manage-architecture``'s test surface), but it answers from the fixture's own
+    module directories — so the fixture drives the population: remove it and the
+    test fails. Everything this plan adds — the resolver factory, the per-path
+    call and the join into ``bundles`` — runs for real. The handler is INJECTED
+    rather than imported: publishing ``_cmd_client_handlers`` into ``sys.modules``
+    from this module would collide with the shared-loader guard
+    (``test_conftest_loader_contract.py``).
+    """
+    _write_reactor(tmp_path)
+
+    def fake_which_module(args):
+        project = Path(args.project_dir)
+        owners = sorted(
+            (child.name for child in project.iterdir() if child.is_dir() and (child / 'pom.xml').is_file()),
+            key=len,
+            reverse=True,
+        )
+        for name in owners:
+            if args.path == name or args.path.startswith(name + '/'):
+                return {'status': 'success', 'module': name}
+        return {'status': 'success', 'module': None}
+
+    resolver = _mod.architecture_module_resolver(tmp_path, which_module=fake_which_module)
+    bundles, unresolved = _mod.derive_gate_bundles(
+        ['alpha/src/main/java/Thing.java', 'beta/src/main/java/Thing.java', 'docs/notes.md'],
+        _MAVEN_GLOBS,
+        tmp_path / 'marketplace' / 'bundles',
+        module_resolver=resolver,
+    )
+
+    assert bundles == ['alpha', 'beta']
+    assert unresolved == ['docs/notes.md']
+
+
+def test_a_consumer_test_root_path_resolves_through_the_resolver(tmp_path):
+    """A consumer project's ``test/<pkg>/…`` is a module path, not a phantom bundle."""
+    bundles, unresolved = derive_gate_bundles(
+        ['test/pkg/test_thing.py', 'test/nobody/test_orphan.py'],
+        ['**/*.py'],
+        tmp_path / 'marketplace' / 'bundles',
+        module_resolver=_prefix_resolver({'test/pkg': 'pkg'}),
+    )
+
+    assert bundles == ['pkg']
+    assert unresolved == ['test/nobody/test_orphan.py']
+
+
+def test_cli_builds_the_resolver_only_for_a_non_marketplace_root(tmp_path, monkeypatch, capsys):
+    """The factory is consulted for a consumer root, and never for a marketplace one."""
+    import argparse
+
+    from toon_parser import parse_toon
+
+    calls: list[Path] = []
+
+    def fake_factory(root: Path):
+        calls.append(root)
+
+        def resolve(path: str) -> str | None:
+            return 'alpha' if path.startswith('alpha/') else None
+
+        return resolve
+
+    monkeypatch.setattr(_mod, 'architecture_module_resolver', fake_factory)
+    args = argparse.Namespace(
+        files='alpha/src/main/java/Thing.java',
+        files_file=None,
+        globs='**/*.java',
+        marketplace_root=str(tmp_path),
+    )
+
+    _mod.cmd_derive(args)
+    consumer = parse_toon(capsys.readouterr().out)
+
+    assert consumer['bundles'] == ['alpha']
+    assert calls == [tmp_path]
+
+    monkeypatch.setattr(_mod, 'architecture_module_resolver', lambda root: pytest.fail('resolver built'))
+    marketplace_args = argparse.Namespace(
+        files='test/plan-marshall/test_x.py',
+        files_file=None,
+        globs='test/*',
+        marketplace_root=str(PROJECT_ROOT),
+    )
+
+    _mod.cmd_derive(marketplace_args)
+    marketplace = parse_toon(capsys.readouterr().out)
+
+    assert marketplace['bundles'] == ['plan-marshall']
+
+
+# ---------------------------------------------------------------------------
 # Non-package directory guard
 # ---------------------------------------------------------------------------
 

@@ -177,10 +177,10 @@ Walk the producer surfaces sequentially, emitting findings of each type to the s
 
    ```bash
    python3 .plan/execute-script.py plan-marshall:workflow-integration-sonar:sonar \
-     fetch_findings --plan-id {plan_id} --project {project_key}
+     fetch_findings --plan-id {plan_id} --project {project_key} --pr {pr_number}
    ```
 
-   The producer writes one `sonar-issue` finding per surviving issue to the store, quarantining the untrusted message under `raw_input`. If Sonar is unavailable, log "Sonar skipped — not configured" and continue.
+   The producer writes one `sonar-issue` finding per surviving issue to the store, quarantining the untrusted message under `raw_input`. `--pr` is not optional here: it scopes the enumeration to THIS pull request and arms the analysis-revision comparison, so a settled scan of an older head reports `undecidable` instead of a clean zero. Without it the fetch enumerates project-wide and is confirmed on Compute-Engine state alone. If Sonar is unavailable, log "Sonar skipped — not configured" and continue; a `count_status: undecidable` is NOT a clean pass — record it and continue without claiming a Sonar verdict.
 
 After all three producer surfaces have run, query the store for the union — `--include-qgate` merges the pending per-phase Q-Gate findings into the per-plan read so the union is a single unified query (see `manage-findings` Canonical invocations → `list`):
 
@@ -189,7 +189,7 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings li
   --plan-id {plan_id} --resolution pending --include-qgate
 ```
 
-If empty, return `status: success`, `display_detail: "PR #{pr_number} clean — nothing to triage"`. Otherwise continue to Step 1.4.
+If empty, return `status: success`, `display_detail: "PR #{pr_number} clean — nothing to triage"` — unless the Sonar producer answered `count_status: undecidable` (a stale analysis, an unreported revision or an unsettled Compute Engine) or the typed `unconfigured` status: then the union's emptiness is not a clean pass, and the displayed verdict must say the Sonar result was undecidable/unconfigured rather than clean. Otherwise continue to Step 1.4.
 
 ### Branch: `producer=finalize-feedback` (store-only union over pr-comment ∪ sonar-issue)
 

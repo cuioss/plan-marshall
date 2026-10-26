@@ -103,7 +103,7 @@ This FIND-only step performs NO triage. The filed `sonar-issue` findings remain 
 
 The success condition for this FIND-only step is **a confirmed PR-scoped new-code issue count of zero** — NOT "the Sonar quality gate reported passed." The gate verdict can report green while new-code issues remain (CE lag, PR-scoping gaps), so the terminal clean pass is anchored on the producer's verified count, read from the `sonar-scan-summary.jsonl` marker the producer wrote during the fetch above. Because triage is dispatcher-owned, this gate attests only the producer's FOUND count; a confirmed non-zero count means findings were filed for the unified triage to resolve, not that this step failed.
 
-After the producer fetch, read the **latest** attestation row from the verified-scan marker. The marker lives in the archive-surviving findings directory; its row schema (`count_status`, `new_code_issue_count`, `count_status_reason`, `pr`, `project`, `scanned_sha`, `ts`) is owned by `workflow-integration-sonar/SKILL.md` § "Scan-Summary Marker (sonar-scan-summary.jsonl)" — do not restate it here.
+After the producer fetch, read the **latest** attestation row from the verified-scan marker. The marker lives in the archive-surviving findings directory; its row schema (`count_status`, `new_code_issue_count`, `count_status_reason`, `pr`, `project`, `scanned_sha`, `analysis_revision`, `head_revision`, `ts`) is owned by `workflow-integration-sonar/SKILL.md` § "Scan-Summary Marker (sonar-scan-summary.jsonl)" — do not restate it here. `analysis_revision` is the revision Sonar reports for the analysis the count was read from and `head_revision` the commit it was compared against; `count_status == confirmed` means the two matched, so a stale analysis never reaches Branch A/B.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-files:manage-files read \
@@ -114,7 +114,7 @@ Take the last (most recent) JSONL row as the verified-scan attestation for this 
 
 - **Clean pass (Branch A)** — the row exists AND `count_status == confirmed` AND `new_code_issue_count == 0`. Only this combination satisfies the new-code-zero success criterion. Proceed to "Mark Step Complete" Branch A.
 
-- **Fail closed (undecidable or absent marker)** — `count_status == undecidable` (the producer's CE wait timed out or an auth/REST failure blocked confirmation), OR the marker file is absent / carries no row (`manage-files read` returns a not-found / empty result). An undecidable result MUST NOT be treated as a clean pass — an absent marker means "not checked," not "checked, zero issues." Fail closed: mark the step `failed`, recording the two facts this path honestly has — the count could not be decided, and no scan result was produced:
+- **Fail closed (undecidable or absent marker)** — `count_status == undecidable` (the producer's CE wait timed out, an auth/REST failure blocked confirmation, the analysis is of another commit — `stale_analysis` — no revision was reported, or the head could not be resolved), OR the marker file is absent / carries no row (`manage-files read` returns a not-found / empty result). An undecidable result MUST NOT be treated as a clean pass — an absent marker means "not checked," not "checked, zero issues." Fail closed: mark the step `failed`, recording the two facts this path honestly has — the count could not be decided, and no scan result was produced:
 
   ```bash
   python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \

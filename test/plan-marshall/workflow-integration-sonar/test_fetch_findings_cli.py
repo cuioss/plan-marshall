@@ -34,8 +34,19 @@ def _stub_sonar_configured():
     so without this stub every happy-path test would take the unconfigured branch.
     Tests that exercise the unconfigured path re-patch the same target inside a
     ``with`` block, which takes precedence.
+
+    The analysis-revision gate is stubbed ``confirmed`` for the same reason: these
+    tests are about fetch semantics, not about revision truth (covered against a
+    stubbed Sonar API by ``test_sonar_analysis_revision.py``). Without the stub
+    every fetch would reach for a real Sonar client.
     """
-    with patch('sonar_mod._sonar_credential_missing', return_value=''):
+    with (
+        patch('sonar_mod._sonar_credential_missing', return_value=''),
+        patch(
+            'sonar_mod._verify_analysis_revision',
+            return_value={'count_status': 'confirmed', 'analysis_revision': 'a' * 40, 'head_revision': 'a' * 40},
+        ),
+    ):
         yield
 
 

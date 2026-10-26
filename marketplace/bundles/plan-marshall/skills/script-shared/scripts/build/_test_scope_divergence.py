@@ -64,7 +64,8 @@ benign verdict is an EMPTY footprint - see :func:`resolve_test_scope`.
 
 from __future__ import annotations
 
-from collections.abc import Collection
+import fnmatch
+from collections.abc import Callable, Collection
 from dataclasses import dataclass
 
 # Footprint prefixes whose presence means a scoped run cannot observe a
@@ -127,8 +128,9 @@ class TestScopeResolution:
             whole-tree run fails - the footprint spans more than one module, it
             touches shared / cross-module test infrastructure, at least one
             footprint entry could not be mapped to a registered target (a bundle
-            or a test tree holding tests), or at least one scoped module is
-            named only (``named_only_modules`` is non-empty).
+            or a test tree holding tests), at least one scoped module is
+            named only (``named_only_modules`` is non-empty), or the footprint
+            adds/edits a test file (``root_guards_required``).
         recommended_target: The single BUNDLE module a scoped run should target
             when divergence is impossible (scoped-equals-whole-tree by
             equivalence); None when a whole-tree run is warranted, and also None
@@ -164,6 +166,16 @@ class TestScopeResolution:
             exactly when ``narrow_units`` is non-empty, which is what
             ``recommended_target`` is not: that one is null whenever a
             whole-tree run is warranted, while narrow units are still offered.
+        root_guards_required: True when the footprint adds or edits a test FILE.
+            The root-level guards (``test/*.py``) sit outside every module, so no
+            scoped ``module-tests {module}`` run executes them; a footprint that
+            touches a test file therefore forces ``divergence_possible`` and a
+            null ``recommended_target``. False for a production-only or docs-only
+            footprint, so those stay scoped.
+        excluded_population: The populations a SCOPED verdict does not cover,
+            named so a green scoped run states what it left out instead of
+            implying coverage of the whole change. Empty whenever the verdict is
+            whole-tree (nothing is left out) or there is nothing to run.
     """
 
     scoped_modules: tuple[str, ...]
@@ -174,6 +186,8 @@ class TestScopeResolution:
     narrow_units_unresolved: tuple[str, ...] = ()
     named_only_modules: tuple[str, ...] = ()
     narrow_unit_module: str | None = None
+    root_guards_required: bool = False
+    excluded_population: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -190,6 +204,25 @@ class DivergenceVerdict:
 
     divergent: bool
     caught: bool
+
+
+#: The test-file names the root-level guards assert on. A raw fixture under a
+#: test tree (``test/.../fixtures/*.java``) is data, not a test.
+_TEST_FILE_PATTERNS: tuple[str, ...] = ('test_*.py', '*_test.py', 'conftest.py')
+
+
+def _is_test_file(path: str) -> bool:
+    """Return True when ``path`` is a test FILE under a test root.
+
+    The root-level guards (``test/*.py``) assert on the project's test files, and
+    they sit outside every module. A footprint that adds or edits a test file
+    therefore demands them, while a raw fixture or a production file does not.
+    """
+    segments = path.split('/')
+    if len(segments) < 2 or segments[0] not in _TEST_ROOTS:
+        return False
+    name = segments[-1]
+    return any(fnmatch.fnmatch(name, pattern) for pattern in _TEST_FILE_PATTERNS)
 
 
 def _touches_shared_infra(path: str) -> bool:
@@ -393,6 +426,7 @@ def resolve_test_scope(
     test_directories: Collection[str] | None = None,
     bundle_modules: Collection[str] | None = None,
     existing_paths: Collection[str] | None = None,
+    module_for_path: Callable[[str], str | None] | None = None,
 ) -> TestScopeResolution:
     """Resolve the scoped module set and whether a whole-tree run is warranted.
 
@@ -410,18 +444,21 @@ def resolve_test_scope(
     consulted for the span or for the empty-scope fallback, which is exactly the
     pre-filter whose removal this function's fail-closed behaviour depends on.
 
-    ``divergence_possible`` is True when ANY of four conditions holds: the
+    * ``divergence_possible`` is True when ANY of five conditions holds: the
     resolved set spans more than one module; any footprint entry touches shared /
     cross-module test infrastructure; ``unresolved_paths`` is non-empty (at
-    least one entry mapped to no registered target); or ``named_only_modules`` is
+    least one entry mapped to no registered target); ``named_only_modules`` is
     non-empty (a scoped module is a test tree that is no bundle, or was reached
-    through the declared mapping - see the module docstring). The third and
+    through the declared mapping - see the module docstring); or the footprint
+    adds/edits a test file (``root_guards_required``). The third and
     fourth are the fail-closed ones: coverage for an unmapped path cannot be
     determined, and a named-only module is one a scoped run can neither be
     resolved for nor shown equivalent to the whole tree, so the run falls back
-    to the whole tree rather than emitting a confident scoped target. A footprint
+    to the whole tree rather than emitting a confident scoped target. The fifth
+    is structural: the root-level test guards sit outside every module, so no
+    scoped ``module-tests {module}`` run executes them. A footprint
     of exactly one bundle module, every path of it owned by a path segment,
-    touching no shared infra and leaving nothing unresolved yields
+    touching no shared infra, editing no test file and leaving nothing unresolved yields
     ``divergence_possible = False`` with that module as the
     ``recommended_target`` (match by equivalence).
 
@@ -472,6 +509,14 @@ def resolve_test_scope(
             files. Keyword-only, and consulted for one decision only: a changed
             test file is a narrow unit only when it is in this set. The default
             ``None`` establishes no file as existing, so no test file is a unit.
+        module_for_path: An optional ``path -> module | None`` ownership resolver
+            that REPLACES the segment/mapping derivation above. Keyword-only, and
+            for a build skill whose project names its modules by directory rather
+            than by a ``marketplace/bundles/<b>`` segment (Maven's reactor): the
+            caller enumerates its modules and answers ownership itself. A ``None``
+            answer is the same "no owning module" the built-in derivation reports,
+            so the path lands in ``unresolved_paths`` and the run fails closed to
+            the whole tree. The default ``None`` selects the built-in derivation.
 
     Returns:
         A frozen :class:`TestScopeResolution`.
@@ -481,7 +526,14 @@ def resolve_test_scope(
     named_only: set[str] = set()
     unresolved: list[str] = []
     for path in footprint:
-        module = _module_for_path(path, registered_modules)
+        # An injected resolver replaces the marketplace-shaped segment/mapping
+        # derivation; it is how a build skill whose project names modules by
+        # directory (Maven) answers the same question. ``None`` keeps the
+        # derivation this module owns.
+        if module_for_path is not None:
+            module = module_for_path(path)
+        else:
+            module = _module_for_path(path, registered_modules)
         if module is None:
             unresolved.append(path)
             continue
@@ -493,8 +545,13 @@ def resolve_test_scope(
     unresolved_paths = tuple(unresolved)
     named_only_modules = tuple(sorted(named_only))
     shared_infra_touched = any(_touches_shared_infra(path) for path in footprint)
+    root_guards_required = any(_is_test_file(path) for path in footprint)
     divergence_possible = (
-        len(scoped_modules) > 1 or shared_infra_touched or bool(unresolved_paths) or bool(named_only_modules)
+        len(scoped_modules) > 1
+        or shared_infra_touched
+        or bool(unresolved_paths)
+        or bool(named_only_modules)
+        or root_guards_required
     )
 
     recommended_target: str | None
@@ -502,6 +559,17 @@ def resolve_test_scope(
         recommended_target = scoped_modules[0]
     else:
         recommended_target = None
+
+    excluded_population: tuple[str, ...] = ()
+    if recommended_target is not None:
+        exclusions = [f'every module outside {recommended_target}']
+        # The root-level guards exist in a test-root-shaped project; naming them
+        # as excluded is what keeps a scoped green run from reading as coverage
+        # of a change whose guards never ran. "where the project has them" keeps
+        # the statement true for a project that carries none.
+        if any(path.split('/')[0] in _TEST_ROOTS or path.startswith('marketplace/bundles/') for path in footprint):
+            exclusions.append('root-level test guards under each test root (where the project has them)')
+        excluded_population = tuple(exclusions)
 
     narrow_units, narrow_units_unresolved = _resolve_narrow_units(
         footprint, scoped_modules, bundles, test_directories, existing_paths
@@ -516,6 +584,8 @@ def resolve_test_scope(
         narrow_units_unresolved=narrow_units_unresolved,
         named_only_modules=named_only_modules,
         narrow_unit_module=scoped_modules[0] if narrow_units else None,
+        root_guards_required=root_guards_required,
+        excluded_population=excluded_population,
     )
 
 

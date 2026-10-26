@@ -47,7 +47,7 @@ An open question sat behind the two unconditional whole-tree arms: after a loop-
 
 Both settlements are scoping decisions only. The existing **honest-degradation branch** (the whole-tree invocation cannot run at all in this project) and its mandatory **per-dimension WARNING** are unchanged by this section — they remain the only sanctioned path on which the whole-tree `quality-gate` arm does not run.
 
-The module-tests gate consults the callable scope-resolution seam — the `resolve-test-scope` verb of whichever `build-{tool}` skill the project's `module-tests` canonical resolves to (in this repository `build-pyproject`, backed by the pure `_test_scope_divergence.resolve_test_scope`) — and runs a real whole-tree `module-tests` only when divergence is possible — mirroring the escalate-only-on-trigger discipline of the `finalize-step-plugin-doctor` reference behavior (PLAN-02), so whole-tree cost is paid only where a scoped run could miss a cross-module regression. The registered targets that seam checks a derived name against have one derivation, the shared helper `_test_scope_targets.resolve_registered_targets`; the `default:push` freshness precondition reads the same helper, so the scope this gate runs and the coverage that precondition requires rest on one target set.
+The module-tests gate consults the callable scope-resolution seam — the `resolve-test-scope` verb of whichever `build-{tool}` skill the project's `module-tests` canonical resolves to (in this repository `build-pyproject`, backed by the pure `_test_scope_divergence.resolve_test_scope`; `build-maven` publishes the same verb, backed by the same helper with Maven's module-directory ownership) — and runs a real whole-tree `module-tests` only when divergence is possible — mirroring the escalate-only-on-trigger discipline of the `finalize-step-plugin-doctor` reference behavior (PLAN-02), so whole-tree cost is paid only where a scoped run could miss a cross-module regression. The registered targets that seam checks a derived name against have one derivation, the shared helper `_test_scope_targets.resolve_registered_targets`; the `default:push` freshness precondition reads the same helper, so the scope this gate runs and the coverage that precondition requires rest on one target set.
 
 **A test tree that is no bundle, and source reached through the declared source-to-test mapping, require the whole tree.** The seam names such a module in `scoped_modules` and `named_only_modules` — the path is not unresolved — and reports `divergence_possible: true` with a null `recommended_target`, so the footprint arrives at branch 4 below and the freshness precondition accepts only a whole-tree test row for it. Branch 6's `recommended_target` is therefore always a bundle module, which is what makes its module-scoped `architecture resolve --module {recommended_target}` resolvable: a test tree that is no bundle is not reliably an architecture module, so that resolve may refuse its name or answer with a run that is not scoped to that tree.
 
@@ -89,12 +89,27 @@ needs — the gate MUST NOT exit fresh. An underivable requirement is the
 absence of evidence, never evidence of coverage; a fresh verdict on it would
 be the confident-empty signal this gate exists to refuse.
 
-Root-level test guards run unconditionally whenever the plan adds or edits
-test files. A scoped `module-tests` run never covers `test/*.py` at the
-repository root (no bundle owns that scope), so a footprint touching
-`test/*.py` always escalates the module-tests arm to the whole-tree branch
-regardless of what the scoped derivation would otherwise select. The
-population the scoped runs did not cover is stated in the run's log line.
+Root-level test guards run unconditionally whenever the plan adds or edits a
+test FILE under a test root. A scoped `module-tests {module}` run never covers
+`test/*.py` at the repository root — no module owns that scope — so **any**
+footprint that adds or edits a test FILE under a test root (`test/`, `tests/`)
+escalates the module-tests arm to the whole-tree branch, regardless of what the
+scoped derivation would otherwise select. The seam reports this directly as
+`root_guards_required`, which forces `divergence_possible: true`; it is the same
+trigger whether the edited test file is a root-level guard or a module's own test
+file, because a scoped run of that module still leaves the root guards
+unexecuted. A Maven module's `src/test/…` is NOT this trigger: those tests live
+inside the module, so a module-scoped run covers them natively. A
+production-only or docs-only footprint sets no trigger, so those stay scoped.
+Because the `manage-tasks` build-claim coverage gate reads `divergence_possible`
+verbatim, a test-file edit also requires a whole-tree test row there — the same
+escalation, stated once so the cost is not a surprise.
+
+When the verdict does stay scoped, the seam's `excluded_population` names the
+populations the run does not cover (every module outside the target, and the
+root-level test guards in a test-root-shaped project). The module-tests arm
+states it in the run's log line — a green scoped run reports what it left out
+rather than reading as coverage of the whole change.
 
 `head_at_completion` is captured at step start as well as at step end, both
 via `git -C {worktree_path} rev-parse HEAD`. When
@@ -259,7 +274,9 @@ Extract `build_map` (the domain-keyed `{glob, role, build_class}` map) from the 
 
 ### Derive unique bundle set
 
-The derivation rule lives in exactly one place — the deterministic `derive_gate_bundles` seam. Do NOT restate it here. Pass the footprint file written above, the collected build_map `globs`, and the worktree root; the seam returns the sorted, de-duplicated `bundles` set plus an `unresolved` list of footprint paths that matched a build_map glob but resolved to no real bundle (e.g. a `test/marketplace/**` path, which is never a bundle and never a silent drop):
+The derivation rule lives in exactly one place — the deterministic `derive_gate_bundles` seam. Do NOT restate it here. Pass the footprint file written above, the collected build_map `globs`, and the worktree root; the seam returns the sorted, de-duplicated `bundles` set plus an `unresolved` list of footprint paths that matched a build_map glob but resolved to no real bundle (e.g. a `test/marketplace/**` path, which is never a bundle and never a silent drop).
+
+**A non-marketplace layout resolves through the architecture.** When the worktree root carries no `marketplace/bundles/` directory — a consumer project with Maven, Gradle or npm module directories — the seam asks the architecture's `which-module` reader for each such path and the answered module joins the population, so the per-bundle sweep iterates the project's real modules instead of zero. A path `which-module` cannot place stays in `unresolved` and takes the WARNING branch below. In a marketplace layout the seam classifies `marketplace/bundles/<b>/…` and `test/<b>/…` itself and never consults the architecture; deriving `<b>` from a path segment is what keeps `test/marketplace/**` from naming a phantom `marketplace` module:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:phase-6-finalize:derive_gate_bundles \
@@ -269,6 +286,10 @@ python3 .plan/execute-script.py plan-marshall:phase-6-finalize:derive_gate_bundl
 ```
 
 `--files` (the inline CSV form) remains available for a small footprint and is mutually exclusive with `--files-file`; it is not the prescribed form, because the gate's correctness depends on the derivation population being exactly the footprint. A footprint too large to pass as a file is a reason to STOP the step and report, never to pass a hand-picked subset — a narrowed list is indistinguishable from a clean gate once it is inside the loop.
+
+`--marketplace-root` is the project root: it both locates `marketplace/bundles/` (when the layout has one) and anchors the architecture read the non-marketplace fallback performs, so pass the worktree root, not the bundles directory.
+
+**Two ownership questions, deliberately two derivations.** This population answers "which modules must the `quality-gate` sweep cover", and the module-tests arm's `resolve-test-scope` answers "which tests could a scoped run miss". They agree on module identity and disagree on one input on purpose: `which-module` may attribute a root-level file to the project's root module, while the test-scope verb treats the reactor root as no owner (a root POM change can move every module, so it routes the whole tree). Neither answer is the other's substitute.
 
 Parse `bundles` and `unresolved` from the TOON output. Let `N = len(bundles)`.
 
@@ -432,7 +453,7 @@ The guards above run mypy + ruff over production sources and mypy over `test/` �
 
    Branch on this call with the same exact-shape discipline the whole-tree `quality-gate` availability probe uses — and for the same reason: exactly one response proves the verb does not exist, and every other one merely failed to answer.
 
-   - **`status: success`** → parse `scoped_modules`, `divergence_possible`, `recommended_target`, `unresolved_paths`, and `whole_tree_available` from the TOON output, and continue to the routing branches below. For this repository the notation resolves to `plan-marshall:build-pyproject:pyproject_build`; see [`build-pyproject/SKILL.md`](../../build-pyproject/SKILL.md) § "Canonical invocations" → `resolve-test-scope` for that seam's argument surface and output contract, and the corresponding section of whichever `build-{tool}` skill a different project resolves to.
+   - **`status: success`** → parse `scoped_modules`, `divergence_possible`, `recommended_target`, `unresolved_paths`, `root_guards_required`, `excluded_population`, and `whole_tree_available` from the TOON output, and continue to the routing branches below. For this repository the notation resolves to `plan-marshall:build-pyproject:pyproject_build`; see [`build-pyproject/SKILL.md`](../../build-pyproject/SKILL.md) § "Canonical invocations" → `resolve-test-scope` for that seam's argument surface and output contract, and the corresponding section of whichever `build-{tool}` skill a different project resolves to.
    - **A rejection carrying ALL FOUR of `error: invalid_invocation`, `reason: unknown_verb`, `rejected: resolve-test-scope`, and an `accepted` list that OMITS `resolve-test-scope`** → this exact shape, and only this shape, proves the resolved build skill exposes no `resolve-test-scope` verb. This is the response that reaches **branch 0's missing-verb WARNING**: emit it and proceed to **Mark Step Complete (Success)** with the **module-tests DEGRADED** detail variant under § "Mark Step Complete". The fourth conjunct is deliberately **"`accepted` omits the verb"** rather than "`accepted` is non-empty", for the same reason the resolver probe phrases its third conjunct that way — a degenerate empty list is a legitimate instance of the shape, not grounds to reject it.
    - **ANY other response** → the call did not establish that the verb is absent; it failed to answer. An unreadable response is not evidence of unavailability, so do NOT degrade — STOP the step per § "Exit-code convention for every script call", preserving the response envelope verbatim.
 
@@ -486,6 +507,8 @@ The guards above run mypy + ruff over production sources and mypy over `test/` �
    **Do NOT build this invocation by appending `{recommended_target}` to branch 0's whole-tree `executable`.** How a build tool carries module scope is that tool's own convention, so an appended bare token is not a scope — it is string surgery on a resolved command, and it is wrong under both tools this repository can observe. Under the pyprojectx wrapper the module rides INSIDE a quoted value (`run --command-args "module-tests {module}"`), so a token appended to the resolved string lands outside the quotes entirely; under npm the scope is carried by a flag (`--prefix=` / `--workspace=`), so an appended token becomes an extra argument to the test script rather than a scope. This is the same rule § "Whole-tree test-compile gate" states when it fixes its probe order. The discriminator is whether the resolver can be asked for the form you want: here it can, so surgery is gratuitous. The one place this document still mutates a resolved string — that arm's module-argument REMOVAL — is reached only after the resolver has been asked for the wider form and proven to expose none, and is recorded as a deliberate widening in § "What this caveat does NOT license".
 
    Gate on its result the same way: `status: error` → **Mark Step Complete (Failure)** (halt before push); `status: success` → **Mark Step Complete (Success)**; `timeout`, `killed` or `indeterminate` → neither branch, STOP the step per § "Exit-code convention for every script call".
+
+   Before branching, record what the scoped run does not cover: emit one `[STATUS]` naming `excluded_population` from the seam's `status: success` payload (see the root-level-test-guard paragraph above). A scoped green run that stays silent about its exclusions reads as coverage of the whole change, which it is not. An empty `excluded_population` says the SCOPED run left nothing out of its own scope — it never says a run happened: branches 3 and 5 run no pytest at all and must say so in their own terms.
 
 The module-tests outcome folds into the Mark Step Complete branches below: Branch A covers a run in which the per-bundle `quality-gate` sweep, the whole-tree `quality-gate`, the whole-tree `test-compile` and the module-tests gate each returned `status: success` if it ran at all — which is not the same as all four having run, so read § "Mark Step Complete" for what the `display_detail` may then claim; Branch B (failure) covers a `status: error` from the per-bundle `quality-gate` OR the whole-tree `quality-gate` OR `test-compile` OR the module-tests run; and a `timeout`, `killed` or `indeterminate` from any arm is neither branch — the step has already STOPped at that arm per § "Exit-code convention for every script call".
 

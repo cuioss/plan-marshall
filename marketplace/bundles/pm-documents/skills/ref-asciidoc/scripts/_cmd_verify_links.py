@@ -183,6 +183,20 @@ def cmd_verify_links(args) -> dict:
 
     files = []
     if path.is_file():
+        if path.suffix != '.adoc':
+            # File mode applies the AsciiDoc grammar. A Markdown file parsed with
+            # it yields no links and a clean ``total_links: 0`` — a pass over a
+            # file that was never read. Refuse with the same no_files-class error
+            # the directory mode returns, so a caller sees "nothing was checked"
+            # rather than a verified zero.
+            return {
+                'status': 'error',
+                'error': 'no_files',
+                'message': (
+                    f"No AsciiDoc files found in {target_path}: '{path.suffix or path.name}' is not an "
+                    'AsciiDoc file (only .adoc files are checked)'
+                ),
+            }
         files = [str(path)]
     elif recursive:
         files = [str(f) for f in path.rglob('*.adoc') if 'target' not in f.parts]

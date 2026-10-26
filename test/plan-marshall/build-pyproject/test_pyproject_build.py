@@ -531,6 +531,7 @@ import pytest  # noqa: E402
 # The declared-mapping fixture is defined once, beside the pure-function cases,
 # and imported here so the handler cases assert on the same inputs.
 from test_test_scope_divergence import (  # noqa: E402
+    _CHANGED_TEST_FILE,
     DECLARED_MAPPING_FIXTURE,
     NARROW_UNIT_CASES,
     NARROW_UNIT_EXISTING_PATHS,
@@ -633,6 +634,49 @@ def test_resolve_test_scope_changed_paths_multi_module_sets_divergence(capsys):
     assert out['status'] == 'success'
     assert out['divergence_possible'] is True
     assert out['recommended_target'] is None
+
+
+def test_resolve_test_scope_module_test_edit_escalates_for_the_root_guards(capsys):
+    """Editing one module's test file still runs the ROOT-level test guards.
+
+    The guards live at ``test/*.py``, outside every module, so a scoped
+    ``module-tests {module}`` run never executes them — the gate read a scoped
+    green while CI failed on a guard rule. A test-file edit therefore escalates
+    to the whole-tree branch.
+    """
+    out = _run_resolve_scope(
+        capsys,
+        changed_paths='test/plan-marshall/build-pyproject/test_pyproject_build.py',
+    )
+
+    assert out['status'] == 'success'
+    assert out['root_guards_required'] is True
+    assert out['divergence_possible'] is True
+    assert out['recommended_target'] is None
+
+
+def test_resolve_test_scope_scoped_run_names_what_it_left_out(capsys):
+    """A scoped verdict states the populations it does not cover."""
+    out = _run_resolve_scope(
+        capsys,
+        changed_paths='marketplace/bundles/plan-marshall/skills/build-pyproject/scripts/pyproject_build.py',
+    )
+
+    assert out['recommended_target'] == 'plan-marshall'
+    excluded = out['excluded_population']
+    excluded = excluded if isinstance(excluded, list) else [excluded]
+    assert any('outside' in item for item in excluded)
+    assert any('root-level test guards' in item for item in excluded)
+
+
+def test_resolve_test_scope_docs_only_diff_does_not_require_the_root_guards(capsys):
+    """A diff that edits no test file does not pull the root guards in."""
+    out = _run_resolve_scope(
+        capsys,
+        changed_paths='marketplace/bundles/plan-marshall/skills/build-pyproject/SKILL.md',
+    )
+
+    assert out['root_guards_required'] is False
 
 
 def test_resolve_test_scope_changed_paths_shared_infra_sets_divergence(capsys):
@@ -976,8 +1020,10 @@ assert _NARROW_UNIT_PARAMS, 'the narrow-unit case population is empty'
 def test_resolve_test_scope_prints_the_narrow_units(capsys, case):
     """Each named footprint prints its narrow units and names what contributed none.
 
-    ``recommended_target`` is asserted too: the module-level answer the handler
-    printed before the narrow lists existed is unchanged in every case.
+    The module-level fields are asserted too, and they are case-dependent: a
+    footprint that edits a test FILE takes the whole-tree verdict
+    (``root_guards_required``), because the root-level guards live outside every
+    module and a scoped run never executes them.
     """
     out = _run_resolve_scope_with_directories(
         capsys,
@@ -985,13 +1031,16 @@ def test_resolve_test_scope_prints_the_narrow_units(capsys, case):
         directories=NARROW_UNIT_TEST_DIRECTORIES,
     )
 
+    edits_a_test_file = _CHANGED_TEST_FILE in case.footprint
+    expected_target = None if edits_a_test_file else 'plan-marshall'
     assert out['status'] == 'success'
     assert out['narrow_units'] == list(case.narrow_units)
     assert out['narrow_units_unresolved'] == list(case.narrow_units_unresolved)
     assert out['narrow_unit_module'] == 'plan-marshall'
     assert out['scoped_modules'] == ['plan-marshall']
-    assert out['recommended_target'] == 'plan-marshall'
-    assert out['divergence_possible'] is False
+    assert out['root_guards_required'] is edits_a_test_file
+    assert out['divergence_possible'] is edits_a_test_file
+    assert out['recommended_target'] == expected_target
     assert out['unresolved_paths'] == []
 
 
