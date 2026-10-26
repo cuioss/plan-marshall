@@ -247,10 +247,29 @@ derive, for rows still live.
   against two disclosed; last head unreviewed after a logic change (a note). The merged executor is not live until the
   harness sync and one regeneration (Open Defect). Fix-forward: none staged.
 
-- **PLAN-LB-95** (staged 2026-10-25, WS-04, runbook, **critical**): the executor puts only the resolved script's own plugin
+- **PLAN-LB-95** (**shipped 2026-10-26, #1865, B+**, `landings/PLAN-LB-95.md`; fix in source only until the harness sync and
+  an executor regeneration; staged 2026-10-25, WS-04, runbook, **critical**): the executor puts only the resolved script's own plugin
   version on PYTHONPATH. D1 the same-root walk returns the script's own version; D2 a sibling bundle without that version uses
   its newest, ordered numerically; D3 the other shapes keep their PYTHONPATH and a guard keeps one version per skill ahead;
   D4 the reproduction with eight cached versions. A regression of PLAN-LB-94 D3. Emit it first.
+
+- **PLAN-LB-82** (**shipped 2026-10-26, #1864, B**, `landings/PLAN-LB-82.md`; runbook lane, `deepseek-v4.1-flash/high`, six
+  sessions, 14 h 39 min): the integrity carry fails safe, the re-freeze authorization is guarded end to end, and the tests that
+  pin them can fail. All four deliverables delivered with `mutation-after` evidence for D1 to D3 and test-first for D4; the four
+  cited failing logs exist and match the PR body. Exact question (4), sub-agent (5), read-class shell (4) and guard (0) counts,
+  no spoofed identity, no main-checkout edit, Sonar 0, main clean. Debits: the landing says CodeRabbit never reviewed the final
+  head and that all threads are resolved, but the walkthrough covers the merge head and one Minor thread is open (a note, not
+  a finding about the unreviewed head); D3's first Done-when is met at the validator seam, disclosed; the local full suite never
+  completed at the merge head. Fix-forward: none staged.
+
+- **PLAN-LB-96** (staged 2026-10-26, widened the same day to four deliverables, WS-04, runbook, **critical**): a flat OpenCode
+  install works end to end. D1 `resolve_bundles_root` gains a flat leg after the two nested probes; D2 the six import-time call
+  sites import in a marker-less flat tree and a guard covers every call site; D3 the failure message names the flat shape and
+  the flat directory pattern; D4 extension discovery finds the domain bundles in a flat tree (the OpenCode and Antigravity
+  emitters deploy `implements:`, and discovery enumerates the flat root through the recorded identity), so module discovery
+  and the build commands resolve. Found when a lane on the operator's second machine stopped at `runbook_lane resolve`, then
+  at empty `architecture modules`. Shares `test/plan-marshall/script-shared/` with the held PLAN-LB-93; no file with the
+  running plans.
 
 - **PLAN-LB-93** (staged 2026-10-25, WS-04, runbook, **high**; widened the same day by operator instruction to one plan for
   four defects, six deliverables): D1-D2 the executor generator and four sibling entry scripts start in the flat OpenCode
@@ -515,6 +534,37 @@ derive, for rows still live.
 
 ## Decisions
 
+- 2026-10-26 — **PLAN-LB-82 shipped (#1864, merge `931d5847b`), graded B.** Analysis at full depth against git, the CI
+  abstraction, all five PR threads, the session store (root plus five review children), `guard.log` (0 against the landing's 0),
+  Sonar (0), the four cited failing logs and the merged diff of `_locks_core.py`, `file_ops.py`, `_status_core.py`,
+  `_cmd_lifecycle.py` and the `authorize_refreeze` path. The landing misreports the reviewer state: CodeRabbit's Merge Risk
+  block covers the merge head `66c883e51` (reviewed, Low, 09:18Z), not only `a3b6144c8`, and thread
+  `PRRT_kwDOQ3xasM6wMufJ` (Minor, `authorize_refreeze` reports success after a successor replaced its token inside the stale-guard
+  window) was merged open; fail-closed, not staged. The standing authorization is unaffected. Third landing to report a routed
+  build failing from a lane worktree (`pwx` unresolvable), so the Watches condition is met; the operator decides.
+
+- 2026-10-26 — **PLAN-LB-95 shipped (#1865, merge `972683f0f`), graded B+.** Analysis at full depth against git, the CI
+  abstraction, the PR thread (1 of 1 resolved), the session store (root plus four review children), `guard.log` (1 against the
+  landing's 1), the execution log, Sonar (0) and the merged diff read in full. Open items: the fix is source-only until
+  `/sync-harnesses` and an executor regeneration here, and the new plugin version plus a regeneration on the second machine;
+  `executor-skew` is permanently `could_not_check` on a flat OpenCode install (two avoidable questions per lane, medium, not
+  staged); the landing labels the numeric-ordering test a forward guard although its own log shows it failing at the base (the
+  label came from my spec). The row, landing, inbox and view are reconciled.
+- 2026-10-26 — **PLAN-LB-96 staged at critical priority: a flat OpenCode install cannot resolve its bundles root.**
+  Operator, asking whether PLAN-LB-95 fixes the second machine's `resolve_bundles_root` failure, then "stage it". It does not:
+  LB-95 bounds the nested-cache PYTHONPATH; this is the flat layout, where `resolve_bundles_root` (`marketplace_bundles.py`
+  L246-287) has no flat leg and six call sites raise at import time. Reproduced against the freshly generated OpenCode tree
+  (all six raise). This machine's installed tree hides it through a hand-made `plan-marshall/.claude-plugin/plugin.json` shim
+  that nothing in the repository writes. The fix reuses `deployed_layout`'s flat vocabulary and leaves the nested probes first.
+  PLAN-LB-93 D2 does not cover these scripts. A first probe reported `plugin_discover` failing on `_build_discover`; that was a
+  probe artifact (the module sits in a subdirectory the probe did not add), corrected in the spec.
+- 2026-10-26 — **PLAN-LB-96 widened to four deliverables: extension discovery in a flat install.** Operator: "that is to
+  complicated. Widen the plan now and we will continue when it landed". With the bundle marker in place the second machine's lane
+  passed `resolve_bundles_root` and stopped at `find_extension_path` finding no bundle (`architecture modules` empty, no
+  `quality-gate`, no `verify`). Two causes read in the code: `discover_all_extensions` and `_scan_skills_roots_for_implementors`
+  treat each directory under the root as a bundle, and the OpenCode and Antigravity emitters do not deploy the `implements:`
+  declaration `find_extension_path` reads. D4 fixes both. The operator's own instruction is to wait for the plan to land rather
+  than keep working around it on that machine; the environment-variable and Claude-Code fallbacks were offered and not taken.
 - 2026-10-25 — **PLAN-LB-95 staged at critical priority: the PLAN-LB-94 executor puts all cached plugin versions on PYTHONPATH.**
   Operator, after meeting the failure on a second machine: "analyze carefully and create a plan for fixing with the highest
   prio". Analysis: the cause the machine reported is confirmed in the template (`_same_root_script_dirs` L588-621, introduced
@@ -980,6 +1030,11 @@ derive, for rows still live.
 
 ## Open Defects
 
+- **`executor-skew` answers `could_not_check` on every flat OpenCode install (PLAN-LB-95 landing, 2026-10-26; medium; not
+  staged).** A flat install has no `{bundle}/{version}` directory, so the lane text version cannot be derived and each
+  OpenCode lane asks the operator two questions that cannot change the outcome (LB-95 asked both; regenerating the executor
+  did not change the verdict). Related to PLAN-LB-96, which makes the flat install resolve its bundles root, but not part of
+  it. Under the high-and-blocking focus rule this waits.
 - **The emitted lane command cannot read a spec from the ledger worktree (PLAN-LB-90 landing, 2026-10-25; high; not staged).**
   The lane accepts `resolve --spec-from-ledger`, but `/plan-marshall-runbook-lane plan=…` carries no argument that sets it and
   the lane text names no trigger for adding it, so a spec edited in the ledger worktree reaches a lane only after a ledger
@@ -998,8 +1053,20 @@ derive, for rows still live.
   full `module-tests` run is a third writer (every `generate_executor` verb ran through the main executor at 08:04:51Z to
   08:05:46Z); both folded into PLAN-LB-94. Workaround until it ships: after a mismatch, regenerate with
   the repository-source generator (`recover --target claude` for the orchestrator), expecting the lane to flip it back.
+- **CRITICAL — a flat OpenCode install cannot resolve its bundles root (found 2026-10-26 on the operator's second machine;
+  owner PLAN-LB-96, staged).** `resolve_bundles_root` accepts only the marketplace and versioned-cache shapes, so six
+  import-time call sites (`_cmd_client_build`, `_config_core`, `_manifest_validation`, `plugin_discover`, `_doctor_shared`,
+  `_cmd_extension`) raise `could not locate a 'plan-marshall' bundle` and `runbook_lane resolve` never starts. Reproduced against
+  the generated tree; masked here by a hand-made bundle-identity shim in `~/.config/opencode/skills/plan-marshall/`. Behind it,
+  extension discovery finds no bundle in a flat tree (`architecture modules` empty, no `quality-gate` or `verify`): the
+  discovery loops treat each directory as a bundle and the OpenCode and Antigravity emitters do not deploy `implements:`.
+  Workaround on the affected machine: create `~/.config/opencode/skills/plan-marshall/.claude-plugin/plugin.json` (name
+  `plan-marshall`, a version, a description) and export `PM_MARKETPLACE_ROOT` at a plan-marshall checkout (untested); both
+  hide the defect. The operator chose to wait for the plan to land.
 - **CRITICAL — the generated executor puts every cached plugin version on PYTHONPATH, oldest first (found 2026-10-25 on the
-  operator's second machine; regression of PLAN-LB-94 D3, #1861; owner PLAN-LB-95, staged).** `_same_root_script_dirs`
+  operator's second machine; regression of PLAN-LB-94 D3, #1861; FIXED IN SOURCE by PLAN-LB-95, #1865, merged 2026-10-26; not
+  live until the harness sync and an executor regeneration, and on the second machine until the new plugin version is
+  installed there).** `_same_root_script_dirs`
   (`execute-script.py.template` L588-621) globs the whole install root and sorts the result as strings, so a script from
   `0.1.2010` imports its helpers from the oldest cached version that has them: `marshall-steward` on a not yet enrolled
   project stopped at Step 4 with `ImportError: cannot import name 'STANDING_RULES_BRIDGE_MARKER' from 'antigravity_runtime'`
@@ -1870,7 +1937,9 @@ entries below are OpenCode 1 assumptions in plan-marshall that OpenCode 2 broke.
   and falls back to `pwx` (absolute values work), plus two whole-tree builds hitting the daemon's supervisory bound. Landing
   statements, not re-run here. Also both report `test_harness_shape_guards.py` whole-tree scanners passing in CI and standalone
   but exceeding 300 s under 32 k-test local load. None blocks a run (the fallback works); recorded to see whether a third
-  run repeats it before anything is staged.
+  run repeats it before anything is staged. **A third run repeats it (PLAN-LB-82, 2026-10-26):** the routed leg could not
+  resolve the worktree's `./pw` (`pwx`, `exit_code -1`) and every build ran `--execution-mode in_process`; the same
+  command from the main checkout succeeded. Operator decides whether it earns a plan.
 - **Runs write tracked files into the MAIN checkout before they switch to their worktree (2026-10-24).** From the session
   store: PLAN-LB-43 made 12 edits (8 to `extension_api.py`, 2 to `extension-api/SKILL.md`, the new test) at 15:35-15:38Z on the
   first day; PLAN-LB-55 edited a tracked test file twice and created an untracked draft at 08:34Z; PLAN-LB-85 edited `sonar.py` 14
@@ -1907,7 +1976,7 @@ entries below are OpenCode 1 assumptions in plan-marshall that OpenCode 2 broke.
   graded on its work, report graded down for the undisclosed shell and clone conduct), LB-55 C+ (3 sessions, 14 h 17 min, `deepseek-v4.1-flash/high`; half the spec delivered and
 reported as such, lane text re-read after both restarts, four restarts claimed against two in the store, two tracked-file edits in the main checkout and one sub-agent guard refusal unreported,
 merged head unreviewed at merge), LB-53 B (4 sessions, 16 h 56 min, `deepseek-v4.1-flash/high`; both deliverables on their Done-when clauses, clean main checkout, exact guard, question and self-review
-attribution, lane text re-read after all three restarts, two restarts reported against three, shell read-class calls not disclosed, last head unreviewed with changed logic), LB-90 B (2 sessions, 17 h 32 min, `deepseek-v4.1-flash/high`; all three deliverables test-first, exact question, sub-agent and guard counts, clean main checkout, 37 executor calls under a spoofed harness identity beyond the operator's answer, last head unreviewed), LB-94 B (4 sessions, 8 h 02 min, `deepseek-v4.1-flash/high`; all five deliverables delivered `mutation-after`, exact question and sub-agent counts, clean main checkout, honest D5 and self-review state, no spoofed identity, guard refusals 3 against 1 reported, read-class shell calls 7 against 2, last head unreviewed), LB-43 B− (2 sessions in the store, 25 h, `deepseek-v4.1-flash/high`; lane text re-read after
+attribution, lane text re-read after all three restarts, two restarts reported against three, shell read-class calls not disclosed, last head unreviewed with changed logic), LB-90 B (2 sessions, 17 h 32 min, `deepseek-v4.1-flash/high`; all three deliverables test-first, exact question, sub-agent and guard counts, clean main checkout, 37 executor calls under a spoofed harness identity beyond the operator's answer, last head unreviewed), LB-95 B+ (5 sessions, 11 h 14 min, `deepseek-v4.1-flash/high`; all four deliverables delivered, all six tests then present failing at the base and the seventh mutation-checked, exact question (3), sub-agent (4) and guard (1) counts, clean main checkout, no spoofed identity, required reviewer reviewed the merged head, read-class shell calls 32 against about two dozen, one label contradicting its own failing log), LB-82 B (6 sessions, 14 h 39 min, `deepseek-v4.1-flash/high`; all four deliverables delivered, `mutation-after` for D1 to D3 and test-first for D4 with the four failing logs matching the PR body, exact question (4), sub-agent (5), read-class shell (4) and guard (0) counts, clean main checkout, no spoofed identity, honest self-report of its shell deviations, reviewer state at the final head misreported and one Minor thread merged open), LB-94 B (4 sessions, 8 h 02 min, `deepseek-v4.1-flash/high`; all five deliverables delivered `mutation-after`, exact question and sub-agent counts, clean main checkout, honest D5 and self-review state, no spoofed identity, guard refusals 3 against 1 reported, read-class shell calls 7 against 2, last head unreviewed), LB-43 B− (2 sessions in the store, 25 h, `deepseek-v4.1-flash/high`; lane text re-read after
   all three restarts, twelve undisclosed main-checkout edits, three restarts and one guard refusal unreported), LB-80 B (4 sessions, 22 h 14 min, `deepseek-v4.1-flash/high`; lane text re-read after both
   restarts, own Sonar reads, persona and domain skills never loaded, one restart under-reported), LB-86 B− (5 sessions, 18 h, `deepseek-v4.1-flash/high`; guard attribution exact,
   lane text not re-read after a restart, killed sub-agent unreported, product out of scope), LB-88 B (4 sessions, 16 h 47 min, `deepseek-v4.1-flash/high`
@@ -2008,6 +2077,9 @@ attribution, lane text re-read after all three restarts, two restarts reported a
   validator still matches id-bearing rows by text where the gate does not; `atomic_write_bytes` has no
   fsync and replaces the file mode; `manage-config/scripts/_cmd_finalize_steps.py:301` still writes the
   whole status document unguarded; and four of the new tests cannot fail for the reason they name.
+  **All fixed in source by PLAN-LB-82 (#1864, 2026-10-26, B).** Residue it left: a late success after a successor
+  replaced the token inside the stale-guard window still reports `success` (Minor, fail-closed, open CodeRabbit thread);
+  `create --force` leaves a pre-existing `work/criteria-snapshot.json` in place.
   **PLAN-LB-76's own residue,
   owned by PLAN-LB-80:** the repository skill veto fails open on every unreadable-configuration path
   (`extension_base.py:783-798`, `_cmd_enrich.py:410-422`); a bundle-qualified exclusion removes another

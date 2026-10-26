@@ -14,11 +14,13 @@ from argparse import Namespace
 from pathlib import Path
 from typing import Any
 
+import _cmd_loop_back as _loop_back
 import _criteria_snapshot as _snap
 
 from conftest import load_script_module
 
 PLAN_ID = 'lb77-protected-keys-d3'
+HEAD = 'a' * 40
 
 _query = load_script_module('plan-marshall', 'manage-status', '_status_query.py', '_lb77_d3_query')
 
@@ -39,9 +41,28 @@ def _metadata(plan_dir: Path) -> dict:
     return json.loads((plan_dir / 'status.json').read_text(encoding='utf-8')).get('metadata') or {}
 
 
-def test_the_protected_set_is_exactly_the_keys_a_verb_writes() -> None:
-    assert _query.PROTECTED_METADATA_FIELDS == frozenset({_snap.INTEGRITY_KEY, _snap.OVERRIDE_HEADS_KEY})
-    assert _snap.SNAPSHOT_FROZEN_KEY not in _query.PROTECTED_METADATA_FIELDS
+def test_the_protected_set_is_exactly_the_keys_a_verb_writes_at_top_level(plan_context) -> None:
+    """Derived from the metadata delta produced by the owning verbs.
+
+    Each protected key has an owner that writes it at the TOP level of
+    ``status.metadata``; ``snapshot_frozen`` is an inner key of the
+    ``criteria_integrity`` block, so no verb writes it there. The test runs the two
+    owners and compares the guard's set with the top-level keys whose value is NEW
+    or CHANGED — not with a hard-coded candidate list, so an owner that writes a new
+    key with no guard entry fails it too. The unchanged ``use_worktree`` seed key is
+    excluded by construction. Only the owners invoked here are covered.
+    """
+    plan_dir = _plan(plan_context)
+    before = _metadata(plan_dir)
+    assert _snap.write_snapshot(PLAN_ID)['status'] == 'success'
+    changed, error = _loop_back._record_override_head(PLAN_ID, _loop_back.FUNCTIONAL_REVIEW_STEP, HEAD)
+    assert (changed, error) == (True, None)
+
+    after = _metadata(plan_dir)
+    written_at_top_level = {key for key, value in after.items() if key not in before or before[key] != value}
+
+    assert written_at_top_level == {_snap.INTEGRITY_KEY, _snap.OVERRIDE_HEADS_KEY}
+    assert _query.PROTECTED_METADATA_FIELDS == written_at_top_level
 
 
 def test_a_top_level_snapshot_frozen_write_cannot_forge_the_integrity_block(plan_context) -> None:

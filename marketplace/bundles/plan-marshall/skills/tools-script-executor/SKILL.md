@@ -49,6 +49,19 @@ Script execution notation: `{bundle}:{skill}:{script}`
 | `plan-marshall:build-maven:maven` |
 | `plan-marshall:tools-integration-ci:ci` |
 
+## Deployed (flat) installs
+
+A flat deployment puts one dash-joined directory per skill under the target's
+skill root; the deployed layout itself is stated once per target — see
+`plan-marshall-opencode:target-rules` § "Deployed Flat Layout" (and the
+Antigravity equivalent). What matters when a script cannot find its root: a
+plan-marshall script lives at `{root}/skills/plan-marshall-{skill}/scripts/`,
+**never** at `skills/{skill}`. An un-prefixed directory name is not this layout,
+and probing one reports a missing install that is not missing. A source checkout
+and the Claude Code plugin cache are unchanged: both keep
+`{bundle}/skills/{skill}/`, and the flat tree is the only shape with no `{bundle}/`
+directory at all.
+
 ## Examples
 
 ```bash
@@ -436,7 +449,7 @@ The executor exports environment variables to child scripts:
 |----------|---------|---------|
 | `PLAN_DIR_NAME` | Directory name for plan storage (e.g., `.plan`) | `.plan` |
 | `PM_MARKETPLACE_ROOT` | Optional explicit marketplace anchor directory (must contain `marketplace/bundles`). NOT required for stale/relocated embedded paths — the executor self-heals those (see [Self-healing path resolution](#self-healing-path-resolution)). Honored by `generate_executor.py` and `script_shared.marketplace_paths.find_marketplace_path()` when resolving the marketplace tree. Overrides the cwd-based fallback. The CLI flag `--marketplace-root` takes precedence when both are set (see each subcommand's `--help` for which verbs accept it, rather than reading a verb list from here). | _(unset)_ |
-| `PYTHONPATH` | Cross-skill import paths | Auto-built from all script directories |
+| `PYTHONPATH` | Cross-skill import paths | Auto-built from the resolved script's own install root and, in a versioned plugin cache, its own version |
 
 ### PLAN_DIR_NAME Usage
 

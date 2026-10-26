@@ -13,6 +13,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
+import deployed_layout
+
 # Direct import - executor sets up PYTHONPATH for cross-skill imports
 import resolve_project_dir as _routing
 from marketplace_bundles import resolve_bundle_path, resolve_bundles_root, resolve_skills_root
@@ -245,6 +247,11 @@ def read_implements_field(skill_md_path: Path) -> list[str]:
     stripped so a quoted declaration resolves to the same value as an unquoted
     one.
 
+    The inline form is SPLIT on commas. A flat emitter may only write a string
+    under ``metadata`` (the Agent Skills map is string-to-string), so it folds a
+    multi-value declaration into one comma-joined scalar; splitting here is what
+    keeps a deployed manifest's declaration list identical to the source's.
+
     Args:
         skill_md_path: Path to a candidate doc with ``---``-fenced frontmatter.
 
@@ -277,8 +284,10 @@ def read_implements_field(skill_md_path: Path) -> list[str]:
 
         inline = _strip_scalar_quotes(value)
         if inline:
-            # Inline-scalar form: implements: <value>
-            return [inline]
+            # Inline-scalar form: implements: <value>[, <value>…]. The comma split
+            # restores a multi-value declaration a flat emitter folded into one
+            # string (metadata values must be strings).
+            return [declared.strip() for declared in inline.split(',') if declared.strip()]
 
         # Block-sequence form: collect the following ``- value`` item lines.
         values: list[str] = []
@@ -371,6 +380,58 @@ def find_extension_path(bundle_dir: Path) -> Path | None:
     return None
 
 
+def _flat_skill_extension_path(skill_dir: Path) -> Path | None:
+    """Return a flat skill's sibling ``extension.py`` when it declares the archetype.
+
+    The flat twin of :func:`_scan_skills_root_for_manifest`: it reads the
+    ``implements:`` declaration from the deployed ``SKILL.md`` and derives nothing
+    from a path heuristic — a flat skill that does not declare the archetype is
+    not an implementor, however it is named.
+    """
+    skill_md = skill_dir / 'SKILL.md'
+    if not skill_md.is_file():
+        return None
+    if _DOMAIN_BUNDLE_ARCHETYPE not in read_implements_field(skill_md):
+        return None
+    extension_path = skill_dir / 'extension.py'
+    return extension_path if extension_path.is_file() else None
+
+
+def discover_flat_extensions(root: Path) -> list[dict[str, Any]]:
+    """Discover the domain-bundle implementors a FLAT deployed root carries.
+
+    Enumerated through ``deployed_layout`` (``flat_skill_dirs`` /
+    ``read_flat_skill_identity``), never by splitting a directory name: the flat
+    name ``{bundle}-{skill}`` is ambiguous (both components are kebab-case), so
+    the bundle is whatever the emitted ``SKILL.md`` records as its identity.
+
+    A root that deploys the nested shapes yields an empty list — ``skill_roots``
+    reports no skill root for a ``{bundle}/skills`` tree or a versioned cache — so
+    this leg adds nothing there and the nested/versioned legs keep their order and
+    their results.
+
+    Args:
+        root: A bundles root or a flat deploy root.
+
+    Returns:
+        One record per attributable flat skill carrying the archetype declaration
+        and an ``extension.py`` beside its ``SKILL.md``.
+    """
+    records: list[dict[str, Any]] = []
+    for skill_dir in deployed_layout.flat_skill_dirs(root):
+        identity = deployed_layout.read_flat_skill_identity(skill_dir)
+        if identity is None:
+            continue
+        bundle, _skill = identity
+        extension_path = _flat_skill_extension_path(skill_dir)
+        if extension_path is None:
+            continue
+        module = load_extension_module(extension_path, bundle)
+        if module:
+            records.append({'bundle': bundle, 'path': str(extension_path), 'module': module})
+    return records
+
+
 def discover_all_extensions() -> list[dict[str, Any]]:
     """Discover all extension.py files in bundles — returns every extension regardless
     of whether it applies to the current project.
@@ -378,6 +439,14 @@ def discover_all_extensions() -> list[dict[str, Any]]:
     Use this for configuration operations (skill domains, workflow extensions)
     where all extensions need to be queried. For project-specific discovery
     that filters by applicability, use discover_applicable_extensions() instead.
+
+    Both deployed shapes are read. The NESTED legs (``{bundle}/skills`` and the
+    versioned cache) run first and are unchanged; a root that deploys the FLAT
+    shape — ``{root}/skills/{bundle}-{skill}/``, which is what OpenCode and
+    Antigravity install — is then enumerated through
+    :func:`discover_flat_extensions`. Without that leg an installed tree yielded
+    no extension at all, so module discovery was empty and no build command
+    resolved.
 
     Returns:
         List of dicts with extension info: {bundle, path, module}
@@ -399,6 +468,8 @@ def discover_all_extensions() -> list[dict[str, Any]]:
         module = load_extension_module(extension_path, bundle_dir.name)
         if module:
             extensions.append({'bundle': bundle_dir.name, 'path': str(extension_path), 'module': module})
+
+    extensions.extend(discover_flat_extensions(bundles_path))
 
     return extensions
 
@@ -901,6 +972,12 @@ _IMPLEMENTOR_FRONTMATTER_KEYS: tuple[str, ...] = (
     'verification_profile',
 )
 
+#: The implementor fields whose value is a LIST. A flat emitter folds such a field
+#: into one comma-joined string (an Agent Skills ``metadata`` value must be a
+#: string), so a scalar value for these keys is split back into its items here —
+#: the one place a list-shaped field is read, on either layout.
+_LIST_FRONTMATTER_KEYS: frozenset[str] = frozenset({'presets', 'canonicals'})
+
 
 def _read_frontmatter_fields(doc_path: Path, keys: tuple[str, ...]) -> dict[str, Any]:
     """Read the named top-level frontmatter scalars/lists from ``doc_path``.
@@ -1027,6 +1104,15 @@ def _read_frontmatter_fields(doc_path: Path, keys: tuple[str, ...]) -> dict[str,
     for meta_key, meta_val in metadata_fields.items():
         fields.setdefault(meta_key, meta_val)
 
+    # A flat emitter folds a list-valued field into ONE comma-joined string (an
+    # Agent Skills ``metadata`` value must be a string), so a scalar value for a
+    # list-shaped key is split back into its items. Without this a deployed
+    # ``presets: full, standard`` would read as a single-element list.
+    for list_key in _LIST_FRONTMATTER_KEYS:
+        list_value = fields.get(list_key)
+        if isinstance(list_value, str):
+            fields[list_key] = [item.strip() for item in list_value.split(',') if item.strip()]
+
     return fields
 
 
@@ -1121,19 +1207,56 @@ def _resolve_bundle_skills_root(bundle_dir: Path) -> Path | None:
     return candidate if candidate.is_dir() else None
 
 
+def _flat_bundle_optional_records(root: Path, ext_point: str, seen_step_ids: set[str]) -> list[dict[str, Any]]:
+    """Collect bundle-optional implementors a FLAT deployed root carries.
+
+    The flat twin of the per-bundle ``skills/*/SKILL.md`` scan below, sharing its
+    ``seen_step_ids`` set so a step that both roots surface is still emitted once.
+    The ``{bundle}:{skill}`` step id is built from the identity the emitted
+    ``SKILL.md`` records, never from the dash-joined directory name.
+    """
+    records: list[dict[str, Any]] = []
+    for skill_dir in deployed_layout.flat_skill_dirs(root):
+        identity = deployed_layout.read_flat_skill_identity(skill_dir)
+        if identity is None:
+            continue
+        bundle, skill = identity
+        if skill == 'phase-6-finalize':
+            continue
+        step_id = f'{bundle}:{skill}'
+        if step_id in seen_step_ids:
+            continue
+        skill_md = skill_dir / 'SKILL.md'
+        if not skill_md.is_file() or ext_point not in read_implements_field(skill_md):
+            continue
+        seen_step_ids.add(step_id)
+        record = _build_implementor_record(skill_md, 'bundle-optional', name_override=step_id)
+        # Same promotion rule as the nested scan: a promoted built-in-equivalent
+        # (``default_on: true``) classifies as built-in, keeping its step id.
+        if record.get('default_on'):
+            record['source'] = 'built-in'
+        records.append(record)
+    return records
+
+
 def _scan_skills_roots_for_implementors(ext_point: str) -> list[dict[str, Any]]:
     """Scan every bundle's ``skills/*/SKILL.md`` for ``ext_point`` implementors.
 
     Resolves the marketplace bundles root and the plugin cache roots so the scan
     works both in the source checkout and in a consumer project that has only the
-    installed plugin cache. A SKILL.md that lives under the ``plan-marshall``
-    bundle's ``phase-6-finalize`` skill is NOT scanned here — phase-6 built-in
-    steps are body docs under ``workflow/`` / ``standards/``, surfaced by
-    :func:`_scan_phase6_for_implementors`. Bundle SKILL.md implementors are the
-    opt-in ``{bundle}:{skill}`` steps (e.g. ``plan-marshall:plan-retrospective``).
+    installed plugin cache, then adds the FLAT deployment leg — a root carrying
+    ``{root}/skills/{bundle}-{skill}/`` (OpenCode, Antigravity), enumerated through
+    ``deployed_layout`` and attributed to a bundle by the identity the emitted
+    manifest records (:func:`_flat_bundle_optional_records`). A SKILL.md that
+    lives under the ``plan-marshall`` bundle's ``phase-6-finalize`` skill is NOT
+    scanned here — phase-6 built-in steps are body docs under ``workflow/`` /
+    ``standards/``, surfaced by :func:`_scan_phase6_for_implementors`. Bundle
+    SKILL.md implementors are the opt-in ``{bundle}:{skill}`` steps (e.g.
+    ``plan-marshall:plan-retrospective``).
 
     Returns:
-        One ``bundle-optional`` record per matching ``skills/*/SKILL.md``.
+        One ``bundle-optional`` record per matching ``skills/*/SKILL.md``, from
+        either the nested/versioned legs or the flat leg.
     """
     records: list[dict[str, Any]] = []
     seen_step_ids: set[str] = set()
@@ -1200,6 +1323,10 @@ def _scan_skills_roots_for_implementors(ext_point: str) -> list[dict[str, Any]]:
                 if record.get('default_on'):
                     record['source'] = 'built-in'
                 records.append(record)
+
+        # Flat leg, after the nested/versioned legs for this root and adding
+        # nothing when the root does not deploy the flat shape.
+        records.extend(_flat_bundle_optional_records(root, ext_point, seen_step_ids))
 
     return records
 
@@ -1384,11 +1511,14 @@ def find_implementors(ext_point: str) -> list[dict[str, Any]]:
     marketplace/bundles/plan-marshall/skills/extension-api/standards/
     ext-point-finalize-step.md and ext-point-build-verify-step.md.
 
-    Scans four surfaces:
+    Scans five surfaces:
 
     - every bundle's ``skills/*/SKILL.md`` (opt-in ``bundle-optional`` steps),
       across both the source bundles root and the plugin cache roots, so a
       consumer project with no ``marketplace/`` tree resolves through the cache;
+    - every FLAT deployment's ``{root}/skills/{bundle}-{skill}/SKILL.md`` (the
+      OpenCode/Antigravity shape), attributed to its bundle from the identity the
+      emitted manifest records;
     - ``phase-6-finalize/workflow/*.md`` + ``standards/*.md`` (finalize ``built-in``
       steps, ``workflow/`` winning on a bare-name collision);
     - ``phase-5-execute/standards/*.md`` (verify ``built-in`` steps);

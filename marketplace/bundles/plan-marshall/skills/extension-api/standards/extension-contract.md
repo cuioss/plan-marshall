@@ -52,10 +52,12 @@ The directory name `plan-marshall-plugin` is a **convention that reads "this bun
 
 ### Discovery Mechanism
 
-The `find_extension_path()` function in `extension_discovery.py` discovers the manifest by scanning each bundle's candidate `skills/*/SKILL.md` files for the `implements:` frontmatter declaration and deriving the sibling `extension.py` from the matched manifest's directory. It resolves across two structures:
+The `find_extension_path()` function in `extension_discovery.py` discovers the manifest by scanning each bundle's candidate `skills/*/SKILL.md` files for the `implements:` frontmatter declaration and deriving the sibling `extension.py` from the matched manifest's directory. It resolves across two nested structures:
 
 1. **Source structure**: `marketplace/bundles/{bundle}/skills/*/SKILL.md`
 2. **Cache structure** (versioned): `~/.claude/plugins/cache/plan-marshall/{bundle}/{version}/skills/*/SKILL.md`
+
+A FLAT deployment (OpenCode, Antigravity: `{root}/skills/{bundle}-{skill}/SKILL.md`) is enumerated separately by `discover_flat_extensions()`, which reads the same `implements:` declaration from the deployed manifest and attributes the implementor to its bundle from the identity that manifest records — never by splitting the dash-joined directory name. The flat emitters therefore write the declaration into the deployed `SKILL.md`; without it no installed tree yields an extension.
 
 Discovery is keyed on the `implements: plan-marshall:extension-api/standards/ext-point-domain-bundle` declaration, not on a directory-name path literal. A bundle whose manifest `SKILL.md` omits the declaration is not discovered, regardless of its directory name. See [ext-point-domain-bundle.md](ext-point-domain-bundle.md) for the archetype-identification contract.
 

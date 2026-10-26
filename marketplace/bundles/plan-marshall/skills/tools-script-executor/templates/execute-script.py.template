@@ -579,35 +579,164 @@ def _install_root_of(_path: str) -> tuple[str | None, str | None]:
     return None, None
 
 
-#: Per-process cache of an install root's script dirs, keyed by root. The
-#: directory listing is a property of the install, and one process dispatches
-#: many times; re-walking it per call would cost more than the guard it feeds.
+#: Per-process cache of an install root's script dirs, keyed by the root, the
+#: version and the bundle the resolved script belongs to. The listing is a
+#: property of the install and of that version, and one process dispatches many
+#: times; re-walking it per call would cost more than the guard it feeds. The
+#: key carries all three because the answer depends on all three — a dispatch
+#: from another cached version must never be served the first one's answer.
 _SAME_ROOT_DIRS_CACHE: dict[str, tuple[str, ...]] = {}
 
 
-def _same_root_script_dirs(_path: str) -> list[str]:
-    """Return the script dirs of the install root that carries ``path``.
-
-    The baked ``_SCRIPT_DIRS`` are the GENERATING machine's dirs; a consumer
-    project (or a fixture) resolves a script from an install whose helpers were
-    never baked in. Reading them off the resolved script's own root is what makes
-    the PYTHONPATH follow the script instead of the generation-time layout. Both
-    deployed shapes are enumerated, bounded by explicit glob depth:
-
-    - nested: ``{root}/{bundle}/{version}/skills/{skill}/scripts`` and
-      ``{root}/{version}/skills/{skill}/scripts``;
-    - flat: ``{root}/{bundle}-{skill}/scripts``.
-    """
-    _harness, _root = _install_root_of(_path)
-    if not _root:
+def _visible_subdirs(_parent: Path) -> list[Path]:
+    """Return ``_parent``'s non-hidden subdirectories, ordered by name."""
+    try:
+        return sorted(
+            (_p for _p in _parent.iterdir() if not _p.name.startswith('.') and _p.is_dir()),
+            key=lambda _p: _p.name,
+        )
+    except (OSError, ValueError, RuntimeError):
         return []
-    cached = _SAME_ROOT_DIRS_CACHE.get(_root)
-    if cached is not None:
-        return list(cached)
+
+
+def _is_version_segment(_name: str) -> bool:
+    """Return whether a path segment names a version directory.
+
+    A version carries a number (``0.1.2010``), which ``_version_key`` reads. A
+    dot-prefixed segment counts too — it is version-shaped by convention, and a
+    bundle directory is never dot-prefixed.
+    """
+    return bool(_version_key(_name)) or _name.startswith('.')
+
+
+def _version_dir_of(_path: str, _root: str) -> tuple[str | None, str | None]:
+    """Return ``(version, bundle)`` of the version directory ``_path`` sits in.
+
+    The segment BEFORE ``skills/`` is what tells the two versioned deploy shapes
+    apart:
+
+    - ``{root}/{bundle}/{version}/skills/{skill}/scripts/...`` -> ``(version, bundle)``
+    - ``{root}/{version}/skills/{skill}/scripts/...`` -> ``(version, None)``
+
+    Every bundle name in this marketplace is digit-free and undotted, so the
+    single-segment form's bundle position is not read as a version and an
+    unversioned ``{root}/{bundle}/skills/...`` path answers ``(None, None)``. A
+    flat ``{root}/{bundle}-{skill}/scripts/...`` path has no ``skills`` segment at
+    all. Both answer ``(None, None)``, as does a path outside ``_root``; those
+    keep the root-wide walk.
+
+    A HIDDEN segment still answers its version, so the walk for such a path stays
+    scoped to that version instead of reopening the root-wide walk that would
+    hand the script every cached copy. Within that walk a hidden BUNDLE directory
+    is skipped (:func:`_visible_subdirs`), while a hidden VERSION is used — it is
+    the version the script itself lives in. The script's own directory leads
+    either way (:func:`pythonpath_for`).
+    """
+    try:
+        _segments = Path(_path).resolve().relative_to(Path(_root).expanduser().resolve()).parts
+    except (OSError, ValueError, RuntimeError):
+        return None, None
+    if 'skills' not in _segments:
+        return None, None
+    _prefix = _segments[: _segments.index('skills')]
+    if len(_prefix) == 2 and _is_version_segment(_prefix[1]):
+        return _prefix[1], _prefix[0]
+    if len(_prefix) == 1 and _is_version_segment(_prefix[0]):
+        return _prefix[0], None
+    return None, None
+
+
+def _newest_version_dir(_bundle_dir: Path) -> Path | None:
+    """Return the NEWEST version directory under ``_bundle_dir``, or ``None``.
+
+    Ordered by :func:`_version_key` — the numeric-tuple reader inlined from the
+    target-aware resolver, which this body runs after — so ``0.1.1000`` outranks
+    ``0.1.999`` and a string sort can never decide it. A directory with no
+    ``skills`` child is not a version of this bundle and is skipped.
+    """
+    _versioned = [
+        (_version_key(_candidate.name), _candidate.name, _candidate)
+        for _candidate in _visible_subdirs(_bundle_dir)
+        if (_candidate / 'skills').is_dir()
+    ]
+    if not _versioned:
+        return None
+    return max(_versioned)[2]
+
+
+def _skills_script_dirs(_version_dir: Path) -> list[str]:
+    """Return the resolved ``{version_dir}/skills/*/scripts`` directories."""
+    _dirs: list[str] = []
+    for _skill_dir in _visible_subdirs(_version_dir / 'skills'):
+        _scripts = _skill_dir / 'scripts'
+        try:
+            if _scripts.is_dir():
+                _dirs.append(str(_scripts.resolve()))
+        except (OSError, ValueError, RuntimeError):
+            continue
+    return _dirs
+
+
+def _version_script_dirs(_root: str, _version: str, _bundle: str | None) -> list[str]:
+    """Return the script dirs of ONE version under ``_root``.
+
+    Every sibling bundle of ``_version`` is enumerated, so a helper module comes
+    from the version the SCRIPT belongs to and an older cached copy of the same
+    bundle can never shadow it. A bundle that carries no directory at
+    ``_version`` is not installed at it, so it contributes its NEWEST version
+    instead — or nothing at all, when it carries no version directory either.
+    The choice is made by :func:`_version_key`, never by a string sort.
+
+    Newest, not "newest at or below ``_version``": there is no copy of that
+    bundle at the script's own version to prefer, so the choice is between the
+    bundle's newest copy and contributing nothing at all. Contributing nothing
+    strips that bundle's helpers from every consumer project whose bundles are not
+    all installed at one version, which is the common case; the newest copy is
+    the one the project runs day to day. The mirror risk this accepts — an old
+    pinned script reaching a newer helper — is the price of that, and it is the
+    same direction the resolver itself takes when it walks a bundle's versions.
+
+    The ``{root}/{version}/skills/...`` shape names the version in the root's own
+    first segment, so it has no sibling bundles to fall back FOR: it contributes
+    that one version's skills.
+    """
+    _dirs: list[str] = []
+    try:
+        _base = Path(_root).expanduser()
+        if _bundle is None:
+            _dirs.extend(_skills_script_dirs(_base / _version))
+        else:
+            for _bundle_dir in _visible_subdirs(_base):
+                _at_version = _bundle_dir / _version
+                _selected = _newest_version_dir(_bundle_dir)
+                if (_at_version / 'skills').is_dir():
+                    _selected = _at_version
+                if _selected is not None:
+                    _dirs.extend(_skills_script_dirs(_selected))
+    except (OSError, ValueError, RuntimeError):
+        pass
+    return _dirs
+
+
+def _unversioned_script_dirs(_root: str) -> list[str]:
+    """Return every script dir under ``_root``, for a path with no version.
+
+    The flat deploy shape (``{root}/{bundle}-{skill}/scripts``) has no version
+    segment, so there is nothing to bound the walk to: it keeps the handling it
+    had before a version could be read off the path. Any other path the version
+    reader could not place takes the same route, so an unrecognised root loses no
+    directory it used to serve.
+    """
     found: list[str] = []
     try:
         base = Path(_root).expanduser()
-        for pattern in ('*/*/skills/*/scripts', '*/skills/*/scripts', '*/scripts', 'skills/*/scripts', 'skill/*/scripts'):
+        for pattern in (
+            '*/*/skills/*/scripts',
+            '*/skills/*/scripts',
+            '*/scripts',
+            'skills/*/scripts',
+            'skill/*/scripts',
+        ):
             for candidate in base.glob(pattern):
                 try:
                     if candidate.is_dir():
@@ -615,9 +744,31 @@ def _same_root_script_dirs(_path: str) -> list[str]:
                 except (OSError, ValueError):
                     continue
     except (OSError, ValueError, RuntimeError):
-        found = []
+        return []
+    return found
+
+
+def _same_root_script_dirs(_path: str) -> list[str]:
+    """Return the script dirs of the resolved script's OWN version.
+
+    The baked ``_SCRIPT_DIRS`` are the GENERATING machine's dirs; a consumer
+    project (or a fixture) resolves a script from an install whose helpers were
+    never baked in. Reading them off the resolved script's own root is what makes
+    the PYTHONPATH follow the script instead of the generation-time layout, and
+    reading them off the script's own VERSION is what keeps a helper from being
+    imported out of an older cached copy of the same bundle.
+    """
+    _harness, _root = _install_root_of(_path)
+    if not _root:
+        return []
+    _version, _bundle = _version_dir_of(_path, _root)
+    _cache_key = '\0'.join((_root, _version or '', _bundle or ''))
+    cached = _SAME_ROOT_DIRS_CACHE.get(_cache_key)
+    if cached is not None:
+        return list(cached)
+    found = _version_script_dirs(_root, _version, _bundle) if _version else _unversioned_script_dirs(_root)
     ordered = tuple(sorted(set(found)))
-    _SAME_ROOT_DIRS_CACHE[_root] = ordered
+    _SAME_ROOT_DIRS_CACHE[_cache_key] = ordered
     return list(ordered)
 
 
