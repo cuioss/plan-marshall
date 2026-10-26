@@ -1222,14 +1222,19 @@ def _scan_skills_roots_for_implementors(ext_point: str) -> list[dict[str, Any]]:
 
     Resolves the marketplace bundles root and the plugin cache roots so the scan
     works both in the source checkout and in a consumer project that has only the
-    installed plugin cache. A SKILL.md that lives under the ``plan-marshall``
-    bundle's ``phase-6-finalize`` skill is NOT scanned here — phase-6 built-in
-    steps are body docs under ``workflow/`` / ``standards/``, surfaced by
-    :func:`_scan_phase6_for_implementors`. Bundle SKILL.md implementors are the
-    opt-in ``{bundle}:{skill}`` steps (e.g. ``plan-marshall:plan-retrospective``).
+    installed plugin cache, then adds the FLAT deployment leg — a root carrying
+    ``{root}/skills/{bundle}-{skill}/`` (OpenCode, Antigravity), enumerated through
+    ``deployed_layout`` and attributed to a bundle by the identity the emitted
+    manifest records (:func:`_flat_bundle_optional_records`). A SKILL.md that
+    lives under the ``plan-marshall`` bundle's ``phase-6-finalize`` skill is NOT
+    scanned here — phase-6 built-in steps are body docs under ``workflow/`` /
+    ``standards/``, surfaced by :func:`_scan_phase6_for_implementors`. Bundle
+    SKILL.md implementors are the opt-in ``{bundle}:{skill}`` steps (e.g.
+    ``plan-marshall:plan-retrospective``).
 
     Returns:
-        One ``bundle-optional`` record per matching ``skills/*/SKILL.md``.
+        One ``bundle-optional`` record per matching ``skills/*/SKILL.md``, from
+        either the nested/versioned legs or the flat leg.
     """
     records: list[dict[str, Any]] = []
     seen_step_ids: set[str] = set()
@@ -1484,11 +1489,14 @@ def find_implementors(ext_point: str) -> list[dict[str, Any]]:
     marketplace/bundles/plan-marshall/skills/extension-api/standards/
     ext-point-finalize-step.md and ext-point-build-verify-step.md.
 
-    Scans four surfaces:
+    Scans five surfaces:
 
     - every bundle's ``skills/*/SKILL.md`` (opt-in ``bundle-optional`` steps),
       across both the source bundles root and the plugin cache roots, so a
       consumer project with no ``marketplace/`` tree resolves through the cache;
+    - every FLAT deployment's ``{root}/skills/{bundle}-{skill}/SKILL.md`` (the
+      OpenCode/Antigravity shape), attributed to its bundle from the identity the
+      emitted manifest records;
     - ``phase-6-finalize/workflow/*.md`` + ``standards/*.md`` (finalize ``built-in``
       steps, ``workflow/`` winning on a bare-name collision);
     - ``phase-5-execute/standards/*.md`` (verify ``built-in`` steps);
