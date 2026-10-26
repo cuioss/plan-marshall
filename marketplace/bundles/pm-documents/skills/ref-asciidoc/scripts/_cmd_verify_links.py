@@ -192,7 +192,10 @@ def cmd_verify_links(args) -> dict:
             return {
                 'status': 'error',
                 'error': 'no_files',
-                'message': f"No AsciiDoc files found in {target_path}: '{path.suffix or path.name}' is not an AsciiDoc file",
+                'message': (
+                    f"No AsciiDoc files found in {target_path}: '{path.suffix or path.name}' is not an "
+                    'AsciiDoc file (only .adoc files are checked)'
+                ),
             }
         files = [str(path)]
     elif recursive:

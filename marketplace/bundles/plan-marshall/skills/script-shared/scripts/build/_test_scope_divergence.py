@@ -565,9 +565,10 @@ def resolve_test_scope(
         exclusions = [f'every module outside {recommended_target}']
         # The root-level guards exist in a test-root-shaped project; naming them
         # as excluded is what keeps a scoped green run from reading as coverage
-        # of a change whose guards never ran.
+        # of a change whose guards never ran. "where the project has them" keeps
+        # the statement true for a project that carries none.
         if any(path.split('/')[0] in _TEST_ROOTS or path.startswith('marketplace/bundles/') for path in footprint):
-            exclusions.append('root-level test guards under each test root')
+            exclusions.append('root-level test guards under each test root (where the project has them)')
         excluded_population = tuple(exclusions)
 
     narrow_units, narrow_units_unresolved = _resolve_narrow_units(

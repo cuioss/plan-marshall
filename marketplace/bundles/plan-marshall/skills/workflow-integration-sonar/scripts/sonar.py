@@ -44,9 +44,9 @@ older head reads exactly like a clean analysis of this one: a stale analysis
 processing-at-timeout or an auth/REST failure reports
 ``new_code_issue_count: null`` with ``count_status: undecidable`` and a
 ``count_status_reason`` — NEVER a false ``0``. A fetch with NO ``--pr`` is
-outside the revision comparison (the provider reports no analysed revision for
-a branch read), so it is confirmed on the CE state alone and leaves both
-revisions blank. Every fetch also writes one attestation row to
+outside the revision comparison (the branch-analysis endpoint describes a
+branch's history, not the head being counted), so it is confirmed on the CE
+state alone and leaves both revisions blank. Every fetch also writes one attestation row to
 ``artifacts/findings/sonar-scan-summary.jsonl`` (written even at count==0 and on
 undecidable, carrying ``analysis_revision`` beside ``scanned_sha``) so an absent
 file can never be confused with "not checked."
@@ -381,10 +381,13 @@ def _read_analysis_revision(project: str, pr: str | None) -> dict[str, Any]:
 
     ``/api/project_pull_requests/list`` describes the pull request's analysis: the
     entry for the pull request carries the analysed commit (``commit.sha``) and the
-    source branch. That is the only surface the provider offers for "which revision
-    was this PR analysis made of" — ``/api/project_analyses/search`` describes a
-    BRANCH's activity tab (the default branch, never the branch being counted), so
-    it is deliberately not consulted here.
+    source branch. That is the surface this verb uses, confirmed against
+    SonarCloud (``project=cuioss_plan-marshall``): every entry carries ``key``,
+    ``branch`` and ``commit.sha``. ``/api/project_analyses/search`` is NOT used: it
+    reports a branch's activity history — by default the default branch, and its
+    ``pullRequest`` parameter is not honoured (a live check returns the same
+    default-branch analysis with and without it) — so its ``revision`` describes a
+    different tree than the head being counted.
 
     Returns ``{'revision': str, 'branch': str | None}`` — ``revision`` is ``''``
     when the provider reports none for the analysis (SonarQube Server stores no PR
@@ -425,12 +428,13 @@ def _verify_analysis_revision(project: str, pr: str | None) -> dict[str, Any]:
     * unequal → ``undecidable`` with reason ``stale_analysis`` and both SHAs;
     * no revision reported, or no head resolvable → ``undecidable``.
 
-    A read with NO pull request is out of scope: the provider reports no analysed
-    revision for a branch read, and comparing the default branch's newest analysis
-    with the working tree's HEAD would compare two unrelated trees — a guaranteed
-    mismatch that would report every branch fetch undecidable. Such a read keeps
-    the CE-state contract and leaves both revisions blank, which is the honest
-    record that no revision comparison happened.
+    A read with NO pull request is out of scope: the branch-analysis endpoint
+    describes a branch's history (the default branch by default) rather than the
+    head being counted, so comparing it with the working tree's HEAD would compare
+    two unrelated trees — a guaranteed mismatch that would report every branch
+    fetch undecidable. Such a read keeps the CE-state contract and leaves both
+    revisions blank, which is the honest record that no revision comparison
+    happened.
 
     Both revisions travel beside the verdict either way, so a caller can record
     what was compared even when the comparison could not decide.
@@ -630,8 +634,12 @@ def _undecidable_fetch(plan_id: str, project: str, pr: str | None, verdict: dict
     The single path for every way the count can fail to be confirmed — an
     unsettled Compute Engine, a stale analysis, an unreadable revision — so the
     returned shape and the written row cannot drift apart per reason. The
-    revisions travel beside the verdict; they are blank when the reason is not a
-    revision mismatch.
+    revisions travel beside the verdict: ``analysis_revision`` is populated for
+    every revision reason except a failed read, ``head_revision`` only when one
+    could be resolved, and both are blank for a non-revision reason. "The pull
+    request is absent from the provider's list" and "it carries no commit" share
+    the ``analysis_revision_unavailable`` reason — both fail closed, and neither
+    invents a revision.
     """
     reason = verdict.get('count_status_reason')
     analysis_revision = verdict.get('analysis_revision', '')
@@ -906,8 +914,9 @@ def _undecidable_read(
     zero: an analysis that did not settle, an analysis of another commit, or a
     REST/auth failure, means the issue set was never observed. ``open_issue_count``
     is ``None`` on purpose (never ``0``), so a consumer branching on the count
-    cannot treat an unobserved set as an empty one. The revisions ride beside the
-    reason when the read was decided on them, and are omitted otherwise.
+    cannot treat an unobserved set as an empty one. Both revisions are always
+    present — blank when no comparison happened — so no caller branches on a
+    missing key.
     """
     result: dict[str, Any] = {
         'status': 'success',
@@ -917,12 +926,10 @@ def _undecidable_read(
         'pull_request': pr or 'none',
         'count_status': 'undecidable',
         'open_issue_count': None,
+        'analysis_revision': analysis_revision,
+        'head_revision': head_revision,
         'count_status_reason': reason,
     }
-    if analysis_revision:
-        result['analysis_revision'] = analysis_revision
-    if head_revision:
-        result['head_revision'] = head_revision
     return result
 
 

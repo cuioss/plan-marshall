@@ -342,10 +342,11 @@ class TestBranchReadOutOfScope:
     """A fetch with no pull request keeps the CE contract, and says so.
 
     The provider reports no analysed revision for a branch read
-    (``/api/project_analyses/search`` describes the DEFAULT branch, never the
-    branch being counted), so comparing it with the working tree's HEAD would
-    compare two unrelated trees and report every branch fetch undecidable. Such a
-    read answers ``confirmed`` on a settled CE and leaves both revisions blank.
+    (``/api/project_analyses/search`` describes a branch's history, and its
+    ``pullRequest`` parameter is not honoured), so comparing it with the working
+    tree's HEAD would compare two unrelated trees and report every branch fetch
+    undecidable. Such a read answers ``confirmed`` on a settled CE and leaves both
+    revisions blank.
     """
 
     def test_a_branch_fetch_consults_no_revision_endpoint(self, monkeypatch, plan_context):
