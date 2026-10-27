@@ -25,26 +25,33 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-# Bootstrap sys.path so sibling skill libraries resolve without the executor.
-# Walk up from this script to the skills/ root, then append each library dir.
-for _ancestor in Path(__file__).resolve().parents:
-    if _ancestor.name == 'skills' and (_ancestor.parent / '.claude-plugin' / 'plugin.json').is_file():
-        for _lib in (
-            'ref-toon-format',
-            'manage-terminal-title',
-            'tools-file-ops',
-            'script-shared',
-        ):
-            _lib_path = str(_ancestor / _lib / 'scripts')
-            if _lib_path not in sys.path:
-                sys.path.append(_lib_path)
-        # script-shared organises its modules into subdirectories; the
-        # build-server wire protocol the ``wait for`` observable is inspected
-        # through lives one level down.
-        _build_lib_path = str(_ancestor / 'script-shared' / 'scripts' / 'build')
-        if _build_lib_path not in sys.path:
-            sys.path.append(_build_lib_path)
-        break
+# --- plan-marshall skill bootstrap: one shared anchor (see script-shared/scripts/skill_bootstrap.py) ---
+# Stdlib only: it runs before any shared module is importable, so it cannot import the resolver.
+# It locates script-shared/scripts in either deployed shape (nested `skills/script-shared`, flat
+# `skills/*-script-shared`) and hands the library list to the shared helper, which owns the flat
+# naming rule. Every carrier holds this block byte-identically — test_skill_bootstrap_guard asserts it.
+_SCRIPTS_DIR = Path(__file__).resolve().parent
+_SKILLS_DIR = _SCRIPTS_DIR.parent.parent
+_SHARED_CANDIDATES = [_SKILLS_DIR / 'script-shared' / 'scripts', *sorted(_SKILLS_DIR.glob('*-script-shared/scripts'))]
+_SHARED_SCRIPTS = next((path for path in _SHARED_CANDIDATES if path.is_dir()), None)
+if _SHARED_SCRIPTS is None:
+    raise SystemExit(
+        'plan-marshall bootstrap: library directory "script-shared" not found beside this script.\n'
+        '  probed (either deployed shape):\n'
+        f'    nested: {_SKILLS_DIR / "script-shared" / "scripts"}\n'
+        f'    flat:   {_SKILLS_DIR}/<bundle>-script-shared/scripts'
+    )
+if str(_SHARED_SCRIPTS) in sys.path:
+    sys.path.remove(str(_SHARED_SCRIPTS))
+sys.path.insert(0, str(_SHARED_SCRIPTS))
+
+from skill_bootstrap import bootstrap_skill_libraries  # noqa: E402
+
+bootstrap_skill_libraries(
+    Path(__file__),
+    ('ref-toon-format', 'manage-terminal-title', 'tools-file-ops', 'script-shared'),
+    extra_subdirs=(('script-shared', 'build'),),
+)
 
 import session_binding  # noqa: E402
 from manage_terminal_title import _compose_body, compose, title_token_state  # noqa: E402,F401
