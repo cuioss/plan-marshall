@@ -66,8 +66,9 @@ before `resolve` (section 0), because a stale executor's own `resolve` cannot pe
 Where the lane text's version comes from, once, per layout: a versioned plugin cache supplies it from
 the newest eligible `{bundle}/{version}/skills/{skill}` directory; a flat install (OpenCode,
 Antigravity) has no version directory, so it supplies the `version` of the install stamp — the
-`dist-manifest.json` the sync writes at the deploy root that contains the skill root; a source
-checkout has neither, so the comparison there stays `could_not_check`. The stamp moves only on a
+`dist-manifest.json` the sync writes at the deploy root that contains the skill root, where the
+target's sync publishes one (without it the comparison stays `could_not_check`); a source checkout
+has neither, so its comparison stays `could_not_check` as well. The stamp moves only on a
 sync, so an edit made to the installed lane text in place is not part of what the comparison sees.
 A `could_not_check` is reported and the operator is asked — never read as "no skew" — and its reason
 names the thing it could not read: the executor, the install stamp it probed, or the version-less

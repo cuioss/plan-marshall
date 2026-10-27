@@ -517,16 +517,16 @@ def _lane_version_probe(skill_dir: Path | None = None) -> _LaneTextVersion:
       resolution follows);
     * a flat install (``{root}/skills/{bundle}-{skill}/``) carries no version
       directory, so it supplies the ``version`` of the sync's install stamp at
-      the deploy root that contains its skill root;
+      the deploy root that contains its skill root, where the target's sync
+      publishes one;
     * a source checkout carries neither, so its comparison stays UNMAKEABLE.
 
     The legs run in that order, and a leg that finds nothing leaves the probe to
     the next one. A flat install whose stamp is absent, unreadable or carries no
-    version is UNMAKEABLE too — never "no skew". So is a stamp whose version
-    carries no digit: the comparison parses versions by their digit runs, so a
-    word such as ``unknown`` would compare as the empty tuple and every executor
-    would then read as ``match`` — the fail-open direction this check exists to
-    close.
+    version is UNMAKEABLE too — never "no skew". So is a stamp whose version the
+    comparison cannot parse into a version key: a word such as ``unknown`` yields
+    no key at all, so every executor would read as ``match`` — the fail-open
+    direction this check exists to close.
 
     The stamp is written ONCE PER SYNC, so it witnesses what the sync deployed,
     not a lane text edited in place afterwards. That is the accepted trade: a
@@ -536,6 +536,7 @@ def _lane_version_probe(skill_dir: Path | None = None) -> _LaneTextVersion:
     """
     from deployed_layout import DIST_MANIFEST_NAME, flat_deploy_root, read_deploy_stamp_version
     from marketplace_bundles import resolve_bundles_root, select_live_version_dir
+    from plugin_registry import version_key
 
     root = (skill_dir or _lane_skill_dir()).resolve()
     bundle = _lane_bundle()
@@ -555,7 +556,7 @@ def _lane_version_probe(skill_dir: Path | None = None) -> _LaneTextVersion:
     deploy_root = flat_deploy_root(root)
     if deploy_root is not None:
         stamped = read_deploy_stamp_version(deploy_root)
-        comparable = stamped if stamped is not None and any(char.isdigit() for char in stamped) else None
+        comparable = stamped if stamped is not None and version_key(stamped) else None
         return _LaneTextVersion(comparable, _LANE_LAYOUT_FLAT, deploy_root / DIST_MANIFEST_NAME)
     if bundle_dir is not None:
         return _LaneTextVersion(None, _LANE_LAYOUT_NESTED, bundle_dir)
@@ -581,7 +582,7 @@ def _unreadable_lane_text_reason(skill_dir: Path | None = None) -> str:
     """
     probe = _lane_version_probe(skill_dir)
     if probe.layout == _LANE_LAYOUT_FLAT:
-        return f'lane text version unknown: no readable version in the install stamp {probe.probe}'
+        return f'lane text version unknown: no usable version in the install stamp {probe.probe}'
     if probe.layout == _LANE_LAYOUT_NESTED:
         return f'lane text version unknown: no version directory under {probe.probe}'
     return 'lane text version unknown: no versioned install and no flat install stamp above the lane text'
@@ -600,13 +601,18 @@ def _executor_skew(executor: Path, lane_skill_dir: Path | None = None, target: s
     read — the dangerous direction, where the text names verbs the executor's
     mapped script does not have — and ``could_not_check`` when either version
     cannot be read. ``could_not_check`` is deliberately not ``match``: a failed
-    read must never be reported as agreement.
+    read must never be reported as agreement. A version the comparison cannot
+    parse into a version key is such a failed read on either side: it would
+    otherwise compare as the empty tuple and claim ``skew`` (or ``match``) for a
+    comparison that was never made.
     """
     from plugin_registry import EXECUTOR_VERSION_FOUND, read_executor_version, version_key
 
     state, executor_version = read_executor_version(executor, target=target)
     lane_version = _lane_text_version(lane_skill_dir)
     if state != EXECUTOR_VERSION_FOUND or executor_version is None or lane_version is None:
+        return _EXECUTOR_SKEW_UNCHECKED
+    if not version_key(executor_version) or not version_key(lane_version):
         return _EXECUTOR_SKEW_UNCHECKED
     if version_key(executor_version) < version_key(lane_version):
         return _EXECUTOR_SKEW_SKEW

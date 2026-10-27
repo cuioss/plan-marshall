@@ -82,8 +82,8 @@ def _skew_result(executor: Path, lane_dir: Path) -> dict[str, object]:
 
 
 def _flat_reason(deploy_root: Path) -> str:
-    """The reason a flat install without a readable stamp reports."""
-    return f'lane text version unknown: no readable version in the install stamp {deploy_root / "dist-manifest.json"}'
+    """The reason a flat install without a usable stamp reports."""
+    return f'lane text version unknown: no usable version in the install stamp {deploy_root / "dist-manifest.json"}'
 
 
 # -----------------------------------------------------------------------------
@@ -200,6 +200,17 @@ def test_reason_names_an_unreadable_executor(tmp_path: Path) -> None:
 
     assert data['verdict'] == 'could_not_check'
     assert data['reason'] == 'executor version unreadable'
+
+
+def test_an_unparseable_executor_version_cannot_check(tmp_path: Path) -> None:
+    """A version with no version key is a failed read, not the older side.
+
+    ``skew`` claims the executor is OLDER; a name the comparison cannot parse
+    would compare as the empty tuple and make that claim without a comparison.
+    """
+    _root, lane = _flat_install(tmp_path, '0.1.2021')
+
+    assert _lane_module()._executor_skew(_executor(tmp_path, 'dev'), lane) == 'could_not_check'
 
 
 def test_skill_states_where_each_layout_takes_the_lane_text_version() -> None:
@@ -323,5 +334,5 @@ def test_executor_skew_cannot_check_through_the_executor_without_a_stamp(tmp_pat
 
     assert result.returncode == 0, result.stdout + result.stderr
     assert 'verdict: could_not_check' in result.stdout, result.stdout + result.stderr
-    assert 'no readable version in the install stamp' in result.stdout
+    assert 'no usable version in the install stamp' in result.stdout
     assert 'dist-manifest.json' in result.stdout
