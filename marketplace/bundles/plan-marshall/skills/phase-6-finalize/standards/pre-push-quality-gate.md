@@ -132,9 +132,14 @@ either way:
   (`--no-incremental`), so the verdict is computed against the current tree rather than a possibly-
   stale cache. A fresh CI clone runs cold; a developer machine keeps a `.mypy_cache` across runs, and
   a stale cache answering *"nothing I have cached changed"* is exactly how a clean local verdict once
-  diverged from a red CI. A mypy that then reports success in a wall-time no real analysis of its file
-  set could achieve is treated as **suspect, not reassurance** — `classify_check_duration` flags it
-  and the gate fails closed rather than certifying the tree from a cache.
+  diverged from a red CI. Success is then read on the run's **own affirmative signal**: mypy prints
+  the number of source files it analysed (`Success: no issues found in N source files`), and a run
+  that analysed at least the collected file set is a real analysis — `classify_check_duration` accepts
+  it without consulting a clock, so a fast machine's honest cold run is not failed for being fast. The
+  wall-time heuristic remains only as the fallback for a run that published no count, and an
+  impossible rate still fails closed: a summary naming fewer files than were collected, or a rate in
+  the impossible band, is **suspect, not reassurance**, and the gate fails closed rather than
+  certifying the tree from a cache.
 - **Honest coverage boundary.** A run that could not fully check a footprint is **distinguishable**
   from one that genuinely passed — and so is a run that established nothing at all. `verify` /
   `quality-gate` print one of **three** verdicts. COMPLETE requires an *affirmative* signal: at least
