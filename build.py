@@ -403,11 +403,13 @@ def run(cmd: list[str], description: str, env: dict[str, str] | None = None) -> 
     print(f'>>> {description}')
     print(f'    {" ".join(cmd)}')
     if _is_mypy_command(cmd):
-        result = subprocess.run(cmd, env=env, capture_output=True, text=True)
-        _LAST_MYPY_OUTPUT = (result.stdout or '') + (result.stderr or '')
-        sys.stdout.write(result.stdout or '')
-        sys.stderr.write(result.stderr or '')
-        return result.returncode
+        captured = subprocess.run(cmd, env=env, capture_output=True, text=True)
+        stdout = getattr(captured, 'stdout', '') or ''
+        stderr = getattr(captured, 'stderr', '') or ''
+        _LAST_MYPY_OUTPUT = stdout + stderr
+        sys.stdout.write(stdout)
+        sys.stderr.write(stderr)
+        return captured.returncode
     result = subprocess.run(cmd, env=env)
     return result.returncode
 

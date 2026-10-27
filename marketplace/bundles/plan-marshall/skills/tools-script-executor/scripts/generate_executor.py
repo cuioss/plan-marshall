@@ -186,7 +186,7 @@ if _SHARED_SCRIPTS is None:
     raise SystemExit(
         'plan-marshall bootstrap: library directory "script-shared" not found beside this script.\n'
         '  probed (either deployed shape):\n'
-        f'    nested: {_SKILLS_DIR / "script-shared" / "scripts"}\n'
+        f'    nested: {_SHARED_CANDIDATES[0]}\n'
         f'    flat:   {_SKILLS_DIR}/<bundle>-script-shared/scripts'
     )
 if str(_SHARED_SCRIPTS) in sys.path:

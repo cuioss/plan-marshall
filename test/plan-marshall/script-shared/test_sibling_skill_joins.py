@@ -39,58 +39,24 @@ _HELPER_NAMES: frozenset[str] = frozenset({'resolve_sibling_skill_path', 'requir
 #: Discovered joins that are legitimately flat-safe, keyed by
 #: ``(module path relative to the repo root, skill literal)``. Each carries the
 #: reason it cannot fail on a flat tree, in one line.
-_FLAT_SAFE_LIB_LOOP = (
-    'the same import loop probes plan-marshall-{lib} immediately after the bare join, which is the flat directory name'
+_FLAT_SAFE_BOOTSTRAP_ANCHOR = (
+    'the shared bootstrap anchor probes the flat `*-script-shared/scripts` sibling '
+    'immediately after this nested candidate, and hands the library list to '
+    'skill_bootstrap (PLAN-LB-93 D1/D2)'
 )
 
-_FLAT_SAFE_GENERATOR_BOOTSTRAP = _FLAT_SAFE_LIB_LOOP
-
 FLAT_SAFE_JOINS: dict[tuple[str, str], str] = {
-    (
+    (module, 'script-shared'): _FLAT_SAFE_BOOTSTRAP_ANCHOR
+    for module in (
         'marketplace/bundles/plan-marshall/skills/tools-script-executor/scripts/generate_executor.py',
-        'ref-toon-format',
-    ): _FLAT_SAFE_GENERATOR_BOOTSTRAP,
-    (
-        'marketplace/bundles/plan-marshall/skills/tools-script-executor/scripts/generate_executor.py',
-        'script-shared',
-    ): _FLAT_SAFE_GENERATOR_BOOTSTRAP,
-    (
-        'marketplace/bundles/plan-marshall/skills/tools-script-executor/scripts/generate_executor.py',
-        'tools-file-ops',
-    ): _FLAT_SAFE_GENERATOR_BOOTSTRAP,
-    ('marketplace/bundles/plan-marshall/skills/marshall-steward/scripts/bootstrap_plugin.py', 'ref-toon-format'): (
-        _FLAT_SAFE_LIB_LOOP
-    ),
-    ('marketplace/bundles/plan-marshall/skills/marshall-steward/scripts/bootstrap_plugin.py', 'tools-file-ops'): (
-        _FLAT_SAFE_LIB_LOOP
-    ),
-    ('marketplace/bundles/plan-marshall/skills/marshall-steward/scripts/determine_mode.py', 'platform-runtime'): (
-        _FLAT_SAFE_LIB_LOOP
-    ),
-    ('marketplace/bundles/plan-marshall/skills/marshall-steward/scripts/determine_mode.py', 'ref-toon-format'): (
-        _FLAT_SAFE_LIB_LOOP
-    ),
-    ('marketplace/bundles/plan-marshall/skills/marshall-steward/scripts/determine_mode.py', 'tools-file-ops'): (
-        _FLAT_SAFE_LIB_LOOP
-    ),
-    ('marketplace/bundles/plan-marshall/skills/marshall-steward/scripts/determine_mode.py', 'tools-script-executor'): (
-        _FLAT_SAFE_LIB_LOOP
-    ),
-    ('marketplace/bundles/plan-marshall/skills/marshall-steward/scripts/gitignore_setup.py', 'ref-toon-format'): (
-        _FLAT_SAFE_LIB_LOOP
-    ),
-    (
+        'marketplace/bundles/plan-marshall/skills/marshall-steward/scripts/bootstrap_plugin.py',
+        'marketplace/bundles/plan-marshall/skills/marshall-steward/scripts/determine_mode.py',
+        'marketplace/bundles/plan-marshall/skills/marshall-steward/scripts/gitignore_setup.py',
         'marketplace/bundles/plan-marshall/skills/tools-permission-fix/scripts/permission_fix.py',
-        'ref-toon-format',
-    ): _FLAT_SAFE_LIB_LOOP,
-    (
-        'marketplace/bundles/plan-marshall/skills/tools-permission-fix/scripts/permission_fix.py',
-        'tools-file-ops',
-    ): _FLAT_SAFE_LIB_LOOP,
-    (
-        'marketplace/bundles/plan-marshall/skills/tools-permission-fix/scripts/permission_fix.py',
-        'tools-permission-doctor',
-    ): _FLAT_SAFE_LIB_LOOP,
+        'marketplace/bundles/plan-marshall/skills/tools-permission-doctor/scripts/permission_common.py',
+        'marketplace/bundles/plan-marshall/skills/tools-permission-doctor/scripts/permission_doctor.py',
+        'marketplace/bundles/plan-marshall/skills/platform-runtime/scripts/claude_runtime.py',
+    )
 }
 
 

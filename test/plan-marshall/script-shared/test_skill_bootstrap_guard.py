@@ -119,9 +119,9 @@ def _module_level_path_edits(module_path: Path) -> bool:
             self.generic_visit(node)
             self.depth -= 1
 
-        visit_FunctionDef = _descend  # type: ignore[assignment]
-        visit_AsyncFunctionDef = _descend  # type: ignore[assignment]
-        visit_ClassDef = _descend  # type: ignore[assignment]
+        visit_FunctionDef = _descend
+        visit_AsyncFunctionDef = _descend
+        visit_ClassDef = _descend
 
         def visit_Call(self, node: ast.Call) -> None:
             nonlocal found
