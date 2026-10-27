@@ -416,6 +416,9 @@ def test_touches_shared_infra(path, expected):
 #: A ``tests/``-rooted path whose segment 1 IS a registered module. Under the
 #: ``test/``-only derivation this resolved to no module at all.
 _TESTS_ROOT_REGISTERED = 'tests/plan-marshall/build-pyproject/test_x.py'
+#: The same root and module, holding a NON-test file: root recognition without the
+#: test-file escalation the root-level guards demand.
+_TESTS_ROOT_REGISTERED_NON_TEST_FILE = 'tests/plan-marshall/build-pyproject/resources/data.json'
 #: The ``tests/`` sibling of the cross-bundle test-helper root.
 _TESTS_SHARED_HELPER = 'tests/_shared/_build_class_roster.py'
 #: A ``tests/``-rooted conftest under a registered module. This is the path that
@@ -521,16 +524,19 @@ def test_a_tests_rooted_conftest_still_forces_the_whole_tree():
 def test_an_ordinary_tests_rooted_path_can_still_resolve_confidently():
     """POSITIVE CONTROL: the widening did not degenerate into "always divergent".
 
-    A single ``tests/``-rooted module path, touching no shared infra and leaving
-    nothing unresolved, still yields the confident scoped target -- which is the
-    whole point of recognising the root.
+    A single ``tests/``-rooted module path, touching no shared infra, editing no
+    test file and leaving nothing unresolved, still yields the confident scoped
+    target -- which is the whole point of recognising the root. The path is a
+    non-test file on purpose: a test FILE under that root now escalates for the
+    root-level guards (see the D4 population cases at the end of this module).
     """
     resolution = resolve_test_scope(
-        [_TESTS_ROOT_REGISTERED], _GLOBS, _REGISTERED_MODULES, bundle_modules=_REGISTERED_MODULES
+        [_TESTS_ROOT_REGISTERED_NON_TEST_FILE], _GLOBS, _REGISTERED_MODULES, bundle_modules=_REGISTERED_MODULES
     )
 
     assert resolution.scoped_modules == ('plan-marshall',)
     assert resolution.unresolved_paths == ()
+    assert resolution.root_guards_required is False
     assert resolution.divergence_possible is False
     assert resolution.recommended_target == 'plan-marshall'
 
@@ -949,15 +955,19 @@ def test_supplying_the_directory_set_changes_no_other_field(case):
     Comparing the two calls pins "identical" directly instead of against a
     copied expectation. The matched control is the case above: the same supplied
     set does produce narrow units, so equality here is not two no-op calls
-    agreeing.
+    agreeing. The comparison is deliberately between the two calls only: the
+    ``changed_test_file`` case takes the whole-tree verdict (a test-file edit
+    requires the root-level guards), and both calls share that verdict.
     """
     without = resolve_test_scope(list(case.footprint), _GLOBS, _REGISTERED_MODULES, bundle_modules=_REGISTERED_MODULES)
     supplied = _resolve_narrow(case.footprint)
 
-    assert supplied.recommended_target == without.recommended_target == 'plan-marshall'
+    expected_target = None if _CHANGED_TEST_FILE in case.footprint else 'plan-marshall'
+    assert supplied.recommended_target == without.recommended_target == expected_target
     assert supplied.scoped_modules == without.scoped_modules
     assert supplied.divergence_possible is without.divergence_possible
     assert supplied.unresolved_paths == without.unresolved_paths
+    assert supplied.root_guards_required is without.root_guards_required
 
 
 def test_a_call_without_the_directory_set_reads_both_narrow_lists_empty():
@@ -1121,3 +1131,70 @@ def test_classify_divergence_truth_table(scoped_outcome, whole_tree_outcome, exp
     assert verdict.divergent is expected_divergent
     # ``caught`` mirrors ``divergent`` - the whole-tree route is what surfaces it.
     assert verdict.caught is expected_divergent
+
+
+# ---------------------------------------------------------------------------
+# Root-level test guards (D4)
+# ---------------------------------------------------------------------------
+#
+# ``test/*.py`` guards sit outside every module, so ``module-tests {module}``
+# never runs them. The population therefore has to account for them: a footprint
+# that adds or edits a test FILE requires the whole tree, and a scoped verdict
+# names the populations it does not cover.
+_MODULE_TEST_FILE = 'test/plan-marshall/build-pyproject/test_example.py'
+_PROD_SINGLE_MODULE = 'marketplace/bundles/plan-marshall/skills/build-pyproject/scripts/pyproject_build.py'
+
+
+def test_a_module_test_file_edit_requires_the_root_guards():
+    """One module's test edit still needs the root guards, so it escalates."""
+    resolution = resolve_test_scope(
+        [_MODULE_TEST_FILE], _GLOBS, _REGISTERED_MODULES, bundle_modules=_REGISTERED_MODULES
+    )
+
+    assert resolution.root_guards_required is True
+    assert resolution.divergence_possible is True
+    assert resolution.recommended_target is None
+
+
+def test_a_tests_rooted_test_file_edit_also_requires_the_root_guards():
+    """The ``tests/`` root is the same population as ``test/``."""
+    resolution = resolve_test_scope(
+        ['tests/plan-marshall/build-pyproject/test_example.py'],
+        _GLOBS,
+        _REGISTERED_MODULES,
+        bundle_modules=_REGISTERED_MODULES,
+    )
+
+    assert resolution.root_guards_required is True
+    assert resolution.divergence_possible is True
+
+
+def test_a_production_only_footprint_does_not_require_the_root_guards():
+    """Editing production code alone does not pull the guards into the population."""
+    resolution = resolve_test_scope(
+        [_PROD_SINGLE_MODULE], _GLOBS, _REGISTERED_MODULES, bundle_modules=_REGISTERED_MODULES
+    )
+
+    assert resolution.root_guards_required is False
+    assert resolution.recommended_target == 'plan-marshall'
+
+
+def test_a_scoped_verdict_names_the_excluded_populations():
+    """A scoped green run states what it left out instead of implying coverage."""
+    resolution = resolve_test_scope(
+        [_PROD_SINGLE_MODULE], _GLOBS, _REGISTERED_MODULES, bundle_modules=_REGISTERED_MODULES
+    )
+
+    assert resolution.excluded_population
+    assert any('outside plan-marshall' in item for item in resolution.excluded_population)
+    assert any('root-level test guards' in item for item in resolution.excluded_population)
+
+
+def test_a_whole_tree_verdict_excludes_nothing():
+    """A whole-tree run leaves nothing out, so no exclusion is named."""
+    resolution = resolve_test_scope(
+        [_MODULE_TEST_FILE, _PROD_PM_PYTHON], _GLOBS, _REGISTERED_MODULES, bundle_modules=_REGISTERED_MODULES
+    )
+
+    assert resolution.divergence_possible is True
+    assert resolution.excluded_population == ()

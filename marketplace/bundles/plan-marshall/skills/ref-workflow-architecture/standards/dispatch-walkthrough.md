@@ -156,8 +156,9 @@ Files 4 pending `pr-comment` findings; `mark-step-done --outcome done --head-at-
 
 ```bash
 # 1. Producer: FIND new-code issues into the ledger (untrusted message under raw_input)
+#    --pr scopes the enumeration AND arms the analysis-revision gate
 python3 .plan/execute-script.py plan-marshall:workflow-integration-sonar:sonar \
-  fetch_findings --plan-id feature-jwt-auth --project feature-jwt-auth-key
+  fetch_findings --plan-id feature-jwt-auth --project feature-jwt-auth-key --pr 412
 
 # 2. Consumer count (for display only) — this step does NOT triage
 python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \

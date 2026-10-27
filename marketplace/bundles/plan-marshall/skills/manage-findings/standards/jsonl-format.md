@@ -271,12 +271,14 @@ Each line is a JSON object written by `sonar.py:_write_scan_summary`. This is a 
 
 | Field | Type | Always present | Description |
 |-------|------|:--------------:|-------------|
-| `count_status` | string | yes | `confirmed` (CE settled in budget) or `undecidable` (CE timeout or REST/auth failure) |
+| `count_status` | string | yes | `confirmed` (CE settled — and, on a PR-scoped fetch, the analysis is of the counted revision) or `undecidable` (CE timeout, REST/auth failure, a stale analysis, or no reported revision) |
 | `new_code_issue_count` | int \| null | yes | Verified PR-scoped new-code total on `confirmed`; `null` on `undecidable` |
-| `count_status_reason` | string | no | Human-readable reason; emitted **only** on `undecidable` |
+| `count_status_reason` | string | no | Human-readable reason; emitted **only** on `undecidable`. Revision reasons are `analysis_revision_unavailable`, `head_revision_unavailable` and `stale_analysis: analysed {sha} != head {sha}`; CE and REST/auth failures carry their own text |
 | `pr` | string \| null | yes | PR number the fetch was scoped to (`null` for a non-PR / branch fetch) |
 | `project` | string | yes | Sonar project key the fetch enumerated |
 | `scanned_sha` | string | yes | Worktree HEAD SHA the scan attests to; `""` when the SHA cannot be resolved |
+| `analysis_revision` | string | yes | The SCM revision Sonar reports for the pull request's analysis; `""` when the provider reports none, when the revision read failed, on a CE timeout, and on a non-PR fetch |
+| `head_revision` | string | yes | The commit the analysis revision was compared against; `""` when it could not be resolved, before a comparison was reached, and on a non-PR fetch |
 | `ts` | string | yes | ISO-8601 UTC timestamp of the fetch |
 
 ## Hash ID Generation
