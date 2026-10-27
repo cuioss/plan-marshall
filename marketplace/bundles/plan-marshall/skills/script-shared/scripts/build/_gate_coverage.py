@@ -70,6 +70,7 @@ and unit-testable in isolation.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 
 # ---------------------------------------------------------------------------
@@ -106,7 +107,46 @@ SUSPECT_MIN_FILES: int = 100
 #: faster machine — is not flagged. A small scope is not judged at all (see
 #: :data:`SUSPECT_MIN_FILES`), because a check that flagged every fast gate would
 #: be disabled within a week, which is worse than not having one.
+#:
+#: This ceiling is the FALLBACK band, used only when the check published no
+#: affirmative signal of its own. A faster machine legitimately crosses it — the
+#: tree outgrew the calibration set and ``verify`` failed three times on PR #1851
+#: (1801 files in 8.2 s = 220 files/s) and once on PR #1857 (211 files/s), each
+#: cleared by a re-run of the same honest, cold analysis. The ceiling cannot be
+#: recalibrated upward without rating the incident band plausible again, so a
+#: check that reports WHAT it analysed is judged on that instead (see
+#: :func:`classify_check_duration`'s ``reported_sources``).
 MAX_ANALYSIS_THROUGHPUT: float = 200.0
+
+#: The ceiling applied when the check DOES publish its own analysed-file count.
+#:
+#: An affirmative count answers "did it look at the tree?" directly, so the
+#: marginal-throughput false failure disappears: 1801 files in 8.2 s is a fast
+#: machine, not a cache. What survives is the impossible band — the count says the
+#: check analysed the tree, but no analysis processes files at this rate — so the
+#: discrimination stays. 1000 files/s is ~5x the fastest cold throughput measured
+#: on this tree (220 files/s) and ~140x the original calibration (71 files/s);
+#: the incident shape (660 files in 0.05 s = 13,200 files/s) sits an order of
+#: magnitude above it, and the incident band's fast end (660 files in 3.0 s = 220
+#: files/s) is left plausible ON PURPOSE — with a real source count in hand there
+#: is no evidence the analysis did not happen.
+IMPOSSIBLE_ANALYSIS_THROUGHPUT: float = 1000.0
+
+#: mypy's success summary. It names the number of SOURCE FILES the run analysed —
+#: the affirmative signal :func:`classify_check_duration` prefers over a clock.
+_MYPY_SUCCESS_RE = re.compile(r'^Success: no issues found in (\d+) source files?$', re.MULTILINE)
+
+
+def parse_mypy_reported_sources(output: str) -> int | None:
+    """Return the source-file count mypy's success summary names, or ``None``.
+
+    ``None`` means the output carries no affirmative success line — a failure
+    summary, an empty capture, or a mypy version that words it differently. The
+    caller then falls back to the duration heuristic: an unparseable success is
+    never read as an affirmative one.
+    """
+    match = _MYPY_SUCCESS_RE.search(output or '')
+    return int(match.group(1)) if match else None
 
 
 @dataclass(frozen=True)
@@ -128,16 +168,30 @@ class DurationVerdict:
     reason: str | None
 
 
-def classify_check_duration(files_checked: int, elapsed_seconds: float) -> DurationVerdict:
-    """Judge whether reporting success over ``files_checked`` files in ``elapsed_seconds`` is plausible.
+def classify_check_duration(
+    files_checked: int,
+    elapsed_seconds: float,
+    reported_sources: int | None = None,
+) -> DurationVerdict:
+    """Judge whether a check's reported success is plausible for the work it claims.
 
     A small file set (below :data:`SUSPECT_MIN_FILES`) is always plausible — a
     tiny scope is legitimately fast, and flagging it would make the check fire on
-    every quick run. For a substantial file set, success is *implausible* when the
-    implied throughput exceeds :data:`MAX_ANALYSIS_THROUGHPUT` (including the
-    degenerate zero/negative-elapsed case, which is infinite throughput): no real
-    type-analysis processes files that fast, so the checker answered from a cache
-    or ran nothing at all.
+    every quick run.
+
+    For a substantial file set the verdict prefers the check's OWN affirmative
+    signal (``reported_sources``: the count mypy prints in its success summary)
+    over the clock:
+
+    * With a count, the run is implausible when the count is SHORT of the file set
+      that was collected (it did not see the tree it claims) or when the implied
+      throughput is in the impossible band
+      (:data:`IMPOSSIBLE_ANALYSIS_THROUGHPUT`). A run that analysed the collected
+      set at 219 files/s is a fast machine, not a cache — the false failure this
+      parameter removes.
+    * Without a count, the duration heuristic stands unchanged
+      (:data:`MAX_ANALYSIS_THROUGHPUT`), so a success in a time no analysis could
+      achieve is still refused.
 
     Args:
         files_checked: The number of source files the check claims to have
@@ -145,10 +199,21 @@ def classify_check_duration(files_checked: int, elapsed_seconds: float) -> Durat
             fine — undercounting lowers the implied throughput, which only makes
             the verdict *less* likely to flag, never more.
         elapsed_seconds: Wall-clock seconds the check took.
+        reported_sources: The analysed-file count the check itself published, or
+            ``None`` when it published none.
 
     Returns:
         A frozen :class:`DurationVerdict`.
     """
+    if reported_sources is not None and reported_sources < files_checked:
+        return DurationVerdict(
+            plausible=False,
+            reason=(
+                f'reported success over {reported_sources} source files where '
+                f'{files_checked} were collected — the check did not see the tree '
+                f'it claims to have verified'
+            ),
+        )
     if files_checked < SUSPECT_MIN_FILES:
         return DurationVerdict(plausible=True, reason=None)
     if elapsed_seconds <= 0.0:
@@ -160,15 +225,17 @@ def classify_check_duration(files_checked: int, elapsed_seconds: float) -> Durat
                 f'on a cache, not on the current tree'
             ),
         )
-    throughput = files_checked / elapsed_seconds
-    if throughput > MAX_ANALYSIS_THROUGHPUT:
+    measured = reported_sources if reported_sources is not None else files_checked
+    ceiling = IMPOSSIBLE_ANALYSIS_THROUGHPUT if reported_sources is not None else MAX_ANALYSIS_THROUGHPUT
+    throughput = measured / elapsed_seconds
+    if throughput > ceiling:
         return DurationVerdict(
             plausible=False,
             reason=(
                 f'reported success over {files_checked} files in '
                 f'{elapsed_seconds:.3f}s = {throughput:.0f} files/s, above the '
-                f'{MAX_ANALYSIS_THROUGHPUT:.0f} files/s ceiling real analysis '
-                f'cannot beat — the verdict rests on a cache, not on the current tree'
+                f'{ceiling:.0f} files/s ceiling real analysis cannot beat — the '
+                f'verdict rests on a cache, not on the current tree'
             ),
         )
     return DurationVerdict(plausible=True, reason=None)

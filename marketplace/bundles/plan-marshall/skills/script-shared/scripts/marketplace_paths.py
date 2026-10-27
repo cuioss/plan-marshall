@@ -33,7 +33,6 @@ not depend on git resolution.
 
 import os
 import subprocess
-import sys
 from pathlib import Path
 from typing import Any, TypeGuard
 
@@ -275,16 +274,38 @@ def _read_runtime_target() -> str:
 
 
 def _find_skills_root() -> Path | None:
-    """Locate the marketplace ``skills/`` root by walking ancestors of this file.
+    """Locate the deployed ``skills/`` root by walking ancestors of this file.
 
-    The root is the first ancestor named ``skills`` whose parent holds a
-    ``.claude-plugin/plugin.json`` bundle manifest. Returns ``None`` when no
-    such ancestor exists (e.g. running from the plugin cache).
+    Delegates to the shared walk (``marketplace_bundles.resolve_skills_root``),
+    which recognises BOTH deployed shapes: a nested tree, where an ancestor named
+    ``skills`` sits beside a bundle manifest, and the FLAT tree OpenCode and
+    Antigravity deploy, where every skill is ``{root}/skills/{bundle}-{skill}``
+    and no bundle marker exists at all. Before this delegation the flat probe
+    answered ``None`` for a complete OpenCode install, so every layout op fell
+    back to the Claude default root and the caller's answer was about the wrong
+    harness.
+
+    Returns ``None`` rather than raising: every caller here has a documented
+    default to fall back to.
     """
-    for ancestor in Path(__file__).resolve().parents:
-        if ancestor.name == 'skills' and (ancestor.parent / '.claude-plugin' / 'plugin.json').is_file():
-            return ancestor
-    return None
+    from marketplace_bundles import resolve_skills_root
+
+    try:
+        return resolve_skills_root(Path(__file__))
+    except RuntimeError:
+        return None
+
+
+def _ensure_layout_libs() -> None:
+    """Put the layout op's own libraries on ``sys.path`` through the shared bootstrap.
+
+    The library resolution — nested ``skills/{lib}/scripts`` and flat
+    ``skills/{bundle}-{lib}/scripts`` — belongs to ``skill_bootstrap``; re-spelling
+    it here is how this module stayed nested-only while the deployed tree was flat.
+    """
+    from skill_bootstrap import bootstrap_skill_libraries
+
+    bootstrap_skill_libraries(Path(__file__), ('ref-toon-format', 'platform-runtime'))
 
 
 def _invoke_layout_op(target: str, method_name: str = 'layout_skill_roots') -> tuple[str, ...] | None:
@@ -298,16 +319,8 @@ def _invoke_layout_op(target: str, method_name: str = 'layout_skill_roots') -> t
     ``roots`` list out of the op's TOON. Returns ``None`` on any resolution
     failure so the caller can fall back to the module's default roots.
     """
-    skills_root = _find_skills_root()
-    if skills_root is None:
-        return None
-
-    for lib in ('ref-toon-format', 'platform-runtime'):
-        lib_dir = str(skills_root / lib / 'scripts')
-        if lib_dir not in sys.path:
-            sys.path.append(lib_dir)
-
     try:
+        _ensure_layout_libs()
         from platform_runtime import _make_runtime
         from toon_parser import parse_toon
 
@@ -352,16 +365,8 @@ def _invoke_settings_op(scope: str, target: str | None = None) -> Path | None:
             cascade. ``None`` keeps the ambient resolution, which is what every
             pre-existing caller means.
     """
-    skills_root = _find_skills_root()
-    if skills_root is None:
-        return None
-
-    for lib in ('ref-toon-format', 'platform-runtime'):
-        lib_dir = str(skills_root / lib / 'scripts')
-        if lib_dir not in sys.path:
-            sys.path.append(lib_dir)
-
     try:
+        _ensure_layout_libs()
         from platform_runtime import _make_runtime
 
         # The same shared-resolution rule as _invoke_layout_op: an unregistered

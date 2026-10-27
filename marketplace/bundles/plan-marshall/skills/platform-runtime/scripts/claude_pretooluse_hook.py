@@ -136,6 +136,9 @@ _BASH_TOOL = 'Bash'
 #: Tool names whose ``file_path`` the R3 generated-executor matcher inspects.
 _FILE_EDIT_TOOLS = ('Edit', 'Write')
 
+#: Tool names R7's lane-write matcher inspects (the Claude edit family).
+_LANE_WRITE_TOOLS = ('Edit', 'Write', 'MultiEdit')
+
 #: Generated executor path R3 forbids editing. Matched on the path tail so an
 #: absolute or worktree-relative path both trip the rule.
 _GENERATED_EXECUTOR_TAIL = '.plan/execute-script.py'
@@ -533,6 +536,75 @@ def _match_r3_generated_executor(tool_name: str | None, tool_input: dict[str, An
     if normalized == _GENERATED_EXECUTOR_TAIL or normalized.endswith('/' + _GENERATED_EXECUTOR_TAIL):
         return _R3_REASON
     return None
+
+
+#: Paths a lane run MAY write in the main checkout — its worktrees, its temp area
+#: and its plan-local work slots (progress file, PR bodies, guard log).
+_MAIN_CHECKOUT_WRITE_EXEMPT_PREFIXES = (
+    '.plan/local/worktrees/',
+    '.plan/temp/',
+    '.plan/local/plans/',
+)
+
+
+def _lane_worktrees(root: str | None) -> list[str]:
+    """Return the worktrees the LIVE lane markers name, when those worktrees exist.
+
+    The lane marker is ``.plan/temp/rb-<plan>/progress.md`` and it maps to
+    ``.plan/local/worktrees/<plan>``. An ABSENT worktree contributes nothing:
+    markers outlive their worktrees, so a rule keyed on the marker alone would
+    refuse a developer's ordinary edit after any past lane run. The list is NOT
+    narrowed to one candidate: the payload carries no lane identity, so picking one
+    would name a worktree the call may not belong to — the refusal names them all.
+    """
+    if not root:
+        return []
+    found: list[str] = []
+    for entry in _fresh_lane_markers(root):
+        worktree = os.path.join(root, '.plan', 'local', 'worktrees', entry.removeprefix('rb-'))
+        if os.path.isdir(worktree):
+            found.append(worktree)
+    return found
+
+
+def _match_r7_lane_main_checkout_write(
+    payload: dict[str, Any], tool_name: str | None, tool_input: dict[str, Any]
+) -> str | None:
+    """R7 — a lane run editing a main-checkout path.
+
+    Binds only when ALL of: the call is a plan-context one (the lane marker is
+    Signal 3), a live marker names at least one EXISTING worktree, and the target
+    resolves inside the project root but outside the sanctioned prefixes. The
+    worktree path(s) to use instead are named in the refusal.
+
+    The rule covers every non-exempt main-checkout path, NEW files included — it
+    makes no Git-tracked/untracked distinction, because the payload the hook reads
+    carries none.
+    """
+    if tool_name not in _LANE_WRITE_TOOLS:
+        return None
+    if not (gate.context_gate(payload) or _is_lane_run(payload)):
+        return None
+    root = os.environ.get('CLAUDE_PROJECT_DIR') or gate.cwd(payload)
+    worktrees = _lane_worktrees(root)
+    if not worktrees or not root:
+        return None
+    raw = tool_input.get('file_path')
+    if not isinstance(raw, str) or not raw:
+        return None
+    target = _real_path(_resolve_against(root, raw))
+    root_norm = _real_path(root).rstrip('/') + '/'
+    worktree_norms = [worktree.rstrip('/') + '/' for worktree in (_real_path(w) for w in worktrees)]
+    if not target.startswith(root_norm) or any(target.startswith(prefix) for prefix in worktree_norms):
+        return None
+    relative = target[len(root_norm) :]
+    if any(relative.startswith(prefix) for prefix in _MAIN_CHECKOUT_WRITE_EXEMPT_PREFIXES):
+        return None
+    destinations = ' (or) '.join(os.path.join(worktree, relative) for worktree in worktrees)
+    return (
+        f'plan-marshall: a lane run may not write {relative} in the main checkout — '
+        f'make the edit in the plan worktree: {destinations}'
+    )
 
 
 def _pw_admitted(verb: str) -> bool:
@@ -2222,24 +2294,30 @@ def _is_lane_run(payload: dict[str, Any]) -> bool:
     R1-R5 in a consumer checkout forever.
     """
     root = os.environ.get('CLAUDE_PROJECT_DIR') or gate.cwd(payload)
+    return bool(_fresh_lane_markers(root))
+
+
+def _fresh_lane_markers(root: str | None) -> list[str]:
+    """Return the names of the LIVE ``rb-<plan>`` markers ``root`` carries."""
     if not root:
-        return False
+        return []
     temp_dir = pathlib.Path(root) / '.plan' / 'temp'
     try:
         entries = list(temp_dir.iterdir())
     except OSError:
-        return False
+        return []
     now = time.time()
+    fresh: list[str] = []
     for entry in entries:
         if not entry.name.startswith('rb-'):
             continue
         marker = entry / 'progress.md'
         try:
             if now - marker.stat().st_mtime <= _LANE_MARKER_MAX_AGE_SECONDS:
-                return True
+                fresh.append(entry.name)
         except OSError:
             continue
-    return False
+    return fresh
 
 
 def evaluate(payload: dict[str, Any]) -> str | None:
@@ -2309,6 +2387,14 @@ def evaluate(payload: dict[str, Any]) -> str | None:
             if reason is not None:
                 _append_guard_log(payload, rule_name, _refusal_detail(payload))
                 return reason
+        # R7 — a lane run may not write a tracked file of the main checkout. It
+        # needs the whole payload (its scope and the marker→worktree mapping), not
+        # only the tool arguments, so it is not in the `_RULES` chain; it runs
+        # after R3 so the generated-executor refusal keeps its specific remedy.
+        reason = _match_r7_lane_main_checkout_write(payload, tool_name, tool_input)
+        if reason is not None:
+            _append_guard_log(payload, 'R7', _refusal_detail(payload))
+            return reason
         # The floor may have decided this command IS the admitted executor behind
         # a splicing wrapper (`env -S "python3 .plan/execute-script.py …"`); R2
         # and R4 have already run, so it is admitted exactly as the bare form is.
