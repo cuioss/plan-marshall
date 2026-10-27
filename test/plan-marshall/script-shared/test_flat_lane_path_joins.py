@@ -133,14 +133,14 @@ def test_the_ci_parser_and_persistence_layer_load(lane_results: dict[str, Any]) 
     assert lane_results['ci_persist'], 'the CI persistence layer did not load on the flat tree'
 
 
-def test_the_generator_runs_from_the_flat_tree(flat_install: Path, tmp_path: Path) -> None:
-    """The executor generator the upgrade invokes loads and parses its surface on a flat tree.
+def test_the_generator_runs_with_no_inherited_pythonpath(flat_install: Path, tmp_path: Path) -> None:
+    """The generator starts from a flat tree even when nothing supplies an import path.
 
-    The generator's own ``sys.path`` bootstrap is nested-only (declared, with its
-    reason, in the D2 guard), so this exercises the ONE invocation shape it is
-    actually given: a ``python3 <path>`` run inside the deployed tree, with the
-    flat PYTHONPATH the executor would pass. ``--help`` stops at argparse, so no
-    output tree is touched.
+    This is the wizard's first-run case: ``generate_executor.py`` is invoked directly,
+    BEFORE the executor that it is about to write exists, so it has no PYTHONPATH to
+    inherit. Its own bootstrap must therefore find the sibling libs on the flat tree,
+    not only on a nested one. ``--help`` stops at argparse, so no output tree is
+    touched.
     """
     project = tmp_path / 'project'
     project.mkdir()
@@ -152,6 +152,7 @@ def test_the_generator_runs_from_the_flat_tree(flat_install: Path, tmp_path: Pat
         f'import runpy, sys\nsys.argv = [{str(script)!r}, "--help"]\n'
         f'try:\n    runpy.run_path({str(script)!r}, run_name="__main__")\n'
         'except SystemExit as exc:\n    raise SystemExit(int(exc.code or 0))\n',
+        env_overrides={'PYTHONPATH': ''},
     )
 
     assert completed.returncode == 0, completed.stderr

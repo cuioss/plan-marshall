@@ -217,12 +217,20 @@ def run_python_in_flat(
     code: str,
     *,
     timeout: int = 300,
+    env_overrides: dict[str, str] | None = None,
 ) -> subprocess.CompletedProcess[str]:
-    """Run ``code`` with the flat fixture as the import root and ``project_dir`` as cwd."""
+    """Run ``code`` with the flat fixture as the import root and ``project_dir`` as cwd.
+
+    ``env_overrides`` is applied after the scrub, so a caller can PIN a location
+    (or an empty ``PYTHONPATH``) the fixture otherwise decides for it.
+    """
+    env = flat_env(root, project_dir)
+    if env_overrides:
+        env.update(env_overrides)
     return subprocess.run(
         [sys.executable, '-c', code],
         cwd=project_dir,
-        env=flat_env(root, project_dir),
+        env=env,
         capture_output=True,
         text=True,
         timeout=timeout,

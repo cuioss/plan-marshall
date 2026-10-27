@@ -43,12 +43,7 @@ _FLAT_SAFE_LIB_LOOP = (
     'the same import loop probes plan-marshall-{lib} immediately after the bare join, which is the flat directory name'
 )
 
-_FLAT_SAFE_GENERATOR_BOOTSTRAP = (
-    'sys.path hints only: the loop inserts three directories WITHOUT probing them, so a flat install '
-    'simply inserts three absent paths and the imports resolve through the executor PYTHONPATH every '
-    "caller passes (the generator's three invokers run it in this process tree); the generator itself is "
-    'exercised from the flat fixture by test_flat_lane_path_joins'
-)
+_FLAT_SAFE_GENERATOR_BOOTSTRAP = _FLAT_SAFE_LIB_LOOP
 
 FLAT_SAFE_JOINS: dict[tuple[str, str], str] = {
     (
