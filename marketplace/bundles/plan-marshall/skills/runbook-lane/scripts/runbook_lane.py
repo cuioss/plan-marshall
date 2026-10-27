@@ -576,13 +576,16 @@ def _lane_text_version(skill_dir: Path | None = None) -> str | None:
 def _unreadable_lane_text_reason(skill_dir: Path | None = None) -> str:
     """Name the thing a ``could_not_check`` could not read on the lane-text side.
 
-    The three cases name different remedies — a missing install stamp, a
-    version-less nested install, and a directory that is neither — so the reason
-    says which path was probed instead of one generic sentence.
+    The cases name different remedies — a missing install stamp, a version
+    directory whose name carries no version, a version-less nested install, and a
+    directory that is neither — so the reason says which path was probed instead
+    of one generic sentence.
     """
     probe = _lane_version_probe(skill_dir)
     if probe.layout == _LANE_LAYOUT_FLAT:
         return f'lane text version unknown: no usable version in the install stamp {probe.probe}'
+    if probe.layout == _LANE_LAYOUT_VERSIONED:
+        return f'lane text version unknown: the version directory {probe.probe} names no version key'
     if probe.layout == _LANE_LAYOUT_NESTED:
         return f'lane text version unknown: no version directory under {probe.probe}'
     return 'lane text version unknown: no versioned install and no flat install stamp above the lane text'
@@ -632,6 +635,7 @@ def cmd_executor_skew(args: argparse.Namespace) -> dict[str, Any]:
         EXECUTOR_VERSION_FOUND,
         EXECUTOR_VERSION_NOT_FOUND,
         read_executor_version,
+        version_key,
     )
 
     executor = Path(getattr(args, 'executor', None) or '.plan/execute-script.py')
@@ -661,14 +665,18 @@ def cmd_executor_skew(args: argparse.Namespace) -> dict[str, Any]:
         result['remedy'] = 'regenerate the executor'
     elif verdict == _EXECUTOR_SKEW_UNCHECKED:
         # Name WHICH side could not be read: a file that was read but carries no
-        # usable assignment is a different fact from an unreadable file, and the
-        # operator's remedy differs.
-        if state == EXECUTOR_VERSION_FOUND:
-            result['reason'] = _unreadable_lane_text_reason(lane_skill_dir)
-        elif state in (EXECUTOR_VERSION_EMPTY, EXECUTOR_VERSION_NOT_FOUND):
-            result['reason'] = 'executor version missing or empty'
+        # usable version is a different fact from an unreadable file, and the
+        # operator's remedy differs. A readable but key-less executor version is
+        # the executor's failure, so it must not be blamed on the lane text.
+        if state != EXECUTOR_VERSION_FOUND:
+            if state in (EXECUTOR_VERSION_EMPTY, EXECUTOR_VERSION_NOT_FOUND):
+                result['reason'] = 'executor version missing or empty'
+            else:
+                result['reason'] = 'executor version unreadable'
+        elif executor_version is None or not version_key(executor_version):
+            result['reason'] = 'executor version names no version key'
         else:
-            result['reason'] = 'executor version unreadable'
+            result['reason'] = _unreadable_lane_text_reason(lane_skill_dir)
     return result
 
 

@@ -207,10 +207,26 @@ def test_an_unparseable_executor_version_cannot_check(tmp_path: Path) -> None:
 
     ``skew`` claims the executor is OLDER; a name the comparison cannot parse
     would compare as the empty tuple and make that claim without a comparison.
+    The failure is the executor's, so the reason must not blame the lane text.
     """
     _root, lane = _flat_install(tmp_path, '0.1.2021')
 
-    assert _lane_module()._executor_skew(_executor(tmp_path, 'dev'), lane) == 'could_not_check'
+    data = _skew_result(_executor(tmp_path, 'dev'), lane)
+
+    assert data['verdict'] == 'could_not_check'
+    assert data['reason'] == 'executor version names no version key'
+
+
+def test_an_unparseable_version_directory_cannot_check(tmp_path: Path) -> None:
+    """A live version dir whose name carries no version key cannot be compared."""
+    module = _lane_module()
+    lane = _versioned_lane(tmp_path, 'dev')
+
+    data = _skew_result(_executor(tmp_path, '0.1.2021'), lane)
+
+    assert data['verdict'] == 'could_not_check'
+    assert data['reason'] == f'lane text version unknown: the version directory {lane.parents[1]} names no version key'
+    assert module._executor_skew(_executor(tmp_path, '0.1.2021'), lane) == 'could_not_check'
 
 
 def test_skill_states_where_each_layout_takes_the_lane_text_version() -> None:
