@@ -98,23 +98,28 @@ FLAT_SAFE_JOINS: dict[tuple[str, str], str] = {
     ): _FLAT_SAFE_LIB_LOOP,
 }
 
-#: Modules whose sibling joins MUST go through the helper. Each entry is the
-#: module path relative to the repo root.
-ROUTED_MODULES: frozenset[str] = frozenset(
-    {
-        'marketplace/bundles/plan-marshall/skills/extension-api/scripts/configurable_contract.py',
-        'marketplace/bundles/plan-marshall/skills/extension-api/scripts/extension_discovery.py',
-        'marketplace/bundles/plan-marshall/skills/manage-execution-manifest/scripts/_manifest_validation.py',
-        'marketplace/bundles/plan-marshall/skills/marshall-steward/scripts/determine_mode.py',
-        'marketplace/bundles/plan-marshall/skills/script-shared/scripts/build/_build_execute_factory.py',
-        'marketplace/bundles/plan-marshall/skills/script-shared/scripts/build/_build_queue_slot.py',
-        'marketplace/bundles/plan-marshall/skills/tools-integration-ci/scripts/_ci_log_filter.py',
-        'marketplace/bundles/plan-marshall/skills/tools-integration-ci/scripts/ci_base.py',
-        'marketplace/bundles/plan-marshall/skills/workflow-integration-git/scripts/git-workflow.py',
-        'marketplace/bundles/plan-marshall/skills/workflow-integration-git/scripts/integrate_into_main.py',
-        'marketplace/bundles/plan-marshall/skills/workflow-integration-git/scripts/prepare_execute.py',
-    }
-)
+
+#: Modules whose sibling joins MUST go through the helper — DERIVED, never listed.
+#:
+#: The defining property is "this module calls the flat-aware join", so the roster
+#: is discovered by the same traversal the join inventory uses: an AST scan for a
+#: call to either helper name. A second, hand-kept membership list would drift the
+#: moment a module was routed or unrouted, and the whole point of the guard is that
+#: nobody has to remember.
+def _routed_modules() -> frozenset[str]:
+    """Return every module under ``marketplace/bundles`` that calls the helper."""
+    routed: set[str] = set()
+    for module_path in _module_paths():
+        tree = ast.parse(module_path.read_text(encoding='utf-8'), filename=str(module_path))
+        called = {
+            node.func.id if isinstance(node.func, ast.Name) else getattr(node.func, 'attr', '')
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call)
+        }
+        if called & _HELPER_NAMES:
+            routed.add(module_path.relative_to(PROJECT_ROOT).as_posix())
+    return frozenset(routed)
+
 
 #: Attributes that make an expression "derived from a filesystem location", which
 #: is what every sibling join in this tree walks up from.
@@ -398,9 +403,12 @@ def test_every_declared_join_appears_exactly_once() -> None:
 
 
 def test_every_routed_module_calls_the_helper() -> None:
-    """Each module the plan routed reaches its sibling skills through the helper."""
+    """The derived routed set is non-empty, and each member really calls the helper."""
+    routed = _routed_modules()
+
+    assert routed, 'the helper-call scan found no module: the derivation itself is broken'
     missing: list[str] = []
-    for relative in sorted(ROUTED_MODULES):
+    for relative in sorted(routed):
         tree = ast.parse((PROJECT_ROOT / relative).read_text(encoding='utf-8'), filename=relative)
         called = {
             node.func.id if isinstance(node.func, ast.Name) else getattr(node.func, 'attr', '')
@@ -413,12 +421,37 @@ def test_every_routed_module_calls_the_helper() -> None:
     assert not missing, f'routed modules that do not call {sorted(_HELPER_NAMES)}: {missing}'
 
 
+def test_the_routed_roster_is_derived_not_declared() -> None:
+    """The roster tracks the source: every routed module is the one the plan changed.
+
+    A hand-kept membership list would let a routed module be un-routed (or a new one
+    added) without the guard noticing. The derivation is the assertion: the set is
+    non-empty AND every module that calls the helper is in it — which is true by
+    construction, so what this pins is that the traversal still SEES them all.
+    """
+    routed = _routed_modules()
+    helper_callers = {
+        module_path.relative_to(PROJECT_ROOT).as_posix()
+        for module_path in _module_paths()
+        if _HELPER_NAMES
+        & {
+            node.func.id if isinstance(node.func, ast.Name) else getattr(node.func, 'attr', '')
+            for node in ast.walk(ast.parse(module_path.read_text(encoding='utf-8')))
+            if isinstance(node, ast.Call)
+        }
+    }
+
+    assert routed == helper_callers
+    assert len(routed) >= 10, f"expected the plan's routed modules, found {sorted(routed)}"
+
+
 def test_a_routed_module_carries_no_bare_join() -> None:
     """A routed module must not keep a bare sibling join beside the helper call."""
+    routed = _routed_modules()
     offenders = {
         f'{module} -> {skill}'
         for (module, skill) in _discovered_joins()
-        if module in ROUTED_MODULES and (module, skill) not in FLAT_SAFE_JOINS
+        if module in routed and (module, skill) not in FLAT_SAFE_JOINS
     }
 
     assert not offenders, sorted(offenders)

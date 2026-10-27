@@ -263,10 +263,19 @@ def _load_parse_log(error_style: str):
 
     Returns:
         The ``parse_log`` callable, or ``None`` when the build parser modules
-        cannot be imported in the current environment.
+        cannot be imported in the current environment — including when the
+        deployment root itself cannot be resolved, so a broken tree degrades to
+        the generic filter instead of raising into the CI entry point.
     """
     skill, module_name = _STYLE_TO_PARSE_MODULE[error_style]
-    _ensure_build_parser_paths(skill)
+    try:
+        _ensure_build_parser_paths(skill)
+    except RuntimeError:
+        # The sibling lookup walks to the skills root, which raises on a tree that
+        # carries neither deployed shape. That is exactly the degraded environment
+        # this function already answers ``None`` for; it must not fail louder than
+        # an unavailable parser module.
+        return None
     try:
         module = __import__(module_name)
     except ImportError:

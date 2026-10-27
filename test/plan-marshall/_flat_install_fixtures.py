@@ -113,8 +113,18 @@ def deployed_skill_md(bundle: str, skill: str) -> str:
         return identity_skill_md(bundle, skill)
     frontmatter = lines[1:closing]
     body = lines[closing + 1 :]
-    identity = [f'{IDENTITY_METADATA_KEY}:', f'  {IDENTITY_BUNDLE_KEY}: {bundle}', f'  {IDENTITY_SKILL_KEY}: {skill}']
-    assembled = ['---', *frontmatter, *identity, '---', *body]
+    identity = [f'  {IDENTITY_BUNDLE_KEY}: {bundle}', f'  {IDENTITY_SKILL_KEY}: {skill}']
+    metadata_key = f'{IDENTITY_METADATA_KEY}:'
+    if metadata_key in frontmatter:
+        # Four shipped skills already declare a top-level ``metadata:`` map (a
+        # ``verification_profile``). Appending a second one would give the manifest a
+        # duplicate key, and which half a parser keeps is implementation-defined — so
+        # the identity is merged INTO the existing block instead.
+        index = frontmatter.index(metadata_key)
+        merged = [*frontmatter[: index + 1], *identity, *frontmatter[index + 1 :]]
+        assembled = ['---', *merged, '---', *body]
+    else:
+        assembled = ['---', *frontmatter, metadata_key, *identity, '---', *body]
     return '\n'.join(assembled) + '\n'
 
 

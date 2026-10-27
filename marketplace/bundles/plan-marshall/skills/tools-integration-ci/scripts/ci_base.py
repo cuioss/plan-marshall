@@ -2133,10 +2133,15 @@ def _load_persist():
     # consulted, and this module is loaded early by the CI entry points.
     from marketplace_bundles import resolve_sibling_skill_path
 
-    module_path = resolve_sibling_skill_path(
-        Path(__file__), 'plan-marshall', 'skills/manage-ci-artifacts/scripts/manage-ci-artifacts.py'
-    )
-    if not module_path.is_file():
+    try:
+        module_path = resolve_sibling_skill_path(
+            Path(__file__), 'plan-marshall', 'skills/manage-ci-artifacts/scripts/manage-ci-artifacts.py'
+        )
+    except RuntimeError:
+        # The sibling lookup walks to the skills root, which raises on a tree that
+        # carries neither deployed shape. That is the same "cannot be located" state
+        # this function already degrades to ``None`` for, and its callers run before
+        # their own per-entry guards.
         return None
     try:
         spec = importlib.util.spec_from_file_location('manage_ci_artifacts', module_path)
