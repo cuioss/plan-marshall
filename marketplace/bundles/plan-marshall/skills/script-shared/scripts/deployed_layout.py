@@ -81,6 +81,12 @@ FLAT_DIR_SEPARATOR: Final[str] = '-'
 #: for why the singular spelling is still probed.
 TARGET_MANIFEST_NAMES: Final[tuple[str, ...]] = ('plugin.json', 'opencode.json')
 
+#: The sync's INSTALL STAMP: the ``dist-manifest.json`` a target's sync writes at
+#: the deploy root, beside the target manifest. It records the version deployed
+#: there, and on a flat tree it is the ONLY version witness the install holds —
+#: the flat shape has no ``{bundle}/{version}/`` directory to read one from.
+DIST_MANIFEST_NAME: Final[str] = 'dist-manifest.json'
+
 
 # ---------------------------------------------------------------------------
 # Bundle-cache roots — where each target DEPLOYS bundles
@@ -250,6 +256,41 @@ def is_flat_skill_root(path: Path) -> bool:
     it, so the two cannot disagree about which directories count.
     """
     return path.name in SKILL_ROOT_NAMES and path.is_dir() and not is_bundle_skill_root(path)
+
+
+def flat_deploy_root(skill_dir: Path) -> Path | None:
+    """Return the deploy root a FLAT skill directory belongs to, or ``None``.
+
+    ``{root}/skills/{bundle}-{skill}`` is a flat skill; its deploy root is the
+    directory CONTAINING that skill root, which is where the sync writes its
+    install stamp (:data:`DIST_MANIFEST_NAME`).
+
+    ``None`` for a NESTED skill directory (a bundle's own ``skills/``) and for
+    any path that is not a flat skill at all, so a caller falls through instead
+    of reading a stamp that layout never writes.
+    """
+    if not skill_dir.is_dir() or not is_flat_skill_root(skill_dir.parent):
+        return None
+    if not is_flat_skill_dir_name(skill_dir.name):
+        return None
+    return skill_dir.parent.parent
+
+
+def read_deploy_stamp_version(deploy_root: Path) -> str | None:
+    """Return the version the deploy root's install stamp records, or ``None``.
+
+    ``None`` covers every case a caller must not turn into a version it did not
+    read: no stamp, an unreadable or non-object payload, and a payload whose
+    ``version`` is absent, empty or not a string.
+    """
+    try:
+        payload = json.loads((deploy_root / DIST_MANIFEST_NAME).read_text(encoding='utf-8'))
+    except (OSError, ValueError, UnicodeDecodeError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    version = payload.get('version')
+    return version if isinstance(version, str) and version else None
 
 
 def skill_roots(root: Path) -> list[Path]:

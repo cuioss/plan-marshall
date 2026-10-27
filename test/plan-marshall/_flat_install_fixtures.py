@@ -32,6 +32,7 @@ Usage (``test/plan-marshall/`` is on ``sys.path`` via the root conftest)::
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import subprocess
@@ -40,6 +41,7 @@ from pathlib import Path
 
 import pytest
 from deployed_layout import (
+    DIST_MANIFEST_NAME,
     IDENTITY_BUNDLE_KEY,
     IDENTITY_METADATA_KEY,
     IDENTITY_SKILL_KEY,
@@ -128,7 +130,28 @@ def deployed_skill_md(bundle: str, skill: str) -> str:
     return '\n'.join(assembled) + '\n'
 
 
-def build_flat_install(root: Path, *, real_frontmatter: bool = False) -> Path:
+def write_dist_manifest(root: Path, version: str | None = '0.1.2021', *, raw: str | None = None) -> Path:
+    """Write the sync's install stamp at a flat DEPLOY root, as the sync does.
+
+    The stamp is the only version witness a flat install carries: the deployed
+    tree has no ``{bundle}/{version}/`` directory to read a version from.
+
+    Args:
+        root: The deploy root (the directory CONTAINING ``skills/``).
+        version: The version the stamp records; ``None`` writes a stamp with no
+            ``version`` field.
+        raw: Text to write verbatim instead of a JSON payload — the unreadable
+            stamp a corrupt or foreign file would produce.
+
+    Returns:
+        The path of the stamp that was written.
+    """
+    path = root / DIST_MANIFEST_NAME
+    path.write_text(raw if raw is not None else json.dumps({} if version is None else {'version': version}), 'utf-8')
+    return path
+
+
+def build_flat_install(root: Path, *, real_frontmatter: bool = False, stamp_version: str | None = None) -> Path:
     """Populate ``{root}/skills/{bundle}-{skill}/`` from the real bundle trees.
 
     Args:
@@ -138,6 +161,10 @@ def build_flat_install(root: Path, *, real_frontmatter: bool = False) -> Path:
             manifest. Needed by a reader that parses a skill's own declaration —
             the step-doc ``configurable`` blocks and the ``automatic-review`` bot
             roster — and still cheap enough to build per session.
+        stamp_version: When set, write the sync's install stamp at ``root``
+            (:func:`write_dist_manifest`) with that version, as a synced install
+            does. Left unset the fixture carries no stamp, which is what a
+            hand-copied tree has.
 
     Returns:
         ``root``, so a caller can chain the build and the env construction.
@@ -168,6 +195,8 @@ def build_flat_install(root: Path, *, real_frontmatter: bool = False) -> Path:
                         target / subtree,
                         ignore=shutil.ignore_patterns('__pycache__', '*.pyc'),
                     )
+    if stamp_version is not None:
+        write_dist_manifest(root, stamp_version)
     return root
 
 
