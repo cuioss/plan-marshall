@@ -2,9 +2,9 @@
   "id": "PLAN-LB-58",
   "slug": "verification-truth",
   "workstream": "WS-01",
-  "status": "running",
-  "plan_marshall_plan_id": "",
-  "pr": "",
-  "landing": "",
+  "status": "shipped",
+  "plan_marshall_plan_id": "rb-lb-58-verification-truth",
+  "pr": "1866",
+  "landing": "landings/PLAN-LB-58.md",
   "seq": 58
 }
