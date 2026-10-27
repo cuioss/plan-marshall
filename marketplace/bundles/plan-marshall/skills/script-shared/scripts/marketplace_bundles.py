@@ -375,6 +375,19 @@ def resolve_skills_root(script_file: Path) -> Path:
     )
 
 
+def _shape_lines(nested: Path, flat: Path | None) -> list[str]:
+    """Render the probe candidates a sibling-skill lookup tried, one line each.
+
+    The SINGLE wording both surfaces use — the exception's message and
+    :func:`describe_sibling_skill_shapes` — so the two cannot drift into two
+    descriptions of the same miss.
+    """
+    lines = [f'  nested (marketplace checkout / plugin cache): {nested}']
+    if flat is not None:
+        lines.append(f'  flat (OpenCode / Antigravity): {flat}')
+    return lines
+
+
 class SkillPathNotFound(LookupError):
     """A skill-anchored path resolved against NEITHER deployed shape.
 
@@ -389,11 +402,8 @@ class SkillPathNotFound(LookupError):
         self.relative_path = relative_path
         self.nested = nested
         self.flat = flat
-        lines = [f'sibling skill path not found: {relative_path}']
-        lines.append(f'  nested (marketplace checkout / plugin cache): {nested}')
-        if flat is not None:
-            lines.append(f'  flat (OpenCode / Antigravity): {flat}')
-        super().__init__('\n'.join(lines))
+        header = f'sibling skill path not found: {relative_path}'
+        super().__init__('\n'.join([header, *_shape_lines(nested, flat)]))
 
 
 def _nested_sibling_path(skills_root: Path, relative_path: str) -> Path:
@@ -478,10 +488,7 @@ def describe_sibling_skill_shapes(script_file: Path, bundle: str, relative_path:
     surfaces name the same two candidates.
     """
     nested, flat_candidates = _sibling_skill_candidates(script_file, bundle, relative_path)
-    lines = [f'  nested (marketplace checkout / plugin cache): {nested}']
-    if flat_candidates:
-        lines.append(f'  flat (OpenCode / Antigravity): {flat_candidates[0]}')
-    return '\n'.join(lines)
+    return '\n'.join(_shape_lines(nested, flat_candidates[0] if flat_candidates else None))
 
 
 def require_sibling_skill_path(script_file: Path, bundle: str, relative_path: str) -> Path:

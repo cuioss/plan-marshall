@@ -94,7 +94,7 @@ def lane_results(flat_install: Path, tmp_path_factory: pytest.TempPathFactory) -
     """One pass of the flat-tree driver, shared by the per-site assertions.
 
     Each site below then reports its OWN failure, so a mutation that breaks all of
-    them yields one named failure per join rather than a single stop at the first.
+    them produces one named failure per join rather than a single stop at the first.
     """
     project = tmp_path_factory.mktemp('flat-lane-project')
     completed = run_python_in_flat(flat_install, project, _program(flat_install))
