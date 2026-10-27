@@ -309,6 +309,14 @@ derive, for rows still live.
   found: ~/.config/opencode/skills/automatic-review/SKILL.md`, reproduced here by a direct probe. Overlaps the held PLAN-LB-93 on
   `determine_mode.py`, `deployed_layout.py` and `test/plan-marshall/script-shared/`; no file with the running PLAN-LB-58.
 
+- **PLAN-LB-98** (staged 2026-10-27, WS-04, runbook, **high** by operator ruling; `plans/PLAN-LB-98-flat-install-executor-skew.md`,
+  nine claims): the executor-skew check can answer on a flat install. D1 the lane text version on a flat install is read from the
+  install root's sync stamp (`dist-manifest.json`), so the check answers `match` or `skew`; D2 the `could_not_check` reason
+  names what was probed and the lane text states where each layout's version comes from; D3 an end-to-end test through the
+  executor under the OpenCode runtime signal, with the stale-executor case as the fixture. Verify-first: whether the stamp is an
+  acceptable witness (a per-skill stamp and a content hash are the alternatives). No file shared with the emitted LB-93, so the
+  two can run in parallel. Not emitted; the ledger must be landed first.
+
 - **PLAN-LB-93 re-grounded 2026-10-27 at `2001a8a13`, emitted on the operator's instruction (re-ground, land, emit):** only
   `generate_executor.py` and `determine_mode.py` changed since the claims were grounded, both through PLAN-LB-97. D1's
   start-up symptom is fixed (the installed flat generator runs `recover --help`), so D1 narrows to the missing-library report
@@ -580,6 +588,12 @@ derive, for rows still live.
 - **Operator decisions the specs leave open** (each is a verify-first clause in its spec):
 
 ## Decisions
+
+- 2026-10-27 — **PLAN-LB-98 staged at high.** The PLAN-LB-93 lane asked the `executor-skew` question again (could_not_check,
+  executor 0.1.2021, lane text version unknown). I answered "proceed" and offered to stage it as medium; the operator ruled "it
+  is high", which overrides the focus-rule reading of it as an avoidable question. Grounded in `runbook_lane.py` L481-590,
+  reproduced with `env OPENCODE=1 ... runbook_lane executor-skew`, and fixed by reading the install root's sync stamp. Nine
+  claims persisted (seven corroborated, two unverifiable). Not emitted. No overlap with LB-93.
 
 - 2026-10-27 — **PLAN-LB-93 re-grounded and emitted.** Operator: "first re-ground, then land, then emit". Method: a
   `git diff --stat ee00687b8..2001a8a13` over every surface file (two changed, both by LB-97), then direct runs on the installed
@@ -1128,8 +1142,11 @@ derive, for rows still live.
 
 ## Open Defects
 
-- **`executor-skew` answers `could_not_check` on every flat OpenCode install (PLAN-LB-95 landing, 2026-10-26; medium; not
-  staged).** A flat install has no `{bundle}/{version}` directory, so the lane text version cannot be derived and each
+- **HIGH (operator ruling 2026-10-27: "it is high") — `executor-skew` answers `could_not_check` on every flat OpenCode
+  install; owner PLAN-LB-98, staged (found in the PLAN-LB-95 landing, 2026-10-26; asked again by the PLAN-LB-93 lane,
+  2026-10-27).** Beyond the avoidable question, on the second machine the same verdict sat on a stale executor (`0.1.2010`)
+  and hid it. A flat install carries a version witness the check does not read: the sync's `dist-manifest.json` at the install
+  root. Earlier text of this entry, written at medium: A flat install has no `{bundle}/{version}` directory, so the lane text version cannot be derived and each
   OpenCode lane asks the operator two questions that cannot change the outcome (LB-95 asked both; regenerating the executor
   did not change the verdict). Related to PLAN-LB-96, which makes the flat install resolve its bundles root, but not part of
   it. Under the high-and-blocking focus rule this waits.
