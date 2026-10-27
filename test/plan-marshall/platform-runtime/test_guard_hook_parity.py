@@ -25,7 +25,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from _guard_node_harness import SUB_AGENT_AGENT, GuardHarness, build_harness, shell_event
+from _guard_node_harness import SUB_AGENT_AGENT, GuardHarness, build_harness, edit_event, shell_event
 
 from conftest import load_script_module
 
@@ -214,3 +214,38 @@ def test_guards_refuse_paths_outside_the_repository_and_the_deployment(
     hook_reason = _HOOK.evaluate(_hook_payload(command, in_context=True))
     assert guard_blocked is True, f'guard.js must refuse {command!r}'
     assert hook_reason is not None, f'hook must refuse {command!r}'
+
+
+def test_guards_agree_on_the_lane_write_rule(tmp_path_factory: pytest.TempPathFactory) -> None:
+    """R7: both harnesses refuse a lane run's main-checkout edit and allow the worktree one.
+
+    The full case matrix (progress file, no marker, marker without worktree) lives
+    in ``test_guard_lane_main_checkout_write.py``; this row is the PARITY statement
+    — the rule both implementations must share, driven through both.
+    """
+    harness = build_harness(tmp_path_factory.mktemp('guard-lane-parity'))
+    root = harness.root
+    marker = root / '.plan' / 'temp' / 'rb-lane-parity' / 'progress.md'
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.write_text('lane\n', encoding='utf-8')
+    worktree = root / '.plan' / 'local' / 'worktrees' / 'lane-parity'
+    worktree.mkdir(parents=True, exist_ok=True)
+    tracked = root / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills' / 'x' / 'scripts' / 'x.py'
+
+    def hook_edit(file_path: str) -> dict:
+        return {
+            'tool_name': 'Edit',
+            'tool_input': {'file_path': file_path},
+            'cwd': str(root),
+            'agent_type': SUB_AGENT_AGENT,
+        }
+
+    guard_main, _ = harness.blocks(edit_event(str(tracked), agent=SUB_AGENT_AGENT))
+    hook_main = _HOOK.evaluate(hook_edit(str(tracked)))
+    assert guard_main is True, 'guard.js must refuse a lane edit of the main checkout'
+    assert hook_main is not None, 'the hook must refuse the same edit'
+
+    guard_worktree, _ = harness.blocks(edit_event(str(worktree / 'x.py'), agent=SUB_AGENT_AGENT))
+    hook_worktree = _HOOK.evaluate(hook_edit(str(worktree / 'x.py')))
+    assert guard_worktree is False, 'guard.js must allow the worktree edit'
+    assert hook_worktree is None, 'the hook must allow the worktree edit'

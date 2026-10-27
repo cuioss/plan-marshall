@@ -18,7 +18,7 @@ Three scripts in `scripts/` implement the hook, layered shared-gate-first:
 |--------|------|
 | `pretooluse_gate.py` | Shared, pure-function library: the SINGLE home of payload-field knowledge and the context-gate predicate. Imported by both leaves; owns NO rule matchers. |
 | `claude_pretooluse_capture.py` | Observe-only leaf that imports the shared gate and records the raw payload + the gate's extracted fields + would-be verdict. Always exits 0 emitting nothing. Used to validate the gate's field names against real payloads before enforcement is armed. |
-| `claude_pretooluse_hook.py` | Enforcement leaf that imports the SAME shared gate and adds ONLY the R1–R6 rule matchers + the `permissionDecision: deny` envelope on top. |
+| `claude_pretooluse_hook.py` | Enforcement leaf that imports the SAME shared gate and adds ONLY the R1–R7 rule matchers + the `permissionDecision: deny` envelope on top. |
 
 The dependency ordering is **shared-gate (best-guess) → capture (validate /
 correct) → enforce (final)**: the shared gate's best-guess field names are
@@ -31,8 +31,8 @@ the two leaves — all of it lives in `pretooluse_gate.py`.
 
 Two harnesses enforce the same decision table: the **Claude PreToolUse hook**
 (`claude_pretooluse_hook.py`) and the **OpenCode guard** (`.opencode/plugin/
-guard.js`). On the Claude hook, R1–R5 bind when ANY of the following fires; the
-OpenCode guard applies R1–R4 unconditionally and gates only R5 on the same
+guard.js`). On the Claude hook, R1–R5 and R7 bind when ANY of the following fires; the
+OpenCode guard applies R1–R4 unconditionally and gates only R5 and R7 on the same
 predicate. **R6 is not context-gated on either harness** (only its unresolvable
 fail-closed branch is limited to that scope).
 
@@ -76,6 +76,7 @@ An absent Signal-1 field still lets Signal 2 satisfy the gate, and vice versa.
 | Signal 3 (24-hour lane marker) | `.plan/temp/rb-<plan>/progress.md` under `CLAUDE_PROJECT_DIR`, falling back to the payload `cwd`, fresh within 24 h | the same marker under the guard's project root, fresh within 24 h |
 | Repository marker | `CLAUDE_PROJECT_DIR`, falling back to the payload `cwd`, then to the hook's own location, carries the shared allow-list file | the guard's project root carries the same file |
 | R6 | unconditional | unconditional |
+| R7 | plan context (Signal 1–3) AND a live lane marker whose worktree exists | the same predicate, from the guard's `agent`/`workdir`/root |
 
 Both harnesses therefore bind a root session of this repository. On the Claude
 hook a consumer repository outside a plan context is refused nothing except R6.
@@ -84,11 +85,11 @@ project that installs that guard IS bound by those rules; only its R5 is gated.
 
 ## Rule families
 
-The R1–R6 matchers are enforcement-only — they live solely in the enforcement
+The R1–R7 matchers are enforcement-only — they live solely in the enforcement
 leaf, layered on top of the shared gate, and run against the shared gate's
 `tool_name(payload)` / `tool_input(payload)` accessors. When the gate is satisfied
-OR this project IS the plan-marshall source repository the leaf runs R1–R5; R6
-runs unconditionally. On the first matching
+OR this project IS the plan-marshall source repository the leaf runs R1–R5 and
+R7; R6 runs unconditionally. On the first matching
 rule the leaf appends one `guard.log` audit
 line (best-effort) and emits a `permissionDecision: deny` envelope carrying a
 one-line `permissionDecisionReason`; on no match it emits nothing.
@@ -101,6 +102,7 @@ one-line `permissionDecisionReason`; on no match it emits nothing.
 | **R4 hard-coded build** | A Bash command invoking `./pw` or a bare `mvn` / `npm` / `gradle` / `uv` (the program is read un-stripped and after R5 wrapper stripping, so `env uv run python -c ...` is refused). The `./pw` verdict is the shared table's `build_wrapper_admission` (`generate*` and `--*` admitted today), so the hook and the guard give `./pw generate` — the command `CLAUDE.md` prescribes — ONE verdict | Resolve build commands via `plan-marshall:manage-architecture:architecture resolve` |
 | **R5 direct interpreter call** | A Bash command invoking an interpreter (`python` / `python3` / `pypy` / `pypy3` / a versioned spelling such as `python3.12`, case-insensitively) as `-c`, a script path, a bare `-` (STDIN) or a `-<`/`->` redirection, or `-m` with any module — except the executor permit (the relative `python3 .plan/execute-script.py` run from the repository root, or an absolute form equal to `{repository root}/.plan/execute-script.py` after path normalization) and the shared allow-list of documented non-executor invocations. **R5 binds inside a plan context, in a live runbook-lane run, AND in every session of the plan-marshall source repository.** The wrapper prefixes come from ONE shared data file, [`r5-wrappers.json`](r5-wrappers.json): a path-qualified `/usr/bin/env` strips like `env`, an option cluster like `env -iu FOO` is walked letter by letter, `timeout` / `flock` / `chrt` / `taskset` consume their leading positional, `env -S` and a shell's `-c` splice the command string back into the walk (all of its segments), `watch`/`parallel` splice their positional command string, and `find … -exec` is walked from the program it runs. A shell's `cd` inside the spliced string is applied in order, so the executor is judged from the directory it really runs in. The **fail-closed floor** runs before R2: a wrapper handed a command string, stdin (a here-string or here-document) or a SCRIPT FILE is refused when that text names an interpreter ANYWHERE, so a grouping keyword (`if`/`then`/`for`/`case`/`{ }`/`( )`/`!`), a shell option before `-c`, a here-string or a script file cannot hide the call; the segment walk decides only whether the text is the admitted executor. With the table absent the check reads each raw token's own content, so `zsh -c "python3 -c x"` is refused rather than read as an opaque token | Route builds and checks via `python3 .plan/execute-script.py`; `.plan` state via `manage-*` verbs or the Read/Edit/Write tools |
 | **R6 raw finalize commit** | A raw `git commit` while the enclosing plan — NAMED from every commit form: the `--work-tree` value, the composed `git -C` target, the plan a `--git-dir` / `GIT_DIR` admin directory points at (`…/worktrees/{plan}`), then the shell workdir, then the project root — its `status.json` field `current_phase` read from the WORKTREE-RESIDENT record first (the live one during phase 5+) and the main-anchored record otherwise, never "the first plan found". A subcommand defined with `-c alias.NAME=…` is resolved to its body; a shell-expansion alias body and any directory value that still carries an unexpanded variable are UNRESOLVABLE and refused fail-closed. **R6 is not context-gated.** Every plan commit must pass through the gate-bearing `git-workflow commit` verb, which sanctions an open loop-back fix task, a review-rubric section-6 record, or a step id of the plan's composed phase-6 manifest. R6 runs after R1 and BEFORE R2–R5 on both harnesses, so the shell-spawn class cannot shadow the specific raw-commit rule for a commit wrapped in a shell string (the interpreter floor still takes precedence, which is the more severe refusal) | Commit via `python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow commit` |
+| **R7 lane write into the main checkout** | An Edit/Write/MultiEdit (hook) or edit/write/patch/apply_patch (guard) whose target resolves INSIDE the project root, outside `.plan/local/worktrees/`, `.plan/temp/` and `.plan/local/plans/`, while the call is a plan-context one AND a live `rb-<plan>` marker names an EXISTING `.plan/local/worktrees/<plan>`. The binding is deliberately narrow: with no marker (a developer session in the main checkout) or with a marker whose worktree is gone (a `use_worktree: false` plan, or a past lane run) the edit passes. The refusal names the worktree path to write instead | Make the edit in the plan worktree the refusal names |
 
 ### R5 — allow-list, wrappers, and the audit line
 
