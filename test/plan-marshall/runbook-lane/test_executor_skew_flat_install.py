@@ -78,7 +78,10 @@ def _versioned_lane(tmp_path: Path, version: str) -> Path:
 def _skew_result(executor: Path, lane_dir: Path) -> dict[str, object]:
     """Run the verb in-process against ``lane_dir`` and return its payload."""
     module = _lane_module()
-    return module.cmd_executor_skew(argparse.Namespace(executor=str(executor), lane_dir=str(lane_dir)))
+    payload: dict[str, object] = module.cmd_executor_skew(
+        argparse.Namespace(executor=str(executor), lane_dir=str(lane_dir))
+    )
+    return payload
 
 
 def _flat_reason(deploy_root: Path) -> str:
