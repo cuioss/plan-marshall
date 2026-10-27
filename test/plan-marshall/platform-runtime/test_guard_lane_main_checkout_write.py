@@ -144,3 +144,59 @@ def test_a_marker_without_a_matching_worktree_passes(harness: GuardHarness) -> N
 
     assert not blocked, message
     assert hook_reason is None
+
+
+def test_two_live_lanes_name_every_candidate_worktree(harness: GuardHarness) -> None:
+    """The payload identifies no lane, so a refusal names ALL candidates, never one.
+
+    Picking the first marker's worktree would tell a call from the other lane to
+    edit a directory that is not its own.
+    """
+    root = harness.root
+    _lane_marker(root, 'lane-a')
+    _lane_marker(root, 'lane-b')
+    first = _lane_worktree(root, 'lane-a')
+    second = _lane_worktree(root, 'lane-b')
+
+    (blocked, message), hook_reason = _both(harness, root, str(root / MAIN_CHECKOUT_TARGET))
+
+    assert blocked, 'the write must still be refused'
+    assert str(first) in message and str(second) in message, f'both candidates must be named; message={message!r}'
+    assert hook_reason is not None
+    assert str(first) in hook_reason and str(second) in hook_reason, hook_reason
+
+
+def test_a_patch_path_with_a_space_is_resolved_whole(harness: GuardHarness) -> None:
+    """An apply_patch marker names ONE path; a space in it must not split the target."""
+    root = harness.root
+    _lane_marker(root)
+    worktree = _lane_worktree(root)
+    patch = f'*** Begin Patch\n*** Update File: {worktree}/space file.py\n*** End Patch\n'
+
+    event = {
+        'tool': 'apply_patch',
+        'sessionID': 'sess-0001',
+        'id': 'call-0001',
+        'input': {'patchText': patch},
+        'agent': SUB_AGENT_AGENT,
+    }
+    blocked, message = harness.blocks(event)
+
+    assert not blocked, f'the worktree path is exempt whatever its spaces; message={message!r}'
+
+
+def test_a_new_file_under_a_symlinked_exempt_dir_is_refused(harness: GuardHarness) -> None:
+    """A symlinked exempt prefix cannot hide a not-yet-existing main-checkout target."""
+    root = harness.root
+    _lane_marker(root)
+    _lane_worktree(root)
+    (root / '.plan' / 'local').mkdir(parents=True, exist_ok=True)
+    link = root / '.plan' / 'local' / 'plans'
+    if not link.exists():
+        link.symlink_to(root / 'marketplace', target_is_directory=True)
+    target = link / 'bundles' / 'new-module' / 'new.py'
+
+    (blocked, message), hook_reason = _both(harness, root, str(target))
+
+    assert blocked, f'a new file resolving into the checkout must be refused; message={message!r}'
+    assert hook_reason is not None

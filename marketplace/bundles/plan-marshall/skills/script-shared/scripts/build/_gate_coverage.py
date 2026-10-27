@@ -205,8 +205,6 @@ def classify_check_duration(
     Returns:
         A frozen :class:`DurationVerdict`.
     """
-    if files_checked < SUSPECT_MIN_FILES:
-        return DurationVerdict(plausible=True, reason=None)
     if reported_sources is not None and reported_sources < files_checked:
         return DurationVerdict(
             plausible=False,
@@ -216,6 +214,8 @@ def classify_check_duration(
                 f'it claims to have verified'
             ),
         )
+    if files_checked < SUSPECT_MIN_FILES:
+        return DurationVerdict(plausible=True, reason=None)
     if elapsed_seconds <= 0.0:
         return DurationVerdict(
             plausible=False,

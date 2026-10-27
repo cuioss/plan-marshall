@@ -135,11 +135,13 @@ either way:
   diverged from a red CI. Success is then read on the run's **own affirmative signal**: mypy prints
   the number of source files it analysed (`Success: no issues found in N source files`), and a run
   that analysed at least the collected file set is a real analysis — `classify_check_duration` accepts
-  it without consulting a clock, so a fast machine's honest cold run is not failed for being fast. The
-  wall-time heuristic remains only as the fallback for a run that published no count, and an
-  impossible rate still fails closed: a summary naming fewer files than were collected, or a rate in
-  the impossible band, is **suspect, not reassurance**, and the gate fails closed rather than
-  certifying the tree from a cache.
+  it without consulting the 200-files-per-second fallback ceiling, so a fast machine's honest cold run
+  is not failed for being fast. The count does not switch every clock check off: a zero/negative
+  wall-time and a rate above the impossible-analysis band still fail closed, because no analysis
+  processes files that fast. The wall-time ceiling itself remains only as the fallback for a run that
+  published no count, and an impossible result still fails: a summary naming fewer files than were
+  collected, or a rate in the impossible band, is **suspect, not reassurance**, and the gate fails
+  closed rather than certifying the tree from a cache.
 - **Honest coverage boundary.** A run that could not fully check a footprint is **distinguishable**
   from one that genuinely passed — and so is a run that established nothing at all. `verify` /
   `quality-gate` print one of **three** verdicts. COMPLETE requires an *affirmative* signal: at least

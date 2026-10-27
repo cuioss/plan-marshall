@@ -182,6 +182,23 @@ def test_a_count_short_of_the_collected_set_is_implausible():
     assert '12' in verdict.reason
 
 
+def test_a_short_count_is_implausible_at_small_scope_too():
+    """The small-scope exemption covers DURATION only — a short count still reds.
+
+    A module-scoped run that reports fewer sources than were collected is the same
+    defect at any size; exempting it would leave the gate blind on every scoped
+    run.
+    """
+    verdict = classify_check_duration(
+        files_checked=SUSPECT_MIN_FILES - 1,
+        elapsed_seconds=0.01,
+        reported_sources=3,
+    )
+
+    assert verdict.plausible is False
+    assert verdict.reason is not None
+
+
 def test_parse_mypy_reported_sources_reads_the_success_summary():
     """The ONE parse of mypy's affirmative line — both singular and plural forms."""
     assert parse_mypy_reported_sources('Success: no issues found in 1801 source files') == 1801

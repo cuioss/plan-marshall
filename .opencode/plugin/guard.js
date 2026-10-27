@@ -1250,22 +1250,26 @@ function freshLaneMarkers(root) {
   })
 }
 
-// The worktree a LIVE lane marker names, when that worktree EXISTS, else null.
+// The worktrees the LIVE lane markers name, when those worktrees EXIST.
 //
 // The marker-to-worktree mapping is `rb-<plan>` → `.plan/local/worktrees/<plan>`
-// (the lane's `sender_id` minus its prefix). An ABSENT worktree answers null: the
-// marker outlives its worktree, so a rule keyed on the marker alone would refuse
-// a developer's ordinary edit in the main checkout after any past lane run.
-function laneWorktree(root) {
+// (the lane's `sender_id` minus its prefix). An ABSENT worktree contributes
+// nothing: the marker outlives its worktree, so a rule keyed on the marker alone
+// would refuse a developer's ordinary edit in the main checkout after any past
+// lane run. The list is NOT narrowed to one candidate on purpose — the payload
+// carries no lane identity, so picking one would name a worktree the call may not
+// belong to; the refusal names them all instead.
+function laneWorktrees(root) {
+  const found = []
   for (const name of freshLaneMarkers(root)) {
     const candidate = path.join(root, ".plan", "local", "worktrees", name.slice("rb-".length))
     try {
-      if (statSync(candidate).isDirectory()) return candidate
+      if (statSync(candidate).isDirectory()) found.push(candidate)
     } catch {
       continue
     }
   }
-  return null
+  return found
 }
 
 // The paths a lane run may write in the MAIN checkout: its own worktrees, its
@@ -1444,18 +1448,37 @@ function resolveInsideRoot(raw, root) {
   if (!trimmed) return null
   const base = (root || "").replace(/\\/g, "/").replace(/\/+$/, "")
   const joined = trimmed.startsWith("/") ? trimmed : base + "/" + trimmed
-  return normalizePosixPath(realPathOf(joined))
+  return resolveNearestExisting(joined)
+}
+
+// Resolve the nearest EXISTING ancestor and re-append the missing tail, then
+// normalise. `realPathOf` alone returns the lexical path when its target does not
+// exist yet, which lets a symlinked exempt directory (`.plan/temp/`, the lane
+// worktree) hide a NEW file from the containment check: the lexical path looks
+// exempt while the file would be created in the main checkout.
+function resolveNearestExisting(absolutePath) {
+  const normalized = normalizePosixPath(absolutePath)
+  const segments = normalized.split("/").filter(Boolean)
+  const tail = []
+  while (segments.length) {
+    const candidate = "/" + segments.join("/")
+    if (existsSync(candidate)) {
+      return normalizePosixPath([realPathOf(candidate), ...tail.slice().reverse()].join("/"))
+    }
+    tail.push(segments.pop())
+  }
+  return normalized
 }
 
 // The main-checkout write R7 refuses, or null. A lane run may write only inside
 // its own worktree, `.plan/temp/` and `.plan/local/plans/`; everything else under
-// the checkout is a tracked-file write the lane must make in the worktree.
-function laneWriteViolation(args, root, worktree) {
+// the checkout — existing or new — is a write the lane must make in the worktree.
+function laneWriteViolation(args, root, worktrees) {
   const rootNorm = normalizePosixPath(realPathOf(root)) + "/"
-  const worktreeNorm = normalizePosixPath(realPathOf(worktree)) + "/"
+  const worktreePrefixes = worktrees.map((worktree) => normalizePosixPath(realPathOf(worktree)) + "/")
   for (const target of editedTargetPaths(args, root)) {
     if (!target.startsWith(rootNorm)) continue
-    if (target.startsWith(worktreeNorm)) continue
+    if (worktreePrefixes.some((prefix) => target.startsWith(prefix))) continue
     const relative = target.slice(rootNorm.length)
     if (MAIN_CHECKOUT_WRITE_EXEMPT_PREFIXES.some((prefix) => relative.startsWith(prefix))) continue
     return { target, relative }
@@ -1475,23 +1498,40 @@ function normalizedIsExecutorPath(raw) {
 // than a filePath. `patchOperationTargets` returns every operation target (both
 // paths on a move); the executor rule refuses if any resolves under
 // .plan/execute-script.py, and R7 judges the same set against the main checkout.
+//
+// A MARKER names ONE path, and a path may contain spaces, so the marker forms take
+// the whole remainder (minus one matching pair of surrounding quotes). Only the
+// legacy bare form still splits on whitespace.
 function patchOperationTargets(patchText) {
   if (!patchText) return []
   const candidates = []
   for (const line of patchText.split("\n")) {
-    const op =
+    const marker =
       line.match(/^\s*\*+\s+(?:add|update|delete)\s+file:\s*(.+?)\s*$/i) ||
-      line.match(/^\s*\*+\s+move\s+to:\s*(.+?)\s*$/i) ||
-      line.match(/^\s*(?:add|update|move|delete)\b\s+(.*)$/i)
-    if (!op) continue
-    const targetPart = op[1]
+      line.match(/^\s*\*+\s+move\s+to:\s*(.+?)\s*$/i)
+    if (marker) {
+      candidates.push(stripSurroundingQuotes(marker[1]))
+      continue
+    }
+    const legacy = line.match(/^\s*(?:add|update|move|delete)\b\s+(.*)$/i)
+    if (!legacy) continue
     const tokenRe = /"([^"]+)"|'([^']+)'|(\S+)/g
     let m
-    while ((m = tokenRe.exec(targetPart)) !== null) {
+    while ((m = tokenRe.exec(legacy[1])) !== null) {
       candidates.push(m[1] ?? m[2] ?? m[3])
     }
   }
   return candidates
+}
+
+function stripSurroundingQuotes(value) {
+  const trimmed = String(value).trim()
+  if (trimmed.length >= 2) {
+    const first = trimmed[0]
+    const last = trimmed[trimmed.length - 1]
+    if ((first === '"' && last === '"') || (first === "'" && last === "'")) return trimmed.slice(1, -1)
+  }
+  return trimmed
 }
 
 function patchTextTargetsExecutor(patchText) {
@@ -1821,16 +1861,18 @@ export default Plugin.define({
           )
         }
         // R7 — a LANE run may not write a tracked file of the main checkout. The
-        // binding is narrow on purpose: it needs the lane marker AND the worktree
-        // that marker names, so a developer session (no marker) and a plan whose
-        // `use_worktree` is false (marker, no worktree) are never refused.
-        const worktree = laneWorktree(root)
-        if (worktree && contextGate(event?.agent, workdir, root)) {
-          const violation = laneWriteViolation(args, root, worktree)
+        // binding is narrow on purpose: it needs the lane marker AND at least one
+        // worktree that marker names, so a developer session (no marker) and a
+        // plan whose `use_worktree` is false (marker, no worktree) are never
+        // refused.
+        const worktrees = laneWorktrees(root)
+        if (worktrees.length && contextGate(event?.agent, workdir, root)) {
+          const violation = laneWriteViolation(args, root, worktrees)
           if (violation) {
             audit(auditLine("R7", tool, sessionID, callID, violation.target))
+            const destinations = worktrees.map((worktree) => path.join(worktree, violation.relative)).join(" (or) ")
             throw new Error(
-              `[plan-marshall-guard] R7: a lane run may not write ${violation.relative} in the main checkout — make the edit in the plan worktree: ${path.join(worktree, violation.relative)}`,
+              `[plan-marshall-guard] R7: a lane run may not write ${violation.relative} in the main checkout — make the edit in the plan worktree: ${destinations}`,
             )
           }
         }

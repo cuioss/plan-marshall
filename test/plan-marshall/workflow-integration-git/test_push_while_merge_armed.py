@@ -16,6 +16,7 @@ could not answer — neither is evidence of an armed merge.
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 import _push_gate as push_gate
@@ -58,7 +59,7 @@ def test_the_refusal_carries_the_code_the_remedy_and_the_pr(monkeypatch):
     monkeypatch.setattr(
         push_gate,
         'read_merge_arm_state',
-        lambda branch: {'pr_number': '4711', 'in_queue': False, 'auto_merge_armed': True},
+        lambda branch, project_dir=None: {'pr_number': '4711', 'in_queue': False, 'auto_merge_armed': True},
     )
 
     refusal = push_gate.armed_merge_refusal('feature/x')
@@ -72,39 +73,64 @@ def test_the_refusal_carries_the_code_the_remedy_and_the_pr(monkeypatch):
     assert 'Disable auto-merge' in refusal['message']
 
 
+def test_the_reads_are_pinned_to_the_pushed_checkout(monkeypatch):
+    """The gate hands the pushed worktree to the arm read, never the caller's cwd."""
+    seen: list[str | None] = []
+
+    def _reader(branch: str, project_dir: str | None = None) -> dict:
+        seen.append(project_dir)
+        return {}
+
+    monkeypatch.setattr(push_gate, 'read_merge_arm_state', _reader)
+
+    push_gate.armed_merge_refusal('feature/x', '/checkouts/worktree-a')
+
+    assert seen == ['/checkouts/worktree-a']
+
+
 def test_an_unreadable_arm_state_does_not_block(monkeypatch):
     """No PR, an unreadable PR, or a provider without the verbs is not an armed merge."""
-    monkeypatch.setattr(push_gate, 'read_merge_arm_state', lambda branch: {})
+    monkeypatch.setattr(push_gate, 'read_merge_arm_state', lambda branch, project_dir=None: {})
 
     assert push_gate.armed_merge_refusal('feature/x') is None
 
 
 def test_the_push_verb_refuses_before_shipping_a_new_head(monkeypatch):
-    """The wiring: ``git push`` is never reached while the arm holds."""
+    """The wiring: ``git push`` is never reached while the arm holds.
+
+    The stub is ``read_merge_arm_state`` (not the refusal itself), so the test
+    exercises the real refusal AND proves ``cmd_push`` supplies the branch it read.
+    The state is armed only for the branch the push would ship.
+    """
     git_workflow = _load_git_workflow()
     ran: list[list[str]] = []
 
     def _fake_git(args, **kwargs):
         ran.append(list(args))
-        if args[-1] == 'HEAD':
+        if 'rev-parse' in args:
             return 0, 'c' * 40 + '\n', ''
         if 'symbolic-ref' in args:
             return 0, 'feature/x\n', ''
         return 0, '', ''
 
+    def _armed_for_feature_x(branch: str, project_dir: str | None = None) -> dict:
+        if branch == 'feature/x':
+            return {'pr_number': '7', 'in_queue': False, 'auto_merge_armed': True}
+        return {}
+
     monkeypatch.setattr(git_workflow, '_resolve_analyze_diff_path', lambda args: (Path('/repo'), None))
     monkeypatch.setattr(git_workflow, '_run_git_nul_verbatim', _fake_git)
     monkeypatch.setattr(push_gate, 'head_gate_refusal', lambda plan_id, head, **kwargs: None)
-    monkeypatch.setattr(
-        push_gate,
-        'armed_merge_refusal',
-        lambda branch: {'status': 'error', 'error': push_gate.ARMED_MERGE_REFUSAL, 'pushed': False},
-    )
+    monkeypatch.setattr(push_gate, 'read_merge_arm_state', _armed_for_feature_x)
+    # `cmd_push` imports the gate lazily; pin the module registry to THIS copy so the
+    # stub is the one the verb resolves, whatever the loader did to sys.path.
+    monkeypatch.setitem(sys.modules, '_push_gate', push_gate)
 
     result = git_workflow.cmd_push(_push_args())
 
     assert result['status'] == 'error'
     assert result['error'] == push_gate.ARMED_MERGE_REFUSAL
+    assert result['condition'] == 'auto_merge_armed'
     assert not any('push' in command for command in ran), f'git push ran while armed: {ran}'
 
 

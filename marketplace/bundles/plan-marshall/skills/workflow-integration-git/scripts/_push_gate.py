@@ -176,23 +176,29 @@ def _run_ci_verb(ci_args: list[str]) -> dict[str, Any]:
     return parsed if isinstance(parsed, dict) else {}
 
 
-def read_merge_arm_state(branch: str) -> dict[str, Any]:
+def read_merge_arm_state(branch: str, project_dir: str | None = None) -> dict[str, Any]:
     """Read the PR's merge-queue / auto-merge state for ``branch``, or an empty dict.
 
     Two provider reads through the executor: ``pr view --head {branch}`` names the
-    PR, and ``pr queue-state`` reports ``in_queue`` and ``auto_merge_armed``. An
-    empty dict is the declared unknown — no PR, an unreadable PR, a provider
+    PR, and ``pr queue-state`` reports ``in_queue`` and ``auto_merge_armed``. Both
+    are pinned to ``project_dir`` — the checkout whose HEAD is being pushed — so the
+    CI router (which selects its provider, and the PR it reads, from the project
+    directory) cannot answer about a different checkout and let a push through to
+    an armed PR.
+
+    An empty dict is the declared unknown — no PR, an unreadable PR, a provider
     without these verbs — never "not armed" spelled as an absent field.
     """
     if not branch:
         return {}
-    view = _run_ci_verb(['pr', 'view', '--head', branch])
+    project_args = ['--project-dir', project_dir] if project_dir else []
+    view = _run_ci_verb([*project_args, 'pr', 'view', '--head', branch])
     if view.get('status') != 'success' or str(view.get('state') or '') != 'open':
         return {}
     number = view.get('pr_number')
     if number in (None, '', 'unknown'):
         return {}
-    queue_state = _run_ci_verb(['pr', 'queue-state', '--pr-number', str(number)])
+    queue_state = _run_ci_verb([*project_args, 'pr', 'queue-state', '--pr-number', str(number)])
     if queue_state.get('status') != 'success':
         return {}
     return {'pr_number': str(number), **queue_state}
@@ -213,7 +219,7 @@ def evaluate_merge_arm_state(state: dict[str, Any]) -> tuple[str, str] | None:
     return None
 
 
-def armed_merge_refusal(branch: str) -> dict[str, Any] | None:
+def armed_merge_refusal(branch: str, project_dir: str | None = None) -> dict[str, Any] | None:
     """Refuse a push while the PR is armed for an automatic merge.
 
     An armed auto-merge or merge-queue entry is bound to the HEAD it was armed
@@ -221,8 +227,11 @@ def armed_merge_refusal(branch: str) -> dict[str, Any] | None:
     REFUSES while the arm holds, rather than pushing and leaving a stale arm
     behind. The cheap alternative — disarming on push — would be a side effect
     the caller never asked for and could not see in the result.
+
+    ``project_dir`` is the checkout whose HEAD is being pushed; the reads are
+    pinned to it so they cannot answer about another checkout's PR.
     """
-    state = read_merge_arm_state(branch)
+    state = read_merge_arm_state(branch, project_dir)
     verdict = evaluate_merge_arm_state(state)
     if verdict is None:
         return None

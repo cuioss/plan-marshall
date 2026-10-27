@@ -547,55 +547,63 @@ _MAIN_CHECKOUT_WRITE_EXEMPT_PREFIXES = (
 )
 
 
-def _lane_worktree(root: str | None) -> str | None:
-    """Return the worktree a LIVE lane marker names, when that worktree exists.
+def _lane_worktrees(root: str | None) -> list[str]:
+    """Return the worktrees the LIVE lane markers name, when those worktrees exist.
 
     The lane marker is ``.plan/temp/rb-<plan>/progress.md`` and it maps to
-    ``.plan/local/worktrees/<plan>``. An ABSENT worktree answers ``None``: markers
-    outlive their worktrees, so a rule keyed on the marker alone would refuse a
-    developer's ordinary edit after any past lane run.
+    ``.plan/local/worktrees/<plan>``. An ABSENT worktree contributes nothing:
+    markers outlive their worktrees, so a rule keyed on the marker alone would
+    refuse a developer's ordinary edit after any past lane run. The list is NOT
+    narrowed to one candidate: the payload carries no lane identity, so picking one
+    would name a worktree the call may not belong to — the refusal names them all.
     """
     if not root:
-        return None
+        return []
+    found: list[str] = []
     for entry in _fresh_lane_markers(root):
         worktree = os.path.join(root, '.plan', 'local', 'worktrees', entry.removeprefix('rb-'))
         if os.path.isdir(worktree):
-            return worktree
-    return None
+            found.append(worktree)
+    return found
 
 
 def _match_r7_lane_main_checkout_write(
     payload: dict[str, Any], tool_name: str | None, tool_input: dict[str, Any]
 ) -> str | None:
-    """R7 — a lane run editing a tracked file of the MAIN checkout.
+    """R7 — a lane run editing a main-checkout path.
 
     Binds only when ALL of: the call is a plan-context one (the lane marker is
-    Signal 3), a live marker names an EXISTING worktree, and the target resolves
-    inside the project root but outside the sanctioned prefixes. The worktree path
-    to use instead is named in the refusal.
+    Signal 3), a live marker names at least one EXISTING worktree, and the target
+    resolves inside the project root but outside the sanctioned prefixes. The
+    worktree path(s) to use instead are named in the refusal.
+
+    The rule covers every non-exempt main-checkout path, NEW files included — it
+    makes no Git-tracked/untracked distinction, because the payload the hook reads
+    carries none.
     """
     if tool_name not in _LANE_WRITE_TOOLS:
         return None
     if not (gate.context_gate(payload) or _is_lane_run(payload)):
         return None
     root = os.environ.get('CLAUDE_PROJECT_DIR') or gate.cwd(payload)
-    worktree = _lane_worktree(root)
-    if not worktree or not root:
+    worktrees = _lane_worktrees(root)
+    if not worktrees or not root:
         return None
     raw = tool_input.get('file_path')
     if not isinstance(raw, str) or not raw:
         return None
     target = _real_path(_resolve_against(root, raw))
     root_norm = _real_path(root).rstrip('/') + '/'
-    worktree_norm = _real_path(worktree).rstrip('/') + '/'
-    if not target.startswith(root_norm) or target.startswith(worktree_norm):
+    worktree_norms = [worktree.rstrip('/') + '/' for worktree in (_real_path(w) for w in worktrees)]
+    if not target.startswith(root_norm) or any(target.startswith(prefix) for prefix in worktree_norms):
         return None
     relative = target[len(root_norm) :]
     if any(relative.startswith(prefix) for prefix in _MAIN_CHECKOUT_WRITE_EXEMPT_PREFIXES):
         return None
+    destinations = ' (or) '.join(os.path.join(worktree, relative) for worktree in worktrees)
     return (
         f'plan-marshall: a lane run may not write {relative} in the main checkout — '
-        f'make the edit in the plan worktree: {os.path.join(worktree, relative)}'
+        f'make the edit in the plan worktree: {destinations}'
     )
 
 

@@ -984,7 +984,7 @@ def cmd_push(args):
         )
     # An armed auto-merge / merge-queue entry is bound to the HEAD it was armed for,
     # so a push of a new HEAD is refused while it holds (see `_push_gate`).
-    arm_refusal = armed_merge_refusal(branch)
+    arm_refusal = armed_merge_refusal(branch, str(worktree))
     if arm_refusal is not None:
         arm_refusal.update({'operation': 'push', 'worktree': str(worktree), 'head': current_head})
         return arm_refusal
@@ -1098,7 +1098,7 @@ def cmd_commit(args):
                 'cannot push a detached HEAD: the committed change has no branch to ship to',
                 code=ErrorCode.INVALID_INPUT,
             )
-        arm_refusal = armed_merge_refusal(branch)
+        arm_refusal = armed_merge_refusal(branch, str(worktree))
         if arm_refusal is not None:
             arm_refusal['commit_hash'] = commit_hash
             return arm_refusal

@@ -533,7 +533,7 @@ def _mypy_collects_any(path: str, label: str = 'mypy') -> bool:
 
 
 def _mypy_collect_count(paths: list[str]) -> int:
-    """Count the files under ``paths`` that survive mypy's excludes.
+    """Count the FILES under ``paths`` that survive mypy's excludes.
 
     A conservative lower bound on the work a mypy invocation over ``paths``
     represents: it counts the files passed on the command line that mypy would
@@ -542,9 +542,14 @@ def _mypy_collect_count(paths: list[str]) -> int:
     only makes a run *less* likely to be judged implausibly fast. Mirrors the
     exclude-aware crawl of :func:`_mypy_collects_any` so the count agrees with what
     mypy sees.
+
+    A ``module.pyi`` SHADOWS ``module.py``: mypy analyses one source for that
+    module and names one in its summary, so counting both would inflate the bound
+    and make a valid run look short of the collected set. The pair is therefore
+    counted once.
     """
     patterns = _mypy_exclude_patterns()
-    count = 0
+    counted: set[Path] = set()
     for entry in paths:
         target = Path(entry)
         if target.is_dir():
@@ -554,9 +559,11 @@ def _mypy_collect_count(paths: list[str]) -> int:
         else:
             continue
         for candidate in candidates:
-            if not any(pattern.search(candidate.as_posix()) for pattern in patterns):
-                count += 1
-    return count
+            if any(pattern.search(candidate.as_posix()) for pattern in patterns):
+                continue
+            # Collapse a `.py`/`.pyi` pair onto one module identity.
+            counted.add(candidate.with_suffix(''))
+    return len(counted)
 
 
 def _run_mypy(
