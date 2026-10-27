@@ -18,11 +18,13 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
 
 import pytest
+import target_context
 from _flat_install_fixtures import build_flat_install, write_dist_manifest
 
 from conftest import MARKETPLACE_ROOT, load_script_module
@@ -31,8 +33,9 @@ _SKILL_NAME = 'runbook-lane'
 _SKILL_DIR = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / _SKILL_NAME
 _FLAT_LANE_DIR_NAME = f'plan-marshall-{_SKILL_NAME}'
 
-#: Every platform env signal the runtime detector reads.
-_SIGNALS = ('CLAUDE_CODE_SESSION_ID', 'OPENCODE', 'ANTIGRAVITY_AGENT')
+#: Every platform env signal the runtime detector reads, taken from the detector's
+#: own declaration so a new signal cannot stay active in the subprocess paths.
+_SIGNALS = tuple(signal for signal, _target in target_context.TARGET_ENV_SIGNALS)
 
 #: The reason a read-but-version-less executor produces. Pinned because the
 #: operator's remedy depends on WHICH side of the comparison could not be read.
@@ -244,10 +247,11 @@ def test_skill_states_where_each_layout_takes_the_lane_text_version() -> None:
 
 
 def _skill_section(text: str, heading: str) -> str:
-    """Return one heading's prose, whitespace-normalised, up to the next ``## ``."""
+    """Return one heading's prose, whitespace-normalised, up to the next ``##``/``###``."""
     start = text.index(heading)
     rest = text[start + len(heading) :]
-    end = rest.find('\n## ')
+    following = re.search(r'\n#{2,3} ', rest)
+    end = following.start() if following else -1
     return ' '.join((heading + (rest if end == -1 else rest[:end])).split())
 
 

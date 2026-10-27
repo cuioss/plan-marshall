@@ -245,6 +245,13 @@ def test_install_core_only(multi_bundle_repo: Path, tmp_path: Path, antigravity_
     assert len(manifest['dist_manifest_sha']) == 64
     assert 'skills/plan-marshall-core-skill/SKILL.md' in manifest['managed_files']
     assert 'agents/core-agent.md' in manifest['managed_files']
+    # The install stamp lands at the deploy root beside plugin.json. A flat
+    # install has no version dir, so this is the only file the installed-version
+    # readers — the executor preflight, the freshness check and the runbook
+    # lane's executor-skew — can resolve a version from.
+    assert (dest / 'dist-manifest.json').is_file()
+    assert json.loads((dest / 'dist-manifest.json').read_text(encoding='utf-8'))['version'] == '1.0.0'
+    assert 'dist-manifest.json' in manifest['managed_files']
 
 
 def test_install_bundles_dependency_closure(multi_bundle_repo: Path, tmp_path: Path, antigravity_config_dir: Path):
