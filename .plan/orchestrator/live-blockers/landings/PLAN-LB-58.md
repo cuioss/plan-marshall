@@ -96,8 +96,9 @@ statement in the spec (a claim the cleanup pass had contradicted earlier) is con
   the re-trigger; the standing authorization applies, a note only. Sourcery refused on diff size (150 000 characters).
 - **Executor broken by another session** **(re-read, execution log)**: at 21:47Z the lane found the main checkout's executor
   unusable and the operator regenerated it (log: a `generate` at 21:47:28Z, 24.9 s). The previous regeneration in the log is
-  mine at 16:58Z, after the harness sync, and it worked at the time. What changed it in between is not shown by anything I read;
-  the LB-97 lane started at 19:37Z. Recorded as unexplained. Nothing seen since.
+  mine at 16:58Z, after the harness sync, and it worked at the time. What changed it in between was not shown by anything I read
+  when this landing was analyzed; the LB-97 analysis later explained it: the LB-97 lane's `generate_executor generate` at
+  21:47:03Z regenerated the shared main executor against a scratch worktree, 25 seconds before the repair. Nothing seen since.
 - **Routed builds from a worktree** **(re-read, landing §8)**: routed builds answered `exit_code -1` with an empty inner log, so
   every build ran `--execution-mode in_process`. Fifth landing to report it (LB-55, LB-53, LB-82, LB-96, LB-58). The Watches
   condition has been met since the third.
