@@ -93,6 +93,7 @@ from file_ops import (
     get_worktree_root,
     resolve_plan_context,
 )
+from marketplace_bundles import resolve_sibling_skill_path
 from marketplace_paths import (
     PLAN_DIR_NAME,
     resolve_main_anchored_path,
@@ -115,7 +116,9 @@ from triage_helpers import (
 # load path resolves a sibling skill's scripts dir, not this skill's own.
 
 _THIS_DIR = Path(__file__).resolve().parent
-_MERGE_LOCK_PATH = _THIS_DIR.parent.parent / 'manage-locks' / 'scripts' / 'merge_lock.py'
+_MERGE_LOCK_PATH = resolve_sibling_skill_path(
+    Path(__file__), 'plan-marshall', 'skills/manage-locks/scripts/merge_lock.py'
+)
 
 # The bound, in seconds, the move-back acquire waits for admission when no outer
 # holder of the same plan already holds the merge lock. ``merge_lock`` clamps it

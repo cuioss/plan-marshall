@@ -375,6 +375,141 @@ def resolve_skills_root(script_file: Path) -> Path:
     )
 
 
+def _shape_lines(nested: Path, flat: Path | None) -> list[str]:
+    """Render the probe candidates a sibling-skill lookup tried, one line each.
+
+    The SINGLE wording both surfaces use — the exception's message and
+    :func:`describe_sibling_skill_shapes` — so the two cannot drift into two
+    descriptions of the same miss.
+    """
+    lines = [f'  nested (marketplace checkout / plugin cache): {nested}']
+    if flat is not None:
+        lines.append(f'  flat (OpenCode / Antigravity): {flat}')
+    return lines
+
+
+class SkillPathNotFound(LookupError):
+    """A skill-anchored path resolved against NEITHER deployed shape.
+
+    Carries the candidates it probed — the nested one and, when the tree deploys
+    the flat shape, the flat one — so the caller's error names both. A bare nested
+    path in the message reads as "this install is incomplete" on a machine whose
+    install is flat and complete, which is the report this exception exists to
+    replace.
+    """
+
+    def __init__(self, relative_path: str, nested: Path, flat: Path | None) -> None:
+        self.relative_path = relative_path
+        self.nested = nested
+        self.flat = flat
+        header = f'sibling skill path not found: {relative_path}'
+        super().__init__('\n'.join([header, *_shape_lines(nested, flat)]))
+
+
+def _nested_sibling_path(skills_root: Path, relative_path: str) -> Path:
+    """Return the NESTED path a skill-anchored subpath addresses, without probing.
+
+    ``relative_path`` is the nested-layout spelling (``skills/{skill}/rest``) and
+    ``skills_root`` is the skills directory of THIS script's own tree, so the
+    answer names the copy that ships beside the running script — which is what
+    makes a plugin-cache answer stay inside the version directory the script came
+    from. A subpath that is not skill-anchored is joined as-is.
+    """
+    split = deployed_layout.split_skill_relative_path(relative_path)
+    if split is None:
+        return skills_root / relative_path
+    skill, rest = split
+    path = skills_root / skill
+    return path / rest if rest else path
+
+
+def _sibling_skill_candidates(script_file: Path, bundle: str, relative_path: str) -> tuple[Path, list[Path]]:
+    """Return ``(nested, flat_candidates)`` for a skill-anchored subpath, both unprobed.
+
+    The flat leg is probed only when this script's own skill root IS a flat skill
+    root. A nested tree's ``skills/`` sits beside its bundle manifest, which
+    :func:`deployed_layout.is_flat_skill_root` excludes, so a nested install yields
+    no flat candidate at all — the error text then names only the shape it has,
+    instead of a phantom ``{bundle}-{skill}`` directory.
+    """
+    skills_root = resolve_skills_root(script_file)
+    nested = _nested_sibling_path(skills_root, relative_path)
+    if not deployed_layout.is_flat_skill_root(skills_root):
+        return nested, []
+    return nested, deployed_layout.flat_skill_paths(skills_root.parent, bundle, relative_path)
+
+
+def resolve_sibling_skill_path(script_file: Path, bundle: str, relative_path: str) -> Path:
+    """Resolve a SIBLING skill's path beside ``script_file``, for every deployed shape.
+
+    ``relative_path`` is the nested-layout spelling (``skills/{skill}/rest``) and
+    ``bundle`` is the bundle the sibling belongs to. Three shapes are covered:
+
+    **Nested** — the marketplace source checkout and a bundle's own subtree. The
+    skills root is walked from ``script_file`` (:func:`resolve_skills_root`), so
+    the answer is the copy the RUNNING script came from. That is deliberate and is
+    what keeps a versioned plugin cache answering inside its own version directory:
+    :func:`resolve_bundle_path` picks the NEWEST eligible version instead, which is
+    right for an inventory read and wrong for "the sibling of the script I am".
+
+    **Flat** — OpenCode and Antigravity deploy every skill as
+    ``{root}/skills/{bundle}-{skill}/``. When the nested probe misses, the flat leg
+    (:func:`deployed_layout.resolve_skill_path`) constructs the dash-namespaced name
+    through :func:`deployed_layout.flat_skill_dir_name` — never spelled here — and
+    answers only if it exists. Every candidate :func:`deployed_layout.skill_roots`
+    yields is probed, in its order.
+
+    **Never ``None``**: a miss returns the nested path, which is the deterministic
+    path to report. A caller that must fail instead uses
+    :func:`require_sibling_skill_path`, which names both shapes.
+
+    Args:
+        script_file: Path to the calling script (typically ``Path(__file__)``).
+        bundle: Bundle the sibling skill belongs to (e.g. ``plan-marshall``).
+        relative_path: Nested-layout subpath of the sibling (``skills/{skill}/…``).
+
+    Returns:
+        The existing path, or the nested path when neither shape carries it.
+    """
+    nested, flat_candidates = _sibling_skill_candidates(script_file, bundle, relative_path)
+    if nested.exists():
+        return nested
+    for candidate in flat_candidates:
+        if candidate.exists():
+            return candidate
+    return nested
+
+
+def describe_sibling_skill_shapes(script_file: Path, bundle: str, relative_path: str) -> str:
+    """Describe the shapes a sibling-skill lookup probed, for a caller's own error text.
+
+    The shared wording :class:`SkillPathNotFound` uses, available to a caller that
+    reports the miss its own way (a TOON error rather than an exception) so both
+    surfaces name the same two candidates.
+    """
+    nested, flat_candidates = _sibling_skill_candidates(script_file, bundle, relative_path)
+    return '\n'.join(_shape_lines(nested, flat_candidates[0] if flat_candidates else None))
+
+
+def require_sibling_skill_path(script_file: Path, bundle: str, relative_path: str) -> Path:
+    """Resolve a sibling skill's path, raising when neither deployed shape carries it.
+
+    The fail-loud companion to :func:`resolve_sibling_skill_path`: the exception
+    names the nested AND the flat candidate, so a genuinely absent skill is not
+    misreported as an incomplete install on a flat machine.
+
+    Raises:
+        SkillPathNotFound: when no candidate exists on disk.
+    """
+    nested, flat_candidates = _sibling_skill_candidates(script_file, bundle, relative_path)
+    if nested.exists():
+        return nested
+    for candidate in flat_candidates:
+        if candidate.exists():
+            return candidate
+    raise SkillPathNotFound(relative_path, nested, flat_candidates[0] if flat_candidates else None)
+
+
 def build_pythonpath(base_path: Path) -> str:
     """Build PYTHONPATH from all skill script directories.
 

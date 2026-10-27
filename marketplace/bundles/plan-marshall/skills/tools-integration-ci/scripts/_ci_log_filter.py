@@ -33,6 +33,9 @@ import sys
 import tempfile
 from pathlib import Path
 
+# Direct import - the executor sets up PYTHONPATH for cross-skill imports.
+from marketplace_bundles import resolve_sibling_skill_path
+
 # Symmetric before/after context-line count for the generic heuristic.
 CONTEXT_LINES = 3
 
@@ -260,10 +263,19 @@ def _load_parse_log(error_style: str):
 
     Returns:
         The ``parse_log`` callable, or ``None`` when the build parser modules
-        cannot be imported in the current environment.
+        cannot be imported in the current environment — including when the
+        deployment root itself cannot be resolved, so a broken tree degrades to
+        the generic filter instead of raising into the CI entry point.
     """
     skill, module_name = _STYLE_TO_PARSE_MODULE[error_style]
-    _ensure_build_parser_paths(skill)
+    try:
+        _ensure_build_parser_paths(skill)
+    except RuntimeError:
+        # The sibling lookup walks to the skills root, which raises on a tree that
+        # carries neither deployed shape. That is exactly the degraded environment
+        # this function already answers ``None`` for; it must not fail louder than
+        # an unavailable parser module.
+        return None
     try:
         module = __import__(module_name)
     except ImportError:
@@ -274,20 +286,18 @@ def _load_parse_log(error_style: str):
 def _ensure_build_parser_paths(skill: str) -> None:
     """Add the build skill + shared build script directories to ``sys.path``.
 
-    Navigates from this file (``tools-integration-ci/scripts/``) up to the
-    ``skills/`` directory and adds the per-system build skill's ``scripts``
-    directory plus the shared ``script-shared/scripts/build`` directory that the
-    build parsers depend on.
+    Each directory is a SIBLING skill, so it is reached through the shared
+    flat-aware join rather than by walking to the skills root and joining a bare
+    name: a flat install names the directory ``plan-marshall-{skill}``, and the
+    bare join added nothing on such a machine.
 
     Args:
         skill: The build skill directory name (e.g. ``build-maven``).
     """
-    scripts_dir = Path(__file__).resolve().parent
-    skills_dir = scripts_dir.parent.parent
     candidate_dirs = [
-        skills_dir / skill / 'scripts',
-        skills_dir / 'script-shared' / 'scripts' / 'build',
-        skills_dir / 'tools-file-ops' / 'scripts',
+        resolve_sibling_skill_path(Path(__file__), 'plan-marshall', f'skills/{skill}/scripts'),
+        resolve_sibling_skill_path(Path(__file__), 'plan-marshall', 'skills/script-shared/scripts/build'),
+        resolve_sibling_skill_path(Path(__file__), 'plan-marshall', 'skills/tools-file-ops/scripts'),
     ]
     for directory in candidate_dirs:
         directory_str = str(directory)

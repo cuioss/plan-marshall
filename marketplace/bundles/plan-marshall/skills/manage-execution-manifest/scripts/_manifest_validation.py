@@ -29,7 +29,7 @@ from _manifest_decide import _split_csv
 from _step_key_canonical import canonicalize_step_key
 from file_ops import output_toon_error
 from input_validation import require_valid_plan_id
-from marketplace_bundles import resolve_bundles_root, resolve_skills_root
+from marketplace_bundles import resolve_bundles_root, resolve_sibling_skill_path
 from marketplace_paths import _find_plan_root_from_cwd, resolve_project_skill_path
 
 # =============================================================================
@@ -188,7 +188,7 @@ def cmd_step_params_set(args: argparse.Namespace) -> dict[str, Any] | None:
 # workflows (LLM-judgement workflows dispatched as a unit via
 # ``execution-context``) live under ``workflow/``. The loadability check
 # searches both, ``workflow/`` first.
-_PHASE_6_SKILL_DIR = resolve_skills_root(Path(__file__)) / 'phase-6-finalize'
+_PHASE_6_SKILL_DIR = resolve_sibling_skill_path(Path(__file__), 'plan-marshall', 'skills/phase-6-finalize')
 _PHASE_6_WORKFLOW_DIR = _PHASE_6_SKILL_DIR / 'workflow'
 _PHASE_6_STANDARDS_DIR = _PHASE_6_SKILL_DIR / 'standards'
 
@@ -197,7 +197,9 @@ _PHASE_6_STANDARDS_DIR = _PHASE_6_SKILL_DIR / 'standards'
 # skill. In the composed manifest it is the boundary-normalized bare
 # ``automatic-review`` id, so the loadability / order resolvers below must point
 # at the bundle SKILL.md rather than the deleted phase-6 body doc.
-_AUTOMATIC_REVIEW_SKILL_MD = resolve_skills_root(Path(__file__)) / 'automatic-review' / 'SKILL.md'
+_AUTOMATIC_REVIEW_SKILL_MD = resolve_sibling_skill_path(
+    Path(__file__), 'plan-marshall', 'skills/automatic-review/SKILL.md'
+)
 
 # Anchor used to render a BUILT-IN standards path as a bundle-relative string in
 # the script output. ``resolve_bundles_root`` identity-walks to the root of the

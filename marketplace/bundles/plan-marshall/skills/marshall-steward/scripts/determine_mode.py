@@ -165,7 +165,11 @@ for _ancestor in Path(__file__).resolve().parents:
                 break
         break
 
-from marketplace_bundles import resolve_skills_root  # noqa: E402
+from marketplace_bundles import (  # noqa: E402
+    describe_sibling_skill_shapes,
+    resolve_sibling_skill_path,
+    resolve_skills_root,
+)
 from marketplace_paths import (  # noqa: E402
     agent_instructions_filename,
     iter_project_skill_dirs,
@@ -1191,12 +1195,15 @@ def _generate_executor_script() -> Path:
     """Resolve the sibling ``tools-script-executor`` generator script path.
 
     ``generate_executor.py`` lives one skill over, at
-    ``<skills>/tools-script-executor/scripts/generate_executor.py``. The
-    ``_SKILLS_DIR`` anchor (resolved from this file via ``resolve_skills_root``)
-    is the shared skills-root both skills hang off, so the path is derived
-    deterministically without a plugin-cache glob.
+    ``<skills>/tools-script-executor/scripts/generate_executor.py``. The sibling
+    is reached through the shared flat-aware join, so a flat install answers
+    ``skills/plan-marshall-tools-script-executor/scripts/generate_executor.py`` —
+    where the bare join named a file that does not exist, which is why the
+    upgrade's preflight could not run at all on a flat machine.
     """
-    return _SKILLS_DIR / 'tools-script-executor' / 'scripts' / 'generate_executor.py'
+    return resolve_sibling_skill_path(
+        Path(__file__), 'plan-marshall', 'skills/tools-script-executor/scripts/generate_executor.py'
+    )
 
 
 def run_preflight() -> dict:
@@ -1219,7 +1226,10 @@ def run_preflight() -> dict:
 
     script = _generate_executor_script()
     if not script.is_file():
-        return {'status': 'error', 'error': f'generate_executor.py not found at {script}'}
+        shapes = describe_sibling_skill_shapes(
+            Path(__file__), 'plan-marshall', 'skills/tools-script-executor/scripts/generate_executor.py'
+        )
+        return {'status': 'error', 'error': f'generate_executor.py not found; probed:\n{shapes}'}
 
     try:
         result = subprocess.run(
