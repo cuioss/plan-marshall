@@ -53,8 +53,10 @@ MARKETPLACE_ROOT = Path(__file__).resolve().parents[2] / 'marketplace' / 'bundle
 #: The skill-relative trees a deployed flat skill carries that this fixture
 #: reproduces. ``scripts/`` is what imports resolve against; ``standards/`` and
 #: ``workflow/`` are the body docs a runtime reader (the runbook lane's bot
-#: registry, the phase-6 body docs) opens by path.
-COPIED_SUBTREES = ('scripts', 'standards', 'workflow')
+#: registry, the phase-6 body docs) opens by path; ``templates/`` is what the
+#: generator renders the executor from, so a fixture without it cannot regenerate
+#: one — a real deploy copies the whole skill directory.
+COPIED_SUBTREES = ('scripts', 'standards', 'templates', 'workflow')
 
 #: The target manifest the OpenCode install writes at the deploy root. It is NOT a
 #: bundle marker — ``resolve_bundles_root``'s nested probes look for

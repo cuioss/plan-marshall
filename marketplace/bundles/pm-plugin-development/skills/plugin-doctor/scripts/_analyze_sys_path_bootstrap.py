@@ -101,6 +101,12 @@ _ALLOWLIST: frozenset[str] = frozenset(
         'plan-marshall/skills/marshall-steward/scripts/determine_mode.py',
         'plan-marshall/skills/marshall-steward/scripts/gitignore_setup.py',
         'plan-marshall/skills/tools-permission-fix/scripts/permission_fix.py',
+        # The shared bootstrap helper every entry-script anchor calls: it front-loads
+        # each sibling skill library BEFORE the executor exists (the deployed
+        # generator, recovery, and the wizard's direct-path scripts all run first),
+        # and re-front-loads so an inherited PYTHONPATH cannot shadow the running
+        # copy. Its whole purpose is the mutation this rule otherwise forbids.
+        'plan-marshall/skills/script-shared/scripts/skill_bootstrap.py',
         # Spawned directly by an LSP client from an operator-added `lspServers`
         # declaration (this bundle deliberately ships none), so the executor never
         # dispatches it and no PYTHONPATH is injected. Verified by running `serve`
