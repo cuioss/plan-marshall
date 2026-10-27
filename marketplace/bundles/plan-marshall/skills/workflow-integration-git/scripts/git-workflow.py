@@ -963,7 +963,7 @@ def cmd_push(args):
         # that skips the comparison is exactly what this verb exists to prevent.
         return make_error(f'git rev-parse HEAD failed: {head_err or f"exit {rc}"}', code=ErrorCode.FETCH_FAILURE)
 
-    from _push_gate import head_gate_refusal
+    from _push_gate import armed_merge_refusal, head_gate_refusal
 
     gate_refusal = head_gate_refusal(plan_id or '', current_head)
     if gate_refusal is not None:
@@ -982,6 +982,12 @@ def cmd_push(args):
             'cannot push a detached HEAD: the validated commit has no branch to ship to',
             code=ErrorCode.INVALID_INPUT,
         )
+    # An armed auto-merge / merge-queue entry is bound to the HEAD it was armed for,
+    # so a push of a new HEAD is refused while it holds (see `_push_gate`).
+    arm_refusal = armed_merge_refusal(branch)
+    if arm_refusal is not None:
+        arm_refusal.update({'operation': 'push', 'worktree': str(worktree), 'head': current_head})
+        return arm_refusal
     rc, _out, push_err = _run_git_nul_verbatim(
         ['-C', str(worktree), 'push', 'origin', f'{current_head}:refs/heads/{branch}'],
         timeout=_PUSH_TIMEOUT_SECONDS,
@@ -1077,7 +1083,7 @@ def cmd_commit(args):
         # pre-push gate recorded a DIFFERENT head, that gate never saw this tree —
         # refuse before the ref moves (see `_push_gate`).
         if commit_hash:
-            from _push_gate import head_gate_refusal
+            from _push_gate import armed_merge_refusal, head_gate_refusal
 
             gate_refusal = head_gate_refusal(plan_id or _plan_id_from_worktree_path(worktree) or '', commit_hash)
             if gate_refusal is not None:
@@ -1092,6 +1098,10 @@ def cmd_commit(args):
                 'cannot push a detached HEAD: the committed change has no branch to ship to',
                 code=ErrorCode.INVALID_INPUT,
             )
+        arm_refusal = armed_merge_refusal(branch)
+        if arm_refusal is not None:
+            arm_refusal['commit_hash'] = commit_hash
+            return arm_refusal
         rc, _out, push_err = _run_git_nul_verbatim(
             ['-C', str(worktree), 'push', 'origin', f'{commit_hash}:refs/heads/{branch}'],
             timeout=_PUSH_TIMEOUT_SECONDS,

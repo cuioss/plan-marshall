@@ -40,7 +40,11 @@ PRE_PUSH_GATE_STEP = 'pre-push-quality-gate'
 #: Refusal code for a HEAD the recorded gate never saw.
 HEAD_NOT_GATED = 'head_not_validated_by_gate'
 
+#: Refusal code for a push attempted while the PR is armed for an automatic merge.
+ARMED_MERGE_REFUSAL = 'push_while_merge_armed'
+
 _MANAGE_STATUS_NOTATION = 'plan-marshall:manage-status:manage-status'
+_CI_NOTATION = 'plan-marshall:tools-integration-ci:ci'
 
 
 def read_plan_status(plan_id: str) -> dict[str, Any] | None:
@@ -132,10 +136,108 @@ def head_gate_refusal(plan_id: str, head: str, *, status: dict[str, Any] | None 
 
 
 __all__ = [
+    'ARMED_MERGE_REFUSAL',
     'FINALIZE_PHASE',
     'HEAD_NOT_GATED',
     'PRE_PUSH_GATE_STEP',
+    'armed_merge_refusal',
+    'evaluate_merge_arm_state',
     'head_gate_refusal',
+    'read_merge_arm_state',
     'read_plan_status',
     'recorded_gate_head',
 ]
+
+
+def _run_ci_verb(ci_args: list[str]) -> dict[str, Any]:
+    """Run ``ci`` through the executor and return its parsed TOON (empty on failure)."""
+    try:
+        executor = get_executor_path()
+    except RuntimeError:
+        return {}
+    if executor is None:
+        return {}
+    try:
+        completed = subprocess.run(
+            [sys.executable, str(executor), _CI_NOTATION, *ci_args],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=120,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return {}
+    if not (completed.stdout or '').strip():
+        return {}
+    try:
+        parsed = parse_toon(completed.stdout)
+    except Exception:
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def read_merge_arm_state(branch: str) -> dict[str, Any]:
+    """Read the PR's merge-queue / auto-merge state for ``branch``, or an empty dict.
+
+    Two provider reads through the executor: ``pr view --head {branch}`` names the
+    PR, and ``pr queue-state`` reports ``in_queue`` and ``auto_merge_armed``. An
+    empty dict is the declared unknown — no PR, an unreadable PR, a provider
+    without these verbs — never "not armed" spelled as an absent field.
+    """
+    if not branch:
+        return {}
+    view = _run_ci_verb(['pr', 'view', '--head', branch])
+    if view.get('status') != 'success' or str(view.get('state') or '') != 'open':
+        return {}
+    number = view.get('pr_number')
+    if number in (None, '', 'unknown'):
+        return {}
+    queue_state = _run_ci_verb(['pr', 'queue-state', '--pr-number', str(number)])
+    if queue_state.get('status') != 'success':
+        return {}
+    return {'pr_number': str(number), **queue_state}
+
+
+def evaluate_merge_arm_state(state: dict[str, Any]) -> tuple[str, str] | None:
+    """Return ``(condition, detail)`` when ``state`` shows an armed merge, else ``None``.
+
+    Only a POSITIVE observation refuses: ``in_queue is True`` or
+    ``auto_merge_armed is True``. ``False`` means the read said no, and
+    ``indeterminate`` means the read could not answer — neither is evidence of an
+    armed merge, so neither blocks a push (the gate-head binding still applies).
+    """
+    if state.get('in_queue') is True:
+        return ('in_queue', f'the PR is in the merge queue (position {state.get("queue_position")})')
+    if state.get('auto_merge_armed') is True:
+        return ('auto_merge_armed', 'auto-merge is armed on the PR')
+    return None
+
+
+def armed_merge_refusal(branch: str) -> dict[str, Any] | None:
+    """Refuse a push while the PR is armed for an automatic merge.
+
+    An armed auto-merge or merge-queue entry is bound to the HEAD it was armed
+    for: a push of a new HEAD must not slip past it. The push verb therefore
+    REFUSES while the arm holds, rather than pushing and leaving a stale arm
+    behind. The cheap alternative — disarming on push — would be a side effect
+    the caller never asked for and could not see in the result.
+    """
+    state = read_merge_arm_state(branch)
+    verdict = evaluate_merge_arm_state(state)
+    if verdict is None:
+        return None
+    condition, detail = verdict
+    pr_number = state.get('pr_number')
+    return {
+        'status': 'error',
+        'error': ARMED_MERGE_REFUSAL,
+        'condition': condition,
+        'pr_number': pr_number,
+        'branch': branch,
+        'pushed': False,
+        'message': (
+            f'The PR (#{pr_number}) is armed for an automatic merge: {detail}. The arm is bound '
+            'to the HEAD it was armed for, so a push of a new HEAD is refused. Disable auto-merge '
+            'or dequeue the PR, push, then arm it again on the new HEAD.'
+        ),
+    }
