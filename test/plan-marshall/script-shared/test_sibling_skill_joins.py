@@ -30,6 +30,8 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
+from test_skill_bootstrap_guard import DECLARED_CARRIERS
+
 from conftest import MARKETPLACE_ROOT, PROJECT_ROOT
 
 #: The helper every routed join goes through. Either spelling is accepted: the
@@ -45,18 +47,11 @@ _FLAT_SAFE_BOOTSTRAP_ANCHOR = (
     'skill_bootstrap (PLAN-LB-93 D1/D2)'
 )
 
+#: The carrier roster is DERIVED from the bootstrap guard's own declaration, so a
+#: carrier added or removed there cannot leave a second, hand-kept list behind.
+#: One roster, one edit.
 FLAT_SAFE_JOINS: dict[tuple[str, str], str] = {
-    (module, 'script-shared'): _FLAT_SAFE_BOOTSTRAP_ANCHOR
-    for module in (
-        'marketplace/bundles/plan-marshall/skills/tools-script-executor/scripts/generate_executor.py',
-        'marketplace/bundles/plan-marshall/skills/marshall-steward/scripts/bootstrap_plugin.py',
-        'marketplace/bundles/plan-marshall/skills/marshall-steward/scripts/determine_mode.py',
-        'marketplace/bundles/plan-marshall/skills/marshall-steward/scripts/gitignore_setup.py',
-        'marketplace/bundles/plan-marshall/skills/tools-permission-fix/scripts/permission_fix.py',
-        'marketplace/bundles/plan-marshall/skills/tools-permission-doctor/scripts/permission_common.py',
-        'marketplace/bundles/plan-marshall/skills/tools-permission-doctor/scripts/permission_doctor.py',
-        'marketplace/bundles/plan-marshall/skills/platform-runtime/scripts/claude_runtime.py',
-    )
+    (module, 'script-shared'): _FLAT_SAFE_BOOTSTRAP_ANCHOR for module in sorted(DECLARED_CARRIERS)
 }
 
 
