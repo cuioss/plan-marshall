@@ -455,6 +455,13 @@ def get_bundle_managed_files(
         if (source_dir / 'bundle-components.json').is_file():
             items.append((source_dir / 'bundle-components.json', 'bundle-components.json'))
             managed_files.append('bundle-components.json')
+        # A flat install has no plugin-cache version dir, so the only place it
+        # can carry its installed version is the install stamp at the deploy
+        # root. `generate_executor preflight`, `cache_freshness check` and the
+        # runbook lane's flat `executor-skew` leg all read exactly this file.
+        if (source_dir / 'dist-manifest.json').is_file():
+            items.append((source_dir / 'dist-manifest.json', 'dist-manifest.json'))
+            managed_files.append('dist-manifest.json')
         managed_files.append('plugin.json')
     elif target_name == 'opencode':
         if (source_dir / 'README.adoc').is_file():

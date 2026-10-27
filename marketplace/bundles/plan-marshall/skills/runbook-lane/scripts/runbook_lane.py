@@ -477,38 +477,118 @@ _EXECUTOR_SKEW_MATCH = 'match'
 _EXECUTOR_SKEW_SKEW = 'skew'
 _EXECUTOR_SKEW_UNCHECKED = 'could_not_check'
 
+#: Which leg of :func:`_lane_version_probe` answered — or failed to. The layout
+#: decides which path the ``could_not_check`` reason names, so the operator's
+#: remedy (no install stamp? no version directory? a broken executor?) follows
+#: from the verdict instead of from a guess.
+_LANE_LAYOUT_VERSIONED = 'versioned'
+_LANE_LAYOUT_FLAT = 'flat'
+_LANE_LAYOUT_NESTED = 'nested'
+_LANE_LAYOUT_UNRESOLVED = 'unresolved'
+
+
+class _LaneTextVersion(NamedTuple):
+    """The lane-text version probe: the version read, and where it looked.
+
+    ``version`` is ``None`` when the comparison is UNMAKEABLE. ``probe`` is the
+    path the answering leg read: the live version directory, the install stamp a
+    flat install carries, the version-less bundle directory, or ``None`` when no
+    install was found at all.
+    """
+
+    version: str | None
+    layout: str
+    probe: Path | None
+
+
+def _lane_version_probe(skill_dir: Path | None = None) -> _LaneTextVersion:
+    """Read the lane text's version, naming the leg that answered.
+
+    The version comes from the LIVE install, never from the executing script's
+    own path: a stale executor runs an older ``runbook_lane.py`` from its
+    embedded path, so reading ``__file__``'s version would compare that stale
+    version with itself and report ``match``.
+
+    Which leg answers depends on the layout the harness deploys:
+
+    * a versioned plugin cache supplies it from the newest eligible
+      ``{bundle}/{version}/skills/{skill}`` directory
+      (``select_live_version_dir`` — the shared selector the harness's own
+      resolution follows);
+    * a flat install (``{root}/skills/{bundle}-{skill}/``) carries no version
+      directory, so it supplies the ``version`` of the sync's install stamp at
+      the deploy root that contains its skill root, where the target's sync
+      publishes one;
+    * a source checkout carries neither, so its comparison stays UNMAKEABLE.
+
+    The legs run in that order, and a leg that finds nothing leaves the probe to
+    the next one. A flat install whose stamp is absent, unreadable or carries no
+    version is UNMAKEABLE too — never "no skew". So is a stamp whose version the
+    comparison cannot parse into a version key: a word such as ``unknown`` yields
+    no key at all, so every executor would read as ``match`` — the fail-open
+    direction this check exists to close.
+
+    The stamp is written ONCE PER SYNC, so it witnesses what the sync deployed,
+    not a lane text edited in place afterwards. That is the accepted trade: a
+    flat install has no pin or registry, so what was deployed is what is loaded,
+    and a per-skill version stamp or a content hash would be the only witnesses
+    that also catch an in-place edit.
+    """
+    from deployed_layout import DIST_MANIFEST_NAME, flat_deploy_root, read_deploy_stamp_version
+    from marketplace_bundles import resolve_bundles_root, select_live_version_dir
+    from plugin_registry import version_key
+
+    root = (skill_dir or _lane_skill_dir()).resolve()
+    bundle = _lane_bundle()
+    bundle_dir: Path | None = None
+    if bundle:
+        try:
+            bundles_root: Path | None = resolve_bundles_root(root / 'SKILL.md')
+        except Exception:
+            bundles_root = None
+        if bundles_root is not None and (bundles_root / bundle).is_dir():
+            bundle_dir = bundles_root / bundle
+            live = select_live_version_dir(
+                bundle_dir, lambda version_dir: (version_dir / 'skills' / root.name / 'SKILL.md').is_file()
+            )
+            if live is not None:
+                return _LaneTextVersion(live.name, _LANE_LAYOUT_VERSIONED, live)
+    deploy_root = flat_deploy_root(root)
+    if deploy_root is not None:
+        stamped = read_deploy_stamp_version(deploy_root)
+        comparable = stamped if stamped is not None and version_key(stamped) else None
+        return _LaneTextVersion(comparable, _LANE_LAYOUT_FLAT, deploy_root / DIST_MANIFEST_NAME)
+    if bundle_dir is not None:
+        return _LaneTextVersion(None, _LANE_LAYOUT_NESTED, bundle_dir)
+    return _LaneTextVersion(None, _LANE_LAYOUT_UNRESOLVED, None)
+
 
 def _lane_text_version(skill_dir: Path | None = None) -> str | None:
     """Return the version of the lane text a harness would load, or ``None``.
 
-    The version is read from the LIVE installed bundle, never from the executing
-    script's own path: a stale executor runs an older ``runbook_lane.py`` from
-    its embedded path, so reading ``__file__``'s version would compare that stale
-    version with itself and report ``match``. ``select_live_version_dir`` is the
-    shared selector the harness's resolution follows, so the comparison names the
-    text an agent actually reads.
-
-    A deployed bundle lives under ``{bundle}/{version}/skills/{skill}``. The
-    source tree and a flat install carry no version directory; either is an
-    UNMAKEABLE comparison, never "no skew".
+    ``None`` means the comparison is UNMAKEABLE, never that the versions agree.
+    See :func:`_lane_version_probe` for which leg supplies the version on each
+    layout and what a failed probe leaves behind.
     """
-    from marketplace_bundles import resolve_bundles_root, select_live_version_dir
+    return _lane_version_probe(skill_dir).version
 
-    root = (skill_dir or _lane_skill_dir()).resolve()
-    bundle = _lane_bundle()
-    if not bundle:
-        return None
-    try:
-        bundles_root = resolve_bundles_root(root / 'SKILL.md')
-    except Exception:
-        return None
-    bundle_dir = bundles_root / bundle
-    if not bundle_dir.is_dir():
-        return None
-    live = select_live_version_dir(
-        bundle_dir, lambda version_dir: (version_dir / 'skills' / root.name / 'SKILL.md').is_file()
-    )
-    return live.name if live is not None else None
+
+def _unreadable_lane_text_reason(skill_dir: Path | None = None) -> str:
+    """Name the thing a ``could_not_check`` could not read on the lane-text side.
+
+    The cases name different remedies — a missing install stamp, a version
+    directory whose name carries no version, a version-less nested install, and a
+    directory that is neither — so the reason says which path was probed instead
+    of one generic sentence.
+    """
+    probe = _lane_version_probe(skill_dir)
+    if probe.layout == _LANE_LAYOUT_FLAT:
+        return f'lane text version unknown: no usable version in the install stamp {probe.probe}'
+    if probe.layout == _LANE_LAYOUT_VERSIONED:
+        return f'lane text version unknown: the version directory {probe.probe} names no version key'
+    if probe.layout == _LANE_LAYOUT_NESTED:
+        return f'lane text version unknown: no version directory under {probe.probe}'
+    return 'lane text version unknown: no versioned install and no flat install stamp above the lane text'
 
 
 def _executor_skew(executor: Path, lane_skill_dir: Path | None = None, target: str | None = None) -> str:
@@ -524,13 +604,18 @@ def _executor_skew(executor: Path, lane_skill_dir: Path | None = None, target: s
     read — the dangerous direction, where the text names verbs the executor's
     mapped script does not have — and ``could_not_check`` when either version
     cannot be read. ``could_not_check`` is deliberately not ``match``: a failed
-    read must never be reported as agreement.
+    read must never be reported as agreement. A version the comparison cannot
+    parse into a version key is such a failed read on either side: it would
+    otherwise compare as the empty tuple and claim ``skew`` (or ``match``) for a
+    comparison that was never made.
     """
     from plugin_registry import EXECUTOR_VERSION_FOUND, read_executor_version, version_key
 
     state, executor_version = read_executor_version(executor, target=target)
     lane_version = _lane_text_version(lane_skill_dir)
     if state != EXECUTOR_VERSION_FOUND or executor_version is None or lane_version is None:
+        return _EXECUTOR_SKEW_UNCHECKED
+    if not version_key(executor_version) or not version_key(lane_version):
         return _EXECUTOR_SKEW_UNCHECKED
     if version_key(executor_version) < version_key(lane_version):
         return _EXECUTOR_SKEW_SKEW
@@ -550,6 +635,7 @@ def cmd_executor_skew(args: argparse.Namespace) -> dict[str, Any]:
         EXECUTOR_VERSION_FOUND,
         EXECUTOR_VERSION_NOT_FOUND,
         read_executor_version,
+        version_key,
     )
 
     executor = Path(getattr(args, 'executor', None) or '.plan/execute-script.py')
@@ -579,14 +665,18 @@ def cmd_executor_skew(args: argparse.Namespace) -> dict[str, Any]:
         result['remedy'] = 'regenerate the executor'
     elif verdict == _EXECUTOR_SKEW_UNCHECKED:
         # Name WHICH side could not be read: a file that was read but carries no
-        # usable assignment is a different fact from an unreadable file, and the
-        # operator's remedy differs.
-        if state == EXECUTOR_VERSION_FOUND:
-            result['reason'] = 'lane text version not derivable from its install path'
-        elif state in (EXECUTOR_VERSION_EMPTY, EXECUTOR_VERSION_NOT_FOUND):
-            result['reason'] = 'executor version missing or empty'
+        # usable version is a different fact from an unreadable file, and the
+        # operator's remedy differs. A readable but key-less executor version is
+        # the executor's failure, so it must not be blamed on the lane text.
+        if state != EXECUTOR_VERSION_FOUND:
+            if state in (EXECUTOR_VERSION_EMPTY, EXECUTOR_VERSION_NOT_FOUND):
+                result['reason'] = 'executor version missing or empty'
+            else:
+                result['reason'] = 'executor version unreadable'
+        elif executor_version is None or not version_key(executor_version):
+            result['reason'] = 'executor version names no version key'
         else:
-            result['reason'] = 'executor version unreadable'
+            result['reason'] = _unreadable_lane_text_reason(lane_skill_dir)
     return result
 
 

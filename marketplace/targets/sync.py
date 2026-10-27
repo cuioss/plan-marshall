@@ -282,6 +282,10 @@ TARGET_CONFIGS: dict[str, TargetSyncConfig] = {
         source_commands_dir='commands',
         root_assets=(
             ('plugin.json', 'config', False),
+            # The install stamp, for the same reason the OpenCode root carries
+            # one: a flat install has no plugin-cache version dir, so the stamp
+            # at the deploy root is the only version witness the tree holds.
+            ('dist-manifest.json', 'manifest', False),
             ('install.sh', 'asset', True),
             ('README.adoc', 'asset', False),
         ),
