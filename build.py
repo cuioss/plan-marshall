@@ -48,6 +48,7 @@ if str(_GATE_COVERAGE_DIR) not in sys.path:
 from _gate_coverage import (  # noqa: E402
     CoverageBoundary,
     classify_check_duration,
+    parse_mypy_reported_sources,
     render_coverage_summary,
 )
 
@@ -390,11 +391,40 @@ def _compute_mypypath() -> str:
 
 
 def run(cmd: list[str], description: str, env: dict[str, str] | None = None) -> int:
-    """Run a command and return exit code."""
+    """Run a command and return exit code.
+
+    A MYPY invocation is captured so its success summary — the affirmative
+    file-count signal the freshness backstop reads — is available to the caller.
+    Every other command streams straight through, so a long test run keeps its
+    live progress. The captured text is echoed rather than swallowed, so the log
+    is the same either way.
+    """
+    global _LAST_MYPY_OUTPUT
     print(f'>>> {description}')
     print(f'    {" ".join(cmd)}')
+    if _is_mypy_command(cmd):
+        captured = subprocess.run(cmd, env=env, capture_output=True, text=True)
+        stdout = getattr(captured, 'stdout', '') or ''
+        stderr = getattr(captured, 'stderr', '') or ''
+        _LAST_MYPY_OUTPUT = stdout + stderr
+        sys.stdout.write(stdout)
+        sys.stderr.write(stderr)
+        return captured.returncode
     result = subprocess.run(cmd, env=env)
     return result.returncode
+
+
+#: The captured output of the most recent mypy invocation, or ``None``. Reset by
+#: :func:`_run_mypy` before each run, so a stale capture can never be read as this
+#: run's affirmative signal (and a monkeypatched ``run`` — which cannot capture —
+#: leaves it ``None``, putting the verdict back on the duration fallback).
+_LAST_MYPY_OUTPUT: str | None = None
+
+
+def _is_mypy_command(cmd: list[str]) -> bool:
+    """Whether ``cmd`` is the mypy invocation whose summary carries the file count."""
+    return any(Path(part).name == 'mypy' for part in cmd[:4])
+
 
 
 def get_bundle_path(module: str | None) -> str:
@@ -503,7 +533,7 @@ def _mypy_collects_any(path: str, label: str = 'mypy') -> bool:
 
 
 def _mypy_collect_count(paths: list[str]) -> int:
-    """Count the files under ``paths`` that survive mypy's excludes.
+    """Count the FILES under ``paths`` that survive mypy's excludes.
 
     A conservative lower bound on the work a mypy invocation over ``paths``
     represents: it counts the files passed on the command line that mypy would
@@ -512,9 +542,14 @@ def _mypy_collect_count(paths: list[str]) -> int:
     only makes a run *less* likely to be judged implausibly fast. Mirrors the
     exclude-aware crawl of :func:`_mypy_collects_any` so the count agrees with what
     mypy sees.
+
+    A ``module.pyi`` SHADOWS ``module.py``: mypy analyses one source for that
+    module and names one in its summary, so counting both would inflate the bound
+    and make a valid run look short of the collected set. The pair is therefore
+    counted once.
     """
     patterns = _mypy_exclude_patterns()
-    count = 0
+    counted: set[Path] = set()
     for entry in paths:
         target = Path(entry)
         if target.is_dir():
@@ -524,9 +559,11 @@ def _mypy_collect_count(paths: list[str]) -> int:
         else:
             continue
         for candidate in candidates:
-            if not any(pattern.search(candidate.as_posix()) for pattern in patterns):
-                count += 1
-    return count
+            if any(pattern.search(candidate.as_posix()) for pattern in patterns):
+                continue
+            # Collapse a `.py`/`.pyi` pair onto one module identity.
+            counted.add(candidate.with_suffix(''))
+    return len(counted)
 
 
 def _run_mypy(
@@ -551,17 +588,22 @@ def _run_mypy(
 
     2. **Freshness backstop (gate paths only).** When a ``boundary`` is supplied
        (the ``verify`` / ``quality-gate`` paths assembling a coverage verdict), a
-       mypy that exits 0 in a wall-time no real analysis of its file set could
-       achieve is treated as suspect, not reassurance: the boundary records the
-       degradation and the call returns :data:`_FRESHNESS_SUSPECT_RC` so the gate
-       fails closed. A plausibly-timed run records the dimension as checked. Bare
-       ``compile`` / ``test-compile`` (no boundary) still run cold but skip the
-       gate-verdict machinery.
+       mypy that exits 0 without evidence it analysed the tree is treated as
+       suspect, not reassurance: the boundary records the degradation and the call
+       returns :data:`_FRESHNESS_SUSPECT_RC` so the gate fails closed. The evidence
+       is mypy's OWN success summary — the file count in
+       ``Success: no issues found in N source files`` — which proves the tree was
+       analysed without consulting a clock; the wall-time heuristic applies only
+       as the fallback for a run that published no count. A run that analysed the
+       whole set is recorded as checked. Bare ``compile`` / ``test-compile`` (no
+       boundary) still run cold but skip the gate-verdict machinery.
 
     A non-zero mypy exit (real type error) is returned unchanged; the caller halts
     and mypy's own output is the signal.
     """
     argv = ['uv', 'run', 'mypy', '--no-incremental', *paths]
+    global _LAST_MYPY_OUTPUT
+    _LAST_MYPY_OUTPUT = None
     start = time.monotonic()
     exit_code = run(argv, description, env=env)
     elapsed = time.monotonic() - start
@@ -569,7 +611,8 @@ def _run_mypy(
         return exit_code
     if boundary is not None:
         files_checked = _mypy_collect_count(paths)
-        verdict = classify_check_duration(files_checked, elapsed)
+        reported_sources = parse_mypy_reported_sources(_LAST_MYPY_OUTPUT or '')
+        verdict = classify_check_duration(files_checked, elapsed, reported_sources)
         if not verdict.plausible:
             print(f'>>> {description}: FRESHNESS SUSPECT — {verdict.reason}', file=sys.stderr)
             boundary.record_degraded(dimension, f'freshness suspect — {verdict.reason}')

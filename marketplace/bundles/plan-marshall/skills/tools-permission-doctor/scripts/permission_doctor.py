@@ -26,14 +26,29 @@ import re
 import sys
 from pathlib import Path
 
-# Bootstrap sys.path so the platform-runtime library resolves without the
-# executor. Walk up to the skills/ root and append platform-runtime/scripts.
-for _ancestor in Path(__file__).resolve().parents:
-    if _ancestor.name == 'skills' and (_ancestor.parent / '.claude-plugin' / 'plugin.json').is_file():
-        _rt_path = str(_ancestor / 'platform-runtime' / 'scripts')
-        if _rt_path not in sys.path:
-            sys.path.append(_rt_path)
-        break
+# --- plan-marshall skill bootstrap: one shared anchor (see script-shared/scripts/skill_bootstrap.py) ---
+# Stdlib only: it runs before any shared module is importable, so it cannot import the resolver.
+# It locates script-shared/scripts in either deployed shape (nested `skills/script-shared`, flat
+# `skills/*-script-shared`) and hands the library list to the shared helper, which owns the flat
+# naming rule. Every carrier holds this block byte-identically — test_skill_bootstrap_guard asserts it.
+_SCRIPTS_DIR = Path(__file__).resolve().parent
+_SKILLS_DIR = _SCRIPTS_DIR.parent.parent
+_SHARED_CANDIDATES = [_SKILLS_DIR / 'script-shared' / 'scripts', *sorted(_SKILLS_DIR.glob('*-script-shared/scripts'))]
+_SHARED_SCRIPTS = next((path for path in _SHARED_CANDIDATES if path.is_dir()), None)
+if _SHARED_SCRIPTS is None:
+    raise SystemExit(
+        'plan-marshall bootstrap: library directory "script-shared" not found beside this script.\n'
+        '  probed (either deployed shape):\n'
+        f'    nested: {_SHARED_CANDIDATES[0]}\n'
+        f'    flat:   {_SKILLS_DIR}/<bundle>-script-shared/scripts'
+    )
+if str(_SHARED_SCRIPTS) in sys.path:
+    sys.path.remove(str(_SHARED_SCRIPTS))
+sys.path.insert(0, str(_SHARED_SCRIPTS))
+
+from skill_bootstrap import bootstrap_skill_libraries  # noqa: E402
+
+bootstrap_skill_libraries(Path(__file__), ('ref-toon-format', 'platform-runtime'))
 
 from permission_common import (  # noqa: E402
     EXIT_SUCCESS,

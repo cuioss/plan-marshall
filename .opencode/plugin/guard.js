@@ -1,10 +1,10 @@
 /**
- * plan-marshall guard plugin — tool.execute.before enforcement of R1-R6.
+ * plan-marshall guard plugin — tool.execute.before enforcement of R1-R7.
  *
  * V2 plugin (`Plugin.define` with `ctx.tool.hook("execute.before")`). The
  * opencode host loads every module under `{plugin,plugins}/*.{ts,js}` in the
  * project config directory. This plugin registers a
- * `ctx.tool.hook("execute.before")` hook that inspects each tool invocation against the six
+ * `ctx.tool.hook("execute.before")` hook that inspects each tool invocation against the seven
  * plan-marshall hard-rule bypass classes and THROWS to block the execution,
  * appending one audit line to `.plan/temp/guard.log` per blocked invocation.
  *
@@ -15,7 +15,7 @@
  *
  * DECISION TABLE (authoritative — mirrored in the D4 runtime matrix):
  *
- *   Guarded tools: bash (R1, R2, R4, R5, R6), edit/write/patch/apply_patch (R3).
+ *   Guarded tools: bash (R1, R2, R4, R5, R6), edit/write/patch/apply_patch (R3, R7).
  *   Every other tool passes through untouched.
  *
  *   R1 — shell-chaining constructors (bash): the command, with single-quoted
@@ -38,6 +38,14 @@
  *   the target resolves under `.plan/execute-script.py` — via filePath, or via
  *   every `*** Add/Update/Delete File:` / `*** Move to:` marker (plus legacy
  *   bare add/update/move/delete targets) in apply_patch patchText  => block.
+ *
+ *   R7 — a LANE run writing a tracked file of the MAIN checkout
+ *   (edit/write/patch/apply_patch): the target resolves inside the project root,
+ *   outside `.plan/local/worktrees/`, `.plan/temp/` and `.plan/local/plans/`, AND
+ *   this is a plan-context call (Signal 1/2/3) AND the live `rb-<plan>` lane
+ *   marker names an EXISTING `.plan/local/worktrees/<plan>`  => block, naming the
+ *   worktree path to use. Absent marker or absent worktree => pass: a developer
+ *   session and a `use_worktree: false` plan are not refused.
  *
  *   R4 — hard-coded build commands bypassing `python3 .plan/execute-script.py`
  *   (bash): route builds through the executor only. Block when:
@@ -1214,16 +1222,24 @@ function isThisRepository(root) {
 const LANE_MARKER_MAX_AGE_MS = 24 * 60 * 60 * 1000
 
 function isLaneRun(root) {
-  if (!root) return false
+  return freshLaneMarkers(root).length > 0
+}
+
+// The names of the LIVE runbook-lane markers a checkout carries (`rb-<plan>`),
+// newest-agnostic and freshness-bounded. Split out of `isLaneRun` because the
+// same set decides both "is this a lane run" and "which worktree may it write"
+// — and two derivations of one marker set are two answers waiting to diverge.
+function freshLaneMarkers(root) {
+  if (!root) return []
   const tempDir = path.join(root, ".plan", "temp")
   let entries
   try {
     entries = readdirSync(tempDir)
   } catch {
-    return false
+    return []
   }
   const now = Date.now()
-  return entries.some((name) => {
+  return entries.filter((name) => {
     if (!name.startsWith("rb-")) return false
     const marker = path.join(tempDir, name, "progress.md")
     try {
@@ -1233,6 +1249,32 @@ function isLaneRun(root) {
     }
   })
 }
+
+// The worktrees the LIVE lane markers name, when those worktrees EXIST.
+//
+// The marker-to-worktree mapping is `rb-<plan>` → `.plan/local/worktrees/<plan>`
+// (the lane's `sender_id` minus its prefix). An ABSENT worktree contributes
+// nothing: the marker outlives its worktree, so a rule keyed on the marker alone
+// would refuse a developer's ordinary edit in the main checkout after any past
+// lane run. The list is NOT narrowed to one candidate on purpose — the payload
+// carries no lane identity, so picking one would name a worktree the call may not
+// belong to; the refusal names them all instead.
+function laneWorktrees(root) {
+  const found = []
+  for (const name of freshLaneMarkers(root)) {
+    const candidate = path.join(root, ".plan", "local", "worktrees", name.slice("rb-".length))
+    try {
+      if (statSync(candidate).isDirectory()) found.push(candidate)
+    } catch {
+      continue
+    }
+  }
+  return found
+}
+
+// The paths a lane run may write in the MAIN checkout: its own worktrees, its
+// temp area and its plan-local work slots (progress file, PR bodies, guard log).
+const MAIN_CHECKOUT_WRITE_EXEMPT_PREFIXES = [".plan/local/worktrees/", ".plan/temp/", ".plan/local/plans/"]
 
 function contextGate(agent, workdir, root) {
   if (typeof agent === "string" && agent.includes(EXECUTION_CONTEXT_MARKER)) return true
@@ -1381,6 +1423,69 @@ function targetsExecutor(args) {
   return patchTextTargetsExecutor(typeof args.patchText === "string" ? args.patchText : "")
 }
 
+// R7 — the paths one edit-family call targets, resolved against the checkout.
+//
+// `edit` / `write` carry `filePath`; `apply_patch` / `patch` name their targets in
+// `patchText` marker lines (every operation target, both paths on a move), which
+// `patchOperationTargets` parses for the executor rule already. A target that
+// cannot be resolved is skipped rather than guessed: R7 refuses only a path it can
+// place inside the main checkout.
+function editedTargetPaths(args, root) {
+  if (!args || typeof args !== "object") return []
+  const raw = []
+  if (typeof args.filePath === "string" && args.filePath) raw.push(args.filePath)
+  if (typeof args.path === "string" && args.path) raw.push(args.path)
+  if (typeof args.patchText === "string" && args.patchText) raw.push(...patchOperationTargets(args.patchText))
+  return raw.map((candidate) => resolveInsideRoot(candidate, root)).filter((candidate) => candidate !== null)
+}
+
+// Resolve a write target to (realpath-normalised) absolute form, or null when it
+// is empty. A RELATIVE target resolves against the project root, which is the
+// working directory every lane call carries.
+function resolveInsideRoot(raw, root) {
+  if (!raw || typeof raw !== "string") return null
+  const trimmed = raw.trim()
+  if (!trimmed) return null
+  const base = (root || "").replace(/\\/g, "/").replace(/\/+$/, "")
+  const joined = trimmed.startsWith("/") ? trimmed : base + "/" + trimmed
+  return resolveNearestExisting(joined)
+}
+
+// Resolve the nearest EXISTING ancestor and re-append the missing tail, then
+// normalise. `realPathOf` alone returns the lexical path when its target does not
+// exist yet, which lets a symlinked exempt directory (`.plan/temp/`, the lane
+// worktree) hide a NEW file from the containment check: the lexical path looks
+// exempt while the file would be created in the main checkout.
+function resolveNearestExisting(absolutePath) {
+  const normalized = normalizePosixPath(absolutePath)
+  const segments = normalized.split("/").filter(Boolean)
+  const tail = []
+  while (segments.length) {
+    const candidate = "/" + segments.join("/")
+    if (existsSync(candidate)) {
+      return normalizePosixPath([realPathOf(candidate), ...tail.slice().reverse()].join("/"))
+    }
+    tail.push(segments.pop())
+  }
+  return normalized
+}
+
+// The main-checkout write R7 refuses, or null. A lane run may write only inside
+// its own worktree, `.plan/temp/` and `.plan/local/plans/`; everything else under
+// the checkout — existing or new — is a write the lane must make in the worktree.
+function laneWriteViolation(args, root, worktrees) {
+  const rootNorm = normalizePosixPath(realPathOf(root)) + "/"
+  const worktreePrefixes = worktrees.map((worktree) => normalizePosixPath(realPathOf(worktree)) + "/")
+  for (const target of editedTargetPaths(args, root)) {
+    if (!target.startsWith(rootNorm)) continue
+    if (worktreePrefixes.some((prefix) => target.startsWith(prefix))) continue
+    const relative = target.slice(rootNorm.length)
+    if (MAIN_CHECKOUT_WRITE_EXEMPT_PREFIXES.some((prefix) => relative.startsWith(prefix))) continue
+    return { target, relative }
+  }
+  return null
+}
+
 function normalizedIsExecutorPath(raw) {
   if (!raw || typeof raw !== "string") return false
   const normalized = raw.replace(/\\/g, "/")
@@ -1390,25 +1495,47 @@ function normalizedIsExecutorPath(raw) {
 // OpenCode's apply_patch tool names its targets in output.args.patchText as
 // `*** Add File:` / `*** Update File:` / `*** Move to:` / `*** Delete File:`
 // marker lines (plus the legacy bare add/update/move/delete form) rather
-// than a filePath. Inspect every operation target (both paths on a move);
-// any target resolving under .plan/execute-script.py blocks.
-function patchTextTargetsExecutor(patchText) {
-  if (!patchText) return false
+// than a filePath. `patchOperationTargets` returns every operation target (both
+// paths on a move); the executor rule refuses if any resolves under
+// .plan/execute-script.py, and R7 judges the same set against the main checkout.
+//
+// A MARKER names ONE path, and a path may contain spaces, so the marker forms take
+// the whole remainder (minus one matching pair of surrounding quotes). Only the
+// legacy bare form still splits on whitespace.
+function patchOperationTargets(patchText) {
+  if (!patchText) return []
   const candidates = []
   for (const line of patchText.split("\n")) {
-    const op =
+    const marker =
       line.match(/^\s*\*+\s+(?:add|update|delete)\s+file:\s*(.+?)\s*$/i) ||
-      line.match(/^\s*\*+\s+move\s+to:\s*(.+?)\s*$/i) ||
-      line.match(/^\s*(?:add|update|move|delete)\b\s+(.*)$/i)
-    if (!op) continue
-    const targetPart = op[1]
+      line.match(/^\s*\*+\s+move\s+to:\s*(.+?)\s*$/i)
+    if (marker) {
+      candidates.push(stripSurroundingQuotes(marker[1]))
+      continue
+    }
+    const legacy = line.match(/^\s*(?:add|update|move|delete)\b\s+(.*)$/i)
+    if (!legacy) continue
     const tokenRe = /"([^"]+)"|'([^']+)'|(\S+)/g
     let m
-    while ((m = tokenRe.exec(targetPart)) !== null) {
+    while ((m = tokenRe.exec(legacy[1])) !== null) {
       candidates.push(m[1] ?? m[2] ?? m[3])
     }
   }
-  return candidates.some(normalizedIsExecutorPath)
+  return candidates
+}
+
+function stripSurroundingQuotes(value) {
+  const trimmed = String(value).trim()
+  if (trimmed.length >= 2) {
+    const first = trimmed[0]
+    const last = trimmed[trimmed.length - 1]
+    if ((first === '"' && last === '"') || (first === "'" && last === "'")) return trimmed.slice(1, -1)
+  }
+  return trimmed
+}
+
+function patchTextTargetsExecutor(patchText) {
+  return patchOperationTargets(patchText).some(normalizedIsExecutorPath)
 }
 
 // A directory value that still carries a shell expansion is UNRESOLVABLE: the
@@ -1732,6 +1859,22 @@ export default Plugin.define({
           throw new Error(
             "[plan-marshall-guard] R3: direct edits to the generated executor (.plan/execute-script.py) are forbidden; access .plan/ via manage-* scripts only",
           )
+        }
+        // R7 — a LANE run may not write a tracked file of the main checkout. The
+        // binding is narrow on purpose: it needs the lane marker AND at least one
+        // worktree that marker names, so a developer session (no marker) and a
+        // plan whose `use_worktree` is false (marker, no worktree) are never
+        // refused.
+        const worktrees = laneWorktrees(root)
+        if (worktrees.length && contextGate(event?.agent, workdir, root)) {
+          const violation = laneWriteViolation(args, root, worktrees)
+          if (violation) {
+            audit(auditLine("R7", tool, sessionID, callID, violation.target))
+            const destinations = worktrees.map((worktree) => path.join(worktree, violation.relative)).join(" (or) ")
+            throw new Error(
+              `[plan-marshall-guard] R7: a lane run may not write ${violation.relative} in the main checkout — make the edit in the plan worktree: ${destinations}`,
+            )
+          }
         }
         return
       }

@@ -29,7 +29,7 @@ from pathlib import Path
 
 import build
 import pytest
-from _gate_coverage import MAX_ANALYSIS_THROUGHPUT, SUSPECT_MIN_FILES
+from _gate_coverage import MAX_ANALYSIS_THROUGHPUT, SUSPECT_MIN_FILES, CoverageBoundary
 
 # build.py resolves every path relative to the repo root, so the real-tree tests
 # below pin cwd there instead of trusting whatever directory pytest was started
@@ -836,6 +836,54 @@ def test_quality_gate_does_not_flag_a_plausibly_timed_whole_tree_run(repo_root_c
     out = capsys.readouterr().out
     assert 'FRESHNESS SUSPECT' not in out
     assert 'coverage: COMPLETE' in out
+
+
+def _mypy_output_recorder(reported_sources: int):
+    """Return a ``build.run`` stub that reports mypy's affirmative summary line.
+
+    A monkeypatched ``build.run`` never runs mypy, so it must seed the module's
+    captured-output slot itself — that is exactly the seam ``_run_mypy`` reads.
+    """
+
+    def _stub(cmd: list[str], description: str, env: dict[str, str] | None = None) -> int:
+        build._LAST_MYPY_OUTPUT = f'Success: no issues found in {reported_sources} source files'
+        return 0
+
+    return _stub
+
+
+def test_run_mypy_trusts_a_fast_run_that_analysed_the_whole_set(monkeypatch):
+    """A boundary-bearing run over 1801 files in 8.2 s returns 0 — the CI measurement.
+
+    The run is cold by construction, so 219 files/s is a fast machine, not a
+    cached answer; mypy's own summary names the 1801 files it analysed and that is
+    the affirmative signal the gate trusts.
+    """
+    monkeypatch.setattr(build, '_mypy_collect_count', lambda paths: 1801)
+    monkeypatch.setattr(build, 'run', _mypy_output_recorder(1801))
+    monkeypatch.setattr(build.time, 'monotonic', _ticks(100.0, 108.2))
+    boundary = CoverageBoundary()
+
+    rc = build._run_mypy(['marketplace/bundles'], 'compile', {}, dimension='mypy(production)', boundary=boundary)
+
+    assert rc == 0
+    assert boundary.degraded == []
+
+
+def test_run_mypy_still_fails_closed_on_a_run_that_analysed_nothing(monkeypatch):
+    """660 files in 0.05 s is still suspect, whatever the summary says.
+
+    The incident shape: success over a substantial set with no measurable work.
+    """
+    monkeypatch.setattr(build, '_mypy_collect_count', lambda paths: 660)
+    monkeypatch.setattr(build, 'run', _mypy_output_recorder(660))
+    monkeypatch.setattr(build.time, 'monotonic', _ticks(100.0, 100.05))
+    boundary = CoverageBoundary()
+
+    rc = build._run_mypy(['marketplace/bundles'], 'compile', {}, dimension='mypy(production)', boundary=boundary)
+
+    assert rc == build._FRESHNESS_SUSPECT_RC
+    assert boundary.degraded, 'the degradation must be recorded, not folded into a pass'
 
 
 def test_module_scoped_quality_gate_states_an_empty_mypy_scope_and_maligns_nothing(repo_root_cwd, monkeypatch, capsys):
