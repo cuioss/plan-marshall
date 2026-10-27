@@ -193,8 +193,11 @@ _FLAT_SKILL_PREFIX = (
     else ''
 )
 for _lib in ('ref-toon-format', 'tools-file-ops', 'script-shared'):
-    # Both deployed shapes are probed, in the same order the shared resolver uses:
-    # the nested `skills/{lib}/scripts` first, then the flat `skills/{prefix}{lib}/scripts`.
+    # Both deployed shapes are probed, in the SAME precedence the shared resolver uses:
+    # the nested `skills/{lib}/scripts` wins over the flat `skills/{prefix}{lib}/scripts`.
+    # The loop stops at the first candidate that exists, because a later insert would be
+    # front-loaded ahead of the winner and let the flat copy shadow the nested one on a
+    # tree that carries both.
     for _candidate in (_SKILLS_DIR / _lib / 'scripts', _SKILLS_DIR / f'{_FLAT_SKILL_PREFIX}{_lib}' / 'scripts'):
         _lib_path = str(_candidate)
         if not _candidate.is_dir():
@@ -209,6 +212,7 @@ for _lib in ('ref-toon-format', 'tools-file-ops', 'script-shared'):
         if _lib_path in sys.path:
             sys.path.remove(_lib_path)
         sys.path.insert(0, _lib_path)
+        break
 
 # ============================================================================
 # CONFIGURATION
