@@ -67,9 +67,11 @@ Where the lane text's version comes from, once, per layout: a versioned plugin c
 the newest eligible `{bundle}/{version}/skills/{skill}` directory; a flat install (OpenCode,
 Antigravity) has no version directory, so it supplies the `version` of the install stamp — the
 `dist-manifest.json` the sync writes at the deploy root that contains the skill root; a source
-checkout has neither, so the comparison there stays `could_not_check`. A `could_not_check` is
-reported and the operator is asked — never read as "no skew" — and its reason names the thing it
-could not read: the executor, the install stamp it probed, or the version-less bundle directory.
+checkout has neither, so the comparison there stays `could_not_check`. The stamp moves only on a
+sync, so an edit made to the installed lane text in place is not part of what the comparison sees.
+A `could_not_check` is reported and the operator is asked — never read as "no skew" — and its reason
+names the thing it could not read: the executor, the install stamp it probed, or the version-less
+bundle directory.
 
 ### build-routing
 

@@ -39,10 +39,16 @@ questions behind one interface:
   each ``SKILL.md`` (:func:`read_flat_skill_identity`), never by splitting a
   directory name.
 
+Two further helpers locate a flat skill's DEPLOY ROOT and read the install stamp
+the sync leaves there (:func:`flat_deploy_root`,
+:func:`read_deploy_stamp_version`): the flat shape carries no version directory,
+so that stamp is the only version witness a flat install holds.
+
 The NESTED shape's version-dir selection is deliberately NOT here. Choosing
 among sibling version directories is a different concern from choosing a shape,
 and it already has one owner: ``marketplace_bundles.select_live_version_dir``.
-The flat tree is unversioned, so the two never apply to the same subtree.
+The flat tree is unversioned — its version lives in the deploy root's stamp, not
+in a directory name — so the two never apply to the same subtree.
 
 This module reads the DEPLOYED tree. It does not change what any target emits:
 the singular-to-plural mapping stays in ``install.sh`` where it already lives,
@@ -285,7 +291,7 @@ def read_deploy_stamp_version(deploy_root: Path) -> str | None:
     """
     try:
         payload = json.loads((deploy_root / DIST_MANIFEST_NAME).read_text(encoding='utf-8'))
-    except (OSError, ValueError, UnicodeDecodeError):
+    except (OSError, ValueError):
         return None
     if not isinstance(payload, dict):
         return None

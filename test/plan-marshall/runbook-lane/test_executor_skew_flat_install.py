@@ -8,9 +8,10 @@ holds is the sync stamp (``dist-manifest.json``) at the deploy root. Without tha
 leg the lane-text version is unmakeable on every flat harness, the check answers
 ``could_not_check`` there, and a genuinely stale executor passes unnoticed.
 
-The in-process cases drive the helper; the end-to-end cases drive the verb
-through a generated executor under the OpenCode runtime signal, which is the path
-a lane actually takes.
+The in-process cases drive the helper; the end-to-end cases drive the verb through
+a generated executor under the OpenCode runtime signal, naming the flat fixture's
+lane skill explicitly (``--lane-dir``) because a developer checkout's own tree
+outranks every deployed copy by design.
 """
 
 from __future__ import annotations
@@ -80,6 +81,11 @@ def _skew_result(executor: Path, lane_dir: Path) -> dict[str, object]:
     return module.cmd_executor_skew(argparse.Namespace(executor=str(executor), lane_dir=str(lane_dir)))
 
 
+def _flat_reason(deploy_root: Path) -> str:
+    """The reason a flat install without a readable stamp reports."""
+    return f'lane text version unknown: no readable version in the install stamp {deploy_root / "dist-manifest.json"}'
+
+
 # -----------------------------------------------------------------------------
 # The lane-text version comes from the install's own stamp
 # -----------------------------------------------------------------------------
@@ -115,9 +121,7 @@ def test_flat_install_without_a_stamp_cannot_check(tmp_path: Path) -> None:
     data = _skew_result(_executor(tmp_path, '0.1.2021'), lane)
 
     assert data['verdict'] == 'could_not_check'
-    assert data['reason'] == (
-        f'lane text version unknown: no readable version in the install stamp {root / "dist-manifest.json"}'
-    )
+    assert data['reason'] == _flat_reason(root)
 
 
 def test_flat_install_with_an_unreadable_stamp_cannot_check(tmp_path: Path) -> None:
@@ -127,7 +131,7 @@ def test_flat_install_with_an_unreadable_stamp_cannot_check(tmp_path: Path) -> N
     data = _skew_result(_executor(tmp_path, '0.1.2021'), lane)
 
     assert data['verdict'] == 'could_not_check'
-    assert 'no readable version in the install stamp' in str(data['reason'])
+    assert data['reason'] == _flat_reason(root)
 
 
 def test_flat_install_with_a_versionless_stamp_cannot_check(tmp_path: Path) -> None:
@@ -137,7 +141,22 @@ def test_flat_install_with_a_versionless_stamp_cannot_check(tmp_path: Path) -> N
     data = _skew_result(_executor(tmp_path, '0.1.2021'), lane)
 
     assert data['verdict'] == 'could_not_check'
-    assert 'no readable version in the install stamp' in str(data['reason'])
+    assert data['reason'] == _flat_reason(root)
+
+
+def test_flat_install_with_an_incomparable_stamp_cannot_check(tmp_path: Path) -> None:
+    """A stamp version with no digit cannot be compared, so it is never agreement.
+
+    The comparison parses versions by their digit runs, so a word would compare
+    as the empty tuple and read as ``match`` against any executor — the exact
+    fail-open direction the check exists to close.
+    """
+    root, lane = _flat_install(tmp_path, 'unknown')
+
+    data = _skew_result(_executor(tmp_path, '0.1.2010'), lane)
+
+    assert data['verdict'] == 'could_not_check'
+    assert data['reason'] == _flat_reason(root)
 
 
 def test_versioned_cache_still_reads_the_installed_version_directory(tmp_path: Path) -> None:

@@ -522,7 +522,17 @@ def _lane_version_probe(skill_dir: Path | None = None) -> _LaneTextVersion:
 
     The legs run in that order, and a leg that finds nothing leaves the probe to
     the next one. A flat install whose stamp is absent, unreadable or carries no
-    version is UNMAKEABLE too — never "no skew".
+    version is UNMAKEABLE too — never "no skew". So is a stamp whose version
+    carries no digit: the comparison parses versions by their digit runs, so a
+    word such as ``unknown`` would compare as the empty tuple and every executor
+    would then read as ``match`` — the fail-open direction this check exists to
+    close.
+
+    The stamp is written ONCE PER SYNC, so it witnesses what the sync deployed,
+    not a lane text edited in place afterwards. That is the accepted trade: a
+    flat install has no pin or registry, so what was deployed is what is loaded,
+    and a per-skill version stamp or a content hash would be the only witnesses
+    that also catch an in-place edit.
     """
     from deployed_layout import DIST_MANIFEST_NAME, flat_deploy_root, read_deploy_stamp_version
     from marketplace_bundles import resolve_bundles_root, select_live_version_dir
@@ -544,11 +554,9 @@ def _lane_version_probe(skill_dir: Path | None = None) -> _LaneTextVersion:
                 return _LaneTextVersion(live.name, _LANE_LAYOUT_VERSIONED, live)
     deploy_root = flat_deploy_root(root)
     if deploy_root is not None:
-        return _LaneTextVersion(
-            read_deploy_stamp_version(deploy_root),
-            _LANE_LAYOUT_FLAT,
-            deploy_root / DIST_MANIFEST_NAME,
-        )
+        stamped = read_deploy_stamp_version(deploy_root)
+        comparable = stamped if stamped is not None and any(char.isdigit() for char in stamped) else None
+        return _LaneTextVersion(comparable, _LANE_LAYOUT_FLAT, deploy_root / DIST_MANIFEST_NAME)
     if bundle_dir is not None:
         return _LaneTextVersion(None, _LANE_LAYOUT_NESTED, bundle_dir)
     return _LaneTextVersion(None, _LANE_LAYOUT_UNRESOLVED, None)
