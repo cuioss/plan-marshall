@@ -39,7 +39,7 @@ def _merge(status, head, **kwargs):
     """
     kwargs.setdefault(
         'participation_check',
-        lambda _pid, _pr: {
+        lambda _pid, _pr, _project_dir: {
             'status': 'success',
             'participation_complete': True,
             'roster_read': True,

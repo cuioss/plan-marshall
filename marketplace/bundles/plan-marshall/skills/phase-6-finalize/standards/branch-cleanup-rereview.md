@@ -130,6 +130,8 @@ Both branches that advance an unreviewed HEAD — the `proceed` policy branch an
 
   ⛔ **The prompt names `{outcome_detail}`, never a hard-coded budget expiry.** Both entrants reach this prompt and the operator is choosing on the strength of what was observed: a timeout means nothing answered, a decline means the bot answered without reviewing this HEAD. Rendering the timeout wording on a decline hands the operator a claim nothing made, and the "wait" option is the WEAKEST of the three there — no budget expired, so a longer one buys nothing, and a bot that declined this HEAD answers a re-trigger with another decline rather than a review. Say so in the option's description on that entrant instead of silently offering it as equal.
 
+  ⛔ **`{merge_consequence}` is GENERATED, never authored here.** Render it with `pre_merge_gate consequence-text --final-merge-without-asking {final_merge_without_asking}` and interpolate the returned `text` into the "Merge anyway — proceed unreviewed" description, exactly as every pre-enqueue merge option in [`branch-cleanup.md`](branch-cleanup.md) § "Every pre-enqueue merge question says whether a second one follows" does. The sentence tells the operator whether selecting this option merges the PR on the spot or is followed by the pre-merge confirmation question, and it is the one place that answer is written.
+
   ```text
   AskUserQuestion:
     questions:

@@ -52,14 +52,15 @@ is structurally blind to it. The barrier in ``branch-cleanup.md`` asks the
 a run can skip. ``merge`` therefore asks it too, with the roster read from the
 execution manifest's ``plan-marshall:automatic-review`` step params —
 :func:`_check_participation` runs the provider producer and then the very
-predicate the barrier runs, so proxy and barrier cannot disagree about what
-participation means. A gap is refused as
-:data:`MERGE_PARTICIPATION_UNPROVEN` unless a HEAD-bound authorization over
+predicate the barrier runs, over the very roster it runs it with. A gap is refused
+as :data:`MERGE_PARTICIPATION_UNPROVEN` unless a HEAD-bound authorization over
 :data:`REVIEW_BARRIER_GAP_CLASS` covers it, in which case the merge proceeds and
 the payload names the kind that was relied on, so the step record can say so.
-An EMPTY roster is never read as a pass — the verdict states whether the roster
-was READ, and a roster nobody could read is a refusal rather than a vacuous
-quorum.
+**A state nobody could READ is never authorizable** — the refusal carries an
+``authorizable`` discriminator, and only a KNOWN gap with named bots reaches the
+grant lookup. An EMPTY roster is never read as a pass either: the verdict states
+whether the roster was READ, and a roster nobody could read is a refusal rather
+than a vacuous quorum.
 
 Two further subcommands keep the merge path's WORDING in this script rather than
 in an agent's hands:
@@ -188,7 +189,7 @@ FindingsCheck = Callable[[str], dict[str, Any]]
 MergeRunner = Callable[[list[str]], dict[str, Any]]
 StatusReader = Callable[[str], dict[str, Any] | None]
 HeadReader = Callable[[str], str | None]
-ParticipationCheck = Callable[[str, int], dict[str, Any]]
+ParticipationCheck = Callable[[str, int, str], dict[str, Any]]
 AuthorizationCheck = Callable[[str, str], dict[str, Any]]
 MarkDoneRunner = Callable[[list[str]], dict[str, Any]]
 
@@ -398,8 +399,10 @@ _PROVIDER_SKILL_PREFIX = 'workflow-integration-'
 def _find_marshal_path(start: Path | None = None) -> Path | None:
     """Walk up from ``start`` (default: the current directory) to ``marshal.json``.
 
-    Mirrors the CI router's own resolution rather than hard-coding a provider
-    name, so a project configured for GitLab resolves GitLab.
+    Mirrors the CI router's own resolution — including its ROOT, which every caller
+    here passes as the tree the merge is being dispatched for, so a dispatch whose
+    cwd is elsewhere still resolves the project's own provider rather than another
+    checkout's. A project configured for GitLab resolves GitLab.
     """
     current = start or Path.cwd()
     for parent in [current, *current.parents]:
@@ -409,7 +412,7 @@ def _find_marshal_path(start: Path | None = None) -> Path | None:
     return None
 
 
-def _provider_pr_notation() -> str | None:
+def _provider_pr_notation(project_dir: str | None = None) -> str | None:
     """Return the configured CI provider's PR-producer notation, or ``None``.
 
     The provider key is DERIVED from the ``category: ci`` entry's ``skill_name``
@@ -417,7 +420,8 @@ def _provider_pr_notation() -> str | None:
     reaches its own producer instead of this one's. ``None`` means the provider
     could not be resolved at all — a refusal reason, never a default.
     """
-    marshal_path = _find_marshal_path()
+    start = Path(project_dir) if project_dir else None
+    marshal_path = _find_marshal_path(start)
     if marshal_path is None:
         return None
     try:
@@ -489,9 +493,11 @@ def _read_roster(plan_id: str) -> dict[str, Any]:
 
     ``{'read': True, 'required_bots': [...], 'optional_bots': [...]}`` when the
     snapshot was read, ``{'read': False, 'reason': …}`` otherwise. The two are never
-    collapsed: an empty required list is a DECIDED configuration only when it was
-    read, which is why :func:`_check_participation` gates on ``read`` before it
-    looks at the list.
+    collapsed: ``read`` says whether the CONFIGURATION could be observed at all, which
+    is a different question from what it says. A read roster configuring no REQUIRED bot
+    is answered ``read: True`` with an empty list — and the caller then decides, which is
+    why :func:`_check_participation` refuses that shape rather than treating it as a
+    decided empty quorum: nobody decided it, the step simply carried no roster.
     """
     result = _run_verb(
         _MANIFEST_NOTATION,
@@ -526,14 +532,18 @@ def _read_roster(plan_id: str) -> dict[str, Any]:
     }
 
 
-def _check_participation(plan_id: str, pr_number: int) -> dict[str, Any]:
+def _check_participation(plan_id: str, pr_number: int, project_dir: str) -> dict[str, Any]:
     """Ask the barrier's own participation predicate about the merge candidate.
 
     The chain is the barrier's, run in-process instead of by a step body: read the
     configured roster, re-run the provider producer against the current head, then
     feed the producer's observations to ``review_completeness check`` under that
-    roster. Every failure in the chain is an error verdict carrying a ``reason``,
-    never a pass and never a ``0``:
+    roster. Both sites therefore apply one predicate over one roster, so they cannot
+    disagree about what participation MEANS; two overlays differ deliberately and are
+    named in ``branch-cleanup.md`` — the dispatch passes ``--triage-ran``, and it
+    supplies no ``not_triggered`` / ``declined`` overlay because those are read from
+    verbs it does not call. Every failure in the chain is an error verdict carrying a
+    ``reason``, never a pass and never a ``0``:
 
     * an unreadable roster, and a roster that was read but configures no REQUIRED
       bot — an empty roster is a decision nobody made, and reading it as a vacuous
@@ -567,7 +577,7 @@ def _check_participation(plan_id: str, pr_number: int) -> dict[str, Any]:
             ),
         }
 
-    notation = _provider_pr_notation()
+    notation = _provider_pr_notation(project_dir)
     if notation is None:
         return {
             'status': 'error',
@@ -710,6 +720,7 @@ def _read_merge_authorization(plan_id: str, head: str) -> dict[str, Any]:
 def _participation_verdict(
     plan_id: str,
     pr_number: int,
+    project_dir: str,
     *,
     head: str | None,
     participation_check: ParticipationCheck | None = None,
@@ -721,10 +732,20 @@ def _participation_verdict(
     the two are recorded differently because they are different facts:
 
     * the predicate proved participation — ``authorization_kind`` is ``None``;
-    * the predicate reported a gap AND a HEAD-bound authorization over
+    * the predicate REPORTED A GAP and a HEAD-bound authorization over
       :data:`REVIEW_BARRIER_GAP_CLASS` is admissible at ``head`` — then
       ``authorization_kind`` names the kind relied on, which is what the step record
       renders.
+
+    The second case is reachable only from a KNOWN gap with bot states. An UNKNOWN —
+    an unreadable roster, an empty roster, an unresolved provider, a producer that did
+    not answer or could not resolve the candidate, a predicate that did not answer — is
+    ``authorizable: False`` and is refused with no grant consulted at all. That
+    asymmetry is the spec's standing constraint and the doc's own rule: an authorization
+    covers a review gap somebody can name, never a state nobody could read. Reading the
+    two alike is exactly the fail-open this gate exists to remove — a single grant
+    recorded earlier for another purpose would otherwise admit a merge with zero
+    participation proof.
 
     The operator's standing ruling — a quota-limited required bot whose qualifying
     review of this head is on record — needs no grant and lands in the FIRST case:
@@ -734,7 +755,7 @@ def _participation_verdict(
     review predates this head resolves ``participated_stale``. Both of the latter
     are members of the predicate's unproven set and are refused here.
     """
-    verdict = (participation_check or _check_participation)(plan_id, pr_number)
+    verdict = (participation_check or _check_participation)(plan_id, pr_number, project_dir)
     if verdict.get('status') == 'success' and verdict.get('participation_complete') is True:
         return {
             'allowed': True,
@@ -744,23 +765,22 @@ def _participation_verdict(
             'bot_states': list(verdict.get('bot_states') or []),
             'required_bots': list(verdict.get('required_bots') or []),
             'authorization_kind': None,
+            'authorizable': False,
             'code': None,
             'detail': None,
             'authorization': None,
         }
 
-    # The refusal's machine code and its human detail are kept apart on purpose:
-    # the code names WHICH participation question went unanswered, the detail says
-    # what was seen, and a caller can route on the first without parsing the second.
-    if verdict.get('status') == 'success':
-        code = 'participation_unproven'
-    else:
-        code = str(verdict.get('error') or 'participation_unreadable')
+    # The refusal's machine code and its human detail are kept apart on purpose: the
+    # code names WHICH participation question went unanswered, the detail says what was
+    # seen, and a caller can route on the first without parsing the second.
+    known_gap = verdict.get('status') == 'success'
+    code = 'participation_unproven' if known_gap else str(verdict.get('error') or 'participation_unreadable')
     detail = verdict.get('reason')
 
     authorization: dict[str, Any] | None = None
     authorization_kind: str | None = None
-    if head:
+    if known_gap and head:
         authorization = (authorization_check or _read_merge_authorization)(plan_id, head)
         kinds = [str(kind) for kind in (authorization.get('admissible_kinds') or [])]
         if authorization.get('status') == 'success' and authorization.get('any_admissible') is True and kinds:
@@ -774,6 +794,7 @@ def _participation_verdict(
         'bot_states': list(verdict.get('bot_states') or []),
         'required_bots': list(verdict.get('required_bots') or []),
         'authorization_kind': authorization_kind,
+        'authorizable': known_gap,
         'code': code,
         'detail': detail,
         'authorization': authorization,
@@ -785,14 +806,22 @@ def _participation_refusal(plan_id: str, head: str | None, verdict: dict[str, An
 
     The payload states whether the ROSTER WAS READ separately from whether the bots
     participated, so "nobody could read the roster" and "the roster was read and
-    these bots did not review" are distinguishable by a caller and by an operator.
-    The HEAD-bound authorization that was consulted is reported too: an
-    ``any_authorized: true`` beside ``any_admissible: false`` is the case where a
-    ruling exists over some OTHER gap at this same head, and that distinction is
-    what tells an operator their ruling was simply the wrong one.
+    these bots did not review" are distinguishable by a caller and by an operator. It
+    also states ``authorizable``: a KNOWN gap with named bots is where a HEAD-bound
+    authorization can apply, and an UNKNOWN is not — the remedy for that one is to make
+    the participation state readable, never to rule past it.
     """
     unproven = verdict['unproven_bots']
     detail = verdict.get('detail') or 'no reason was reported'
+    authorizable = bool(verdict.get('authorizable'))
+    remedy = (
+        f'A required reviewer is never demoted, and the only ruling that covers its silence is a '
+        f'recorded HEAD-bound merge authorization over {REVIEW_BARRIER_GAP_CLASS}.'
+        if authorizable
+        else 'No merge authorization covers this: a participation state nobody could read is not a '
+        'review gap, so the gate must be made readable (roster, provider, producer, or predicate) '
+        'before this merge can proceed.'
+    )
     payload: dict[str, Any] = {
         'status': 'error',
         'error': MERGE_PARTICIPATION_UNPROVEN,
@@ -800,6 +829,7 @@ def _participation_refusal(plan_id: str, head: str | None, verdict: dict[str, An
         'phase': FINDINGS_PHASE,
         'head': head,
         'reason': verdict['code'],
+        'authorizable': authorizable,
         'roster_read': verdict['roster_read'],
         'required_bots': verdict['required_bots'],
         'unproven_bots': unproven,
@@ -808,9 +838,7 @@ def _participation_refusal(plan_id: str, head: str | None, verdict: dict[str, An
         'message': (
             'Required review-bot participation is not proven on the merge candidate'
             + (f' ({", ".join(unproven)})' if unproven else '')
-            + f'. {detail}. Refusing to merge; a required reviewer is never demoted, and the only '
-            f'ruling that covers its silence is a recorded HEAD-bound merge authorization over '
-            f'{REVIEW_BARRIER_GAP_CLASS}.'
+            + f'. {detail}. Refusing to merge; {remedy}'
         ),
     }
     authorization = verdict.get('authorization')
@@ -878,8 +906,10 @@ def merge_step_detail(kind: str | None) -> str:
     token = str(kind).strip()
     if not token:
         raise ValueError('an authorization kind, when supplied, must be a non-empty token')
-    if any(character > '\x7f' for character in token):
-        raise ValueError(f'the authorization kind {token!r} is not ASCII, so the fixed-width record cannot hold it')
+    if not all(' ' <= character <= '~' for character in token):
+        raise ValueError(
+            f'the authorization kind {token!r} is not printable ASCII, so the fixed-width record cannot hold it'
+        )
     return GAP_RECORDED_TEMPLATE.format(kind=token)
 
 
@@ -1052,6 +1082,22 @@ def record_merge(
                     'the merge-queue route never rebases, so an action fact would record a rebase this '
                     'path cannot have performed',
                 )
+            if action is None and merge_mechanism == 'pr_safe_merge':
+                # The mirror case, and the one that used to render a FALSE clause: an
+                # absent action is only honest for the queue route, so a direct merge
+                # without one would claim "rebase deferred to queue" on the path that
+                # never enqueues. Refuse rather than narrate a rebase that did not
+                # happen.
+                return _refuse(
+                    'action_required_on_direct_route',
+                    'a direct merge reached the rebase, so its record must carry the action and '
+                    'upstream_commit_count facts it observed',
+                )
+            if action is not None and 'upstream_commit_count' not in recorded:
+                return _refuse(
+                    'upstream_count_required_with_action',
+                    'a recorded rebase action must carry the upstream_commit_count read from the same payload',
+                )
             display_detail = _checked_detail(clean_merge_step_detail(action, merge_mechanism))
     except ValueError as exc:
         return _refuse('display_detail_invalid', str(exc))
@@ -1114,6 +1160,37 @@ def _invocation_refusal(
 # ---------------------------------------------------------------------------
 
 
+def _findings_refusal(plan_id: str, findings_check: FindingsCheck | None) -> dict[str, Any] | None:
+    """Return the refusal for a store that is not proven clean, or ``None``.
+
+    One evaluator for both readings the dispatch performs — before the participation
+    chain and again after it — so the two can never grade the same store differently.
+    """
+    verdict = (findings_check or _check_findings)(plan_id)
+    if verdict.get('status') != 'success':
+        # blocking_findings_present, query_failed, or any other refusal the
+        # verdict source returns: the payload travels verbatim, nothing merges.
+        # The invocation category is never forwarded — the store WAS read here.
+        store_refusal = {k: v for k, v in verdict.items() if k != REFUSAL_CATEGORY_FIELD}
+        return {**store_refusal, 'dispatched': False}
+    if verdict.get('blocking_count') != 0:
+        # A success envelope that does not carry a measured zero is not a clean
+        # store. Fail closed rather than read an absent count as zero.
+        return {
+            'status': 'error',
+            'error': 'findings_verdict_unrecognised',
+            'plan_id': plan_id,
+            'phase': FINDINGS_PHASE,
+            'blocking_count': verdict.get('blocking_count'),
+            'dispatched': False,
+            'message': (
+                'findings-check returned status: success without blocking_count: 0, so the store '
+                'was not proven clean; refusing to merge'
+            ),
+        }
+    return None
+
+
 def merge(
     plan_id: str,
     *,
@@ -1166,32 +1243,13 @@ def merge(
     if refusal is not None:
         return refusal
 
-    verdict = (findings_check or _check_findings)(plan_id)
-    if verdict.get('status') != 'success':
-        # blocking_findings_present, query_failed, or any other refusal the
-        # verdict source returns: the payload travels verbatim, nothing merges.
-        # The invocation category is never forwarded — the store WAS read here.
-        store_refusal = {k: v for k, v in verdict.items() if k != REFUSAL_CATEGORY_FIELD}
-        return {**store_refusal, 'dispatched': False}
-    if verdict.get('blocking_count') != 0:
-        # A success envelope that does not carry a measured zero is not a clean
-        # store. Fail closed rather than read an absent count as zero.
-        return {
-            'status': 'error',
-            'error': 'findings_verdict_unrecognised',
-            'plan_id': plan_id,
-            'phase': FINDINGS_PHASE,
-            'blocking_count': verdict.get('blocking_count'),
-            'dispatched': False,
-            'message': (
-                'findings-check returned status: success without blocking_count: 0, so the store '
-                'was not proven clean; refusing to merge'
-            ),
-        }
+    refusal_from_store = _findings_refusal(plan_id, findings_check)
+    if refusal_from_store is not None:
+        return refusal_from_store
 
     # Head binding: the merge candidate must be the tree the head-dependent gates
-    # validated. Runs only on a clean findings store, so the cheaper verdict names
-    # the refusal first when both would fire.
+    # validated. Runs before the participation gate because it is the cheaper verdict,
+    # so a tree the gates never saw is named without paying for a provider read.
     #
     # The HEAD is resolved ONCE here and handed to the head-binding check through a
     # constant reader, because the participation gate below needs the same SHA for
@@ -1215,12 +1273,24 @@ def merge(
     participation = _participation_verdict(
         plan_id,
         pr_number,
+        project_dir,
         head=head,
         participation_check=participation_check,
         authorization_check=authorization_check,
     )
     if not participation['allowed']:
         return _participation_refusal(plan_id, head, participation)
+
+    # ⚠ The participation chain RUNS THE PROVIDER PRODUCER, and that producer files
+    # ``pr-comment`` findings for comments it has not seen before. A comment that
+    # landed between the store gate above and this read is therefore now IN the store,
+    # and the gate that ran first never saw it. Re-read the store here, so the merge
+    # dispatch remains the latest point a pending finding can stop the merge: without
+    # this second read the producer would quietly widen the window the gate exists to
+    # close. The read is a local store query, not a second provider call.
+    refusal_after_participation = _findings_refusal(plan_id, findings_check)
+    if refusal_after_participation is not None:
+        return refusal_after_participation
 
     ci_args = build_merge_args(
         route,

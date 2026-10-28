@@ -55,7 +55,7 @@ def _merge(route: str, verdict: dict[str, Any], **flags: Any) -> tuple[dict[str,
     # both stubbed to get there at all.
     flags.setdefault('status_reader', lambda _plan_id: None)
     flags.setdefault('head_reader', lambda _project_dir: None)
-    flags.setdefault('participation_check', lambda _plan_id, _pr: dict(_PARTICIPATION_COMPLETE))
+    flags.setdefault('participation_check', lambda _plan_id, _pr, _project_dir: dict(_PARTICIPATION_COMPLETE))
 
     result = gate.merge(
         _PLAN_ID,

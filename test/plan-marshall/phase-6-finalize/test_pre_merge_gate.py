@@ -167,7 +167,10 @@ def _merge(verdict, runner, *, route='safe-merge', participation=None, authoriza
         flags.setdefault('strategy', 'squash')
     flags.setdefault('head_reader', lambda _project_dir: _HEAD)
     flags.setdefault('status_reader', lambda _plan_id: None)
-    flags.setdefault('participation_check', lambda _plan_id, _pr: dict(participation or _PARTICIPATION_COMPLETE))
+    flags.setdefault(
+        'participation_check',
+        lambda _plan_id, _pr, _project_dir: dict(participation or _PARTICIPATION_COMPLETE),
+    )
     flags.setdefault('authorization_check', lambda _plan_id, _head: dict(authorization or _NO_AUTHORIZATION))
     return gate.merge(
         _PLAN_ID,
@@ -322,7 +325,7 @@ def test_production_runner_invokes_the_ci_router_through_the_executor(monkeypatc
         # subprocess (the head-binding and participation behaviour have their own cases).
         status_reader=lambda _plan_id: None,
         head_reader=lambda _dir: None,
-        participation_check=lambda _plan_id, _pr: dict(_PARTICIPATION_COMPLETE),
+        participation_check=lambda _plan_id, _pr, _project_dir: dict(_PARTICIPATION_COMPLETE),
         **flags,
     )
 
@@ -360,7 +363,7 @@ def test_production_runner_reports_a_silent_verb_as_merge_verb_no_output(monkeyp
         findings_check=lambda _plan_id: dict(_CLEAN_VERDICT),
         status_reader=lambda _plan_id: None,
         head_reader=lambda _dir: None,
-        participation_check=lambda _plan_id, _pr: dict(_PARTICIPATION_COMPLETE),
+        participation_check=lambda _plan_id, _pr, _project_dir: dict(_PARTICIPATION_COMPLETE),
     )
 
     assert result['status'] == 'error'
@@ -683,8 +686,8 @@ def _participation_chain(monkeypatch, responses):
         return dict(responses[notation])
 
     monkeypatch.setattr(gate, '_run_verb', fake_run_verb)
-    monkeypatch.setattr(gate, '_provider_pr_notation', lambda: _PRODUCER_NOTATION)
-    return gate._check_participation(_PLAN_ID, 42), calls
+    monkeypatch.setattr(gate, '_provider_pr_notation', lambda _project_dir=None: _PRODUCER_NOTATION)
+    return gate._check_participation(_PLAN_ID, 42, _PROJECT_DIR), calls
 
 
 def _full_chain_responses(**overrides):
@@ -781,11 +784,181 @@ def test_the_chain_reads_the_provider_from_the_configured_providers_list(monkeyp
     assert gate._provider_pr_notation() == 'plan-marshall:workflow-integration-gitlab:gitlab_pr'
 
 
+def test_the_provider_resolution_is_anchored_at_the_projects_own_tree(tmp_path):
+    """The walk starts at the ``--project-dir`` the merge binds to, not at the cwd.
+
+    A dispatch whose shell sits in another checkout must resolve THAT tree's provider —
+    resolving the cwd's would silently read a different project's configuration, and
+    resolving nothing would refuse every merge in a correctly configured one.
+    """
+    project = tmp_path / 'project'
+    (project / '.plan').mkdir(parents=True)
+    (project / '.plan' / 'marshal.json').write_text(
+        '{"providers": [{"category": "ci", "skill_name": "plan-marshall:workflow-integration-gitlab"}]}',
+        encoding='utf-8',
+    )
+
+    assert gate._provider_pr_notation(str(project)) == 'plan-marshall:workflow-integration-gitlab:gitlab_pr'
+
+
 def test_an_unresolvable_provider_makes_the_notation_empty(monkeypatch, tmp_path):
     """No configured provider is an empty answer, never a default provider."""
     monkeypatch.setattr(gate, '_find_marshal_path', lambda _start=None: tmp_path / 'absent.json')
 
     assert gate._provider_pr_notation() is None
+
+
+def test_an_unknown_participation_state_is_never_authorizable():
+    """A state nobody could read is NOT a review gap, so no grant admits it.
+
+    This is the spec's standing constraint and the doc's own UNKNOWN disposition: a
+    ruling covers a gap somebody can NAME. Reading an unreadable roster or a silent
+    predicate like an unproven bot would let one grant recorded earlier admit a merge
+    with zero participation proof — the exact fail-open the gate removes.
+    """
+    runner = _Runner()
+    unreadable = {
+        'status': 'error',
+        'error': 'roster_unreadable',
+        'roster_read': False,
+        'reason': 'the configured review-bot roster could not be read',
+    }
+    authorization = _Seam(_GRANTED_AUTHORIZATION)
+
+    result = _merge(
+        _CLEAN_VERDICT,
+        runner,
+        participation=unreadable,
+        authorization_check=authorization,
+    )
+
+    assert authorization.calls == [], 'an UNKNOWN participation state must not even consult an authorization'
+    assert runner.calls == []
+    assert result['error'] == gate.MERGE_PARTICIPATION_UNPROVEN
+    assert result['authorizable'] is False
+    assert 'No merge authorization covers this' in result['message']
+
+
+def test_the_whole_participation_chain_is_unknown_authorizable_or_refused():
+    """The refusal says WHICH side of the authorizable line it is on, per input."""
+    refused_unknown = _merge(
+        _CLEAN_VERDICT,
+        _Runner(),
+        participation={
+            'status': 'error',
+            'error': 'participation_arm_unavailable',
+            'roster_read': True,
+            'reason': 'the provider producer returned no participation arm',
+        },
+        authorization=_GRANTED_AUTHORIZATION,
+    )
+    refused_gap = _merge(
+        _CLEAN_VERDICT,
+        _Runner(),
+        participation=_PARTICIPATION_ABSENT,
+        authorization=_NO_AUTHORIZATION,
+    )
+
+    assert refused_unknown['authorizable'] is False
+    assert refused_gap['authorizable'] is True
+
+
+def test_a_comment_filed_by_the_participation_read_blocks_the_merge(monkeypatch):
+    """The producer files findings, so the store gate must be re-read after it runs.
+
+    The participation chain calls the provider producer, and that producer writes a
+    ``pr-comment`` finding for every comment it has not seen. A comment that landed
+    between the first store gate and that read is therefore in the store and was never
+    gated — so the second read is what keeps the dispatch the latest point a pending
+    finding can stop the merge.
+    """
+    runner = _Runner()
+    verdicts = [_CLEAN_VERDICT, _BLOCKING_VERDICT]
+    checks: list[str] = []
+
+    def findings_check(plan_id):
+        checks.append(plan_id)
+        return dict(verdicts[min(len(checks) - 1, len(verdicts) - 1)])
+
+    result = gate.merge(
+        _PLAN_ID,
+        route='safe-merge',
+        pr_number=42,
+        project_dir=_PROJECT_DIR,
+        strategy='squash',
+        findings_check=findings_check,
+        merge_runner=runner,
+        status_reader=lambda _plan_id: None,
+        head_reader=lambda _project_dir: _HEAD,
+        participation_check=lambda _plan_id, _pr, _project_dir: dict(_PARTICIPATION_COMPLETE),
+    )
+
+    assert len(checks) == 2, 'the store must be read again after the participation chain ran the producer'
+    assert runner.calls == []
+    assert result['error'] == 'blocking_findings_present'
+    assert result['dispatched'] is False
+
+
+def test_the_produce_then_re_read_order_does_not_block_a_genuinely_clean_store():
+    """Positive control for the second read: two clean reads still dispatch once."""
+    runner = _Runner()
+    checks: list[str] = []
+
+    def findings_check(plan_id):
+        checks.append(plan_id)
+        return dict(_CLEAN_VERDICT)
+
+    result = gate.merge(
+        _PLAN_ID,
+        route='merge-queue',
+        pr_number=42,
+        project_dir=_PROJECT_DIR,
+        findings_check=findings_check,
+        merge_runner=runner,
+        status_reader=lambda _plan_id: None,
+        head_reader=lambda _project_dir: _HEAD,
+        participation_check=lambda _plan_id, _pr, _project_dir: dict(_PARTICIPATION_COMPLETE),
+    )
+
+    assert len(checks) == 2
+    assert len(runner.calls) == 1
+    assert result['dispatched'] is True
+
+
+def test_the_participation_mapping_is_the_predicates_own():
+    """The quota-limited-but-reviewed case is on the predicate's ADMITTED side, by its code.
+
+    D1's verify-first clause asks how the check tells a quota-limited required bot with a
+    qualifying review apart from an unreviewed one, and which ``review_completeness``
+    state members it maps to each side. Asserting that against THIS module's canned
+    payload would only restate the fixture, so the mapping is read from the predicate
+    itself: a current-head participation credit outranks an observed refusal, while a
+    bot with no participation and a refusal resolves to an unproven member.
+    """
+    predicate = load_script_module(
+        'plan-marshall', 'automatic-review', 'review_completeness.py', 'review_completeness_for_gate'
+    )
+
+    quota_limited_but_reviewed = predicate.classify_bot(
+        'coderabbit',
+        {'coderabbit': 'review_body'},
+        True,
+        set(),
+        {'coderabbit'},
+    )
+    unreviewed_and_refused = predicate.classify_bot(
+        'coderabbit',
+        {},
+        False,
+        set(),
+        {'coderabbit'},
+    )
+    never_reviewed = predicate.classify_bot('coderabbit', {}, False, set(), set())
+
+    assert quota_limited_but_reviewed in {'participated', 'participated_but_empty'}
+    assert quota_limited_but_reviewed not in predicate._UNPROVEN_STATES
+    assert unreviewed_and_refused in predicate._UNPROVEN_STATES
+    assert never_reviewed in predicate._UNPROVEN_STATES
 
 
 # --------------------------------------------------------------------------- #
@@ -929,6 +1102,7 @@ def test_the_documented_branch_e_wording_is_the_scripts_template():
             [
                 'merge_mechanism=pr_safe_merge',
                 'action=skipped',
+                'upstream_commit_count=1',
                 'merge_state=merged',
                 'cleanup_owed=false',
                 'work_performed=true',
@@ -941,8 +1115,31 @@ def test_the_documented_branch_e_wording_is_the_scripts_template():
             'merge_state_not_landed',
         ),
         (['merge_mechanism=pr_safe_merge', 'not-a-pair'], 'facts_malformed'),
+        (
+            ['merge_mechanism=pr_safe_merge', 'merge_state=merged', 'cleanup_owed=false', 'work_performed=true'],
+            'action_required_on_direct_route',
+        ),
+        (
+            [
+                'merge_mechanism=pr_safe_merge',
+                'action=rebased',
+                'merge_state=merged',
+                'cleanup_owed=false',
+                'work_performed=true',
+            ],
+            'upstream_count_required_with_action',
+        ),
     ],
-    ids=['action-on-queue', 'unknown-mechanism', 'unknown-action', 'missing-facts', 'not-landed', 'malformed-fact'],
+    ids=[
+        'action-on-queue',
+        'unknown-mechanism',
+        'unknown-action',
+        'missing-facts',
+        'not-landed',
+        'malformed-fact',
+        'no-action-on-direct-route',
+        'action-without-upstream-count',
+    ],
 )
 def test_record_merge_refuses_an_incoherent_record_and_writes_nothing(facts, expected_error):
     """A record asserting something the path cannot have produced is refused, not written."""
@@ -995,49 +1192,42 @@ def _fenced_blocks(text):
     return text.split('```')[1::2]
 
 
-def _anchor_candidates(text, label):
-    """Yield ``(rank, context)`` candidates for where ``label`` is RENDERED, best first.
+def _declaring_blocks(text, label):
+    """Every fenced block that DECLARES ``label`` as an option (``label: "<label>"``).
 
-    The ranks, and each is load-bearing:
-
-    1. a fenced block declaring the option itself (``label: "<label>"``). Several bash
-       blocks mention these labels in decision-log message text and in
-       ``--operator-answer`` arguments, so matching on the label alone would anchor on a
-       message that renders no option at all.
-    2. a paragraph carrying BOTH the label and the placeholder — the prose sites, where
-       the option is documented as a sentence rather than as a composed prompt.
-    3. a paragraph carrying the label, so a site that lost its placeholder fails with the
-       message naming that site rather than vanishing from the population.
+    Declaration is what separates a render site from a mention: several bash blocks name
+    these labels in decision-log message text and in ``--operator-answer`` arguments, and
+    neither renders an option. Every declared block is a site, never only the first.
     """
     declaration = f'label: "{label}"'
-    for block in _fenced_blocks(text):
-        if declaration in block:
-            yield 0, block
-    paragraphs = text.split('\n\n')
-    for paragraph in paragraphs:
+    return [block for block in _fenced_blocks(text) if declaration in block]
+
+
+def _prose_site(text, label):
+    """The paragraph documenting ``label`` as a sentence rather than a composed prompt."""
+    for paragraph in text.split('\n\n'):
         if label in paragraph and _MERGE_CONSEQUENCE_PLACEHOLDER in paragraph:
-            yield 1, paragraph
-    for paragraph in paragraphs:
-        if label in paragraph:
-            yield 2, paragraph
+            return paragraph
+    return None
 
 
-def _context_for(label):
-    """Return ``(path, context)`` for ``label``, choosing the BEST-ranked context.
+def _sites_for(label):
+    """Return ``[(path, block_or_paragraph), …]`` for every site that renders ``label``.
 
-    The ranking is applied ACROSS the corpus rather than per document, because a label
-    is also named in sibling documents' prose — the merge-authorization roster lists
-    every option label by name — and a per-document first-match would anchor the guard
-    on that mention instead of on the site that renders the option.
+    The whole population, not the best match: a label rendered at two places is two
+    sites, and asserting only the first would leave the second free to hand-write a
+    sentence the other knob value contradicts.
     """
-    best = None
+    sites = []
     for path, text in _DOCS.items():
-        for rank, context in _anchor_candidates(text, label):
-            if best is None or rank < best[0]:
-                best = (rank, path, context)
-    if best is None:
-        return None, None
-    return best[1], best[2]
+        sites.extend((path, block) for block in _declaring_blocks(text, label))
+    if sites:
+        return sites
+    for path, text in _DOCS.items():
+        paragraph = _prose_site(text, label)
+        if paragraph is not None:
+            return [(path, paragraph)]
+    return []
 
 
 def test_the_corpus_never_states_either_consequence_sentence():
@@ -1049,23 +1239,70 @@ def test_the_corpus_never_states_either_consequence_sentence():
 
 @pytest.mark.parametrize('label', _MERGE_OPTION_LABELS)
 def test_every_pre_enqueue_merge_option_renders_the_generated_sentence(label):
-    """Each site carries the placeholder, and each knob value renders a different text."""
-    path, context = _context_for(label)
+    """EVERY site that renders ``label`` carries the placeholder and says which outcome follows."""
+    sites = _sites_for(label)
 
-    assert context is not None, f'no block or paragraph in the finalize standards renders {label!r}'
+    assert sites, f'no block or paragraph in the finalize standards renders {label!r}'
 
-    assert _MERGE_CONSEQUENCE_PLACEHOLDER in context, (
-        f'{label!r} in {path.name} does not carry {_MERGE_CONSEQUENCE_PLACEHOLDER}, so its option '
-        'text cannot be generated from the final_merge_without_asking value'
+    for path, context in sites:
+        assert _MERGE_CONSEQUENCE_PLACEHOLDER in context, (
+            f'{label!r} in {path.name} does not carry {_MERGE_CONSEQUENCE_PLACEHOLDER}, so its option '
+            'text cannot be generated from the final_merge_without_asking value'
+        )
+
+        without_asking = context.replace(_MERGE_CONSEQUENCE_PLACEHOLDER, gate.merge_consequence_text(True))
+        with_asking = context.replace(_MERGE_CONSEQUENCE_PLACEHOLDER, gate.merge_consequence_text(False))
+
+        assert gate.merge_consequence_text(True) in without_asking
+        assert gate.merge_consequence_text(False) in with_asking
+        # Falsifiable in the direction that matters: the rendered site must NOT carry
+        # the OTHER value's sentence, which is what a contradictory site looks like.
+        assert gate.merge_consequence_text(False) not in without_asking
+        assert gate.merge_consequence_text(True) not in with_asking
+
+
+def test_the_site_census_covers_every_merge_option_label():
+    """The four declared merge-option labels all resolve to at least one real site.
+
+    A label whose site was reworded away would otherwise vanish silently: the
+    per-label test above would still be parametrized over it but find nothing.
+    """
+    resolved = {label: len(_sites_for(label)) for label in _MERGE_OPTION_LABELS}
+
+    assert all(count > 0 for count in resolved.values()), f'a merge-option label resolves to no site: {resolved}'
+
+
+def test_the_site_detector_fires_on_a_hand_written_sentence():
+    """Mutation control: a site that hard-codes the other value's text IS reported.
+
+    Without this the corpus assertion above could pass over a document that simply
+    stopped carrying the sentences for an unrelated reason.
+    """
+    contradictory = (
+        '```text\nAskUserQuestion:\n  options:\n'
+        '    - label: "Merge anyway (record reason)"\n'
+        f'      description: "{gate.MERGE_CONSEQUENCE_WITH_ASKING}"\n'
+        '```\n'
     )
 
-    without_asking = context.replace(_MERGE_CONSEQUENCE_PLACEHOLDER, gate.merge_consequence_text(True))
-    with_asking = context.replace(_MERGE_CONSEQUENCE_PLACEHOLDER, gate.merge_consequence_text(False))
+    blocks = _declaring_blocks(contradictory, 'Merge anyway (record reason)')
 
-    assert gate.merge_consequence_text(True) in without_asking
-    assert gate.merge_consequence_text(False) in with_asking
-    assert without_asking != with_asking, (
-        f'rendering {label!r} for the two knob values produced the same option text, so one of them is lying'
+    assert len(blocks) == 1, 'the declaration detector missed a real option declaration'
+    assert _MERGE_CONSEQUENCE_PLACEHOLDER not in blocks[0], (
+        'the fixture must omit the placeholder, or it does not model a hand-written site'
+    )
+    assert gate.MERGE_CONSEQUENCE_WITH_ASKING in blocks[0]
+
+
+def test_the_prose_site_detector_fires_on_a_paragraph_without_the_placeholder():
+    """Mutation control: the prose fallback only accepts a paragraph that HAS the placeholder."""
+    with_placeholder = 'The option carries `{merge_consequence}` so the operator knows what follows.'
+    without = 'The red-CI override option is offered, and then the merge proceeds.'
+
+    assert _prose_site(with_placeholder + '\n\n' + without, 'nonexistent-label') is None
+    assert _prose_site(with_placeholder, '{merge_consequence}') == with_placeholder
+    assert _prose_site(without, 'red-CI override') is None, (
+        'a paragraph that names a site but carries no placeholder must not be accepted as its render site'
     )
 
 
