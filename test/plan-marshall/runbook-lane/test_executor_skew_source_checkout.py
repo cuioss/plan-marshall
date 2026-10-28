@@ -20,18 +20,31 @@ unreadable executor all still stop the run.
 from __future__ import annotations
 
 import argparse
+import os
 import re
+import shutil
+import subprocess
+import sys
 from pathlib import Path
+
+import pytest
+import target_context
 
 from conftest import MARKETPLACE_ROOT, load_script_module
 
 _SKILL_NAME = 'runbook-lane'
 _SKILL_DIR = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / _SKILL_NAME
 
+#: Every platform env signal the runtime detector reads, taken from the detector's
+#: own declaration so a new signal cannot stay active in the subprocess paths.
+_SIGNALS = tuple(signal for signal, _target in target_context.TARGET_ENV_SIGNALS)
+
 #: The phrase the reason must carry: the verdict is safe BECAUSE the executor
 #: dispatches the checkout's own scripts, not because the versions happened to
 #: line up.
 _OWN_SCRIPTS_PHRASE = "this source checkout's own scripts"
+
+ge = load_script_module('plan-marshall', 'tools-script-executor', 'generate_executor.py', register=False)
 
 
 def _lane_module():
@@ -171,3 +184,109 @@ def test_input_section_sends_the_source_checkout_verdict_on() -> None:
 
     assert '`not_applicable`' in section
     assert 'proceeds' in section
+
+
+# -----------------------------------------------------------------------------
+# The verdict on the path a lane takes: through an executor mapped into a
+# source checkout
+# -----------------------------------------------------------------------------
+
+
+def _source_checkout_bundles(tmp_path: Path) -> Path:
+    """Copy the real bundle tree into a disposable source checkout, and return its root.
+
+    A copy rather than the working tree, so the mapping the executor embeds is
+    PROVABLY the fixture's (asserted below) and the test cannot pass on a tree
+    that happens to be a source checkout for another reason.
+    """
+    bundles = tmp_path / 'checkout' / 'marketplace' / 'bundles'
+    shutil.copytree(MARKETPLACE_ROOT, bundles, ignore=shutil.ignore_patterns('__pycache__', '*.pyc'))
+    return bundles
+
+
+def _generate_executor(
+    monkeypatch: pytest.MonkeyPatch,
+    plan_dir: Path,
+    marketplace_root: Path,
+    roots: tuple[tuple[str, str], ...],
+    versions: tuple[tuple[str, str], ...],
+) -> Path:
+    """Generate a real executor whose OpenCode install is ``roots`` at ``versions``."""
+    plan_dir.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setenv('PLAN_BASE_DIR', str(plan_dir))
+    for signal in _SIGNALS:
+        monkeypatch.delenv(signal, raising=False)
+    monkeypatch.setattr(ge, 'installed_harness_roots', lambda: list(roots))
+    monkeypatch.setattr(ge, 'installed_harness_versions', lambda _roots=None: list(versions))
+    result = ge.generate_executor({}, marketplace_root, dry_run=False, target='opencode')
+    assert result['status'] == 'success', result
+    executor = plan_dir / 'execute-script.py'
+    assert executor.is_file()
+    return executor
+
+
+def _run_skew(
+    executor: Path, project_dir: Path, lane_dir: Path, *, executor_arg: Path | None = None
+) -> subprocess.CompletedProcess[str]:
+    """Run the verb through ``executor`` as an OpenCode call against ``lane_dir``."""
+    env = {key: value for key, value in os.environ.items() if key not in _SIGNALS}
+    env.pop('PYTHONPATH', None)
+    env['OPENCODE'] = '1'
+    env['PLAN_MARSHALL_HOME'] = str(project_dir / '.machine-home')
+    command = [
+        sys.executable,
+        str(executor),
+        'plan-marshall:runbook-lane:runbook_lane',
+        'executor-skew',
+        '--lane-dir',
+        str(lane_dir),
+    ]
+    if executor_arg is not None:
+        command.extend(['--executor', str(executor_arg)])
+    return subprocess.run(command, cwd=project_dir, env=env, capture_output=True, text=True, timeout=300)
+
+
+def test_executor_skew_answers_not_applicable_through_the_executor(tmp_path, monkeypatch) -> None:
+    """A lane whose executor maps a source checkout reaches the new verdict end to end."""
+    bundles = _source_checkout_bundles(tmp_path)
+    project = tmp_path / 'project'
+    executor = _generate_executor(
+        monkeypatch,
+        project / '.plan',
+        marketplace_root=bundles,
+        roots=(('opencode', str(tmp_path / 'opencode' / 'skills')),),
+        versions=(('opencode', '0.1.2025'),),
+    )
+    assert str(bundles) in executor.read_text(encoding='utf-8'), 'the mapping does not point into the fixture'
+
+    result = _run_skew(executor, project, bundles / 'plan-marshall' / 'skills' / _SKILL_NAME)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert 'verdict: not_applicable' in result.stdout, result.stdout + result.stderr
+    assert 'verdict: could_not_check' not in result.stdout, result.stdout + result.stderr
+    assert _OWN_SCRIPTS_PHRASE in result.stdout
+    assert 'remedy:' not in result.stdout, 'an unmakeable comparison must not claim the executor is stale'
+
+
+def test_executor_skew_cannot_check_through_the_executor_when_it_is_removed(tmp_path, monkeypatch) -> None:
+    """Removing the executor is a failed read, not a source-checkout verdict."""
+    bundles = _source_checkout_bundles(tmp_path)
+    project = tmp_path / 'project'
+    executor = _generate_executor(
+        monkeypatch,
+        project / '.plan',
+        marketplace_root=bundles,
+        roots=(('opencode', str(tmp_path / 'opencode' / 'skills')),),
+        versions=(('opencode', '0.1.2025'),),
+    )
+
+    result = _run_skew(
+        executor,
+        project,
+        bundles / 'plan-marshall' / 'skills' / _SKILL_NAME,
+        executor_arg=project / '.plan' / 'removed-execute-script.py',
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert 'verdict: could_not_check' in result.stdout, result.stdout + result.stderr
+    assert 'executor version unreadable' in result.stdout
