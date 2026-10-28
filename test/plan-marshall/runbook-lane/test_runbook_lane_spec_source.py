@@ -148,7 +148,7 @@ def _titles(data: dict[str, Any]) -> list[str]:
 
 
 def _lane_text() -> str:
-    return _SKILL_TEXT.read_text(encoding='utf-8')
+    return str(_SKILL_TEXT.read_text(encoding='utf-8'))
 
 
 # =============================================================================
