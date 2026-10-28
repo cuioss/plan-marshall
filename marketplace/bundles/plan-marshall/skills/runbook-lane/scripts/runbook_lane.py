@@ -476,6 +476,11 @@ def _skill_exists(notation: str, lane_bundle: str) -> bool:
 _EXECUTOR_SKEW_MATCH = 'match'
 _EXECUTOR_SKEW_SKEW = 'skew'
 _EXECUTOR_SKEW_UNCHECKED = 'could_not_check'
+#: The comparison cannot change the outcome, so it is not made — a source
+#: checkout, where the executor dispatches the checkout's own scripts and the
+#: lane text is that same checkout's text. Distinct from ``match``: nothing
+#: agreed, because nothing was compared.
+_EXECUTOR_SKEW_NOT_APPLICABLE = 'not_applicable'
 
 #: Which leg of :func:`_lane_version_probe` answered — or failed to. The layout
 #: decides which path the ``could_not_check`` reason names, so the operator's
@@ -484,6 +489,7 @@ _EXECUTOR_SKEW_UNCHECKED = 'could_not_check'
 _LANE_LAYOUT_VERSIONED = 'versioned'
 _LANE_LAYOUT_FLAT = 'flat'
 _LANE_LAYOUT_NESTED = 'nested'
+_LANE_LAYOUT_SOURCE_CHECKOUT = 'source_checkout'
 _LANE_LAYOUT_UNRESOLVED = 'unresolved'
 
 
@@ -519,7 +525,10 @@ def _lane_version_probe(skill_dir: Path | None = None) -> _LaneTextVersion:
       directory, so it supplies the ``version`` of the sync's install stamp at
       the deploy root that contains its skill root, where the target's sync
       publishes one;
-    * a source checkout carries neither, so its comparison stays UNMAKEABLE.
+    * a source checkout carries neither, so its comparison stays UNMAKEABLE —
+      and unnecessary: the executor dispatches that checkout's own scripts (see
+      :func:`_is_source_checkout_bundle`), which is why the verdict for it is
+      ``not_applicable`` rather than an answered comparison.
 
     The legs run in that order, and a leg that finds nothing leaves the probe to
     the next one. A flat install whose stamp is absent, unreadable or carries no
@@ -559,8 +568,35 @@ def _lane_version_probe(skill_dir: Path | None = None) -> _LaneTextVersion:
         comparable = stamped if stamped is not None and version_key(stamped) else None
         return _LaneTextVersion(comparable, _LANE_LAYOUT_FLAT, deploy_root / DIST_MANIFEST_NAME)
     if bundle_dir is not None:
+        if _is_source_checkout_bundle(bundle_dir):
+            return _LaneTextVersion(None, _LANE_LAYOUT_SOURCE_CHECKOUT, bundle_dir)
         return _LaneTextVersion(None, _LANE_LAYOUT_NESTED, bundle_dir)
     return _LaneTextVersion(None, _LANE_LAYOUT_UNRESOLVED, None)
+
+
+def _is_source_checkout_bundle(bundle_dir: Path) -> bool:
+    """Whether *bundle_dir* is a source checkout's bundle rather than a cache entry.
+
+    The two bundle shapes are the ones ``resolve_bundles_root`` already probes: a
+    SOURCE checkout carries ``.claude-plugin/plugin.json`` DIRECTLY under the
+    bundle (``marketplace/bundles/plan-marshall``), a plugin cache carries it
+    under ``{bundle}/{version}/``. Reading the same manifest keeps this from
+    becoming a second layout signal that could disagree with the resolver.
+
+    A bundle that carries BOTH a direct manifest and version directories is not
+    read as a source checkout: the version directories are what make the
+    comparison makeable, so its probe keeps falling through to them.
+    """
+    from marketplace_bundles import select_live_version_dir
+
+    if not (bundle_dir / '.claude-plugin' / 'plugin.json').is_file():
+        return False
+    return (
+        select_live_version_dir(
+            bundle_dir, lambda version_dir: (version_dir / '.claude-plugin' / 'plugin.json').is_file()
+        )
+        is None
+    )
 
 
 def _lane_text_version(skill_dir: Path | None = None) -> str | None:
@@ -591,6 +627,20 @@ def _unreadable_lane_text_reason(skill_dir: Path | None = None) -> str:
     return 'lane text version unknown: no versioned install and no flat install stamp above the lane text'
 
 
+def _source_checkout_reason(skill_dir: Path | None = None) -> str:
+    """Say why a source checkout needs no comparison, naming the tree that makes it true.
+
+    The statement is about the executor's MAPPING, not about versions agreeing:
+    in a source checkout the executor dispatches the checkout's own scripts, so
+    the lane text cannot name a verb its mapped script lacks.
+    """
+    probe = _lane_version_probe(skill_dir)
+    return (
+        "comparison not applicable: the executor maps this source checkout's own scripts "
+        f'({probe.probe}), so the lane text cannot name a verb those scripts lack'
+    )
+
+
 def _executor_skew(executor: Path, lane_skill_dir: Path | None = None, target: str | None = None) -> str:
     """Compare the executor's version with the lane text's version.
 
@@ -608,14 +658,28 @@ def _executor_skew(executor: Path, lane_skill_dir: Path | None = None, target: s
     parse into a version key is such a failed read on either side: it would
     otherwise compare as the empty tuple and claim ``skew`` (or ``match``) for a
     comparison that was never made.
+
+    A source checkout answers ``not_applicable`` instead of any of the three:
+    the executor maps that checkout's own scripts, so the lane text cannot name a
+    verb the mapped script lacks, and the comparison would change nothing. That
+    verdict needs a READABLE executor version first — an unreadable one is still
+    ``could_not_check``, because the reason the lane must act on is then the
+    executor's, not the layout's.
     """
     from plugin_registry import EXECUTOR_VERSION_FOUND, read_executor_version, version_key
 
     state, executor_version = read_executor_version(executor, target=target)
-    lane_version = _lane_text_version(lane_skill_dir)
-    if state != EXECUTOR_VERSION_FOUND or executor_version is None or lane_version is None:
+    if state != EXECUTOR_VERSION_FOUND or executor_version is None:
         return _EXECUTOR_SKEW_UNCHECKED
-    if not version_key(executor_version) or not version_key(lane_version):
+    if not version_key(executor_version):
+        return _EXECUTOR_SKEW_UNCHECKED
+    probe = _lane_version_probe(lane_skill_dir)
+    if probe.layout == _LANE_LAYOUT_SOURCE_CHECKOUT:
+        return _EXECUTOR_SKEW_NOT_APPLICABLE
+    lane_version = probe.version
+    if lane_version is None:
+        return _EXECUTOR_SKEW_UNCHECKED
+    if not version_key(lane_version):
         return _EXECUTOR_SKEW_UNCHECKED
     if version_key(executor_version) < version_key(lane_version):
         return _EXECUTOR_SKEW_SKEW
@@ -628,7 +692,8 @@ def cmd_executor_skew(args: argparse.Namespace) -> dict[str, Any]:
     Reports the verdict and both versions, so a ``skew`` can name them and the
     remedy. A comparison that cannot be made is ``could_not_check`` with its
     reason; the lane reports it and asks the operator instead of reading it as
-    no skew.
+    no skew. A source checkout answers ``not_applicable`` with the reason the
+    comparison would change nothing, and the lane proceeds on it.
     """
     from plugin_registry import (
         EXECUTOR_VERSION_EMPTY,
@@ -663,6 +728,8 @@ def cmd_executor_skew(args: argparse.Namespace) -> dict[str, Any]:
     }
     if verdict == _EXECUTOR_SKEW_SKEW:
         result['remedy'] = 'regenerate the executor'
+    elif verdict == _EXECUTOR_SKEW_NOT_APPLICABLE:
+        result['reason'] = _source_checkout_reason(lane_skill_dir)
     elif verdict == _EXECUTOR_SKEW_UNCHECKED:
         # Name WHICH side could not be read: a file that was read but carries no
         # usable version is a different fact from an unreadable file, and the

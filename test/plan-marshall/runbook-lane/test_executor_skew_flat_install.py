@@ -175,14 +175,8 @@ def test_versioned_cache_still_reads_the_installed_version_directory(tmp_path: P
     assert module._executor_skew(_executor(tmp_path, '0.1.1950'), lane) == 'skew'
 
 
-def test_source_checkout_still_cannot_check(tmp_path: Path) -> None:
-    """A source checkout carries neither a version directory nor a stamp."""
-    data = _skew_result(_executor(tmp_path, '0.1.2021'), _SKILL_DIR)
-
-    assert data['verdict'] == 'could_not_check'
-    assert data['reason'] == (
-        f'lane text version unknown: no version directory under {MARKETPLACE_ROOT / "plan-marshall"}'
-    )
+# The source-checkout case lives in ``test_executor_skew_source_checkout.py``: it is
+# no longer a ``could_not_check``, and the verdict it answers now is that module's subject.
 
 
 # -----------------------------------------------------------------------------
