@@ -238,6 +238,18 @@ SITE_EXPECTATIONS: dict[str, SiteExpectation] = {
         'The merge barrier’s routing rules over the producer’s participation sets, including '
         'stale_participation and the head_sha_verified decline shape.',
     ),
+    f'{_SKILLS}/phase-6-finalize/scripts/pre_merge_gate.py': SiteExpectation(
+        'producer_sets',
+        'none',
+        'yes',
+        'The merge dispatch’s participation gate. It re-runs the provider producer with the '
+        'roster read from the execution manifest and forwards the producer’s emitted observation '
+        'sets verbatim to review_completeness check, so it computes no currency verdict and '
+        're-anchors nothing: its verdict is a pure function of those sets plus the roster. An '
+        'empty roster, an unreadable roster and a producer that did not resolve the merge '
+        'candidate are each a REFUSAL rather than a pass, which is what keeps the gate closed '
+        'over an ABSENCE a pending-finding count cannot see.',
+    ),
     f'{_SKILLS}/tools-integration-ci/standards/api-contract.md': SiteExpectation(
         'normative_text',
         'timestamp',

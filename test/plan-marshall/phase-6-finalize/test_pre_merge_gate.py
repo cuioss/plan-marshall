@@ -11,13 +11,15 @@ with the positive control that a clean store reaches it exactly once, with the
 routed verb's arguments unchanged, on both routes.
 """
 
+import re
 import subprocess
 import sys
 from argparse import Namespace
 
 import pytest
+from _dispatch_roster import parse_roster_rows
 
-from conftest import load_script_module
+from conftest import MARKETPLACE_ROOT, load_script_module
 
 gate = load_script_module('plan-marshall', 'phase-6-finalize', 'pre_merge_gate.py', 'pre_merge_gate')
 
@@ -27,6 +29,9 @@ assert len(gate.ROUTES) >= 1, 'pre_merge_gate.ROUTES is empty; the route-paramet
 
 _PLAN_ID = 'pre-merge-gate-plan'
 _PROJECT_DIR = '/abs/worktree'
+_HEAD = 'abc1234def5678'
+
+_CLEAN_VERDICT = {'status': 'success', 'plan_id': _PLAN_ID, 'phase': '6-finalize', 'blocking_count': 0}
 
 _BLOCKING_VERDICT = {
     'status': 'error',
@@ -47,7 +52,95 @@ _QUERY_FAILED_VERDICT = {
     'message': 'pending_findings_blocking_count could not be evaluated',
 }
 
-_CLEAN_VERDICT = {'status': 'success', 'plan_id': _PLAN_ID, 'phase': '6-finalize', 'blocking_count': 0}
+#: A roster that was READ and proved every required bot a participant on this head.
+_PARTICIPATION_COMPLETE = {
+    'status': 'success',
+    'participation_complete': True,
+    'roster_read': True,
+    'required_bots': ['coderabbit'],
+    'optional_bots': ['sourcery'],
+    'unproven_bots': [],
+    'bot_states': [{'bot_kind': 'coderabbit', 'state': 'participated'}],
+}
+
+#: The operator's standing ruling: a quota-LIMITED required bot whose qualifying
+#: review of this head is on record. ``review_completeness`` classifies current-head
+#: participation above an observed refusal, so this resolves ``participated`` and
+#: needs no grant of its own.
+_PARTICIPATION_QUOTA_LIMITED_BUT_REVIEWED = {
+    'status': 'success',
+    'participation_complete': True,
+    'roster_read': True,
+    'required_bots': ['coderabbit'],
+    'optional_bots': [],
+    'unproven_bots': [],
+    'bot_states': [{'bot_kind': 'coderabbit', 'state': 'participated'}],
+}
+
+#: A required bot that never reviewed any head.
+_PARTICIPATION_ABSENT = {
+    'status': 'success',
+    'participation_complete': False,
+    'roster_read': True,
+    'required_bots': ['coderabbit'],
+    'optional_bots': [],
+    'unproven_bots': ['coderabbit'],
+    'bot_states': [{'bot_kind': 'coderabbit', 'state': 'absent'}],
+}
+
+#: A required bot whose review predates the merge candidate.
+_PARTICIPATION_STALE = {
+    'status': 'success',
+    'participation_complete': False,
+    'roster_read': True,
+    'required_bots': ['coderabbit'],
+    'optional_bots': [],
+    'unproven_bots': ['coderabbit'],
+    'bot_states': [{'bot_kind': 'coderabbit', 'state': 'participated_stale'}],
+}
+
+_NO_AUTHORIZATION = {
+    'status': 'success',
+    'any_authorized': False,
+    'any_admissible': False,
+    'authorized_kinds': [],
+    'admissible_kinds': [],
+    'inadmissible_kinds': [],
+    'lapsed_kinds': [],
+}
+
+_GRANTED_AUTHORIZATION = {
+    'status': 'success',
+    'any_authorized': True,
+    'any_admissible': True,
+    'authorized_kinds': ['barrier-ask-override'],
+    'admissible_kinds': ['barrier-ask-override'],
+    'inadmissible_kinds': [],
+    'lapsed_kinds': [],
+}
+
+#: A ruling that exists at this head over some OTHER gap: reported, never admissible.
+_WRONG_GAP_AUTHORIZATION = {
+    'status': 'success',
+    'any_authorized': True,
+    'any_admissible': False,
+    'authorized_kinds': ['pre-merge-consent'],
+    'admissible_kinds': [],
+    'inadmissible_kinds': ['pre-merge-consent'],
+    'lapsed_kinds': [],
+}
+
+
+class _Seam:
+    """Recording seam: returns a canned payload and logs every call's arguments."""
+
+    def __init__(self, payload):
+        self.calls: list[tuple] = []
+        self.payload = payload
+
+    def __call__(self, *args):
+        self.calls.append(args)
+        return dict(self.payload)
 
 
 class _Runner:
@@ -62,9 +155,20 @@ class _Runner:
         return dict(self.payload)
 
 
-def _merge(verdict, runner, *, route='safe-merge', **flags):
+def _merge(verdict, runner, *, route='safe-merge', participation=None, authorization=None, **flags):
+    """Drive ``merge`` with the participation and head seams defaulted to a pass.
+
+    The default head reader answers a fixed SHA and the default status reader answers
+    ``None``, so a case about the FINDINGS or ROUTING logic spawns no git or status
+    subprocess. A case about participation overrides ``participation`` /
+    ``authorization``; a case about the head overrides ``head_reader`` itself.
+    """
     if route == 'safe-merge':
         flags.setdefault('strategy', 'squash')
+    flags.setdefault('head_reader', lambda _project_dir: _HEAD)
+    flags.setdefault('status_reader', lambda _plan_id: None)
+    flags.setdefault('participation_check', lambda _plan_id, _pr: dict(participation or _PARTICIPATION_COMPLETE))
+    flags.setdefault('authorization_check', lambda _plan_id, _head: dict(authorization or _NO_AUTHORIZATION))
     return gate.merge(
         _PLAN_ID,
         route=route,
@@ -158,6 +262,7 @@ def test_clean_store_dispatches_safe_merge_once_with_its_arguments():
         'merged': True,
         'strategy': 'squash',
         'findings_gate': 'clean',
+        'participation_gate': 'complete',
         'dispatched': True,
     }
 
@@ -212,11 +317,12 @@ def test_production_runner_invokes_the_ci_router_through_the_executor(monkeypatc
         pr_number=42,
         project_dir=_PROJECT_DIR,
         findings_check=lambda _plan_id: dict(_CLEAN_VERDICT),
-        # The head-binding readers are stubbed away: this case asserts the argv the CI
-        # ROUTER receives, and those two production readers each spawn their own
-        # subprocess (the head-binding behaviour has its own cases).
+        # The head-binding AND participation seams are stubbed away: this case asserts
+        # the argv the CI ROUTER receives, and each production reader spawns its own
+        # subprocess (the head-binding and participation behaviour have their own cases).
         status_reader=lambda _plan_id: None,
         head_reader=lambda _dir: None,
+        participation_check=lambda _plan_id, _pr: dict(_PARTICIPATION_COMPLETE),
         **flags,
     )
 
@@ -252,6 +358,9 @@ def test_production_runner_reports_a_silent_verb_as_merge_verb_no_output(monkeyp
         pr_number=42,
         project_dir=_PROJECT_DIR,
         findings_check=lambda _plan_id: dict(_CLEAN_VERDICT),
+        status_reader=lambda _plan_id: None,
+        head_reader=lambda _dir: None,
+        participation_check=lambda _plan_id, _pr: dict(_PARTICIPATION_COMPLETE),
     )
 
     assert result['status'] == 'error'
@@ -367,5 +476,627 @@ def test_cli_rejects_a_forbidden_merge_verb_as_route(forbidden, monkeypatch):
 
     with pytest.raises(SystemExit) as exc:
         gate.main()
+
+    assert exc.value.code == 2
+
+
+# --------------------------------------------------------------------------- #
+# D1 — required-bot participation is proven at the merge dispatch
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.parametrize('route', gate.ROUTES)
+def test_unreviewed_required_bot_is_refused_without_a_covering_grant(route):
+    """A required bot that never reviewed the candidate blocks BOTH merge routes.
+
+    The refusal is the new named code, and it carries the bots and their states so an
+    operator can see WHICH reviewer is unproven rather than only that something is.
+    """
+    runner = _Runner()
+
+    result = _merge(_CLEAN_VERDICT, runner, route=route, participation=_PARTICIPATION_ABSENT)
+
+    assert runner.calls == [], f'the merge runner was invoked on an unproven participation state: {runner.calls}'
+    assert result['status'] == 'error'
+    assert result['error'] == gate.MERGE_PARTICIPATION_UNPROVEN
+    assert result['reason'] == 'participation_unproven'
+    assert result['roster_read'] is True
+    assert result['unproven_bots'] == ['coderabbit']
+    assert result['bot_states'] == [{'bot_kind': 'coderabbit', 'state': 'absent'}]
+    assert result['dispatched'] is False
+    assert result['authorization']['any_admissible'] is False
+
+
+def test_unreviewed_required_bot_merges_under_a_covering_grant():
+    """A HEAD-bound authorization over the barrier gap admits the merge, and says so."""
+    runner = _Runner()
+
+    result = _merge(
+        _CLEAN_VERDICT,
+        runner,
+        participation=_PARTICIPATION_ABSENT,
+        authorization=_GRANTED_AUTHORIZATION,
+    )
+
+    assert len(runner.calls) == 1
+    assert result['dispatched'] is True
+    assert result['participation_gate'] == 'authorized'
+    assert result['merge_authorization_kind'] == 'barrier-ask-override'
+    assert result['merge_authorization_gap'] == gate.REVIEW_BARRIER_GAP_CLASS
+    assert result['unproven_bots'] == ['coderabbit']
+
+
+def test_a_ruling_over_another_gap_does_not_admit_the_merge():
+    """``any_authorized: true`` beside ``any_admissible: false`` is still a refusal.
+
+    Several kinds are granted at earlier sites at the SAME head over a DIFFERENT gap,
+    so routing on head-validity alone would admit an unproven reviewer on the strength
+    of a routine consent.
+    """
+    runner = _Runner()
+
+    result = _merge(
+        _CLEAN_VERDICT,
+        runner,
+        participation=_PARTICIPATION_ABSENT,
+        authorization=_WRONG_GAP_AUTHORIZATION,
+    )
+
+    assert runner.calls == []
+    assert result['error'] == gate.MERGE_PARTICIPATION_UNPROVEN
+    assert result['authorization']['any_authorized'] is True
+    assert result['authorization']['any_admissible'] is False
+    assert result['authorization']['inadmissible_kinds'] == ['pre-merge-consent']
+
+
+def test_quota_limited_required_bot_with_a_qualifying_review_is_admitted():
+    """The operator's standing ruling needs no grant: the predicate proves participation.
+
+    ``review_completeness`` ranks a current-head review above the bot's later quota
+    refusal, so this resolves ``participated`` — which is why the authorization seam is
+    never even consulted here.
+    """
+    runner = _Runner()
+    authorization = _Seam(_GRANTED_AUTHORIZATION)
+
+    result = _merge(
+        _CLEAN_VERDICT,
+        runner,
+        participation=_PARTICIPATION_QUOTA_LIMITED_BUT_REVIEWED,
+        authorization_check=authorization,
+    )
+
+    assert authorization.calls == [], 'a proven participant must not need an authorization lookup'
+    assert len(runner.calls) == 1
+    assert result['participation_gate'] == 'complete'
+    assert 'merge_authorization_kind' not in result
+
+
+def test_a_review_that_predates_the_candidate_is_refused():
+    """Stale participation is unproven: the tree being merged was never reviewed."""
+    runner = _Runner()
+
+    result = _merge(_CLEAN_VERDICT, runner, participation=_PARTICIPATION_STALE)
+
+    assert runner.calls == []
+    assert result['error'] == gate.MERGE_PARTICIPATION_UNPROVEN
+    assert result['bot_states'] == [{'bot_kind': 'coderabbit', 'state': 'participated_stale'}]
+
+
+def test_empty_roster_is_refused_and_states_that_the_roster_was_read():
+    """An EMPTY roster is a decision nobody made, never a vacuously-satisfied quorum."""
+    runner = _Runner()
+    empty_roster = {
+        'status': 'error',
+        'error': 'roster_empty',
+        'roster_read': True,
+        'required_bots': [],
+        'optional_bots': [],
+        'reason': 'the roster was read and configures no REQUIRED reviewer',
+    }
+
+    result = _merge(_CLEAN_VERDICT, runner, participation=empty_roster)
+
+    assert runner.calls == []
+    assert result['error'] == gate.MERGE_PARTICIPATION_UNPROVEN
+    assert result['reason'] == 'roster_empty'
+    assert result['roster_read'] is True
+    assert result['required_bots'] == []
+
+
+def test_unreadable_roster_is_refused_and_states_that_it_was_not_read():
+    """A roster nobody could read is not an empty roster and is not a pass."""
+    runner = _Runner()
+    unreadable = {
+        'status': 'error',
+        'error': 'roster_unreadable',
+        'roster_read': False,
+        'reason': 'the configured review-bot roster could not be read',
+    }
+
+    result = _merge(_CLEAN_VERDICT, runner, participation=unreadable)
+
+    assert runner.calls == []
+    assert result['reason'] == 'roster_unreadable'
+    assert result['roster_read'] is False
+
+
+def test_an_unresolvable_head_reports_that_no_authorization_was_checked():
+    """With no HEAD there is no tree to bind a ruling to, and the payload says so."""
+    runner = _Runner()
+
+    result = _merge(
+        _CLEAN_VERDICT,
+        runner,
+        participation=_PARTICIPATION_ABSENT,
+        head_reader=lambda _project_dir: None,
+    )
+
+    assert runner.calls == []
+    assert result['error'] == gate.MERGE_PARTICIPATION_UNPROVEN
+    assert result['authorization']['checked'] is False
+
+
+# --------------------------------------------------------------------------- #
+# D1 — the production participation chain
+# --------------------------------------------------------------------------- #
+
+
+_ROSTER_PAYLOAD = {
+    'status': 'success',
+    'phase': '6-finalize',
+    'step_id': 'plan-marshall:automatic-review',
+    'params': {'required_bots': 'coderabbit', 'optional_bots': 'sourcery'},
+}
+
+_FETCH_PAYLOAD = {
+    'status': 'success',
+    'merge_candidate_sha_resolved': True,
+    'participated_bots': [{'bot_kind': 'coderabbit', 'evidence_kind': 'review_body'}],
+    'stale_participation_bots': [{'bot_kind': 'sourcery', 'evidence_kind': 'comment'}],
+    'refused_bots': [],
+    'unrecognised_refusal': [{'bot_kind': 'other-bot', 'layer': 'enumerative'}],
+    'refused_causes': [{'bot_kind': 'other-bot', 'cause': 'size'}],
+    'refused_size_caps': [{'bot_kind': 'other-bot', 'cap': '400 lines'}],
+}
+
+_PREDICATE_PAYLOAD = {
+    'status': 'success',
+    'participation_complete': True,
+    'proves': 'participation_only',
+    'unproven_bots': [],
+    'bot_states': [
+        {'bot_kind': 'coderabbit', 'state': 'participated'},
+        {'bot_kind': 'sourcery', 'state': 'participated_stale'},
+    ],
+}
+
+_PRODUCER_NOTATION = 'plan-marshall:workflow-integration-github:github_pr'
+
+
+def _participation_chain(monkeypatch, responses):
+    """Drive ``_check_participation`` with the verb seam replaced by ``responses``."""
+    calls: list[tuple[str, list[str]]] = []
+
+    def fake_run_verb(notation, argv, **_kwargs):
+        calls.append((notation, list(argv)))
+        return dict(responses[notation])
+
+    monkeypatch.setattr(gate, '_run_verb', fake_run_verb)
+    monkeypatch.setattr(gate, '_provider_pr_notation', lambda: _PRODUCER_NOTATION)
+    return gate._check_participation(_PLAN_ID, 42), calls
+
+
+def _full_chain_responses(**overrides):
+    responses = {
+        gate._MANIFEST_NOTATION: _ROSTER_PAYLOAD,
+        _PRODUCER_NOTATION: _FETCH_PAYLOAD,
+        gate._COMPLETENESS_NOTATION: _PREDICATE_PAYLOAD,
+    }
+    responses.update(overrides)
+    return responses
+
+
+def test_the_production_chain_reads_the_roster_the_producer_and_the_predicate(monkeypatch):
+    """The chain is the BARRIER's, in this order, with the producer's records translated."""
+    verdict, calls = _participation_chain(monkeypatch, _full_chain_responses())
+
+    assert [notation for notation, _argv in calls] == [
+        gate._MANIFEST_NOTATION,
+        _PRODUCER_NOTATION,
+        gate._COMPLETENESS_NOTATION,
+    ]
+    assert verdict['participation_complete'] is True
+    assert verdict['roster_read'] is True
+
+    roster_argv = calls[0][1]
+    assert roster_argv[:2] == ['step-params', 'get']
+    assert roster_argv[-2:] == ['--step-id', 'plan-marshall:automatic-review']
+
+    producer_argv = calls[1][1]
+    assert producer_argv[:3] == ['fetch_findings', '--pr-number', '42']
+    assert '--required-bots' in producer_argv
+    assert 'coderabbit' in producer_argv
+
+    predicate_argv = calls[2][1]
+    assert predicate_argv[0] == 'check'
+    assert predicate_argv[-1] == '--triage-ran', 'the merge runs after triage, so a pending finding must block'
+    # The producer emits RECORDS; the predicate consumes PAIRS. One conversion site.
+    assert 'coderabbit:review_body' in predicate_argv
+    assert 'sourcery:comment' in predicate_argv
+    assert 'other-bot' in predicate_argv
+    assert 'other-bot:size' in predicate_argv
+    assert 'other-bot:400 lines' in predicate_argv
+
+
+def test_the_chain_does_not_reach_the_producer_when_the_roster_is_empty(monkeypatch):
+    """An empty roster is decided before any provider call: nothing to prove, nothing to read."""
+    empty = dict(_ROSTER_PAYLOAD, params={'required_bots': '', 'optional_bots': ''})
+
+    verdict, calls = _participation_chain(monkeypatch, _full_chain_responses(**{gate._MANIFEST_NOTATION: empty}))
+
+    assert [notation for notation, _argv in calls] == [gate._MANIFEST_NOTATION]
+    assert verdict['error'] == 'roster_empty'
+    assert verdict['roster_read'] is True
+
+
+def test_the_chain_refuses_a_producer_that_could_not_resolve_the_candidate(monkeypatch):
+    """``merge_candidate_sha_resolved: false`` means the observations are about no tree."""
+    unresolvable = dict(_FETCH_PAYLOAD, merge_candidate_sha_resolved=False)
+
+    verdict, calls = _participation_chain(monkeypatch, _full_chain_responses(**{_PRODUCER_NOTATION: unresolvable}))
+
+    assert [notation for notation, _argv in calls] == [gate._MANIFEST_NOTATION, _PRODUCER_NOTATION]
+    assert verdict['error'] == 'participation_unreadable'
+
+
+def test_the_chain_refuses_a_producer_without_a_participation_arm(monkeypatch):
+    """A provider that classifies nothing answers no participation question."""
+    armless = {'status': 'success', 'merge_candidate_sha_resolved': True}
+
+    verdict, _calls = _participation_chain(monkeypatch, _full_chain_responses(**{_PRODUCER_NOTATION: armless}))
+
+    assert verdict['error'] == 'participation_arm_unavailable'
+
+
+def test_the_chain_refuses_when_the_predicate_does_not_answer(monkeypatch):
+    """An unknown predicate verdict is never read as complete."""
+    failed = {'status': 'error', 'error': 'findings_store_unresolved'}
+
+    verdict, _calls = _participation_chain(monkeypatch, _full_chain_responses(**{gate._COMPLETENESS_NOTATION: failed}))
+
+    assert verdict['error'] == 'predicate_unreadable'
+
+
+def test_the_chain_reads_the_provider_from_the_configured_providers_list(monkeypatch, tmp_path):
+    """The producer notation is DERIVED from ``providers[]``, never a hard-coded provider."""
+    plan_dir = tmp_path / '.plan'
+    plan_dir.mkdir()
+    (plan_dir / 'marshal.json').write_text(
+        '{"providers": [{"category": "ci", "skill_name": "plan-marshall:workflow-integration-gitlab"}]}',
+        encoding='utf-8',
+    )
+    monkeypatch.setattr(gate, '_find_marshal_path', lambda _start=None: plan_dir / 'marshal.json')
+
+    assert gate._provider_pr_notation() == 'plan-marshall:workflow-integration-gitlab:gitlab_pr'
+
+
+def test_an_unresolvable_provider_makes_the_notation_empty(monkeypatch, tmp_path):
+    """No configured provider is an empty answer, never a default provider."""
+    monkeypatch.setattr(gate, '_find_marshal_path', lambda _start=None: tmp_path / 'absent.json')
+
+    assert gate._provider_pr_notation() is None
+
+
+# --------------------------------------------------------------------------- #
+# D2 — the merge record says what was relied on
+# --------------------------------------------------------------------------- #
+
+
+_SKILL_STANDARDS = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'phase-6-finalize' / 'standards'
+_BRANCH_CLEANUP = _SKILL_STANDARDS / 'branch-cleanup.md'
+_BRANCH_CLEANUP_REREVIEW = _SKILL_STANDARDS / 'branch-cleanup-rereview.md'
+_BRANCH_CLEANUP_TEXT = _BRANCH_CLEANUP.read_text(encoding='utf-8')
+_DOCS = {
+    _BRANCH_CLEANUP: _BRANCH_CLEANUP_TEXT,
+    _BRANCH_CLEANUP_REREVIEW: _BRANCH_CLEANUP_REREVIEW.read_text(encoding='utf-8'),
+}
+
+_ROSTER_HEADING = '## Merge-Authorization Roster'
+_ROSTER_ROWS: list[tuple[str, str]] = parse_roster_rows(_BRANCH_CLEANUP_TEXT, _ROSTER_HEADING)
+
+#: Vacuity guard — every sweep below is parametrized over a population parsed out of a
+#: document, so a heading that moved would collect zero cases and report green.
+assert _ROSTER_ROWS, f'no merge-authorization roster rows parsed from {_BRANCH_CLEANUP}'
+
+_GRANT_KINDS: list[str] = [kind for kind, row in _ROSTER_ROWS if 'bound_via: grant' in row]
+assert _GRANT_KINDS, 'the roster declares no grant-backed authorization kind'
+
+
+_MERGE_FACTS_CLEAN = [
+    'action=rebased',
+    'upstream_commit_count=3',
+    'merge_mechanism=pr_safe_merge',
+    'merge_state=merged',
+    'cleanup_owed=false',
+    'work_performed=true',
+]
+
+
+def test_a_granted_merge_step_record_carries_the_gap():
+    """The wording Branch E specifies is what the script writes."""
+    written: list[list[str]] = []
+
+    result = gate.record_merge(
+        _PLAN_ID,
+        facts=list(_MERGE_FACTS_CLEAN),
+        grant_kind='barrier-ask-override',
+        mark_done_runner=lambda argv: written.append(list(argv)) or {'status': 'success'},
+    )
+
+    assert result['display_detail'] == 'merged under barrier-ask-override, gap recorded'
+    assert written, 'the step record was never written'
+    argv = written[0]
+    assert argv[:2] == ['mark-step-done', '--plan-id']
+    assert argv[argv.index('--display-detail') + 1] == 'merged under barrier-ask-override, gap recorded'
+    # Every fact the caller supplied reaches the writer verbatim.
+    for fact in _MERGE_FACTS_CLEAN:
+        assert fact in argv
+
+
+def test_a_clean_merge_step_record_never_carries_the_gap():
+    """The clean form is the clause composition, and it asserts no gap."""
+    written: list[list[str]] = []
+
+    result = gate.record_merge(
+        _PLAN_ID,
+        facts=list(_MERGE_FACTS_CLEAN),
+        mark_done_runner=lambda argv: written.append(list(argv)) or {'status': 'success'},
+    )
+
+    assert result['display_detail'] == 'rebased onto base, merged directly, cleanup complete'
+    assert 'gap recorded' not in result['display_detail']
+    assert 'action=rebased' in written[0]
+    assert 'upstream_commit_count=3' in written[0]
+
+
+@pytest.mark.parametrize(
+    ('action', 'merge_mechanism', 'expected'),
+    [
+        ('noop', 'pr_safe_merge', 'already current with base, merged directly, cleanup complete'),
+        (None, 'merge_queue', 'rebase deferred to queue, queue-merged, corroborated, cleanup complete'),
+    ],
+    ids=['noop', 'queue'],
+)
+def test_the_clean_form_renders_both_axes_as_clauses(action, merge_mechanism, expected):
+    """Neither axis is interpolated raw: the queue path never claims a rebase this step did."""
+    assert gate.clean_merge_step_detail(action, merge_mechanism) == expected
+
+
+def test_the_longest_admissible_grant_kind_still_fits_the_bound():
+    """Every roster ``grant`` kind renders inside the declared ceiling.
+
+    The population is DERIVED from the roster, so a kind added there is sized here
+    without editing this test — and the bound is the script's own constant, which the
+    doc's § "Length discipline" states.
+    """
+    longest = max(_GRANT_KINDS, key=len)
+
+    rendered = gate.merge_step_detail(longest)
+
+    assert len(rendered) <= gate.MERGE_DISPLAY_DETAIL_MAX_CHARS, (
+        f'the longest admissible grant kind {longest!r} renders {len(rendered)} characters: {rendered!r}'
+    )
+
+
+def test_the_documented_branch_e_length_matches_the_rendered_length():
+    """The doc's published worst case is the value the script actually renders."""
+    match = re.search(r'`merged under barrier-ask-override, gap recorded`, \*\*(\d+) chars\*\*', _BRANCH_CLEANUP_TEXT)
+
+    assert match is not None, 'branch-cleanup.md no longer publishes the Branch E worst-case length'
+    assert len(gate.merge_step_detail('barrier-ask-override')) == int(match.group(1))
+
+
+def test_the_documented_branch_e_wording_is_the_scripts_template():
+    """Branch E stays the SPECIFICATION: the literal it states is the script's template."""
+    assert gate.GAP_RECORDED_TEMPLATE in _BRANCH_CLEANUP_TEXT, (
+        'branch-cleanup.md no longer states the gap-bearing wording, so the script would be '
+        'specifying a record shape no document owns'
+    )
+    assert 'record-merge' in _BRANCH_CLEANUP_TEXT, (
+        'branch-cleanup.md does not route Branch A/E through the verb that renders the wording'
+    )
+
+
+@pytest.mark.parametrize(
+    ('facts', 'expected_error'),
+    [
+        (
+            [
+                'action=rebased',
+                'merge_mechanism=merge_queue',
+                'merge_state=merged',
+                'cleanup_owed=false',
+                'work_performed=true',
+            ],
+            'action_on_queue_route',
+        ),
+        (
+            ['merge_mechanism=squash', 'merge_state=merged', 'cleanup_owed=false', 'work_performed=true'],
+            'display_detail_invalid',
+        ),
+        (
+            [
+                'merge_mechanism=pr_safe_merge',
+                'action=skipped',
+                'merge_state=merged',
+                'cleanup_owed=false',
+                'work_performed=true',
+            ],
+            'display_detail_invalid',
+        ),
+        (['merge_mechanism=pr_safe_merge', 'merge_state=merged'], 'facts_incomplete'),
+        (
+            ['merge_mechanism=pr_safe_merge', 'merge_state=n/a', 'cleanup_owed=false', 'work_performed=true'],
+            'merge_state_not_landed',
+        ),
+        (['merge_mechanism=pr_safe_merge', 'not-a-pair'], 'facts_malformed'),
+    ],
+    ids=['action-on-queue', 'unknown-mechanism', 'unknown-action', 'missing-facts', 'not-landed', 'malformed-fact'],
+)
+def test_record_merge_refuses_an_incoherent_record_and_writes_nothing(facts, expected_error):
+    """A record asserting something the path cannot have produced is refused, not written."""
+    written: list[list[str]] = []
+
+    result = gate.record_merge(
+        _PLAN_ID,
+        facts=list(facts),
+        mark_done_runner=lambda argv: written.append(list(argv)) or {'status': 'success'},
+    )
+
+    assert written == [], f'a refused record was still written: {written}'
+    assert result['error'] == expected_error
+    assert result[gate.REFUSAL_CATEGORY_FIELD] == gate.INVOCATION_REFUSAL
+
+
+def test_record_merge_refuses_a_rendering_over_the_declared_ceiling():
+    """The bound is measured on the RENDERED string, and refused at the write site."""
+    written: list[list[str]] = []
+
+    result = gate.record_merge(
+        _PLAN_ID,
+        facts=list(_MERGE_FACTS_CLEAN),
+        grant_kind='k' * gate.MERGE_DISPLAY_DETAIL_MAX_CHARS,
+        mark_done_runner=lambda argv: written.append(list(argv)) or {'status': 'success'},
+    )
+
+    assert written == []
+    assert result['error'] == 'display_detail_invalid'
+    assert str(gate.MERGE_DISPLAY_DETAIL_MAX_CHARS) in result['message']
+
+
+# --------------------------------------------------------------------------- #
+# D3 — every pre-enqueue merge question says whether a second one follows
+# --------------------------------------------------------------------------- #
+
+_MERGE_OPTION_LABELS = (
+    'Merge anyway (record reason)',
+    'Accept the coverage gap (record reason)',
+    'Merge anyway — override red CI',
+    'Merge anyway — proceed unreviewed',
+)
+
+#: The placeholder every such site must carry instead of a hand-written sentence.
+_MERGE_CONSEQUENCE_PLACEHOLDER = '{merge_consequence}'
+
+
+def _fenced_blocks(text):
+    """Every fenced code block in ``text`` — the population a prompt block lives in."""
+    return text.split('```')[1::2]
+
+
+def _anchor_candidates(text, label):
+    """Yield ``(rank, context)`` candidates for where ``label`` is RENDERED, best first.
+
+    The ranks, and each is load-bearing:
+
+    1. a fenced block declaring the option itself (``label: "<label>"``). Several bash
+       blocks mention these labels in decision-log message text and in
+       ``--operator-answer`` arguments, so matching on the label alone would anchor on a
+       message that renders no option at all.
+    2. a paragraph carrying BOTH the label and the placeholder — the prose sites, where
+       the option is documented as a sentence rather than as a composed prompt.
+    3. a paragraph carrying the label, so a site that lost its placeholder fails with the
+       message naming that site rather than vanishing from the population.
+    """
+    declaration = f'label: "{label}"'
+    for block in _fenced_blocks(text):
+        if declaration in block:
+            yield 0, block
+    paragraphs = text.split('\n\n')
+    for paragraph in paragraphs:
+        if label in paragraph and _MERGE_CONSEQUENCE_PLACEHOLDER in paragraph:
+            yield 1, paragraph
+    for paragraph in paragraphs:
+        if label in paragraph:
+            yield 2, paragraph
+
+
+def _context_for(label):
+    """Return ``(path, context)`` for ``label``, choosing the BEST-ranked context.
+
+    The ranking is applied ACROSS the corpus rather than per document, because a label
+    is also named in sibling documents' prose — the merge-authorization roster lists
+    every option label by name — and a per-document first-match would anchor the guard
+    on that mention instead of on the site that renders the option.
+    """
+    best = None
+    for path, text in _DOCS.items():
+        for rank, context in _anchor_candidates(text, label):
+            if best is None or rank < best[0]:
+                best = (rank, path, context)
+    if best is None:
+        return None, None
+    return best[1], best[2]
+
+
+def test_the_corpus_never_states_either_consequence_sentence():
+    """No site may hand-write either value's sentence, which is what makes the pair safe."""
+    for path, text in _DOCS.items():
+        assert gate.MERGE_CONSEQUENCE_WITHOUT_ASKING not in text, f'{path.name} hard-codes the without-asking sentence'
+        assert gate.MERGE_CONSEQUENCE_WITH_ASKING not in text, f'{path.name} hard-codes the asking sentence'
+
+
+@pytest.mark.parametrize('label', _MERGE_OPTION_LABELS)
+def test_every_pre_enqueue_merge_option_renders_the_generated_sentence(label):
+    """Each site carries the placeholder, and each knob value renders a different text."""
+    path, context = _context_for(label)
+
+    assert context is not None, f'no block or paragraph in the finalize standards renders {label!r}'
+
+    assert _MERGE_CONSEQUENCE_PLACEHOLDER in context, (
+        f'{label!r} in {path.name} does not carry {_MERGE_CONSEQUENCE_PLACEHOLDER}, so its option '
+        'text cannot be generated from the final_merge_without_asking value'
+    )
+
+    without_asking = context.replace(_MERGE_CONSEQUENCE_PLACEHOLDER, gate.merge_consequence_text(True))
+    with_asking = context.replace(_MERGE_CONSEQUENCE_PLACEHOLDER, gate.merge_consequence_text(False))
+
+    assert gate.merge_consequence_text(True) in without_asking
+    assert gate.merge_consequence_text(False) in with_asking
+    assert without_asking != with_asking, (
+        f'rendering {label!r} for the two knob values produced the same option text, so one of them is lying'
+    )
+
+
+def test_the_two_consequence_sentences_state_opposite_outcomes():
+    """Each sentence says what actually follows its option, and the two cannot be swapped."""
+    without_asking = gate.merge_consequence_text(True)
+    with_asking = gate.merge_consequence_text(False)
+
+    assert without_asking != with_asking
+    assert 'no second question' in without_asking.lower()
+    assert 'confirmation' in with_asking.lower()
+
+
+@pytest.mark.parametrize('value', ['true', 'false'])
+def test_the_consequence_text_cli_renders_the_resolved_knob_value(value, capsys):
+    """The verb answers from the value it was given, and says which one it used."""
+    parser = gate.build_parser()
+    args = parser.parse_args(['consequence-text', '--final-merge-without-asking', value])
+
+    assert gate.cmd_consequence_text(args) == 0
+    emitted = capsys.readouterr().out
+
+    assert f'final_merge_without_asking: {value}' in emitted
+    assert gate.merge_consequence_text(value == 'true') in emitted
+
+
+def test_the_consequence_knob_flag_admits_only_the_two_declared_values():
+    """A third value names no outcome, so argparse refuses it before any text is rendered."""
+    parser = gate.build_parser()
+
+    with pytest.raises(SystemExit) as exc:
+        parser.parse_args(['consequence-text', '--final-merge-without-asking', 'maybe'])
 
     assert exc.value.code == 2

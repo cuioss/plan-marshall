@@ -30,7 +30,24 @@ def _status(head_by_step: dict[str, str | None]) -> dict:
 
 
 def _merge(status, head, **kwargs):
-    """Run the gate with stubbed findings + merge seams."""
+    """Run the gate with stubbed findings, participation and merge seams.
+
+    Participation is stubbed COMPLETE here because this module's subject is the head
+    binding: the production participation reader spawns its own provider and predicate
+    subprocesses, and LB-100's participation behaviour has its own cases in
+    ``test_pre_merge_gate.py``.
+    """
+    kwargs.setdefault(
+        'participation_check',
+        lambda _pid, _pr: {
+            'status': 'success',
+            'participation_complete': True,
+            'roster_read': True,
+            'required_bots': ['coderabbit'],
+            'unproven_bots': [],
+            'bot_states': [{'bot_kind': 'coderabbit', 'state': 'participated'}],
+        },
+    )
     return gate.merge(
         'lb55-plan',
         route='safe-merge',

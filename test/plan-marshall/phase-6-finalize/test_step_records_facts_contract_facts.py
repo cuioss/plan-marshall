@@ -52,13 +52,16 @@ step that declares ``records_facts`` later is covered with no edit here.
 Assertions (8) and (9) are targeted anchors on the two named defects and are
 labelled as such — they name specific branches on purpose.
 
-The unit of analysis is deliberately **one terminal ``mark-step-done``
-invocation block per call site**, never a doc-wide blob: ``branch-cleanup`` has
-four ``--outcome done`` branches plus a ``loop_back`` call, and
-``sonar-roundtrip`` has three ``done`` branches plus an ``--outcome failed``
-call. A doc-wide scan would let Branch A borrow Branch B's facts and read as
-green — which is precisely the honest-subset property these tests exist to
-check. ``test_call_site_split_isolates_each_invocation`` guards that split.
+The unit of analysis is deliberately **one terminal step-record invocation block per
+call site**, never a doc-wide blob: ``branch-cleanup`` has four ``--outcome done``
+branches plus a ``loop_back`` call, and ``sonar-roundtrip`` has three ``done``
+branches plus an ``--outcome failed`` call. A doc-wide scan would let Branch A borrow
+Branch B's facts and read as green — which is precisely the honest-subset property
+these tests exist to check. ``test_call_site_split_isolates_each_invocation`` guards
+that split. TWO verbs write a terminal record — the generic ``mark-step-done`` and the
+merge path's ``record-merge``, which renders the Branch A/E wording from the facts it
+records — and both shapes are recognised, with
+``test_record_merge_shape_is_recognised_as_a_terminal_call_site`` guarding the second.
 
 A block is bounded at BOTH ends. It starts at a shell **invocation line**, not
 at any line carrying the verb: a narrative sentence can name both
@@ -108,6 +111,19 @@ _BRANCH_A_FIXED_LITERAL = 'rebased onto base, merged, cleanup complete'
 
 #: A terminal call site is a ``mark-step-done`` invocation carrying an outcome.
 _MARK_STEP_TOKEN = 'mark-step-done'
+
+#: The SECOND terminal-call shape. ``branch-cleanup``'s landed-merge branches write their
+#: record through ``pre_merge_gate record-merge``, which renders the Branch A/E detail from
+#: the very facts it records and forwards them to ``mark-step-done``. The step's fact
+#: obligation did not disappear when the write moved behind that verb — it moved WITH it —
+#: so the shape is recognised as a call site rather than dropping its doc out of this
+#: contract. Its ``--fact`` arguments are the same ``KEY=VALUE`` tokens, so assertions
+#: (4)/(6) read them unchanged.
+_RECORD_MERGE_TOKEN = 'record-merge'
+
+#: ``record-merge`` writes ``--outcome done`` unconditionally, so its block carries no
+#: ``--outcome`` argument of its own. Stated rather than inferred from the doc.
+_RECORD_MERGE_OUTCOME = 'done'
 
 #: One ``--fact KEY=VALUE`` argument. Value stops at whitespace, so a trailing
 #: line-continuation backslash is never absorbed into it.
@@ -178,15 +194,20 @@ def _record_for(step_name: str) -> dict:
 # ---------------------------------------------------------------------------
 
 
+def _is_record_merge(block: str) -> bool:
+    """True for a block that writes a record through the merge-path verb."""
+    return _RECORD_MERGE_TOKEN in block
+
+
 def _call_site_blocks(text: str) -> list[str]:
-    """Return each terminal ``mark-step-done`` invocation as its OWN block.
+    """Return each terminal step-record invocation as its OWN block.
 
     A block starts at a shell **invocation line** (``_INVOCATION_START`` — a line
     that opens a ``python3`` command) and extends across shell line-continuations
     (``\\``), so each invocation's ``--outcome`` and ``--fact`` arguments stay
-    bound to that invocation alone. The collected block is admitted only when it
-    both carries the ``mark-step-done`` token and passes an ``--outcome``
-    argument.
+    bound to that invocation alone. The collected block is admitted when it either
+    carries the ``mark-step-done`` token and passes an ``--outcome`` argument, or
+    writes its record through ``record-merge`` (which fixes the outcome itself).
 
     Prose is excluded by the **invocation-start boundary**, NOT by the
     ``--outcome`` requirement alone. That requirement is not sufficient on its
@@ -210,12 +231,14 @@ def _call_site_blocks(text: str) -> list[str]:
             cursor += 1
             collected.append(lines[cursor])
         block = '\n'.join(collected)
-        if _MARK_STEP_TOKEN in block and _OUTCOME_ARG.search(block):
+        if _is_record_merge(block) or (_MARK_STEP_TOKEN in block and _OUTCOME_ARG.search(block)):
             blocks.append(block)
     return blocks
 
 
 def _block_outcome(block: str) -> str | None:
+    if _is_record_merge(block):
+        return _RECORD_MERGE_OUTCOME
     match = _OUTCOME_ARG.search(block)
     return match.group(1) if match else None
 
@@ -381,3 +404,30 @@ def test_call_site_split_isolates_each_invocation():
     assert [_block_outcome(block) for block in blocks] == ['done', 'failed']
     assert _block_facts(blocks[0]) == {'work_performed': 'true'}
     assert _block_facts(blocks[1]) == {'count_status': 'undecidable'}
+
+
+def test_record_merge_shape_is_recognised_as_a_terminal_call_site():
+    """Guards the SECOND terminal shape: a record written through ``record-merge``.
+
+    ``branch-cleanup``'s two landed-merge branches write their record through that verb
+    so the wording is rendered from the facts rather than typed by hand. Without this
+    recognition those two blocks vanish from the population, and (4)/(6) would report a
+    correctly-wired doc as an orphan declaration — the doc would keep declaring a fact
+    obligation nothing appears to satisfy.
+    """
+    doc = (
+        '```bash\n'
+        'python3 x pre_merge_gate record-merge \\\n'
+        '  --plan-id {plan_id} \\\n'
+        '  --fact merge_mechanism=pr_safe_merge \\\n'
+        '  --fact merge_state=merged \\\n'
+        '  --fact cleanup_owed=false \\\n'
+        '  --fact work_performed=true\n'
+        '```\n'
+    )
+
+    blocks = _call_site_blocks(doc)
+
+    assert len(blocks) == 1, f'Expected the record-merge block to be collected, got {blocks}'
+    assert _block_outcome(blocks[0]) == 'done'
+    assert set(_block_facts(blocks[0])) == {'merge_mechanism', 'merge_state', 'cleanup_owed', 'work_performed'}

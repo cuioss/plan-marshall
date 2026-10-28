@@ -146,7 +146,7 @@ Both branches that advance an unreviewed HEAD — the `proceed` policy branch an
           - label: "Wait another {re_review_await_timeout_seconds}s"
             description: "Re-issue the re-review and await a fresh budget (weakest option on outcome=declined: the bot already answered)"
           - label: "Merge anyway — proceed unreviewed"
-            description: "Advance the unreviewed HEAD to the pre-merge gate"
+            description: "Advance the unreviewed HEAD to the pre-merge gate. {merge_consequence}"
           - label: "Defer merge"
             description: "Skip the merge; re-enter finalize later"
         multiSelect: false
