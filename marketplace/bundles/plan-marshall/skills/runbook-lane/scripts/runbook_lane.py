@@ -278,6 +278,20 @@ def _contained_file(path: Path, root: Path) -> bool:
         return False
 
 
+def _named_copy_is_contained(spec: Path, main_store: Path, ledger_store: Path | None) -> bool:
+    """Whether a directly named spec resolves under the main or the ledger store.
+
+    The shape check proves the path LOOKS like a staged spec; this proves it IS one
+    of the two copies the read order is about. A same-shaped file in a plan
+    worktree's own ``.plan`` tier passes the first test and fails this one — it is
+    neither copy — so the read is refused instead of being labelled
+    ``main_checkout`` for a file the main checkout does not hold.
+    """
+    if _contained_file(spec, main_store):
+        return True
+    return ledger_store is not None and _contained_file(spec, ledger_store)
+
+
 def _resolve_spec(spec_value: str, project_dir: Path) -> _SpecChoice:
     """Validate ``--spec`` and select the copy of it to read.
 
@@ -288,9 +302,10 @@ def _resolve_spec(spec_value: str, project_dir: Path) -> _SpecChoice:
     The read is WORKTREE-FIRST: the ledger worktree's copy wins when it exists, so
     a spec that exists only in the worktree is readable by default, and the main
     checkout's copy is the fallback for a spec the worktree does not hold —
-    ``invalid_spec`` when neither exists. The choice is reported as ``source``, and
-    ``differs`` says whether the copy NOT read would have answered differently
-    (the main checkout's copy, when the worktree's was read).
+    ``invalid_spec`` when neither exists, and ``invalid_spec`` for a same-shaped
+    file that resolves under neither store root. The choice is reported as
+    ``source``, and ``differs`` says whether the copy NOT read would have answered
+    differently (the main checkout's copy, when the worktree's was read).
 
     Raised as ``ValueError`` carrying the refusal code so the caller can emit a
     structured error rather than a traceback.
@@ -316,11 +331,12 @@ def _resolve_spec(spec_value: str, project_dir: Path) -> _SpecChoice:
         chosen, source = ledger_copy, 'ledger_worktree'
     elif _contained_file(main_copy, main_store):
         chosen, source = main_copy, 'main_checkout'
-    elif spec.is_file():
-        # The caller named the ONLY copy. It survived the shape check above, so it
-        # is either the main checkout's own file or one in the ledger worktree's
-        # store. The LABEL comes from where the file actually resolves, never from
-        # the order alone: a sole copy outside the ledger store is not one.
+    elif spec.is_file() and _named_copy_is_contained(spec, main_store, store):
+        # The caller named the copy directly. It survived the shape check, and it
+        # must ALSO resolve under one of the two store roots: a same-shaped file in
+        # a plan worktree's own ``.plan`` tier is not a store copy, and reading it
+        # while reporting `main_checkout` would mislabel the source. The LABEL comes
+        # from where the file actually resolves, never from the order alone.
         chosen = spec.resolve()
         source = 'ledger_worktree' if store is not None and _contained_file(chosen, store) else 'main_checkout'
     else:

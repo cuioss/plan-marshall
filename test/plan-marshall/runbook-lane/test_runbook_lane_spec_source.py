@@ -211,6 +211,27 @@ def test_a_spec_in_neither_copy_is_refused(tmp_path: Path) -> None:
     assert data['error'] == 'invalid_spec'
 
 
+def test_a_spec_in_a_plan_worktree_tier_is_not_a_store_copy(tmp_path: Path, monkeypatch) -> None:
+    """A same-shaped file under a plan worktree's own ``.plan`` is neither copy.
+
+    Reading it and calling it `main_checkout` would mislabel the source, so the
+    fallback is refused: the read is about the two store copies, not about any path
+    that happens to look like a staged spec.
+    """
+    main_root = tmp_path / 'main'
+    project = tmp_path / 'plan-worktree'
+    _write(project / SPEC_REL, _spec_body(LEDGER_TITLE))
+    _write(project / '.plan' / 'marshal.json', json.dumps({}))
+
+    module = load_script_module('plan-marshall', _SKILL_NAME, 'runbook_lane.py', register=False)
+    monkeypatch.setattr(module, 'main_checkout_root', lambda: main_root)
+    monkeypatch.setattr(module, 'base_dir_override_active', lambda: False)
+    monkeypatch.setattr(module, '_ledger_store_dir', lambda: None)
+
+    with pytest.raises(ValueError, match='invalid_spec'):
+        module._resolve_spec(SPEC_REL, project)
+
+
 def test_the_ledger_spelling_is_knob_gated(tmp_path: Path) -> None:
     """With the knob off a ledger-store path is not a staged spec: the filesystem does not decide."""
     _seed_copies(
