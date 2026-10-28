@@ -132,9 +132,10 @@ MERGE_HEAD_NOT_GATED = 'merge_candidate_not_gated'
 #: Refusal code for a merge candidate whose REQUIRED-bot participation is not
 #: proven. One code for every participation refusal — an unproven bot, a roster
 #: nobody could read, an empty roster, a producer that answered nothing — because
-#: the caller's disposition is the same in all of them (record a HEAD-bound
-#: authorization, or fix the participation state) and the ``reason`` field names
-#: which one it was.
+#: the payload's ``reason`` names which one it was and its ``authorizable``
+#: discriminator decides the disposition: a KNOWN gap with named bots is what a
+#: HEAD-bound authorization can cover, while a state nobody could READ is not
+#: authorizable at all.
 MERGE_PARTICIPATION_UNPROVEN = 'merge_participation_unproven'
 
 #: The gap class the pre-merge review barrier reports, and the only class that
@@ -591,6 +592,13 @@ def _check_participation(plan_id: str, pr_number: int, project_dir: str) -> dict
     fetched = _run_verb(
         notation,
         [
+            # The routing flags precede the verb: the executor's router resolves the
+            # plan's worktree from a PRE-verb ``--plan-id``, which is what makes the
+            # producer read the tree being merged rather than whatever checkout the
+            # dispatch process happens to sit in. The post-verb copy is the producer's
+            # own argument.
+            '--plan-id',
+            plan_id,
             'fetch_findings',
             '--pr-number',
             str(pr_number),
@@ -695,7 +703,25 @@ def _check_participation(plan_id: str, pr_number: int, project_dir: str) -> dict
         'unproven_bots': list(checked.get('unproven_bots') or []),
         'bot_states': list(checked.get('bot_states') or []),
         'proves': checked.get('proves'),
+        # The predicate can answer ``participation_complete: false`` with every bot a
+        # proofed participant — that is a required finding still ``pending`` once triage
+        # has run (see ``review_completeness``). Name it here, so a refusal built from
+        # this verdict never reports "no reason" beside an empty ``unproven_bots``.
+        'reason': _incomplete_reason(checked),
     }
+
+
+def _incomplete_reason(checked: dict[str, Any]) -> str | None:
+    """Describe WHY the predicate did not prove participation, or ``None`` when it did."""
+    if checked.get('participation_complete') is True:
+        return None
+    unproven = [str(bot) for bot in (checked.get('unproven_bots') or [])]
+    if unproven:
+        return f'the predicate leaves these required reviewers unproven: {", ".join(unproven)}'
+    return (
+        'the predicate reports an incomplete required review with no unproven bot: a required '
+        'finding is still pending after triage'
+    )
 
 
 def _read_merge_authorization(plan_id: str, head: str) -> dict[str, Any]:
@@ -897,9 +923,9 @@ def merge_step_detail(kind: str | None) -> str:
     clean one; this function is what makes each happen, so the wording is not
     retyped by an agent on the way past. ``kind`` is the authorization kind actually
     relied on — ``None`` renders the clean form, and a set value always renders the
-    gap-bearing form. The two are mutually exclusive BY CONSTRUCTION: an authorized
-    merge can never render the clean wording, because the clean branch is reachable
-    only when no kind was relied on.
+    gap-bearing form, so the two cannot be produced for one call. WHICH one a run asks
+    for is decided by the merge result (``merge_authorization_kind``); this function
+    renders the answer, it does not choose it.
     """
     if kind is None:
         return ''
@@ -1072,32 +1098,36 @@ def record_merge(
 
     merge_mechanism = recorded['merge_mechanism']
     action = recorded.get('action')
+    # Route/action coherence is checked for BOTH renderings: the facts a branch asks to
+    # be recorded must be able to be true whichever wording it selects, so Branch E is
+    # not exempt from them.
+    if action is not None and merge_mechanism == 'merge_queue':
+        return _refuse(
+            'action_on_queue_route',
+            'the merge-queue route never rebases, so an action fact would record a rebase this '
+            'path cannot have performed',
+        )
+    if action is None and merge_mechanism == 'pr_safe_merge':
+        # The mirror case, and the one that used to render a FALSE clause: a direct merge
+        # always reached the rebase (the default path and the ``queue_wait: forbidden``
+        # reroute alike), so an absent action would claim "rebase deferred to queue" on a
+        # path that never enqueued. Refuse rather than narrate a rebase that did not
+        # happen.
+        return _refuse(
+            'action_required_on_direct_route',
+            'a direct merge reached the rebase, so its record must carry the action and '
+            'upstream_commit_count facts it observed',
+        )
+    if action is not None and 'upstream_commit_count' not in recorded:
+        return _refuse(
+            'upstream_count_required_with_action',
+            'a recorded rebase action must carry the upstream_commit_count read from the same payload',
+        )
+
     try:
         if grant_kind is not None:
             display_detail = _checked_detail(merge_step_detail(grant_kind))
         else:
-            if action is not None and merge_mechanism == 'merge_queue':
-                return _refuse(
-                    'action_on_queue_route',
-                    'the merge-queue route never rebases, so an action fact would record a rebase this '
-                    'path cannot have performed',
-                )
-            if action is None and merge_mechanism == 'pr_safe_merge':
-                # The mirror case, and the one that used to render a FALSE clause: an
-                # absent action is only honest for the queue route, so a direct merge
-                # without one would claim "rebase deferred to queue" on the path that
-                # never enqueues. Refuse rather than narrate a rebase that did not
-                # happen.
-                return _refuse(
-                    'action_required_on_direct_route',
-                    'a direct merge reached the rebase, so its record must carry the action and '
-                    'upstream_commit_count facts it observed',
-                )
-            if action is not None and 'upstream_commit_count' not in recorded:
-                return _refuse(
-                    'upstream_count_required_with_action',
-                    'a recorded rebase action must carry the upstream_commit_count read from the same payload',
-                )
             display_detail = _checked_detail(clean_merge_step_detail(action, merge_mechanism))
     except ValueError as exc:
         return _refuse('display_detail_invalid', str(exc))

@@ -717,7 +717,10 @@ def test_the_production_chain_reads_the_roster_the_producer_and_the_predicate(mo
     assert roster_argv[-2:] == ['--step-id', 'plan-marshall:automatic-review']
 
     producer_argv = calls[1][1]
-    assert producer_argv[:3] == ['fetch_findings', '--pr-number', '42']
+    # The routing flags precede the verb, so the producer reads the plan's worktree; the
+    # post-verb copy is the producer's own argument. Both must be present.
+    assert producer_argv[:4] == ['--plan-id', _PLAN_ID, 'fetch_findings', '--pr-number']
+    assert producer_argv.count('--plan-id') == 2
     assert '--required-bots' in producer_argv
     assert 'coderabbit' in producer_argv
 
@@ -1154,6 +1157,82 @@ def test_record_merge_refuses_an_incoherent_record_and_writes_nothing(facts, exp
     assert written == [], f'a refused record was still written: {written}'
     assert result['error'] == expected_error
     assert result[gate.REFUSAL_CATEGORY_FIELD] == gate.INVOCATION_REFUSAL
+
+
+@pytest.mark.parametrize(
+    ('facts', 'expected_error'),
+    [
+        (
+            [
+                'action=rebased',
+                'upstream_commit_count=1',
+                'merge_mechanism=merge_queue',
+                'merge_state=merged',
+                'cleanup_owed=false',
+                'work_performed=true',
+            ],
+            'action_on_queue_route',
+        ),
+        (
+            ['merge_mechanism=pr_safe_merge', 'merge_state=merged', 'cleanup_owed=false', 'work_performed=true'],
+            'action_required_on_direct_route',
+        ),
+    ],
+    ids=['granted-action-on-queue', 'granted-no-action-on-direct-route'],
+)
+def test_the_route_action_rules_also_bind_the_authorized_rendering(facts, expected_error):
+    """Branch E is not exempt from the coherence rules: the FACTS must be able to be true."""
+    written: list[list[str]] = []
+
+    result = gate.record_merge(
+        _PLAN_ID,
+        facts=list(facts),
+        grant_kind='barrier-ask-override',
+        mark_done_runner=lambda argv: written.append(list(argv)) or {'status': 'success'},
+    )
+
+    assert written == []
+    assert result['error'] == expected_error
+
+
+def test_a_rerouted_direct_merge_records_its_rebase():
+    """The ``queue_wait: forbidden`` reroute merges directly WHILE the queue knob is true.
+
+    Its record therefore carries a rebase action on a ``pr_safe_merge`` mechanism — the
+    combination a naive "rebase iff use_merge_queue == false" rule would refuse.
+    """
+    written: list[list[str]] = []
+
+    result = gate.record_merge(
+        _PLAN_ID,
+        facts=[
+            'action=rebased',
+            'upstream_commit_count=2',
+            'merge_mechanism=pr_safe_merge',
+            'merge_state=merged',
+            'cleanup_owed=false',
+            'work_performed=true',
+        ],
+        mark_done_runner=lambda argv: written.append(list(argv)) or {'status': 'success'},
+    )
+
+    assert result['display_detail'] == 'rebased onto base, merged directly, cleanup complete'
+    assert len(written) == 1
+
+
+def test_record_merge_refuses_a_grant_kind_carrying_a_control_character():
+    """A multi-line kind would render a multi-line step detail inside the length bound."""
+    written: list[list[str]] = []
+
+    result = gate.record_merge(
+        _PLAN_ID,
+        facts=list(_MERGE_FACTS_CLEAN),
+        grant_kind='barrier\nask-override',
+        mark_done_runner=lambda argv: written.append(list(argv)) or {'status': 'success'},
+    )
+
+    assert written == []
+    assert result['error'] == 'display_detail_invalid'
 
 
 def test_record_merge_refuses_a_rendering_over_the_declared_ceiling():
