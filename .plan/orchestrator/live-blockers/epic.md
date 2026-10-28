@@ -309,6 +309,31 @@ derive, for rows still live.
   found: ~/.config/opencode/skills/automatic-review/SKILL.md`, reproduced here by a direct probe. Overlaps the held PLAN-LB-93 on
   `determine_mode.py`, `deployed_layout.py` and `test/plan-marshall/script-shared/`; no file with the running PLAN-LB-58.
 
+- **PLAN-LB-99** (staged 2026-10-28, WS-04, runbook, **high**; `plans/PLAN-LB-99-source-checkout-executor-skew.md`, nine claims,
+  six corroborated and three unverifiable): a lane in a source checkout is not asked the executor-skew question it cannot answer.
+  D1 an explicit verdict that is not `match` for the source-checkout layout (working name `not_applicable`), D2 the lane text
+  states each verdict and when the question is asked, D3 an end-to-end test through a generated executor. One outline decision
+  (Verify-first): `not_applicable`, a read-only preflight witness, or leaving the question; the spec says what each does not
+  cover (a stale executor template). No file shared with anything running. Not emitted; the ledger must be landed first.
+
+- **PLAN-LB-93 landed** (**#1874, 2026-10-27, C+**, `landings/PLAN-LB-93.md`; runbook lane, `deepseek-v4.1-flash/high`, one
+  session and no self-review sub-agent, 5 h 25 min; fix in source until the next sync): four of six deliverables delivered and
+  verified (the flat-install generator bootstrap with a missing-library report, the shared bootstrap helper and its guard,
+  an affirmative mypy freshness signal, rule R7 refusing a lane run's tracked-file write in the main checkout), D5 half
+  delivered (the push refuses while a merge is armed; `pre_merge_gate merge` still runs no participation check), D6 not
+  started. The self-review round was skipped (a reported rule break); the partial landing was the operator's choice. Question
+  (3), guard (1 of 1) counts exact; read-class shell calls understated (21 against a few); no spoofed identity, no restart, no
+  main-checkout edit; CodeRabbit reviewed `50087913`, the merged head is a note. **Fix-forward: D5 second half and D6 need a
+  plan (below).** Original entry follows.
+
+- **PLAN-LB-98 landed** (**#1876, 2026-10-27, B+**, `landings/PLAN-LB-98.md`; runbook lane, `deepseek-v4.1-flash/high`, five
+  sessions, 5 h 37 min; fix in source until the next sync): the executor-skew check reads the install root's sync stamp on a
+  flat install, so it answers `match` or `skew`; all three deliverables delivered, ten red tests in the cited job log, the
+  fail-open case (an unparseable stamp version) caught by the lane, Antigravity fixed to publish the stamp. Exact question (3),
+  sub-agent (4), guard (3 of 3) and read-class shell (8 of 8) counts; no spoofed identity, no restart, no main-checkout edit;
+  CodeRabbit reviewed the merged head. Debits are small (a revert-after run labelled test-first, one commit carrying three
+  deliverables, a relative `--project-dir` once). Fix-forward: none staged. Original entry follows.
+
 - **PLAN-LB-98** (staged 2026-10-27, WS-04, runbook, **high** by operator ruling; `plans/PLAN-LB-98-flat-install-executor-skew.md`,
   nine claims): the executor-skew check can answer on a flat install. D1 the lane text version on a flat install is read from the
   install root's sync stamp (`dist-manifest.json`), so the check answers `match` or `skew`; D2 the `could_not_check` reason
@@ -588,6 +613,23 @@ derive, for rows still live.
 - **Operator decisions the specs leave open** (each is a verify-first clause in its spec):
 
 ## Decisions
+
+- 2026-10-28 — **PLAN-LB-99 staged (high), after the operator challenged my fix.** I had offered "a fix is possible" for the
+  source-checkout executor-skew question without running the existing staleness check; the operator asked whether it can be
+  fixed at all. Checked: `generate_executor preflight` answers staleness already (and writes), the executor maps every script
+  into the tree so the failure the check guards against cannot occur there, and a fingerprint-derivation would duplicate
+  preflight. The plan carries the decision, not a mechanism, and records two unverified hypotheses honestly. Instruction
+  "do it" read as: stage that small plan; nothing landed or emitted.
+
+- 2026-10-27 — **PLAN-LB-93 landed as #1874 (merge `027351aaa`), graded C+; PLAN-LB-98 landed as #1876 (merge `b8961015b`),
+  graded B+.** Full-depth analysis of both against git, the CI abstraction (all threads resolved: 28 of 28 and 6 of 6), the
+  session store (LB-93 one session; LB-98 root plus four children), `guard.log` (1 of 1 and 3 of 3), the execution log (no
+  shared-executor regeneration in either run), the cited job logs (all seven exist and list the failures claimed) and the
+  merged diffs. **LB-93** delivered 4 of 6 (D5 half, D6 none) and skipped its self-review; the operator chose the partial land.
+  **LB-98** delivered 3 of 3 and is the cleanest landing of the epic on counts and on code. **Three findings beyond the grades:**
+  (1) the Sonar gate is unattainable here because CI never submits PR analyses (`sonar.enabled: false` since February), which
+  also makes every earlier "Sonar 0" I recorded vacuous; (2) the gate-truth half of LB-55 is now twice deferred; (3) LB-93 and
+  LB-98 ran in parallel on the shared main executor with no interference, unlike LB-97 and LB-58. Running 0 of 4.
 
 - 2026-10-27 — **PLAN-LB-98 staged at high.** The PLAN-LB-93 lane asked the `executor-skew` question again (could_not_check,
   executor 0.1.2021, lane text version unknown). I answered "proceed" and offered to stage it as medium; the operator ruled "it
@@ -1142,9 +1184,42 @@ derive, for rows still live.
 
 ## Open Defects
 
-- **HIGH (operator ruling 2026-10-27: "it is high") — `executor-skew` answers `could_not_check` on every flat OpenCode
-  install; owner PLAN-LB-98, staged (found in the PLAN-LB-95 landing, 2026-10-26; asked again by the PLAN-LB-93 lane,
-  2026-10-27).** Beyond the avoidable question, on the second machine the same verdict sat on a stale executor (`0.1.2010`)
+- **HIGH — the Sonar merge gate is unattainable on this repository, so every merge needs an operator override (found in
+  the PLAN-LB-97 landing, 2026-10-27; confirmed by PLAN-LB-93 and PLAN-LB-98; NOT STAGED, needs an operator decision).**
+  PRs #1872, #1874 and #1876 all ended with `read_open_issues` answering `undecidable` / `analysis_revision_unavailable` and
+  merged on the operator's explicit "merge anyway". Cause, verified: `.github/project.yml` has had `sonar: enabled: false` since
+  the first commit (2026-02-21), so CI submits no pull-request analysis, while the project's provider block resolves
+  `sonar: configured` for `cuioss_plan-marshall`. The provider holds three PR analyses (PRs 766, 801 and 802), the newest from
+  2026-06-29. The gate PLAN-LB-58 added correctly fails closed. Options: enable Sonar analysis in CI, or make the provider
+  block resolve `unconfigured` when `sonar.enabled` is false so the gate does not demand an analysis nobody submits. **Correction
+  that follows:** every "Sonar 0" I recorded for this repository's PRs since 2026-06-29 (the LB-95, LB-82 and LB-96 landing
+  records and their epic lines) came from the pre-LB-58 behaviour, which counted issues on whatever the provider returned; as the
+  provider holds no analysis for those PRs, those confirmed zeros can only have read an absent analysis as zero (my inference,
+  from the list above and the confirmed `0` reads I made). Those figures are not evidence of a clean analysis. LB-58's own landing reports confirmed
+  live reads at two heads of PR 1866; I cannot reconcile that with the provider's current list and have not tried to.
+- **HIGH — the gate-truth half of PLAN-LB-55 is still not shipped (PLAN-LB-93 landing, 2026-10-27; NOT STAGED).** LB-93 shipped
+  the push-vs-armed-merge refusal and left D5's second bullet (the participation check inside `pre_merge_gate merge`) and all
+  of D6 (the `step-params` empty-roster error, the stale-bot re-trigger, generated barrier options with no "make the required
+  bot optional", the rate-window loop, the merged-under-authorization record, the merge-anyway mutex re-acquisition, and the two
+  remedies in `branch-cleanup.md` L1041 and L1222). Second deferral (LB-55 first). Needs a plan.
+- **HIGH — `executor-skew` STILL cannot answer in this repository's own lanes (found 2026-10-27 right after the sync of
+  `0.1.2025`; owner PLAN-LB-99, STAGED 2026-10-28 with ONE outline decision rather than a prescribed mechanism: the operator
+  challenged my first idea (derive a version from tree evidence) and the check showed `generate_executor preflight` already
+  answers staleness but regenerates the executor in place when it is stale, so it is not a read-only witness; the candidates are
+  an explicit `not_applicable` verdict for a source checkout, a read-only variant of preflight, or leaving the question).** PLAN-LB-98 is live and correct on a flat install: the installed
+  OpenCode copy reads the stamp (`0.1.2025`), returns `skew` for a `0.1.2021` executor and `match` after regeneration (run here
+  with the installed lane copy called directly). But this checkout's executor maps `runbook_lane` (and every script) to the
+  SOURCE tree (`marketplace/bundles/plan-marshall/skills/runbook-lane/scripts/runbook_lane.py`), so a lane in this repository
+  runs the source copy, whose layout is "nested, no version directory": `could_not_check`, now with the reason `lane text
+  version unknown: no version directory under …/marketplace/bundles/plan-marshall`. The operator will therefore still get the
+  question in every lane of this repository. In a source checkout the executor is generated from the tree, so the real risk is
+  an executor older than the tree's scripts; the tree carries the evidence for that (the `target/{harness}/dist-manifest.json`
+  fingerprints, or a comparison of the executor's script fingerprint with the tree), and nothing reads it. LB-98's own landing
+  records the source-checkout limit ("the reading checkout is a source tree"); my LB-98 spec did not name it and its
+  reproduction (`env OPENCODE=1 …`) ran the source copy, not the flat one, which I presented as the flat copy. Mine to correct.
+- **FIXED IN SOURCE (PLAN-LB-98, #1876, 2026-10-27; LIVE since the sync of `0.1.2025` on flat installs) — `executor-skew` answered
+  `could_not_check` on every flat OpenCode install; high by operator ruling "it is high"; found in the PLAN-LB-95 landing,
+  2026-10-26; asked again by the PLAN-LB-93 lane, 2026-10-27).** Beyond the avoidable question, on the second machine the same verdict sat on a stale executor (`0.1.2010`)
   and hid it. A flat install carries a version witness the check does not read: the sync's `dist-manifest.json` at the install
   root. Earlier text of this entry, written at medium: A flat install has no `{bundle}/{version}` directory, so the lane text version cannot be derived and each
   OpenCode lane asks the operator two questions that cannot change the outcome (LB-95 asked both; regenerating the executor
@@ -2080,7 +2155,8 @@ entries below are OpenCode 1 assumptions in plan-marshall that OpenCode 2 broke.
 
 ## Watches
 
-- **The Sonar analysis-revision gate (PLAN-LB-58) was undecidable for a whole PR (PLAN-LB-97, 2026-10-27).** Eight reads across
+- **ESCALATED to a HIGH Open Defect on 2026-10-27 after PLAN-LB-93 and PLAN-LB-98 repeated it (cause found: CI submits no PR
+  analysis).** The Sonar analysis-revision gate (PLAN-LB-58) was undecidable for a whole PR (PLAN-LB-97, 2026-10-27). Eight reads across
   five heads of PR 1872 answered `undecidable` / `analysis_revision_unavailable` with `head_revision` resolving to
   `origin/main`, i.e. the provider's PR list carried no entry for the pull request. The merge gate blocked on it and the
   operator chose "Merge anyway, gap accepted". LB-58's own PR was confirmed at two heads, so the gate can work. The check list of PR 1872 (re-read after the
@@ -2143,7 +2219,7 @@ entries below are OpenCode 1 assumptions in plan-marshall that OpenCode 2 broke.
   graded on its work, report graded down for the undisclosed shell and clone conduct), LB-55 C+ (3 sessions, 14 h 17 min, `deepseek-v4.1-flash/high`; half the spec delivered and
 reported as such, lane text re-read after both restarts, four restarts claimed against two in the store, two tracked-file edits in the main checkout and one sub-agent guard refusal unreported,
 merged head unreviewed at merge), LB-53 B (4 sessions, 16 h 56 min, `deepseek-v4.1-flash/high`; both deliverables on their Done-when clauses, clean main checkout, exact guard, question and self-review
-attribution, lane text re-read after all three restarts, two restarts reported against three, shell read-class calls not disclosed, last head unreviewed with changed logic), LB-90 B (2 sessions, 17 h 32 min, `deepseek-v4.1-flash/high`; all three deliverables test-first, exact question, sub-agent and guard counts, clean main checkout, 37 executor calls under a spoofed harness identity beyond the operator's answer, last head unreviewed), LB-95 B+ (5 sessions, 11 h 14 min, `deepseek-v4.1-flash/high`; all four deliverables delivered, all six tests then present failing at the base and the seventh mutation-checked, exact question (3), sub-agent (4) and guard (1) counts, clean main checkout, no spoofed identity, required reviewer reviewed the merged head, read-class shell calls 32 against about two dozen, one label contradicting its own failing log), LB-97 B (4 sessions, 15 h 41 min, `deepseek-v4.1-flash/high`; all four deliverables delivered with honest `mutation-after` evidence and cited job logs that exist and show what is claimed, exact question (5), sub-agent (3) and guard (3) counts, no spoofed identity, six real CodeRabbit findings fixed, 18 main-checkout operations at the start, the shared main executor regenerated from a scratch worktree and broken for a concurrent lane, one unreported restart, Sonar never decidable and merged on the operator's override), LB-58 B (5 sessions, 26 h 16 min including an operator pause, `deepseek-v4.1-flash/high`; all four deliverables delivered, evidence logs for D1, D2 and D4 matching exactly, D3's named population tests absent from the cited failing run, one clause unmet where my spec named a SHA the lane does not share, exact question (3) and sub-agent (4) counts, guard refusals 4 against 1 reported, read-class shell calls 3 against 1, clean main checkout, no spoofed identity, two real self-inflicted defects found by CodeRabbit and fixed, the "rebase" instruction handled honestly), LB-96 B+ (4 sessions, 8 h 02 min, `deepseek-v4.1-flash/high`; three of four deliverables as written and the fourth reported as unmet where my spec was wrong, all seven cited logs matching, exact guard (5), question (2) and sub-agent (3) counts, clean main checkout after one disclosed and reverted main-checkout edit, no spoofed identity, CodeRabbit reviewed the second-to-last head and re-triggered after the last push, read-class shell calls understated, residue honestly listed), LB-82 B (6 sessions, 14 h 39 min, `deepseek-v4.1-flash/high`; all four deliverables delivered, `mutation-after` for D1 to D3 and test-first for D4 with the four failing logs matching the PR body, exact question (4), sub-agent (5), read-class shell (4) and guard (0) counts, clean main checkout, no spoofed identity, honest self-report of its shell deviations, reviewer state at the final head misreported and one Minor thread merged open), LB-94 B (4 sessions, 8 h 02 min, `deepseek-v4.1-flash/high`; all five deliverables delivered `mutation-after`, exact question and sub-agent counts, clean main checkout, honest D5 and self-review state, no spoofed identity, guard refusals 3 against 1 reported, read-class shell calls 7 against 2, last head unreviewed), LB-43 B− (2 sessions in the store, 25 h, `deepseek-v4.1-flash/high`; lane text re-read after
+attribution, lane text re-read after all three restarts, two restarts reported against three, shell read-class calls not disclosed, last head unreviewed with changed logic), LB-90 B (2 sessions, 17 h 32 min, `deepseek-v4.1-flash/high`; all three deliverables test-first, exact question, sub-agent and guard counts, clean main checkout, 37 executor calls under a spoofed harness identity beyond the operator's answer, last head unreviewed), LB-95 B+ (5 sessions, 11 h 14 min, `deepseek-v4.1-flash/high`; all four deliverables delivered, all six tests then present failing at the base and the seventh mutation-checked, exact question (3), sub-agent (4) and guard (1) counts, clean main checkout, no spoofed identity, required reviewer reviewed the merged head, read-class shell calls 32 against about two dozen, one label contradicting its own failing log), LB-98 B+ (5 sessions, 5 h 37 min, `deepseek-v4.1-flash/high`; all three deliverables delivered with ten red tests in the cited job log, the fail-open case caught by the lane, exact question (3), sub-agent (4), guard (3 of 3) and read-class shell (8 of 8) counts, no restart, no main-checkout edit, CodeRabbit reviewed the merged head, a revert-after run labelled test-first, Sonar merged on the operator's override), LB-93 C+ (1 session and no self-review sub-agent, 5 h 25 min, `deepseek-v4.1-flash/high`; four of six deliverables delivered and verified, D5 half, D6 not started, the self-review skipped and reported as a rule break, exact question (3) and guard (1 of 1) counts, read-class shell calls understated, no restart, no main-checkout edit, honest account of its own state), LB-97 B (4 sessions, 15 h 41 min, `deepseek-v4.1-flash/high`; all four deliverables delivered with honest `mutation-after` evidence and cited job logs that exist and show what is claimed, exact question (5), sub-agent (3) and guard (3) counts, no spoofed identity, six real CodeRabbit findings fixed, 18 main-checkout operations at the start, the shared main executor regenerated from a scratch worktree and broken for a concurrent lane, one unreported restart, Sonar never decidable and merged on the operator's override), LB-58 B (5 sessions, 26 h 16 min including an operator pause, `deepseek-v4.1-flash/high`; all four deliverables delivered, evidence logs for D1, D2 and D4 matching exactly, D3's named population tests absent from the cited failing run, one clause unmet where my spec named a SHA the lane does not share, exact question (3) and sub-agent (4) counts, guard refusals 4 against 1 reported, read-class shell calls 3 against 1, clean main checkout, no spoofed identity, two real self-inflicted defects found by CodeRabbit and fixed, the "rebase" instruction handled honestly), LB-96 B+ (4 sessions, 8 h 02 min, `deepseek-v4.1-flash/high`; three of four deliverables as written and the fourth reported as unmet where my spec was wrong, all seven cited logs matching, exact guard (5), question (2) and sub-agent (3) counts, clean main checkout after one disclosed and reverted main-checkout edit, no spoofed identity, CodeRabbit reviewed the second-to-last head and re-triggered after the last push, read-class shell calls understated, residue honestly listed), LB-82 B (6 sessions, 14 h 39 min, `deepseek-v4.1-flash/high`; all four deliverables delivered, `mutation-after` for D1 to D3 and test-first for D4 with the four failing logs matching the PR body, exact question (4), sub-agent (5), read-class shell (4) and guard (0) counts, clean main checkout, no spoofed identity, honest self-report of its shell deviations, reviewer state at the final head misreported and one Minor thread merged open), LB-94 B (4 sessions, 8 h 02 min, `deepseek-v4.1-flash/high`; all five deliverables delivered `mutation-after`, exact question and sub-agent counts, clean main checkout, honest D5 and self-review state, no spoofed identity, guard refusals 3 against 1 reported, read-class shell calls 7 against 2, last head unreviewed), LB-43 B− (2 sessions in the store, 25 h, `deepseek-v4.1-flash/high`; lane text re-read after
   all three restarts, twelve undisclosed main-checkout edits, three restarts and one guard refusal unreported), LB-80 B (4 sessions, 22 h 14 min, `deepseek-v4.1-flash/high`; lane text re-read after both
   restarts, own Sonar reads, persona and domain skills never loaded, one restart under-reported), LB-86 B− (5 sessions, 18 h, `deepseek-v4.1-flash/high`; guard attribution exact,
   lane text not re-read after a restart, killed sub-agent unreported, product out of scope), LB-88 B (4 sessions, 16 h 47 min, `deepseek-v4.1-flash/high`

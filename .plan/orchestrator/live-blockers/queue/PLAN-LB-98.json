@@ -2,10 +2,10 @@
   "id": "PLAN-LB-98",
   "slug": "flat-install-executor-skew",
   "workstream": "WS-04",
-  "status": "staged",
+  "status": "shipped",
   "lane": "runbook",
-  "plan_marshall_plan_id": "",
-  "pr": "",
-  "landing": "",
+  "plan_marshall_plan_id": "rb-lb-98-flat-install-executor-skew",
+  "pr": "1876",
+  "landing": "landings/PLAN-LB-98.md",
   "seq": 98
 }

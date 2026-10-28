@@ -2,10 +2,10 @@
   "id": "PLAN-LB-93",
   "slug": "flat-install-generator-bootstrap",
   "workstream": "WS-04",
-  "status": "staged",
+  "status": "shipped",
   "lane": "runbook",
-  "plan_marshall_plan_id": "",
-  "pr": "",
-  "landing": "",
+  "plan_marshall_plan_id": "rb-lb-93-flat-install-generator-bootstrap",
+  "pr": "1874",
+  "landing": "landings/PLAN-LB-93.md",
   "seq": 93
 }
