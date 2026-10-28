@@ -717,9 +717,13 @@ def _incomplete_reason(checked: dict[str, Any]) -> str | None:
         return None
     unproven = [str(bot) for bot in (checked.get('unproven_bots') or [])]
     if unproven:
-        return f'the predicate leaves these required reviewers unproven: {", ".join(unproven)}'
+        return (
+            'the predicate leaves '
+            + ('one required reviewer' if len(unproven) == 1 else f'{len(unproven)} required reviewers')
+            + ' unproven'
+        )
     return (
-        'the predicate reports an incomplete required review with no unproven bot: a required '
+        'the predicate reports an incomplete required review with no unproven reviewer: a required '
         'finding is still pending after triage'
     )
 
@@ -1062,10 +1066,13 @@ def record_merge(
     mechanism behind that rule — the doc keeps the specification, the script
     produces the string from the facts it was handed.
 
-    Refusals are invocation-shaped (``refusal_category: invocation``): a record
-    missing a required fact, a ``merge_state`` other than ``merged``, an unknown
-    mechanism or action (so no clause exists), a queue-path record carrying an
-    ``action`` the route cannot have produced, and an over-long rendering. Nothing is
+    Refusals are invocation-shaped (``refusal_category: invocation``): a malformed fact,
+    a record missing ``merge_mechanism`` / ``merge_state`` / ``cleanup_owed`` /
+    ``work_performed``, a ``merge_state`` other than ``merged``, an unknown mechanism or
+    action (so no clause exists), an action contradicting its route — a queue record
+    carrying one, or a direct record omitting the rebase facts every direct route
+    observes — and an over-long rendering. Every rule binds BOTH renderings, so a
+    granted record cannot smuggle in a fact the clean one would reject. Nothing is
     written in any of them.
     """
 
@@ -1125,10 +1132,10 @@ def record_merge(
         )
 
     try:
-        if grant_kind is not None:
-            display_detail = _checked_detail(merge_step_detail(grant_kind))
-        else:
-            display_detail = _checked_detail(clean_merge_step_detail(action, merge_mechanism))
+        # The vocabulary is validated for BOTH renderings: an unknown mechanism or action
+        # names no clause, so a granted record carrying one would be written unexamined.
+        clean_detail = clean_merge_step_detail(action, merge_mechanism)
+        display_detail = _checked_detail(merge_step_detail(grant_kind) if grant_kind is not None else clean_detail)
     except ValueError as exc:
         return _refuse('display_detail_invalid', str(exc))
 

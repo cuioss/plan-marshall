@@ -1177,8 +1177,19 @@ def test_record_merge_refuses_an_incoherent_record_and_writes_nothing(facts, exp
             ['merge_mechanism=pr_safe_merge', 'merge_state=merged', 'cleanup_owed=false', 'work_performed=true'],
             'action_required_on_direct_route',
         ),
+        (
+            [
+                'action=rebased',
+                'upstream_commit_count=1',
+                'merge_mechanism=squash',
+                'merge_state=merged',
+                'cleanup_owed=false',
+                'work_performed=true',
+            ],
+            'display_detail_invalid',
+        ),
     ],
-    ids=['granted-action-on-queue', 'granted-no-action-on-direct-route'],
+    ids=['granted-action-on-queue', 'granted-no-action-on-direct-route', 'granted-unknown-mechanism'],
 )
 def test_the_route_action_rules_also_bind_the_authorized_rendering(facts, expected_error):
     """Branch E is not exempt from the coherence rules: the FACTS must be able to be true."""
@@ -1193,6 +1204,26 @@ def test_the_route_action_rules_also_bind_the_authorized_rendering(facts, expect
 
     assert written == []
     assert result['error'] == expected_error
+
+
+def test_a_granted_queue_record_is_accepted():
+    """Positive control for the granted path: a coherent queue record still renders Branch E."""
+    written: list[list[str]] = []
+
+    result = gate.record_merge(
+        _PLAN_ID,
+        facts=[
+            'merge_mechanism=merge_queue',
+            'merge_state=merged',
+            'cleanup_owed=false',
+            'work_performed=true',
+        ],
+        grant_kind='barrier-ask-override',
+        mark_done_runner=lambda argv: written.append(list(argv)) or {'status': 'success'},
+    )
+
+    assert result['display_detail'] == 'merged under barrier-ask-override, gap recorded'
+    assert len(written) == 1
 
 
 def test_a_rerouted_direct_merge_records_its_rebase():
