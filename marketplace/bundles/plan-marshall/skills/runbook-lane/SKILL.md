@@ -167,9 +167,9 @@ or an `unknown_verb`/argparse rejection that shows the executor predates this te
 **blocked**, naming both versions and the remedy: regenerate the executor (`/marshall-steward`, or
 the project's equivalent generate step). A `could_not_check` (the executor is unreadable, its
 version is absent, or the lane text's own version cannot be derived) is reported as **could not
-check** and the operator is asked; it is never read as no skew. A `not_applicable` — a source
-checkout, where the executor dispatches the checkout's own scripts — proceeds without asking and is
-recorded in the landing. The check cannot live inside
+check** and the operator is asked; it is never read as no skew. A `not_applicable` (a source
+checkout; § executor-skew says why it is safe, and what it leaves uncovered) proceeds without asking
+and is recorded in the landing. The check cannot live inside
 `resolve`: a stale executor runs the stale `resolve`, which is exactly the code that lacks it, while
 this text is loaded from the installed plugin and is current when the executor is not.
 

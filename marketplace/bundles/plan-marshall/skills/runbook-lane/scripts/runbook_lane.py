@@ -627,21 +627,21 @@ def _unreadable_lane_text_reason(skill_dir: Path | None = None) -> str:
     return 'lane text version unknown: no versioned install and no flat install stamp above the lane text'
 
 
-def _probe_is_running_lane_tree(probe: Path | None) -> bool:
-    """Whether *probe* is the bundle this very script is running from.
+def _probe_is_running_lane_tree(skill_dir: Path | None) -> bool:
+    """Whether the probed lane skill directory IS the one this script runs from.
 
     This is the mapping check the ``not_applicable`` verdict rests on: the
     executor dispatches this notation to a file, and that file IS this script, so
-    the executor's mapping is the probed checkout's own copy exactly when this
-    script lives inside it. A source checkout probed from elsewhere is a
-    different tree whose lane text may name a verb this run's script lacks, and
-    excusing it would report a comparison nobody made — so the verdict is
-    withheld there.
+    the executor's mapping is the probed checkout's own copy exactly when the
+    probed skill directory is the script's own. Bundle containment is not enough —
+    another skill in the same bundle is unrelated text this run does not execute,
+    and excusing it would report a comparison nobody made. So is a source checkout
+    probed from a different tree: its lane text may name a verb this run's mapped
+    script lacks.
     """
-    if probe is None:
-        return False
+    probed = skill_dir or _lane_skill_dir()
     try:
-        return _lane_skill_dir().is_relative_to(probe.resolve())
+        return probed.resolve() == _lane_skill_dir()
     except OSError:
         return False
 
@@ -705,7 +705,7 @@ def _executor_skew(executor: Path, lane_skill_dir: Path | None = None, target: s
     # keeps the fail-closed verdict.
     if lane_version is None:
         probe = _lane_version_probe(lane_skill_dir)
-        if probe.layout == _LANE_LAYOUT_SOURCE_CHECKOUT and _probe_is_running_lane_tree(probe.probe):
+        if probe.layout == _LANE_LAYOUT_SOURCE_CHECKOUT and _probe_is_running_lane_tree(lane_skill_dir):
             return _EXECUTOR_SKEW_NOT_APPLICABLE
     return _EXECUTOR_SKEW_UNCHECKED
 

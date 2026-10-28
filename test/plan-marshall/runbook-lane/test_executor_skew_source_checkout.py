@@ -118,6 +118,19 @@ def test_a_source_checkout_this_run_does_not_execute_cannot_check(tmp_path: Path
     assert 'is not the checkout this run executes' in str(data['reason'])
 
 
+def test_another_skill_in_the_same_bundle_is_not_excused(tmp_path: Path) -> None:
+    """Bundle membership is not enough: only the skill directory this run executes counts."""
+    lane = _source_checkout(tmp_path)
+    sibling = lane.parent / 'other-lane'
+    sibling.mkdir()
+    (sibling / 'SKILL.md').write_text('---\nname: other-lane\n---\n\n# Other Lane\n', encoding='utf-8')
+
+    data = _skew_result(_executor(tmp_path, '0.1.2025'), sibling)
+
+    assert data['verdict'] == 'could_not_check'
+    assert 'is not the checkout this run executes' in str(data['reason'])
+
+
 def test_source_checkout_is_probed_not_assumed(tmp_path: Path) -> None:
     """The layout comes from the bundle's own shape, not from its directory name."""
     lane = _source_checkout(tmp_path)
