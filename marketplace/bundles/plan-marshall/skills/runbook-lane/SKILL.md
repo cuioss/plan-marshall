@@ -32,7 +32,7 @@ The canonical argparse surface for `runbook_lane.py`.
 ```bash
 python3 .plan/execute-script.py plan-marshall:runbook-lane:runbook_lane resolve \
   --spec .plan/orchestrator/{slug}/plans/PLAN-NN-{slug}.md \
-  [--project-dir DIR] [--spec-from-ledger]
+  [--project-dir DIR]
 ```
 
 Resolves the epic slug, the derived names, the build commands, the required and optional reviewers
@@ -40,9 +40,11 @@ with their trigger comments, the commit trailer, the harness and guard state, th
 preflight state (`build_server`, plus `build_server_reason` when it is `down`), the Sonar state
 (`sonar`, plus `sonar_project_key` when it is `configured`) and the `inbox write`
 command. `--project-dir` defaults to the current directory and anchors every project-scoped read.
-`--spec-from-ledger` reads the named spec from the shared ledger worktree first and falls back to the
-main checkout; the result always carries `spec_source` (`ledger_worktree` | `main_checkout`), plus
-`spec_differ: true` when both copies exist and differ.
+The spec read is worktree-first: the shared ledger worktree's copy is read when it exists and the
+main checkout's is the fallback. The result always carries `spec_source` (`ledger_worktree` |
+`main_checkout`), plus `spec_differ: true` when both copies exist and differ.
+`--spec-from-ledger` is accepted as a documented no-op: it names the read the default makes, so a
+command line that carries it behaves exactly as one that does not.
 Fails closed with a specific error code for a spec outside the orchestrator tree, an unreadable
 configuration, an unreadable Sonar block (`sonar_config_unreadable`) or a Sonar block with no
 project key (`sonar_config_incomplete`), a missing automatic-review
@@ -178,19 +180,21 @@ generated file does not depend on which harness generated it, and a call from an
 and dispatches. Only a changed script set or a stale version justifies a regeneration — never the
 fact that another harness last wrote the file.
 
-Read the spec from the **main checkout** by default; it is git-tracked there. Add
-`--spec-from-ledger` to read it from the shared ledger worktree first —
+The spec is read from the **shared ledger worktree** first —
 `{epic_dir}/plans/{spec name}`, where `epic_dir` follows the same store seam
-`orchestrator resolve-path --slug {slug}` publishes — falling back to the main checkout's copy when
-the worktree holds none. The flag is set per emit, so a round of emits needs no ledger land; with
-`orchestrator.use_worktree` off there is no second copy and it is a no-op rather than an error.
+`orchestrator resolve-path --slug {slug}` publishes — and the main checkout's copy only when the
+worktree holds none. That worktree-first order is the default, so an emitted command needs no flag
+and no ledger land between a spec edit and the emit; with `orchestrator.use_worktree` off there is
+no second copy and the one copy is read without error. `--spec-from-ledger` is accepted as a
+documented no-op: it names the read the default makes, so a command line that carries it behaves
+exactly as one that does not.
 `resolve` reports which copy it read (`spec_source`) and, when both copies exist and differ, the
-`spec_differ` marker, so a read of the older copy is never silent. The worktree copy is READ ONLY
-either way. Then **resolve** every value the run uses, and read the result before doing anything
-else:
+`spec_differ` marker — "the copy NOT read says something else", which is now the main checkout's
+copy — so a read of the older copy is never silent. The worktree copy is READ ONLY either way. Then
+**resolve** every value the run uses, and read the result before doing anything else:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:runbook-lane:runbook_lane resolve --spec {spec} [--spec-from-ledger]
+python3 .plan/execute-script.py plan-marshall:runbook-lane:runbook_lane resolve --spec {spec}
 ```
 
 The result supplies, and nothing below is spelled from anywhere else:

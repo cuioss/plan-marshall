@@ -11,7 +11,7 @@ so the lane contract itself carries no project-specific literal.
 
 Verb surface::
 
-    runbook_lane resolve --spec PATH [--project-dir DIR] [--spec-from-ledger]
+    runbook_lane resolve --spec PATH [--project-dir DIR]
     runbook_lane executor-skew [--executor PATH] [--lane-dir DIR]
     runbook_lane build-routing --worktree PATH
     runbook_lane build-classify --paths P1,P2 [--project-dir DIR]
@@ -25,15 +25,20 @@ to run a staged orchestrator plan, and a path outside that tree names something
 else. ``--project-dir`` defaults to the current directory and anchors every
 project-scoped read (marshal.json, the project architecture, the guard marker).
 
-``--spec-from-ledger`` reads that same logical spec from the shared ledger
-worktree first — ``{epic_dir}/plans/{spec name}``, where ``epic_dir`` follows the
-store seam the orchestrator publishes — and falls back to the main checkout's copy
-when the worktree holds none. The flag is set per emit, so a round of emits needs
-no ledger land; with ``orchestrator.use_worktree`` off there is no second copy and
-the flag is a no-op rather than an error. ``resolve`` always reports which copy it
-read (``spec_source``: ``ledger_worktree`` | ``main_checkout``) and, when both
-copies exist and differ, ``spec_differ: true`` — the marker a silent read of the
-older copy would leave out.
+``--spec`` names that staged spec LOGICALLY: the read is worktree-first by
+default. The shared ledger worktree's copy —
+``{epic_dir}/plans/{spec name}``, where ``epic_dir`` follows the store seam the
+orchestrator publishes — wins when it exists, and the main checkout's copy is the
+fallback when the worktree holds none. Every spec edit lives only in that worktree
+until a ledger land, so this default is what lets an emitted command carry no flag
+and need no land. With ``orchestrator.use_worktree`` off there is no second copy
+and the one copy is read without error. ``--spec-from-ledger`` is accepted as a
+documented no-op: it names the read the default makes, so a command line that
+carries it behaves exactly as one that does not. ``resolve`` always reports which
+copy it read (``spec_source``: ``ledger_worktree`` | ``main_checkout``) and, when
+both copies exist and differ, ``spec_differ: true`` — "the copy NOT read says
+something else", which is the main checkout's copy when the worktree's was read,
+and the marker a read of the older copy would otherwise leave out.
 
 **Fail closed.** An empty ``required_bots`` list, a missing automatic-review
 step, an unreadable ``marshal.json``, an unreadable Sonar block
@@ -201,7 +206,7 @@ def _ledger_store_dir() -> Path | None:
         return None
 
 
-def _staged_spec_shape(spec: Path, project_dir: Path, *, from_ledger: bool) -> tuple[str, str]:
+def _staged_spec_shape(spec: Path, project_dir: Path) -> tuple[str, str]:
     """Return ``(slug, file name)`` for a spec path, or refuse it.
 
     The file name carries its ``.md`` extension, because the caller rebuilds both
@@ -210,10 +215,11 @@ def _staged_spec_shape(spec: Path, project_dir: Path, *, from_ledger: bool) -> t
 
     The project-relative path is matched as a WHOLE against :data:`_SPEC_RE`, so a
     same-shaped file nested elsewhere (an archive, a fixture tree) never
-    qualifies. Under the ledger flag one further spelling is accepted: a path
-    inside the ledger worktree's own store, which is exactly the form a caller
-    reaches for when the worktree copy is the one it wants. Every other path is
-    the ``spec_outside_orchestrator`` refusal.
+    qualifies. A second spelling is accepted beside it: a path inside the ledger
+    worktree's own store, which is exactly the form a caller reaches for when the
+    worktree copy is the one it wants — accepted with no flag, because the
+    worktree-first read is the default. Every other path is the
+    ``spec_outside_orchestrator`` refusal.
     """
     try:
         relative = spec.resolve().relative_to(project_dir.resolve())
@@ -223,17 +229,16 @@ def _staged_spec_shape(spec: Path, project_dir: Path, *, from_ledger: bool) -> t
         match = _SPEC_RE.fullmatch(relative.as_posix())
         if match is not None:
             return match.group('slug'), f'{match.group("name")}.md'
-    if from_ledger:
-        store = _ledger_store_dir()
-        if store is not None:
-            try:
-                inside = spec.resolve().relative_to(store.resolve())
-            except ValueError:
-                inside = None
-            if inside is not None:
-                match = _SPEC_RE.fullmatch(f'{PLAN_DIR_NAME}/{inside.as_posix()}')
-                if match is not None:
-                    return match.group('slug'), f'{match.group("name")}.md'
+    store = _ledger_store_dir()
+    if store is not None:
+        try:
+            inside = spec.resolve().relative_to(store.resolve())
+        except ValueError:
+            inside = None
+        if inside is not None:
+            match = _SPEC_RE.fullmatch(f'{PLAN_DIR_NAME}/{inside.as_posix()}')
+            if match is not None:
+                return match.group('slug'), f'{match.group("name")}.md'
     raise ValueError('spec_outside_orchestrator')
 
 
@@ -273,18 +278,19 @@ def _contained_file(path: Path, root: Path) -> bool:
         return False
 
 
-def _resolve_spec(spec_value: str, project_dir: Path, *, from_ledger: bool = False) -> _SpecChoice:
+def _resolve_spec(spec_value: str, project_dir: Path) -> _SpecChoice:
     """Validate ``--spec`` and select the copy of it to read.
 
     A RELATIVE spec is resolved against ``--project-dir``, not against the
     process's working directory: the flag names the project the whole resolution
     is about, so a caller that passes both must get the spec file it named.
 
-    Without the flag this is the unchanged read — the main checkout's copy, and
-    ``invalid_spec`` when it holds none. With it the ledger worktree's copy wins
-    when it exists and the main checkout's is the fallback, so a spec that exists
-    only in the worktree is readable. The choice is reported as ``source``, and
-    ``differs`` says whether the copy NOT read would have answered differently.
+    The read is WORKTREE-FIRST: the ledger worktree's copy wins when it exists, so
+    a spec that exists only in the worktree is readable by default, and the main
+    checkout's copy is the fallback for a spec the worktree does not hold —
+    ``invalid_spec`` when neither exists. The choice is reported as ``source``, and
+    ``differs`` says whether the copy NOT read would have answered differently
+    (the main checkout's copy, when the worktree's was read).
 
     Raised as ``ValueError`` carrying the refusal code so the caller can emit a
     structured error rather than a traceback.
@@ -292,13 +298,13 @@ def _resolve_spec(spec_value: str, project_dir: Path, *, from_ledger: bool = Fal
     spec = Path(spec_value)
     if not spec.is_absolute():
         spec = project_dir / spec
-    slug, name = _staged_spec_shape(spec, project_dir, from_ledger=from_ledger)
+    slug, name = _staged_spec_shape(spec, project_dir)
 
     main_store = _main_store_dir(project_dir)
     main_copy = main_store / 'orchestrator' / slug / 'plans' / name
-    # The ledger copy is resolved on BOTH paths: the flag decides whether it is
-    # READ, while the differ marker exists precisely to report a default read that
-    # left the newer copy unread.
+    # Both copies are resolved on every path: which one is READ is the default
+    # order's decision, while the differ marker exists to report a read that left
+    # the other copy unread.
     ledger_copy: Path | None = None
     store = _ledger_store_dir()
     if store is not None:
@@ -306,16 +312,15 @@ def _resolve_spec(spec_value: str, project_dir: Path, *, from_ledger: bool = Fal
         if _contained_file(candidate, store):
             ledger_copy = candidate
 
-    if from_ledger and ledger_copy is not None:
+    if ledger_copy is not None:
         chosen, source = ledger_copy, 'ledger_worktree'
     elif _contained_file(main_copy, main_store):
         chosen, source = main_copy, 'main_checkout'
     elif spec.is_file():
         # The caller named the ONLY copy. It survived the shape check above, so it
-        # is either the main checkout's own file or, under the flag, the ledger
-        # worktree's. The LABEL comes from where the file actually resolves, never
-        # from the flag alone: the flag says which copy to prefer, and a sole copy
-        # outside the ledger store is not one.
+        # is either the main checkout's own file or one in the ledger worktree's
+        # store. The LABEL comes from where the file actually resolves, never from
+        # the order alone: a sole copy outside the ledger store is not one.
         chosen = spec.resolve()
         source = 'ledger_worktree' if store is not None and _contained_file(chosen, store) else 'main_checkout'
     else:
@@ -2077,7 +2082,7 @@ def cmd_resolve(args: argparse.Namespace) -> dict[str, Any]:
     project_dir = Path(getattr(args, 'project_dir', '.') or '.').resolve()
 
     try:
-        choice = _resolve_spec(args.spec, project_dir, from_ledger=getattr(args, 'spec_from_ledger', False))
+        choice = _resolve_spec(args.spec, project_dir)
     except ValueError as exc:
         return {'status': 'error', 'error': str(exc), 'spec': args.spec}
     spec, slug, plan_id = choice.path, choice.slug, choice.plan_id
@@ -2234,7 +2239,10 @@ def main() -> int:
         '--spec-from-ledger',
         dest='spec_from_ledger',
         action='store_true',
-        help='Read the spec from the shared ledger worktree first, falling back to the main checkout',
+        help=(
+            'Accepted for compatibility and now a no-op: reading the spec from the shared ledger '
+            'worktree first, then the main checkout, is the default'
+        ),
     )
 
     skew_parser = subparsers.add_parser(

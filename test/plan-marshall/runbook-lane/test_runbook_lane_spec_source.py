@@ -3,10 +3,12 @@
 """Which copy of a staged spec ``resolve`` reads, and what it says about it.
 
 With ``orchestrator.use_worktree`` on, every spec edit lives only in the shared
-ledger worktree until a ledger land, so a lane that always reads the main
-checkout can run a spec other than the one the orchestrator reports. ``resolve``
-therefore takes ``--spec-from-ledger``: read the ledger worktree's copy first,
-fall back to the main checkout's. The default is unchanged.
+ledger worktree until a ledger land, so a lane that always read the main checkout
+could run a spec other than the one the orchestrator reports. The read is
+therefore WORKTREE-FIRST by default: the ledger worktree's copy wins when it
+exists, and the main checkout's copy is the fallback. ``--spec-from-ledger`` is
+still accepted and is a documented no-op — it names the read the default already
+makes, so a command emitted for an earlier lane text keeps running.
 
 The two copies carry DIFFERENT deliverable titles in these fixtures, so an
 assertion on the parsed output proves which BODY was read, not merely which path
@@ -145,126 +147,67 @@ def _titles(data: dict[str, Any]) -> list[str]:
     return [row['title'] for row in data['deliverables']]
 
 
+def _lane_text() -> str:
+    return _SKILL_TEXT.read_text(encoding='utf-8')
+
+
 # =============================================================================
-# D1 — the parameter, and which copy it reads
+# D1 — the default read order: the ledger worktree, then the main checkout
 # =============================================================================
 
 
-def test_default_reads_the_main_checkout_copy(tmp_path: Path) -> None:
-    """With the flag absent the lane reads the main checkout, exactly as before."""
+def test_default_reads_the_ledger_worktree_copy(tmp_path: Path) -> None:
+    """With the flag absent the lane reads the worktree's body, not the main checkout's."""
     _seed_copies(tmp_path, use_worktree=True, main_body=_spec_body(MAIN_TITLE), ledger_body=_spec_body(LEDGER_TITLE))
 
     data = _run_resolve(tmp_path, SPEC_REL)
-
-    assert data['status'] == 'success', data
-    assert _titles(data) == [MAIN_TITLE]
-
-
-def test_spec_from_ledger_reads_the_worktree_copy(tmp_path: Path) -> None:
-    """The flag reads the ledger worktree's body, not the main checkout's."""
-    _seed_copies(tmp_path, use_worktree=True, main_body=_spec_body(MAIN_TITLE), ledger_body=_spec_body(LEDGER_TITLE))
-
-    data = _run_resolve(tmp_path, SPEC_REL, from_ledger=True)
 
     assert data['status'] == 'success', data
     assert _titles(data) == [LEDGER_TITLE]
     assert data['spec'] == _ledger_spec(tmp_path).as_posix()
 
 
-def test_spec_only_in_the_ledger_is_read_under_the_flag_and_refused_by_default(tmp_path: Path) -> None:
-    """A worktree-only spec is exactly the case the flag exists for."""
+def test_a_spec_only_in_the_ledger_is_read_by_default(tmp_path: Path) -> None:
+    """A worktree-only spec is exactly the case the default order has to reach."""
     _seed_copies(tmp_path, use_worktree=True, main_body=None, ledger_body=_spec_body(LEDGER_TITLE))
 
-    refused = _run_resolve(tmp_path, SPEC_REL)
-    assert refused['status'] == 'error'
-    assert refused['error'] == 'invalid_spec'
+    data = _run_resolve(tmp_path, SPEC_REL)
 
-    data = _run_resolve(tmp_path, SPEC_REL, from_ledger=True)
     assert data['status'] == 'success', data
     assert _titles(data) == [LEDGER_TITLE]
+
+
+def test_a_spec_only_in_the_main_checkout_is_read_by_default(tmp_path: Path) -> None:
+    """The main checkout stays the fallback, so its copy is never lost."""
+    _seed_copies(tmp_path, use_worktree=True, main_body=_spec_body(MAIN_TITLE), ledger_body=None)
+
+    data = _run_resolve(tmp_path, SPEC_REL)
+
+    assert data['status'] == 'success', data
+    assert _titles(data) == [MAIN_TITLE]
+    assert data['spec_source'] == 'main_checkout'
+
+
+def test_use_worktree_off_reads_the_one_copy(tmp_path: Path) -> None:
+    """With no ledger worktree there is one copy, read without error."""
+    _seed_copies(tmp_path, use_worktree=False, main_body=_spec_body(MAIN_TITLE), ledger_body=None)
+
+    data = _run_resolve(tmp_path, SPEC_REL)
+
+    assert data['status'] == 'success', data
+    assert _titles(data) == [MAIN_TITLE]
+    assert data['spec_source'] == 'main_checkout'
 
 
 def test_the_ledger_copy_is_readable_by_its_own_absolute_path(tmp_path: Path) -> None:
-    """A worktree path refused by default is readable under the flag."""
+    """The shape check accepts the ledger store's form without any flag."""
     _seed_copies(tmp_path, use_worktree=True, main_body=_spec_body(MAIN_TITLE), ledger_body=_spec_body(LEDGER_TITLE))
 
-    refused = _run_resolve(tmp_path, str(_ledger_spec(tmp_path)))
-    assert refused['status'] == 'error'
-    assert refused['error'] == 'spec_outside_orchestrator'
+    data = _run_resolve(tmp_path, str(_ledger_spec(tmp_path)))
 
-    data = _run_resolve(tmp_path, str(_ledger_spec(tmp_path)), from_ledger=True)
     assert data['status'] == 'success', data
     assert _titles(data) == [LEDGER_TITLE]
-
-
-def test_flag_is_a_no_op_with_use_worktree_off(tmp_path: Path) -> None:
-    """With no ledger worktree there is one copy, and the flag is not an error."""
-    _seed_copies(tmp_path, use_worktree=False, main_body=_spec_body(MAIN_TITLE), ledger_body=None)
-
-    data = _run_resolve(tmp_path, SPEC_REL, from_ledger=True)
-
-    assert data['status'] == 'success', data
-    assert _titles(data) == [MAIN_TITLE]
-
-
-# =============================================================================
-# D2 — the result says which copy was read
-# =============================================================================
-
-
-def test_resolve_reports_the_copy_it_read(tmp_path: Path) -> None:
-    """Each mode names its own source, and the flag's source is the worktree."""
-    _seed_copies(tmp_path, use_worktree=True, main_body=_spec_body(MAIN_TITLE), ledger_body=_spec_body(LEDGER_TITLE))
-
-    main_read = _run_resolve(tmp_path, SPEC_REL)
-    ledger_read = _run_resolve(tmp_path, SPEC_REL, from_ledger=True)
-
-    assert main_read['spec_source'] == 'main_checkout'
-    assert ledger_read['spec_source'] == 'ledger_worktree'
-
-
-def test_two_differing_copies_carry_the_differ_marker(tmp_path: Path) -> None:
-    """A silent read of the older copy is what the marker removes."""
-    _seed_copies(tmp_path, use_worktree=True, main_body=_spec_body(MAIN_TITLE), ledger_body=_spec_body(LEDGER_TITLE))
-
-    main_read = _run_resolve(tmp_path, SPEC_REL)
-    ledger_read = _run_resolve(tmp_path, SPEC_REL, from_ledger=True)
-
-    assert main_read.get('spec_differ') is True
-    assert ledger_read.get('spec_differ') is True
-
-
-def test_a_single_copy_carries_no_differ_marker(tmp_path: Path) -> None:
-    """One copy cannot differ from itself, so the marker is absent rather than false."""
-    _seed_copies(tmp_path, use_worktree=True, main_body=_spec_body(MAIN_TITLE), ledger_body=None)
-
-    data = _run_resolve(tmp_path, SPEC_REL, from_ledger=True)
-
-    assert data['status'] == 'success', data
-    assert _titles(data) == [MAIN_TITLE]
-    assert data['spec_source'] == 'main_checkout'
-    assert 'spec_differ' not in data
-
-
-def test_identical_copies_carry_no_differ_marker(tmp_path: Path) -> None:
-    """Two copies that agree are not a discrepancy worth reporting."""
-    body = _spec_body(MAIN_TITLE)
-    _seed_copies(tmp_path, use_worktree=True, main_body=body, ledger_body=body)
-
-    data = _run_resolve(tmp_path, SPEC_REL, from_ledger=True)
-
-    assert data['status'] == 'success', data
-    assert 'spec_differ' not in data
-
-
-def test_the_no_op_mode_reports_one_copy_and_no_marker(tmp_path: Path) -> None:
-    """A project with no second copy reports the main checkout and no differ marker."""
-    _seed_copies(tmp_path, use_worktree=False, main_body=_spec_body(MAIN_TITLE), ledger_body=None)
-
-    data = _run_resolve(tmp_path, SPEC_REL, from_ledger=True)
-
-    assert data['spec_source'] == 'main_checkout'
-    assert 'spec_differ' not in data
+    assert data['spec_source'] == 'ledger_worktree'
 
 
 def test_the_knob_gate_ignores_a_ledger_copy_left_on_disk(tmp_path: Path) -> None:
@@ -276,10 +219,112 @@ def test_the_knob_gate_ignores_a_ledger_copy_left_on_disk(tmp_path: Path) -> Non
         ledger_body=_spec_body(LEDGER_TITLE),
     )
 
+    data = _run_resolve(tmp_path, SPEC_REL)
+
+    assert data['status'] == 'success', data
+    assert _titles(data) == [MAIN_TITLE]
+    assert data['spec_source'] == 'main_checkout'
+    assert 'spec_differ' not in data
+
+
+# =============================================================================
+# D2 — the flag stays accepted and means what the default now means
+# =============================================================================
+
+
+def test_the_flag_means_what_the_default_means(tmp_path: Path) -> None:
+    """An old emitted command carrying the flag reads the same copy the default reads."""
+    _seed_copies(tmp_path, use_worktree=True, main_body=_spec_body(MAIN_TITLE), ledger_body=_spec_body(LEDGER_TITLE))
+
+    plain = _run_resolve(tmp_path, SPEC_REL)
+    flagged = _run_resolve(tmp_path, SPEC_REL, from_ledger=True)
+
+    assert plain['spec_source'] == flagged['spec_source'] == 'ledger_worktree'
+    assert _titles(plain) == _titles(flagged) == [LEDGER_TITLE]
+
+
+def test_the_flag_is_still_accepted_with_use_worktree_off(tmp_path: Path) -> None:
+    """No second copy means the flag stays harmless rather than becoming an error."""
+    _seed_copies(tmp_path, use_worktree=False, main_body=_spec_body(MAIN_TITLE), ledger_body=None)
+
     data = _run_resolve(tmp_path, SPEC_REL, from_ledger=True)
 
     assert data['status'] == 'success', data
     assert _titles(data) == [MAIN_TITLE]
+
+
+def test_lane_text_names_the_flag_status() -> None:
+    """The lane text states what the flag now means, so a reader does not infer worktree-first."""
+    text = _lane_text()
+
+    assert '--spec-from-ledger' in text
+    assert 'documented no-op' in text
+
+
+# =============================================================================
+# D3 — the result and the landing still say which copy was read
+# =============================================================================
+
+
+def test_resolve_reports_the_copy_it_read(tmp_path: Path) -> None:
+    """Both modes name the worktree, because the default and the flag are one read."""
+    _seed_copies(tmp_path, use_worktree=True, main_body=_spec_body(MAIN_TITLE), ledger_body=_spec_body(LEDGER_TITLE))
+
+    plain = _run_resolve(tmp_path, SPEC_REL)
+    flagged = _run_resolve(tmp_path, SPEC_REL, from_ledger=True)
+
+    assert plain['spec_source'] == 'ledger_worktree'
+    assert flagged['spec_source'] == 'ledger_worktree'
+
+
+def test_two_differing_copies_carry_the_differ_marker(tmp_path: Path) -> None:
+    """A silent read of the older copy is what the marker removes."""
+    _seed_copies(tmp_path, use_worktree=True, main_body=_spec_body(MAIN_TITLE), ledger_body=_spec_body(LEDGER_TITLE))
+
+    plain = _run_resolve(tmp_path, SPEC_REL)
+    flagged = _run_resolve(tmp_path, SPEC_REL, from_ledger=True)
+
+    assert plain.get('spec_differ') is True
+    assert flagged.get('spec_differ') is True
+
+
+def test_a_worktree_only_copy_reports_the_worktree_and_no_marker(tmp_path: Path) -> None:
+    """One copy cannot differ from itself, and the source names where it was read."""
+    _seed_copies(tmp_path, use_worktree=True, main_body=None, ledger_body=_spec_body(LEDGER_TITLE))
+
+    data = _run_resolve(tmp_path, SPEC_REL)
+
+    assert data['spec_source'] == 'ledger_worktree'
+    assert 'spec_differ' not in data
+
+
+def test_a_main_only_copy_reports_the_main_checkout_and_no_marker(tmp_path: Path) -> None:
+    """The fallback is still labelled by where it actually resolves."""
+    _seed_copies(tmp_path, use_worktree=True, main_body=_spec_body(MAIN_TITLE), ledger_body=None)
+
+    data = _run_resolve(tmp_path, SPEC_REL)
+
+    assert data['spec_source'] == 'main_checkout'
+    assert 'spec_differ' not in data
+
+
+def test_identical_copies_carry_no_differ_marker(tmp_path: Path) -> None:
+    """Two copies that agree are not a discrepancy worth reporting."""
+    body = _spec_body(MAIN_TITLE)
+    _seed_copies(tmp_path, use_worktree=True, main_body=body, ledger_body=body)
+
+    data = _run_resolve(tmp_path, SPEC_REL)
+
+    assert data['status'] == 'success', data
+    assert 'spec_differ' not in data
+
+
+def test_the_no_op_mode_reports_one_copy_and_no_marker(tmp_path: Path) -> None:
+    """A project with no second copy reports the main checkout and no differ marker."""
+    _seed_copies(tmp_path, use_worktree=False, main_body=_spec_body(MAIN_TITLE), ledger_body=None)
+
+    data = _run_resolve(tmp_path, SPEC_REL, from_ledger=True)
+
     assert data['spec_source'] == 'main_checkout'
     assert 'spec_differ' not in data
 
@@ -308,7 +353,7 @@ def test_the_fallback_is_the_main_checkout_not_the_project_dir(tmp_path: Path, m
 
 
 def test_a_symlinked_spec_cannot_escape_its_store(tmp_path: Path) -> None:
-    """A link planted at a store path must not hand the lane a file from outside it."""
+    """A link planted at a main-store path must not hand the lane a file from outside it."""
     outside = tmp_path / 'outside.md'
     _write(outside, _spec_body(LEDGER_TITLE))
     _seed_project(tmp_path, use_worktree=True)
@@ -322,9 +367,33 @@ def test_a_symlinked_spec_cannot_escape_its_store(tmp_path: Path) -> None:
     assert data['error'] == 'spec_outside_orchestrator'
 
 
+def test_a_link_at_the_ledger_copy_is_not_read_as_a_store_copy(tmp_path: Path) -> None:
+    """The containment check covers the worktree copy too: it falls back rather than escaping."""
+    outside = tmp_path / 'outside.md'
+    _write(outside, _spec_body(LEDGER_TITLE))
+    _seed_copies(tmp_path, use_worktree=True, main_body=_spec_body(MAIN_TITLE), ledger_body=None)
+    ledger = _ledger_spec(tmp_path)
+    ledger.parent.mkdir(parents=True, exist_ok=True)
+    ledger.symlink_to(outside)
+
+    data = _run_resolve(tmp_path, SPEC_REL)
+
+    assert data['status'] == 'success', data
+    assert _titles(data) == [MAIN_TITLE]
+    assert data['spec_source'] == 'main_checkout'
+
+
+def test_lane_text_states_the_worktree_first_order() -> None:
+    """§ 0 states the new order, and the old default sentence is gone."""
+    text = _lane_text()
+
+    assert 'The spec is read from the **shared ledger worktree** first' in text
+    assert 'Read the spec from the **main checkout** by default' not in text
+
+
 def test_lane_text_names_the_ledger_read_and_what_it_reports() -> None:
     """The landing's RULE-CHECK item carries both facts, not just the setup text."""
-    text = _SKILL_TEXT.read_text(encoding='utf-8')
+    text = _lane_text()
     rule_check = text.split('**Rule check**', 1)
 
     assert len(rule_check) == 2, 'the landing report has no rule-check section'
@@ -335,7 +404,7 @@ def test_lane_text_names_the_ledger_read_and_what_it_reports() -> None:
 
 
 # =============================================================================
-# D3 — the new read does not soften the write rule
+# D4 — the new read does not soften the write rule
 # =============================================================================
 
 
@@ -349,19 +418,20 @@ def _snapshot(root: Path) -> dict[str, tuple[int, bytes]]:
 
 
 def test_reading_the_ledger_copy_writes_nothing(tmp_path: Path) -> None:
-    """The worktree copy is READ ONLY: the resolve leaves the tree byte-identical."""
+    """The worktree copy is READ ONLY: the default read leaves the tree byte-identical."""
     _seed_copies(tmp_path, use_worktree=True, main_body=_spec_body(MAIN_TITLE), ledger_body=_spec_body(LEDGER_TITLE))
     before = _snapshot(tmp_path)
 
-    data = _run_resolve(tmp_path, SPEC_REL, from_ledger=True)
+    data = _run_resolve(tmp_path, SPEC_REL)
 
     assert data['status'] == 'success', data
+    assert _titles(data) == [LEDGER_TITLE]
     assert _snapshot(tmp_path) == before
 
 
 def test_lane_text_keeps_the_write_rule_verbatim() -> None:
     """The rule the new read must not soften, quoted as the lane states it."""
-    text = _SKILL_TEXT.read_text(encoding='utf-8')
+    text = _lane_text()
 
     assert 'Never edit the spec or any file under `.plan/orchestrator/`' in text
     assert 'The worktree copy is READ ONLY' in text
