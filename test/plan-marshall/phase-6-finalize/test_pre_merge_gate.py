@@ -341,7 +341,7 @@ def test_production_runner_invokes_the_ci_router_through_the_executor(monkeypatc
                 route,
                 *verb_args,
             ],
-            {'capture_output': True, 'text': True, 'check': False},
+            {'capture_output': True, 'text': True, 'check': False, 'timeout': None},
         )
     ]
     assert result['status'] == 'success'
@@ -1073,6 +1073,42 @@ def test_the_documented_branch_e_length_matches_the_rendered_length():
     assert len(gate.merge_step_detail('barrier-ask-override')) == int(match.group(1))
 
 
+def test_the_documented_branch_a_tables_are_the_scripts_clause_maps():
+    """The clause tables in the doc ARE the values the script renders, both directions.
+
+    The two tables are the SPECIFICATION of Branch A's rendering. Pinning two sample
+    strings would let a row drift from ``REBASE_CLAUSES`` / ``MERGE_CLAUSES`` while every
+    sample still passed, so the tables are parsed and compared row for row.
+    """
+    section = _BRANCH_CLEANUP_TEXT
+    action_rows = re.findall(r'^\|\s*`(rebased|noop)`\s*\|\s*`([^`]+)`\s*\|', section, re.MULTILINE)
+    absent_rows = re.findall(r'^\|\s*_absent_[^|]*\|\s*`([^`]+)`\s*\|', section, re.MULTILINE)
+    mechanism_rows = re.findall(r'^\|\s*`(pr_safe_merge|merge_queue)`\s*\|\s*`([^`]+)`\s*\|', section, re.MULTILINE)
+
+    assert action_rows and absent_rows and mechanism_rows, 'a Branch A clause table could not be parsed'
+
+    documented_rebase = dict(action_rows)
+    documented_rebase[None] = absent_rows[0]
+    documented_merge = dict(mechanism_rows)
+
+    assert documented_rebase == dict(gate.REBASE_CLAUSES)
+    assert documented_merge == dict(gate.MERGE_CLAUSES)
+
+
+def test_the_documented_branch_a_worst_case_matches_the_rendered_length():
+    """The doc's published Branch A worst case is a REACHABLE rendering, measured."""
+    match = re.search(
+        r'`rebase deferred to queue, queue-merged, corroborated, cleanup complete`, \*\*(\d+) chars\*\*',
+        _BRANCH_CLEANUP_TEXT,
+    )
+
+    assert match is not None, 'branch-cleanup.md no longer publishes the Branch A worst-case length'
+    worst_case = gate.clean_merge_step_detail(None, 'merge_queue')
+    assert worst_case == 'rebase deferred to queue, queue-merged, corroborated, cleanup complete'
+    assert len(worst_case) == int(match.group(1))
+    assert len(worst_case) <= gate.MERGE_DISPLAY_DETAIL_MAX_CHARS
+
+
 def test_the_documented_branch_e_wording_is_the_scripts_template():
     """Branch E stays the SPECIFICATION: the literal it states is the script's template."""
     assert gate.GAP_RECORDED_TEMPLATE in _BRANCH_CLEANUP_TEXT, (
@@ -1414,6 +1450,82 @@ def test_the_prose_site_detector_fires_on_a_paragraph_without_the_placeholder():
     assert _prose_site(without, 'red-CI override') is None, (
         'a paragraph that names a site but carries no placeholder must not be accepted as its render site'
     )
+
+
+#: Labels that are declared in these documents but are NOT pre-enqueue merge options,
+#: each with the reason it is not. The census below is DERIVED from the documents, so a
+#: new option declaration lands in exactly one of `_MERGE_OPTION_LABELS` or this map —
+#: there is no third state in which it is simply unexamined.
+_NON_MERGE_OPTION_LABELS: dict[str, str] = {
+    'Wait and retry (recommended)': 'merge-queue admission wait; it merges nothing',
+    'Skip merge': 'gives up the admission place without merging',
+    'Yes, merge (recommended)': 'the pre-merge CONFIRMATION itself — the second question the generated sentence talks about',
+    'No, skip merge': 'declines the confirmation without merging',
+    'Retry the barrier now (recommended)': 're-runs the store gate; it merges nothing',
+    'Split the PR into diffs under the cap': 'sends the work back to the operator; it merges nothing',
+    'Re-triage now (recommended)': 'loops back to triage; it merges nothing',
+    'Defer merge': 'terminates without merging',
+    'Wait another {re_review_await_timeout_seconds}s': 're-issues the re-review; it merges nothing',
+    'It is queued or merged — wait for it': 'queue-landing observation, not a merge decision',
+    'Stop here': 'terminates the queue-landing wait',
+    'Yes, it is pushed': 'pre-push confirmation',
+    'No, skip': 'declines the push',
+}
+
+#: Every option label the two documents DECLARE (``label: "<label>"`` inside a fence).
+_DECLARED_LABELS = re.compile(r'^\s*- label: "([^"]+)"', re.MULTILINE)
+
+
+def _declared_option_labels():
+    """Every option label declared by the two documents, in document order."""
+    labels: list[str] = []
+    for text in _DOCS.values():
+        for block in _fenced_blocks(text):
+            labels.extend(_DECLARED_LABELS.findall(block))
+    return labels
+
+
+def test_the_derived_option_census_is_total_over_the_declared_labels():
+    """Every declared option is either a merge option or recorded as a non-merge one.
+
+    This is the reverse direction of the per-label test: that one proves each known
+    merge option carries the generated sentence, this one proves no declared option
+    escapes classification. A new merge option added to these documents fails here until
+    it is either given the placeholder or recorded above with its reason.
+    """
+    declared = sorted(set(_declared_option_labels()))
+    unclassified = [
+        label for label in declared if label not in _MERGE_OPTION_LABELS and label not in _NON_MERGE_OPTION_LABELS
+    ]
+
+    assert declared, 'the option-label census is empty — the declaration shape changed'
+    assert not unclassified, (
+        f'declared option(s) in neither the merge set nor the non-merge map: {unclassified}. '
+        'A merge option must carry {merge_consequence}; a non-merge one must be recorded with its reason.'
+    )
+
+
+def test_the_non_merge_option_map_has_no_stale_entry():
+    """A recorded non-merge label the documents no longer declare is a rot signal."""
+    declared = set(_declared_option_labels())
+    stale = sorted(label for label in _NON_MERGE_OPTION_LABELS if label not in declared)
+
+    assert not stale, f'the non-merge map records label(s) the documents no longer declare: {stale}'
+
+
+def test_the_declared_merge_options_are_exactly_the_expected_set():
+    """The four pre-enqueue merge options are declared exactly where the tests look.
+
+    The red-CI option is documented as prose rather than as a composed prompt, so it is
+    the one member of the set with no declaration — asserted here rather than assumed.
+    """
+    declared = set(_declared_option_labels())
+    with_declaration = [label for label in _MERGE_OPTION_LABELS if label in declared]
+
+    assert sorted(with_declaration) == sorted(
+        ['Merge anyway (record reason)', 'Accept the coverage gap (record reason)', 'Merge anyway — proceed unreviewed']
+    )
+    assert 'Merge anyway — override red CI' not in declared
 
 
 def test_the_two_consequence_sentences_state_opposite_outcomes():

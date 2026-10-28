@@ -178,9 +178,11 @@ MERGE_CLAUSES: dict[str, str] = {
     'merge_queue': 'queue-merged, corroborated',
 }
 
-#: The pre-enqueue sentence for ``final_merge_without_asking == true``: the merge
-#: follows the answer, with no further question.
-MERGE_CONSEQUENCE_WITHOUT_ASKING = 'No second question follows: the PR is merged as soon as this option is chosen.'
+#: The pre-enqueue sentence for ``final_merge_without_asking == true``: no further
+#: question is asked about this answer. It deliberately does NOT claim the merge happens
+#: the instant the option is chosen — other gates may still act on the tree (the review
+#: barrier above all), so "no second question" is the fact this sentence owns.
+MERGE_CONSEQUENCE_WITHOUT_ASKING = 'No second question follows: the merge is not confirmed again before it proceeds.'
 
 #: The pre-enqueue sentence for ``final_merge_without_asking == false``: the
 #: Pre-Merge Confirmation Gate asks again before anything merges.
@@ -330,12 +332,22 @@ def _head_binding_refusal(
     }
 
 
+#: The bound on every NON-merge verb this module runs. Generous for a provider fetch and
+#: a store query, and deliberately finite: the participation chain runs while the
+#: cross-plan merge mutex is held, so a network read that never returns would pin the
+#: critical section indefinitely. The merge verb itself stays UNBOUNDED — it bounds its
+#: own readiness poll (``--poll-timeout``) and a local timeout there would cut a
+#: legitimate wait short.
+_VERB_TIMEOUT_SECONDS = 300
+
+
 def _run_verb(
     notation: str,
     argv: list[str],
     *,
     silent_error: str,
     unparseable_error: str,
+    timeout: float | None = _VERB_TIMEOUT_SECONDS,
 ) -> dict[str, Any]:
     """Run one executor-mapped verb and return its parsed TOON.
 
@@ -344,17 +356,28 @@ def _run_verb(
     predicate, the authorization check and the step-record write all reach their
     verb by the same route — never by a direct script path.
 
-    A verb that produced no output, and one whose output is not TOON, are reported
-    as error payloads under the caller's own code rather than as a verdict from the
-    verb: a silent provider is not a passing provider.
+    Three failures are reported as error payloads under the caller's own code rather
+    than as a verdict from the verb: output that was not produced, output that is not
+    TOON, and a call that could not run at all (an unresolvable executor, a failed
+    spawn, or a timeout). A silent provider is not a passing provider, and a traceback
+    reaching the caller instead of a payload would leave it with no ``dispatched``
+    field to branch on.
     """
-    executor = get_executor_path()
-    completed = subprocess.run(
-        [sys.executable, str(executor), notation, *argv],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    try:
+        executor = get_executor_path()
+        completed = subprocess.run(
+            [sys.executable, str(executor), notation, *argv],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=timeout,
+        )
+    except (RuntimeError, OSError, subprocess.SubprocessError) as exc:
+        return {
+            'status': 'error',
+            'error': silent_error,
+            'message': f'{notation} could not run: {exc}',
+        }
     stdout = completed.stdout or ''
     if not stdout.strip():
         return {
@@ -378,16 +401,17 @@ def _run_verb(
 def _run_ci(ci_args: list[str]) -> dict[str, Any]:
     """Run ``ci`` with ``ci_args`` through the executor and return its parsed TOON.
 
-    No subprocess timeout is applied: ``pr safe-merge`` bounds its own readiness
-    poll (``--poll-timeout``), and ``pr merge-queue`` returns once the enqueue is
-    issued. A verb that produced no output is reported as an error payload rather
-    than as a merge outcome.
+    UNBOUNDED on purpose: ``pr safe-merge`` bounds its own readiness poll
+    (``--poll-timeout``), and ``pr merge-queue`` returns once the enqueue is issued, so a
+    local timeout here could cut a legitimate wait short. A verb that produced no output
+    is reported as an error payload rather than as a merge outcome.
     """
     return _run_verb(
         _CI_NOTATION,
         ci_args,
         silent_error='merge_verb_no_output',
         unparseable_error='merge_verb_unparseable',
+        timeout=None,
     )
 
 
