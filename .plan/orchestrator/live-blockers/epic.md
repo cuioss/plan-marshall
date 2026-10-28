@@ -309,12 +309,16 @@ derive, for rows still live.
   found: ~/.config/opencode/skills/automatic-review/SKILL.md`, reproduced here by a direct probe. Overlaps the held PLAN-LB-93 on
   `determine_mode.py`, `deployed_layout.py` and `test/plan-marshall/script-shared/`; no file with the running PLAN-LB-58.
 
-- **PLAN-LB-99** (staged 2026-10-28, WS-04, runbook, **high**; `plans/PLAN-LB-99-source-checkout-executor-skew.md`, nine claims,
-  six corroborated and three unverifiable): a lane in a source checkout is not asked the executor-skew question it cannot answer.
-  D1 an explicit verdict that is not `match` for the source-checkout layout (working name `not_applicable`), D2 the lane text
-  states each verdict and when the question is asked, D3 an end-to-end test through a generated executor. One outline decision
-  (Verify-first): `not_applicable`, a read-only preflight witness, or leaving the question; the spec says what each does not
-  cover (a stale executor template). No file shared with anything running. Not emitted; the ledger must be landed first.
+- **PLAN-LB-99 landed** (**#1878, 2026-10-28, B**, `landings/PLAN-LB-99.md`; runbook lane, `deepseek-v4.1-flash/high`, two
+  sessions in the store (root plus the one self-review child), about 4 h 07 min; fix in source until the next sync): all three
+  deliverables delivered as specified. A source checkout now answers `not_applicable` (never `match`, and only for the tree the
+  run executes), the lane text states all four verdicts, and an end-to-end test drives it through a generated executor. The
+  outline chose the explicit verdict; a stale executor template stays uncovered and `SKILL.md` says so once. Question (3), guard
+  (3 of 3) and sub-agent counts exact; no spoofed identity, no restart, no main-checkout edit beyond the one refused and
+  re-issued; main clean; the shared main executor not rewritten; every PR thread resolved (7 of 7); CodeRabbit reviewed
+  `3264fd6d7` and not the merged head, which is a note. Debits: read-class shell calls 50 against about 25 disclosed (`grep` 35
+  against about 12), `total_tokens` reported `unknown` while the store measured them, and the PR body names an earlier head.
+  Original entry removed; the spec is the record.
 
 - **PLAN-LB-93 landed** (**#1874, 2026-10-27, C+**, `landings/PLAN-LB-93.md`; runbook lane, `deepseek-v4.1-flash/high`, one
   session and no self-review sub-agent, 5 h 25 min; fix in source until the next sync): four of six deliverables delivered and
@@ -613,6 +617,21 @@ derive, for rows still live.
 - **Operator decisions the specs leave open** (each is a verify-first clause in its spec):
 
 ## Decisions
+
+- 2026-10-28 — **PLAN-LB-99 landed as #1878 (merge `76adb7714`), graded B.** Full-depth analysis against git, the CI abstraction
+  (7 of 7 threads resolved), the lane's progress file, `guard.log` (3 of 3), the session store (root plus one child; counts
+  only) and the merged diff. The outline decision was the explicit `not_applicable` verdict; both spec hypotheses were
+  confirmed. The declared surface missed the new test module only; nothing collided, so no spec correction is owed. **The fix
+  is in source only:** this checkout's lanes run the source script, but the lane text a harness loads is the installed copy,
+  which does not yet name `not_applicable`; the next emit should follow a sync. Open items stay the two operator-owned ones
+  (the gate-truth half of LB-55, and the lane command that cannot read a spec from the ledger worktree). Running 0 of 4.
+
+- 2026-10-28 — **Operator ruling: Sonar is not enabled for this project, so it is ignored for every plan in this epic.** No
+  plan is staged to enable it or to change the provider block. A Sonar figure is neither collected nor required as landing
+  evidence, a Sonar result of `undecidable` or `analysis_revision_unavailable` at a merge is expected and is not raised as a
+  question or a finding, and the analyze checklist carries no Sonar item. The Open Defect on the Sonar merge gate is closed
+  by this ruling. No live spec (LB-99 or any parked plan) mentions Sonar, so no spec changed; shipped and superseded specs
+  and landing records keep their wording as the historical record.
 
 - 2026-10-28 — **PLAN-LB-99 staged (high), after the operator challenged my fix.** I had offered "a fix is possible" for the
   source-checkout executor-skew question without running the existing staleness check; the operator asked whether it can be
@@ -1184,8 +1203,10 @@ derive, for rows still live.
 
 ## Open Defects
 
-- **HIGH — the Sonar merge gate is unattainable on this repository, so every merge needs an operator override (found in
-  the PLAN-LB-97 landing, 2026-10-27; confirmed by PLAN-LB-93 and PLAN-LB-98; NOT STAGED, needs an operator decision).**
+- **CLOSED BY OPERATOR RULING (2026-10-28): Sonar is not enabled for this project and is ignored for all plans; nothing is
+  staged and the text below is the historical record.** ~~HIGH — the Sonar merge gate is unattainable on this repository, so
+  every merge needs an operator override (found in
+  the PLAN-LB-97 landing, 2026-10-27; confirmed by PLAN-LB-93 and PLAN-LB-98; NOT STAGED, needs an operator decision).~~
   PRs #1872, #1874 and #1876 all ended with `read_open_issues` answering `undecidable` / `analysis_revision_unavailable` and
   merged on the operator's explicit "merge anyway". Cause, verified: `.github/project.yml` has had `sonar: enabled: false` since
   the first commit (2026-02-21), so CI submits no pull-request analysis, while the project's provider block resolves
@@ -1202,7 +1223,12 @@ derive, for rows still live.
   of D6 (the `step-params` empty-roster error, the stale-bot re-trigger, generated barrier options with no "make the required
   bot optional", the rate-window loop, the merged-under-authorization record, the merge-anyway mutex re-acquisition, and the two
   remedies in `branch-cleanup.md` L1041 and L1222). Second deferral (LB-55 first). Needs a plan.
-- **HIGH — `executor-skew` STILL cannot answer in this repository's own lanes (found 2026-10-27 right after the sync of
+- **INCOMPLETE LANDING — `rb-lb-99-source-checkout-executor-skew-001.md` (2026-10-28; `inbox landing-check` reported
+  `complete: false`, `missing_keys`: `total_tokens`).** The lane wrote `total_tokens=unknown` while the OpenCode session store
+  holds the figures for the root and the child session. The landing was drained and reconciled as far as its facts go; the
+  tokens are recorded in `landings/PLAN-LB-99.md` from the store. Token and measurement work is out of scope under the focus
+  rule, so nothing is staged.
+- **FIXED IN SOURCE (PLAN-LB-99, #1878, 2026-10-28; LIVE after the next sync, since a harness loads the installed lane text) — `executor-skew` STILL cannot answer in this repository's own lanes (found 2026-10-27 right after the sync of
   `0.1.2025`; owner PLAN-LB-99, STAGED 2026-10-28 with ONE outline decision rather than a prescribed mechanism: the operator
   challenged my first idea (derive a version from tree evidence) and the check showed `generate_executor preflight` already
   answers staleness but regenerates the executor in place when it is stale, so it is not a read-only witness; the candidates are
