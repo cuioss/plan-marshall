@@ -235,7 +235,7 @@ def test_skill_states_where_each_layout_takes_the_lane_text_version() -> None:
 
     assert 'dist-manifest.json' in section, 'the executor-skew section names no flat-install witness'
     assert 'version directory' in section, 'the executor-skew section names no versioned witness'
-    assert 'source checkout' in section, 'the executor-skew section does not say which layout stays unmakeable'
+    assert 'source checkout' in section, 'the executor-skew section does not name the source checkout'
     assert 'never read as' in section, 'an unmakeable comparison is not distinguished from no skew'
     assert text.count('dist-manifest.json') == 1, 'the flat-install witness is stated more than once'
 

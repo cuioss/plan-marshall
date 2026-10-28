@@ -42,7 +42,7 @@ _SIGNALS = tuple(signal for signal, _target in target_context.TARGET_ENV_SIGNALS
 #: The phrase the reason must carry: the verdict is safe BECAUSE the executor
 #: dispatches the checkout's own scripts, not because the versions happened to
 #: line up.
-_OWN_SCRIPTS_PHRASE = "this source checkout's own scripts"
+_OWN_SCRIPTS_PHRASE = "the checkout's own scripts"
 
 ge = load_script_module('plan-marshall', 'tools-script-executor', 'generate_executor.py', register=False)
 
@@ -59,7 +59,7 @@ def _executor(tmp_path: Path, version: str | None) -> Path:
     return path
 
 
-def _source_checkout(tmp_path: Path, *, version_dir: str | None = None) -> Path:
+def _source_checkout(tmp_path: Path, *, version_dir: str | None = None, with_skill: bool = False) -> Path:
     """Lay out a source checkout and return its lane skill directory.
 
     The source shape is a bundle carrying ``.claude-plugin/plugin.json`` DIRECTLY
@@ -70,8 +70,9 @@ def _source_checkout(tmp_path: Path, *, version_dir: str | None = None) -> Path:
     Args:
         tmp_path: Base directory of the fixture.
         version_dir: When set, also lay out ``{bundle}/{version_dir}/`` carrying a
-            bundle manifest and the lane skill — the hybrid tree that must NOT be
-            read as a source checkout.
+            plugin-cache-shaped bundle manifest.
+        with_skill: When set with ``version_dir``, that version directory also
+            carries the lane skill, which makes it the leg that answers.
     """
     bundle = tmp_path / 'checkout' / 'marketplace' / 'bundles' / 'plan-marshall'
     (bundle / '.claude-plugin').mkdir(parents=True)
@@ -80,9 +81,15 @@ def _source_checkout(tmp_path: Path, *, version_dir: str | None = None) -> Path:
     lane.mkdir(parents=True)
     (lane / 'SKILL.md').write_text(f'---\nname: {_SKILL_NAME}\n---\n\n# Runbook Lane\n', encoding='utf-8')
     if version_dir is not None:
-        stale = bundle / version_dir
-        (stale / '.claude-plugin').mkdir(parents=True)
-        (stale / '.claude-plugin' / 'plugin.json').write_text('{}\n', encoding='utf-8')
+        versioned = bundle / version_dir
+        (versioned / '.claude-plugin').mkdir(parents=True)
+        (versioned / '.claude-plugin' / 'plugin.json').write_text('{}\n', encoding='utf-8')
+        if with_skill:
+            versioned_lane = versioned / 'skills' / _SKILL_NAME
+            versioned_lane.mkdir(parents=True)
+            (versioned_lane / 'SKILL.md').write_text(
+                f'---\nname: {_SKILL_NAME}\n---\n\n# Runbook Lane\n', encoding='utf-8'
+            )
     return lane
 
 
@@ -131,14 +138,24 @@ def test_source_checkout_with_an_unreadable_executor_cannot_check(tmp_path: Path
     assert data['reason'] == 'executor version unreadable'
 
 
-def test_a_bundle_that_also_carries_a_version_directory_is_not_a_source_checkout(tmp_path: Path) -> None:
-    """The source shape means the manifest directly under the bundle AND no version dir."""
+def test_a_live_version_directory_still_wins_over_the_direct_manifest(tmp_path: Path) -> None:
+    """A version dir carrying this skill is compared, not excused, even beside a direct manifest."""
+    lane = _source_checkout(tmp_path, version_dir='0.1.2024', with_skill=True)
+
+    data = _skew_result(_executor(tmp_path, '0.1.2010'), lane)
+
+    assert data['verdict'] == 'skew'
+    assert data['lane_version'] == '0.1.2024'
+
+
+def test_a_version_directory_without_this_skill_still_maps_to_the_source_copy(tmp_path: Path) -> None:
+    """A version dir holding no copy of this skill leaves the mapping on the unversioned copy."""
     lane = _source_checkout(tmp_path, version_dir='0.1.2010')
 
     data = _skew_result(_executor(tmp_path, '0.1.2025'), lane)
 
-    assert data['verdict'] == 'could_not_check', 'a version-carrying bundle is a cache, not a source checkout'
-    assert data['reason'] == f'lane text version unknown: no version directory under {lane.parents[1]}'
+    assert data['verdict'] == 'not_applicable', 'the executor resolves this skill to the source copy'
+    assert _OWN_SCRIPTS_PHRASE in str(data['reason'])
 
 
 def test_source_checkout_in_this_checkout_answers_not_applicable(tmp_path: Path) -> None:

@@ -577,26 +577,20 @@ def _lane_version_probe(skill_dir: Path | None = None) -> _LaneTextVersion:
 def _is_source_checkout_bundle(bundle_dir: Path) -> bool:
     """Whether *bundle_dir* is a source checkout's bundle rather than a cache entry.
 
-    The two bundle shapes are the ones ``resolve_bundles_root`` already probes: a
-    SOURCE checkout carries ``.claude-plugin/plugin.json`` DIRECTLY under the
-    bundle (``marketplace/bundles/plan-marshall``), a plugin cache carries it
-    under ``{bundle}/{version}/``. Reading the same manifest keeps this from
-    becoming a second layout signal that could disagree with the resolver.
+    The shape ``resolve_bundles_root`` already probes: a SOURCE checkout carries
+    ``.claude-plugin/plugin.json`` DIRECTLY under the bundle
+    (``marketplace/bundles/plan-marshall``), while a plugin cache carries it under
+    ``{bundle}/{version}/`` and holds none directly.
 
-    A bundle that carries BOTH a direct manifest and version directories is not
-    read as a source checkout: the version directories are what make the
-    comparison makeable, so its probe keeps falling through to them.
+    Reaching this check already means the versioned leg found no version
+    directory carrying THIS skill, so ``resolve_bundle_path`` resolves the
+    executor's mapping for it to the unversioned copy
+    (``marketplace_bundles.resolve_bundle_path`` falls back to
+    ``{bundle}/{subpath}``) — the checkout's own script. A cache-shaped bundle
+    whose live version directory DOES carry the skill never reaches here: the
+    versioned leg returns first.
     """
-    from marketplace_bundles import select_live_version_dir
-
-    if not (bundle_dir / '.claude-plugin' / 'plugin.json').is_file():
-        return False
-    return (
-        select_live_version_dir(
-            bundle_dir, lambda version_dir: (version_dir / '.claude-plugin' / 'plugin.json').is_file()
-        )
-        is None
-    )
+    return (bundle_dir / '.claude-plugin' / 'plugin.json').is_file()
 
 
 def _lane_text_version(skill_dir: Path | None = None) -> str | None:
@@ -630,14 +624,15 @@ def _unreadable_lane_text_reason(skill_dir: Path | None = None) -> str:
 def _source_checkout_reason(skill_dir: Path | None = None) -> str:
     """Say why a source checkout needs no comparison, naming the tree that makes it true.
 
-    The statement is about the executor's MAPPING, not about versions agreeing:
-    in a source checkout the executor dispatches the checkout's own scripts, so
-    the lane text cannot name a verb its mapped script lacks.
+    The statement is about the MAPPING a source checkout produces, not about
+    versions agreeing: the executor resolves this skill to the checkout's own
+    script, so the lane text cannot name a verb its mapped script lacks.
     """
     probe = _lane_version_probe(skill_dir)
     return (
-        "comparison not applicable: the executor maps this source checkout's own scripts "
-        f'({probe.probe}), so the lane text cannot name a verb those scripts lack'
+        'comparison not applicable: the lane text lives in a source checkout '
+        f"({probe.probe}), where the executor maps the checkout's own scripts, "
+        'so the lane text cannot name a verb those scripts lack'
     )
 
 
