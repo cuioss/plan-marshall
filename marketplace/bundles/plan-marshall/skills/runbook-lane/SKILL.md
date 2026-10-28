@@ -852,7 +852,8 @@ step.sonar-roundtrip.open_issue_rules={rules left open|none|unknown|n/a}
      allowed only when the log has no line for the run — and never on a harness whose resolve
      result reported `guard: none`. Record the spec read's own two facts here as well — which copy
      `resolve` read (`spec_source`) and, when it carried one, the `spec_differ` marker — because a
-     silent read of the older copy is the failure the ledger flag and this record exist to remove.
+     silent read of the older copy is the failure the worktree-first default and this record exist to
+     remove.
      Record the `executor-skew` verdict this run read here too: a `not_applicable` from a source
      checkout is answered, recorded and never asked about.
   8. **Build server** — the setup preflight's state (`ready`, `disabled` or `down`, with its reason),

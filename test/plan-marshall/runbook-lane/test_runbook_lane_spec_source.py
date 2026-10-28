@@ -7,8 +7,8 @@ ledger worktree until a ledger land, so a lane that always read the main checkou
 could run a spec other than the one the orchestrator reports. The read is
 therefore WORKTREE-FIRST by default: the ledger worktree's copy wins when it
 exists, and the main checkout's copy is the fallback. ``--spec-from-ledger`` is
-still accepted and is a documented no-op — it names the read the default already
-makes, so a command emitted for an earlier lane text keeps running.
+accepted as a documented no-op — it names the read the default makes, so a command
+line that carries it behaves exactly as one that does not.
 
 The two copies carry DIFFERENT deliverable titles in these fixtures, so an
 assertion on the parsed output proves which BODY was read, not merely which path
@@ -26,6 +26,8 @@ import json
 import re
 from pathlib import Path
 from typing import Any
+
+import pytest
 
 from conftest import MARKETPLACE_ROOT, get_scripts_dir, load_script_module, run_script
 
@@ -197,6 +199,31 @@ def test_use_worktree_off_reads_the_one_copy(tmp_path: Path) -> None:
     assert data['status'] == 'success', data
     assert _titles(data) == [MAIN_TITLE]
     assert data['spec_source'] == 'main_checkout'
+
+
+def test_a_spec_in_neither_copy_is_refused(tmp_path: Path) -> None:
+    """Neither copy existing is the fail-closed refusal, never a silent empty read."""
+    _seed_copies(tmp_path, use_worktree=True, main_body=None, ledger_body=None)
+
+    data = _run_resolve(tmp_path, SPEC_REL)
+
+    assert data['status'] == 'error'
+    assert data['error'] == 'invalid_spec'
+
+
+def test_the_ledger_spelling_is_knob_gated(tmp_path: Path) -> None:
+    """With the knob off a ledger-store path is not a staged spec: the filesystem does not decide."""
+    _seed_copies(
+        tmp_path,
+        use_worktree=False,
+        main_body=_spec_body(MAIN_TITLE),
+        ledger_body=_spec_body(LEDGER_TITLE),
+    )
+
+    data = _run_resolve(tmp_path, str(_ledger_spec(tmp_path)))
+
+    assert data['status'] == 'error'
+    assert data['error'] == 'spec_outside_orchestrator'
 
 
 def test_the_ledger_copy_is_readable_by_its_own_absolute_path(tmp_path: Path) -> None:
@@ -383,6 +410,31 @@ def test_a_link_at_the_ledger_copy_is_not_read_as_a_store_copy(tmp_path: Path) -
     assert data['spec_source'] == 'main_checkout'
 
 
+def test_a_link_at_the_derived_main_copy_is_not_read(tmp_path: Path, monkeypatch) -> None:
+    """The containment check refuses a DERIVED copy that resolves outside its store.
+
+    The named path passes the shape check, so only :func:`_contained_file` stands
+    between the lane and the escaped file — and it fails closed with ``invalid_spec``
+    rather than reading it under a store label.
+    """
+    main_root = tmp_path / 'main'
+    project = tmp_path / 'plan-worktree'
+    outside = tmp_path / 'outside.md'
+    _write(outside, _spec_body(LEDGER_TITLE))
+    _write(project / '.plan' / 'marshal.json', json.dumps({}))
+    staged = main_root / SPEC_REL
+    staged.parent.mkdir(parents=True, exist_ok=True)
+    staged.symlink_to(outside)
+
+    module = load_script_module('plan-marshall', _SKILL_NAME, 'runbook_lane.py', register=False)
+    monkeypatch.setattr(module, 'main_checkout_root', lambda: main_root)
+    monkeypatch.setattr(module, 'base_dir_override_active', lambda: False)
+    monkeypatch.setattr(module, '_ledger_store_dir', lambda: None)
+
+    with pytest.raises(ValueError, match='invalid_spec'):
+        module._resolve_spec(SPEC_REL, project)
+
+
 def test_lane_text_states_the_worktree_first_order() -> None:
     """§ 0 states the new order, and the old default sentence is gone."""
     text = _lane_text()
@@ -401,6 +453,10 @@ def test_lane_text_names_the_ledger_read_and_what_it_reports() -> None:
     item = re.split(r'^ {0,4}\d+\. \*\*', rule_check[1], maxsplit=1, flags=re.MULTILINE)[0]
     assert 'spec_source' in item
     assert 'spec_differ' in item
+    # The rationale names the mechanism that removes a silent older read: the
+    # worktree-first default, not the accepted-as-a-no-op flag.
+    assert 'worktree-first default' in item
+    assert 'ledger flag' not in item
 
 
 # =============================================================================
