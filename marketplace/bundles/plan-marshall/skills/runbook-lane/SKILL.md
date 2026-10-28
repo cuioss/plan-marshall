@@ -60,16 +60,27 @@ python3 .plan/execute-script.py plan-marshall:runbook-lane:runbook_lane executor
 
 Compares the version the executor carries with the version of the lane text it will run, reading the
 executor through the shared `plugin_registry` reader rather than parsing it. It answers `match`,
-`skew` or `could_not_check` and names both versions; `skew` also carries the remedy. The lane runs it
-before `resolve` (section 0), because a stale executor's own `resolve` cannot perform the check.
+`skew`, `not_applicable` or `could_not_check`, and names both versions; `skew` also carries the
+remedy. The lane runs it before `resolve` (section 0), because a stale executor's own `resolve`
+cannot perform the check.
 
 Where the lane text's version comes from, once, per layout: a versioned plugin cache supplies it from
 the newest eligible `{bundle}/{version}/skills/{skill}` directory; a flat install (OpenCode,
 Antigravity) has no version directory, so it supplies the `version` of the install stamp — the
 `dist-manifest.json` the sync writes at the deploy root that contains the skill root, where the
-target's sync publishes one (without it the comparison stays `could_not_check`); a source checkout
-has neither, so its comparison stays `could_not_check` as well. The stamp moves only on a
-sync, so an edit made to the installed lane text in place is not part of what the comparison sees.
+target's sync publishes one (without it the comparison stays `could_not_check`). The stamp moves only
+on a sync, so an edit made to the installed lane text in place is not part of what the comparison
+sees.
+
+A source checkout — a bundle carrying `.claude-plugin/plugin.json` directly, with no version
+directory — answers `not_applicable`. It is not `match`: nothing agreed, because nothing was
+compared. It is safe because the executor maps that checkout's own scripts, so the lane text cannot
+name a verb its mapped script lacks — an unknown verb fails at once with the surface named. The lane
+proceeds without asking, and records the verdict in the landing. What it does not cover is a stale
+executor TEMPLATE: the executor's own code, not its mapped scripts, decides how a run is dispatched,
+and only `bootstrap`/`preflight` compare the embedded template hash — both of them regenerating in
+place when it is stale, so neither is a read-only witness a lane may call.
+
 A `could_not_check` is reported and the operator is asked — never read as "no skew" — and its reason
 names the thing it could not read: the executor, the install stamp it probed, or the version-less
 bundle directory.
@@ -147,12 +158,14 @@ executor carries with the version of the lane text this run read:
 python3 .plan/execute-script.py plan-marshall:runbook-lane:runbook_lane executor-skew
 ```
 
-It answers `match`, `skew` or `could_not_check`, naming both versions. A `skew` — or an
-`unknown_verb`/argparse rejection that shows the executor predates this text — stops the run as
+It answers `match`, `skew`, `not_applicable` or `could_not_check`, naming both versions. A `skew` —
+or an `unknown_verb`/argparse rejection that shows the executor predates this text — stops the run as
 **blocked**, naming both versions and the remedy: regenerate the executor (`/marshall-steward`, or
 the project's equivalent generate step). A `could_not_check` (the executor is unreadable, its
 version is absent, or the lane text's own version cannot be derived) is reported as **could not
-check** and the operator is asked; it is never read as no skew. The check cannot live inside
+check** and the operator is asked; it is never read as no skew. A `not_applicable` — a source
+checkout, where the executor dispatches the checkout's own scripts — proceeds without asking and is
+recorded in the landing. The check cannot live inside
 `resolve`: a stale executor runs the stale `resolve`, which is exactly the code that lacks it, while
 this text is loaded from the installed plugin and is current when the executor is not.
 
@@ -832,6 +845,8 @@ step.sonar-roundtrip.open_issue_rules={rules left open|none|unknown|n/a}
      result reported `guard: none`. Record the spec read's own two facts here as well — which copy
      `resolve` read (`spec_source`) and, when it carried one, the `spec_differ` marker — because a
      silent read of the older copy is the failure the ledger flag and this record exist to remove.
+     Record the `executor-skew` verdict this run read here too: a `not_applicable` from a source
+     checkout is answered, recorded and never asked about.
   8. **Build server** — the setup preflight's state (`ready`, `disabled` or `down`, with its reason),
      the fallback each build used and why (`degraded` with its `reason`, or
      `executor_absent_from_worktree`), and any `killed` job with its disposition. Add any

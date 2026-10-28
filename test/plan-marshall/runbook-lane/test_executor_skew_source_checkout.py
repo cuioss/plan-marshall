@@ -20,6 +20,7 @@ unreadable executor all still stop the run.
 from __future__ import annotations
 
 import argparse
+import re
 from pathlib import Path
 
 from conftest import MARKETPLACE_ROOT, load_script_module
@@ -133,3 +134,40 @@ def test_source_checkout_in_this_checkout_answers_not_applicable(tmp_path: Path)
 
     assert data['verdict'] == 'not_applicable'
     assert _OWN_SCRIPTS_PHRASE in str(data['reason'])
+
+
+# -----------------------------------------------------------------------------
+# The lane text states every verdict a run can reach
+# -----------------------------------------------------------------------------
+
+
+def _skill_section(text: str, heading: str) -> str:
+    """Return one heading's prose, whitespace-normalised, up to the next ``##``/``###``."""
+    start = text.index(heading)
+    rest = text[start + len(heading) :]
+    following = re.search(r'\n#{2,3} ', rest)
+    end = following.start() if following else -1
+    return ' '.join((heading + (rest if end == -1 else rest[:end])).split())
+
+
+def test_skill_states_every_executor_skew_verdict() -> None:
+    """Every verdict a lane can reach is named, with what the new one does NOT cover."""
+    text = (_SKILL_DIR / 'SKILL.md').read_text(encoding='utf-8')
+    section = _skill_section(text, '### executor-skew')
+
+    for verdict in ('match', 'skew', 'not_applicable', 'could_not_check'):
+        assert f'`{verdict}`' in section, f'the executor-skew section does not name the {verdict} verdict'
+    assert 'source checkout' in section
+    assert 'own scripts' in section, 'the source-checkout verdict states no reason it is safe'
+    assert 'template' in section, 'the source-checkout verdict does not say what it leaves uncovered'
+    assert 'records the verdict' in section, 'the source-checkout verdict is not recorded in the landing'
+    assert 'never read as' in section, 'could_not_check is not distinguished from no skew'
+
+
+def test_input_section_sends_the_source_checkout_verdict_on() -> None:
+    """Section 0 says what a lane does on each verdict it can reach."""
+    text = (_SKILL_DIR / 'SKILL.md').read_text(encoding='utf-8')
+    section = _skill_section(text, '## 0. Input')
+
+    assert '`not_applicable`' in section
+    assert 'proceeds' in section
