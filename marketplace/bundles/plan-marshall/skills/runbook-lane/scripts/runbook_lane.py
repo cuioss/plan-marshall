@@ -659,12 +659,12 @@ def _executor_skew(executor: Path, lane_skill_dir: Path | None = None, target: s
     otherwise compare as the empty tuple and claim ``skew`` (or ``match``) for a
     comparison that was never made.
 
-    A source checkout answers ``not_applicable`` instead of any of the three:
-    the executor maps that checkout's own scripts, so the lane text cannot name a
-    verb the mapped script lacks, and the comparison would change nothing. That
-    verdict needs a READABLE executor version first — an unreadable one is still
-    ``could_not_check``, because the reason the lane must act on is then the
-    executor's, not the layout's.
+    A source checkout answers ``not_applicable`` instead of any of the three when
+    there is no version to compare against: the executor maps that checkout's own
+    scripts, so the lane text cannot name a verb the mapped script lacks, and the
+    comparison would change nothing. That verdict needs a READABLE executor
+    version first — an unreadable one is still ``could_not_check``, because the
+    reason the lane must act on is then the executor's, not the layout's.
     """
     from plugin_registry import EXECUTOR_VERSION_FOUND, read_executor_version, version_key
 
@@ -673,17 +673,17 @@ def _executor_skew(executor: Path, lane_skill_dir: Path | None = None, target: s
         return _EXECUTOR_SKEW_UNCHECKED
     if not version_key(executor_version):
         return _EXECUTOR_SKEW_UNCHECKED
-    probe = _lane_version_probe(lane_skill_dir)
-    if probe.layout == _LANE_LAYOUT_SOURCE_CHECKOUT:
+    lane_version = _lane_text_version(lane_skill_dir)
+    if lane_version is not None and version_key(lane_version):
+        if version_key(executor_version) < version_key(lane_version):
+            return _EXECUTOR_SKEW_SKEW
+        return _EXECUTOR_SKEW_MATCH
+    # No version to compare against. A source checkout is the one layout where that
+    # is not a failed read but an unnecessary comparison; every other unmakeable
+    # case keeps the fail-closed verdict.
+    if lane_version is None and _lane_version_probe(lane_skill_dir).layout == _LANE_LAYOUT_SOURCE_CHECKOUT:
         return _EXECUTOR_SKEW_NOT_APPLICABLE
-    lane_version = probe.version
-    if lane_version is None:
-        return _EXECUTOR_SKEW_UNCHECKED
-    if not version_key(lane_version):
-        return _EXECUTOR_SKEW_UNCHECKED
-    if version_key(executor_version) < version_key(lane_version):
-        return _EXECUTOR_SKEW_SKEW
-    return _EXECUTOR_SKEW_MATCH
+    return _EXECUTOR_SKEW_UNCHECKED
 
 
 def cmd_executor_skew(args: argparse.Namespace) -> dict[str, Any]:
