@@ -618,7 +618,32 @@ def _unreadable_lane_text_reason(skill_dir: Path | None = None) -> str:
         return f'lane text version unknown: the version directory {probe.probe} names no version key'
     if probe.layout == _LANE_LAYOUT_NESTED:
         return f'lane text version unknown: no version directory under {probe.probe}'
+    if probe.layout == _LANE_LAYOUT_SOURCE_CHECKOUT:
+        # The verdict is withheld, not the layout: this run executes a different
+        # checkout, so its mapped script may lack a verb the probed text names.
+        return (
+            f'lane text version unknown: the probed source checkout {probe.probe} is not the checkout this run executes'
+        )
     return 'lane text version unknown: no versioned install and no flat install stamp above the lane text'
+
+
+def _probe_is_running_lane_tree(probe: Path | None) -> bool:
+    """Whether *probe* is the bundle this very script is running from.
+
+    This is the mapping check the ``not_applicable`` verdict rests on: the
+    executor dispatches this notation to a file, and that file IS this script, so
+    the executor's mapping is the probed checkout's own copy exactly when this
+    script lives inside it. A source checkout probed from elsewhere is a
+    different tree whose lane text may name a verb this run's script lacks, and
+    excusing it would report a comparison nobody made — so the verdict is
+    withheld there.
+    """
+    if probe is None:
+        return False
+    try:
+        return _lane_skill_dir().is_relative_to(probe.resolve())
+    except OSError:
+        return False
 
 
 def _source_checkout_reason(skill_dir: Path | None = None) -> str:
@@ -673,11 +698,15 @@ def _executor_skew(executor: Path, lane_skill_dir: Path | None = None, target: s
         if version_key(executor_version) < version_key(lane_version):
             return _EXECUTOR_SKEW_SKEW
         return _EXECUTOR_SKEW_MATCH
-    # No version to compare against. A source checkout is the one layout where that
-    # is not a failed read but an unnecessary comparison; every other unmakeable
-    # case keeps the fail-closed verdict.
-    if lane_version is None and _lane_version_probe(lane_skill_dir).layout == _LANE_LAYOUT_SOURCE_CHECKOUT:
-        return _EXECUTOR_SKEW_NOT_APPLICABLE
+    # No version to compare against. A source checkout is the one layout where
+    # that is not a failed read but an unnecessary comparison — but only for the
+    # tree this run actually executes, because only then is the executor's mapping
+    # its own copy (see _probe_is_running_lane_tree). Every other unmakeable case
+    # keeps the fail-closed verdict.
+    if lane_version is None:
+        probe = _lane_version_probe(lane_skill_dir)
+        if probe.layout == _LANE_LAYOUT_SOURCE_CHECKOUT and _probe_is_running_lane_tree(probe.probe):
+            return _EXECUTOR_SKEW_NOT_APPLICABLE
     return _EXECUTOR_SKEW_UNCHECKED
 
 

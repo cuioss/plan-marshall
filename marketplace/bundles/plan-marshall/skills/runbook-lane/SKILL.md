@@ -73,13 +73,17 @@ on a sync, so an edit made to the installed lane text in place is not part of wh
 sees.
 
 A source checkout — a bundle carrying `.claude-plugin/plugin.json` directly, with no version
-directory — answers `not_applicable`. It is not `match`: nothing agreed, because nothing was
-compared. It is safe because the executor maps that checkout's own scripts, so the lane text cannot
-name a verb its mapped script lacks — an unknown verb fails at once with the surface named. The lane
-proceeds without asking, and records the verdict in the landing. What it does not cover is a stale
-executor TEMPLATE: the executor's own code, not its mapped scripts, decides how a run is dispatched,
-and only `bootstrap`/`preflight` compare the embedded template hash — both of them regenerating in
-place when it is stale, so neither is a read-only witness a lane may call.
+directory — answers `not_applicable` when the lane text it probed is the text this run executes. It
+is not `match`: nothing agreed, because nothing was compared. It is safe because the executor maps
+that checkout's own scripts, so the lane text cannot name a verb its mapped script lacks — an unknown
+verb fails at once with the surface named. A source checkout probed from another tree (an explicit
+`--lane-dir` pointing elsewhere) is not excused: its lane text may name a verb this run's mapped
+script lacks, so it stays `could_not_check`. The lane proceeds without asking, and records the
+verdict in the landing. What it does not cover is a stale executor TEMPLATE: the executor's own code,
+not its mapped scripts, decides how a run is dispatched. Only `bootstrap` compares the embedded
+template hash, and it regenerates in place when that is stale, so it is not a read-only witness a
+lane may call; `preflight` compares the manifest's version fields, so a template-only change does not
+reach it at all.
 
 A `could_not_check` is reported and the operator is asked — never read as "no skew" — and its reason
 names the thing it could not read: the executor, the install stamp it probed, or the version-less

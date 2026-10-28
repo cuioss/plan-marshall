@@ -29,6 +29,7 @@ from pathlib import Path
 
 import pytest
 import target_context
+from _flat_install_fixtures import LOCATION_ENV_VARS as _LOCATION_ENV_VARS
 
 from conftest import MARKETPLACE_ROOT, load_script_module
 
@@ -106,20 +107,19 @@ def _skew_result(executor: Path, lane_dir: Path) -> dict[str, object]:
 # -----------------------------------------------------------------------------
 
 
-def test_source_checkout_answers_not_applicable_and_never_match(tmp_path: Path) -> None:
-    """The checkout's own scripts make the comparison unnecessary, not equal."""
+def test_a_source_checkout_this_run_does_not_execute_cannot_check(tmp_path: Path) -> None:
+    """A source checkout probed from elsewhere judges text this run's mapped script may not match."""
     lane = _source_checkout(tmp_path)
 
     data = _skew_result(_executor(tmp_path, '0.1.2025'), lane)
 
-    assert data['verdict'] == 'not_applicable'
+    assert data['verdict'] == 'could_not_check'
     assert data['verdict'] != 'match', 'an unmakeable comparison must never be reported as agreement'
-    assert _OWN_SCRIPTS_PHRASE in str(data['reason'])
-    assert 'source checkout' in str(data['reason'])
+    assert 'is not the checkout this run executes' in str(data['reason'])
 
 
 def test_source_checkout_is_probed_not_assumed(tmp_path: Path) -> None:
-    """The verdict comes from the bundle's own layout, not from its directory name."""
+    """The layout comes from the bundle's own shape, not from its directory name."""
     lane = _source_checkout(tmp_path)
 
     module = _lane_module()
@@ -148,14 +148,11 @@ def test_a_live_version_directory_still_wins_over_the_direct_manifest(tmp_path: 
     assert data['lane_version'] == '0.1.2024'
 
 
-def test_a_version_directory_without_this_skill_still_maps_to_the_source_copy(tmp_path: Path) -> None:
+def test_a_version_directory_without_this_skill_still_probes_as_the_source_copy(tmp_path: Path) -> None:
     """A version dir holding no copy of this skill leaves the mapping on the unversioned copy."""
     lane = _source_checkout(tmp_path, version_dir='0.1.2010')
 
-    data = _skew_result(_executor(tmp_path, '0.1.2025'), lane)
-
-    assert data['verdict'] == 'not_applicable', 'the executor resolves this skill to the source copy'
-    assert _OWN_SCRIPTS_PHRASE in str(data['reason'])
+    assert _lane_module()._lane_version_probe(lane).layout == 'source_checkout'
 
 
 def test_source_checkout_in_this_checkout_answers_not_applicable(tmp_path: Path) -> None:
@@ -181,11 +178,15 @@ def _skill_section(text: str, heading: str) -> str:
 
 
 def test_skill_states_every_executor_skew_verdict() -> None:
-    """Every verdict a lane can reach is named, with what the new one does NOT cover."""
+    """Every verdict the script can answer is named, with what the new one does NOT cover."""
     text = (_SKILL_DIR / 'SKILL.md').read_text(encoding='utf-8')
     section = _skill_section(text, '### executor-skew')
 
-    for verdict in ('match', 'skew', 'not_applicable', 'could_not_check'):
+    # Derived from the implementation, never a list kept in step by hand: a verdict
+    # added to the script but not to the doc fails this test.
+    verdicts = sorted(value for name, value in vars(_lane_module()).items() if name.startswith('_EXECUTOR_SKEW_'))
+    assert verdicts, 'the lane script declares no verdicts'
+    for verdict in verdicts:
         assert f'`{verdict}`' in section, f'the executor-skew section does not name the {verdict} verdict'
     assert 'source checkout' in section
     assert 'own scripts' in section, 'the source-checkout verdict states no reason it is safe'
@@ -243,11 +244,28 @@ def _generate_executor(
 
 
 def _run_skew(
-    executor: Path, project_dir: Path, lane_dir: Path, *, executor_arg: Path | None = None
+    executor: Path,
+    project_dir: Path,
+    lane_dir: Path,
+    *,
+    executor_arg: Path | None = None,
+    cwd: Path | None = None,
 ) -> subprocess.CompletedProcess[str]:
-    """Run the verb through ``executor`` as an OpenCode call against ``lane_dir``."""
+    """Run the verb through ``executor`` as an OpenCode call against ``lane_dir``.
+
+    Every location variable a flat-install fixture scrubs is scrubbed here too: an
+    ambient ``PM_MARKETPLACE_ROOT`` (or a plan base) would let the generated
+    executor resolve this checkout's tree instead of its own mapping, and the test
+    would then prove nothing about a fixture it did not run.
+
+    ``cwd`` is the fixture's checkout ROOT when a test needs the executor's own
+    upward walk to find the fixture rather than the repository that hosts the
+    pytest basetemp. ``--executor`` is then passed explicitly, because the default
+    is resolved relative to the cwd.
+    """
     env = {key: value for key, value in os.environ.items() if key not in _SIGNALS}
-    env.pop('PYTHONPATH', None)
+    for variable in _LOCATION_ENV_VARS:
+        env.pop(variable, None)
     env['OPENCODE'] = '1'
     env['PLAN_MARSHALL_HOME'] = str(project_dir / '.machine-home')
     command = [
@@ -260,23 +278,35 @@ def _run_skew(
     ]
     if executor_arg is not None:
         command.extend(['--executor', str(executor_arg)])
-    return subprocess.run(command, cwd=project_dir, env=env, capture_output=True, text=True, timeout=300)
+    return subprocess.run(command, cwd=cwd or project_dir, env=env, capture_output=True, text=True, timeout=300)
 
 
 def test_executor_skew_answers_not_applicable_through_the_executor(tmp_path, monkeypatch) -> None:
-    """A lane whose executor maps a source checkout reaches the new verdict end to end."""
+    """A lane whose executor maps a source checkout reaches the new verdict end to end.
+
+    The executor sits inside the fixture checkout (``{fixture}/.plan``), so the
+    executor's own upward tree probe finds the fixture rather than the repository
+    that hosts the pytest basetemp — the script the verdict judges is then the copy
+    it runs.
+    """
     bundles = _source_checkout_bundles(tmp_path)
-    project = tmp_path / 'project'
+    checkout = bundles.parent.parent
     executor = _generate_executor(
         monkeypatch,
-        project / '.plan',
+        checkout / '.plan',
         marketplace_root=bundles,
         roots=(('opencode', str(tmp_path / 'opencode' / 'skills')),),
         versions=(('opencode', '0.1.2025'),),
     )
     assert str(bundles) in executor.read_text(encoding='utf-8'), 'the mapping does not point into the fixture'
 
-    result = _run_skew(executor, project, bundles / 'plan-marshall' / 'skills' / _SKILL_NAME)
+    result = _run_skew(
+        executor,
+        checkout,
+        bundles / 'plan-marshall' / 'skills' / _SKILL_NAME,
+        executor_arg=executor,
+        cwd=checkout,
+    )
 
     assert result.returncode == 0, result.stdout + result.stderr
     assert 'verdict: not_applicable' in result.stdout, result.stdout + result.stderr
@@ -288,10 +318,10 @@ def test_executor_skew_answers_not_applicable_through_the_executor(tmp_path, mon
 def test_executor_skew_cannot_check_through_the_executor_when_it_is_removed(tmp_path, monkeypatch) -> None:
     """Removing the executor is a failed read, not a source-checkout verdict."""
     bundles = _source_checkout_bundles(tmp_path)
-    project = tmp_path / 'project'
+    checkout = bundles.parent.parent
     executor = _generate_executor(
         monkeypatch,
-        project / '.plan',
+        checkout / '.plan',
         marketplace_root=bundles,
         roots=(('opencode', str(tmp_path / 'opencode' / 'skills')),),
         versions=(('opencode', '0.1.2025'),),
@@ -299,9 +329,10 @@ def test_executor_skew_cannot_check_through_the_executor_when_it_is_removed(tmp_
 
     result = _run_skew(
         executor,
-        project,
+        checkout,
         bundles / 'plan-marshall' / 'skills' / _SKILL_NAME,
-        executor_arg=project / '.plan' / 'removed-execute-script.py',
+        executor_arg=checkout / '.plan' / 'removed-execute-script.py',
+        cwd=checkout,
     )
 
     assert result.returncode == 0, result.stdout + result.stderr
