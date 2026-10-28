@@ -2,10 +2,10 @@
   "id": "PLAN-LB-99",
   "slug": "source-checkout-executor-skew",
   "workstream": "WS-04",
-  "status": "running",
+  "status": "shipped",
   "lane": "runbook",
-  "plan_marshall_plan_id": "",
-  "pr": "",
-  "landing": "",
+  "plan_marshall_plan_id": "rb-lb-99-source-checkout-executor-skew",
+  "pr": "1878",
+  "landing": "landings/PLAN-LB-99.md",
   "seq": 99
 }

@@ -320,7 +320,7 @@ A push run skips the heavy verify when an open PR exists and still reports `veri
 
 ### 4.11 Smaller items outside PM-MCP — LOW
 - Dependabot uses the `pip` ecosystem and can bump `pyproject.toml` without relocking `uv.lock`.
-- The Sonar step reports a confirmed zero for PRs Sonar never analysed.
+- ~~The Sonar step reports a confirmed zero for PRs Sonar never analysed.~~ Withdrawn: Sonar is not enabled for this project (operator ruling) and is ignored.
 - Release and deploy steps are planned as ordinary agent steps and stall.
 - Fifteen tests never run locally; five are excluded through `collect_ignore` and invisible to the skip gate.
 - The recorded "zero over-budget test modules" result is false (419 files over 400 lines at HEAD); do not stage the warning-to-error flip from it.
