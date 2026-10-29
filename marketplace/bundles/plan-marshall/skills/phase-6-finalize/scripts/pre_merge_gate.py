@@ -521,8 +521,13 @@ def _roster_runner(plan_id: str) -> dict[str, Any]:
     subprocess fallback) so a caller that stubs this module's executor seam stubs the
     roster read too — one seam, and the shared reader owns the parsing and the
     unreadable/empty distinction.
+
+    ⛔ The failure DIAGNOSTIC is renamed to ``detail`` here: ``_run_verb`` reports its
+    own failures with a ``message``, while ``read_roster`` reads ``detail``, so passing
+    the payload through unchanged would drop the exit code and stderr from the
+    operator's refusal and leave "roster unreadable" with no cause named.
     """
-    return _run_verb(
+    result = _run_verb(
         _MANIFEST_NOTATION,
         [
             'step-params',
@@ -538,6 +543,13 @@ def _roster_runner(plan_id: str) -> dict[str, Any]:
         unparseable_error='roster_unreadable',
         require_zero_exit=True,
     )
+    if result.get('status') != 'success':
+        return {
+            'status': 'error',
+            'error': result.get('error') or 'roster_unreadable',
+            'detail': result.get('message') or result.get('detail') or '',
+        }
+    return result
 
 
 def _read_roster(plan_id: str) -> dict[str, Any]:

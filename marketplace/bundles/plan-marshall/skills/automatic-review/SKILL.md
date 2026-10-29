@@ -934,12 +934,16 @@ discouraged: the `request_fresh_review` guard refuses it in code.
      await failure naming that the post succeeded; then proceed to "Producer: FIND".
 
    ⛔ **The retained claim IS the persisted in-progress state, and its expiry is deliberate.** While
-   it is unexpired, `request_fresh_review`'s window guard refuses a second ordinary trigger, so a
-   duplicate cannot be posted during the interval in which the first request may still be running.
-   When the claim expires, the bot's own rate window has elapsed — and re-triggering then is the
-   policy's own action (one window, then one more trigger), not a duplicate of the post it made.
+   it is unexpired — and the rate-window read is READABLE — `request_fresh_review`'s window guard
+   refuses a second ordinary trigger, so a duplicate cannot be posted during the interval in which
+   the first request may still be running. When the claim expires, the bot's own rate window has
+   elapsed — and re-triggering then is the policy's own action (one window, then one more trigger),
+   not a duplicate of the post it made.
    A second, longer-lived "posted" flag would keep the loop from ever re-triggering a bot whose
-   review never landed; the claim's window is the dedup span on purpose.
+   review never landed; the claim's window is the dedup span on purpose. ⚠ **The one residual is the
+   guard's own:** an UNREADABLE rate-window read carries no `expired` key, and the guard permits the
+   post in that case. The claim narrows the duplicate window to a failure of that read, and does not
+   pretend to close it.
 
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
