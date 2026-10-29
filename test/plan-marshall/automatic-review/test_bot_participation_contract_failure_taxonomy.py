@@ -56,7 +56,6 @@ matched nothing FAILS rather than reporting a healthy aggregate over an empty se
 from __future__ import annotations
 
 import itertools
-import json
 import re
 from unittest.mock import patch
 
@@ -72,7 +71,6 @@ from _bot_flag_derivation import derive_bot_flags, derive_declared_flags
 from test_participation_site_population_records import READS_VOCABULARY, SITE_EXPECTATIONS
 
 from conftest import (
-    PLAN_DIR_NAME,
     PROJECT_ROOT,
     get_script_path,
     load_script_module,
@@ -90,19 +88,6 @@ _AR_SCRIPTS = get_script_path('plan-marshall', 'automatic-review', 'review_compl
 _CONTRACT_DOC = _AR_SCRIPTS.parent / 'standards' / 'bot-participation-contract.md'
 _AR_SKILL = _AR_SCRIPTS.parent / 'SKILL.md'
 _RC_SCRIPT = get_script_path('plan-marshall', 'automatic-review', 'review_completeness.py')
-
-# THIS repository's tracked config, resolved through conftest's project anchor so
-# the suite is cwd-independent.
-_MARSHAL_JSON = PROJECT_ROOT / PLAN_DIR_NAME / 'marshal.json'
-_AUTOMATIC_REVIEW_STEP_ID = 'plan-marshall:automatic-review'
-
-
-def _live_step_params() -> dict:
-    """Return this repository's tracked ``plan-marshall:automatic-review`` params."""
-    config = json.loads(_MARSHAL_JSON.read_text(encoding='utf-8'))
-    params: dict = config['plan']['phase-6-finalize']['steps'][_AUTOMATIC_REVIEW_STEP_ID]
-    return params
-
 
 # The three provenance values the contract declares. Sourced from the contract doc
 # itself rather than restated as a convenience literal.

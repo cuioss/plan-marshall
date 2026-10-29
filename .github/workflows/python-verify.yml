@@ -50,8 +50,8 @@ jobs:
       # `extra-buildable` (.claude/**, marketplace/**/*.md, and test/**/*.md) are
       # test inputs in this repository and force a verify build even when only
       # docs/config files change. `.plan/marshal.json` is deliberately absent: no
-      # test reads this repository's own config, so a config-only change takes the
-      # footprint skip like any other non-building path.
+      # test's verdict depends on this repository's own config, so a config-only
+      # change takes the footprint skip like any other non-building path.
       skip-on-docs-only: true
       extra-buildable: >-
         .claude/**

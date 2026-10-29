@@ -6,10 +6,10 @@ PLAN-LB-30 / PLAN-LB-16 (Deliverable 6):
 Asserts that while ``skip-on-docs-only`` is ``true``, the ``extra-buildable`` input
 is present in ``.github/workflows/python-verify.yml`` and names at minimum
 ``.claude/**`` plus the two markdown test globs. ``.plan/marshal.json`` is
-deliberately NOT required: no test reads this repository's own config, so a
-config-only change takes the footprint skip like any other non-building path.
-When ``skip-on-docs-only`` is ``false`` or absent, the test passes without the
-input (as nothing is skipped).
+deliberately both NOT required and FORBIDDEN: no test's verdict depends on this
+repository's own config, so a config-only change takes the footprint skip like
+any other non-building path. When ``skip-on-docs-only`` is ``false`` or absent,
+the test passes without the input (as nothing is skipped).
 
 Includes matched positive and negative controls to prevent regressions.
 """
@@ -41,9 +41,9 @@ REQUIRED_MARKDOWN_BUILDABLE_PATHS = frozenset(
     }
 )
 
-#: Paths that must NOT be passed: no test reads this repository's own project
-#: config, so listing it forces a full verify for a change nothing depends on.
-#: A config-only change takes the footprint skip instead.
+#: Paths that must NOT be passed: no test's verdict depends on this repository's
+#: own project config, so listing it forces a full verify for a change nothing
+#: depends on. A config-only change takes the footprint skip instead.
 FORBIDDEN_EXTRA_BUILDABLE_PATHS = frozenset(
     {
         '.plan/marshal.json',

@@ -192,7 +192,7 @@ A `…/.venv/bin/python3` path reporting 3.12 means the pin held. A `.pyprojectx
 
 That is deliberate and sufficient. `setup-python` would pin only the *bootstrap* interpreter — the one that runs Pyprojectx, which now installs nothing but `uv` — while `UV_PYTHON` pins the interpreter the tools actually run on. Adding a `pyprojectx.python-version` key would therefore introduce a second interpreter declaration that governs a layer whose version no longer matters, inviting exactly the misreading this section previously documented: that the Pyprojectx venv is where the build happens. The single pin is the honest one.
 
-The workflow also opts in to the organization's footprint gate (`skip-on-docs-only: true`), skipping heavy verify runs on `pull_request` and `merge_group` when only docs/config change, while passing test-input paths (`.claude/**`, `marketplace/**/*.md`, `test/**/*.md`) via `extra-buildable` to ensure tests run whenever test inputs change. `.plan/marshal.json` is deliberately not listed: no test reads this repository's own config, so a config-only change takes the footprint skip.
+The workflow also opts in to the organization's footprint gate (`skip-on-docs-only: true`), skipping heavy verify runs on `pull_request` and `merge_group` when only docs/config change, while passing test-input paths (`.claude/**`, `marketplace/**/*.md`, `test/**/*.md`) via `extra-buildable` to ensure tests run whenever test inputs change. `.plan/marshal.json` is deliberately not listed: no test's verdict depends on this repository's own config, so a config-only change takes the footprint skip.
 
 ==== The related declarations
 

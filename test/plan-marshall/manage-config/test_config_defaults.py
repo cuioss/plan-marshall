@@ -1985,12 +1985,16 @@ def test_seeded_orchestrator_leaves_effort_and_scope_resolution_unchanged():
 
 
 #: Orchestrator knobs this project deliberately tunes away from the seeded default,
-#: mapped to the value each is tuned TO. Pinning the expected value — rather than
-#: exempting the knob — is what keeps the guard below able to fail: a blanket
-#: exemption would let any later edit to a tuned knob pass unnoticed, which is the
-#: same blindness the guard exists to prevent, moved one level up.
+#: mapped to the value each is tuned TO.
 #:
-#: ``effort``: all three orchestrator surfaces are pinned explicitly so none of them
+#: The VALUES record the operator's decision and are NOT asserted against this
+#: repository's live ``.plan/marshal.json`` any more: a test that read the live file
+#: made its verdict depend on the shipped config, which the operator ruled a bug.
+#: What survives here is the KEY SET, which ``test_project_tuned_orchestrator_
+#: effort_surfaces_match_the_registry`` below pins against the resolver's own
+#: registry so a newly registered surface cannot escape unpinned.
+#:
+#: ``effort``: all three orchestrator surfaces are recorded explicitly so none of them
 #: silently tracks ``plan.effort``. The decision and its consequence are recorded in
 #: ``plan-marshall/standards/effort-roles.md`` § Orchestrator role group.
 #:
@@ -2006,15 +2010,12 @@ _PROJECT_TUNED_ORCHESTRATOR_KNOBS: dict[str, object] = {
 def test_project_tuned_orchestrator_effort_surfaces_match_the_registry():
     """The tuned-knobs table's surface KEYS must track the resolver's own registry.
 
-    ``_PROJECT_TUNED_ORCHESTRATOR_KNOBS['effort']`` is hardcoded because its VALUES
-    are a deliberate per-surface tuning decision (finding 77b104) that must NOT be
-    derived away — a derived value would silently re-track whatever the registry
-    or the seed says instead of asserting the pin. But its KEY SET is not a
-    decision at all; it is supposed to equal every surface the resolver actually
-    recognises (`_cmd_effort_mod.ORCHESTRATOR_SURFACES`), and a newly registered
-    surface would stay unpinned and untested here while this table's own assertion
-    kept passing on the surfaces it already knew about. This test catches that
-    drift without touching the tuned VALUES.
+    ``_PROJECT_TUNED_ORCHESTRATOR_KNOBS['effort']`` records a deliberate per-surface
+    tuning decision (finding 77b104). Its KEY SET is not a decision at all; it is
+    supposed to equal every surface the resolver actually recognises
+    (`_cmd_effort_mod.ORCHESTRATOR_SURFACES`), and a newly registered surface would
+    otherwise stay unrecorded here while this table's own assertion kept passing on
+    the surfaces it already knew about. This test catches that drift.
     """
     tuned_keys = set(_PROJECT_TUNED_ORCHESTRATOR_KNOBS['effort'].keys())
     registered_surfaces = set(_cmd_effort_mod.ORCHESTRATOR_SURFACES)
@@ -2036,10 +2037,17 @@ def test_save_config_round_trips_an_already_canonical_config_unchanged(tmp_path,
     this repository's ``.plan/marshal.json``, so a live config edit cannot change
     what the test asserts.
     """
-    before = [
-        key for key in _EXPECTED_CANONICAL_KEY_ORDER if key in {'plan', 'build', 'project', 'providers', 'system'}
-    ]
-    canonical_config = {key: {} for key in before}
+    #: Non-empty nested content, so the round-trip exercises real serialization
+    #: (blocks, a list, a nested map), not just empty-object placement.
+    values: dict[str, object] = {
+        'plan': {'effort': 'level-3', 'phase-1-init': {'use_worktree': True}},
+        'build': {'map': {'python': [{'glob': '*.py', 'role': 'production'}]}},
+        'project': {'working_prefixes': ['fix/']},
+        'providers': [{'skill_name': 'bundle:provider', 'category': 'ci'}],
+        'system': {'retention': {'logs_days': 1}},
+    }
+    before = [key for key in _EXPECTED_CANONICAL_KEY_ORDER if key in values]
+    canonical_config = {key: values[key] for key in before}
     marshal_path = tmp_path / 'marshal.json'
 
     # persist via save_config to the redirected fixture path

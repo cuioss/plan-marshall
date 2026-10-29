@@ -269,24 +269,3 @@ class TestNonProjectAndMalformedEntries:
     def test_unreadable_shapes_yield_no_steps_rather_than_raising(self, config: dict[str, Any]) -> None:
         """One unexpected shape must not take down every permission op."""
         assert extract_project_steps(config) == []
-
-
-class TestShippedStepMapShape:
-    """The keyed-map ``steps`` shape is read, over a fixture that states it.
-
-    The shape the defect hid behind is ``{step-notation: {params}}`` — a keyed map,
-    not a bare list. ``KEYED_CONFIG`` above builds exactly that shape, and the
-    cases in this module read it through the same production reader. Reading this
-    repository's own ``.plan/marshal.json`` instead would make the verdict depend
-    on the live config rather than on the shape the code must support.
-    """
-
-    def test_keyed_map_declares_project_steps_and_the_reader_finds_them(self) -> None:
-        declared = {
-            notation
-            for phase in PROJECT_STEP_PHASES
-            for notation in (KEYED_CONFIG.get('plan', {}).get(phase, {}).get('steps') or {})
-            if isinstance(notation, str) and notation.startswith('project:')
-        }
-        assert declared, 'the keyed-map fixture declares no project steps; this test no longer covers the defect'
-        assert {step['step'] for step in extract_project_steps(KEYED_CONFIG)} == declared

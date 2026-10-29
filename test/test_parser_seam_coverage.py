@@ -157,6 +157,13 @@ def derive_populations(root: Path) -> tuple[frozenset[str], frozenset[str]]:
 
 ENTRY_POINTS, NON_CLI_MODULES = derive_populations(MARKETPLACE_ROOT)
 
+# ⛔ Vacuity guard — the fixture-config probe below keys on an exact label. A rename
+# would make the comparison silently miss, quietly restoring the live-config read
+# this test exists to remove.
+assert _CI_ROUTER_LABEL in ENTRY_POINTS, (
+    f'{_CI_ROUTER_LABEL} is not a derived entry point, so the fixture-config probe it keys is never used'
+)
+
 #: Entry points that deliberately reach no parser seam, one row per script.
 SEAM_EXEMPT: dict[str, ShapeVerdict] = {
     'plan-marshall:platform-runtime:platform_runtime.py': ShapeVerdict(

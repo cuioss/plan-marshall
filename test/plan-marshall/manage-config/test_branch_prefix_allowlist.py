@@ -108,7 +108,7 @@ def test_every_working_prefix_is_ci_push_triggered():
         'Working prefix(es) not covered by any python-verify.yml on.push.branches '
         'trigger — a PR on such a branch silently receives no verify / verify '
         'check and is structurally unmergeable. Add a matching push trigger to '
-        'the workflow (or drop the prefix from project.working_prefixes).\n'
+        "the workflow (or drop the prefix from DEFAULT_PROJECT['working_prefixes']).\n"
         f'  uncovered prefixes: {uncovered}\n'
         f'  working_prefixes:   {prefixes}\n'
         f'  workflow triggers:  {triggers}'
