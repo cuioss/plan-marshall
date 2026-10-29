@@ -932,9 +932,9 @@ path-shaped flags are checked, and neither can arrive here relative:
 * ``--plan-id`` is mutually exclusive with ``--project-dir`` and, unlike it,
   derives its own ABSOLUTE tree (a persisted worktree path, else the checkout
   root), so it resolves identically in both processes.
-* ``--working-dir`` and ``--env`` make a build daemon-incompatible, so a build
-  carrying either never routes at all — it falls back in-process before this
-  seam (see ``daemon_incompatible`` in ``cmd_run``).
+* ``--working-dir`` and ``--env`` make a build daemon-incompatible, so such a
+  build never reaches this seam at all — under ``auto`` it falls back in-process
+  before routing, and under ``daemon`` it fails loud (see ``cmd_run``).
 * ``--root`` is declared only on the ``discover`` subcommand and on Gradle's
   ``find-project``, so it cannot appear in the routed ``run`` argv.
 """

@@ -95,8 +95,8 @@ Present when `status` is `error`, `timeout`, `killed`, or `indeterminate`.
 |-------|------|-------------|
 | `error` | string | Error type identifier (e.g., `build_failed`, `timeout`, `killed`, `indeterminate`, `execution_failed`) |
 | `message` | string | Operator-facing detail. On `killed` it carries the no-blind-retry sentence; on `indeterminate` it is the **only** actionable content the result has, naming why nothing could be concluded |
-| `reason` | string | **Launch faults only** (`execution_failed`, `log_file_failed`): the reason the producer rendered, e.g. `python wrapper not found: pwx`. The command never ran, so the class alone cannot say whether a wrapper was missing |
-| `project_dir` | string | **Wrapper-not-found faults only**: the absolute project directory the wrapper was looked for in. Paired with `wrapper` and `reason`, it is what separates a missing wrapper from a daemon fault |
+| `reason` | string | The reason a **wrapper-not-found** launch fault rendered, e.g. `python wrapper not found: pwx`. The `log_file_failed` leg states no reason today. The same key also appears on a `daemon_required` envelope, where it names why routing was unavailable — that is a routing refusal, not a launch fault |
+| `project_dir` | string | On a wrapper-not-found fault: the absolute project directory the wrapper was looked for in. Paired with `wrapper` and `reason`, it is what separates a missing wrapper from a daemon fault. (Other error envelopes reuse the key for the caller's raw `--project-dir` value) |
 
 #### Parsed Issues and Test Evidence
 
