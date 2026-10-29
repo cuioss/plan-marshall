@@ -381,7 +381,7 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci --project-
 
 `rate_limited_bots[]` is orthogonal to the rows above: it is an additive per-bot discriminator, not a
 poll outcome, so a non-empty list never changes which row fires. It is consumed by the "Rate-limit
-refusal recovery (opt-in)" subsection below.
+refusal recovery" subsection below.
 
 #### Completion-aware poll (per enabled bot)
 
@@ -814,7 +814,7 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github
 
 `{attempts_remaining}` is the field the Branch 2 `rate-window check` read returned. `--window-expired` and `--attempts-remaining` are supplied here **because both were observed** by that read — omitting either returns `action: unmeasured`, which authorizes nothing and would leave this branch with no route.
 
-⛔ **`--attempt-held true` is REQUIRED at this consult, and omitting it silently loses the last recovery event.** Branch 2's claim, made on the pass that handed the wait back, already spent an attempt — a successful claim increments the ledger before it returns — so the cap-final claim reports `attempts_remaining: 0` from the instant it is granted, and the re-entry read reports the same zero. Feeding that post-claim zero to a selector that reads it as *no budget left* routes to `escalate_exhausted`, and this branch then releases the claim without ever generating the event the claim bought: a cap of 1 delivers zero events, and the default cap of 6 delivers five. The flag tells the selector the attempt is already HELD, so the budget is read as *may a FURTHER claim be made?* rather than as permission for this one. Exhaustion is still enforced — by `rate-window claim`'s own `recovery_cap_exhausted` refusal in Branch 2, which is the single place the cap is decided.
+⛔ **`--attempt-held true` is REQUIRED at this consult, and omitting it silently loses the last recovery event.** Branch 2's claim, made on the pass that handed the wait back, already spent an attempt — a successful claim increments the ledger before it returns — so the cap-final claim reports `attempts_remaining: 0` from the instant it is granted, and the re-entry read reports the same zero. Feeding that post-claim zero to a selector that reads it as *no budget left* routes to `escalate_exhausted`, and this branch then releases the claim without ever generating the event the claim bought: a cap of 1 delivers zero events, and the default cap of 10 delivers nine. The flag tells the selector the attempt is already HELD, so the budget is read as *may a FURTHER claim be made?* rather than as permission for this one. Exhaustion is still enforced — by `rate-window claim`'s own `recovery_cap_exhausted` refusal in Branch 2, which is the single place the cap is decided.
 
 `--notice-stale` is not forwarded at this consult. The notice that armed this claim is stale by now — its window is the one the main context just waited out — and `--attempt-held true` already tells the selector that the claim's event is owed, which is the arm that outranks a stale notice.
 

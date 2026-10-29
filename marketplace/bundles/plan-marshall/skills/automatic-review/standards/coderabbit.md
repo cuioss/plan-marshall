@@ -354,12 +354,27 @@ The operator's standing ruling for this bot, which every consumer follows and no
 - **The operator is asked only after those steps are spent**, and an answer that says "merge" or
   "continue" does not shorten the policy.
 
+**How the shipped loop implements this, and where it differs — and why.** The defaults ARE these
+figures (`review_rate_window_await` on, `review_rate_window_timeout_seconds` = 5400, `merge_lock`'s
+`--window-seconds` = 5400 and `--attempt-cap` = 10), so the default configuration runs the policy and
+nothing has to be enabled. Two steps differ from the wording above, each deliberately:
+
+- **Which event re-triggers.** The elapsed arm re-triggers `trigger_comment` for a bot that already has
+  a review on record; it closes and re-opens the PR only when the bot has NO review on record, because
+  re-delivering a request a bot already answered buys nothing. The policy's per-window "re-trigger" is
+  therefore satisfied by the ordinary trigger in the common case.
+- **What happens at the cap.** The tenth window escalates `rate_window_exhausted` to the operator
+  instead of closing and re-opening the PR automatically. The loop runs unattended for ten windows and
+  then hands a decision back rather than taking a repository-shaping action (opening a new PR) on the
+  operator's behalf; the close-and-reopen from the bullet above is the remedy offered at that
+  escalation, and the cap is what makes "the operator is asked only after those steps are spent"
+  literally true rather than open-ended.
+
 The merge-path option sets do not carry a demotion option for a required bot: `branch-cleanup.md`'s
 structural-refusal and blocked paths offer split-or-authorization, and `automatic-review/SKILL.md`'s
 structural escalation carries two options for the same reason. No shipped document offers demoting a
-required bot — the demotion is not a remedy the workflow has, whatever an older sentence may once have
-said. A bot that reviewed an older head and refused the current one is a refusal state, not a
-participation: see
+required bot — the demotion is not a remedy the workflow has. A bot whose review covers a different
+head and that refused the current one is a refusal state, not a participation: see
 [`bot-participation-contract.md`](bot-participation-contract.md) § "The currency-blind path for
 append-per-review bots".
 

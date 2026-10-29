@@ -42,33 +42,33 @@ from conftest import run_script
 
 
 class TestRecursionCap:
-    def test_sixth_attempt_is_admitted_and_the_seventh_is_refused(self, isolated_base: dict) -> None:
-        """The shipped budget is SIX recovery attempts per ``(bot_kind, pr_number)``.
+    def test_the_tenth_attempt_is_admitted_and_the_eleventh_is_refused(self, isolated_base: dict) -> None:
+        """The shipped budget is TEN recovery attempts per ``(bot_kind, pr_number)``.
 
-        The ordinals are stated as literals rather than derived from the returned
-        ``attempt_cap``, and that is the point of the test: every sibling test in
-        this class derives its bound from whatever the code ships, so all of them
-        pass against ANY cap — including a cap too small for the recovery sequence
-        to ever complete. Only a test that names the number can fail when the
-        number is wrong, which is why this one carries the boundary and the others
-        carry the semantics.
+        TEN is the operator policy's own count ("repeat up to **10 windows**"), and the
+        literals are stated rather than derived from the returned ``attempt_cap`` for a
+        reason that is the point of the test: every sibling test in this class derives
+        its bound from whatever the code ships, so all of them pass against ANY cap —
+        including a cap too small for the recovery sequence to ever complete. Only a
+        test that names the number can fail when the number is wrong, which is why this
+        one carries the boundary and the others carry the semantics.
         """
         _make_live_plan(isolated_base['base'], 'plan-a')
 
-        admitted = [_claim('plan-a') for _ in range(6)]
+        admitted = [_claim('plan-a') for _ in range(10)]
 
-        assert [r['status'] for r in admitted] == ['success'] * 6, admitted
-        assert admitted[-1]['attempts'] == 6
-        assert admitted[-1]['attempt_cap'] == 6
+        assert [r['status'] for r in admitted] == ['success'] * 10, admitted
+        assert admitted[-1]['attempts'] == 10
+        assert admitted[-1]['attempt_cap'] == 10
         assert admitted[-1]['attempts_remaining'] == 0
 
         before = _read_store(isolated_base['queue_path'])['rate_windows']['coderabbit']
-        seventh = _claim('plan-a')
+        eleventh = _claim('plan-a')
 
-        assert seventh['status'] == 'refused', seventh
-        assert seventh['reason'] == 'recovery_cap_exhausted'
-        assert seventh['attempts'] == 6
-        assert seventh['attempt_cap'] == 6
+        assert eleventh['status'] == 'refused', eleventh
+        assert eleventh['reason'] == 'recovery_cap_exhausted'
+        assert eleventh['attempts'] == 10
+        assert eleventh['attempt_cap'] == 10
         assert _read_store(isolated_base['queue_path'])['rate_windows']['coderabbit'] == before
 
     def test_attempt_past_the_cap_is_refused_with_an_explicit_verdict(self, isolated_base: dict) -> None:

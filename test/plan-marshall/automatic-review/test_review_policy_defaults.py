@@ -86,7 +86,8 @@ class TestThePolicyIsTheSourceOfTheDefaults:
         text = source.read_text(encoding='utf-8')
 
         assert 'Operator review policy' in text
-        assert 'reason for the change' in text or 'reason' in text
+        assert 'the reason for the change is recorded here' in text
+        assert 'repeat up to' in text or 'up to 10 windows' in text or 'TEN' in text
 
 
 class TestTheLoopIsOnByDefault:

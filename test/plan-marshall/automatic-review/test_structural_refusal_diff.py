@@ -651,12 +651,13 @@ class TestNoAwaitOnTheStructuralBranch:
     def test_the_barriers_own_prompt_offers_the_structural_remedies(self):
         """⛔ The barrier renders a REAL option list, and it is the one that fires by default.
 
-        This is the surface round 1 did NOT reach. `review_rate_window_await` defaults
-        to `false`, so the leaf's Branch 0 never fires on a default configuration and
-        the dispatcher's structural branch table is unreachable — the prompt an operator
-        actually sees is this one. A test that only greps the barrier's PROSE (as the
-        sibling above does) passes while its rendered `options:` block still offers
-        re-triage.
+        This is the surface round 1 did NOT reach. The leaf's Branch 0 now escalates
+        `refusal_structural` on the DEFAULT configuration, and the barrier re-derives
+        participation on its own — so this prompt is still a surface an operator sees
+        whenever the barrier observes the refusal itself (the leaf's escalation was
+        answered, or the barrier re-read a PR whose refusal state the leaf never
+        reached). A test that only greps the barrier's PROSE (as the sibling above does)
+        passes while its rendered `options:` block still offers re-triage.
         """
         options = _barrier_structural_options().lower()
         assert 'split the pr' in options

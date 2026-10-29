@@ -63,11 +63,12 @@ merge_lock = load_script_module('plan-marshall', 'manage-locks', 'merge_lock.py'
 # flag defaults to when the caller omits it — is only observable by driving this.
 SCRIPT_PATH = get_script_path('plan-marshall', 'manage-locks', 'merge_lock.py')
 
-# The cap the ``rate-window`` CLI ships as ``--attempt-cap``'s default. The
-# helpers below forward it on every verb, so a Namespace-driven test sees the
-# same attribute argparse would have produced; a test that needs a narrower cap
-# passes its own rather than reaching for a second helper.
-_DEFAULT_ATTEMPT_CAP = 6
+# The cap the ``rate-window`` CLI ships as ``--attempt-cap``'s default, READ OFF the
+# module rather than restated: the helpers below forward it on every verb, so a
+# Namespace-driven test sees the same attribute argparse would have produced. A test
+# that needs a narrower cap passes its own rather than reaching for a second helper,
+# and a test that pins the DEFAULT must go through the CLI (see TestRateWindowCli).
+_DEFAULT_ATTEMPT_CAP = merge_lock._DEFAULT_RECOVERY_ATTEMPT_CAP
 
 
 def _read_store(queue_path: Path) -> dict:

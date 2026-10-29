@@ -854,8 +854,8 @@ def resolve_recovery_action(
        admitted — reports ``attempts_remaining: 0`` the moment it succeeds. A
        caller that then re-consults after waiting out its own claim would be told
        the budget is spent and would release without triggering anything, so a cap
-       of one delivered zero recovery events and the default cap of six delivered
-       five. ``attempt_held=True`` is the caller stating it holds such a claim; the
+       of one delivered zero recovery events and the default cap of ten delivered
+       nine. ``attempt_held=True`` is the caller stating it holds such a claim; the
        exhausted arm is then skipped, because the attempt is already paid for and
        the cap was already enforced — by ``rate-window claim``'s own ``exhausted``
        refusal, which is where exhaustion is decided. The default is ``False``, so

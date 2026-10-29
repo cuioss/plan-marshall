@@ -35,7 +35,6 @@ from conftest import get_skill_dir, load_script_module
 rc = load_script_module('plan-marshall', 'automatic-review', 'review_completeness.py', register=False)
 
 _AR_SKILL = get_skill_dir('plan-marshall', 'automatic-review') / 'SKILL.md'
-_PHASE_6_SKILL = get_skill_dir('plan-marshall', 'phase-6-finalize') / 'SKILL.md'
 _BRANCH_CLEANUP = get_skill_dir('plan-marshall', 'phase-6-finalize') / 'standards' / 'branch-cleanup.md'
 
 #: The markers a consumer's roster read must carry to be fail-closed. The verb name is
@@ -105,16 +104,38 @@ class TestTheReadDistinguishesUnreadableFromEmpty:
         assert payload['error'] == 'roster_unreadable'
         assert 'required_bots' not in payload
 
+    def test_a_list_shaped_roster_override_is_read(self):
+        """A per-plan override may carry a real list; that is a roster, not a parse failure."""
+        payload = rc.read_roster(
+            'any-plan',
+            runner=lambda _plan: {
+                'status': 'success',
+                'params': {'required_bots': ['coderabbit', 'cuioss-review-bot'], 'optional_bots': ['sourcery']},
+            },
+        )
+
+        assert payload['status'] == 'success'
+        assert payload['required_bots'] == ['coderabbit', 'cuioss-review-bot']
+        assert payload['optional_bots'] == ['sourcery']
+
+    def test_a_roster_that_cannot_be_parsed_is_unreadable(self):
+        """A malformed token must not escape as a traceback, nor as a partly-read roster."""
+        payload = rc.read_roster('any-plan', runner=_readable_runner('coderabbit:sourcery', ''))
+
+        assert payload['status'] == 'error'
+        assert payload['error'] == 'roster_unreadable'
+        assert 'required_bots' not in payload
+        assert 'could not be parsed' in payload['reason']
+
 
 class TestTheCommandLineFailsClosed:
-    def test_the_verb_is_registered(self):
-        parser_names = []
-        # The parser is built inside ``main``, so the surface is read off the module's
-        # own command table rather than guessed from a help string.
-        assert hasattr(rc, 'cmd_roster')
-        for name in ('check', 'deficit', 'size-caps', 'roster', 'trigger-bot'):
-            parser_names.append(name)
-        assert 'roster' in parser_names
+    def test_the_verb_is_registered(self, capsys):
+        """The subcommand is on the REAL parser, read off its own help output."""
+        with pytest.raises(SystemExit) as exit_info:
+            rc.main(['--help'])
+
+        assert exit_info.value.code == 0
+        assert 'roster' in capsys.readouterr().out
 
     def test_the_command_returns_non_zero_on_an_unreadable_roster(self, monkeypatch, capsys):
         original = rc.read_roster

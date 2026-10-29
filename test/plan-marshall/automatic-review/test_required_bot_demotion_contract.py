@@ -108,16 +108,37 @@ class TestTheScannerCanFail:
     def test_an_already_optional_bot_is_not_a_demotion(self):
         """The required-vs-optional distinction the deliverable asks for, both arms.
 
-        A sentence about a bot that is ALREADY optional carries no required signal, so
-        reclassifying it as optional is not offered as a demotion. The paired sentence
-        names a required bot and IS reported — so the acceptance above is the
-        distinction, not a rule that accepts everything.
+        A sentence about a bot that is ALREADY optional is not offered as a demotion,
+        even when it uses the same verb and destination. The paired sentence names a
+        required bot and IS reported — so the acceptance above is the distinction, not
+        a rule that accepts everything.
         """
-        optional = 'An optional bot already listed in `optional_bots` stays optional when it goes quiet.\n'
+        optional = (
+            'An optional bot already in `optional_bots` that goes quiet may be moved to '
+            '`optional_bots` a second time with no effect.\n'
+        )
         required = 'A required bot that goes quiet should be moved to `optional_bots`.\n'
 
         assert scanner.offered_demotions(optional) == []
         assert scanner.offered_demotions(required)
+
+    def test_the_roster_token_form_is_seen(self):
+        """``required_bots`` must be seen: ``\\brequired\\b`` does not match it.
+
+        ``_`` is a word character, so a word boundary does not exist between
+        ``required`` and ``_bots``. A sentence phrased only in roster tokens is the
+        form a demotion instruction is most likely to take, and a scanner blind to it
+        reports a clean corpus over the very defect it exists to catch.
+        """
+        text = 'Move the bot from `required_bots` to `optional_bots` when it keeps declining.\n'
+
+        assert scanner.offered_demotions(text)
+
+    def test_an_offer_that_names_only_a_reviewer_is_seen(self):
+        """The shipped defect that survived the first sweep said "the reviewer", not "required"."""
+        text = 'The barrier records a remedy that moves the reviewer to `optional_bots`.\n'
+
+        assert scanner.offered_demotions(text)
 
     def test_a_short_form_destination_is_caught(self):
         """``optional`` without the ``_bots`` suffix is the form the shipped defect used."""

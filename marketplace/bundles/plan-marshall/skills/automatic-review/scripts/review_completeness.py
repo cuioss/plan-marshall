@@ -1644,6 +1644,24 @@ def _run_manifest_step_params(plan_id: str) -> dict:
         }
 
 
+def _roster_value(value: object) -> str | None:
+    """Normalise a roster param value to the comma-separated form ``_split_bots`` reads.
+
+    The composed snapshot carries a comma-separated string, but a per-plan override may
+    carry a real list. Both are LEGITIMATE roster shapes, so the list is joined rather
+    than rejected; the token SHAPE check (a pair token on a bare-form flag) then runs
+    uniformly over either form. A value of any other type is stringified so
+    :func:`_split_bots` still sees a string — the read is then a wrong roster rather
+    than a traceback, and an empty result reports as an empty roster only because the
+    caller reached the success arm.
+    """
+    if value is None:
+        return None
+    if isinstance(value, (list, tuple)):
+        return ','.join(str(item) for item in value)
+    return str(value)
+
+
 def read_roster(plan_id: str, *, runner=None) -> dict:
     """Read the configured review-bot roster, distinguishing unreadable from empty.
 
@@ -1681,11 +1699,23 @@ def read_roster(plan_id: str, *, runner=None) -> dict:
             'roster_read': False,
             'reason': f'the {ROSTER_STEP_ID} step carried no param object',
         }
+    try:
+        required = _split_bots(_roster_value(params.get('required_bots')), '--required-bots')
+        optional = _split_bots(_roster_value(params.get('optional_bots')), '--optional-bots')
+    except (MalformedBotFlag, AttributeError, TypeError) as exc:
+        # A roster that could not be PARSED is as unreadable as one that could not be
+        # fetched: the caller must stop rather than receive a partly-read roster.
+        return {
+            'status': 'error',
+            'error': 'roster_unreadable',
+            'roster_read': False,
+            'reason': f'the {ROSTER_STEP_ID} roster could not be parsed: {exc}',
+        }
     return {
         'status': 'success',
         'roster_read': True,
-        'required_bots': _split_bots(params.get('required_bots'), '--required-bots'),
-        'optional_bots': _split_bots(params.get('optional_bots'), '--optional-bots'),
+        'required_bots': required,
+        'optional_bots': optional,
     }
 
 

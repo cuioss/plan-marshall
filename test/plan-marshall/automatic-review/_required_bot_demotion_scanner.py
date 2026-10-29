@@ -20,16 +20,19 @@ What counts as an offer, stated exactly:
 
 * a DEMOTION VERB (``move``/``demote``/``reclassify``/``drop`` and inflections) whose
   destination is ``optional`` or ``optional_bots``; and
-* the sentence is about a REQUIRED bot — it names ``required`` / ``required_bots``; and
+* the sentence is about a reviewer that could be demoted — it names ``required`` /
+  ``required_bots`` or, when no such qualifier appears, a bot/reviewer object; and
 * the sentence does not NEGATE the offer (``never``, ``not``, ``no``, ``withdrawn``,
-  ``forbidden``, …).
+  ``forbidden``, …) in the OFFER'S OWN CLAUSE.
 
 The negation arm is load-bearing in both directions. Every policy statement in this
 corpus is written as a prohibition ("a required bot is **never** demoted to
 `optional_bots`"), so a scanner that flagged the phrase itself would flag the rule
-alongside its violation. And a sentence about an ALREADY-OPTIONAL bot is not a
-demotion at all: reclassifying an optional bot as optional changes nothing, so it
-carries no ``required`` qualifier and is not reported.
+alongside its violation. And the negation is scoped to the offer's clause rather than
+the sentence: "move it to `optional`, never another trigger" states a demotion and an
+unrelated prohibition in one sentence, and a sentence-level test acquits the first.
+Finally, a sentence about an ALREADY-OPTIONAL bot is not a demotion at all:
+reclassifying an optional bot as optional changes nothing, so it is not reported.
 """
 
 from __future__ import annotations
@@ -55,9 +58,16 @@ _DEMOTION_OFFER = re.compile(
     rf'|{_DESTINATION}\s*(?:,|—|-)?\s*(?:as|instead|rather)[^.;\n]{{0,40}}?{_DEMOTION_VERB}\b',
     re.IGNORECASE,
 )
-#: The sentence must be about a REQUIRED bot. ``required_bots`` counts: it is the
-#: roster the demotion would move the bot out of.
-_REQUIRED_SIGNAL = re.compile(r'\brequired\b', re.IGNORECASE)
+#: The sentence must be about a reviewer that could be demoted: an explicit
+#: ``required``/``required_bots`` qualifier, or a bare bot/reviewer object. The roster
+#: token is spelled ``required(?:_bots)?`` because a word boundary does not exist
+#: between ``required`` and ``_bots`` — ``_`` is a word character, so ``\brequired\b``
+#: silently misses the roster's own name.
+_REQUIRED_SIGNAL = re.compile(r'required(?:_bots)?\b|\b(?:reviewer|bot)\b', re.IGNORECASE)
+#: A sentence describing a bot that is ALREADY optional: reclassifying it as optional is
+#: not a demotion. Paired with the required signal, so a sentence that names a required
+#: bot is never excused by a nearby mention of an optional one.
+_ALREADY_OPTIONAL = re.compile(r'\balready optional\b|\boptional bot\b|\ban optional\b', re.IGNORECASE)
 #: A prohibition. Only NEGATION LOCAL TO THE OFFER counts: a sentence can state an
 #: offer and a separate prohibition at once ("move it to `optional`, never another
 #: trigger"), and letting any ``never`` anywhere in the sentence launder the offer is
@@ -83,8 +93,6 @@ _SENTENCE_SPLIT = re.compile(r'(?<=[.!?])\s+|\n+|\s+[|]\s+')
 #: splitting there is how a laundered offer hides from the clause window.
 _WRAP_JOIN = re.compile(r'\n(?!\s*(?:[-*+]\s|\d+\.\s|#{1,6}\s|\|))')
 
-DEMOTION_KEYWORD = 'optional_bots'
-
 
 def sentences(text: str) -> list[str]:
     """Split shipped text into claim-sized sentences.
@@ -104,7 +112,9 @@ def offered_demotions(text: str) -> list[str]:
     offenders: list[str] = []
     for sentence in sentences(text):
         if not _REQUIRED_SIGNAL.search(sentence):
-            # An already-optional bot being called optional is not a demotion.
+            continue
+        if _ALREADY_OPTIONAL.search(sentence) and not re.search(r'required(?:_bots)?\b', sentence, re.IGNORECASE):
+            # An already-optional bot being moved to `optional_bots` is not a demotion.
             continue
         for match in _DEMOTION_OFFER.finditer(sentence):
             window = sentence[max(0, match.start() - _NEGATION_BEFORE_CHARS) : match.end() + _NEGATION_AFTER_CHARS]

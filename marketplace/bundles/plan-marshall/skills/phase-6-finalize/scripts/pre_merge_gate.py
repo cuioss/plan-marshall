@@ -467,21 +467,6 @@ def _provider_pr_notation(project_dir: str | None = None) -> str | None:
     return None
 
 
-def _csv(value: Any) -> list[str]:
-    """Read a roster / bot list off a param value as a list of tokens.
-
-    The manifest snapshot carries the lists as comma-separated strings, but a
-    per-plan override can supply a real list, so both shapes are read. An absent
-    value is the empty list — and, for the required side, that empty is exactly what
-    :func:`_check_participation` refuses rather than passes.
-    """
-    if value is None:
-        return []
-    if isinstance(value, (list, tuple)):
-        return [str(item).strip() for item in value if str(item).strip()]
-    return [token.strip() for token in str(value).split(',') if token.strip()]
-
-
 def _pairs(records: Any, value_key: str) -> list[str]:
     """Render ``[{bot_kind, <value_key>}, …]`` records as ``bot:value`` pairs.
 
@@ -513,18 +498,15 @@ def _bot_kinds(records: Any) -> list[str]:
     return kinds
 
 
-def _read_roster(plan_id: str) -> dict[str, Any]:
-    """Read the configured review-bot roster from the execution manifest.
+def _roster_runner(plan_id: str) -> dict[str, Any]:
+    """The step-params read the shared roster contract is computed from.
 
-    ``{'read': True, 'required_bots': [...], 'optional_bots': [...]}`` when the
-    snapshot was read, ``{'read': False, 'reason': …}`` otherwise. The two are never
-    collapsed: ``read`` says whether the CONFIGURATION could be observed at all, which
-    is a different question from what it says. A read roster configuring no REQUIRED bot
-    is answered ``read: True`` with an empty list — and the caller then decides, which is
-    why :func:`_check_participation` refuses that shape rather than treating it as a
-    decided empty quorum: nobody decided it, the step simply carried no roster.
+    Kept as the module's own ``_run_verb`` seam (rather than the shared reader's
+    subprocess fallback) so a caller that stubs this module's executor seam stubs the
+    roster read too — one seam, and the shared reader owns the parsing and the
+    unreadable/empty distinction.
     """
-    result = _run_verb(
+    return _run_verb(
         _MANIFEST_NOTATION,
         [
             'step-params',
@@ -539,21 +521,37 @@ def _read_roster(plan_id: str) -> dict[str, Any]:
         silent_error='roster_unreadable',
         unparseable_error='roster_unreadable',
     )
-    if result.get('status') != 'success':
+
+
+def _read_roster(plan_id: str) -> dict[str, Any]:
+    """Read the configured review-bot roster, through the ONE fail-closed reader.
+
+    ``review_completeness.read_roster`` owns the read (and the unreadable-vs-empty
+    distinction); this function only adapts its record to the shape the participation
+    chain consumes. Two readers of the same step params would be two sources of truth
+    for one contract, and they would eventually disagree about what an empty roster
+    means — the exact conflation the distinction exists to remove.
+
+    ``{'read': True, 'required_bots': [...], 'optional_bots': [...]}`` when the
+    snapshot was read, ``{'read': False, 'reason': …}`` otherwise. ``read`` says
+    whether the CONFIGURATION could be observed at all, which is a different question
+    from what it says: a read roster configuring no REQUIRED bot is answered
+    ``read: True`` with an empty list, and :func:`_check_participation` decides what to
+    do with that (it refuses it — nobody decided the empty quorum).
+    """
+    import review_completeness
+
+    record = review_completeness.read_roster(plan_id, runner=_roster_runner)
+    if record.get('status') != 'success':
         return {
             'read': False,
-            'reason': (
-                f'the configured review-bot roster could not be read from the {ROSTER_STEP_ID} '
-                f'step params ({result.get("error") or "unknown"})'
-            ),
+            'reason': record.get('reason')
+            or f'the configured review-bot roster could not be read from the {ROSTER_STEP_ID} step params',
         }
-    params = result.get('params')
-    if not isinstance(params, dict):
-        return {'read': False, 'reason': f'the {ROSTER_STEP_ID} step carried no param object'}
     return {
         'read': True,
-        'required_bots': _csv(params.get('required_bots')),
-        'optional_bots': _csv(params.get('optional_bots')),
+        'required_bots': record.get('required_bots') or [],
+        'optional_bots': record.get('optional_bots') or [],
     }
 
 
