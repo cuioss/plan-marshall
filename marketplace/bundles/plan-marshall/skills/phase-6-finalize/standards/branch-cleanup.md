@@ -530,7 +530,7 @@ The disposition of a red gate depends on WHICH path produced it — the two path
       decision --plan-id {plan_id} --level ERROR --message "(plan-marshall:phase-6-finalize) Branch cleanup: CI RED on the authoritative immediate-merge gate (use_merge_queue=false, no queue re-test) — aborting merge for known-red PR #{pr_number}; re-enter finalize after CI is green"
     ```
 
-  - **Escalate (operator override)**: when an operator gate is warranted, fire an inline `AskUserQuestion` mirroring the trigger-A timeout gate — default **"Abort merge"**, with an explicit **"Merge anyway — override red CI"** option that decision-logs the override at WARNING before proceeding. Silent warn-and-proceed is NOT one of the options.
+  - **Escalate (operator override)**: when an operator gate is warranted, fire an inline `AskUserQuestion` mirroring the trigger-A timeout gate — default **"Abort merge"**, with an explicit **"Merge anyway — override red CI"** option that decision-logs the override at WARNING before proceeding. Silent warn-and-proceed is NOT one of the options. That option's description carries `{merge_consequence}`, rendered exactly as at every other pre-enqueue merge option (§ "Every pre-enqueue merge question says whether a second one follows").
 
     On the **"Merge anyway — override red CI"** selection, bind the override to the tree it was granted against. Resolve the live HEAD:
 
@@ -580,6 +580,19 @@ python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-e
 Extract `final_merge_without_asking` from the returned `params` object as `{final_merge_without_asking}` (default: `true`). Valid values: `true`, `false`. The default is `true` — unattended auto-merge once CI is green, serialized across plans via the cross-plan merge-lock so concurrent plans can never race on the merge-to-main critical section. `false` is the opt-in to being prompted before the irreversible merge to `main`. The read mechanism is a plain boolean — no tri-state, no back-compat normalization.
 
 **Why the default is `true`** — this is an operator decision, not an inherited default. It consolidates the shipping-side gate into the same autonomy posture as the forward-transition gates, leaving `plan_without_asking` as the single deliberate human checkpoint in the plan lifecycle.
+
+#### Every pre-enqueue merge question says whether a second one follows
+
+`final_merge_without_asking` decides whether ANY question follows a pre-enqueue merge option, so a question that offers such an option must say which it is. Otherwise an operator choosing "Merge anyway (record reason)" at the review barrier on the `true` path is not told that their answer merges the PR on the spot, and the same words mean the opposite on the `false` path.
+
+The sentence is **generated, never authored per call site**: render `{merge_consequence}` from
+
+```bash
+python3 .plan/execute-script.py plan-marshall:phase-6-finalize:pre_merge_gate consequence-text \
+  --final-merge-without-asking {final_merge_without_asking}
+```
+
+and interpolate the returned `text` into the option's description. The verb answers from the knob's value alone — `true` renders that no second question follows, `false` that a confirmation follows — so a site cannot pair the two values' wording, and there is no site at which the sentence is written out by hand. It deliberately claims only what the knob decides: whether ANOTHER question comes, never that the merge happens the instant the option is chosen, because other gates (the review barrier above all) may still act on the tree. Four sites render a pre-enqueue merge option and each carries the placeholder: the review barrier's "Merge anyway (record reason)", the structural refusal's "Accept the coverage gap (record reason)", "Merge anyway — override red CI" (§ "CI gate before the merge"), and [`branch-cleanup-rereview.md`](branch-cleanup-rereview.md)'s "Merge anyway — proceed unreviewed". This gate's own "Yes, merge" is the second question on the `false` path and exists only there, so it needs no consequence sentence.
 
 **Two safety mechanisms still bind on the now-default auto path**, and neither depends on the human consent point the default removes:
 
@@ -823,9 +836,24 @@ The finding **store** gate is enforced **mechanically, at the merge dispatch its
 
 **The same entry point also binds the merge to the HEAD the gates saw.** A clean store says nothing about WHICH tree was validated, and the head-dependent finalize gates each stamp `head_at_completion`. `pre_merge_gate merge` compares the local merge candidate's HEAD with every stamped head in the `6-finalize` step records and refuses with `merge_candidate_not_gated` — `dispatched: false`, `steps[]` naming each mismatched step and both SHAs — when any of them differs. Membership is DERIVED from the records: a step is head-dependent exactly when it stamped the field (the ext-point contract makes that field mandatory for such a step and meaningless for the others), so no list of step ids lives here or in the script. A plan whose records carry no head, an unreadable status and an unreadable local HEAD all pass rather than refuse: each is an unknown, never a proven mismatch. The case this closes is PLAN-LB-26, where the gates were stamped `3db65fc05` and `74e6bfda` merged.
 
+**The same entry point also proves REQUIRED-BOT PARTICIPATION.** A clean findings store is blind to an ABSENCE: a required reviewer that never reviewed files no comment, so no pending count can see it. The barrier below asks the `review_completeness` predicate that question, but a barrier is a step body a run can skip. `pre_merge_gate merge` therefore asks it too — it reads the configured roster from the `plan-marshall:automatic-review` step params, re-runs the provider producer against the current head, and feeds the result to `review_completeness check`, so the dispatch runs the barrier's own predicate over the barrier's own roster. A gap is refused with `merge_participation_unproven`, carrying `unproven_bots[]`, each bot's classified state, and an `authorizable` discriminator:
+
+- **`authorizable: true`** — a KNOWN gap with named bots. A HEAD-bound authorization over `review-barrier-gap` is admissible at the merge candidate, and when one is the merge proceeds with `participation_gate: authorized`, naming the kind as `merge_authorization_kind`, which is what makes Branch E of Mark Step Complete render `merged under {kind}, gap recorded` rather than a clean-merge wording.
+- **`authorizable: false`** — the participation state could not be READ: an unreadable roster, an empty roster, an unresolved provider, a producer that did not answer or that could not resolve the merge candidate, or a predicate that did not answer. **No grant covers this**, on the same rule § "UNKNOWN disposition — blocked, and never authorizable" states for the store gate: a ruling covers a gap somebody can name, never a state nobody could read. Reading the two alike would let a single earlier grant admit a merge with zero participation proof.
+
+**An EMPTY roster is not a pass.** The refusal payload states `roster_read` separately from any bot list, so "the roster could not be read", "the roster was read and requires nobody", and "these bots did not review" are three distinguishable outcomes. A plan whose manifest carries no `plan-marshall:automatic-review` step params answers `roster_unreadable` (`step-params get` finds no such step), and one whose step params carry an empty `required_bots` answers `roster_empty`; both are `authorizable: false`, so neither is reachable by a ruling — the remedy is to make the roster readable, not to merge past it.
+
+**Provider coverage is not uniform.** The producer notation is resolved from `marshal.json`'s `providers[]`, so a project on any configured provider reaches its own producer. The classification flags are still sent unconditionally, so a provider whose producer declares neither `--required-bots` nor `--optional-bots` — the asymmetry § "Re-read bot comments against the current HEAD" records for `gitlab_pr fetch_findings` — REJECTS the call at argparse, and the dispatch answers `reason: participation_unreadable` (the producer answered nothing). A producer that instead answers successfully and carries no participation arm at all answers `reason: participation_arm_unavailable`. Both are `authorizable: false`: on such a provider no required bot can be PROVEN a participant, so the merge is blocked until the provider's participation arm exists. That is the fail-closed reading rather than a silent pass.
+
+**The dispatch and the barrier run one predicate, not one identical command.** Both feed `review_completeness check` the producer's sets under the configured roster, so they cannot disagree about what participation MEANS. Two overlays differ deliberately: the dispatch passes `--triage-ran` (it runs after triage, so a still-pending required finding is a real incompleteness), and it supplies no `not_triggered` / `declined` overlay, because those are read from verbs the merge dispatch does not call. A reviewer in one of those two states is therefore REFUSED (both are unproven members) and reported as `absent`; the refusal names the bot, and the operator's remedy is the same recorded ruling.
+
+The operator's standing ruling needs no grant and is admitted by the predicate itself — a quota-limited required bot whose qualifying review of this head is on record resolves `participated`, because the predicate ranks current-head participation above an observed refusal.
+
+Because the participation chain calls the provider producer, and that producer FILES findings for comments it has not seen before, the dispatch re-reads the findings store after it: a comment that landed between the first store read and that fetch is in the store by then, and the second read is what keeps this dispatch the latest point a pending finding can still stop the merge.
+
 The gate cannot be skipped, because the merge is only reachable through it: § "Merge routing (`use_merge_queue`)" below dispatches `pre_merge_gate merge` and never a bare `ci pr safe-merge` / `ci pr merge-queue`. Like `findings-check`, the entry point writes NO handshake row (see [`../../plan-marshall/references/phase-handshake.md`](../../plan-marshall/references/phase-handshake.md) § `findings-check`).
 
-It re-reads the store; the provider re-fetch below re-reads the provider for comments never fetched. The two are complementary and both run before the merge — the provider re-fetch here, the store gate at the dispatch, which is the latest point a pending finding can still stop the merge. The gate's refusals (`blocking_findings_present`, `query_failed`) and the disposition each one takes are stated where the gate fires, in § "Merge routing (`use_merge_queue`)" → "Gate result — branch on `dispatched` first".
+It re-reads the store; the provider re-fetch below re-reads the provider for comments never fetched. The two are complementary and both run before the merge — the provider re-fetch here, and the store gate at the dispatch, which re-reads the store AGAIN after its own participation chain has run the provider producer, so it remains the latest point a pending finding can still stop the merge. The gate's refusals (`blocking_findings_present`, `query_failed`, `merge_candidate_not_gated`, `merge_participation_unproven`) and the disposition each one takes are stated where the gate fires, in § "Merge routing (`use_merge_queue`)" → "Gate result — branch on `dispatched` first".
 
 This gate is the fail-closed pre-merge complement to the lifecycle completion boundary's `assert_finalize_findings_clean` state assertion (`manage-status transition --completed 6-finalize` / `archive`): the completion boundary catches a plan that reached completion with an actionable finding still pending, and this gate catches the pending findings BEFORE the merge rather than after.
 
@@ -1342,7 +1370,7 @@ AskUserQuestion:
         - label: "Split the PR into diffs under the cap"
           description: "Nothing merges now. You break the change into smaller pull requests, each under the ceiling, which the reviewer will then read"
         - label: "Accept the coverage gap (record reason)"
-          description: "The change lands unreviewed by EVERY reviewer listed above, not just the size-capped one. Your reason is written down against this exact version"
+          description: "The change lands unreviewed by EVERY reviewer listed above, not just the size-capped one. Your reason is written down against this exact version. {merge_consequence}"
       multiSelect: false
 ```
 
@@ -1425,7 +1453,7 @@ AskUserQuestion:
         - label: "Re-triage now (recommended)"
           description: "Works through the outstanding comments first — fixing, dismissing or accepting each — and then comes back here to merge"
         - label: "Merge anyway (record reason)"
-          description: "{The change lands on {base_branch} with those comments still unanswered | The change joins the merge queue with those comments still unanswered, and the queue merges it into {base_branch} once its own re-test passes} (routed by use_merge_queue, the same value that routes the pre-merge prompt). Your reason is written down against this exact version, so a later reader can see what was accepted and why"
+          description: "{The change lands on {base_branch} with those comments still unanswered | The change joins the merge queue with those comments still unanswered, and the queue merges it into {base_branch} once its own re-test passes} (routed by use_merge_queue, the same value that routes the pre-merge prompt). Your reason is written down against this exact version, so a later reader can see what was accepted and why. {merge_consequence}"
         - label: "Defer merge"
           description: "Stops here without merging and without triaging. The comments stay outstanding and your pull request stays open; re-run finalize when you are ready"
       multiSelect: false
@@ -1570,8 +1598,16 @@ Both routes below return the entry point's TOON, and it exits 0 on every outcome
   python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
     decision --plan-id {plan_id} --level WARNING --message "(plan-marshall:phase-6-finalize) Pre-merge HEAD binding: merge_candidate_not_gated — candidate {head}, ungated steps {steps} (recorded heads named in the payload); merge blocked, no dispatch"
   ```
+- **`dispatched: false` with `error: merge_participation_unproven`** → the store was clean and the candidate was gated, but a REQUIRED reviewer's participation is not proven against it (`unproven_bots[]` + each bot's `bot_states` entry). Branch on the payload's own `authorizable` field, because the two halves have DIFFERENT remedies:
+  - **`authorizable: true`** — the predicate REPORTED a gap with named bots, so an operator ruling can cover it. Route it exactly like the barrier's participation gap: `{barrier_mode} == fail_into_loopback` → release the mutex, record `branch-cleanup` as `loop_back` to `6-finalize` so the review pipeline re-fires; `{barrier_mode} == ask` → offer the prompt's "Merge anyway (record reason)", and on that selection grant `barrier-ask-override` over `review-barrier-gap` at the freshly-resolved HEAD, re-acquire, and re-enter this gate. A required reviewer is never demoted to `optional_bots` and never dropped from the roster as a remedy.
+  - **`authorizable: false`** — the participation state could not be READ (unreadable roster, empty roster, unresolved provider, a producer that did not answer or could not resolve the candidate, a predicate that did not answer); `reason` names which. This is § "UNKNOWN disposition — blocked, and never authorizable" applied to participation: release the merge mutex if held, emit the WARNING decision line naming `reason`, and STOP. **No `merge-authorization` grant covers it** — a ruling covers a gap somebody can name, never a state nobody could read — so the remedy is to make the gate readable (roster step params, provider configuration, producer, predicate), then re-enter.
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+    decision --plan-id {plan_id} --level WARNING --message "(plan-marshall:phase-6-finalize) Pre-merge participation gate: merge_participation_unproven — reason={reason}, authorizable={authorizable}, unproven_bots={unproven_bots} (states in the payload); merge blocked, no dispatch"
+  ```
 - **`dispatched: false` WITHOUT `refusal_category: invocation`, any other error** — `error: query_failed` (the pending count could not be evaluated: executor unreachable / partial query failure), `error: findings_verdict_unrecognised` (the verdict source answered `status: success` without a measured `blocking_count: 0`), or any other store-verdict refusal the gate passes through → the store gate **fails closed**: take § "UNKNOWN disposition — blocked, and never authorizable" above, exactly as written there. A merge NEVER proceeds on an unevaluable store gate, and no `merge-authorization` grant covers this gap.
-- **`dispatched: true`** → the store was proven clean (`findings_gate: clean`) and the gate issued the routed verb. The rest of the payload IS that verb's payload, verbatim, so the existing route-specific branches below apply to it unchanged.
+- **`dispatched: true`** → every gate was proven (`findings_gate: clean`, plus `participation_gate: complete` or `participation_gate: authorized` with `merge_authorization_kind` and `merge_authorization_gap` when a ruling was relied on) and the gate issued the routed verb. The verb's OWN payload fields are that verb's verbatim — the gate ADDS the findings/participation fields above and never rewrites one — so the existing route-specific branches below apply to it unchanged.
 
 The routing itself:
 
@@ -2140,32 +2176,35 @@ This step declares the `records_facts` union `action`, `upstream_commit_count`, 
 
 **Length discipline.** Every `--display-detail` below is bounded (≤80 chars, ASCII, no trailing period) and MUST be checked against its placeholders' **worst-case expansion**, never its literal form. **This rule binds the figures published here too** — every count below is re-derived by measuring the expanded string, never transcribed. The two placeholder-bearing branches:
 
-- **Branch A** — worst case `rebase deferred to queue, queue-merged, corroborated, cleanup complete`, **70 chars**. The two axes are **coupled by `use_merge_queue`**, so the longest rebase clause and the longest merge clause cannot co-occur: `already current with base` (25) requires a rebase to have run, which happens only on `use_merge_queue == false`, where the merge clause is necessarily `merged directly` (15); and `queue-merged, corroborated` (26) requires `use_merge_queue == true`, where the rebase is skipped and the clause is `rebase deferred to queue` (24). Measuring the free cross-product would report an unreachable 71.
+- **Branch A** — worst case `rebase deferred to queue, queue-merged, corroborated, cleanup complete`, **70 chars**. The two axes are **coupled by the ROUTE**, so the longest rebase clause and the longest merge clause cannot co-occur: a rebase clause other than `rebase deferred to queue` requires the run to have rebased, and every rebasing route ends in a DIRECT merge — the `use_merge_queue == false` path, and the `queue_wait: forbidden` reroute which rebases while the knob is `true` — so its merge clause is necessarily `merged directly` (15). Conversely `queue-merged, corroborated` (26) requires `merge_mechanism == merge_queue`, which no rebasing route can produce, so its rebase clause is `rebase deferred to queue` (24). Measuring the free cross-product would report an unreachable 71.
 - **Branch E** — worst case `merged under barrier-ask-override, gap recorded`, **47 chars**. `{kind}` does NOT range over the whole `bound_via: grant` set: this site checks with `--gap-class review-barrier-gap`, and `barrier-ask-override` is the only § "Merge-Authorization Roster" row whose `authorizes:` is `review-barrier-gap`, so it is the only value `admissible_kinds` can yield here — and it is also the literal the `ask` path substitutes. The longest grant kind overall is `rereview-timeout-override` (25 chars, which would expand to 52), but it authorizes `rereview-timeout` and can never be admissible at this site.
 
 Branch B carries one placeholder (`{base_branch}`) and is checked the same way. Branches C, D, and F carry none in their display details, so each is its own worst case — C 16, D 26, and F's longest sub-path F2 44 chars, measured — and the longest of those three is Branch F at **44 chars**.
 
 The three `loop_back` call sites in the pre-merge comment barrier are deliberately untouched. The reason is that each hands control back with the cleanup **not attempted** — no branch state was determined, so there is no honest subset to record. It is NOT that `loop_back` exempts a site from the fact obligation: Branch F is a `loop_back` and does carry facts, because it determined the PR's state before deferring.
 
-**Branch A — PR mode (landed merge + cleanup)** (the merge **landed** and was corroborated, base branch pulled, feature branch deleted locally and on remote, worktree removed — preceded by a rebase on the `use_merge_queue == false` path and by no rebase on the `true` path). Branch A is the **clean-barrier** payload: use it only when the pre-merge review barrier resolved via its clean path. When the merge proceeded past a reported gap under an authorization, emit **Branch E** instead. When the PR was enqueued but the queue merge never landed, emit **Branch F** instead — Branch A requires `{merge_landed} == true`. It is the only clean-path branch that reaches a landed merge, so it carries `merge_mechanism` and `work_performed` **always**, plus the two rebase facts **on the path that rebased**:
+**Branch A — PR mode (landed merge + cleanup)** (the merge **landed** and was corroborated, base branch pulled, feature branch deleted locally and on remote, worktree removed — preceded by a rebase on every route that rebases: the `use_merge_queue == false` path and the `queue_wait: forbidden` reroute; on the plain `true` path, where the queue owns the rebase, none ran). Branch A is the CLEAN payload: use it when the dispatched merge reported no `merge_authorization_kind` (§ "Which branch applies" below). When the dispatched payload DID report one, emit **Branch E** instead. When the PR was enqueued but the queue merge never landed, emit **Branch F** instead — Branch A requires `{merge_landed} == true`. It is the only clean-path branch that reaches a landed merge, so it carries `merge_mechanism` and `work_performed` **always**, plus the two rebase facts **on the path that rebased**:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
-  --plan-id {plan_id} --phase 6-finalize --step branch-cleanup --outcome done \
-  {--fact action={action} (if use_merge_queue == false)} \
-  {--fact upstream_commit_count={rebase_upstream_commit_count} (if use_merge_queue == false)} \
+python3 .plan/execute-script.py plan-marshall:phase-6-finalize:pre_merge_gate record-merge \
+  --plan-id {plan_id} \
+  {--fact action={action} (if this run reached Rebase Branch onto Base)} \
+  {--fact upstream_commit_count={rebase_upstream_commit_count} (if this run reached Rebase Branch onto Base)} \
   --fact merge_mechanism={merge_mechanism} \
   --fact merge_state=merged \
   --fact cleanup_owed=false \
-  --fact work_performed=true \
-  --display-detail "{rendered_detail}"
+  --fact work_performed=true
 ```
 
-The two rebase facts carry the same `{… (if …)}` conditional form the rest of this document uses for a per-path payload, because they are **conditional, not optional-by-taste**: they are recorded iff this run reached the rebase, which per § "Rebase Branch onto Base" it does iff `use_merge_queue == false`. On the `true` path no rebase ran, so both lines are omitted entirely — omission is the honest signal the fact table above requires, and interpolating a placeholder that has no value would fabricate one.
+The two rebase facts carry the same `{… (if …)}` conditional form the rest of this document uses for a per-path payload, because they are **conditional, not optional-by-taste**: they are recorded iff this run reached the rebase. That is the `use_merge_queue == false` path, and ALSO the `queue_wait: forbidden` reroute, which runs § "Rebase Branch onto Base" while `use_merge_queue == true` (§ "Merge routing" → the queue-wait suppression). The condition is therefore "did this run rebase", never the knob: conditioning it on `use_merge_queue == false` alone would omit the facts on the reroute, where the rebase DID run. The verb enforces the consequence — a `pr_safe_merge` record with no `action` is refused, because a direct merge always reached the rebase and would otherwise render "rebase deferred to queue" on a path that never enqueued.
+
+**`record-merge` writes the record AND the rendering.** The verb forwards these facts to `manage-status mark-step-done` and composes `--display-detail` from them — the two rebase clauses below from the `action` fact and the merge clause from `merge_mechanism`. The detail is therefore a FUNCTION of the recorded facts, which is what makes the rule at the top of this section (a rendering must never assert a rebase or a merge the recorded facts do not support) a property of the mechanism rather than a matter of care. It refuses a record missing any of the four mandatory facts, one whose `merge_state` is not `merged`, one whose action contradicts its route (`pr_safe_merge` without the two rebase facts this run observed, or a `merge_queue` record carrying them — enforced for Branch E's rendering too, not only for this one), and one whose rendering would breach the bound.
+
+**Which branch applies is decided by the merge RESULT**, and that rule is stated once, here: `pre_merge_gate merge` reports `merge_authorization_kind` on the dispatched payload exactly when it relied on a ruling, with `participation_gate: authorized` beside it. That field selects Branch E; its absence selects Branch A. A merge whose dispatch proved participation did not proceed past a participation gap — even if the barrier reported one earlier, because a review that landed in between genuinely closed it — so it renders the clean form, and rendering it as authorized would claim a gap the merge did not rely on.
 
 **`upstream_commit_count` has two distinct bindings, so the fact site uses a DISTINCT placeholder.** The pre-merge gate's mandatory classifier re-run (§ "Re-run the classifier against the current head") also parses a field of that name and interpolates it into the operator prompt, on BOTH paths — and it runs LATER, so `{upstream_commit_count}` is bound to the classifier's value by the time an executor reaches this block. The two are not interchangeable: the fact recorded here is the count the `worktree-rebase-to` payload reported for the replay this step performed, so it exists only where that replay did, while a classifier-sourced count is an observation of `origin/{base_branch}` rather than a record of work this step did. Capturing the rebase payload's value as `{rebase_upstream_commit_count}` when § "Rebase Branch onto Base" parses its return is what keeps the two apart structurally; a prose prohibition alone would leave the executor interpolating the wrong binding by name. The recorded FACT key stays `upstream_commit_count` — only the template variable differs.
 
-Render `{rendered_detail}` as `"{rebase_clause}, {merge_clause}, cleanup complete"`, composing the two clauses independently: the rebase clause comes from `action` (or from its absence) and the merge clause from `merge_mechanism`. Both axes must be rendered as clauses rather than interpolated raw — a single-axis form such as `merged via {merge_mechanism}` reads as "this step merged it via the queue" and so claims for the queue path a merge this step never performed:
+`record-merge` renders the detail as `"{rebase_clause}, {merge_clause}, cleanup complete"`, composing the two clauses independently: the rebase clause comes from `action` (or from its absence) and the merge clause from `merge_mechanism`. Both axes must be rendered as clauses rather than interpolated raw — a single-axis form such as `merged via {merge_mechanism}` reads as "this step merged it via the queue" and so claims for the queue path a merge this step never performed. The tables below are the SPECIFICATION of that rendering, and `record_merge` is what applies them:
 
 | `action` | Rebase clause |
 |----------|---------------|
@@ -2213,22 +2252,22 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
   --display-detail "no PR, nothing to clean up"
 ```
 
-**Branch E — merged under an authorization** (PR mode, but the pre-merge review barrier reported a gap and the merge proceeded anyway — either because § "Authorization check — the only admissible evidence on a blocked path" returned `any_admissible: true`, or because the operator selected "Merge anyway (record reason)" in the `{barrier_mode} == ask` branch and a `barrier-ask-override` ruling was granted). This branch REPLACES Branch A on those paths: Branch A's rendered detail describes an ordinary rebase-and-merge and so reads exactly like a passed gate, which is the phrasing the barrier's decision-log rule forbids, and an authorized bypass that renders as a clean merge is invisible to the operator reading the step output.
+**Branch E — merged under an authorization** (PR mode, and the DISPATCHED merge payload carried a `merge_authorization_kind` — see § "Which branch applies" under Branch A for the rule). This branch REPLACES Branch A on those paths: Branch A's rendered detail describes an ordinary rebase-and-merge and so reads exactly like a passed gate, which is the phrasing the barrier's decision-log rule forbids, and an authorized bypass that renders as a clean merge is invisible to the operator reading the step output.
 
-`{kind}` is the authorization kind actually relied on (the single value of `admissible_kinds` on the check path, or `barrier-ask-override` on the ask path). The form is fixed-width by construction — the unbounded gap expansion belongs to the `decision`-log line only, never here.
+`{kind}` is the authorization kind actually relied on (the single value of `admissible_kinds` on the check path, or `barrier-ask-override` on the ask path). `pre_merge_gate merge` reports that kind as `merge_authorization_kind` on the dispatched payload, so it is read from the merge result rather than re-derived here. The form is fixed-width by construction — the unbounded gap expansion belongs to the `decision`-log line only, never here.
 
-This branch reaches the same rebase-or-skip routing and the same merge Branch A does, so it records the same facts under the same conditions — the two rebase facts conditional for the same reason (recorded iff this run reached the rebase, i.e. iff `use_merge_queue == false`, and sourced from the rebase payload rather than from the classifier re-run). Only the rendered detail differs, and it differs precisely because the gap must stay visible:
+This branch reaches the same rebase-or-skip routing and the same merge Branch A does, so it records the same facts under the same conditions — the two rebase facts conditional on the SAME predicate ("did this run reach Rebase Branch onto Base"), and sourced from the rebase payload rather than from the classifier re-run. Only the rendered detail differs, and it differs precisely because the gap must stay visible. `record-merge` renders it: `--grant-kind` makes the wording `merged under {kind}, gap recorded`, and omitting that flag is what renders Branch A's clean form instead. The route/action coherence rules apply here too, so an authorized record cannot assert a rebase its route could not have performed.
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
-  --plan-id {plan_id} --phase 6-finalize --step branch-cleanup --outcome done \
-  {--fact action={action} (if use_merge_queue == false)} \
-  {--fact upstream_commit_count={rebase_upstream_commit_count} (if use_merge_queue == false)} \
+python3 .plan/execute-script.py plan-marshall:phase-6-finalize:pre_merge_gate record-merge \
+  --plan-id {plan_id} \
+  --grant-kind {kind} \
+  {--fact action={action} (if this run reached Rebase Branch onto Base)} \
+  {--fact upstream_commit_count={rebase_upstream_commit_count} (if this run reached Rebase Branch onto Base)} \
   --fact merge_mechanism={merge_mechanism} \
   --fact merge_state=merged \
   --fact cleanup_owed=false \
-  --fact work_performed=true \
-  --display-detail "merged under {kind}, gap recorded"
+  --fact work_performed=true
 ```
 
 **Branch F — enqueued, merge not yet landed** (PR mode, `use_merge_queue == true`: the `ci pr merge-queue` enqueue succeeded, but § "Wait for the Queue Merge to Land (bounded)" did not observe the queue merge the PR within `merge_queue_wait_budget_seconds` — or observed it closed or dequeued, or could not observe its state at all, or, on a GitLab merge train, had no landing wait to run). The post-merge tail was skipped and the merge mutex released; the head branch and its remote-tracking ref are intact.

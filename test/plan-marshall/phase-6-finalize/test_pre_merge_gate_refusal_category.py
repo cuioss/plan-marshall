@@ -27,6 +27,15 @@ assert len(gate.ROUTES) >= 1, 'pre_merge_gate.ROUTES is empty; the route-paramet
 _PLAN_ID = 'pre-merge-gate-category-plan'
 _CLEAN_VERDICT = {'status': 'success', 'plan_id': _PLAN_ID, 'phase': '6-finalize', 'blocking_count': 0}
 
+_PARTICIPATION_COMPLETE = {
+    'status': 'success',
+    'participation_complete': True,
+    'roster_read': True,
+    'required_bots': ['coderabbit'],
+    'unproven_bots': [],
+    'bot_states': [{'bot_kind': 'coderabbit', 'state': 'participated'}],
+}
+
 
 def _merge(route: str, verdict: dict[str, Any], **flags: Any) -> tuple[dict[str, Any], list[str], list[list[str]]]:
     checks: list[str] = []
@@ -39,6 +48,14 @@ def _merge(route: str, verdict: dict[str, Any], **flags: Any) -> tuple[dict[str,
     def merge_runner(ci_args: list[str]) -> dict[str, Any]:
         runs.append(list(ci_args))
         return {'status': 'success', 'merged': True}
+
+    # The head-binding and participation seams are stubbed for the SAME reason in every
+    # case here: this module is about the refusal CATEGORY, and each of those production
+    # readers spawns its own subprocess. A case that reaches the merge dispatch needs
+    # both stubbed to get there at all.
+    flags.setdefault('status_reader', lambda _plan_id: None)
+    flags.setdefault('head_reader', lambda _project_dir: None)
+    flags.setdefault('participation_check', lambda _plan_id, _pr, _project_dir: dict(_PARTICIPATION_COMPLETE))
 
     result = gate.merge(
         _PLAN_ID,

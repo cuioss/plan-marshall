@@ -9,7 +9,12 @@ routes on, and the landing read complete and clean. The fact is the structured
 carrier; this module pins that it is wired where the ruling says it is.
 
 The population is DERIVED from ``branch-cleanup.md`` § "Mark Step Complete": every
-labelled branch block carrying a ``mark-step-done`` call is a terminal call site.
+labelled branch block carrying a terminal step-record call is a terminal call site.
+TWO verbs write one — the generic ``mark-step-done`` and the merge path's
+``record-merge``, which forwards the same facts after rendering the Branch A/E
+detail — so both shapes are recognised. Recognising only one would silently drop the
+branches that moved behind the second, and the parser would then report a clean pass
+over a population missing exactly the merged-landing branches this guard exists for.
 The count is published and asserted against the expected branch set in BOTH
 directions, so a parser that matched nothing, or a branch added without a ruled
 value, can never read as a clean pass.
@@ -77,14 +82,25 @@ def _mark_step_section(text: str) -> str:
     return match.group(1)
 
 
+#: The verbs that write a terminal step record. ``record-merge`` renders the Branch A/E
+#: detail and forwards the caller's facts to ``mark-step-done``, so its block records the
+#: same ``--fact KEY=VALUE`` arguments and is the same unit of analysis.
+_TERMINAL_RECORD_TOKENS: tuple[str, ...] = ('mark-step-done', 'record-merge')
+
+
+def _is_terminal_block(block: str) -> bool:
+    """True when ``block`` writes a terminal step record."""
+    return any(token in block for token in _TERMINAL_RECORD_TOKENS)
+
+
 def _labelled_mark_step_blocks(section: str) -> dict[str, list[str]]:
-    """Map each labelled branch to the ``mark-step-done`` blocks in its segment.
+    """Map each labelled branch to the terminal-record blocks in its segment.
 
     The single segmentation pass behind both public detectors below, so the facts
     and the block population those facts were merged from can never be derived
     from different readings of the document.
 
-    A label's segment runs to the next label. A segment with no ``mark-step-done``
+    A label's segment runs to the next label. A segment with no terminal-record
     block (Branch F's overview, which only introduces F1/F2/F3) is not a terminal
     call site and is left out.
 
@@ -101,7 +117,7 @@ def _labelled_mark_step_blocks(section: str) -> dict[str, list[str]]:
     for index, label in enumerate(labels):
         end = labels[index + 1].start() if index + 1 < len(labels) else len(section)
         segment = section[label.end() : end]
-        blocks = [block for block in _BASH_BLOCK.findall(segment) if 'mark-step-done' in block]
+        blocks = [block for block in _BASH_BLOCK.findall(segment) if _is_terminal_block(block)]
         if not blocks:
             continue
         blocks_by_label.setdefault(label.group(1), []).extend(blocks)
@@ -109,7 +125,7 @@ def _labelled_mark_step_blocks(section: str) -> dict[str, list[str]]:
 
 
 def terminal_call_sites(section: str) -> dict[str, dict[str, str]]:
-    """Map each labelled branch that issues ``mark-step-done`` to the facts it records.
+    """Map each labelled branch that writes a terminal record to the facts it records.
 
     ⚠ Per-block granularity is LOST here: the facts of every block carrying a
     label are folded into one dict — across every segment bearing that label, not
@@ -136,7 +152,7 @@ def terminal_call_site_block_counts(section: str) -> dict[str, int]:
     Published so :func:`terminal_call_sites`' merge is auditable rather than
     assumed: its key set is that of :func:`terminal_call_sites` by construction
     (both views onto :func:`_labelled_mark_step_blocks`), and each value is the
-    number of ``mark-step-done`` blocks folded into that label's fact dict. A
+    number of terminal-record blocks folded into that label's fact dict. A
     caller reading an empty offender list from :func:`labels_with_multiple_blocks`
     reads this mapping to tell "nothing to report" from "nothing was parsed".
     """
@@ -196,7 +212,7 @@ def test_the_terminal_call_site_population_is_the_ruled_branch_set():
 
 
 def test_every_terminal_call_site_is_backed_by_exactly_one_block():
-    """One ``mark-step-done`` block per label, so the fact merge is an identity.
+    """One terminal-record block per label, so the fact merge is an identity.
 
     The assertion above pins the LABEL set; this one pins the BLOCK set behind
     it, which nothing else publishes. ``terminal_call_sites`` folds every block
@@ -210,7 +226,7 @@ def test_every_terminal_call_site_is_backed_by_exactly_one_block():
     section = _mark_step_section(_BRANCH_CLEANUP_DOC.read_text(encoding='utf-8'))
     counts = terminal_call_site_block_counts(section)
 
-    assert len(counts) > 0, 'the parser found no mark-step-done block, so the count assertion would pass vacuously'
+    assert len(counts) > 0, 'the parser found no terminal-record block, so the count assertion would pass vacuously'
     assert set(counts) == set(terminal_call_sites(section)), (
         f'the block population and the parsed facts disagree on the label set: {sorted(counts)}'
     )
