@@ -120,6 +120,10 @@ def test_negative_control_flags_prohibited_keys() -> None:
         ({'orchestrator': {'effort': {'default': 'claude-3-5-sonnet'}}}, 'Invalid effort level'),
         ({'project': {'windows_slash': 'C:/build/agent'}}, 'Machine-local path'),
         ({'project': {'windows_backslash': 'C:\\build\\agent'}}, 'Machine-local path'),
+        ({'project': {'home_path': '/home/alice/git/repo'}}, 'Machine-local path'),
+        ({'project': {'tmp_path': '/tmp/build/agent'}}, 'Machine-local path'),
+        ({'project': {'socket_path': '/run/pm.sock'}}, 'Machine-local path'),
+        ({'project': {'pid_path': '/run/pm.pid'}}, 'Machine-local path'),
     ]
 
     for bad_config, expected_substr in test_cases:

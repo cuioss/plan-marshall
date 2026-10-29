@@ -132,9 +132,11 @@ in the PR body.
 ⛔ **The figures once quoted for this gap are stale, and were re-derived here by
 calling the helpers above rather than trusted.** The lead said "26 implementor docs
 against 25 registered steps"; the two sets are now the same size and the same
-membership, so no discovered doc is unregistered today. That is a property of the
-tree at this moment, not a guarantee — which is exactly why the registry-absence
-finding below is reported rather than asserted empty.
+membership, so no discovered doc is unregistered today — and because the registry
+is now derived from the same discovery walk, the two sets are equal by
+construction rather than by luck. The registry-absence finding below is still
+reported rather than asserted empty: it is what catches a doc whose frontmatter
+``name:`` no longer resolves to its step id.
 
 Registry absence is REPORTED, never asserted
 --------------------------------------------

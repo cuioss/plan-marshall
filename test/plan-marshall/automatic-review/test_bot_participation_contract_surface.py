@@ -12,7 +12,6 @@ CONTRACT the components jointly implement:
 * ``never_asked`` / ``migrated`` / ``answered`` are three distinguishable
   provenance states, so a never-asked key stays distinct from an answered-empty
   one;
-* THIS repository's step params carry the settled two-list configuration;
 * an unlisted bot is warned-about and STILL ingested (the warn-but-ingest rule);
 * the failure taxonomy is EXHAUSTIVE — every classified bot lands in exactly one
   member, over a bot set derived from ``bot_registry.bot_kinds()``;
@@ -88,10 +87,6 @@ _AR_SCRIPTS = get_script_path('plan-marshall', 'automatic-review', 'review_compl
 _CONTRACT_DOC = _AR_SCRIPTS.parent / 'standards' / 'bot-participation-contract.md'
 _AR_SKILL = _AR_SCRIPTS.parent / 'SKILL.md'
 _RC_SCRIPT = get_script_path('plan-marshall', 'automatic-review', 'review_completeness.py')
-
-# The three provenance values the contract declares. Sourced from the contract doc
-# itself rather than restated as a convenience literal.
-_PROVENANCE_STATES = ('never_asked', 'migrated', 'answered')
 
 # The closed NON-participation members. ``participated`` is deliberately NOT a
 # member — it is the complement the taxonomy exists to distinguish from.

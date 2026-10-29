@@ -12,7 +12,6 @@ CONTRACT the components jointly implement:
 * ``never_asked`` / ``migrated`` / ``answered`` are three distinguishable
   provenance states, so a never-asked key stays distinct from an answered-empty
   one;
-* THIS repository's step params carry the settled two-list configuration;
 * an unlisted bot is warned-about and STILL ingested (the warn-but-ingest rule);
 * the failure taxonomy is EXHAUSTIVE — every classified bot lands in exactly one
   member, over a bot set derived from ``bot_registry.bot_kinds()``;

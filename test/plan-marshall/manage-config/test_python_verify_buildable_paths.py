@@ -144,7 +144,7 @@ def validate_extra_buildable_config(with_section: dict[str, Any]) -> tuple[bool,
     if forbidden:
         return (
             False,
-            f'extra-buildable names paths no test reads, so they force a build for nothing: '
+            f'extra-buildable names paths no test verdict depends on, so they force a build for nothing: '
             f'{sorted(forbidden)} (found: {sorted(paths)})',
         )
 

@@ -644,12 +644,12 @@ class TestKnobDefaults:
 class TestConfiguredBotsResolveToTheRegistry:
     """A reviewer a configuration names must have a registry record.
 
-    The roster is a fixture, not this repository's own ``.plan/marshal.json``: a
-    test that read the live config would make its verdict depend on the
-    operator's current settings instead of on the code. The property pinned is
-    that every bot kind the pipeline is expected to consume is a registry
-    member, so a retired or misspelled kind fails here rather than resolving to
-    nothing at merge time.
+    The roster is a literal in this test, not this repository's own
+    ``.plan/marshal.json``: a test that read the live config would make its
+    verdict depend on the operator's current settings instead of on the code.
+    The property pinned is that every bot kind the pipeline is expected to
+    consume is a registry member, so a retired or misspelled kind fails here
+    rather than resolving to nothing at merge time.
     """
 
     def test_every_configured_bot_has_a_registry_record(self):

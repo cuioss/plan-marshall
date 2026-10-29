@@ -2053,8 +2053,10 @@ def test_save_config_round_trips_an_already_canonical_config_unchanged(tmp_path,
     # persist via save_config to the redirected fixture path
     after = _save_config_to(marshal_path, canonical_config, monkeypatch)
 
-    # key order and key set are unchanged by the round-trip
+    # key order and key set are unchanged by the round-trip, and the nested
+    # content survives intact — a save that reordered or dropped a value fails.
     assert after == before
+    assert json.loads(marshal_path.read_text(encoding='utf-8')) == canonical_config
 
 
 def test_save_config_orders_build_after_plan(tmp_path, monkeypatch):

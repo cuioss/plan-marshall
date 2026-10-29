@@ -95,7 +95,7 @@ def _prefix_is_covered(prefix: str, triggers: list[str]) -> bool:
 
 
 def test_every_working_prefix_is_ci_push_triggered():
-    """Every project.working_prefixes entry must be covered by a workflow push trigger."""
+    """Every shipped default working prefix must be covered by a workflow push trigger."""
     prefixes = _working_prefixes()
     triggers = _parse_push_branches()
 
@@ -128,10 +128,10 @@ def test_workflow_push_allowlist_excludes_docs_prefix():
 
 
 def test_docs_prefix_absent_from_working_prefixes():
-    """The retired 'docs/' prefix must NOT appear in project.working_prefixes."""
+    """The retired 'docs/' prefix must NOT appear in the shipped default prefix set."""
     prefixes = _working_prefixes()
 
     # 'docs/' is explicitly retired from the working-prefix set.
     assert 'docs/' not in prefixes, (
-        f"'docs/' is explicitly retired and must be absent from project.working_prefixes; found: {prefixes}"
+        f"'docs/' is explicitly retired and must be absent from DEFAULT_PROJECT['working_prefixes']; found: {prefixes}"
     )
