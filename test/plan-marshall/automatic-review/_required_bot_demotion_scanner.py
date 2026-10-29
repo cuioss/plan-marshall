@@ -58,16 +58,30 @@ _DEMOTION_OFFER = re.compile(
 #: The sentence must be about a REQUIRED bot. ``required_bots`` counts: it is the
 #: roster the demotion would move the bot out of.
 _REQUIRED_SIGNAL = re.compile(r'\brequired\b', re.IGNORECASE)
-#: A prohibition. Any of these in the sentence means the sentence is telling the
-#: reader NOT to do it, which is the shape every policy statement takes.
+#: A prohibition. Only NEGATION LOCAL TO THE OFFER counts: a sentence can state an
+#: offer and a separate prohibition at once ("move it to `optional`, never another
+#: trigger"), and letting any ``never`` anywhere in the sentence launder the offer is
+#: exactly how the shipped defect survives a scanner. The clause window around a match
+#: is what makes the negation the offer's rather than a neighbour's.
 _NEGATION = re.compile(
     r'\b(?:never|not|no|none|nor|neither|withdrawn|forbidden|prohibited|cannot|'
     r"can't|doesn't|don't|isn't|aren't|won't|mustn't)\b",
     re.IGNORECASE,
 )
+#: How far around an offer match its own clause reaches. Asymmetric on purpose: a
+#: prohibition is stated BEFORE or immediately AFTER the demotion ("is never offered
+#: here", "— is withdrawn"), never a clause later, which is where a separate remedy
+#: begins.
+_NEGATION_BEFORE_CHARS = 40
+_NEGATION_AFTER_CHARS = 25
 #: Sentence boundaries that matter for reading one claim at a time. A markdown table
 #: row or a bullet is its own claim, so the newline is a boundary too.
 _SENTENCE_SPLIT = re.compile(r'(?<=[.!?])\s+|\n+|\s+[|]\s+')
+#: A newline that WRAPS a prose line rather than starting a new markdown block. It is
+#: joined into a space before the sentence split, because a negation the author wrapped
+#: onto the next line ("... is\nnot offered") is still part of the same claim — and
+#: splitting there is how a laundered offer hides from the clause window.
+_WRAP_JOIN = re.compile(r'\n(?!\s*(?:[-*+]\s|\d+\.\s|#{1,6}\s|\|))')
 
 DEMOTION_KEYWORD = 'optional_bots'
 
@@ -75,25 +89,29 @@ DEMOTION_KEYWORD = 'optional_bots'
 def sentences(text: str) -> list[str]:
     """Split shipped text into claim-sized sentences.
 
-    Newlines are boundaries as well as sentence punctuation: a bullet or table row is
-    one claim, and joining it to its neighbour is what lets a prohibition beside an
-    offer launder the offer.
+    Newlines are boundaries as well as sentence punctuation when they START a new block
+    (a bullet, a numbered item, a heading, a table row): a bullet or table row is one
+    claim, and joining it to its neighbour is what lets a prohibition beside an offer
+    launder the offer. A newline that merely WRAPS a prose line is joined into a space
+    first, so a negation the author wrapped onto the next line stays in its clause.
     """
-    return [part.strip() for part in _SENTENCE_SPLIT.split(text) if part.strip()]
+    joined = _WRAP_JOIN.sub(' ', text)
+    return [part.strip() for part in _SENTENCE_SPLIT.split(joined) if part.strip()]
 
 
 def offered_demotions(text: str) -> list[str]:
     """Every sentence in ``text`` that OFFERS demoting a required bot."""
     offenders: list[str] = []
     for sentence in sentences(text):
-        if not _DEMOTION_OFFER.search(sentence):
-            continue
         if not _REQUIRED_SIGNAL.search(sentence):
             # An already-optional bot being called optional is not a demotion.
             continue
-        if _NEGATION.search(sentence):
-            continue
-        offenders.append(sentence)
+        for match in _DEMOTION_OFFER.finditer(sentence):
+            window = sentence[max(0, match.start() - _NEGATION_BEFORE_CHARS) : match.end() + _NEGATION_AFTER_CHARS]
+            if _NEGATION.search(window):
+                continue
+            offenders.append(sentence)
+            break
     return offenders
 
 

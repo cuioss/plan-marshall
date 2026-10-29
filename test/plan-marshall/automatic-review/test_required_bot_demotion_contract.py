@@ -89,6 +89,22 @@ class TestTheScannerCanFail:
 
         assert scanner.offered_demotions(text) == []
 
+    def test_a_prohibition_later_in_the_same_sentence_does_not_launder_the_offer(self):
+        """⛔ The shipped defect's exact shape: the offer, then a 'never'.
+
+        "accept the decline (move it to `optional`, or record a merge authorization),
+        never another trigger" states a demotion AND a prohibition in one sentence. A
+        sentence-level negation test reads the second and acquits the first, which is
+        why the negation is scoped to the offer's own clause.
+        """
+        text = (
+            'A required bot on `declined` engaged but declined: the productive action is to accept '
+            'the decline (move it to `optional`, or record a merge authorization), never another '
+            'trigger.\n'
+        )
+
+        assert scanner.offered_demotions(text)
+
     def test_an_already_optional_bot_is_not_a_demotion(self):
         """The required-vs-optional distinction the deliverable asks for, both arms.
 
