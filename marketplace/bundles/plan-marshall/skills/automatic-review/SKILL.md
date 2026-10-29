@@ -819,6 +819,8 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github
   --required-bots "{required_bots}" --optional-bots "{optional_bots}"
 ```
 
+The two lists are the roster this step read at its top (trigger B's fail-closed roster read). When a path reaches this branch without that read, run `review_completeness roster --plan-id {plan_id}` first and STOP on `roster_unreadable` — an unreadable roster is never forwarded as empty lists.
+
 OMIT `--review-on-record` when that call fails or places the bot in no list — an unobserved review state keeps the dropped-request arm, which is the fail-closed direction: the policy's restriction names an OBSERVED review, so an absence of observation must not silently widen it.
 
 `{attempts_remaining}` is the field the Branch 2 `rate-window check` read returned. `--window-expired` and `--attempts-remaining` are supplied here **because both were observed** by that read — omitting either returns `action: unmeasured`, which authorizes nothing and would leave this branch with no route.
@@ -917,6 +919,14 @@ discouraged: the `request_fresh_review` guard refuses it in code.
      --pr-number {pr_number} --bot-kind {bot_kind} --head-sha {head_sha} --push-time {push_time} \
      --timeout {re_review_await_timeout_seconds} --plan-id {plan_id}
    ```
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+     decision --plan-id {plan_id} --level INFO \
+     --message "(plan-marshall:automatic-review) refusal recovery GENERATED (explicit trigger) — {bot_kind} answers no push, so its ordinary trigger_comment was posted after the window elapsed (base movement is irrelevant to it)"
+   ```
+
+   Use the `main unchanged` wording below ONLY for the `auto_on_push` fallback; for the explicit-trigger case the record above is the accurate one, because it does not claim a rebase was impossible:
 
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \

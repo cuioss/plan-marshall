@@ -142,8 +142,8 @@ from that list does not merely go unlabelled: the comment arrives in this bot's 
 participating in a review it declined — the false-green coverage claim the refusal branch exists to
 prevent. All three are `hard_quota` on the **awaitability** axis, but their **cause** differs — the
 size ceiling is listed in `refusal_size_patterns`, so `_github_pr.refusal_cause` classifies it `size`
-and it resolves to the `refused_structural` member (remedies: split / accept / disable-for-this-PR —
-never wait), while neither quota wording is, so both classify `quota` and keep the `refused_hard`
+and it resolves to the `refused_structural` member (remedies: split the diff / accept the gap under a
+recorded merge authorization — never wait and never demote), while neither quota wording is, so both classify `quota` and keep the `refused_hard`
 awaitability member (remedy: backoff). That one bot
 carries two causes at one class is precisely why the cause cannot be read off `rate_limit_class`. See
 [`bot-participation-contract.md`](bot-participation-contract.md) § "Two axes: awaitability and CAUSE".

@@ -813,7 +813,7 @@ both are consulted before it:
 
 | Observation | Member | Meaning |
 |-------------|--------|---------|
-| **override (first) —** `cause: size` (any `rate_limit_class`) | `refused_structural` | A ceiling on the diff itself. The same request never succeeds at this size, so **no wait is productive** — the remedies are split / accept / disable-for-this-PR. |
+| **override (first) —** `cause: size` (any `rate_limit_class`) | `refused_structural` | A ceiling on the diff itself. The same request never succeeds at this size, so **no wait is productive** — the remedies are split the diff / accept the gap under a recorded merge authorization. |
 | **override (second) —** no arm of the recognition stack could READ the refusal (any `rate_limit_class`) | `refused_unknown` | Nothing was READ, so nothing is known — least of all whether the window reopens. Deferring to the declared class here would assert a reset time nobody observed. |
 | *default —* `awaitable_window` | `refused_awaitable` | The limit reopens on its own; awaiting the reset is productive. |
 | *default —* `hard_quota` | `refused_hard` | A budget that does not reopen on a useful timescale; awaiting it only burns budget. |

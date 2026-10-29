@@ -153,7 +153,7 @@ the single place the arms are named.
 a rolling window that reopens by itself, so their remedy is backoff and `rate_limit_class:
 awaitable_window` governs. A file count does not fall while you wait: the skip notice is listed in
 `refusal_size_patterns`, so `_github_pr.refusal_cause` classifies it `size` and it resolves to
-`refused_structural`, whose remedies are split / accept / disable-for-this-PR and never wait. That one
+`refused_structural`, whose remedies are split the diff / accept the gap under a recorded merge authorization, and never wait. That one
 bot carries two causes at one awaitability class is exactly why the cause cannot be read off
 `rate_limit_class` — the same split Sourcery already carries. See
 [`bot-participation-contract.md`](bot-participation-contract.md) § "Two axes: awaitability and CAUSE".
