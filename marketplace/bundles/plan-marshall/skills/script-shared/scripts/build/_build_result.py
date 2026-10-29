@@ -98,11 +98,12 @@ class DirectCommandResult(TypedDict, total=False):
             ``killed``, and on ``indeterminate`` it is the ONLY actionable
             content the result has — it says why nothing could be concluded.
         reason: The reason a LAUNCH FAULT rendered (``wrapper not found: …``), with
-            ``wrapper`` and ``project_dir`` beside it when the producer knows them.
+            ``wrapper`` and ``project_dir`` beside it where the producer knows them.
             A wrapper-not-found fault carries all three, because the class alone
             cannot say whether a wrapper was missing, which one was looked for, or
             where — the distinction six landings could not make from
-            ``execution_failed``. A log-file fault carries the reason only.
+            ``execution_failed``. A log-file fault carries none of the three today:
+            what it knows is that no log file could be created.
         routed_tests_run: Present ONLY on a daemon-routed green result, carrying
             the executed-test count the INNER build wrapper measured and
             published. It is an INPUT to the renderer, not part of the emitted

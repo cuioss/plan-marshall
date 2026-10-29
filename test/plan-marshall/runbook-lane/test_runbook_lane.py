@@ -1034,7 +1034,9 @@ def test_skill_routes_every_build_and_retries_a_launch_fault_once() -> None:
     assert 'NEXT build' in gate, 'section 4 does not say the next build routes again'
 
     assert 'standing' in lowered, 'section 4 does not scope a standing in_process setting'
-    assert 'build-routing' in gate, 'section 4 does not tie the standing setting to build-routing'
+    assert '`build-routing` answered `in_process`' in gate, (
+        'section 4 does not tie the standing setting to a build-routing verdict'
+    )
 
 
 def test_landing_build_server_line_counts_the_builds_per_mechanism() -> None:

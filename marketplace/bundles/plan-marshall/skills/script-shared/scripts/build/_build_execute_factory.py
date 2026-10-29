@@ -802,8 +802,10 @@ def _result_for_log_verdict(
     said ``success`` and the job log says otherwise. What the log says is one of
     the wrapper's three non-green values, and they are not interchangeable —
     ``timeout`` and ``killed`` are NON-FINISHES that reported no verdict, while
-    ``error`` is a build that ran and failed. Mapping all three onto
-    ``error_result`` would make the backstop itself the collapse.
+    ``error`` is a build that ran and failed OR a launch fault that never ran at
+    all (the two are separated by the fault's own class and reason, see below).
+    Mapping all three onto ``error_result`` would make the backstop itself the
+    collapse.
 
     A status outside the wrapper's vocabulary is ``indeterminate``: the log said
     something this client cannot interpret, which supports no verdict at all.
@@ -933,8 +935,8 @@ path-shaped flags are checked, and neither can arrive here relative:
 * ``--working-dir`` and ``--env`` make a build daemon-incompatible, so a build
   carrying either never routes at all — it falls back in-process before this
   seam (see ``daemon_incompatible`` in ``cmd_run``).
-* ``--root`` is declared only on the ``discover`` subcommand, so it cannot appear
-  in the routed ``run`` argv.
+* ``--root`` is declared only on the ``discover`` subcommand and on Gradle's
+  ``find-project``, so it cannot appear in the routed ``run`` argv.
 """
 
 
