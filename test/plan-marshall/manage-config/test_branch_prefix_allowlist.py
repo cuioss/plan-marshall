@@ -2,11 +2,12 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Structural coverage guard: every working_prefix is CI-push-triggered.
 
-Pins the canonical working-branch prefix set in
-``project.working_prefixes`` (read from the repo's ``.plan/marshal.json``, or the
-``DEFAULT_PROJECT['working_prefixes']`` fail-closed default when the project
-``marshal.json`` or the key is absent) against the CI push-trigger branch
+Pins the canonical working-branch prefix set — the shipped
+``DEFAULT_PROJECT['working_prefixes']`` — against the CI push-trigger branch
 allowlist in ``.github/workflows/python-verify.yml`` (``on.push.branches``).
+The set is the code's own default rather than a read of this repository's
+``.plan/marshal.json``, so a project's live config cannot change what this guard
+asserts.
 
 The check is a **subset coverage** assertion, not full equality: every
 ``working_prefix`` MUST be covered by at least one workflow push trigger. The
@@ -24,13 +25,11 @@ prefix and is asserted absent.
 """
 
 import importlib.util
-import json
 import re
 
 from conftest import PROJECT_ROOT, load_script_module
 
 _WORKFLOW_PATH = PROJECT_ROOT / '.github' / 'workflows' / 'python-verify.yml'
-_MARSHAL_PATH = PROJECT_ROOT / '.plan' / 'marshal.json'
 
 _config_defaults_mod = load_script_module(
     'plan-marshall',
@@ -40,27 +39,14 @@ _config_defaults_mod = load_script_module(
 )
 
 
-def _load_project_config() -> dict:
-    """Load the repo's marshal.json if present, else an empty config.
-
-    The empty-config path drives the prefix lookup to its fail-closed default
-    (``DEFAULT_PROJECT['working_prefixes']``), keeping the test deterministic in
-    a fresh checkout where ``.plan/marshal.json`` does not exist (e.g. a CI
-    runner before ``/marshall-steward``).
-    """
-    try:
-        data: dict = json.loads(_MARSHAL_PATH.read_text(encoding='utf-8'))
-        return data
-    except (FileNotFoundError, json.JSONDecodeError, OSError):
-        return {}
-
-
 def _working_prefixes() -> list[str]:
-    """The canonical working-branch prefix set, live block or fail-closed default."""
-    config = _load_project_config()
-    project = config.get('project') if isinstance(config, dict) else None
-    if isinstance(project, dict) and isinstance(project.get('working_prefixes'), list):
-        return list(project['working_prefixes'])
+    """The canonical working-branch prefix set, from the shipped default.
+
+    The production default is the population this guard pins: it is the set a
+    fresh project receives, and it is what the workflow's push allowlist must
+    cover. Reading this repository's own ``.plan/marshal.json`` would make the
+    assertion depend on the live config instead of the shipped contract.
+    """
     return list(_config_defaults_mod.DEFAULT_PROJECT['working_prefixes'])
 
 

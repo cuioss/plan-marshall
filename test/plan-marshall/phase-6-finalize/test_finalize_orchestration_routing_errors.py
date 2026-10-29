@@ -21,7 +21,8 @@ Covered:
   unnoticed until the registered-step sweep below caught it.
 - **The write-site set is closed** — a sweep over every registered
   ``phase-6-finalize`` step body. **Scope**: the sweep covers the registered
-  finalize step set only (``marshal.json`` -> ``plan.phase-6-finalize.steps``).
+  finalize step set only (the roster ``extension_discovery`` emits, never this
+  project's ``.plan/marshal.json``).
   It fails when a future FINALIZE step gains an unbranched ``manage-lessons add``
   call site. The two out-of-scope mid-flight call sites (``phase-4-plan/SKILL.md``
   and ``execute-task/SKILL.md``, which fire in phases 4 and 5 before the plan has
@@ -42,7 +43,6 @@ Covered:
 
 from __future__ import annotations
 
-import json
 import re
 from pathlib import Path
 
@@ -61,7 +61,6 @@ _LESSONS_CAPTURE = _FINALIZE / 'workflow' / 'lessons-capture.md'
 _LESSONS_INTEGRATION = _FINALIZE / 'standards' / 'lessons-integration.md'
 _PREFERENCE_EMITTER = _FINALIZE / 'standards' / 'finalize-step-preference-emitter.md'
 _RETROSPECTIVE = _PLAN_MARSHALL / 'plan-retrospective' / 'SKILL.md'
-_MARSHAL_JSON = PROJECT_ROOT / '.plan' / 'marshal.json'
 
 #: The exact executor invocation form of a global-lessons-store write.
 _ADD_CALL = re.compile(r'manage-lessons:manage-lessons\s+add\b')
@@ -87,8 +86,13 @@ def _between(text: str, start_marker: str, end_marker: str) -> str:
 
 
 def _registered_finalize_steps() -> list[str]:
-    data = json.loads(_read(_MARSHAL_JSON))
-    return list(data['plan']['phase-6-finalize']['steps'].keys())
+    """Every discovered finalize-step implementor's step id.
+
+    The population is the finalize-step registry as ``extension_discovery`` emits
+    it, not this project's ``.plan/marshal.json``: a test that read the live
+    config would change its verdict whenever the operator re-registered a step.
+    """
+    return [str(record['name']) for record in find_implementors(_EXT_POINT)]
 
 
 def _step_documents(step_key: str) -> list[Path]:

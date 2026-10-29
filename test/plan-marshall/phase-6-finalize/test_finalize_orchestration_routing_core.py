@@ -21,7 +21,8 @@ Covered:
   unnoticed until the registered-step sweep below caught it.
 - **The write-site set is closed** — a sweep over every registered
   ``phase-6-finalize`` step body. **Scope**: the sweep covers the registered
-  finalize step set only (``marshal.json`` -> ``plan.phase-6-finalize.steps``).
+  finalize step set only, derived from ``extension_discovery`` discovery rather
+  than from this project's ``.plan/marshal.json``.
   It fails when a future FINALIZE step gains an unbranched ``manage-lessons add``
   call site. The two out-of-scope mid-flight call sites (``phase-4-plan/SKILL.md``
   and ``execute-task/SKILL.md``, which fire in phases 4 and 5 before the plan has
@@ -54,7 +55,6 @@ Covered:
 
 from __future__ import annotations
 
-import json
 import re
 from pathlib import Path
 
@@ -74,7 +74,6 @@ _LESSONS_INTEGRATION = _FINALIZE / 'standards' / 'lessons-integration.md'
 _PREFERENCE_EMITTER = _FINALIZE / 'standards' / 'finalize-step-preference-emitter.md'
 _EMIT_LANDING = _FINALIZE / 'standards' / 'emit-landing.md'
 _RETROSPECTIVE = _PLAN_MARSHALL / 'plan-retrospective' / 'SKILL.md'
-_MARSHAL_JSON = PROJECT_ROOT / '.plan' / 'marshal.json'
 
 #: The exact executor invocation form of a global-lessons-store write.
 _ADD_CALL = re.compile(r'manage-lessons:manage-lessons\s+add\b')
@@ -166,8 +165,15 @@ def _frontmatter_order_and_destroys() -> dict[str, tuple[object, list[str]]]:
 
 
 def _registered_finalize_steps() -> list[str]:
-    data = json.loads(_read(_MARSHAL_JSON))
-    return list(data['plan']['phase-6-finalize']['steps'].keys())
+    """Every discovered finalize-step implementor's step id.
+
+    The population is the finalize-step registry as ``extension_discovery`` emits
+    it — ``default:<step>`` for built-ins, ``<bundle>:<skill>`` for bundle-optional
+    steps and ``project:<skill>`` for project steps — rather than this project's
+    ``.plan/marshal.json``. A test that read the live config would change its
+    verdict whenever the operator re-registered a step.
+    """
+    return [str(record['name']) for record in find_implementors(_EXT_POINT)]
 
 
 def _step_documents(step_key: str) -> list[Path]:
@@ -196,9 +202,9 @@ _STEP_ID_TOKEN = re.compile(r'`([a-z][a-z0-9-]*:[a-z0-9][a-z0-9-]*)`')
 def _registered_step_bodies() -> tuple[dict[str, str], list[str]]:
     """Every registered finalize step's body text, plus the steps that resolved to no document.
 
-    The population is the registered roster itself (``marshal.json`` ->
-    ``plan.phase-6-finalize.steps``), so a newly registered step joins the check
-    without anyone editing a hand-copied list.
+    The population is the discovered implementor roster, so a newly registered
+    step joins the check without anyone editing a hand-copied list and without
+    reading this project's live configuration.
     """
     bodies: dict[str, str] = {}
     unresolved: list[str] = []

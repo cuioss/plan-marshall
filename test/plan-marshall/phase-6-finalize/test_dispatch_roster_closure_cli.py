@@ -6,7 +6,8 @@
 ``standards/dispatch-inline-split.md`` is the single source of truth for which
 finalize steps dispatch under ``Task: execution-context-{level}`` and which run
 inline. It is hand-maintained prose with nothing structurally linking it to the
-authoritative registry (``marshal.json`` → ``plan.phase-6-finalize.steps``), so
+authoritative registry (the finalize-step implementors ``extension_discovery``
+emits), so
 it drifted: the roster classified a subset of the registered steps while
 claiming hardcoded counts that no longer matched.
 
@@ -197,13 +198,12 @@ the counts.
 from __future__ import annotations
 
 import functools
-import json
 import re
 from pathlib import Path
 from typing import NamedTuple
 
 from _dispatch_roster import parse_roster, parse_roster_rows, section_lines
-from conftest import MARKETPLACE_ROOT, PROJECT_ROOT
+from conftest import MARKETPLACE_ROOT
 from extension_discovery import find_implementors
 
 _SKILL_DIR = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'phase-6-finalize'
@@ -216,7 +216,6 @@ _PLAN_MARSHALL_SKILLS = MARKETPLACE_ROOT / 'plan-marshall' / 'skills'
 
 _ROSTER_DOC = _SKILL_DIR / 'standards' / 'dispatch-inline-split.md'
 _SKILL_DOC = _SKILL_DIR / 'SKILL.md'
-_MARSHAL_JSON = PROJECT_ROOT / '.plan' / 'marshal.json'
 
 _DISPATCHED_HEADING = '## Dispatched steps'
 _INLINE_HEADING = '## Inline steps'
@@ -409,10 +408,13 @@ _CROSS_LEDGER_SENTENCE = 'the SAME event item 5c stamps `returned_with_findings`
 
 
 def _registered_steps() -> set[str]:
-    """Return the authoritative registered finalize-step key set."""
-    data = json.loads(_MARSHAL_JSON.read_text(encoding='utf-8'))
-    steps = data['plan']['phase-6-finalize']['steps']
-    return set(steps.keys())
+    """Return the finalize-step registry key set, derived from discovery.
+
+    The population is the roster ``extension_discovery`` emits, not this
+    project's ``.plan/marshal.json``: a test that read the live config would
+    change its coverage verdict whenever the operator re-registered a step.
+    """
+    return {str(record['name']) for record in find_implementors(_FINALIZE_STEP_EXT_POINT)}
 
 
 def _roster(heading: str) -> list[str]:
@@ -860,7 +862,7 @@ class _RosterCoverage(NamedTuple):
 
     #: Implementor docs ``find_implementors`` discovered — the walked population.
     discovered_docs: int
-    #: Steps ``marshal.json`` registers — the denominator the ratio is against.
+    #: Steps the finalize-step registry emits — the denominator the ratio is against.
     registered_steps: int
     #: Distinct registered keys that actually contributed a comparison.
     compared: int
@@ -872,7 +874,7 @@ def _roster_correctness_coverage() -> _RosterCoverage:
     """The (f) coverage figures, derived by calling this module's own helpers.
 
     Nothing here is transcribed: ``discovered_docs`` comes from
-    ``find_implementors``, ``registered_steps`` from ``marshal.json``, and
+    ``find_implementors``, ``registered_steps`` from the same discovery, and
     ``compared`` from the claims the walk actually produced. Publishing the three
     together is what makes "discovered the whole registry, compared a fraction of
     it" legible instead of implied.

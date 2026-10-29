@@ -2,12 +2,12 @@
 """The shared ``project:{skill}`` step reader (``runtime_base.extract_project_steps``).
 
 Governs the reader every runtime delegates to, and the keyed-map ``steps`` shape
-the live marshal.json actually writes. The regression this module exists for is
-a SILENCE, not a wrong value: a reader that only understood the legacy list
-shape returned an empty scan against a real marshal.json, and an empty scan is
-byte-identical to "scanned, and this marshal.json declares no project steps". A
-permission surface could therefore report a clean coverage scan while having
-read nothing.
+a marshal.json writes. The regression this module exists for is a SILENCE, not a
+wrong value: a reader that only understood the legacy list shape returned an
+empty scan against a keyed-map config, and an empty scan is byte-identical to
+"scanned, and this config declares no project steps". A permission surface could
+therefore report a clean coverage scan while having read nothing. Every config
+below is a fixture built in the test; none reads this project's own marshal.json.
 
 marshal.json is shared and target-neutral, so the same reader must serve every
 target. The cross-runtime agreement cases below are the guard on that: a
@@ -24,8 +24,6 @@ import pytest
 from antigravity_runtime import AntigravityRuntime
 from opencode_runtime import OpenCodeRuntime
 from runtime_base import PROJECT_STEP_PHASES, extract_project_steps
-
-from conftest import PROJECT_ROOT
 
 # ⛔ Vacuity guard — the roster is production's, so an empty one would make the
 # roster assertions below vacuous and `assert declared` unreachable.
@@ -273,23 +271,22 @@ class TestNonProjectAndMalformedEntries:
         assert extract_project_steps(config) == []
 
 
-class TestLiveMarshalJson:
-    """The live marshal.json is the input whose shape the defect hid behind."""
+class TestShippedStepMapShape:
+    """The keyed-map ``steps`` shape is read, over a fixture that states it.
 
-    def test_live_marshal_json_declares_project_steps_and_the_reader_finds_them(self) -> None:
-        """Read the file this repo actually ships, not a fixture standing in for it.
+    The shape the defect hid behind is ``{step-notation: {params}}`` — a keyed map,
+    not a bare list. ``KEYED_CONFIG`` above builds exactly that shape, and the
+    cases in this module read it through the same production reader. Reading this
+    repository's own ``.plan/marshal.json`` instead would make the verdict depend
+    on the live config rather than on the shape the code must support.
+    """
 
-        ``.plan/marshal.json`` is tracked, so its ``steps`` shape is a fact about
-        the repository rather than about one developer's local config. That shape
-        is precisely what the list-only readers could not read, and no synthetic
-        fixture states it as strongly as the file itself.
-        """
-        config = json.loads((PROJECT_ROOT / '.plan' / 'marshal.json').read_text(encoding='utf-8'))
+    def test_keyed_map_declares_project_steps_and_the_reader_finds_them(self) -> None:
         declared = {
             notation
             for phase in PROJECT_STEP_PHASES
-            for notation in (config.get('plan', {}).get(phase, {}).get('steps') or {})
+            for notation in (KEYED_CONFIG.get('plan', {}).get(phase, {}).get('steps') or {})
             if isinstance(notation, str) and notation.startswith('project:')
         }
-        assert declared, 'the live marshal.json declares no project steps; this test no longer covers the defect'
-        assert {step['step'] for step in extract_project_steps(config)} == declared
+        assert declared, 'the keyed-map fixture declares no project steps; this test no longer covers the defect'
+        assert {step['step'] for step in extract_project_steps(KEYED_CONFIG)} == declared

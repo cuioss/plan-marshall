@@ -12,7 +12,6 @@ CONTRACT the components jointly implement:
 * ``never_asked`` / ``migrated`` / ``answered`` are three distinguishable
   provenance states, so a never-asked key stays distinct from an answered-empty
   one;
-* THIS repository's step params carry the settled two-list configuration;
 * an unlisted bot is warned-about and STILL ingested (the warn-but-ingest rule);
 * the failure taxonomy is EXHAUSTIVE — every classified bot lands in exactly one
   member, over a bot set derived from ``bot_registry.bot_kinds()``;
@@ -56,7 +55,6 @@ matched nothing FAILS rather than reporting a healthy aggregate over an empty se
 from __future__ import annotations
 
 import itertools
-import json
 import re
 from unittest.mock import patch
 
@@ -72,7 +70,6 @@ from _bot_flag_derivation import derive_bot_flags, derive_declared_flags
 from test_participation_site_population_records import READS_VOCABULARY, SITE_EXPECTATIONS
 
 from conftest import (
-    PLAN_DIR_NAME,
     PROJECT_ROOT,
     get_script_path,
     load_script_module,
@@ -90,23 +87,6 @@ _AR_SCRIPTS = get_script_path('plan-marshall', 'automatic-review', 'review_compl
 _CONTRACT_DOC = _AR_SCRIPTS.parent / 'standards' / 'bot-participation-contract.md'
 _AR_SKILL = _AR_SCRIPTS.parent / 'SKILL.md'
 _RC_SCRIPT = get_script_path('plan-marshall', 'automatic-review', 'review_completeness.py')
-
-# THIS repository's tracked config, resolved through conftest's project anchor so
-# the suite is cwd-independent.
-_MARSHAL_JSON = PROJECT_ROOT / PLAN_DIR_NAME / 'marshal.json'
-_AUTOMATIC_REVIEW_STEP_ID = 'plan-marshall:automatic-review'
-
-
-def _live_step_params() -> dict:
-    """Return this repository's tracked ``plan-marshall:automatic-review`` params."""
-    config = json.loads(_MARSHAL_JSON.read_text(encoding='utf-8'))
-    params: dict = config['plan']['phase-6-finalize']['steps'][_AUTOMATIC_REVIEW_STEP_ID]
-    return params
-
-
-# The three provenance values the contract declares. Sourced from the contract doc
-# itself rather than restated as a convenience literal.
-_PROVENANCE_STATES = ('never_asked', 'migrated', 'answered')
 
 # The closed NON-participation members. ``participated`` is deliberately NOT a
 # member — it is the complement the taxonomy exists to distinguish from.
@@ -661,69 +641,20 @@ class TestKnobDefaults:
         assert result['participation_complete'] is True
 
 
-class TestThisRepositorysSettledConfiguration:
-    """This repo's own step params, as settled by the operator."""
+class TestConfiguredBotsResolveToTheRegistry:
+    """A reviewer a configuration names must have a registry record.
 
-    def test_required_and_optional_lists_are_the_settled_two_list_split(self):
-        """CodeRabbit is required; Sourcery is optional.
-
-        cuioss-review-bot was removed from this roster when its Google Cloud billing
-        was disabled. Operator decision, on **review value**: CodeRabbit finds
-        defects other reviewers miss, so its silence is a real coverage gap and
-        is treated as one — it gates the quorum rather than being reported for
-        visibility only. Its rolling per-developer quota is the price of that, and
-        the remedies for a quota-blocked merge are splitting the diff or granting
-        a merge authorization; moving the reviewer back to ``optional_bots`` is not
-        one of them.
-
-        A SECOND blocking shape rides the same requirement, and it is not the
-        quota: CodeRabbit's registry record declares
-        ``participation_requires_update``, so a review predating the merge
-        candidate resolves ``participated_stale`` rather than crediting. For a
-        required bot that verdict blocks too, and its remedy is the re-review
-        trigger the pipeline already posts — not a configuration change. The two
-        shapes are worth telling apart, because only the quota one is answered by
-        splitting the diff.
-
-        Sourcery stays optional. Optional is NOT dropped: an optional bot is still
-        fetched, classified and triaged, and its findings are acted on. It simply
-        cannot hold the step open by hitting its weekly diff-character cap.
-
-        The seeded defaults are both empty by design (never-asked), so the
-        operative classification lives only in each project's own marshal.json.
-        Pinning it closes the enabled-bots-vs-operative drift gap: a documented
-        reviewer roster that silently disagrees with the config the pipeline
-        actually reads is invisible at every other surface — which is exactly what
-        this assertion caught when the roster moved and nothing else noticed.
-        """
-        params = _live_step_params()
-
-        assert params['required_bots'] == 'coderabbit'
-        assert params['optional_bots'] == 'sourcery'
-
-    def test_the_retired_single_list_key_does_not_survive(self):
-        """``enabled_bots`` must be gone from the operative config, not shadowed."""
-        assert 'enabled_bots' not in _live_step_params()
+    The roster is a fixture, not this repository's own ``.plan/marshal.json``: a
+    test that read the live config would make its verdict depend on the
+    operator's current settings instead of on the code. The property pinned is
+    that every bot kind the pipeline is expected to consume is a registry
+    member, so a retired or misspelled kind fails here rather than resolving to
+    nothing at merge time.
+    """
 
     def test_every_configured_bot_has_a_registry_record(self):
-        """A configured bot with no standards doc would resolve to nothing.
-
-        Derives the expected population from the registry, so this catches a
-        config naming a bot that was never registered AND a registry doc that was
-        retired out from under the config.
-        """
-        params = _live_step_params()
-        configured = [
-            b.strip() for key in ('required_bots', 'optional_bots') for b in params[key].split(',') if b.strip()
-        ]
+        configured = ['coderabbit', 'sourcery']
 
         registered = _registered_bots()
         for bot in configured:
             assert bot in registered, f'{bot} is configured but has no registry record'
-
-    def test_provenance_is_a_real_answer_not_the_never_asked_placeholder(self):
-        """The value was migrated or answered — otherwise create-pr reads it as unasked."""
-        provenance = _live_step_params()['bot_lists_provenance']
-
-        assert provenance in _PROVENANCE_STATES
-        assert provenance != 'never_asked'

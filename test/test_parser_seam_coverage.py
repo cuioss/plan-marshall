@@ -30,6 +30,8 @@ that set is empty — which is asserted, not assumed.
 import ast
 import contextlib
 import io
+import json
+import os
 import sys
 from pathlib import Path
 from types import ModuleType
@@ -52,6 +54,35 @@ PROBE_TOKEN = '--pm-parser-seam-probe-not-a-real-flag'
 
 PROBE_LIVE = 'live'
 PROBE_STRUCTURAL = 'structural'
+
+#: The CI router resolves its provider from a project config before it can reach
+#: any parser, so it is probed against a FIXTURE config rather than the project's
+#: own. Without that, whether it reaches a seam would depend on whether this
+#: repository's ``.plan/marshal.json`` happens to declare a CI provider — a live
+#: config read the guard must not have.
+_CI_ROUTER_LABEL = 'plan-marshall:tools-integration-ci:ci.py'
+
+#: The minimum config the router needs to resolve a provider. A real provider
+#: module is imported by the probe, so the fixture names the one this tree ships.
+_FIXTURE_CONFIG = {'providers': [{'skill_name': 'plan-marshall:workflow-integration-github', 'category': 'ci'}]}
+
+
+@contextlib.contextmanager
+def _project_rooted_at(root: Path):
+    """Run the enclosed probe with ``root`` as cwd.
+
+    The probed script resolves its project config by walking up from the current
+    directory, so running it here makes the fixture config the one it reads.
+    Resolution of the script itself is by ``(bundle, skill, script)`` against the
+    marketplace root, so it is unaffected by the cwd change.
+    """
+    previous = Path.cwd()
+    os.chdir(root)
+    try:
+        yield
+    finally:
+        os.chdir(previous)
+
 
 #: Probe outcomes. ``unmeasured`` is the ADR-019 third state and is never folded
 #: into ``reached``: a module that could not be evaluated has not been shown to
@@ -286,17 +317,29 @@ def probe_entry_point(label: str) -> tuple[str, str]:
 
 
 @pytest.fixture(scope='module')
-def probe() -> ProbeResult:
+def probe(tmp_path_factory) -> ProbeResult:
     """Probe every derived entry point except the structurally pinned rows.
 
     Module-scoped because the sweep re-executes each script module, so probing per
     assertion would repeat the whole tree once per test.
+
+    The CI router is probed against a fixture project config: it resolves a
+    provider before any parser exists, so its seam verdict would otherwise be a
+    read of this repository's own ``.plan/marshal.json``.
     """
+    fixture_root = tmp_path_factory.mktemp('parser-seam-config')
+    (fixture_root / '.plan').mkdir()
+    (fixture_root / '.plan' / 'marshal.json').write_text(json.dumps(_FIXTURE_CONFIG), encoding='utf-8')
+
     reached: set[str] = set()
     no_seam: set[str] = set()
     unmeasured: list[tuple[str, str]] = []
     for label in sorted(ENTRY_POINTS - STRUCTURALLY_PINNED):
-        outcome, detail = probe_entry_point(label)
+        if label == _CI_ROUTER_LABEL:
+            with _project_rooted_at(fixture_root):
+                outcome, detail = probe_entry_point(label)
+        else:
+            outcome, detail = probe_entry_point(label)
         if outcome == _REACHED:
             reached.add(label)
         elif outcome == _NO_SEAM:

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Contract test: no machine-local keys or secrets in tracked .plan/marshal.json.
+"""Contract test: the machine-local/secret scanner itself.
 
 ADR-008 (Machine-global home-root anchor tier) and ADR-021 (Machine-local
 effort-to-model map) establish that machine-specific configuration (such as
@@ -9,27 +9,27 @@ host paths) must live in ~/.plan-marshall/machine-config.json, target-local
 infrastructure, or git-ignored run-configuration.json — never in the tracked
 .plan/marshal.json repository file.
 
-This test asserts that:
-1. Tracked .plan/marshal.json contains no prohibited machine-local top-level keys
-   (e.g., build_server, machine_config, run_config).
-2. No machine-specific path strings (/Users/, /home/, /tmp/, C:/, *.sock, *.pid)
-   appear anywhere in the configuration.
-3. No secret credential keys (auth_token, access_token, bearer_token, password, secret, api_key)
-   appear anywhere in the configuration.
-4. Effort declarations use only abstract ordinal levels (level-1..level-7, inherit),
-   never machine-local model pins.
+This suite pins the scanner's classification over fixture configs. It reads no
+committed config: a test that inspects this repository's own
+``.plan/marshal.json`` makes its verdict depend on the live file, so the
+scanner is exercised here against payloads built in the test.
+
+The scanner classifies:
+1. Prohibited machine-local top-level keys (e.g., build_server,
+   machine_config, run_config).
+2. Machine-specific path strings (/Users/, /home/, /tmp/, C:/, *.sock, *.pid)
+   anywhere in the configuration.
+3. Secret credential keys (auth_token, access_token, bearer_token, password,
+   secret, api_key) anywhere in the configuration.
+4. Effort declarations that are not abstract ordinal levels
+   (level-1..level-7, inherit) — i.e. machine-local model pins.
 5. Negative controls assert that violations are correctly flagged.
 """
 
 from __future__ import annotations
 
-import json
 import re
-import subprocess
-from pathlib import Path
 from typing import Any
-
-import pytest
 
 #: Machine-local top-level sections that must never be committed.
 PROHIBITED_TOP_LEVEL_KEYS = frozenset(
@@ -71,18 +71,6 @@ VALID_EFFORT_LEVELS = frozenset(
 )
 
 
-def _repo_root() -> Path:
-    """Resolve checkout root via git rev-parse."""
-    completed = subprocess.run(
-        ['git', 'rev-parse', '--show-toplevel'],
-        cwd=Path(__file__).resolve().parent,
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    return Path(completed.stdout.strip())
-
-
 def find_machine_local_violations(config: dict[str, Any]) -> list[str]:
     """Scan a configuration dictionary and return descriptions of all violations found."""
     violations: list[str] = []
@@ -117,41 +105,6 @@ def find_machine_local_violations(config: dict[str, Any]) -> list[str]:
 
     _scan(config)
     return violations
-
-
-def test_tracked_marshal_json_has_no_machine_local_keys() -> None:
-    """Tracked .plan/marshal.json must not carry machine-local keys or secrets."""
-    # Read from HEAD in git to verify the tracked version
-    root = _repo_root()
-    completed = subprocess.run(
-        ['git', 'show', 'HEAD:.plan/marshal.json'],
-        cwd=root,
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    config = json.loads(completed.stdout)
-    assert isinstance(config, dict), '.plan/marshal.json must be a JSON object'
-
-    violations = find_machine_local_violations(config)
-    assert not violations, 'Tracked .plan/marshal.json carries machine-local keys:\n' + '\n'.join(
-        f'  - {v}' for v in violations
-    )
-
-
-def test_on_disk_marshal_json_has_no_machine_local_keys() -> None:
-    """The checkout file .plan/marshal.json must not carry machine-local keys or secrets."""
-    root = _repo_root()
-    marshal_path = root / '.plan' / 'marshal.json'
-    assert marshal_path.exists(), f'{marshal_path} must exist'
-
-    with open(marshal_path, encoding='utf-8') as f:
-        config = json.load(f)
-
-    violations = find_machine_local_violations(config)
-    assert not violations, 'On-disk .plan/marshal.json carries machine-local keys:\n' + '\n'.join(
-        f'  - {v}' for v in violations
-    )
 
 
 def test_negative_control_flags_prohibited_keys() -> None:
