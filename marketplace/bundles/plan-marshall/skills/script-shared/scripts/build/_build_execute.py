@@ -520,6 +520,11 @@ def execute_direct_base(
 
     except FileNotFoundError:
         log_entry('script', 'global', 'ERROR', f'[{log_prefix}] Wrapper not found: {wrapper}')
+        # A launch fault, not a red build: the command never ran. The reason, the
+        # wrapper name and the directory are carried as their OWN fields so the
+        # renderer can hand them on — a single opaque ``error`` string is what made
+        # a missing wrapper indistinguishable from a daemon fault downstream.
+        reason = f'{tool_name} wrapper not found: {wrapper}'
         return {
             'status': 'error',
             'exit_code': -1,
@@ -527,7 +532,10 @@ def execute_direct_base(
             'timeout_used_seconds': timeout_seconds,
             'log_file': log_file,
             'command': command_str,
-            'error': f'{tool_name} wrapper not found: {wrapper}',
+            'error': reason,
+            'reason': reason,
+            'wrapper': wrapper,
+            'project_dir': str(Path(project_dir).resolve()),
             **extras,
         }
 

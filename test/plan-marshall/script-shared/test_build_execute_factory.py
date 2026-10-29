@@ -939,6 +939,89 @@ class TestRoutedArgvResolvesTheWorktreeWrapper:
         )
 
 
+class TestMissingWrapperIsNamedOnBothLegs:
+    """A launch fault reaches the rendered result as itself, with where it looked.
+
+    The rendered result historically carried only ``error: execution_failed``, so a
+    missing wrapper was indistinguishable from a daemon fault. The three facts that
+    separate them — the reason, the wrapper name tried, and the project directory it
+    was looked for in — must survive on the in-process leg and on the routed leg
+    alike; on the routed leg the inner wrapper's own verdict is what the client reads
+    back out of the job log.
+    """
+
+    def test_in_process_leg_names_the_wrapper_reason_and_directory(self, monkeypatch, tmp_path, capsys):
+        project = tmp_path / 'tree-without-a-wrapper'
+        project.mkdir()
+
+        def _missing(*_args, **_kwargs):
+            raise FileNotFoundError(2, 'No such file or directory', 'pwx')
+
+        monkeypatch.setattr(build_execute.subprocess, 'Popen', _missing)
+        monkeypatch.setattr(build_execute.shutil, 'which', lambda _cmd: None)
+        _execute_direct, cmd_run = factory.create_execute_handlers(
+            _make_config(with_resolve_fn=False), lambda *_a, **_k: ([], None, 'SUCCESS')
+        )
+
+        rc = cmd_run(
+            argparse.Namespace(
+                command_args='verify',
+                plan_id='',
+                project_dir=str(project),
+                format='toon',
+                execution_mode='in_process',
+            )
+        )
+
+        assert rc == 1
+        out = capsys.readouterr().out
+        assert 'error: execution_failed' in out
+        assert 'wrapper: pwx' in out
+        assert 'wrapper not found' in out, 'the rendered result must carry the reason, not only the error class'
+        assert str(project) in out, 'the rendered result must name the directory the wrapper was looked for in'
+
+    @pytest.mark.allow_daemon_routing
+    def test_routed_leg_reports_the_inner_launch_fault_with_its_reason(self, monkeypatch, tmp_path, capsys):
+        monkeypatch.delenv(factory.MARSHALLD_JOB_ENV, raising=False)
+        inner_tree = str(tmp_path / 'tree-without-a-wrapper')
+        log = tmp_path / 'job.log'
+        log.write_text(
+            'status: error\n'
+            'exit_code: -1\n'
+            'duration_seconds: 0\n'
+            'error: execution_failed\n'
+            'reason: "python wrapper not found: pwx"\n'
+            'wrapper: pwx\n'
+            f'project_dir: {inner_tree}\n',
+            encoding='utf-8',
+        )
+        client = _FakeBuildServerClient(
+            {'job_status': 'failure', 'exit_code': 1, 'log_file': str(log), 'duration_seconds': 0}
+        )
+        monkeypatch.setattr(factory, '_load_build_server', lambda: client)
+        _execute_direct, cmd_run = factory.create_execute_handlers(
+            _make_config(), lambda *_a, **_k: ([], None, 'SUCCESS')
+        )
+
+        rc = cmd_run(
+            argparse.Namespace(
+                command_args='verify',
+                plan_id='',
+                project_dir=str(tmp_path),
+                format='toon',
+                execution_mode='daemon',
+            )
+        )
+
+        assert rc == 1
+        out = capsys.readouterr().out
+        assert 'error: execution_failed' in out, 'a routed launch fault must not be reported as a generic build failure'
+        assert 'build_failed' not in out
+        assert 'wrapper: pwx' in out
+        assert 'wrapper not found' in out
+        assert inner_tree in out
+
+
 class TestRecordResolutionSentinelSuppressesWorkLog:
     """``_record_resolution``: the sentinel suppresses the work-log write only."""
 

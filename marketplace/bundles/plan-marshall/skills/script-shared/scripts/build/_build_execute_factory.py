@@ -549,6 +549,30 @@ def _append_gate_build_row(
         pass
 
 
+def _launch_fault_extra(fault: Any) -> dict[str, Any]:
+    """Carry a launch fault's three identifying facts onto a routed result.
+
+    The inner wrapper never launched the build, so there are no per-test rows and
+    no bound to hand on — only WHY it could not start. Each fact is attached only
+    when the log stated it, so an older wrapper that published none leaves the
+    keys off rather than present-but-empty.
+
+    Args:
+        fault: The :class:`InnerFault` read back from the job log, or ``None``.
+
+    Returns:
+        The extras dict (possibly empty).
+    """
+    if fault is None:
+        return {}
+    extra: dict[str, Any] = {}
+    for name in ('reason', 'wrapper', 'project_dir'):
+        value = getattr(fault, name, None)
+        if value:
+            extra[name] = value
+    return extra
+
+
 def _routed_errors_extra(verdict: Any) -> dict[str, Any]:
     """Carry the INNER wrapper's structured ``errors[]`` onto a routed result.
 
@@ -734,13 +758,28 @@ def _daemon_result_to_direct(
         # verdict to `failure`, so the log is read here purely to carry the
         # per-test rows it recorded. Without them the renderer re-parses this same
         # TOON as if it were test-runner output and synthesises one opaque row.
+        verdict = read_log_verdict(log_file)
+        if verdict is not None and verdict.fault is not None:
+            # The inner wrapper never launched the build. Reporting that as a
+            # generic ``build_failed`` is exactly what hid a missing wrapper behind
+            # six landings; the fault class and its reason travel instead, with
+            # exit -1 so the renderer's launch-fault leg (not its build-failure
+            # leg) owns it.
+            return error_result(  # type: ignore[return-value]
+                verdict.fault.error,
+                -1,
+                duration,
+                log_file,
+                command_str,
+                **_launch_fault_extra(verdict.fault),
+            )
         return error_result(  # type: ignore[return-value]
             ERROR_BUILD_FAILED,
             exit_code or 1,
             duration,
             log_file,
             command_str,
-            **_routed_errors_extra(read_log_verdict(log_file)),
+            **_routed_errors_extra(verdict),
         )
     return indeterminate_result(  # type: ignore[return-value]
         f'daemon reported terminal job_status {job_status!r}, which this client '
@@ -805,6 +844,18 @@ def _result_for_log_verdict(
             **bound_extra,
         )
     if status == 'error':
+        if getattr(verdict, 'fault', None) is not None:
+            # A cross-checked verdict that is a LAUNCH FAULT keeps its own class
+            # and reason: the build never ran, so a ``build_failed`` here would
+            # assert a verdict the inner wrapper never reached.
+            return error_result(  # type: ignore[return-value]
+                verdict.fault.error,
+                -1,
+                duration,
+                log_file,
+                command_str,
+                **_launch_fault_extra(verdict.fault),
+            )
         return error_result(  # type: ignore[return-value]
             ERROR_BUILD_FAILED,
             exit_code or 1,

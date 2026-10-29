@@ -39,6 +39,7 @@ from _build_result import (
     ERROR_BUILD_FAILED,
     ERROR_EXECUTION_FAILED,
     ERROR_LOG_FILE_FAILED,
+    LAUNCH_FAULT_ERRORS,
     STATUS_INDETERMINATE,
     STATUS_KILLED,
     STATUS_RUNNING,
@@ -751,16 +752,27 @@ def cmd_run_common(
 
     # Handle execution errors (wrapper not found, log file creation failed)
     if result['status'] == 'error' and result['exit_code'] == -1:
+        # A carried identifier wins when the producer stated one: a routed result
+        # already names the INNER fault class, and re-deriving it from the message
+        # text would re-classify a log-file fault as an execution fault.
+        raw_error = str(result.get('error') or '')
         error_type = ERROR_EXECUTION_FAILED
-        if 'log file' in result.get('error', '').lower():
+        if raw_error in LAUNCH_FAULT_ERRORS:
+            error_type = raw_error
+        elif 'log file' in raw_error.lower():
             error_type = ERROR_LOG_FILE_FAILED
 
+        # The three facts that separate a launch fault from a daemon fault travel
+        # with the result. They are attached only when present, so a result that
+        # states none reads as "unstated" rather than as an empty directory.
+        fault_extra = {name: result[name] for name in ('reason', 'wrapper', 'project_dir') if result.get(name)}
         err_output = error_result(
             error=error_type,
             exit_code=-1,
             duration_seconds=0,
             log_file=log_file,
             command=command_str,
+            **fault_extra,
         )
         print(formatter(err_output))
         return 1

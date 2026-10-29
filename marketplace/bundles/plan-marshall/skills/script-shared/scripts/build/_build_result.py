@@ -97,6 +97,11 @@ class DirectCommandResult(TypedDict, total=False):
         message: Operator-facing detail. Carries the no-blind-retry sentence on
             ``killed``, and on ``indeterminate`` it is the ONLY actionable
             content the result has — it says why nothing could be concluded.
+        reason: The reason a LAUNCH FAULT rendered (``wrapper not found: …``), with
+            ``wrapper`` and ``project_dir`` beside it. All three are present
+            together on an execution fault, because the class alone cannot say
+            whether a wrapper was missing, which one was looked for, or where —
+            the distinction six landings could not make from ``execution_failed``.
         routed_tests_run: Present ONLY on a daemon-routed green result, carrying
             the executed-test count the INNER build wrapper measured and
             published. It is an INPUT to the renderer, not part of the emitted
@@ -151,6 +156,8 @@ class DirectCommandResult(TypedDict, total=False):
     command_type: str  # npm: "npm" or "npx"
     error: str  # Error type id (on error/timeout/killed/indeterminate only)
     message: str  # Operator-facing detail (on killed and indeterminate)
+    reason: str  # Launch fault: the reason the producer rendered (wrapper not found: …)
+    project_dir: str  # Launch fault: the directory the wrapper was looked for in
     routed_tests_run: int  # Daemon-routed green build: the INNER wrapper's count
     routed_errors: list  # Daemon-routed failing build: the INNER wrapper's errors[]
     job_id: str  # Daemon-routed running hand-back: the daemon job to re-attach to
@@ -254,6 +261,15 @@ ERROR_WRAPPER_NOT_FOUND = 'wrapper_not_found'
 
 ERROR_LOG_FILE_FAILED = 'log_file_failed'
 """Failed to create log file for build output."""
+
+LAUNCH_FAULT_ERRORS = frozenset({ERROR_EXECUTION_FAILED, ERROR_LOG_FILE_FAILED})
+"""The error classes that mean the build never launched, so no verdict exists.
+
+A consumer must report one of these as itself, with the reason the producer
+rendered, rather than collapsing it into a build failure: the command never ran,
+so there is no test result, no applied bound and no per-test row to read. The
+reason is what separates a missing wrapper from a daemon fault.
+"""
 
 
 # =============================================================================
