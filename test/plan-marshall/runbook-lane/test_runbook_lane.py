@@ -1008,6 +1008,45 @@ def test_skill_states_the_one_daemon_routed_build_rule() -> None:
     assert 'sub-agents included' in lowered
 
 
+def test_skill_routes_every_build_and_retries_a_launch_fault_once() -> None:
+    """A launched build uses the server; a launch fault costs ONE retry, not the server.
+
+    The three statements are one contract: the default routing is used for every
+    build, a launch fault (`execution_failed`, which is not a red build) is re-run
+    once in-process for that build and the NEXT build routes again, and a standing
+    `in_process` setting is allowed only where `build-routing` answers
+    `in_process`. Leaving any one of them out is what let a single routed failure
+    turn the server off for the rest of a run.
+    """
+    gate = _raw_section('## 4. Build gate')
+    lowered = gate.lower()
+
+    assert 'default routing' in lowered, 'section 4 does not name the default routing as the loop default'
+    assert 'every build' in lowered, 'section 4 does not say the default routing is used for every build'
+
+    assert 'launch fault' in lowered, 'section 4 does not name the launch-fault class'
+    assert 'execution_failed' in gate, 'section 4 does not name execution_failed as a launch fault'
+    assert 'not a red build' in lowered, 'section 4 does not separate a launch fault from a red build'
+    assert 'once' in lowered and '--execution-mode in_process' in gate, (
+        'section 4 does not prescribe the single in-process retry'
+    )
+    assert 'next build' in lowered, 'section 4 does not say the next build routes again'
+
+    assert 'standing' in lowered, 'section 4 does not scope a standing in_process setting'
+    assert 'build-routing' in gate, 'section 4 does not tie the standing setting to build-routing'
+
+
+def test_landing_build_server_line_counts_the_builds_per_mechanism() -> None:
+    """The landing names how many builds each mechanism served.
+
+    A run that never reached the server must be visible in the landing itself,
+    not discovered afterwards in the daemon journal.
+    """
+    text = _skill_text()
+    assert 'per-`mechanism` build count' in text
+    assert 'builds: {mechanism: count' in text
+
+
 def test_resolve_empty_required_bots_is_an_error(tmp_path: Path) -> None:
     spec = _seed_fixture(tmp_path, executable=_PYPROJECT_EXEC, required_bots='')
     data = _run_resolve(spec, tmp_path)

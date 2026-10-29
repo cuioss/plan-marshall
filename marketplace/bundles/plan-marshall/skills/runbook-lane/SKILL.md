@@ -274,7 +274,7 @@ item below and before starting the next. One line per entry, newest last:
 
 ```text
 setup: worktree {worktree}, branch {branch}, pushed
-build-server: {ready|disabled|down}{ (reason)}; fallback: {none|in_process|degraded}, {reason or none}
+build-server: {ready|disabled|down}{ (reason)}; builds: {mechanism: count, …}; fallback: {none|in_process|degraded}, {reason or none}
 re-read: lane text loaded at {timestamp} ({session start|compaction|restart|idle gap})
 D{n} hypothesis: {claim} — confirmed|refuted, {file:line}
 D{n} test: {test name} — order {test-first|mutation-after|none}; failing run {commit} {output identifier}; passed at {sha}
@@ -509,8 +509,9 @@ publishes no test part supplies no `{build.module-tests}`:
 {build.verify} --project-dir {worktree} --timeout {build_timeout_seconds}
 ```
 
-- **Routing.** `auto` submits the job to the build daemon when the setup preflight found it `ready`,
-  and runs in-process otherwise. Before the first routed build, run
+- **Routing.** The DEFAULT routing — no `--execution-mode` flag — is used for EVERY build. Under it
+  `auto` submits the job to the build daemon when the setup preflight found it `ready`, and runs
+  in-process otherwise. Before the first routed build, run
   `python3 .plan/execute-script.py plan-marshall:runbook-lane:runbook_lane build-routing --worktree {worktree}`:
   `auto` means the worktree carries its own executor and the build submits with no execution flag, so
   the daemon re-runs that executor; `in_process` is the DEGRADED answer for an `absent` slot, where
@@ -520,6 +521,13 @@ publishes no test part supplies no `{build.module-tests}`:
   `--timeout` can only raise; a bound expiry comes back as `timeout` naming `timeout_used_seconds`
   and `timeout_source`, and the client's rules for it are cited, not restated. Record a bound
   expiry and continue with the split form below rather than re-submitting the same bound.
+- **A launch fault costs ONE retry, not the server.** A routed build whose result is a launch fault
+  (`error: execution_failed` or `log_file_failed`) never started, so it is NOT a red build: re-run
+  that build ONCE with `--execution-mode in_process`, record the retry with its `reason` in the
+  progress file and the landing message, and submit the NEXT build with the default routing again.
+  `--execution-mode in_process` as a STANDING setting for the rest of the run is allowed only where
+  `build-routing` answered `in_process`; never let one routed failure turn the server off for the
+  run.
 - **Read the routing outcome** from the build result's own fields (`requested`, `resolved`, `reason`,
   `mechanism`). A `degraded` result has already fallen back in-process: record the degradation and
   its `reason` in the progress file and the landing message.
@@ -857,8 +865,10 @@ step.sonar-roundtrip.open_issue_rules={rules left open|none|unknown|n/a}
      Record the `executor-skew` verdict this run read here too: a `not_applicable` from a source
      checkout is answered, recorded and never asked about.
   8. **Build server** — the setup preflight's state (`ready`, `disabled` or `down`, with its reason),
-     the fallback each build used and why (`degraded` with its `reason`, or
-     `executor_absent_from_worktree`), and any `killed` job with its disposition. Add any
+     the per-`mechanism` build count (`daemon` versus `in_process`, so a run that did not use the
+     server is visible here and not only in the daemon journal), the fallback each build used and why
+     (`degraded` with its `reason`, or `executor_absent_from_worktree`), and any `killed` job with its
+     disposition. Add any
      `runtime_stamp_reason` the resolve result carried: it names a runtime-info seam that failed, or
      a fact nothing could measure, and marks the stamp as `unknown` rather than silently absent.
   9. **Residue** — anything left open.
