@@ -364,11 +364,14 @@ nothing has to be enabled. Two steps differ from the wording above, each deliber
   re-delivering a request a bot already answered buys nothing. The policy's per-window "re-trigger" is
   therefore satisfied by the ordinary trigger in the common case.
 - **What happens at the cap.** The tenth window escalates `rate_window_exhausted` to the operator
-  instead of closing and re-opening the PR automatically. The loop runs unattended for ten windows and
-  then hands a decision back rather than taking a repository-shaping action (opening a new PR) on the
-  operator's behalf; the close-and-reopen from the bullet above is the remedy offered at that
-  escalation, and the cap is what makes "the operator is asked only after those steps are spent"
-  literally true rather than open-ended.
+  instead of closing and re-opening the PR automatically. The escalation is a prompt with the
+  review-wide choices (wait another budget, defer, or merge past the gap under a recorded
+  authorization); the policy's "close the PR unmerged, open a NEW PR" is an operator action taken
+  OUTSIDE the run, not one the loop performs on its own. The reason is that opening a new PR is a
+  repository-shaping action the loop cannot decide, and the cap is what makes "the operator is asked
+  only after those steps are spent" literally true rather than open-ended. (Close-and-reopen of the
+  SAME PR, in Branch 5, is a different move: it re-delivers a dropped request and is not this
+  escalation's remedy.)
 
 The merge-path option sets do not carry a demotion option for a required bot: `branch-cleanup.md`'s
 structural-refusal and blocked paths offer split-or-authorization, and `automatic-review/SKILL.md`'s

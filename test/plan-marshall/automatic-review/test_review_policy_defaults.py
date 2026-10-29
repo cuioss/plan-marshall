@@ -30,7 +30,6 @@ importlib.import_module('github_ops')
 
 import bot_registry  # noqa: E402
 import github_re_review  # noqa: E402
-import pytest  # noqa: E402
 
 from conftest import get_skill_dir, load_script_module  # noqa: E402
 
@@ -229,3 +228,30 @@ class TestTheBarrierSpendsTheLoopBeforeItAsks:
             assert excluded in trigger_paragraph, (
                 f'the scope paragraph must say that a {excluded} bot gets no extra trigger'
             )
+
+    def test_the_pre_ask_refresh_runs_on_the_ask_path_only(self):
+        """Triggering under `fail_into_loopback` would duplicate trigger B for one head."""
+        section = self._participation_section()
+        preamble = section[: section.index('A stale required reviewer gets its ordinary trigger')]
+
+        assert 'only on the ask path' in preamble
+        assert 'trigger B' in preamble
+
+    def test_the_trigger_state_is_initialised_before_either_blocked_path(self):
+        """The prompt renders on the pending-findings path too, which never runs step 1."""
+        text = _BRANCH_CLEANUP.read_text(encoding='utf-8')
+
+        assert 'Record `{trigger_state}` = `none attempted` here' in text
+        assert text.index('Record `{trigger_state}` = `none attempted` here') < text.index(
+            'Branch Cleanup — Pre-merge comment barrier'
+        )
+
+    def test_the_quota_wait_honours_the_documented_off_switch(self):
+        """With the knob off the re-fired step settles, so a wait here would never progress."""
+        section = self._participation_section()
+        wait_paragraph = section[
+            section.index('An awaitable quota refusal is waited out') : section.index('Branch on `{barrier_mode}`')
+        ]
+
+        assert 'review_rate_window_await' in wait_paragraph
+        assert 'ordinary settle' in wait_paragraph

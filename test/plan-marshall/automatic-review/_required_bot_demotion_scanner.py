@@ -63,7 +63,7 @@ _DEMOTION_OFFER = re.compile(
 #: token is spelled ``required(?:_bots)?`` because a word boundary does not exist
 #: between ``required`` and ``_bots`` — ``_`` is a word character, so ``\brequired\b``
 #: silently misses the roster's own name.
-_REQUIRED_SIGNAL = re.compile(r'required(?:_bots)?\b|\b(?:reviewer|bot)\b', re.IGNORECASE)
+_REQUIRED_SIGNAL = re.compile(r'\brequired(?:_bots)?\b|\b(?:reviewer|bot)\b', re.IGNORECASE)
 #: A sentence describing a bot that is ALREADY optional: reclassifying it as optional is
 #: not a demotion. Paired with the required signal, so a sentence that names a required
 #: bot is never excused by a nearby mention of an optional one.
