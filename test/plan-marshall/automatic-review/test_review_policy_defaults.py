@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import importlib
 import re
+from pathlib import Path
 
 importlib.import_module('github_ops')
 
@@ -35,9 +36,13 @@ from conftest import get_skill_dir, load_script_module  # noqa: E402
 
 ml = load_script_module('plan-marshall', 'manage-locks', 'merge_lock.py', register=False)
 
-_AR_SKILL = get_skill_dir('plan-marshall', 'automatic-review') / 'SKILL.md'
-_CODERABBIT = get_skill_dir('plan-marshall', 'automatic-review') / 'standards' / 'coderabbit.md'
-_BRANCH_CLEANUP = get_skill_dir('plan-marshall', 'phase-6-finalize') / 'standards' / 'branch-cleanup.md'
+#: Annotated because ``get_skill_dir`` is untyped, so everything derived from it —
+#: including ``read_text`` — propagates as ``Any``. Without the annotation a helper
+#: returning a slice of that text trips ``no-any-return`` in ``test-compile``, which
+#: neither the quality gate nor a plain pytest run executes.
+_AR_SKILL: Path = get_skill_dir('plan-marshall', 'automatic-review') / 'SKILL.md'
+_CODERABBIT: Path = get_skill_dir('plan-marshall', 'automatic-review') / 'standards' / 'coderabbit.md'
+_BRANCH_CLEANUP: Path = get_skill_dir('plan-marshall', 'phase-6-finalize') / 'standards' / 'branch-cleanup.md'
 
 
 def _frontmatter_default(document_text: str, key: str) -> str:
