@@ -2,7 +2,7 @@ name: Python Verify
 
 on:
   push:
-    branches: [main, "feature/*", "fix/*", "chore/*", "dependabot/**"]
+    branches: [main, "feature/*", "fix/*", "chore/*", "!chore/orchestrator-ledger", "dependabot/**"]
   pull_request:
     branches: [main]
   merge_group:
