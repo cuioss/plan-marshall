@@ -933,6 +933,14 @@ discouraged: the `request_fresh_review` guard refuses it in code.
      open claim instead of posting a duplicate while the first request may still be running; log the
      await failure naming that the post succeeded; then proceed to "Producer: FIND".
 
+   ⛔ **The retained claim IS the persisted in-progress state, and its expiry is deliberate.** While
+   it is unexpired, `request_fresh_review`'s window guard refuses a second ordinary trigger, so a
+   duplicate cannot be posted during the interval in which the first request may still be running.
+   When the claim expires, the bot's own rate window has elapsed — and re-triggering then is the
+   policy's own action (one window, then one more trigger), not a duplicate of the post it made.
+   A second, longer-lived "posted" flag would keep the loop from ever re-triggering a bot whose
+   review never landed; the claim's window is the dedup span on purpose.
+
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
      decision --plan-id {plan_id} --level WARNING \

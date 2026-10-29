@@ -348,6 +348,7 @@ def _run_verb(
     silent_error: str,
     unparseable_error: str,
     timeout: float | None = _VERB_TIMEOUT_SECONDS,
+    require_zero_exit: bool = False,
 ) -> dict[str, Any]:
     """Run one executor-mapped verb and return its parsed TOON.
 
@@ -362,6 +363,12 @@ def _run_verb(
     spawn, or a timeout). A silent provider is not a passing provider, and a traceback
     reaching the caller instead of a payload would leave it with no ``dispatched``
     field to branch on.
+
+    ``require_zero_exit`` adds a FOURTH, opt-in failure: a non-zero exit whose stdout
+    happens to parse. Only the ROSTER read sets it, because a roster is the one input
+    whose misread changes a required-reviewer quorum; the other verbs keep their
+    existing contract, where a payload-bearing non-zero exit is the caller's to
+    interpret.
     """
     try:
         executor = get_executor_path()
@@ -379,6 +386,15 @@ def _run_verb(
             'message': f'{notation} could not run: {exc}',
         }
     stdout = completed.stdout or ''
+    if require_zero_exit and completed.returncode != 0:
+        return {
+            'status': 'error',
+            'error': silent_error,
+            'message': (
+                f'{notation} {" ".join(argv)} exited with code {completed.returncode}: '
+                f'{completed.stderr.strip() or "no stderr"}'
+            ),
+        }
     if not stdout.strip():
         return {
             'status': 'error',
@@ -520,6 +536,7 @@ def _roster_runner(plan_id: str) -> dict[str, Any]:
         ],
         silent_error='roster_unreadable',
         unparseable_error='roster_unreadable',
+        require_zero_exit=True,
     )
 
 
