@@ -925,3 +925,54 @@ class TestReadLogVerdict:
         assert verdict is not None
         assert verdict.timeout_used_seconds == 330
         assert verdict.timeout_source == 'learned'
+
+    # -- launch fault -------------------------------------------------------
+    # A launch fault means the command never started, so the class and its
+    # reason are the whole content of the verdict. The matched negative control
+    # below keeps a RED BUILD out of this shape: only the two identifiers that
+    # mean "never launched" may attach a fault.
+
+    def test_carries_the_launch_fault_with_the_wrapper_and_the_directory(self, tmp_path):
+        log = tmp_path / 'job.log'
+        log.write_text(
+            'status: error\n'
+            'exit_code: -1\n'
+            'error: execution_failed\n'
+            'reason: "python wrapper not found: pwx"\n'
+            'wrapper: pwx\n'
+            'project_dir: /trees/plan-x\n'
+        )
+
+        verdict = proto.read_log_verdict(str(log))
+
+        assert verdict is not None
+        assert verdict.fault is not None
+        assert verdict.fault.error == 'execution_failed'
+        assert verdict.fault.reason == 'python wrapper not found: pwx'
+        assert verdict.fault.wrapper == 'pwx'
+        assert verdict.fault.project_dir == '/trees/plan-x'
+
+    def test_a_log_file_fault_carries_no_wrapper_or_directory(self, tmp_path):
+        # The same fault class with only the fact the producer knows: the reason.
+        # An absent wrapper must read as unstated, never as an empty name.
+        log = tmp_path / 'job.log'
+        log.write_text('status: error\nexit_code: -1\nerror: log_file_failed\nreason: "log file not creatable"\n')
+
+        verdict = proto.read_log_verdict(str(log))
+
+        assert verdict is not None
+        assert verdict.fault is not None
+        assert verdict.fault.error == 'log_file_failed'
+        assert verdict.fault.wrapper is None
+        assert verdict.fault.project_dir is None
+
+    def test_a_red_build_attaches_no_fault(self, tmp_path):
+        # The matched negative: a build that RAN and failed states its reason in
+        # the same ``error:`` position, and must never be re-read as a fault.
+        log = tmp_path / 'job.log'
+        log.write_text('status: error\nexit_code: 1\nerror: build_failed\nreason: something upstream broke\n')
+
+        verdict = proto.read_log_verdict(str(log))
+
+        assert verdict is not None
+        assert verdict.fault is None, 'a red build has a verdict; it is not a launch fault'

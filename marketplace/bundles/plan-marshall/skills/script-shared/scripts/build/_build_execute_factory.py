@@ -933,8 +933,8 @@ path-shaped flags are checked, and neither can arrive here relative:
 * ``--working-dir`` and ``--env`` make a build daemon-incompatible, so a build
   carrying either never routes at all — it falls back in-process before this
   seam (see ``daemon_incompatible`` in ``cmd_run``).
-* ``--root`` is declared only on the ``discover`` and ``find`` subcommands, so it
-  cannot appear in the routed ``run`` argv.
+* ``--root`` is declared only on the ``discover`` subcommand, so it cannot appear
+  in the routed ``run`` argv.
 """
 
 
@@ -1088,7 +1088,9 @@ def _emit_error_envelope(output_format: str, output: dict) -> int:
     Shared print/serialize tail for the build-execute error emitters below —
     the generic TOON/JSON serializer, not the build-result formatter (which
     filters to known build fields and would drop emitter-specific keys like
-    ``max_retries`` or ``reason``).
+    ``max_retries``, ``tool`` or ``plan_id``; the launch-fault trio
+    ``reason`` / ``wrapper`` / ``project_dir`` IS on the formatter's whitelist,
+    because a build result carries it).
     """
     if output_format == 'json':
         print(json.dumps(output, indent=2))

@@ -980,6 +980,37 @@ class TestMissingWrapperIsNamedOnBothLegs:
         assert 'wrapper not found' in out, 'the rendered result must carry the reason, not only the error class'
         assert str(project) in out, 'the rendered result must name the directory the wrapper was looked for in'
 
+    def test_the_json_leg_carries_the_same_three_facts(self, monkeypatch, tmp_path, capsys):
+        """The JSON projection carries the trio too, so the two formats agree."""
+        project = tmp_path / 'tree-without-a-wrapper'
+        project.mkdir()
+
+        def _missing(*_args, **_kwargs):
+            raise FileNotFoundError(2, 'No such file or directory', 'pwx')
+
+        monkeypatch.setattr(build_execute.subprocess, 'Popen', _missing)
+        monkeypatch.setattr(build_execute.shutil, 'which', lambda _cmd: None)
+        _execute_direct, cmd_run = factory.create_execute_handlers(
+            _make_config(with_resolve_fn=False), lambda *_a, **_k: ([], None, 'SUCCESS')
+        )
+
+        rc = cmd_run(
+            argparse.Namespace(
+                command_args='verify',
+                plan_id='',
+                project_dir=str(project),
+                format='json',
+                execution_mode='in_process',
+            )
+        )
+
+        assert rc == 1
+        payload = json.loads(capsys.readouterr().out)
+        assert payload['error'] == 'execution_failed'
+        assert payload['reason'] == 'python wrapper not found: pwx'
+        assert payload['wrapper'] == 'pwx'
+        assert payload['project_dir'] == str(project.resolve())
+
     @pytest.mark.allow_daemon_routing
     def test_routed_leg_reports_the_inner_launch_fault_with_its_reason(self, monkeypatch, tmp_path, capsys):
         monkeypatch.delenv(factory.MARSHALLD_JOB_ENV, raising=False)

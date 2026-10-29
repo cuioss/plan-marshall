@@ -98,10 +98,11 @@ class DirectCommandResult(TypedDict, total=False):
             ``killed``, and on ``indeterminate`` it is the ONLY actionable
             content the result has — it says why nothing could be concluded.
         reason: The reason a LAUNCH FAULT rendered (``wrapper not found: …``), with
-            ``wrapper`` and ``project_dir`` beside it. All three are present
-            together on an execution fault, because the class alone cannot say
-            whether a wrapper was missing, which one was looked for, or where —
-            the distinction six landings could not make from ``execution_failed``.
+            ``wrapper`` and ``project_dir`` beside it when the producer knows them.
+            A wrapper-not-found fault carries all three, because the class alone
+            cannot say whether a wrapper was missing, which one was looked for, or
+            where — the distinction six landings could not make from
+            ``execution_failed``. A log-file fault carries the reason only.
         routed_tests_run: Present ONLY on a daemon-routed green result, carrying
             the executed-test count the INNER build wrapper measured and
             published. It is an INPUT to the renderer, not part of the emitted
@@ -265,10 +266,15 @@ ERROR_LOG_FILE_FAILED = 'log_file_failed'
 LAUNCH_FAULT_ERRORS = frozenset({ERROR_EXECUTION_FAILED, ERROR_LOG_FILE_FAILED})
 """The error classes that mean the build never launched, so no verdict exists.
 
-A consumer must report one of these as itself, with the reason the producer
+A consumer must report one of these as itself, with whatever reason the producer
 rendered, rather than collapsing it into a build failure: the command never ran,
 so there is no test result, no applied bound and no per-test row to read. The
 reason is what separates a missing wrapper from a daemon fault.
+
+``ERROR_WRAPPER_NOT_FOUND`` is deliberately NOT a member: no producer emits it
+(the wrapper-not-found path reports ``execution_failed`` with the reason, the
+wrapper and the directory), so including it would only invite a second,
+divergent spelling of the same fault.
 """
 
 

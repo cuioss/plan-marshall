@@ -865,10 +865,10 @@ step.sonar-roundtrip.open_issue_rules={rules left open|none|unknown|n/a}
      Record the `executor-skew` verdict this run read here too: a `not_applicable` from a source
      checkout is answered, recorded and never asked about.
   8. **Build server** — the setup preflight's state (`ready`, `disabled` or `down`, with its reason),
-     the per-`mechanism` build count (`daemon` versus `in_process`, so a run that did not use the
-     server is visible here and not only in the daemon journal), the fallback each build used and why
-     (`degraded` with its `reason`, or `executor_absent_from_worktree`), and any `killed` job with its
-     disposition. Add any
+     the per-`mechanism` build count (`daemon_longpoll` versus `in_process_fallback`, so a run that
+     did not use the server is visible here and not only in the daemon journal), the fallback each
+     build used and why (`degraded` with its `reason`, or `executor_absent_from_worktree`), and any
+     `killed` job with its disposition. Add any
      `runtime_stamp_reason` the resolve result carried: it names a runtime-info seam that failed, or
      a fact nothing could measure, and marks the stamp as `unknown` rather than silently absent.
   9. **Residue** — anything left open.

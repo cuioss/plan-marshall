@@ -1022,15 +1022,16 @@ def test_skill_routes_every_build_and_retries_a_launch_fault_once() -> None:
     lowered = gate.lower()
 
     assert 'default routing' in lowered, 'section 4 does not name the default routing as the loop default'
-    assert 'every build' in lowered, 'section 4 does not say the default routing is used for every build'
+    assert 'no `--execution-mode` flag' in gate, 'section 4 does not pin the no-flag form of the default'
+    assert 'used for EVERY build' in gate, 'section 4 does not say the default routing is used for every build'
 
     assert 'launch fault' in lowered, 'section 4 does not name the launch-fault class'
     assert 'execution_failed' in gate, 'section 4 does not name execution_failed as a launch fault'
     assert 'not a red build' in lowered, 'section 4 does not separate a launch fault from a red build'
-    assert 'once' in lowered and '--execution-mode in_process' in gate, (
+    assert 'ONCE' in gate and '--execution-mode in_process' in gate, (
         'section 4 does not prescribe the single in-process retry'
     )
-    assert 'next build' in lowered, 'section 4 does not say the next build routes again'
+    assert 'NEXT build' in gate, 'section 4 does not say the next build routes again'
 
     assert 'standing' in lowered, 'section 4 does not scope a standing in_process setting'
     assert 'build-routing' in gate, 'section 4 does not tie the standing setting to build-routing'

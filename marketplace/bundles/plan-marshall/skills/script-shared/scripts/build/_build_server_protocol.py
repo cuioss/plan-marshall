@@ -1108,15 +1108,16 @@ def read_log_verdict(log_file: str) -> LogVerdict | None:
     """Read the build wrapper's emitted TOON verdict back from a job log.
 
     Pure with respect to any daemon/client state — it only reads the log the
-    supervisor already streamed. Seven top-level (column-0) keys are parsed:
+    supervisor already streamed. Eleven top-level (column-0) keys are parsed:
     ``status:``, ``exit_code:``, ``tests_run:``, the applied-bound triple
-    ``timeout_used_seconds:`` / ``timeout_source:`` / ``command_key:``, and the
-    ``errors[N]{...}:`` table header, whose indented rows are then collected as
-    that table's body. The launch-fault quadruple ``error:`` / ``reason:`` /
-    ``wrapper:`` / ``project_dir:`` is read too, so an inner fault reaches the
-    consumer as itself rather than as a bare build failure; it is attached as
-    :class:`InnerFault` only for the two identifiers that mean the command never
-    ran. Every other key is ignored. An applied-bound key that is
+    ``timeout_used_seconds:`` / ``timeout_source:`` / ``command_key:``, the
+    launch-fault quadruple ``error:`` / ``reason:`` / ``wrapper:`` /
+    ``project_dir:``, and the ``errors[N]{...}:`` table header, whose indented
+    rows are then collected as that table's body. The launch-fault quadruple is
+    read so an inner fault reaches the consumer as itself rather than as a bare
+    build failure; it is attached as :class:`InnerFault` only for the two
+    identifiers that mean the command never ran. Every other key is ignored. An
+    applied-bound key that is
     absent, empty or (for the bound) not a positive integer reads as ``None``. The LAST occurrence of each wins, because the wrapper
     emits its result TOON after any progress output it already wrote to the same
     log.
