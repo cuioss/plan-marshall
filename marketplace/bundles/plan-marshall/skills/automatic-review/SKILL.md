@@ -920,17 +920,29 @@ discouraged: the `request_fresh_review` guard refuses it in code.
      --timeout {re_review_await_timeout_seconds} --plan-id {plan_id}
    ```
 
-   ⛔ **Branch on the return BEFORE the log — a refused post is not a generated event.** The registry's
-   `request_fresh_review` guard refuses to post into an open window and returns `status: refused` (for
-   example `reason: window_open`) having posted nothing. On that return, or on a `status: error`, log the
-   refusal/error instead — naming the reason — release the claim (step 4), and proceed to "Producer:
-   FIND"; do NOT write either `GENERATED` line, because a record claiming a trigger that was never posted
-   is what a resumed run reads back as done:
+   ⛔ **Branch on the return BEFORE the log — a refused post is not a generated event, and an
+   await failure is not a failed post.** Three shapes:
+
+   - **`status: refused`** (for example `reason: window_open`) — the guard posted nothing. Log the
+     refusal naming its reason, release the claim (step 4), and proceed to "Producer: FIND"; do NOT
+     write either `GENERATED` line.
+   - **`status: error` WITHOUT `trigger_posted: true`** — the post itself failed, so nothing was
+     posted. Same treatment as a refusal.
+   - **`status: error` WITH `trigger_posted: true`** — the trigger WAS posted and only the await
+     failed. ⛔ Keep the claim (do NOT run step 4's release) so the next pass meets this plan's own
+     open claim instead of posting a duplicate while the first request may still be running; log the
+     await failure naming that the post succeeded; then proceed to "Producer: FIND".
 
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
      decision --plan-id {plan_id} --level WARNING \
      --message "(plan-marshall:automatic-review) refusal recovery NOT GENERATED — {bot_kind} re-review returned status={status} reason={reason}; nothing was posted, claim released"
+   ```
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+     decision --plan-id {plan_id} --level WARNING \
+     --message "(plan-marshall:automatic-review) refusal recovery POSTED, await failed — {bot_kind} trigger was posted (trigger_posted=true) but the await returned status={status} reason={reason}; claim retained so no duplicate trigger is posted"
    ```
 
    ```bash

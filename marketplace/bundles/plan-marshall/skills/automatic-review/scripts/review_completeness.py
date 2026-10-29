@@ -1602,7 +1602,6 @@ def _run_manifest_step_params(plan_id: str) -> dict:
     import subprocess
 
     from file_ops import get_executor_path
-    from toon_parser import parse_toon
 
     argv = [
         'step-params',
@@ -1624,15 +1623,36 @@ def _run_manifest_step_params(plan_id: str) -> dict:
         )
     except (RuntimeError, OSError, subprocess.SubprocessError) as exc:
         return {'status': 'error', 'error': 'roster_unreadable', 'detail': f'{_MANIFEST_NOTATION} could not run: {exc}'}
+    return _manifest_result(completed)
+
+
+def _manifest_result(completed) -> dict:
+    """Turn one finished manifest call into a parsed payload or a failed read.
+
+    ⛔ **A non-zero exit is a failed read even when its stdout parses.** The manifest
+    verb can emit a payload and still exit non-zero, and a roster parsed out of that
+    payload would change the required-reviewer quorum on a call that reported failure.
+    The exit code is therefore checked BEFORE any parsing, and the three failure shapes
+    (non-zero exit, no output, unparseable output) all answer the same
+    ``roster_unreadable`` error.
+    """
+    from toon_parser import parse_toon
+
+    if completed.returncode != 0:
+        return {
+            'status': 'error',
+            'error': 'roster_unreadable',
+            'detail': (
+                f'{_MANIFEST_NOTATION} exited with code {completed.returncode}: '
+                f'{completed.stderr.strip() or "no stderr"}'
+            ),
+        }
     stdout = completed.stdout or ''
     if not stdout.strip():
         return {
             'status': 'error',
             'error': 'roster_unreadable',
-            'detail': (
-                f'{_MANIFEST_NOTATION} step-params get produced no output '
-                f'(exit_code={completed.returncode}): {completed.stderr.strip() or "no stderr"}'
-            ),
+            'detail': f'{_MANIFEST_NOTATION} step-params get produced no output (exit_code=0)',
         }
     try:
         return parse_toon(stdout)

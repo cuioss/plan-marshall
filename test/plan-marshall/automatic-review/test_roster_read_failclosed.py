@@ -118,6 +118,41 @@ class TestTheReadDistinguishesUnreadableFromEmpty:
         assert payload['required_bots'] == ['coderabbit', 'cuioss-review-bot']
         assert payload['optional_bots'] == ['sourcery']
 
+    def test_a_non_zero_exit_is_an_error_even_when_its_stdout_parses(self):
+        """⛔ A failed call whose output happens to be TOON is still a failed read.
+
+        Parsing first would let a manifest call that reported failure change the
+        required-reviewer quorum — the one thing a roster read must never do.
+        """
+        from types import SimpleNamespace
+
+        completed = SimpleNamespace(
+            returncode=1,
+            stdout='status: success\nparams:\n  required_bots: coderabbit\n',
+            stderr='boom',
+        )
+
+        result = rc._manifest_result(completed)
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'roster_unreadable'
+        assert 'exited with code 1' in result['detail']
+
+    def test_a_zero_exit_with_a_parseable_payload_is_read(self):
+        """Matched positive control: the same helper accepts a successful call."""
+        from types import SimpleNamespace
+
+        completed = SimpleNamespace(
+            returncode=0,
+            stdout='status: success\nparams:\n  required_bots: coderabbit\n',
+            stderr='',
+        )
+
+        result = rc._manifest_result(completed)
+
+        assert result['status'] == 'success'
+        assert result['params']['required_bots'] == 'coderabbit'
+
     def test_a_roster_that_cannot_be_parsed_is_unreadable(self):
         """A malformed token must not escape as a traceback, nor as a partly-read roster."""
         payload = rc.read_roster('any-plan', runner=_readable_runner('coderabbit:sourcery', ''))

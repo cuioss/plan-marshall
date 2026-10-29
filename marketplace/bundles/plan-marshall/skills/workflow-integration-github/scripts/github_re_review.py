@@ -1947,10 +1947,23 @@ def cmd_re_review(args: argparse.Namespace) -> dict:
         timeout=args.timeout,
     )
     if await_result.get('status') != 'success':
-        return await_result
+        # ⛔ The trigger WAS posted. An await failure (a fetch error, a timeout that
+        # surfaced as an error) says nothing about the post, so the caller must not
+        # read this envelope as "nothing was posted": preserving the fact here is what
+        # stops a recovery pass from posting a duplicate trigger while the first
+        # request may still be running.
+        return {
+            **await_result,
+            'bot_kind': args.bot_kind,
+            'escalated': escalated,
+            'trigger_posted': True,
+            'trigger_time': trigger_time,
+        }
 
     await_result['bot_kind'] = args.bot_kind
     await_result['escalated'] = escalated
+    await_result['trigger_posted'] = True
+    await_result['trigger_time'] = trigger_time
     return await_result
 
 
