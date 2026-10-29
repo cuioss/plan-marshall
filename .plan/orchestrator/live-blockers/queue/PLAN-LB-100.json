@@ -2,10 +2,10 @@
   "id": "PLAN-LB-100",
   "slug": "merge-path-truth",
   "workstream": "WS-01",
-  "status": "staged",
+  "status": "shipped",
   "lane": "runbook",
-  "plan_marshall_plan_id": "",
-  "pr": "",
-  "landing": "",
+  "plan_marshall_plan_id": "rb-lb-100-merge-path-truth",
+  "pr": "1883",
+  "landing": "landings/PLAN-LB-100.md",
   "seq": 100
 }

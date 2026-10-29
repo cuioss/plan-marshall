@@ -618,6 +618,25 @@ derive, for rows still live.
 
 ## Decisions
 
+- 2026-10-29 — **PLAN-LB-100 landed as #1883 (merge `b399401ee`), graded B.** Corroborated against the CI abstraction (PR merged, merge
+  commit and parent `6d1554570` as stated, all five code checks green), the merge diff (eleven files, +2571 −102), and a content search
+  on the merged tree for the new refusal code and the two new verbs. All three deliverables met; evidence order is `mutation-after`
+  throughout, which the lane labelled honestly. The merge-path half of the gate-truth item is retired; the review-policy half is
+  PLAN-LB-101, whose dependency is now satisfied. Declared surface missed seven guard tests the new shape forced to change and
+  added one doc (`branch-cleanup-rereview.md`); the spec's `manage-status` hypothesis was refuted (the writer stayed
+  `mark-step-done`). Why B and not higher: the new participation check binds to the provider's candidate while the merge binds to the
+  local head (a known limit the PR accepted), self-review ended `budget-exhausted` with three items open, and the landing is incomplete
+  (`total_tokens`). Not re-checked here: the session-store counts, the guard log, the PR review threads, my own line-by-line read of
+  the added gate code, and any test re-run. Launched 0 of 4.
+
+- 2026-10-28 — **PLAN-LB-102 landed as #1882 (merge `6d1554570`), graded B.** Corroborated against the CI abstraction (merged, merge-group
+  run green), the merge commit's diff (three files, all inside the declared surface), a read of the lane script diff, and a live
+  `resolve` on the merged tree. All four deliverables met; the flag is kept as a documented no-op. Both spec hypotheses were refuted
+  by the lane (the lifecycle lane already reads worktree-first; no other doc describes the old default) and I accepted that from the
+  landing without re-reading `phase-1-init`. A review finding made the containment constraint binding (a same-shaped file outside both
+  stores is now refused). Not re-checked here: the session-store counts, the guard log, and the PR review threads. The landing is
+  incomplete (`total_tokens`). Follow-ups are Watches only; nothing staged. Launched 1 of 4 (PLAN-LB-100).
+
 - 2026-10-28 — **PLAN-LB-99 landed as #1878 (merge `76adb7714`), graded B.** Full-depth analysis against git, the CI abstraction
   (7 of 7 threads resolved), the lane's progress file, `guard.log` (3 of 3), the session store (root plus one child; counts
   only) and the merged diff. The outline decision was the explicit `not_applicable` verdict; both spec hypotheses were
@@ -1218,11 +1237,28 @@ derive, for rows still live.
   provider holds no analysis for those PRs, those confirmed zeros can only have read an absent analysis as zero (my inference,
   from the list above and the confirmed `0` reads I made). Those figures are not evidence of a clean analysis. LB-58's own landing reports confirmed
   live reads at two heads of PR 1866; I cannot reconcile that with the provider's current list and have not tried to.
-- **HIGH — the gate-truth half of PLAN-LB-55 is still not shipped (PLAN-LB-93 landing, 2026-10-27; NOT STAGED).** LB-93 shipped
+- **MERGE-PATH HALF FIXED IN SOURCE (PLAN-LB-100, #1883, 2026-10-29; LIVE after the next sync); the review-policy half is staged as
+  PLAN-LB-101.** `pre_merge_gate merge` now refuses an unproven required-bot participation (`merge_participation_unproven`), a merge
+  under an authorization is recorded by `record-merge`, and the merge question's consequence sentence is generated from the knob.
+  The roster-read error, stale-bot trigger-before-ask, no-demotion options and the quota loop below are LB-101's. Original entry:
+  **HIGH — the gate-truth half of PLAN-LB-55 is still not shipped (PLAN-LB-93 landing, 2026-10-27).** LB-93 shipped
   the push-vs-armed-merge refusal and left D5's second bullet (the participation check inside `pre_merge_gate merge`) and all
   of D6 (the `step-params` empty-roster error, the stale-bot re-trigger, generated barrier options with no "make the required
   bot optional", the rate-window loop, the merged-under-authorization record, the merge-anyway mutex re-acquisition, and the two
   remedies in `branch-cleanup.md` L1041 and L1222). Second deferral (LB-55 first). Needs a plan.
+- **INCOMPLETE LANDING — `rb-lb-100-merge-path-truth-001.md` (2026-10-29; `inbox landing-check` reported `complete: false`,
+  `missing_keys`: `total_tokens`).** The lane wrote `total_tokens=unknown` (OpenCode measured none). The landing was drained and
+  reconciled as far as its facts go. Token and measurement work is out of scope under the focus rule; nothing is staged and no
+  figure was recovered.
+- **MEDIUM — the merge-path participation check binds to the provider's candidate, the merge to the local head (PLAN-LB-100
+  landing, 2026-10-29; NOT STAGED; a known limit the PR accepted).** `_check_participation` proves participation against the
+  provider's merge candidate while `_head_binding_refusal` binds the merge to the LOCAL head; the producer returns only a boolean
+  `merge_candidate_sha_resolved`, so closing the gap needs a provider return-contract change. Until then the two heads could differ
+  without the check noticing. Three smaller items stay open beside it, two pre-existing and outside LB-100: the `state == merged`
+  re-entry path documents `merge_mechanism` as unrecorded while Branch A/E make it mandatory; the merge-queue reroute
+  (`queue_wait: forbidden`) keeps knob-routed narration; and the barrier's documented producer call places `--plan-id` differently
+  from the new gate call (cosmetic). Not high or blocking, so nothing is staged under the focus rule; CodeRabbit asked whether to
+  open a follow-up issue and nobody has answered.
 - **INCOMPLETE LANDING — `rb-lb-99-source-checkout-executor-skew-001.md` (2026-10-28; `inbox landing-check` reported
   `complete: false`, `missing_keys`: `total_tokens`).** The lane wrote `total_tokens=unknown` while the OpenCode session store
   holds the figures for the root and the child session. The landing was drained and reconciled as far as its facts go; the
@@ -1251,11 +1287,15 @@ derive, for rows still live.
   OpenCode lane asks the operator two questions that cannot change the outcome (LB-95 asked both; regenerating the executor
   did not change the verdict). Related to PLAN-LB-96, which makes the flat install resolve its bundles root, but not part of
   it. Under the high-and-blocking focus rule this waits.
-- **The emitted lane command cannot read a spec from the ledger worktree (PLAN-LB-90 landing, 2026-10-25; high; not staged).**
-  The lane accepts `resolve --spec-from-ledger`, but `/plan-marshall-runbook-lane plan=…` carries no argument that sets it and
-  the lane text names no trigger for adding it, so a spec edited in the ledger worktree reaches a lane only after a ledger
-  land. The PLAN-LB-90 spec left this to the orchestrator side (`orchestrate.md` Step 5 and the command's argument handling).
-  Until it is staged and shipped, land the ledger before each emit that follows a spec edit.
+- **FIXED IN SOURCE (PLAN-LB-102, #1882, 2026-10-28; LIVE after the next sync, since a harness loads the installed lane text) — the
+  emitted lane command could not read a spec from the ledger worktree (PLAN-LB-90 landing, 2026-10-25; high).** The lane now reads the
+  ledger worktree's copy first and falls back to the main checkout by default (operator ruling 2026-10-28), so an emitted command needs no
+  flag and no ledger land after a spec edit; `--spec-from-ledger` stays accepted as a documented no-op. Verified live on the merged
+  tree: `resolve` on LB-101 with no flag answers `spec_source: ledger_worktree`. Until the sync, an installed lane text still says the
+  main checkout is the default, so land the ledger before an emit that follows a spec edit.
+- **INCOMPLETE LANDING — `rb-lb-102-ledger-first-spec-read-001.md` (2026-10-28; `inbox landing-check` reported `complete: false`,
+  `missing_keys`: `total_tokens`).** The lane wrote `total_tokens=unknown`. The landing was drained and reconciled as far as its facts
+  go. Token and measurement work is out of scope under the focus rule, so the figure was not recovered and nothing is staged.
 - **CRITICAL — the shared `.plan/execute-script.py` is rewritten back and forth by two harnesses (found 2026-10-25;
   fixed in source by PLAN-LB-94, #1861; LIVE EFFECT OWED until `/sync-harnesses` and one executor regeneration from the
   merged template, then the stamp war is over; until then the workaround below stands).** The test-suite-as-writer clause was
@@ -1334,7 +1374,9 @@ derive, for rows still live.
   re-run: four failures across two PRs, all cleared by a re-run. **Owner: PLAN-LB-93 D3 (operator, 2026-10-25).** Read for the
   spec: mypy always runs `--no-incremental`, so a cache cannot answer, and the 200 files/s ceiling was calibrated on 417 files
   at 71 files/s.
-- **The gate-truth half of PLAN-LB-55 is unshipped, and it sits in the lifecycle lane only (PLAN-LB-55 landing, 2026-10-25;
+- **The merge-path part of this item was fixed in source by PLAN-LB-100 (#1883, 2026-10-29); the rest is PLAN-LB-101.** The
+  `pre_merge_gate merge` participation check and the merged-under-authorization record exist now; the roster, trigger, option and
+  loop items below are unchanged and are LB-101's. **The gate-truth half of PLAN-LB-55 is unshipped, and it sits in the lifecycle lane only (PLAN-LB-55 landing, 2026-10-25;
   medium; not staged).** An armed auto-merge is not bound to its head; `pre_merge_gate merge` does not run the required-bot
   participation check; the roster-read error, stale-bot trigger-before-ask, generated barrier option set, `merge_lock`
   recovery loop, merged-under-authorization record and mutex re-acquire are unimplemented, so `coderabbit.md`'s policy is
@@ -2181,6 +2223,42 @@ entries below are OpenCode 1 assumptions in plan-marshall that OpenCode 2 broke.
 
 ## Watches
 
+- **The lane's Sonar question recurred in PLAN-LB-100 (2026-10-29), now with its cause found: stale configuration, not the lane
+  (recorded, not staged).** The LB-100 run asked the same question and was told to merge. `runbook_lane resolve` decides `configured`
+  from `credentials_config.workflow-integration-sonar` in the tracked `.plan/marshal.json` (organization `cuioss`, project key
+  `cuioss_plan-marshall`), and `default:sonar-roundtrip` was `lane: full` there. The operator confirmed the config is stale. The
+  `sonar-roundtrip` lane is now `off`, the provider block is removed from `credentials_config` (left as an empty object), and the
+  global token is removed. **FIXED (PR 1884, merge `9e731121c`, 2026-10-29):** `runbook_lane resolve` now reports
+  `sonar: not_configured` and no longer carries a project key, so LB-101's lane has no Sonar question to ask. The block was removed by
+  a direct edit of `.plan/marshal.json`, the operator's approval, because no script verb removes a provider block (`credentials
+  remove` deletes the secret and leaves the block; a small plan could add that verb). CodeRabbit could not review that PR at all:
+  its path filter excludes `.plan/**`, so it posted a skipped notice, and the merge went ahead on green CI plus Sourcery's approval.
+  The PR ran two full verify builds, one on the PR and one in the merge group (about 30 minutes each), because
+  `.plan/marshal.json` is on the workflow's forced-build list. A lane change (treat `sonar-roundtrip: off` as not configured) stays
+  optional and rides the lane refactor decision.
+- **A concurrent edit in the shared main checkout blocked a lane's last cleanup step (PLAN-LB-100, 2026-10-29; recorded, not
+  staged).** `switch-and-pull` refused because `.plan/marshal.json` carried an unstaged edit the lane did not make; the lane asked, was
+  told the checkout was cleared, re-checked, and the sanctioned retry succeeded. The edit was this orchestrator session's own
+  (inferred). A process lesson more than a defect: an orchestrator-side config change goes on a branch from the start, never left
+  uncommitted in the main checkout while a lane may still be finishing. **Recurrence the same day, with a branch:** twice the main
+  checkout was switched from my chore branch back to `main` between two of my commands (first with the one-line change left
+  uncommitted on `main`, then the same with the second edit), so I moved each change back with a switch that carries or merges it
+  and committed at once. Cause not established: it fits the LB-100 lane's cleanup step, and I cannot rule out another session or
+  an editor. Nothing was lost; the safe habit is to check the branch before every git step and to commit an edit in the same
+  breath as making it.
+- **A second routed-build failure from a worktree, with a trigger the lane did not name (PLAN-LB-100, 2026-10-29).** The first routed
+  `quality-gate` with `--project-dir {worktree}` failed `execution_failed` (the worktree's `pwx` exited -1 with an empty log) and
+  every later build ran in-process. The landing does not say whether the path was absolute. Unconfirmed as the known relative-path
+  trigger; treat it as a recurrence of the routed-build Watch below until shown otherwise.
+- **Two lane behaviours recurred in the PLAN-LB-102 landing (2026-10-28; recorded, not staged).** (1) The lane's merge gate still asks the
+  operator a Sonar question (`undecidable` Sonar read, "merge despite undecidable Sonar" selected), although the 2026-10-28 ruling says
+  such a result is expected and never raised as a question. The cause is the lane, not the provider block: `runbook_lane resolve`
+  still reports `sonar: configured` (read live on the merged tree), so each lane run on this project pays one avoidable question, and
+  LB-100 and LB-101 will too. No Sonar figure is wanted; it bears on whether the lane keeps its Sonar surface (the lane refactor
+  analysis). (2) The relative `--project-dir` routed-build failure (see the routed-build Watch below) hit again: two jobs failed
+  `execution_failed` before the lane switched to an absolute path, so the lane text saying "absolute" once is now two observations
+  old. The lane also read two daemon job logs outside the repository root because its own § 4 points there, against its own
+  stay-inside rule; it disclosed that.
 - **ESCALATED to a HIGH Open Defect on 2026-10-27 after PLAN-LB-93 and PLAN-LB-98 repeated it (cause found: CI submits no PR
   analysis).** The Sonar analysis-revision gate (PLAN-LB-58) was undecidable for a whole PR (PLAN-LB-97, 2026-10-27). Eight reads across
   five heads of PR 1872 answered `undecidable` / `analysis_revision_unavailable` with `head_revision` resolving to

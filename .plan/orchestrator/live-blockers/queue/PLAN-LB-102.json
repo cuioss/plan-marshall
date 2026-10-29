@@ -2,10 +2,10 @@
   "id": "PLAN-LB-102",
   "slug": "ledger-first-spec-read",
   "workstream": "WS-04",
-  "status": "staged",
+  "status": "shipped",
   "lane": "runbook",
-  "plan_marshall_plan_id": "",
-  "pr": "",
-  "landing": "",
+  "plan_marshall_plan_id": "rb-lb-102-ledger-first-spec-read",
+  "pr": "1882",
+  "landing": "landings/PLAN-LB-102.md",
   "seq": 102
 }
