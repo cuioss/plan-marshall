@@ -185,8 +185,9 @@ be right for both. The size refusal is now classified from its **cause**: it res
 reopen from being offered an await for a diff that is simply too big. See
 [`bot-participation-contract.md`](bot-participation-contract.md) § "A refusal resolves by `rate_limit_class` BY DEFAULT, displaced by two overrides".
 
-The productive responses to the size ceiling are to split the PR, to accept the bot's
-non-participation, or to disable this reviewer for the PR — never to wait — and the
+The productive responses to the size ceiling are to split the PR or to accept the bot's
+non-participation under a recorded merge authorization — never to wait, and never to demote a required
+bot — and the
 required-versus-optional classification is what decides whether that non-participation blocks.
 `refusal_size_cap_patterns` reads the ceiling out of the notice so the accepted gap can be reconciled
 against the diff that was actually refused.

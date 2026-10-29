@@ -397,7 +397,7 @@ race the claim's own expiry. A claimed window already longer than the budget is 
 wait rather than waited out. Only that second pass RE-DELIVERS the request by closing and re-opening the
 PR **when no review by this bot is on record** — the elapsed claim resolves through this record's
 `trigger_semantics` above, and this bot asks for an explicit trigger, so a rebase-push is not what
-fires; a bot that already reviewed a head it already reviewed is re-triggered instead, because re-delivering a
+fires; a bot whose review is already on record is re-triggered instead, because re-delivering a
 request it answered buys nothing. See `../SKILL.md`
 § "Rate-limit refusal recovery" for the branch this lands on, and
 `workflow-integration-github`'s `resolve_recovery_action` for the derivation itself.

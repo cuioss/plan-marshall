@@ -19,7 +19,8 @@ product corpus stays free of a check nobody runs.
 What counts as an offer, stated exactly:
 
 * a DEMOTION VERB (``move``/``demote``/``reclassify``/``drop`` and inflections) whose
-  destination is ``optional`` or ``optional_bots``; and
+  destination is ``optional`` or ``optional_bots``, OR the withdrawn arm's own label
+  (``disable``/``exclude``/``remove`` … reviewer/bot); and
 * the sentence is about a reviewer that could be demoted — it names ``required`` /
   ``required_bots`` or, when no such qualifier appears, a bot/reviewer object; and
 * the sentence does not NEGATE the offer (``never``, ``not``, ``no``, ``withdrawn``,
@@ -58,6 +59,18 @@ _DEMOTION_OFFER = re.compile(
     rf'|{_DESTINATION}\s*(?:,|—|-)?\s*(?:as|instead|rather)[^.;\n]{{0,40}}?{_DEMOTION_VERB}\b',
     re.IGNORECASE,
 )
+#: The OTHER way the corpus phrased the same remedy: "disable this reviewer for this PR".
+#: It names no roster at all, so the destination pattern cannot see it, yet it is the
+#: same demotion — the moved-to-optional arm the barrier withdrew under that label.
+_DISABLE_OFFER = re.compile(
+    r'\b(?:disabl(?:e|es|ed|ing)|exclud(?:e|es|ed|ing)|remov(?:e|es|ed|ing))\s+'
+    r'(?:this|that|the)\s+(?:reviewer|bot)\b(?!\s*\'s)'
+    r'|\b(?:this|that|the)\s+(?:reviewer|bot)\s+(?:is|be|was|gets?)\s+'
+    r'(?:disabled|excluded|removed)\b',
+    re.IGNORECASE,
+)
+#: Any offer the scanner must judge.
+_ANY_OFFER = re.compile(f'{_DEMOTION_OFFER.pattern}|{_DISABLE_OFFER.pattern}', re.IGNORECASE)
 #: The sentence must be about a reviewer that could be demoted: an explicit
 #: ``required``/``required_bots`` qualifier, or a bare bot/reviewer object. The roster
 #: token is spelled ``required(?:_bots)?`` because a word boundary does not exist
@@ -116,8 +129,19 @@ def offered_demotions(text: str) -> list[str]:
         if _ALREADY_OPTIONAL.search(sentence) and not re.search(r'required(?:_bots)?\b', sentence, re.IGNORECASE):
             # An already-optional bot being moved to `optional_bots` is not a demotion.
             continue
-        for match in _DEMOTION_OFFER.finditer(sentence):
-            window = sentence[max(0, match.start() - _NEGATION_BEFORE_CHARS) : match.end() + _NEGATION_AFTER_CHARS]
+        for match in _ANY_OFFER.finditer(sentence):
+            # The negation must sit in the OFFER'S OWN CLAUSE. A semicolon ends a clause,
+            # so a negation after it ("move it to `optional`; do not trigger again")
+            # belongs to the next claim and must not acquit this one.
+            before_start = max(0, match.start() - _NEGATION_BEFORE_CHARS)
+            clause_start = sentence.rfind(';', 0, match.start())
+            if clause_start != -1:
+                before_start = max(before_start, clause_start + 1)
+            after_end = min(len(sentence), match.end() + _NEGATION_AFTER_CHARS)
+            clause_end = sentence.find(';', match.end())
+            if clause_end != -1:
+                after_end = min(after_end, clause_end)
+            window = sentence[before_start:after_end]
             if _NEGATION.search(window):
                 continue
             offenders.append(sentence)

@@ -562,12 +562,19 @@ class TestNoAwaitOnTheStructuralBranch:
         assert 'do not generate an event' in lowered
 
     def test_the_contract_forbids_an_await_on_the_member(self):
-        """The taxonomy's own row names the remedy set and excludes awaiting."""
+        """The taxonomy's own row names the remedy set, excludes awaiting, and never demotes.
+
+        The demotion arm is asserted ABSENT: a required reviewer is mandatory, so the
+        row's remedy set is split / recorded authorization, and a regression that
+        re-added a disable-the-reviewer arm has to fail here rather than pass as "one of
+        the remedies".
+        """
         row = _section(_CONTRACT_DOC.read_text(encoding='utf-8'), r'Failure taxonomy')
         structural = next(line for line in row.splitlines() if line.startswith('| `refused_structural`'))
         assert 'never await' in structural.lower()
-        for remedy in ('split', 'accept', 'disable'):
+        for remedy in ('split', 'accept', 'merge authorization'):
             assert remedy in structural.lower(), f'{remedy} missing from the remedy set'
+        assert 'disable' not in structural.lower()
 
     def test_the_orchestrator_hook_knows_the_structural_reason(self):
         """⛔ The hook that actually FIRES the prompt must know this reason exists.
@@ -598,12 +605,18 @@ class TestNoAwaitOnTheStructuralBranch:
             f'non-option this member exists to remove:\n{table[:600]}'
         )
 
-    def test_the_orchestrator_hook_offers_the_three_real_remedies(self):
-        """Asserting only the absence of a wait would pass on an empty branch table."""
+    def test_the_orchestrator_hook_offers_the_two_real_remedies(self):
+        """Asserting only the absence of a wait would pass on an empty branch table.
+
+        TWO, and no demotion: a required reviewer is mandatory and is never moved to
+        `optional_bots`, so the former "disable this reviewer" arm is not an option the
+        hook may render (see `automatic-review/standards/coderabbit.md` § "Operator
+        review policy").
+        """
         table = _hook_structural_table().lower()
         assert 'split' in table
         assert 'accept the coverage gap' in table
-        assert 'disable this reviewer' in table
+        assert 'disable this reviewer' not in table
 
     def test_the_orchestrator_hook_names_both_audit_figures(self):
         """The operator accepting a gap must be shown the cap AND the measured size.

@@ -140,6 +140,18 @@ class TestTheScannerCanFail:
 
         assert scanner.offered_demotions(text)
 
+    def test_the_disable_this_reviewer_label_is_seen(self):
+        """The withdrawn arm's own label names no roster, and is the same demotion."""
+        text = 'A required bot that keeps refusing can be handled by disabling this reviewer for this PR.\n'
+
+        assert scanner.offered_demotions(text)
+
+    def test_a_semicolon_ends_the_negation_clause(self):
+        """A `not` after a semicolon prohibits the NEXT claim, not the demotion."""
+        text = 'Move a required bot to `optional_bots`; do not trigger it again.\n'
+
+        assert scanner.offered_demotions(text)
+
     def test_a_short_form_destination_is_caught(self):
         """``optional`` without the ``_bots`` suffix is the form the shipped defect used."""
         assert scanner.offered_demotions('If a required bot keeps declining, move it to `optional` instead.\n')

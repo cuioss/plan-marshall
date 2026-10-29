@@ -820,7 +820,7 @@ applies to a `rate_limited` record.
 not one axis restated: `cause` is observed per REFUSAL while `rate_limit_class` is declared per BOT,
 and one bot can refuse for both causes at one class. A `size` refusal never succeeds while the diff
 is this size, so waiting is a NON-OPTION for it whatever its class says — the remedies are splitting
-the diff, accepting the gap, or disabling that reviewer for this PR. Only a `quota` cause makes the
+the diff, or accepting the gap under a recorded merge authorization. Only a `quota` cause makes the
 class the deciding field. Both keys are present on EVERY record, so a consumer reads one shape.
 
 An **empty list means no registered bot's most recently written comment is a refusal notice**. The list is per-bot by design: a single

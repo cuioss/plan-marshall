@@ -71,8 +71,8 @@ For GitLab projects use `plan-marshall:workflow-integration-gitlab:gitlab_pr fet
 > review, the opposite of `absent`'s escalate-the-non-participation. Rendering all three alike
 > prescribes escalation in the two cases where a trigger was the correct answer. `refused_structural`
 > (the bot refused because the DIFF is over its declared ceiling) is the sharpest case: neither a
-> trigger nor a wait can change its answer, so its remedies are to **split**, to **accept the gap**, or
-> to **disable that reviewer for this PR** — and offering a wait there is not a weaker remedy but an
+> trigger nor a wait can change its answer, so its remedies are to **split**, or to **accept the gap
+> under a recorded merge authorization** — and offering a wait there is not a weaker remedy but an
 > unavailable one.
 
 ### Step 2.5: INGEST — promote quarantined bodies to top-level

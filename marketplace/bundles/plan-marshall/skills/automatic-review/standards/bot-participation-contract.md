@@ -85,7 +85,7 @@ restates it.
 | `refused_awaitable` | The bot posted a refusal whose limit reopens on its own (`rate_limit_class: awaitable_window`). | Worth awaiting — the window resets. |
 | `refused_hard` | The bot posted a refusal that does not reopen on a useful timescale (`rate_limit_class: hard_quota`) and whose cause is a rate/budget **quota** — an account- or plan-level allowance. | Not worth awaiting; whether the absence is tolerable is a required-vs-optional question, not a waiting question. |
 | `refused_unknown` | The bot posted a refusal about whose awaitability nothing is known. Reached two ways: the registry declares its class `unknown` (its refusal shape has never been observed), or **no arm of the recognition stack could read the notice at all** — which resolves here whatever class the bot declares. | A declared *we-do-not-know*, NEVER a positive hard quota. Rendering it as `refused_hard` steers an operator toward "waiting is futile, force it" for a refusal that might have been awaitable. Its own member so the ignorance reaches the reader as ignorance. |
-| `refused_structural` | The bot posted a refusal whose **cause is a ceiling on the diff itself** — the PR is over a per-PR size budget (an observed `cause: size`). Decided by the cause axis, whatever the bot's `rate_limit_class` declares. | **The only member whose refusal is not temporal.** The other three say *not now*; this one says *not this diff*, and the same request never succeeds while the diff is this size. Remedies: **split**, **accept the gap**, or **disable this reviewer for this PR** — ⛔ **never await.** The finding carries the **cap** the notice stated, so the gap is auditable against the measured diff size. |
+| `refused_structural` | The bot posted a refusal whose **cause is a ceiling on the diff itself** — the PR is over a per-PR size budget (an observed `cause: size`). Decided by the cause axis, whatever the bot's `rate_limit_class` declares. | **The only member whose refusal is not temporal.** The other three say *not now*; this one says *not this diff*, and the same request never succeeds while the diff is this size. Remedies: **split the diff**, or **accept the gap under a recorded merge authorization** — ⛔ **never await, and never demote a required bot.** The finding carries the **cap** the notice stated, so the gap is auditable against the measured diff size. |
 | `participated_but_empty` | The bot posted at least one comment, but every comment was filtered out (noise) so it stored zero findings. | **Accounted-for, not a failure.** The bot did its pass and had nothing actionable to say. |
 | `participated_stale` | The bot's comment was already admissible evidence — it matched a declared `participation_evidence` publish shape AND carried that shape's declared content marker where one is declared — but failed the `participation_requires_update` currency test — the currency ledger anchors the comment to a commit that is **not** the merge candidate, and its `updated_at` is unchanged from the value recorded at that credit — or the comment itself names a commit that is not the merge candidate. A bot declaring `participation_requires_update: false` reaches this member too, but ONLY in a fetch that also observed it publishing a refusal: its evidence then has to be placed at the merge candidate by the provider-reported `commit_id`, and a comment whose commit was not reported is not placeable. | The bot reviewed an **earlier** commit, so nothing has reviewed the current diff. Blocking, but the remedy is a re-review trigger. |
 | `declined` | The bot was asked to review the merge candidate (a re-review was triggered) and answered without producing a review of it — an **incremental-review decline**: it responded with a comment that does not REFERENCE the merge candidate (`head_sha_verified: false`) rather than a review of this HEAD. `false` covers BOTH shapes — a comment naming no reviewed commit at all, and one naming a DIFFERENT commit — so neither may be described as the whole of it. | The bot engaged but **declined** to review this commit. Blocking, but re-triggering is futile — the productive action is to record a merge authorization over the decline, not to trigger again and not to demote a required bot (see `coderabbit.md` § "Operator review policy"). |
@@ -133,9 +133,10 @@ the fourth refines the refusal branch.
   three's.** The three temporal refusal members all describe a limit that moves — the same request
   succeeds once it does — so their remedy set is *wait, or accept the gap*. A diff-size ceiling does
   not move: the same PR is over the limit a minute later and an hour later alike. Its remedy set is
-  *split, accept the gap, or disable this reviewer for this PR*, and ⛔ **`await` is not a member of
-  it.** Collapsing the structural case into a temporal member therefore does not merely mislabel it —
-  it **offers a non-option**, handing the operator a wait for a ceiling that waiting does not move.
+  *split, or accept the gap under a recorded merge authorization*, and ⛔ **neither `await` nor a
+  demotion is a member of it.** Collapsing the structural case into a temporal member therefore does
+  not merely mislabel it — it **offers a non-option**, handing the operator a wait for a ceiling that
+  waiting does not move.
 
   This is why the cause is a **member** rather than a label attached to one. A label leaves every
   consumer routing on the member, so the wrong remedy is still the one offered; only a distinct
@@ -171,9 +172,10 @@ it matters*:
 
 A completeness failure is not one undifferentiated state: several blocking members name a **different
 remedy** than the others — `participated_stale` (re-trigger the stale review), `not_triggered`
-(trigger the review at all), `declined` (accept the decline, because re-triggering a bot that will
-not review this commit is futile), and `refused_structural` (split the diff, accept the gap, or
-disable this reviewer for this PR — **never** wait) — so a consumer that renders every blocking member
+(trigger the review at all), `declined` (record a merge authorization over the decline, because
+re-triggering a bot that will not review this commit is futile), and `refused_structural` (split the
+diff, or accept the gap under a recorded merge authorization — **never** wait and **never** demote a
+required bot) — so a consumer that renders every blocking member
 as "the bot did not review" discards the one thing the widened taxonomy exists to carry.
 
 ⛔ **`refused_structural` is the member on which offering the wrong remedy is worst**, because the
