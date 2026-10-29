@@ -654,6 +654,7 @@ _ROSTER_PAYLOAD = {
 
 _FETCH_PAYLOAD = {
     'status': 'success',
+    'fetch_complete': True,
     'merge_candidate_sha_resolved': True,
     'participated_bots': [{'bot_kind': 'coderabbit', 'evidence_kind': 'review_body'}],
     'stale_participation_bots': [{'bot_kind': 'sourcery', 'evidence_kind': 'comment'}],
@@ -763,6 +764,32 @@ def test_the_chain_refuses_a_producer_without_a_participation_arm(monkeypatch):
     verdict, _calls = _participation_chain(monkeypatch, _full_chain_responses(**{_PRODUCER_NOTATION: armless}))
 
     assert verdict['error'] == 'participation_arm_unavailable'
+
+
+def test_the_chain_refuses_an_incomplete_provider_fetch(monkeypatch):
+    """A capped fetch is not an observation: an omitted bot would read as a KNOWN gap.
+
+    ``fetch_complete`` is the producer's coverage discriminator. With it false the
+    participation sets are partial, so a required reviewer whose comment sat in the
+    truncated page is in no list at all — and the predicate would classify it ``absent``,
+    which this gate must never accept as an authorizable gap.
+    """
+    incomplete = dict(_FETCH_PAYLOAD, fetch_complete=False)
+
+    verdict, _calls = _participation_chain(monkeypatch, _full_chain_responses(**{_PRODUCER_NOTATION: incomplete}))
+
+    assert verdict['error'] == 'participation_unreadable'
+    assert 'INCOMPLETE fetch' in verdict['reason']
+
+
+def test_the_chain_refuses_a_producer_that_omits_the_coverage_flag(monkeypatch):
+    """An absent ``fetch_complete`` is not a complete fetch — the fail-closed direction."""
+    omitted = dict(_FETCH_PAYLOAD)
+    del omitted['fetch_complete']
+
+    verdict, _calls = _participation_chain(monkeypatch, _full_chain_responses(**{_PRODUCER_NOTATION: omitted}))
+
+    assert verdict['error'] == 'participation_unreadable'
 
 
 def test_the_chain_refuses_when_the_predicate_does_not_answer(monkeypatch):
@@ -1153,6 +1180,28 @@ def test_the_documented_branch_e_wording_is_the_scripts_template():
             ['merge_mechanism=pr_safe_merge', 'merge_state=n/a', 'cleanup_owed=false', 'work_performed=true'],
             'merge_state_not_landed',
         ),
+        (
+            [
+                'action=rebased',
+                'upstream_commit_count=1',
+                'merge_mechanism=pr_safe_merge',
+                'merge_state=merged',
+                'cleanup_owed=true',
+                'work_performed=true',
+            ],
+            'cleanup_owed_not_cleared',
+        ),
+        (
+            [
+                'action=rebased',
+                'upstream_commit_count=1',
+                'merge_mechanism=pr_safe_merge',
+                'merge_state=merged',
+                'cleanup_owed=false',
+                'work_performed=false',
+            ],
+            'work_performed_not_recorded',
+        ),
         (['merge_mechanism=pr_safe_merge', 'not-a-pair'], 'facts_malformed'),
         (
             ['merge_mechanism=pr_safe_merge', 'merge_state=merged', 'cleanup_owed=false', 'work_performed=true'],
@@ -1175,6 +1224,8 @@ def test_the_documented_branch_e_wording_is_the_scripts_template():
         'unknown-action',
         'missing-facts',
         'not-landed',
+        'cleanup-owed-true',
+        'work-performed-false',
         'malformed-fact',
         'no-action-on-direct-route',
         'action-without-upstream-count',

@@ -658,6 +658,23 @@ def _check_participation(plan_id: str, pr_number: int, project_dir: str) -> dict
                 'proven a participant on this head'
             ),
         }
+    if fetched.get('fetch_complete') is not True:
+        # A CAPPED connection makes the producer's observation sets partial: a required bot
+        # whose review sat in the truncated page appears in NO participation list, so the
+        # predicate would classify it ``absent`` and this gate would read that as a KNOWN,
+        # authorizable gap. An incomplete fetch is not an observation, so it is UNKNOWN —
+        # the same class as a silent producer, never a gap somebody can rule past.
+        return {
+            'status': 'error',
+            'error': 'participation_unreadable',
+            'roster_read': True,
+            'required_bots': required,
+            'optional_bots': optional,
+            'reason': (
+                'the provider producer returned an INCOMPLETE fetch (fetch_complete is not true), so its '
+                'participation sets are partial and an omitted bot would read as absent'
+            ),
+        }
     if fetched.get('merge_candidate_sha_resolved') is not True:
         return {
             'status': 'error',
@@ -1125,6 +1142,22 @@ def record_merge(
         return _refuse(
             'merge_state_not_landed',
             f'this verb records a LANDED merge, so merge_state must be merged; got {recorded["merge_state"]!r}',
+        )
+    # The VALUES, not only the keys: this verb records a landed merge whose cleanup is
+    # complete, so a payload asserting otherwise would write a record that contradicts
+    # itself (and whose clean wording claims a cleanup the facts deny). The doc fixes both
+    # values at this site; enforcing them here is what makes that a mechanism.
+    if recorded['cleanup_owed'] != 'false':
+        return _refuse(
+            'cleanup_owed_not_cleared',
+            f'a landed-merge record for this step has its cleanup complete, so cleanup_owed must be '
+            f'false; got {recorded["cleanup_owed"]!r}',
+        )
+    if recorded['work_performed'] != 'true':
+        return _refuse(
+            'work_performed_not_recorded',
+            f'a landed-merge record did perform its work, so work_performed must be true; '
+            f'got {recorded["work_performed"]!r}',
         )
 
     merge_mechanism = recorded['merge_mechanism']
