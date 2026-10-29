@@ -870,6 +870,65 @@ def _running_hand_back(
     return running_result(job_id, duration, log_file, command_str)  # type: ignore[return-value]
 
 
+_PROJECT_DIR_FLAG = '--project-dir'
+"""The one path-valued flag a routed argv can carry whose value the daemon re-resolves.
+
+``_absolutise_project_dir`` rewrites its value before submission. The other
+path-shaped flags are checked, and neither can arrive here relative:
+
+* ``--plan-id`` is mutually exclusive with ``--project-dir`` and, unlike it,
+  derives its own ABSOLUTE tree (a persisted worktree path, else the checkout
+  root), so it resolves identically in both processes.
+* ``--working-dir`` and ``--env`` make a build daemon-incompatible, so a build
+  carrying either never routes at all — it falls back in-process before this
+  seam (see ``daemon_incompatible`` in ``cmd_run``).
+* ``--root`` is declared only on the ``discover`` and ``find`` subcommands, so it
+  cannot appear in the routed ``run`` argv.
+"""
+
+
+def _absolutise_project_dir(argv: list[str], project_dir: str) -> list[str]:
+    """Rewrite every ``--project-dir`` value in a routed argv onto ``project_dir``.
+
+    The daemon re-runs the submitted command with its working directory set to
+    the resolved project tree, so a RELATIVE ``--project-dir`` — the form the
+    runbook lane hands every build, ``.plan/local/worktrees/{plan_id}`` — is
+    resolved a SECOND time against that tree and names a directory that does not
+    exist. The wrapper lookup then misses the project's own wrapper, falls
+    through to a bare system command that is not installed, and a healthy project
+    dies ``execution_failed`` inside the daemon.
+
+    Both token forms (``--project-dir X`` and ``--project-dir=X``) are rewritten
+    and no other token is touched. An argv with no ``--project-dir`` is returned
+    unchanged: the child's default ``.`` already resolves to that same tree.
+
+    Args:
+        argv: The routing process's own argv tail (``sys.argv[1:]``).
+        project_dir: The ABSOLUTE project directory the daemon will run in.
+
+    Returns:
+        The argv with every ``--project-dir`` value replaced.
+    """
+    normalised: list[str] = []
+    index = 0
+    while index < len(argv):
+        token = argv[index]
+        if token == _PROJECT_DIR_FLAG:
+            normalised.append(token)
+            if index + 1 < len(argv):
+                normalised.append(project_dir)
+                index += 2
+                continue
+            index += 1
+            continue
+        if token.startswith(f'{_PROJECT_DIR_FLAG}='):
+            normalised.append(f'{_PROJECT_DIR_FLAG}={project_dir}')
+        else:
+            normalised.append(token)
+        index += 1
+    return normalised
+
+
 def _route_to_daemon(
     config: ExecuteConfig,
     project_dir: str,
@@ -920,7 +979,16 @@ def _route_to_daemon(
     # Reconstruct the executor-form command the daemon re-runs from THIS build
     # process's own argv tail — argv[0] is the build script path, argv[1:] is the
     # `run --command-args "<args>" [flags…]` the executor invoked us with.
-    command = ['python3', str(Path(exec_root) / '.plan' / 'execute-script.py'), notation, *sys.argv[1:]]
+    #
+    # The tail's `--project-dir` value is REPLACED with the absolute tree: the
+    # daemon sets the child's working directory to that tree, so a relative value
+    # would be resolved again against it and name a directory that does not exist.
+    command = [
+        'python3',
+        str(Path(exec_root) / '.plan' / 'execute-script.py'),
+        notation,
+        *_absolutise_project_dir(sys.argv[1:], exec_root),
+    ]
     command_str = ' '.join(command)
 
     # Routing and ledger values DO carry the sentinel: a plan-less build is

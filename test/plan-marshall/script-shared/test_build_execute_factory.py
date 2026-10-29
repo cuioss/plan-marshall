@@ -29,6 +29,7 @@ their subject and re-arm it with ``@pytest.mark.allow_daemon_routing``.
 
 import argparse
 import json
+import sys
 
 import _build_execute as build_execute
 import _build_execute_factory as factory
@@ -859,12 +860,14 @@ class _FakeBuildServerClient:
     def __init__(self, wait_payload: dict):
         self._wait_payload = wait_payload
         self.forwarded_plan_ids: list[tuple[str, str]] = []
+        self.submitted_commands: list[str] = []
 
     def run_preflight(self, _ns):
         return {'preflight': 'ready'}
 
     def run_submit(self, ns):
         self.forwarded_plan_ids.append(('submit', ns.plan_id))
+        self.submitted_commands.append(ns.command)
         return {'status': 'success', 'job_id': 'J1'}
 
     def run_wait(self, ns):
@@ -884,6 +887,56 @@ class _FakeBuildServerClient:
 # * ``_route_to_daemon`` FORWARDS the sentinel — routing and ledger values do
 #   carry NO_PLAN, so the daemon's kind=job row matches the kind=build row's
 #   never-null contract.
+
+
+class TestRoutedArgvResolvesTheWorktreeWrapper:
+    """The argv a routed job submits must still name the caller's tree in the child.
+
+    The daemon runs the submitted command with the worktree as its working
+    directory, so the ``--project-dir`` value is resolved a SECOND time — by the
+    child, against that directory. This drives the real routing assembly, takes
+    the submitted argv, then replays the child's own resolution through the REAL
+    two-state resolver and the REAL wrapper detection: a relative value survives
+    the first resolve and dies the second, which is how a healthy project came to
+    die ``execution_failed`` inside the daemon. Only the daemon client is stubbed;
+    no resolver, detector or formatter is.
+    """
+
+    @pytest.mark.allow_daemon_routing
+    def test_the_submitted_project_dir_resolves_the_worktree_wrapper(self, monkeypatch, tmp_path):
+        from resolve_project_dir import resolve_project_dir
+
+        monkeypatch.delenv(factory.MARSHALLD_JOB_ENV, raising=False)
+        worktree = tmp_path / '.plan' / 'local' / 'worktrees' / 'plan-x'
+        worktree.mkdir(parents=True)
+        (worktree / 'pw').write_text('#!/bin/sh\n')
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setattr(
+            sys,
+            'argv',
+            ['pyproject_build.py', 'run', '--command-args', 'verify', '--project-dir', '.plan/local/worktrees/plan-x'],
+        )
+        log = tmp_path / 'job.log'
+        log.write_text('status: success\nexit_code: 0\n')
+        client = _FakeBuildServerClient({'job_status': 'success', 'log_file': str(log), 'duration_seconds': 1})
+        monkeypatch.setattr(factory, '_load_build_server', lambda: client)
+
+        routed, reason = factory._route_to_daemon(_make_config(), '.plan/local/worktrees/plan-x', None)
+
+        assert routed is not None, f'routing did not happen (reason={reason!r})'
+        submitted = json.loads(client.submitted_commands[0])
+        project_dir_value = submitted[submitted.index('--project-dir') + 1]
+        # Replay the CHILD: the daemon's cwd is the resolved tree, and the child
+        # resolves the flag again through the same resolver the build CLI uses.
+        monkeypatch.chdir(worktree.resolve())
+        monkeypatch.setattr(build_execute.shutil, 'which', lambda _cmd: None)
+
+        replayed = resolve_project_dir(None, project_dir_value, default='.')
+
+        assert build_execute.detect_wrapper(replayed, 'pw', 'pw.bat', 'pwx') == './pw', (
+            'the daemon child resolved --project-dir to '
+            f'{replayed!r}, where no wrapper exists — the submitted value must be the absolute tree'
+        )
 
 
 class TestRecordResolutionSentinelSuppressesWorkLog:

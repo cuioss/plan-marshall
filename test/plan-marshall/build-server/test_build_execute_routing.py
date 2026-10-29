@@ -304,6 +304,83 @@ def test_route_ready_submits_reconstructed_command(use_fake_client, monkeypatch,
     assert client.submit_calls[0].plan_id == 'plan-x'
 
 
+def test_route_submits_the_absolute_project_dir_for_the_separated_form(use_fake_client, monkeypatch, tmp_path):
+    """The daemon re-runs the argv in the worktree, so the relative value must not survive.
+
+    The lane hands every build ``--project-dir .plan/local/worktrees/{plan_id}``.
+    Submitted verbatim, the child re-resolves it against the worktree the daemon
+    made its working directory, names a directory that does not exist, and the
+    wrapper lookup falls through to a bare system command that is not installed.
+    Only the VALUE may change: every other token is what the caller wrote.
+    """
+    worktree = tmp_path / '.plan' / 'local' / 'worktrees' / 'plan-x'
+    worktree.mkdir(parents=True)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        sys,
+        'argv',
+        [
+            'pyproject_build.py',
+            'run',
+            '--command-args',
+            'verify core',
+            '--project-dir',
+            '.plan/local/worktrees/plan-x',
+        ],
+    )
+    client = use_fake_client(
+        preflight={'status': 'success', 'preflight': 'ready'},
+        submit={'status': 'success', 'job_id': 'JOB-1'},
+        waits=[{'status': 'success', 'job_status': 'success', 'duration_seconds': 1, 'log_file': 'x.log'}],
+    )
+
+    result, reason = factory._route_to_daemon(_config(tool_name='python'), '.plan/local/worktrees/plan-x', None)
+
+    assert reason == ''
+    assert result is not None
+    submitted = json.loads(client.submit_calls[0].command)
+    assert submitted[3:] == [
+        'run',
+        '--command-args',
+        'verify core',
+        '--project-dir',
+        str(worktree.resolve()),
+    ], 'the submitted argv must carry the absolute tree and leave every other token alone'
+
+
+def test_route_submits_the_absolute_project_dir_for_the_equals_form(use_fake_client, monkeypatch, tmp_path):
+    """``--project-dir=X`` is the same flag: its value is rewritten, the token kept."""
+    worktree = tmp_path / '.plan' / 'local' / 'worktrees' / 'plan-x'
+    worktree.mkdir(parents=True)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        sys,
+        'argv',
+        [
+            'pyproject_build.py',
+            'run',
+            '--command-args',
+            'verify core',
+            '--project-dir=.plan/local/worktrees/plan-x',
+        ],
+    )
+    client = use_fake_client(
+        preflight={'status': 'success', 'preflight': 'ready'},
+        submit={'status': 'success', 'job_id': 'JOB-1'},
+        waits=[{'status': 'success', 'job_status': 'success', 'duration_seconds': 1, 'log_file': 'x.log'}],
+    )
+
+    factory._route_to_daemon(_config(tool_name='python'), '.plan/local/worktrees/plan-x', None)
+
+    submitted = json.loads(client.submit_calls[0].command)
+    assert submitted[3:] == [
+        'run',
+        '--command-args',
+        'verify core',
+        f'--project-dir={worktree.resolve()}',
+    ]
+
+
 def test_route_wait_reissues_on_running(use_fake_client):
     client = use_fake_client(
         preflight={'status': 'success', 'preflight': 'ready'},
