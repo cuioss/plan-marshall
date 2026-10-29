@@ -5,8 +5,11 @@
 PLAN-LB-30 / PLAN-LB-16 (Deliverable 6):
 Asserts that while ``skip-on-docs-only`` is ``true``, the ``extra-buildable`` input
 is present in ``.github/workflows/python-verify.yml`` and names at minimum
-``.plan/marshal.json`` and ``.claude/**``. When ``skip-on-docs-only`` is ``false``
-or absent, the test passes without the input (as nothing is skipped).
+``.claude/**`` plus the two markdown test globs. ``.plan/marshal.json`` is
+deliberately NOT required: no test reads this repository's own config, so a
+config-only change takes the footprint skip like any other non-building path.
+When ``skip-on-docs-only`` is ``false`` or absent, the test passes without the
+input (as nothing is skipped).
 
 Includes matched positive and negative controls to prevent regressions.
 """
@@ -26,7 +29,6 @@ _WORKFLOW_PATH = PROJECT_ROOT / '.github' / 'workflows' / 'python-verify.yml'
 #: Required buildable paths that must be passed when skip-on-docs-only is active.
 REQUIRED_EXTRA_BUILDABLE_PATHS = frozenset(
     {
-        '.plan/marshal.json',
         '.claude/**',
     }
 )
@@ -36,6 +38,15 @@ REQUIRED_MARKDOWN_BUILDABLE_PATHS = frozenset(
     {
         'marketplace/**/*.md',
         'test/**/*.md',
+    }
+)
+
+#: Paths that must NOT be passed: no test reads this repository's own project
+#: config, so listing it forces a full verify for a change nothing depends on.
+#: A config-only change takes the footprint skip instead.
+FORBIDDEN_EXTRA_BUILDABLE_PATHS = frozenset(
+    {
+        '.plan/marshal.json',
     }
 )
 
@@ -129,6 +140,14 @@ def validate_extra_buildable_config(with_section: dict[str, Any]) -> tuple[bool,
             f'extra-buildable is missing required markdown paths: {sorted(missing_markdown)} (found: {sorted(paths)})',
         )
 
+    forbidden = FORBIDDEN_EXTRA_BUILDABLE_PATHS & paths
+    if forbidden:
+        return (
+            False,
+            f'extra-buildable names paths no test reads, so they force a build for nothing: '
+            f'{sorted(forbidden)} (found: {sorted(paths)})',
+        )
+
     return True, ''
 
 
@@ -174,31 +193,43 @@ def test_validate_extra_buildable_fails_when_extra_buildable_missing():
 
 
 def test_validate_extra_buildable_fails_when_required_path_missing():
-    """Negative control: missing .plan/marshal.json or .claude/** must fail."""
-    # Missing .claude/**
+    """Negative control: missing required paths must fail, and .plan/marshal.json must NOT be required."""
+    # Missing the required .claude/** path (the markdown globs are present).
     with_section_1 = {
         'skip-on-docs-only': True,
-        'extra-buildable': '.plan/marshal.json',
+        'extra-buildable': 'marketplace/**/*.md test/**/*.md',
     }
     valid_1, reason_1 = validate_extra_buildable_config(with_section_1)
     assert not valid_1, 'Expected failure when .claude/** is missing'
     assert '.claude/**' in reason_1
 
-    # Missing .plan/marshal.json
+    # A two-path config that carries .plan/marshal.json instead of .claude/** still
+    # fails: the config path is no longer a required or sufficient member.
     with_section_2 = {
         'skip-on-docs-only': True,
-        'extra-buildable': '.claude/**',
+        'extra-buildable': '.plan/marshal.json marketplace/**/*.md test/**/*.md',
     }
     valid_2, reason_2 = validate_extra_buildable_config(with_section_2)
-    assert not valid_2, 'Expected failure when .plan/marshal.json is missing'
-    assert '.plan/marshal.json' in reason_2
+    assert not valid_2, 'Expected failure when .claude/** is missing even beside .plan/marshal.json'
+    assert '.claude/**' in reason_2
+
+
+def test_validate_extra_buildable_fails_when_a_forbidden_path_is_listed():
+    """Negative control: .plan/marshal.json must be rejected even with every required path present."""
+    with_section = {
+        'skip-on-docs-only': True,
+        'extra-buildable': '.plan/marshal.json .claude/** marketplace/**/*.md test/**/*.md',
+    }
+    valid, reason = validate_extra_buildable_config(with_section)
+    assert not valid, 'Expected failure when .plan/marshal.json is listed'
+    assert '.plan/marshal.json' in reason
 
 
 def test_validate_extra_buildable_fails_when_markdown_path_has_wrong_extension():
     """Negative control: extra-buildable carrying .mdx globs instead of .md must fail."""
     with_section = {
         'skip-on-docs-only': True,
-        'extra-buildable': '.plan/marshal.json .claude/** marketplace/**/*.mdx test/**/*.mdx',
+        'extra-buildable': '.claude/** marketplace/**/*.mdx test/**/*.mdx',
     }
     valid, reason = validate_extra_buildable_config(with_section)
     assert not valid, 'Expected failure when markdown paths have .mdx extension'
