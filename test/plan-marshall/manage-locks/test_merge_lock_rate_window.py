@@ -223,14 +223,16 @@ class TestDegradedState:
 
 
 class TestRateWindowCli:
-    def test_shipped_attempt_cap_default_is_six(self, isolated_base: dict) -> None:
-        """Omitting ``--attempt-cap`` must yield a budget of SIX.
+    def test_shipped_attempt_cap_default_matches_the_operator_policy(self, isolated_base: dict) -> None:
+        """Omitting ``--attempt-cap`` must yield the operator policy's TEN windows.
 
         The literal is the assertion. The recursion cap exists to let the
-        automatic-review recovery sequence run to completion before it escalates,
-        so a default too small silently strands that sequence — and no
-        cap-derived test above can see it, because each derives its bound from
-        the shipped value and would agree with any number at all.
+        automatic-review recovery sequence run to completion before it escalates, so
+        a default too small silently strands that sequence — and no cap-derived test
+        above can see it, because each derives its bound from the shipped value and
+        would agree with any number at all. TEN is the figure the policy states
+        (``automatic-review/standards/coderabbit.md`` § "Operator review policy",
+        "repeat up to **10 windows**").
         """
         result = run_script(
             SCRIPT_PATH,
@@ -248,8 +250,8 @@ class TestRateWindowCli:
         assert result.returncode == 0, result.stderr
         parsed = parse_toon(result.stdout)
         assert parsed['status'] == 'success', parsed
-        assert parsed['attempt_cap'] == 6, parsed
-        assert parsed['attempts_remaining'] == 5, parsed
+        assert parsed['attempt_cap'] == 10, parsed
+        assert parsed['attempts_remaining'] == 9, parsed
 
     def test_help_advertises_attempt_cap_and_its_default(self) -> None:
         """``--help`` is the surface an operator reads before choosing a cap."""
@@ -257,10 +259,10 @@ class TestRateWindowCli:
 
         assert result.returncode == 0, result.stderr
         # argparse hard-wraps help text at the terminal width, so a wrap between
-        # any two words of '(default: 6)' would break a raw substring match.
+        # any two words of '(default: 10)' would break a raw substring match.
         advertised = ' '.join(result.stdout.split())
         assert '--attempt-cap' in advertised, advertised
-        assert '(default: 6)' in advertised, advertised
+        assert '(default: 10)' in advertised, advertised
 
     def test_claim_refuses_a_missing_pr_number(self, isolated_base: dict) -> None:
         """No PR means no counter to count against — refuse rather than guess.

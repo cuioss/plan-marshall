@@ -361,7 +361,7 @@ answer spends a capped recovery attempt for nothing.
 
 **Which recovery that yields is not restated here.** The routing — which discriminator is read first,
 which branch each combination reaches, and which remedies each offers — is owned by
-[`../SKILL.md`](../SKILL.md) § "Rate-limit refusal recovery (opt-in)", and is DERIVED at runtime by
+[`../SKILL.md`](../SKILL.md) § "Rate-limit refusal recovery", and is DERIVED at runtime by
 `github_re_review recovery-action` from this record's own `rate_limit_class` and `trigger_semantics`.
 Read it there. A per-bot copy of a cross-bot routing rule is invisible to the next bot registered, and
 goes stale the moment a branch is added — which is exactly what this record is for: it declares the
@@ -485,8 +485,8 @@ Two properties of this bot's `/review` output follow from the observed fact that
    bot is the motivating case for the whole class: `participation_evidence` declares `issue_comment`
    as the unconditional shape and `completion_check_name` is empty, so the comment is the ONLY place
    it can ever name a reviewed commit — a required `cuioss-review-bot` could therefore never verify,
-   and `declined`'s documented remedy is to demote it to `optional_bots` or take a merge-authorization
-   waiver.
+   and `declined`'s only remedy is a recorded merge authorization over the decline; a required bot is
+   never demoted to `optional_bots`.
 
    The verdict is now read off the body by that same predicate. A comment naming this HEAD verifies;
    one naming a different commit, or none, still reports `false` — the genuine decline. The signal is

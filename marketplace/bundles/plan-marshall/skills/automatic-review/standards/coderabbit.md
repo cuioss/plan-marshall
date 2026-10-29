@@ -207,7 +207,7 @@ matching one carries `condition: no_unreviewed_commit` on its record; every othe
   CodeRabbit review the whole changeset again. CodeRabbit's command reference states that it uses one
   review from the allowance when it runs, exactly as `@coderabbitai review` does, so it is posted only
   when no CodeRabbit review is on record at all, and at most once per reply. Which of the two applies is decided by the recovery
-  selector — see `../SKILL.md` § "Rate-limit refusal recovery (opt-in)" Branch 6, which owns the rule
+  selector — see `../SKILL.md` § "Rate-limit refusal recovery" Branch 6, which owns the rule
   and the observations it reads; it is not restated here.
 
 `No new commits to review` is the skip notice for the same situation. It is matched on that line
@@ -354,13 +354,12 @@ The operator's standing ruling for this bot, which every consumer follows and no
 - **The operator is asked only after those steps are spent**, and an answer that says "merge" or
   "continue" does not shorten the policy.
 
-The merge-path option sets do not carry "move CodeRabbit to `optional_bots`" as an option for a
-required bot: `branch-cleanup.md`'s structural-refusal and blocked paths offer split-or-accept, and
-`automatic-review/SKILL.md`'s structural escalation carries two options for the same reason. Any older
-remedy text elsewhere in this corpus that still says "move the bot to `optional`" describes the
-pre-policy posture and is SUPERSEDED by this section for a required bot — the demotion is not a remedy
-the workflow offers, whatever an older sentence says. A bot that reviewed an older head and refused the
-current one is a refusal state, not a participation: see
+The merge-path option sets do not carry a demotion option for a required bot: `branch-cleanup.md`'s
+structural-refusal and blocked paths offer split-or-authorization, and `automatic-review/SKILL.md`'s
+structural escalation carries two options for the same reason. No shipped document offers demoting a
+required bot — the demotion is not a remedy the workflow has, whatever an older sentence may once have
+said. A bot that reviewed an older head and refused the current one is a refusal state, not a
+participation: see
 [`bot-participation-contract.md`](bot-participation-contract.md) § "The currency-blind path for
 append-per-review bots".
 
@@ -368,9 +367,9 @@ append-per-review bots".
 
 CodeRabbit's review limit is a **rolling window that reopens on its own**, so `rate_limit_class` is
 `awaitable_window`: awaiting the reset is productive work, not a stall. This is what makes the
-`automatic-review` opt-in rate-limit refusal recovery (`review_rate_window_await`, bounded by
-`review_rate_window_timeout_seconds`, defaulted to 3600 to match the roughly hourly reset) worth
-enabling for this bot — the class is the field the recovery decision reads, rather than assuming
+`automatic-review` rate-limit refusal recovery (`review_rate_window_await`, ON by default and bounded by
+`review_rate_window_timeout_seconds`, defaulted to 5400 = the policy's ONE 90-minute window) the right
+default for this bot — the class is the field the recovery decision reads, rather than assuming
 every bot's refusal is waitable. For this bot the recovery claims the window and then stops: the
 `automatic-review` step returns the wait to the main context instead of holding it. The main context
 (`phase-6-finalize` Step 3 item 7a) waits on the claim's own expiry, under that budget — one bounded
@@ -378,9 +377,11 @@ every bot's refusal is waitable. For this bot the recovery claims the window and
 again once the claim has expired plus the wake margin that wait applies, so the re-dispatch does not
 race the claim's own expiry. A claimed window already longer than the budget is escalated before any
 wait rather than waited out. Only that second pass RE-DELIVERS the request by closing and re-opening the
-PR — the elapsed claim resolves through this record's `trigger_semantics` above, and this bot asks
-for an explicit trigger, so a rebase-push or a trigger comment is not what fires. See `../SKILL.md`
-§ "Rate-limit refusal recovery (opt-in)" for the branch this lands on, and
+PR **when no review by this bot is on record** — the elapsed claim resolves through this record's
+`trigger_semantics` above, and this bot asks for an explicit trigger, so a rebase-push is not what
+fires; a bot that already reviewed a head it already reviewed is re-triggered instead, because re-delivering a
+request it answered buys nothing. See `../SKILL.md`
+§ "Rate-limit refusal recovery" for the branch this lands on, and
 `workflow-integration-github`'s `resolve_recovery_action` for the derivation itself.
 
 The notice usually states its own reset time; `rate_limit_eta_patterns` extracts it so the caller
