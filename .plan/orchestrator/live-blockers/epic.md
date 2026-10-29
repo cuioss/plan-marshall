@@ -2271,6 +2271,13 @@ entries below are OpenCode 1 assumptions in plan-marshall that OpenCode 2 broke.
 - **A lane can rewrite the shared main executor (PLAN-LB-97, 2026-10-27).** It regenerated `.plan/execute-script.py` from a
   scratch worktree and a concurrent lane found the executor broken. The guard covers tracked-file edits in the main checkout
   (PLAN-LB-93 D4), not the untracked executor. One occurrence, now explained; stage a rule if it recurs.
+- **STAGED as PLAN-LB-104 on 2026-10-29 (operator: the build server is the lane's default; trigger CONFIRMED first-hand).** The daemon
+  journal holds a matched pair of jobs, same worktree, executor and daemon: relative `--project-dir` died `execution_failed` (`pwx`,
+  exit -1, 0 s), absolute ran `./pw module-tests` green. Cause: `_route_to_daemon` submits `*sys.argv[1:]` unchanged and the daemon
+  runs it with the worktree as cwd, so the relative path is re-resolved against the worktree; `detect_wrapper` then finds no `pw` and
+  the bare fallback (`pwx`, or `mvn` for Maven) is spawned. The lane text and `resolve` both emit the relative form. LB-100 then ran
+  every later build in-process on its own initiative. The two Watches below ("known trigger" and "still fall back after LB-92") are
+  closed by it; the Maven report from another project is unconfirmed (spec's Verify-first clause).
 - **Routed-build failure from a worktree has a known trigger (PLAN-LB-97, 2026-10-27).** The lane ran 72 routed builds with no
   degradation once `--project-dir` was ABSOLUTE; a relative path resolved against the daemon's cwd and fell back to a system
   `pwx` that is not installed. PLAN-LB-53 said the same. The five lanes that fell back (LB-55, LB-53, LB-82, LB-96, LB-58)

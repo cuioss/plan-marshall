@@ -2,7 +2,7 @@
   "id": "PLAN-LB-103",
   "slug": "tests-use-fixtures-not-live-config",
   "workstream": "WS-04",
-  "status": "staged",
+  "status": "launched",
   "lane": "runbook",
   "plan_marshall_plan_id": "",
   "pr": "",
