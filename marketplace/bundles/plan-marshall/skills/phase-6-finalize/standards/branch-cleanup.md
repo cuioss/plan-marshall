@@ -916,9 +916,15 @@ not a richer call. The two flags belong at § "Predicate 2" below, which is the 
 **The rule is a POSITIVE validation of the required shape, not an enumeration of known-bad shapes.**
 The barrier proceeds to Predicate 2 when, and only when, this `fetch_findings` call exited **zero** AND
 its return carries **EVERY** participation input it enumerates — `participated_bots`,
-`stale_participation_bots`, `refused_bots`, `unrecognised_refusal`, and
-`merge_candidate_sha_resolved`. **Every other shape is an
-UNKNOWN**, including a zero exit whose return omits any one of them. The enumeration is the
+`stale_participation_bots`, `refused_bots`, `refused_causes`, `unrecognised_refusal`,
+`fetch_complete`, and `merge_candidate_sha_resolved` — AND `fetch_complete` is `true`. **Every other
+shape is an
+UNKNOWN**, including a zero exit whose return omits any one of them, and including a capped or partial
+response whose `fetch_complete` is not `true`. `refused_causes` is required on the same ground
+`unrecognised_refusal` is: it is the CAUSE overlay the predicate reads to resolve a `size` refusal to
+`refused_structural`, so a truncated return that keeps `refused_bots` but drops its causes would let a
+structural refusal fall back to `rate_limit_class` and offer the operator a wait — the exact remedy
+miscount the cause axis exists to prevent. The enumeration is the
 requirement; it deliberately states no cardinal, because a restated count is a second place the set
 size lives and the one that goes stale silently when the set is widened. Keying the trigger on a single
 sentinel field would not do: a
@@ -1255,7 +1261,7 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github
   --timeout {re_review_await_timeout_seconds} --plan-id {plan_id}
 ```
 
-Record `{trigger_state}` as a comma-separated `{bot_kind}: {status}` list from the returns (`reviewed`, `refused`, `declined`, `silent`), or the literal `none attempted` when `{stale_bots}` is empty. ⛔ **The scope is `participated_stale` ONLY.** A bot in any other blocking member gets no extra trigger here: a `declined` bot answers another trigger with another decline, a `refused_awaitable` one is handled by step 2 below, a `refused_hard` / `refused_structural` one cannot answer at all, and an `absent` one is already being asked by the re-fired pipeline. Triggering any of them spends quota to learn what the state already says.
+After each return, map the RAW envelope to a status before recording `{trigger_state}`: `status: refused` → `refused`; `status: success` with `matched: true` and `head_sha_verified: true` → `reviewed`; `status: success` with `matched: true` and `head_sha_verified: false` → `declined`; `timed_out: true` or `matched: false` → `silent`. A `status: error` is surfaced as an error and never rendered as a review status. Record the mapped results as a comma-separated `{bot_kind}: {status}` list, or the literal `none attempted` when `{stale_bots}` is empty. ⛔ **The scope is `participated_stale` ONLY.** A bot in any other blocking member gets no extra trigger here: a `declined` bot answers another trigger with another decline, a `refused_awaitable` one is handled by step 2 below, a `refused_hard` / `refused_structural` one cannot answer at all, and an `absent` one is already being asked by the re-fired pipeline. Triggering any of them spends quota to learn what the state already says.
 
 ⛔ **A fresh review is NEW EVIDENCE — re-read it before disposing of anything.** `github_re_review re-review` awaits the bot's answer but does not ingest it, and the count and the participation verdict above were computed BEFORE the trigger. So after the triggers return, re-run § "Re-fetch bot comments against the current HEAD" and § "Predicate 2 — required-bot participation against this HEAD" — the same reads and the same UNKNOWN handling — and dispose on the REFRESHED results: a review that landed with actionable feedback is a non-zero pending count and goes to § "Blocked path — one or more pending findings", a bot the fresh review proves a participant is no longer a gap, and only when the refreshed verdict still blocks does the step below run. Asking about the old gap, or letting "Merge anyway" cover a review nobody read, is the failure this re-read exists to prevent.
 
