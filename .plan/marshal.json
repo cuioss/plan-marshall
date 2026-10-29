@@ -282,12 +282,7 @@
       ]
     }
   },
-  "credentials_config": {
-    "workflow-integration-sonar": {
-      "organization": "cuioss",
-      "project_key": "cuioss_plan-marshall"
-    }
-  },
+  "credentials_config": {},
   "interaction_mode": "advanced",
   "project": {
     "default_base_branch": "main",
