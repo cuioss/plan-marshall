@@ -165,6 +165,17 @@ def _frontmatter_order_and_destroys() -> dict[str, tuple[object, list[str]]]:
     return out
 
 
+#: External (bundle-optional) finalize steps this project registers. An INDEPENDENT
+#: fixture, not a discovery result: if one of these skills loses its ``SKILL.md``,
+#: discovery no longer emits it, so the document-derived roster cannot notice — this
+#: list is what keeps that failure visible. It names the registrations, not the
+#: operator's live config.
+_EXTERNAL_REGISTERED_FINALIZE_STEPS = (
+    'plan-marshall:automatic-review',
+    'plan-marshall:plan-retrospective',
+)
+
+
 def _registered_finalize_steps() -> list[str]:
     """Every discovered finalize-step implementor's step id.
 
@@ -519,6 +530,20 @@ class TestWriteSiteListIsDerivedClosed:
     verdict. This class derives the writer set from the registered step roster
     and compares it to the list the a0 block records, in both directions.
     """
+
+    def test_external_registered_steps_resolve_to_a_body(self):
+        """The external steps this project registers still resolve to their SKILL.md.
+
+        The roster is document-derived, so a deleted external skill document is
+        invisible to it; this independent fixture keeps that failure detectable.
+        """
+        unresolved = [
+            step
+            for step in _EXTERNAL_REGISTERED_FINALIZE_STEPS
+            if not any(path.is_file() for path in _step_documents(step))
+        ]
+
+        assert unresolved == [], f'External registered finalize steps with no body document: {unresolved}'
 
     def test_derived_writer_set_is_non_empty(self):
         """Anti-vacuity: an empty derived set would make the equality below meaningless."""
