@@ -305,7 +305,7 @@ Read `re_review_on_loopback` (default: `false`) off the returned `params` object
 
    - **When `timed_out: true` (and `matched: false`)**, the await budget expired with no fresh review by that bot for the new HEAD. Add `{trigger_bot_kind}` to the accumulating `{timed_out_bots}` list; the pass enters "On re-review timeout (trigger B)" below once every listed bot has been asked, instead of falling through silently.
 
-     **One exception — the bot answered that nothing is unreviewed.** When the return also carries `refusal_detected: true` with a `refusals[]` record whose `condition` is `no_unreviewed_commit`, do NOT add the bot to `{timed_out_bots}` — whatever `review_rate_window_await` is set to. The bot did not stay silent: it said every commit is already reviewed, and asking the operator whether to wait longer for a review it has just declined to repeat asks the wrong question. The exception does not depend on the opt-in because the producer's answer does not: `github_pr fetch_findings` credits a stale bot whose own `no_unreviewed_commit` reply is strictly newer than the merge-candidate commit on every call, so a bot disposed as timed out here could be one the FIND call of this same pass counts as having reviewed this HEAD. What the opt-in decides is only what happens next:
+     **One exception — the bot answered that nothing is unreviewed.** When the return also carries `refusal_detected: true` with a `refusals[]` record whose `condition` is `no_unreviewed_commit`, do NOT add the bot to `{timed_out_bots}` — whatever `review_rate_window_await` is set to. The bot did not stay silent: it said every commit is already reviewed, and asking the operator whether to wait longer for a review it has just declined to repeat asks the wrong question. The exception does not depend on `review_rate_window_await` because the producer's answer does not: `github_pr fetch_findings` credits a stale bot whose own `no_unreviewed_commit` reply is strictly newer than the merge-candidate commit on every call, so a bot disposed as timed out here could be one the FIND call of this same pass counts as having reviewed this HEAD. What `review_rate_window_await` decides is only what happens next:
 
      - **With `review_rate_window_await` `true`**, carry that record into "Rate-limit refusal recovery", which routes it to Branch 6.
      - **With `review_rate_window_await` `false`**, the recovery section is skipped, so no selector is consulted and nothing is posted — the bot's escalated command is sent from Branch 6 alone. Continue as for a bot that did not time out; "Producer: FIND" decides. A bot the producer credits is in `participated_bots[]`. A bot it does not credit — the reply is not strictly newer than the merge-candidate commit, or the order of the two could not be read — stays in `stale_participation_bots[]`, or in no participation list at all, and the step-done participation guard holds the step open for it as for any other unproven bot. It is never passed as reviewed.
@@ -439,7 +439,8 @@ for a bot whose refusal shape has never been observed. ⛔ Each record ALSO carr
 non-option whatever the class declares, so a consumer that routes on `rate_limit_class` alone offers a
 wait for a ceiling waiting does not move. ⛔ Before either of those comes the record's `condition`: a
 `no_unreviewed_commit` record is not a limit at all and is never waited for. The "Rate-limit refusal recovery" subsection
-below acts on this discriminator when the opt-in is enabled; when the opt-in is off, a non-empty
+below acts on this discriminator when `review_rate_window_await == true`; when
+`review_rate_window_await == false`, a non-empty
 `rate_limited_bots[]` is treated as an ordinary settle by the table above.
 
 ### Rate-limit refusal recovery
@@ -639,7 +640,7 @@ The selector returns one of these:
 
 - **`action: settle_stale_notice`** — the bot has a review on record, its state could not be decided,
   or none was observed. Claim nothing, hand no wait back, and generate no event. Decision-log, then
-  proceed to "Producer: FIND" — the notice is settled as a refusal is when the opt-in is off, and the
+  proceed to "Producer: FIND" — the notice is settled as a refusal is when `review_rate_window_await == false`, and the
   step-done participation guard still sees that the bot did not review:
 
   ```bash
@@ -1533,7 +1534,7 @@ rides — on the claiming pass, and again on a re-entry-before-wake pass whose w
 arms. ⛔ **It is ABSENT —
 the key omitted entirely — on a pass that armed no wait**: never an empty table, and never a row of
 defaulted fields, which a reader would take as a wait armed on nothing. Branch 0 and Branch 1, Branch 2's
-`recovery_cap_exhausted` and `window_held_by_other_plan` arms, and a run with the opt-in off all return
+`recovery_cap_exhausted` and `window_held_by_other_plan` arms, and a run with `review_rate_window_await == false` all return
 without it.
 
 FIND-only producer — this step fetches and files `pr-comment` findings; the per-finding LLM triage is delegated to the dispatcher-owned unified wait-region triage (`producer=finalize-feedback`), not dispatched here. `comments_found` is the count filed to the store. The `display_detail` value (≤80 chars, ASCII, no trailing period) is forwarded via `mark-step-done --display-detail`. A `loop_back` status is emitted ONLY by the D3 participation guard (awaiting a bot whose participation is unproven), never for a triage disposition; on `loop_back` the step re-fires on the next phase entry per the HEAD-dependent resumability rules above.
