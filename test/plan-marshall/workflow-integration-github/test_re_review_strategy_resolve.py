@@ -609,6 +609,40 @@ def test_bot_kind_for_author_known_sourcery_login():
     assert github_re_review.bot_kind_for_author('sourcery-ai') == 'sourcery'
 
 
+def test_an_await_failure_after_a_posted_trigger_keeps_the_post_outcome(monkeypatch):
+    """⛔ A failed await is not a failed post.
+
+    `cmd_re_review` returns the await's error envelope after a SUCCESSFUL post, so an
+    envelope that does not carry `trigger_posted: true` is read by the recovery step as
+    "nothing was posted" — and it would post a duplicate while the first request may
+    still be running.
+    """
+
+    class _Strategy:
+        def request_fresh_review(self, *_args, **_kwargs):
+            return {'status': 'success', 'trigger_time': '2026-01-01T00:00:00Z'}
+
+        def await_fresh_review(self, *_args, **_kwargs):
+            return {'status': 'error', 'error': 'fetch_failure', 'message': 'boom'}
+
+    monkeypatch.setattr(github_re_review, 'resolve_strategy', lambda _bot_kind: _Strategy())
+    args = argparse.Namespace(
+        bot_kind='coderabbit',
+        pr_number=42,
+        push_time='2026-01-01T00:00:00Z',
+        plan_id='p',
+        head_sha='headsha',
+        timeout=1,
+        escalated=False,
+    )
+
+    result = github_re_review.cmd_re_review(args)
+
+    assert result['status'] == 'error'
+    assert result['trigger_posted'] is True
+    assert result['trigger_time'] == '2026-01-01T00:00:00Z'
+
+
 def test_main_re_review_wires_args_and_prints_toon(monkeypatch, capsys):
     """main() parses argv, runs cmd_re_review, and prints a TOON envelope.
 

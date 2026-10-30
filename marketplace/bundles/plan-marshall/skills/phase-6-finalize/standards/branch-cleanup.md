@@ -49,7 +49,7 @@ configurable:
     description: Gate the GitHub-only stuck-state `--admin` fallback inside `ci pr safe-merge` — false refuses the admin merge and surfaces the stuck PR to the operator; true permits `gh pr merge --admin` only when the PR stays `mergeable_state: blocked` past the poll timeout AND every active ruleset requirement is provably met. Orthogonal to `final_merge_without_asking` (which gates whether the merge is attempted at all).
   - key: pre_merge_comment_barrier
     default: fail_into_loopback
-    description: Gate the fail-closed pre-merge review-completeness barrier that re-fetches bot comments immediately before merge/enqueue and blocks on EITHER of two predicates — any pr-comment finding still pending, or any REQUIRED bot whose participation against the current HEAD is unproven. The second predicate exists because the first cannot see an absence: a bot that never reviewed files no comment and so reads as clean to a pending count. fail_into_loopback (default) loops the plan back into the automatic-review triage pipeline (records the branch-cleanup step loop_back, releases the merge mutex if held, re-enters phase-6-finalize); ask fires an inline AskUserQuestion offering re-triage / merge-anyway-with-recorded-reason / defer. ONE member changes what both arms OFFER — a required bot on refused_structural refused because the diff exceeds a ceiling the reviewer declares, so re-requesting the review cannot clear it and re-triage is never offered as a remedy there. With pending findings zero, fail_into_loopback still records the loop_back (re-entry re-runs the authorization check, which an operator remedy can clear) but logs the structural bots, the cap, the measured diff size and three copy-runnable remedies; ask fires a different prompt offering split / accept-the-gap / disable-this-reviewer. Pending findings are disposed of first when both blocks hold. The clean path requires BOTH zero pending findings and participation_complete.
+    description: Gate the fail-closed pre-merge review-completeness barrier that re-fetches bot comments immediately before merge/enqueue and blocks on EITHER of two predicates — any pr-comment finding still pending, or any REQUIRED bot whose participation against the current HEAD is unproven. The second predicate exists because the first cannot see an absence: a bot that never reviewed files no comment and so reads as clean to a pending count. fail_into_loopback (default) loops the plan back into the automatic-review triage pipeline (records the branch-cleanup step loop_back, releases the merge mutex if held, re-enters phase-6-finalize); ask fires an inline AskUserQuestion offering re-triage / merge-anyway-with-recorded-reason / defer. ONE member changes what both arms OFFER — a required bot on refused_structural refused because the diff exceeds a ceiling the reviewer declares, so re-requesting the review cannot clear it and re-triage is never offered as a remedy there. With pending findings zero, fail_into_loopback still records the loop_back (re-entry re-runs the authorization check, which an operator remedy can clear) but logs the structural bots, the cap, the measured diff size and two copy-runnable remedies; ask fires a different prompt offering split the diff / accept the gap under a recorded authorization. Pending findings are disposed of first when both blocks hold. The clean path requires BOTH zero pending findings and participation_complete.
 ---
 
 # Branch Cleanup
@@ -868,14 +868,15 @@ python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-e
 
 Extract `pre_merge_comment_barrier` from the returned `params` object as `{barrier_mode}` (default: `fail_into_loopback`). Valid values: `fail_into_loopback`, `ask`.
 
-Read `required_bots` and `optional_bots` off the `plan-marshall:automatic-review` step's param object (the review-bot participation classification for this plan):
+Read `required_bots` and `optional_bots` through the fail-closed roster verb (the same read `automatic-review` uses, so the two sites agree on whether the roster was read at all):
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-execution-manifest \
-  step-params get --plan-id {plan_id} --phase 6-finalize --step-id plan-marshall:automatic-review
+python3 .plan/execute-script.py plan-marshall:automatic-review:review_completeness roster --plan-id {plan_id}
 ```
 
-Extract `required_bots` and `optional_bots` from the returned `params` object as `{required_bots}` (e.g. `coderabbit,cuioss-review-bot`) and `{optional_bots}` (e.g. `sourcery`). Both default EMPTY. The two lists classify rather than admit — see [`../../automatic-review/standards/bot-participation-contract.md`](../../automatic-review/standards/bot-participation-contract.md).
+⛔ **An unreadable roster is a barrier ERROR, never an empty roster.** A `status: error` / `error: roster_unreadable` return means the step-params read failed; do NOT carry `{required_bots}` / `{optional_bots}` forward as empty strings and do NOT run the predicates below on them, because an empty roster makes the participation quorum vacuously satisfied and the barrier would pass a plan whose reviewers nobody could observe. Route it to § "UNKNOWN — the re-fetch itself failed" as another unreadable participation input — participation neither proven nor disproven, and never authorizable. Only a `roster_read: true` return is used, and it is used even when both lists are empty: the empty list IS the answer for a READ roster, and `roster_read` is what keeps it distinguishable from an unreadable one. That is a statement about the READ, not about the merge — the dispatch-side participation gate above still refuses `roster_empty` on its own, so an empty configured roster is not a pass. The two lists classify rather than admit — see [`../../automatic-review/standards/bot-participation-contract.md`](../../automatic-review/standards/bot-participation-contract.md).
+
+Record `{trigger_state}` = `none attempted` here, before either predicate's disposition can reach an operator prompt. § "Before the barrier asks" replaces it with the outcome when it triggers a stale reviewer, and the pending-findings prompt renders the same placeholder.
 
 #### Re-fetch bot comments against the current HEAD
 
@@ -887,7 +888,7 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github
   --required-bots "{required_bots}" --optional-bots "{optional_bots}"
 ```
 
-Both lists default EMPTY. **The load-bearing defence is the parser, not the quoting.** Through the
+Both flags read an absent value as the empty list — a transport detail, distinct from the roster read above: an empty VALUE is safe to forward only after `roster_read: true`, and a failed read routes to the UNKNOWN disposition before this call. **The load-bearing defence is the parser, not the quoting.** Through the
 generated executor a quoted empty placeholder arrives as an empty value: `--required-bots ""` reaches
 the parser as `--required-bots ''`, because the executor keeps an empty string that is the value of
 the option before it. An UNQUOTED empty placeholder is removed by the shell before the executor runs,
@@ -915,9 +916,15 @@ not a richer call. The two flags belong at § "Predicate 2" below, which is the 
 **The rule is a POSITIVE validation of the required shape, not an enumeration of known-bad shapes.**
 The barrier proceeds to Predicate 2 when, and only when, this `fetch_findings` call exited **zero** AND
 its return carries **EVERY** participation input it enumerates — `participated_bots`,
-`stale_participation_bots`, `refused_bots`, `unrecognised_refusal`, and
-`merge_candidate_sha_resolved`. **Every other shape is an
-UNKNOWN**, including a zero exit whose return omits any one of them. The enumeration is the
+`stale_participation_bots`, `refused_bots`, `refused_causes`, `unrecognised_refusal`,
+`fetch_complete`, and `merge_candidate_sha_resolved` — AND `fetch_complete` is `true`. **Every other
+shape is an
+UNKNOWN**, including a zero exit whose return omits any one of them, and including a capped or partial
+response whose `fetch_complete` is not `true`. `refused_causes` is required on the same ground
+`unrecognised_refusal` is: it is the CAUSE overlay the predicate reads to resolve a `size` refusal to
+`refused_structural`, so a truncated return that keeps `refused_bots` but drops its causes would let a
+structural refusal fall back to `rate_limit_class` and offer the operator a wait — the exact remedy
+miscount the cause axis exists to prevent. The enumeration is the
 requirement; it deliberately states no cardinal, because a restated count is a second place the set
 size lives and the one that goes stale silently when the set is widened. Keying the trigger on a single
 sentinel field would not do: a
@@ -1004,7 +1011,7 @@ Also retain `{unrecognised_refusal_bots}` — the `bot_kind` values from the sam
 
 ⚠ **An unrecognised refusal is state-determining, not advisory — and it is the override this call site most needs.** A bot whose refusal no recognition arm could read resolves to `refused_unknown` REGARDLESS of its declared `rate_limit_class`: an unparsed notice supports no claim about its own awaitability. Without it, a bot declaring `awaitable_window` renders `refused_awaitable` here and the `ask`-mode prompt below offers the operator a wait on a window nobody observed — the exact remedy-misnaming the prompt's own construction (see § "Predicate 2 fails — the ask" below) exists to prevent. See [`../../automatic-review/standards/bot-participation-contract.md`](../../automatic-review/standards/bot-participation-contract.md) § "Refusal recognition is ENUMERATIVE", which requires both recognition sites to report the same state for one refusal.
 
-⚠ **A `size` cause is state-determining, not advisory — this is a behaviour change at this call site.** It resolves the refusing bot to `refused_structural` rather than to an awaitability member, because `rate_limit_class` is declared per BOT while a cause is observed per REFUSAL and one bot can refuse for both causes at one class. Every other cause remains advisory and changes no verdict. The distinction matters here precisely because this is the site that renders an operator prompt: a structural refusal's remedies are split / accept / disable-for-this-PR, and **never** wait. See [`../../automatic-review/standards/bot-participation-contract.md`](../../automatic-review/standards/bot-participation-contract.md) § "A refusal resolves by `rate_limit_class` BY DEFAULT, displaced by two overrides".
+⚠ **A `size` cause is state-determining, not advisory — this is a behaviour change at this call site.** It resolves the refusing bot to `refused_structural` rather than to an awaitability member, because `rate_limit_class` is declared per BOT while a cause is observed per REFUSAL and one bot can refuse for both causes at one class. Every other cause remains advisory and changes no verdict. The distinction matters here precisely because this is the site that renders an operator prompt: a structural refusal's remedies are split the diff / accept the gap under a recorded merge authorization, and **never** wait. See [`../../automatic-review/standards/bot-participation-contract.md`](../../automatic-review/standards/bot-participation-contract.md) § "A refusal resolves by `rate_limit_class` BY DEFAULT, displaced by two overrides".
 
 One input is NOT available from the re-fetch, because no earlier call observes it — the PR-wide question of whether any `pull_request`-event workflow run exists for this PR at all. Read it here:
 
@@ -1066,7 +1073,7 @@ alone to make an empty list safe.**
 
 Read `participation_complete`, `unproven_bots`, `bot_states`, and `refusal_causes` from the returned TOON. ⛔ **`refusal_causes` is the CHECK return's spelling, and it is not the producer's.** `github_pr fetch_findings` emits the same information as two separate fields, `refused_causes[]` and `refused_size_caps[]`, which this step forwards INTO the call as `--refused-causes` / `--refusal-size-caps`; `review_completeness check` returns them merged as one `refusal_causes[]` table of `{bot_kind, cause, cap}` rows. Reading the producer's spelling off the consumer's return finds nothing, and an absent field renders as an empty cap — a quantified gap silently becoming an unquantified one. The `{cap}` derivation below reads this field, not the producer's. The predicate is fail-closed over the REQUIRED set: a required bot that published nothing yields `participation_complete: false`. Which member it resolves to depends on the `--not-triggered` input read above — `not_triggered` when no `pull_request`-event run exists for the PR at all, `absent` otherwise — and the two carry opposite remedies, so read `bot_states` rather than assuming `absent`. An unproven OPTIONAL bot never blocks — a bot on a hard quota that will not clear inside this plan's lifetime belongs in `optional_bots`, which is the configured way to accept its silence, rather than in a force-done that accepts every bot's silence at once.
 
-**Read `bot_states` before disposing of a block, because several of the blocking members name a different remedy than the others.** A required bot on `participated_stale` DID publish — its review merely predates this HEAD — so the productive action is a re-review trigger; a PR-wide `not_triggered` means no reviewer was ever asked, so the productive action is to generate the trigger event at all; a required bot on `declined` answered the re-review without reviewing this HEAD, so re-triggering it produces another decline — the productive action is to accept the decline (move it to `optional`, or record a merge-authorization), not to trigger again; a required bot on `refused_hard` is out of a budget this plan cannot restore, so the productive actions are those same acceptance moves rather than a wait for a window that does not reopen on a useful timescale; a required bot on `refused_structural` refused because the DIFF is over its declared ceiling, so neither a re-trigger nor a wait can change its answer — the productive actions are to split the diff, to accept the coverage gap, or to disable that reviewer for this PR; and a required bot on `unregistered_kind` is not a reviewer that stayed silent at all but a configured NAME no registered reviewer answers to, so there is nobody for a trigger to reach and nothing for a wait to arrive from — the productive action is to correct the token in `required_bots` / `optional_bots` against the live kind set the predicate reports, or to record a merge-authorization for the gap. Every one of them is still a block and none shortens the barrier, but a `{barrier_mode} == ask` prompt that renders them as *"the bot did not review"* asks the operator to accept the wrong gap. See [`../../automatic-review/standards/bot-participation-contract.md`](../../automatic-review/standards/bot-participation-contract.md) § "Some members are refinements, not siblings — and their remedies are opposite" and § "Detecting a decline".
+**Read `bot_states` before disposing of a block, because several of the blocking members name a different remedy than the others.** A required bot on `participated_stale` DID publish — its review merely predates this HEAD — so the productive action is a re-review trigger; a PR-wide `not_triggered` means no reviewer was ever asked, so the productive action is to generate the trigger event at all; a required bot on `declined` answered the re-review without reviewing this HEAD, so re-triggering it produces another decline — the productive action is to record a HEAD-bound operator merge authorization over the decline, never a demotion (a required bot is mandatory: see [`../../automatic-review/standards/coderabbit.md`](../../automatic-review/standards/coderabbit.md) § "Operator review policy") and never another trigger; a required bot on `refused_hard` is out of a budget this plan cannot restore, so the productive action is that same recorded authorization rather than a wait for a window that does not reopen on a useful timescale; a required bot on `refused_structural` refused because the DIFF is over its declared ceiling, so neither a re-trigger nor a wait can change its answer — the productive actions are to split the diff, or to accept the coverage gap under a recorded merge authorization; and a required bot on `unregistered_kind` is not a reviewer that stayed silent at all but a configured NAME no registered reviewer answers to, so there is nobody for a trigger to reach and nothing for a wait to arrive from — the productive action is to correct the token in `required_bots` / `optional_bots` against the live kind set the predicate reports, or to record a merge-authorization for the gap. Every one of them is still a block and none shortens the barrier, but a `{barrier_mode} == ask` prompt that renders them as *"the bot did not review"* asks the operator to accept the wrong gap. See [`../../automatic-review/standards/bot-participation-contract.md`](../../automatic-review/standards/bot-participation-contract.md) § "Some members are refinements, not siblings — and their remedies are opposite" and § "Detecting a decline".
 
 ⛔ **`refused_structural` is the member on which naming the wrong remedy is worst, because the wrong remedy is not merely unhelpful but unavailable.** Waiting is an action the operator can take that is guaranteed not to work, and a prompt that offers it has spent their attention on a non-option while leaving the real remedies unnamed. When rendering this member, name BOTH figures alongside it — the **cap** from `refusal_causes[]` (the ceiling the bot's own notice stated) and `{measured_diff_size}` (how big the refused diff actually was), each `unknown` when unavailable — so an operator choosing to accept the gap accepts a quantified one. Neither figure alone is enough: a cap without a measurement is a claim taken on trust, and a measurement without a cap has nothing to be measured against.
 
@@ -1240,6 +1247,35 @@ When `participation_complete: false`, the merge is blocked even if `{count} == 0
 
 This is an **authorizable** blocked path: § "Authorization check — the only admissible evidence on a blocked path" above has already run, and this disposition fires only when it returned `any_admissible: false` for `review-barrier-gap` — including when `any_authorized` was `true` under a ruling granted over some other gap.
 
+##### Before the barrier asks — refresh a stale reviewer, then wait out a quota
+
+The operator is asked only after the remedies that need no decision have been spent. These run BEFORE any `{barrier_mode} == ask` prompt, and only on the ask path: under `fail_into_loopback` the re-fired `automatic-review` re-enters trigger B, which already triggers a stale required bot on loop-back whatever `re_review_on_loopback` says, so triggering here as well would ask the same bot twice for one head.
+
+`{trigger_state}` was initialised to `none attempted` with the roster read above; step 1 replaces it when it runs.
+
+**1. A stale required reviewer gets its ordinary trigger.** Derive `{stale_bots}` = every bot in `{unproven_bots}` ∩ required whose `bot_states` entry is `participated_stale`. For each bot in turn, post its registry `trigger_comment` through the D2 re-review registry, resolving `{head_sha}` and `{push_time}` exactly as the FIND step's trigger B resolves them:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_re_review re-review \
+  --pr-number {pr_number} --bot-kind {bot_kind} --head-sha {head_sha} --push-time {push_time} \
+  --timeout {re_review_await_timeout_seconds} --plan-id {plan_id}
+```
+
+After each return, map the RAW envelope to a status before recording `{trigger_state}`: `status: refused` → `refused`; `status: success` with `matched: true` and `head_sha_verified: true` → `reviewed`; `status: success` with `matched: true` and `head_sha_verified: false` → `declined`; `timed_out: true` or `matched: false` → `silent`. A `status: error` is surfaced as an error and never rendered as a review status. Record the mapped results as a comma-separated `{bot_kind}: {status}` list, or the literal `none attempted` when `{stale_bots}` is empty. ⛔ **The scope is `participated_stale` ONLY.** A bot in any other blocking member gets no extra trigger here: a `declined` bot answers another trigger with another decline, a `refused_awaitable` one is handled by step 2 below, a `refused_hard` / `refused_structural` one cannot answer at all, and an `absent` one is already being asked by the re-fired pipeline. Triggering any of them spends quota to learn what the state already says.
+
+⛔ **A fresh review is NEW EVIDENCE — re-read it before disposing of anything.** `github_re_review re-review` awaits the bot's answer but does not ingest it, and the count and the participation verdict above were computed BEFORE the trigger. So after the triggers return, re-run § "Re-fetch bot comments against the current HEAD" and § "Predicate 2 — required-bot participation against this HEAD" — the same reads and the same UNKNOWN handling — and dispose on the REFRESHED results: a review that landed with actionable feedback is a non-zero pending count and goes to § "Blocked path — one or more pending findings", a bot the fresh review proves a participant is no longer a gap, and only when the refreshed verdict still blocks does the step below run. Asking about the old gap, or letting "Merge anyway" cover a review nobody read, is the failure this re-read exists to prevent.
+
+**2. An awaitable quota refusal is waited out, never asked about.** First read `review_rate_window_await` off the `plan-marshall:automatic-review` step's param object with the same one-stop read the review step itself uses — the roster verb above returns only the bot lists, not the knobs:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-execution-manifest \
+  step-params get --plan-id {plan_id} --phase 6-finalize --step-id plan-marshall:automatic-review
+```
+
+When it is `false` — the documented way a project turns the loop off — the re-fired `automatic-review` step settles the refusal instead of claiming a window, so finishing the wait here would re-enter with the same verdict until the iteration ceiling: treat the refusal as an ordinary settle and fall through to the `{barrier_mode}` branch below. When it is `true`, derive `{awaitable_bots}` = every bot in `{unproven_bots}` ∩ required whose `bot_states` entry is `refused_awaitable`. When that set is non-empty the barrier **must not ask**: release the merge mutex (§ "Merge-Mutex Hold Window" invariant 4 — this is a wait boundary) and record `branch-cleanup` as a `loop_back` to `6-finalize`. The re-fired `automatic-review` step detects the refusal, claims the window through `merge_lock rate-window claim`, and returns `escalate_ask{reason: rate_window_await}`; **item 7a** holds the wait through `merge_lock rate-window wait` — never a raw `sleep` — and re-dispatches the step, which re-triggers the bot once its window has passed. The loop is bounded by `review_rate_window_timeout_seconds` and the claim's attempt cap (`merge_lock --attempt-cap`); when the cap is spent the recovery escalates with `rate_window_exhausted`, and only THEN does this barrier's `ask` branch fire. ⛔ The merge mutex is released for the whole loop, so no merge lock is held across the wait.
+
+A refusal from a bot outside `required_bots` never arms either step: an optional bot's silence is not a failure, so waiting on its window burns budget to ask a question the operator does not need in front of them.
+
 Branch on `{barrier_mode}` using the SAME two branches as the unhandled-comment block below — **unless a required bot resolved `refused_structural`, which carves out both branches; read § "Structural refusal — RE-TRIAGE is not a remedy" below FIRST** — `fail_into_loopback` (default) loops back into `6-finalize` so `automatic-review` re-fires and re-awaits the unproven bot, and `ask` prompts the operator. Both branches carry the same merge-mutex release obligations documented there; only the recorded message differs:
 
 ```bash
@@ -1247,7 +1283,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   decision --plan-id {plan_id} --level WARNING --message "(plan-marshall:phase-6-finalize) Pre-merge review barrier: required-bot participation incomplete — unproven_bots={unproven_bots}, pending pr-comment findings={count} — pre_merge_comment_barrier={barrier_mode} (merge blocked)"
 ```
 
-⚠ **A loop-back here is only productive if the unproven bot can still produce evidence.** Whether it can is a per-bot, per-repository property: a bot with no auto-review-on-push trigger in this repository's caller workflow will never re-review a loop-back fix commit on its own, and `re_review_on_loopback` (default `false`) governs whether an explicit trigger comment is posted for it. If neither holds, the loop-back re-enters this barrier with the same verdict. Fix the trigger, or move the bot to `optional_bots` — do not answer a structurally-unprovable bot with repeated loop-backs. See [`../../automatic-review/standards/cuioss-review-bot.md`](../../automatic-review/standards/cuioss-review-bot.md) § "Signal calibration" for how to read a given repository's caller.
+⚠ **A loop-back here is only productive if the unproven bot can still produce evidence.** Whether it can is a per-bot, per-repository property: a bot with no auto-review-on-push trigger in this repository's caller workflow will never re-review a loop-back fix commit on its own, and `re_review_on_loopback` (default `false`) governs whether an explicit trigger comment is posted for it. If neither holds, the loop-back re-enters this barrier with the same verdict. Fix the trigger, or record a merge authorization covering the gap — a required bot is never demoted to `optional_bots`, and repeated loop-backs are not the answer either. See [`../../automatic-review/standards/cuioss-review-bot.md`](../../automatic-review/standards/cuioss-review-bot.md) § "Signal calibration" for how to read a given repository's caller.
 
 ##### ⛔ Structural refusal — RE-TRIAGE is not a remedy, under BOTH barrier modes
 
@@ -1438,10 +1474,18 @@ AskUserQuestion:
       description: |
         **PR**: #{pr_number}
         **Unhandled pr-comment findings**: {count}
+        **Stale re-review**: {trigger_state}
 
         A re-fetch against the current HEAD surfaced comment(s) that
         were never handled. Merging now would land the PR with open
         bot feedback.
+
+        {trigger_state expands to one `{bot_kind}: {status}` entry per required
+        bot the barrier triggered before asking — `reviewed`, `refused`,
+        `declined` or `silent` — or to the literal "none attempted" when no
+        required bot was stale. It is ALWAYS rendered, so the operator can see
+        whether a stale reviewer was asked again, and with what result, before
+        being asked about the gap.}
 
         {When a structural refusal is also present, APPEND: “Also
         unreviewed: {structural_bots} refused over cap {cap} (measured

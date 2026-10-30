@@ -1449,8 +1449,8 @@ def test_default_plan_finalize_steps_nests_step_owned_params():
         're_review_on_branch_cleanup': True,
         're_review_await_timeout_seconds': 600,
         're_review_on_timeout': 'ask',
-        'review_rate_window_await': False,
-        'review_rate_window_timeout_seconds': 3600,
+        'review_rate_window_await': True,
+        'review_rate_window_timeout_seconds': 5400,
         'lane': 'ask',
     }
 
