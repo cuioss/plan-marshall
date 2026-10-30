@@ -2,10 +2,10 @@
   "id": "PLAN-LB-101",
   "slug": "review-policy-barrier",
   "workstream": "WS-01",
-  "status": "launched",
+  "status": "shipped",
   "lane": "runbook",
-  "plan_marshall_plan_id": "",
-  "pr": "",
-  "landing": "",
+  "plan_marshall_plan_id": "rb-lb-101-review-policy-barrier",
+  "pr": "1890",
+  "landing": "landings/PLAN-LB-101.md",
   "seq": 101
 }

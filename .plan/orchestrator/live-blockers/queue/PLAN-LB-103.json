@@ -2,10 +2,10 @@
   "id": "PLAN-LB-103",
   "slug": "tests-use-fixtures-not-live-config",
   "workstream": "WS-04",
-  "status": "launched",
+  "status": "shipped",
   "lane": "runbook",
-  "plan_marshall_plan_id": "",
-  "pr": "",
-  "landing": "",
+  "plan_marshall_plan_id": "rb-lb-103-tests-use-fixtures-not-live-config",
+  "pr": "1894",
+  "landing": "landings/PLAN-LB-103.md",
   "seq": 103
 }
