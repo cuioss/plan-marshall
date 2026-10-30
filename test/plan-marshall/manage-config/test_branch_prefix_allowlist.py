@@ -68,13 +68,16 @@ def _parse_push_branches() -> list[str]:
         on_section = data.get('on')
         if on_section is None:
             on_section = data.get(True)
-        branches = on_section['push']['branches']
-        return list(branches)
+        push = on_section.get('push') or {}
+        # A pull-request-only workflow has no push trigger at all; that is an empty
+        # list, not a crash, so the pull_request coverage path can still be reached.
+        return [str(entry) for entry in (push.get('branches') or [])]
 
     # Regex fallback — anchor on the push block's branches list so the
     # pull_request.branches list is never matched.
     match = re.search(r'push:\s*\n\s*branches:\s*\[([^\]]*)\]', text)
-    assert match, f'Could not locate on.push.branches in {_WORKFLOW_PATH}'
+    if not match:
+        return []
     raw_entries = match.group(1).split(',')
     return [entry.strip().strip('"').strip("'") for entry in raw_entries if entry.strip()]
 
@@ -92,14 +95,24 @@ def _pull_request_builds_main() -> bool:
             on_section = data.get(True)
         if 'pull_request' not in on_section:
             return False
-        bases = (on_section['pull_request'] or {}).get('branches')
+        pull_request = on_section['pull_request'] or {}
+        # ``branches-ignore`` wins over an absent ``branches``: a workflow that
+        # ignores ``main`` builds no main-targeted PR.
+        ignored = pull_request.get('branches-ignore')
+        if ignored is not None and 'main' in ignored:
+            return False
+        bases = pull_request.get('branches')
         return bases is None or 'main' in bases
 
     # Regex fallback — anchor on the pull_request block so push.branches is never matched.
     match = re.search(r'\n  pull_request:\s*\n(?P<body>(?:    .*\n|\s*\n)*)', text)
     if not match:
         return False
-    bases = re.search(r'branches:\s*\[([^\]]*)\]', match.group('body'))
+    body = match.group('body')
+    ignored = re.search(r'branches-ignore:\s*\[([^\]]*)\]', body)
+    if ignored is not None and 'main' in ignored.group(1):
+        return False
+    bases = re.search(r'branches:\s*\[([^\]]*)\]', body)
     return bases is None or 'main' in bases.group(1)
 
 

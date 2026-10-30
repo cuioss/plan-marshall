@@ -48,7 +48,7 @@ from pathlib import Path
 
 import _manifest_core
 import extension_discovery
-from _finalize_step_roster import in_checkout_finalize_steps
+from _finalize_step_roster import in_checkout_finalize_steps, in_checkout_step_documents
 from conftest import MARKETPLACE_ROOT, PROJECT_ROOT, load_script_module
 from extension_discovery import find_implementors
 
@@ -97,18 +97,28 @@ def _registered_finalize_steps() -> list[str]:
 
 
 def _step_documents(step_key: str) -> list[Path]:
-    """Resolve a registered finalize step key to its on-disk body document(s)."""
+    """Resolve a registered finalize step key to its on-disk body document(s).
+
+    The discovered path comes first: a project step may live under any target's
+    project-local skill root, so re-deriving it from the key alone would miss every
+    root but ``.claude/skills``. The conventional candidates cover the built-in
+    ``standards/`` / ``workflow/`` split.
+    """
+    candidates: list[Path] = [*in_checkout_step_documents().get(step_key, [])]
     if step_key.startswith('project:'):
         name = step_key.split(':', 1)[1]
-        return [PROJECT_ROOT / '.claude' / 'skills' / name / 'SKILL.md']
-    if step_key.startswith('default:'):
+        candidates.append(PROJECT_ROOT / '.claude' / 'skills' / name / 'SKILL.md')
+    elif step_key.startswith('default:'):
         name = step_key.split(':', 1)[1]
-        return [
-            _FINALIZE / 'standards' / f'{name}.md',
-            _FINALIZE / 'workflow' / f'{name}.md',
-        ]
-    bundle, skill = step_key.split(':', 1)
-    return [MARKETPLACE_ROOT / bundle / 'skills' / skill / 'SKILL.md']
+        candidates.extend([_FINALIZE / 'standards' / f'{name}.md', _FINALIZE / 'workflow' / f'{name}.md'])
+    else:
+        bundle, skill = step_key.split(':', 1)
+        candidates.append(MARKETPLACE_ROOT / bundle / 'skills' / skill / 'SKILL.md')
+    documents: list[Path] = []
+    for path in candidates:
+        if path not in documents:
+            documents.append(path)
+    return documents
 
 
 # =============================================================================

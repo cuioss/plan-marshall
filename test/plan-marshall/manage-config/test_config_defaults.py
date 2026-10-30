@@ -1871,22 +1871,11 @@ def test_save_config_emits_canonical_top_level_key_order(tmp_path, monkeypatch):
     rest alphabetically), proving save_config's key_order is the authoritative
     ordering — independent of insertion order.
     """
-    # every canonical key present, deliberately reverse-scrambled
-    scrambled = {
-        'system': {},
-        'skill_domains': {},
-        'runtime': {},
-        'providers': {},
-        'project_dir': {},
-        'project': {},
-        'interaction_mode': 'advanced',
-        'credentials_config': {},
-        'code_intelligence': {},
-        'orchestrator': {},
-        'plan': {},
-        'extension_defaults': {},
-        'build': {},
-    }
+    # every canonical key present, deliberately reverse-scrambled. Derived from the
+    # production order rather than mirrored as a literal, so a newly canonical key
+    # joins the scramble without a test edit.
+    scrambled = {key: {} for key in reversed(_EXPECTED_CANONICAL_KEY_ORDER)}
+    scrambled['interaction_mode'] = 'advanced'
     marshal_path = tmp_path / 'marshal.json'
 
     actual_order = _save_config_to(marshal_path, scrambled, monkeypatch)

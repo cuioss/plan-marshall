@@ -39,6 +39,20 @@ def in_checkout_finalize_records() -> list[dict[str, Any]]:
     return [record for record in find_implementors(FINALIZE_STEP_EXT_POINT) if _in_checkout(str(record['path']))]
 
 
+def in_checkout_step_documents() -> dict[str, list[Path]]:
+    """Map each checkout step id to the document path(s) discovery found for it.
+
+    A project step may live under any target's project-local skill root
+    (``.claude/skills``, ``.opencode/skills``, ``.agents/skills``), so a caller that
+    re-derives the path from the step id alone misses every root but its guess. The
+    discovered path is the authority.
+    """
+    documents: dict[str, list[Path]] = {}
+    for record in in_checkout_finalize_records():
+        documents.setdefault(str(record['name']), []).append(Path(str(record['path'])))
+    return documents
+
+
 def in_checkout_finalize_steps() -> list[str]:
     """The step ids whose documents this checkout ships, in discovery order.
 

@@ -60,7 +60,7 @@ from pathlib import Path
 
 import _manifest_core
 import extension_discovery
-from _finalize_step_roster import in_checkout_finalize_steps
+from _finalize_step_roster import in_checkout_finalize_steps, in_checkout_step_documents
 from conftest import MARKETPLACE_ROOT, PROJECT_ROOT, load_script_module
 from extension_discovery import find_implementors
 
@@ -209,8 +209,15 @@ def _registered_step_bodies() -> tuple[dict[str, str], list[str]]:
     """
     bodies: dict[str, str] = {}
     unresolved: list[str] = []
+    discovered = in_checkout_step_documents()
     for step_key in _registered_finalize_steps():
-        documents = [path for path in _step_documents(step_key) if path.is_file()]
+        documents: list[Path] = []
+        # The discovered path first: a project step may live under any target's
+        # project-local skill root, so re-deriving it from the key alone would miss
+        # every root but `.claude/skills`.
+        for path in [*discovered.get(step_key, []), *_step_documents(step_key)]:
+            if path.is_file() and path not in documents:
+                documents.append(path)
         if not documents:
             unresolved.append(step_key)
             continue
