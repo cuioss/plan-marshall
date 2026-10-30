@@ -511,9 +511,9 @@ publishes no test part supplies no `{build.module-tests}`:
 
 - **Routing.** The DEFAULT routing — no `--execution-mode` flag — is used for EVERY build. Under it
   `auto` submits the job to the build daemon when the setup preflight found it `ready`, and runs
-  in-process otherwise. Before the first auto build — whatever the setup preflight answered, because
-  the routing client preflights again per build and a daemon that was `down` at setup can be `ready`
-  by the time a build runs — run
+  in-process otherwise. Before the first routed build — and whatever the setup preflight answered,
+  because the routing client preflights again per build and a daemon that was `down` at setup can be
+  `ready` by the time a build runs — run
   `python3 .plan/execute-script.py plan-marshall:runbook-lane:runbook_lane build-routing --worktree {worktree}`:
   `auto` means the worktree carries its own executor and the build submits with no execution flag, so
   the daemon re-runs that executor; `in_process` is the DEGRADED answer for an `absent` slot, where
