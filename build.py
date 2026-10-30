@@ -685,11 +685,35 @@ def cmd_test_compile(module: str | None, boundary: CoverageBoundary | None = Non
     return _run_mypy([path], f'test-compile: mypy {path}', mypy_env, dimension='mypy(test)', boundary=boundary)
 
 
+# Upper bound on the xdist workers one pytest run starts. ``-n auto`` alone starts
+# one worker per CPU thread, and a worker of this suite holds roughly 450-600 MB,
+# so on a 16-thread host a single run takes about 8-10 GB and two concurrent runs
+# (the build server admits several) exhaust a 31 GB host: the kernel OOM killer
+# then takes the editor's extension host and the agents' terminals with it. Six
+# workers keep a run near 3 GB; a CI runner with four CPUs is unaffected because
+# the CPU count stays the binding bound there.
+PYTEST_XDIST_MAX_WORKERS = 6
+
+
+def _xdist_worker_arg() -> str:
+    """Return the value of pytest-xdist's ``-n`` for a parallel run.
+
+    An operator who exports ``PYTEST_XDIST_AUTO_NUM_WORKERS`` has already chosen
+    the count, and xdist reads that variable itself when given ``auto``, so the
+    choice is passed through untouched. Otherwise the count is the CPU count,
+    bounded by :data:`PYTEST_XDIST_MAX_WORKERS`.
+    """
+    if os.environ.get('PYTEST_XDIST_AUTO_NUM_WORKERS'):
+        return 'auto'
+    return str(max(1, min(os.cpu_count() or 1, PYTEST_XDIST_MAX_WORKERS)))
+
+
 def cmd_module_tests(module: str | None, parallel: bool = True, filter_expr: str | None = None) -> int:
     """Run pytest on test sources.
 
     Parallel by default: the canonical full-suite run uses pytest-xdist with
-    ``-n auto`` so worker count tracks available CPUs. ``--dist=loadgroup`` is
+    ``-n`` set by :func:`_xdist_worker_arg`, so the worker count tracks available
+    CPUs up to :data:`PYTEST_XDIST_MAX_WORKERS`. ``--dist=loadgroup`` is
     mandatory whenever ``-n`` is active so that ``xdist_group`` markers (e.g.
     the ``real_marshal_json`` group) keep their tests pinned to a single worker
     — without it, xdist scatters grouped tests across workers and the grouping
@@ -709,7 +733,7 @@ def cmd_module_tests(module: str | None, parallel: bool = True, filter_expr: str
     if filter_expr:
         cmd.extend(['-k', filter_expr])
     if parallel:
-        cmd.extend(['-n', 'auto', '--dist=loadgroup'])
+        cmd.extend(['-n', _xdist_worker_arg(), '--dist=loadgroup'])
     return run(cmd, f'module-tests: pytest {path}')
 
 
@@ -928,8 +952,8 @@ def cmd_coverage(module: str | None) -> int:
     """Run pytest with coverage.
 
     Parallel by default, mirroring ``cmd_module_tests``: the coverage run
-    executes the identical full suite, so it must ride pytest-xdist (``-n auto``)
-    too — a serial coverage run is the same ~10k tests on a single core and
+    executes the identical full suite, so it must ride pytest-xdist (``-n`` set by
+    :func:`_xdist_worker_arg`, the same bounded worker count) too — a serial coverage run is the same ~10k tests on a single core and
     walls in at several times the parallel test runtime, which pushed it past
     the background-duration ceiling and got it killed mid-suite. pytest-cov
     supports xdist natively: each worker writes its own coverage data file and
@@ -952,7 +976,7 @@ def cmd_coverage(module: str | None) -> int:
         test_path,
         f'--basetemp={basetemp}',
         '-n',
-        'auto',
+        _xdist_worker_arg(),
         '--dist=loadgroup',
         f'--cov={bundle_path}',
         '--cov-report=html:.plan/temp/htmlcov',
@@ -1038,7 +1062,7 @@ Examples:
     p.add_argument('module', nargs='?', help='Test directory (e.g., plan-marshall)')
 
     # module-tests
-    # Parallel-by-default (pytest-xdist -n auto --dist=loadgroup). --parallel/-p
+    # Parallel-by-default (pytest-xdist -n <bounded workers> --dist=loadgroup). --parallel/-p
     # is retained for backward compatibility (no-op: parallel is already the
     # default); --no-parallel opts into serial single-file debug runs.
     p = subparsers.add_parser('module-tests', help='pytest on test sources')
@@ -1049,7 +1073,7 @@ Examples:
         dest='parallel',
         action='store_true',
         default=True,
-        help='Run tests in parallel (default; -n auto --dist=loadgroup)',
+        help='Run tests in parallel (default; -n <bounded workers> --dist=loadgroup)',
     )
     p.add_argument(
         '--no-parallel', dest='parallel', action='store_false', help='Run tests serially (single-file debug)'
