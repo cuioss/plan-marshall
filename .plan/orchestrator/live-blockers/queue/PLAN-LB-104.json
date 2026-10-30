@@ -2,10 +2,10 @@
   "id": "PLAN-LB-104",
   "slug": "routed-build-project-dir",
   "workstream": "WS-04",
-  "status": "launched",
+  "status": "shipped",
   "lane": "runbook",
-  "plan_marshall_plan_id": "",
-  "pr": "",
-  "landing": "",
+  "plan_marshall_plan_id": "rb-lb-104-routed-build-project-dir",
+  "pr": "1893",
+  "landing": "landings/PLAN-LB-104.md",
   "seq": 104
 }

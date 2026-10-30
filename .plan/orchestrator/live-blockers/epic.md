@@ -277,6 +277,49 @@ derive, for rows still live.
   at empty `architecture modules`. Shares `test/plan-marshall/script-shared/` with the held PLAN-LB-93; no file with the
   running plans.
 
+- **PLAN-LB-103** (**shipped 2026-10-30, #1894, B+**, `landings/PLAN-LB-103.md`; runbook lane, `deepseek-v4.1-flash/high`, one session
+  tree plus two self-review sub-agents, about 27 h; fix in source, installed by the sync of 2026-10-30): tests never read the project
+  config, and a config-only change no longer forces the full verify. D1 eleven files converted or deleted (the spec named three; its
+  own verify-first clause sent the lane to the census, which found eight more), `.plan/marshal.json` is read by no test; D2 only that
+  path leaves `extra-buildable` in `python-verify.yml`, `CLAUDE.md` and `build.adoc` name the three that remain, and the probe PR
+  #1897 shows the gate skipping the build (read through `ci checks status`). Surface: 13 paths beyond the declaration, all under `test/`,
+  one of them (`test_harness_shape_guards.py`, a 900 s timeout on two whole-tree sweeps) not a reader and absent from the landing message
+  though disclosed in the PR body; no collision. Checked against the session database, the first landing of the run to be: the tree, the
+  two sub-agents, the one question and the model match; shell use is disclosed in kind and understated in count; no tracked file of the
+  main checkout was edited. Cost to the grade: two probe branches were still on the remote although the landing says cleanup is not
+  owed (the operator had them deleted on 2026-10-30, the Watch is retired), the final-head census pair was never re-obtained (five attempts killed by the host), and the build-server section
+  carries an impossible timestamp. The landing is incomplete (`total_tokens` unknown; out of scope, folded here). CodeRabbit: formal
+  reviews on several heads, every finding handled, standing authorization applied. Seen again from this lane: the first routed build
+  failed on a relative `--project-dir` and passed with an absolute one, the PLAN-LB-104 trigger. Properties dropped by the operator's
+  ruling are recorded in the PR (a note). Fix-forward: none staged.
+
+- **PLAN-LB-104** (**shipped 2026-10-30, #1893, B**, `landings/PLAN-LB-104.md`; runbook lane, `deepseek-v4.1-flash/high`; fix in
+  source, and installed since the sync of 2026-10-30): a routed build resolves the tree the caller named. D1 `_absolutise_project_dir` rewrites both
+  `--project-dir` token forms onto the absolute tree before the command is submitted to the daemon, no other token touched (read
+  from the merged diff); D2 a launch fault travels as itself with its `reason`, `wrapper` and `project_dir` instead of `build_failed`
+  exit 1; D3 the lane text routes every build, retries a launch fault once in process and submits the next build routed again, and
+  the landing's build-server line counts builds per mechanism. D1's live-record clause is NOT met: my spec asked for a relative-form
+  run from a lane worktree, which can only reach the base-commit executor before the merge, so it could not be produced (a spec
+  error); the lane reported it and the operator chose to open the PR. Surface: six paths beyond the declaration, two of them my spec
+  errors (the field whitelist is in `_build_format.py`, not `_build_result.py`); the lane's "no surface drift" statement is contradicted
+  by the diff. The lane's 48 routed builds, none in process, are NOT corroborated: the daemon journal for its removed worktree root is
+  empty. The landing is incomplete (`total_tokens` unknown; out of scope under the focus rule, folded here). CodeRabbit: formal
+  reviews on three heads, every finding fixed, standing authorization applied on the merged head. Not checked against the session
+  database. Fix-forward: none staged; the live-record clause can be closed now by one routed build from the main checkout (the main executor runs the source tree, which carries the merge); not run, it would build inside another lane's worktree.
+
+- **PLAN-LB-101** (**shipped 2026-10-30, #1890, B+**, `landings/PLAN-LB-101.md`; runbook lane, `deepseek-v4.1-flash/high`, one
+  session tree, about 17 h; fix in source until the next harness sync): the barrier states and enforces the review policy. D1 an
+  unreadable roster is an error, D2 a stale required bot is re-triggered before the barrier asks (in the barrier, not the leaf, so
+  one trigger per head), D3 a contract scanner plus the demotion offer removed from nine documents, D4 the quota wait is on by
+  default at 90 minutes and ten windows (`review_rate_window_await` `True`, 5400 s; read from the merged diff). Surface: 17 paths
+  beyond the declaration, the documentation ripple of D3 plus `pre_merge_gate.py` and `github_re_review.py`; my spec under-declared
+  it and put `bot-participation-contract.md` out of scope although D3 changed it (a spec error, no collision). The landing is
+  incomplete (`total_tokens` unknown; out of scope under the focus rule, folded here and not a separate Open Defect). Self-review
+  stopped at its three-round limit with only that record-level item open. CodeRabbit: formal reviews on several heads, the merged head
+  one commit past the last reviewed (a note). NOT checked against the session database. The lane ran every build after its first
+  routed one in process (journal: one routed job, a failure after 1 s), which is the PLAN-LB-104 trigger and left those builds
+  outside the slot cap. Fix-forward: none staged.
+
 - **PLAN-LB-58** (**shipped 2026-10-26, #1866, B**, `landings/PLAN-LB-58.md`; runbook lane, `deepseek-v4.1-flash/high`, five
   sessions, 26 h 16 min including an operator pause; fix in source until the next harness sync): verification never confirms a
   result over evidence it did not examine. D1 Sonar compares the provider's PR analysis revision with the resolved head
@@ -2276,8 +2319,11 @@ entries below are OpenCode 1 assumptions in plan-marshall that OpenCode 2 broke.
   exit -1, 0 s), absolute ran `./pw module-tests` green. Cause: `_route_to_daemon` submits `*sys.argv[1:]` unchanged and the daemon
   runs it with the worktree as cwd, so the relative path is re-resolved against the worktree; `detect_wrapper` then finds no `pw` and
   the bare fallback (`pwx`, or `mvn` for Maven) is spawned. The lane text and `resolve` both emit the relative form. LB-100 then ran
-  every later build in-process on its own initiative. The two Watches below ("known trigger" and "still fall back after LB-92") are
-  closed by it; the Maven report from another project is unconfirmed (spec's Verify-first clause).
+  every later build in-process on its own initiative. **SHIPPED 2026-10-30 (#1893, B, `landings/PLAN-LB-104.md`): the fix is in
+  source, and installed since the sync of 2026-10-30, so the two Watches below ("known trigger" and "still fall back after LB-92") stay open
+  until one routed build with the relative form from the main checkout confirms it (D1's live-record clause, which could not be
+  produced before the merge and can be now: the main executor runs the source tree).** The Maven report from another project is unconfirmed (spec's Verify-first
+  clause; the lane did not read that journal).
 - **Routed-build failure from a worktree has a known trigger (PLAN-LB-97, 2026-10-27).** The lane ran 72 routed builds with no
   degradation once `--project-dir` was ABSOLUTE; a relative path resolved against the daemon's cwd and fell back to a system
   `pwx` that is not installed. PLAN-LB-53 said the same. The five lanes that fell back (LB-55, LB-53, LB-82, LB-96, LB-58)
