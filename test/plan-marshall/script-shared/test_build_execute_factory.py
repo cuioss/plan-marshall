@@ -28,6 +28,7 @@ their subject and re-arm it with ``@pytest.mark.allow_daemon_routing``.
 """
 
 import argparse
+import dataclasses
 import json
 import sys
 
@@ -1033,24 +1034,24 @@ class TestMissingWrapperIsNamedOnBothLegs:
         assert payload['error'] == 'log_file_failed'
         assert 'could not create a log file' in payload['reason']
 
-    def test_a_missing_working_directory_is_not_reported_as_a_missing_wrapper(self, monkeypatch, tmp_path, capsys):
-        """The exception names which path was missing; the report names that one."""
-        seen: dict = {}
+    def test_a_missing_working_directory_is_not_reported_as_a_missing_wrapper(self, tmp_path, capsys):
+        """The launcher's cwd is checked on disk, so the fault is classified portably.
 
-        def _missing_cwd(*_args, **kwargs):
-            seen['cwd'] = kwargs.get('cwd')
-            raise FileNotFoundError(2, 'No such file or directory', str(kwargs.get('cwd')))
-
-        monkeypatch.setattr(build_execute.subprocess, 'Popen', _missing_cwd)
-        _execute_direct, cmd_run = factory.create_execute_handlers(
-            _make_config(with_resolve_fn=False), lambda *_a, **_k: ([], None, 'SUCCESS')
-        )
+        No exception is fabricated: the build's working directory genuinely does
+        not exist, so the real launcher raises (``FileNotFoundError`` on POSIX,
+        ``NotADirectoryError`` on Windows) and both legs must classify it as a cwd
+        fault — the wrapper is present and is never named.
+        """
+        absent_cwd = tmp_path / 'no-such-working-dir'
+        config = dataclasses.replace(_make_config(with_resolve_fn=False), supports_working_dir=True)
+        _execute_direct, cmd_run = factory.create_execute_handlers(config, lambda *_a, **_k: ([], None, 'SUCCESS'))
 
         rc = cmd_run(
             argparse.Namespace(
                 command_args='verify',
                 plan_id='',
                 project_dir=str(tmp_path),
+                working_dir=str(absent_cwd),
                 format='json',
                 execution_mode='in_process',
             )
@@ -1059,7 +1060,7 @@ class TestMissingWrapperIsNamedOnBothLegs:
         assert rc == 1
         payload = json.loads(capsys.readouterr().out)
         assert payload['error'] == 'execution_failed'
-        assert payload['reason'] == f'working directory not found: {seen["cwd"]}'
+        assert payload['reason'] == f'working directory not found: {absent_cwd}'
         assert 'wrapper' not in payload, 'a cwd fault must not name a wrapper the run never tried'
 
     @pytest.mark.allow_daemon_routing

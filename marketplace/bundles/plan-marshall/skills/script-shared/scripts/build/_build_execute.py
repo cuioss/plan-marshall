@@ -86,6 +86,18 @@ def detect_wrapper(
     return None
 
 
+def cwd_is_missing(cwd: str | None) -> bool:
+    """True when the launcher's working directory does not exist on disk.
+
+    The classification asks the FILESYSTEM, not the exception, because the same
+    fault surfaces under two exception types: ``FileNotFoundError`` on POSIX and
+    ``NotADirectoryError`` (WinError 267, often with no ``filename``) on Windows.
+    A guard reading the exception would miss the Windows leg and report a generic
+    OS error, leaving the two faults it exists to separate still fused.
+    """
+    return bool(cwd) and not os.path.isdir(str(cwd))
+
+
 def has_wrapper(project_root: Path, unix_wrapper: str, windows_wrapper: str) -> bool:
     """Check if wrapper exists for current platform.
 
@@ -522,14 +534,12 @@ def execute_direct_base(
             **extras,
         }
 
-    except FileNotFoundError as exc:
-        # A missing CWD raises the same exception as a missing executable, and the
-        # two are different faults: the wrapper can be perfectly present while the
-        # working directory it was asked to run in does not exist. The exception
-        # names WHICH path was missing, so the report names that one instead of
-        # asserting a missing wrapper over an existing one.
-        missing = getattr(exc, 'filename', None)
-        cwd_missing = bool(missing) and bool(cwd) and os.path.abspath(str(missing)) == os.path.abspath(cwd)
+    except FileNotFoundError:
+        # A missing CWD and a missing executable are different faults: the wrapper
+        # can be perfectly present while the directory it was asked to run in does
+        # not exist. The filesystem decides which one this is, so the report names
+        # the cwd instead of asserting a missing wrapper over an existing one.
+        cwd_missing = cwd_is_missing(cwd)
         if cwd_missing:
             reason = f'working directory not found: {cwd}'
         else:
@@ -564,6 +574,24 @@ def execute_direct_base(
         }
 
     except OSError as e:
+        # Windows reports a nonexistent cwd as NotADirectoryError, which is neither
+        # FileNotFoundError nor carries a usable ``filename``. Checking the cwd on
+        # disk is what makes the classification portable: the same fault reaches
+        # this leg and is still reported as a cwd fault rather than a generic OSError.
+        if cwd_is_missing(cwd):
+            reason = f'working directory not found: {cwd}'
+            log_entry('script', 'global', 'ERROR', f'[{log_prefix}] {reason}')
+            return {
+                'status': 'error',
+                'exit_code': -1,
+                'duration_seconds': 0,
+                'timeout_used_seconds': timeout_seconds,
+                'log_file': log_file,
+                'command': command_str,
+                'error': reason,
+                'reason': reason,
+                **extras,
+            }
         log_entry('script', 'global', 'ERROR', f'[{log_prefix}] OS error: {e}')
         return {
             'status': 'error',
