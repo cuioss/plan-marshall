@@ -99,16 +99,18 @@ def _registered_finalize_steps() -> list[str]:
 def _step_documents(step_key: str) -> list[Path]:
     """Resolve a registered finalize step key to its on-disk body document(s).
 
-    The discovered path comes first: a project step may live under any target's
-    project-local skill root, so re-deriving it from the key alone would miss every
-    root but ``.claude/skills``. The conventional candidates cover the built-in
-    ``standards/`` / ``workflow/`` split.
+    A ``project:`` step resolves through discovery ONLY: it may live under any
+    target's project-local skill root, and a conventional ``.claude/skills`` guess
+    could read an untracked same-named document the checkout-scoped roster excludes.
+    For ``default:`` / ``<bundle>:<skill>`` steps the discovered document comes
+    first, with the shipped conventional locations as a fallback.
     """
-    candidates: list[Path] = [*in_checkout_step_documents().get(step_key, [])]
+    candidates: list[Path] = list(in_checkout_step_documents().get(step_key, []))
     if step_key.startswith('project:'):
-        name = step_key.split(':', 1)[1]
-        candidates.append(PROJECT_ROOT / '.claude' / 'skills' / name / 'SKILL.md')
-    elif step_key.startswith('default:'):
+        # Discovered-only: a conventional `.claude/skills` guess could read an
+        # UNTRACKED same-named document the checkout-scoped roster excludes.
+        return candidates
+    if step_key.startswith('default:'):
         name = step_key.split(':', 1)[1]
         candidates.extend([_FINALIZE / 'standards' / f'{name}.md', _FINALIZE / 'workflow' / f'{name}.md'])
     else:

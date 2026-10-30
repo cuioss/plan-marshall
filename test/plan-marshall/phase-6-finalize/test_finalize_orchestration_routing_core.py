@@ -224,10 +224,17 @@ def _registered_step_bodies() -> dict[str, str]:
     discovered = in_checkout_step_documents()
     for step_key in _registered_finalize_steps():
         documents: list[Path] = []
-        # The discovered path first: a project step may live under any target's
-        # project-local skill root, so re-deriving it from the key alone would miss
-        # every root but `.claude/skills`.
-        for path in [*discovered.get(step_key, []), *_step_documents(step_key)]:
+        # The discovered path is the authority: a project step may live under any
+        # target's project-local skill root, so re-deriving it from the key alone
+        # would miss every root but `.claude/skills` — and would also read an
+        # UNTRACKED same-named `.claude` document the checkout-scoped roster
+        # excludes. The conventional candidates are therefore only a fallback for
+        # `default:` / `<bundle>:<skill>` steps, where they are part of the shipped
+        # layout.
+        candidates = list(discovered.get(step_key, []))
+        if not candidates:
+            candidates = _step_documents(step_key)
+        for path in candidates:
             if path.is_file() and path not in documents:
                 documents.append(path)
         if documents:
