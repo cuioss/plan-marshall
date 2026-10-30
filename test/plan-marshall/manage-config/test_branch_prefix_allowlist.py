@@ -25,6 +25,7 @@ fails this test, forcing the workflow file (or the prefix set) to be updated.
 ``docs/`` is not a working prefix and is asserted absent.
 """
 
+import fnmatch
 import importlib.util
 import re
 
@@ -82,6 +83,32 @@ def _parse_push_branches() -> list[str]:
     return [entry.strip().strip('"').strip("'") for entry in raw_entries if entry.strip()]
 
 
+def _branch_is_selected(branch: str, patterns: list[str]) -> bool:
+    """GitHub branch-filter semantics for one branch: ordered globs, ``!`` negates.
+
+    A matching negative pattern after a positive one excludes the branch, and a
+    glob (``m*``) matches like it does in the workflow, so a guard that only
+    compared literal names would accept a filter that excludes ``main``.
+    """
+    selected = False
+    for raw in patterns:
+        pattern = str(raw)
+        negate = pattern.startswith('!')
+        if fnmatch.fnmatchcase(branch, pattern[1:] if negate else pattern):
+            selected = not negate
+    return selected
+
+
+def _main_selected(branches: list[str] | None, ignored: list[str] | None) -> bool:
+    """Whether a PR targeting ``main`` triggers the workflow under both filters."""
+    selected = True
+    if branches is not None:
+        selected = selected and _branch_is_selected('main', branches)
+    if ignored is not None:
+        selected = selected and not _branch_is_selected('main', ignored)
+    return selected
+
+
 def _pull_request_builds_main() -> bool:
     """True when ``on.pull_request`` targets ``main``, so a PR from any head branch is built."""
     text = _WORKFLOW_PATH.read_text(encoding='utf-8')
@@ -96,24 +123,21 @@ def _pull_request_builds_main() -> bool:
         if 'pull_request' not in on_section:
             return False
         pull_request = on_section['pull_request'] or {}
-        # ``branches-ignore`` wins over an absent ``branches``: a workflow that
-        # ignores ``main`` builds no main-targeted PR.
-        ignored = pull_request.get('branches-ignore')
-        if ignored is not None and 'main' in ignored:
-            return False
-        bases = pull_request.get('branches')
-        return bases is None or 'main' in bases
+        return _main_selected(pull_request.get('branches'), pull_request.get('branches-ignore'))
 
     # Regex fallback — anchor on the pull_request block so push.branches is never matched.
     match = re.search(r'\n  pull_request:\s*\n(?P<body>(?:    .*\n|\s*\n)*)', text)
     if not match:
         return False
     body = match.group('body')
-    ignored = re.search(r'branches-ignore:\s*\[([^\]]*)\]', body)
-    if ignored is not None and 'main' in ignored.group(1):
-        return False
-    bases = re.search(r'branches:\s*\[([^\]]*)\]', body)
-    return bases is None or 'main' in bases.group(1)
+
+    def _entries(key: str) -> list[str] | None:
+        found = re.search(rf'{key}:\s*\[([^\]]*)\]', body)
+        if found is None:
+            return None
+        return [entry.strip().strip('"').strip("'") for entry in found.group(1).split(',') if entry.strip()]
+
+    return _main_selected(_entries('branches'), _entries('branches-ignore'))
 
 
 def _prefix_is_covered(prefix: str, triggers: list[str]) -> bool:

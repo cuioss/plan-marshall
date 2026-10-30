@@ -200,15 +200,16 @@ _WRITE_SITE_SPAN_END = 'A future step'
 _STEP_ID_TOKEN = re.compile(r'`([a-z][a-z0-9-]*:[a-z0-9][a-z0-9-]*)`')
 
 
-def _registered_step_bodies() -> tuple[dict[str, str], list[str]]:
-    """Every registered finalize step's body text, plus the steps that resolved to no document.
+def _registered_step_bodies() -> dict[str, str]:
+    """Every discovered finalize step's body text.
 
     The population is the discovered implementor roster, so a newly registered
     step joins the check without anyone editing a hand-copied list and without
-    reading this project's live configuration.
+    reading this project's live configuration. A step whose own document is gone is
+    by definition not discovered, so there is no separate "resolved to no document"
+    outcome: the closure checks below quantify over the documents that exist.
     """
     bodies: dict[str, str] = {}
-    unresolved: list[str] = []
     discovered = in_checkout_step_documents()
     for step_key in _registered_finalize_steps():
         documents: list[Path] = []
@@ -218,11 +219,9 @@ def _registered_step_bodies() -> tuple[dict[str, str], list[str]]:
         for path in [*discovered.get(step_key, []), *_step_documents(step_key)]:
             if path.is_file() and path not in documents:
                 documents.append(path)
-        if not documents:
-            unresolved.append(step_key)
-            continue
-        bodies[step_key] = '\n'.join(_read(path) for path in documents)
-    return bodies, unresolved
+        if documents:
+            bodies[step_key] = '\n'.join(_read(path) for path in documents)
+    return bodies
 
 
 def _derived_inbox_writers(step_bodies: dict[str, str]) -> set[str]:
@@ -521,15 +520,9 @@ class TestWriteSiteListIsDerivedClosed:
     and compares it to the list the a0 block records, in both directions.
     """
 
-    def test_every_registered_step_resolves_to_a_body(self):
-        """Anti-vacuity: a step with no readable body would silently drop out of the population."""
-        _, unresolved = _registered_step_bodies()
-
-        assert unresolved == [], f'Registered finalize steps with no resolvable body document: {unresolved}'
-
     def test_derived_writer_set_is_non_empty(self):
         """Anti-vacuity: an empty derived set would make the equality below meaningless."""
-        bodies, _ = _registered_step_bodies()
+        bodies = _registered_step_bodies()
 
         assert _derived_inbox_writers(bodies), (
             'No registered finalize step body issues an `orchestrator inbox write` call, so the '
@@ -537,7 +530,7 @@ class TestWriteSiteListIsDerivedClosed:
         )
 
     def test_listed_write_sites_equal_the_derived_writers(self):
-        bodies, _ = _registered_step_bodies()
+        bodies = _registered_step_bodies()
         listed = _listed_write_sites(_write_site_span(_read(_FINALIZE_SKILL)))
 
         mismatch = _write_site_mismatch(_derived_inbox_writers(bodies), listed)
@@ -549,7 +542,7 @@ class TestWriteSiteListIsDerivedClosed:
 
     def test_closure_predicate_catches_a_new_unlisted_writer(self):
         """Mutation guard: a newly registered inbox writer missing from the list must be caught."""
-        bodies, _ = _registered_step_bodies()
+        bodies = _registered_step_bodies()
         bodies['default:hypothetical-new-writer'] = (
             'python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator inbox write --kind landing'
         )
@@ -561,7 +554,7 @@ class TestWriteSiteListIsDerivedClosed:
 
     def test_closure_predicate_catches_a_writer_dropped_from_the_list(self):
         """Mutation guard: removing a real writer from the recorded list must be caught."""
-        bodies, _ = _registered_step_bodies()
+        bodies = _registered_step_bodies()
         span = _write_site_span(_read(_FINALIZE_SKILL)).replace('`default:emit-landing`', 'the landing step')
 
         mismatch = _write_site_mismatch(_derived_inbox_writers(bodies), _listed_write_sites(span))

@@ -328,15 +328,6 @@ class TestZeroGlobalStoreWritesPreferenceEmitter:
 
 
 class TestWriteSiteSetIsClosed:
-    def test_every_registered_step_key_resolves_to_a_body_document(self):
-        unresolved = [
-            step for step in _registered_finalize_steps() if not any(doc.is_file() for doc in _step_documents(step))
-        ]
-
-        # `lessons-capture` and friends resolve via standards/ OR workflow/; a key
-        # that resolves to neither means the sweep below would silently skip it.
-        assert unresolved == []
-
     def test_no_registered_finalize_step_writes_the_global_store_unbranched(self):
         leaking: list[str] = []
         for step in _registered_finalize_steps():

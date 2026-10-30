@@ -135,8 +135,8 @@ against 25 registered steps"; the two sets are now the same size and the same
 membership, so no discovered doc is unregistered today — and because the registry
 is now derived from the same discovery walk, the two sets are equal by
 construction rather than by luck. The registry-absence finding below is still
-reported rather than asserted empty: it is what catches a doc whose frontmatter
-``name:`` no longer resolves to its step id.
+reported rather than asserted empty; a renamed built-in is caught by the sibling
+closure assertion (the dispatch document keeps the old key), not by that finding.
 
 Registry absence is REPORTED, never asserted
 --------------------------------------------

@@ -641,10 +641,10 @@ class TestKnobDefaults:
         assert result['participation_complete'] is True
 
 
-class TestConfiguredBotsResolveToTheRegistry:
-    """A reviewer a configuration names must have a registry record.
+class TestExpectedPipelineBotsResolveToTheRegistry:
+    """Every bot kind expected by the pipeline must have a registry record.
 
-    The roster is a literal in this test, not this repository's own
+    The roster is an independent fixture, not this repository's own
     ``.plan/marshal.json``: a test that read the live config would make its
     verdict depend on the operator's current settings instead of on the code.
     The property pinned is that every bot kind the pipeline is expected to
@@ -652,9 +652,9 @@ class TestConfiguredBotsResolveToTheRegistry:
     rather than resolving to nothing at merge time.
     """
 
-    def test_every_configured_bot_has_a_registry_record(self):
-        configured = ['coderabbit', 'sourcery']
+    def test_every_expected_pipeline_bot_has_a_registry_record(self):
+        expected_bots = ['coderabbit', 'sourcery']
 
         registered = _registered_bots()
-        for bot in configured:
-            assert bot in registered, f'{bot} is configured but has no registry record'
+        for bot in expected_bots:
+            assert bot in registered, f'{bot} is expected by the pipeline but has no registry record'
