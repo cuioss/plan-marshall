@@ -19,6 +19,7 @@ fail the closure assertion against the unchanged dispatch document.
 
 from __future__ import annotations
 
+import os
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -46,12 +47,25 @@ def _tracked(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
         return records
     paths = [Path(str(record['path'])) for record in records]
     relative = [str(path.relative_to(PROJECT_ROOT)) for path in paths]
-    completed = subprocess.run(
-        ['git', '-C', str(PROJECT_ROOT), 'ls-files', '--', *relative],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    # `git -C` still honours a caller's GIT_DIR / GIT_INDEX_FILE, which would make
+    # this read a different repository or index. Strip them so the question really
+    # is "does THIS checkout track this file". A missing `git` is a launch error
+    # before the return-code fallback, so it fails open here too.
+    env = {
+        key: value
+        for key, value in os.environ.items()
+        if key not in {'GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE', 'GIT_COMMON_DIR'}
+    }
+    try:
+        completed = subprocess.run(
+            ['git', '-C', str(PROJECT_ROOT), 'ls-files', '--', *relative],
+            capture_output=True,
+            text=True,
+            check=False,
+            env=env,
+        )
+    except OSError:
+        return records
     if completed.returncode != 0:
         return records
     tracked = {(PROJECT_ROOT / line).resolve() for line in completed.stdout.splitlines() if line}

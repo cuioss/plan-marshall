@@ -93,6 +93,12 @@ def _branch_is_selected(branch: str, patterns: list[str]) -> bool:
     selected = False
     for raw in patterns:
         pattern = str(raw)
+        if '?' in pattern:
+            # GitHub's `?` is "zero or one of the preceding character"; fnmatch's
+            # is "exactly one character". Modelling one with the other would read a
+            # filter that excludes `main` as covering it, so refuse the pattern
+            # rather than answer wrongly.
+            raise ValueError(f'unsupported GitHub branch filter {pattern!r}: ? means something different in fnmatch')
         negate = pattern.startswith('!')
         if fnmatch.fnmatchcase(branch, pattern[1:] if negate else pattern):
             selected = not negate
