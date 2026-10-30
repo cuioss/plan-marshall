@@ -952,8 +952,8 @@ def cmd_coverage(module: str | None) -> int:
     """Run pytest with coverage.
 
     Parallel by default, mirroring ``cmd_module_tests``: the coverage run
-    executes the identical full suite, so it must ride pytest-xdist (``-n auto``)
-    too — a serial coverage run is the same ~10k tests on a single core and
+    executes the identical full suite, so it must ride pytest-xdist (``-n`` set by
+    :func:`_xdist_worker_arg`, the same bounded worker count) too — a serial coverage run is the same ~10k tests on a single core and
     walls in at several times the parallel test runtime, which pushed it past
     the background-duration ceiling and got it killed mid-suite. pytest-cov
     supports xdist natively: each worker writes its own coverage data file and
@@ -976,7 +976,7 @@ def cmd_coverage(module: str | None) -> int:
         test_path,
         f'--basetemp={basetemp}',
         '-n',
-        'auto',
+        _xdist_worker_arg(),
         '--dist=loadgroup',
         f'--cov={bundle_path}',
         '--cov-report=html:.plan/temp/htmlcov',
@@ -1062,7 +1062,7 @@ Examples:
     p.add_argument('module', nargs='?', help='Test directory (e.g., plan-marshall)')
 
     # module-tests
-    # Parallel-by-default (pytest-xdist -n auto --dist=loadgroup). --parallel/-p
+    # Parallel-by-default (pytest-xdist -n <bounded workers> --dist=loadgroup). --parallel/-p
     # is retained for backward compatibility (no-op: parallel is already the
     # default); --no-parallel opts into serial single-file debug runs.
     p = subparsers.add_parser('module-tests', help='pytest on test sources')
@@ -1073,7 +1073,7 @@ Examples:
         dest='parallel',
         action='store_true',
         default=True,
-        help='Run tests in parallel (default; -n auto --dist=loadgroup)',
+        help='Run tests in parallel (default; -n <bounded workers> --dist=loadgroup)',
     )
     p.add_argument(
         '--no-parallel', dest='parallel', action='store_false', help='Run tests serially (single-file debug)'

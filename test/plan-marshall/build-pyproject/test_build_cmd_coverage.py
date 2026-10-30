@@ -101,21 +101,26 @@ def test_cmd_coverage_emits_xml_report_flag() -> None:
     )
 
 
-def test_cmd_coverage_emits_xdist_parallel_flags() -> None:
-    """cmd_coverage's pytest invocation includes ``-n auto --dist=loadgroup``.
+def test_cmd_coverage_emits_xdist_parallel_flags(monkeypatch) -> None:
+    """cmd_coverage's pytest invocation carries a BOUNDED ``-n`` count and ``--dist=loadgroup``.
 
     Coverage runs the identical full suite as module-tests; without xdist it
     runs serially on a single core and walls past the background-duration
-    ceiling (it gets killed mid-suite). ``--dist=loadgroup`` must accompany
-    ``-n`` so ``xdist_group`` markers stay pinned to one worker. This guards
-    against a silent regression back to a serial coverage run.
+    ceiling (it gets killed mid-suite). The worker count is the same bounded
+    one module-tests uses, never a bare ``auto``: on a many-thread host that
+    starts one worker per CPU thread and two concurrent runs exhaust memory.
+    ``--dist=loadgroup`` must accompany ``-n`` so ``xdist_group`` markers stay
+    pinned to one worker. This guards against a silent regression back to a
+    serial coverage run and against an unbounded one.
     """
+    monkeypatch.delenv('PYTEST_XDIST_AUTO_NUM_WORKERS', raising=False)
     build_module = _load_build_module()
+    monkeypatch.setattr(build_module.os, 'cpu_count', lambda: 64)
 
     cmd, _ = _capture_coverage_cmd(build_module)
 
-    assert '-n' in cmd and 'auto' in cmd[cmd.index('-n') + 1 : cmd.index('-n') + 2], (
-        f'cmd_coverage must emit "-n auto" for parallel coverage; got cmd={cmd!r}'
+    assert '-n' in cmd and cmd[cmd.index('-n') + 1] == str(build_module.PYTEST_XDIST_MAX_WORKERS), (
+        f'cmd_coverage must emit the bounded "-n {build_module.PYTEST_XDIST_MAX_WORKERS}" on a 64-CPU host; got cmd={cmd!r}'
     )
     assert '--dist=loadgroup' in cmd, f'cmd_coverage must emit --dist=loadgroup alongside -n; got cmd={cmd!r}'
 
