@@ -95,6 +95,8 @@ Present when `status` is `error`, `timeout`, `killed`, or `indeterminate`.
 |-------|------|-------------|
 | `error` | string | Error type identifier (e.g., `build_failed`, `timeout`, `killed`, `indeterminate`, `execution_failed`) |
 | `message` | string | Operator-facing detail. On `killed` it carries the no-blind-retry sentence; on `indeterminate` it is the **only** actionable content the result has, naming why nothing could be concluded |
+| `reason` | string | The reason a **wrapper-not-found** launch fault rendered, e.g. `python wrapper not found: pwx`. The `log_file_failed` leg states no reason today. The same key also appears on a `daemon_required` envelope, where it names why routing was unavailable — that is a routing refusal, not a launch fault |
+| `project_dir` | string | On a wrapper-not-found fault: the absolute project directory the wrapper was looked for in. Paired with `wrapper` and `reason`, it is what separates a missing wrapper from a daemon fault. (Other error envelopes reuse the key for the caller's raw `--project-dir` value) |
 
 #### Parsed Issues and Test Evidence
 
@@ -159,7 +161,7 @@ Build systems may include additional context for diagnostics.
 | `timeout_source` | string | `timeout`, `killed` | Which path produced `timeout_used_seconds` (see below). Omitted together with the bound |
 | `command_key` | string | `timeout`, `killed` | The key a learned bound is stored under in `run-configuration.json` (see [R3](#r3-timeout-learning)) |
 | `tool_duration_seconds` | float | Tools reporting a run duration | Test tool's own reported run duration, mirroring `tests.duration_seconds`. Distinct from the top-level `duration_seconds` (wall clock): this shows how long the suite itself took. |
-| `wrapper` | string | Maven, Python | Wrapper path used (e.g., `./mvnw`, `./pw`) |
+| `wrapper` | string | Maven, Python | Wrapper path used (e.g., `./mvnw`, `./pw`); on a wrapper-not-found fault, the wrapper name tried |
 | `command_type` | string | npm | Execution type: `npm` or `npx` |
 
 **`timeout_used_seconds` is the applied bound, not the elapsed time.** The two are different measurements: a job that ran 300 s under an 1800 s bound was measured against 1800. `duration_seconds` carries the elapsed time; a producer that does not know the bound omits `timeout_used_seconds` and `timeout_source` rather than substituting the duration.

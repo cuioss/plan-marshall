@@ -922,6 +922,36 @@ def status_from_result(result: dict[str, Any], *, killed: bool = False, **extra:
 
 
 @dataclass(frozen=True)
+class InnerFault:
+    """A launch fault the INNER wrapper reported, with where it looked.
+
+    A launch fault is not a red build: the build never ran, so no test-count,
+    timeout bound or per-test row exists to read. The three carried facts are what
+    make the difference between a missing wrapper and a daemon fault legible to the
+    consumer — the reason line, the wrapper name tried, and the project directory it
+    was looked for in.
+
+    Attributes:
+        error: The wrapper's own error identifier (``execution_failed`` /
+            ``log_file_failed``).
+        reason: The operator-facing reason the wrapper rendered.
+        wrapper: The wrapper name the wrapper process resolved (``pwx``, ``mvn``,
+            ``./pw`` …).
+        project_dir: The absolute project directory the wrapper looked in.
+    """
+
+    error: str
+    reason: str | None = None
+    wrapper: str | None = None
+    project_dir: str | None = None
+
+
+#: The wrapper's error identifiers that mean "the build never launched".
+LAUNCH_FAULT_ERRORS = _build_result.LAUNCH_FAULT_ERRORS
+"""Error classes carrying no build verdict — the command never ran."""
+
+
+@dataclass(frozen=True)
 class LogVerdict:
     """The build wrapper's own verdict, read back from a job log.
 
@@ -989,6 +1019,16 @@ class LogVerdict:
     timeout_used_seconds: int | None = None
     timeout_source: str | None = None
     command_key: str | None = None
+    fault: InnerFault | None = None
+    """The INNER wrapper's own launch fault, when it reported one.
+
+    ``None`` on every result that got as far as running the build. A launch fault
+    (``execution_failed`` / ``log_file_failed``) carries the three facts that
+    separate it from a red build: the reason, the wrapper it looked for and the
+    project directory it looked in. Without them a routed job reported a bare
+    ``build_failed`` and the six landings that hit this could not tell a missing
+    wrapper from a daemon fault.
+    """
 
 
 # The wrapper's emitted ``errors[N]{cols}:`` table header, matched at column 0 so
@@ -1068,11 +1108,16 @@ def read_log_verdict(log_file: str) -> LogVerdict | None:
     """Read the build wrapper's emitted TOON verdict back from a job log.
 
     Pure with respect to any daemon/client state — it only reads the log the
-    supervisor already streamed. Seven top-level (column-0) keys are parsed:
+    supervisor already streamed. Eleven top-level (column-0) keys are parsed:
     ``status:``, ``exit_code:``, ``tests_run:``, the applied-bound triple
-    ``timeout_used_seconds:`` / ``timeout_source:`` / ``command_key:``, and the
-    ``errors[N]{...}:`` table header, whose indented rows are then collected as
-    that table's body. Every other key is ignored. An applied-bound key that is
+    ``timeout_used_seconds:`` / ``timeout_source:`` / ``command_key:``, the
+    launch-fault quadruple ``error:`` / ``reason:`` / ``wrapper:`` /
+    ``project_dir:``, and the ``errors[N]{...}:`` table header, whose indented
+    rows are then collected as that table's body. The launch-fault quadruple is
+    read so an inner fault reaches the consumer as itself rather than as a bare
+    build failure; it is attached as :class:`InnerFault` only for the two
+    identifiers that mean the command never ran. Every other key is ignored. An
+    applied-bound key that is
     absent, empty or (for the bound) not a positive integer reads as ``None``. The LAST occurrence of each wins, because the wrapper
     emits its result TOON after any progress output it already wrote to the same
     log.
@@ -1106,6 +1151,10 @@ def read_log_verdict(log_file: str) -> LogVerdict | None:
     timeout_used_seconds: int | None = None
     timeout_source: str | None = None
     command_key: str | None = None
+    fault_error: str | None = None
+    fault_reason: str | None = None
+    fault_wrapper: str | None = None
+    fault_project_dir: str | None = None
     errors: tuple[dict[str, Any], ...] = ()
     # Non-None only while an `errors[N]{...}:` header has been seen and its
     # indented rows are still being collected.
@@ -1162,6 +1211,14 @@ def read_log_verdict(log_file: str) -> LogVerdict | None:
                     timeout_source = _toon_scalar(line) or None
                 elif line.startswith('command_key:'):
                     command_key = _toon_scalar(line) or None
+                elif line.startswith('error:'):
+                    fault_error = _toon_scalar(line) or None
+                elif line.startswith('reason:'):
+                    fault_reason = _toon_scalar(line) or None
+                elif line.startswith('wrapper:'):
+                    fault_wrapper = _toon_scalar(line) or None
+                elif line.startswith('project_dir:'):
+                    fault_project_dir = _toon_scalar(line) or None
             # A table that ran to end-of-file is closed by the file's end.
             if errors_block is not None:
                 errors = _parse_errors_table(errors_block)
@@ -1169,6 +1226,14 @@ def read_log_verdict(log_file: str) -> LogVerdict | None:
         return None
     if status is None:
         return None
+    fault = None
+    if fault_error in LAUNCH_FAULT_ERRORS:
+        fault = InnerFault(
+            error=fault_error,
+            reason=fault_reason,
+            wrapper=fault_wrapper,
+            project_dir=fault_project_dir,
+        )
     return LogVerdict(
         status=status,
         exit_code=exit_code,
@@ -1177,4 +1242,5 @@ def read_log_verdict(log_file: str) -> LogVerdict | None:
         timeout_used_seconds=timeout_used_seconds,
         timeout_source=timeout_source,
         command_key=command_key,
+        fault=fault,
     )

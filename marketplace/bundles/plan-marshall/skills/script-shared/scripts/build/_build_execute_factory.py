@@ -549,6 +549,30 @@ def _append_gate_build_row(
         pass
 
 
+def _launch_fault_extra(fault: Any) -> dict[str, Any]:
+    """Carry a launch fault's three identifying facts onto a routed result.
+
+    The inner wrapper never launched the build, so there are no per-test rows and
+    no bound to hand on — only WHY it could not start. Each fact is attached only
+    when the log stated it, so an older wrapper that published none leaves the
+    keys off rather than present-but-empty.
+
+    Args:
+        fault: The :class:`InnerFault` read back from the job log, or ``None``.
+
+    Returns:
+        The extras dict (possibly empty).
+    """
+    if fault is None:
+        return {}
+    extra: dict[str, Any] = {}
+    for name in ('reason', 'wrapper', 'project_dir'):
+        value = getattr(fault, name, None)
+        if value:
+            extra[name] = value
+    return extra
+
+
 def _routed_errors_extra(verdict: Any) -> dict[str, Any]:
     """Carry the INNER wrapper's structured ``errors[]`` onto a routed result.
 
@@ -734,13 +758,28 @@ def _daemon_result_to_direct(
         # verdict to `failure`, so the log is read here purely to carry the
         # per-test rows it recorded. Without them the renderer re-parses this same
         # TOON as if it were test-runner output and synthesises one opaque row.
+        verdict = read_log_verdict(log_file)
+        if verdict is not None and verdict.fault is not None:
+            # The inner wrapper never launched the build. Reporting that as a
+            # generic ``build_failed`` is exactly what hid a missing wrapper behind
+            # six landings; the fault class and its reason travel instead, with
+            # exit -1 so the renderer's launch-fault leg (not its build-failure
+            # leg) owns it.
+            return error_result(  # type: ignore[return-value]
+                verdict.fault.error,
+                -1,
+                duration,
+                log_file,
+                command_str,
+                **_launch_fault_extra(verdict.fault),
+            )
         return error_result(  # type: ignore[return-value]
             ERROR_BUILD_FAILED,
             exit_code or 1,
             duration,
             log_file,
             command_str,
-            **_routed_errors_extra(read_log_verdict(log_file)),
+            **_routed_errors_extra(verdict),
         )
     return indeterminate_result(  # type: ignore[return-value]
         f'daemon reported terminal job_status {job_status!r}, which this client '
@@ -763,8 +802,10 @@ def _result_for_log_verdict(
     said ``success`` and the job log says otherwise. What the log says is one of
     the wrapper's three non-green values, and they are not interchangeable —
     ``timeout`` and ``killed`` are NON-FINISHES that reported no verdict, while
-    ``error`` is a build that ran and failed. Mapping all three onto
-    ``error_result`` would make the backstop itself the collapse.
+    ``error`` is a build that ran and failed OR a launch fault that never ran at
+    all (the two are separated by the fault's own class and reason, see below).
+    Mapping all three onto ``error_result`` would make the backstop itself the
+    collapse.
 
     A status outside the wrapper's vocabulary is ``indeterminate``: the log said
     something this client cannot interpret, which supports no verdict at all.
@@ -805,6 +846,18 @@ def _result_for_log_verdict(
             **bound_extra,
         )
     if status == 'error':
+        if getattr(verdict, 'fault', None) is not None:
+            # A cross-checked verdict that is a LAUNCH FAULT keeps its own class
+            # and reason: the build never ran, so a ``build_failed`` here would
+            # assert a verdict the inner wrapper never reached.
+            return error_result(  # type: ignore[return-value]
+                verdict.fault.error,
+                -1,
+                duration,
+                log_file,
+                command_str,
+                **_launch_fault_extra(verdict.fault),
+            )
         return error_result(  # type: ignore[return-value]
             ERROR_BUILD_FAILED,
             exit_code or 1,
@@ -870,6 +923,65 @@ def _running_hand_back(
     return running_result(job_id, duration, log_file, command_str)  # type: ignore[return-value]
 
 
+_PROJECT_DIR_FLAG = '--project-dir'
+"""The one path-valued flag a routed argv can carry whose value the daemon re-resolves.
+
+``_absolutise_project_dir`` rewrites its value before submission. The other
+path-shaped flags are checked, and neither can arrive here relative:
+
+* ``--plan-id`` is mutually exclusive with ``--project-dir`` and, unlike it,
+  derives its own ABSOLUTE tree (a persisted worktree path, else the checkout
+  root), so it resolves identically in both processes.
+* ``--working-dir`` and ``--env`` make a build daemon-incompatible, so such a
+  build never reaches this seam at all — under ``auto`` it falls back in-process
+  before routing, and under ``daemon`` it fails loud (see ``cmd_run``).
+* ``--root`` is declared only on the ``discover`` subcommand and on Gradle's
+  ``find-project``, so it cannot appear in the routed ``run`` argv.
+"""
+
+
+def _absolutise_project_dir(argv: list[str], project_dir: str) -> list[str]:
+    """Rewrite every ``--project-dir`` value in a routed argv onto ``project_dir``.
+
+    The daemon re-runs the submitted command with its working directory set to
+    the resolved project tree, so a RELATIVE ``--project-dir`` — the form the
+    runbook lane hands every build, ``.plan/local/worktrees/{plan_id}`` — is
+    resolved a SECOND time against that tree and names a directory that does not
+    exist. The wrapper lookup then misses the project's own wrapper, falls
+    through to a bare system command that is not installed, and a healthy project
+    dies ``execution_failed`` inside the daemon.
+
+    Both token forms (``--project-dir X`` and ``--project-dir=X``) are rewritten
+    and no other token is touched. An argv with no ``--project-dir`` is returned
+    unchanged: the child's default ``.`` already resolves to that same tree.
+
+    Args:
+        argv: The routing process's own argv tail (``sys.argv[1:]``).
+        project_dir: The ABSOLUTE project directory the daemon will run in.
+
+    Returns:
+        The argv with every ``--project-dir`` value replaced.
+    """
+    normalised: list[str] = []
+    index = 0
+    while index < len(argv):
+        token = argv[index]
+        if token == _PROJECT_DIR_FLAG:
+            normalised.append(token)
+            if index + 1 < len(argv):
+                normalised.append(project_dir)
+                index += 2
+                continue
+            index += 1
+            continue
+        if token.startswith(f'{_PROJECT_DIR_FLAG}='):
+            normalised.append(f'{_PROJECT_DIR_FLAG}={project_dir}')
+        else:
+            normalised.append(token)
+        index += 1
+    return normalised
+
+
 def _route_to_daemon(
     config: ExecuteConfig,
     project_dir: str,
@@ -920,7 +1032,16 @@ def _route_to_daemon(
     # Reconstruct the executor-form command the daemon re-runs from THIS build
     # process's own argv tail — argv[0] is the build script path, argv[1:] is the
     # `run --command-args "<args>" [flags…]` the executor invoked us with.
-    command = ['python3', str(Path(exec_root) / '.plan' / 'execute-script.py'), notation, *sys.argv[1:]]
+    #
+    # The tail's `--project-dir` value is REPLACED with the absolute tree: the
+    # daemon sets the child's working directory to that tree, so a relative value
+    # would be resolved again against it and name a directory that does not exist.
+    command = [
+        'python3',
+        str(Path(exec_root) / '.plan' / 'execute-script.py'),
+        notation,
+        *_absolutise_project_dir(sys.argv[1:], exec_root),
+    ]
     command_str = ' '.join(command)
 
     # Routing and ledger values DO carry the sentinel: a plan-less build is
@@ -969,7 +1090,9 @@ def _emit_error_envelope(output_format: str, output: dict) -> int:
     Shared print/serialize tail for the build-execute error emitters below —
     the generic TOON/JSON serializer, not the build-result formatter (which
     filters to known build fields and would drop emitter-specific keys like
-    ``max_retries`` or ``reason``).
+    ``max_retries``, ``tool`` or ``plan_id``; the launch-fault trio
+    ``reason`` / ``wrapper`` / ``project_dir`` IS on the formatter's whitelist,
+    because a build result carries it).
     """
     if output_format == 'json':
         print(json.dumps(output, indent=2))
