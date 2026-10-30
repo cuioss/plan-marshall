@@ -39,8 +39,13 @@ _CLAIMED_AT = 2_000_000_000.0
 #: Seconds between the claim and the first wait call of the consumer.
 _HAND_BACK_SECONDS = 5.0
 
-#: The consumer's default total budget, in seconds.
-_DEFAULT_BUDGET_SECONDS = 3600
+#: The consumer's default total budget, in seconds — the automatic-review
+#: ``review_rate_window_timeout_seconds`` default, which is one operator-policy
+#: window (90 minutes; see ``automatic-review/standards/coderabbit.md``). It is kept
+#: a literal here (rather than read from the skill) because this module pins the
+#: RELATION between it and ``merge_lock``'s default window; the D4 parity test
+#: derives the value itself from the policy document.
+_DEFAULT_BUDGET_SECONDS = 5400
 
 #: A stated window longer than the default budget, in seconds.
 _LONG_WINDOW_SECONDS = 2 * _DEFAULT_BUDGET_SECONDS
@@ -138,7 +143,7 @@ def _spend(fake: _FakeTime, budget_seconds: int) -> tuple[dict, int, list[tuple[
 
 
 def test_the_default_window_expires_inside_the_default_budget(isolated_base: dict) -> None:
-    """The literals are the assertion: both defaults are one hour.
+    """The literals are the assertion: both defaults are one operator-policy window.
 
     The wake instant lies past the budget by the margin less the hand-back, so the
     budget runs out with the window already expired. That is the margin's time, not

@@ -55,10 +55,10 @@ two completion signals, checked in that order of strength:
    ``false`` here meant the matcher never inspected the body, so every correct
    re-review that bot performed was published as ``matched: true`` /
    ``head_sha_verified: false`` — which both consumers route as an
-   incremental-review DECLINE. That member is blocking and its documented remedy is
-   to demote the bot to ``optional_bots`` or take a merge-authorization waiver, so a
-   REQUIRED bot in this shape could never verify and the pipeline's advice was to
-   stop requiring it.
+   incremental-review DECLINE. That member is blocking and its only remedy is a
+   recorded merge authorization over the decline — a REQUIRED bot is mandatory and
+   is never demoted to ``optional_bots`` — so a REQUIRED bot in this shape could
+   never verify while the pipeline still had no answer but a waiver.
 
    A comment that references the awaited HEAD therefore reports
    ``head_sha_verified: true``; one that does not still reports ``false``, which is
@@ -854,8 +854,8 @@ def resolve_recovery_action(
        admitted — reports ``attempts_remaining: 0`` the moment it succeeds. A
        caller that then re-consults after waiting out its own claim would be told
        the budget is spent and would release without triggering anything, so a cap
-       of one delivered zero recovery events and the default cap of six delivered
-       five. ``attempt_held=True`` is the caller stating it holds such a claim; the
+       of one delivered zero recovery events and the default cap of ten delivered
+       nine. ``attempt_held=True`` is the caller stating it holds such a claim; the
        exhausted arm is then skipped, because the attempt is already paid for and
        the cap was already enforced — by ``rate-window claim``'s own ``exhausted``
        refusal, which is where exhaustion is decided. The default is ``False``, so
@@ -863,13 +863,19 @@ def resolve_recovery_action(
     7. **An OPEN claim resolves ``await_window``.** ⛔ A re-trigger inside the
        window RESETS it rather than shortening it — an advertised wait was
        observed going from 50 to 59 minutes — and spends quota doing so.
-    8. **An ELAPSED claim resolves by the bot's ``trigger_semantics``**:
-       ``close_and_reopen`` for a bot that reviews only when explicitly asked,
-       ``generate_trigger`` for one that re-reviews on push. Close-and-reopen
-       re-DELIVERS a request the bot dropped; it buys back no quota, because the
-       limit is ACCOUNT-scoped and no PR-level move touches it. It is therefore
-       worth nothing before the window is up, which is precisely why this arm is
-       unreachable until then.
+    8. **An ELAPSED claim resolves by the bot's ``trigger_semantics``**, with one
+       exception for a bot that reviews only when explicitly asked: ``close_and_reopen``
+       for that bot **only when no review by it is on record**
+       (``review_on_record`` is not ``credited``/``stale``), and ``generate_trigger``
+       for it when a review IS on record — re-delivering a request the bot already
+       answered buys nothing, so the re-trigger is the productive event. An
+       UNOBSERVED review state keeps ``close_and_reopen``, the fail-closed direction,
+       because the policy's restriction names an observed review rather than an
+       absent observation. ``generate_trigger`` is the answer for ``auto_on_push``
+       either way. Close-and-reopen re-DELIVERS a request the bot dropped; it buys
+       back no quota, because the limit is ACCOUNT-scoped and no PR-level move
+       touches it. It is therefore worth nothing before the window is up, which is
+       precisely why this arm is unreachable until then.
 
     ⛔ **The elapsed arm is named ``claim_window_elapsed``, never
     ``bot_window_reopened``.** What elapsed is the CLAIM clock this pipeline set,
@@ -971,6 +977,18 @@ def resolve_recovery_action(
             'reason': 'stale_notice_no_review_on_record',
         }
     if semantics == bot_registry.TRIGGER_SEMANTICS_REQUIRES_EXPLICIT_TRIGGER:
+        # Close-and-reopen re-delivers a request the bot DROPPED. A bot that already
+        # reviewed an earlier head did not drop it — it answered, and the merge
+        # candidate moved on — so re-delivering the whole PR buys nothing and the
+        # operator policy bounds close-and-reopen to the no-review-on-record case.
+        # Such a bot is re-triggered instead (`generate_trigger`), which is what the
+        # caller's fallback path posts when no rebase can produce an event.
+        if review_on_record in (REVIEW_ON_RECORD_CREDITED, REVIEW_ON_RECORD_STALE):
+            return {
+                **verdict,
+                'action': RECOVERY_ACTION_GENERATE_TRIGGER,
+                'reason': 'claim_window_elapsed_review_on_record',
+            }
         return {**verdict, 'action': RECOVERY_ACTION_CLOSE_AND_REOPEN, 'reason': 'claim_window_elapsed'}
     return {**verdict, 'action': RECOVERY_ACTION_GENERATE_TRIGGER, 'reason': 'claim_window_elapsed'}
 
@@ -1929,10 +1947,23 @@ def cmd_re_review(args: argparse.Namespace) -> dict:
         timeout=args.timeout,
     )
     if await_result.get('status') != 'success':
-        return await_result
+        # ⛔ The trigger WAS posted. An await failure (a fetch error, a timeout that
+        # surfaced as an error) says nothing about the post, so the caller must not
+        # read this envelope as "nothing was posted": preserving the fact here is what
+        # stops a recovery pass from posting a duplicate trigger while the first
+        # request may still be running.
+        return {
+            **await_result,
+            'bot_kind': args.bot_kind,
+            'escalated': escalated,
+            'trigger_posted': True,
+            'trigger_time': trigger_time,
+        }
 
     await_result['bot_kind'] = args.bot_kind
     await_result['escalated'] = escalated
+    await_result['trigger_posted'] = True
+    await_result['trigger_time'] = trigger_time
     return await_result
 
 

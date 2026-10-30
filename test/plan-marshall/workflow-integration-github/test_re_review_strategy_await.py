@@ -1097,8 +1097,10 @@ def test_cmd_re_review_short_circuits_on_await_failure(monkeypatch):
     """request succeeds but await errors → the await error envelope is returned.
 
     coderabbit's request posts its trigger comment successfully, so the only
-    failure surface here is the await fetch. The handler must return that error
-    without stamping bot_kind.
+    failure surface here is the await fetch. The handler returns that error, and it
+    MUST carry the POST outcome (`trigger_posted: true` plus the bot kind): an
+    envelope without it reads as "nothing was posted", which is how the recovery
+    step would post a duplicate trigger while the first request may still be running.
     """
     _noop_sleep(monkeypatch)
     monkeypatch.setattr(
@@ -1116,8 +1118,9 @@ def test_cmd_re_review_short_circuits_on_await_failure(monkeypatch):
 
     assert result['status'] == 'error'
     assert result['operation'] == 'await_fresh_review'
-    # bot_kind is only stamped on a successful await envelope.
-    assert 'bot_kind' not in result
+    # The post succeeded, so the envelope states it even though the await failed.
+    assert result['trigger_posted'] is True
+    assert result['bot_kind'] == 'coderabbit'
 
 
 def test_cmd_re_review_threads_timeout_into_await(monkeypatch):

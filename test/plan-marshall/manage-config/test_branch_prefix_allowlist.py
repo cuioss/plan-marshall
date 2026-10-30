@@ -1,26 +1,28 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Structural coverage guard: every working_prefix is CI-push-triggered.
+"""Structural coverage guard: every working_prefix is built by CI.
 
 Pins the canonical working-branch prefix set in
 ``project.working_prefixes`` (read from the repo's ``.plan/marshal.json``, or the
 ``DEFAULT_PROJECT['working_prefixes']`` fail-closed default when the project
-``marshal.json`` or the key is absent) against the CI push-trigger branch
-allowlist in ``.github/workflows/python-verify.yml`` (``on.push.branches``).
+``marshal.json`` or the key is absent) against the CI triggers in
+``.github/workflows/python-verify.yml``.
+
+A branch is built in one of two ways. A ``pull_request`` trigger matches on the
+**base** branch, so when it targets ``main`` a PR from any head branch gets its
+``verify / verify`` check and no push trigger is needed: the cuioss-organization
+default (``ci.push-builds: default-branch-only``) builds working branches that
+way and leaves ``on.push.branches`` at ``main`` and ``dependabot/**``. Without
+such a ``pull_request`` trigger the push allowlist (``on.push.branches``) is the
+only thing that builds a branch.
 
 The check is a **subset coverage** assertion, not full equality: every
-``working_prefix`` MUST be covered by at least one workflow push trigger. The
-workflow allowlist owns CI-only entries (``main``, ``dependabot/**``) that are
-deliberately NOT working prefixes, so an equality check would be wrong — the
-prefix set is the source of truth for what plans may create, and the workflow is
-the source of truth for what CI runs. This test only enforces the one-way
-implication that matters: a working prefix with no CI trigger.
-
-A PR whose branch prefix falls outside the CI push allowlist silently receives
-no ``verify / verify`` status check and is structurally unmergeable. A
-``working_prefix`` not covered by any workflow trigger fails this test, forcing
-the workflow file (or the prefix set) to be updated. ``docs/`` is not a working
-prefix and is asserted absent.
+``working_prefix`` MUST be covered by at least one of the two. The workflow owns
+CI-only entries (``main``, ``dependabot/**``) that are deliberately NOT working
+prefixes, so an equality check would be wrong. A ``working_prefix`` covered by
+neither makes its PRs structurally unmergeable (no ``verify / verify`` check) and
+fails this test, forcing the workflow file (or the prefix set) to be updated.
+``docs/`` is not a working prefix and is asserted absent.
 """
 
 import importlib.util
@@ -92,6 +94,30 @@ def _parse_push_branches() -> list[str]:
     return [entry.strip().strip('"').strip("'") for entry in raw_entries if entry.strip()]
 
 
+def _pull_request_builds_main() -> bool:
+    """True when ``on.pull_request`` targets ``main``, so a PR from any head branch is built."""
+    text = _WORKFLOW_PATH.read_text(encoding='utf-8')
+
+    if importlib.util.find_spec('yaml') is not None:
+        import yaml
+
+        data = yaml.safe_load(text)
+        on_section = data.get('on')
+        if on_section is None:
+            on_section = data.get(True)
+        if 'pull_request' not in on_section:
+            return False
+        bases = (on_section['pull_request'] or {}).get('branches')
+        return bases is None or 'main' in bases
+
+    # Regex fallback — anchor on the pull_request block so push.branches is never matched.
+    match = re.search(r'\n  pull_request:\s*\n(?P<body>(?:    .*\n|\s*\n)*)', text)
+    if not match:
+        return False
+    bases = re.search(r'branches:\s*\[([^\]]*)\]', match.group('body'))
+    return bases is None or 'main' in bases.group(1)
+
+
 def _prefix_is_covered(prefix: str, triggers: list[str]) -> bool:
     """Return True when a workflow push trigger covers the working ``prefix``.
 
@@ -108,24 +134,27 @@ def _prefix_is_covered(prefix: str, triggers: list[str]) -> bool:
     return False
 
 
-def test_every_working_prefix_is_ci_push_triggered():
-    """Every project.working_prefixes entry must be covered by a workflow push trigger."""
+def test_every_working_prefix_is_ci_built():
+    """Every project.working_prefixes entry must be built by a pull_request or push trigger."""
     prefixes = _working_prefixes()
     triggers = _parse_push_branches()
+    pull_request_builds_main = _pull_request_builds_main()
 
-    uncovered = [p for p in prefixes if not _prefix_is_covered(p, triggers)]
+    # A pull_request trigger on main builds a PR from any head branch.
+    uncovered = [] if pull_request_builds_main else [p for p in prefixes if not _prefix_is_covered(p, triggers)]
 
     # subset coverage: a working prefix with no CI trigger makes its
     # PRs structurally unmergeable (no verify / verify check).
     # See CLAUDE.md § Branch Naming.
     assert not uncovered, (
-        'Working prefix(es) not covered by any python-verify.yml on.push.branches '
-        'trigger — a PR on such a branch silently receives no verify / verify '
-        'check and is structurally unmergeable. Add a matching push trigger to '
-        'the workflow (or drop the prefix from project.working_prefixes).\n'
-        f'  uncovered prefixes: {uncovered}\n'
-        f'  working_prefixes:   {prefixes}\n'
-        f'  workflow triggers:  {triggers}'
+        'Working prefix(es) not built by python-verify.yml — a PR on such a branch '
+        'silently receives no verify / verify check and is structurally unmergeable. '
+        'Add a pull_request trigger on main, or a matching on.push.branches entry '
+        '(or drop the prefix from project.working_prefixes).\n'
+        f'  uncovered prefixes:    {uncovered}\n'
+        f'  working_prefixes:      {prefixes}\n'
+        f'  workflow push triggers: {triggers}\n'
+        f'  pull_request on main:  {pull_request_builds_main}'
     )
 
 

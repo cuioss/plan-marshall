@@ -2,7 +2,7 @@ name: Python Verify
 
 on:
   push:
-    branches: [main, "feature/*", "fix/*", "chore/*", "!chore/orchestrator-ledger", "dependabot/**"]
+    branches: [main, "dependabot/**"]
   pull_request:
     branches: [main]
   merge_group:
@@ -40,7 +40,7 @@ permissions:
 
 jobs:
   verify:
-    uses: cuioss/cuioss-organization/.github/workflows/reusable-pyprojectx-verify.yml@711571432df351d3c5b08d5d50cb6c331f61abb1 # v0.42.0
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-pyprojectx-verify.yml@3e1ecafb6a194fe22fc6a9bfdc2a41c81584f989 # v0.43.0
     with:
       # Opt in to the footprint gate: skip the heavy build+tests when every
       # changed path is non-building (docs/config). The always-reporting

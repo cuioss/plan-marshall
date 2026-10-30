@@ -350,12 +350,24 @@ _RATE_WINDOWS_KEY = 'rate_windows'
 # is threaded through every rate-window verb as a parameter, so a caller whose
 # recovery sequence needs a different budget supplies one rather than editing
 # this module.
-_DEFAULT_RECOVERY_ATTEMPT_CAP = 6
+#
+# TEN, because that is the operator policy's own figure: `coderabbit.md`
+# § "Operator review policy" allows the review window to be waited out and the
+# trigger re-posted "up to 10 windows" before the reviewer is treated as
+# unavailable. The policy is the source of the default, so the two cannot drift
+# into a loop that gives up before the policy says it may, or one that outlives it.
+_DEFAULT_RECOVERY_ATTEMPT_CAP = 10
 
 # Fallback window length when the caller has no parsed ETA from the bot's
-# `rate_limit_eta_patterns`. One hour is the coarsest window any registered bot
-# advertises, so an un-parsed ETA errs toward waiting rather than re-triggering.
-_DEFAULT_WINDOW_SECONDS = 3600.0
+# `rate_limit_eta_patterns`. It is the operator policy's ONE window — 90 minutes
+# (`coderabbit.md` § "Operator review policy") — because the policy, not the
+# coarsest advertised reset, is what decides how long a refused required reviewer
+# is waited for. The figure replaces an earlier one-hour fallback that was shorter
+# than a policy window; the reason for the change is recorded here rather than left
+# to a reader comparing two documents: a claim shorter than one policy window would
+# hand the bot back a window that had not actually passed, which is the
+# premature-trigger case the claim exists to prevent.
+_DEFAULT_WINDOW_SECONDS = 5400.0
 
 # Default bounds for the `poll-delay` jitter, in seconds — 5 to 20 minutes.
 #
@@ -2568,7 +2580,7 @@ Examples:
   merge_lock.py release --plan-id EXAMPLE-PLAN
   merge_lock.py dequeue --plan-id EXAMPLE-PLAN
   merge_lock.py budget-reclaim --plan-id WAITER-PLAN --hold-start 1699999999.0 --hold-budget-seconds 3600
-  merge_lock.py rate-window claim --plan-id EXAMPLE-PLAN --bot-kind coderabbit --pr-number 42 [--window-seconds 3600] [--attempt-cap 6]
+  merge_lock.py rate-window claim --plan-id EXAMPLE-PLAN --bot-kind coderabbit --pr-number 42 [--window-seconds 5400] [--attempt-cap 10]
   merge_lock.py rate-window check --plan-id EXAMPLE-PLAN --bot-kind coderabbit --pr-number 42
   merge_lock.py rate-window wait --plan-id EXAMPLE-PLAN --bot-kind coderabbit --pr-number 42 [--grace-seconds 60] [--wait-seconds 480] [--interval-seconds 15]
   merge_lock.py rate-window release --plan-id EXAMPLE-PLAN --bot-kind coderabbit
