@@ -60,6 +60,7 @@ from pathlib import Path
 
 import _manifest_core
 import extension_discovery
+from _finalize_step_roster import in_checkout_finalize_steps
 from conftest import MARKETPLACE_ROOT, PROJECT_ROOT, load_script_module
 from extension_discovery import find_implementors
 
@@ -173,7 +174,7 @@ def _registered_finalize_steps() -> list[str]:
     ``.plan/marshal.json``. A test that read the live config would change its
     verdict whenever the operator re-registered a step.
     """
-    return [str(record['name']) for record in find_implementors(_EXT_POINT)]
+    return list(in_checkout_finalize_steps())
 
 
 def _step_documents(step_key: str) -> list[Path]:

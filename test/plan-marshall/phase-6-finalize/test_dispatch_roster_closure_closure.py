@@ -205,8 +205,8 @@ from pathlib import Path
 from typing import NamedTuple
 
 from _dispatch_roster import parse_roster, parse_roster_rows, section_lines
+from _finalize_step_roster import in_checkout_finalize_records, in_checkout_finalize_steps
 from conftest import MARKETPLACE_ROOT
-from extension_discovery import find_implementors
 
 _SKILL_DIR = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'phase-6-finalize'
 
@@ -339,8 +339,8 @@ _EMIT_LOOKBACK_LINES = 25
 #: is followed by the registry rather than going stale in a hardcoded list. A
 #: hardcoded mirror of the registry is exactly the drift archetype these tests
 #: exist to prevent, so the population is discovered through the same
-#: ``find_implementors`` path the dispatcher and the head-dependence derivation use.
-_FINALIZE_STEP_EXT_POINT = 'plan-marshall:extension-api/standards/ext-point-finalize-step'
+#: ``find_implementors`` path the dispatcher and the head-dependence derivation
+#: use, filtered to this checkout's own trees by ``_finalize_step_roster``.
 
 #: A step doc's own classification claim. The wording is the canonical
 #: self-classification sentence (``architecture-refresh.md`` § "This step is
@@ -416,7 +416,7 @@ def _registered_steps() -> set[str]:
     project's ``.plan/marshal.json``: a test that read the live config would
     change its coverage verdict whenever the operator re-registered a step.
     """
-    return {str(record['name']) for record in find_implementors(_FINALIZE_STEP_EXT_POINT)}
+    return set(in_checkout_finalize_steps())
 
 
 def _roster(heading: str) -> list[str]:
@@ -780,7 +780,7 @@ def _finalize_step_doc_paths() -> list[Path]:
     use — never a hardcoded file list — so a step added, removed, or relocated is
     followed automatically rather than going stale in a pinned tuple here.
     """
-    return [Path(str(record['path'])) for record in find_implementors(_FINALIZE_STEP_EXT_POINT)]
+    return [Path(str(record['path'])) for record in in_checkout_finalize_records()]
 
 
 def _classify_discovered_doc(
