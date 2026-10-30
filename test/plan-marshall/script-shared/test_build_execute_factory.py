@@ -1033,6 +1033,35 @@ class TestMissingWrapperIsNamedOnBothLegs:
         assert payload['error'] == 'log_file_failed'
         assert 'could not create a log file' in payload['reason']
 
+    def test_a_missing_working_directory_is_not_reported_as_a_missing_wrapper(self, monkeypatch, tmp_path, capsys):
+        """The exception names which path was missing; the report names that one."""
+        seen: dict = {}
+
+        def _missing_cwd(*_args, **kwargs):
+            seen['cwd'] = kwargs.get('cwd')
+            raise FileNotFoundError(2, 'No such file or directory', str(kwargs.get('cwd')))
+
+        monkeypatch.setattr(build_execute.subprocess, 'Popen', _missing_cwd)
+        _execute_direct, cmd_run = factory.create_execute_handlers(
+            _make_config(with_resolve_fn=False), lambda *_a, **_k: ([], None, 'SUCCESS')
+        )
+
+        rc = cmd_run(
+            argparse.Namespace(
+                command_args='verify',
+                plan_id='',
+                project_dir=str(tmp_path),
+                format='json',
+                execution_mode='in_process',
+            )
+        )
+
+        assert rc == 1
+        payload = json.loads(capsys.readouterr().out)
+        assert payload['error'] == 'execution_failed'
+        assert payload['reason'] == f'working directory not found: {seen["cwd"]}'
+        assert 'wrapper' not in payload, 'a cwd fault must not name a wrapper the run never tried'
+
     @pytest.mark.allow_daemon_routing
     def test_routed_leg_reports_the_inner_launch_fault_with_its_reason(self, monkeypatch, tmp_path, capsys):
         monkeypatch.delenv(factory.MARSHALLD_JOB_ENV, raising=False)

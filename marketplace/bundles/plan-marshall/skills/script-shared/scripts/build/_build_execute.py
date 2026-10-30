@@ -522,13 +522,33 @@ def execute_direct_base(
             **extras,
         }
 
-    except FileNotFoundError:
-        log_entry('script', 'global', 'ERROR', f'[{log_prefix}] Wrapper not found: {wrapper}')
-        # A launch fault, not a red build: the command never ran. The reason, the
-        # wrapper name and the directory are carried as their OWN fields so the
-        # renderer can hand them on — a single opaque ``error`` string is what made
-        # a missing wrapper indistinguishable from a daemon fault downstream.
-        reason = f'{tool_name} wrapper not found: {wrapper}'
+    except FileNotFoundError as exc:
+        # A missing CWD raises the same exception as a missing executable, and the
+        # two are different faults: the wrapper can be perfectly present while the
+        # working directory it was asked to run in does not exist. The exception
+        # names WHICH path was missing, so the report names that one instead of
+        # asserting a missing wrapper over an existing one.
+        missing = getattr(exc, 'filename', None)
+        cwd_missing = bool(missing) and bool(cwd) and os.path.abspath(str(missing)) == os.path.abspath(cwd)
+        if cwd_missing:
+            reason = f'working directory not found: {cwd}'
+        else:
+            reason = f'{tool_name} wrapper not found: {wrapper}'
+        log_entry('script', 'global', 'ERROR', f'[{log_prefix}] {reason}')
+        # The wrapper and the directory are only meaningful for the wrapper case;
+        # attaching them to a CWD fault would name a wrapper the run never tried.
+        if cwd_missing:
+            return {
+                'status': 'error',
+                'exit_code': -1,
+                'duration_seconds': 0,
+                'timeout_used_seconds': timeout_seconds,
+                'log_file': log_file,
+                'command': command_str,
+                'error': reason,
+                'reason': reason,
+                **extras,
+            }
         return {
             'status': 'error',
             'exit_code': -1,
