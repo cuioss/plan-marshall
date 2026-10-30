@@ -21,7 +21,8 @@ Covered:
   unnoticed until the registered-step sweep below caught it.
 - **The write-site set is closed** — a sweep over every registered
   ``phase-6-finalize`` step body. **Scope**: the sweep covers the registered
-  finalize step set only (``marshal.json`` -> ``plan.phase-6-finalize.steps``).
+  finalize step set only, derived from ``extension_discovery`` discovery rather
+  than from this project's ``.plan/marshal.json``.
   It fails when a future FINALIZE step gains an unbranched ``manage-lessons add``
   call site. The two out-of-scope mid-flight call sites (``phase-4-plan/SKILL.md``
   and ``execute-task/SKILL.md``, which fire in phases 4 and 5 before the plan has
@@ -54,12 +55,12 @@ Covered:
 
 from __future__ import annotations
 
-import json
 import re
 from pathlib import Path
 
 import _manifest_core
 import extension_discovery
+from _finalize_step_roster import in_checkout_finalize_steps, in_checkout_step_documents
 from conftest import MARKETPLACE_ROOT, PROJECT_ROOT, load_script_module
 from extension_discovery import find_implementors
 
@@ -74,7 +75,6 @@ _LESSONS_INTEGRATION = _FINALIZE / 'standards' / 'lessons-integration.md'
 _PREFERENCE_EMITTER = _FINALIZE / 'standards' / 'finalize-step-preference-emitter.md'
 _EMIT_LANDING = _FINALIZE / 'standards' / 'emit-landing.md'
 _RETROSPECTIVE = _PLAN_MARSHALL / 'plan-retrospective' / 'SKILL.md'
-_MARSHAL_JSON = PROJECT_ROOT / '.plan' / 'marshal.json'
 
 #: The exact executor invocation form of a global-lessons-store write.
 _ADD_CALL = re.compile(r'manage-lessons:manage-lessons\s+add\b')
@@ -165,9 +165,27 @@ def _frontmatter_order_and_destroys() -> dict[str, tuple[object, list[str]]]:
     return out
 
 
+#: External (bundle-optional) finalize steps this project registers. An INDEPENDENT
+#: fixture, not a discovery result: if one of these skills loses its ``SKILL.md``,
+#: discovery no longer emits it, so the document-derived roster cannot notice — this
+#: list is what keeps that failure visible. It names the registrations, not the
+#: operator's live config.
+_EXTERNAL_REGISTERED_FINALIZE_STEPS = (
+    'plan-marshall:automatic-review',
+    'plan-marshall:plan-retrospective',
+)
+
+
 def _registered_finalize_steps() -> list[str]:
-    data = json.loads(_read(_MARSHAL_JSON))
-    return list(data['plan']['phase-6-finalize']['steps'].keys())
+    """Every discovered finalize-step implementor's step id.
+
+    The population is the finalize-step registry as ``extension_discovery`` emits
+    it — ``default:<step>`` for built-ins, ``<bundle>:<skill>`` for bundle-optional
+    steps and ``project:<skill>`` for project steps — rather than this project's
+    ``.plan/marshal.json``. A test that read the live config would change its
+    verdict whenever the operator re-registered a step.
+    """
+    return list(in_checkout_finalize_steps())
 
 
 def _step_documents(step_key: str) -> list[Path]:
@@ -193,22 +211,35 @@ _WRITE_SITE_SPAN_END = 'A future step'
 _STEP_ID_TOKEN = re.compile(r'`([a-z][a-z0-9-]*:[a-z0-9][a-z0-9-]*)`')
 
 
-def _registered_step_bodies() -> tuple[dict[str, str], list[str]]:
-    """Every registered finalize step's body text, plus the steps that resolved to no document.
+def _registered_step_bodies() -> dict[str, str]:
+    """Every discovered finalize step's body text.
 
-    The population is the registered roster itself (``marshal.json`` ->
-    ``plan.phase-6-finalize.steps``), so a newly registered step joins the check
-    without anyone editing a hand-copied list.
+    The population is the discovered implementor roster, so a newly registered
+    step joins the check without anyone editing a hand-copied list and without
+    reading this project's live configuration. A step whose own document is gone is
+    by definition not discovered, so there is no separate "resolved to no document"
+    outcome: the closure checks below quantify over the documents that exist.
     """
     bodies: dict[str, str] = {}
-    unresolved: list[str] = []
+    discovered = in_checkout_step_documents()
     for step_key in _registered_finalize_steps():
-        documents = [path for path in _step_documents(step_key) if path.is_file()]
-        if not documents:
-            unresolved.append(step_key)
-            continue
-        bodies[step_key] = '\n'.join(_read(path) for path in documents)
-    return bodies, unresolved
+        documents: list[Path] = []
+        # The discovered path is the authority: a project step may live under any
+        # target's project-local skill root, so re-deriving it from the key alone
+        # would miss every root but `.claude/skills` — and would also read an
+        # UNTRACKED same-named `.claude` document the checkout-scoped roster
+        # excludes. The conventional candidates are therefore only a fallback for
+        # `default:` / `<bundle>:<skill>` steps, where they are part of the shipped
+        # layout.
+        candidates = list(discovered.get(step_key, []))
+        if not candidates:
+            candidates = _step_documents(step_key)
+        for path in candidates:
+            if path.is_file() and path not in documents:
+                documents.append(path)
+        if documents:
+            bodies[step_key] = '\n'.join(_read(path) for path in documents)
+    return bodies
 
 
 def _derived_inbox_writers(step_bodies: dict[str, str]) -> set[str]:
@@ -507,15 +538,23 @@ class TestWriteSiteListIsDerivedClosed:
     and compares it to the list the a0 block records, in both directions.
     """
 
-    def test_every_registered_step_resolves_to_a_body(self):
-        """Anti-vacuity: a step with no readable body would silently drop out of the population."""
-        _, unresolved = _registered_step_bodies()
+    def test_external_registered_steps_resolve_to_a_body(self):
+        """The external steps this project registers still resolve to their SKILL.md.
 
-        assert unresolved == [], f'Registered finalize steps with no resolvable body document: {unresolved}'
+        The roster is document-derived, so a deleted external skill document is
+        invisible to it; this independent fixture keeps that failure detectable.
+        """
+        unresolved = [
+            step
+            for step in _EXTERNAL_REGISTERED_FINALIZE_STEPS
+            if not any(path.is_file() for path in _step_documents(step))
+        ]
+
+        assert unresolved == [], f'External registered finalize steps with no body document: {unresolved}'
 
     def test_derived_writer_set_is_non_empty(self):
         """Anti-vacuity: an empty derived set would make the equality below meaningless."""
-        bodies, _ = _registered_step_bodies()
+        bodies = _registered_step_bodies()
 
         assert _derived_inbox_writers(bodies), (
             'No registered finalize step body issues an `orchestrator inbox write` call, so the '
@@ -523,7 +562,7 @@ class TestWriteSiteListIsDerivedClosed:
         )
 
     def test_listed_write_sites_equal_the_derived_writers(self):
-        bodies, _ = _registered_step_bodies()
+        bodies = _registered_step_bodies()
         listed = _listed_write_sites(_write_site_span(_read(_FINALIZE_SKILL)))
 
         mismatch = _write_site_mismatch(_derived_inbox_writers(bodies), listed)
@@ -535,7 +574,7 @@ class TestWriteSiteListIsDerivedClosed:
 
     def test_closure_predicate_catches_a_new_unlisted_writer(self):
         """Mutation guard: a newly registered inbox writer missing from the list must be caught."""
-        bodies, _ = _registered_step_bodies()
+        bodies = _registered_step_bodies()
         bodies['default:hypothetical-new-writer'] = (
             'python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator inbox write --kind landing'
         )
@@ -547,7 +586,7 @@ class TestWriteSiteListIsDerivedClosed:
 
     def test_closure_predicate_catches_a_writer_dropped_from_the_list(self):
         """Mutation guard: removing a real writer from the recorded list must be caught."""
-        bodies, _ = _registered_step_bodies()
+        bodies = _registered_step_bodies()
         span = _write_site_span(_read(_FINALIZE_SKILL)).replace('`default:emit-landing`', 'the landing step')
 
         mismatch = _write_site_mismatch(_derived_inbox_writers(bodies), _listed_write_sites(span))

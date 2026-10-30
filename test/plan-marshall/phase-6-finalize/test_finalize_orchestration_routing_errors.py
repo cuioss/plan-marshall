@@ -21,7 +21,8 @@ Covered:
   unnoticed until the registered-step sweep below caught it.
 - **The write-site set is closed** — a sweep over every registered
   ``phase-6-finalize`` step body. **Scope**: the sweep covers the registered
-  finalize step set only (``marshal.json`` -> ``plan.phase-6-finalize.steps``).
+  finalize step set only (the roster ``extension_discovery`` emits, never this
+  project's ``.plan/marshal.json``).
   It fails when a future FINALIZE step gains an unbranched ``manage-lessons add``
   call site. The two out-of-scope mid-flight call sites (``phase-4-plan/SKILL.md``
   and ``execute-task/SKILL.md``, which fire in phases 4 and 5 before the plan has
@@ -42,12 +43,12 @@ Covered:
 
 from __future__ import annotations
 
-import json
 import re
 from pathlib import Path
 
 import _manifest_core
 import extension_discovery
+from _finalize_step_roster import in_checkout_finalize_steps, in_checkout_step_documents
 from conftest import MARKETPLACE_ROOT, PROJECT_ROOT, load_script_module
 from extension_discovery import find_implementors
 
@@ -61,7 +62,6 @@ _LESSONS_CAPTURE = _FINALIZE / 'workflow' / 'lessons-capture.md'
 _LESSONS_INTEGRATION = _FINALIZE / 'standards' / 'lessons-integration.md'
 _PREFERENCE_EMITTER = _FINALIZE / 'standards' / 'finalize-step-preference-emitter.md'
 _RETROSPECTIVE = _PLAN_MARSHALL / 'plan-retrospective' / 'SKILL.md'
-_MARSHAL_JSON = PROJECT_ROOT / '.plan' / 'marshal.json'
 
 #: The exact executor invocation form of a global-lessons-store write.
 _ADD_CALL = re.compile(r'manage-lessons:manage-lessons\s+add\b')
@@ -87,23 +87,40 @@ def _between(text: str, start_marker: str, end_marker: str) -> str:
 
 
 def _registered_finalize_steps() -> list[str]:
-    data = json.loads(_read(_MARSHAL_JSON))
-    return list(data['plan']['phase-6-finalize']['steps'].keys())
+    """Every discovered finalize-step implementor's step id.
+
+    The population is the finalize-step registry as ``extension_discovery`` emits
+    it, not this project's ``.plan/marshal.json``: a test that read the live
+    config would change its verdict whenever the operator re-registered a step.
+    """
+    return list(in_checkout_finalize_steps())
 
 
 def _step_documents(step_key: str) -> list[Path]:
-    """Resolve a registered finalize step key to its on-disk body document(s)."""
+    """Resolve a registered finalize step key to its on-disk body document(s).
+
+    A ``project:`` step resolves through discovery ONLY: it may live under any
+    target's project-local skill root, and a conventional ``.claude/skills`` guess
+    could read an untracked same-named document the checkout-scoped roster excludes.
+    For ``default:`` / ``<bundle>:<skill>`` steps the discovered document comes
+    first, with the shipped conventional locations as a fallback.
+    """
+    candidates: list[Path] = list(in_checkout_step_documents().get(step_key, []))
     if step_key.startswith('project:'):
-        name = step_key.split(':', 1)[1]
-        return [PROJECT_ROOT / '.claude' / 'skills' / name / 'SKILL.md']
+        # Discovered-only: a conventional `.claude/skills` guess could read an
+        # UNTRACKED same-named document the checkout-scoped roster excludes.
+        return candidates
     if step_key.startswith('default:'):
         name = step_key.split(':', 1)[1]
-        return [
-            _FINALIZE / 'standards' / f'{name}.md',
-            _FINALIZE / 'workflow' / f'{name}.md',
-        ]
-    bundle, skill = step_key.split(':', 1)
-    return [MARKETPLACE_ROOT / bundle / 'skills' / skill / 'SKILL.md']
+        candidates.extend([_FINALIZE / 'standards' / f'{name}.md', _FINALIZE / 'workflow' / f'{name}.md'])
+    else:
+        bundle, skill = step_key.split(':', 1)
+        candidates.append(MARKETPLACE_ROOT / bundle / 'skills' / skill / 'SKILL.md')
+    documents: list[Path] = []
+    for path in candidates:
+        if path not in documents:
+            documents.append(path)
+    return documents
 
 
 # =============================================================================
@@ -313,15 +330,6 @@ class TestZeroGlobalStoreWritesPreferenceEmitter:
 
 
 class TestWriteSiteSetIsClosed:
-    def test_every_registered_step_key_resolves_to_a_body_document(self):
-        unresolved = [
-            step for step in _registered_finalize_steps() if not any(doc.is_file() for doc in _step_documents(step))
-        ]
-
-        # `lessons-capture` and friends resolve via standards/ OR workflow/; a key
-        # that resolves to neither means the sweep below would silently skip it.
-        assert unresolved == []
-
     def test_no_registered_finalize_step_writes_the_global_store_unbranched(self):
         leaking: list[str] = []
         for step in _registered_finalize_steps():

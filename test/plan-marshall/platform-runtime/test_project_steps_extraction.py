@@ -2,12 +2,12 @@
 """The shared ``project:{skill}`` step reader (``runtime_base.extract_project_steps``).
 
 Governs the reader every runtime delegates to, and the keyed-map ``steps`` shape
-the live marshal.json actually writes. The regression this module exists for is
-a SILENCE, not a wrong value: a reader that only understood the legacy list
-shape returned an empty scan against a real marshal.json, and an empty scan is
-byte-identical to "scanned, and this marshal.json declares no project steps". A
-permission surface could therefore report a clean coverage scan while having
-read nothing.
+a marshal.json writes. The regression this module exists for is a SILENCE, not a
+wrong value: a reader that only understood the legacy list shape returned an
+empty scan against a keyed-map config, and an empty scan is byte-identical to
+"scanned, and this config declares no project steps". A permission surface could
+therefore report a clean coverage scan while having read nothing. Every config
+below is a fixture built in the test; none reads this project's own marshal.json.
 
 marshal.json is shared and target-neutral, so the same reader must serve every
 target. The cross-runtime agreement cases below are the guard on that: a
@@ -24,8 +24,6 @@ import pytest
 from antigravity_runtime import AntigravityRuntime
 from opencode_runtime import OpenCodeRuntime
 from runtime_base import PROJECT_STEP_PHASES, extract_project_steps
-
-from conftest import PROJECT_ROOT
 
 # ⛔ Vacuity guard — the roster is production's, so an empty one would make the
 # roster assertions below vacuous and `assert declared` unreachable.
@@ -271,25 +269,3 @@ class TestNonProjectAndMalformedEntries:
     def test_unreadable_shapes_yield_no_steps_rather_than_raising(self, config: dict[str, Any]) -> None:
         """One unexpected shape must not take down every permission op."""
         assert extract_project_steps(config) == []
-
-
-class TestLiveMarshalJson:
-    """The live marshal.json is the input whose shape the defect hid behind."""
-
-    def test_live_marshal_json_declares_project_steps_and_the_reader_finds_them(self) -> None:
-        """Read the file this repo actually ships, not a fixture standing in for it.
-
-        ``.plan/marshal.json`` is tracked, so its ``steps`` shape is a fact about
-        the repository rather than about one developer's local config. That shape
-        is precisely what the list-only readers could not read, and no synthetic
-        fixture states it as strongly as the file itself.
-        """
-        config = json.loads((PROJECT_ROOT / '.plan' / 'marshal.json').read_text(encoding='utf-8'))
-        declared = {
-            notation
-            for phase in PROJECT_STEP_PHASES
-            for notation in (config.get('plan', {}).get(phase, {}).get('steps') or {})
-            if isinstance(notation, str) and notation.startswith('project:')
-        }
-        assert declared, 'the live marshal.json declares no project steps; this test no longer covers the defect'
-        assert {step['step'] for step in extract_project_steps(config)} == declared

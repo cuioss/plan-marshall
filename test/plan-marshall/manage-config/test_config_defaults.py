@@ -20,7 +20,7 @@ from argparse import Namespace
 
 import pytest
 
-from conftest import PROJECT_ROOT, load_script_module
+from conftest import load_script_module
 
 _MANAGE_CONFIG = ('plan-marshall', 'manage-config')
 
@@ -1836,23 +1836,18 @@ def test_build_map_round_trips_at_top_level_build_path(tmp_path, monkeypatch):
 # lead with ``extension_defaults`` (the extension-seeded defaults block),
 # then ``plan`` (the primary user-facing config), then ``build`` (build
 # infrastructure), followed by the remaining keys per
-# ``CANONICAL_TOP_LEVEL_KEY_ORDER``. These tests pin that contract and prove
-# the committed marshal.json already round-trips through save_config with
-# its key order unchanged. The expected order below is derived from the
-# production definition, so the contract — not a hand-maintained copy of it
-# — is what is pinned.
+# ``CANONICAL_TOP_LEVEL_KEY_ORDER``. These tests pin that contract over fixture
+# configs; they never read this repository's own ``.plan/marshal.json``, so a
+# live config edit cannot change what they assert. The expected order below is
+# derived from the production definition, so the contract — not a
+# hand-maintained copy of it — is what is pinned.
 
 # The expected order is DERIVED from the production definition — never
 # restated as a literal. A hand-maintained mirror is how this table fell
-# behind the committed file once already (the `runtime` key arrived via a
-# verify-skipped steward landing); deriving it keeps a production key
-# addition flowing into every assertion below with no test edit. What the
-# tests pin is that `save_config` honors the definition and that the
-# committed file already matches it — not the definition itself.
+# behind once already (the `runtime` key arrived via a verify-skipped steward
+# landing); deriving it keeps a production key addition flowing into every
+# assertion below with no test edit.
 _EXPECTED_CANONICAL_KEY_ORDER = list(_config_core_mod.CANONICAL_TOP_LEVEL_KEY_ORDER)
-
-#: The committed marshal.json the repo ships, resolved from the shared project root.
-_COMMITTED_MARSHAL_PATH = PROJECT_ROOT / '.plan' / 'marshal.json'
 
 
 def _save_config_to(tmp_marshal_path, config, monkeypatch):
@@ -1876,22 +1871,11 @@ def test_save_config_emits_canonical_top_level_key_order(tmp_path, monkeypatch):
     rest alphabetically), proving save_config's key_order is the authoritative
     ordering — independent of insertion order.
     """
-    # every canonical key present, deliberately reverse-scrambled
-    scrambled = {
-        'system': {},
-        'skill_domains': {},
-        'runtime': {},
-        'providers': {},
-        'project_dir': {},
-        'project': {},
-        'interaction_mode': 'advanced',
-        'credentials_config': {},
-        'code_intelligence': {},
-        'orchestrator': {},
-        'plan': {},
-        'extension_defaults': {},
-        'build': {},
-    }
+    # every canonical key present, deliberately reverse-scrambled. Derived from the
+    # production order rather than mirrored as a literal, so a newly canonical key
+    # joins the scramble without a test edit.
+    scrambled = {key: {} for key in reversed(_EXPECTED_CANONICAL_KEY_ORDER)}
+    scrambled['interaction_mode'] = 'advanced'
     marshal_path = tmp_path / 'marshal.json'
 
     actual_order = _save_config_to(marshal_path, scrambled, monkeypatch)
@@ -1989,31 +1973,17 @@ def test_seeded_orchestrator_leaves_effort_and_scope_resolution_unchanged():
     assert isinstance(plan_effort, str) and plan_effort
 
 
-def test_committed_marshal_json_top_level_keys_already_canonical():
-    """The committed .plan/marshal.json must already be in canonical key order.
-
-    Regression guard: the shipped file must not drift out of the order
-    save_config enforces, otherwise the next save would reorder it and produce a
-    spurious diff.
-    """
-    assert _COMMITTED_MARSHAL_PATH.exists(), f'committed marshal.json must exist at {_COMMITTED_MARSHAL_PATH}'
-    committed = json.loads(_COMMITTED_MARSHAL_PATH.read_text(encoding='utf-8'))
-    committed_keys = list(committed.keys())
-
-    # the committed key order equals the canonical order filtered to present keys
-    expected = [k for k in _EXPECTED_CANONICAL_KEY_ORDER if k in committed]
-    assert committed_keys == expected, (
-        f'committed marshal.json top-level keys {committed_keys} are not in canonical order {expected}'
-    )
-
-
 #: Orchestrator knobs this project deliberately tunes away from the seeded default,
-#: mapped to the value each is tuned TO. Pinning the expected value — rather than
-#: exempting the knob — is what keeps the guard below able to fail: a blanket
-#: exemption would let any later edit to a tuned knob pass unnoticed, which is the
-#: same blindness the guard exists to prevent, moved one level up.
+#: mapped to the value each is tuned TO.
 #:
-#: ``effort``: all three orchestrator surfaces are pinned explicitly so none of them
+#: The VALUES record the operator's decision and are NOT asserted against this
+#: repository's live ``.plan/marshal.json`` any more: a test that read the live file
+#: made its verdict depend on the shipped config, which the operator ruled a bug.
+#: What survives here is the KEY SET, which ``test_project_tuned_orchestrator_
+#: effort_surfaces_match_the_registry`` below pins against the resolver's own
+#: registry so a newly registered surface cannot escape unpinned.
+#:
+#: ``effort``: all three orchestrator surfaces are recorded explicitly so none of them
 #: silently tracks ``plan.effort``. The decision and its consequence are recorded in
 #: ``plan-marshall/standards/effort-roles.md`` § Orchestrator role group.
 #:
@@ -2029,15 +1999,12 @@ _PROJECT_TUNED_ORCHESTRATOR_KNOBS: dict[str, object] = {
 def test_project_tuned_orchestrator_effort_surfaces_match_the_registry():
     """The tuned-knobs table's surface KEYS must track the resolver's own registry.
 
-    ``_PROJECT_TUNED_ORCHESTRATOR_KNOBS['effort']`` is hardcoded because its VALUES
-    are a deliberate per-surface tuning decision (finding 77b104) that must NOT be
-    derived away — a derived value would silently re-track whatever the registry
-    or the seed says instead of asserting the pin. But its KEY SET is not a
-    decision at all; it is supposed to equal every surface the resolver actually
-    recognises (`_cmd_effort_mod.ORCHESTRATOR_SURFACES`), and a newly registered
-    surface would stay unpinned and untested here while this table's own assertion
-    kept passing on the surfaces it already knew about. This test catches that
-    drift without touching the tuned VALUES.
+    ``_PROJECT_TUNED_ORCHESTRATOR_KNOBS['effort']`` records a deliberate per-surface
+    tuning decision (finding 77b104). Its KEY SET is not a decision at all; it is
+    supposed to equal every surface the resolver actually recognises
+    (`_cmd_effort_mod.ORCHESTRATOR_SURFACES`), and a newly registered surface would
+    otherwise stay unrecorded here while this table's own assertion kept passing on
+    the surfaces it already knew about. This test catches that drift.
     """
     tuned_keys = set(_PROJECT_TUNED_ORCHESTRATOR_KNOBS['effort'].keys())
     registered_surfaces = set(_cmd_effort_mod.ORCHESTRATOR_SURFACES)
@@ -2050,80 +2017,35 @@ def test_project_tuned_orchestrator_effort_surfaces_match_the_registry():
     )
 
 
-def test_committed_marshal_json_surfaces_every_orchestrator_knob():
-    """The committed .plan/marshal.json must surface every settable orchestrator knob.
+def test_save_config_round_trips_an_already_canonical_config_unchanged(tmp_path, monkeypatch):
+    """A config whose keys are already canonical round-trips through save_config unchanged.
 
-    Default-surfacing guard for the file an operator actually reads. The seed
-    materialises every key of ``ORCHESTRATOR_KNOWN_KEYS``
-    (``test_get_default_config_includes_orchestrator_block``), but this project's
-    own committed config predates that seed, so a knob can be settable in code and
-    invisible in the shipped file. The expectation is derived from the
-    authoritative key set, never transcribed, so a key added there fails this test
-    until the committed file surfaces it too.
-
-    The value claim is scoped by ``_PROJECT_TUNED_ORCHESTRATOR_KNOBS``: a knob this
-    project deliberately tunes is asserted against its TUNED value, and every other
-    knob is still pinned to the seed. The distinction the guard exists to make —
-    a tuning change wearing a surfacing change's clothes — survives, because an
-    undeclared tuning still fails on the untuned comparison and a drifted value on a
-    tuned knob still fails on its own expectation. A blanket exemption would have
-    given up both halves.
+    The fixture is built in canonical order from the production definition, then
+    re-saved. A save that reordered it would produce a spurious diff on every
+    write, which is the regression this pins. The population is a fixture, not
+    this repository's ``.plan/marshal.json``, so a live config edit cannot change
+    what the test asserts.
     """
-    assert _COMMITTED_MARSHAL_PATH.exists(), f'committed marshal.json must exist at {_COMMITTED_MARSHAL_PATH}'
-    committed = json.loads(_COMMITTED_MARSHAL_PATH.read_text(encoding='utf-8'))
-
-    assert 'orchestrator' in committed, 'the committed marshal.json must carry a top-level orchestrator block'
-    block = committed['orchestrator']
-    # Shape before contents: a JSON ARRAY of the key names satisfies the set
-    # comparison below, so without this the guard accepts a block that is not a
-    # block at all.
-    assert isinstance(block, dict), f'the committed orchestrator value must be an object, got {type(block).__name__}'
-    known = set(_config_defaults_mod.ORCHESTRATOR_KNOWN_KEYS)
-    assert set(block) == known, (
-        f'committed orchestrator block surfaces {sorted(block)}, expected every settable knob {sorted(known)}'
-    )
-    # The keys being present is not the claim — surfacing a knob must not CHANGE
-    # its effective default, so every committed value is pinned against the seed
-    # the surfacing rule is defined by, EXCEPT the knobs this project deliberately
-    # tunes, which are pinned against their tuned values instead.
-    seeded = _config_defaults_mod.get_default_config()['orchestrator']
-
-    for knob, tuned_value in _PROJECT_TUNED_ORCHESTRATOR_KNOBS.items():
-        assert knob in block, f"deliberately-tuned orchestrator knob '{knob}' is absent from the committed block"
-        assert block[knob] == tuned_value, (
-            f"committed orchestrator knob '{knob}' is {block[knob]}, expected the project's "
-            f'recorded tuning {tuned_value}. The tuning is a recorded decision (see '
-            '_PROJECT_TUNED_ORCHESTRATOR_KNOBS) — a DIFFERENT value here is drift, '
-            'not the decision.'
-        )
-
-    untuned_committed = {k: v for k, v in block.items() if k not in _PROJECT_TUNED_ORCHESTRATOR_KNOBS}
-    untuned_seeded = {k: v for k, v in seeded.items() if k not in _PROJECT_TUNED_ORCHESTRATOR_KNOBS}
-    assert untuned_committed == untuned_seeded, (
-        f'committed orchestrator knobs {untuned_committed} must equal the seeded defaults '
-        f'{untuned_seeded} for every knob this project does not deliberately tune '
-        f'(tuned: {sorted(_PROJECT_TUNED_ORCHESTRATOR_KNOBS)}); a differing value would be a '
-        "tuning change wearing a surfacing change's clothes"
-    )
-
-
-def test_committed_marshal_json_round_trips_through_save_config_unchanged(tmp_path, monkeypatch):
-    """The committed marshal.json must round-trip through save_config unchanged.
-
-    Loading the shipped file and re-saving it via save_config must leave the
-    top-level key order byte-for-byte identical — the strongest guarantee that
-    save_config will never reorder the committed config.
-    """
-    # load the committed config and capture its current key order
-    committed = json.loads(_COMMITTED_MARSHAL_PATH.read_text(encoding='utf-8'))
-    before = list(committed.keys())
+    #: Non-empty nested content, so the round-trip exercises real serialization
+    #: (blocks, a list, a nested map), not just empty-object placement.
+    values: dict[str, object] = {
+        'plan': {'effort': 'level-3', 'phase-1-init': {'use_worktree': True}},
+        'build': {'map': {'python': [{'glob': '*.py', 'role': 'production'}]}},
+        'project': {'working_prefixes': ['fix/']},
+        'providers': [{'skill_name': 'bundle:provider', 'category': 'ci'}],
+        'system': {'retention': {'logs_days': 1}},
+    }
+    before = [key for key in _EXPECTED_CANONICAL_KEY_ORDER if key in values]
+    canonical_config = {key: values[key] for key in before}
     marshal_path = tmp_path / 'marshal.json'
 
     # persist via save_config to the redirected fixture path
-    after = _save_config_to(marshal_path, committed, monkeypatch)
+    after = _save_config_to(marshal_path, canonical_config, monkeypatch)
 
-    # key order is unchanged by the round-trip
+    # key order and key set are unchanged by the round-trip, and the nested
+    # content survives intact — a save that reordered or dropped a value fails.
     assert after == before
+    assert json.loads(marshal_path.read_text(encoding='utf-8')) == canonical_config
 
 
 def test_save_config_orders_build_after_plan(tmp_path, monkeypatch):

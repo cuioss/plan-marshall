@@ -126,6 +126,18 @@ def _write(directory: Path, name: str, source: str) -> Path:
 # =============================================================================
 
 
+#: Both population assertions below run EVERY predicate over the whole test tree
+#: in one test, so their cost is the sum of the sweep rather than one predicate's.
+#: Standalone that is tens of seconds; under ``-n auto`` on a slower host the
+#: competing workers push it past the suite-wide 300s hang detector while the
+#: scan is healthy. A per-test marker is the documented mechanism for this class
+#: (see ``pyproject.toml`` § timeout): it keeps the hang detector meaningful for
+#: ordinary tests without turning a slow-but-healthy whole-tree scan into a false
+#: failure.
+_WHOLE_TREE_SWEEP_TIMEOUT_SECONDS = 900
+
+
+@pytest.mark.timeout(_WHOLE_TREE_SWEEP_TIMEOUT_SECONDS)
 def test_every_predicate_examines_a_non_empty_population() -> None:
     """A zero-hit result from a scan that walked nothing proves nothing.
 
@@ -142,6 +154,7 @@ def test_every_predicate_examines_a_non_empty_population() -> None:
         )
 
 
+@pytest.mark.timeout(_WHOLE_TREE_SWEEP_TIMEOUT_SECONDS)
 def test_no_predicate_reports_a_module_it_could_not_parse() -> None:
     """An unparseable module is a module that might carry the shape.
 

@@ -6,7 +6,8 @@
 ``standards/dispatch-inline-split.md`` is the single source of truth for which
 finalize steps dispatch under ``Task: execution-context-{level}`` and which run
 inline. It is hand-maintained prose with nothing structurally linking it to the
-authoritative registry (``marshal.json`` → ``plan.phase-6-finalize.steps``), so
+authoritative registry (the finalize-step implementors ``extension_discovery``
+emits), so
 it drifted: the roster classified a subset of the registered steps while
 claiming hardcoded counts that no longer matched.
 
@@ -131,9 +132,11 @@ in the PR body.
 ⛔ **The figures once quoted for this gap are stale, and were re-derived here by
 calling the helpers above rather than trusted.** The lead said "26 implementor docs
 against 25 registered steps"; the two sets are now the same size and the same
-membership, so no discovered doc is unregistered today. That is a property of the
-tree at this moment, not a guarantee — which is exactly why the registry-absence
-finding below is reported rather than asserted empty.
+membership, so no discovered doc is unregistered today — and because the registry
+is now derived from the same discovery walk, the two sets are equal by
+construction rather than by luck. The registry-absence finding below is still
+reported rather than asserted empty; a renamed built-in is caught by the sibling
+closure assertion (the dispatch document keeps the old key), not by that finding.
 
 Registry absence is REPORTED, never asserted
 --------------------------------------------
@@ -197,14 +200,13 @@ the counts.
 from __future__ import annotations
 
 import functools
-import json
 import re
 from pathlib import Path
 from typing import NamedTuple
 
 from _dispatch_roster import parse_roster, parse_roster_rows, section_lines
-from conftest import MARKETPLACE_ROOT, PROJECT_ROOT
-from extension_discovery import find_implementors
+from _finalize_step_roster import in_checkout_finalize_records, in_checkout_finalize_steps
+from conftest import MARKETPLACE_ROOT
 
 _SKILL_DIR = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'phase-6-finalize'
 
@@ -216,7 +218,6 @@ _PLAN_MARSHALL_SKILLS = MARKETPLACE_ROOT / 'plan-marshall' / 'skills'
 
 _ROSTER_DOC = _SKILL_DIR / 'standards' / 'dispatch-inline-split.md'
 _SKILL_DOC = _SKILL_DIR / 'SKILL.md'
-_MARSHAL_JSON = PROJECT_ROOT / '.plan' / 'marshal.json'
 
 _DISPATCHED_HEADING = '## Dispatched steps'
 _INLINE_HEADING = '## Inline steps'
@@ -338,8 +339,8 @@ _EMIT_LOOKBACK_LINES = 25
 #: is followed by the registry rather than going stale in a hardcoded list. A
 #: hardcoded mirror of the registry is exactly the drift archetype these tests
 #: exist to prevent, so the population is discovered through the same
-#: ``find_implementors`` path the dispatcher and the head-dependence derivation use.
-_FINALIZE_STEP_EXT_POINT = 'plan-marshall:extension-api/standards/ext-point-finalize-step'
+#: ``find_implementors`` path the dispatcher and the head-dependence derivation
+#: use, filtered to this checkout's own trees by ``_finalize_step_roster``.
 
 #: A step doc's own classification claim. The wording is the canonical
 #: self-classification sentence (``architecture-refresh.md`` § "This step is
@@ -409,10 +410,13 @@ _CROSS_LEDGER_SENTENCE = 'the SAME event item 5c stamps `returned_with_findings`
 
 
 def _registered_steps() -> set[str]:
-    """Return the authoritative registered finalize-step key set."""
-    data = json.loads(_MARSHAL_JSON.read_text(encoding='utf-8'))
-    steps = data['plan']['phase-6-finalize']['steps']
-    return set(steps.keys())
+    """Return the finalize-step registry key set, derived from discovery.
+
+    The population is the roster ``extension_discovery`` emits, not this
+    project's ``.plan/marshal.json``: a test that read the live config would
+    change its coverage verdict whenever the operator re-registered a step.
+    """
+    return set(in_checkout_finalize_steps())
 
 
 def _roster(heading: str) -> list[str]:
@@ -776,7 +780,7 @@ def _finalize_step_doc_paths() -> list[Path]:
     use — never a hardcoded file list — so a step added, removed, or relocated is
     followed automatically rather than going stale in a pinned tuple here.
     """
-    return [Path(str(record['path'])) for record in find_implementors(_FINALIZE_STEP_EXT_POINT)]
+    return [Path(str(record['path'])) for record in in_checkout_finalize_records()]
 
 
 def _classify_discovered_doc(
@@ -860,7 +864,7 @@ class _RosterCoverage(NamedTuple):
 
     #: Implementor docs ``find_implementors`` discovered — the walked population.
     discovered_docs: int
-    #: Steps ``marshal.json`` registers — the denominator the ratio is against.
+    #: Steps the finalize-step registry emits — the denominator the ratio is against.
     registered_steps: int
     #: Distinct registered keys that actually contributed a comparison.
     compared: int
@@ -872,7 +876,7 @@ def _roster_correctness_coverage() -> _RosterCoverage:
     """The (f) coverage figures, derived by calling this module's own helpers.
 
     Nothing here is transcribed: ``discovered_docs`` comes from
-    ``find_implementors``, ``registered_steps`` from ``marshal.json``, and
+    ``find_implementors``, ``registered_steps`` from the same discovery, and
     ``compared`` from the claims the walk actually produced. Publishing the three
     together is what makes "discovered the whole registry, compared a fraction of
     it" legible instead of implied.

@@ -2,11 +2,11 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Structural coverage guard: every working_prefix is built by CI.
 
-Pins the canonical working-branch prefix set in
-``project.working_prefixes`` (read from the repo's ``.plan/marshal.json``, or the
-``DEFAULT_PROJECT['working_prefixes']`` fail-closed default when the project
-``marshal.json`` or the key is absent) against the CI triggers in
-``.github/workflows/python-verify.yml``.
+Pins the canonical working-branch prefix set — the shipped
+``DEFAULT_PROJECT['working_prefixes']`` — against the CI triggers in
+``.github/workflows/python-verify.yml``. The set is the code's own default rather
+than a read of this repository's ``.plan/marshal.json``, so a project's live
+config cannot change what this guard asserts.
 
 A branch is built in one of two ways. A ``pull_request`` trigger matches on the
 **base** branch, so when it targets ``main`` a PR from any head branch gets its
@@ -25,14 +25,13 @@ fails this test, forcing the workflow file (or the prefix set) to be updated.
 ``docs/`` is not a working prefix and is asserted absent.
 """
 
+import fnmatch
 import importlib.util
-import json
 import re
 
 from conftest import PROJECT_ROOT, load_script_module
 
 _WORKFLOW_PATH = PROJECT_ROOT / '.github' / 'workflows' / 'python-verify.yml'
-_MARSHAL_PATH = PROJECT_ROOT / '.plan' / 'marshal.json'
 
 _config_defaults_mod = load_script_module(
     'plan-marshall',
@@ -42,27 +41,14 @@ _config_defaults_mod = load_script_module(
 )
 
 
-def _load_project_config() -> dict:
-    """Load the repo's marshal.json if present, else an empty config.
-
-    The empty-config path drives the prefix lookup to its fail-closed default
-    (``DEFAULT_PROJECT['working_prefixes']``), keeping the test deterministic in
-    a fresh checkout where ``.plan/marshal.json`` does not exist (e.g. a CI
-    runner before ``/marshall-steward``).
-    """
-    try:
-        data: dict = json.loads(_MARSHAL_PATH.read_text(encoding='utf-8'))
-        return data
-    except (FileNotFoundError, json.JSONDecodeError, OSError):
-        return {}
-
-
 def _working_prefixes() -> list[str]:
-    """The canonical working-branch prefix set, live block or fail-closed default."""
-    config = _load_project_config()
-    project = config.get('project') if isinstance(config, dict) else None
-    if isinstance(project, dict) and isinstance(project.get('working_prefixes'), list):
-        return list(project['working_prefixes'])
+    """The canonical working-branch prefix set, from the shipped default.
+
+    The production default is the population this guard pins: it is the set a
+    fresh project receives, and it is what the workflow's push allowlist must
+    cover. Reading this repository's own ``.plan/marshal.json`` would make the
+    assertion depend on the live config instead of the shipped contract.
+    """
     return list(_config_defaults_mod.DEFAULT_PROJECT['working_prefixes'])
 
 
@@ -83,15 +69,50 @@ def _parse_push_branches() -> list[str]:
         on_section = data.get('on')
         if on_section is None:
             on_section = data.get(True)
-        branches = on_section['push']['branches']
-        return list(branches)
+        push = on_section.get('push') or {}
+        # A pull-request-only workflow has no push trigger at all; that is an empty
+        # list, not a crash, so the pull_request coverage path can still be reached.
+        return [str(entry) for entry in (push.get('branches') or [])]
 
     # Regex fallback — anchor on the push block's branches list so the
     # pull_request.branches list is never matched.
     match = re.search(r'push:\s*\n\s*branches:\s*\[([^\]]*)\]', text)
-    assert match, f'Could not locate on.push.branches in {_WORKFLOW_PATH}'
+    if not match:
+        return []
     raw_entries = match.group(1).split(',')
     return [entry.strip().strip('"').strip("'") for entry in raw_entries if entry.strip()]
+
+
+def _branch_is_selected(branch: str, patterns: list[str]) -> bool:
+    """GitHub branch-filter semantics for one branch: ordered globs, ``!`` negates.
+
+    A matching negative pattern after a positive one excludes the branch, and a
+    glob (``m*``) matches like it does in the workflow, so a guard that only
+    compared literal names would accept a filter that excludes ``main``.
+    """
+    selected = False
+    for raw in patterns:
+        pattern = str(raw)
+        if '?' in pattern:
+            # GitHub's `?` is "zero or one of the preceding character"; fnmatch's
+            # is "exactly one character". Modelling one with the other would read a
+            # filter that excludes `main` as covering it, so refuse the pattern
+            # rather than answer wrongly.
+            raise ValueError(f'unsupported GitHub branch filter {pattern!r}: ? means something different in fnmatch')
+        negate = pattern.startswith('!')
+        if fnmatch.fnmatchcase(branch, pattern[1:] if negate else pattern):
+            selected = not negate
+    return selected
+
+
+def _main_selected(branches: list[str] | None, ignored: list[str] | None) -> bool:
+    """Whether a PR targeting ``main`` triggers the workflow under both filters."""
+    selected = True
+    if branches is not None:
+        selected = selected and _branch_is_selected('main', branches)
+    if ignored is not None:
+        selected = selected and not _branch_is_selected('main', ignored)
+    return selected
 
 
 def _pull_request_builds_main() -> bool:
@@ -107,15 +128,22 @@ def _pull_request_builds_main() -> bool:
             on_section = data.get(True)
         if 'pull_request' not in on_section:
             return False
-        bases = (on_section['pull_request'] or {}).get('branches')
-        return bases is None or 'main' in bases
+        pull_request = on_section['pull_request'] or {}
+        return _main_selected(pull_request.get('branches'), pull_request.get('branches-ignore'))
 
     # Regex fallback — anchor on the pull_request block so push.branches is never matched.
     match = re.search(r'\n  pull_request:\s*\n(?P<body>(?:    .*\n|\s*\n)*)', text)
     if not match:
         return False
-    bases = re.search(r'branches:\s*\[([^\]]*)\]', match.group('body'))
-    return bases is None or 'main' in bases.group(1)
+    body = match.group('body')
+
+    def _entries(key: str) -> list[str] | None:
+        found = re.search(rf'{key}:\s*\[([^\]]*)\]', body)
+        if found is None:
+            return None
+        return [entry.strip().strip('"').strip("'") for entry in found.group(1).split(',') if entry.strip()]
+
+    return _main_selected(_entries('branches'), _entries('branches-ignore'))
 
 
 def _prefix_is_covered(prefix: str, triggers: list[str]) -> bool:
@@ -135,7 +163,7 @@ def _prefix_is_covered(prefix: str, triggers: list[str]) -> bool:
 
 
 def test_every_working_prefix_is_ci_built():
-    """Every project.working_prefixes entry must be built by a pull_request or push trigger."""
+    """Every shipped default working prefix must be built by a pull_request or push trigger."""
     prefixes = _working_prefixes()
     triggers = _parse_push_branches()
     pull_request_builds_main = _pull_request_builds_main()
@@ -150,7 +178,7 @@ def test_every_working_prefix_is_ci_built():
         'Working prefix(es) not built by python-verify.yml — a PR on such a branch '
         'silently receives no verify / verify check and is structurally unmergeable. '
         'Add a pull_request trigger on main, or a matching on.push.branches entry '
-        '(or drop the prefix from project.working_prefixes).\n'
+        "(or drop the prefix from DEFAULT_PROJECT['working_prefixes']).\n"
         f'  uncovered prefixes:    {uncovered}\n'
         f'  working_prefixes:      {prefixes}\n'
         f'  workflow push triggers: {triggers}\n'
@@ -171,10 +199,10 @@ def test_workflow_push_allowlist_excludes_docs_prefix():
 
 
 def test_docs_prefix_absent_from_working_prefixes():
-    """The retired 'docs/' prefix must NOT appear in project.working_prefixes."""
+    """The retired 'docs/' prefix must NOT appear in the shipped default prefix set."""
     prefixes = _working_prefixes()
 
     # 'docs/' is explicitly retired from the working-prefix set.
     assert 'docs/' not in prefixes, (
-        f"'docs/' is explicitly retired and must be absent from project.working_prefixes; found: {prefixes}"
+        f"'docs/' is explicitly retired and must be absent from DEFAULT_PROJECT['working_prefixes']; found: {prefixes}"
     )
