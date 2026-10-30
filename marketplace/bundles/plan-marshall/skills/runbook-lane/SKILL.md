@@ -511,7 +511,9 @@ publishes no test part supplies no `{build.module-tests}`:
 
 - **Routing.** The DEFAULT routing — no `--execution-mode` flag — is used for EVERY build. Under it
   `auto` submits the job to the build daemon when the setup preflight found it `ready`, and runs
-  in-process otherwise. Before the first routed build, run
+  in-process otherwise. Before the first auto build — whatever the setup preflight answered, because
+  the routing client preflights again per build and a daemon that was `down` at setup can be `ready`
+  by the time a build runs — run
   `python3 .plan/execute-script.py plan-marshall:runbook-lane:runbook_lane build-routing --worktree {worktree}`:
   `auto` means the worktree carries its own executor and the build submits with no execution flag, so
   the daemon re-runs that executor; `in_process` is the DEGRADED answer for an `absent` slot, where
@@ -522,9 +524,11 @@ publishes no test part supplies no `{build.module-tests}`:
   and `timeout_source`, and the client's rules for it are cited, not restated. Record a bound
   expiry and continue with the split form below rather than re-submitting the same bound.
 - **A launch fault costs ONE retry, not the server.** A routed build whose result is a launch fault
-  (`error: execution_failed` or `log_file_failed`) never started, so it is NOT a red build: re-run
-  that build ONCE with `--execution-mode in_process`, record the retry with its `reason` in the
-  progress file and the landing message, and submit the NEXT build with the default routing again.
+  never started, so it is NOT a red build: re-run that build ONCE with `--execution-mode in_process`,
+  record the retry with its `reason` (or, where the result states none, that the reason is
+  unavailable), and submit the NEXT build with the default routing again. The launch-fault class is
+  owned by the build client — `_build_result.LAUNCH_FAULT_ERRORS`, today `execution_failed` and
+  `log_file_failed` — so the retry follows that set rather than a second copy of it.
   `--execution-mode in_process` as a STANDING setting for the rest of the run is allowed only where
   `build-routing` answered `in_process`; never let one routed failure turn the server off for the
   run.
@@ -868,7 +872,9 @@ step.sonar-roundtrip.open_issue_rules={rules left open|none|unknown|n/a}
      the per-`mechanism` build count (`daemon_longpoll` versus `in_process_fallback`, so a run that
      did not use the server is visible here and not only in the daemon journal), the fallback each
      build used and why (`degraded` with its `reason`, or `executor_absent_from_worktree`), and any
-     `killed` job with its disposition. Add any
+     `killed` job with its disposition. Take each build's `mechanism` from the client's own
+     `[BUILD-SERVER] resolved build` line on that build's stderr — it is a routing fact, not a
+     build-result field, so it is not in the result's TOON. Add any
      `runtime_stamp_reason` the resolve result carried: it names a runtime-info seam that failed, or
      a fact nothing could measure, and marks the stamp as `unknown` rather than silently absent.
   9. **Residue** — anything left open.

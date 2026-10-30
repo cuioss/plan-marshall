@@ -388,6 +388,10 @@ def execute_direct_base(
             'log_file': '',
             'command': '',
             'error': 'Failed to create log file',
+            # The launch-fault reason travels on BOTH legs of the class: the lane
+            # records a retry's reason, and a fault that carries none would leave
+            # that entry saying nothing about why the build never started.
+            'reason': f'could not create a log file for {tool_name} (scope {scope})',
             **extras,
         }
 

@@ -1011,6 +1011,28 @@ class TestMissingWrapperIsNamedOnBothLegs:
         assert payload['wrapper'] == 'pwx'
         assert payload['project_dir'] == str(project.resolve())
 
+    def test_a_log_file_fault_names_its_reason(self, monkeypatch, tmp_path, capsys):
+        """The other launch fault states why it could not start, for the same retry record."""
+        monkeypatch.setattr(build_execute, 'create_log_file', lambda *_a, **_k: None)
+        _execute_direct, cmd_run = factory.create_execute_handlers(
+            _make_config(with_resolve_fn=False), lambda *_a, **_k: ([], None, 'SUCCESS')
+        )
+
+        rc = cmd_run(
+            argparse.Namespace(
+                command_args='verify',
+                plan_id='',
+                project_dir=str(tmp_path),
+                format='json',
+                execution_mode='in_process',
+            )
+        )
+
+        assert rc == 1
+        payload = json.loads(capsys.readouterr().out)
+        assert payload['error'] == 'log_file_failed'
+        assert 'could not create a log file' in payload['reason']
+
     @pytest.mark.allow_daemon_routing
     def test_routed_leg_reports_the_inner_launch_fault_with_its_reason(self, monkeypatch, tmp_path, capsys):
         monkeypatch.delenv(factory.MARSHALLD_JOB_ENV, raising=False)
