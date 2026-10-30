@@ -86,6 +86,18 @@ def detect_wrapper(
     return None
 
 
+def cwd_is_missing(cwd: str | None) -> bool:
+    """True when the launcher's working directory does not exist on disk.
+
+    The classification asks the FILESYSTEM, not the exception, because the same
+    fault surfaces under two exception types: ``FileNotFoundError`` on POSIX and
+    ``NotADirectoryError`` (WinError 267, often with no ``filename``) on Windows.
+    A guard reading the exception would miss the Windows leg and report a generic
+    OS error, leaving the two faults it exists to separate still fused.
+    """
+    return bool(cwd) and not os.path.isdir(str(cwd))
+
+
 def has_wrapper(project_root: Path, unix_wrapper: str, windows_wrapper: str) -> bool:
     """Check if wrapper exists for current platform.
 
@@ -388,6 +400,10 @@ def execute_direct_base(
             'log_file': '',
             'command': '',
             'error': 'Failed to create log file',
+            # The launch-fault reason travels on BOTH legs of the class: the lane
+            # records a retry's reason, and a fault that carries none would leave
+            # that entry saying nothing about why the build never started.
+            'reason': f'could not create a log file for {tool_name} (scope {scope})',
             **extras,
         }
 
@@ -519,7 +535,30 @@ def execute_direct_base(
         }
 
     except FileNotFoundError:
-        log_entry('script', 'global', 'ERROR', f'[{log_prefix}] Wrapper not found: {wrapper}')
+        # A missing CWD and a missing executable are different faults: the wrapper
+        # can be perfectly present while the directory it was asked to run in does
+        # not exist. The filesystem decides which one this is, so the report names
+        # the cwd instead of asserting a missing wrapper over an existing one.
+        cwd_missing = cwd_is_missing(cwd)
+        if cwd_missing:
+            reason = f'working directory not found: {cwd}'
+        else:
+            reason = f'{tool_name} wrapper not found: {wrapper}'
+        log_entry('script', 'global', 'ERROR', f'[{log_prefix}] {reason}')
+        # The wrapper and the directory are only meaningful for the wrapper case;
+        # attaching them to a CWD fault would name a wrapper the run never tried.
+        if cwd_missing:
+            return {
+                'status': 'error',
+                'exit_code': -1,
+                'duration_seconds': 0,
+                'timeout_used_seconds': timeout_seconds,
+                'log_file': log_file,
+                'command': command_str,
+                'error': reason,
+                'reason': reason,
+                **extras,
+            }
         return {
             'status': 'error',
             'exit_code': -1,
@@ -527,11 +566,32 @@ def execute_direct_base(
             'timeout_used_seconds': timeout_seconds,
             'log_file': log_file,
             'command': command_str,
-            'error': f'{tool_name} wrapper not found: {wrapper}',
+            'error': reason,
+            'reason': reason,
+            'wrapper': wrapper,
+            'project_dir': str(Path(project_dir).resolve()),
             **extras,
         }
 
     except OSError as e:
+        # Windows reports a nonexistent cwd as NotADirectoryError, which is neither
+        # FileNotFoundError nor carries a usable ``filename``. Checking the cwd on
+        # disk is what makes the classification portable: the same fault reaches
+        # this leg and is still reported as a cwd fault rather than a generic OSError.
+        if cwd_is_missing(cwd):
+            reason = f'working directory not found: {cwd}'
+            log_entry('script', 'global', 'ERROR', f'[{log_prefix}] {reason}')
+            return {
+                'status': 'error',
+                'exit_code': -1,
+                'duration_seconds': 0,
+                'timeout_used_seconds': timeout_seconds,
+                'log_file': log_file,
+                'command': command_str,
+                'error': reason,
+                'reason': reason,
+                **extras,
+            }
         log_entry('script', 'global', 'ERROR', f'[{log_prefix}] OS error: {e}')
         return {
             'status': 'error',

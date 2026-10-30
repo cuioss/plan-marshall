@@ -192,7 +192,9 @@ When `--timeout` is omitted the job spec carries no bound at all and the daemon 
 its own default.
 
 A **lower** bound therefore takes effect only where something else enforces it. On the
-routed leg it does: the routing client rebuilds `command` from its own argv tail, so the
+routed leg it does: the routing client rebuilds `command` from its own argv tail (rewriting
+only the `--project-dir` value onto the absolute project tree, so the child resolves the
+same tree it was named with, and passing every other token through verbatim), so the
 same `--timeout N` is a token inside the submitted command and the child re-runs it and
 self-bounds. On the direct surface above, `--command` is whatever JSON array the caller
 passes, so a lower `--timeout` there bounds nothing unless the caller also puts it in

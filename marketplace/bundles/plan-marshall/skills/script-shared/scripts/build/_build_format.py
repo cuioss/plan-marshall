@@ -41,6 +41,8 @@ CORE_FIELDS = ['status', 'exit_code', 'duration_seconds', 'log_file', 'command']
 EXTRA_FIELDS = [
     'error',
     'message',
+    'reason',
+    'project_dir',
     'timeout_used_seconds',
     'timeout_source',
     'command_key',
@@ -66,6 +68,13 @@ does not say what to do — above all a ``killed`` build's "externally killed �
 flaky, do not blind-retry". Dropping it would leave the emitted TOON saying a
 build was killed while withholding the one instruction that changes the reader's
 next action.
+
+``reason`` / ``wrapper`` / ``project_dir`` are a LAUNCH FAULT's three identifying
+facts (see ``_build_result.LAUNCH_FAULT_ERRORS``): the command never ran, so the
+``error`` class alone cannot say whether a wrapper was missing, which one was
+looked for, or where. They are whitelisted together because the three are only
+diagnostic as a set — the class without the reason is what let six landings mistake
+a missing wrapper for a daemon fault.
 
 ``timeout_source`` names which path produced ``timeout_used_seconds``
 (``explicit`` / ``learned`` / ``default`` / ``floor`` / ``daemon_default``) and

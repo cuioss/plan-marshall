@@ -28,7 +28,9 @@ their subject and re-arm it with ``@pytest.mark.allow_daemon_routing``.
 """
 
 import argparse
+import dataclasses
 import json
+import sys
 
 import _build_execute as build_execute
 import _build_execute_factory as factory
@@ -859,12 +861,14 @@ class _FakeBuildServerClient:
     def __init__(self, wait_payload: dict):
         self._wait_payload = wait_payload
         self.forwarded_plan_ids: list[tuple[str, str]] = []
+        self.submitted_commands: list[str] = []
 
     def run_preflight(self, _ns):
         return {'preflight': 'ready'}
 
     def run_submit(self, ns):
         self.forwarded_plan_ids.append(('submit', ns.plan_id))
+        self.submitted_commands.append(ns.command)
         return {'status': 'success', 'job_id': 'J1'}
 
     def run_wait(self, ns):
@@ -884,6 +888,221 @@ class _FakeBuildServerClient:
 # * ``_route_to_daemon`` FORWARDS the sentinel — routing and ledger values do
 #   carry NO_PLAN, so the daemon's kind=job row matches the kind=build row's
 #   never-null contract.
+
+
+class TestRoutedArgvResolvesTheWorktreeWrapper:
+    """The argv a routed job submits must still name the caller's tree in the child.
+
+    The daemon runs the submitted command with the worktree as its working
+    directory, so the ``--project-dir`` value is resolved a SECOND time — by the
+    child, against that directory. This drives the real routing assembly, takes
+    the submitted argv, then replays the child's own resolution through the REAL
+    two-state resolver and the REAL wrapper detection: a relative value survives
+    the first resolve and dies the second, which is how a healthy project came to
+    die ``execution_failed`` inside the daemon. Only the daemon client is stubbed;
+    no resolver, detector or formatter is.
+    """
+
+    @pytest.mark.allow_daemon_routing
+    def test_the_submitted_project_dir_resolves_the_worktree_wrapper(self, monkeypatch, tmp_path):
+        from resolve_project_dir import resolve_project_dir
+
+        monkeypatch.delenv(factory.MARSHALLD_JOB_ENV, raising=False)
+        worktree = tmp_path / '.plan' / 'local' / 'worktrees' / 'plan-x'
+        worktree.mkdir(parents=True)
+        (worktree / 'pw').write_text('#!/bin/sh\n')
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setattr(
+            sys,
+            'argv',
+            ['pyproject_build.py', 'run', '--command-args', 'verify', '--project-dir', '.plan/local/worktrees/plan-x'],
+        )
+        log = tmp_path / 'job.log'
+        log.write_text('status: success\nexit_code: 0\n')
+        client = _FakeBuildServerClient({'job_status': 'success', 'log_file': str(log), 'duration_seconds': 1})
+        monkeypatch.setattr(factory, '_load_build_server', lambda: client)
+
+        routed, reason = factory._route_to_daemon(_make_config(), '.plan/local/worktrees/plan-x', None)
+
+        assert routed is not None, f'routing did not happen (reason={reason!r})'
+        submitted = json.loads(client.submitted_commands[0])
+        project_dir_value = submitted[submitted.index('--project-dir') + 1]
+        # Replay the CHILD: the daemon's cwd is the resolved tree, and the child
+        # resolves the flag again through the same resolver the build CLI uses.
+        monkeypatch.chdir(worktree.resolve())
+        monkeypatch.setattr(build_execute.shutil, 'which', lambda _cmd: None)
+
+        replayed = resolve_project_dir(None, project_dir_value, default='.')
+
+        assert build_execute.detect_wrapper(replayed, 'pw', 'pw.bat', 'pwx') == './pw', (
+            'the daemon child resolved --project-dir to '
+            f'{replayed!r}, where no wrapper exists — the submitted value must be the absolute tree'
+        )
+
+
+class TestMissingWrapperIsNamedOnBothLegs:
+    """A launch fault reaches the rendered result as itself, with where it looked.
+
+    The rendered result historically carried only ``error: execution_failed``, so a
+    missing wrapper was indistinguishable from a daemon fault. The three facts that
+    separate them — the reason, the wrapper name tried, and the project directory it
+    was looked for in — must survive on the in-process leg and on the routed leg
+    alike; on the routed leg the inner wrapper's own verdict is what the client reads
+    back out of the job log.
+    """
+
+    def test_in_process_leg_names_the_wrapper_reason_and_directory(self, monkeypatch, tmp_path, capsys):
+        project = tmp_path / 'tree-without-a-wrapper'
+        project.mkdir()
+
+        def _missing(*_args, **_kwargs):
+            raise FileNotFoundError(2, 'No such file or directory', 'pwx')
+
+        monkeypatch.setattr(build_execute.subprocess, 'Popen', _missing)
+        monkeypatch.setattr(build_execute.shutil, 'which', lambda _cmd: None)
+        _execute_direct, cmd_run = factory.create_execute_handlers(
+            _make_config(with_resolve_fn=False), lambda *_a, **_k: ([], None, 'SUCCESS')
+        )
+
+        rc = cmd_run(
+            argparse.Namespace(
+                command_args='verify',
+                plan_id='',
+                project_dir=str(project),
+                format='toon',
+                execution_mode='in_process',
+            )
+        )
+
+        assert rc == 1
+        out = capsys.readouterr().out
+        assert 'error: execution_failed' in out
+        assert 'wrapper: pwx' in out
+        assert 'wrapper not found' in out, 'the rendered result must carry the reason, not only the error class'
+        assert str(project) in out, 'the rendered result must name the directory the wrapper was looked for in'
+
+    def test_the_json_leg_carries_the_same_three_facts(self, monkeypatch, tmp_path, capsys):
+        """The JSON projection carries the trio too, so the two formats agree."""
+        project = tmp_path / 'tree-without-a-wrapper'
+        project.mkdir()
+
+        def _missing(*_args, **_kwargs):
+            raise FileNotFoundError(2, 'No such file or directory', 'pwx')
+
+        monkeypatch.setattr(build_execute.subprocess, 'Popen', _missing)
+        monkeypatch.setattr(build_execute.shutil, 'which', lambda _cmd: None)
+        _execute_direct, cmd_run = factory.create_execute_handlers(
+            _make_config(with_resolve_fn=False), lambda *_a, **_k: ([], None, 'SUCCESS')
+        )
+
+        rc = cmd_run(
+            argparse.Namespace(
+                command_args='verify',
+                plan_id='',
+                project_dir=str(project),
+                format='json',
+                execution_mode='in_process',
+            )
+        )
+
+        assert rc == 1
+        payload = json.loads(capsys.readouterr().out)
+        assert payload['error'] == 'execution_failed'
+        assert payload['reason'] == 'python wrapper not found: pwx'
+        assert payload['wrapper'] == 'pwx'
+        assert payload['project_dir'] == str(project.resolve())
+
+    def test_a_log_file_fault_names_its_reason(self, monkeypatch, tmp_path, capsys):
+        """The other launch fault states why it could not start, for the same retry record."""
+        monkeypatch.setattr(build_execute, 'create_log_file', lambda *_a, **_k: None)
+        _execute_direct, cmd_run = factory.create_execute_handlers(
+            _make_config(with_resolve_fn=False), lambda *_a, **_k: ([], None, 'SUCCESS')
+        )
+
+        rc = cmd_run(
+            argparse.Namespace(
+                command_args='verify',
+                plan_id='',
+                project_dir=str(tmp_path),
+                format='json',
+                execution_mode='in_process',
+            )
+        )
+
+        assert rc == 1
+        payload = json.loads(capsys.readouterr().out)
+        assert payload['error'] == 'log_file_failed'
+        assert 'could not create a log file' in payload['reason']
+
+    def test_a_missing_working_directory_is_not_reported_as_a_missing_wrapper(self, tmp_path, capsys):
+        """The launcher's cwd is checked on disk, so the fault is classified portably.
+
+        No exception is fabricated: the build's working directory genuinely does
+        not exist, so the real launcher raises (``FileNotFoundError`` on POSIX,
+        ``NotADirectoryError`` on Windows) and both legs must classify it as a cwd
+        fault — the wrapper is present and is never named.
+        """
+        absent_cwd = tmp_path / 'no-such-working-dir'
+        config = dataclasses.replace(_make_config(with_resolve_fn=False), supports_working_dir=True)
+        _execute_direct, cmd_run = factory.create_execute_handlers(config, lambda *_a, **_k: ([], None, 'SUCCESS'))
+
+        rc = cmd_run(
+            argparse.Namespace(
+                command_args='verify',
+                plan_id='',
+                project_dir=str(tmp_path),
+                working_dir=str(absent_cwd),
+                format='json',
+                execution_mode='in_process',
+            )
+        )
+
+        assert rc == 1
+        payload = json.loads(capsys.readouterr().out)
+        assert payload['error'] == 'execution_failed'
+        assert payload['reason'] == f'working directory not found: {absent_cwd}'
+        assert 'wrapper' not in payload, 'a cwd fault must not name a wrapper the run never tried'
+
+    @pytest.mark.allow_daemon_routing
+    def test_routed_leg_reports_the_inner_launch_fault_with_its_reason(self, monkeypatch, tmp_path, capsys):
+        monkeypatch.delenv(factory.MARSHALLD_JOB_ENV, raising=False)
+        inner_tree = str(tmp_path / 'tree-without-a-wrapper')
+        log = tmp_path / 'job.log'
+        log.write_text(
+            'status: error\n'
+            'exit_code: -1\n'
+            'duration_seconds: 0\n'
+            'error: execution_failed\n'
+            'reason: "python wrapper not found: pwx"\n'
+            'wrapper: pwx\n'
+            f'project_dir: {inner_tree}\n',
+            encoding='utf-8',
+        )
+        client = _FakeBuildServerClient(
+            {'job_status': 'failure', 'exit_code': 1, 'log_file': str(log), 'duration_seconds': 0}
+        )
+        monkeypatch.setattr(factory, '_load_build_server', lambda: client)
+        _execute_direct, cmd_run = factory.create_execute_handlers(
+            _make_config(), lambda *_a, **_k: ([], None, 'SUCCESS')
+        )
+
+        rc = cmd_run(
+            argparse.Namespace(
+                command_args='verify',
+                plan_id='',
+                project_dir=str(tmp_path),
+                format='toon',
+                execution_mode='daemon',
+            )
+        )
+
+        assert rc == 1
+        out = capsys.readouterr().out
+        assert 'error: execution_failed' in out, 'a routed launch fault must not be reported as a generic build failure'
+        assert 'build_failed' not in out
+        assert 'wrapper: pwx' in out
+        assert 'wrapper not found' in out
+        assert inner_tree in out
 
 
 class TestRecordResolutionSentinelSuppressesWorkLog:
