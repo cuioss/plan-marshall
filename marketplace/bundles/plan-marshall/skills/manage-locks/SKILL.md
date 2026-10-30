@@ -616,7 +616,8 @@ python3 .plan/execute-script.py plan-marshall:manage-locks:merge_lock rate-windo
 
 Claims `--bot-kind`'s rate window for `--plan-id`, recording the window expiry and
 advancing the recovery-attempt counter. `--window-seconds` carries the ETA parsed
-from the bot's registry `rate_limit_eta_patterns` (default `3600`). `--attempt-cap`
+from the bot's registry `rate_limit_eta_patterns` (default: the shipped one-policy-window
+length, which `rate-window --help` prints). `--attempt-cap`
 is the recovery budget per `(bot_kind, pr_number)`; omit it to take the shipped
 default, which `rate-window --help` prints — this page names the flag rather than
 restating its value, so the number cannot drift out of agreement with the code that

@@ -17,7 +17,7 @@ claims that make it more than a relabelling:
     declaring ``awaitable_window`` that refuses on size must NOT land on
     ``refused_awaitable``, whose whole meaning is *worth awaiting*.
 (b) **No await on the structural branch.** The documents that render a remedy set
-    for this member offer split / accept / disable and never a wait — the case that
+    for this member offer split / accept-under-authorization and never a wait — the case that
     distinguishes this from a relabelling exercise, so it is asserted against the
     real document text rather than against prose ABOUT the text.
 (c) **The cap travels.** The finding carries the ceiling the bot's own notice
@@ -804,7 +804,7 @@ class TestUnrecognisedRefusalIsADistinctState:
         """The size-ceiling notice this suite is about stays a RECOGNISED refusal.
 
         It is read by the registry arm, so it keeps ``refused_structural`` and its own
-        remedy set — split / accept / disable — rather than degrading into the
+        remedy set — split / accept-under-authorization — rather than degrading into the
         declared-ignorance state whose only remedy is to teach the registry a phrasing.
         """
         seam = self._seam()

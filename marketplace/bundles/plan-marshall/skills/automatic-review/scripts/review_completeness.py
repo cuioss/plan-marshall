@@ -125,6 +125,7 @@ Usage:
     review_completeness.py check --plan-id <id> [--required-bots [<csv>]] [--optional-bots [<csv>]] [--participated-bots [<csv>]] [--in-progress-bots [<csv>]] [--refused-bots [<csv>]] [--stale-participation-bots [<csv>]] [--declined-bots [<csv>]] [--unrecognised-refusal-bots [<csv>]] [--not-triggered] [--triage-ran] [--refused-causes [<csv>]] [--refusal-size-caps [<csv>]] [--measured-diff-size [<s>]]
     review_completeness.py deficit --plan-id <id> [--required-bots [<csv>]] [--optional-bots [<csv>]] [--participated-bots [<csv>]] [--in-progress-bots [<csv>]] [--refused-bots [<csv>]] [--stale-participation-bots [<csv>]] [--declined-bots [<csv>]] [--unrecognised-refusal-bots [<csv>]] [--not-triggered] [--refused-causes [<csv>]] [--refusal-size-caps [<csv>]] [--min-deficit <n>]
     review_completeness.py size-caps
+    review_completeness.py roster --plan-id <id>
     review_completeness.py trigger-bot --plan-id <id> [--required-bots [<csv>]] [--optional-bots [<csv>]] [--stale-participation-bots [<csv>]] [--reviewed-commit-sha [<sha>]] [--head-sha [<sha>]]
     review_completeness.py --help
 
@@ -194,6 +195,12 @@ Subcommands:
                property of the reviewer, so a plan whose footprint will exceed one can
                learn at outline time that the reviewer will not review it, instead of
                discovering it as an unexplained non-participation at the merge gate.
+    roster     Read the configured review-bot roster, distinguishing an UNREADABLE
+               roster from a readable EMPTY one. A failed step-params read returns
+               ``status: error`` / ``error: roster_unreadable`` / ``roster_read: false``
+               and carries NO bot list; a readable roster returns ``roster_read: true``
+               with both lists, empty when nobody is configured. The caller stops on
+               the error — an unreadable roster is never forwarded as an empty one.
     trigger-bot
                List every bot a re-review must be requested from after a fix commit,
                required bots first: the bots whose participation is stale at the
@@ -1575,6 +1582,187 @@ def _emit_size_caps_toon(payload: dict) -> None:
     print(serialize_toon(emitted))
 
 
+#: The step whose params carry the configured review-bot roster. Spelled once and
+#: read by both the manuscript sites (``automatic-review`` and the pre-merge
+#: barrier) through :func:`read_roster`, so neither can drift to a different step.
+ROSTER_STEP_ID = 'plan-marshall:automatic-review'
+#: The manifest phase the roster snapshot lives under.
+ROSTER_PHASE = '6-finalize'
+_MANIFEST_NOTATION = 'plan-marshall:manage-execution-manifest:manage-execution-manifest'
+
+
+def _run_manifest_step_params(plan_id: str) -> dict:
+    """Read the roster's step-params snapshot through the executor.
+
+    The single executor seam this module's ONE cross-skill read goes through. A
+    call that could not run, produced no output, or was not parseable comes back as
+    an error payload carrying the manifest's own message, never as an empty params
+    object — an unreadable configuration and an empty one are different answers.
+    """
+    import subprocess
+
+    from file_ops import get_executor_path
+
+    argv = [
+        'step-params',
+        'get',
+        '--plan-id',
+        plan_id,
+        '--phase',
+        ROSTER_PHASE,
+        '--step-id',
+        ROSTER_STEP_ID,
+    ]
+    try:
+        completed = subprocess.run(
+            [sys.executable, str(get_executor_path()), _MANIFEST_NOTATION, *argv],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=300,
+        )
+    except (RuntimeError, OSError, subprocess.SubprocessError) as exc:
+        return {'status': 'error', 'error': 'roster_unreadable', 'detail': f'{_MANIFEST_NOTATION} could not run: {exc}'}
+    return _manifest_result(completed)
+
+
+def _manifest_result(completed) -> dict:
+    """Turn one finished manifest call into a parsed payload or a failed read.
+
+    ⛔ **A non-zero exit is a failed read even when its stdout parses.** The manifest
+    verb can emit a payload and still exit non-zero, and a roster parsed out of that
+    payload would change the required-reviewer quorum on a call that reported failure.
+    The exit code is therefore checked BEFORE any parsing, and the three failure shapes
+    (non-zero exit, no output, unparseable output) all answer the same
+    ``roster_unreadable`` error.
+    """
+    from toon_parser import parse_toon
+
+    if completed.returncode != 0:
+        return {
+            'status': 'error',
+            'error': 'roster_unreadable',
+            'detail': (
+                f'{_MANIFEST_NOTATION} exited with code {completed.returncode}: '
+                f'{completed.stderr.strip() or "no stderr"}'
+            ),
+        }
+    stdout = completed.stdout or ''
+    if not stdout.strip():
+        return {
+            'status': 'error',
+            'error': 'roster_unreadable',
+            'detail': f'{_MANIFEST_NOTATION} step-params get produced no output (exit_code=0)',
+        }
+    try:
+        return parse_toon(stdout)
+    except Exception as exc:
+        return {
+            'status': 'error',
+            'error': 'roster_unreadable',
+            'detail': f'step-params output not parseable as TOON: {exc}',
+        }
+
+
+def _roster_value(value: object) -> str | None:
+    """Normalise a roster param value to the comma-separated form ``_split_bots`` reads.
+
+    The composed snapshot carries a comma-separated string, but a per-plan override may
+    carry a real list. Both are LEGITIMATE roster shapes, so the list is joined rather
+    than rejected; the token SHAPE check (a pair token on a bare-form flag) then runs
+    uniformly over either form. A value of any other type is stringified so
+    :func:`_split_bots` still sees a string — the read is then a wrong roster rather
+    than a traceback, and an empty result reports as an empty roster only because the
+    caller reached the success arm.
+    """
+    if value is None:
+        return None
+    if isinstance(value, (list, tuple)):
+        return ','.join(str(item) for item in value)
+    return str(value)
+
+
+def read_roster(plan_id: str, *, runner=None) -> dict:
+    """Read the configured review-bot roster, distinguishing unreadable from empty.
+
+    ``runner`` is the step-params reader, injectable so the contract can be tested
+    without a plan directory; it defaults to :func:`_run_manifest_step_params`.
+
+    Returns ``status: success`` with ``roster_read: true``, ``required_bots`` and
+    ``optional_bots`` when the snapshot was READ — including when the read roster
+    configures nobody, which is a real, decided, empty quorum. Returns
+    ``status: error`` with ``roster_read: false``, ``error: roster_unreadable`` and a
+    ``reason`` naming the input that could not be read when it was NOT read, and
+    carries NO bot list at all: an absent list and an empty list must never be
+    confusable, because collapsing them is exactly how a bot nobody configured
+    becomes a bot nobody required. The caller treats the error as a hard stop.
+    """
+    reader = runner or _run_manifest_step_params
+    result = reader(plan_id)
+    if result.get('status') != 'success':
+        return {
+            'status': 'error',
+            'error': 'roster_unreadable',
+            'roster_read': False,
+            'reason': (
+                'the configured review-bot roster could not be read from the '
+                f'{ROSTER_STEP_ID} step params ({result.get("error") or "unknown"}'
+                + (f': {result.get("detail")}' if result.get('detail') else '')
+                + ')'
+            ),
+        }
+    params = result.get('params')
+    if not isinstance(params, dict):
+        return {
+            'status': 'error',
+            'error': 'roster_unreadable',
+            'roster_read': False,
+            'reason': f'the {ROSTER_STEP_ID} step carried no param object',
+        }
+    try:
+        required = _split_bots(_roster_value(params.get('required_bots')), '--required-bots')
+        optional = _split_bots(_roster_value(params.get('optional_bots')), '--optional-bots')
+    except (MalformedBotFlag, AttributeError, TypeError) as exc:
+        # A roster that could not be PARSED is as unreadable as one that could not be
+        # fetched: the caller must stop rather than receive a partly-read roster.
+        return {
+            'status': 'error',
+            'error': 'roster_unreadable',
+            'roster_read': False,
+            'reason': f'the {ROSTER_STEP_ID} roster could not be parsed: {exc}',
+        }
+    return {
+        'status': 'success',
+        'roster_read': True,
+        'required_bots': required,
+        'optional_bots': optional,
+    }
+
+
+def _emit_roster_toon(payload: dict) -> None:
+    """Print the roster read, keeping an unreadable roster distinct from an empty one."""
+    emitted: dict[str, object] = {'status': payload.get('status', 'success')}
+    if emitted['status'] == 'error':
+        emitted['error'] = payload.get('error', 'roster_unreadable')
+        emitted['roster_read'] = bool(payload.get('roster_read', False))
+        emitted['reason'] = payload.get('reason', '')
+        print(serialize_toon(emitted))
+        return
+    emitted['roster_read'] = True
+    # Emitted even when empty: the empty list IS the answer for a read roster, and
+    # dropping it would make "configured nobody" indistinguishable from "not read".
+    emitted['required_bots'] = list(payload.get('required_bots') or [])
+    emitted['optional_bots'] = list(payload.get('optional_bots') or [])
+    print(serialize_toon(emitted))
+
+
+def cmd_roster(args: argparse.Namespace) -> int:
+    """Read the configured review-bot roster and emit it, failing closed on a bad read."""
+    payload = read_roster(args.plan_id)
+    _emit_roster_toon(payload)
+    return 0 if payload.get('status') == 'success' else 1
+
+
 def cmd_size_caps(args: argparse.Namespace) -> int:
     """Emit the per-reviewer structural-size-ceiling disclosure.
 
@@ -1968,8 +2156,9 @@ def _add_bot_observation_flags(sub: argparse.ArgumentParser) -> None:
             'Comma-separated bot_kind:cause pairs — the exact shape github_pr '
             'fetch_findings emits in refused_causes[], forwarded verbatim. cause is '
             'the refusal CAUSE axis (size / quota), orthogonal to rate_limit_class: '
-            'size means the diff is over a per-PR ceiling (remedy: split, accept, or '
-            'disable the reviewer for this PR — never wait), quota means a rate/budget '
+            'size means the diff is over a per-PR ceiling (remedy: split the diff, or '
+            'accept the gap under a recorded merge authorization — never wait and never '
+            'demote a required reviewer), quota means a rate/budget '
             'limit (remedy: backoff). A size cause resolves the bot to '
             'refused_structural whatever its rate_limit_class says, because a per-bot '
             'class cannot separate two causes one bot refuses under; every other cause '
@@ -2133,6 +2322,17 @@ def main(argv: list[str] | None = None) -> int:
         allow_abbrev=False,
     )
     size_caps_parser.set_defaults(func=cmd_size_caps)
+
+    roster_parser = subparsers.add_parser(
+        'roster',
+        help=(
+            'Read the configured review-bot roster, failing closed: an unreadable '
+            'roster is an error, never an empty roster'
+        ),
+        allow_abbrev=False,
+    )
+    roster_parser.add_argument('--plan-id', required=True)
+    roster_parser.set_defaults(func=cmd_roster)
 
     trigger_bot_parser = subparsers.add_parser(
         'trigger-bot',

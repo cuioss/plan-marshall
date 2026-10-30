@@ -15,7 +15,7 @@ and the step dispatched after that wait reads its own elapsed claim and consults
 again. Feeding the second consult that post-claim zero routed it to
 ``escalate_exhausted``, and the workflow
 released the claim without ever generating the event — so an ``attempt_cap`` of 1
-delivered ZERO recovery events and the default cap of 6 delivered five. The bug is
+delivered ZERO recovery events and the default cap of 10 delivered nine. The bug is
 silent by construction: every observable says the budget is spent, and the missing
 event is the last one rather than the first.
 
