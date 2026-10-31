@@ -1,0 +1,1100 @@
+---
+name: plan-marshall-workflow-integration-git
+description: Git commit workflow with conventional commits, artifact cleanup, optional push, and consolidated branch/worktree verbs (force-push, branch-sync-state parity, worktree lifecycle)
+compatibility: Adapted from plan-marshall marketplace (Claude Code native)
+metadata:
+  bundle: plan-marshall
+  skill: workflow-integration-git
+---
+
+# Git Workflow Skill
+
+Provides git commit workflow following conventional commits specification. Includes artifact cleanup, commit formatting, and optional push.
+
+## Enforcement
+
+**Execution mode**: Execute git commit workflow steps sequentially, delegating to script for artifact cleanup and commit formatting.
+
+**Prohibited actions:**
+- Never commit secrets, credentials, or `.env` files
+- Never skip artifact cleanup step before committing (LLM must call detect-artifacts and act on results — the script detects but does not delete)
+- Never run raw `git <subcommand>` that relies on the current working directory.
+
+**Constraints:**
+- Commit messages must follow conventional commits format: `<type>(<scope>): <subject>` — see `standards/git-commit-standards.md` for types, rules, and examples
+- Push only when explicitly requested via parameters
+- All git invocations MUST use `git -C {worktree_path} <subcommand>`. `{worktree_path}` is resolved from `status.metadata.worktree_path` in Step 0 of the Commit Changes workflow. See `standards/worktree-handling.md` for the worktree-specific application of this rule.
+- Temp files MUST be written under `.plan/temp/` per project policy — never `/tmp/`.
+
+## Exit-code convention for every script call
+
+The exit-code contract for every `python3 .plan/execute-script.py` call in this document — of EVERY notation, not only `manage-*` — is stated once in [`tools-script-executor/standards/exit-code-convention.md`](../tools-script-executor/standards/exit-code-convention.md); it is not restated here.
+
+## Parameters
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `message` | string | no | auto-generate from diff | Custom commit message |
+| `push` | bool | no | false | Push to remote after committing |
+
+## Prerequisites
+
+No external `Skill:` dependencies. Script imports `triage_helpers` from `ref-toon-format` at runtime (see `ref-workflow-architecture` → "Shared Infrastructure").
+
+## Architecture
+
+```text
+workflow-integration-git (git commit workflow)
+  └─> triage_helpers (ref-toon-format) — error handling, TOON serialization
+```
+
+## Usage Examples
+
+```bash
+# Format a commit message
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow format-commit \
+  --type feat --scope auth --subject "add login flow"
+
+# Analyze a worktree diff for commit suggestions
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow analyze-diff --plan-id {plan_id}
+# or with explicit path override:
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow analyze-diff --project-dir {worktree_path}
+
+# Detect artifacts before committing
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow detect-artifacts
+```
+
+## Workflow: Commit Changes
+
+**Purpose:** Commit all uncommitted changes following Git Commit Standards.
+
+**Input Parameters:**
+- **message** (optional): Custom commit message
+- **push** (optional): Push after committing
+- **step** (optional): Finalize step id producing this commit — passed through to the gate, which sanctions a source commit only when the id is in the plan's composed phase-6 manifest.
+
+### Steps
+
+**Step 0: Resolve Worktree Path**
+
+Read the active worktree path from plan status metadata. Every subsequent git call binds to this path via `git -C`.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \
+  --plan-id {plan_id} --get --field worktree_path
+```
+
+Use the returned `value` as `{worktree_path}` throughout the rest of the workflow. If the field is absent (non-plan context), use the repository root resolved by the caller and still prefix every git call with `git -C <root>` — never rely on the agent's cwd.
+
+**Step 1: Verify Commit Standards**
+Use the quick reference above. For edge cases (breaking changes, multi-footer, scope guidelines), read `standards/git-commit-standards.md`.
+
+**Step 2: Check for Uncommitted Changes**
+```bash
+git -C {worktree_path} status --porcelain
+```
+
+If no changes → Report "No changes to commit"
+
+**Step 3: Clean Artifacts**
+
+Detect artifacts using the script:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow detect-artifacts [--root <repo-root>]
+```
+
+The script returns `safe` (auto-deletable) and `uncertain` (needs confirmation) lists. Pattern definitions are in `standards/artifact-patterns.json`. The script respects `.gitignore` by default — gitignored files, and every path beneath a gitignored directory, are excluded since they cannot be accidentally committed. A **nested** git repository or worktree below the scan root (a submodule, or a running plan's worktree encountered while scanning the surrounding repository) is never traversed — its contents are a separate checkout, are not committable here, and so never appear in `safe` or `uncertain`. A path whose **first segment** is the plan-state directory (`.plan/`) is excluded **unconditionally** — before, and independent of, the ignore lookup. That exclusion is what keeps a plan's finalize from offering the run's own live artifacts (its in-flight `logs/work.log` and build caches) for deletion when the plan's worktree is itself the scan root, which is the normal phase-5-onward state. It is stated as unconditional rather than credited to `.gitignore` because each of `--no-gitignore`, a `.gitignore` carrying no `.plan` rule, and an empty-but-successful ignore set defeats an ignore-based exclusion. When that worktree is nested *beneath* the scan root the never-traversed rule above covers it instead. Tracked files never appear in `safe`; they are always routed to `uncertain` so the caller must confirm before deletion. For safe artifacts, delete them. For uncertain artifacts, ask user via `ask_question`.
+
+**An ignore set that cannot be determined is an error, not a result.** Under default flags, when the ignore oracle cannot be read at all the verb returns `status: error` (`error_code: FETCH_FAILURE`, carrying the scan `root`) and offers nothing — no `safe` list. The output contract tells every caller to branch on `status`, so a success payload carrying `gitignore_resolved: false` would be indistinguishable from a scan that genuinely resolved a clean tree. `--no-gitignore` is the supported way to scan a tree that has no readable ignore set (a non-repo root), and it is safe to do so because the plan-state exclusion above is unconditional and does not depend on the ignore mechanism. One consequence is worth stating rather than leaving to be discovered: on a `detect-artifacts` **success** payload `gitignore_resolved` can now only ever be `true`.
+
+`tracked_resolved` is different and **does still degrade**. When it is `false` the trackedness oracle could not be read, `safe` is empty by construction, and every match is routed to `uncertain`. A caller must not read that empty `safe` as "nothing to clean" — it means "nothing could be established as safe".
+
+**Step 4: Generate Commit Message**
+
+If custom message provided:
+- Validate format
+- Use provided message
+
+If no message:
+- Capture and analyze the diff in a single call (the script runs `git -C {worktree_path} diff [--cached]` internally — no temp file required):
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow analyze-diff \
+    --plan-id {plan_id} [--cached]
+  # or with explicit path override:
+  python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow analyze-diff \
+    --project-dir {worktree_path} [--cached]
+  ```
+- The script suggests `type` and `scope` but NOT the subject line — compose the subject yourself based on the diff content and the detected type
+- If multiple change types are present, use the highest priority: fix > feat > perf > refactor > docs > style > test > chore > ci
+- **Scope caveat**: The script infers scope from the first source file's path structure. For changes spanning multiple modules, the detected scope may not be representative — omit scope for cross-cutting changes.
+
+**Step 5: Stage and Commit**
+
+Stage specific files relevant to the logical change (use `git -C {worktree_path} status --porcelain` to review):
+
+```bash
+# ONE Bash call — stage files
+git -C {worktree_path} add <specific-files>
+```
+
+Author the commit message via the `Write` tool to a `.plan/temp/` file (the path is permission-pre-approved via `Edit(.plan/**)` and lives inside the workspace — never `/tmp/`). The message MUST end with the project's `Co-Authored-By` trailer. The identity is **fixed**, not target-aware: it names the system that produced the commit, never the assistant or vendor behind it, and it is the same on every target. BOTH the `Write` and the `git commit -F` MUST use the worktree-absolute `{worktree_path}/.plan/temp/...` path: the harness `Write` tool resolves a relative path against the main checkout while `git -C {worktree_path}` resolves it against the worktree, so a relative-path round-trip would reference two different files and the commit could read a stale message. `{worktree_path}` is already resolved in Step 0, so no new resolution step is required.
+
+```text
+Write(file_path="{worktree_path}/.plan/temp/{plan_id}-commit-msg.txt", content="{commit_message}\n\n{coauthor_trailer}\n")
+```
+
+`{coauthor_trailer}` is resolved, not hardcoded — one Bash call, before the `Write`:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config commit-trailer get
+```
+
+Use the returned `trailer` field verbatim. The `name_source` / `email_source` fields say whether each half came from the project's configuration or from the default; neither changes what you write, both are what makes an unexpected identity diagnosable.
+
+When the executor is unavailable — a fresh clone, or a cloud session, where the git-ignored run-configuration.json does not exist — the resolver's own default stands, and it is written directly:
+
+```text
+Co-Authored-By: plan-marshall <noreply@cuioss.de>
+```
+
+Append no other attribution — in particular no `Generated with …` footer. See `plan-marshall:manage-run-config` § "commit-trailer get / set" for the schema and the per-half fallback.
+
+Commit through the gate-bearing `commit` verb — ONE Bash call. It judges the STAGED commit and refuses a `6-finalize` source commit without a sanction (an open loop-back fix task, a review-rubric section-6 record, or a `--step` naming a step id of the plan's composed phase-6 manifest), exiting non-zero on a refusal:
+
+```bash
+# ONE Bash call — commit through the gate (message read from the worktree-absolute file)
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow commit \
+  --project-dir {worktree_path} \
+  --message-file {worktree_path}/.plan/temp/{plan_id}-commit-msg.txt \
+  [--step {step}]
+```
+
+A **raw** `git commit` is refused by the enforcement guard in phase `6-finalize` (both harnesses) precisely so this verb is the single commit path; do not bypass it. The `git commit -m "$(cat <<'EOF' … EOF)"` form is forbidden — it combines `$(…)` substitution with a heredoc, both of which trip the Bash safety harness. See `persona-plan-marshall-agent/standards/tool-usage-patterns.md` for the chain-shape and Bash-write rules.
+
+**Step 6: Push (Optional)**
+
+If `push` parameter, push through the gated verb — never a bare `git push`:
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow push \
+  --plan-id {plan_id} --project-dir {worktree_path}
+```
+
+Both selectors are passed on purpose: `--plan-id` resolves the plan's own working tree and is what makes the gate apply (the verb also derives the plan id from the path, but only a plan-worktree path carries one). The verb reads the plan's `6-finalize` record for the pre-push quality gate and refuses a HEAD the gate did not validate (`head_not_validated_by_gate`). This is the path the finalize push step takes when the tree is already clean — the case a raw `git push` served before — so the barrier covers it too.
+
+### Output
+
+```toon
+status: success
+commit_hash: abc123
+commit_message: "feat(http): add retry configuration"
+files_changed: 5
+artifacts_cleaned: 2
+pushed: true
+```
+
+## Scripts
+
+**Script**: `plan-marshall:workflow-integration-git:git-workflow`
+
+| Command | Parameters | Description |
+|---------|------------|-------------|
+| `format-commit` | `--type --subject [--scope] [--body] [--breaking] [--footer]` | Format commit message (Co-Authored-By NOT appended — caller adds it at `git commit` time per project convention) |
+| `analyze-diff` | `(--plan-id \| --project-dir) [--cached]` | Capture and analyze the worktree diff for commit suggestions. Resolves working tree path from plan metadata when `--plan-id` is used. |
+| `detect-artifacts` | `[--root]` | Scan for committable artifacts |
+| `force-push-with-lease` | `(--plan-id \| --project-dir --branch)` | Force-push feature branch to origin with `--force-with-lease` guard (post-rebase). Resolves branch and worktree path from plan metadata when `--plan-id` is used. Refuses (`error_type: head_not_validated_by_gate`) when the HEAD being pushed is not the HEAD the plan's pre-push quality gate recorded. |
+| `push` | `[--plan-id] [--project-dir]` | Push the current branch through the pre-push gate-head barrier — the push path the finalize push step uses when the settled tree is already clean. Refuses (`error: head_not_validated_by_gate`) when the HEAD being pushed differs from the `pre-push-quality-gate` record; a plan with no record is not blocked. |
+| `switch-and-pull` | `(--plan-id \| --project-dir) --base` | Checkout `--base` on the main checkout and pull from origin. Under `--plan-id` the plan id is a **validity gate, not a path source** — the target is the MAIN checkout root, resolved by `git rev-parse --git-common-dir` (`marketplace_paths.main_checkout_root`), not read from plan metadata and not the cwd-relative checkout. Main-anchoring is what makes the verb work from phase-5 onward, where cwd is pinned to the plan's worktree: a cwd-relative target would aim `git checkout` at the worktree and refuse with `main is already used by worktree` at exactly the moment main is stale. A failure to resolve the common dir is reported as `error_type: project_dir_not_a_git_repo`. `--project-dir` remains the explicit override for callers that already know the path. |
+| `prune-local-and-remote-ref` | `(--plan-id \| --project-dir --head) [--mode local_and_remote\|local_only]` | Delete local feature branch and optionally prune the remote-tracking ref after merge. Internal `show-ref` guard skips ref deletion when already absent. Default mode `local_and_remote`; use `local_only` in local-only plans. |
+| `branch-sync-state` | `--plan-id` | Report push parity of the plan's feature branch vs its `origin/{branch}` tracking ref: `ahead` \| `synced` \| `remote_absent_landed` \| `remote_absent_unverified` (a missing ref is disambiguated so a merged-and-deleted branch is never re-pushed), plus the `barrier_action` (`re-fire` \| `skip`) the push barrier's consumer branches on. Pure read-only comparison (`git rev-parse HEAD` vs `git rev-parse origin/{branch}`), no fetch. Resolves branch from `metadata.worktree_branch` and the tree via the canonical worktree-resolution channel. |
+| `worktree-path` | `--plan-id` | Resolve the persisted worktree path via `manage-status get-worktree-path` |
+| `worktree-create` | `--plan-id --branch [--base]` | Run `git worktree add`, project-state bookkeeping (`metadata.use_worktree`/`worktree_path`/`worktree_branch`), and produce the worktree's own executor (`executor_in_worktree`) |
+| `worktree-executor-refresh` | `--plan-id` | Regenerate the worktree's executor through the production seam, reporting `executor_regenerated` and its detail (after a plan changes the script set) |
+| `worktree-remove` | `--plan-id [--force]` | Remove the worktree first, then delete the branch ref |
+| `worktree-list` | _(none)_ | List plans whose `status.metadata.use_worktree == true` |
+| `locate-plan-checkout` | `--plan-id` | Report where a plan's directory currently lives (`current` \| `worktree` \| `not_found`). The `worktree` probe resolves by two paths: the canonical `_resolve_worktree_path_for_plan` (manage-status) channel for not-yet-moved plans, then a structural `get_worktree_root() / {plan_id}` filesystem probe for the moved-in-from-main case (phase-5+, ADR-002). Reuses the uniform cwd walk-up for the current-checkout probe — no inline `git worktree list --porcelain` re-parsing. Used by the cross-session re-entry preflight at the `/plan-marshall` entry sites. |
+| `baseline-reconcile` | `--plan-id [--base-branch] [--skip-fetch] [--no-emit]` | Mechanical baseline reconciliation for phase-2-refine Step 3d. Resolves the worktree path (from `status.metadata.worktree_path`), fetches `origin/{base_branch}`, lists upstream commits since `merge-base(HEAD, origin/{base_branch})` (recomputed per call, never read from a stored SHA), and runs `git merge-tree` to detect potential conflicts. **Non-mutating on every classification — it never moves the branch ref, never performs a real merge, and never modifies the working tree**, on any of the three classification paths; a `git merge-tree --write-tree` probe leaves HEAD where it found it, and the verb re-reads HEAD after the probe and returns `error: probe_mutated_head` rather than a verdict derived from a tree it moved. "No working-tree mutation" alone was too weak a claim, because a branch-ref move does not violate it. The verb is **not** side-effect-free, and the one exception is stated rather than left to be discovered: on the stale-base path — the configured `base_branch` no longer resolves on origin — it rewrites `base_branch` in `references.json` before the fetch, ungated by `--no-emit` (which suppresses Q-Gate findings only), and reports that write back as `base_branch_updated` / `original_base_branch`. Each conflicted file becomes a Q-Gate finding under `--source qgate` so the phase-2-refine iterate-to-confidence loop addresses the drift. The LLM-judgement classification step (which upstream commit warrants scope adjustment) stays bundled in the existing phase-2-refine dispatch. `--skip-fetch` bypasses the network round-trip for tests / replay scenarios. |
+
+**Script**: `plan-marshall:workflow-integration-git:prepare_execute`
+
+| Command | Parameters | Description |
+|---------|------------|-------------|
+| `prepare` | `--plan-id [--branch] [--base]` | Atomic phase-5 move-in: materializes the worktree (delegating to `worktree-create`), then MOVES the plan directory (`.plan/local/plans/{plan_id}`) from main into its worktree-resident location and GENERATES a worktree-bound executor (`.plan/execute-script.py`) into the worktree — the executor is per-tree derived state, NOT moved; main's copy stays present and untouched. Returns the canonical `worktree_path`. Atomic-with-rollback (a partial-move failure leaves plan state WHOLLY on main), idempotent (already-moved-in → no-op success), and never changes the caller's cwd — the phase-5 orchestrator pins its own cwd to the returned `worktree_path`. `--branch` is required only on first run (when the worktree has not yet been materialized); on re-entry it is ignored. See ADR-002. |
+
+**Script**: `plan-marshall:manage-locks:merge_lock`
+
+| Command | Parameters | Description |
+|---------|------------|-------------|
+| `acquire` | `--plan-id [--wait-seconds] [--interval-seconds] [--no-title-token]` | Acquire the single main-anchored merge lock (`.plan/local/merge.lock` on the MAIN checkout, recording the holder `plan-id`) through a FIFO admission queue: only the FIFO-front plan attempts the `O_EXCL` create, so exactly one holder wins. By default the call is one non-waiting attempt that returns `admission: blocked` for the consumer to re-poll; `--wait-seconds` repeats whole non-waiting attempts within one bounded call (clamped below the host's per-call ceiling) and adds `waited_seconds` / `timed_out`. A lock whose recorded holder no longer corresponds to a live plan is reclaimed (re-verified atomically). See `plan-marshall:manage-locks` Canonical invocations → `merge_lock — acquire` and ADR-002. |
+| `release` | `--plan-id` | Remove the merge lock when this caller is the recorded holder, and dequeue `--plan-id` from the FIFO admission queue in every case. Idempotent: releasing a lock that is already free, or held by a foreign holder, leaves the lock file intact and is a no-op success. |
+
+**Script**: `plan-marshall:workflow-integration-git:integrate_into_main`
+
+| Command | Parameters | Description |
+|---------|------------|-------------|
+| `integrate` | `--plan-id` | Atomic finalize move-back: in ONE call it ACQUIRES the cooperative merge lock (delegating to `merge_lock`, with a bounded admission wait), FOLDS the plan's own global logs into the plan dir, MOVES the plan directory back from the worktree to main, and RELEASES the lock it took. An acquire that takes no lock (blocked on expiry, an error, or a raise) is followed by a dequeue-only cleanup that removes the plan's FIFO entry and never touches `merge.lock`, so a lock a concurrent same-plan call created after the refused attempt survives; `dequeued` reports whether the cleanup landed. Once a non-reentrant acquire succeeded, the lock is released on every exit path after it — success, move-back rollback, a log-fold failure, and an unexpected exception, which becomes an error payload after the release. The release outcome is checked: a release that errors, raises, or does not report `action: released` yields an error payload with `lock_released: false` and `release_failure`, never plain success. A lock the same plan already held (reentrant acquire, `action: already_held`) is left to its holder. Does NOT regenerate the executor — on-main executor regeneration is the project-level `finalize-step-sync-plugin-cache` step's responsibility (meta-project-only), run after the cache sync. Runs while the worktree is STILL PRESENT (branch cleanup removes the worktree AFTER this returns). Atomic-with-rollback (a partial move-back rolls the plan dir back into the worktree and releases the lock only when this call took it), idempotent (already-integrated → no-op success). Does NOT change the caller's cwd and does NOT remove the worktree — the finalize orchestrator returns its own cwd to main after the call. See ADR-002. |
+
+The `worktree-*` subcommands implement the §9 two-state contract: `--plan-id` is mandatory (these verbs operate on a worktree), and path resolution flows through `manage-status get-worktree-path` so a single plan-id is sufficient — no `--project-dir`, no filesystem layout re-derivation. `worktree-create` is the only verb that materializes a path on disk; it computes `get_worktree_root() / <plan-id>`, runs `git worktree add`, and writes the resolved path back to status metadata so subsequent verbs resolve through the canonical channel. The worktree root also holds the reserved `_orchestrator` shared ledger worktree, which is not a plan worktree: no `worktree-*` verb creates, lists, or removes it — `worktree-create` and `worktree-remove` each refuse the reserved key with `error: reserved_worktree_name` before any path resolution or git call (see `standards/worktree-handling.md`).
+
+**`merge_lock` is the single main-anchored resolver exception (ADR-002).** Every other path resolution in the codebase is uniform cwd-relative (phases 1-4 resolve to main because cwd is main; phase-5+ resolve to the pinned worktree because cwd is pinned there). `merge_lock` — and ONLY `merge_lock` — always resolves `.plan/local/merge.lock` against the MAIN checkout regardless of caller cwd, because cross-session coordination is inherently main-scoped: phase-5+ finalizes each run with cwd pinned to their own worktree, yet they must all contend for one shared lock. It MUST remain the only main-anchored resolver so the codebase cannot regrow a pervasive git-common-dir-style resolution hack. See ADR-002 and `tools-script-executor/standards/cwd-policy.md` (D6).
+
+### format-commit
+
+Format commit message following conventional commits.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow format-commit \
+  --type feat \
+  --scope http \
+  --subject "add retry config" \
+  [--body "Extended description..."] \
+  [--breaking "API changed"] \
+  [--footer "Fixes #123"]
+```
+
+**Parameters**:
+- `--type` (required): Commit type (feat, fix, docs, style, refactor, perf, test, chore)
+- `--subject` (required): Commit subject line
+- `--scope`: Optional component scope
+- `--body`: Optional commit body
+- `--breaking`: Optional breaking change description
+- `--footer`: Optional additional footer
+
+**Output** (TOON):
+```toon
+type: feat
+scope: http
+subject: add retry config
+formatted_message: "feat(http): add retry config"
+validation:
+  valid: true
+  warnings[0]:
+status: success
+```
+
+### analyze-diff
+
+Capture the worktree diff via `git -C {worktree_path} diff [--cached]` and analyze it to suggest commit message parameters. The script captures the diff in-process; callers no longer need to materialize a temp file.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow analyze-diff \
+  --plan-id PLAN_ID [--cached]
+# or with explicit path override:
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow analyze-diff \
+  --project-dir ABS_PATH [--cached]
+```
+
+**Parameters**:
+- `--plan-id`: Plan identifier — resolves the worktree path via `manage-status get-worktree-path` (mutually exclusive with `--project-dir`).
+- `--project-dir`: Explicit worktree path (escape hatch; mutually exclusive with `--plan-id`).
+- `--cached`: Use the staged diff (`git diff --cached`) instead of the unstaged working-tree diff.
+
+**Output** (TOON):
+```toon
+mode: analysis
+suggestions:
+  type: feat
+  scope: auth
+  detected_changes[1]:
+    - Significant new code added
+  files_changed[1]:
+    - src/main/java/auth/Login.java
+status: success
+```
+
+### detect-artifacts
+
+Scan a directory for build artifacts and temporary files that should not be committed.
+Files already covered by `.gitignore` are excluded by default since they cannot be accidentally committed; a gitignored directory is excluded in full (every path beneath it), not just its top-level entry. A nested git repository or worktree below the scan root (a submodule, a linked worktree — e.g. a running plan's worktree seen while scanning the surrounding repository) is never traversed — its contents are a separate checkout and are not committable here.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow detect-artifacts \
+  [--root /path/to/repo] [--no-gitignore]
+```
+
+**Parameters**:
+- `--root`: Root directory to scan (default: current working directory)
+- `--no-gitignore`: Include gitignored files in results (default: respect .gitignore), and scan a tree whose ignore set cannot be read — under default flags that is an error, not a result (see § "Clean Artifacts"). The **nested git repository/worktree skip is unconditional** and is unaffected by this flag: those contents belong to a separate checkout either way.
+
+**Output** (TOON):
+```toon
+root: /path/to/repo
+safe[2]:
+  - src/main/java/Example.class
+  - .DS_Store
+uncertain[1]:
+  - target/classes/Config.class
+total: 3
+status: success
+```
+
+### force-push-with-lease
+
+Push the plan's feature branch to `origin` using `--force-with-lease`, detecting concurrent remote pushes instead of silently overwriting them. The primary path (`--plan-id`) resolves the worktree path and branch name from plan metadata; the escape hatch (`--project-dir` + `--branch`) accepts an explicit path for post-worktree-removal or non-plan contexts.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow force-push-with-lease \
+  --plan-id PLAN_ID
+# or with explicit path override:
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow force-push-with-lease \
+  --project-dir ABS_PATH --branch BRANCH
+```
+
+**Parameters**:
+- `--plan-id`: Plan identifier — resolves worktree path and branch name via `manage-status get-worktree-path` (mutually exclusive with `--project-dir`).
+- `--project-dir`: Explicit worktree path (escape hatch; mutually exclusive with `--plan-id`; requires `--branch`).
+- `--branch`: Branch name to push (only with `--project-dir`; resolved from plan metadata when `--plan-id` is used).
+
+**Output** (TOON, success):
+```toon
+status: success
+operation: force-push-with-lease
+plan_id: EXAMPLE-PLAN
+branch: feature/EXAMPLE-PLAN
+remote: origin
+remote_sha: abc123def456
+```
+
+**Typed errors**:
+
+| `error_type` | Cause |
+|-------------|-------|
+| `status_module_unavailable` | `file_ops` could not be imported — an environment problem, not a missing plan |
+| `worktree_resolution_failed` | Worktree resolution raised — executor missing, python3 absent, manage-status timed out or exited non-zero, metadata corrupt, or `use_worktree=true` with an empty persisted path. Deliberately NOT `plan_not_found`: the plan may well exist |
+| `worktree_not_materialized` | `worktree_path` or `worktree_branch` absent from manage-status response |
+| `missing_required_arg` | Neither `--plan-id` nor `--project-dir` supplied; or `--project-dir` without `--branch` |
+| `project_dir_not_a_git_repo` | `--project-dir` path is not a git working tree |
+| `branch_not_found` | Branch does not exist locally, or branch is `main`/`master` (force-push to base branch is refused) |
+| `push_rejected_non_fast_forward` | `--force-with-lease` lease violation: remote moved since last fetch |
+| `lease_check_failed` | Force-with-lease check could not be evaluated |
+| `push_failed` | Push exited non-zero for another reason |
+
+### switch-and-pull
+
+Checkout `--base` on the project directory and then pull from `origin` using the explicit form `git pull origin {base_branch}` (never the implicit plain `git pull`). Designed for post-merge cleanup; the primary path (`--plan-id`) derives the main checkout root from `marketplace_paths`; the escape hatch (`--project-dir`) accepts an explicit path.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow switch-and-pull \
+  --plan-id PLAN_ID --base BASE_BRANCH
+# or with explicit path override:
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow switch-and-pull \
+  --project-dir ABS_PATH --base BASE_BRANCH
+```
+
+**Parameters**:
+- `--plan-id`: Plan identifier — resolves the main checkout root via `marketplace_paths` (mutually exclusive with `--project-dir`).
+- `--project-dir`: Explicit main checkout path (escape hatch; mutually exclusive with `--plan-id`).
+- `--base` (required): Base branch to check out and pull (consumer-configured via `project.default_base_branch`; per-plan override via `references.base_branch`).
+
+**Output** (TOON, success):
+```toon
+status: success
+operation: switch-and-pull
+plan_id: EXAMPLE-PLAN
+base_branch: main
+pre_sha: abc123
+post_sha: def456
+commits_pulled: 3
+```
+
+**Typed errors**:
+
+| `error_type` | Cause |
+|-------------|-------|
+| `plan_not_found` | `--plan-id` supplied but executor missing, python3 absent, manage-status timed out, plan resolution failed, or `marketplace_paths` unavailable |
+| `missing_required_arg` | Neither `--plan-id` nor `--project-dir` supplied |
+| `project_dir_not_a_git_repo` | `--project-dir` path is not a git working tree |
+| `branch_not_found` | `--base` branch not found on remote (`origin/{base}` does not exist) |
+| `merge_conflict` | Checkout failed due to uncommitted changes in the current working tree |
+| `pull_failed` | `git checkout` or `git pull origin {base}` exited non-zero for another reason |
+
+### prune-local-and-remote-ref
+
+Delete the local feature branch and (in `local_and_remote` mode) the remote-tracking ref `refs/remotes/origin/{head_branch}` after a PR merge. An internal `show-ref` guard skips remote-tracking ref deletion when the ref is already absent.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow prune-local-and-remote-ref \
+  --plan-id PLAN_ID [--mode local_and_remote|local_only]
+# or with explicit path override:
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow prune-local-and-remote-ref \
+  --project-dir ABS_PATH --head HEAD_BRANCH [--mode local_and_remote|local_only]
+```
+
+**Parameters**:
+- `--plan-id`: Plan identifier — resolves main checkout root and head branch via `manage-status get-worktree-path` (mutually exclusive with `--project-dir`).
+- `--project-dir`: Explicit main checkout path (escape hatch; mutually exclusive with `--plan-id`; requires `--head`).
+- `--head`: Feature branch name to delete (only with `--project-dir`; resolved from plan metadata when `--plan-id` is used).
+- `--mode`: Deletion scope: `local_and_remote` (default) deletes both the local branch and remote-tracking ref; `local_only` skips the remote-tracking ref operation.
+
+**Output** (TOON, success — full deletion):
+```toon
+status: success
+operation: prune-local-and-remote-ref
+plan_id: EXAMPLE-PLAN
+head_branch: feature/EXAMPLE-PLAN
+mode: local_and_remote
+local_deleted: true
+remote_ref_deleted: true
+```
+
+**Output** (TOON, partial — remote-tracking ref was already absent):
+```toon
+status: partial
+operation: prune-local-and-remote-ref
+plan_id: EXAMPLE-PLAN
+head_branch: feature/EXAMPLE-PLAN
+mode: local_and_remote
+local_deleted: true
+remote_ref_deleted: false
+remote_ref_warning: "remote-tracking ref refs/remotes/origin/feature/EXAMPLE-PLAN was already absent — no-op"
+```
+
+**Typed errors**:
+
+| `error_type` | Cause |
+|-------------|-------|
+| `plan_not_found` | `--plan-id` supplied but executor missing, python3 absent, manage-status timed out, plan resolution failed, or `marketplace_paths` unavailable |
+| `worktree_not_materialized` | `worktree_branch` absent from manage-status response |
+| `missing_required_arg` | Neither `--plan-id` nor `--project-dir` supplied; or `--project-dir` without `--head` |
+| `project_dir_not_a_git_repo` | `--project-dir` path is not a git working tree |
+| `branch_delete_failed` | Refusing to delete the currently checked-out branch; or `git branch -D` exited non-zero |
+| `unexpected_ref_error` | `git update-ref -d` failed after `show-ref` confirmed the ref exists |
+
+### branch-sync-state
+
+Report the push-parity state of the plan's feature branch versus its `origin/{branch}` tracking ref. Pure read-only comparison — no fetch, no working-tree mutation. The branch is resolved from `status.metadata.worktree_branch` and the working tree via the canonical worktree-resolution channel (`manage-status get-worktree-path`). The verb compares `git rev-parse HEAD` against `git rev-parse origin/{branch}`. A **missing** origin tracking ref is ambiguous — a never-pushed branch and a merged-and-deleted branch both lack it, yet need OPPOSITE remedies (push vs. do-not-resurrect) — so the verb **disambiguates rather than collapsing both into a single "never pushed" answer** (see States below). Consumed by the phase-6-finalize resumable re-entry check to make the push barrier's skip/re-fire decision parity-driven rather than done-record-driven.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow branch-sync-state \
+  --plan-id EXAMPLE-PLAN
+```
+
+**Parameters**:
+- `--plan-id` (required): Plan identifier (mandatory — resolves the branch from `status.metadata.worktree_branch` and the tree via the canonical worktree-resolution channel).
+
+**States**:
+- `ahead` — `origin/{branch}` resolves but local HEAD differs from it (commits not yet pushed). The only state the push barrier re-fires on.
+- `synced` — local HEAD equals `origin/{branch}`.
+- `remote_absent_landed` — `origin/{branch}` does not resolve AND HEAD is an ancestor of `origin/{base_branch}` (the branch's work already landed; it merged and the remote branch was deleted). `remote_sha` is omitted; `base_branch` names the ref used to prove containment. The push barrier must NOT re-fire — re-pushing would resurrect a landed branch.
+- `remote_absent_unverified` — `origin/{branch}` does not resolve AND containment could not be proven (no resolvable base ref, or HEAD is not an ancestor — which a squash merge also produces). Never-pushed and squash-merged-and-deleted are indistinguishable from local state alone, so the verb DECLINES to assert "safe to re-push". `remote_sha` is omitted; `base_branch` carries the base checked (or `null`). The push barrier declines to re-fire on this state.
+
+**Barrier action**: every **successful** payload also carries `barrier_action` — `re-fire` on `ahead`,
+`skip` on every other state, including one this verb learns to emit later. The push barrier's consumer
+branches on **this field**, not on the `state` token, so the state→action mapping lives in one place
+(`push_barrier_action`) with a test over it instead of being re-derived in each consumer's prose. An
+**error** payload carries no `barrier_action`: an unresolvable state is not a verdict to map, and the
+consumer's own `status: error` branch (fail toward pushing) governs it. The asymmetry — only `ahead`
+re-fires — is deliberate, because re-firing is a PUSH: an over-broad re-fire resurrects a landed
+branch, while an over-broad skip leaves a genuinely-unpushed branch for the operator to notice.
+
+**Output** (TOON, remote ref present):
+```toon
+status: success
+plan_id: EXAMPLE-PLAN
+branch: feature/EXAMPLE-PLAN
+state: ahead
+barrier_action: re-fire
+head_sha: abc123def456
+remote_sha: 789fed654cba
+```
+
+**Output** (TOON, tracking ref absent, cause unverified):
+```toon
+status: success
+plan_id: EXAMPLE-PLAN
+branch: feature/EXAMPLE-PLAN
+state: remote_absent_unverified
+barrier_action: skip
+head_sha: abc123def456
+base_branch: main
+```
+
+**Typed errors**:
+
+| `error_type` | Cause |
+|-------------|-------|
+| `plan_resolution_failed` | Worktree path unresolvable — executor missing, manage-status failed, or `use_worktree` false / `worktree_path` unset |
+| `worktree_not_materialized` | `worktree_branch` absent from status.metadata |
+| `head_unresolvable` | `git rev-parse HEAD` failed in the resolved tree |
+
+### worktree-path
+
+Resolve the persisted worktree path for a plan via `manage-status get-worktree-path`. Returns the absolute path plus an `exists` flag indicating whether the directory is currently materialized. The path is the value of `status.metadata.worktree_path` — populated at phase-5 materialization by `worktree-create` / `prepare` (phases 1-4 record only `use_worktree`, not the path).
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow worktree-path \
+  --plan-id EXAMPLE-PLAN
+```
+
+**Parameters**:
+- `--plan-id` (required): Plan identifier. Absence is rejected with `error: plan_resolution_failed` — the worktree subcommands operate on a worktree, so a plan id is mandatory.
+
+**Output** (TOON):
+```toon
+status: success
+plan_id: EXAMPLE-PLAN
+worktree_path: /repo/.plan/local/worktrees/EXAMPLE-PLAN
+exists: true
+```
+
+### worktree-create
+
+Run `git worktree add <resolved-path> <branch>` against the main checkout, materialize a REAL `.plan/local`, produce the worktree's own executor, best-effort bootstrap pyprojectx, and persist the resolved path/branch via `manage-status metadata --set` so subsequent verbs can resolve through the canonical channel. The path is computed from `get_worktree_root() / <plan-id>`.
+
+**The executor is produced here, not only at the phase-5 move-in.** A routed build re-runs the worktree's own `.plan/execute-script.py`, and a plan whose lane text calls a verb it introduced in its branch needs that slot to resolve the call — so an absent slot costs every build its routed path and the plan its own new verbs. Production goes through the same seam the move-in uses (`prepare_execute`'s generate with `--marketplace-root {worktree}`, then the copy-from-main fallback), with the verdict taken from the file on disk. It is non-fatal: a worktree that cannot get an executor is still a usable worktree.
+
+A `present` slot is not a promise about its CONTENT: the copy-from-main fallback carries main's embedded surface, so a verb the worktree's branch introduces still needs `worktree-executor-refresh`.
+
+It runs for **every** plan, not behind a lane-only flag: the executor is per-tree derived state every worktree consumer needs, generation is idempotent and non-fatal, and a flag would add a second path a future caller can forget — the defect class this closes. The phase-5 move-in still generates its own copy, so the lifecycle's outcome is unchanged either way.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow worktree-create \
+  --plan-id EXAMPLE-PLAN --branch feature/EXAMPLE-PLAN [--base {base_branch}]
+```
+
+**Parameters**:
+- `--plan-id` (required): Plan identifier (mandatory).
+- `--branch` (required): Feature branch name to create.
+- `--base`: Base ref for the new branch (default: current HEAD).
+
+**Output** (TOON):
+```toon
+status: success
+plan_id: EXAMPLE-PLAN
+worktree_path: /repo/.plan/local/worktrees/EXAMPLE-PLAN
+branch: feature/EXAMPLE-PLAN
+plan_symlink: /repo/.plan/local/worktrees/EXAMPLE-PLAN/.plan
+bootstrap: ok
+executor_in_worktree: present
+```
+
+`executor_in_worktree` is `present` only when the slot holds a non-empty, non-symlink file. When it is `absent`, `executor_reason` names which mechanism was tried and why neither produced one.
+
+### worktree-executor-refresh
+
+Regenerate the worktree's executor through the same production seam, for the case `worktree-create` cannot cover: a plan that adds, removes or renames a script verb in its own branch. The executor embeds the script map and the argparse surface it derived when the worktree was created, so a verb the branch introduces is refused as `unknown_verb` until that surface is rebuilt. The rebuild must not be a direct interpreter call to `generate_executor.py` — this verb is the sanctioned route.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow worktree-executor-refresh \
+  --plan-id EXAMPLE-PLAN
+```
+
+**Output** (TOON):
+```toon
+status: success
+plan_id: EXAMPLE-PLAN
+worktree: /repo/.plan/local/worktrees/EXAMPLE-PLAN
+executor_path: /repo/.plan/local/worktrees/EXAMPLE-PLAN/.plan/execute-script.py
+executor_in_worktree: present
+executor_regenerated: true
+executor_detail: worktree executor generated at /repo/.plan/local/worktrees/EXAMPLE-PLAN/.plan/execute-script.py
+```
+
+`executor_regenerated` is taken from the file on disk, never from generation intent, and a `false` carries the reason in `executor_detail`. **The refresh never falls back to copying main's executor**: that would put main's older surface back over the branch's — the staleness this verb removes — so a generation that cannot land is reported as `executor_regenerated: false` with the existing slot left untouched. The verb is non-fatal by contract: the caller judges the boolean. A plan whose worktree cannot be resolved returns the plan-context resolver's own `plan_resolution_failed` error, and a path that is not a real worktree returns `executor_in_worktree: absent` with `worktree_plan_local_absent` rather than writing an executor outside one.
+
+**On resume (`error: worktree_exists`) the verb also heals the executor slot** and reports the same `executor_in_worktree` / `executor_reason` fields, so a worktree created before this verb produced executors is not left on the degraded routing path.
+
+### worktree-remove
+
+Remove the worktree (`git worktree remove`) first, then delete the plan's branch ref. Order matters for two independent reasons. The branch ref is one: `git worktree remove` refuses to drop a branch ref that is still checked out, so cleanup is always worktree-first. The plan's own state is the other, and there the ordering is script-enforced rather than merely sequenced — the verb refuses to remove a worktree whose plan directory has not landed back on the main checkout. **Branch cleanup the verb did not do is always reported and never fails the command** — the worktree is gone and branch cleanup is recoverable, so both a delete that failed and a name that could not be resolved surface as `branch_warning`.
+
+**The verb resolves main-anchored, not caller-anchored.** Neither the tree the removal acts on nor the guard applied to it is decided by where the caller happens to stand — but the two resolve through two *different* main-facing resolvers, because they need different things:
+
+- The **move-back probe** asks `marketplace_paths.resolve_main_anchored_path` for `plans/{plan_id}/status.json`, and scans `archived-plans/` through the same call. That is the one sanctioned main-anchored resolver, and it is the same call `integrate_into_main` uses to compute the destination it writes — so guard and producer derive main's plan slot by one mechanism and cannot disagree. It also honours `PLAN_BASE_DIR` / `set_base_dir()`, which a raw git-common-dir walk does not: under an active override, a git-derived probe would read a tree the move-back never wrote to and refuse a plan whose state genuinely landed.
+- The **`git -C` target** derives from `marketplace_paths.main_checkout_root()` — git's common dir, which names the main checkout from inside any linked worktree — because that argument must be a real git checkout, and an override directory is not one.
+
+The main-anchoring is the point rather than an implementation detail: a cwd-relative probe lets a caller standing inside the worktree satisfy the move-back guard with the very plan-state copy the removal is about to destroy. The guard accepts either main-anchored shape — the live directory `integrate_into_main` lands, or the date-prefixed archived record `manage-status archive` writes — and fails closed, since an unresolvable main anchor is not evidence that the move-back happened. The one thing the verb reads from the caller is `Path.cwd()`, and it reads it only in order to refuse.
+
+The worktree path itself resolves through two channels tried in order — the canonical `manage-status get-worktree-path`, then a structural `get_worktree_root() / {plan_id}` probe for the archived plan whose `status.json` that channel can no longer find. The success payload names which one was taken as `resolution: metadata | structural_probe`, so a routine removal is distinguishable from an archived-plan recovery.
+
+**The branch name layers the same way, and for the same reason.** It is read first from `status.metadata.worktree_branch` through `manage-status`, and — when that yields nothing — from main's own copy of the plan record, resolved through the same `resolve_main_anchored_path` rule and the same two shapes the move-back guard accepts (the live record, or the date-prefixed archived one). The fallback is load-bearing rather than defensive: `manage-status` resolves `{base}/plans/{plan_id}` with no archived fallback, so on the `structural_probe` route the canonical read answers with nothing for *every* archived plan. Whichever channel answers, the outcome is reported: a deleted branch appears as `branch`, and a branch this verb did not clean up — whether `git branch -D` failed or no name could be resolved at all — appears as `branch_warning`. A success payload never omits the branch silently, because a payload that names no branch is indistinguishable from one that had no branch to delete.
+
+**The removal is budgeted against the observed tree, not against a constant.** Once both refusals have passed — so nothing measured is the side effect of a call that then refuses — the regenerable pytest scratch is cleared, what remains is counted, and the `git worktree remove` timeout is derived from that count (floored at the ordinary short-git-call budget, so the derivation can only ever lengthen it). Both the success payload and the `worktree_remove_timed_out` payload carry `scratch_cleared`, `scratch_entries_removed`, `measured_entries`, `timeout_seconds` and `budget_basis`, so the budget a run chose and the evidence behind it are readable afterwards rather than reconstructed.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow worktree-remove \
+  --plan-id EXAMPLE-PLAN [--force]
+```
+
+**Parameters**:
+- `--plan-id` (required): Plan identifier (mandatory).
+- `--force`: Force removal of a **dirty** worktree, and nothing else. Of the error codes this verb returns it bears on `worktree_remove_failed` only — and there only on the dirty subset of that catch-all, since the same code is returned for any non-timeout non-zero git result (see `## Error Handling`, where `message` carries git's own stderr). None of `reserved_worktree_name`, `plan_dir_not_moved_back` and `cwd_inside_removal_target` is overridable by it — those refusals protect the shared orchestrator ledger worktree, the sole authoritative plan-state copy and the caller's own working directory, and none has a legitimate fast path. It adds nothing to a `worktree_remove_timed_out` either, which is a command that never finished rather than one that refused. See `## Error Handling` for the per-refusal remedies.
+
+**Output** (TOON, success):
+```toon
+status: success
+plan_id: EXAMPLE-PLAN
+worktree_path: /repo/.plan/local/worktrees/EXAMPLE-PLAN
+action: removed
+resolution: metadata
+branch: feature/EXAMPLE-PLAN
+scratch_cleared: true
+scratch_entries_removed: 4812
+measured_entries: 184000
+timeout_seconds: 92
+budget_basis: measured_tree
+```
+
+### worktree-list
+
+Enumerate plans whose `status.metadata.use_worktree == true`. Reads from `manage-status list`, then resolves each plan's worktree path via `manage-status get-worktree-path`; plans without a configured worktree are silently skipped. The reserved `_orchestrator` shared ledger worktree is never listed: `manage-status list` skips it by name, since it is not a plan worktree (see `standards/worktree-handling.md`).
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow worktree-list
+```
+
+**Parameters**: _(none)_
+
+**Output** (TOON):
+```toon
+status: success
+worktrees_root: /repo/.plan/local/worktrees
+count: 2
+worktrees[2]{plan_id,path,branch}:
+  EXAMPLE-PLAN,/repo/.plan/local/worktrees/EXAMPLE-PLAN,feature/EXAMPLE-PLAN
+  other,/repo/.plan/local/worktrees/other,feature/other
+```
+
+### locate-plan-checkout
+
+Report where a plan's directory currently lives, resolving one of three states without raw `git worktree list --porcelain` re-parsing — it reuses the uniform cwd walk-up (`_find_plan_root_from_cwd`) for the current-checkout probe and resolves the worktree probe by two paths in order: the canonical `_resolve_worktree_path_for_plan` (`manage-status get-worktree-path`) channel, then — when that channel cannot resolve the path — a structural `get_worktree_root() / {plan_id}` filesystem probe. The structural fallback handles the moved-in-from-main case: a plan whose dir was MOVED into its worktree at phase-5 entry (ADR-002) is invisible to the manage-status channel (its `status.json` is no longer on main), so the verb probes the canonical worktree location directly and confirms `status.json` on disk, still returning `location: worktree` when the call is made from main. The verb is read-only and idempotent: a call made from inside the worktree (already cwd-pinned) returns `location: current`, so the cross-session re-entry preflight never double-`cd`s.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow locate-plan-checkout \
+  --plan-id EXAMPLE-PLAN
+```
+
+**Parameters**:
+- `--plan-id` (required): Plan identifier (mandatory — resolves the plan checkout location).
+
+**Resolution states**:
+- `current` — the plan directory exists on the current checkout's `.plan/local/plans/{plan_id}/status.json` (covers both main-checkout plans and the already-cwd-pinned-in-worktree case).
+- `worktree` — the plan dir lives in its worktree but the current checkout does NOT hold it. Resolved by two paths, tried in order: (1) the canonical `manage-status get-worktree-path` channel, which still succeeds for a not-yet-moved plan whose `status.json` is on main; (2) a structural `get_worktree_root() / {plan_id}` filesystem probe handling the moved-in-from-main case — a phase-5+ plan whose dir was MOVED into its worktree (ADR-002) is invisible to the manage-status channel, so the verb probes `{worktree}/.plan/local/plans/{plan_id}/status.json` directly and confirms it on disk. `worktree_path` is present only in this state.
+- `not_found` — neither location holds the plan dir.
+
+**Output** (TOON, plan dir on the current checkout):
+```toon
+status: success
+plan_id: EXAMPLE-PLAN
+location: current
+```
+
+**Output** (TOON, plan dir moved into a worktree — call made from main):
+```toon
+status: success
+plan_id: EXAMPLE-PLAN
+location: worktree
+worktree_path: /repo/.plan/local/worktrees/EXAMPLE-PLAN
+```
+
+**Output** (TOON, unknown plan):
+```toon
+status: success
+plan_id: EXAMPLE-PLAN
+location: not_found
+```
+
+### prepare_execute — prepare
+
+Atomic phase-5 move-in (notation `plan-marshall:workflow-integration-git:prepare_execute`). In ONE call it materializes the worktree (delegating to the `worktree-create` machinery so a single code path owns `git worktree add` + `.plan` bookkeeping), then MOVES (not copies) the plan directory (`.plan/local/plans/{plan_id}`) from the main checkout into its worktree-resident location and GENERATES a worktree-bound executor (`.plan/execute-script.py`) into the worktree via `generate_executor --marketplace-root {worktree}`. The executor is per-tree DERIVED state, NOT a moved slot — main's copy stays present and untouched; generation is non-fatal. It returns the canonical `worktree_path`.
+
+**The script does NOT change the caller's cwd** — a subprocess cannot mutate its parent's cwd. It RETURNS `worktree_path`; the phase-5 orchestrator pins ITS OWN cwd to that path for the remainder of phase-5+ (D8 wires the pin). The move is atomic-with-rollback (a partial-move failure rolls back so plan state is left WHOLLY on main, never half-moved, returning `status: error`) and idempotent (an already-moved-in plan returns success returning the same path). The idempotent re-entry is **self-healing**: when the plan dir is already moved in but the worktree executor is absent on disk (the partial-materialization case), the re-entry regenerates/copies the missing executor and returns `action: healed` rather than a bare `action: noop`. See ADR-002 and the TOCTOU mitigation menu in `ref-code-quality/standards/code-organization.md#toctou--check-then-act-hazards`.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:prepare_execute prepare \
+  --plan-id PLAN_ID --branch BRANCH [--base BASE_REF]
+```
+
+**Parameters**:
+- `--plan-id` (required): Plan identifier (mandatory).
+- `--branch`: Feature branch to create when the worktree has not been materialized yet (required on first run; ignored on re-entry once the worktree exists).
+- `--base`: Base ref for the new branch (default: current HEAD).
+
+**Output** (TOON, first run):
+```toon
+status: success
+plan_id: EXAMPLE-PLAN
+worktree_path: /repo/.plan/local/worktrees/EXAMPLE-PLAN
+action: moved
+moved_in[1]:
+  - /repo/.plan/local/worktrees/EXAMPLE-PLAN/.plan/local/plans/EXAMPLE-PLAN
+worktree_executor_generated: true
+executor_detail: "worktree executor generated at /repo/.plan/local/worktrees/EXAMPLE-PLAN/.plan/execute-script.py"
+```
+
+**Output** (TOON, re-entry — already moved in, executor present):
+```toon
+status: success
+plan_id: EXAMPLE-PLAN
+worktree_path: /repo/.plan/local/worktrees/EXAMPLE-PLAN
+action: noop
+message: "plan state already moved into worktree"
+```
+
+**Output** (TOON, re-entry with missing executor — self-healed): when the plan dir is already moved in but the worktree executor is absent on disk, the re-entry regenerates/copies it and reports the heal:
+```toon
+status: success
+plan_id: EXAMPLE-PLAN
+worktree_path: /repo/.plan/local/worktrees/EXAMPLE-PLAN
+action: healed
+message: "plan state already moved in; regenerated missing worktree executor"
+worktree_executor_generated: true
+executor_detail: "worktree executor generated at /repo/.plan/local/worktrees/EXAMPLE-PLAN/.plan/execute-script.py"
+```
+
+**Typed errors** (all `status: error`, `exit_code: 0`):
+
+| `error_code` | Cause |
+|-------------|-------|
+| `NOT_FOUND` | Worktree root unresolvable, executor path unresolvable, or the plan directory is absent on the main checkout |
+| `INVALID_INPUT` | `--branch` omitted on first run (worktree not yet materialized), or a move-in step failed (rolled back to main) |
+
+### merge_lock — acquire / release
+
+Cooperative merge lock (notation `plan-marshall:manage-locks:merge_lock`) — the SINGLE main-anchored coordination file serializing concurrent `integrate_into_main` (D5) finalizes. One lock file at the MAIN checkout's `.plan/local/merge.lock` records the holder `plan-id`; concurrent finalizes serialize their merge + write-back to main.
+
+**Main-anchored resolution — the single deliberate exception (ADR-002).** This script — and ONLY this script — always resolves its lock file against the MAIN checkout regardless of the caller's cwd, because cross-session coordination is inherently main-scoped (phase-5+ callers run with cwd pinned to their own worktree, yet must all contend for one shared lock). It MUST remain the only main-anchored resolver so the codebase cannot regrow a pervasive git-common-dir-style hack. See ADR-002 and `tools-script-executor/standards/cwd-policy.md` (D6).
+
+**Admission and concurrency correctness.** `acquire` FIFO-enqueues the plan into the main-anchored `merge-queue.json` (idempotently, preserving its position on re-poll) and admits ONLY the FIFO-front plan, which then collapses the does-the-lock-exist → create-it check-then-act into a single atomic `os.open(..., O_CREAT | O_EXCL | O_WRONLY)`: exactly one racing creator wins. A non-front plan, or a front plan that loses to a live holder, gets `status: blocked` / `admission: blocked` — a structured re-poll signal, not an error. By default the call is ONE non-waiting attempt and the consumer re-polls; `--wait-seconds` repeats whole non-waiting attempts inside one bounded call (clamped below the host's per-call ceiling), re-deciding admission from a fresh guarded read each time and pausing only between attempts, and adds `waited_seconds` / `timed_out` to the last attempt's payload. Stale reclamation (a holder whose plan is no longer live) is itself a check-then-act and re-verifies atomically against the specific observed lock file, so a concurrent session winning the race in between makes the reclaimer lose cleanly. The full contract is `plan-marshall:manage-locks` Canonical invocations → `merge_lock — acquire`. See the TOCTOU mitigation menu in `ref-code-quality/standards/code-organization.md#toctou--check-then-act-hazards`.
+
+`integrate_into_main` (D5) acquires before move-back/merge and releases after — a lock it took on every exit path; a lock the same plan already held is left to its holder.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-locks:merge_lock acquire \
+  --plan-id PLAN_ID [--wait-seconds WAIT_SECONDS] [--interval-seconds INTERVAL_SECONDS]
+python3 .plan/execute-script.py plan-marshall:manage-locks:merge_lock release \
+  --plan-id PLAN_ID
+```
+
+**Parameters**:
+- `acquire --plan-id` (required): holder source — the `plan-id` acquiring the lock.
+- `acquire --wait-seconds`: per-call bound for repeating whole non-waiting attempts until admitted (default `0` — a single attempt; clamped to the verb's per-call ceiling).
+- `acquire --interval-seconds`: seconds between two attempts under `--wait-seconds` (default `15`).
+- `release --plan-id` (required): holder source — removes the lock only when this caller is the recorded holder.
+
+**Output** (TOON, acquire success):
+```toon
+status: success
+plan_id: EXAMPLE-PLAN
+action: acquired
+admission: admitted
+lock_path: /repo/.plan/local/merge.lock
+holder: EXAMPLE-PLAN
+reclaimed: false
+waiting_count: 1
+timed_out: false
+waited_seconds: 0
+```
+
+**Output** (TOON, release):
+```toon
+status: success
+plan_id: EXAMPLE-PLAN
+action: released
+lock_path: /repo/.plan/local/merge.lock
+```
+
+**Typed errors** (all `status: error`, `exit_code: 0`):
+
+| `error_code` | Cause |
+|-------------|-------|
+| `NOT_FOUND` | The main checkout (and thus the lock path) could not be resolved (not a git repo) |
+| `INVALID_INPUT` | `acquire` received a non-finite or negative `--wait-seconds` or a non-finite or non-positive `--interval-seconds` (refused before the store is touched), or `release` failed to remove the lock file (filesystem error) |
+
+A lock still held when the wait ends is not an error: it is the `status: blocked` / `admission: blocked` re-poll signal, with `timed_out: true` once a `--wait-seconds` bound lapsed.
+
+### integrate_into_main — integrate
+
+Atomic finalize move-back (notation `plan-marshall:workflow-integration-git:integrate_into_main`) — the inverse of `prepare_execute`. In ONE atomic call it ACQUIRES the cooperative merge lock (delegating to `merge_lock`), FOLDS the plan's own global logs into the plan dir's `logs/`, MOVES the plan directory back from the worktree to the main checkout, and RELEASES the lock it took (an `already_held` grant is left to its holder). It does NOT regenerate the executor.
+
+**Runs while the worktree is STILL PRESENT** — branch cleanup removes the worktree AFTER this script returns. **The script does NOT change the caller's cwd** (a subprocess cannot mutate its parent's cwd) and **does NOT remove the worktree**. It RETURNS a status TOON; the finalize orchestrator returns ITS OWN cwd to main after the call so the uniform cwd rule resumes main resolution for retrospective + archive. The move-back is atomic-with-rollback (a partial move-back rolls the plan dir back into the worktree, leaving the authoritative copy whole, and releases the lock when this call took it) and idempotent (an already-integrated plan is a no-op success that never acquires the lock). A lock this call took is released on every exit path, including rollback; a lock the same plan already held is left to its holder, so exactly one release — the outer holder's — removes it. See ADR-002 and the TOCTOU mitigation menu in `ref-code-quality/standards/code-organization.md#toctou--check-then-act-hazards`.
+
+**Executor regeneration ownership.** `integrate_into_main` does NOT regenerate the executor. On-main executor regeneration (when a plan changes the marketplace script SET — newly added notations must resolve post-merge) is a project-level, meta-project-only finalize step (`finalize-step-sync-plugin-cache`, run after the cache sync), NOT this script's responsibility. The executor is per-tree DERIVED state (ADR-002): main keeps its copy present throughout phase-5+, each worktree generates its own at move-in, and the on-main copy is refreshed by the cache-sync step. This script only moves the plan dir back under the merge lock.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:integrate_into_main integrate \
+  --plan-id PLAN_ID
+```
+
+**Parameters**:
+- `--plan-id` (required): Plan identifier (mandatory).
+
+**Output** (TOON, success):
+```toon
+status: success
+plan_id: EXAMPLE-PLAN
+action: integrated
+plan_dir: /repo/.plan/local/plans/EXAMPLE-PLAN
+folded_logs[1]:
+  - work.log
+```
+
+**Output** (TOON, re-entry — already integrated):
+```toon
+status: success
+plan_id: EXAMPLE-PLAN
+action: noop
+message: "plan state already integrated into main"
+```
+
+**Typed errors** (all `status: error`, `exit_code: 0`):
+
+| `error_code` | Cause |
+|-------------|-------|
+| `NOT_FOUND` | Worktree root unresolvable, or the worktree-resident plan directory is absent (and not already on main) |
+| `INVALID_INPUT` | A move-back step failed (rolled back to the worktree; a lock this call took is released, an `already_held` grant is left to its holder) |
+| (none) | The merge-lock acquire raised: `error` names the exception and the payload carries `dequeued` (see the refused-acquire paragraph below) |
+| (none) | The release of a lock this call took failed, raised, or did not report `action: released`: `lock_released: false`, `release_failure` and, when the release answered, `release_result`. A move-back that otherwise succeeded is reported as this error (carrying `integration_action`, `plan_dir`, `folded_logs`), because the lock may still be held; an error payload keeps its own `error` and gains the release fields |
+
+The move-back acquire is a **bounded wait**, not a single attempt: it passes `wait_seconds` (the module constant `_MOVE_BACK_ACQUIRE_WAIT_SECONDS`, below both the `merge_lock` per-call ceiling and the host's default per-call Bash timeout) so admission is re-tried inside the one call. A reentrant `already_held` grant still returns at once. No finalize call site retries the integrate result, so this bound is the call's whole admission budget.
+
+When the acquire takes no lock, the `merge_lock acquire` payload is surfaced and the plan is **dequeued** from the FIFO admission queue first, through the in-process dequeue-only `merge_lock.run_dequeue` — NOT through `merge_lock release`. The dequeue never touches `merge.lock`: `release` unlinks the lock whenever its recorded holder equals the plan id, so routing the cleanup through it would delete a lock a concurrent call for the same plan created after the refused attempt. Dequeuing a plan with no entry is a no-op. Two acquire results take no lock, and both are dequeued:
+
+- `status: blocked` / `admission: blocked` with `timed_out: true` — the bound lapsed while another plan holds the lock or is ahead in the FIFO queue.
+- `status: error` — an attempt failed, for example a queue read-modify-write that raised. An attempt of the bounded wait can fail after a preceding attempt of the same wait already enqueued the plan, so an error is no proof that the queue holds no entry for it. A fault that escapes the acquire as an exception (the lock-file create runs after the enqueue) is reported the same way: `status: error` naming the exception, and dequeued.
+
+The payload adds `dequeued: true` when that dequeue landed and `dequeued: false` when it did not, in which case the plan's entry may still be queued. Without the dequeue, an enqueue from any attempt would outlive the call and wedge every plan queued behind it. Nothing was acquired, so no lock is released. A reentrant `already_held` grant is a success, not a refusal: it is never dequeued, and its lock is left to its holder.
+
+## Canonical invocations
+
+The canonical argparse surface for `git-workflow.py` and the standalone
+`prepare_execute.py`, `merge_lock.py`, and `integrate_into_main.py`. The plugin-doctor `missing-canonical-block` rule checks that this section is PRESENT,
+matching its heading only — the body is never read; `manage-invocation-invalid` derives
+its accept-set from a live `--help` walk rather than from this section. Consuming skills xref this section by
+name (e.g., "see `workflow-integration-git` Canonical invocations →
+`worktree-create`") instead of restating the command inline. The sibling
+`git_provider.py` module exposes shared helpers (`run_git`, provider declarations)
+and has no CLI surface — it is not invoked directly.
+
+### format-commit
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow format-commit \
+  --type TYPE --subject TEXT \
+  [--scope SCOPE] [--body TEXT] [--breaking TEXT] [--footer TEXT]
+```
+
+### analyze-diff
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow analyze-diff \
+  --plan-id PLAN_ID [--cached]
+# or explicit path override:
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow analyze-diff \
+  --project-dir ABS_PATH [--cached]
+```
+
+### detect-artifacts
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow detect-artifacts \
+  [--root DIR] [--no-gitignore]
+```
+
+### force-push-with-lease
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow force-push-with-lease \
+  --plan-id PLAN_ID
+# or explicit path override:
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow force-push-with-lease \
+  --project-dir ABS_PATH --branch BRANCH
+```
+
+### switch-and-pull
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow switch-and-pull \
+  --plan-id PLAN_ID --base BASE_BRANCH
+# or explicit path override:
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow switch-and-pull \
+  --project-dir ABS_PATH --base BASE_BRANCH
+```
+
+### prune-local-and-remote-ref
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow prune-local-and-remote-ref \
+  --plan-id PLAN_ID [--mode local_and_remote|local_only]
+# or explicit path override:
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow prune-local-and-remote-ref \
+  --project-dir ABS_PATH --head HEAD_BRANCH [--mode local_and_remote|local_only]
+```
+
+### branch-sync-state
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow branch-sync-state \
+  --plan-id PLAN_ID
+```
+
+### worktree-path
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow worktree-path \
+  --plan-id PLAN_ID
+```
+
+### worktree-create
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow worktree-create \
+  --plan-id PLAN_ID --branch BRANCH \
+  [--base BASE_REF]
+```
+
+### worktree-remove
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow worktree-remove \
+  --plan-id PLAN_ID [--force]
+```
+
+### worktree-executor-refresh
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow worktree-executor-refresh \
+  --plan-id PLAN_ID
+```
+
+### worktree-list
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow worktree-list
+```
+
+### worktree-rebase-to
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow worktree-rebase-to \
+  --plan-id PLAN_ID --base BASE_REF
+```
+
+### locate-plan-checkout
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow locate-plan-checkout \
+  --plan-id PLAN_ID
+```
+
+### baseline-reconcile
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow baseline-reconcile \
+  --plan-id PLAN_ID \
+  [--base-branch BRANCH] \
+  [--skip-fetch] [--no-emit]
+```
+
+Mechanical baseline reconciliation: resolves the worktree, fetches `origin/{base_branch}`, lists the
+upstream commits since `merge-base(HEAD, origin/{base_branch})` — recomputed per call, never read
+from a stored SHA — and runs `git merge-tree` to detect potential conflicts.
+
+**Return**. Every consumer MUST branch on `status` **before** reading `classification`: the wrapper
+prints the payload through a helper that always exits 0, so an "if the script exits non-zero" test
+never fires, and only the `success` payload carries a `classification` field at all.
+
+`status: success` — the classification fields:
+
+| Field | Meaning |
+|-------|---------|
+| `classification` | `no_overlap` \| `overlap_no_content_conflict` \| `overlap_with_content_conflict` |
+| `auto_reconcilable` | **Derived**, not measured: it is exactly `classification == overlap_no_content_conflict`, so it never downgrades an auto-resolvable overlap. A consumer already inside an `overlap_no_content_conflict` branch has no information left to gain from it |
+| `worktree_path`, `base_branch`, `base_branch_source` | The resolved target and where the base branch came from. `base_branch_source` is one of `cli` \| `plan_references` \| `plan_config` \| `default`, in that precedence order: an explicit `--base-branch`; then the plan's own persisted `references.json` value; then `marshal.json`'s project-wide `plan.phase-2-refine.base_branch`; then the `main` fallback. **The reference outranks the config deliberately** — the stale-base auto-update below writes there, so a resolver that preferred the config would re-resolve the stale branch on the next call, re-detect it, and rewrite the same correction indefinitely, leaving the update authoritative for nothing |
+| `base_branch_updated`, `original_base_branch` | The stale-base auto-update below. `original_base_branch` is present only when the update fired — and **both fields ride the `success` payload only**. The write happens before the fetch, so a run that updates `references.json` and then exits `skipped` (`fetch_failed`, `head_unresolved`, `merge_base_unresolved`) reports the update **nowhere**: those payloads carry `base_branch` alone. A consumer that reads these fields to learn whether the persisted base moved must therefore treat their absence on a skip as *unknown*, not as *no update* |
+| `merge_base_sha`, `merge_base_source` | The anchor every range below is computed against, recomputed per call |
+| `upstream_commit_count`, `upstream_commits` | Commits on the base since the merge base |
+| `conflict_count`, `conflicts`, `merge_tree_error` | The `git merge-tree` probe's result |
+| `in_flight_files` | Files the branch itself changed since the merge base |
+| `findings_emitted`, `emit` | Q-Gate findings written, and whether emission was enabled |
+
+`status: skipped` — the probe **declined to classify**; no `classification` field is present. A skip is
+never evidence that a rebase is safe, so a consumer forces its own conservative decision and logs
+`reason`. An unconfigured base branch is NOT among them: it falls back to `main`
+(`base_branch_source: default`) and the probe proceeds.
+
+| `reason` | Cause |
+|----------|-------|
+| `main_checkout_flow` | The plan's worktree state is `disabled` — it runs against the main checkout |
+| `worktree_not_materialized` | The plan is bound to a worktree in state `pending` — declared, not yet created |
+| `status_not_found` / `status_module_unavailable` / `worktree_path_missing` / `worktree_path_not_a_directory` | The worktree could not be resolved: status unreadable, the resolver unavailable, or the declared path absent or not a directory |
+| `worktree_unresolved` | Fallback, used only when the resolver returns no path AND names no reason of its own |
+| `no_remote` | The repository has no remote to fetch from |
+| `fetch_failed` | `git fetch origin {base_branch}` failed (network, auth, missing ref) |
+| `head_unresolved` | `git rev-parse HEAD` does not resolve in the worktree — nothing to anchor the comparison on |
+| `merge_base_unresolved` | `merge-base(HEAD, origin/{base_branch})` does not resolve — unrelated histories or an absent upstream ref leave no anchor for the commit range or the conflict probe |
+
+`status: error` — typed failures:
+
+| `error` | Cause |
+|---------|-------|
+| `probe_mutated_head` | HEAD changed during the probe. The classifier moves no refs, so a moved ref means it cannot be trusted to have classified the state it reported; it refuses to return a verdict derived from a mutated tree. This takes precedence over every other outcome, including a persist failure |
+| `finding_persist_failed` | A conflict finding could not be written to the store. The finding is that path's primary output, so the caller sees an error carrying the rejected content (`qgate_persist_failures`) rather than a clean result with `findings_emitted: 0` |
+
+**Side effects.** The probe never moves the branch ref and never touches the working tree. Its one
+persisted write is a **stale-`base_branch` auto-update**: when the configured base branch no longer
+resolves on origin and a remote default is detectable, it rewrites `base_branch` in `references.json`
+and emits a decision-log entry. That write runs **before** the fetch and is **not** gated by
+`--no-emit` — `--no-emit` suppresses Q-Gate findings only.
+
+### prepare_execute — prepare
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:prepare_execute prepare \
+  --plan-id PLAN_ID [--branch BRANCH] [--base BASE_REF]
+```
+
+### merge_lock — acquire / release
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-locks:merge_lock acquire \
+  --plan-id PLAN_ID [--wait-seconds WAIT_SECONDS] [--interval-seconds INTERVAL_SECONDS]
+python3 .plan/execute-script.py plan-marshall:manage-locks:merge_lock release \
+  --plan-id PLAN_ID
+```
+
+### integrate_into_main — integrate
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:integrate_into_main integrate \
+  --plan-id PLAN_ID
+```
+
+## Error Handling
+
+| Failure | Action |
+|---------|--------|
+| No changes to commit | Report "No changes to commit" and return success (not an error). |
+| format-commit validation failure | Report warnings to caller. Do not commit with invalid message. |
+| analyze-diff on missing/invalid worktree | Return failure with the path. Caller should pass an existing worktree. |
+| Artifact cleanup uncertain | Ask user via `ask_question` before deleting. Never auto-delete uncertain files. |
+| git commit failure (hook rejection, conflict) | Report error with full output. Do not retry automatically. |
+| git push failure | Report error. Never force-push as fallback. |
+| `worktree-*` invoked without `--plan-id` | argparse rejects with non-zero exit. The verbs operate on a worktree; a plan id is mandatory. |
+| `worktree-path` on plan without configured worktree | Return `error: plan_resolution_failed` — `status.metadata.use_worktree` is false or `worktree_path` is unset. |
+| `worktree-remove` cannot resolve the worktree at all | Return `error: plan_resolution_failed`. Reached on either of two paths: (1) the metadata channel refuses AND the structural probe finds no `.git`-carrying directory at the canonical slot — the resolver's own diagnosis is propagated verbatim; (2) `main_checkout_root()` cannot resolve the main checkout for the `git -C` target. **No git call runs after the resolution failure on either path.** Path 1 returns before any git subprocess at all — the structural probe is a pure filesystem test. Path 2 is *reached by* a git call: `main_checkout_root()` runs `git rev-parse --git-common-dir`, and that call failing IS the condition, so the claim there is about what runs afterwards, not about what ran. |
+| `worktree-create` with `--plan-id _orchestrator` | Return `error: reserved_worktree_name`. The key is the reserved shared orchestrator ledger worktree (`marketplace_paths.ORCHESTRATOR_WORKTREE_KEY`), not a plan id; the refusal fires before path resolution, so no directory is created and no `git worktree add` runs. |
+| `worktree-create` against a path that already exists | Return `error: worktree_exists` with the conflicting path, and heal the executor slot in that worktree: the payload carries `executor_in_worktree` and, when absent, `executor_reason`. |
+| `worktree-create` `git worktree add` failure | Return `error: worktree_add_failed` with stderr from git. |
+| `worktree-create` `.plan` symlink helper rejects a real directory | Return `error: plan_symlink_failed`; the worktree exists but `.plan/local` is a real directory or file (refused so user data is never clobbered). |
+| `worktree-remove` with `--plan-id _orchestrator` | Return `error: reserved_worktree_name`. The key is the reserved shared orchestrator ledger worktree (`marketplace_paths.ORCHESTRATOR_WORKTREE_KEY`), not a plan id, and `worktree-remove` never removes it. This is the verb's FIRST check: it fires before path resolution, the structural probe, any filesystem touch and any git call, and so precedes `plan_dir_not_moved_back` — the reserved key is never answered with a move-back remedy that does not apply to it. NOT overridable by `--force`. |
+| `worktree-remove` plan dir has not landed back on main | Return `error: plan_dir_not_moved_back`. The move-back precondition, probed through `resolve_main_anchored_path` (the same resolver `integrate_into_main` writes through) and satisfied by either the live plan directory `integrate_into_main` lands or the archived record `manage-status archive` writes: removing now would destroy the sole authoritative copy of the plan's state. Surface the error, run `integrate_into_main`, then re-run. NOT overridable by `--force` — that flag keeps its dirty-tree meaning only. |
+| `worktree-remove` cwd is the removal target or a directory beneath it | Return `error: cwd_inside_removal_target`, carrying the offending `cwd`. Git itself imposes no such condition — `git worktree remove` will delete a shell's own working directory with or without `--force` — so this refusal is ours, not git's. Change the working directory out of the worktree (to the main checkout) and re-run. NOT overridable by `--force`; the remedy is to leave the directory, not to insist harder. |
+| `worktree-remove` `git worktree remove` exits non-zero for any non-timeout reason | Return `error: worktree_remove_failed` with a hint to verify cleanliness before passing `--force`. **This code is the catch-all, not an established dirtiness verdict.** The branch is selected by the exit code alone — nothing inspects the tree — so a locked worktree or a filesystem error reaches it exactly as a dirty one does; git's own stderr is forwarded verbatim in `message`, and that is where the real cause is read. A dirty worktree is the common case and the only one `--force` addresses: salvage any uncommitted work first, then remove with `--force` deliberately — never `--force` as the salvage. On any other cause reaching this code, forcing is not the remedy; read `message` first. |
+| `worktree-remove` derived removal budget expires | Return `error: worktree_remove_timed_out` alongside `timeout_seconds`, `measured_entries` and `budget_basis`. The removal is slow, not refused — git rendered no verdict and the worktree is still on disk. Re-run `worktree-remove` (the regenerable scratch was cleared before the attempt, so the retry walks a smaller tree), or delete the directory out-of-band and run `git worktree prune`. Deliberately distinct from `worktree_remove_failed` so that code's `--force` remedy stays off this path: forcing addresses a dirty worktree, a different failure, and adds nothing to a command that never finished. |
+| `worktree-remove` branch ref delete fails | Return success with `branch_warning` naming the branch and git's stderr — the worktree is gone, branch cleanup is recoverable. |
+| `worktree-remove` branch NAME cannot be resolved | Return success with `branch_warning` and NO `branch` field. Neither channel answered: `status.metadata.worktree_branch` is unset or unreadable, and main's plan record — live or archived — carries no branch either. No `git branch -D` runs, so a local feature branch may still exist; the warning names the plan and the manual remedy. Reported rather than skipped in silence, because the alternative is a clean-removal payload over a stranded branch. |
+
+## Standards (Load On-Demand)
+
+| Standard | When to Load |
+|----------|-------------|
+| `standards/worktree-handling.md` | Canonical reference for worktree mechanism: path convention, dispatch protocol, `git -C` rule application, never-edit-main-checkout invariant, cleanup ordering, `--plan-id` two-state contract |
+| `standards/git-commit-standards.md` | Edge cases: breaking changes, multi-footer, scope guidelines, anti-patterns |
+| `standards/git-commit-config.json` | Adding/updating valid commit types, imperative mood allowlist, or length thresholds |
+| `standards/artifact-patterns.json` | Adding/updating artifact detection patterns and cleanup rules |
+
+## Related
+
+See `ref-workflow-architecture` → "Workflow Skill Orchestration" for the full dependency graph and shared infrastructure documentation. Called by: `plan-marshall:workflow-pr-doctor` (commit after fixes), `plan-marshall:phase-6-finalize` (final commit).
