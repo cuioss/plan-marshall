@@ -1,0 +1,37 @@
+package ${PACKAGE};
+
+import static io.restassured.RestAssured.given;
+import static org.hamcrest.Matchers.*;
+
+import io.quarkus.test.junit.QuarkusIntegrationTest;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+
+/**
+ * Integration tests for ${RESOURCE_NAME} running against the packaged application.
+ * No CDI injection — test via HTTP only.
+ */
+@QuarkusIntegrationTest
+@DisplayName("Integration tests for ${RESOURCE_NAME}")
+class ${RESOURCE_NAME}IT {
+
+    @Test
+    @DisplayName("Should respond with 200 on GET ${ENDPOINT}")
+    void shouldRespondOnGet() {
+        given()
+            .when().get("${ENDPOINT}")
+            .then()
+            .statusCode(200)
+            .body("$.size()", greaterThan(0));
+    }
+
+    @Test
+    @DisplayName("Should return health UP")
+    void shouldReturnHealthUp() {
+        given()
+            .when().get("/q/health")
+            .then()
+            .statusCode(200)
+            .body("status", equalTo("UP"));
+    }
+}
