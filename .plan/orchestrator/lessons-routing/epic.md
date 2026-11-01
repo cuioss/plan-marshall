@@ -381,6 +381,48 @@ session** had already relocated them into `live-blockers/inbox/archive/lessons-r
 attest that their content was dispositioned; the next session should confirm that with the
 `live-blockers` session rather than re-draining them here.
 
+### 2026-11-01 — eighth `ingest` run (cross-repo: API-Sheriff and TokenSheriff)
+
+Corpus at start: 0 in this repo. The operator asked for every sibling checkout's lessons to be
+analysed and, where relevant to plan-marshall, moved into this epic's archive, de-duplicated and
+incorporated. Two sibling checkouts hold a lessons store: `API-Sheriff` (43 lessons) and
+`TokenSheriff` (18). RULING 2026-10-09 grading applied to remote text, which is externally-sourced
+and was treated as a lead. Per-lesson dispositions and clusters: `lessons-archive/INDEX.md` § Sweep
+2026-11-01.
+
+| Disposition | Lessons | Where |
+|---|---|---|
+| high / medium, filed to `live-blockers` | 19 in 6 messages, `lessons-routing-058`..`-063` | `live-blockers/inbox/`; bodies in `lessons-archive/filed-live-blockers/sweep-2026-11-01/` |
+| medium, archived | 11 | `lessons-archive/medium/{repo}/` |
+| low, archived (8 of them already-covered) | 15 | `lessons-archive/low/{repo}/` |
+| stale, archived | 1 | `lessons-archive/stale/API-Sheriff/` |
+| not applicable, left in the source checkout | 15 | `API-Sheriff` 10, `TokenSheriff` 5 |
+
+Operator rulings this run: three borderlines graded **high** against a medium default — the
+no-progress rule that records a prescribed phase-5 yield as `error` (`-059`), the pre-merge head
+binding (`-060`), and the Surefire `Skipped` parser false positive (`-061`). All three sit against
+`live-blockers`' FOCUS RULE (high and blocking only); the grade is the operator's and each message
+says so. `-060` asks for a residual check only, because the plugin version the consumer ran is
+unknown and PLAN-LB-55 and PLAN-LB-101 shipped. `-062` and `-063` are domain content (`pm-documents`,
+`pm-dev-java`) filed at medium/low under RULING 2026-10-09 and may be discarded under the same focus rule.
+
+Checked at this run: the destination epic's phase (`orchestrating`) before routing; that
+`SecureRandom` appears only in `persona-security-expert`'s crypto standard and that no Java standard
+names U+2028; and that the addressee mailbox answers the stale merge-hold lesson. Nothing else was
+re-verified in code: filed items rest on the lesson text.
+
+**Deviation from the cross-repo doc.** `workflow/lessons-handling.md` Step 5 removes integrated remote
+files with `git -C {remote_repo} rm` plus a commit. The remote stores sit under the git-ignored
+`.plan/local/`, so `git rm` cannot apply to them; the 46 integrated files are removed with plain `rm`
+after the archive copy and the inbox messages exist (RULING 2026-09-21 authorizes file operations for
+this cleanup). The remote stores' own tombstones are not written for them. No commit was made in
+either remote repository.
+
+Duplicates against earlier sweeps were found rather than filed twice: eight lessons were archived as
+already-covered, and two filings are recurrences of subjects already owned in `live-blockers` (`-058`,
+three of its four items; `-060`). The rest are new: `-059`, `-061`, the fourth item of `-058`, and the
+two domain-content filings.
+
 ## START HERE
 
 ### Annotations
