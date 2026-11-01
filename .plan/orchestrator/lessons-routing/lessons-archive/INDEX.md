@@ -448,3 +448,70 @@ Nothing refuted at ground truth this run.
 | standalone | 0 |
 | stale | 0 |
 | **total** | **147** |
+
+## Sweep 2026-11-01 — 61 lessons from two sibling checkouts (cross-repo)
+
+Input was the local lesson stores of the two sibling checkouts that hold any: `API-Sheriff` (43 lessons, 2026-10-02 to 10-14; a Maven consumer of plan-marshall) and `TokenSheriff` (18 lessons, 2026-10-29 to 10-31). The other sibling checkouts have no lessons directory. This epic's own corpus was empty. Remote lesson text is externally-sourced; every claim here rests on that text, and a lesson was not re-verified at HEAD unless a line says so.
+
+**Relevance.** 46 of the 61 are about plan-marshall or its bundles and were taken in; 15 are specific to the consumer project (see `Not applicable` below) and stay where they are. **Archive layout.** Remote ids collide with this repo's own (`2026-10-13-14-001`..`-004` already exist under `high/` and `medium/`), so the copies are verbatim under a per-repo subdirectory: `{level}/{repo}/{lesson-id}.md`. The consolidated body of each filing is `filed-live-blockers/sweep-2026-11-01/lessons-routing-NNN.md`, and there the file number equals the message number. They sit in a subdirectory because the root `filed-live-blockers/lessons-routing-058.md` already holds the earlier sweep's DRAFT 058 (message `-057`, see the numbering note above).
+
+**Operator rulings this run.** Three borderlines were put to the operator and each graded **high**: the no-progress rule (`-059`), the pre-merge head binding (`-060`) and the Surefire parser false positive (`-061`). Two of them sit against `live-blockers`' FOCUS RULE (high and blocking only); the operator ruling outranks it, and each message states that it is an operator grade.
+
+### `filed-live-blockers/` (6 filings, 19 sources)
+
+| Message | Level | Sources | Subject | Owner today |
+|---|---|---|---|---|
+| `lessons-routing-058` | high (inherited) | API `2026-10-12-16-001`, `-16-005`, `-16-008`, `2026-10-13-14-003` | Consumer-repo fit: assessment-coverage check on the deep lane, ci-verify producers `verification-feedback` rejects, Maven pre-push gate degraded; new: a step with no implementor records `done` | recurrence of `-022`, `-019`, `-031`; the `done`-vs-`skipped` item has none |
+| `lessons-routing-059` | high (operator) | API `2026-10-12-16-007`, `2026-10-12-07-007` | The no-progress rule records a prescribed phase-5 yield as `error` | none |
+| `lessons-routing-060` | high (operator) | TokenSheriff `2026-10-31-13-002` | Pre-merge head binding voids every gate on a late commit; a waiver the step record accepted is refused at merge | PLAN-LB-55, PLAN-LB-101 shipped; consumer plugin version unknown |
+| `lessons-routing-061` | high (operator) | API `2026-10-12-07-015` | Maven log parser files a `test-failure` for a passing Surefire summary with `Skipped` above zero | none |
+| `lessons-routing-062` | medium | API `2026-10-02-12-007`, `2026-10-12-07-011`, `2026-10-13-06-001`, `-06-002`, `-06-003`, `2026-10-13-14-004`, `2026-10-12-16-009`, `-16-010`; TokenSheriff `2026-10-31-12-006` | Domain content (`pm-documents`): a stated guarantee, count or closed list is not checked against what enforces it | sibling of `-057`; none |
+| `lessons-routing-063` | medium / low | TokenSheriff `2026-10-29-23-001` (medium), `2026-10-29-23-003` (low) | Domain content (`pm-dev-java`): `SecureRandom` in native-image code; U+2028/U+2029 as Unicode escapes | none (searched: only the crypto standard names `SecureRandom`; no Java standard names U+2028) |
+
+Messages `-058`..`-063` were written to `live-blockers/inbox/` in one run and are undrained at the end of it. `live-blockers` is open (`phase: orchestrating`). Domain-content filings `-062` and `-063` are below that epic's FOCUS RULE and may be discarded there; they are filed because RULING 2026-10-09 files domain content at any severity.
+
+### `medium/` (11, not filed)
+
+| Lessons | Subject |
+|---|---|
+| API `2026-10-12-07-001`, `2026-10-12-16-006` | A build `status: timeout` is not "the build ended" (teardown destroyed a running build); the build daemon's 1800 s default is shorter than a full Docker integration run and a timed-out run tears nothing down. Same subject as pm 197, 281, 282 and as 013 |
+| API `2026-10-12-07-009` | The merge-queue wait budget is shorter than the queue's own required checks, so the deferred path is the normal path |
+| API `2026-10-12-07-006` | `-Dtest=A+B` matches nothing and passes with zero tests; the planning step stamped the wrong form (related to `-061`) |
+| API `2026-10-12-07-014`, `2026-10-12-16-002`, `2026-10-12-16-003`, `2026-10-14-13-001`; TokenSheriff `2026-10-31-13-005` | Outline and task-plan quality: a mitigation that moves a fix into a later deliverable, a test task paired with a doc-only implementation task, operator answers not written back into `solution_outline.md`, success criteria that cannot be evidenced before the grading gate, closed-set docs missing from the footprint (same subject as `as 004`, `006`, `009`) |
+| TokenSheriff `2026-10-31-13-004` | Bookkeeping slips: a change-ledger row per out-of-task commit, the commit trailer checked before the first commit, phase transitions left to the orchestrator (see pm 209, 211, 241) |
+| TokenSheriff `2026-10-31-13-006` | The PR body goes stale after loop-back fix tasks and is the squash-merge commit message |
+
+### `low/` (15, not filed)
+
+| Lessons | Subject |
+|---|---|
+| API `2026-10-12-07-004`, `2026-10-12-07-008`, `2026-10-13-14-005` | One finalize ceiling shared by self-review, CI and review-bot rounds (pm 243, 244); `adr-propose` skipped after a hand-driven final round; description-drift check flags a count derived from an enumerated outline list |
+| API `2026-10-12-07-012`; TokenSheriff `2026-10-31-12-003`, `-12-007`, `-12-009` | Test adequacy (the existing cluster of the 2026-10-23 sweep): a guard needs a negative control, wall-clock boundary tests need margin plus a hit assertion, leak assertions must test the real input, one throwing call per `assertThrows` |
+| API `2026-10-12-07-003`, `2026-10-12-07-013`, `2026-10-12-16-004`, `2026-10-13-06-004`, `2026-10-13-06-005`; TokenSheriff `2026-10-31-13-001`, `-13-003`, `2026-10-29-23-002` | **Already covered.** Self-review does not converge (`-001`); invented verbs and flags — `qgate query` in three plans, `--number`, `--plan-id` placement, Maven `resolve-test-scope` (`-044`, pm 144, 157..161, 272, 273); docs-only fix re-fires every head-dependent step (`-005`, the withdrawn `-047`); CodeRabbit one-review-per-hour quota (`live-blockers` ruling: wait); script surface drift (`-044`); log injection from parser exception messages (`persona-security-expert` secure-logging and `cui-logging` standards) |
+
+### `stale/` (1)
+
+| Lesson | Why |
+|---|---|
+| API `2026-10-14-13-003` | The premise — a merge hold written in the epic ledger cannot reach a running plan — is answered by the addressee mailbox: `inbox write --target-plan` delivers to a running plan's `inbox/to/{plan_id}/`, and a plan reads it with `inbox read` (checked in the installed `orchestration-model.md` Ledger Write-Boundary). Whether it is a reliable hold is a separate question the lesson does not ask. |
+
+### Not applicable — left in the source checkout (15)
+
+| Lessons | Why |
+|---|---|
+| API `2026-10-02-12-008`, `2026-10-12-07-002`, `2026-10-12-07-005`, `2026-10-13-14-002` | Keycloak realm fixture, Rancher Desktop/WSL2 dead host ports, the project's native CI job limit: host and project facts |
+| API `2026-10-12-07-010`, `2026-10-12-16-011`, `2026-10-12-16-012`, `2026-10-12-16-013`, `2026-10-14-13-002`, `2026-10-13-14-001` | k6 behaviour, a Sonar literal, a flaky edge test, a missing library accessor, an exception handler's rationale, a diagnosis made by reading code (`2026-10-13-14-001` is Principle 8 of the foundational persona; its own scope hint says not a plan-marshall component) |
+| TokenSheriff `2026-10-31-12-001`, `-12-002`, `-12-004`, `-12-005`, `-12-008` | Async lifecycle fencing, two-slot races, a stale `~/.m2` runner, formatter import flips and OpenRewrite markers in that project's build |
+
+### Dispositions
+
+| Disposition | Count |
+|---|---|
+| clustered-into (19 in 6 filings, 11 in `medium/`, 7 in `low/`) | 37 |
+| already-covered (stored in `low/`) | 8 |
+| standalone | 0 |
+| stale | 1 |
+| not applicable (left in the source checkout) | 15 |
+| **total** | **61** |
+
+The 46 lessons taken in are the 37 clustered, the 8 already-covered and the 1 stale; the 15 not applicable are not copied.
