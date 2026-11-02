@@ -661,6 +661,19 @@ derive, for rows still live.
 
 ## Decisions
 
+- 2026-11-02 — **Inbox drain (17 lessons-routing findings, `-058` to `-074`).** Ten high
+  findings were **observed** as new Open Defects. They are listed under the drain-of-2026-11-02
+  note at the end of that section, and none was staged: staging is the operator's call. Seven
+  domain-content findings were **discarded** under the FOCUS RULE (high and blocking only). They
+  were not blocking, so they stay in `lessons-routing`'s archive:
+  - `-062`: `pm-documents`, claims not checked against what enforces them, medium.
+  - `-063`: `pm-dev-java`, `SecureRandom` in native image and U+2028; medium and low.
+  - `-070`: `pm-dev-java`, four rules: locale, user-info, S2637/S2638 and `-Dtest`; medium and
+    low.
+  - `-071`: `cui-logging`, a retired id is reused; low.
+  - `-072`: `oci-security`, verify-then-run uses a tag instead of the digest; medium.
+  - `-073`: `ref-svg-diagrams`, commas in alt text and `:imagesdir:`; low.
+  - `-074`: `jest-testing`, use `--silent`; low.
 - 2026-10-29 — **PLAN-LB-100 landed as #1883 (merge `b399401ee`), graded B.** Corroborated against the CI abstraction (PR merged, merge
   commit and parent `6d1554570` as stated, all five code checks green), the merge diff (eleven files, +2571 −102), and a content search
   on the merged tree for the new refusal code and the two new verbs. All three deliverables met; evidence order is `mutation-after`
@@ -2212,6 +2225,86 @@ derive, for rows still live.
   staged. — source: inbox messages `lb-23-verify-builds-004.md` and
   `plan-lb-29-harness-sync-002.md`; the mapping was read at
   `script-shared/scripts/build/_test_scope_divergence.py` § `_module_for_path`, `4ed67e228`.
+
+The ten entries below came in from the inbox drain of 2026-11-02 (lessons-routing `-058` to
+`-061` and `-064` to `-069`; consumer-repo sightings). All are graded high by the sender or by
+operator ruling. They were **observed, not staged**: staging is the operator's decision. Unless an
+entry says otherwise, it was not re-verified at HEAD beyond the ground truth the message cites.
+
+- **HIGH — the `weakened_test` check reads moved, renamed and planned-removed tests as lost
+  assertions, and an acceptance re-opens at every new head (2026-11-02; not staged).** Five
+  API-Sheriff PRs (#502, #505, #520, #526, #538). Cited ground truth at `c431a8193`: in
+  `_review_support_integrity.py`, `:75` diffs with `--no-renames`, and `:81-84` reads the
+  pre-image at the base tip rather than the merge base. Counting is per path, with no total
+  across files. Two more problems are reported: the acceptance is keyed to the head, and the
+  `qgate add` fold and the review path deduplicate differently. Parked PLAN-LB-75 D3 touches the
+  same file but does not cover this. — source: inbox `lessons-routing-064.md`.
+- **HIGH — the success-criteria parser keeps only an unbroken run of `- ` lines, so every
+  criterion after a wrapped or nested line drops out of the frozen snapshot unreported (2026-11-02;
+  not staged).** Cited ground truth: `_criteria_snapshot.py:72` `_SUCCESS_CRITERIA_RE`, the single
+  parser `outline_deliverables` uses. Because `criteria_drift` and `open_criteria` compare against
+  the snapshot, a dropped criterion is never graded and never reported. API-Sheriff #467 and #513
+  (`unknown_criterion_id`). The parked PLAN-LB-75 surface includes this file. — source: inbox
+  `lessons-routing-065.md`.
+- **HIGH — CodeRabbit participation is read from the wrong signals (2026-11-02; not staged).**
+  Per-line thread replies at the new HEAD count as a review of that head; `coderabbit.md:50`
+  requires no marker for `inline`. A finished review in the new summary format
+  (`coveredCommitId == head`, `kind: reviewed`) is never credited, because only `runbook-lane`
+  reads `coveredCommitId`. Since PLAN-LB-100, every such clean review needs `barrier-ask-override`.
+  API-Sheriff #515 and #537. This is related to, but not covered by, the "Participation credit
+  ignores an in-progress review" entry and parked PLAN-LB-46. — source: inbox
+  `lessons-routing-066.md`.
+- **HIGH (operator ruling) — review-bot findings are lost before triage (2026-11-02; not
+  staged).** (1) Bodies are cut at 8000 characters, a literal located in `untrusted-ingestion`
+  `validate_struct.py`. The cut drops CodeRabbit's conclusion, which comes after its analysis,
+  and nothing marks the body as truncated. The fetch-to-promotion path was not traced. (2) Inline
+  comments from a re-review were never fetched (#512; seen once; cause unverified). This sits
+  next to the "summary-only concerns are never filed" entry. — source: inbox
+  `lessons-routing-067.md`.
+- **HIGH (operator ruling) — a residual check against PLAN-LB-58: the pre-push freshness gate
+  passed on a 5-test row labelled whole-tree (2026-11-02; not staged).** One sentence of evidence,
+  from API-Sheriff on 2026-10-30, which is after #1866. The open question is whether the gate
+  derives whole-tree from the row's real scope or from its label. — source: inbox
+  `lessons-routing-068.md`.
+- **HIGH (operator ruling) — the build daemon runs two builds in one worktree at once (2026-11-02;
+  not staged).** The machine-global `max_slots` does not serialise jobs that share a
+  `project_dir`, so a shared `target/` produces false ClassNotFound and Quarkus start failures
+  (API-Sheriff PLAN-V02-10 and V02-14). Cited content search: no script keys any exclusion on
+  the worktree. Exposure is wider since PLAN-LB-104 made routing the lane default. This relates
+  to the Watch on the build server coalescing results (folded into PLAN-LB-78 D2 as a prose
+  rule). — source: inbox `lessons-routing-069.md`.
+- **HIGH (operator ruling) — the phase-5 no-progress rule records a prescribed yield as `error`
+  (2026-11-02; not staged).** API-Sheriff plan-24 #430 and plan-25 #408. Each reclassification
+  also feeds the script-failure signal that triggers lessons capture. A related problem: a module
+  whose test build always exceeds the per-task limit is not detected at planning time. — source:
+  inbox `lessons-routing-059.md`.
+- **HIGH (operator ruling) — a waiver accepted by a step record is refused by the merge gate
+  (2026-11-02; not staged; recurs after PLAN-LB-55 and PLAN-LB-101).** `loop-back close
+  --waive-refire` records `refire_waiver`, then `pre_merge_gate merge` refuses with
+  `merge_candidate_not_gated` naming the same steps. Cited content search at `c431a8193`: no
+  `pre_merge_gate` source reads `refire_waiver`. Further asks: derive the skip rule and the
+  head-dependence from one source, and build the operator prompt from the barrier's own labels.
+  Sightings: TokenSheriff PLAN-01/02/06, and API-Sheriff `-078` and #527. — source: inbox
+  `lessons-routing-060.md` (revision 1).
+- **HIGH (operator ruling) — the Maven log parser files a `test-failure` for a passing Surefire
+  summary with `Skipped` above zero (2026-11-02; not staged).** API-Sheriff plan-25 #408, twice.
+  The accepted-false-positive tuple reached `preference_min_recurrence`. A related medium item:
+  `-Dtest=A+B` matches nothing. This sits next to the "PLAN-LB-28's test ladder" entry (epilogue
+  lines still filed). — source: inbox `lessons-routing-061.md`.
+- **HIGH (inherited) — consumer-repo recurrences on the finalize and outline path, plus one new
+  item (2026-11-02; not staged).** API-Sheriff (Maven):
+  - (1) The deep-lane outline writes no assessments, a recurrence of the entry of that name
+    (residue owned by PLAN-LB-54 D2).
+  - (2) `ci-verify-policy` and `ci-verify-cancelled` answer `unknown_producer`, a recurrence
+    after the retired PLAN-LB-44 entry; a residual check is owed.
+  - (3) Maven `module-tests` is marked degraded although every test ran, a recurrence of `-031`
+    (PLAN-LB-58 D3); see the medium Maven task-time gate entry.
+  - (4) **New:** a finalize step with no implementor records `done` instead of `skipped`, and
+    the `pre-push-quality-gate` and `branch-cleanup` docs name pyprojectx commands inline. Item 4
+    names `pre-submission-self-review`, which PLAN-LB-37 retired, so the consumer probably ran an
+    older plugin; only the done-vs-skipped rule is a candidate here.
+
+  — source: inbox `lessons-routing-058.md`.
 
 ## Non-Claude-Code Failures
 
