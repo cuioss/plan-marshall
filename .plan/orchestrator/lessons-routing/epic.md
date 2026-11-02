@@ -185,6 +185,42 @@ recorded with a one-line reason per item; a lesson whose grade is genuinely bord
 and `high` is put to the operator rather than guessed. Nothing is routed to any other sibling epic, and
 nothing is added to the PM-MCP carry-over by this command.
 
+⛔⛔ **RULING 2026-11-02 (operator) — the `gather` command.** `gather` is the cross-repo sibling of
+`ingest`: it collects plan-marshall-relevant lessons from every sibling checkout's lessons store into this
+epic. Like `ingest`, it is an epic-local command (`/plan-orchestrator epic=lessons-routing gather`), defined
+HERE and not in the skill source. It uses the RULING 2026-10-09 grading and destinations unchanged. The
+operator authorizes file operations (`mv`, `mkdir`) on the remote stores for this command. Steps, in order:
+
+1. **Enumerate stores.** Probe every sibling checkout under the parent of this repository's main
+   checkout (`/Users/oliver/git/*`), and each sibling's own `.plan/local/worktrees/*`. A store is found
+   with `git -C {repo} status --porcelain --ignored --untracked-files=all -- .plan/local/lessons-learned`
+   (the files are git-ignored, so a plain listing through the inventory misses them). An empty result is
+   trusted only after the same probe has returned a known non-empty store in the same session. Record
+   every repo probed and its count. A repo with no store is a recorded zero, not a skip.
+2. **Relevance split.** A lesson is in scope when it is about the `plan-marshall` bundle, any
+   `marketplace/bundles/*` domain bundle, or plan-marshall tooling as used by the consumer. Project-only
+   lessons (about the consumer's own code, build or CI) **stay in their source store, untouched**.
+3. **Pass 1, consolidate.** Dedup and cluster all in-scope lessons across every repo, and against
+   earlier sweeps (`lessons-archive/INDEX.md`) and the undrained `live-blockers` inbox. A recurrence of an
+   already-filed subject is either archived as already-covered or added to the open message with
+   `inbox amend`, never refiled.
+4. **Pass 2, ground truth.** Check each consolidated item against the base branch HEAD and grade it
+   `critical` / `high` / `medium` / `low` / `stale`. A borderline medium/high item goes to the operator.
+5. **File.** Applicable items (RULING 2026-10-09 (a) or (b)) become ONE `live-blockers` inbox message
+   each (`--sender-type orchestrator --sender-id lessons-routing --kind finding`). The body names the
+   severity, the bundle, the ground-truth evidence with `file:line` at the checked commit, and every
+   source `{repo} {lesson-id}`.
+6. **Move.** Every in-scope lesson is moved verbatim (`mv -n`) to
+   `{epic_dir}/lessons-archive/{level}/{repo}/`, or to `filed-live-blockers/sweep-{date}/{repo}/` for filed
+   ones. The move happens only after the item's inbox message exists. Every destination is then verified
+   present (`git -C {store_checkout} status --porcelain --untracked-files=all -- …/lessons-archive`),
+   because `mv -n` skips silently. No remote tombstone and no remote commit are made: the stores are
+   git-ignored.
+7. **Record.** Append a dated `## Lesson Sweeps` subsection here and a matching section to
+   `lessons-archive/INDEX.md`, each with a per-lesson disposition. Name every probed repo, so a coverage
+   gap is visible rather than implied. Then log a decision line, update the resume anchor and run
+   `regenerate-view`. Land through the `land` verb only when the operator asks.
+
 ## Lesson Sweeps
 
 One dated subsection per sweep, append-only, newest last. This is where a sweep's disposition record
@@ -422,6 +458,40 @@ Duplicates against earlier sweeps were found rather than filed twice: eight less
 already-covered, and two filings are recurrences of subjects already owned in `live-blockers` (`-058`,
 three of its four items; `-060`). The rest are new: `-059`, `-061`, the fourth item of `-058`, and the
 two domain-content filings.
+
+### 2026-11-02 — ninth `ingest` run (inbox, 116 messages)
+
+Corpus at start: 0. Inbox at start: 116 live, valid messages, none a landing. 78 came from the API-Sheriff epic `api-sheriff-0-2-0`, and 13 more were API-Sheriff observations relayed under this epic's own sender id (`lessons-routing-001`..`-013`). The other 25 came from three `plan-v02-*` plans and from `pm-mcp-core-corpus-group-contamination`. Grading was drafted by one read-only level-5 leaf and adjudicated here. Per-message dispositions: `lessons-archive/INDEX.md` § Sweep 2026-11-02.
+
+| Disposition | Messages | Where |
+|---|---|---|
+| high, filed to `live-blockers` | 15 in 5 filings (`lessons-routing-064`..`-068`) | `live-blockers/inbox/` |
+| already-covered (incl. 3 added to the amended `-060`) | 39 | archived; no new filing |
+| medium, archived | 50 | `inbox/archive/{sender}/` |
+| low, archived | 12 | same |
+| stale | 0 | — |
+
+Operator rulings: all four borderlines were graded **high** — review-ingest fidelity (`-067`) and the freshness false pass (`-068`). The undrained `live-blockers` message `lessons-routing-060` was amended (revision 1) with the waiver-refused-at-merge recurrence rather than refiled.
+
+Checked at `c431a8193`: the criteria bullet regex (`_criteria_snapshot.py:72`); `--no-renames` and the pre-image read at the base tip (`_review_support_integrity.py:75`, `:81-84`); the `inline` participation evidence needs no marker (`coderabbit.md:50`); and `refire_waiver` is absent from every `pre_merge_gate` source. Medium and low grades rest on the message text. As in the 2026-10-23 run, message bodies stay verbatim in `inbox/archive/`, and no copy was made under `lessons-archive/{level}/`.
+
+### 2026-11-02 — tenth `ingest` run (cross-repo: five sibling checkouts)
+
+At the operator's direction, every sibling checkout's lesson store was swept. Stores found: API-Sheriff (91), pm-mcp-core (60), nifi-extensions (13), TokenSheriff (10) and cui-jsf-test-basic (4), 178 lessons in all. 96 are about plan-marshall or its bundles and were moved into the archive, removing them from the source. The other 82 are project-specific and stay in their checkouts, on the operator's ruling. Grading took two passes, consolidation and dedup first and then a ground-truth check at `c431a8193`. Per-lesson dispositions: `lessons-archive/INDEX.md` § Sweep 2026-11-02 (second run).
+
+| Disposition | Lessons | Where |
+|---|---|---|
+| high (operator), filed | 1 in `lessons-routing-069` (build daemon runs two builds in one worktree) | `live-blockers/inbox/` |
+| domain content, filed | 9 in 5 filings, `-070`..`-074` (pm-dev-java, cui-logging, oci-security, ref-svg-diagrams, jest-testing) | same |
+| already-covered | 33 | `lessons-archive/low/{repo}/` |
+| medium | 18 | `lessons-archive/medium/{repo}/` |
+| low | 30 | `lessons-archive/low/{repo}/` |
+| stale | 5 | `lessons-archive/stale/{repo}/` |
+| not applicable, left in source | 82 | — |
+
+No new plan-marshall high or critical defect turned up apart from the operator-graded build-daemon item: every other high-grade subject is already owned by a `live-blockers` filing or plan. Lessons were moved with `mv -n`. All 96 destinations were verified present, and no source-repo tombstone or commit was made (same deviation as the 2026-11-01 run).
+
+⚠ **Coverage gap:** the store set rests on probing sibling names by hand, because no wildcard listing was possible in this session. ⚠ **Unreconciled:** ids the 2026-11-01 run recorded as left in place, for example API `2026-10-12-07-002` and TokenSheriff `2026-10-31-12-001`, are no longer at those paths.
 
 ## START HERE
 

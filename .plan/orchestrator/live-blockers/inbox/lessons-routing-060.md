@@ -4,6 +4,8 @@ sender_id=lessons-routing
 epic=live-blockers
 kind=finding
 created=2026-11-01T20:42:29Z
+revision=1
+amended=2026-11-02T10:27:02Z
 
 # Pre-merge HEAD binding voids every gate on a late commit; a waiver the step record accepted is refused at merge
 
@@ -22,3 +24,9 @@ Source: 1 lesson from the TokenSheriff checkout, verbatim in `lessons-routing/le
 ## Ask
 
 Check at HEAD whether (a) the skip rule and the gate's head-dependence derive from one source, (b) a waiver accepted by a step record is also accepted by the merge gate, and (c) the operator prompt is built from the labels the barrier returns.
+
+## Added 2026-11-02 sweep — item (b) recurs after LB-55/LB-101, and the code says it is still open
+
+- **Recurrence (API-Sheriff, 2026-10-30):** `api-sheriff-api-sheriff-0-2-0-078` (plan-v02-48-adr-corpus-cleanup-part-2): `loop-back close --step code-review --waive-refire functional-review --waive-refire finalize-step-simplify` recorded a `refire_waiver` with head and basis on both steps; `pre_merge_gate merge` then refused with `merge_candidate_not_gated` naming exactly those two steps, after CI, bots and Sonar had finished. Also `lessons-routing-009` (same refusal) and `lessons-routing-001` (PR cuioss/API-Sheriff#527: operator narrowed the re-fire set, the push went through, then branch-cleanup refused; a full functional-review round plus simplify and security-audit re-ran about an hour after the override). Bodies verbatim in `lessons-routing/inbox/archive/`.
+- **Ground truth (c431a8193):** `architecture search --content --pattern refire_waiver` finds the field only in `manage-status` (`_cmd_loop_back.py`, `_cmd_mark_step.py`, `manage-status.py`, SKILL.md) and `phase-6-finalize/SKILL.md` — **no `pre_merge_gate` source reads it**. Found by content search, not by running the gate.
+- Either the gate honours a waiver bound to the candidate head, or `loop-back close` refuses the waiver up front and says the merge gate will not accept it.

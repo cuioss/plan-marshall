@@ -515,3 +515,166 @@ Messages `-058`..`-063` were written to `live-blockers/inbox/` in one run and ar
 | **total** | **61** |
 
 The 46 lessons taken in are the 37 clustered, the 8 already-covered and the 1 stale; the 15 not applicable are not copied.
+
+## Sweep 2026-11-02 — inbox, 116 messages
+
+Input was this epic's own inbox: `api-sheriff-api-sheriff-0-2-0-001`..`-078` (API-Sheriff epic api-sheriff-0-2-0), `lessons-routing-001`..`-013` (API-Sheriff observations relayed under this epic's sender id), `plan-v02-04-adr-corpus-cleanup-001`..`-007`, `plan-v02-12-idp-addressing-model-001`..`-008`, `plan-v02-46-upstream-close-after-early-answer-001`..`-005`, `pm-mcp-core-corpus-group-contamination-001`..`-005`. Corpus: 0. All 116 valid, all live, none a landing. Grading was drafted by one read-only `execution-context-level-5` leaf and adjudicated here.
+
+Abbreviations below: `as-NNN` = `api-sheriff-api-sheriff-0-2-0-NNN`, `lr-NNN` = this inbox's `lessons-routing-NNN` (not the outbound filings), `v04-`/`v12-`/`v46-` = the three `plan-v02-*` senders, `pmc-` = `pm-mcp-core-corpus-group-contamination`. Message bodies are preserved verbatim in `inbox/archive/{sender}/`; no copy was made under `{level}/` (as in the 2026-10-23 sweep). The filed bodies live only in `live-blockers/inbox/` (no `filed-live-blockers/` copy — the messages carry the full body).
+
+**Operator rulings this run.** Four borderlines were put to the operator, and all four were graded **high**: review-ingest fidelity (`lr-013`, `as-044`, `as-052`) and the freshness false pass (`as-078` item 2). The operator also directed that `live-blockers` `lessons-routing-060` (undrained) be amended with the waiver-refused-at-merge evidence instead of getting a new filing.
+
+**Checked at `c431a8193`:** `_criteria_snapshot.py:72` (the bullet regex); `_review_support_integrity.py:75` (`--no-renames`) and `:81-84` (the pre-image is read at the base tip); `coderabbit.md:48-53` (the `inline` evidence needs no marker); and `refire_waiver`, which is not referenced from any `pre_merge_gate` source (`architecture search --content`). Medium and low grades rest on the message text.
+
+### Filed to `live-blockers` (5 new filings + 1 amendment, 15 sources + 3 recurrences)
+
+| Message | Level | Sources | Subject |
+|---|---|---|---|
+| `lessons-routing-064` | high | lr-008; as-036, -048, -049, -062, -063, -071 | `weakened_test` reads moves, renames and planned dedups as lost assertions, and re-raises them at every head. Shares a file with PLAN-LB-75 (parked) |
+| `lessons-routing-065` | high | as-004; v46-001 | The success-criteria parser drops every criterion after a wrapped line |
+| `lessons-routing-066` | high | as-055, -074 | CodeRabbit participation: thread replies credit an unreviewed head, and the new summary format is never credited (PLAN-LB-100 now blocks on it) |
+| `lessons-routing-067` | high (operator) | lr-013; as-044, -052 | Review bodies are cut at 8,000 characters before the request, and a re-review's inline comments are not fetched |
+| `lessons-routing-068` | high (operator) | as-078 (item 2) | The freshness gate passed on a 5-test row labelled whole-tree (residual check against LB-58) |
+| `lessons-routing-060` (amended, revision 1) | high (operator, 2026-11-01) | + lr-001, lr-009, as-078 (item 1) | The merge gate ignores a `--waive-refire` that the step record accepted |
+
+### Already covered (39, no new filing)
+
+| Messages | Covered by |
+|---|---|
+| lr-001, lr-009 | `lessons-routing-060` (amended above) |
+| lr-002; as-006, -016, -029, -030, -047, -051, -059 | `-044` script surface drift. `resolve-test-scope` is now declared, so its rejection was executor skew |
+| lr-004; as-038 | `-051` search coverage |
+| lr-007, lr-010; as-023, -067; v12-007 | `-045` executor skew; PLAN-LB-43 #1851, PLAN-LB-95 #1865 |
+| as-001; pmc-002 | PLAN-LB-101 #1890 (quota wait); `-030`/`-050` |
+| as-005, -022, -037, -065; v04-003; v46-005 | `-031`/`-058` (Maven module-tests DEGRADED). The zero-bundle half is fixed by #1866 |
+| as-010, -031, -045, -053; v12-005; pmc-001 | `-046`; PLAN-LB-91 #1847 rebase remap |
+| as-011 | `-038` leaf self-transition |
+| as-014, -019, -026 | `-022`/`-032`/`-058` outline assessments |
+| as-040, -061; v04-006 | `-042` stale cwd after cleanup |
+| v12-004 | `-059` no-progress hand-back |
+
+### `medium/` (50, not filed — bodies in `inbox/archive/`)
+
+| Cluster | Messages |
+|---|---|
+| Head-dependent re-fire cost (cost class, outside the FOCUS RULE; precedent: the withdrawn `-047`) | lr-012; as-025, -034, -043, -054, -064; v04-004; v12-008 |
+| Outline and plan authoring quality (the Q-Gate catches these) | lr-011; as-012, -015, -018, -020, -027, -028, -041, -056, -057; v46-002 |
+| Finalize/review authoring traps | lr-006; as-003, -013, -042, -046, -058, -069 |
+| Orchestrator spec planning | as-002, -007 |
+| Build timeouts and daemon env | as-009, -035, -068 |
+| build-server wait log flood | as-017, -024 |
+| `q_gate_validation=once` leaves findings pending | as-021, -039 |
+| Post-merge CI wait | as-032, -072; v04-007; v12-003 |
+| Freshness keyed to a hash | lr-005; as-076 |
+| `git-workflow commit` reports FETCH_FAILURE on an empty index | v12-001; v46-003 |
+| Singletons | lr-003 (guards learned from refusal); as-050 (busy main checkout); as-060 (review body re-filed); as-070 (preference promotion); as-075 (loop-back admit spends a round); v04-001 (finalize driven from a leaf); v46-004 (`pull_request_runs` false negative) |
+
+### `low/` (12, not filed)
+
+| Cluster | Messages |
+|---|---|
+| Caller UX and contract gaps | as-073; v04-002; v12-002, -006 |
+| Measurement and logging gaps (outside the FOCUS RULE) | as-077; pmc-003, -004 |
+| Singletons | as-008 (spec size cap); as-033 (deliverable label); as-066 (leaf edited a tool-result copy); v04-005 (queue squash message, also as-078 item 3); pmc-005 (Sonar project key) |
+
+### Dispositions
+
+| Disposition | Count |
+|---|---|
+| filed (5 filings) | 15 |
+| already-covered (incl. 3 folded into amended `-060`) | 39 |
+| medium | 50 |
+| low | 12 |
+| stale | 0 |
+| **total** | **116** |
+
+## Sweep 2026-11-02 (second run) — 178 lessons from five sibling checkouts (cross-repo)
+
+The input was the local lesson stores of `API-Sheriff` (91), `pm-mcp-core` (60), `nifi-extensions` (13), `TokenSheriff` (10) and `cui-jsf-test-basic` (4). The plan-marshall corpus itself was empty. Remote text is externally sourced. Grading was drafted by one read-only level-5 leaf in two passes (consolidation and dedup, then a ground-truth check at `c431a8193`) and adjudicated here.
+
+**Coverage caveat.** The store set was found by probing sibling directory names by hand. Glob was not available, and the hook blocks shell listing, so a wildcard sweep and the one-level-deeper check were not run. Probed with no store: cuioss-organization, cui-http, cui-test-generator, cui-test-keycloak-integration, cui-test-mockwebserver-junit5, cui-test-value-objects, coderabbit, cui-portal-core, cui-java-tools, cui-test-juli-logger. Not checked out: cui-jwt, OAuth-Sheriff, pm-mcp, cui-parent-pom, pr-agent-settings. **Discrepancy with the 2026-11-01 record:** its "left in the source checkout" ids, for example API `2026-10-12-07-002` and TokenSheriff `2026-10-31-12-001`, no longer exist at those paths. API `2026-10-13-14-001`/`-002` exist with different content. Unreconciled.
+
+**Operator rulings this run.**
+- The 82 project-only lessons stay in their source checkout.
+- Domain content is filed at any severity, per RULING 2026-10-09.
+- The borderline build-daemon concurrency lesson is graded **high**.
+
+**Layout.** Each lesson was moved verbatim with `mv -n` (no overwrite) to `{level}/{repo}/{lesson-id}.md`, and the filed ones to `filed-live-blockers/sweep-2026-11-02/{repo}/`. 96 destination files were verified present by `git status`. The source repos' tombstones were not written, and nothing was committed in any source repo.
+
+### Filed to `live-blockers` (6 filings, 10 sources)
+
+| Message | Level | Sources | Subject |
+|---|---|---|---|
+| `lessons-routing-069` | high (operator) | API `2026-10-04-09-002` | Build daemon runs two builds in one worktree; shared `target/` produces false failures. No per-project_dir exclusion at HEAD |
+| `lessons-routing-070` | medium / low | pmc `2026-10-15-06-001`; TS `2026-10-14-06-001`; API `2026-10-15-09-002`, `2026-10-05-13-001`; cjtb `2026-06-16-09-001` | `pm-dev-java`: `Locale.ROOT` for signed bytes, URL user-info in rejection messages, S2637/S2638 flip-flop, `-Dtest` selector grammar |
+| `lessons-routing-071` | low | API `2026-10-24-15-001` | `pm-dev-java-cui` cui-logging: a retired LogRecord id is reused |
+| `lessons-routing-072` | medium | API `2026-10-21-19-003` | `pm-dev-oci` oci-security: quick reference signs/verifies a mutable tag (`supply-chain-security.md:28-32`) |
+| `lessons-routing-073` | low | nifi `2026-07-18-21-001` | `pm-documents` ref-svg-diagrams: comma alt text, document-global `:imagesdir:` |
+| `lessons-routing-074` | low | nifi `2026-06-14-21-001` | `pm-dev-frontend` jest-testing: `--silent` instead of console stubs |
+
+### Already covered (33, stored in `low/{repo}/`)
+
+| Lessons | Covered by |
+|---|---|
+| API `2026-10-04-09-004`, `-09-008`, `-09-009`, `-09-010`, `2026-10-14-20-001`, `2026-10-15-09-001`, `2026-10-15-12-001`, `2026-10-17-09-001`, `2026-10-18-06-001`, `2026-10-22-05-004`, `2026-10-27-05-002`; pmc `2026-10-11-20-001` | `-062`/`-057` stated guarantee not bound to its enforcer |
+| API `2026-09-24-15-004`, `2026-10-09-13-001`, `-13-002`, `2026-10-22-05-001`, `2026-10-27-17-003` | `-049` declared footprint omits ADRs / restating sites |
+| API `2026-10-03-06-003`; TS `2026-10-10-08-001` | `-007`/`-050` review-bot size caps |
+| API `2026-10-03-06-007`, `2026-10-06-08-001` | `-031`/`-058` Maven pre-push gate; #1866 |
+| API `2026-10-03-06-001` | `-001`/`-005` self-review non-convergence |
+| API `2026-10-03-06-006` | `-044` script surface drift |
+| API `2026-10-13-07-001` | `-045` executor skew; PLAN-LB-43, -95 |
+| API `2026-10-04-09-003` | `-022`/`-032` outline assessments |
+| API `2026-10-05-13-002` | `-038` leaf self-transition |
+| API `2026-09-24-15-013` | `-017`; PLAN-LB-101 #1890 |
+| API `2026-10-27-05-001` | `-051` search coverage |
+| pmc `2026-10-13-06-001`, `2026-10-15-07-001` | `-018`/`-029`/`-035` sibling-repo spec drift |
+| pmc `2026-10-15-07-002` | `-052` whole-tree verify in a leaf |
+| pmc `2026-10-15-07-003` | `-036` ADR number collision |
+| TS `2026-10-10-08-003` | junit-core `test-fork-policy.md:96-98` |
+
+### `stale/` (5)
+
+| Lesson | Why |
+|---|---|
+| API `2026-10-03-06-005` | scope_creep_check fixed by #1745 (`370f42379`) |
+| API `2026-10-05-18-002` | Maven reactor test count fixed by #1750 (`2fd164ec9`) |
+| nifi `2026-07-17-17-002` | Doc tasks get skills: `pm-documents` `plan-marshall-plugin/extension.py:119-127` |
+| pmc `2026-10-15-06-004`; API `2026-10-24-15-002` | cui-logging row sync and emitting test already stated (`logmessages-documentation.md:145-155`, `SKILL.md:27,125`) |
+
+### `medium/` (18, not filed — message text only unless noted)
+
+| Cluster | Lessons |
+|---|---|
+| Base drift during long finalize | API `2026-10-03-06-002`, `2026-10-27-17-001`, `2026-10-29-09-003` |
+| Build timeouts / daemon env | API `2026-10-03-06-008`; TS `2026-10-19-08-002` |
+| Outline authoring (survey lists, finalize obligations, in-file entries) | API `2026-10-04-09-005`, `-09-006`; pmc `2026-10-18-06-001` |
+| Singletons | API `2026-10-03-06-004` (queue-landing wait); API `2026-10-05-13-003` (whole self-review in a leaf); API `2026-10-06-08-004` (`pull_request_runs` false zero); API `2026-10-09-13-006` (self-review closes with unchecked items); API `2026-10-13-18-001` (duplicate plan hand-off — `launched` status exists at HEAD; residual unchecked); API `2026-10-28-05-001` (staged spec claims ungrounded); TS `2026-10-10-08-004` (unexecuted test reported verified); TS `2026-10-10-08-006` (Maven module-scoped commands below package); nifi `2026-07-16-21-002` (change-ledger build row in worktree); pmc `2026-10-13-13-003` (sibling-relative paths under plan worktrees) |
+
+### `low/` (30, not filed)
+
+| Cluster | Lessons |
+|---|---|
+| Test adequacy (consumer practice) | API `2026-09-24-15-003`, `-15-009`, `2026-10-05-18-001`, `2026-10-28-05-002`, `2026-10-29-09-001`, `2026-10-30-05-001`; TS `2026-10-10-08-002` |
+| Request/outline premises from prose | API `2026-09-24-15-006`, `-15-007`, `-15-011`; nifi `2026-06-22-18-001` |
+| Review-bot suggestion triage, fix rounds | API `2026-10-27-14-001`; nifi `2026-06-22-15-001`; pmc `2026-10-15-07-004` |
+| Module-mapping validator cross-module pairs | API `2026-10-09-13-004`; TS `2026-10-19-08-001` |
+| Sonar visible only in CI / PR scan scope | API `2026-10-09-13-009`; pmc `2026-10-10-07-009` |
+| Process discipline | API `2026-10-04-09-001`, `2026-10-06-08-003` |
+| Recipe near no-op; Sonar HTTPS config | cjtb `2026-06-15-18-001`, `2026-06-16-09-002` |
+| Singletons | API `2026-10-04-09-007` (keyword_drift FP); API `2026-10-05-13-004` (docs-only skip cost); API `2026-10-09-13-007` (formatter style flips); API `2026-10-09-13-010` (footprint on mid-finalize split); API `2026-10-25-22-001` (JaCoCo append); API `2026-10-29-09-002` (stale file:line citations); TS `2026-10-10-08-005` (owed architecture hint); nifi `2026-07-16-00-001` (Surefire `@Nested` count) |
+
+### Not applicable — left in the source checkout (82)
+
+cui-jsf-test-basic 1, nifi-extensions 6, TokenSheriff 1, pm-mcp-core 49, API-Sheriff 25: the consumer project's own code, tests, docs, CI or host. They are exactly the lesson files still present in each store after this run.
+
+### Dispositions
+
+| Disposition | Count |
+|---|---|
+| filed (6 filings) | 10 |
+| already-covered | 33 |
+| medium | 18 |
+| low | 30 |
+| stale | 5 |
+| not applicable (left in source) | 82 |
+| **total** | **178** |
