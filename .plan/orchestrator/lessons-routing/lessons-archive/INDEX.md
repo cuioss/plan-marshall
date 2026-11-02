@@ -515,3 +515,75 @@ Messages `-058`..`-063` were written to `live-blockers/inbox/` in one run and ar
 | **total** | **61** |
 
 The 46 lessons taken in are the 37 clustered, the 8 already-covered and the 1 stale; the 15 not applicable are not copied.
+
+## Sweep 2026-11-02 — inbox, 116 messages
+
+Input was this epic's own inbox: `api-sheriff-api-sheriff-0-2-0-001`..`-078` (API-Sheriff epic api-sheriff-0-2-0), `lessons-routing-001`..`-013` (API-Sheriff observations relayed under this epic's sender id), `plan-v02-04-adr-corpus-cleanup-001`..`-007`, `plan-v02-12-idp-addressing-model-001`..`-008`, `plan-v02-46-upstream-close-after-early-answer-001`..`-005`, `pm-mcp-core-corpus-group-contamination-001`..`-005`. Corpus: 0. All 116 valid, all live, none a landing. Grading was drafted by one read-only `execution-context-level-5` leaf and adjudicated here.
+
+Abbreviations below: `as-NNN` = `api-sheriff-api-sheriff-0-2-0-NNN`, `lr-NNN` = this inbox's `lessons-routing-NNN` (not the outbound filings), `v04-`/`v12-`/`v46-` = the three `plan-v02-*` senders, `pmc-` = `pm-mcp-core-corpus-group-contamination`. Message bodies are preserved verbatim in `inbox/archive/{sender}/`; no copy was made under `{level}/` (as in the 2026-10-23 sweep). The filed bodies live only in `live-blockers/inbox/` (no `filed-live-blockers/` copy — the messages carry the full body).
+
+**Operator rulings this run.** Four borderlines were put to the operator, and all four were graded **high**: review-ingest fidelity (`lr-013`, `as-044`, `as-052`) and the freshness false pass (`as-078` item 2). The operator also directed that `live-blockers` `lessons-routing-060` (undrained) be amended with the waiver-refused-at-merge evidence instead of getting a new filing.
+
+**Checked at `c431a8193`:** `_criteria_snapshot.py:72` (the bullet regex); `_review_support_integrity.py:75` (`--no-renames`) and `:81-84` (the pre-image is read at the base tip); `coderabbit.md:48-53` (the `inline` evidence needs no marker); and `refire_waiver`, which is not referenced from any `pre_merge_gate` source (`architecture search --content`). Medium and low grades rest on the message text.
+
+### Filed to `live-blockers` (5 new filings + 1 amendment, 15 sources + 3 recurrences)
+
+| Message | Level | Sources | Subject |
+|---|---|---|---|
+| `lessons-routing-064` | high | lr-008; as-036, -048, -049, -062, -063, -071 | `weakened_test` reads moves, renames and planned dedups as lost assertions, and re-raises them at every head. Shares a file with PLAN-LB-75 (parked) |
+| `lessons-routing-065` | high | as-004; v46-001 | The success-criteria parser drops every criterion after a wrapped line |
+| `lessons-routing-066` | high | as-055, -074 | CodeRabbit participation: thread replies credit an unreviewed head, and the new summary format is never credited (PLAN-LB-100 now blocks on it) |
+| `lessons-routing-067` | high (operator) | lr-013; as-044, -052 | Review bodies are cut at 8,000 characters before the request, and a re-review's inline comments are not fetched |
+| `lessons-routing-068` | high (operator) | as-078 (item 2) | The freshness gate passed on a 5-test row labelled whole-tree (residual check against LB-58) |
+| `lessons-routing-060` (amended, revision 1) | high (operator, 2026-11-01) | + lr-001, lr-009, as-078 (item 1) | The merge gate ignores a `--waive-refire` that the step record accepted |
+
+### Already covered (39, no new filing)
+
+| Messages | Covered by |
+|---|---|
+| lr-001, lr-009 | `lessons-routing-060` (amended above) |
+| lr-002; as-006, -016, -029, -030, -047, -051, -059 | `-044` script surface drift. `resolve-test-scope` is now declared, so its rejection was executor skew |
+| lr-004; as-038 | `-051` search coverage |
+| lr-007, lr-010; as-023, -067; v12-007 | `-045` executor skew; PLAN-LB-43 #1851, PLAN-LB-95 #1865 |
+| as-001; pmc-002 | PLAN-LB-101 #1890 (quota wait); `-030`/`-050` |
+| as-005, -022, -037, -065; v04-003; v46-005 | `-031`/`-058` (Maven module-tests DEGRADED). The zero-bundle half is fixed by #1866 |
+| as-010, -031, -045, -053; v12-005; pmc-001 | `-046`; PLAN-LB-91 #1847 rebase remap |
+| as-011 | `-038` leaf self-transition |
+| as-014, -019, -026 | `-022`/`-032`/`-058` outline assessments |
+| as-040, -061; v04-006 | `-042` stale cwd after cleanup |
+| v12-004 | `-059` no-progress hand-back |
+
+### `medium/` (50, not filed — bodies in `inbox/archive/`)
+
+| Cluster | Messages |
+|---|---|
+| Head-dependent re-fire cost (cost class, outside the FOCUS RULE; precedent: the withdrawn `-047`) | lr-012; as-025, -034, -043, -054, -064; v04-004; v12-008 |
+| Outline and plan authoring quality (the Q-Gate catches these) | lr-011; as-012, -015, -018, -020, -027, -028, -041, -056, -057; v46-002 |
+| Finalize/review authoring traps | lr-006; as-003, -013, -042, -046, -058, -069 |
+| Orchestrator spec planning | as-002, -007 |
+| Build timeouts and daemon env | as-009, -035, -068 |
+| build-server wait log flood | as-017, -024 |
+| `q_gate_validation=once` leaves findings pending | as-021, -039 |
+| Post-merge CI wait | as-032, -072; v04-007; v12-003 |
+| Freshness keyed to a hash | lr-005; as-076 |
+| `git-workflow commit` reports FETCH_FAILURE on an empty index | v12-001; v46-003 |
+| Singletons | lr-003 (guards learned from refusal); as-050 (busy main checkout); as-060 (review body re-filed); as-070 (preference promotion); as-075 (loop-back admit spends a round); v04-001 (finalize driven from a leaf); v46-004 (`pull_request_runs` false negative) |
+
+### `low/` (12, not filed)
+
+| Cluster | Messages |
+|---|---|
+| Caller UX and contract gaps | as-073; v04-002; v12-002, -006 |
+| Measurement and logging gaps (outside the FOCUS RULE) | as-077; pmc-003, -004 |
+| Singletons | as-008 (spec size cap); as-033 (deliverable label); as-066 (leaf edited a tool-result copy); v04-005 (queue squash message, also as-078 item 3); pmc-005 (Sonar project key) |
+
+### Dispositions
+
+| Disposition | Count |
+|---|---|
+| filed (5 filings) | 15 |
+| already-covered (incl. 3 folded into amended `-060`) | 39 |
+| medium | 50 |
+| low | 12 |
+| stale | 0 |
+| **total** | **116** |

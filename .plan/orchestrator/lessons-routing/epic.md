@@ -423,6 +423,22 @@ already-covered, and two filings are recurrences of subjects already owned in `l
 three of its four items; `-060`). The rest are new: `-059`, `-061`, the fourth item of `-058`, and the
 two domain-content filings.
 
+### 2026-11-02 — ninth `ingest` run (inbox, 116 messages)
+
+Corpus at start: 0. Inbox at start: 116 live, valid messages, none a landing. 78 came from the API-Sheriff epic `api-sheriff-0-2-0`, and 13 more were API-Sheriff observations relayed under this epic's own sender id (`lessons-routing-001`..`-013`). The other 25 came from three `plan-v02-*` plans and from `pm-mcp-core-corpus-group-contamination`. Grading was drafted by one read-only level-5 leaf and adjudicated here. Per-message dispositions: `lessons-archive/INDEX.md` § Sweep 2026-11-02.
+
+| Disposition | Messages | Where |
+|---|---|---|
+| high, filed to `live-blockers` | 15 in 5 filings (`lessons-routing-064`..`-068`) | `live-blockers/inbox/` |
+| already-covered (incl. 3 added to the amended `-060`) | 39 | archived; no new filing |
+| medium, archived | 50 | `inbox/archive/{sender}/` |
+| low, archived | 12 | same |
+| stale | 0 | — |
+
+Operator rulings: all four borderlines were graded **high** — review-ingest fidelity (`-067`) and the freshness false pass (`-068`). The undrained `live-blockers` message `lessons-routing-060` was amended (revision 1) with the waiver-refused-at-merge recurrence rather than refiled.
+
+Checked at `c431a8193`: the criteria bullet regex (`_criteria_snapshot.py:72`); `--no-renames` and the pre-image read at the base tip (`_review_support_integrity.py:75`, `:81-84`); the `inline` participation evidence needs no marker (`coderabbit.md:50`); and `refire_waiver` is absent from every `pre_merge_gate` source. Medium and low grades rest on the message text. As in the 2026-10-23 run, message bodies stay verbatim in `inbox/archive/`, and no copy was made under `lessons-archive/{level}/`.
+
 ## START HERE
 
 ### Annotations
