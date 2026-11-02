@@ -185,6 +185,42 @@ recorded with a one-line reason per item; a lesson whose grade is genuinely bord
 and `high` is put to the operator rather than guessed. Nothing is routed to any other sibling epic, and
 nothing is added to the PM-MCP carry-over by this command.
 
+⛔⛔ **RULING 2026-11-02 (operator) — the `gather` command.** `gather` is the cross-repo sibling of
+`ingest`: it collects plan-marshall-relevant lessons from every sibling checkout's lessons store into this
+epic. Like `ingest`, it is an epic-local command (`/plan-orchestrator epic=lessons-routing gather`), defined
+HERE and not in the skill source. It uses the RULING 2026-10-09 grading and destinations unchanged. The
+operator authorizes file operations (`mv`, `mkdir`) on the remote stores for this command. Steps, in order:
+
+1. **Enumerate stores.** Probe every sibling checkout under the parent of this repository's main
+   checkout (`/Users/oliver/git/*`), and each sibling's own `.plan/local/worktrees/*`. A store is found
+   with `git -C {repo} status --porcelain --ignored --untracked-files=all -- .plan/local/lessons-learned`
+   (the files are git-ignored, so a plain listing through the inventory misses them). An empty result is
+   trusted only after the same probe has returned a known non-empty store in the same session. Record
+   every repo probed and its count. A repo with no store is a recorded zero, not a skip.
+2. **Relevance split.** A lesson is in scope when it is about the `plan-marshall` bundle, any
+   `marketplace/bundles/*` domain bundle, or plan-marshall tooling as used by the consumer. Project-only
+   lessons (about the consumer's own code, build or CI) **stay in their source store, untouched**.
+3. **Pass 1, consolidate.** Dedup and cluster all in-scope lessons across every repo, and against
+   earlier sweeps (`lessons-archive/INDEX.md`) and the undrained `live-blockers` inbox. A recurrence of an
+   already-filed subject is either archived as already-covered or added to the open message with
+   `inbox amend`, never refiled.
+4. **Pass 2, ground truth.** Check each consolidated item against the base branch HEAD and grade it
+   `critical` / `high` / `medium` / `low` / `stale`. A borderline medium/high item goes to the operator.
+5. **File.** Applicable items (RULING 2026-10-09 (a) or (b)) become ONE `live-blockers` inbox message
+   each (`--sender-type orchestrator --sender-id lessons-routing --kind finding`). The body names the
+   severity, the bundle, the ground-truth evidence with `file:line` at the checked commit, and every
+   source `{repo} {lesson-id}`.
+6. **Move.** Every in-scope lesson is moved verbatim (`mv -n`) to
+   `{epic_dir}/lessons-archive/{level}/{repo}/`, or to `filed-live-blockers/sweep-{date}/{repo}/` for filed
+   ones. The move happens only after the item's inbox message exists. Every destination is then verified
+   present (`git -C {store_checkout} status --porcelain --untracked-files=all -- …/lessons-archive`),
+   because `mv -n` skips silently. No remote tombstone and no remote commit are made: the stores are
+   git-ignored.
+7. **Record.** Append a dated `## Lesson Sweeps` subsection here and a matching section to
+   `lessons-archive/INDEX.md`, each with a per-lesson disposition. Name every probed repo, so a coverage
+   gap is visible rather than implied. Then log a decision line, update the resume anchor and run
+   `regenerate-view`. Land through the `land` verb only when the operator asks.
+
 ## Lesson Sweeps
 
 One dated subsection per sweep, append-only, newest last. This is where a sweep's disposition record
