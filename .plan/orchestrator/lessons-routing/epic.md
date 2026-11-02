@@ -221,6 +221,20 @@ operator authorizes file operations (`mv`, `mkdir`) on the remote stores for thi
    gap is visible rather than implied. Then log a decision line, update the resume anchor and run
    `regenerate-view`. Land through the `land` verb only when the operator asks.
 
+⛔⛔ **RULING 2026-11-02 (operator) — the action menu.** After every session start (`resume` or the first
+verb of a session) and after every action finishes, the chat ends by displaying the defined actions of
+this epic, each as **number, name, description**. The operator selects an action by its number. The menu
+is this table, and it is the single source; add a row here when a new epic-local action is defined.
+
+| # | Action | Description |
+|:-:|--------|-------------|
+| 1 | `drain` | Drain this epic's inbox (analyze inbox-scan mode) with the RULING 2026-10-09 grading: file applicable items to `live-blockers` and archive the rest. |
+| 2 | `ingest` | Sweep this repo's own `.plan/local/lessons-learned` corpus: consolidate, ground-truth check, file or archive (RULING 2026-10-09). |
+| 3 | `gather` | Sweep every sibling checkout's lessons store for plan-marshall-relevant lessons, and move them here, filed or archived (RULING 2026-11-02). |
+| 4 | `status` | Report the queue, the resume anchor and the undrained `live-blockers` filings. |
+| 5 | `cleanup` | Remove session temp files, then compact and verify the ledger and regenerate the view. |
+| 6 | `land` | Land the whole shared ledger worktree onto `main` through one PR and the merge queue, then resync. |
+
 ## Lesson Sweeps
 
 One dated subsection per sweep, append-only, newest last. This is where a sweep's disposition record
