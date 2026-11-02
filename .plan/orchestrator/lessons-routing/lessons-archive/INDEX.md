@@ -587,3 +587,94 @@ Abbreviations below: `as-NNN` = `api-sheriff-api-sheriff-0-2-0-NNN`, `lr-NNN` = 
 | low | 12 |
 | stale | 0 |
 | **total** | **116** |
+
+## Sweep 2026-11-02 (second run) — 178 lessons from five sibling checkouts (cross-repo)
+
+The input was the local lesson stores of `API-Sheriff` (91), `pm-mcp-core` (60), `nifi-extensions` (13), `TokenSheriff` (10) and `cui-jsf-test-basic` (4). The plan-marshall corpus itself was empty. Remote text is externally sourced. Grading was drafted by one read-only level-5 leaf in two passes (consolidation and dedup, then a ground-truth check at `c431a8193`) and adjudicated here.
+
+**Coverage caveat.** The store set was found by probing sibling directory names by hand. Glob was not available, and the hook blocks shell listing, so a wildcard sweep and the one-level-deeper check were not run. Probed with no store: cuioss-organization, cui-http, cui-test-generator, cui-test-keycloak-integration, cui-test-mockwebserver-junit5, cui-test-value-objects, coderabbit, cui-portal-core, cui-java-tools, cui-test-juli-logger. Not checked out: cui-jwt, OAuth-Sheriff, pm-mcp, cui-parent-pom, pr-agent-settings. **Discrepancy with the 2026-11-01 record:** its "left in the source checkout" ids, for example API `2026-10-12-07-002` and TokenSheriff `2026-10-31-12-001`, no longer exist at those paths. API `2026-10-13-14-001`/`-002` exist with different content. Unreconciled.
+
+**Operator rulings this run.**
+- The 82 project-only lessons stay in their source checkout.
+- Domain content is filed at any severity, per RULING 2026-10-09.
+- The borderline build-daemon concurrency lesson is graded **high**.
+
+**Layout.** Each lesson was moved verbatim with `mv -n` (no overwrite) to `{level}/{repo}/{lesson-id}.md`, and the filed ones to `filed-live-blockers/sweep-2026-11-02/{repo}/`. 96 destination files were verified present by `git status`. The source repos' tombstones were not written, and nothing was committed in any source repo.
+
+### Filed to `live-blockers` (6 filings, 10 sources)
+
+| Message | Level | Sources | Subject |
+|---|---|---|---|
+| `lessons-routing-069` | high (operator) | API `2026-10-04-09-002` | Build daemon runs two builds in one worktree; shared `target/` produces false failures. No per-project_dir exclusion at HEAD |
+| `lessons-routing-070` | medium / low | pmc `2026-10-15-06-001`; TS `2026-10-14-06-001`; API `2026-10-15-09-002`, `2026-10-05-13-001`; cjtb `2026-06-16-09-001` | `pm-dev-java`: `Locale.ROOT` for signed bytes, URL user-info in rejection messages, S2637/S2638 flip-flop, `-Dtest` selector grammar |
+| `lessons-routing-071` | low | API `2026-10-24-15-001` | `pm-dev-java-cui` cui-logging: a retired LogRecord id is reused |
+| `lessons-routing-072` | medium | API `2026-10-21-19-003` | `pm-dev-oci` oci-security: quick reference signs/verifies a mutable tag (`supply-chain-security.md:28-32`) |
+| `lessons-routing-073` | low | nifi `2026-07-18-21-001` | `pm-documents` ref-svg-diagrams: comma alt text, document-global `:imagesdir:` |
+| `lessons-routing-074` | low | nifi `2026-06-14-21-001` | `pm-dev-frontend` jest-testing: `--silent` instead of console stubs |
+
+### Already covered (33, stored in `low/{repo}/`)
+
+| Lessons | Covered by |
+|---|---|
+| API `2026-10-04-09-004`, `-09-008`, `-09-009`, `-09-010`, `2026-10-14-20-001`, `2026-10-15-09-001`, `2026-10-15-12-001`, `2026-10-17-09-001`, `2026-10-18-06-001`, `2026-10-22-05-004`, `2026-10-27-05-002`; pmc `2026-10-11-20-001` | `-062`/`-057` stated guarantee not bound to its enforcer |
+| API `2026-09-24-15-004`, `2026-10-09-13-001`, `-13-002`, `2026-10-22-05-001`, `2026-10-27-17-003` | `-049` declared footprint omits ADRs / restating sites |
+| API `2026-10-03-06-003`; TS `2026-10-10-08-001` | `-007`/`-050` review-bot size caps |
+| API `2026-10-03-06-007`, `2026-10-06-08-001` | `-031`/`-058` Maven pre-push gate; #1866 |
+| API `2026-10-03-06-001` | `-001`/`-005` self-review non-convergence |
+| API `2026-10-03-06-006` | `-044` script surface drift |
+| API `2026-10-13-07-001` | `-045` executor skew; PLAN-LB-43, -95 |
+| API `2026-10-04-09-003` | `-022`/`-032` outline assessments |
+| API `2026-10-05-13-002` | `-038` leaf self-transition |
+| API `2026-09-24-15-013` | `-017`; PLAN-LB-101 #1890 |
+| API `2026-10-27-05-001` | `-051` search coverage |
+| pmc `2026-10-13-06-001`, `2026-10-15-07-001` | `-018`/`-029`/`-035` sibling-repo spec drift |
+| pmc `2026-10-15-07-002` | `-052` whole-tree verify in a leaf |
+| pmc `2026-10-15-07-003` | `-036` ADR number collision |
+| TS `2026-10-10-08-003` | junit-core `test-fork-policy.md:96-98` |
+
+### `stale/` (5)
+
+| Lesson | Why |
+|---|---|
+| API `2026-10-03-06-005` | scope_creep_check fixed by #1745 (`370f42379`) |
+| API `2026-10-05-18-002` | Maven reactor test count fixed by #1750 (`2fd164ec9`) |
+| nifi `2026-07-17-17-002` | Doc tasks get skills: `pm-documents` `plan-marshall-plugin/extension.py:119-127` |
+| pmc `2026-10-15-06-004`; API `2026-10-24-15-002` | cui-logging row sync and emitting test already stated (`logmessages-documentation.md:145-155`, `SKILL.md:27,125`) |
+
+### `medium/` (18, not filed — message text only unless noted)
+
+| Cluster | Lessons |
+|---|---|
+| Base drift during long finalize | API `2026-10-03-06-002`, `2026-10-27-17-001`, `2026-10-29-09-003` |
+| Build timeouts / daemon env | API `2026-10-03-06-008`; TS `2026-10-19-08-002` |
+| Outline authoring (survey lists, finalize obligations, in-file entries) | API `2026-10-04-09-005`, `-09-006`; pmc `2026-10-18-06-001` |
+| Singletons | API `2026-10-03-06-004` (queue-landing wait); API `2026-10-05-13-003` (whole self-review in a leaf); API `2026-10-06-08-004` (`pull_request_runs` false zero); API `2026-10-09-13-006` (self-review closes with unchecked items); API `2026-10-13-18-001` (duplicate plan hand-off — `launched` status exists at HEAD; residual unchecked); API `2026-10-28-05-001` (staged spec claims ungrounded); TS `2026-10-10-08-004` (unexecuted test reported verified); TS `2026-10-10-08-006` (Maven module-scoped commands below package); nifi `2026-07-16-21-002` (change-ledger build row in worktree); pmc `2026-10-13-13-003` (sibling-relative paths under plan worktrees) |
+
+### `low/` (30, not filed)
+
+| Cluster | Lessons |
+|---|---|
+| Test adequacy (consumer practice) | API `2026-09-24-15-003`, `-15-009`, `2026-10-05-18-001`, `2026-10-28-05-002`, `2026-10-29-09-001`, `2026-10-30-05-001`; TS `2026-10-10-08-002` |
+| Request/outline premises from prose | API `2026-09-24-15-006`, `-15-007`, `-15-011`; nifi `2026-06-22-18-001` |
+| Review-bot suggestion triage, fix rounds | API `2026-10-27-14-001`; nifi `2026-06-22-15-001`; pmc `2026-10-15-07-004` |
+| Module-mapping validator cross-module pairs | API `2026-10-09-13-004`; TS `2026-10-19-08-001` |
+| Sonar visible only in CI / PR scan scope | API `2026-10-09-13-009`; pmc `2026-10-10-07-009` |
+| Process discipline | API `2026-10-04-09-001`, `2026-10-06-08-003` |
+| Recipe near no-op; Sonar HTTPS config | cjtb `2026-06-15-18-001`, `2026-06-16-09-002` |
+| Singletons | API `2026-10-04-09-007` (keyword_drift FP); API `2026-10-05-13-004` (docs-only skip cost); API `2026-10-09-13-007` (formatter style flips); API `2026-10-09-13-010` (footprint on mid-finalize split); API `2026-10-25-22-001` (JaCoCo append); API `2026-10-29-09-002` (stale file:line citations); TS `2026-10-10-08-005` (owed architecture hint); nifi `2026-07-16-00-001` (Surefire `@Nested` count) |
+
+### Not applicable — left in the source checkout (82)
+
+cui-jsf-test-basic 1, nifi-extensions 6, TokenSheriff 1, pm-mcp-core 49, API-Sheriff 25: the consumer project's own code, tests, docs, CI or host. They are exactly the lesson files still present in each store after this run.
+
+### Dispositions
+
+| Disposition | Count |
+|---|---|
+| filed (6 filings) | 10 |
+| already-covered | 33 |
+| medium | 18 |
+| low | 30 |
+| stale | 5 |
+| not applicable (left in source) | 82 |
+| **total** | **178** |

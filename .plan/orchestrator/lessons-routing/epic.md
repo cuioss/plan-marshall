@@ -439,6 +439,24 @@ Operator rulings: all four borderlines were graded **high** — review-ingest fi
 
 Checked at `c431a8193`: the criteria bullet regex (`_criteria_snapshot.py:72`); `--no-renames` and the pre-image read at the base tip (`_review_support_integrity.py:75`, `:81-84`); the `inline` participation evidence needs no marker (`coderabbit.md:50`); and `refire_waiver` is absent from every `pre_merge_gate` source. Medium and low grades rest on the message text. As in the 2026-10-23 run, message bodies stay verbatim in `inbox/archive/`, and no copy was made under `lessons-archive/{level}/`.
 
+### 2026-11-02 — tenth `ingest` run (cross-repo: five sibling checkouts)
+
+At the operator's direction, every sibling checkout's lesson store was swept. Stores found: API-Sheriff (91), pm-mcp-core (60), nifi-extensions (13), TokenSheriff (10) and cui-jsf-test-basic (4), 178 lessons in all. 96 are about plan-marshall or its bundles and were moved into the archive, removing them from the source. The other 82 are project-specific and stay in their checkouts, on the operator's ruling. Grading took two passes, consolidation and dedup first and then a ground-truth check at `c431a8193`. Per-lesson dispositions: `lessons-archive/INDEX.md` § Sweep 2026-11-02 (second run).
+
+| Disposition | Lessons | Where |
+|---|---|---|
+| high (operator), filed | 1 in `lessons-routing-069` (build daemon runs two builds in one worktree) | `live-blockers/inbox/` |
+| domain content, filed | 9 in 5 filings, `-070`..`-074` (pm-dev-java, cui-logging, oci-security, ref-svg-diagrams, jest-testing) | same |
+| already-covered | 33 | `lessons-archive/low/{repo}/` |
+| medium | 18 | `lessons-archive/medium/{repo}/` |
+| low | 30 | `lessons-archive/low/{repo}/` |
+| stale | 5 | `lessons-archive/stale/{repo}/` |
+| not applicable, left in source | 82 | — |
+
+No new plan-marshall high or critical defect turned up apart from the operator-graded build-daemon item: every other high-grade subject is already owned by a `live-blockers` filing or plan. Lessons were moved with `mv -n`. All 96 destinations were verified present, and no source-repo tombstone or commit was made (same deviation as the 2026-11-01 run).
+
+⚠ **Coverage gap:** the store set rests on probing sibling names by hand, because no wildcard listing was possible in this session. ⚠ **Unreconciled:** ids the 2026-11-01 run recorded as left in place, for example API `2026-10-12-07-002` and TokenSheriff `2026-10-31-12-001`, are no longer at those paths.
+
 ## START HERE
 
 ### Annotations
