@@ -65,29 +65,10 @@ fails at `a297ea762`.
      the verb and the operator question;
    - a doc test asserts `functional-review.md` records the D3e decision.
 
-3. **The test-integrity check reaches plans without a worktree and the weakened-test rules agree.**
-   - Skills: pm-plugin-development:plugin-architecture, pm-plugin-development:plugin-script-architecture, pm-dev-python:python-core, plan-marshall:ref-code-quality, pm-dev-python:pytest-testing, plan-marshall:persona-module-tester, pm-documents:ref-asciidoc
-   - Persona: plan-marshall:persona-implementer
-   - A plan with `use_worktree: false` is graded against the main checkout's diff to the base, not
-     skipped; the choice of evidence root is recorded at outline.
-   - Per-function matching is keyed by a qualified name, so class methods (indented `def`),
-     `async def` tests and same-name tests in different classes are matched; a deleted test whose
-     assertions are added elsewhere in the same file is reported.
-   - The docstring of `_review_support_integrity.py` and `functional-review.md` L309 state exactly
-     which evasions are caught and which are not (a weaker replacing assertion; a Java test method),
-     and `review-rubric.md` and `functional-review.md` L309 agree on whether a deliverable that asks for
-     the change retires a `weakened_test` finding.
-
-   *Done when:* each of these fails at `a297ea762`:
-   - an assertion moved between two methods of one class is reported;
-   - an `async def` test that loses an assertion is reported;
-   - a deleted test with an equal number of assertions added to another test in the same file is
-     reported;
-   - a `use_worktree: false` fixture plan that removes an assertion yields a `weakened_test` finding;
-   - a doc test asserts the two documents give one answer on the "asks for the change" case.
-
-   And these **hold at** `a297ea762` and are kept as controls: an assertion moved to a NEW test
-   function is reported; a wholly deleted test is reported.
+3. **ABSORBED into PLAN-LB-105 D1 and D2 (orchestrator decision, 2026-11-02).** The test-integrity reach (plans without a
+   worktree, qualified-name matching, the conflict between `review-rubric.md` and `functional-review.md`) ships there, controls
+   included, because PLAN-LB-105 builds the same matcher in the same function (`compute_test_integrity`). This plan carries no
+   D3. When it is re-grounded, read `_review_support_integrity.py` as PLAN-LB-105 left it.
 
 4. **A closed review does not close later criteria.**
    - Skills: pm-plugin-development:plugin-architecture, pm-plugin-development:plugin-script-architecture, pm-dev-python:python-core, plan-marshall:ref-code-quality, pm-dev-python:pytest-testing, plan-marshall:persona-module-tester
@@ -119,13 +100,11 @@ fails at `a297ea762`.
 
 ## Expected Surface
 
-- OBSERVED: `marketplace/bundles/plan-marshall/skills/phase-6-finalize/scripts/review_support.py` — `run_open_criteria`, evidence root (D1, D3)
-- OBSERVED: `marketplace/bundles/plan-marshall/skills/phase-6-finalize/scripts/_review_support_integrity.py` — per-function matching and docstring (D3)
+- OBSERVED: `marketplace/bundles/plan-marshall/skills/phase-6-finalize/scripts/review_support.py` — `run_open_criteria` (D1)
 - OBSERVED: `marketplace/bundles/plan-marshall/skills/manage-status/scripts/_cmd_lifecycle.py` — `criteria_gate`, the drop reason (D1)
 - OBSERVED: `marketplace/bundles/plan-marshall/skills/manage-solution-outline/scripts/_criteria_snapshot.py` — override heads, `superseded` (D4)
 - OBSERVED: `marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/plan-marshall/workflow/triage.md` (D1)
-- OBSERVED: `marketplace/bundles/plan-marshall/skills/phase-6-finalize/workflow/functional-review.md` — L93, L309 (D2, D3)
-- OBSERVED: `marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/review-rubric.md` (D3)
+- OBSERVED: `marketplace/bundles/plan-marshall/skills/phase-6-finalize/workflow/functional-review.md` — L93 (D2)
 - HYPOTHESIS: `marketplace/bundles/plan-marshall/skills/phase-3-outline/SKILL.md` and `marketplace/bundles/plan-marshall/skills/phase-3-outline/workflow/light-lane.md` (verify-at-outline) (D2)
 - OBSERVED: `test/plan-marshall/phase-6-finalize/` and `test/plan-marshall/manage-status/` — the fixtures of D1 to D4
 

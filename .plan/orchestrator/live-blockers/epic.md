@@ -674,6 +674,31 @@ derive, for rows still live.
   - `-072`: `oci-security`, verify-then-run uses a tag instead of the digest; medium.
   - `-073`: `ref-svg-diagrams`, commas in alt text and `:imagesdir:`; low.
   - `-074`: `jest-testing`, use `--silent`; low.
+- 2026-11-02 — **The ten high Open Defects of the 2026-11-02 drain are staged as six plans** (operator: "stage the
+  corresponding plans. Aggregate where sensible"). All are runbook lane. Read-only leaf agents drafted the specs against
+  `0fb6a79b1` and the orchestrator adjudicated them; every surface is `declarative`, with 0 unresolved entries.
+  - PLAN-LB-105 (WS-03), review-gate grading truth: `-064` (`weakened_test`) and `-065` (criteria parser). The re-observation
+    outcome in the qgate store is new. **PLAN-LB-75 D3 is absorbed into it**: one matcher, one function. LB-75 D3 now points
+    to PLAN-LB-105, and its surface lost `_review_support_integrity.py` and `review-rubric.md` in the same edit.
+  - PLAN-LB-106 (WS-05), review-bot evidence truth: `-066` (CodeRabbit participation) and `-067` (body truncation, re-review
+    fetch). It also absorbs the Open Defect "Participation credit ignores an in-progress review" and LB-46 D6's third bullet.
+    It is sequenced before parked LB-46.
+  - PLAN-LB-107 (WS-01), finalize gate waiver and step truth: `-060` (waiver, head-dependence source, published grant labels),
+    `-068` (freshness row scope) and a doc-side guard for `-058` item 2.
+  - PLAN-LB-108 (WS-04), build daemon serialised per directory: `-069`. The in-process per-directory lock and the
+    per-invocation build-queue slot are new.
+  - PLAN-LB-109 (WS-01), a prescribed execute hand-back is not recorded as an error: `-059`.
+  - PLAN-LB-110 (WS-02), Maven consumer test truth: `-061` and `-058` item 3. It absorbs the epilogue-line gap of the PLAN-LB-28
+    test-ladder Open Defect and, as a droppable D4, the medium Maven task-time gate Open Defect.
+
+  The drafters refuted three items at HEAD, and none of them is staged:
+  - `-058` item 1: an empty assessment store reports `not run` since #1773.
+  - `-058` item 4: the step was retired by #1758.
+  - `-061` headline: fixed by #1750 before the sighting. It is kept only as a regression pin.
+
+  New watches: a mixed-domain outline that assesses only plugin files may flag every other affected file (unsighted). The
+  `_plan_parsing.py` block regexes (`Metadata`, `Affected files`, `Verification`) drop wrapped bullets the same way the
+  criteria parser does.
 - 2026-10-29 — **PLAN-LB-100 landed as #1883 (merge `b399401ee`), graded B.** Corroborated against the CI abstraction (PR merged, merge
   commit and parent `6d1554570` as stated, all five code checks green), the merge diff (eleven files, +2571 −102), and a content search
   on the merged tree for the new refusal code and the two new verbs. All three deliverables met; evidence order is `mutation-after`
