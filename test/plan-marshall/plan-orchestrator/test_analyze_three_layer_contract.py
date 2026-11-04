@@ -95,14 +95,24 @@ def _dispatch_bullet(text: str) -> str:
 
 
 def _layer_block(analysis: str, number: int) -> str:
-    """The definition bullet of one layer, up to the next layer's bullet."""
+    """The definition bullet of one layer, up to the next layer's bullet.
+
+    Layer 3 has no following bullet, so its block ends at the limit paragraph
+    that closes the definitions. Without that bound the helper would return the
+    rest of the analysis block, and a keyword moved out of the layer-3 definition
+    into the limit or dispatch paragraph would keep the definition assertion green.
+    """
     marker = f'**Layer {number} — {dict(_LAYERS)[number]}.**'
     start = analysis.find(marker)
     assert start != -1, f'analyze.md Step 4: the layer definition {marker!r} was not found'
     tail = analysis[start + len(marker) :]
     following = [f'**Layer {n} — {name}.**' for n, name in _LAYERS if n > number]
-    end = min((tail.find(m) for m in following if tail.find(m) != -1), default=-1)
-    return tail if end == -1 else tail[:end]
+    stops = [tail.find(m) for m in following if tail.find(m) != -1]
+    if number == max(n for n, _ in _LAYERS):
+        stops.append(tail.find('The limit is absolute:'))
+    stops = [stop for stop in stops if stop != -1]
+    assert stops, f'analyze.md Step 4: the layer {number} block has no closing marker'
+    return tail[: min(stops)]
 
 
 # =============================================================================
@@ -236,9 +246,10 @@ class TestThreeLayerAlwaysDispatched:
         assert '`conformance[N]{rule_source,rule,verdict,evidence}`' in analysis, (
             'Step 4 does not give the conformance return shape'
         )
-        assert '`blocker`' in analysis and '`info`' in analysis, (
-            'Step 4 does not define the severity vocabulary the leaf must return'
-        )
+        for severity in ('`blocker`', '`major`', '`minor`', '`info`'):
+            assert severity in analysis, (
+                f'Step 4 does not define the severity vocabulary member {severity} the leaf must return'
+            )
         assert re.search(r'(?i)re-reads every `?checked`? point', analysis), (
             'Step 4 does not require the orchestrator to re-read every `checked` point'
         )
