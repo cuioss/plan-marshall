@@ -900,11 +900,9 @@ class TestMovedBackPlanRoutedBuild:
         with pytest.raises(routing.WorktreeResolutionError):
             routing.resolve_project_dir(_MOVED_BACK_PLAN, '.', default='.')
 
-    def test_the_routing_process_resolves_the_still_existing_worktree(self, moved_back_window):
+    def test_the_routing_process_resolves_the_still_existing_worktree(self, moved_back_window, monkeypatch):
         """D1 contrast: from MAIN the same flag resolves — the asymmetry is the defect."""
-        import os
-
-        os.chdir(moved_back_window['main'])
+        monkeypatch.chdir(moved_back_window['main'])
         import resolve_project_dir as routing
 
         assert routing.resolve_project_dir(_MOVED_BACK_PLAN, '.', default='.') == str(
@@ -976,10 +974,8 @@ class TestMovedBackPlanRoutedBuild:
         dispatch) and the machine-global build slot the child acquires. That is why
         the tree travels beside it rather than replacing it.
         """
-        import os
-
         worktree = str(moved_back_window['worktree'].resolve())
-        os.chdir(moved_back_window['main'])
+        monkeypatch.chdir(moved_back_window['main'])
         monkeypatch.setattr(
             sys,
             'argv',

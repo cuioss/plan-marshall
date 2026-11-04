@@ -253,19 +253,36 @@ def extract_plan_id(argv: list[str]) -> tuple[str | None, list[str]]:
     return plan_id, out
 
 
-def emit_mutually_exclusive_error(plan_id: str | None, project_dir: str | None) -> dict:
+def emit_mutually_exclusive_error(plan_id: str | None, project_dir: str | None, *, message: str | None = None) -> dict:
     """Build the canonical TOON-friendly error payload for the both-supplied case.
 
     Centralised so every consumer emits the same shape regardless of
     whether it speaks TOON, JSON, or a mixed format. Callers are
     responsible for serialising and printing.
+
+    ``message`` exists for the ONE other mutual-exclusion conflict this module
+    raises — the routed carry beside an explicit ``--project-dir`` (see
+    :func:`resolve_carried_project_dir`). Its reason names a different flag pair,
+    so the canonical ``--plan-id`` wording would tell the operator to drop the
+    wrong flag; the caller passes the raise's own message instead. The error code
+    stays ``mutually_exclusive_args``: the class of the fault is the same.
+
+    Args:
+        plan_id: The plan id the dispatch named, if any.
+        project_dir: The explicit ``--project-dir`` value, if any.
+        message: Override for the canonical wording; ``None`` keeps it.
+
+    Returns:
+        The error payload for the both-supplied case.
     """
     # The values are echoed back to make debugging easier without
     # disclosing anything sensitive (plan ids are not secrets).
     return {
         'status': 'error',
         'error': 'mutually_exclusive_args',
-        'message': (
+        'message': message
+        if message is not None
+        else (
             '--plan-id and --project-dir are mutually exclusive. '
             'Pick one: --plan-id auto-resolves via manage-status; --project-dir is the explicit override.'
         ),
@@ -280,6 +297,34 @@ def emit_worktree_error(plan_id: str, exc: WorktreeResolutionError) -> dict:
         'status': 'error',
         'error': 'worktree_resolution_failed',
         'message': str(exc),
+        'plan_id': plan_id,
+    }
+
+
+def emit_carried_tree_outside_job_error(resolved_project_dir: str, plan_id: str | None) -> dict:
+    """Refuse a routed tree carry that arrived outside a marshalld job child.
+
+    The carry is the routing seam's contract with the child it submits, and the
+    daemon stamps that child. Honouring the flag anywhere else would turn a
+    documented-internal carry into a way to run a build in an arbitrary tree while
+    attributing it to a plan — bypassing exactly the resolution gate
+    ``--plan-id`` exists to enforce. Fail closed, naming the condition.
+
+    Args:
+        resolved_project_dir: The carried tree value, echoed for diagnosis.
+        plan_id: The plan id the dispatch named, if any.
+
+    Returns:
+        The refusal payload.
+    """
+    return {
+        'status': 'error',
+        'error': 'carried_tree_outside_daemon_job',
+        'message': (
+            '--resolved-project-dir is the routed daemon child carry. It is only honoured inside a '
+            'marshalld job child, and this process is not one. Use --plan-id or --project-dir.'
+        ),
+        'resolved_project_dir': resolved_project_dir,
         'plan_id': plan_id,
     }
 
@@ -303,6 +348,7 @@ __all__ = [
     'MutuallyExclusiveArgsError',
     'WorktreeResolutionError',
     'add_plan_id_arg',
+    'emit_carried_tree_outside_job_error',
     'emit_mutually_exclusive_error',
     'emit_worktree_error',
     'extract_plan_id',

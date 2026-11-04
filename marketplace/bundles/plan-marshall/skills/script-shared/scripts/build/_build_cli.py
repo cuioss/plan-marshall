@@ -11,11 +11,12 @@ Split from _build_shared.py to separate CLI wiring from command implementations.
 
 from __future__ import annotations
 
+import os
 from collections.abc import Callable
 
 from _build_format import format_toon
 from _build_parse import Issue
-from _build_server_protocol import positive_timeout_seconds
+from _build_server_protocol import MARSHALLD_JOB_ENV, positive_timeout_seconds
 from _build_shared import ParserFn, cmd_discover_common, cmd_parse_common
 from file_ops import safe_main  # noqa: F401  # canonical entry-point wrapper
 from marketplace_paths import NO_PLAN_SENTINEL
@@ -25,7 +26,7 @@ RESOLVED_PROJECT_DIR_FLAG = '--resolved-project-dir'
 
 
 def add_project_dir_arg(parser) -> None:
-    """Attach the standard --project-dir / --plan-id argument pair to a subparser.
+    """Attach the routing pair (and the routed tree carry) to a subparser.
 
     Every build-class subcommand accepts ``--project-dir`` and ``--plan-id``
     so invocations from an isolated worktree (or any non-cwd directory)
@@ -40,6 +41,11 @@ def add_project_dir_arg(parser) -> None:
     asserted against the argparse-derived build-class roster rather than
     restated as prose, so a subcommand registered without the pair fails
     a test instead of silently falsifying this sentence.
+
+    The pair is declared together with ``--resolved-project-dir``, the routed
+    child's tree carry (:func:`add_resolved_project_dir_arg`). Declaring them at
+    one site is what keeps "the pair" and "the carry that replaces one half of its
+    resolution" from drifting apart.
 
     Scope of that guarantee: the roster's population is every subcommand
     of a wrapper routed through :func:`build_main`. A build-class script
@@ -70,17 +76,17 @@ def add_project_dir_arg(parser) -> None:
 
     A ROUTED dispatch additionally carries ``--resolved-project-dir`` (see
     :func:`add_resolved_project_dir_arg`): the tree its routing process already
-    resolved. When that flag is present ``build_main`` uses it and performs NO
+    resolved. When that flag is present — and only inside a marshalld job child,
+    which is its sole legitimate producer — ``build_main`` uses it and performs NO
     ``--plan-id`` resolution, because the child's own tree is the one the plan
     directory may have already left. It replaces neither flag and stays mutually
     exclusive with ``--project-dir``.
 
     The ``--project-dir`` default stays ``'.'`` so the existing
     ``execute_direct(project_dir=args.project_dir, ...)`` call sites
-    keep compiling. ``apply_plan_id_routing`` (called by the run / parse
-    / coverage / check-warnings handlers via ``_build_shared``)
-    rewrites ``args.project_dir`` to the resolved value before
-    subprocess execution.
+    keep compiling. :func:`build_main` writes the resolved value into
+    ``args.project_dir`` before any handler reads it, so subprocess
+    execution sees the resolved tree and never the raw flag.
     """
     parser.add_argument(
         '--project-dir',
@@ -719,9 +725,17 @@ def build_main(
     # plan record is on main while the child stands in the still-existing
     # worktree. The plan id itself is untouched: it still reaches the handler, the
     # executor's ledger row and the build-slot accounting.
+    #
+    # ⛔ The carry is honoured ONLY inside a marshalld job child. The routing seam
+    # is its sole producer, and the daemon stamps every child with
+    # ``MARSHALLD_JOB_ENV``. Honouring it anywhere else would let a hand-written
+    # ``--plan-id X --resolved-project-dir ANY_TREE`` run a build in an arbitrary
+    # tree while attributing the ledger row and any stored findings to X — the
+    # plan-existence gate that makes ``--plan-id`` trustworthy, gone.
     from resolve_project_dir import (
         MutuallyExclusiveArgsError,
         WorktreeResolutionError,
+        emit_carried_tree_outside_job_error,
         emit_mutually_exclusive_error,
         emit_worktree_error,
         resolve_carried_project_dir,
@@ -734,11 +748,20 @@ def build_main(
     if hasattr(args, 'project_dir'):
         try:
             if carried_project_dir is not None:
+                if not os.environ.get(MARSHALLD_JOB_ENV):
+                    print(format_toon(emit_carried_tree_outside_job_error(carried_project_dir, plan_id)))
+                    return 2
                 args.project_dir = resolve_carried_project_dir(carried_project_dir, project_dir, default='.')
             else:
                 args.project_dir = resolve_project_dir(plan_id, project_dir, default='.')
-        except MutuallyExclusiveArgsError:
-            print(format_toon(emit_mutually_exclusive_error(plan_id, project_dir)))
+        except MutuallyExclusiveArgsError as exc:
+            # The carry's own conflict names a different pair, so its reason wins.
+            carry_message = str(exc) if carried_project_dir is not None else None
+            print(
+                format_toon(
+                    emit_mutually_exclusive_error(plan_id, project_dir, message=carry_message),
+                )
+            )
             return 2
         except WorktreeResolutionError as exc:
             assert plan_id is not None  # only reachable when plan_id was supplied

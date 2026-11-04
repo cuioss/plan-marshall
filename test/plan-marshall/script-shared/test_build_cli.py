@@ -414,6 +414,9 @@ def test_build_main_uses_the_carried_tree_without_resolving_the_plan(monkeypatch
     must win, and the plan id must still reach the handler untouched.
     """
     import file_ops as _resolver_core
+    from _build_server_protocol import MARSHALLD_JOB_ENV
+
+    monkeypatch.setenv(MARSHALLD_JOB_ENV, '1')
 
     def _must_not_query(_plan_id):
         raise AssertionError('a dispatched tree must not re-resolve --plan-id')
@@ -450,13 +453,54 @@ def test_build_main_uses_the_carried_tree_without_resolving_the_plan(monkeypatch
     assert captured == [(str(Path(CANONICAL_WORKTREE)), CANONICAL_PLAN_ID)]
 
 
+def test_build_main_refuses_a_carried_tree_outside_a_daemon_job(monkeypatch, capsys):
+    """The carry is the daemon's contract, so a non-child process is refused.
+
+    Honouring it anywhere else would let any caller run a build in an arbitrary
+    tree while attributing it to a plan, bypassing the resolution gate that makes
+    ``--plan-id`` trustworthy. Fail closed, and say why.
+    """
+    monkeypatch.delenv('MARSHALLD_JOB_ENV', raising=False)
+
+    def _must_not_run(_args):
+        raise AssertionError('a refused carry must not reach the handler')
+
+    def register(subparsers):
+        p = add_run_subparser(subparsers, command_args_help='Test')
+        p.set_defaults(func=_must_not_run)
+
+    monkeypatch.setattr(
+        'sys.argv',
+        [
+            'maven.py',
+            'run',
+            '--command-args',
+            'verify',
+            '--plan-id',
+            CANONICAL_PLAN_ID,
+            '--resolved-project-dir',
+            CANONICAL_WORKTREE,
+        ],
+    )
+
+    rc = build_main('Maven build', [register])
+
+    emitted = capsys.readouterr().out
+    assert rc == 2
+    assert 'error: carried_tree_outside_daemon_job' in emitted
+
+
 def test_build_main_refuses_a_carried_tree_beside_an_explicit_project_dir(monkeypatch, capsys):
     """Two trees cannot both be authoritative, so the pair is refused, not guessed.
 
     The carry replaces ``--plan-id``'s RESOLUTION and nothing else: ``--plan-id``
     and ``--project-dir`` stay mutually exclusive, and a dispatch that names both a
-    tree and an override is ambiguous.
+    tree and an override is ambiguous. The refusal names the pair that actually
+    conflicts — telling the operator to drop ``--plan-id`` would name the wrong flag.
     """
+    from _build_server_protocol import MARSHALLD_JOB_ENV
+
+    monkeypatch.setenv(MARSHALLD_JOB_ENV, '1')
     monkeypatch.setattr(
         'sys.argv',
         [
@@ -475,8 +519,10 @@ def test_build_main_refuses_a_carried_tree_beside_an_explicit_project_dir(monkey
 
     rc = build_main('Maven build', [_register_noop_run])
 
+    emitted = capsys.readouterr().out
     assert rc == 2
-    assert 'mutually_exclusive_args' in capsys.readouterr().out
+    assert 'mutually_exclusive_args' in emitted
+    assert '--resolved-project-dir and --project-dir' in emitted
 
 
 def test_register_standard_subparsers_propagates_routing_flags():
