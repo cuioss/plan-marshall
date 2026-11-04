@@ -208,4 +208,52 @@ def test_java_core_review_rules_cover_a_default_removed_from_a_switch_statement(
     _assert_harvestable(rule)
 
 
+# ---------------------------------------------------------------------------
+# D5 — masking is not sanitising, and \p{Cntrl} is ASCII-only
+# ---------------------------------------------------------------------------
+
+
+def test_java_security_masking_pattern_says_masking_is_not_sanitising():
+    text = (
+        get_skill_dir('pm-dev-java', 'java-security') / 'standards' / 'java-security-patterns.md'
+    ).read_text(encoding='utf-8')
+    masking = _section(text, '### Masking Pattern')
+
+    assert 'mask' in masking.lower(), 'control: the section must still show the masking example'
+    assert 'not sanitising' in masking.lower() or 'does not neutralise' in masking.lower(), (
+        'masking must be stated as redaction, not neutralisation'
+    )
+    assert 'CR' in masking and 'LF' in masking, 'the statement must name the characters masking leaves in place'
+    assert 'forge' in masking.lower(), 'the statement must name the consequence: a forged log line'
+
+
+def test_secure_logging_names_the_c1_range_and_the_ascii_only_cntrl_class():
+    text = (
+        get_skill_dir('plan-marshall', 'persona-security-expert') / 'standards' / 'secure-logging.md'
+    ).read_text(encoding='utf-8')
+
+    assert 'U+0080' in text and 'U+009F' in text, 'the C1 range must be named explicitly'
+    assert '\\p{Cntrl}' in text, 'the regex class must be named'
+    assert 'ASCII' in text, 'the class must be described as ASCII-only'
+    assert 'Character.isISOControl' in text, 'the check that covers the full set must be named'
+
+
+def test_java_security_skill_carries_the_java_form_and_points_to_the_persona_standard():
+    text = (get_skill_dir('pm-dev-java', 'java-security') / 'SKILL.md').read_text(encoding='utf-8')
+
+    assert 'Character.isISOControl' in text, 'the Java form must use the full-range check'
+    assert 'neutralise' in text.lower(), 'the Java form must show the neutralise-then-log step'
+    assert 'secure-logging.md' in text, 'the skill must point at the persona standard that owns the rule'
+
+
+def test_cui_logging_points_at_the_value_neutralisation_rule():
+    text = (
+        get_skill_dir('pm-dev-java-cui', 'cui-logging') / 'standards' / 'logging-standards.md'
+    ).read_text(encoding='utf-8')
+
+    assert 'Character.isISOControl' in text, 'the pointer must name the check the rule uses'
+    assert 'secure-logging.md' in text, 'the pointer must name the standard that owns the rule'
+
+
+
 

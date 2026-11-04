@@ -41,6 +41,21 @@ private String maskUsername(String username) {
 }
 ```
 
+Masking is not sanitising. `maskUsername` redacts part of the value; it does not neutralise CR, LF or any other control character, so a masked value whose remaining characters carry one can still forge a log line. Pair every masking helper with the neutralisation step before the value reaches the appender:
+
+```java
+log.info("Authentication successful for user: " + neutralise(maskUsername(username)));
+
+private String neutralise(String value) {
+    StringBuilder out = new StringBuilder(value.length());
+    for (int i = 0; i < value.length(); i++) {
+        char c = value.charAt(i);
+        out.append(Character.isISOControl(c) ? '?' : c);
+    }
+    return out.toString();
+}
+```
+
 ## Startup Configuration Validation
 
 Validate security configuration at startup, not at runtime. Use `@PostConstruct` or constructor validation to fail fast:

@@ -81,6 +81,23 @@ The conceptual *why* behind every rule in this skill's standards lives in the ce
 | Mapping a finding to a recognized risk category | [`owasp-top-ten.md`](../../../plan-marshall/skills/persona-security-expert/standards/owasp-top-ten.md) |
 | Threat-modeling a Java service | [`threat-modeling-stride.md`](../../../plan-marshall/skills/persona-security-expert/standards/threat-modeling-stride.md) |
 
+## Java Form — Neutralise Before Logging
+
+The cross-cutting rule — which control characters to neutralise, and why `\p{Cntrl}` does not cover the C1 range — is owned by [`secure-logging.md`](../../../plan-marshall/skills/persona-security-expert/standards/secure-logging.md) § "Log Injection". The Java mechanics: `Character.isISOControl` covers the C0 controls, DEL and the C1 range (U+0080 to U+009F); masking is a separate step and neutralises nothing.
+
+```java
+private String neutralise(String value) {
+    StringBuilder out = new StringBuilder(value.length());
+    for (int i = 0; i < value.length(); i++) {
+        char c = value.charAt(i);
+        out.append(Character.isISOControl(c) ? '?' : c);
+    }
+    return out.toString();
+}
+
+log.info("Authentication failed for user: {}", neutralise(username));
+```
+
 ## Related Skills
 
 - `plan-marshall:persona-security-expert` — Cross-cutting security review identity and authoritative home for OWASP Top 10, STRIDE, secrets, secure logging, trust boundaries, authn/authz, and secure-design principles
