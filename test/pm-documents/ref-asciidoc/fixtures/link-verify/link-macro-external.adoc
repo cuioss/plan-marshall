@@ -1,0 +1,3 @@
+= Link Macro External
+
+An external link:https://example.com[Example] is never fetched, so it is not verified.

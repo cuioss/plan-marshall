@@ -9,6 +9,20 @@ from pathlib import Path
 
 from plan_logging import log_entry
 
+#: The AsciiDoc ``link:target[label]`` macro. The target must start with a
+#: non-space character, so prose such as "see link: <<anchor>>" is not read as a
+#: macro whose target is " <<anchor>>".
+_LINK_MACRO_RE = re.compile(r'link:([^\[\s][^\[]*?)\[([^\]]*)\]')
+
+#: A target that carries a URI scheme (``https:``, ``mailto:``, ``file:``). The
+#: checker performs no network access, so every one of these is an unchecked
+#: class rather than a broken or a verified link.
+_URI_SCHEME_RE = re.compile(r'^[A-Za-z][A-Za-z0-9+.\-]*:')
+
+#: The class name reported under ``unchecked_link_classes`` for a scheme target.
+_EXTERNAL_URL_CLASS = 'external-url'
+
+
 
 @dataclass
 class Link:
@@ -105,7 +119,57 @@ def extract_links_from_file(filepath: str) -> list[Link]:
                 )
             )
 
+        for match in re.finditer(_LINK_MACRO_RE, line):
+            links.append(
+                Link(
+                    file=filepath,
+                    line_num=line_num,
+                    link_text=match.group(0),
+                    link_type='link',
+                    target=match.group(1).strip(),
+                    label=match.group(2).strip(),
+                )
+            )
+
     return links
+
+
+def _link_macro_class(target: str) -> str:
+    """The class a ``link:`` target belongs to.
+
+    ``internal-anchor`` for a ``#anchor`` target, ``external-url`` for a target
+    carrying a URI scheme, and ``relative-file`` for everything else.
+    """
+    if target.startswith('#'):
+        return 'internal-anchor'
+    if _URI_SCHEME_RE.match(target):
+        return _EXTERNAL_URL_CLASS
+    return 'relative-file'
+
+
+def summarise_unchecked_link_classes(links: list[Link]) -> list[dict]:
+    """One row per class the checker saw but did not verify.
+
+    A ``link:`` target carrying a URI scheme is never fetched, so it is counted
+    here instead of being reported as verified. A file with no such link yields
+    an empty list — a measured zero, not a missing field.
+    """
+    rows: dict[str, dict] = {}
+    for link in links:
+        if link.link_type != 'link':
+            continue
+        link_class = _link_macro_class(link.target)
+        if link_class != _EXTERNAL_URL_CLASS:
+            continue
+        row = rows.get(link_class)
+        if row is None:
+            row = rows[link_class] = {
+                'class': link_class,
+                'count': 0,
+                'first': {'file': link.file, 'line': link.line_num, 'link': link.link_text},
+            }
+        row['count'] += 1
+    return [rows[key] for key in sorted(rows)]
 
 
 def verify_links(files: list[str]) -> tuple[list[Link], list[Issue]]:
@@ -165,6 +229,35 @@ def verify_links(files: list[str]) -> tuple[list[Link], list[Issue]]:
                         suggested_fix=f'xref:{link.target.rstrip("#,")}[Label]',
                     )
                 )
+            elif link.link_type == 'link':
+                link_class = _link_macro_class(link.target)
+                if link_class == 'internal-anchor':
+                    anchor = link.target[1:]
+                    if anchor not in anchor_cache[filepath]:
+                        issues.append(
+                            Issue(
+                                file=filepath,
+                                line_num=link.line_num,
+                                link_text=link.link_text,
+                                issue_type='broken',
+                                description=f"Anchor '{anchor}' not found",
+                            )
+                        )
+                elif link_class == 'relative-file':
+                    target_file = link.target.split('#', 1)[0]
+                    target_path = str((Path(filepath).parent / target_file).resolve())
+                    if not Path(target_path).exists():
+                        issues.append(
+                            Issue(
+                                file=filepath,
+                                line_num=link.line_num,
+                                link_text=link.link_text,
+                                issue_type='broken',
+                                description=f"Target file '{target_path}' not found",
+                            )
+                        )
+                # A URI-scheme target is not fetched. It is reported through
+                # summarise_unchecked_link_classes() rather than as broken.
 
     return all_links, issues
 
@@ -229,6 +322,7 @@ def cmd_verify_links(args) -> dict:
             'total_links': len(all_links),
             'broken_links': len(broken),
             'format_violations': len(violations),
+            'unchecked_link_classes': summarise_unchecked_link_classes(all_links),
             'issues': [
                 {
                     'file': i.file,

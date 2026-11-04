@@ -623,3 +623,66 @@ def test_adr_template_renders_and_validates_clean():
         assert result['missing_attrs'] == []
     finally:
         temp_file.unlink(missing_ok=True)
+
+
+# Tier 2: verify-links ``link:`` macro grammar (PLAN-LB-113 D6)
+
+
+def _link_macro_result(name: str) -> dict:
+    """Run ``verify-links`` on one ``link-verify`` fixture by name."""
+    return cmd_verify_links(
+        _ns(_VERIFY_LINKS_NS, file=str(LINK_VERIFY_FIXTURES / name), directory=None, recursive=False, report=None)
+    )
+
+
+def test_verify_links_relative_link_macro_to_an_existing_file_is_checked():
+    result = _link_macro_result('link-macro-relative.adoc')
+
+    data = result['data']
+    assert data['total_links'] == 1
+    assert data['broken_links'] == 0
+    assert data['unchecked_link_classes'] == [], 'a relative target is verified, so no class stays unchecked'
+
+
+def test_verify_links_relative_link_macro_to_a_missing_file_is_broken():
+    result = _link_macro_result('link-macro-missing.adoc')
+
+    data = result['data']
+    assert data['broken_links'] == 1
+    assert data['issues'][0]['type'] == 'broken'
+    assert 'missing-target.adoc' in data['issues'][0]['description']
+
+
+def test_verify_links_external_link_macro_is_reported_as_an_unchecked_class():
+    result = _link_macro_result('link-macro-external.adoc')
+
+    data = result['data']
+    assert data['broken_links'] == 0, 'an external target is not fetched, so it is not broken either'
+    assert data['unchecked_link_classes'] == [
+        {
+            'class': 'external-url',
+            'count': 1,
+            'first': {
+                'file': str(LINK_VERIFY_FIXTURES / 'link-macro-external.adoc'),
+                'line': 3,
+                'link': 'link:https://example.com[Example]',
+            },
+        }
+    ]
+
+
+def test_verify_links_a_file_without_link_macros_reports_an_empty_unchecked_list():
+    result = _link_macro_result('link-macro-none.adoc')
+
+    data = result['data']
+    assert data['total_links'] == 0
+    assert data['unchecked_link_classes'] == []
+
+
+def test_anchor_derivation_still_strips_a_link_macro_from_a_section_title(tmp_path):
+    adoc = tmp_path / 'anchor.adoc'
+    adoc.write_text('= Doc\n\n== See link:https://example.com[Example] Now\n\n<<see-now>>\n', encoding='utf-8')
+
+    anchors = extract_anchors_from_file(str(adoc))
+
+    assert 'see-now' in anchors, 'the link: macro in a title must still be stripped before slugging'
