@@ -184,9 +184,11 @@ A new invariant can make the forbidden state unreachable, so the negative assert
 // Before — reachable only while the input is unvalidated
 assertThrows(IllegalArgumentException.class, () -> service.accept(""));
 
-// After — a positive control proves the same call reaches the method on valid input
+// After — the positive control shows the call succeeds on valid input, and the
+// message pins the branch that rejected the invalid one
 assertEquals(ACCEPTED, service.accept("value"));
-assertThrows(IllegalArgumentException.class, () -> service.accept(""));
+var exception = assertThrows(IllegalArgumentException.class, () -> service.accept(""));
+assertEquals("empty input", exception.getMessage());
 ```
 
 ### Mirrored name list or enum cardinality
@@ -197,8 +199,9 @@ A hardcoded copy of a set another file defines stays green when that set grows, 
 // Before — the copy and the declaration drift apart in silence
 assertEquals(Set.of("admin", "user", "auditor"), service.roles());
 
-// After — the expectation is derived from the declaration it mirrors
-assertEquals(Role.values().length, service.roles().size());
+// After — the expected set is derived from the declaration it mirrors
+var expected = Arrays.stream(Role.values()).map(Role::wireName).collect(Collectors.toSet());
+assertEquals(expected, service.roles());
 ```
 
 ### Security test citing a specification without its clause
@@ -213,7 +216,7 @@ void shouldRejectCrlf() { }
 
 // After — the clause the assertion exercises is named
 @Test
-@DisplayName("Rejects CRLF in the request target (RFC 9110 section 5.5)")
+@DisplayName("Rejects CRLF in the request target (RFC 9110 section 7.1)")
 void shouldRejectCrlf() { }
 ```
 

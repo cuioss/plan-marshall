@@ -686,3 +686,29 @@ def test_anchor_derivation_still_strips_a_link_macro_from_a_section_title(tmp_pa
     anchors = extract_anchors_from_file(str(adoc))
 
     assert 'see-now' in anchors, 'the link: macro in a title must still be stripped before slugging'
+
+
+def test_verify_links_link_macro_needs_a_word_boundary_and_no_whitespace(tmp_path):
+    """``backlink:`` and ``link: two words`` are prose, not macros."""
+    adoc = tmp_path / 'grammar.adoc'
+    adoc.write_text(
+        '= Doc\n\nA backlink:target-file.adoc[Back] is not a link: macro.\n\n'
+        'Prose link: two words[Label] is not a macro either.\n',
+        encoding='utf-8',
+    )
+
+    result = cmd_verify_links(_ns(_VERIFY_LINKS_NS, file=str(adoc), directory=None, recursive=False, report=None))
+
+    assert result['data']['total_links'] == 0
+    assert result['data']['broken_links'] == 0
+
+
+def test_verify_links_relative_link_macro_to_a_missing_anchor_is_broken(tmp_path):
+    (tmp_path / 'target.adoc').write_text('= Target\n\n[[present]]\n', encoding='utf-8')
+    adoc = tmp_path / 'page.adoc'
+    adoc.write_text('= Page\n\nSee link:target.adoc#ghost[Ghost].\n', encoding='utf-8')
+
+    result = cmd_verify_links(_ns(_VERIFY_LINKS_NS, file=str(adoc), directory=None, recursive=False, report=None))
+
+    assert result['data']['broken_links'] == 1
+    assert 'ghost' in result['data']['issues'][0]['description']

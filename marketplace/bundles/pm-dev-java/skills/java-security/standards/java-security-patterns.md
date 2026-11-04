@@ -21,7 +21,7 @@ Security patterns for Java applications. These are language/framework-agnostic p
 ### Safe to Log
 
 - Security event types (authentication success/failure)
-- Masked usernames (first 3 characters + `***`)
+- Masked usernames (first 3 characters + `***`), after CR/LF neutralisation
 - Resource access attempts (without sensitive details)
 - Security policy violations (without triggering data)
 - Audit trail events (with proper masking)

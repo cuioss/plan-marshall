@@ -109,14 +109,12 @@ constant later turns the now-missing case into a **compile error** rather than a
 (When the constants must remain `String` — an external wire format, say — a `switch` expression over
 the string still beats the chain, but keep a `default -> throw` for the genuinely open input.)
 
-Removing the trailing `throw` is safe **only** because the rewritten form is a switch **expression**:
-the compiler checks exhaustiveness for a switch expression, and for an enhanced switch that matches
-patterns or covers an enum exhaustively. A constant-only switch **statement** is not checked —
-exhaustiveness is checked for the expression form alone, so an unmatched value falls through the
-statement with no result. A switch statement therefore keeps its `default -> throw`; dropping it on a
-statement form is a fail-open defect, and the authorization path is the case that shows it: a `switch`
-statement that decides access falls through to whatever follows on an unmatched role instead of
-rejecting it.
+Removing the trailing `throw` is safe **only** under the first form: exhaustiveness is checked for a
+switch **expression**, and for an enhanced switch **statement** that matches patterns or covers an
+enum exhaustively. It is not checked for a switch statement whose cases are plain constants, so an
+unmatched value falls through the statement with no result. A constant-only switch statement therefore keeps its
+`default -> throw`; dropping it is a fail-open defect, and the access decision is the case that shows
+it: the statement falls through to whatever follows on an unmatched value instead of rejecting it.
 
 ## Pattern Matching for instanceof (Java 16)
 

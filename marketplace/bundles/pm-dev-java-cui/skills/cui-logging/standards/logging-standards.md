@@ -315,7 +315,7 @@ This is safe **for throwables of trusted provenance** — those whose stack trac
 
 This is the CUI-specific instance of the generic log-injection principle, which is owned by the `pm-dev-java:java-security` secure-logging surface — apply the generic rule from there; it is not restated here. The boundary with rule 2 (Exception Parameter First): exception-first governs HOW to log a throwable when logging it is intended and still applies whenever the throwable's message chain is trusted or already sanitized; this rule governs WHETHER to pass the raw throwable when its message carries untrusted content.
 
-Value neutralisation itself — the control-character set (C0, DEL and the C1 range U+0080 to U+009F) and why `\p{Cntrl}` covers only ASCII — is owned by `plan-marshall:persona-security-expert`'s [`secure-logging.md`](../../../../plan-marshall/skills/persona-security-expert/standards/secure-logging.md); use `Character.isISOControl` there. This section covers only the throwable and cause-chain channel.
+Value neutralisation itself — which characters to neutralise, and the `Character.isISOControl` check that covers the full set — is owned by `plan-marshall:persona-security-expert`'s [`secure-logging.md`](../../../../plan-marshall/skills/persona-security-expert/standards/secure-logging.md). This section covers only the throwable and cause-chain channel.
 
 ---
 

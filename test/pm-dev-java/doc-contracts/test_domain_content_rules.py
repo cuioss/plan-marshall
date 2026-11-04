@@ -3,7 +3,9 @@
 
 Each test pins one rule the guidance must carry, against the real bundle
 document that owns it. They read the shipped Markdown, never a copy, so a rule
-that is deleted or reworded into something else reds here.
+that is deleted — or reworded away from every token the test names — reds here.
+A reword that keeps those tokens is not caught; the tokens are the contract this
+file pins, not a substitute for review.
 
 The review-rule helpers below read a ``## Review Rules`` block the way the
 code-review pack generator does: bullets of that section, wrapped continuation
@@ -19,15 +21,14 @@ from pathlib import Path
 
 from conftest import get_skill_dir
 
-#: Phrases that make the pack generator drop a harvested rule. A rule written
-#: with one never reaches a reviewer, so its presence is a defect, not a style
-#: preference.
+#: Phrases the code-review pack generator drops a harvested rule for. Read from
+#: ``marketplace/targets/cuioss_review_bot/target.py`` (``_WITHHOLDING_PHRASES``),
+#: so this test and the generator agree on what suppression looks like.
 _WITHHOLDING_MARKERS = (
     'do not duplicate',
-    'only when you can name',
-    'do not report',
-    "don't report",
-    'no need to report',
+    'avoid duplicating',
+    'prefer one well-evidenced',
+    'only when you can name the concrete input',
 )
 
 
@@ -60,10 +61,12 @@ def _assert_harvestable(rule: str) -> None:
     """The harvestable-block contract, applied to one rule.
 
     One rule per bullet is structural (the caller reads bullets), so what is
-    checked here is the pair a reader can see: a mechanism-naming ``so`` clause
-    and no withholding phrase.
+    checked here is the pair a reader can see — a rule addressed to a reviewer
+    and a mechanism-naming ``so`` clause — plus the absence of every phrase the
+    pack generator drops.
     """
     assert rule.strip(), 'a harvested rule must carry text'
+    assert rule.startswith(('A ', 'An ')), f'a rule must be addressed to a reviewer: {rule!r}'
     assert ' so ' in rule, f'a rule must name the mechanism that goes wrong: {rule!r}'
     lowered = rule.lower()
     offenders = [marker for marker in _WITHHOLDING_MARKERS if marker in lowered]
@@ -195,7 +198,9 @@ def test_java_17_switch_section_names_when_the_compiler_checks_exhaustiveness():
 
     assert 'exhaustiveness is checked' in section, 'the section must say when exhaustiveness is checked'
     assert 'switch statement' in section, 'the section must distinguish the statement form from the expression'
-    assert 'default -> throw' in section, 'the section must keep the default-throw on a statement'
+    assert 'switch statement therefore keeps its' in section, (
+        'the section must say a constant-only switch statement keeps its default-throw'
+    )
 
 
 def test_java_core_review_rules_cover_a_default_removed_from_a_switch_statement():
@@ -226,9 +231,8 @@ def test_java_security_masking_pattern_says_masking_is_not_sanitising():
 
 
 def test_secure_logging_names_the_c1_range_and_the_ascii_only_cntrl_class():
-    text = (get_skill_dir('plan-marshall', 'persona-security-expert') / 'standards' / 'secure-logging.md').read_text(
-        encoding='utf-8'
-    )
+    standard = get_skill_dir('plan-marshall', 'persona-security-expert') / 'standards' / 'secure-logging.md'
+    text = _section(standard.read_text(encoding='utf-8'), '## Log Injection (CWE-117): Attack and Prevention')
 
     assert 'U+0080' in text and 'U+009F' in text, 'the C1 range must be named explicitly'
     assert '\\p{Cntrl}' in text, 'the regex class must be named'

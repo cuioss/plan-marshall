@@ -9,10 +9,10 @@ from pathlib import Path
 
 from plan_logging import log_entry
 
-#: The AsciiDoc ``link:target[label]`` macro. The target must start with a
-#: non-space character, so prose such as "see link: <<anchor>>" is not read as a
-#: macro whose target is " <<anchor>>".
-_LINK_MACRO_RE = re.compile(r'link:([^\[\s][^\[]*?)\[([^\]]*)\]')
+#: The AsciiDoc ``link:target[label]`` macro. ``\b`` keeps ``backlink:...`` from
+#: matching, and the target may carry no whitespace, so prose such as
+#: "see link: <<anchor>>" is not read as a macro at all.
+_LINK_MACRO_RE = re.compile(r'\blink:([^\s\[]+?)\[([^\]]*)\]')
 
 #: A target that carries a URI scheme (``https:``, ``mailto:``, ``file:``). The
 #: checker performs no network access, so every one of these is an unchecked
@@ -141,7 +141,7 @@ def _link_macro_class(target: str) -> str:
     """
     if target.startswith('#'):
         return 'internal-anchor'
-    if _URI_SCHEME_RE.match(target):
+    if target.startswith('//') or _URI_SCHEME_RE.match(target):
         return _EXTERNAL_URL_CLASS
     return 'relative-file'
 
@@ -243,7 +243,7 @@ def verify_links(files: list[str]) -> tuple[list[Link], list[Issue]]:
                             )
                         )
                 elif link_class == 'relative-file':
-                    target_file = link.target.split('#', 1)[0]
+                    target_file, _, fragment = link.target.partition('#')
                     target_path = str((Path(filepath).parent / target_file).resolve())
                     if not Path(target_path).exists():
                         issues.append(
@@ -255,6 +255,19 @@ def verify_links(files: list[str]) -> tuple[list[Link], list[Issue]]:
                                 description=f"Target file '{target_path}' not found",
                             )
                         )
+                    elif fragment:
+                        if target_path not in anchor_cache:
+                            anchor_cache[target_path] = extract_anchors_from_file(target_path)
+                        if fragment not in anchor_cache[target_path]:
+                            issues.append(
+                                Issue(
+                                    file=filepath,
+                                    line_num=link.line_num,
+                                    link_text=link.link_text,
+                                    issue_type='broken',
+                                    description=f"Anchor '{fragment}' not found in '{target_path}'",
+                                )
+                            )
                 # A URI-scheme target is not fetched. It is reported through
                 # summarise_unchecked_link_classes() rather than as broken.
 

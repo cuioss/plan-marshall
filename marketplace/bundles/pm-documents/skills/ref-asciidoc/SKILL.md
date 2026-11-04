@@ -214,11 +214,11 @@ Verify all links and cross-references in AsciiDoc files.
 ### What It Verifies
 
 - Cross-reference file links (xref:)
-- Internal anchor references (<<anchor>>)
+- Internal anchor references (<<anchor>> and `link:#anchor`)
 - `link:` macros whose target is a relative file path
 - Link formats and syntax
 
-`broken_links` counts only the classes the checker verified and found broken: `<<anchor>>` references, `xref:` targets, and `link:` macros whose target is a relative file path. A zero is a measured zero for those classes alone — it is not full coverage. The result's `unchecked_link_classes` names every class the checker saw but did not verify, with its class name, its count and its first occurrence; an external `link:` URL is one such class, because the checker performs no network access.
+`broken_links` counts only the classes the checker verified and found broken: `<<anchor>>` references, `xref:` targets, `link:` macros whose target is a `#anchor`, and `link:` macros whose target is a relative file path. A zero is a measured zero for those classes alone — it is not full coverage. The result's `unchecked_link_classes` names every class the checker saw but did not verify, with its class name, its count and its first occurrence; an external `link:` URL is one such class, because the checker performs no network access.
 
 ### Parameters
 
