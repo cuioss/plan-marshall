@@ -33,6 +33,7 @@ behaviour here avoids 4× duplication.
 from __future__ import annotations
 
 import argparse
+from pathlib import Path
 
 import pytest
 
@@ -403,6 +404,79 @@ def test_build_main_preserves_explicit_project_dir(monkeypatch):
     rc = build_main('Maven build', [register])
     assert rc == 0
     assert captured[0].endswith(CANONICAL_PROJECT_DIR.lstrip('/'))
+
+
+def test_build_main_uses_the_carried_tree_without_resolving_the_plan(monkeypatch):
+    """A routed child is handed its tree: ``--plan-id`` is NOT re-resolved.
+
+    This is the move-back window's fix at the consumption site. The child stands in
+    a tree whose plan directory is gone, so a re-resolution would refuse; the carry
+    must win, and the plan id must still reach the handler untouched.
+    """
+    import file_ops as _resolver_core
+
+    def _must_not_query(_plan_id):
+        raise AssertionError('a dispatched tree must not re-resolve --plan-id')
+
+    monkeypatch.setattr(_resolver_core, '_query_worktree_path', _must_not_query)
+
+    captured: list[tuple[str, str | None]] = []
+
+    def capture_run(args):
+        captured.append((args.project_dir, args.plan_id))
+        return 0
+
+    def register(subparsers):
+        p = add_run_subparser(subparsers, command_args_help='Test')
+        p.set_defaults(func=capture_run)
+
+    monkeypatch.setattr(
+        'sys.argv',
+        [
+            'maven.py',
+            'run',
+            '--command-args',
+            'verify',
+            '--plan-id',
+            CANONICAL_PLAN_ID,
+            '--resolved-project-dir',
+            CANONICAL_WORKTREE,
+        ],
+    )
+
+    rc = build_main('Maven build', [register])
+
+    assert rc == 0
+    assert captured == [(str(Path(CANONICAL_WORKTREE)), CANONICAL_PLAN_ID)]
+
+
+def test_build_main_refuses_a_carried_tree_beside_an_explicit_project_dir(monkeypatch, capsys):
+    """Two trees cannot both be authoritative, so the pair is refused, not guessed.
+
+    The carry replaces ``--plan-id``'s RESOLUTION and nothing else: ``--plan-id``
+    and ``--project-dir`` stay mutually exclusive, and a dispatch that names both a
+    tree and an override is ambiguous.
+    """
+    monkeypatch.setattr(
+        'sys.argv',
+        [
+            'maven.py',
+            'run',
+            '--command-args',
+            'verify',
+            '--plan-id',
+            CANONICAL_PLAN_ID,
+            '--project-dir',
+            CANONICAL_PROJECT_DIR,
+            '--resolved-project-dir',
+            CANONICAL_WORKTREE,
+        ],
+    )
+
+    rc = build_main('Maven build', [_register_noop_run])
+
+    assert rc == 2
+    assert 'mutually_exclusive_args' in capsys.readouterr().out
 
 
 def test_register_standard_subparsers_propagates_routing_flags():

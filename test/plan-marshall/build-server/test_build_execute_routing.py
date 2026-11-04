@@ -969,11 +969,6 @@ class TestMovedBackPlanRoutedBuild:
             'a routing fault is not a build failure, so no synthetic build_failure row may be published'
         )
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason='PLAN-LB-112 D2: at HEAD the routed child re-resolves --plan-id and is never handed '
-        'the tree; the xfail is removed by the deliverable that makes it pass',
-    )
     def test_the_routed_child_carries_the_tree_the_routing_process_resolved(
         self, moved_back_window, use_fake_client, monkeypatch
     ):

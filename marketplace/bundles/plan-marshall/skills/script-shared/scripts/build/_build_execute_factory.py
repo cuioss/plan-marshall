@@ -923,6 +923,20 @@ def _running_hand_back(
     return running_result(job_id, duration, log_file, command_str)  # type: ignore[return-value]
 
 
+_PLAN_ID_FLAG = '--plan-id'
+"""The plan-attribution flag a routed argv can carry (never a path the daemon re-resolves).
+
+Its value is what the child re-resolves against its OWN tree, which is why
+:func:`_carry_resolved_tree` hands the routing process's tree over beside it.
+"""
+
+_RESOLVED_PROJECT_DIR_FLAG = '--resolved-project-dir'
+"""The tree-carry flag :func:`_carry_resolved_tree` appends (see ``_build_cli``).
+
+Declared on the build CLI's routing pair so a routed child consumes it before any
+``--plan-id`` resolution; never sent to a non-routed build.
+"""
+
 _PROJECT_DIR_FLAG = '--project-dir'
 """The one path-valued flag a routed argv can carry whose value the daemon re-resolves.
 
@@ -938,6 +952,34 @@ path-shaped flags are checked, and neither can arrive here relative:
 * ``--root`` is declared only on the ``discover`` subcommand and on Gradle's
   ``find-project``, so it cannot appear in the routed ``run`` argv.
 """
+
+
+def _carry_resolved_tree(argv: list[str], project_dir: str) -> list[str]:
+    """Append the resolved tree to a routed child's argv when the argv names a plan.
+
+    ``--plan-id`` is resolved by the ROUTING process against ITS tree and then
+    re-resolved by the daemon child against the child's tree. Those are the same
+    tree except in the finalize move-back window, where ``integrate_into_main``
+    has moved the plan directory back to the main checkout and the worktree
+    directory still exists: the routing process resolves (main holds the record,
+    and it names the still-existing worktree) and the child refuses (its tree no
+    longer holds the record). The carry is what removes the second resolution.
+
+    Only an argv that actually names a plan gets the carry: a ``--project-dir``
+    dispatch already travels as an absolute value, and an argv naming no plan has
+    nothing to re-resolve. Every existing token is left exactly as it was.
+
+    Args:
+        argv: The routed argv tail, already absolutised for ``--project-dir``.
+        project_dir: The ABSOLUTE tree the routing process resolved.
+
+    Returns:
+        The argv, with the carry appended when the argv names a plan.
+    """
+    names_a_plan = any(token == _PLAN_ID_FLAG or token.startswith(f'{_PLAN_ID_FLAG}=') for token in argv)
+    if not names_a_plan:
+        return list(argv)
+    return [*argv, _RESOLVED_PROJECT_DIR_FLAG, project_dir]
 
 
 def _absolutise_project_dir(argv: list[str], project_dir: str) -> list[str]:
@@ -1036,11 +1078,21 @@ def _route_to_daemon(
     # The tail's `--project-dir` value is REPLACED with the absolute tree: the
     # daemon sets the child's working directory to that tree, so a relative value
     # would be resolved again against it and name a directory that does not exist.
+    #
+    # A tail carrying `--plan-id` additionally gets `--resolved-project-dir`, the
+    # tree resolved HERE. The child is re-run from that tree, and after the
+    # finalize move-back that tree no longer holds the plan directory (it moved
+    # back to main), so the child's own `--plan-id` resolution — the strict
+    # `get-worktree-path` gate — would refuse a resolution this process already
+    # completed. `--plan-id` stays in the argv rather than being replaced: the
+    # child's `kind=build` ledger row and its build-slot accounting both key off
+    # it, and `--plan-id` / `--project-dir` remain mutually exclusive.
+    child_argv = _carry_resolved_tree(_absolutise_project_dir(sys.argv[1:], exec_root), exec_root)
     command = [
         'python3',
         str(Path(exec_root) / '.plan' / 'execute-script.py'),
         notation,
-        *_absolutise_project_dir(sys.argv[1:], exec_root),
+        *child_argv,
     ]
     command_str = ' '.join(command)
 

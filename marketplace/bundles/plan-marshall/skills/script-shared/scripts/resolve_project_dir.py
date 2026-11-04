@@ -136,6 +136,48 @@ def resolve_project_dir(
     return cwd_checkout_root()
 
 
+def resolve_carried_project_dir(resolved_project_dir: str, project_dir: str | None, *, default: str = '.') -> str:
+    """Return the tree a routing process already resolved for this dispatch.
+
+    The counterpart of :func:`resolve_project_dir`'s ``--plan-id`` branch, and the
+    reason that branch is never taken by a routed daemon child. The routing process
+    resolves the plan's tree, submits the build, and the daemon re-runs the same
+    argv from THAT tree. Re-resolving ``--plan-id`` there is what fails in the
+    finalize move-back window: ``integrate_into_main`` has already moved the plan
+    directory back to main while the worktree directory still exists, so the child
+    stands in a tree whose plan record is gone and the strict
+    ``manage-status get-worktree-path`` gate refuses a resolution that had already
+    succeeded one process up.
+
+    The carry travels BESIDE ``--plan-id``, never in its place: the plan id still
+    has to reach the child's ``kind=build`` ledger row and its build-slot
+    accounting. The two routing sources therefore stay mutually exclusive — this
+    helper refuses an explicit ``--project-dir`` alongside the carry, because two
+    trees cannot both be authoritative — while ``--plan-id`` itself remains legal
+    and is simply not consulted for the tree.
+
+    Args:
+        resolved_project_dir: The absolute tree the routing process resolved.
+        project_dir: The ``--project-dir`` value the caller supplied, if any.
+        default: The sentinel the parser uses for "``--project-dir`` not
+            supplied"; the same convention :func:`resolve_project_dir` takes.
+
+    Returns:
+        The carried tree as an absolute path.
+
+    Raises:
+        MutuallyExclusiveArgsError: when ``--project-dir`` was ALSO explicitly
+            supplied.
+    """
+    if project_dir is not None and project_dir != default:
+        raise MutuallyExclusiveArgsError(
+            'Both --resolved-project-dir and --project-dir were supplied. '
+            '--resolved-project-dir is the routed child carry; --project-dir is the explicit override. '
+            'Pick one.'
+        )
+    return os.path.abspath(resolved_project_dir)
+
+
 def add_plan_id_arg(parser, *, help_text: str | None = None) -> None:
     """Attach the standard ``--plan-id`` argument to a parser.
 
@@ -264,6 +306,7 @@ __all__ = [
     'emit_mutually_exclusive_error',
     'emit_worktree_error',
     'extract_plan_id',
+    'resolve_carried_project_dir',
     'resolve_from_args',
     'resolve_project_dir',
 ]
