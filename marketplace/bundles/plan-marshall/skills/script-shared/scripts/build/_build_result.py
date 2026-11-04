@@ -264,6 +264,29 @@ ERROR_WRAPPER_NOT_FOUND = 'wrapper_not_found'
 ERROR_LOG_FILE_FAILED = 'log_file_failed'
 """Failed to create log file for build output."""
 
+ERROR_WORKTREE_RESOLUTION_FAILED = 'worktree_resolution_failed'
+"""The build process could not resolve the plan's working tree before running.
+
+Emitted by ``resolve_project_dir.emit_worktree_error`` and printed by ``build_main``
+with exit 2. No build tool ran, so this is a ROUTING fault rather than a build
+result — a routed dispatch must hand it to its caller under this name.
+"""
+
+ERROR_MUTUALLY_EXCLUSIVE_ARGS = 'mutually_exclusive_args'
+"""The dispatch named both ``--plan-id`` and ``--project-dir``.
+
+Emitted by ``resolve_project_dir.emit_mutually_exclusive_error`` with exit 2. Like
+``worktree_resolution_failed`` it precedes any build tool.
+"""
+
+ERROR_INVALID_INVOCATION = 'invalid_invocation'
+"""The executor refused the dispatch before spawning the script (exit 2).
+
+Its ``reason`` carries the rejection class (``unknown_flag``,
+``missing_required_flag``, an unregistered verb), so a routed child whose executor
+surface predates a flag still reports a REFUSAL rather than a red build.
+"""
+
 LAUNCH_FAULT_ERRORS = frozenset({ERROR_EXECUTION_FAILED, ERROR_LOG_FILE_FAILED})
 """The error classes that mean the build never launched, so no verdict exists.
 
@@ -276,6 +299,27 @@ reason is what separates a missing wrapper from a daemon fault.
 (the wrapper-not-found path reports ``execution_failed`` with the reason, the
 wrapper and the directory), so including it would only invite a second,
 divergent spelling of the same fault.
+"""
+
+PRE_TOOL_FAULT_ERRORS = frozenset(
+    {
+        ERROR_WORKTREE_RESOLUTION_FAILED,
+        ERROR_MUTUALLY_EXCLUSIVE_ARGS,
+        ERROR_INVALID_INVOCATION,
+    }
+)
+"""The error classes a build process emits from its OWN pre-tool emitters.
+
+Distinct from :data:`LAUNCH_FAULT_ERRORS`, which is the tool-LAUNCH layer (the
+wrapper could not start the command): these are the ROUTING and DISPATCH layer,
+where the process refused before any build tool was chosen. A routed dispatch that
+carries one of these to its caller as a generic ``build_failed`` reports a routing
+fault as a red build — the exact misattribution that hid a moved-back plan behind
+a synthetic "no structured errors were parsed" row.
+
+A member is reported as ITSELF, with its own reason and exit code, and never
+through the build-failure path: ``build_failed`` keeps that path, because it means
+the tool DID run and failed.
 """
 
 

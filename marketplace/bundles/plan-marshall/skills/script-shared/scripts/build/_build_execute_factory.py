@@ -773,6 +773,8 @@ def _daemon_result_to_direct(
                 command_str,
                 **_launch_fault_extra(verdict.fault),
             )
+        if verdict is not None and verdict.child_fault is not None:
+            return _child_fault_result(verdict.child_fault, exit_code, duration, log_file, command_str)
         return error_result(  # type: ignore[return-value]
             ERROR_BUILD_FAILED,
             exit_code or 1,
@@ -790,6 +792,43 @@ def _daemon_result_to_direct(
         log_file,
         command_str,
         exit_code=exit_code or -1,
+    )
+
+
+def _child_fault_result(
+    fault: Any, exit_code: int, duration: int, log_file: str, command_str: str
+) -> DirectCommandResult:
+    """Carry a PRE-TOOL fault the child reported as itself, with its own exit code.
+
+    A build process that refuses before any build tool runs — the plan tree will
+    not resolve, the two routing flags were both supplied, the executor rejected
+    the dispatch — is not a red build. The name, the reason and the exit code are
+    the whole result: there is no test row to collect and no bound to report, so
+    the synthetic ``build_failure`` row is exactly the fabrication the renderer must
+    not publish over it. The exit code is the CHILD's, so the routed path answers
+    what a direct build already answers (``worktree_resolution_failed`` with 2).
+
+    Args:
+        fault: The :class:`ChildFault` read back from the job log.
+        exit_code: The daemon's job exit code — the child's own.
+        duration: Wall-clock duration reported by the daemon.
+        log_file: The job log path.
+        command_str: The command that was executed.
+
+    Returns:
+        The error result under the child's own name.
+    """
+    extra: dict[str, Any] = {}
+    reason = getattr(fault, 'reason', None)
+    if reason:
+        extra['reason'] = reason
+    return error_result(  # type: ignore[return-value]
+        fault.error,
+        exit_code or 2,
+        duration,
+        log_file,
+        command_str,
+        **extra,
     )
 
 
@@ -857,6 +896,16 @@ def _result_for_log_verdict(
                 log_file,
                 command_str,
                 **_launch_fault_extra(verdict.fault),
+            )
+        if getattr(verdict, 'child_fault', None) is not None:
+            # Same rule one layer out: a cross-checked PRE-TOOL fault is the
+            # routing/dispatch layer refusing, not a build that ran.
+            return _child_fault_result(
+                verdict.child_fault,
+                exit_code if exit_code is not None else 2,
+                duration,
+                log_file,
+                command_str,
             )
         return error_result(  # type: ignore[return-value]
             ERROR_BUILD_FAILED,

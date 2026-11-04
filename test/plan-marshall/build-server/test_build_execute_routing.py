@@ -918,7 +918,7 @@ class TestMovedBackPlanRoutedBuild:
         is routing-specific: the same tree, the same flag, the same missing plan
         record — only the non-routed path is honest about it.
         """
-        import _build_cli
+        import _build_cli  # the module owning build_main is the subject here
         from _build_cli import add_run_subparser, build_main
 
         def _register(subparsers):
@@ -937,13 +937,8 @@ class TestMovedBackPlanRoutedBuild:
         assert rc == 2
         assert 'error: worktree_resolution_failed' in emitted
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason='PLAN-LB-112 D3: at HEAD the routed path collapses the child routing fault into '
-        'build_failed; the xfail is removed by the deliverable that makes it pass',
-    )
     def test_the_routed_result_reaches_the_caller_as_the_child_reported_it(self, moved_back_window, tmp_path, capsys):
-        """D1 + D3: HEAD folds the child's routing fault into ``build_failed``."""
+        """D1 + D3: the child's routing fault arrives under its own name and code."""
         from _build_shared import cmd_run_common
 
         log_file = _child_fault_job_log(tmp_path)
@@ -965,6 +960,8 @@ class TestMovedBackPlanRoutedBuild:
         cmd_run_common(result, lambda _log: ([], None, 'FAILURE'), 'python')
         emitted = capsys.readouterr().out
         assert 'worktree_resolution_failed' in emitted
+        assert 'reason:' in emitted, "the child's own reason travels with its name"
+        assert 'exit_code: 2' in emitted, 'the routed path answers the code the direct path answers'
         assert 'no structured errors were parsed' not in emitted, (
             'a routing fault is not a build failure, so no synthetic build_failure row may be published'
         )
@@ -1007,3 +1004,71 @@ class TestMovedBackPlanRoutedBuild:
         from plan_logging import extract_plan_id
 
         assert extract_plan_id(submitted) == _MOVED_BACK_PLAN, 'the child ledger row keeps the plan id'
+
+
+class TestPreToolFaultPassThrough:
+    """D3: a pre-tool refusal travels as itself, and a real failure still does not."""
+
+    def test_a_build_that_ran_and_failed_keeps_build_failed_and_its_rows(self, tmp_path, capsys):
+        """Matched control: the pass-through must not swallow a genuine failure.
+
+        The discriminator is the child's own error NAME, never its exit code: a build
+        that ran and failed reports ``build_failed`` with its parsed rows, and that
+        path — including the synthetic row when nothing parsed — is untouched.
+        """
+        from _build_shared import cmd_run_common
+
+        log = tmp_path / 'ran-and-failed.log'
+        log.write_text(
+            'status: error\nexit_code: 1\nerror: build_failed\n'
+            'errors[1]{file,line,message,category}:\n'
+            '  test/a.py,3,"assert 0",test_failure\n',
+            encoding='utf-8',
+        )
+        result = factory._daemon_result_to_direct(
+            {'job_status': 'failure', 'exit_code': 1, 'duration_seconds': 2, 'log_file': str(log)},
+            'cmd',
+        )
+
+        assert result['error'] == 'build_failed'
+
+        cmd_run_common(result, lambda _log: ([], None, 'FAILURE'), 'python')
+        emitted = capsys.readouterr().out
+        assert 'build_failed' in emitted
+        assert 'test/a.py' in emitted, 'the inner wrapper per-test rows still travel'
+
+    def test_the_reader_separates_a_pre_tool_fault_from_a_build_failure(self, tmp_path):
+        """The reader's own discriminator: the error name, read off the child's body."""
+        import _build_server_protocol as proto
+
+        pre_tool = tmp_path / 'pre.log'
+        pre_tool.write_text('status: error\nerror: mutually_exclusive_args\nmessage: pick one\n', encoding='utf-8')
+        verdict = proto.read_log_verdict(str(pre_tool))
+
+        assert verdict is not None
+        assert verdict.fault is None, 'a routing refusal is not a launch fault'
+        assert verdict.child_fault is not None
+        assert verdict.child_fault.error == 'mutually_exclusive_args'
+        assert verdict.child_fault.reason == 'pick one', 'the resolution emitters write reason in message'
+
+        failed = tmp_path / 'failed.log'
+        failed.write_text('status: error\nerror: build_failed\n', encoding='utf-8')
+        failed_verdict = proto.read_log_verdict(str(failed))
+
+        assert failed_verdict is not None
+        assert failed_verdict.child_fault is None, 'a build that ran keeps the build-failure path'
+
+    def test_the_emitted_identifiers_are_the_ones_the_lane_classifies(self):
+        """The resolution emitters and the reader agree on the identifiers.
+
+        A fault identifier spelled differently at the producer and in the reader's set
+        would silently fall back to ``build_failed`` — the defect this deliverable
+        removes — so the agreement is asserted rather than assumed.
+        """
+        import resolve_project_dir as routing
+        from _build_result import PRE_TOOL_FAULT_ERRORS
+
+        assert routing.emit_worktree_error('p', routing.WorktreeResolutionError('x'))['error'] in (
+            PRE_TOOL_FAULT_ERRORS
+        )
+        assert routing.emit_mutually_exclusive_error('p', 'q')['error'] in PRE_TOOL_FAULT_ERRORS

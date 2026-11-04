@@ -952,6 +952,33 @@ LAUNCH_FAULT_ERRORS = _build_result.LAUNCH_FAULT_ERRORS
 
 
 @dataclass(frozen=True)
+class ChildFault:
+    """A PRE-TOOL fault the build process reported before any tool ran.
+
+    The routing and dispatch layer's counterpart of :class:`InnerFault`. These
+    faults carry no ``wrapper`` and no ``project_dir`` because no wrapper was ever
+    looked for: the process refused while resolving the plan's tree, while rejecting
+    the flags, or while the executor refused the dispatch. What the caller needs is
+    the name, the reason and the exit code — a routing fault is never a red build.
+
+    Attributes:
+        error: The refusing process's own error identifier (a member of
+            ``_build_result.PRE_TOOL_FAULT_ERRORS``).
+        reason: The operator-facing reason it rendered — the ``reason:`` line when
+            the emitter wrote one, else the ``message:`` line (the resolution
+            emitters write ``message``).
+    """
+
+    error: str
+    reason: str | None = None
+
+
+#: The build process's error identifiers that mean "it refused before any tool ran".
+PRE_TOOL_FAULT_ERRORS = _build_result.PRE_TOOL_FAULT_ERRORS
+"""Error classes carrying no build verdict — no build tool was ever chosen."""
+
+
+@dataclass(frozen=True)
 class LogVerdict:
     """The build wrapper's own verdict, read back from a job log.
 
@@ -1028,6 +1055,18 @@ class LogVerdict:
     project directory it looked in. Without them a routed job reported a bare
     ``build_failed`` and the six landings that hit this could not tell a missing
     wrapper from a daemon fault.
+    """
+
+    child_fault: ChildFault | None = None
+    """The build process's own PRE-TOOL fault, when it refused before any tool ran.
+
+    ``None`` on every result that reached a build tool. A member of
+    ``PRE_TOOL_FAULT_ERRORS`` (``worktree_resolution_failed``,
+    ``mutually_exclusive_args``, ``invalid_invocation``) means the process stopped
+    while resolving the tree, rejecting the flags, or refusing the dispatch — so the
+    caller must report that name with its reason and exit code instead of a
+    ``build_failed`` and a synthetic error row. ``build_failed`` deliberately never
+    populates this: it is the tool RAN and failed case.
     """
 
 
@@ -1112,11 +1151,13 @@ def read_log_verdict(log_file: str) -> LogVerdict | None:
     ``status:``, ``exit_code:``, ``tests_run:``, the applied-bound triple
     ``timeout_used_seconds:`` / ``timeout_source:`` / ``command_key:``, the
     launch-fault quadruple ``error:`` / ``reason:`` / ``wrapper:`` /
-    ``project_dir:``, and the ``errors[N]{...}:`` table header, whose indented
-    rows are then collected as that table's body. The launch-fault quadruple is
-    read so an inner fault reaches the consumer as itself rather than as a bare
-    build failure; it is attached as :class:`InnerFault` only for the two
-    identifiers that mean the command never ran. Every other key is ignored. An
+    ``project_dir:``, ``message:``, and the ``errors[N]{...}:`` table header, whose
+    indented rows are then collected as that table's body. The launch-fault
+    quadruple is read so an inner fault reaches the consumer as itself rather than
+    as a bare build failure; it is attached as :class:`InnerFault` only for the two
+    identifiers that mean the command never ran. ``message:`` is read for the
+    PRE-TOOL emitters, which render their reason there rather than in ``reason:``
+    (see :class:`ChildFault`). Every other key is ignored. An
     applied-bound key that is
     absent, empty or (for the bound) not a positive integer reads as ``None``. The LAST occurrence of each wins, because the wrapper
     emits its result TOON after any progress output it already wrote to the same
@@ -1155,6 +1196,7 @@ def read_log_verdict(log_file: str) -> LogVerdict | None:
     fault_reason: str | None = None
     fault_wrapper: str | None = None
     fault_project_dir: str | None = None
+    fault_message: str | None = None
     errors: tuple[dict[str, Any], ...] = ()
     # Non-None only while an `errors[N]{...}:` header has been seen and its
     # indented rows are still being collected.
@@ -1215,6 +1257,8 @@ def read_log_verdict(log_file: str) -> LogVerdict | None:
                     fault_error = _toon_scalar(line) or None
                 elif line.startswith('reason:'):
                     fault_reason = _toon_scalar(line) or None
+                elif line.startswith('message:'):
+                    fault_message = _toon_scalar(line) or None
                 elif line.startswith('wrapper:'):
                     fault_wrapper = _toon_scalar(line) or None
                 elif line.startswith('project_dir:'):
@@ -1234,6 +1278,9 @@ def read_log_verdict(log_file: str) -> LogVerdict | None:
             wrapper=fault_wrapper,
             project_dir=fault_project_dir,
         )
+    child_fault = None
+    if fault_error in PRE_TOOL_FAULT_ERRORS:
+        child_fault = ChildFault(error=fault_error, reason=fault_reason or fault_message)
     return LogVerdict(
         status=status,
         exit_code=exit_code,
@@ -1243,4 +1290,5 @@ def read_log_verdict(log_file: str) -> LogVerdict | None:
         timeout_source=timeout_source,
         command_key=command_key,
         fault=fault,
+        child_fault=child_fault,
     )
