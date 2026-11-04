@@ -123,6 +123,8 @@ void shouldIncludeAuthHeader(MockWebServer server, URIBuilder uriBuilder) throws
 
 When the task tests code that reads untrusted HTTP input (path segments, query parameters, headers), load the **Adversarial / Negative-Path Testing** section of `standards/testing-mockwebserver.md`. It documents the `de.cuioss.http.security.database` attack databases (`OWASPTop10AttackDatabase`, `ApacheCVEAttackDatabase`, `ModSecurityCRSAttackDatabase`) and the `AttackDatabase.ArgumentsProvider` parameterized-test pattern. Drive adversarial inputs from the curated databases rather than hardcoding a few attack literals.
 
+A parameterized attack-database test is where a negative assertion most easily goes vacuous — see `pm-dev-java:junit-core` § "Tests That Cannot Fail" for the shape and its positive control.
+
 ## Key Rules
 
 - `@MockResponseConfig` is repeatable — use multiple annotations for multiple endpoints

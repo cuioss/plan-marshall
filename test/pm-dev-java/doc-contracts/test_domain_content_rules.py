@@ -101,3 +101,52 @@ def test_javadoc_method_standard_requires_checking_an_ordering_claim_at_the_call
     assert 'the caller' in text, 'the method-documentation standard must name the caller check'
     assert 'ordering claim' in text, 'the standard must name the claim it sends the author to check'
     assert 'Check the call site' in text, 'the verification half must tell the author where to look'
+
+
+# ---------------------------------------------------------------------------
+# D2 — JUnit review rules: tests that cannot fail, and spec citations
+# ---------------------------------------------------------------------------
+
+#: One needle tuple per new rule. Each tuple must select exactly one rule, so a
+#: rule that silently drops out of the block is a failure here rather than a
+#: smaller count nobody reads.
+_D2_RULE_NEEDLES = (
+    ('anchor', 'concrete'),
+    ('builder default', 'explicitly'),
+    ('vacuous',),
+    ('cardinality',),
+    ('clause',),
+    ('fail-open',),
+)
+
+
+def test_junit_review_rules_cover_the_six_cannot_fail_and_citation_shapes():
+    rules = _review_rules(get_skill_dir('pm-dev-java', 'junit-core'))
+
+    assert len(rules) == 10, f'the junit-core block holds four rules plus the six this plan adds: {rules}'
+    for needles in _D2_RULE_NEEDLES:
+        _assert_harvestable(_rule_containing(rules, *needles))
+
+
+def test_junit_testing_standard_explains_each_shape_with_a_before_and_after():
+    standard = get_skill_dir('pm-dev-java', 'junit-core') / 'standards' / 'testing-junit-core.md'
+    section = _section(standard.read_text(encoding='utf-8'), '## Tests That Cannot Fail')
+
+    shapes = [block for block in re.split(r'^### ', section, flags=re.MULTILINE)[1:] if block.strip()]
+    assert len(shapes) == 6, f'the standard must give one subsection per shape: {len(shapes)} found'
+    for shape in shapes:
+        heading = shape.splitlines()[0]
+        assert 'Before' in shape, f'{heading} carries no before example'
+        assert 'After' in shape, f'{heading} carries no after example'
+
+    assert 'persona-module-tester' in section, 'the section must point at the language-agnostic form'
+    assert 'positive control' in section.lower(), 'the pointer must name the matched positive control'
+    assert 'non-vacuity' in section.lower(), 'the pointer must name the non-vacuity guidance'
+
+
+def test_cui_skills_point_at_the_cannot_fail_rules_without_restating_them():
+    for skill in ('cui-testing', 'cui-http-testing'):
+        text = (get_skill_dir('pm-dev-java-cui', skill) / 'SKILL.md').read_text(encoding='utf-8')
+        assert 'Tests That Cannot Fail' in text, f'{skill} must point at the junit-core section'
+        assert 'pm-dev-java:junit-core' in text, f'{skill} must name the skill that owns the rule'
+
