@@ -31,6 +31,7 @@ import argparse
 import dataclasses
 import json
 import sys
+from pathlib import Path
 
 import _build_execute as build_execute
 import _build_execute_factory as factory
@@ -1522,3 +1523,46 @@ class TestPerTaskRoutedBuildOutliving300s:
         assert routed['status'] == 'running'
         assert routed['job_id'] == 'J300'
         assert routed['job_status'] == 'running'
+
+
+class TestResolvedTreeDocContract:
+    """D4: the factory documents the invariant that HOLDS, not the one that did not.
+
+    The module used to state that ``--plan-id`` "resolves identically in both
+    processes". That was false for the finalize move-back window, and it is what
+    made the routed re-run look safe while the child re-resolved a plan record that
+    had already left its tree. The guarantee now is the CARRY, and these cases pin
+    both halves: the old claim is gone, and the documented carry is what the seam
+    actually does — so the prose cannot drift away from the behaviour again.
+    """
+
+    @staticmethod
+    def _flattened_source() -> str:
+        return ' '.join(Path(factory.__file__).read_text(encoding='utf-8').split())
+
+    def test_the_old_identical_resolution_claim_is_gone(self):
+        source = self._flattened_source()
+
+        assert 'resolves identically in both processes' not in source
+
+    def test_the_documented_guarantee_is_the_carried_tree(self):
+        source = self._flattened_source()
+
+        assert 'travels beside it as ``--resolved-project-dir``' in source
+        assert 'finalize move-back window' in source
+
+    def test_the_seam_carries_the_tree_exactly_when_the_argv_names_a_plan(self):
+        """The documented mechanism, asserted on the seam that implements it."""
+        tree = '/resolved/tree'
+
+        carried = factory._carry_resolved_tree(['run', '--plan-id', 'p'], tree)
+        assert carried == ['run', '--plan-id', 'p', '--resolved-project-dir', tree]
+
+        equals_form = factory._carry_resolved_tree(['run', '--plan-id=p'], tree)
+        assert equals_form[-2:] == ['--resolved-project-dir', tree]
+
+        project_dir_form = factory._carry_resolved_tree(['run', '--project-dir', tree], tree)
+        assert project_dir_form == ['run', '--project-dir', tree], 'the --project-dir rewrite already carried it'
+
+        plan_less = factory._carry_resolved_tree(['run'], tree)
+        assert plan_less == ['run'], 'a plan-less argv has nothing to re-resolve'

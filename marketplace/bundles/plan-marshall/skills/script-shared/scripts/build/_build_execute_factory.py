@@ -987,14 +987,20 @@ Declared on the build CLI's routing pair so a routed child consumes it before an
 """
 
 _PROJECT_DIR_FLAG = '--project-dir'
-"""The one path-valued flag a routed argv can carry whose value the daemon re-resolves.
+"""The one path-valued flag a CALLER can hand a routed argv whose value the daemon re-resolves.
 
 ``_absolutise_project_dir`` rewrites its value before submission. The other
-path-shaped flags are checked, and neither can arrive here relative:
+path-shaped flags are checked, and none of them can arrive here relative:
 
-* ``--plan-id`` is mutually exclusive with ``--project-dir`` and, unlike it,
-  derives its own ABSOLUTE tree (a persisted worktree path, else the checkout
-  root), so it resolves identically in both processes.
+* ``--plan-id`` is mutually exclusive with ``--project-dir`` and names a PLAN, not
+  a path: the child never resolves it for itself. The tree the routing process
+  resolved travels beside it as ``--resolved-project-dir`` (see
+  :func:`_carry_resolved_tree`), and that value is already absolute. It has to
+  travel, because re-resolving the plan id from the child's own working directory
+  is equivalent to the routing process's resolution only while that directory
+  still holds the plan record — it does not in the finalize move-back window, when
+  ``integrate_into_main`` has moved the record back to main and the worktree
+  directory still exists.
 * ``--working-dir`` and ``--env`` make a build daemon-incompatible, so such a
   build never reaches this seam at all — under ``auto`` it falls back in-process
   before routing, and under ``daemon`` it fails loud (see ``cmd_run``).
@@ -1044,7 +1050,9 @@ def _absolutise_project_dir(argv: list[str], project_dir: str) -> list[str]:
 
     Both token forms (``--project-dir X`` and ``--project-dir=X``) are rewritten
     and no other token is touched. An argv with no ``--project-dir`` is returned
-    unchanged: the child's default ``.`` already resolves to that same tree.
+    unchanged: a build that names its plan instead gets the tree through
+    :func:`_carry_resolved_tree`, and a plan-less child's default ``.`` is the
+    submitted tree itself.
 
     Args:
         argv: The routing process's own argv tail (``sys.argv[1:]``).
