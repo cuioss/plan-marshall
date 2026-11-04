@@ -24,10 +24,12 @@ the evidence checked (files, tests, PR diff) for each verdict.}
 
 {One read-only leaf read the landing on three layers — the spec, the deliverable
 trace, and the merged code — and the orchestrator re-read every point recorded as
-`checked` before writing it here. The reading is **by reading, no build, no test
-run, no write**: what only a run could show is tagged `not shown by reading`,
-never left as clean.}
+`checked` before writing it here; where a dispatch could not return, the
+orchestrator completed the read inline and says so beside the dispatch line. The
+reading is **by reading, no build, no test run, no write**: what only a run could
+show is tagged `not shown by reading`, never left as clean.}
 
+- **Dispatch:** one read-only leaf per landing — reason: {why this landing got its own leaf}
 - **Verdict:** layer 1 {clean | findings}; layer 2 {clean | findings}; layer 3 {clean | findings} —
   every layer that carried a finding is named here, so a layer-3 defect is visible
   without reading the section.
@@ -50,9 +52,9 @@ it.}
 the diff touched that no deliverable explains, and every claim of the lane's
 report the diff does not bear out.}
 
-| Deliverable | Code trace | Test that can fail | Unexplained file | Verdict |
-|-------------|------------|--------------------|------------------|---------|
-| {deliverable} | {file:line} | {test} | {path, or none} | {checked \| not_shown_by_reading} |
+| Deliverable | Code trace | Test that can fail | Unexplained file / unborne claim | Verdict |
+|-------------|------------|--------------------|---------------------------------|---------|
+| {deliverable} | {file:line} | {test} | {path or claim, or none} | {checked \| not_shown_by_reading} |
 
 **Layer 2 verdict:** {clean | findings — N}
 

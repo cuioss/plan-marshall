@@ -25,11 +25,12 @@ each helper that locates a block publishes the marker it could not find rather
 than returning an empty string — a green over a renamed heading would otherwise
 claim the contract was verified when nothing was read.
 
-The "no size qualifier" absence assertion is scoped to the Step 4 analysis block
-alone: Step 2's corroboration dispatch keeps its own "when the read burden is
-large" gate, and a document-wide absence check would either fail on that
-legitimate wording or force it out of the doc. The three-layer read, stated in
-Step 4, is the one that is unconditional.
+The "no size qualifier" absence assertion is scoped to the three-layer blocks
+only — Step 4's analysis block and the Step 2 index bullet — never document-wide:
+Step 2's corroboration dispatch keeps its own "when the read burden is large"
+gate, and a document-wide absence check would either fail on that legitimate
+wording or force it out of the doc. The three-layer read, stated in Step 4, is
+the one that is unconditional.
 """
 
 from __future__ import annotations
@@ -367,6 +368,10 @@ class TestThreeLayerRouting:
         )
         assert 'Step 2b' in routing and 'corpus set-verdict' in routing, (
             "the routing rule does not state that a corroborated claim persists through Step 2b's `corpus set-verdict`"
+        )
+        assert 'Step 4 runs after Step 2b' in routing, (
+            'the routing rule does not resolve the ordering: Step 2b has already run when Step 4 '
+            'settles the claim, so the `corpus set-verdict` call is made at Step 4'
         )
 
     def test_the_template_verdict_line_names_the_layers_with_findings(self):
