@@ -4,27 +4,32 @@
 
 The three-layer analysis makes ``analyze`` read every full-ship landing on three
 layers — **specified**, **implemented** and **correct** — by reading alone, through
-one read-only leaf per landing. The contract lives in three files and none of them
-is written here:
+one read-only leaf per landing. Two contract files are read here and neither is
+written:
 
 - ``plan-orchestrator/workflow/analyze.md`` — Step 4's analysis step (the layer
-  definitions, the read-only limit, the ``not shown by reading`` tag), Step 2's
-  dispatch index entry (always-dispatched, one leaf per landing, the return shape,
-  the re-read obligation, the leaf's write ban), and the per-layer routing rule.
+  definitions, the read-only limit, the ``not shown by reading`` tag, the full
+  dispatch contract), Step 2's dispatch index entry (the resolve form and the
+  one-leaf-per-landing rule), and the per-layer routing rule.
 - ``plan-orchestrator/templates/landing-analysis.md`` — the
   ``## Three-Layer Analysis`` section: one block per layer, the conformance list
   for the project's own rules, and the verdict line.
+
+The third carrier — the Dispatch Decision Rule's numbered index in
+``orchestration-model.md`` — is pinned by
+``test_orchestrator_dispatch_workflow_pin.py``, which also pins this dispatch's
+concrete ``--workflow`` doc and surface.
 
 Every assertion below derives its population from the document text it names, and
 each helper that locates a block publishes the marker it could not find rather
 than returning an empty string — a green over a renamed heading would otherwise
 claim the contract was verified when nothing was read.
 
-The module deliberately scopes the "no size qualifier" assertion to the Step 4
-analysis block alone: Step 2's corroboration dispatch keeps its own "when the read
-burden is large" gate, and a document-wide absence check would either fail on that
-legitimate wording or force it out of the doc. The three-layer read is the one
-that is unconditional.
+The "no size qualifier" absence assertion is scoped to the Step 4 analysis block
+alone: Step 2's corroboration dispatch keeps its own "when the read burden is
+large" gate, and a document-wide absence check would either fail on that
+legitimate wording or force it out of the doc. The three-layer read, stated in
+Step 4, is the one that is unconditional.
 """
 
 from __future__ import annotations
@@ -199,6 +204,53 @@ class TestThreeLayerAlwaysDispatched:
             "Step 2's dispatchable index does not name the three-layer landing analysis"
         )
 
+    def test_step_four_states_the_dispatch_contract_as_written(self):
+        """D2's done-when names Step 4, so the contract is pinned THERE as well.
+
+        Pinning only the Step 2 index bullet would leave a size qualifier added to
+        Step 4's own paragraph unobserved: the absence check would be looking at a
+        different block than the one that tells the orchestrator when to dispatch.
+        """
+        analysis = _analysis_block(_read(_ANALYZE_MD))
+        lowered = analysis.lower()
+
+        assert 'every time, with no size qualifier' in lowered, (
+            'Step 4 does not state that the analysis is dispatched every time, with no size qualifier'
+        )
+        for qualifier in ('when large', 'when the read burden is large'):
+            assert qualifier not in lowered, (
+                f'Step 4 carries the optional-dispatch qualifier {qualifier!r} — the three-layer '
+                'analysis runs on every full-ship landing'
+            )
+        assert 'one read-only leaf per landing' in lowered, 'Step 4 does not state the one-leaf-per-landing shape'
+        assert 'must not share context' in lowered, (
+            "Step 4 does not give the one-leaf reason — one landing's read must not share context with another's"
+        )
+        assert '`findings[N]{layer,severity,file,line,claim,verdict}`' in analysis, (
+            'Step 4 does not give the findings return shape'
+        )
+        assert '`checked`' in analysis and '`not_shown_by_reading`' in analysis, (
+            'Step 4 does not give BOTH verdict values'
+        )
+        assert '`conformance[N]{rule_source,rule,verdict,evidence}`' in analysis, (
+            'Step 4 does not give the conformance return shape'
+        )
+        assert '`blocker`' in analysis and '`info`' in analysis, (
+            'Step 4 does not define the severity vocabulary the leaf must return'
+        )
+        assert re.search(r'(?i)re-reads every `?checked`? point', analysis), (
+            'Step 4 does not require the orchestrator to re-read every `checked` point'
+        )
+        for target in (
+            '`Write`',
+            '`Edit`',
+            '`manage-status`',
+            '`manage-logging --store orchestrator`',
+            '`orchestrator queue`',
+            '`corpus set-verdict`',
+        ):
+            assert target in analysis, f'Step 4 does not forbid the leaf {target}'
+
     def test_the_dispatch_is_unconditional_and_one_leaf_per_landing(self):
         bullet = _dispatch_bullet(_read(_ANALYZE_MD))
 
@@ -233,8 +285,8 @@ class TestThreeLayerAlwaysDispatched:
         assert '`checked`' in bullet and '`not_shown_by_reading`' in bullet, (
             'the dispatch does not give BOTH `verdict` values (`checked` and `not_shown_by_reading`)'
         )
-        assert 'conformance list' in bullet.lower(), (
-            "the dispatch does not require the conformance list for the project's own rules"
+        assert '`conformance[N]{rule_source,rule,verdict,evidence}`' in bullet, (
+            "the dispatch does not declare the conformance return shape for the project's own rules"
         )
 
     def test_the_dispatch_carries_the_resolved_level_and_its_workflow_doc(self):

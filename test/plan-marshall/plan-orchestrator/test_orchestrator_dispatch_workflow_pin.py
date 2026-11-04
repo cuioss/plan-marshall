@@ -864,9 +864,9 @@ class TestDraftingDispatchWritePathContainment:
         )
 
     def test_the_sanctioned_dispatch_index_count_matches_the_verb_docs(self):
-        """orchestration-model.md's seven-entry index must agree with the verb docs.
+        """orchestration-model.md's eight-entry index must agree with the verb docs.
 
-        The index asserts its own cardinality ("these **seven**, and this list is
+        The index asserts its own cardinality ("these **eight**, and this list is
         a complete index of them") but nothing machine-checked it against
         analyze.md and decompose.md before this test. A count derived
         independently from the two verb docs — never from the index's own
