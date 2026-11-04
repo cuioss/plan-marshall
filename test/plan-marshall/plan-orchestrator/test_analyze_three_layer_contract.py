@@ -1,0 +1,326 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
+"""Doc-contract tests for the ``analyze`` three-layer landing analysis.
+
+The three-layer analysis makes ``analyze`` read every full-ship landing on three
+layers — **specified**, **implemented** and **correct** — by reading alone, through
+one read-only leaf per landing. The contract lives in three files and none of them
+is written here:
+
+- ``plan-orchestrator/workflow/analyze.md`` — Step 4's analysis step (the layer
+  definitions, the read-only limit, the ``not shown by reading`` tag), Step 2's
+  dispatch index entry (always-dispatched, one leaf per landing, the return shape,
+  the re-read obligation, the leaf's write ban), and the per-layer routing rule.
+- ``plan-orchestrator/templates/landing-analysis.md`` — the
+  ``## Three-Layer Analysis`` section: one block per layer, the conformance list
+  for the project's own rules, and the verdict line.
+
+Every assertion below derives its population from the document text it names, and
+each helper that locates a block publishes the marker it could not find rather
+than returning an empty string — a green over a renamed heading would otherwise
+claim the contract was verified when nothing was read.
+
+The module deliberately scopes the "no size qualifier" assertion to the Step 4
+analysis block alone: Step 2's corroboration dispatch keeps its own "when the read
+burden is large" gate, and a document-wide absence check would either fail on that
+legitimate wording or force it out of the doc. The three-layer read is the one
+that is unconditional.
+"""
+
+from __future__ import annotations
+
+import re
+from pathlib import Path
+
+from conftest import MARKETPLACE_ROOT
+
+_PLAN_MARSHALL = MARKETPLACE_ROOT / 'plan-marshall' / 'skills'
+_PLAN_ORCHESTRATOR = _PLAN_MARSHALL / 'plan-orchestrator'
+_ANALYZE_MD = _PLAN_ORCHESTRATOR / 'workflow' / 'analyze.md'
+_LANDING_TEMPLATE = _PLAN_ORCHESTRATOR / 'templates' / 'landing-analysis.md'
+
+#: Markers the helpers below anchor on. Literal rather than regex because each one
+#: is a contract phrase the documents are expected to carry verbatim.
+_ANALYSIS_HEADING = '#### The three-layer analysis'
+_ROUTING_HEADING = '#### Routing what the three-layer analysis finds'
+_BEFORE_THE_REPORT = '1. Write the landing report'
+_DISPATCH_MARKER = '- **Dispatchable** — the Step 4 three-layer landing analysis'
+_DISPATCH_END = '\n- **Inline-only**'
+_LAYERS: tuple[tuple[int, str], ...] = ((1, 'specified'), (2, 'implemented'), (3, 'correct'))
+
+#: The three-layer dispatch's own level resolution, as it must appear in the Step 2
+#: index. The exact ``--workflow`` value is what pins the doc the leaf loads.
+_DISPATCH_WORKFLOW_DOC = 'plan-marshall:plan-orchestrator/workflow/analyze.md'
+
+#: The one-line summary verdict the template carries, naming every layer.
+_VERDICT_LINE_RE = re.compile(r'(?im)^- \*\*Verdict:\*\*.*layer 1.*layer 2.*layer 3')
+
+
+def _read(path: Path) -> str:
+    assert path.is_file(), f'the contract source is missing: {path}'
+    return path.read_text(encoding='utf-8')
+
+
+def _between(text: str, start_marker: str, end_marker: str, source: str) -> str:
+    """The text from ``start_marker`` up to the next ``end_marker``."""
+    start = text.find(start_marker)
+    assert start != -1, f'{source}: the contract block {start_marker!r} was not found'
+    tail = text[start:]
+    end = tail.find(end_marker)
+    assert end != -1, f'{source}: the contract block {start_marker!r} has no closing marker {end_marker!r}'
+    return tail[:end]
+
+
+def _step4(text: str) -> str:
+    return _between(text, '### Step 4:', '### Step 5:', 'analyze.md')
+
+
+def _analysis_block(text: str) -> str:
+    return _between(_step4(text), _ANALYSIS_HEADING, _ROUTING_HEADING, 'analyze.md Step 4')
+
+
+def _routing_block(text: str) -> str:
+    return _between(_step4(text), _ROUTING_HEADING, _BEFORE_THE_REPORT, 'analyze.md Step 4')
+
+
+def _dispatch_bullet(text: str) -> str:
+    step2 = _between(text, '### Step 2: Verify against ground truth', '#### Step 2b:', 'analyze.md')
+    return _between(step2, _DISPATCH_MARKER, _DISPATCH_END, 'analyze.md Step 2')
+
+
+def _layer_block(analysis: str, number: int) -> str:
+    """The definition bullet of one layer, up to the next layer's bullet."""
+    marker = f'**Layer {number} — {dict(_LAYERS)[number]}.**'
+    start = analysis.find(marker)
+    assert start != -1, f'analyze.md Step 4: the layer definition {marker!r} was not found'
+    tail = analysis[start + len(marker) :]
+    following = [f'**Layer {n} — {name}.**' for n, name in _LAYERS if n > number]
+    end = min((tail.find(m) for m in following if tail.find(m) != -1), default=-1)
+    return tail if end == -1 else tail[:end]
+
+
+# =============================================================================
+# (D1) Step 4 carries the three-layer analysis; the template carries its section
+# =============================================================================
+
+
+class TestThreeLayerStepFourContract:
+    def test_the_analysis_sits_before_the_report_is_written(self):
+        step4 = _step4(_read(_ANALYZE_MD))
+
+        analysis_at = step4.find(_ANALYSIS_HEADING)
+        report_at = step4.find(_BEFORE_THE_REPORT)
+
+        assert analysis_at != -1, (
+            f'analyze.md Step 4 carries no {_ANALYSIS_HEADING!r} block — a landing can still '
+            'pass the fidelity check while resting on a wrong spec premise, an unexplained '
+            'file, or a defect in the merged code'
+        )
+        assert report_at != -1, 'analyze.md Step 4 no longer carries the item 1 report write'
+        assert analysis_at < report_at, (
+            'the three-layer analysis is placed after item 1 writes the report — its findings '
+            'must reach the report, so it has to run before that Write'
+        )
+
+    def test_each_layer_carries_its_definition(self):
+        analysis = _analysis_block(_read(_ANALYZE_MD))
+
+        expectations = {
+            1: ('premises', 'Done-when', '`main`'),
+            2: ('traces to code', 'test that can fail', 'no deliverable explains', 'does not bear out'),
+            3: ('defects', 'invariants', 'boundaries', 'error paths', 'concurrency', 'resource handling'),
+        }
+        for number, keywords in expectations.items():
+            block = _layer_block(analysis, number)
+            for keyword in keywords:
+                assert keyword in block, (
+                    f'layer {number} ({dict(_LAYERS)[number]}) does not name {keyword!r} — its '
+                    f'definition has drifted from the contract. Block read: {block!r}'
+                )
+
+    def test_the_read_only_limit_and_the_not_shown_tag_are_stated(self):
+        analysis = _analysis_block(_read(_ANALYZE_MD)).lower()
+
+        assert 'by reading, no build, no test run, no write' in analysis, (
+            'the three-layer analysis does not state the "by reading, no build, no test run, '
+            'no write" limit — a reading step without it invites a build or a write'
+        )
+        assert '`not shown by reading`' in analysis, (
+            'the three-layer analysis does not carry the `not shown by reading` tag — what only '
+            'a run could show would be reported as clean'
+        )
+
+    def test_the_analysis_applies_to_a_full_ship_only(self):
+        analysis = _analysis_block(_read(_ANALYZE_MD))
+
+        assert re.search(r'(?i)full ship only', analysis), (
+            'the three-layer analysis is not scoped to a full ship — a mid-flight observation '
+            'has no merged code to read'
+        )
+        assert re.search(r'(?i)mid-flight observation \(Step 5\) is unchanged', analysis), (
+            'the three-layer analysis does not state that Step 5 is unchanged'
+        )
+
+    def test_the_template_carries_the_three_layer_section(self):
+        template = _read(_LANDING_TEMPLATE)
+        section = _between(template, '## Three-Layer Analysis', '## Metrics and Anomalies', 'landing-analysis.md')
+
+        for number, name in _LAYERS:
+            assert f'### Layer {number} — {name.title()}' in section, (
+                f'the landing template carries no block for layer {number} ({name})'
+            )
+            assert f'**Layer {number} verdict:**' in section, (
+                f'the landing template carries no verdict for layer {number} ({name})'
+            )
+        assert 'Conformance' in section, 'the landing template carries no conformance list'
+        assert '`CLAUDE.md`' in section and 'code rules' in section, (
+            "the conformance list does not name the project's own rules — `CLAUDE.md` and the code rules it names"
+        )
+        assert _VERDICT_LINE_RE.search(section), (
+            'the landing template carries no summary verdict line naming layer 1, layer 2 and '
+            'layer 3 — a layer-3 defect must be visible without reading the section'
+        )
+
+
+# =============================================================================
+# (D2 doc half) always-dispatched, one read-only leaf per landing
+# =============================================================================
+
+
+class TestThreeLayerAlwaysDispatched:
+    def test_the_step_two_index_names_the_three_layer_sub_step(self):
+        step2 = _between(_read(_ANALYZE_MD), '### Step 2: Verify against ground truth', '#### Step 2b:', 'analyze.md')
+
+        assert re.search(r'\*\*Six\*\* sub-steps', step2), (
+            'Step 2 still declares five dispatchable sub-steps — the three-layer landing analysis '
+            'is not in the complete index, so a reader would not find the dispatch'
+        )
+        assert 'three-layer landing analysis' in step2, (
+            "Step 2's dispatchable index does not name the three-layer landing analysis"
+        )
+
+    def test_the_dispatch_is_unconditional_and_one_leaf_per_landing(self):
+        bullet = _dispatch_bullet(_read(_ANALYZE_MD))
+
+        assert 'every full-ship landing' in bullet.lower(), (
+            'the three-layer dispatch is not stated as running on every full-ship landing'
+        )
+        assert 'no size qualifier' in bullet.lower(), (
+            'the three-layer dispatch does not say it runs without a size qualifier'
+        )
+        for qualifier in ('when large', 'when the read burden is large'):
+            assert qualifier not in bullet.lower(), (
+                f'the three-layer dispatch still carries the optional-dispatch qualifier {qualifier!r} '
+                '— the analysis runs on every full-ship landing, not only on large reads'
+            )
+
+        assert 'one leaf per landing' in bullet.lower(), 'the dispatch does not state the one-leaf-per-landing shape'
+        assert 'one envelope' in bullet.lower() and 'does not apply' in bullet.lower(), (
+            'the dispatch does not record why the one-envelope-per-message drafting rule does not '
+            'apply to the per-landing read'
+        )
+        assert 'must not share context' in bullet.lower(), (
+            "the dispatch does not state the reason for one leaf per landing — one landing's "
+            "read must not share context with another's"
+        )
+
+    def test_the_dispatch_states_the_return_shape_and_both_verdicts(self):
+        bullet = _dispatch_bullet(_read(_ANALYZE_MD))
+
+        assert '`findings[N]{layer,severity,file,line,claim,verdict}`' in bullet, (
+            'the dispatch does not state the return shape `findings[N]{layer,severity,file,line,claim,verdict}`'
+        )
+        assert '`checked`' in bullet and '`not_shown_by_reading`' in bullet, (
+            'the dispatch does not give BOTH `verdict` values (`checked` and `not_shown_by_reading`)'
+        )
+        assert 'conformance list' in bullet.lower(), (
+            "the dispatch does not require the conformance list for the project's own rules"
+        )
+
+    def test_the_dispatch_carries_the_resolved_level_and_its_workflow_doc(self):
+        bullet = _dispatch_bullet(_read(_ANALYZE_MD))
+
+        assert 'effort resolve-target --role orchestrator.analyze' in bullet, (
+            'the dispatch does not resolve its level on the `orchestrator.analyze` surface'
+        )
+        for fact in (
+            '--plan-id none',
+            '--caller plan-marshall:persona-plan-orchestrator',
+            f'--workflow {_DISPATCH_WORKFLOW_DOC}',
+        ):
+            assert fact in bullet, (
+                f'the dispatch resolve omits {fact!r} — the four facts are what make the resolve '
+                'seam emit the [DISPATCH] record'
+            )
+        assert '`execution-context-{level}`' in bullet and 'S1' in bullet, (
+            'the dispatch does not name its vehicle and the S1 read-only instruction'
+        )
+
+    def test_the_orchestrator_re_reads_what_it_records_as_checked(self):
+        bullet = _dispatch_bullet(_read(_ANALYZE_MD))
+
+        assert re.search(r'(?i)re-reads every `?checked`? point', bullet), (
+            'the dispatch does not require the orchestrator to re-read every `checked` point'
+        )
+        assert re.search(r'(?i)records which points it re-read', bullet), (
+            'the dispatch does not require the orchestrator to record which points it re-read'
+        )
+        assert 'unverified lead' in bullet, (
+            'a point the orchestrator cannot re-read is not recorded as an unverified lead'
+        )
+
+    def test_the_leaf_is_forbidden_every_ledger_write(self):
+        bullet = _dispatch_bullet(_read(_ANALYZE_MD))
+
+        assert 'writes nothing' in bullet.lower(), 'the dispatch does not state that the leaf writes nothing'
+        for target in (
+            '`Write`',
+            '`Edit`',
+            '`manage-status`',
+            '`manage-logging --store orchestrator`',
+            '`orchestrator queue`',
+            '`corpus set-verdict`',
+        ):
+            assert target in bullet, (
+                f'the dispatch does not forbid the leaf {target} — the draft crosses the dispatch '
+                'edge as data, and every ledger write stays with the orchestrator'
+            )
+
+
+# =============================================================================
+# (D3) Routing by layer, nothing fixed inline
+# =============================================================================
+
+
+class TestThreeLayerRouting:
+    def test_a_layer_three_defect_goes_to_the_operator_at_once(self):
+        routing = _routing_block(_read(_ANALYZE_MD))
+
+        assert 'reported to the operator' in routing and 'at once' in routing, (
+            'the routing rule does not report a layer-3 defect to the operator at once'
+        )
+        assert 'never fixed inline' in routing, 'the routing rule does not forbid fixing a layer-3 defect inline'
+        assert "only on the operator's word" in routing, (
+            'the routing rule does not reserve the staged fix-plan decision to the operator'
+        )
+
+    def test_a_layer_one_or_two_finding_names_the_spec_to_correct(self):
+        routing = _routing_block(_read(_ANALYZE_MD))
+
+        assert 'name the spec' in routing, (
+            'the routing rule does not require a layer-1/2 finding to name the spec to correct'
+        )
+        assert 'same-act rule' in routing, (
+            'the routing rule does not point a corpus-naming finding at the same-act fold rule'
+        )
+        assert 'Step 2b' in routing and 'corpus set-verdict' in routing, (
+            "the routing rule does not state that a corroborated claim persists through Step 2b's `corpus set-verdict`"
+        )
+
+    def test_the_template_verdict_line_names_the_layers_with_findings(self):
+        template = _read(_LANDING_TEMPLATE)
+        section = _between(template, '## Three-Layer Analysis', '## Metrics and Anomalies', 'landing-analysis.md')
+
+        assert re.search(r'(?i)every layer that carried a finding', section), (
+            "the template's verdict line does not say it names every layer that carried a finding"
+        )
