@@ -689,11 +689,12 @@ def test_anchor_derivation_still_strips_a_link_macro_from_a_section_title(tmp_pa
 
 
 def test_verify_links_link_macro_needs_a_word_boundary_and_no_whitespace(tmp_path):
-    """``backlink:`` and ``link: two words`` are prose, not macros."""
+    """``backlink:`` and a target with a space are prose, not macros."""
     adoc = tmp_path / 'grammar.adoc'
     adoc.write_text(
         '= Doc\n\nA backlink:target-file.adoc[Back] is not a link: macro.\n\n'
-        'Prose link: two words[Label] is not a macro either.\n',
+        'Prose link: two words[Label] is not a macro either.\n\n'
+        'A target may not hold a space: link:two words[Label] is not a macro.\n',
         encoding='utf-8',
     )
 
@@ -701,6 +702,43 @@ def test_verify_links_link_macro_needs_a_word_boundary_and_no_whitespace(tmp_pat
 
     assert result['data']['total_links'] == 0
     assert result['data']['broken_links'] == 0
+
+
+def test_verify_links_ignores_link_macros_inside_a_delimited_block(tmp_path):
+    adoc = tmp_path / 'page.adoc'
+    adoc.write_text('= Page\n\n----\nlink:missing.adoc[Example]\n----\n', encoding='utf-8')
+
+    result = cmd_verify_links(_ns(_VERIFY_LINKS_NS, file=str(adoc), directory=None, recursive=False, report=None))
+
+    assert result['data']['total_links'] == 0, 'a listing block sample is not a live link'
+    assert result['data']['broken_links'] == 0
+
+
+def test_verify_links_internal_anchor_link_macro_resolves(tmp_path):
+    adoc = tmp_path / 'page.adoc'
+    adoc.write_text('= Page\n\n[[present]]\n\nSee link:#present[Present].\n', encoding='utf-8')
+
+    result = cmd_verify_links(_ns(_VERIFY_LINKS_NS, file=str(adoc), directory=None, recursive=False, report=None))
+
+    assert result['data']['broken_links'] == 0
+    assert result['data']['unchecked_link_classes'] == []
+
+
+def test_verify_links_non_asciidoc_fragment_is_an_unchecked_class(tmp_path):
+    (tmp_path / 'manual.pdf').write_bytes(b'%PDF-1.4\n')
+    adoc = tmp_path / 'page.adoc'
+    adoc.write_text('= Page\n\nSee link:manual.pdf#page=3[Manual].\n', encoding='utf-8')
+
+    result = cmd_verify_links(_ns(_VERIFY_LINKS_NS, file=str(adoc), directory=None, recursive=False, report=None))
+
+    assert result['data']['broken_links'] == 0, 'the file exists; only its anchor is unreadable'
+    assert result['data']['unchecked_link_classes'] == [
+        {
+            'class': 'fragment',
+            'count': 1,
+            'first': {'file': str(adoc), 'line': 3, 'link': 'link:manual.pdf#page=3[Manual]'},
+        }
+    ]
 
 
 def test_verify_links_relative_link_macro_to_a_missing_anchor_is_broken(tmp_path):

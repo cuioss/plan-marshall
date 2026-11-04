@@ -14,13 +14,18 @@ from plan_logging import log_entry
 #: "see link: <<anchor>>" is not read as a macro at all.
 _LINK_MACRO_RE = re.compile(r'\blink:([^\s\[]+?)\[([^\]]*)\]')
 
-#: A target that carries a URI scheme (``https:``, ``mailto:``, ``file:``). The
-#: checker performs no network access, so every one of these is an unchecked
-#: class rather than a broken or a verified link.
+#: A target the checker does not open: a URI scheme (``https:``, ``mailto:``,
+#: ``file:``) or a protocol-relative target (``//host/path``). No network access is
+#: performed, so every one of these is an unchecked class rather than a broken or
+#: a verified link.
 _URI_SCHEME_RE = re.compile(r'^[A-Za-z][A-Za-z0-9+.\-]*:')
 
-#: The class name reported under ``unchecked_link_classes`` for a scheme target.
+#: The class name reported under ``unchecked_link_classes`` for an unopened target.
 _EXTERNAL_URL_CLASS = 'external-url'
+
+#: The class name for a fragment on a non-AsciiDoc target, which this checker
+#: cannot read for anchors.
+_FRAGMENT_UNCHECKED_CLASS = 'fragment'
 
 
 @dataclass
@@ -80,6 +85,9 @@ def extract_links_from_file(filepath: str) -> list[Link]:
             in_code_block = not in_code_block
             continue
 
+        if in_code_block:
+            continue
+
         for match in re.finditer(r'<<([^,>]+)(?:,([^>]+))?>>', line):
             links.append(
                 Link(
@@ -136,8 +144,9 @@ def extract_links_from_file(filepath: str) -> list[Link]:
 def _link_macro_class(target: str) -> str:
     """The class a ``link:`` target belongs to.
 
-    ``internal-anchor`` for a ``#anchor`` target, ``external-url`` for a target
-    carrying a URI scheme, and ``relative-file`` for everything else.
+    ``internal-anchor`` for a ``#anchor`` target; ``external-url`` for a target a
+    URI scheme or a ``//`` prefix puts out of reach (``file:`` and a drive letter
+    included, since neither is opened); ``relative-file`` for everything else.
     """
     if target.startswith('#'):
         return 'internal-anchor'
@@ -146,19 +155,32 @@ def _link_macro_class(target: str) -> str:
     return 'relative-file'
 
 
-def summarise_unchecked_link_classes(links: list[Link]) -> list[dict]:
-    """One row per class the checker saw but did not verify.
+def _unchecked_class(link: Link) -> str | None:
+    """The unchecked class a ``link:`` macro belongs to, or ``None`` when verified."""
+    if link.link_type != 'link':
+        return None
+    link_class = _link_macro_class(link.target)
+    if link_class == _EXTERNAL_URL_CLASS:
+        return _EXTERNAL_URL_CLASS
+    if link_class == 'relative-file':
+        target_file, _, fragment = link.target.partition('#')
+        if fragment and not target_file.lower().endswith('.adoc'):
+            return _FRAGMENT_UNCHECKED_CLASS
+    return None
 
-    A ``link:`` target carrying a URI scheme is never fetched, so it is counted
-    here instead of being reported as verified. A file with no such link yields
-    an empty list — a measured zero, not a missing field.
+
+def summarise_unchecked_link_classes(links: list[Link]) -> list[dict]:
+    """One row per class the checker deliberately does not verify.
+
+    A ``link:`` target carrying a URI scheme is never fetched, and a fragment on a
+    non-AsciiDoc target is never read for anchors, so both are counted here
+    instead of being reported as verified. A file with no such link yields an
+    empty list — a measured zero, not a missing field.
     """
     rows: dict[str, dict] = {}
     for link in links:
-        if link.link_type != 'link':
-            continue
-        link_class = _link_macro_class(link.target)
-        if link_class != _EXTERNAL_URL_CLASS:
+        link_class = _unchecked_class(link)
+        if link_class is None:
             continue
         row = rows.get(link_class)
         if row is None:
@@ -255,7 +277,7 @@ def verify_links(files: list[str]) -> tuple[list[Link], list[Issue]]:
                                 description=f"Target file '{target_path}' not found",
                             )
                         )
-                    elif fragment:
+                    elif fragment and target_file.lower().endswith('.adoc'):
                         if target_path not in anchor_cache:
                             anchor_cache[target_path] = extract_anchors_from_file(target_path)
                         if fragment not in anchor_cache[target_path]:

@@ -196,8 +196,7 @@ def test_java_17_switch_section_names_when_the_compiler_checks_exhaustiveness():
     text = (get_skill_dir('pm-dev-java', 'java-core') / 'standards' / 'java-17-features.md').read_text(encoding='utf-8')
     section = _section(text, '### From an if/else chain over a closed constant set')
 
-    assert 'exhaustiveness is checked' in section, 'the section must say when exhaustiveness is checked'
-    assert 'switch statement' in section, 'the section must distinguish the statement form from the expression'
+    assert 'not exhaustiveness-checked' in section, 'the section must say the statement form is unchecked'
     assert 'switch statement therefore keeps its' in section, (
         'the section must say a constant-only switch statement keeps its default-throw'
     )
