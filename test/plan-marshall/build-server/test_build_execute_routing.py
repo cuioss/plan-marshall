@@ -802,3 +802,213 @@ def test_cmd_run_records_requested_and_resolved_mode(monkeypatch, capsys):
     _, cmd_run = factory.create_execute_handlers(_config(), parse_log_fn=lambda *a: None)
     cmd_run(_run_args(execution_mode='daemon'))
     assert 'requested=daemon, resolved=fail-loud' in capsys.readouterr().err
+
+
+# =============================================================================
+# PLAN-LB-112 — a routed build in the finalize move-back window
+# =============================================================================
+#
+# The window: ``integrate_into_main`` has moved the plan directory back to the
+# main checkout, and the worktree directory still exists. A build routed with
+# ``--plan-id`` in that window resolves fine in the ROUTING process (its cwd is
+# main, which holds the plan record, and the record names the still-existing
+# worktree) — and then the daemon child re-runs the same argv from the worktree,
+# where the plan directory is absent. The child refuses with its own
+# ``worktree_resolution_failed`` body and exit 2.
+#
+# The fixture below stages exactly that layout. The one thing it models rather
+# than executes is the process hop inside ``file_ops._run_get_worktree_path``:
+# the real verb shells out to ``manage-status get-worktree-path``, whose STRICT
+# gate reads the plan record from the CURRENT checkout only. The model reads the
+# same on-disk layout through the same ``derive_worktree_state``, so the hop's
+# strictness is what is reproduced, not re-invented.
+
+_MOVED_BACK_PLAN = 'plan-moved-back'
+
+
+def _stage_moved_back_plan(plan_root: Path, worktree: Path) -> Path:
+    """Stage the plan record on ``plan_root`` with ``worktree`` persisted in it."""
+    plan_dir = plan_root / '.plan' / 'local' / 'plans' / _MOVED_BACK_PLAN
+    plan_dir.mkdir(parents=True)
+    (plan_dir / 'status.json').write_text(
+        json.dumps(
+            {
+                'plan_id': _MOVED_BACK_PLAN,
+                'metadata': {
+                    'use_worktree': 'true',
+                    'worktree_path': str(worktree),
+                    'worktree_branch': f'feature/{_MOVED_BACK_PLAN}',
+                },
+            }
+        ),
+        encoding='utf-8',
+    )
+    return plan_dir
+
+
+@pytest.fixture
+def moved_back_window(monkeypatch, tmp_path) -> dict:
+    """The daemon child's view of the window: cwd in the worktree, plan record on main."""
+    import file_ops
+
+    main = tmp_path / 'main'
+    worktree = tmp_path / 'worktree'
+    worktree.mkdir(parents=True)
+    _stage_moved_back_plan(main, worktree)
+    monkeypatch.chdir(worktree)
+
+    def _strict_gate(plan_id: str):
+        """``get-worktree-path``'s STRICT gate, read from the CURRENT checkout."""
+        record = Path.cwd() / '.plan' / 'local' / 'plans' / plan_id / 'status.json'
+        if not record.is_file():
+            raise file_ops.WorktreeResolutionError(
+                'manage-status get-worktree-path returned non-success: '
+                f"error='file_not_found' message='status.json not found for {plan_id!r}'"
+            )
+        metadata = json.loads(record.read_text(encoding='utf-8')).get('metadata') or {}
+        return file_ops.derive_worktree_state(metadata)
+
+    monkeypatch.setattr(file_ops, '_query_worktree_path', _strict_gate)
+    return {'main': main, 'worktree': worktree}
+
+
+def _child_fault_job_log(tmp_path, plan_id: str = _MOVED_BACK_PLAN) -> str:
+    """Write the job log the child produces, from the child's OWN error emitter."""
+    import resolve_project_dir as routing
+    from _build_format import format_toon
+
+    exc = routing.WorktreeResolutionError(
+        f"manage-status get-worktree-path failed (exit 1) for plan_id='{plan_id}': status.json not found"
+    )
+    body = format_toon(routing.emit_worktree_error(plan_id, exc))
+    log = tmp_path / 'moved-back-job.log'
+    log.write_text(f'[EXEC] python3 .plan/execute-script.py … run --plan-id {plan_id}\n{body}', encoding='utf-8')
+    return str(log)
+
+
+class TestMovedBackPlanRoutedBuild:
+    """D1 (reproduce), D2 (carry the resolved tree), D3 (report the fault as itself)."""
+
+    def test_the_child_cannot_resolve_the_plan_from_its_own_tree(self, moved_back_window):
+        """D1 cause: the child re-resolves ``--plan-id`` from a tree without the plan.
+
+        The strict gate is NOT weakened here — this remains the child's answer, and
+        D2 fixes the ROUTED re-run by carrying the tree, never by relaxing the gate.
+        """
+        import resolve_project_dir as routing
+
+        with pytest.raises(routing.WorktreeResolutionError):
+            routing.resolve_project_dir(_MOVED_BACK_PLAN, '.', default='.')
+
+    def test_the_routing_process_resolves_the_still_existing_worktree(self, moved_back_window):
+        """D1 contrast: from MAIN the same flag resolves — the asymmetry is the defect."""
+        import os
+
+        os.chdir(moved_back_window['main'])
+        import resolve_project_dir as routing
+
+        assert routing.resolve_project_dir(_MOVED_BACK_PLAN, '.', default='.') == str(
+            moved_back_window['worktree'].resolve()
+        )
+
+    def test_the_direct_build_reports_the_same_fault_as_itself(self, moved_back_window, monkeypatch, capsys):
+        """The in-process (direct) leg already answers as itself, with exit 2.
+
+        This is the CONTRAST the routed leg has to match, and it is why the defect
+        is routing-specific: the same tree, the same flag, the same missing plan
+        record — only the non-routed path is honest about it.
+        """
+        import _build_cli
+        from _build_cli import add_run_subparser, build_main
+
+        def _register(subparsers):
+            parser = add_run_subparser(subparsers, command_args_help='Test')
+            parser.set_defaults(func=lambda _args: 0)
+
+        monkeypatch.setattr(
+            sys,
+            'argv',
+            ['pyproject_build.py', 'run', '--command-args', 'verify core', '--plan-id', _MOVED_BACK_PLAN],
+        )
+
+        rc = build_main('Python build', [_register])
+
+        emitted = capsys.readouterr().out
+        assert rc == 2
+        assert 'error: worktree_resolution_failed' in emitted
+
+    @pytest.mark.xfail(
+        strict=True,
+        reason='PLAN-LB-112 D3: at HEAD the routed path collapses the child routing fault into '
+        'build_failed; the xfail is removed by the deliverable that makes it pass',
+    )
+    def test_the_routed_result_reaches_the_caller_as_the_child_reported_it(self, moved_back_window, tmp_path, capsys):
+        """D1 + D3: HEAD folds the child's routing fault into ``build_failed``."""
+        from _build_shared import cmd_run_common
+
+        log_file = _child_fault_job_log(tmp_path)
+        result = factory._daemon_result_to_direct(
+            {
+                'job_status': 'failure',
+                'exit_code': 2,
+                'duration_seconds': 1,
+                'log_file': log_file,
+            },
+            f'python3 .plan/execute-script.py … run --plan-id {_MOVED_BACK_PLAN}',
+        )
+
+        assert result['error'] == 'worktree_resolution_failed', (
+            'the child reported a routing fault before any tool ran; the routed result must carry it as itself'
+        )
+        assert result['exit_code'] == 2
+
+        cmd_run_common(result, lambda _log: ([], None, 'FAILURE'), 'python')
+        emitted = capsys.readouterr().out
+        assert 'worktree_resolution_failed' in emitted
+        assert 'no structured errors were parsed' not in emitted, (
+            'a routing fault is not a build failure, so no synthetic build_failure row may be published'
+        )
+
+    @pytest.mark.xfail(
+        strict=True,
+        reason='PLAN-LB-112 D2: at HEAD the routed child re-resolves --plan-id and is never handed '
+        'the tree; the xfail is removed by the deliverable that makes it pass',
+    )
+    def test_the_routed_child_carries_the_tree_the_routing_process_resolved(
+        self, moved_back_window, use_fake_client, monkeypatch
+    ):
+        """D2: the re-run command carries the resolved tree, and keeps the plan id.
+
+        The plan id has to survive for BOTH attributions the child makes: the
+        executor's ``kind=build`` ledger row (which reads ``--plan-id`` off the
+        dispatch) and the machine-global build slot the child acquires. That is why
+        the tree travels beside it rather than replacing it.
+        """
+        import os
+
+        worktree = str(moved_back_window['worktree'].resolve())
+        os.chdir(moved_back_window['main'])
+        monkeypatch.setattr(
+            sys,
+            'argv',
+            ['pyproject_build.py', 'run', '--command-args', 'verify core', '--plan-id', _MOVED_BACK_PLAN],
+        )
+        client = use_fake_client(
+            preflight={'status': 'success', 'preflight': 'ready'},
+            submit={'status': 'success', 'job_id': 'JOB-7'},
+            waits=[{'status': 'success', 'job_status': 'success', 'duration_seconds': 1, 'log_file': 'x.log'}],
+        )
+
+        result, reason = factory._route_to_daemon(_config(tool_name='python'), worktree, _MOVED_BACK_PLAN)
+
+        assert reason == ''
+        assert result is not None and result['status'] == 'success', 'the result is the build own result'
+        submitted = json.loads(client.submit_calls[0].command)
+        carried = submitted[4:]
+        assert carried[:3] == ['--command-args', 'verify core', '--plan-id']
+        assert carried[3] == _MOVED_BACK_PLAN
+        assert carried[4] == '--resolved-project-dir'
+        assert carried[5] == worktree, 'the child is handed the tree the routing process already resolved'
+        from plan_logging import extract_plan_id
+
+        assert extract_plan_id(submitted) == _MOVED_BACK_PLAN, 'the child ledger row keeps the plan id'
