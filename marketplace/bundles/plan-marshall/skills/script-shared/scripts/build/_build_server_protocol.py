@@ -1147,12 +1147,14 @@ def read_log_verdict(log_file: str) -> LogVerdict | None:
     """Read the build wrapper's emitted TOON verdict back from a job log.
 
     Pure with respect to any daemon/client state — it only reads the log the
-    supervisor already streamed. Eleven top-level (column-0) keys are parsed:
+    supervisor already streamed. The top-level (column-0) keys parsed are
     ``status:``, ``exit_code:``, ``tests_run:``, the applied-bound triple
     ``timeout_used_seconds:`` / ``timeout_source:`` / ``command_key:``, the
     launch-fault quadruple ``error:`` / ``reason:`` / ``wrapper:`` /
     ``project_dir:``, ``message:``, and the ``errors[N]{...}:`` table header, whose
-    indented rows are then collected as that table's body. The launch-fault
+    indented rows are then collected as that table's body. No count is stated
+    beside this list: a hand-kept total went stale the moment ``message:`` was
+    added, and the list itself is what a reader checks. The launch-fault
     quadruple is read so an inner fault reaches the consumer as itself rather than
     as a bare build failure; it is attached as :class:`InnerFault` only for the two
     identifiers that mean the command never ran. ``message:`` is read for the

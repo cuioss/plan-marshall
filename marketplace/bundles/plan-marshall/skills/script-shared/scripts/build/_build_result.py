@@ -283,8 +283,17 @@ ERROR_INVALID_INVOCATION = 'invalid_invocation'
 """The executor refused the dispatch before spawning the script (exit 2).
 
 Its ``reason`` carries the rejection class (``unknown_flag``,
-``missing_required_flag``, an unregistered verb), so a routed child whose executor
-surface predates a flag still reports a REFUSAL rather than a red build.
+``missing_required_flag``, an unregistered verb). A routed child whose executor
+declares a surface that still MATCHES the dispatched script reports that refusal as
+itself instead of as a red build.
+
+The qualification is load-bearing: the executor skips validation entirely when it
+has no surface for the script, or when the recorded script digest/path does not
+match the file it resolved (its own fail-open-to-spawn rule). In that case an older
+script's argparse rejects an unknown flag on stderr with no TOON body, so no
+``error:`` line exists to classify and the caller keeps the pre-existing
+``build_failed`` shape. That is the version-skew residual this deliverable does not
+close; see the plan's residue note.
 """
 
 LAUNCH_FAULT_ERRORS = frozenset({ERROR_EXECUTION_FAILED, ERROR_LOG_FILE_FAILED})
