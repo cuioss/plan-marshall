@@ -507,6 +507,24 @@ No new plan-marshall high or critical defect turned up apart from the operator-g
 
 ⚠ **Coverage gap:** the store set rests on probing sibling names by hand, because no wildcard listing was possible in this session. ⚠ **Unreconciled:** ids the 2026-11-01 run recorded as left in place, for example API `2026-10-12-07-002` and TokenSheriff `2026-10-31-12-001`, are no longer at those paths.
 
+### 2026-11-02 — first `gather` run (cross-repo: four sibling checkouts)
+
+The first run of the `gather` command. All 27 sibling checkouts and 7 sibling worktrees were probed. Stores found: cui-http (47, a store the earlier cross-repo run did not have), API-Sheriff (22), nifi-extensions (16) and pm-mcp-core (3), 88 lessons in all. Every other probed repository returned a zero, TokenSheriff and cui-jsf-test-basic among them. 68 lessons are about plan-marshall or its bundles and were moved into the archive, removing them from the source. The other 20 are project-specific and stay in their checkouts. Grading took two passes (consolidation and dedup, then a ground-truth check at `f6830b837`) by three read-only leaves; the orchestrator verified the evidence of every filed item. Per-lesson dispositions: `lessons-archive/INDEX.md` § Sweep 2026-11-02 (third run, `gather`).
+
+| Disposition | Lessons | Where |
+|---|---|---|
+| high (operator), filed | 2 in `lessons-routing-075` (Sourcery footer markers drop the review body) and `-076` (routed build misreports a routing failure as `build_failed`) | `live-blockers/inbox/` |
+| domain content, filed | 13 in 7 filings, `-077`..`-083` (pm-dev-java javadoc, junit-core, java-core, java-security; pm-dev-java-cui cui-http-testing; pm-documents ref-asciidoc) | same |
+| already-covered | 33 | `lessons-archive/low/{repo}/` |
+| medium | 7 | `lessons-archive/medium/{repo}/` |
+| low | 3 | `lessons-archive/low/{repo}/` |
+| stale | 10 | `lessons-archive/stale/{repo}/` |
+| not applicable, left in source | 20 | — |
+
+No new plan-marshall defect turned up at high or critical except the two the operator graded high from borderline medium/high. Lessons were moved with `mv -n`; all 68 destinations were verified present and no source-repo tombstone or commit was made (same deviation as the earlier cross-repo runs).
+
+⚠ **Unreconciled:** the 2026-11-02 second run recorded 82 left in place with named ids (pm-mcp-core 49, API-Sheriff 25, nifi-extensions 6). Those stores now hold different populations (pm-mcp-core 3, API-Sheriff 22, nifi-extensions 16), and none of the named ids is at its recorded path. This run graded what it found and could not establish where the earlier ones went.
+
 ## START HERE
 
 ### Annotations
