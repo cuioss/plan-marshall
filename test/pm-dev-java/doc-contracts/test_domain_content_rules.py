@@ -150,3 +150,37 @@ def test_cui_skills_point_at_the_cannot_fail_rules_without_restating_them():
         assert 'Tests That Cannot Fail' in text, f'{skill} must point at the junit-core section'
         assert 'pm-dev-java:junit-core' in text, f'{skill} must name the skill that owns the rule'
 
+
+# ---------------------------------------------------------------------------
+# D3 — invisible and bidirectional characters are built from code points
+# ---------------------------------------------------------------------------
+
+#: The rule's load-bearing tokens. A document that names the escape but drops
+#: the reviewability reason, or names the reason but shows no code point, is a
+#: partial statement of the rule this test pins.
+_D3_TOKENS = ('code point', 'invisible', 'bidirectional', 'S6389')
+
+
+def _assert_code_point_rule(text: str, where: str) -> None:
+    detached = [token for token in _D3_TOKENS if token.lower() not in text.lower()]
+    assert not detached, f'{where} does not state the rule: missing {detached}'
+    assert '\\u' in text or 'Character.toChars' in text, f'{where} carries no code-point example'
+
+
+def test_cui_http_testing_skill_states_the_code_point_rule_in_step_3():
+    text = (get_skill_dir('pm-dev-java-cui', 'cui-http-testing') / 'SKILL.md').read_text(encoding='utf-8')
+    _assert_code_point_rule(
+        _section(text, '### Step 3: Drive Adversarial / Negative-Path Tests (For Security-Relevant HTTP Code)'),
+        'SKILL.md Step 3',
+    )
+
+
+def test_cui_http_testing_standard_states_the_code_point_rule_in_the_attack_database_section():
+    text = (
+        get_skill_dir('pm-dev-java-cui', 'cui-http-testing') / 'standards' / 'testing-mockwebserver.md'
+    ).read_text(encoding='utf-8')
+    _assert_code_point_rule(
+        _section(text, '## Adversarial / Negative-Path Testing'), 'testing-mockwebserver.md attack section'
+    )
+
+
