@@ -184,3 +184,28 @@ def test_cui_http_testing_standard_states_the_code_point_rule_in_the_attack_data
     )
 
 
+# ---------------------------------------------------------------------------
+# D4 — the switch guidance says when exhaustiveness is checked
+# ---------------------------------------------------------------------------
+
+
+def test_java_17_switch_section_names_when_the_compiler_checks_exhaustiveness():
+    text = (
+        get_skill_dir('pm-dev-java', 'java-core') / 'standards' / 'java-17-features.md'
+    ).read_text(encoding='utf-8')
+    section = _section(text, '### From an if/else chain over a closed constant set')
+
+    assert 'exhaustiveness is checked' in section, 'the section must say when exhaustiveness is checked'
+    assert 'switch statement' in section, 'the section must distinguish the statement form from the expression'
+    assert 'default -> throw' in section, 'the section must keep the default-throw on a statement'
+
+
+def test_java_core_review_rules_cover_a_default_removed_from_a_switch_statement():
+    rules = _review_rules(get_skill_dir('pm-dev-java', 'java-core'))
+
+    assert len(rules) == 6, f'the java-core block holds five rules plus the one this plan adds: {rules}'
+    rule = _rule_containing(rules, 'switch statement', 'falls through')
+    _assert_harvestable(rule)
+
+
+
