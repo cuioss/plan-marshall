@@ -23,7 +23,6 @@ _URI_SCHEME_RE = re.compile(r'^[A-Za-z][A-Za-z0-9+.\-]*:')
 _EXTERNAL_URL_CLASS = 'external-url'
 
 
-
 @dataclass
 class Link:
     file: str

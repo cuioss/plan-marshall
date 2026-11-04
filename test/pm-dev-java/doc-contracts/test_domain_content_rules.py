@@ -176,9 +176,9 @@ def test_cui_http_testing_skill_states_the_code_point_rule_in_step_3():
 
 
 def test_cui_http_testing_standard_states_the_code_point_rule_in_the_attack_database_section():
-    text = (
-        get_skill_dir('pm-dev-java-cui', 'cui-http-testing') / 'standards' / 'testing-mockwebserver.md'
-    ).read_text(encoding='utf-8')
+    text = (get_skill_dir('pm-dev-java-cui', 'cui-http-testing') / 'standards' / 'testing-mockwebserver.md').read_text(
+        encoding='utf-8'
+    )
     _assert_code_point_rule(
         _section(text, '## Adversarial / Negative-Path Testing'), 'testing-mockwebserver.md attack section'
     )
@@ -190,9 +190,7 @@ def test_cui_http_testing_standard_states_the_code_point_rule_in_the_attack_data
 
 
 def test_java_17_switch_section_names_when_the_compiler_checks_exhaustiveness():
-    text = (
-        get_skill_dir('pm-dev-java', 'java-core') / 'standards' / 'java-17-features.md'
-    ).read_text(encoding='utf-8')
+    text = (get_skill_dir('pm-dev-java', 'java-core') / 'standards' / 'java-17-features.md').read_text(encoding='utf-8')
     section = _section(text, '### From an if/else chain over a closed constant set')
 
     assert 'exhaustiveness is checked' in section, 'the section must say when exhaustiveness is checked'
@@ -214,9 +212,9 @@ def test_java_core_review_rules_cover_a_default_removed_from_a_switch_statement(
 
 
 def test_java_security_masking_pattern_says_masking_is_not_sanitising():
-    text = (
-        get_skill_dir('pm-dev-java', 'java-security') / 'standards' / 'java-security-patterns.md'
-    ).read_text(encoding='utf-8')
+    text = (get_skill_dir('pm-dev-java', 'java-security') / 'standards' / 'java-security-patterns.md').read_text(
+        encoding='utf-8'
+    )
     masking = _section(text, '### Masking Pattern')
 
     assert 'mask' in masking.lower(), 'control: the section must still show the masking example'
@@ -228,9 +226,9 @@ def test_java_security_masking_pattern_says_masking_is_not_sanitising():
 
 
 def test_secure_logging_names_the_c1_range_and_the_ascii_only_cntrl_class():
-    text = (
-        get_skill_dir('plan-marshall', 'persona-security-expert') / 'standards' / 'secure-logging.md'
-    ).read_text(encoding='utf-8')
+    text = (get_skill_dir('plan-marshall', 'persona-security-expert') / 'standards' / 'secure-logging.md').read_text(
+        encoding='utf-8'
+    )
 
     assert 'U+0080' in text and 'U+009F' in text, 'the C1 range must be named explicitly'
     assert '\\p{Cntrl}' in text, 'the regex class must be named'
@@ -247,13 +245,9 @@ def test_java_security_skill_carries_the_java_form_and_points_to_the_persona_sta
 
 
 def test_cui_logging_points_at_the_value_neutralisation_rule():
-    text = (
-        get_skill_dir('pm-dev-java-cui', 'cui-logging') / 'standards' / 'logging-standards.md'
-    ).read_text(encoding='utf-8')
+    text = (get_skill_dir('pm-dev-java-cui', 'cui-logging') / 'standards' / 'logging-standards.md').read_text(
+        encoding='utf-8'
+    )
 
     assert 'Character.isISOControl' in text, 'the pointer must name the check the rule uses'
     assert 'secure-logging.md' in text, 'the pointer must name the standard that owns the rule'
-
-
-
-
