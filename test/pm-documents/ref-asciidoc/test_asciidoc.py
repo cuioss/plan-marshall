@@ -628,7 +628,7 @@ def test_adr_template_renders_and_validates_clean():
 # Tier 2: verify-links ``link:`` macro grammar (PLAN-LB-113 D6)
 
 
-def _link_macro_result(name: str) -> dict:
+def _link_macro_result(name: str):
     """Run ``verify-links`` on one ``link-verify`` fixture by name."""
     return cmd_verify_links(
         _ns(_VERIFY_LINKS_NS, file=str(LINK_VERIFY_FIXTURES / name), directory=None, recursive=False, report=None)
