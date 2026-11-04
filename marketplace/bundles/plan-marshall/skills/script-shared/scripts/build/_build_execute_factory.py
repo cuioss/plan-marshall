@@ -993,14 +993,14 @@ _PROJECT_DIR_FLAG = '--project-dir'
 path-shaped flags are checked, and none of them can arrive here relative:
 
 * ``--plan-id`` is mutually exclusive with ``--project-dir`` and names a PLAN, not
-  a path: the child never resolves it for itself. The tree the routing process
-  resolved travels beside it as ``--resolved-project-dir`` (see
-  :func:`_carry_resolved_tree`), and that value is already absolute. It has to
-  travel, because re-resolving the plan id from the child's own working directory
-  is equivalent to the routing process's resolution only while that directory
-  still holds the plan record — it does not in the finalize move-back window, when
-  ``integrate_into_main`` has moved the record back to main and the worktree
-  directory still exists.
+  a path: in a ROUTED dispatch the child is not meant to resolve it at all. The
+  tree the routing process resolved travels beside it as
+  ``--resolved-project-dir`` (see :func:`_carry_resolved_tree`), and that value is
+  already absolute. It has to travel, because re-resolving the plan id from the
+  child's own working directory is equivalent to the routing process's resolution
+  only while that directory still holds the plan record — it does not in the
+  finalize move-back window, when ``integrate_into_main`` has moved the record
+  back to main and the worktree directory still exists.
 * ``--working-dir`` and ``--env`` make a build daemon-incompatible, so such a
   build never reaches this seam at all — under ``auto`` it falls back in-process
   before routing, and under ``daemon`` it fails loud (see ``cmd_run``).
