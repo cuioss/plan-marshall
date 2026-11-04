@@ -678,3 +678,88 @@ cui-jsf-test-basic 1, nifi-extensions 6, TokenSheriff 1, pm-mcp-core 49, API-She
 | stale | 5 |
 | not applicable (left in source) | 82 |
 | **total** | **178** |
+
+## Sweep 2026-11-02 (third run, `gather`) — 88 lessons from four sibling checkouts (cross-repo)
+
+The first run of the epic-local `gather` command. Every sibling checkout under the parent of the main checkout (27 repositories) and every sibling worktree (7, under cui-http, nifi-extensions and pm-mcp-core, plus this repository's own) was probed with `git status --porcelain --ignored --untracked-files=all -- .plan/local/lessons-learned`, after pm-mcp-core had answered with a known non-empty store. Stores found: cui-http 47, API-Sheriff 22, nifi-extensions 16, pm-mcp-core 3. The other 23 repositories and every worktree returned a zero. This repository's own one lesson belongs to `ingest` and was not touched. Total 88 lessons.
+
+Grading ran in two passes. Pass 1 consolidated and deduplicated against this INDEX, the `live-blockers` epic, its plans and its archived inbox. Pass 2 checked each remaining cluster against the base branch at `f6830b837`. Three read-only leaves graded three shards (cui-http by date, and the other three repositories together); the orchestrator verified the evidence of every borderline and every filed item before filing. The operator graded the two borderline plan-marshall items high.
+
+**Layout.** Each lesson was moved verbatim with `mv -n` (no overwrite) to `{level}/{repo}/{lesson-id}.md`, and the filed ones to `filed-live-blockers/sweep-2026-11-02/{repo}/`. 68 destination files were verified present by `git status`. The source repositories' tombstones were not written, and nothing was committed in any source repository.
+
+### Filed to `live-blockers` (9 filings, 15 lessons; `cui-http 2026-10-04-06-008` feeds two filings)
+
+| Message | Level | Sources | Subject |
+|---|---|---|---|
+| `lessons-routing-075` | high (operator) | API `2026-08-09-19-003` | plan-marshall automatic-review: Sourcery OSS footer markers in `ignore_patterns` drop the whole review body, Overall Comments included (`sourcery.md:41-42`, `github_pr.py:510`) |
+| `lessons-routing-076` | high (operator) | API `2026-08-09-03-002` | plan-marshall build routing: a daemon-routed build with `--plan-id` after move-back surfaces `worktree_resolution_failed` as `build_failed` (`_build_execute_factory.py:1036-1047`, `_status_query.py:676-683`) |
+| `lessons-routing-077` | medium | cui-http `2026-09-09-10-002`, `2026-09-15-19-002`, `2026-10-04-06-008` (count part) | `pm-dev-java` javadoc: no review rule for a restated count or a guard/ordering claim (`SKILL.md:145-155`) |
+| `lessons-routing-078` | medium | cui-http `2026-09-09-10-003`, `2026-09-16-15-004`, `-15-008`, `-15-009`, `2026-10-04-06-008` (fixed-list part) | `pm-dev-java` junit-core: tests that cannot fail (unanchored relational assertion, default not reached, vacuous negative, mirrored list) |
+| `lessons-routing-079` | low (weak) | cui-http `2026-09-09-16-003` | `pm-dev-java` junit-core / `pm-dev-java-cui` cui-testing: spec citation must name the clause; a fail-open assertion needs a stated reason |
+| `lessons-routing-080` | low (weak) | cui-http `2026-10-04-06-001` | `pm-dev-java-cui` cui-http-testing: build bidi characters from code points, not raw literals |
+| `lessons-routing-081` | medium | API `2026-08-09-07-001` | `pm-dev-java` java-core: a constant-only switch statement is not exhaustiveness-checked, so dropping the trailing throw is fail-open (`java-17-features.md:94`, `:106`) |
+| `lessons-routing-082` | medium | API `2026-08-09-07-007` | `pm-documents` ref-asciidoc: `verify-links` ignores `link:` macros and carries no unchecked-class field (`_cmd_verify_links.py:70`, `:82`, `:97`, `:225-242`) |
+| `lessons-routing-083` | low | nifi `2026-09-04-11-001`, `2026-09-04-11-002` | `pm-dev-java` java-security / secure-logging: masking is not sanitising; `\p{Cntrl}` is ASCII-only. Related to `-063` |
+
+### Already covered (33, stored in `low/{repo}/`)
+
+| Lessons | Covered by |
+|---|---|
+| cui-http `2026-09-04-12-002`, `2026-09-06-14-003`; API `2026-08-09-07-005`, `2026-08-09-18-008`; cui-http `2026-09-08-15-003`, `2026-09-15-19-003`; nifi `2026-10-09-22-006` | `-044` script surface drift; `-050`/`-066` review-bot participation |
+| cui-http `2026-09-06-07-001`, `2026-09-09-16-002` | `-007`/`-050` review-bot refusal handling, PLAN-LB-24, PLAN-LB-38, PLAN-LB-101 |
+| cui-http `2026-09-06-07-002`, `2026-09-06-14-005`, `2026-10-04-06-006` | `-031`/`-052`/`-058` Maven pre-push gate and zero-arm coverage; #1866; PLAN-LB-110 |
+| cui-http `2026-09-06-14-004`, `2026-09-09-10-004`, `2026-09-09-10-006` | PLAN-LB-32 head-dependent re-fire; the handshake and freshness medium clusters |
+| cui-http `2026-09-08-15-004` | PLAN-LB-27, retired by the operator on 2026-10-14 |
+| cui-http `2026-09-08-15-005` | `-036`, PLAN-LB-59 ADR number collision |
+| cui-http `2026-09-09-10-001`, `2026-09-15-19-001`, `2026-09-16-15-006`; API `2026-08-09-18-001`, `2026-08-09-19-001` | `-040`/`-049` outline authoring and declared footprint |
+| cui-http `2026-09-09-10-008`; API `2026-08-09-18-006` | `-010` domain-narrow; PLAN-LB-42 D4; `-022`/`-032`/`-058` empty assessment store |
+| cui-http `2026-09-16-15-002`; cui-http `2026-09-16-15-003` | `-037` Sonar stale snapshot (Sonar not enabled); `-051` leaf without Grep |
+| API `2026-08-09-07-004`; API `2026-08-09-07-008`, `2026-08-09-07-009` | the staged-spec-claims medium; `-069` and the build-timeout and NO_PLAN clusters |
+| nifi `2026-09-04-10-001`, `2026-09-04-10-002`, `2026-09-06-16-001`, `2026-09-06-16-004` | `-070` S2637/S2638; the freshness-keyed-to-a-hash medium; `-062`/`-057` stated list or guarantee not bound to its source |
+
+### `stale/` (10)
+
+| Lesson | Why |
+|---|---|
+| cui-http `2026-09-04-12-001` | `STATE_UNREGISTERED_KIND` exists (`review_completeness.py:355`) |
+| cui-http `2026-09-04-12-003` | `plan_creation_sha` no longer exists; scope_creep_check uses a merge-base baseline (#1745) |
+| cui-http `2026-09-06-14-001` | triage verify pre-stage and ground-truth precondition exist (`triage.md:79`, `:210`) |
+| cui-http `2026-09-08-15-002` | trigger B re-triggers a stale required bot (`automatic-review/SKILL.md:223`, `:232`) |
+| cui-http `2026-09-08-15-006` | a green status check is a wait signal only, never participation |
+| cui-http `2026-09-09-10-007` | the rationale already goes out as the in-thread reply (`workflow-integration-github/SKILL.md:230`, `:284`) |
+| cui-http `2026-09-16-09-001` | `testing-junit-core.md:65` states the single-throwing-statement rule |
+| cui-http `2026-09-16-15-005` | `further_round_owed` and pre-submission-self-review retired in #1758 |
+| API `2026-08-09-07-006` | the surfacer was retired in #1758 |
+| nifi `2026-09-06-16-002` | restoring real timers is stated (`jest-testing/SKILL.md:63`) |
+
+### `medium/` (7, not filed)
+
+| Cluster | Lessons |
+|---|---|
+| Dispatched leaf workflows containing `Task:` or `AskUserQuestion` (`finalize-step-simplify.md:141`, `adr-propose.md:110`) | cui-http `2026-09-06-07-003` |
+| Allowlist or wildcard edit is itself a trust-boundary change | cui-http `2026-09-06-14-002` |
+| Operator answers settling a conjunctive question not checked against the spec | cui-http `2026-09-08-06-001` |
+| Review method: sibling-guard comparison, closure by enumeration | cui-http `2026-09-08-06-002`, `2026-09-08-15-001` |
+| Singletons | API `2026-08-09-03-001` (`search --content` names no scanned root); API `2026-08-09-07-003` (a bot "does not compile" verdict refuted by green CI; could instead be filed against `pm-dev-java` ext-triage-java) |
+
+### `low/` (3, not filed)
+
+cui-http `2026-09-08-06-003` (a wait should persist an absolute deadline; `waiting.md`); API `2026-08-09-18-007` (same-account comment with no batch shape is filed by design); nifi `2026-09-06-16-003` (truthiness guard rejects the valid value 0; body-less, so only a title as evidence; a domain-bundle content gap in `pm-dev-frontend`, archived rather than filed because there is no body to ground it). These sit in `low/{repo}/` beside the already-covered rows.
+
+### Not applicable — left in the source checkout (20)
+
+cui-http 4, API-Sheriff 6, nifi-extensions 7, pm-mcp-core 3: the consumer project's own code, tests, docs, CI or host. They are exactly the lesson files still present in each store after this run.
+
+⚠ **Unreconciled.** The 2026-11-02 second run recorded 82 left in place (API 25, nifi 6, pm-mcp-core 49, TokenSheriff 1, cui-jsf-test-basic 1) and named ids for them. The stores at the start of this run held a different population: pm-mcp-core 3 (all dated 2026-10-19, not the 49), nifi-extensions 16 (none of the six June/July ids), API-Sheriff 22 (all 2026-08-09), and TokenSheriff and cui-jsf-test-basic empty. The earlier left-in-place ids are not present at those paths; this run could not establish where they went. All 88 lessons found were graded fresh.
+
+### Dispositions
+
+| Disposition | Count |
+|---|---|
+| filed (9 filings) | 15 |
+| already-covered | 33 |
+| medium | 7 |
+| low | 3 |
+| stale | 10 |
+| not applicable (left in source) | 20 |
+| **total** | **88** |
