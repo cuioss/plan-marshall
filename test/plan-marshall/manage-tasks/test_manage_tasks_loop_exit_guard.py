@@ -487,6 +487,25 @@ class TestCompletedTasksDeltaHasAStatedSourceAndNoZeroDefault:
         assert result['error'] == 'no_progress_not_decidable'
         assert '--consumed-tokens' in result['message']
 
+    def test_a_supplied_delta_keeps_a_progressing_dispatch_out_of_error(self, plan_context):
+        """A non-owed task in progress with a completed task is progress, not a stall.
+
+        The control for the absent-delta case above: the SAME queue shape with the
+        delta supplied is decided by the predicate's second conjunct, so the
+        dispatch is not `error`. Only the missing input turns it undecidable.
+        """
+        add_basic_task(plan_id='guard-delta-supplied', title='Mid', deliverable=1, steps=['src/Mid.java'])
+        cmd_update(_update_ns(plan_id='guard-delta-supplied', number=1, status='in_progress'))
+
+        result = cmd_loop_exit_guard(
+            _ns_with_predicate('guard-delta-supplied', consumed_tokens=536031, completed_tasks_delta=1)
+        )
+
+        assert result['predicate_in_progress_count'] == 1
+        assert result['predicate_completed_tasks_delta'] == 1
+        assert result['predicate_holds'] is False
+        assert result['classification'] == 'voluntary_checkpoint'
+
     def test_the_guard_reports_the_done_count_the_delta_is_measured_against(self, plan_context):
         """The delta's source is the done count this same call reports."""
         add_basic_task(plan_id='guard-done-count', title='Done one', deliverable=1, steps=['src/A.java'])

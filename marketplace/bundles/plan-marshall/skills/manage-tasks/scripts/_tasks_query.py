@@ -38,7 +38,10 @@ VERIFICATION_HANDBACK_CAUSE = 'verification_handback'
 NO_PROGRESS_NOT_DECIDABLE = 'no_progress_not_decidable'
 
 #: The plan-local execution manifest, whose ``phase_5.verification_steps`` is
-#: the composed list a hand-back's step ids are checked against.
+#: the composed list a hand-back's step ids are checked against. Mirrors
+#: ``MANIFEST_FILENAME`` in ``manage-execution-manifest/scripts/_manifest_core.py``;
+#: that module is not on this script's import path, and the file name is the
+#: stable part of the cross-skill contract.
 MANIFEST_FILENAME = 'execution.toon'
 
 

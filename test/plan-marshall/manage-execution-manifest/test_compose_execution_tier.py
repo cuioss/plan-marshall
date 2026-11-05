@@ -185,11 +185,12 @@ class TestStampReflectsALiveResolvedCeilingVerdict:
         """The producer chain yields exactly the four fields the composer consumes.
 
         The derived fields are asserted against the MEASURED-vs-UNMEASURED
-        contract, not against the ceiling alone: ``exceeds_bash_ceiling`` is a
-        pure ceiling comparison, while ``execution_tier`` is ``per_task`` only
-        when the key is measured AND the stamp fits. Re-deriving both from the
-        same ``(stamp, measured)`` pair the production lookup returned is what
-        keeps this case from re-pinning the floor-driven derivation.
+        contract, not against the ceiling alone: ``exceeds_bash_ceiling`` states a
+        MEASURED stamp's relation to the ceiling, while ``execution_tier`` is
+        ``per_task`` only when the key is measured AND the stamp fits. Re-deriving
+        both from the same ``(stamp, measured)`` pair the production lookup
+        returned is what keeps this case from re-pinning the floor-driven
+        derivation.
         """
         bash_timeout, measured = self._production_lookup()
         fields = _arch_build._compute_execution_tier_fields(bash_timeout, measured)

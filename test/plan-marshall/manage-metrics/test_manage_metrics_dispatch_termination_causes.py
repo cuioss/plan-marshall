@@ -130,13 +130,34 @@ class TestCloseValueScopeDiscriminator:
 class TestDispatchTerminationCausesEnum:
     """Structural assertions on the DISPATCH_TERMINATION_CAUSES tuple."""
 
-    def test_enum_contains_exactly_fourteen_values(self):
-        """The enum extends to exactly 14 entries — the legacy 5, the phase-6/phase-4
-        extension (5), the budget_yield phase-5 dispatch-loop signal,
-        returned_with_findings (the productive-loop-back member), baseline_drift
-        (the recoverable phase-5 drift return), plus verification_handback (the
-        prescribed orchestrator-tier build hand-back)."""
-        assert len(manage_metrics.DISPATCH_TERMINATION_CAUSES) == 14
+    #: The expected membership, declared by NAME rather than by length. A member
+    #: added or removed is then a deliberate edit here instead of a silently
+    #: re-pinned hand count.
+    EXPECTED_TERMINATION_CAUSES = frozenset(
+        {
+            'voluntary_checkpoint',
+            'task_complete_returned_verbatim',
+            'budget_yield',
+            'harness_cancellation',
+            'error',
+            'clean_exit_queue_empty',
+            'step_complete',
+            'blocked_user_review',
+            'blocked_session_restart',
+            'task_batch_complete',
+            'agent_returned',
+            'returned_with_findings',
+            'baseline_drift',
+            'verification_handback',
+        }
+    )
+
+    def test_enum_membership_matches_the_declared_enumeration(self):
+        """The tuple's membership IS the declared set, with no duplicates."""
+        assert set(manage_metrics.DISPATCH_TERMINATION_CAUSES) == self.EXPECTED_TERMINATION_CAUSES
+        assert len(set(manage_metrics.DISPATCH_TERMINATION_CAUSES)) == len(
+            manage_metrics.DISPATCH_TERMINATION_CAUSES
+        ), 'the enum must not repeat a cause'
 
     def test_enum_contains_verification_handback_cause(self):
         """The prescribed build hand-back member is present.

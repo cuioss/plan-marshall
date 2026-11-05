@@ -1280,14 +1280,14 @@ def _chain_order(numbers: list[int], depends_on: dict[int, list[int]]) -> list[i
 def _plan_module_tests_chain_tail_deferral(
     plan_id: str,
 ) -> tuple[dict[int, str], list[dict[str, Any]], set[tuple[int, str]]]:
-    """Decide which task of each deliverable carries the owed module-tests rung.
+    """Decide which task of each (deliverable, rung command) group carries the owed rung.
 
     The operator ruling this implements: **one full module build per
     deliverable.** When a deliverable's per-task ``module-tests`` rung resolves
     ``orchestrator`` from a MEASURED learned duration that exceeds the Bash
     ceiling, every task deferring on its own would pay the same build once per
-    task. So the rung is placed on the LAST task of the deliverable's chain and
-    the earlier tasks close without the owed hold.
+    task. So the rung is placed on the LAST task of that (deliverable, command)
+    group's chain and the earlier tasks close without the owed hold.
 
     The discriminator is ``exceeds_bash_ceiling`` on the resolve TOON, NOT the
     tier alone: ``orchestrator`` is also what an UNMEASURED command resolves to

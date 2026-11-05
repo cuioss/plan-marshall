@@ -3,11 +3,11 @@
 
 The operator ruling: when a deliverable's per-task ``module-tests`` rung resolves
 ``orchestrator`` from a MEASURED learned duration above the Bash ceiling, the
-deliverable's LAST task in its chain carries the owed rung and the earlier tasks
-close without the owed hold. Below the ceiling the rung runs inline on every
-task, and an UNMEASURED command keeps today's behaviour — no deferral decision
-is recorded, because a duration nobody has measured cannot say the build will
-always exceed the limit.
+last task of that ``(deliverable, command)`` group's chain carries the owed rung
+and the earlier tasks close without the owed hold. Below the ceiling the rung runs
+inline on every task, and an UNMEASURED command keeps today's behaviour — no
+deferral decision is recorded, because a duration nobody has measured cannot say
+the build will always exceed the limit.
 
 The decision is recorded on the task ladder (`verification.owed_rung`) and
 summarised in the manifest (`phase_5.owed_rung_deferral`).

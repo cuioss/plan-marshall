@@ -114,3 +114,15 @@ class TestHandbackCauseIsNamedInItsTwoDocuments:
 
         assert 'without a valid hand-back pair' in text
         assert 'beside an empty `pending_verify_steps[]`' in text
+
+    def test_b7_is_evaluated_on_every_non_error_return(self):
+        """A hand-back return must still reach the predicate, or D1 can never fire.
+
+        The table classifies a valid hand-back as `verification_handback`, so a
+        trigger scoped to returns "provisionally classified voluntary_checkpoint"
+        would skip the very return the scoped exemption exists for.
+        """
+        text = EXECUTION_MD.read_text(encoding='utf-8')
+
+        assert 'After ANY non-error dispatch return' in text
+        assert 'let the returned `classification` override the table' in text

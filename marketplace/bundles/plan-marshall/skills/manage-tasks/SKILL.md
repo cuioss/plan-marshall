@@ -112,8 +112,8 @@ broadened predicate. Either non-empty bucket forces `status: continue`.
 
 **TOON return contract:**
 
-Both `continue` and `success` branches emit all six count/id fields so
-callers can read either axis without conditional presence checks:
+Both `continue` and `success` branches emit every count/id field so callers can
+read either axis without conditional presence checks:
 
 ```toon
 status: continue | success
@@ -124,6 +124,7 @@ in_progress_count: M
 in_progress_ids[M]: [task_numbers]
 owed_count: K
 owed_ids[K]: [task_numbers]
+done_count: D
 message: "..."
 ```
 
@@ -142,11 +143,17 @@ message: "..."
   bucket: an owed task still forces `status: continue`, because the build it
   waits on has not reported. The split exists for the no-progress predicate
   below, which must not count a task the workflow itself is holding open.
+- `done_count` — the `done` count from the same queue walk. It is the source
+  of `completed_tasks_delta`: the orchestrator snapshots it per iteration and
+  subtracts the previous snapshot, so the delta and the queue state can never
+  disagree about which tasks completed.
 
-**No-progress mode (B7).** Passing `--consumed-tokens` (or any other
-predicate input: `--completed-tasks-delta`, `--verification-handback`)
+**No-progress mode (B7).** Passing any predicate input: `--consumed-tokens`, `--completed-tasks-delta`, `--pending-verify-steps`, or `--verification-handback`
 switches the verb into the deterministic B7 evaluation the orchestrator runs
-after a dispatch returns and before `record-dispatch-boundary`. The result
+after a dispatch returns and before `record-dispatch-boundary`. The evaluation
+needs BOTH `--consumed-tokens` and `--completed-tasks-delta`; a call that
+supplies one without the other returns `status: error` with
+`error: no_progress_not_decidable` and no classification. The result
 then also carries:
 
 ```toon
@@ -155,6 +162,7 @@ predicate_completed_tasks_delta: {D}
 predicate_consumed_tokens: {X}
 predicate_holds: {true|false}
 verification_handback_valid: {true|false}
+verification_handback_unknown_steps[N]: [step_ids]
 classification: {error|verification_handback|voluntary_checkpoint|<provisional cause>}
 classification_reason: {...}
 ```
@@ -162,11 +170,15 @@ classification_reason: {...}
 The predicate is `predicate_in_progress_count > 0 AND
 predicate_completed_tasks_delta == 0 AND predicate_consumed_tokens > 50000`
 — stated once, with its exemptions, in `plan-marshall/workflow/execution.md`
-§ "B7 — voluntary_checkpoint no-progress reclassification". Two exemptions
-precede it: a return carrying `--verification-handback` beside a non-empty
-`--pending-verify-steps` classifies as `verification_handback` and never
-reaches the predicate, and the owed-task subtraction means an owed task can
-never manufacture a stall. `classification` is the cause to record.
+§ "B7 — voluntary_checkpoint no-progress reclassification". The predicate is
+consulted on every non-error return, including one that hands a build back: the
+owed-task subtraction keeps the handed-back task out of `predicate_in_progress_count`,
+a non-owed task that stalled in the same dispatch is still classified `error`,
+and a hand-back naming a step id outside the manifest's composed
+`phase_5.verification_steps` exempts nothing. The verb reports
+`verification_handback_unknown_steps[]` — the named ids the manifest does not
+carry — so a rejected hand-back is observable rather than inferred.
+`classification` is the cause to record.
 
 **Rationale:** before this verb, the loop-exit decision was driven by the
 dispatched agent's terminal payload, which the agent could echo verbatim
