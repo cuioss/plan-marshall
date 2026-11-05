@@ -12,10 +12,12 @@ from _tasks_core import (
     find_task_file,
     get_all_tasks,
     get_deliverable_context,
+    get_plan_dir,
     get_tasks_dir,
     output_error,
     parse_task_file,
 )
+from toon_parser import ToonParseError, parse_toon
 
 # ---------------------------------------------------------------------------
 # B7 no-progress reclassification vocabulary
@@ -29,6 +31,15 @@ B7_PROVISIONAL_CAUSE = 'voluntary_checkpoint'
 B7_NO_PROGRESS_TOKEN_THRESHOLD = 50000
 NO_PROGRESS_CAUSE = 'error'
 VERIFICATION_HANDBACK_CAUSE = 'verification_handback'
+
+#: The named error a mode entered without both predicate measurements returns.
+#: ``--consumed-tokens`` or ``--completed-tasks-delta`` absent is NOT a zero:
+#: a delta nobody supplied cannot be evidence that the loop made no progress.
+NO_PROGRESS_NOT_DECIDABLE = 'no_progress_not_decidable'
+
+#: The plan-local execution manifest, whose ``phase_5.verification_steps`` is
+#: the composed list a hand-back's step ids are checked against.
+MANIFEST_FILENAME = 'execution.toon'
 
 
 def _build_done_set(all_tasks: list) -> set[str]:
@@ -353,13 +364,15 @@ def cmd_loop_exit_guard(args) -> dict:
     split exists because the no-progress predicate must not count a task the
     workflow itself is holding open (see ``evaluate_no_progress``).
 
-    **No-progress mode (B7).** Passing ``--consumed-tokens`` (or
-    ``--completed-tasks-delta``) switches the verb into the deterministic
-    B7 evaluation the orchestrator runs after a dispatch returns: the
-    predicate, its three values, and the resulting classification are added
-    to the result. The predicate is stated once in
-    ``plan-marshall/workflow/execution.md`` § B7; the arithmetic lives here,
-    not in prose.
+    **No-progress mode (B7).** Passing any predicate input switches the verb
+    into the deterministic B7 evaluation the orchestrator runs after a dispatch
+    returns: the predicate, its three values, and the resulting classification
+    are added to the result. The evaluation itself needs BOTH measurements —
+    ``--consumed-tokens`` and ``--completed-tasks-delta`` — and a call that
+    supplies one without the other is refused with ``no_progress_not_decidable``
+    rather than evaluated with the absent input read as ``0``. The predicate is
+    stated once in ``plan-marshall/workflow/execution.md`` § B7; the arithmetic
+    lives here, not in prose.
     """
     task_dir = get_tasks_dir(args.plan_id)
     all_tasks = get_all_tasks(task_dir)
@@ -371,6 +384,12 @@ def cmd_loop_exit_guard(args) -> dict:
     owed_count = len(owed_ids)
     pending_count = len(pending_ids)
     in_progress_count = len(in_progress_ids)
+    # The done count is reported so ``completed_tasks_delta`` has a readable
+    # source: the orchestrator snapshots this field per iteration and subtracts
+    # the previous iteration's value. It is the same queue walk the counts above
+    # come from, so the delta and the queue state can never disagree about which
+    # tasks are done.
+    done_count = sum(1 for _, t in all_tasks if t.get('status') == 'done')
 
     result: dict = {
         'plan_id': args.plan_id,
@@ -380,6 +399,7 @@ def cmd_loop_exit_guard(args) -> dict:
         'in_progress_ids': in_progress_ids,
         'owed_count': owed_count,
         'owed_ids': owed_ids,
+        'done_count': done_count,
     }
 
     if pending_count > 0 or in_progress_count > 0:
@@ -406,25 +426,53 @@ def cmd_loop_exit_guard(args) -> dict:
         result.update({'status': 'success', 'message': 'Unfinished queue empty — clean exit permitted.'})
 
     if _no_progress_mode_requested(args):
+        completed_tasks_delta = _int_arg(args, 'completed_tasks_delta')
+        consumed_tokens = _int_arg(args, 'consumed_tokens')
+        if consumed_tokens is None or completed_tasks_delta is None:
+            absent = [
+                flag
+                for flag, value in (
+                    ('--consumed-tokens', consumed_tokens),
+                    ('--completed-tasks-delta', completed_tasks_delta),
+                )
+                if value is None
+            ]
+            result.update(
+                {
+                    'status': 'error',
+                    'error': NO_PROGRESS_NOT_DECIDABLE,
+                    'message': (
+                        'B7 no-progress mode needs both measurements; absent: '
+                        f'{", ".join(absent)}. An absent input is not a measured zero, '
+                        'so the dispatch is not decidable by the predicate.'
+                    ),
+                }
+            )
+            return result
         result.update(
             evaluate_no_progress(
                 provisional_cause=getattr(args, 'provisional_cause', None) or B7_PROVISIONAL_CAUSE,
                 in_progress_count=in_progress_count,
                 owed_count=owed_count,
-                completed_tasks_delta=_int_arg(args, 'completed_tasks_delta'),
-                consumed_tokens=_int_arg(args, 'consumed_tokens'),
+                completed_tasks_delta=completed_tasks_delta,
+                consumed_tokens=consumed_tokens,
                 verification_handback=bool(getattr(args, 'verification_handback', False)),
                 pending_verify_steps=_step_ids_arg(args),
+                manifest_verification_steps=_manifest_verification_steps(args.plan_id),
             )
         )
 
     return result
 
 
-def _int_arg(args, name: str) -> int:
-    """Read an optional integer flag, treating absence as ``0``."""
+def _int_arg(args, name: str) -> int | None:
+    """Read an optional integer flag, keeping absence distinguishable from ``0``.
+
+    ``None`` is returned when the caller supplied no value, so the caller can
+    refuse the evaluation instead of reading the absence as a measured zero.
+    """
     value = getattr(args, name, None)
-    return value if isinstance(value, int) else 0
+    return value if isinstance(value, int) else None
 
 
 def _step_ids_arg(args) -> list[str]:
@@ -444,6 +492,11 @@ def _no_progress_mode_requested(args) -> bool:
     value, not mere attribute presence — the argparse surface gives
     ``--verification-handback`` a ``False`` default, so ``is not None`` would
     switch the mode on for every CLI call.
+
+    Supplying a predicate input is not the same as supplying the predicate's
+    two measurements: a mode entered without BOTH ``--consumed-tokens`` and
+    ``--completed-tasks-delta`` is refused with ``no_progress_not_decidable``
+    rather than evaluated with an absent input read as ``0``.
     """
     return (
         getattr(args, 'consumed_tokens', None) is not None
@@ -451,6 +504,37 @@ def _no_progress_mode_requested(args) -> bool:
         or getattr(args, 'pending_verify_steps', None) is not None
         or getattr(args, 'verification_handback', False) is True
     )
+
+
+def _manifest_verification_steps(plan_id: str) -> set[str] | None:
+    """Return the composed ``phase_5.verification_steps`` of the plan's manifest.
+
+    The manifest (``execution.toon``) is the write-time snapshot phase 5 consumes
+    verbatim, so it is the authority for which step ids a hand-back may name.
+    ``None`` means the manifest is absent or unreadable — a hand-back naming any
+    step then exempts nothing, because there is no composed list to check it
+    against (the fail-closed direction: an unverifiable exemption is no
+    exemption).
+    """
+    try:
+        manifest_path = get_plan_dir(plan_id) / MANIFEST_FILENAME
+    except Exception:
+        return None
+    if not manifest_path.is_file():
+        return None
+    try:
+        manifest = parse_toon(manifest_path.read_text(encoding='utf-8'))
+    except (OSError, ToonParseError, ValueError):
+        return None
+    if not isinstance(manifest, dict):
+        return None
+    phase_5 = manifest.get('phase_5')
+    if not isinstance(phase_5, dict):
+        return None
+    steps = phase_5.get('verification_steps')
+    if not isinstance(steps, list):
+        return None
+    return {step for step in steps if isinstance(step, str) and step}
 
 
 def evaluate_no_progress(
@@ -462,6 +546,7 @@ def evaluate_no_progress(
     consumed_tokens: int,
     verification_handback: bool,
     pending_verify_steps: list[str],
+    manifest_verification_steps: set[str] | None = None,
 ) -> dict:
     """Evaluate the B7 no-progress predicate and classify a returning dispatch.
 
@@ -470,20 +555,28 @@ def evaluate_no_progress(
     is its only implementation, so the workflow prose cites it rather than
     restating the arithmetic.
 
-    Two exemptions precede the predicate, in this order:
+    Two exemptions bound the predicate, and neither is a blanket one:
 
-    1. **The prescribed hand-back is never judged a stall.** A return carrying the
-       ``verification_handback`` discriminator beside a NON-EMPTY
-       ``pending_verify_steps[]`` is classified ``verification_handback`` BEFORE
-       the predicate can decide. The leaf was told to hand the build back;
-       calling that non-progress would grade the workflow's own instruction as a
-       failure. The predicate values are still reported for the record; they
-       simply do not decide this return.
+    1. **A hand-back exempts only the owed task(s) it names.** A return carrying
+       the ``verification_handback`` discriminator beside a NON-EMPTY
+       ``pending_verify_steps[]`` is classified ``verification_handback`` when
+       the predicate does not hold — but a non-owed task that stalled in the
+       SAME dispatch still decides it. The hand-back is the prescribed outcome
+       FOR THE TASK IT HANDS BACK, not a licence to stall the rest of the
+       queue. Its step ids are checked against the manifest's composed
+       ``phase_5.verification_steps`` (``manifest_verification_steps``): an id
+       outside that list names no obligation the plan composed, so it does not
+       exempt. A missing or unreadable manifest therefore exempts nothing —
+       an unverifiable exemption is no exemption.
     2. **An owed task does not count as in-progress progress.** A task held
        open with ``verification_owed: true`` is ``in_progress`` BY DESIGN, so
        it is subtracted from the predicate's ``in_progress_count``. It still
        blocks the clean exit (that verdict lives in ``cmd_loop_exit_guard``
        and is unchanged); it just cannot manufacture a no-progress verdict.
+
+    The predicate decides BEFORE the hand-back does, in the order the workflow
+    states: the hand-back's exemption is scoped to the task it names, so the
+    predicate must be consulted first.
 
     The 50,000-token threshold and the ``error`` routing of a genuine stall
     are unchanged.
@@ -493,8 +586,12 @@ def evaluate_no_progress(
       - ``predicate_completed_tasks_delta`` / ``predicate_consumed_tokens``:
             the two forwarded values, echoed for the decision log
       - ``predicate_holds``: the three-way conjunction
-      - ``verification_handback_valid``: True only when the discriminator and
-            a non-empty ``pending_verify_steps[]`` arrived together
+      - ``verification_handback_valid``: True only when the discriminator, a
+            non-empty ``pending_verify_steps[]``, and a step list every entry
+            of which the manifest composed arrived together
+      - ``verification_handback_unknown_steps``: the named ids the manifest
+            does not carry — the reason an otherwise valid-looking hand-back
+            exempts nothing
       - ``classification``: the final termination cause
       - ``classification_reason``: why that cause won
     """
@@ -502,14 +599,19 @@ def evaluate_no_progress(
     predicate_holds = (
         predicate_in_progress > 0 and completed_tasks_delta == 0 and consumed_tokens > B7_NO_PROGRESS_TOKEN_THRESHOLD
     )
-    handback_valid = verification_handback and bool(pending_verify_steps)
+    allowed_steps = manifest_verification_steps if manifest_verification_steps is not None else set()
+    unknown_steps = [step for step in pending_verify_steps if step not in allowed_steps]
+    handback_valid = verification_handback and bool(pending_verify_steps) and not unknown_steps
 
     if provisional_cause != B7_PROVISIONAL_CAUSE:
         classification, reason = provisional_cause, 'not_a_provisional_checkpoint'
+    elif predicate_holds:
+        classification = NO_PROGRESS_CAUSE
+        reason = (
+            'no_progress_predicate_holds_beside_handback' if verification_handback else 'no_progress_predicate_holds'
+        )
     elif handback_valid:
         classification, reason = VERIFICATION_HANDBACK_CAUSE, 'declared_orchestrator_build_handback'
-    elif predicate_holds:
-        classification, reason = NO_PROGRESS_CAUSE, 'no_progress_predicate_holds'
     else:
         classification, reason = B7_PROVISIONAL_CAUSE, 'no_progress_predicate_false'
 
@@ -519,6 +621,7 @@ def evaluate_no_progress(
         'predicate_consumed_tokens': consumed_tokens,
         'predicate_holds': predicate_holds,
         'verification_handback_valid': handback_valid,
+        'verification_handback_unknown_steps': unknown_steps,
         'classification': classification,
         'classification_reason': reason,
     }

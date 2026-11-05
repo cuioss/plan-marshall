@@ -66,7 +66,9 @@ class TestHandbackCauseIsNamedInItsTwoDocuments:
         # with the cause and states how it is detected.
         assert f'| `{NEW_CAUSE}` |' in text, 'execution.md must carry the hand-back as a termination-table row'
         assert 'verification_handback: true' in text, 'the row must name the discriminator it keys on'
-        assert 'the B7 predicate never decides it' in text, 'the row must state the B7 exemption'
+        assert 'The exemption is scoped to the owed task(s) the return names' in text, (
+            'the row must state the SCOPED exemption: a hand-back exempts the owed task it names, not a stall beside it'
+        )
 
     def test_phase_5_return_contract_carries_the_discriminator(self):
         text = PHASE_5_SKILL_MD.read_text(encoding='utf-8')
