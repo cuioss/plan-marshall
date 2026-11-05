@@ -318,6 +318,58 @@ def test_the_tests_to_remove_block_stops_at_the_next_bold_heading(plan_context) 
     assert deliverables[0]['declared_test_removals'] == [{'identity': 'test_a', 'assertions_removed': None}]
 
 
+def test_an_unrelated_accepted_finding_is_not_read_as_a_removal(plan_context, tmp_path, monkeypatch) -> None:
+    """An accepted finding that names a test file is not an acceptance of its removals."""
+    repo = _removed_repo(tmp_path)
+    monkeypatch.setattr(_integrity, 'resolve_live_worktree', lambda _plan_id: repo)
+    monkeypatch.setattr(_attr, 'resolve_live_worktree', lambda _plan_id: None)
+    criteria = ['parser accepts input']
+    _plan(plan_context, criteria)
+    unrelated = _findings_core.add_qgate_finding(
+        PLAN_ID,
+        '6-finalize',
+        'qgate',
+        'bug',
+        'ambiguous_wording at test/sample_test.py',
+        'a wording nit [fix_kind correction]',
+        file_path='test/sample_test.py',
+        rule='functional-review',
+    )
+    assert unrelated['status'] == 'success', unrelated
+
+    entries, warning = _loop_back._removed_identities_for_accept(
+        PLAN_ID,
+        {str(unrelated['hash_id'])},
+        [
+            {
+                'hash_id': unrelated['hash_id'],
+                'title': 'ambiguous_wording at test/sample_test.py',
+                'file_path': 'test/sample_test.py',
+            }
+        ],
+    )
+
+    assert entries == []
+    assert warning is None
+
+
+def test_an_accepted_weakened_finding_is_read_through_its_file_path(plan_context, tmp_path, monkeypatch) -> None:
+    """A ``file_path`` on a weakened-test finding is read before the title."""
+    repo = _removed_repo(tmp_path)
+    monkeypatch.setattr(_integrity, 'resolve_live_worktree', lambda _plan_id: repo)
+    _plan(plan_context)
+    finding = {
+        'hash_id': 'h1',
+        'title': 'weakened_test at test/other_test.py',
+        'file_path': 'test/sample_test.py',
+    }
+
+    entries, warning = _loop_back._removed_identities_for_accept(PLAN_ID, {'h1'}, [finding])
+
+    assert warning is None
+    assert [entry['identity'] for entry in entries] == ['test_a'], entries
+
+
 # --- D2 (c): the two documents state the rule identically -----------------------------------
 
 

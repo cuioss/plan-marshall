@@ -416,14 +416,17 @@ def _removed_identities_for_accept(
     for finding in findings:
         if not isinstance(finding, dict) or finding.get('hash_id') not in accept:
             continue
-        explicit = str(finding.get('file_path') or '').strip()
-        if explicit:
-            paths.append(explicit)
-            continue
+        # Only a weakened-test finding names a test removal. ``file_path`` is read
+        # FIRST (the workflow files the finding with ``--file-path`` when it has
+        # one), and the title prefix is the fallback the documented
+        # ``--title '{kind} at {ref}'`` shape provides. The prefix also GATES the
+        # finding: an unrelated accepted finding that happens to name a test file
+        # must not be read as an acceptance of that file's removals.
         title = str(finding.get('title') or '')
         if not title.startswith(_WEAKENED_TITLE_PREFIX):
             continue
-        path = title[len(_WEAKENED_TITLE_PREFIX) :].strip()
+        explicit = str(finding.get('file_path') or '').strip()
+        path = explicit or title[len(_WEAKENED_TITLE_PREFIX) :].strip()
         if path:
             paths.append(path)
         else:
