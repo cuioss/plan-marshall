@@ -17,6 +17,9 @@ Usage:
         python3 manage-log.py read --plan-id <plan_id> --type decision [--limit N] [--phase PHASE]
         python3 manage-log.py read --plan-id <plan_id> --type script [--limit N]
 
+    Signal scan (lessons Signal 3):
+        python3 manage-log.py signal-scan --plan-id <plan_id>
+
 Arguments (write):
     --plan-id  - Plan identifier (OPTIONAL). When omitted, the entry is written
                  to the dated global log under .plan/local/logs/ (the first-class
@@ -70,6 +73,8 @@ from __future__ import annotations
 
 import argparse
 from typing import Any
+
+from _signal_scan import scan_signal_3
 
 # Direct imports from same directory (local imports)
 from constants import VALID_LOG_LEVELS, VALID_LOG_TYPES
@@ -282,6 +287,24 @@ def main() -> int:
         help='Store name (default: plans)',
     )
 
+    # Signal-scan subcommand — the deterministic computation behind the
+    # phase-6-finalize lessons Signal 3 (script-failure clusters).
+    signal_parser = subparsers.add_parser(
+        'signal-scan',
+        help='Count the lessons Signal-3 script-failure clusters for one plan',
+        description=(
+            'Scan the plan work log for ``[FAILED]`` and ``[ERROR] ... '
+            'script_failure`` lines and the decision log for the B7 '
+            'no-progress reclassification marker, bucket each by distinct '
+            'failing notation, and report ``signal_3_count``. Prescribed '
+            'orchestrator-tier build hand-backs are reported separately and '
+            'never counted.'
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        allow_abbrev=False,
+    )
+    add_plan_id_arg(signal_parser)
+
     args = parse_args_with_toon_errors(parser)
 
     result: dict[str, Any] | None = None
@@ -289,6 +312,8 @@ def main() -> int:
         result = handle_read(args)
     elif args.command == 'separator':
         result = handle_separator(args)
+    elif args.command == 'signal-scan':
+        result = scan_signal_3(args.plan_id)
     else:
         result = handle_write(args)
     if result is not None:
