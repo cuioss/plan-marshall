@@ -400,15 +400,33 @@ def _normalized_body(text: str) -> str:
     return '\n'.join(line.rstrip() for line in text.strip().splitlines())
 
 
+def _current_branch(root: Path) -> str | None:
+    """The branch the checkout is on, or ``None`` when it cannot be read."""
+    proc = _git(root, ['rev-parse', '--abbrev-ref', 'HEAD'])
+    if proc.returncode != 0:
+        return None
+    resolved = proc.stdout.strip()
+    return resolved or None
+
+
+def _tree_is_dirty(root: Path) -> bool:
+    """Whether the checkout carries uncommitted changes."""
+    proc = _git(root, ['status', '--porcelain'])
+    return proc.returncode == 0 and bool(proc.stdout.strip())
+
+
 def _evidence_root(plan_id: str) -> tuple[Path | None, str | None]:
     """Resolve the tree the branch diff is read from, and name the choice.
 
     A worktree-bound plan is graded against its worktree. A plan that runs WITHOUT
     a worktree (``use_worktree: false``) is graded against the main checkout — the
-    tree the finalize contract assigns it — so it is graded rather than skipped as
-    ``worktree_unresolved``. A plan that DECLARED a materialized worktree which
-    does not resolve now returns ``None``: grading it against another tree would
-    compare two heads.
+    tree the finalize contract assigns it — but only when that checkout is actually
+    carrying the plan's work: its HEAD must not be the base branch and its tree must
+    be clean. Otherwise the grade is refused as ``evidence_root_unresolved`` rather
+    than passed on an empty diff (the base-branch case) or on unrelated uncommitted
+    text (the dirty case). A plan that DECLARED a materialized worktree which does
+    not resolve now returns ``None``: grading it against another tree would compare
+    two heads.
     """
     try:
         worktree = resolve_live_worktree(plan_id)
@@ -420,7 +438,21 @@ def _evidence_root(plan_id: str) -> tuple[Path | None, str | None]:
     if plan_uses_worktree(plan_id):
         return None, None
     root = main_checkout_root()
-    return (root, 'main_checkout') if root is not None else (None, None)
+    if root is None:
+        return None, None
+    refs = read_references(plan_id)
+    base_ref = resolve_base_ref(None, refs if isinstance(refs, dict) else {}, root)
+    branch = _current_branch(root)
+    if branch is None:
+        return None, None
+    if branch == base_ref:
+        # On the base branch the three-dot diff is empty: grading it would report
+        # success with zero rows, i.e. a pass, for work that is not checked out.
+        return None, 'main_checkout_on_base_branch'
+    if _tree_is_dirty(root):
+        # A dirty checkout feeds unrelated uncommitted text into the after-image.
+        return None, 'main_checkout_dirty'
+    return root, 'main_checkout'
 
 
 def _row(path: str, removed: int, removed_tests: list[dict[str, Any]], detail: str) -> dict[str, Any]:
@@ -469,12 +501,12 @@ def compute_test_integrity(plan_id: str, base_ref: str | None = None, head_ref: 
     (`assert x == 5` rewritten to `assert x is not None`), which stays the
     author's reading of the change rather than this verb's count.
     """
-    root, evidence_kind = _evidence_root(plan_id)
-    if root is None:
-        if plan_uses_worktree(plan_id):
-            return _error(plan_id, 'worktree_unresolved', 'no worktree is materialized for the plan')
-        return _error(plan_id, 'evidence_root_unresolved', 'no tree could be resolved to grade the branch diff')
     try:
+        root, evidence_kind = _evidence_root(plan_id)
+        if root is None:
+            if plan_uses_worktree(plan_id):
+                return _error(plan_id, 'worktree_unresolved', 'no worktree is materialized for the plan')
+            return _error(plan_id, 'evidence_root_unresolved', 'no tree could be resolved to grade the branch diff')
         return _grade_test_integrity(plan_id, root, evidence_kind, base_ref, head_ref)
     except _GitFailure as exc:
         return _error(plan_id, 'test_integrity_not_run', str(exc))
