@@ -414,6 +414,65 @@ def test_a_renamed_file_keeps_its_existing_skip_marker(plan_context, tmp_path, m
     assert payload['findings'] == [], payload
 
 
+def test_the_pre_image_is_the_merge_base_tree(plan_context, tmp_path, monkeypatch) -> None:
+    """An assertion the base branch added after the branch point is not a removal.
+
+    The branch DOES change the file (another test in it), so the pre-image matters:
+    reading the base TIP would see the assertion main added and report it removed.
+    """
+    repo = _repo(tmp_path)
+    _commit(repo, {'README.md': 'readme\n'})
+    _commit(
+        repo,
+        {'test/sample_test.py': 'def test_a():\n    assert 1 == 1\n\ndef test_b():\n    assert 2 == 2\n'},
+    )
+    _git(repo, 'checkout', '--quiet', '-b', 'feature')
+    _commit(
+        repo,
+        {'test/sample_test.py': 'def test_a():\n    assert 1 == 1\n\ndef test_b():\n    assert 2 == 3\n'},
+    )
+    _git(repo, 'checkout', '--quiet', 'main')
+    _commit(
+        repo,
+        {
+            'test/sample_test.py': 'def test_a():\n    assert 1 == 1\n    assert 9 == 9\n\ndef test_b():\n    assert 2 == 2\n'
+        },
+    )
+    _git(repo, 'checkout', '--quiet', 'feature')
+    monkeypatch.setattr(_integrity, 'resolve_live_worktree', lambda _plan_id: repo)
+    _plan(plan_context)
+
+    payload = _integrity.compute_test_integrity(PLAN_ID)
+
+    assert _rows(payload) == [], payload
+
+
+def test_a_split_that_gains_a_skip_marker_is_reported(plan_context, tmp_path, monkeypatch) -> None:
+    """A split is a delete plus adds; a marker added with it filtered a real test."""
+    repo = _repo(tmp_path)
+    _commit(repo, {'README.md': 'readme\n'})
+    _commit(
+        repo,
+        {'test/one_test.py': 'def test_a():\n    assert 1 == 1\n\ndef test_b():\n    assert 2 == 2\n'},
+    )
+    _git(repo, 'checkout', '--quiet', '-b', 'feature')
+    _git(repo, 'rm', 'test/one_test.py')
+    _commit(
+        repo,
+        {
+            'test/a_test.py': 'import pytest\n\n@pytest.mark.skip\ndef test_a():\n    assert 1 == 1\n',
+            'test/b_test.py': 'def test_b():\n    assert 2 == 2\n',
+        },
+    )
+    monkeypatch.setattr(_integrity, 'resolve_live_worktree', lambda _plan_id: repo)
+    _plan(plan_context)
+
+    payload = _integrity.compute_test_integrity(PLAN_ID)
+
+    assert [row['kind'] for row in payload['findings']] == ['test_filtered'], payload
+    assert payload['findings'][0]['path'] == 'test/a_test.py'
+
+
 def test_a_renamed_test_function_is_reported(plan_context, tmp_path, monkeypatch) -> None:
     """A test FUNCTION that disappears is a named test disappearing, rename included.
 

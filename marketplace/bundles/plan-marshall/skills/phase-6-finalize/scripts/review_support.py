@@ -210,11 +210,13 @@ def _grade_test_integrity(grading: Grading, plan_id: str) -> list[dict[str, Any]
     One finding per changed test whose assertions the branch removed or filtered.
     A failed computation is NOT read as an empty report: when the worktree resolves
     but the base diff cannot be read (``diff_unavailable``), the check did not run,
-    so a blocking ``test_integrity_not_run`` finding blocks closure. A missing
-    worktree is the same not-run state UNLESS the plan never declared one — a plan
-    with ``use_worktree: false`` has no branch diff to grade, while a plan that
-    declared a worktree which no longer resolves must not be graded against a tree
-    it never used.
+    so a blocking ``test_integrity_not_run`` finding blocks closure.
+
+    A ``worktree_unresolved`` report is a not-run state too. It is returned only for
+    a plan that DECLARED a worktree which no longer resolves — a plan with
+    ``use_worktree: false`` is graded against the main checkout instead — so the
+    ``non_applicable`` arm below is a defensive guard for a caller-supplied report,
+    not a production path.
 
     A row whose every removed identity is in the accepted-removal set
     (:func:`_criteria_snapshot.accepted_test_removals`) raises no finding and is

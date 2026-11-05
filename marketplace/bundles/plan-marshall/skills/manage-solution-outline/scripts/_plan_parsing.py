@@ -810,8 +810,8 @@ def declared_paths_population(outline_content: str) -> dict[str, int]:
 
 #: The deliverable heading that declares the tests a deliverable INTENDS to
 #: remove. The accepted-removal set (PLAN-LB-105 D2) has two sources, and this is
-#: the authoring-time one: a declared removal is accepted, and the reader unions
-#: these declarations with the operator-accepted entries in the status record.
+#: the authoring-time one: ``snapshot-criteria`` seeds the status record's set from
+#: these declarations at the freeze, and the reader reads that recorded set.
 _TESTS_TO_REMOVE_HEADING = 'Tests to remove'
 
 #: One ``**Tests to remove:**`` bullet: an identity, optionally followed by the
@@ -831,10 +831,13 @@ def extract_declared_test_removals(content: str) -> list[dict[str, Any]]:
     number of assertions it removes. The heading is OPTIONAL: a deliverable that
     removes no test declares nothing and yields an empty list.
 
-    Declaring a removal is a design decision, not a record of what happened — the
-    reader treats a declared identity as accepted, and an identity declared with no
-    count as accepted for whatever number of assertions the removal turned out to
-    take.
+    Declaring a removal is a design decision, not a record of what happened. It is
+    recorded when the criteria snapshot is FROZEN (``snapshot-criteria``), and it
+    takes effect only through that freeze: a line added to the outline afterwards is
+    not an acceptance route, because it never reached the status record's accepted
+    set. The reader (``_criteria_snapshot.accepted_test_removals``) reads that
+    recorded set, not this parse, so a declaration the freeze never saw blocks like
+    any other undeclared removal.
     """
     removals: list[dict[str, Any]] = []
     block = re.search(

@@ -160,6 +160,32 @@ def test_an_old_parser_snapshot_of_a_wrapped_bullet_yields_parser_extended(plan_
 # --- D4 control: single-line bullets are frozen exactly as before ---------------------------
 
 
+def test_an_appended_criterion_is_reported_as_parser_extended(plan_context) -> None:
+    """Spec-mandated: a frozen criterion a live one EXTENDS is the migration state.
+
+    The state is advisory, so an appended clause is visible and non-blocking. That
+    is the rule the spec sets for a frozen prefix; a control pins it here so the
+    consequence is deliberate rather than accidental.
+    """
+    _plan(plan_context, '- the parser reads every criterion\n')
+    snapshot = {
+        'schema': _snap.SCHEMA,
+        'plan_id': PLAN_ID,
+        'deliverables': [{'number': 1, 'title': 'Deliver the change', 'criteria': ['the parser reads']}],
+        'request': {'done_when': [], 'source': 'absent'},
+        'spec': None,
+        'authorized_changes': [],
+    }
+    path = _snap.snapshot_path(PLAN_ID)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(snapshot, indent=2, sort_keys=True) + '\n', encoding='utf-8')
+    assert _snap.record_snapshot_digest(PLAN_ID)
+
+    drift = _snap.criteria_drift(PLAN_ID)
+
+    assert [row['kind'] for row in drift] == ['parser_extended'], drift
+
+
 def _retired_parser(block: str) -> list[str]:
     """The retired rule, spelled out: consecutive ``- `` lines, first line only."""
     return [line[2:].strip() for line in block.splitlines() if line.startswith('- ')]
@@ -173,6 +199,4 @@ def test_single_line_bullets_freeze_exactly_what_the_retired_parser_produced(pla
     snapshot = _snap.build_snapshot(PLAN_ID)
 
     assert snapshot['deliverables'][0]['criteria'] == _retired_parser(block)
-    rebuilt = {**snapshot, 'deliverables': [{**snapshot['deliverables'][0], 'criteria': _retired_parser(block)}]}
-    assert json.dumps(snapshot, sort_keys=True) == json.dumps(rebuilt, sort_keys=True)
     assert _snap.criteria_drift(PLAN_ID) == []

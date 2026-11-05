@@ -191,9 +191,11 @@ def _after_image(root: Path, path: str) -> str | None:
     """Return the branch's text for ``path``: the working tree, else ``HEAD``.
 
     The working tree first is the behaviour this check already had, and it is the
-    fail-closed direction: a test edited but not yet committed is still graded, so
-    an uncommitted removal cannot hide behind the commit boundary. ``HEAD`` is the
-    fallback for a path the working tree no longer carries.
+    fail-closed direction for a path the branch has COMMITTED a change to: a
+    further edit not yet committed is still graded, so a last-second removal there
+    cannot hide behind the commit boundary. (The changed SET is the committed
+    three-dot diff, so a path the branch never committed is not read at all.)
+    ``HEAD`` is the fallback for a path the working tree no longer carries.
     """
     target = root / path
     try:
@@ -428,8 +430,10 @@ def compute_test_integrity(plan_id: str, base_ref: str | None = None) -> dict[st
                     )
                 )
                 continue
-            # No identity could be extracted (a non-Python test class): fall back to
-            # the file's own count, unless the same body simply moved.
+            # No identity at all could be extracted — neither a test function nor a
+            # class header: fall back to the file's own count, unless the same body
+            # simply moved. Such a row carries no identity, so it can be neither
+            # declared nor accepted; the close reports that rather than failing.
             if not before_fns and before_file and not _content_survives(pre, after):
                 findings.append(
                     _row(
@@ -488,15 +492,21 @@ def compute_test_integrity(plan_id: str, base_ref: str | None = None) -> dict[st
             )
 
     for path, post in after.items():
-        # A marker is only "added by the branch" against a pre-image. An ADDED test
-        # file has none (the branch created it, so it filtered nothing), and a
-        # RENAMED file's pre-image lives under the old path. Comparing an added file
-        # against '' reported every new skipped test as filtered, which the retired
-        # check never did.
+        # A marker is only "added by the branch" against a pre-image. A RENAMED
+        # file's pre-image lives under the old path. An ADDED file normally has
+        # none — the branch created it — but a SPLIT is a delete plus an add, so a
+        # deleted body that matches this one once markers are stripped is the
+        # pre-image of a file the branch moved; a marker that appeared with it was
+        # added during the move and is reported. The old ``pre = ''`` comparison
+        # reported every new skipped test as filtered, which is the false positive
+        # this pairing replaces.
         pre_path = path if path in before else renamed_from.get(path)
-        if pre_path is None:
-            continue
-        pre = before.get(pre_path, '')
+        if pre_path is not None:
+            pre = before.get(pre_path, '')
+        else:
+            pre = _moved_pre_image(post, before, after)
+            if pre is None:
+                continue
         added_markers = sorted(_markers(post) - _markers(pre))
         if added_markers:
             findings.append(
@@ -523,6 +533,46 @@ def _content_survives(pre: str, after: dict[str, str]) -> bool:
     """Whether a body the branch deleted reappears verbatim in an after-file."""
     wanted = _normalized_body(pre)
     return any(_normalized_body(text) == wanted for text in after.values())
+
+
+def _without_markers(text: str) -> str:
+    """A body with its skip/xfail markers removed, so a move still compares equal."""
+    stripped = text
+    for marker in SKIP_MARKERS:
+        stripped = stripped.replace(marker, '')
+    return _normalized_body(stripped)
+
+
+def _moved_pre_image(post: str, before: dict[str, str], after: dict[str, str]) -> str | None:
+    """The deleted body an ADDED file logically came from, or ``None``.
+
+    A split (one file deleted, two added) carries its tests into files that did not
+    exist, so an added path has no same-path pre-image. Two pairings recover it:
+
+    * exact — the added body equals a DELETED body once markers are stripped (a
+      move that stayed whole);
+    * identity — every test identity in the added file is present in one DELETED
+      file (one half of a split).
+
+    Either way a marker that appeared with the move is reported. A genuinely new
+    file matches nothing and stays skipped, so a new skipped test is never read as
+    a filter.
+    """
+    wanted = _without_markers(post)
+    for path, text in before.items():
+        if path in after:
+            continue
+        if _without_markers(text) == wanted:
+            return text
+    added_identities = set(_function_assertion_counts(post))
+    if not added_identities:
+        return None
+    for path, text in before.items():
+        if path in after:
+            continue
+        if added_identities <= set(_function_assertion_counts(text)):
+            return text
+    return None
 
 
 __all__ = [
