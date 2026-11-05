@@ -527,27 +527,54 @@ def test_response_without_page_info_is_not_reported_complete(monkeypatch):
     assert result['complete'] is False
 
 
-# The placement fields a graphQL selection may ask for ONLY on a review-comment node.
+# The placement fields a GraphQL selection may ask for ONLY on a review-comment node.
 # `IssueComment` defines none of them, so selecting one on the PR-level `comments`
 # connection makes GitHub reject the whole query — a fetch-wide failure no stubbed
 # run_graphql can observe, which is why this pin reads the query TEXT.
-_REVIEW_COMMENT_ONLY_FIELDS: tuple[str, ...] = ('replyTo', 'commit', 'pullRequestReview')
+#
+# The population is DERIVED from the source fragments below, not copied: a copy would
+# keep passing when a review-only field is added to the shared base fragment, which is
+# exactly the edit that breaks the live query.
+def _top_level_fields(fragment: str) -> set[str]:
+    """The field names a GraphQL selection fragment requests at its top level."""
+    names = set()
+    for line in fragment.splitlines():
+        token = line.strip().split('(')[0].split()[0] if line.strip() else ''
+        if token and token != '}':
+            names.add(token)
+    return names
+
+
+#: The exact field set an ``IssueComment`` selection may carry. Pinned as a literal
+#: because it is the type's own vocabulary: an addition to the SHARED base fragment
+#: fails here and must be moved to the review-comment fragment instead.
+_ISSUE_COMMENT_FIELDS: frozenset[str] = frozenset({'id', 'body', 'author', 'createdAt', 'updatedAt'})
+
+
+def test_the_shared_base_fragment_carries_only_issue_comment_fields():
+    """The fragment the PR-level connections use may carry no review-comment field."""
+    assert _top_level_fields(github_ops._COMMENT_BASE_FIELDS) == set(_ISSUE_COMMENT_FIELDS)
 
 
 def test_issue_comment_connections_select_no_review_comment_only_fields():
     """A PR-level comment is an ``IssueComment``: selecting review-comment fields fails the fetch.
 
     ``ISSUE_COMMENTS_PAGE_QUERY`` and the ``comments`` connection of the first-page
-    query yield ``IssueComment``. Every field in :data:`_REVIEW_COMMENT_ONLY_FIELDS`
-    exists only on ``PullRequestReviewComment``, so one shared selection fragment made
-    the live query invalid while every stubbed test passed.
+    query yield ``IssueComment``. Every field ``_THREAD_COMMENT_NODE_FIELDS`` adds to
+    the base fragment exists only on ``PullRequestReviewComment``, so one shared
+    selection fragment made the live query invalid while every stubbed test passed.
     """
-    base = github_ops._COMMENT_BASE_FIELDS
-    for field in _REVIEW_COMMENT_ONLY_FIELDS:
-        assert field not in base, f'the shared base fragment selects {field} on an IssueComment'
+    base_fields = _top_level_fields(github_ops._COMMENT_BASE_FIELDS)
+    review_only = _top_level_fields(github_ops._THREAD_COMMENT_NODE_FIELDS) - base_fields
+    # Non-vacuity: an empty difference would make every assertion below trivial.
+    assert review_only, 'the thread fragment adds no field, so the split guards nothing'
 
-    assert base in github_ops.ISSUE_COMMENTS_PAGE_QUERY
+    assert github_ops._COMMENT_BASE_FIELDS in github_ops.ISSUE_COMMENTS_PAGE_QUERY
     assert github_ops._THREAD_COMMENT_NODE_FIELDS not in github_ops.ISSUE_COMMENTS_PAGE_QUERY
+    for field in review_only:
+        assert field not in github_ops.ISSUE_COMMENTS_PAGE_QUERY, (
+            f'{field} is review-comment-only and must not appear on an IssueComment connection'
+        )
     # The first-page query selects the placement fields exactly ONCE — inside the
     # review-thread node. A second occurrence means the issue-comment connection
     # was pointed back at the review-comment fragment.
@@ -555,12 +582,14 @@ def test_issue_comment_connections_select_no_review_comment_only_fields():
 
 
 def test_thread_comment_connections_do_select_the_placement_fields():
-    """The positive control: the review-comment connections carry reply/commit placement."""
+    """The positive control: the review-comment connections carry every derived field."""
+    base_fields = _top_level_fields(github_ops._COMMENT_BASE_FIELDS)
+    review_only = _top_level_fields(github_ops._THREAD_COMMENT_NODE_FIELDS) - base_fields
     for query, name in (
         (github_ops.THREAD_COMMENTS_PAGE_QUERY, 'THREAD_COMMENTS_PAGE_QUERY'),
         (github_ops._THREAD_NODE_FIELDS, '_THREAD_NODE_FIELDS'),
     ):
-        for field in _REVIEW_COMMENT_ONLY_FIELDS:
+        for field in review_only:
             assert field in query, f'{name} does not select the placement field {field}'
 
 
