@@ -623,3 +623,278 @@ def test_adr_template_renders_and_validates_clean():
         assert result['missing_attrs'] == []
     finally:
         temp_file.unlink(missing_ok=True)
+
+
+# Tier 2: verify-links ``link:`` macro grammar (PLAN-LB-113 D6)
+
+
+def _link_macro_result(name: str):
+    """Run ``verify-links`` on one ``link-verify`` fixture by name."""
+    return cmd_verify_links(
+        _ns(_VERIFY_LINKS_NS, file=str(LINK_VERIFY_FIXTURES / name), directory=None, recursive=False, report=None)
+    )
+
+
+def test_verify_links_relative_link_macro_to_an_existing_file_is_checked():
+    result = _link_macro_result('link-macro-relative.adoc')
+
+    data = result['data']
+    assert data['total_links'] == 1
+    assert data['broken_links'] == 0
+    assert data['unchecked_link_classes'] == [], 'a relative target is verified, so no class stays unchecked'
+
+
+def test_verify_links_relative_link_macro_to_a_missing_file_is_broken():
+    result = _link_macro_result('link-macro-missing.adoc')
+
+    data = result['data']
+    assert data['broken_links'] == 1
+    assert data['issues'][0]['type'] == 'broken'
+    assert 'missing-target.adoc' in data['issues'][0]['description']
+
+
+def test_verify_links_external_link_macro_is_reported_as_an_unchecked_class():
+    result = _link_macro_result('link-macro-external.adoc')
+
+    data = result['data']
+    assert data['broken_links'] == 0, 'an external target is not fetched, so it is not broken either'
+    assert data['unchecked_link_classes'] == [
+        {
+            'class': 'external-url',
+            'count': 1,
+            'first': {
+                'file': str(LINK_VERIFY_FIXTURES / 'link-macro-external.adoc'),
+                'line': 3,
+                'link': 'link:https://example.com[Example]',
+            },
+        }
+    ]
+
+
+def test_verify_links_a_file_without_link_macros_reports_an_empty_unchecked_list():
+    result = _link_macro_result('link-macro-none.adoc')
+
+    data = result['data']
+    assert data['total_links'] == 0
+    assert data['unchecked_link_classes'] == []
+
+
+def test_anchor_derivation_still_strips_a_link_macro_from_a_section_title(tmp_path):
+    adoc = tmp_path / 'anchor.adoc'
+    adoc.write_text('= Doc\n\n== See link:https://example.com[Example] Now\n\n<<see-now>>\n', encoding='utf-8')
+
+    anchors = extract_anchors_from_file(str(adoc))
+
+    assert 'see-now' in anchors, 'the link: macro in a title must still be stripped before slugging'
+
+
+def test_verify_links_link_macro_needs_a_word_boundary_and_no_whitespace(tmp_path):
+    """``backlink:`` and a target with a space are prose, not macros."""
+    adoc = tmp_path / 'grammar.adoc'
+    adoc.write_text(
+        '= Doc\n\nA backlink:target-file.adoc[Back] is not a link: macro.\n\n'
+        'Prose link: two words[Label] is not a macro either.\n\n'
+        'A target may not hold a space: link:two words[Label] is not a macro.\n',
+        encoding='utf-8',
+    )
+
+    result = cmd_verify_links(_ns(_VERIFY_LINKS_NS, file=str(adoc), directory=None, recursive=False, report=None))
+
+    assert result['data']['total_links'] == 0
+    assert result['data']['broken_links'] == 0
+
+
+def test_verify_links_ignores_link_macros_inside_a_delimited_block(tmp_path):
+    adoc = tmp_path / 'page.adoc'
+    adoc.write_text('= Page\n\n----\nlink:missing.adoc[Example]\n----\n', encoding='utf-8')
+
+    result = cmd_verify_links(_ns(_VERIFY_LINKS_NS, file=str(adoc), directory=None, recursive=False, report=None))
+
+    assert result['data']['total_links'] == 0, 'a listing block sample is not a live link'
+    assert result['data']['broken_links'] == 0
+
+
+def test_verify_links_internal_anchor_link_macro_resolves(tmp_path):
+    adoc = tmp_path / 'page.adoc'
+    adoc.write_text('= Page\n\n[[present]]\n\nSee link:#present[Present].\n', encoding='utf-8')
+
+    result = cmd_verify_links(_ns(_VERIFY_LINKS_NS, file=str(adoc), directory=None, recursive=False, report=None))
+
+    assert result['data']['total_links'] == 1, 'the macro must be extracted, or a zero-broken result is vacuous'
+    assert result['data']['broken_links'] == 0
+    assert result['data']['unchecked_link_classes'] == []
+
+
+def test_verify_links_internal_anchor_link_macro_to_a_missing_anchor_is_broken(tmp_path):
+    adoc = tmp_path / 'page.adoc'
+    adoc.write_text('= Page\n\nSee link:#ghost[Ghost].\n', encoding='utf-8')
+
+    result = cmd_verify_links(_ns(_VERIFY_LINKS_NS, file=str(adoc), directory=None, recursive=False, report=None))
+
+    assert result['data']['broken_links'] == 1
+    assert 'ghost' in result['data']['issues'][0]['description']
+
+
+def test_verify_links_non_asciidoc_fragment_is_an_unchecked_class(tmp_path):
+    (tmp_path / 'manual.pdf').write_bytes(b'%PDF-1.4\n')
+    adoc = tmp_path / 'page.adoc'
+    adoc.write_text('= Page\n\nSee link:manual.pdf#page=3[Manual].\n', encoding='utf-8')
+
+    result = cmd_verify_links(_ns(_VERIFY_LINKS_NS, file=str(adoc), directory=None, recursive=False, report=None))
+
+    assert result['data']['broken_links'] == 0, 'the file exists; only its anchor is unreadable'
+    assert result['data']['unchecked_link_classes'] == [
+        {
+            'class': 'fragment',
+            'count': 1,
+            'first': {'file': str(adoc), 'line': 3, 'link': 'link:manual.pdf#page=3[Manual]'},
+        }
+    ]
+
+
+def test_verify_links_relative_link_macro_to_a_missing_anchor_is_broken(tmp_path):
+    (tmp_path / 'target.adoc').write_text('= Target\n\n[[present]]\n', encoding='utf-8')
+    adoc = tmp_path / 'page.adoc'
+    adoc.write_text('= Page\n\nSee link:target.adoc#ghost[Ghost].\n', encoding='utf-8')
+
+    result = cmd_verify_links(_ns(_VERIFY_LINKS_NS, file=str(adoc), directory=None, recursive=False, report=None))
+
+    assert result['data']['total_links'] == 1, 'the macro must be extracted, or a broken count is vacuous'
+    assert result['data']['broken_links'] == 1
+    assert 'ghost' in result['data']['issues'][0]['description']
+
+
+def test_verify_links_ignores_inline_comment_and_escaped_macros(tmp_path):
+    adoc = tmp_path / 'page.adoc'
+    adoc.write_text(
+        '= Page\n\n'
+        'An inline example: `link:missing-inline.adoc[x]`.\n\n'
+        '// link:missing-comment.adoc[x]\n\n'
+        'An escaped macro: \\link:missing-escaped.adoc[x].\n',
+        encoding='utf-8',
+    )
+
+    result = cmd_verify_links(_ns(_VERIFY_LINKS_NS, file=str(adoc), directory=None, recursive=False, report=None))
+
+    assert result['data']['total_links'] == 0
+    assert result['data']['broken_links'] == 0
+
+
+def test_verify_links_mixed_delimiters_do_not_hide_a_live_link(tmp_path):
+    adoc = tmp_path / 'page.adoc'
+    adoc.write_text(
+        '= Page\n\n----\nlink:missing-in-block.adoc[x]\n....\nlink:still-in-block.adoc[x]\n----\n\n'
+        'link:missing-live.adoc[Live]\n',
+        encoding='utf-8',
+    )
+
+    result = cmd_verify_links(_ns(_VERIFY_LINKS_NS, file=str(adoc), directory=None, recursive=False, report=None))
+
+    assert result['data']['total_links'] == 1, 'only the live link after the block is extracted'
+    assert result['data']['broken_links'] == 1
+
+
+def test_verify_links_relative_target_with_query_and_percent_encoding_is_found(tmp_path):
+    (tmp_path / 'my doc.adoc').write_text('= Doc\n', encoding='utf-8')
+    adoc = tmp_path / 'page.adoc'
+    adoc.write_text('= Page\n\nSee link:my%20doc.adoc?mode=view[Doc].\n', encoding='utf-8')
+
+    result = cmd_verify_links(_ns(_VERIFY_LINKS_NS, file=str(adoc), directory=None, recursive=False, report=None))
+
+    assert result['data']['total_links'] == 1, 'the macro must be extracted, or zero-broken is vacuous'
+    assert result['data']['broken_links'] == 0
+
+
+def test_verify_links_asciidoctor_default_auto_id_resolves(tmp_path):
+    adoc = tmp_path / 'page.adoc'
+    adoc.write_text('= Page\n\n== Real Heading\n\nSee link:#_real_heading[Heading].\n', encoding='utf-8')
+
+    result = cmd_verify_links(_ns(_VERIFY_LINKS_NS, file=str(adoc), directory=None, recursive=False, report=None))
+
+    assert result['data']['total_links'] == 1, 'the macro must be extracted, or zero-broken is vacuous'
+    assert result['data']['broken_links'] == 0
+
+
+def test_verify_links_relative_link_in_a_title_uses_its_label(tmp_path):
+    (tmp_path / 'other.adoc').write_text('= Other\n', encoding='utf-8')
+    adoc = tmp_path / 'page.adoc'
+    adoc.write_text('= Page\n\n== See link:other.adoc[Other] Now\n\n<<see-other-now>>\n', encoding='utf-8')
+
+    result = cmd_verify_links(_ns(_VERIFY_LINKS_NS, file=str(adoc), directory=None, recursive=False, report=None))
+
+    assert result['data']['total_links'] == 2, 'the title macro and the cross-reference must both be extracted'
+    assert result['data']['broken_links'] == 0
+
+
+def test_verify_links_ignores_anchors_defined_in_comments_and_inline_code(tmp_path):
+    adoc = tmp_path / 'page.adoc'
+    adoc.write_text(
+        '= Page\n\n// [[ghost]]\n\nAn example: `[[inline-ghost]]`.\n\n'
+        'See link:#ghost[Ghost] and link:#inline-ghost[Inline].\n',
+        encoding='utf-8',
+    )
+
+    result = cmd_verify_links(_ns(_VERIFY_LINKS_NS, file=str(adoc), directory=None, recursive=False, report=None))
+
+    assert result['data']['broken_links'] == 2, 'neither anchor is rendered, so both links are broken'
+
+
+def test_verify_links_ignores_passthrough_examples(tmp_path):
+    adoc = tmp_path / 'page.adoc'
+    adoc.write_text(
+        '= Page\n\nAn example: +link:missing.adoc[x]+.\n\n++++\nlink:missing2.adoc[x]\n++++\n',
+        encoding='utf-8',
+    )
+
+    result = cmd_verify_links(_ns(_VERIFY_LINKS_NS, file=str(adoc), directory=None, recursive=False, report=None))
+
+    assert result['data']['total_links'] == 0
+    assert result['data']['broken_links'] == 0
+
+
+def test_verify_links_valid_metric_excludes_unchecked_classes(tmp_path):
+    adoc = tmp_path / 'page.adoc'
+    adoc.write_text('= Page\n\nlink:https://example.com[Example]\n', encoding='utf-8')
+
+    result = cmd_verify_links(_ns(_VERIFY_LINKS_NS, file=str(adoc), directory=None, recursive=False, report=None))
+
+    assert result['data']['unchecked_link_classes'][0]['count'] == 1
+    assert result['metrics']['valid_links'] == 0, 'an unchecked link is not a verified link'
+
+
+def test_verify_links_reports_a_broken_anchor_behind_a_monospace_label(tmp_path):
+    adoc = tmp_path / 'page.adoc'
+    adoc.write_text('= Page\n\nSee <<missing,`Code`>> here.\n', encoding='utf-8')
+
+    result = cmd_verify_links(_ns(_VERIFY_LINKS_NS, file=str(adoc), directory=None, recursive=False, report=None))
+
+    assert result['data']['total_links'] == 1, 'the monospace label must not delete the cross-reference'
+    assert result['data']['broken_links'] == 1
+    assert result['data']['issues'][0]['link'] == '<<missing,`Code`>>', 'the report must quote the source text'
+
+
+def test_verify_links_attribute_bearing_target_is_an_unchecked_class(tmp_path):
+    adoc = tmp_path / 'page.adoc'
+    adoc.write_text('= Page\n\nSee link:{docs-base}/guide.adoc[Guide].\n', encoding='utf-8')
+
+    result = cmd_verify_links(_ns(_VERIFY_LINKS_NS, file=str(adoc), directory=None, recursive=False, report=None))
+
+    assert result['data']['broken_links'] == 0, 'the attribute is not substituted, so the target is not broken'
+    assert result['data']['unchecked_link_classes'] == [
+        {
+            'class': 'attribute-reference',
+            'count': 1,
+            'first': {'file': str(adoc), 'line': 3, 'link': 'link:{docs-base}/guide.adoc[Guide]'},
+        }
+    ]
+
+
+def test_verify_links_missing_non_asciidoc_fragment_is_not_double_counted(tmp_path):
+    adoc = tmp_path / 'page.adoc'
+    adoc.write_text('= Page\n\nSee link:missing.pdf#page=3[Manual].\n', encoding='utf-8')
+
+    result = cmd_verify_links(_ns(_VERIFY_LINKS_NS, file=str(adoc), directory=None, recursive=False, report=None))
+
+    assert result['data']['broken_links'] == 1
+    assert result['data']['unchecked_link_classes'] == [], 'a missing file is broken, not unchecked'
+    assert result['metrics']['valid_links'] == 0
