@@ -1069,13 +1069,15 @@ class LogVerdict:
     child_fault: ChildFault | None = None
     """The build process's own PRE-TOOL fault, when it refused before any tool ran.
 
-    ``None`` on every result that reached a build tool. A member of
-    ``PRE_TOOL_FAULT_ERRORS`` (``worktree_resolution_failed``,
-    ``mutually_exclusive_args``, ``invalid_invocation``) means the process stopped
-    while resolving the tree, rejecting the flags, or refusing the dispatch — so the
+    ``None`` on every result that reached a build tool. When the log names a member
+    of :data:`PRE_TOOL_FAULT_ERRORS`, the process stopped while resolving the tree,
+    rejecting the flags, refusing the dispatch, or waiting for a build slot — so the
     caller must report that name with its reason and exit code instead of a
     ``build_failed`` and a synthetic error row. ``build_failed`` deliberately never
     populates this: it is the tool RAN and failed case.
+
+    No member is listed here: the set is the single statement of which identifiers
+    qualify, and a list beside it drifts the moment a member is added.
     """
 
 
