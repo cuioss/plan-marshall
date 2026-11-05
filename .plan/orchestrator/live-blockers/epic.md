@@ -135,6 +135,70 @@ derive, for rows still live.
     repository, and D3 is dropped if the operator rules the Sonar ruling covers it. Sequence after PLAN-LB-106 and PLAN-LB-108
     (shared `runbook-lane/SKILL.md` and `test_runbook_lane.py`).
 
+- **PLAN-LB-109** (shipped #1911, merge `051fda6a0`, runbook lane, WS-01) — read on three layers; see `landings/PLAN-LB-109.md`. D1 and D3
+  shipped as specified, D2 and D4 modified (D4's unmeasured-arm Done-when is reported not met as written by the lane; this reading
+  does not settle it). Layer 3 has no blocker, **one major** (B7's `completed_tasks_delta` has no stated source, so a dispatch that did
+  complete tasks can be reclassified `error`) and a layer-1 major (the hand-back check runs before the predicate, as the spec asked, so
+  a stall beside a hand-back on a non-owed task is never seen); 13 minor and 2 info. No collision with a running plan; the diff adds 22
+  paths beyond the declared surface, all explained.
+  - **Open Defect (layer 3, carried by PLAN-LB-117):** the two majors above and the minor manifest bookkeeping defects L3-2 to L3-4
+    (`owed_rung_command` overwritten, staleness by deliverable, chain order ignoring outside dependencies).
+  - **Open Defect (my spec, carried by PLAN-LB-117 D3):** "owed rung" is undefined in the spec and bullet 3 and the D4 Done-when read as
+    contradictory; the shipped spec is not rewritten, and the fix plan states the definition.
+  - **Open Defect (landing facts):** `rb-lb-109-execute-prescribed-yield-not-error-001.md` is `complete: false`, `missing_keys:
+    total_tokens` (the standing runbook-lane recurrence; measurement out of scope, nothing staged).
+  - **Watch:** the lane's "CodeRabbit confirmed the fix and resolved its thread" is unverified (one review thread, resolution and the
+    11:46 review body not read). Retire when read.
+  - **Queue annotation, PLAN-LB-110:** this merge changed `execute-task/SKILL.md`, which PLAN-LB-110 D4 declares; re-read its line
+    references at its outline.
+  - **Fix plan staged 2026-11-05 on the operator's word: PLAN-LB-117** (WS-01, runbook lane, five deliverables). D1 a stall on a
+    non-owed task beside a hand-back is still decided, and a hand-back's step ids are checked against the manifest (the layer-1 major);
+    D2 `completed_tasks_delta` has a stated source and an absent input is not read as zero (the layer-3 major); D3 "owed rung" defined
+    once and a leaf-side test of the unmeasured arm (settles the disputed Done-when); D4 the manifest bookkeeping (L3-2 to L3-5,
+    separable); D5 the contradicting documentation lines and the transitional wording (separable). Declarative, 11 entries, 0
+    unresolved; no overlap with the running plans. It shares `execute-task/SKILL.md` and the `test/plan-marshall/execute-task/`
+    directory with the staged PLAN-LB-110, so the two together need an overlap prompt. Not carried: the leads L3-12, L3-13 and L3-16, the
+    `verify` timeout residue and the Sourcery size limit.
+
+- **PLAN-LB-105** (shipped #1913, merge `ce29d4b1f` (a squash on parent `60aa555e5`), runbook lane, WS-03) — read on three layers; see
+  `landings/PLAN-LB-105.md`. The lane reports 3 of 4 deliverables (D1's literal merge-base Done-when "not met as written"; the lane is
+  right, it is a defect of my spec: the changed set is a three-dot diff, so an untouched file is never read). D2 and D1 shipped modified,
+  D3 and D4 as specified. The diff adds 3 paths beyond the declared surface and leaves 3 declared paths untouched, all explained. No
+  collision with a running plan. Every CodeRabbit review thread is resolved; the final head has no bot review (rate limited).
+  - **Open Defect (layer 3, reported, nothing staged):** five majors in the gate this plan made: the changed test set pools the
+    after-counts of a test name across every file, so a same-named test elsewhere hides a deleted file's loss (more permissive than the
+    base); a test function moved out of a surviving file reports a blocking row with no identity that can never be accepted (a fourth
+    loss case, against "a moved test is not a lost assertion" and the docs' "exactly three cases"); a plan without a worktree is graded
+    against whatever the main checkout holds, with no HEAD or dirty-tree check; the re-arm of `taken_into_account` has no rule, source
+    or phase filter; and a no-identity row is never accepted (not shown by reading). Twelve minor and one info, including an uncaught
+    git timeout and transitional wording. Carried by the fix plan PLAN-LB-118.
+  - **Open Defect (layer 2, carried by PLAN-LB-118 D2):** a `**Tests to remove:**` bullet without a count accepts the identity for any
+    count, drops of surviving tests included, against the spec's identity-plus-count key.
+  - **Open Defect (my spec, carried by PLAN-LB-118 D3 and D5):** D3's premise that `taken_into_account` is only the review's own
+    disposition is false (the triage workflow records an operator Hold as `taken_into_account`); D4's migration rule has no
+    discriminator and D3's `--reopen` clause is inverted for that resolution. The shipped spec is not rewritten; the fix plan states the
+    corrected premise.
+  - **Open Defect (landing facts):** `rb-lb-105-review-gate-grading-truth-001.md` is `complete: false`, `missing_keys: total_tokens`
+    (the standing runbook-lane recurrence; measurement out of scope, nothing staged).
+  - **Watch (answered):** the `quality-report` drain asked that this landing be read for the base anchor. The changed set was already a
+    three-dot diff; the pre-image now reads at the merge base (`_review_support_integrity.py:213-222`), with a near-dead fall-back to the
+    tip. Retire that item.
+  - **Watch (unverified):** the review at 12:57 (body not read), the doc test and fixture claims, and whether a close without
+    `--accept` is a working exit for a no-identity row. Retire when read.
+  - **Queue annotation, parked PLAN-LB-75:** this merge changed `review_support.py` and `_criteria_snapshot.py`, which LB-75 D1 and D4
+    declare; re-read its function and line references at its re-grounding and against the no-identity and pooled-count defects.
+  - **Queue annotation, PLAN-LB-107:** it shares `phase-6-finalize` with this merge; re-read its references at its outline.
+  - **Started by the operator 2026-11-05 (row `running`):** PLAN-LB-107 (after PLAN-LB-117). Running now: PLAN-LB-106, PLAN-LB-114,
+    PLAN-LB-117, PLAN-LB-107 (four of four slots).
+  - **Fix plan staged 2026-11-05 on the operator's word: PLAN-LB-118** (WS-03, runbook lane, five deliverables; the single fix plan for
+    the layer-1, layer-2 and layer-3 findings above). D1 a loss decided per identity (the pooled-count hole, a moved function is not a
+    loss, every row acceptable, class scope and indented skip marker); D2 an accepted removal is exactly what was accepted (the
+    count-less declaration, the close reads the validated head and keeps every row of a path); D3 a re-file re-arms only what the loop
+    back superseded, never an operator Hold; D4 the evidence root and the git calls fail closed (separable); D5 the parser edges and the
+    contradicting and transitional text (separable). Declarative, 17 entries (explicit files, no directory), 0 unresolved; no shared
+    file with the four running plans. Queued: all four slots are full. Sequence against parked PLAN-LB-75 (shares `review_support.py`
+    and `_criteria_snapshot.py`). Not carried: nothing of the five majors; the leads settle first at outline.
+
 - **PLAN-LB-39** (shipped #1768, 2026-10-14) — 0 met / 4 partial / 3 unmet against its spec,
   counted 7/7, five regressions; see `landings/PLAN-LB-39.md`. Fix-forward PLAN-LB-50; unshipped
   deliverables re-staged as PLAN-LB-51 (Antigravity) and PLAN-LB-52 (harness-agnostic, as scripts).
