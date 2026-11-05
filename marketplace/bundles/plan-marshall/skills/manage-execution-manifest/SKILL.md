@@ -754,6 +754,20 @@ Before the per-step stamping below, the composer walks every task's `verificatio
 
 **Interaction with per-step stamping**: routing runs first and may append `verify:{verb}` entries to `phase_5.verification_steps`; the stamping pass below then resolves a tier for the FINAL list, so every routed step — canonical or generalized — receives a stamped `{step_id, tier}` record. A generalized `verify:{verb}` whose canonical is unresolvable stamps to the `per_task` permissive default per the stamping rule.
 
+### Deliverable chain-tail rung deferral (`owed_rung_deferral`)
+
+The command-level routing above is per task; this decision is per DELIVERABLE. The operator ruling it implements: **one full module build per deliverable.** When a deliverable's per-task `module-tests` rung resolves `orchestrator` from a MEASURED learned duration that exceeds the Bash ceiling, every task deferring on its own would pay the same module build once per task.
+
+The deferral is keyed on `exceeds_bash_ceiling: true` from the same `architecture resolve` the routing pass already runs — NOT on the tier alone. `orchestrator` is also what an UNMEASURED command resolves to (the fail-closed rule above), and an unmeasured command keeps today's behaviour: no deferral is recorded, because a duration nobody has measured cannot say the build will always exceed the per-task limit. Below the ceiling the rung resolves `per_task` and runs inline per task, also unchanged.
+
+The decision is recorded on the task ladder, which the leaf already reads:
+
+- `verification.owed_rung: chain_tail` — the LAST task of the deliverable's `depends_on` chain. It keeps its `module-tests` command, hands the build back and closes with `--verification-owed`.
+- `verification.owed_rung: deferred` — a task that precedes the deliverable's chain tail. Its rung is dropped from `verification.commands` and it closes without the owed hold.
+- absent — today's behaviour, unchanged: every task carries its own rung.
+
+The `compose` result and the manifest carry the summary as `phase_5.owed_rung_deferral[]` — one `{deliverable, chain_tail_task, deferred_task_count, cause}` record per decided deliverable. The stamp is advisory in one direction only: the leaf's live `per_task` resolve still runs inline, so a run that later measures below the limit is not forced to defer. The leaf-side honouring rule lives in [`../execute-task/SKILL.md`](../execute-task/SKILL.md) Step 5 (b) and [`../phase-5-execute/SKILL.md`](../phase-5-execute/SKILL.md) Step 7; the owed hold itself is unchanged (see `../manage-tasks/SKILL.md` § "Finalize-step verification-owed flag contract").
+
 ### Per-step execution_tier stamping (`step_execution_tier`)
 
 After the canonical-verify footprint pre-filter produces the FINAL `phase_5.verification_steps` list, the composer resolves each selected step's `execution_tier` and stamps a `phase_5.step_execution_tier` record list (one `{step_id, tier}` object per verification step). Each built-in canonical-verify step (`verify:{canonical}`) is resolved via a whole-tree `architecture resolve --command {canonical}`, reading the `execution_tier` field the resolve TOON emits; every other step id (an external `project:` / `bundle:skill` step, or a `verify:{canonical}` whose canonical is unresolvable) defaults to `per_task`. The list is total over `verification_steps` — the composer never emits an unresolved tier.

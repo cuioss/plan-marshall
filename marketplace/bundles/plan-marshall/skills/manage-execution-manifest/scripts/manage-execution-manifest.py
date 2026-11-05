@@ -1189,6 +1189,169 @@ def _resolve_command_tier(cmd: str, plan_id: str) -> dict[str, Any] | None:
     return _invoke_architecture_resolve(argv_extra, plan_id)
 
 
+# =============================================================================
+# Deliverable chain-tail rung deferral (one module build per deliverable)
+# =============================================================================
+#
+# The operator ruling: when a deliverable's per-task ``module-tests`` rung
+# always exceeds the per-task limit, the deliverable builds ONCE, at its chain
+# tail. The decision is recorded on the task ladder, which every leaf already
+# reads:
+#
+# * ``verification.owed_rung: chain_tail`` — this task carries the deliverable's
+#   owed rung; it hands the build back and closes ``--verification-owed``.
+# * ``verification.owed_rung: deferred`` — an earlier task of the same
+#   deliverable; it closes per-task and hands nothing back.
+# * absent — today's behaviour, unchanged: every task carries its own rung.
+#
+# The deferral applies ONLY to a rung whose ``architecture resolve`` reported
+# ``exceeds_bash_ceiling: true`` — a MEASURED duration over the ceiling. An
+# unmeasured command also fails closed to ``orchestrator``, but nothing has been
+# measured, so no deferral decision is recorded and the live re-resolve still
+# routes.
+OWED_RUNG_CHAIN_TAIL = 'chain_tail'
+OWED_RUNG_DEFERRED = 'deferred'
+_MODULE_TESTS_STEP = 'verify:module-tests'
+
+
+def _module_tests_step_for(command: str, plan_id: str) -> tuple[str | None, dict[str, Any] | None]:
+    """Resolve *command* and return its phase-5 step id when it is the module-tests rung.
+
+    Returns ``(step_id, resolve_toon)``. ``step_id`` is ``None`` when the
+    command is not a resolvable build command, or is any verb other than
+    ``module-tests`` — the per-task TEST rung the deferral applies to. The
+    whole-bundle ``verify`` verb maps to the same phase-5 step
+    (``verify:module-tests``) but is a different rung, so it is deliberately
+    excluded: the operator ruling is about the per-task module-tests build, and
+    widening it to ``verify`` would keep a command whose routing contract is
+    unchanged.
+    """
+    parsed = _parse_verification_command(command)
+    if parsed is None:
+        return None, None
+    verb, _ = parsed
+    if verb != 'module-tests':
+        return None, None
+    return _verb_to_phase_5_step(verb), _resolve_command_tier(command, plan_id)
+
+
+def _chain_order(numbers: list[int], depends_on: dict[int, list[int]]) -> list[int]:
+    """Order one deliverable's task numbers by their ``depends_on`` chain.
+
+    A stable topological order restricted to *numbers*: a task whose
+    dependencies are all outside the set (or already emitted) is eligible, and
+    ties break on the task number so the result is deterministic. A cycle
+    cannot swallow a task — any reminder is appended in number order — because a
+    planning defect must not silently drop a rung.
+    """
+    remaining = sorted(numbers)
+    emitted: list[int] = []
+    while remaining:
+        ready = [n for n in remaining if all(dep not in remaining for dep in depends_on.get(n, []))]
+        if not ready:
+            emitted.extend(remaining)
+            break
+        emitted.append(ready[0])
+        remaining.remove(ready[0])
+    return emitted
+
+
+def _plan_module_tests_chain_tail_deferral(
+    plan_id: str,
+) -> tuple[dict[int, str], list[dict[str, Any]], set[int]]:
+    """Decide which task of each deliverable carries the owed module-tests rung.
+
+    The operator ruling this implements: **one full module build per
+    deliverable.** When a deliverable's per-task ``module-tests`` rung resolves
+    ``orchestrator`` from a MEASURED learned duration that exceeds the Bash
+    ceiling, every task deferring on its own would pay the same build once per
+    task. So the rung is placed on the LAST task of the deliverable's chain and
+    the earlier tasks close without the owed hold.
+
+    The discriminator is ``exceeds_bash_ceiling`` on the resolve TOON, NOT the
+    tier alone: ``orchestrator`` is also what an UNMEASURED command resolves to
+    (fail-closed), and an unmeasured command keeps today's behaviour — no
+    deferral decision is recorded for it, because a duration nobody has measured
+    cannot say the build will always exceed the limit. The stamp is advisory:
+    the leaf still re-resolves live, so a run that later measures below the
+    limit is not forced to defer.
+
+    Returns ``(decisions, summary, decided_deliverables)`` where ``decisions``
+    maps task number to ``chain_tail`` or ``deferred``, ``summary`` is the
+    manifest record list (one entry per deliverable the decision touched), and
+    ``decided_deliverables`` names the deliverables a live decision still
+    covers — a deliverable absent from it has no current evidence and its
+    recorded stamps are stale.
+    """
+    tasks_dir = get_plan_dir(plan_id) / 'tasks'
+    if not tasks_dir.is_dir():
+        return {}, [], set()
+
+    candidates: dict[int, int] = {}  # task number -> deliverable
+    depends_on: dict[int, list[int]] = {}
+    for task_path in sorted(tasks_dir.glob('TASK-*.json')):
+        try:
+            task = read_json(task_path, default=None)
+        except (OSError, json.JSONDecodeError):
+            continue
+        if not isinstance(task, dict):
+            continue
+        number = task.get('number')
+        if not isinstance(number, int):
+            continue
+        deps: list[int] = []
+        for dep in task.get('depends_on') or []:
+            if isinstance(dep, int):
+                deps.append(dep)
+                continue
+            digits = ''.join(ch for ch in str(dep) if ch.isdigit())
+            if digits:
+                deps.append(int(digits))
+        depends_on[number] = deps
+        verification = task.get('verification')
+        if not isinstance(verification, dict):
+            continue
+        commands = verification.get('commands')
+        if not isinstance(commands, list):
+            continue
+        for command in commands:
+            if not isinstance(command, str):
+                continue
+            step_id, toon = _module_tests_step_for(command, plan_id)
+            if step_id != _MODULE_TESTS_STEP or not isinstance(toon, dict):
+                continue
+            if toon.get('execution_tier') != 'orchestrator' or toon.get('exceeds_bash_ceiling') is not True:
+                continue
+            deliverable = task.get('deliverable', 0)
+            candidates[number] = deliverable if isinstance(deliverable, int) else 0
+            break
+
+    if not candidates:
+        return {}, [], set()
+
+    by_deliverable: dict[int, list[int]] = {}
+    for number, deliverable in candidates.items():
+        by_deliverable.setdefault(deliverable, []).append(number)
+
+    decisions: dict[int, str] = {}
+    summary: list[dict[str, Any]] = []
+    for deliverable in sorted(by_deliverable):
+        members = by_deliverable[deliverable]
+        ordered = _chain_order(members, depends_on)
+        tail = ordered[-1]
+        for number in ordered:
+            decisions[number] = OWED_RUNG_CHAIN_TAIL if number == tail else OWED_RUNG_DEFERRED
+        summary.append(
+            {
+                'deliverable': deliverable,
+                'chain_tail_task': tail,
+                'deferred_task_count': len(ordered) - 1,
+                'cause': 'measured_module_tests_above_ceiling',
+            }
+        )
+    return decisions, summary, set(by_deliverable)
+
+
 def _route_task_verification_commands(plan_id: str, body: dict[str, Any]) -> tuple[int, list[tuple[Path, str]]]:
     """Walk plan tasks; route verification commands by ``execution_tier``.
 
@@ -1246,6 +1409,16 @@ def _route_task_verification_commands(plan_id: str, body: dict[str, Any]) -> tup
     # De-dup helper: track membership for O(1) lookup while preserving order.
     seen_steps: set[str] = set(verification_steps)
 
+    # The chain-tail deferral decision, computed BEFORE the walk so the pass can
+    # keep the rung on the deliverable's last task and drop it from the earlier
+    # ones. An empty map means no deliverable has a measured over-ceiling
+    # module-tests rung — today's behaviour, untouched.
+    rung_decisions, rung_summary, decided_deliverables = _plan_module_tests_chain_tail_deferral(plan_id)
+    if rung_summary:
+        phase_5['owed_rung_deferral'] = rung_summary
+    else:
+        phase_5.pop('owed_rung_deferral', None)
+
     mutated_tasks = 0
     pending_writes: list[tuple[Path, str]] = []
     for task_path in sorted(tasks_dir.glob('TASK-*.json')):
@@ -1259,12 +1432,26 @@ def _route_task_verification_commands(plan_id: str, body: dict[str, Any]) -> tup
         if not isinstance(verification, dict):
             continue
         commands = verification.get('commands')
-        if not isinstance(commands, list) or not commands:
+        if not isinstance(commands, list):
+            continue
+        task_number = task.get('number')
+        rung = rung_decisions.get(task_number) if isinstance(task_number, int) else None
+        deliverable = task.get('deliverable', 0)
+        # A stamp the live decision no longer covers is stale — the duration was
+        # re-measured, or the deliverable's chain tail no longer qualifies. Clear
+        # it even on a task whose rung command was dropped by an earlier compose
+        # (that task has no command left to re-measure).
+        stale_rung = (
+            verification.get('owed_rung') is not None and rung is None and deliverable not in decided_deliverables
+        )
+        if stale_rung:
+            verification.pop('owed_rung', None)
+        if not commands and not stale_rung:
             continue
 
         kept_commands: list[Any] = []
         per_task_timeout: int | None = None
-        changed = False
+        changed = stale_rung
         for raw in commands:
             if not isinstance(raw, str):
                 kept_commands.append(raw)
@@ -1281,6 +1468,19 @@ def _route_task_verification_commands(plan_id: str, body: dict[str, Any]) -> tup
                     continue
                 verb, _ = parsed
                 step_id = _verb_to_phase_5_step(verb)
+                if rung == OWED_RUNG_CHAIN_TAIL and verb == 'module-tests':
+                    # The deliverable's rung lives HERE: keep the command on the
+                    # chain-tail task so the leaf's live resolve hands the build
+                    # back and closes `--verification-owed`. The orchestrator
+                    # still runs the step once; this task is the one that reports
+                    # it owed.
+                    kept_commands.append(raw)
+                    verification['owed_rung'] = OWED_RUNG_CHAIN_TAIL
+                    if _MODULE_TESTS_STEP not in seen_steps:
+                        verification_steps.append(_MODULE_TESTS_STEP)
+                        seen_steps.add(_MODULE_TESTS_STEP)
+                    changed = True
+                    continue
                 if step_id is None:
                     candidate = f'verify:{verb}'
                     # A build-phase canonical the deriver legitimately emits
@@ -1326,6 +1526,16 @@ def _route_task_verification_commands(plan_id: str, body: dict[str, Any]) -> tup
                 if step_id not in seen_steps:
                     verification_steps.append(step_id)
                     seen_steps.add(step_id)
+                if rung == OWED_RUNG_DEFERRED and verb == 'module-tests':
+                    # An earlier task of a deferred deliverable: its rung belongs
+                    # to the chain tail, so it closes per-task and hands nothing
+                    # back. The step itself is already appended above.
+                    verification['owed_rung'] = OWED_RUNG_DEFERRED
+                elif rung != OWED_RUNG_CHAIN_TAIL and verification.get('owed_rung') is not None:
+                    # A stale stamp from an earlier compose would keep telling
+                    # the leaf to defer a rung the live decision no longer places
+                    # on this task.
+                    verification.pop('owed_rung', None)
                 changed = True
                 continue
             if tier == 'per_task':
@@ -1333,6 +1543,8 @@ def _route_task_verification_commands(plan_id: str, body: dict[str, Any]) -> tup
                 if isinstance(bash_timeout, int):
                     if per_task_timeout is None or bash_timeout > per_task_timeout:
                         per_task_timeout = bash_timeout
+                if rung != OWED_RUNG_CHAIN_TAIL and verification.pop('owed_rung', None) is not None:
+                    changed = True
                 kept_commands.append(raw)
                 continue
             # No tier or unresolvable → leave the command in place.
@@ -2719,6 +2931,7 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
             'verification_steps_count': len(body['phase_5']['verification_steps']),
             'envelope_count': body['phase_5']['envelope_count'],
             'step_execution_tier': body['phase_5']['step_execution_tier'],
+            'owed_rung_deferral': body['phase_5'].get('owed_rung_deferral', []),
         },
         'phase_6': {
             'steps_count': len(body['phase_6']['steps']),
