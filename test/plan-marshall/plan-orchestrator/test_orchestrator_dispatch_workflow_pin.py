@@ -270,6 +270,72 @@ class TestDispatchResolveSitesCarryWorkflow:
 
 
 # =============================================================================
+# The three-layer landing analysis dispatch (analyze.md Step 4)
+# =============================================================================
+#
+# The analysis rides the SAME `orchestrator.analyze` surface as the corroboration,
+# so the `--workflow` pin above already covers the flag's presence. What it cannot
+# see is WHICH doc the new dispatch names: the corroboration bullet resolves
+# `--workflow {the doc the leaf loads}`, so a new site that copied that placeholder
+# would satisfy the flag assertion and still leave the [DISPATCH] record unable to
+# name what the leaf loaded. This pin fixes the concrete pair — surface and workflow
+# doc — for the new site, and names the three layers and the return shape beside it.
+
+_THREE_LAYER_WORKFLOW_DOC = 'plan-marshall:plan-orchestrator/standards/three-layer-analysis.md'
+
+#: The Step 2 bullet that carries the three-layer dispatch, and the top-level
+#: bullet that closes the dispatchable list. Scoping the layer-name assertion to
+#: this slice is deliberate: the whole document carries the layer names in Step 4
+#: as well, so a document-wide scan would stay green if the DISPATCH bullet lost
+#: them and the leaf were given no layer instruction at all.
+_THREE_LAYER_DISPATCH_MARKER = '- **Dispatchable** — the Step 4 three-layer landing analysis'
+_DISPATCH_LIST_END = '\n- **Inline-only**'
+
+
+def _three_layer_dispatch_bullet() -> str:
+    text = _normalized(_ANALYZE_MD)
+    start = text.find(_THREE_LAYER_DISPATCH_MARKER)
+    assert start != -1, (
+        f'analyze.md carries no three-layer dispatch bullet ({_THREE_LAYER_DISPATCH_MARKER!r}) — the pin '
+        'cannot locate the site whose workflow doc and layer instructions it names'
+    )
+    end = text.find(_DISPATCH_LIST_END, start)
+    assert end != -1, 'the three-layer dispatch bullet is not closed by the inline-only bullet'
+    return text[start:end]
+
+
+class TestThreeLayerAnalysisDispatchIsPinned:
+    def test_the_three_layer_dispatch_names_its_surface_and_workflow_doc(self):
+        invocations = _invocations(_ANALYZE_MD)
+
+        matching = [text for text in invocations if _THREE_LAYER_WORKFLOW_DOC in text]
+
+        assert len(matching) == 1, (
+            f'analyze.md carries {len(matching)} dispatch invocation(s) naming `--workflow '
+            f'{_THREE_LAYER_WORKFLOW_DOC}` across {len(invocations)} invocation(s) — the '
+            'three-layer analysis dispatch must name the doc its leaf loads, concretely'
+        )
+        invocation = matching[0]
+        assert '--role orchestrator.analyze' in invocation, (
+            f'the three-layer dispatch does not resolve on the `orchestrator.analyze` surface: {invocation!r}'
+        )
+        for fact in ('--plan-id none', '--caller plan-marshall:persona-plan-orchestrator', '--workflow'):
+            assert fact in invocation, f'the three-layer dispatch omits {fact!r}: {invocation!r}'
+
+    def test_the_three_layer_dispatch_bullet_names_the_layers_and_the_return_shape(self):
+        bullet = _three_layer_dispatch_bullet()
+
+        for layer in ('specified', 'implemented', 'correct'):
+            assert layer in bullet, (
+                f'the three-layer dispatch bullet does not name the {layer!r} layer — the leaf can be '
+                'dispatched with no layer instruction while Step 4 still defines them'
+            )
+        assert 'findings[N]{layer,severity,file,line,claim,verdict}' in bullet, (
+            'the three-layer dispatch bullet does not declare the three-layer return shape'
+        )
+
+
+# =============================================================================
 # Write-path containment for dispatchable DRAFTING sub-steps
 # =============================================================================
 #
@@ -433,7 +499,7 @@ _SANCTIONED_INDEX_RE = re.compile(
 #: whose "(6)" is followed by "returns" and must NOT be double-counted as a
 #: second occurrence of entry 6).
 _PAREN_ENTRY_RE = re.compile(r'\((\d+)\)\s*(?=`|the\s)')
-_INDEX_NUMBER_WORDS = {'two': 2, 'five': 5, 'seven': 7}
+_INDEX_NUMBER_WORDS = {'two': 2, 'five': 5, 'seven': 7, 'eight': 8}
 
 #: A top-level dispatchable-declaring bullet in a verb doc's Step 2 section:
 #: "- **Dispatchable**" (the read) or "- **Two-stage for untrusted third-party
@@ -455,7 +521,7 @@ def _dispatch_index_entry_count(path: Path) -> int:
     """The number of logical dispatchable sub-step entries a verb doc declares.
 
     A top-level bullet is one READ entry each; a nested "Also dispatchable"
-    sub-bullet is one DRAFT entry each — this covers analyze.md's five (two
+    sub-bullet is one DRAFT entry each — this covers analyze.md's six (three
     top-level reads, three nested drafts). decompose.md carries no "Also
     dispatchable" heading and no nested sub-bullet: its single top-level
     `Dispatchable` bullet's RETURN SHAPE names both a read (`candidates[N]`)
@@ -821,9 +887,9 @@ class TestDraftingDispatchWritePathContainment:
         )
 
     def test_the_sanctioned_dispatch_index_count_matches_the_verb_docs(self):
-        """orchestration-model.md's seven-entry index must agree with the verb docs.
+        """orchestration-model.md's eight-entry index must agree with the verb docs.
 
-        The index asserts its own cardinality ("these **seven**, and this list is
+        The index asserts its own cardinality ("these **eight**, and this list is
         a complete index of them") but nothing machine-checked it against
         analyze.md and decompose.md before this test. A count derived
         independently from the two verb docs — never from the index's own
@@ -897,8 +963,10 @@ class TestDraftingDispatchWritePathContainment:
 
     def test_an_analyze_shaped_doc_counts_reads_and_drafts_separately(self, tmp_path):
         # Matched control: two top-level bullets plus three nested draft
-        # bullets sum to five, mirroring analyze.md's real shape, with no
-        # bonus applied since the nested bullets already account for drafts.
+        # bullets sum to five with no bonus applied, since the nested bullets
+        # already account for the drafts. The same arithmetic covers analyze.md's
+        # real shape, which carries a third top-level read (the three-layer
+        # landing analysis) beside these two.
         fixture = tmp_path / 'analyze-shaped.md'
         fixture.write_text(
             '- **Dispatchable** — corroboration.\n\n'
