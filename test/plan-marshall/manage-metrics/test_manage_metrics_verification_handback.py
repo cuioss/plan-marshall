@@ -97,7 +97,8 @@ class TestHandbackCauseIsNamedInItsTwoDocuments:
         text = PHASE_5_SKILL_MD.read_text(encoding='utf-8')
 
         assert 'These two are the ONLY yields' not in text, (
-            'phase-5-execute lists four TASK-boundary re-dispatch points; two of them are error paths'
+            'phase-5-execute lists four TASK-boundary re-dispatch points; two of them are '
+            'prescribed non-completions with their own ledger causes, not clean yields'
         )
         assert 'These two are the only yields that are NOT error handling' in text
         for point in ('budget_yield', 'verification_handback', 'triage_required', 'baseline_drift'):
@@ -115,14 +116,18 @@ class TestHandbackCauseIsNamedInItsTwoDocuments:
         assert 'without a valid hand-back pair' in text
         assert 'beside an empty `pending_verify_steps[]`' in text
 
-    def test_b7_is_evaluated_on_every_non_error_return(self):
+    def test_b7_is_evaluated_on_both_qualifying_returns(self):
         """A hand-back return must still reach the predicate, or D1 can never fire.
 
         The table classifies a valid hand-back as `verification_handback`, so a
         trigger scoped to returns "provisionally classified voluntary_checkpoint"
-        would skip the very return the scoped exemption exists for.
+        would skip the very return the scoped exemption exists for; a trigger
+        covering EVERY non-error return would instead reclassify a legitimate
+        `budget_yield`. The trigger names exactly the two cases.
         """
         text = EXECUTION_MD.read_text(encoding='utf-8')
 
-        assert 'After ANY non-error dispatch return' in text
-        assert 'let the returned `classification` override the table' in text
+        assert 'in exactly two cases' in text
+        assert 'the return is provisionally classified `voluntary_checkpoint`' in text
+        assert 'the return carries a hand-back pair' in text
+        assert 'keeps its own classification and is not passed through the predicate' in text

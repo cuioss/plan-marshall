@@ -1448,9 +1448,9 @@ def _route_task_verification_commands(plan_id: str, body: dict[str, Any]) -> tup
     seen_steps: set[str] = set(verification_steps)
 
     # The chain-tail deferral decision, computed BEFORE the walk so the pass can
-    # keep the rung on the deliverable's last task and drop it from the earlier
-    # ones. An empty map means no deliverable has a measured over-ceiling
-    # module-tests rung — today's behaviour, untouched.
+    # keep each group's rung on that group's last task and drop it from the
+    # earlier ones. An empty map means no (deliverable, command) group has a
+    # measured over-ceiling module-tests rung — today's behaviour, untouched.
     rung_decisions, rung_summary, decided_pairs = _plan_module_tests_chain_tail_deferral(plan_id)
     if rung_summary:
         phase_5['owed_rung_deferral'] = rung_summary
@@ -1478,7 +1478,7 @@ def _route_task_verification_commands(plan_id: str, body: dict[str, Any]) -> tup
         deliverable = deliverable if isinstance(deliverable, int) else 0
         recorded_command = verification.get('owed_rung_command')
         # A stamp the live decision no longer covers is stale — the duration was
-        # re-measured, or the deliverable's chain tail no longer qualifies. The
+        # re-measured, or that group's chain tail no longer qualifies. The
         # check is per (deliverable, command), never per deliverable: a two-module
         # deliverable whose module B is re-measured below the limit must clear
         # module B's stamps while module A's stay. It also covers a task whose
