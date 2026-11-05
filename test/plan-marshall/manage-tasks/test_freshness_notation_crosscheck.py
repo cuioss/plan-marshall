@@ -693,10 +693,21 @@ def test_a_canonical_outside_the_vocabulary_is_undetermined_not_refuted(
         ('run --command-args', None),
         ('run --command-args --timeout 900', None),
         ('run --command-args verify', ('verify', ())),
-        ('run --command-args verify --timeout 900', ('verify', ())),
+        # An EXECUTOR flag after the payload is not scope, but it is not proof of a
+        # whole-tree run either: the joined argv cannot say whether it sat inside the
+        # quoted command or after it, so the row is unreadable (fail-closed).
+        ('run --command-args verify --timeout 900', None),
         ('run --command-args=verify', ('verify', ())),
         ('run --command-args verify plan-marshall', ('verify', ('plan-marshall',))),
         ('run --command-args=verify plan-marshall', ('verify', ('plan-marshall',))),
+        # A KNOWN scope-bearing flag carries the module set instead of dropping it.
+        ('run --command-args module-tests -pl mod-a', ('module-tests', ('mod-a',))),
+        ('run --command-args module-tests --projects mod-a,mod-b', ('module-tests', ('mod-a', 'mod-b'))),
+        ('run --command-args module-tests -pl=mod-a', ('module-tests', ('mod-a',))),
+        ('run --command-args verify plan-marshall -pl mod-a', ('verify', ('plan-marshall', 'mod-a'))),
+        # An UNKNOWN flag is neither whole-tree nor a scope: it is unreadable.
+        ('run --command-args module-tests -k foo', None),
+        ('run --command-args module-tests -pl', None),
     ],
 )
 def test_parse_row_scope_never_reads_an_unreadable_row_as_whole_tree(args, expected) -> None:
@@ -706,6 +717,11 @@ def test_parse_row_scope_never_reads_an_unreadable_row_as_whole_tree(args, expec
     available — so every shape that carries no readable ``--command-args`` must
     return ``None`` instead. Both argparse spellings are accepted because the
     ledger stamps whichever the caller used.
+
+    A trailing flag is ambiguous in the unquoted ledger argv — it could have sat
+    inside the quoted command (narrowing the build) or after it — so every flag
+    that is not a known scope-bearing one makes the row unreadable rather than
+    letting it read as whole-tree.
     """
     parsed = crosscheck.parse_row_scope(_build_entry(args=args))
 
@@ -757,3 +773,98 @@ def test_required_coverage_is_derived_from_the_footprint_not_fixed() -> None:
     assert with_source.analyses == frozenset({vocabulary.compile, vocabulary.lint, vocabulary.test})
     # ``divergence_possible`` is taken verbatim — this dimension does not re-derive it.
     assert with_source.whole_tree is True
+
+
+# =============================================================================
+# PLAN-LB-107 D4 — a narrowing expressed as a flag inside ``--command-args``
+# =============================================================================
+#
+# ``parse_row_scope`` used to stop collecting scope at the FIRST flag after the
+# canonical command, so a Maven row stamped ``--command-args module-tests -pl mod-a``
+# read as no scope at all — which the coverage dimension reads as whole-tree, the
+# false-green direction. These three cases are the refusal, its unknown-flag
+# sibling, and the matched control.
+
+
+def test_a_scope_bearing_flag_narrows_the_row_and_is_refused_for_a_whole_tree_change(monkeypatch) -> None:
+    """(a) ``-pl mod-a`` is the row's scope, so a whole-tree change is not covered."""
+    _stub_expected(monkeypatch, {_PYPROJECT})
+    vocabulary, reason = crosscheck.load_analysis_vocabulary()
+    assert vocabulary is not None, reason
+    row = _build_entry(args=_args_for('module-tests -pl mod-a'), outcome=_outcome_for(120))
+
+    parsed = crosscheck.parse_row_scope(row)
+    assert parsed is not None
+    assert (parsed.canonical, parsed.scope_tokens) == ('module-tests', ('mod-a',))
+
+    outcome = crosscheck.cross_check_candidates(
+        [row],
+        '/nonexistent-project-dir',
+        _required(analyses={vocabulary.test}, whole_tree=True),
+    )
+
+    assert outcome['scope_verdict'] == crosscheck.NARROW, outcome
+    assert outcome['contributing'] == []
+    assert outcome['row_scopes'] == ['module-tests mod-a: ' + crosscheck.ROW_SCOPE_TOO_NARROW]
+
+
+def test_an_unknown_flag_contributes_no_coverage_and_is_never_labelled_whole_tree(monkeypatch) -> None:
+    """(b) ``-k foo`` is not a known scope flag, so the row is unreadable, not whole-tree."""
+    _stub_expected(monkeypatch, {_PYPROJECT})
+    vocabulary, reason = crosscheck.load_analysis_vocabulary()
+    assert vocabulary is not None, reason
+    row = _build_entry(args=_args_for('module-tests -k foo'), outcome=_outcome_for(120))
+
+    assert crosscheck.parse_row_scope(row) is None
+
+    outcome = crosscheck.cross_check_candidates(
+        [row],
+        '/nonexistent-project-dir',
+        _required(analyses={vocabulary.test}, whole_tree=True),
+    )
+
+    assert outcome['scope_verdict'] == crosscheck.UNDETERMINED, outcome
+    assert outcome['scope_reason'] == crosscheck.REASON_SCOPE_UNREADABLE
+    # Nothing is credited to the row: "could not read" is not "covered it".
+    assert outcome['contributing_analyses'] == [[]]
+    assert outcome['row_scopes'] == ['unreadable: ' + crosscheck.ROW_ARGS_UNREADABLE]
+
+
+def test_the_matched_control_row_with_no_scope_is_still_whole_tree_and_adequate(monkeypatch) -> None:
+    """(c) MATCHED CONTROL: ``module-tests`` with no scope tokens is genuinely whole-tree."""
+    _stub_expected(monkeypatch, {_PYPROJECT})
+    vocabulary, reason = crosscheck.load_analysis_vocabulary()
+    assert vocabulary is not None, reason
+    row = _build_entry(args=_args_for('module-tests'), outcome=_outcome_for(19007))
+
+    parsed = crosscheck.parse_row_scope(row)
+    assert parsed is not None
+    assert (parsed.canonical, parsed.scope_tokens) == ('module-tests', ())
+
+    outcome = crosscheck.cross_check_candidates(
+        [row],
+        '/nonexistent-project-dir',
+        _required(analyses={vocabulary.test}, whole_tree=True),
+    )
+
+    assert outcome['scope_verdict'] == crosscheck.COVERED, outcome
+    assert outcome['contributing'] == [0]
+    assert outcome['contributing_analyses'] == [[vocabulary.test]]
+    assert outcome['row_scopes'] == ['module-tests: ' + crosscheck.COVERED]
+
+
+def test_the_scope_flag_registry_names_the_flags_each_build_tool_carries() -> None:
+    """The registry is explicit, so a flag cannot become "scope" by accident.
+
+    Maven's ``-pl`` / ``--projects`` is the minimum the plan names; Gradle's ``-p``
+    and npm's ``-w`` / ``--workspace`` select the same blast radius. Asserting the
+    exact set keeps an accidental addition (a test filter, a verbosity flag) from
+    being read as a module scope.
+    """
+    assert crosscheck._SCOPE_FLAGS == {
+        '-pl': 1,
+        '--projects': 1,
+        '-p': 1,
+        '-w': 1,
+        '--workspace': 1,
+    }

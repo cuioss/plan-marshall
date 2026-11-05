@@ -381,7 +381,7 @@ compared on **blast radius**:
 
 | Side | Source | What it yields |
 |---|---|---|
-| The row | `args`, at `--command-args` | The canonical it ran and the scope tokens that followed — no tokens means whole-tree |
+| The row | `args`, at `--command-args` | The canonical it ran and its scope: the non-flag tokens that follow it, plus the value of a KNOWN scope-bearing flag (maven `-pl` / `--projects`, gradle `-p`, npm `-w` / `--workspace`). No scope tokens AND no flag means whole-tree; any OTHER flag makes the row unreadable, never whole-tree |
 | The row | `outcome.tests_run` + `outcome.tests_population` | Whether it MEASURED that it executed zero tests |
 | The change | the live plan footprint via `_test_scope_divergence.resolve_test_scope`, with the registered targets and the bundle modules from the shared helpers `_test_scope_targets.resolve_registered_targets` and `resolve_bundle_modules` | The module set a scoped run must cover, and whether only a whole-tree run will do |
 
@@ -407,6 +407,16 @@ would see `verify` with nothing after it and conclude *whole-tree*. That is the
 false-green direction, so `command` is **not** used as a fallback: a row whose
 `args` carries no `--command-args` is reported undetermined rather than guessed
 at.
+
+A flag inside `args` is resolved the same conservative way, because the ledger
+joins its argv WITHOUT quoting and the boundary between the command's own
+arguments and the executor's is therefore gone. A known scope-bearing flag
+contributes its value to the scope. Every other flag makes the row **unreadable**
+— the `-k foo` of a test filter and the `--timeout 900` of the executor are
+indistinguishable there, and either read as "no scope" would assert whole-tree
+over a run that may have been narrowed. An unreadable row contributes no coverage
+and is never labelled whole-tree; the inability is recorded, and no requirement
+is credited to it.
 
 **What the change requires is DERIVED, not fixed.** A non-empty footprint
 requires the `test` analysis unconditionally (markdown under the bundle tree is a

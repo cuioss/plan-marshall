@@ -191,6 +191,14 @@ readings name the SAME blast radius — an invocation that mentions
 ``plan-marshall`` and nothing wider. What the ambiguity would break is a claim
 about the argv's *structure*, which nothing here makes.
 
+A flag after the canonical is a different matter, and :func:`parse_row_scope`
+resolves it conservatively: a KNOWN scope-bearing flag (maven's ``-pl`` /
+``--projects``, gradle's ``-p``, npm's ``-w`` / ``--workspace``) contributes its
+value to the scope, while **any other flag makes the row unreadable**. Reading an
+unknown flag as "no scope" would assert whole-tree over a run that might have been
+narrowed inside the lost quoting — the false-green direction — so it is an
+inability with its reason recorded instead.
+
 The claim the gate now makes, and why it is bounded
 ====================================================
 
@@ -322,6 +330,27 @@ ROW_ARGS_UNREADABLE = 'args_carry_no_command_args'
 #: subparser declaration (``_build_cli.add_run_subparser``), which is why this
 #: reader works for every build tool rather than only for the Python one.
 _COMMAND_ARGS_FLAG = '--command-args'
+
+#: Flags a build tool's resolved executable carries that NARROW the run to a
+#: subset of modules, mapped to the number of value tokens each consumes. Each
+#: entry is the flag its own skill's executable actually accepts:
+#:
+#: * ``-pl`` / ``--projects`` — maven's module list (``mod-a`` or ``mod-a,mod-b``);
+#: * ``-p`` — gradle's project-directory selector;
+#: * ``-w`` / ``--workspace`` — npm's workspace selector.
+#:
+#: ⛔ A flag NOT in this map is deliberately NOT propagated as scope. The ledger
+#: joins its argv without quoting, so a flag after the canonical command cannot be
+#: placed inside or outside the command's own quoting — reading it as whole-tree
+#: would manufacture the false-green this dimension exists to close. Such a row
+#: returns ``None`` (UNREADABLE) instead.
+_SCOPE_FLAGS: dict[str, int] = {
+    '-pl': 1,
+    '--projects': 1,
+    '-p': 1,
+    '-w': 1,
+    '--workspace': 1,
+}
 
 
 @dataclass(frozen=True)
@@ -529,10 +558,13 @@ def parse_row_scope(entry: dict[str, Any]) -> RowScope | None:
     """Read the canonical and scope a ``kind=build`` row records, or ``None``.
 
     Reads ``args`` — the executor argv — and takes the tokens that follow
-    ``--command-args`` up to the next flag: the first is the canonical, the rest
-    are the scope. Both the space-separated (``--command-args verify``) and the
-    joined (``--command-args=verify``) spellings are accepted, because argparse
-    accepts both and the ledger stamps whichever the caller used.
+    ``--command-args``: the first non-flag is the canonical, the remaining
+    non-flag tokens are positional scope (the module / directory names other
+    build tools accept), and a KNOWN scope-bearing flag (:data:`_SCOPE_FLAGS`)
+    contributes its value to the scope too. Both the space-separated
+    (``--command-args verify``) and the joined (``--command-args=verify``)
+    spellings are accepted, because argparse accepts both and the ledger stamps
+    whichever the caller used.
 
     ⛔ ``None`` means UNREADABLE and is never equivalent to a ``RowScope`` with an
     empty ``scope_tokens``. Empty tokens assert *whole-tree*, which is the widest
@@ -540,6 +572,14 @@ def parse_row_scope(entry: dict[str, Any]) -> RowScope | None:
     manufacture exactly the false-green this dimension exists to remove. ``args``
     that is absent, not a string, carries no ``--command-args``, or carries one
     with no following non-flag token all yield ``None``.
+
+    A flag that is NOT a known scope-bearing one also yields ``None`` rather than
+    silently ending the scope. The ledger joins ``args`` WITHOUT quoting, so a
+    flag after the canonical cannot be placed inside or outside the command's own
+    quoting — an unknown flag might be narrowing the build (``-k foo``,
+    ``-Dtest=…``) or might be the executor's own (``--timeout``), and reading
+    either as whole-tree is the false-green direction. The fail direction is an
+    inability that passes with its reason recorded, never a coverage credit.
 
     ``command`` is deliberately not consulted as a fallback — see the module
     docstring for why a build-tool-specific command line cannot be read for scope
@@ -565,15 +605,34 @@ def parse_row_scope(entry: dict[str, Any]) -> RowScope | None:
             break
     else:
         return None
-    payload = []
-    for token in rest:
+    payload: list[str] = []
+    scope: list[str] = []
+    index = 0
+    while index < len(rest):
+        token = rest[index]
         if token.startswith('-'):
-            break
-        if token:
+            name, separator, inline = token.partition('=')
+            arity = _SCOPE_FLAGS.get(name)
+            if arity is None:
+                return None
+            if separator:
+                values = [inline]
+            else:
+                values = []
+                for offset in range(1, arity + 1):
+                    if index + offset >= len(rest) or rest[index + offset].startswith('-'):
+                        return None
+                    values.append(rest[index + offset])
+                index += arity
+            if not all(values):
+                return None
+            scope.extend(part for value in values for part in value.split(',') if part)
+        elif token:
             payload.append(token)
+        index += 1
     if not payload:
         return None
-    return RowScope(canonical=payload[0], scope_tokens=tuple(payload[1:]))
+    return RowScope(canonical=payload[0], scope_tokens=tuple(payload[1:] + scope))
 
 
 def _measured_zero_tests(entry: dict[str, Any]) -> bool:
