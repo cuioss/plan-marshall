@@ -272,13 +272,17 @@ def _producers_named_in(text: str) -> set[str]:
     return named
 
 
+def _assert_doc_producers_accepted(path):
+    """Assert every producer value ``path`` names is in the workflow's accept-set."""
+    named = _producers_named_in(path.read_text(encoding='utf-8'))
+    assert named, f'{path.name} names no producer value — the guard would pass vacuously'
+    refused = sorted(named - _accept_set())
+    assert not refused, f'{path.name} names producer value(s) the workflow refuses: {refused}'
+
+
 def test_every_producer_the_ci_verify_doc_names_is_accepted():
     """Every producer value in the doc is a member of the workflow's accept-set."""
-    named = _producers_named_in(_CI_VERIFY_DOC.read_text(encoding='utf-8'))
-
-    assert named, 'the ci-verify doc names no producer value — the guard would pass vacuously'
-    refused = sorted(named - _accept_set())
-    assert not refused, f'ci-verify.md names producer value(s) the workflow refuses: {refused}'
+    _assert_doc_producers_accepted(_CI_VERIFY_DOC)
 
 
 @pytest.mark.parametrize(
@@ -290,10 +294,12 @@ def test_every_producer_the_ci_verify_doc_names_is_accepted():
     ids=['producers-list', 'producer-assignment'],
 )
 def test_a_mutated_copy_naming_an_unaccepted_producer_turns_the_guard_red(tmp_path, added_line):
-    """Mutation control: the sweep is not a no-op that would pass over any text.
+    """Mutation control: the guard ITSELF rejects a mutated copy, not just the parser.
 
-    Both documented shapes are mutated in turn, so a parser that stopped reading
-    one of them cannot leave half the guard quietly dead.
+    Both documented shapes are mutated in turn, and the mutated file is driven
+    through the same ``_assert_doc_producers_accepted`` the real guard runs, so a
+    parser that stopped reading one shape — or an assertion that only ever looked
+    at the shipped file — cannot leave half the guard quietly dead.
     """
     original = _CI_VERIFY_DOC.read_text(encoding='utf-8')
     assert not (_producers_named_in(original) - _accept_set()), 'precondition: the shipped doc is clean'
@@ -301,6 +307,7 @@ def test_a_mutated_copy_naming_an_unaccepted_producer_turns_the_guard_red(tmp_pa
     mutated = tmp_path / 'ci-verify.md'
     mutated.write_text(original + added_line, encoding='utf-8')
 
-    refused = sorted(_producers_named_in(mutated.read_text(encoding='utf-8')) - _accept_set())
+    with pytest.raises(AssertionError) as refusal:
+        _assert_doc_producers_accepted(mutated)
 
-    assert refused == ['ci-verify-policy'], f'the mutated doc was not reported: {refused}'
+    assert 'ci-verify-policy' in str(refusal.value)
