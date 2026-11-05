@@ -218,7 +218,9 @@ Verify all links and cross-references in AsciiDoc files.
 - `link:` macros whose target is a relative file path
 - Link formats and syntax
 
-`broken_links` counts only the classes the checker verified and found broken: `<<anchor>>` references, `xref:` targets, `link:` macros whose target is a `#anchor`, and `link:` macros whose target is a relative file path. A zero is a measured zero for those classes alone — it is not full coverage. The result's `unchecked_link_classes` names each class the checker deliberately does not verify, with its class name, its count and its first occurrence: an external `link:` URL (the checker performs no network access), an attribute-bearing `link:` target (the checker does not substitute attributes), and a fragment on a non-AsciiDoc target (it reads anchors from AsciiDoc only).
+`broken_links` counts only the classes the checker verified and found broken: `<<anchor>>` references, `xref:` targets, `link:` macros whose target is a `#anchor`, and `link:` macros whose target is a relative file path. A zero is a measured zero for those classes alone — it is not full coverage. The result's `unchecked_link_classes` names each class the checker deliberately does not verify, with its class name, its count and its first occurrence: an external `link:` URL (the checker performs no network access), an absolute target (a leading `/` or `\`, which is not relative to the file), an attribute-bearing `link:` target (the checker does not substitute attributes), a fragment on a non-AsciiDoc target (it reads anchors from AsciiDoc only), and a `link:` macro masked as an inline example — one class per mask (`code-span`, `inline-passthrough`, `passthrough`, `pass-macro`). A `link:` macro that the checker did not examine is always counted here rather than reported as examined.
+
+A target the checker cannot read — a directory named like an `.adoc` file, a permission error, a non-UTF-8 file, or a target it cannot resolve into a path — is reported as an `unreadable` issue on that link or file with the reason, and the multi-file run continues with the other files' results.
 
 ### Parameters
 
@@ -270,7 +272,8 @@ Read `target/asciidoc-link-verifier/links.md` and extract:
 - Broken file links
 - Broken anchors
 - Format violations
-- Unchecked link classes (`unchecked_link_classes`), with each class's count and first occurrence — record the disposition of each: an external URL is not fetched, an attribute-bearing target is not substituted, and a fragment on a non-AsciiDoc target is not read for anchors.
+- Unchecked link classes (`unchecked_link_classes`), with each class's count and first occurrence — record the disposition of each: an external URL is not fetched, an absolute target is not relative to the file, an attribute-bearing target is not substituted, a fragment on a non-AsciiDoc target is not read for anchors, and a masked example is not a live macro.
+- `unreadable` issues — a target the checker could not read or resolve, reported with its reason rather than swallowed.
 
 **Step 6: Manual Verification (CRITICAL)**
 

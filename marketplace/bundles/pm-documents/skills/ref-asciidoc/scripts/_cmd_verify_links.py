@@ -4,6 +4,7 @@
 
 import json
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import unquote
@@ -33,27 +34,93 @@ _FRAGMENT_UNCHECKED_CLASS = 'fragment'
 #: the literal target cannot be resolved to a path.
 _ATTRIBUTE_REFERENCE_CLASS = 'attribute-reference'
 
+#: The class name for a target that is not relative to the containing file
+#: (``/etc/hosts``, ``\\server\share.adoc``). The checker does not open it:
+#: joining it onto the file's directory discards that directory and addresses
+#: the host root, so it is neither verified nor broken.
+_ABSOLUTE_PATH_CLASS = 'absolute-path'
+
+#: One class name per inline mask that hides a ``link:`` macro from the checker.
+#: A masked example is still counted, so the report says what the checker did
+#: not examine instead of implying it verified a zero.
+_CODE_SPAN_CLASS = 'code-span'
+_INLINE_PASSTHROUGH_CLASS = 'inline-passthrough'
+_PASSTHROUGH_CLASS = 'passthrough'
+_PASS_MACRO_CLASS = 'pass-macro'
+
+#: The issue type for a target the checker could not read (a directory named
+#: like an ``.adoc`` file, a permission error, a non-UTF-8 file) or could not
+#: resolve (a NUL byte in the target). It is not ``broken``: the link was never
+#: examined.
+_UNREADABLE_ISSUE = 'unreadable'
+
 #: AsciiDoc delimited blocks whose contents are literal (a listing or literal
 #: block), a passthrough block, or a comment. Links and anchors inside them are
 #: never rendered, so they are not checked.
 _BLOCK_DELIMITER_RE = re.compile(r'-{4,}|\.{4,}|/{4,}|\+{4,}')
 
+#: An inline monospace code span (`` `link:target[label]` ``).
+_CODE_SPAN_RE = re.compile(r'`[^`\n]*`')
+
+#: A macro passthrough (``pass:[link:target[label]]``). Its content is emitted
+#: verbatim, so it is an example, not a live macro.
+_PASS_MACRO_RE = re.compile(r'pass:\[[^\]\n]*\]')
+
+#: An unconstrained passthrough (``++link:target[label]++``). Its content is
+#: emitted verbatim, so it is an example, not a live macro.
+_PASSTHROUGH_RE = re.compile(r'\+\+[^+\n]*?\+\+')
+
 #: An inline passthrough (``+link:target[label]+``). Its content is emitted
 #: verbatim, so it is an example, not a live macro.
 _INLINE_PASSTHROUGH_RE = re.compile(r'(?<![\w+])\+[^+\s][^+\n]*?\+(?![\w+])')
+
+#: The inline masks, outermost first. A link inside a code span is counted under
+#: ``code-span`` even when the span also matches a later pattern, because the
+#: first mask that covers it blanks the text the later ones would scan.
+_MASKS: tuple[tuple[str, re.Pattern[str]], ...] = (
+    (_CODE_SPAN_CLASS, _CODE_SPAN_RE),
+    (_PASS_MACRO_CLASS, _PASS_MACRO_RE),
+    (_PASSTHROUGH_CLASS, _PASSTHROUGH_RE),
+    (_INLINE_PASSTHROUGH_CLASS, _INLINE_PASSTHROUGH_RE),
+)
+
+
+def _mask_inline_constructs(line: str) -> tuple[str, list[tuple[str, str]]]:
+    """Blank the inline example constructs on a line, naming each masked link.
+
+    Returns the masked line — same length, so offsets still address the original
+    — and every ``link:`` macro the masking hid, as ``(class, source text)``
+    pairs. Masking is what keeps a documented syntax example from being reported
+    as a live, broken link; counting the hidden macros is what keeps the
+    unchecked-class report honest about what was skipped.
+    """
+    masked = line
+    hidden: list[tuple[str, str]] = []
+
+    def _masker(link_class: str) -> Callable[[re.Match[str]], str]:
+        def _blank(match: re.Match[str]) -> str:
+            hidden.extend((link_class, found.group(0)) for found in _LINK_MACRO_RE.finditer(match.group(0)))
+            return ' ' * len(match.group(0))
+
+        return _blank
+
+    for link_class, pattern in _MASKS:
+        masked = pattern.sub(_masker(link_class), masked)
+    return masked, hidden
 
 
 def _block_delimiter(line: str) -> str | None:
     """The delimited-block delimiter a line carries, when it opens or closes one.
 
     Only a line that is nothing but four-or-more of one delimiter character
-    qualifies; ``----`` followed by prose is content, not a delimiter. The run is
-    reduced to its first four characters so a longer closing run still closes the
-    block it matches.
+    qualifies; ``----`` followed by prose is content, not a delimiter. The whole
+    run is returned, because a block closes only on a delimiter of the same
+    length that opened it: a nested ``----`` inside a ``-----`` listing is
+    content, not a close.
     """
     stripped = line.strip()
     if _BLOCK_DELIMITER_RE.fullmatch(stripped):
-        return stripped[:4]
+        return stripped
     return None
 
 
@@ -75,6 +142,9 @@ class Link:
     target: str = ''
     anchor: str = ''
     label: str = ''
+    #: Set only for a ``link_type == 'masked'`` row: the inline construct that
+    #: hid the macro, which is also the unchecked class it is reported under.
+    unchecked_class: str = ''
 
 
 @dataclass
@@ -135,9 +205,14 @@ def extract_anchors_from_file(filepath: str) -> set[str]:
     return anchors
 
 
-def extract_links_from_file(filepath: str) -> list[Link]:
-    """Extract all links from an AsciiDoc file."""
+def _extract_from_file(filepath: str) -> tuple[list[Link], list[Link]]:
+    """Extract the live links and the masked examples from an AsciiDoc file.
+
+    Masked examples are returned separately, so a caller that counts links does
+    not count them as live while the unchecked-class summary still sees them.
+    """
     links = []
+    masked_links = []
     with open(filepath, encoding='utf-8') as f:
         lines = f.readlines()
 
@@ -155,10 +230,20 @@ def extract_links_from_file(filepath: str) -> list[Link]:
         # An inline monospace/passthrough example is not a live link. Match on a
         # masked copy (same length, so offsets still address the original line) and
         # slice the ORIGINAL line for the recorded text, so a report never shows a
-        # mangled link.
+        # mangled link. The masked macros are named by their own class, so the
+        # report says what the checker did not examine.
         original_line = line
-        masked = re.sub(r'`[^`]*`', lambda match: ' ' * len(match.group(0)), line)
-        masked = _INLINE_PASSTHROUGH_RE.sub(lambda match: ' ' * len(match.group(0)), masked)
+        masked, hidden = _mask_inline_constructs(line)
+        for link_class, hidden_text in hidden:
+            masked_links.append(
+                Link(
+                    file=filepath,
+                    line_num=line_num,
+                    link_text=hidden_text,
+                    link_type='masked',
+                    unchecked_class=link_class,
+                )
+            )
 
         for match in re.finditer(r'<<([^,>]+)(?:,([^>]+))?>>', masked):
             links.append(
@@ -210,46 +295,64 @@ def extract_links_from_file(filepath: str) -> list[Link]:
                 )
             )
 
-    return links
+    return links, masked_links
+
+
+def extract_links_from_file(filepath: str) -> list[Link]:
+    """Extract all live links from an AsciiDoc file."""
+    return _extract_from_file(filepath)[0]
 
 
 def _link_macro_class(target: str) -> str:
     """The class a ``link:`` target belongs to.
 
-    ``internal-anchor`` for a ``#anchor`` target; ``external-url`` for a target a
-    URI scheme or a ``//`` prefix puts out of reach (``file:`` and a drive letter
-    included, since neither is opened); ``relative-file`` for everything else.
+    ``attribute-reference`` for a target carrying an unresolved ``{attribute}``
+    — tested before the ``#`` test, so ``link:#{section-id}[x]`` is not looked up
+    as the literal anchor ``{section-id}``. ``internal-anchor`` for a ``#anchor``
+    target; ``external-url`` for a target a URI scheme or a ``//`` prefix puts
+    out of reach (``file:`` and a drive letter included, since neither is
+    opened); ``absolute-path`` for a target a leading ``/`` or ``\\`` anchors
+    outside the file's directory; ``relative-file`` for everything else.
     """
+    if '{' in target:
+        return _ATTRIBUTE_REFERENCE_CLASS
     if target.startswith('#'):
         return 'internal-anchor'
     if target.startswith('//') or _URI_SCHEME_RE.match(target):
         return _EXTERNAL_URL_CLASS
-    if '{' in target:
-        return _ATTRIBUTE_REFERENCE_CLASS
+    if target.startswith('/') or target.startswith('\\'):
+        return _ABSOLUTE_PATH_CLASS
     return 'relative-file'
 
 
 def _split_relative_target(target: str) -> tuple[str, str]:
     """Split a relative ``link:`` target into (filesystem path, fragment).
 
-    The query component is dropped and percent-encoding decoded, so both the
-    verifier and the unchecked-class summary read the same path.
+    The query component is dropped and percent-encoding decoded — the fragment
+    included — so both the verifier and the unchecked-class summary read the
+    same path and the same anchor.
     """
     target_file, _, fragment = target.partition('#')
-    return unquote(target_file.split('?', 1)[0]), fragment
+    return unquote(target_file.split('?', 1)[0]), unquote(fragment)
 
 
 def _unchecked_class(link: Link) -> str | None:
     """The unchecked class a ``link:`` macro belongs to, or ``None`` when verified."""
+    if link.link_type == 'masked':
+        return link.unchecked_class
     if link.link_type != 'link':
         return None
     link_class = _link_macro_class(link.target)
-    if link_class in {_EXTERNAL_URL_CLASS, _ATTRIBUTE_REFERENCE_CLASS}:
+    if link_class in {_EXTERNAL_URL_CLASS, _ATTRIBUTE_REFERENCE_CLASS, _ABSOLUTE_PATH_CLASS}:
         return link_class
     if link_class == 'relative-file':
         target_file, fragment = _split_relative_target(link.target)
         if fragment and not target_file.lower().endswith('.adoc'):
-            if (Path(link.file).parent / target_file).exists():
+            try:
+                exists = (Path(link.file).parent / target_file).exists()
+            except (OSError, ValueError):
+                exists = False
+            if exists:
                 return _FRAGMENT_UNCHECKED_CLASS
     return None
 
@@ -257,10 +360,11 @@ def _unchecked_class(link: Link) -> str | None:
 def summarise_unchecked_link_classes(links: list[Link]) -> list[dict]:
     """One row per class the checker deliberately does not verify.
 
-    A ``link:`` target carrying a URI scheme is never fetched, and a fragment on a
-    non-AsciiDoc target is never read for anchors, so both are counted here
-    instead of being reported as verified. A file with no such link yields an
-    empty list — a measured zero, not a missing field.
+    An external or absolute ``link:`` target is never opened, an attribute-bearing
+    one is never substituted, a fragment on a non-AsciiDoc target is never read for
+    anchors, and a macro inside an inline example mask is never examined — so each
+    is counted here instead of being reported as verified. A file with no such link
+    yields an empty list — a measured zero, not a missing field.
     """
     rows: dict[str, dict] = {}
     for link in links:
@@ -278,18 +382,59 @@ def summarise_unchecked_link_classes(links: list[Link]) -> list[dict]:
     return [rows[key] for key in sorted(rows)]
 
 
+def _safe_anchors(filepath: str) -> tuple[set[str] | None, str | None]:
+    """The anchors of one file, or ``None`` and the reason it could not be read."""
+    try:
+        return extract_anchors_from_file(filepath), None
+    except (OSError, UnicodeError) as exc:
+        return None, f'{type(exc).__name__}: {exc}'
+
+
+def _resolve_target(filepath: str, target_file: str) -> tuple[str | None, str | None]:
+    """The resolved target path, or ``None`` and the reason it could not be resolved."""
+    try:
+        return str((Path(filepath).parent / target_file).resolve()), None
+    except (OSError, ValueError) as exc:
+        return None, f'{type(exc).__name__}: {exc}'
+
+
 def verify_links(files: list[str]) -> tuple[list[Link], list[Issue]]:
-    """Verify all links in all files."""
-    all_links = []
-    issues = []
-    anchor_cache = {f: extract_anchors_from_file(f) for f in files}
+    """Verify all links in all files.
+
+    A file or target the checker cannot read is reported as an issue on that
+    link and the run continues, so one bad target never aborts a multi-file
+    verification and leaves the other files' results unread. The returned link
+    list carries the masked examples too, each with its own unchecked class, so
+    the caller can say what was skipped; ``link_type == 'masked'`` marks them.
+    """
+    all_links: list[Link] = []
+    issues: list[Issue] = []
+    anchor_cache: dict[str, tuple[set[str] | None, str | None]] = {}
 
     for filepath in files:
-        links = extract_links_from_file(filepath)
+        anchors, reason = _safe_anchors(filepath)
+        anchor_cache[filepath] = (anchors, reason)
+        if anchors is None:
+            issues.append(
+                Issue(
+                    file=filepath,
+                    line_num=0,
+                    link_text='',
+                    issue_type=_UNREADABLE_ISSUE,
+                    description=f"File '{filepath}' could not be read: {reason}",
+                )
+            )
+
+    for filepath in files:
+        anchors, _reason = anchor_cache[filepath]
+        if anchors is None:
+            continue
+        links, masked_links = _extract_from_file(filepath)
         all_links.extend(links)
+        all_links.extend(masked_links)
 
         for link in links:
-            if link.link_type == 'cross-ref' and link.anchor not in anchor_cache[filepath]:
+            if link.link_type == 'cross-ref' and link.anchor not in anchors:
                 issues.append(
                     Issue(
                         file=filepath,
@@ -300,8 +445,10 @@ def verify_links(files: list[str]) -> tuple[list[Link], list[Issue]]:
                     )
                 )
             elif link.link_type == 'xref':
-                target_path = str((Path(filepath).parent / link.target).resolve()) if link.target else filepath
-                if not Path(target_path).exists():
+                target_path, reason = _resolve_target(filepath, link.target) if link.target else (filepath, None)
+                if target_path is None:
+                    issues.append(_unresolvable_issue(filepath, link, reason))
+                elif not Path(target_path).exists():
                     issues.append(
                         Issue(
                             file=filepath,
@@ -312,9 +459,10 @@ def verify_links(files: list[str]) -> tuple[list[Link], list[Issue]]:
                         )
                     )
                 elif link.anchor:
-                    if target_path not in anchor_cache:
-                        anchor_cache[target_path] = extract_anchors_from_file(target_path)
-                    if link.anchor not in anchor_cache[target_path]:
+                    target_anchors, reason = _anchors_at(target_path, anchor_cache)
+                    if target_anchors is None:
+                        issues.append(_unreadable_issue(filepath, link, target_path, reason))
+                    elif unquote(link.anchor) not in target_anchors:
                         issues.append(
                             Issue(
                                 file=filepath,
@@ -338,8 +486,8 @@ def verify_links(files: list[str]) -> tuple[list[Link], list[Issue]]:
             elif link.link_type == 'link':
                 link_class = _link_macro_class(link.target)
                 if link_class == 'internal-anchor':
-                    anchor = link.target[1:]
-                    if anchor not in anchor_cache[filepath]:
+                    anchor = unquote(link.target[1:])
+                    if anchor not in anchors:
                         issues.append(
                             Issue(
                                 file=filepath,
@@ -351,8 +499,10 @@ def verify_links(files: list[str]) -> tuple[list[Link], list[Issue]]:
                         )
                 elif link_class == 'relative-file':
                     target_file, fragment = _split_relative_target(link.target)
-                    target_path = str((Path(filepath).parent / target_file).resolve())
-                    if not Path(target_path).exists():
+                    target_path, reason = _resolve_target(filepath, target_file)
+                    if target_path is None:
+                        issues.append(_unresolvable_issue(filepath, link, reason))
+                    elif not Path(target_path).exists():
                         issues.append(
                             Issue(
                                 file=filepath,
@@ -363,9 +513,10 @@ def verify_links(files: list[str]) -> tuple[list[Link], list[Issue]]:
                             )
                         )
                     elif fragment and target_file.lower().endswith('.adoc'):
-                        if target_path not in anchor_cache:
-                            anchor_cache[target_path] = extract_anchors_from_file(target_path)
-                        if fragment not in anchor_cache[target_path]:
+                        target_anchors, reason = _anchors_at(target_path, anchor_cache)
+                        if target_anchors is None:
+                            issues.append(_unreadable_issue(filepath, link, target_path, reason))
+                        elif fragment not in target_anchors:
                             issues.append(
                                 Issue(
                                     file=filepath,
@@ -375,10 +526,42 @@ def verify_links(files: list[str]) -> tuple[list[Link], list[Issue]]:
                                     description=f"Anchor '{fragment}' not found in '{target_path}'",
                                 )
                             )
-                # A URI-scheme target is not fetched. It is reported through
+                # An external, absolute or attribute-bearing target is not
+                # opened. It is reported through
                 # summarise_unchecked_link_classes() rather than as broken.
 
     return all_links, issues
+
+
+def _anchors_at(
+    target_path: str, cache: dict[str, tuple[set[str] | None, str | None]]
+) -> tuple[set[str] | None, str | None]:
+    """The anchors of a target file, read once and cached, with its failure reason."""
+    if target_path not in cache:
+        cache[target_path] = _safe_anchors(target_path)
+    return cache[target_path]
+
+
+def _unreadable_issue(filepath: str, link: Link, target_path: str, reason: str | None) -> Issue:
+    """The issue for a link whose `.adoc` target could not be read for anchors."""
+    return Issue(
+        file=filepath,
+        line_num=link.line_num,
+        link_text=link.link_text,
+        issue_type=_UNREADABLE_ISSUE,
+        description=f"Target '{target_path}' could not be read: {reason}",
+    )
+
+
+def _unresolvable_issue(filepath: str, link: Link, reason: str | None) -> Issue:
+    """The issue for a link whose target cannot be turned into a path."""
+    return Issue(
+        file=filepath,
+        line_num=link.line_num,
+        link_text=link.link_text,
+        issue_type=_UNREADABLE_ISSUE,
+        description=f"Target '{link.target}' could not be resolved: {reason}",
+    )
 
 
 def cmd_verify_links(args) -> dict:
@@ -435,11 +618,15 @@ def cmd_verify_links(args) -> dict:
             f'[DOCS-LINKS] Found {len(broken)} broken links, {len(violations)} format violations in {len(files)} files',
         )
 
+    live_links = [link for link in all_links if link.link_type != 'masked']
+    unchecked_live = sum(1 for link in live_links if _unchecked_class(link) is not None)
+    total_links = len(live_links)
+
     result = {
         'status': 'success' if not issues else 'failure',
         'data': {
             'files_processed': len(files),
-            'total_links': len(all_links),
+            'total_links': total_links,
             'broken_links': len(broken),
             'format_violations': len(violations),
             'unchecked_link_classes': unchecked,
@@ -454,7 +641,10 @@ def cmd_verify_links(args) -> dict:
                 for i in issues
             ],
         },
-        'metrics': {'valid_links': len(all_links) - len(issues) - sum(row['count'] for row in unchecked)},
+        # A masked example is not a live link and an unchecked target is not a
+        # verified one, so neither is subtracted from a population it is absent
+        # from.
+        'metrics': {'valid_links': total_links - len(issues) - unchecked_live},
     }
 
     if args.report:
