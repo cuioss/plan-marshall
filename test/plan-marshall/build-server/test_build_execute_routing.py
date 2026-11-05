@@ -825,6 +825,9 @@ def test_cmd_run_records_requested_and_resolved_mode(monkeypatch, capsys):
 
 _MOVED_BACK_PLAN = 'plan-moved-back'
 
+_MOVED_BACK_REASON = 'status.json not found for the moved-back plan'
+"""The reason the child states; asserted at the routed layer, not only at the reader."""
+
 
 def _stage_moved_back_plan(plan_root: Path, worktree: Path) -> Path:
     """Stage the plan record on ``plan_root`` with ``worktree`` persisted in it."""
@@ -877,9 +880,7 @@ def _child_fault_job_log(tmp_path, plan_id: str = _MOVED_BACK_PLAN) -> str:
     import resolve_project_dir as routing
     from _build_format import format_toon
 
-    exc = routing.WorktreeResolutionError(
-        f"manage-status get-worktree-path failed (exit 1) for plan_id='{plan_id}': status.json not found"
-    )
+    exc = routing.WorktreeResolutionError(_MOVED_BACK_REASON)
     body = format_toon(routing.emit_worktree_error(plan_id, exc))
     log = tmp_path / 'moved-back-job.log'
     log.write_text(f'[EXEC] python3 .plan/execute-script.py … run --plan-id {plan_id}\n{body}', encoding='utf-8')
@@ -958,7 +959,7 @@ class TestMovedBackPlanRoutedBuild:
         cmd_run_common(result, lambda _log: ([], None, 'FAILURE'), 'python')
         emitted = capsys.readouterr().out
         assert 'worktree_resolution_failed' in emitted
-        assert 'reason:' in emitted, "the child's own reason travels with its name"
+        assert _MOVED_BACK_REASON in emitted, "the child's own reason text travels, not just a `reason:` label"
         assert 'exit_code: 2' in emitted, 'the routed path answers the code the direct path answers'
         assert 'no structured errors were parsed' not in emitted, (
             'a routing fault is not a build failure, so no synthetic build_failure row may be published'
@@ -1055,16 +1056,26 @@ class TestPreToolFaultPassThrough:
         assert failed_verdict.child_fault is None, 'a build that ran keeps the build-failure path'
 
     def test_the_emitted_identifiers_are_the_ones_the_lane_classifies(self):
-        """The resolution emitters and the reader agree on the identifiers.
+        """Every pre-tool emitter's identifier is a member of the classifier set.
 
         A fault identifier spelled differently at the producer and in the reader's set
         would silently fall back to ``build_failed`` — the defect this deliverable
-        removes — so the agreement is asserted rather than assumed.
+        removes — so the agreement is asserted rather than assumed, one producer at a
+        time. The executor's refusal literal lives in the generator template, so that
+        producer is tied to the set through the template's own text.
         """
         import resolve_project_dir as routing
-        from _build_result import PRE_TOOL_FAULT_ERRORS
+        from _build_result import ERROR_INVALID_INVOCATION, PRE_TOOL_FAULT_ERRORS
 
         assert routing.emit_worktree_error('p', routing.WorktreeResolutionError('x'))['error'] in (
             PRE_TOOL_FAULT_ERRORS
         )
         assert routing.emit_mutually_exclusive_error('p', 'q')['error'] in PRE_TOOL_FAULT_ERRORS
+        assert ERROR_INVALID_INVOCATION in PRE_TOOL_FAULT_ERRORS
+
+        template = (
+            Path(__file__).parents[3]
+            / 'marketplace/bundles/plan-marshall/skills/tools-script-executor/templates/execute-script.py.template'
+        )
+        assert template.is_file(), f'the executor template moved; this drift guard must follow it: {template}'
+        assert f'error: {ERROR_INVALID_INVOCATION}' in template.read_text(encoding='utf-8')

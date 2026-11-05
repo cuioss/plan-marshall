@@ -1157,10 +1157,11 @@ def read_log_verdict(log_file: str) -> LogVerdict | None:
     added, and the list itself is what a reader checks. The launch-fault
     quadruple is read so an inner fault reaches the consumer as itself rather than
     as a bare build failure; it is attached as :class:`InnerFault` only for the two
-    identifiers that mean the command never ran. ``message:`` is read for the
-    PRE-TOOL emitters, which render their reason there rather than in ``reason:``
-    (see :class:`ChildFault`). Every other key is ignored. An
-    applied-bound key that is
+    identifiers that mean the command never ran. ``message:`` is read because a
+    PRE-TOOL emitter may render its reason there instead (the resolution emitters
+    write ``message:`` and no ``reason:``), and the reader prefers ``reason:`` with
+    ``message:`` as the fallback — see :class:`ChildFault`. Every other key is
+    ignored. An applied-bound key that is
     absent, empty or (for the bound) not a positive integer reads as ``None``. The LAST occurrence of each wins, because the wrapper
     emits its result TOON after any progress output it already wrote to the same
     log.
