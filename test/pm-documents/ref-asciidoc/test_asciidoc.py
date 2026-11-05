@@ -830,3 +830,24 @@ def test_verify_links_valid_metric_excludes_unchecked_classes(tmp_path):
 
     assert result['data']['unchecked_link_classes'][0]['count'] == 1
     assert result['metrics']['valid_links'] == 0, 'an unchecked link is not a verified link'
+
+
+def test_verify_links_reports_a_broken_anchor_behind_a_monospace_label(tmp_path):
+    adoc = tmp_path / 'page.adoc'
+    adoc.write_text('= Page\n\nSee <<missing,`Code`>> here.\n', encoding='utf-8')
+
+    result = cmd_verify_links(_ns(_VERIFY_LINKS_NS, file=str(adoc), directory=None, recursive=False, report=None))
+
+    assert result['data']['total_links'] == 1, 'the monospace label must not delete the cross-reference'
+    assert result['data']['broken_links'] == 1
+
+
+def test_verify_links_missing_non_asciidoc_fragment_is_not_double_counted(tmp_path):
+    adoc = tmp_path / 'page.adoc'
+    adoc.write_text('= Page\n\nSee link:missing.pdf#page=3[Manual].\n', encoding='utf-8')
+
+    result = cmd_verify_links(_ns(_VERIFY_LINKS_NS, file=str(adoc), directory=None, recursive=False, report=None))
+
+    assert result['data']['broken_links'] == 1
+    assert result['data']['unchecked_link_classes'] == [], 'a missing file is broken, not unchecked'
+    assert result['metrics']['valid_links'] == 0

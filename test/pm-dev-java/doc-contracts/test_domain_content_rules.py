@@ -16,20 +16,31 @@ restated in the documents under test.
 
 from __future__ import annotations
 
+import ast
 import re
 from pathlib import Path
 
-from conftest import get_skill_dir
+from conftest import PROJECT_ROOT, get_skill_dir
 
-#: Phrases the code-review pack generator drops a harvested rule for. Read from
-#: ``marketplace/targets/cuioss_review_bot/target.py`` (``_WITHHOLDING_PHRASES``),
-#: so this test and the generator agree on what suppression looks like.
-_WITHHOLDING_MARKERS = (
-    'do not duplicate',
-    'avoid duplicating',
-    'prefer one well-evidenced',
-    'only when you can name the concrete input',
-)
+
+def _generator_withholding_phrases() -> tuple[str, ...]:
+    """The pack generator's own withholding phrases, read from its source.
+
+    Derived rather than copied: the generator drops a harvested rule carrying any
+    of these, so a phrase added there reaches this test automatically instead of
+    drifting behind a second list.
+    """
+    source = PROJECT_ROOT / 'marketplace' / 'targets' / 'cuioss_review_bot' / 'target.py'
+    tree = ast.parse(source.read_text(encoding='utf-8'))
+    for node in tree.body:
+        if isinstance(node, ast.Assign) and any(
+            isinstance(target, ast.Name) and target.id == '_WITHHOLDING_PHRASES' for target in node.targets
+        ):
+            return tuple(ast.literal_eval(node.value))
+    raise AssertionError(f'_WITHHOLDING_PHRASES not found in {source}')
+
+
+_WITHHOLDING_MARKERS = _generator_withholding_phrases()
 
 
 def _section(body: str, heading: str) -> str:
@@ -42,9 +53,19 @@ def _section(body: str, heading: str) -> str:
 
 
 def _bullets(section: str) -> list[str]:
-    """The bullets of a section, with wrapped continuation lines joined."""
+    """The bullets of a section, with wrapped continuation lines joined.
+
+    Fenced code is skipped, matching the pack generator, so a rule that appears
+    only inside an example is not counted as a published rule.
+    """
     bullets: list[str] = []
+    in_fence = False
     for line in section.splitlines():
+        if line.strip().startswith('```'):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
         if line.startswith('- '):
             bullets.append(line[2:].strip())
         elif bullets and line.strip() and line[:1].isspace():

@@ -31,15 +31,20 @@ _FRAGMENT_UNCHECKED_CLASS = 'fragment'
 #: AsciiDoc delimited blocks whose contents are literal (a listing or literal
 #: block) or a comment. Links and anchors inside them are never rendered, so they
 #: are not checked.
-_BLOCK_DELIMITERS = ('----', '....', '////')
+_BLOCK_DELIMITER_RE = re.compile(r'-{4,}|\.{4,}|/{4,}')
 
 
 def _block_delimiter(line: str) -> str | None:
-    """The delimited-block delimiter a line carries, when it opens or closes one."""
+    """The delimited-block delimiter a line carries, when it opens or closes one.
+
+    Only a line that is nothing but four-or-more of one delimiter character
+    qualifies; ``----`` followed by prose is content, not a delimiter. The run is
+    reduced to its first four characters so a longer closing run still closes the
+    block it matches.
+    """
     stripped = line.strip()
-    for delimiter in _BLOCK_DELIMITERS:
-        if stripped.startswith(delimiter):
-            return delimiter
+    if _BLOCK_DELIMITER_RE.fullmatch(stripped):
+        return stripped[:4]
     return None
 
 
@@ -132,8 +137,10 @@ def extract_links_from_file(filepath: str) -> list[Link]:
         if line.strip().startswith('//'):
             continue
 
-        # An inline monospace/escaped example is not a live link.
-        line = re.sub(r'`[^`]*`', '', line)
+        # An inline monospace/escaped example is not a live link. Replace the span
+        # with same-length blanks rather than deleting it, so a live cross-ref whose
+        # label is monospace (``<<anchor,`Label`>>``) keeps its label group.
+        line = re.sub(r'`[^`]*`', lambda match: ' ' * len(match.group(0)), line)
 
         for match in re.finditer(r'<<([^,>]+)(?:,([^>]+))?>>', line):
             links.append(
@@ -202,6 +209,16 @@ def _link_macro_class(target: str) -> str:
     return 'relative-file'
 
 
+def _split_relative_target(target: str) -> tuple[str, str]:
+    """Split a relative ``link:`` target into (filesystem path, fragment).
+
+    The query component is dropped and percent-encoding decoded, so both the
+    verifier and the unchecked-class summary read the same path.
+    """
+    target_file, _, fragment = target.partition('#')
+    return unquote(target_file.split('?', 1)[0]), fragment
+
+
 def _unchecked_class(link: Link) -> str | None:
     """The unchecked class a ``link:`` macro belongs to, or ``None`` when verified."""
     if link.link_type != 'link':
@@ -210,9 +227,10 @@ def _unchecked_class(link: Link) -> str | None:
     if link_class == _EXTERNAL_URL_CLASS:
         return _EXTERNAL_URL_CLASS
     if link_class == 'relative-file':
-        target_file, _, fragment = link.target.partition('#')
+        target_file, fragment = _split_relative_target(link.target)
         if fragment and not target_file.lower().endswith('.adoc'):
-            return _FRAGMENT_UNCHECKED_CLASS
+            if (Path(link.file).parent / target_file).exists():
+                return _FRAGMENT_UNCHECKED_CLASS
     return None
 
 
@@ -312,8 +330,7 @@ def verify_links(files: list[str]) -> tuple[list[Link], list[Issue]]:
                             )
                         )
                 elif link_class == 'relative-file':
-                    target_file, _, fragment = link.target.partition('#')
-                    target_file = unquote(target_file.split('?', 1)[0])
+                    target_file, fragment = _split_relative_target(link.target)
                     target_path = str((Path(filepath).parent / target_file).resolve())
                     if not Path(target_path).exists():
                         issues.append(
