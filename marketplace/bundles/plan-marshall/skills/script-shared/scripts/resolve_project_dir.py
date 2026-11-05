@@ -305,10 +305,13 @@ def emit_carried_tree_outside_job_error(resolved_project_dir: str, plan_id: str 
     """Refuse a routed tree carry that arrived outside a marshalld job child.
 
     The carry is the routing seam's contract with the child it submits, and the
-    daemon stamps that child. Honouring the flag anywhere else would turn a
-    documented-internal carry into a way to run a build in an arbitrary tree while
-    attributing it to a plan — bypassing exactly the resolution gate
-    ``--plan-id`` exists to enforce. Fail closed, naming the condition.
+    daemon marks that child with ``MARSHALLD_JOB``. The marker is an ambient fact,
+    not a credential: what it buys is that the ORDINARY caller — a hand-written
+    dispatch, a replayed argv — cannot silently acquire the carry's behaviour,
+    because it would have to set the marker deliberately. Without the refusal the
+    flag would turn a documented-internal carry into a way to run a build in an
+    arbitrary tree while attributing it to a plan, bypassing the resolution gate
+    ``--plan-id`` exists to enforce.
 
     Args:
         resolved_project_dir: The carried tree value, echoed for diagnosis.
@@ -321,8 +324,9 @@ def emit_carried_tree_outside_job_error(resolved_project_dir: str, plan_id: str 
         'status': 'error',
         'error': 'carried_tree_outside_daemon_job',
         'message': (
-            '--resolved-project-dir is the routed daemon child carry. It is only honoured inside a '
-            'marshalld job child, and this process is not one. Use --plan-id or --project-dir.'
+            '--resolved-project-dir is the routed daemon child carry. It is honoured only when this '
+            'process carries the daemon job marker (MARSHALLD_JOB), and it does not. '
+            'Use --plan-id or --project-dir.'
         ),
         'resolved_project_dir': resolved_project_dir,
         'plan_id': plan_id,

@@ -459,8 +459,15 @@ def test_build_main_refuses_a_carried_tree_outside_a_daemon_job(monkeypatch, cap
     Honouring it anywhere else would let any caller run a build in an arbitrary
     tree while attributing it to a plan, bypassing the resolution gate that makes
     ``--plan-id`` trustworthy. Fail closed, and say why.
+
+    The marker is deleted BY NAME from the module that defines it: a hand-typed
+    literal here would delete a variable that does not exist, leaving the ambient
+    value of a suite that is itself running as a daemon child in place — and the
+    test would then red for the environment rather than for the code.
     """
-    monkeypatch.delenv('MARSHALLD_JOB_ENV', raising=False)
+    from _build_server_protocol import MARSHALLD_JOB_ENV
+
+    monkeypatch.delenv(MARSHALLD_JOB_ENV, raising=False)
 
     def _must_not_run(_args):
         raise AssertionError('a refused carry must not reach the handler')
