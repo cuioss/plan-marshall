@@ -1577,3 +1577,8 @@ class TestResolvedTreeDocContract:
 
         plan_less = factory._carry_resolved_tree(['run'], tree)
         assert plan_less == ['run'], 'a plan-less argv has nothing to re-resolve'
+
+        sentinel = factory._carry_resolved_tree(['run', '--plan-id', 'NO_PLAN'], tree)
+        assert sentinel == ['run', '--plan-id', 'NO_PLAN'], (
+            'the sentinel is not a routing source, so it carries nothing'
+        )

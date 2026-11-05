@@ -287,13 +287,16 @@ Its ``reason`` carries the rejection class (``unknown_flag``,
 declares a surface that still MATCHES the dispatched script reports that refusal as
 itself instead of as a red build.
 
-The qualification is load-bearing: the executor skips validation entirely when it
-has no surface for the script, or when the recorded script digest/path does not
-match the file it resolved (its own fail-open-to-spawn rule). In that case an older
-script's argparse rejects an unknown flag on stderr with no TOON body, so no
-``error:`` line exists to classify and the caller keeps the pre-existing
-``build_failed`` shape. That is the version-skew residual this deliverable does not
-close; see the plan's residue note.
+The qualification is load-bearing, and it has a SECOND direction. This branch adds
+a flag to the build CLI, which lives in a module imported by every build script
+while the script files themselves are unchanged — so an executor generated before
+this change still matches its recorded script digest, applies the surface, and
+refuses ``--resolved-project-dir`` as ``unknown_flag``. That refusal IS structured
+(it is this identifier), so it reports as itself rather than as a red build, but
+the build still does not run: regenerating the executor in a project is the owed
+step before its routed plan builds can use the carry. The other direction — no
+matching surface at all, so validation is skipped and an older script's argparse
+rejects the flag on stderr with no TOON body — remains the unclassified residual.
 """
 
 LAUNCH_FAULT_ERRORS = frozenset({ERROR_EXECUTION_FAILED, ERROR_LOG_FILE_FAILED})
@@ -310,11 +313,20 @@ wrapper and the directory), so including it would only invite a second,
 divergent spelling of the same fault.
 """
 
+ERROR_CARRIED_TREE_OUTSIDE_JOB = 'carried_tree_outside_daemon_job'
+"""A routed tree carry arrived outside a marshalld job child (exit 2).
+
+Emitted by ``resolve_project_dir.emit_carried_tree_outside_job_error`` from
+``build_main``, before any resolution or build tool. It belongs to the same class as
+the other pre-tool refusals: the dispatch was stopped, no build verdict exists.
+"""
+
 PRE_TOOL_FAULT_ERRORS = frozenset(
     {
         ERROR_WORKTREE_RESOLUTION_FAILED,
         ERROR_MUTUALLY_EXCLUSIVE_ARGS,
         ERROR_INVALID_INVOCATION,
+        ERROR_CARRIED_TREE_OUTSIDE_JOB,
     }
 )
 """The error classes a build process emits from its OWN pre-tool emitters.

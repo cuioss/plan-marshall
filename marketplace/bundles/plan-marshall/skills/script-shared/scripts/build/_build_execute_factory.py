@@ -975,8 +975,10 @@ def _running_hand_back(
 _PLAN_ID_FLAG = '--plan-id'
 """The plan-attribution flag a routed argv can carry (never a path the daemon re-resolves).
 
-Its value is what the child re-resolves against its OWN tree, which is why
-:func:`_carry_resolved_tree` hands the routing process's tree over beside it.
+It names the plan for the ledger row and the build slot; the tree travels separately
+as ``--resolved-project-dir`` so the child never has to re-resolve it. What the child
+DOES re-resolve when it arrives without the carry is this value against its own tree
+— which is the pre-carry behaviour, and the reason the carry exists.
 """
 
 _RESOLVED_PROJECT_DIR_FLAG = '--resolved-project-dir'
@@ -1020,9 +1022,10 @@ def _carry_resolved_tree(argv: list[str], project_dir: str) -> list[str]:
     and it names the still-existing worktree) and the child refuses (its tree no
     longer holds the record). The carry is what removes the second resolution.
 
-    Only an argv that actually names a plan gets the carry: a ``--project-dir``
-    dispatch already travels as an absolute value, and an argv naming no plan has
-    nothing to re-resolve. Every existing token is left exactly as it was.
+    Only an argv that names a REAL plan gets the carry: a ``--project-dir`` dispatch
+    already travels as an absolute value, and the ``NO_PLAN`` sentinel is not a
+    routing source (its resolution is the submitted tree itself), so neither has a
+    resolution to replace. Every existing token is left exactly as it was.
 
     Args:
         argv: The routed argv tail, already absolutised for ``--project-dir``.
@@ -1031,10 +1034,35 @@ def _carry_resolved_tree(argv: list[str], project_dir: str) -> list[str]:
     Returns:
         The argv, with the carry appended when the argv names a plan.
     """
-    names_a_plan = any(token == _PLAN_ID_FLAG or token.startswith(f'{_PLAN_ID_FLAG}=') for token in argv)
-    if not names_a_plan:
+    carried_plan_id = _flag_value(argv, _PLAN_ID_FLAG)
+    if not names_real_plan(carried_plan_id):
         return list(argv)
     return [*argv, _RESOLVED_PROJECT_DIR_FLAG, project_dir]
+
+
+def _flag_value(argv: list[str], flag: str) -> str | None:
+    """Read one flag's value out of an argv, in both token forms; last occurrence wins.
+
+    Args:
+        argv: The argv tail to scan.
+        flag: The flag spelling, without its value (``--plan-id``).
+
+    Returns:
+        The value, or ``None`` when the flag is absent or carries no value.
+    """
+    value: str | None = None
+    index = 0
+    while index < len(argv):
+        token = argv[index]
+        if token == flag:
+            if index + 1 < len(argv):
+                value = argv[index + 1]
+            index += 2
+            continue
+        if token.startswith(f'{flag}='):
+            value = token.split('=', 1)[1]
+        index += 1
+    return value
 
 
 def _absolutise_project_dir(argv: list[str], project_dir: str) -> list[str]:

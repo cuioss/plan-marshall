@@ -1071,6 +1071,7 @@ class TestPreToolFaultPassThrough:
             PRE_TOOL_FAULT_ERRORS
         )
         assert routing.emit_mutually_exclusive_error('p', 'q')['error'] in PRE_TOOL_FAULT_ERRORS
+        assert routing.emit_carried_tree_outside_job_error('/tree', 'p')['error'] in PRE_TOOL_FAULT_ERRORS
         assert ERROR_INVALID_INVOCATION in PRE_TOOL_FAULT_ERRORS
 
         template = (
