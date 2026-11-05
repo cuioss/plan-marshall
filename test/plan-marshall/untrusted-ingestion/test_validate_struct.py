@@ -87,6 +87,48 @@ def test_over_maxlength_string_is_clamped():
     assert any('narrative' in entry for entry in data['clamped'])
 
 
+def test_over_maxlength_string_keeps_its_tail_and_marks_the_elision():
+    """The tail survives the clamp, and the removed middle is stated in the value.
+
+    A review bot writes its analysis before its conclusion, so a head-only cut
+    removes the only part a reader can act on.
+    """
+    request = 'GUARD THE BOUND BEFORE INDEXING'
+    narrative = ('x' * 10000) + request + ('y' * 2000)
+    data = _validate('issue-body', {'narrative': narrative, 'references': []})
+
+    assert data['status'] == 'success'
+    clamped_value = data['struct']['narrative']
+    assert len(clamped_value) <= 8000
+    assert request in clamped_value, 'the tail carrying the actionable conclusion was cut away'
+    assert 'elided' in clamped_value, 'the clamp states no elision marker'
+    assert 'characters elided' in clamped_value, 'the marker states no removed-character count'
+
+
+def test_the_clamp_reports_the_original_length_as_a_structured_field():
+    """The producer's per-finding record needs the figure, not a sentence to parse."""
+    narrative = 'x' * 9000
+    data = _validate('issue-body', {'narrative': narrative, 'references': []})
+
+    assert data['status'] == 'success'
+    clamps = data.get('clamps') or []
+    assert len(clamps) == 1
+    assert clamps[0]['field'] == 'narrative'
+    assert clamps[0]['original_length'] == 9000
+    assert clamps[0]['max_length'] == 8000
+
+
+def test_a_string_under_the_cap_is_byte_identical_and_reports_no_clamp():
+    narrative = 'short and complete'
+    data = _validate('issue-body', {'narrative': narrative, 'references': []})
+
+    assert data['status'] == 'success'
+    assert data['struct']['narrative'] == narrative
+    assert data['clamped'] == []
+    assert data.get('clamps') == []
+
+
+
 def test_over_maxitems_array_is_clamped():
     struct = {
         'narrative': 'short',

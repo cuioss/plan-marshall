@@ -21,7 +21,9 @@ PLAN_IDS = (
     'cli-ingest-rt',
     'ingest-all-fields',
     'ingest-audit',
+    'ingest-body-under-cap',
     'ingest-clamp',
+    'ingest-cut-tail',
     'ingest-empty',
     'ingest-idem',
     'ingest-mixed',
@@ -140,7 +142,49 @@ def test_ingest_clamps_overlong_field_and_reports_clamped(plan_context):
 
     record = query_findings(pid)['findings'][0]
     assert len(record['detail']) == 8000
-    assert record['detail'] == 'x' * 8000
+    assert 'elided' in record['detail'], 'the clamp kept the head only'
+
+
+def test_ingest_keeps_the_tail_of_a_cut_body_and_says_it_was_cut(plan_context):
+    """A body cut at the promotion cap keeps its conclusion and states the cut on its record.
+
+    The reported shape (lesson ``-067``): a 36,938-character review body whose change
+    request sits in its last 2,000 characters. A head-only cut removed the request and
+    left no trace on the finding that it had happened.
+    """
+    pid = 'ingest-cut-tail'
+    request = 'CHANGE REQUEST: guard the empty-input branch before indexing.'
+    body = ('a' * (36938 - len(request))) + request
+    assert len(body) == 36938
+    assert request in body[-2000:]
+    add_finding(plan_id=pid, finding_type='bug', title='t', detail='ph', raw_input={'body': body})
+
+    result = ingest_findings(pid)
+    assert result['promoted'] == 1
+
+    record = query_findings(pid)['findings'][0]
+    assert request in record['body'], 'the promoted body dropped the actionable conclusion'
+    assert 'elided' in record['body']
+    assert record['truncated'] is True
+    assert record['original_length'] == 36938
+    # The pass summary names WHICH finding was cut, not only that something was.
+    assert any(record['hash_id'] in report for report in result['clamped'])
+
+
+def test_ingest_promotes_a_body_under_the_cap_byte_identically_with_no_flag(plan_context):
+    """A body under the cap is untouched, and no truncation facts appear on the record."""
+    pid = 'ingest-body-under-cap'
+    body = 'A short review body, well under the promotion cap.'
+    add_finding(plan_id=pid, finding_type='bug', title='t', detail='ph', raw_input={'body': body})
+
+    result = ingest_findings(pid)
+    assert result['promoted'] == 1
+
+    record = query_findings(pid)['findings'][0]
+    assert record['body'] == body
+    assert not record.get('truncated')
+    assert 'original_length' not in record
+
 
 
 # =============================================================================

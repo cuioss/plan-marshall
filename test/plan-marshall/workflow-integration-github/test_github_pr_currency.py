@@ -2245,3 +2245,89 @@ def test_a_coderabbit_inline_only_credit_beside_a_quota_refusal_is_not_participa
 
     assert result['participated_bots'] == [], 'a commit-less inline comment proves no review of the candidate'
     assert 'coderabbit' in result['refused_bots']
+
+
+# =============================================================================
+# Inline thread replies are never participation evidence
+# =============================================================================
+
+#: The shape every inline thread reply carries: a reply into an existing thread,
+#: posted after the merge-candidate commit, naming no commit of its own.
+_THREAD_REPLY_BODY = 'Fixed in the follow-up commit — resolving this thread.'
+
+
+def _inline_comment(comment_id, *, thread_reply, commit_id, created_at):
+    """One CodeRabbit inline comment with the provider's placement fields."""
+    return _evidence_comment(
+        'coderabbit',
+        'inline',
+        comment_id,
+        _THREAD_REPLY_BODY,
+        thread_reply=thread_reply,
+        commit_id=commit_id,
+        created_at=created_at,
+        updated_at=created_at,
+    )
+
+
+def test_a_thread_reply_after_the_head_credits_nothing(plan_context, monkeypatch):
+    """A reply in an existing thread is the bot answering the author, not reviewing the push.
+
+    It is stamped after the head commit and names no commit, so the first-observation
+    arm used to credit it — the #515 false green.
+    """
+    plan_id = 'gh-pr-thread-reply-no-credit'
+    _patch_provider(
+        monkeypatch,
+        [_inline_comment('cr-reply', thread_reply=True, commit_id='', created_at=_at(40))],
+        head_sha=_HEAD_A,
+    )
+
+    result = _run_fetch(210, plan_id)
+
+    assert result['participated_bots'] == []
+    assert result['stale_participation_bots'] == [{'bot_kind': 'coderabbit', 'evidence_kind': 'inline'}]
+
+
+def test_a_thread_opening_inline_comment_placed_at_the_head_counts(plan_context, monkeypatch):
+    """The positive control: a NEW thread the provider places at the merge candidate is evidence."""
+    plan_id = 'gh-pr-thread-opening-credit'
+    _patch_provider(
+        monkeypatch,
+        [_inline_comment('cr-open', thread_reply=False, commit_id=_HEAD_A, created_at=_at(40))],
+        head_sha=_HEAD_A,
+    )
+
+    result = _run_fetch(211, plan_id)
+
+    assert result['participated_bots'] == [{'bot_kind': 'coderabbit', 'evidence_kind': 'inline'}]
+
+
+def test_a_thread_opening_inline_comment_with_no_reported_commit_credits_nothing(plan_context, monkeypatch):
+    """⛔ An unplaced inline comment proves no review of the candidate, so it never credits."""
+    plan_id = 'gh-pr-thread-opening-unplaced'
+    _patch_provider(
+        monkeypatch,
+        [_inline_comment('cr-open', thread_reply=False, commit_id='', created_at=_at(40))],
+        head_sha=_HEAD_A,
+    )
+
+    result = _run_fetch(212, plan_id)
+
+    assert result['participated_bots'] == []
+
+
+def test_a_thread_opening_inline_comment_placed_at_an_earlier_head_is_stale(plan_context, monkeypatch):
+    """⛔ MATCHED NEGATIVE CONTROL: placement at another commit is a stale review, not a credit."""
+    plan_id = 'gh-pr-thread-opening-earlier'
+    _patch_provider(
+        monkeypatch,
+        [_inline_comment('cr-open', thread_reply=False, commit_id=_HEAD_B, created_at=_at(40))],
+        head_sha=_HEAD_A,
+    )
+
+    result = _run_fetch(213, plan_id)
+
+    assert result['participated_bots'] == []
+    assert result['stale_participation_bots'] == [{'bot_kind': 'coderabbit', 'evidence_kind': 'inline'}]
+
