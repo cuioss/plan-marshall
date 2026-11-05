@@ -43,6 +43,10 @@ from datetime import UTC, datetime  # noqa: E402
 from pathlib import Path  # noqa: E402
 from typing import Any  # noqa: E402
 
+# The carry flag is DERIVED from the module that declares it on the child's parser,
+# not spelled again here: a one-sided rename would make the routed child reject the
+# flag it was handed, and the two spellings would agree only by luck.
+from _build_cli import RESOLVED_PROJECT_DIR_FLAG as _RESOLVED_PROJECT_DIR_FLAG  # noqa: E402
 from _build_execute import (  # noqa: E402
     MIN_TIMEOUT,
     BuildCommandFn,
@@ -54,6 +58,7 @@ from _build_execute import detect_wrapper as _detect_wrapper  # noqa: E402
 from _build_queue_slot import BuildQueueTimeout, build_queue_slot  # noqa: E402
 from _build_result import (  # noqa: E402
     ERROR_BUILD_FAILED,
+    ERROR_QUEUE_SATURATED,
     DirectCommandResult,
     error_result,
     indeterminate_result,
@@ -85,13 +90,11 @@ from marketplace_paths import NO_PLAN_SENTINEL, home_root, names_real_plan  # no
 from plan_logging import log_entry  # noqa: E402
 from toon_parser import serialize_toon  # noqa: E402
 
-# Error type emitted when the build queue is saturated past max_retries.
-ERROR_QUEUE_SATURATED = 'queue_saturated'
-
-# Error type emitted when execution_mode=daemon is requested but the build
-# cannot be routed to the marshalld daemon (a genuine unavailability, an
-# unroutable tool, or an env/working-dir override the daemon cannot honour).
-# In daemon mode this is a hard failure, NOT a silent in-process fallback.
+# Error type emitted when execution_mode=daemon is requested but the build cannot be
+# routed to the marshalld daemon (a genuine unavailability, an unroutable tool, or an
+# env / working-dir override the daemon cannot honour). In daemon mode this is a hard
+# failure, NOT a silent in-process fallback. Never reachable from a daemon CHILD: the
+# child's own routing returns ``in_daemon_job``, which the fail-loud guard exempts.
 ERROR_DAEMON_REQUIRED = 'daemon_required'
 
 # ---------------------------------------------------------------------------
@@ -773,6 +776,8 @@ def _daemon_result_to_direct(
                 command_str,
                 **_launch_fault_extra(verdict.fault),
             )
+        if verdict is not None and verdict.child_fault is not None:
+            return _child_fault_result(verdict.child_fault, exit_code, duration, log_file, command_str)
         return error_result(  # type: ignore[return-value]
             ERROR_BUILD_FAILED,
             exit_code or 1,
@@ -790,6 +795,46 @@ def _daemon_result_to_direct(
         log_file,
         command_str,
         exit_code=exit_code or -1,
+    )
+
+
+def _child_fault_result(
+    fault: Any, exit_code: int, duration: int, log_file: str, command_str: str
+) -> DirectCommandResult:
+    """Carry a PRE-TOOL fault the child reported as itself, with its own exit code.
+
+    A build process that refuses before any build tool runs — the plan tree will
+    not resolve, the two routing flags were both supplied, the executor rejected
+    the dispatch — is not a red build. The name, the reason and the exit code are
+    the whole result: there is no test row to collect and no bound to report, so
+    the synthetic ``build_failure`` row is exactly the fabrication the renderer must
+    not publish over it. The exit code is the CHILD's, so the routed path answers
+    what a direct build already answers (``worktree_resolution_failed`` with 2).
+
+    Args:
+        fault: The :class:`ChildFault` read back from the job log.
+        exit_code: The daemon's job exit code — the child's own.
+        duration: Wall-clock duration reported by the daemon.
+        log_file: The job log path.
+        command_str: The command that was executed.
+
+    Returns:
+        The error result under the child's own name.
+    """
+    extra: dict[str, Any] = {}
+    reason = getattr(fault, 'reason', None)
+    if reason:
+        extra['reason'] = reason
+    corrective = getattr(fault, 'corrective', None)
+    if corrective:
+        extra['message'] = corrective
+    return error_result(  # type: ignore[return-value]
+        fault.error,
+        exit_code or 2,
+        duration,
+        log_file,
+        command_str,
+        **extra,
     )
 
 
@@ -858,6 +903,16 @@ def _result_for_log_verdict(
                 command_str,
                 **_launch_fault_extra(verdict.fault),
             )
+        if getattr(verdict, 'child_fault', None) is not None:
+            # Same rule one layer out: a cross-checked PRE-TOOL fault is the
+            # routing/dispatch layer refusing, not a build that ran.
+            return _child_fault_result(
+                verdict.child_fault,
+                exit_code if exit_code is not None else 2,
+                duration,
+                log_file,
+                command_str,
+            )
         return error_result(  # type: ignore[return-value]
             ERROR_BUILD_FAILED,
             exit_code or 1,
@@ -923,21 +978,90 @@ def _running_hand_back(
     return running_result(job_id, duration, log_file, command_str)  # type: ignore[return-value]
 
 
+_PLAN_ID_FLAG = '--plan-id'
+"""The plan-attribution flag a routed argv can carry (never a path the daemon re-resolves).
+
+It names the plan for the ledger row and the build slot; the tree travels separately
+as ``--resolved-project-dir`` so the child never has to re-resolve it. What the child
+DOES re-resolve when it arrives without the carry is this value against its own tree
+— which is the pre-carry behaviour, and the reason the carry exists.
+"""
+
 _PROJECT_DIR_FLAG = '--project-dir'
-"""The one path-valued flag a routed argv can carry whose value the daemon re-resolves.
+"""The one path-valued flag a CALLER can hand a routed argv whose value the daemon re-resolves.
 
 ``_absolutise_project_dir`` rewrites its value before submission. The other
-path-shaped flags are checked, and neither can arrive here relative:
+path-shaped flags are checked, and none of them can arrive here relative:
 
-* ``--plan-id`` is mutually exclusive with ``--project-dir`` and, unlike it,
-  derives its own ABSOLUTE tree (a persisted worktree path, else the checkout
-  root), so it resolves identically in both processes.
+* ``--plan-id`` is mutually exclusive with ``--project-dir`` and names a PLAN, not
+  a path: in a ROUTED dispatch the child is not meant to resolve it at all. The
+  tree the routing process resolved travels beside it as
+  ``--resolved-project-dir`` (see :func:`_carry_resolved_tree`), and that value is
+  already absolute. It has to travel, because re-resolving the plan id from the
+  child's own working directory is equivalent to the routing process's resolution
+  only while that directory still holds the plan record — it does not in the
+  finalize move-back window, when ``integrate_into_main`` has moved the record
+  back to main and the worktree directory still exists.
 * ``--working-dir`` and ``--env`` make a build daemon-incompatible, so such a
   build never reaches this seam at all — under ``auto`` it falls back in-process
   before routing, and under ``daemon`` it fails loud (see ``cmd_run``).
 * ``--root`` is declared only on the ``discover`` subcommand and on Gradle's
   ``find-project``, so it cannot appear in the routed ``run`` argv.
 """
+
+
+def _carry_resolved_tree(argv: list[str], project_dir: str) -> list[str]:
+    """Append the resolved tree to a routed child's argv when the argv names a plan.
+
+    ``--plan-id`` is resolved by the ROUTING process against ITS tree and then
+    re-resolved by the daemon child against the child's tree. Those are the same
+    tree except in the finalize move-back window, where ``integrate_into_main``
+    has moved the plan directory back to the main checkout and the worktree
+    directory still exists: the routing process resolves (main holds the record,
+    and it names the still-existing worktree) and the child refuses (its tree no
+    longer holds the record). The carry is what removes the second resolution.
+
+    Only an argv that names a REAL plan gets the carry: a ``--project-dir`` dispatch
+    already travels as an absolute value, and the ``NO_PLAN`` sentinel is not a
+    routing source (its resolution is the submitted tree itself), so neither has a
+    resolution to replace. Every existing token is left exactly as it was.
+
+    Args:
+        argv: The routed argv tail, already absolutised for ``--project-dir``.
+        project_dir: The ABSOLUTE tree the routing process resolved.
+
+    Returns:
+        The argv, with the carry appended when the argv names a plan.
+    """
+    carried_plan_id = _flag_value(argv, _PLAN_ID_FLAG)
+    if not names_real_plan(carried_plan_id):
+        return list(argv)
+    return [*argv, _RESOLVED_PROJECT_DIR_FLAG, project_dir]
+
+
+def _flag_value(argv: list[str], flag: str) -> str | None:
+    """Read one flag's value out of an argv, in both token forms; last occurrence wins.
+
+    Args:
+        argv: The argv tail to scan.
+        flag: The flag spelling, without its value (``--plan-id``).
+
+    Returns:
+        The value, or ``None`` when the flag is absent or carries no value.
+    """
+    value: str | None = None
+    index = 0
+    while index < len(argv):
+        token = argv[index]
+        if token == flag:
+            if index + 1 < len(argv):
+                value = argv[index + 1]
+            index += 2
+            continue
+        if token.startswith(f'{flag}='):
+            value = token.split('=', 1)[1]
+        index += 1
+    return value
 
 
 def _absolutise_project_dir(argv: list[str], project_dir: str) -> list[str]:
@@ -953,7 +1077,9 @@ def _absolutise_project_dir(argv: list[str], project_dir: str) -> list[str]:
 
     Both token forms (``--project-dir X`` and ``--project-dir=X``) are rewritten
     and no other token is touched. An argv with no ``--project-dir`` is returned
-    unchanged: the child's default ``.`` already resolves to that same tree.
+    unchanged: a build that names its plan instead gets the tree through
+    :func:`_carry_resolved_tree`, and a plan-less child's default ``.`` is the
+    submitted tree itself.
 
     Args:
         argv: The routing process's own argv tail (``sys.argv[1:]``).
@@ -1036,11 +1162,21 @@ def _route_to_daemon(
     # The tail's `--project-dir` value is REPLACED with the absolute tree: the
     # daemon sets the child's working directory to that tree, so a relative value
     # would be resolved again against it and name a directory that does not exist.
+    #
+    # A tail carrying `--plan-id` additionally gets `--resolved-project-dir`, the
+    # tree resolved HERE. The child is re-run from that tree, and after the
+    # finalize move-back that tree no longer holds the plan directory (it moved
+    # back to main), so the child's own `--plan-id` resolution — the strict
+    # `get-worktree-path` gate — would refuse a resolution this process already
+    # completed. `--plan-id` stays in the argv rather than being replaced: the
+    # child's `kind=build` ledger row and its build-slot accounting both key off
+    # it, and `--plan-id` / `--project-dir` remain mutually exclusive.
+    child_argv = _carry_resolved_tree(_absolutise_project_dir(sys.argv[1:], exec_root), exec_root)
     command = [
         'python3',
         str(Path(exec_root) / '.plan' / 'execute-script.py'),
         notation,
-        *_absolutise_project_dir(sys.argv[1:], exec_root),
+        *child_argv,
     ]
     command_str = ' '.join(command)
 
