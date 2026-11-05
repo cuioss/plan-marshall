@@ -4,7 +4,7 @@
 
 ``snapshot_frozen`` is an inner key of the ``criteria_integrity`` block, so no
 verb writes it at the top level of ``metadata`` and protecting that name guards a
-write that never happens. The two remaining keys each have an owning verb.
+write that never happens. The remaining keys each have an owning verb.
 """
 
 from __future__ import annotations
@@ -31,7 +31,9 @@ def _plan(plan_context: Any) -> Path:
     (plan_dir / 'status.json').write_text(json.dumps(status), encoding='utf-8')
     (plan_dir / 'solution_outline.md').write_text(
         '# Solution: keys\n\n## Deliverables\n\n### 1. Deliver it\n\n'
-        '**Affected files:**\n- `src/x.py` (write-new)\n\n**Success Criteria:**\n- it works\n',
+        '**Affected files:**\n- `src/x.py` (write-new)\n\n'
+        '**Tests to remove:**\n- `test_old`: 1\n\n'
+        '**Success Criteria:**\n- it works\n',
         encoding='utf-8',
     )
     return plan_dir
@@ -61,7 +63,7 @@ def test_the_protected_set_is_exactly_the_keys_a_verb_writes_at_top_level(plan_c
     after = _metadata(plan_dir)
     written_at_top_level = {key for key, value in after.items() if key not in before or before[key] != value}
 
-    assert written_at_top_level == {_snap.INTEGRITY_KEY, _snap.OVERRIDE_HEADS_KEY}
+    assert written_at_top_level == {_snap.INTEGRITY_KEY, _snap.OVERRIDE_HEADS_KEY, _snap.ACCEPTED_TEST_REMOVALS_KEY}
     assert _query.PROTECTED_METADATA_FIELDS == written_at_top_level
 
 

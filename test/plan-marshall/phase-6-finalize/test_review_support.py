@@ -122,6 +122,22 @@ class Env:
         return str(path)
 
 
+@pytest.fixture(autouse=True)
+def _neutral_test_integrity(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep the validator's own test-integrity leg out of this module's fixtures.
+
+    These tests grade verdicts, not the branch's test diff. A plan without a
+    worktree is graded against the main checkout's diff, and the checkout this
+    suite runs in carries the branch under test — so the leg is neutralized at the
+    fixture. Its own behaviour is covered by ``test_lb105_test_integrity_d1``.
+    """
+    monkeypatch.setattr(
+        review_support,
+        'compute_test_integrity',
+        lambda *_args, **_kwargs: {'status': 'success', 'findings': []},
+    )
+
+
 @pytest.fixture
 def env(plan_context: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Env:
     return Env(plan_context, tmp_path, monkeypatch)

@@ -59,6 +59,7 @@ from constants import (
     HASH_ID_LENGTH,
     QGATE_PHASES,
     QGATE_SOURCES,
+    RESOLUTION_TAKEN_INTO_ACCOUNT,
     VALID_CERTAINTIES,
     VALID_RESOLUTIONS,
 )
@@ -84,13 +85,16 @@ CERTAINTY_VALUES = VALID_CERTAINTIES
 # "the record is in the store" versus "the record was rejected".
 #
 # ``success`` (freshly appended), ``deduplicated`` (an identical pending record
-# already exists), ``reopened`` (a matching resolved record was returned to
-# pending) and ``kept`` (an unchanged re-emission of a resolved record left the
-# recorded resolution, detail and timestamp exactly as stored) all mean the
-# finding IS in the store. The remaining value, ``error``, means it is NOT —
-# and callers MUST NOT fold it into the benign no-op outcomes. Every caller
-# consults this set rather than re-deriving the partition inline with
-# ``status == 'success'``.
+# already exists), ``reopened`` (a matching record was returned to pending, either
+# because the caller passed the ``--reopen`` opt-in on a ``fixed`` record or because
+# an OBSERVATION re-armed the review's own ``taken_into_account`` disposition) and
+# ``kept`` (an unchanged re-emission of a record whose disposition stands — an
+# operator ``accepted`` or ``rejected`` decision, or a ``fixed`` record without the
+# opt-in — left it exactly as stored, carrying ``not_reopened`` to name which
+# resolution stood) all mean the finding IS in the store. The remaining value,
+# ``error``, means it is NOT — and callers MUST NOT fold it into the benign no-op
+# outcomes. Every caller consults this set rather than re-deriving the partition
+# inline with ``status == 'success'``.
 QGATE_PERSIST_OK = frozenset({'success', 'deduplicated', 'reopened', 'kept'})
 
 # The published partition of ``add_finding``'s five-valued ``status`` (the values
@@ -1451,6 +1455,62 @@ def _find_by_title_and_discriminator(
     return None
 
 
+def _reopen_qgate_record(
+    qgate_path: Any,
+    existing: dict[str, Any],
+    phase: str,
+    store: Any,
+    iteration: int | None,
+    *,
+    reopened_by: str,
+) -> dict[str, Any]:
+    """Return a matched resolved record to ``pending``, keeping its prior disposition.
+
+    ``reopened_by`` names the trigger and travels on the result so a caller can tell
+    the two apart: ``observation`` (an identical re-file of a finding the review had
+    recorded ``taken_into_account`` — it is still blocking, so it is pending again)
+    and ``opt_in`` (a caller passing ``--reopen`` against a ``fixed`` record).
+
+    The prior resolution, detail and timestamp move into the record's ``history``
+    instead of being nulled, so the disposition the re-detection overrides stays
+    readable. The caller's ``iteration`` is stored on the record when one is
+    supplied, so the re-armed finding carries the re-detection iteration.
+    """
+    prior = {
+        'resolution': existing.get('resolution'),
+        'resolution_detail': existing.get('resolution_detail'),
+        'resolution_timestamp': existing.get('resolution_timestamp'),
+        'timestamp': existing.get('timestamp'),
+    }
+    history = list(existing.get('history') or [])
+    history.append(prior)
+    reobserved_count = int(existing.get('reobserved_count', 0) or 0) + 1
+    reopen_updates: dict[str, Any] = {
+        'resolution': 'pending',
+        'resolution_detail': None,
+        'resolution_timestamp': None,
+        'history': history,
+        'reobserved_count': reobserved_count,
+    }
+    if iteration is not None:
+        reopen_updates['iteration'] = iteration
+    update_jsonl(qgate_path, existing['hash_id'], reopen_updates)
+    reopened: dict[str, Any] = {
+        'status': 'reopened',
+        'hash_id': existing['hash_id'],
+        'phase': phase,
+        'resolution': 'pending',
+        'previous_resolution': str(existing.get('resolution') or ''),
+        'reopened_by': reopened_by,
+        'history': history,
+        'reobserved_count': reobserved_count,
+        **store_state_fields(store),
+    }
+    if iteration is not None:
+        reopened['iteration'] = iteration
+    return reopened
+
+
 def add_qgate_finding(
     plan_id: str,
     phase: str,
@@ -1483,9 +1543,24 @@ def add_qgate_finding(
     which do leave the finding present. Callers test membership in
     :data:`QGATE_PERSIST_OK`, never ``status == 'success'``.
 
+    A matched resolved record is handled by disposition:
+
+    * ``taken_into_account`` — the review's own "superseded by a later round"
+      disposition, not an operator decision. An identical re-file is an
+      OBSERVATION that the finding still blocks, so the record returns to
+      ``pending`` (``status: reopened``, ``reopened_by: observation``). This is
+      what lets a full loop-back round re-file what still blocks and still be
+      acceptable.
+    * ``fixed`` with ``reopen`` — re-armed (``status: reopened``,
+      ``reopened_by: opt_in``); without the opt-in it is kept.
+    * any other disposition (``accepted``, ``rejected``, ``suppressed``) — kept,
+      because an observation alone never re-arms an operator decision. The result
+      carries ``not_reopened: <resolution>``, so a caller that asked for a reopen
+      can tell why it did not get one, rather than reading a bare ``kept``.
+
     ``reopen`` is the opt-in that re-arms the Q-Gate for a re-detected defect
     the store had recorded as ``fixed``: only a matched record whose resolution
-    is ``fixed`` reopens, and only when the caller passes the opt-in. A reopen stores the
+    is ``fixed`` reopens through the opt-in. A reopen stores the
     caller's ``iteration`` on the record when one is supplied, so the re-armed
     finding carries the re-detection iteration rather than the iteration the
     prior disposition was recorded under. The prior
@@ -1529,49 +1604,38 @@ def add_qgate_finding(
                 'phase': phase,
                 **store_state_fields(store),
             }
+        resolution = str(existing.get('resolution') or '')
+        # An OBSERVATION re-arms the review's own disposition. ``taken_into_account``
+        # is what a full loop-back round records for a finding it superseded — not a
+        # decision the operator took — so a review that re-files the same blocking
+        # finding is reporting it still blocks, and the record returns to pending.
+        # Without this the finding blocks ``validate`` while being unpending in the
+        # store, and ``loop-back close --accept`` refuses it with
+        # ``finding_not_pending``: the operator cannot accept what still blocks.
+        if not reopen and resolution == RESOLUTION_TAKEN_INTO_ACCOUNT:
+            return _reopen_qgate_record(
+                qgate_path,
+                existing,
+                phase,
+                store,
+                iteration,
+                reopened_by='observation',
+            )
         # Opt-in reopen: a re-detected defect the Q-Gate store had recorded as
         # ``fixed`` re-arms the gate only when the filing step passes the opt-in.
         # The prior resolution, detail and timestamp move into the record's
         # ``history`` instead of being nulled, so the overridden disposition stays
         # readable. A ``fixed`` record re-observed without the opt-in is kept, and
         # any non-``fixed`` resolution re-observed with the opt-in is kept.
-        if reopen and existing.get('resolution') == FIXED_RESOLUTION:
-            prior = {
-                'resolution': existing.get('resolution'),
-                'resolution_detail': existing.get('resolution_detail'),
-                'resolution_timestamp': existing.get('resolution_timestamp'),
-                'timestamp': existing.get('timestamp'),
-            }
-            history = list(existing.get('history') or [])
-            history.append(prior)
-            reobserved_count = int(existing.get('reobserved_count', 0) or 0) + 1
-            reopen_updates: dict[str, Any] = {
-                'resolution': 'pending',
-                'resolution_detail': None,
-                'resolution_timestamp': None,
-                'history': history,
-                'reobserved_count': reobserved_count,
-            }
-            if iteration is not None:
-                reopen_updates['iteration'] = iteration
-            update_jsonl(
+        if reopen and resolution == FIXED_RESOLUTION:
+            return _reopen_qgate_record(
                 qgate_path,
-                existing['hash_id'],
-                reopen_updates,
+                existing,
+                phase,
+                store,
+                iteration,
+                reopened_by='opt_in',
             )
-            reopened: dict[str, Any] = {
-                'status': 'reopened',
-                'hash_id': existing['hash_id'],
-                'phase': phase,
-                'resolution': 'pending',
-                'previous_resolution': FIXED_RESOLUTION,
-                'history': history,
-                'reobserved_count': reobserved_count,
-                **store_state_fields(store),
-            }
-            if iteration is not None:
-                reopened['iteration'] = iteration
-            return reopened
         # Kept-resolution: the same title AND the same content is a genuine
         # re-detection of the resolved finding, and the recorded resolution
         # stands — resolution, detail and timestamp are kept exactly, so an
@@ -1579,13 +1643,18 @@ def add_qgate_finding(
         # The re-observation is recorded as a counter on the record; nothing
         # else is touched. A same-title-different-content finding never lands
         # here (it fails the discriminator match above) and is filed fresh.
+        #
+        # ``not_reopened`` names WHY nothing was re-armed. A bare ``kept`` cannot
+        # be told apart from a no-op by a caller that asked for a reopen.
         reobserved_count = int(existing.get('reobserved_count', 0) or 0) + 1
         update_jsonl(qgate_path, existing['hash_id'], {'reobserved_count': reobserved_count})
         return {
             'status': 'kept',
             'hash_id': existing['hash_id'],
             'phase': phase,
-            'resolution': existing['resolution'],
+            'resolution': resolution,
+            'not_reopened': resolution,
+            'reopen_requested': reopen,
             'reobserved_count': reobserved_count,
             **store_state_fields(store),
         }

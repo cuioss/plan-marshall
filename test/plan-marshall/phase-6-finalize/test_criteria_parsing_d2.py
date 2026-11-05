@@ -36,6 +36,15 @@ PLAN_ID = 'lb70-criteria-parsing-d2'
 def _no_main_checkout_fallback(monkeypatch):
     """Keep the evidence root off unless a test deliberately supplies a repo."""
     monkeypatch.setattr(review_support, '_main_checkout_root', lambda: None)
+    # A plan without a worktree is graded against the main checkout's diff, and
+    # the checkout this suite runs in carries the branch under test. Neutralize the
+    # validator's test-integrity leg here; its behaviour is covered by
+    # ``test_lb105_test_integrity_d1``.
+    monkeypatch.setattr(
+        review_support,
+        'compute_test_integrity',
+        lambda *_args, **_kwargs: {'status': 'success', 'findings': []},
+    )
 
 
 #: A fixture copy of the PLAN-LB-52 spec's Deliverables section: deliverable 1's

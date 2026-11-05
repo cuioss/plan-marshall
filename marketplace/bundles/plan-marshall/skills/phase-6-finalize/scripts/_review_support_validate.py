@@ -22,6 +22,7 @@ from typing import Any
 from _criteria_snapshot import (
     AUTHORED_KEY,
     AUTHORSHIP_SCHEMA,
+    PARSER_EXTENDED,
     REQUEST_MISSING,
     SPEC_MISSING,
     SUPERSEDED,
@@ -455,15 +456,35 @@ def _grade_row(
 
 
 def grade_frozen_criteria(grading: Grading, drift: list[dict[str, Any]]) -> int:
-    """Grade the frozen-criteria drift as blocking findings; return the count.
+    """Grade the frozen-criteria drift, and return the number of rows it read.
 
-    One finding per criterion the current outline no longer carries verbatim, one
-    per frozen deliverable that vanished, and one per spec deliverable whose own
-    Done-when no outline criterion covers. A criterion the snapshot froze and an
-    operator decision authorized is not in ``drift`` at all, so it is a pass.
+    One BLOCKING finding per criterion the current outline no longer carries
+    verbatim, one per frozen deliverable that vanished, and one per spec deliverable
+    whose own Done-when no outline criterion covers. A criterion the snapshot froze
+    and an operator decision authorized is not in ``drift`` at all, so it is a pass.
+
+    One kind is ADVISORY, never blocking: ``parser_extended`` — a frozen criterion
+    that is a prefix of the criterion the improved parser now reads in full. Nothing
+    about the outline changed, so it is reported as `criterion_parser_extended` for
+    visibility and left out of the blocking set; retiring it is a re-freeze, which
+    needs its own authorization.
     """
     for row in drift:
         kind = row.get('kind')
+        number = row.get('deliverable')
+        if kind == PARSER_EXTENDED:
+            # The parser now reads a wrapped bullet in full. Visible, never
+            # blocking: nothing about the outline changed, and the operation that
+            # would retire it is a re-freeze, which needs its own authorization.
+            grading.add(
+                'criterion_parser_extended',
+                f'D{number}',
+                f'{row.get("criterion")} -> {row.get("current")}',
+                False,
+                None,
+                f'deliverable {number}',
+            )
+            continue
         if kind in (SPEC_MISSING, REQUEST_MISSING):
             grading.add(
                 kind,
@@ -474,7 +495,6 @@ def grade_frozen_criteria(grading: Grading, drift: list[dict[str, Any]]) -> int:
                 'request or spec Done-when',
             )
             continue
-        number = row.get('deliverable')
         if kind == 'rewritten':
             graded_kind, title = 'criterion_rewritten', f'{row.get("criterion")} -> {row.get("current")}'
         else:

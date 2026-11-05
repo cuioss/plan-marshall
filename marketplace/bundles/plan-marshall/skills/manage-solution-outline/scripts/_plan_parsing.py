@@ -12,6 +12,7 @@ Usage:
         extract_deliverable_headings,
         split_deliverable_blocks,
         extract_deliverables,
+        extract_declared_test_removals,
         declares_change,
         deliverable_write_set,
         declared_paths_by_intent,
@@ -299,6 +300,7 @@ def extract_deliverables(deliverables_section: str) -> list[dict[str, Any]]:
                 'survey_scope': survey_scope,
                 'mutation_scope': mutation_scope,
                 'declared_bucket': extract_declared_bucket(content),
+                'declared_test_removals': extract_declared_test_removals(content),
                 'verification': verification,
                 'has_success_criteria': has_success_criteria,
             }
@@ -804,6 +806,62 @@ def declared_paths_population(outline_content: str) -> dict[str, int]:
         before deduplication, so it reports the walk rather than the result.
     """
     return _walk_declared_paths(outline_content).population
+
+
+#: The deliverable heading that declares the tests a deliverable INTENDS to
+#: remove. The accepted-removal set (PLAN-LB-105 D2) has two sources, and this is
+#: the authoring-time one: ``snapshot-criteria`` seeds the status record's set from
+#: these declarations at the freeze, and the reader reads that recorded set.
+_TESTS_TO_REMOVE_HEADING = 'Tests to remove'
+
+#: One ``**Tests to remove:**`` bullet: an identity, optionally followed by the
+#: number of removed assertions (``test_a: 2`` or ``test_a (2 assertions)``).
+#: The identity itself may contain ``::`` (``Class::method``), so the count suffix
+#: is only recognised when the trailing token is actually a number.
+_REMOVAL_COUNT_SUFFIX_RE = re.compile(
+    r'^(?P<identity>.*?)\s*(?:\(\s*(?P<paren>\d+)\s*(?:assertions?)?\s*\)|:\s*(?P<colon>\d+))\s*$'
+)
+
+
+def extract_declared_test_removals(content: str) -> list[dict[str, Any]]:
+    """Extract a deliverable's ``**Tests to remove:**`` declarations.
+
+    Each bullet names one test by the identity the test-integrity check uses
+    (``class::function``, or a bare function name), optionally followed by the
+    number of assertions it removes. The heading is OPTIONAL: a deliverable that
+    removes no test declares nothing and yields an empty list.
+
+    Declaring a removal is a design decision, not a record of what happened. It is
+    recorded when the criteria snapshot is FROZEN (``snapshot-criteria``), and it
+    takes effect only through that freeze: a line added to the outline afterwards is
+    not an acceptance route, because it never reached the status record's accepted
+    set. The reader (``_criteria_snapshot.accepted_test_removals``) reads that
+    recorded set, not this parse, so a declaration the freeze never saw blocks like
+    any other undeclared removal.
+    """
+    removals: list[dict[str, Any]] = []
+    block = re.search(
+        rf'\*\*{re.escape(_TESTS_TO_REMOVE_HEADING)}:\*\*[^\n]*\n((?:[ \t]*[-*][ \t]+[^\n]+\n?)+)',
+        content,
+        re.IGNORECASE,
+    )
+    if not block:
+        return removals
+    for line in block.group(1).splitlines():
+        bullet = re.sub(r'^[ \t]*[-*]\s+', '', line).strip()
+        if not bullet:
+            continue
+        count: int | None = None
+        match = _REMOVAL_COUNT_SUFFIX_RE.match(bullet)
+        if match:
+            raw_count = match.group('paren') or match.group('colon')
+            if raw_count:
+                count = int(raw_count)
+                bullet = match.group('identity')
+        identity = bullet.strip().strip('`').strip()
+        if identity:
+            removals.append({'identity': identity, 'assertions_removed': count})
+    return removals
 
 
 def extract_declared_bucket(content: str) -> str | None:
