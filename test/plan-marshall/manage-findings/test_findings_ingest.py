@@ -28,6 +28,7 @@ PLAN_IDS = (
     'ingest-empty',
     'ingest-idem',
     'ingest-mixed',
+    'ingest-partial-replace',
     'ingest-promote',
     'ingest-qgate',
     'ingest-qgate-reject',
@@ -215,6 +216,30 @@ def test_a_later_promotion_that_no_longer_cuts_clears_the_stale_flags(plan_conte
     assert record['truncated'] is False
     assert record['original_length'] == 0
     assert record['truncated_fields'] == {}
+
+
+def test_a_partial_replacement_keeps_the_metadata_of_the_field_it_leaves(plan_context):
+    """A field the replacement does not touch keeps its own cut claim.
+
+    A pass that rewrites only ``summary`` leaves the stored top-level ``body`` in
+    place — still the cut text. Clearing the whole record's metadata would then claim
+    that body is unaffected by the cap, which it is not.
+    """
+    pid = 'ingest-partial-replace'
+    add_finding(plan_id=pid, finding_type='bug', title='t', detail='ph', raw_input={'body': 'x' * 9000})
+
+    assert ingest_findings(pid)['promoted'] == 1
+    cut = query_findings(pid)['findings'][0]
+    assert cut['truncated_fields'] == {'body': 9000}
+
+    _core.update_finding_text(pid, cut['hash_id'], detail=cut['detail'], raw_input={'summary': 'short'})
+    assert ingest_findings(pid)['promoted'] == 1
+
+    record = query_findings(pid)['findings'][0]
+    assert record['body'] == cut['body'], 'the untouched body is still the cut text'
+    assert record['truncated'] is True
+    assert record['original_length'] == 9000
+    assert record['truncated_fields'] == {'body': 9000}
 
 
 # =============================================================================

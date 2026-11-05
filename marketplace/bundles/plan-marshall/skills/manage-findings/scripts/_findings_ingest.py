@@ -126,14 +126,29 @@ def _promotion_payload(
     """The top-level fields this pass writes, including the truncation facts.
 
     ``update_jsonl`` MERGES, it never deletes, so a record that was cut by an earlier
-    pass keeps its flags even when the current ``raw_input`` fits. When this pass cuts
-    nothing and the record already carries the keys, they are RESET rather than left
-    stale — a record must never report a cut that does not apply to its current body.
-    A record that never carried the keys receives none of them.
+    pass keeps its flags even when the current ``raw_input`` fits. The reset is
+    PER FIELD, because a partial replacement leaves the fields it omits in place: a
+    record whose truncated ``body`` is untouched by a pass that only rewrites
+    ``summary`` still holds a cut body, so its ``truncated_fields['body']`` entry must
+    survive. A field this pass DID replace without cutting loses its entry. A record
+    that never carried the keys receives none of them.
     """
     promoted = {**payload, **_truncation_fields(clamps)}
-    if not clamps and any(key in existing for key in _TRUNCATION_KEYS):
-        promoted.update({'truncated': False, 'original_length': 0, 'truncated_fields': {}})
+    if clamps:
+        return promoted
+    existing_fields = existing.get('truncated_fields')
+    if not isinstance(existing_fields, dict) or not existing_fields:
+        if any(key in existing for key in _TRUNCATION_KEYS):
+            promoted.update({'truncated': False, 'original_length': 0, 'truncated_fields': {}})
+        return promoted
+    surviving = {str(field): int(length or 0) for field, length in existing_fields.items() if field not in payload}
+    promoted.update(
+        {
+            'truncated': bool(surviving),
+            'original_length': max(surviving.values(), default=0),
+            'truncated_fields': surviving,
+        }
+    )
     return promoted
 
 
