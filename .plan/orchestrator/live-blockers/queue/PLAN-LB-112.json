@@ -1,0 +1,11 @@
+{
+  "id": "PLAN-LB-112",
+  "slug": "routed-build-worktree-fault-truth",
+  "workstream": "WS-04",
+  "status": "shipped",
+  "lane": "runbook",
+  "plan_marshall_plan_id": "lb-112-routed-build-worktree-fault-truth",
+  "pr": "1910",
+  "landing": "landings/PLAN-LB-112.md",
+  "seq": 112
+}
