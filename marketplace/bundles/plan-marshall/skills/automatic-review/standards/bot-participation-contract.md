@@ -646,15 +646,21 @@ it was awaited for.
 
 #### The reviewed-commit reference is recognised wherever it sits, and compared for EQUALITY
 
-`head_sha_verified` is decided by whether the matched signal's evidence **references** the awaited
-HEAD — not by whether that evidence *is* the bare SHA. On the review arm the evidence is the review's
+`head_sha_verified` is decided by whether the matched signal's evidence **names** the awaited HEAD
+— not by whether that evidence *is* the bare SHA. On the review arm the evidence is the review's
 reviewed-commit field; on the issue-comment arm it is the comment **body**, because a bot that
 republishes its summary in place states the commit it reviewed there (CodeRabbit's `Review updated
 until commit …`). The same reviewed-commit value arrives in more than one
 shape: a bare hex token, the SHA carried inside a `…/commit/{sha}` permalink, or either of those
-inside prose. Each names the same commit, so each MUST verify — and both arms read it through the
-one predicate, `github_re_review._references_head_sha`, whose extraction is the one commit recogniser
-(`_github_pr.commit_tokens`) the participation currency test also reads.
+inside prose. Each names the same commit, so each MUST verify — and the issue-comment arm reads it
+through `github_re_review._body_names_head`, whose extraction is the one commit recogniser
+(`_github_pr.commit_tokens`) the participation currency test also reads, PLUS one precedence rule:
+a review-coverage marker present in the body decides first
+(`_github_pr.review_coverage_verdict`, which also says whether `kind` is a finished review), and the
+token recogniser is the fallback for a comment carrying no marker. The review arm reads its field
+through `github_re_review._references_head_sha`. A comment whose coverage marker is present but
+unreadable, or whose `kind` is not a finished review, is not an answer at all: it is skipped without
+a record rather than admitted and reported as a decline.
 
 ⛔ **This predicate fails toward BLOCKING, which is the opposite direction from the rest of this
 contract's refusal handling, and is why the recognition must be wide.** A reference the matcher does
@@ -680,6 +686,9 @@ Worked example — awaited HEAD `a1b2c3d4e5f60718293a4b5c6d7e8f9012345678`:
 | `https://github.com/{owner}/{repo}/commit/0f1e2d3c4b5a69788796a5b4c3d2e1f098765432` | `false` | The same shape naming a genuinely different commit: the negative control the widening must still fail. |
 | `https://github.com/{owner}/{repo}/commit/a1b2c3d4e5f6` | `false` | An abbreviation of the awaited HEAD — equality, never prefix. |
 | comment body: `Review updated until commit [a1b2c3d](https://github.com/{owner}/{repo}/commit/a1b2c3d4e5f60718293a4b5c6d7e8f9012345678)` | `true` | The in-place-republished summary names the awaited HEAD in its body. |
+| coverage marker: `{"sourceCommitId":"a1b2c3d4…","coveredCommitId":"a1b2c3d4…","kind":"reviewed"}` | `true` | The marker names the awaited HEAD and declares a finished review. |
+| same marker with `coveredCommitId` naming another commit | `false` | A present marker is a claim, so it decides — the tokens elsewhere in the body do not override it. |
+| coverage marker whose payload cannot be parsed, or whose `kind` is not `reviewed` | not an answer | Skipped without a record: an in-progress or unreadable summary is no finished review. |
 | comment body naming no commit | `false` | The bot answered without naming what it reviewed — the decline this member exists to record. |
 
 A widening asserted only by its positive case cannot show it did not simply match everything, so the
