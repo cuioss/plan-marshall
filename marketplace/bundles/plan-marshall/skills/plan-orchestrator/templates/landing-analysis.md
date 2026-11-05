@@ -20,6 +20,69 @@ the evidence checked (files, tests, PR diff) for each verdict.}
 |--------------------|---------|----------|
 | {deliverable} | shipped-as-specified | {file/test/PR evidence} |
 
+## Three-Layer Analysis
+
+{The landing was read on three layers — the spec, the deliverable trace, and the
+merged code — by {one read-only leaf | the orchestrator inline, because the
+dispatch did not return}, and the orchestrator re-read every point recorded as
+`checked` before writing it here. The reading is **by reading, no build, no test
+run, no write**: what only a run could show is tagged `not shown by reading`,
+never left as clean.}
+
+- **Dispatch:** one read-only leaf per landing — reason: {why this landing got its own leaf}
+- **Verdict:** layer 1 {clean | findings}; layer 2 {clean | findings}; layer 3 {clean | findings | not shown by reading} —
+  every layer that carried a finding is named here, so a layer-3 defect is visible
+  without reading the section.
+
+### Layer 1 — Specified
+
+{Is the spec sound: are its premises and its Done-when conditions consistent with
+each other and with `main`? Each finding names the spec line and what contradicts
+it.}
+
+| Finding | Claim | Verdict | Evidence (file:line) |
+|---------|-------|---------|----------------------|
+| {none, or L1-N} | {claim} | {checked \| not_shown_by_reading} | {file:line} |
+
+**Layer 1 verdict:** {clean | findings — N}
+
+### Layer 2 — Implemented
+
+{Does each deliverable trace to code and to a test that can fail? Name every file
+the diff touched that no deliverable explains, and every claim of the lane's
+report the diff does not bear out.}
+
+| Deliverable | Code trace | Test that can fail | Unexplained file / unborne claim | Verdict |
+|-------------|------------|--------------------|---------------------------------|---------|
+| {deliverable} | {file:line} | {test} | {path or claim, or none} | {checked \| not_shown_by_reading} |
+
+**Layer 2 verdict:** {clean | findings — N}
+
+### Layer 3 — Correct
+
+{Is the merged code free of defects — invariants, boundaries, error paths,
+concurrency, resource handling and the project's code rules? Each defect carries
+the line, the triggering input and the effect. A layer-3 finding is reported to
+the operator at once and is never fixed inline; it becomes a staged fix-plan spec
+only on the operator's word.}
+
+| Defect | File:line | Triggering input | Effect | Severity |
+|--------|-----------|------------------|--------|----------|
+| {none, or L3-N} | {file:line} | {input} | {effect} | {blocker \| major \| minor \| info} |
+
+**Layer 3 not shown by reading:** {none, or L3-N: the conclusion, and what only a run could show}
+
+**Layer 3 verdict:** {clean | findings — N | not shown by reading — N}
+
+### Conformance to the Project's Own Rules
+
+{The project's own rules — `CLAUDE.md` and the code rules it names — checked
+against the merged code. Each row names the rule source and its verdict.}
+
+| Rule source | Rule | Verdict | Evidence |
+|-------------|------|---------|----------|
+| {CLAUDE.md § …} | {rule} | {conforms \| deviates \| not_shown_by_reading} | {file:line} |
+
 ## Metrics and Anomalies
 
 {Token/duration/loop-back figures from the plan's metrics, plus anything anomalous:
