@@ -54,13 +54,16 @@ private String neutralise(String value) {
     StringBuilder out = new StringBuilder(value.length());
     for (int i = 0; i < value.length(); i++) {
         char c = value.charAt(i);
-        out.append(Character.isISOControl(c) || c == '\u2028' || c == '\u2029' ? '?' : c);
+        // Escape, never drop: the owning rule prefers output encoding over removal.
+        out.append(Character.isISOControl(c) || c == '\u2028' || c == '\u2029'
+                ? String.format("\\u%04X", (int) c)
+                : c);
     }
     return out.toString();
 }
 ```
 
-`neutralise` covers the ISO control characters and the Unicode line separators U+2028/U+2029; it does not escape a structured format's delimiter. Where the appender is delimiter-based, escape the configured delimiter too — or, better, emit structured JSON, which escapes all three.
+`neutralise` covers the ISO control characters and the Unicode line separators U+2028/U+2029 by escaping each as a `\uXXXX` sequence — the owning rule's preference for escaping over dropping, so a legitimate value keeps its data while a CR or LF cannot forge a line. It does not escape a structured format's delimiter. Where the appender is delimiter-based, escape the configured delimiter too — or, better, emit structured JSON. JSON's string grammar escapes only the quote, the backslash and the C0 range (U+0000–U+001F); DEL (U+007F), the C1 range (U+0080–U+009F) and U+2028/U+2029 are still neutralised before the value is logged.
 
 ## Startup Configuration Validation
 
