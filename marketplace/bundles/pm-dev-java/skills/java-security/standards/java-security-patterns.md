@@ -54,13 +54,13 @@ private String neutralise(String value) {
     StringBuilder out = new StringBuilder(value.length());
     for (int i = 0; i < value.length(); i++) {
         char c = value.charAt(i);
-        out.append(Character.isISOControl(c) ? '?' : c);
+        out.append(Character.isISOControl(c) || c == '\u2028' || c == '\u2029' ? '?' : c);
     }
     return out.toString();
 }
 ```
 
-`neutralise` covers the control characters; it does not escape a structured format's delimiter. Where the appender is delimiter-based, escape the configured delimiter too — or, better, emit structured JSON, which escapes both.
+`neutralise` covers the ISO control characters and the Unicode line separators U+2028/U+2029; it does not escape a structured format's delimiter. Where the appender is delimiter-based, escape the configured delimiter too — or, better, emit structured JSON, which escapes all three.
 
 ## Startup Configuration Validation
 

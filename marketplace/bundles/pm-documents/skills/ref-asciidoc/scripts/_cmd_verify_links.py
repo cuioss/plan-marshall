@@ -28,10 +28,19 @@ _EXTERNAL_URL_CLASS = 'external-url'
 #: cannot read for anchors.
 _FRAGMENT_UNCHECKED_CLASS = 'fragment'
 
+#: The class name for a target carrying an AsciiDoc attribute reference
+#: (``{docs-base}/guide.adoc``). The checker does not substitute attributes, so
+#: the literal target cannot be resolved to a path.
+_ATTRIBUTE_REFERENCE_CLASS = 'attribute-reference'
+
 #: AsciiDoc delimited blocks whose contents are literal (a listing or literal
-#: block) or a comment. Links and anchors inside them are never rendered, so they
-#: are not checked.
-_BLOCK_DELIMITER_RE = re.compile(r'-{4,}|\.{4,}|/{4,}')
+#: block), a passthrough block, or a comment. Links and anchors inside them are
+#: never rendered, so they are not checked.
+_BLOCK_DELIMITER_RE = re.compile(r'-{4,}|\.{4,}|/{4,}|\+{4,}')
+
+#: An inline passthrough (``+link:target[label]+``). Its content is emitted
+#: verbatim, so it is an example, not a live macro.
+_INLINE_PASSTHROUGH_RE = re.compile(r'(?<![\w+])\+[^+\s][^+\n]*?\+(?![\w+])')
 
 
 def _block_delimiter(line: str) -> str | None:
@@ -99,9 +108,15 @@ def extract_anchors_from_file(filepath: str) -> set[str]:
             continue
         if open_delimiter is not None:
             continue
+        if line.strip().startswith('//'):
+            continue
 
-        anchors.update(re.findall(r'\[\[([^\]]+)\]\]', line))
-        anchors.update(re.findall(r'\[#([^\]]+)\]', line))
+        # Anchor markers inside a monospace/passthrough example are not rendered;
+        # the section title keeps its own text for the slug.
+        marker_line = re.sub(r'`[^`]*`', lambda match: ' ' * len(match.group(0)), line)
+        marker_line = _INLINE_PASSTHROUGH_RE.sub(lambda match: ' ' * len(match.group(0)), marker_line)
+        anchors.update(re.findall(r'\[\[([^\]]+)\]\]', marker_line))
+        anchors.update(re.findall(r'\[#([^\]]+)\]', marker_line))
         section_match = re.match(r'^(={1,6})\s+(.+)$', line.strip())
         if section_match:
             title = section_match.group(2)
@@ -137,31 +152,34 @@ def extract_links_from_file(filepath: str) -> list[Link]:
         if line.strip().startswith('//'):
             continue
 
-        # An inline monospace/escaped example is not a live link. Replace the span
-        # with same-length blanks rather than deleting it, so a live cross-ref whose
-        # label is monospace (``<<anchor,`Label`>>``) keeps its label group.
-        line = re.sub(r'`[^`]*`', lambda match: ' ' * len(match.group(0)), line)
+        # An inline monospace/passthrough example is not a live link. Match on a
+        # masked copy (same length, so offsets still address the original line) and
+        # slice the ORIGINAL line for the recorded text, so a report never shows a
+        # mangled link.
+        original_line = line
+        masked = re.sub(r'`[^`]*`', lambda match: ' ' * len(match.group(0)), line)
+        masked = _INLINE_PASSTHROUGH_RE.sub(lambda match: ' ' * len(match.group(0)), masked)
 
-        for match in re.finditer(r'<<([^,>]+)(?:,([^>]+))?>>', line):
+        for match in re.finditer(r'<<([^,>]+)(?:,([^>]+))?>>', masked):
             links.append(
                 Link(
                     file=filepath,
                     line_num=line_num,
-                    link_text=match.group(0),
+                    link_text=original_line[match.start() : match.end()],
                     link_type='cross-ref',
                     anchor=match.group(1).strip(),
                     label=match.group(2).strip() if match.group(2) else '',
                 )
             )
 
-        for match in re.finditer(r'xref:([^\[]+)\[([^\]]*)\]', line):
+        for match in re.finditer(r'xref:([^\[]+)\[([^\]]*)\]', masked):
             target_full = match.group(1).strip()
             target, anchor = (target_full.split('#', 1) + [''])[:2] if '#' in target_full else (target_full, '')
             links.append(
                 Link(
                     file=filepath,
                     line_num=line_num,
-                    link_text=match.group(0),
+                    link_text=original_line[match.start() : match.end()],
                     link_type='xref',
                     target=target,
                     anchor=anchor,
@@ -169,23 +187,23 @@ def extract_links_from_file(filepath: str) -> list[Link]:
                 )
             )
 
-        for match in re.finditer(r'<<([^>]*\.adoc[^>]*)>>', line):
+        for match in re.finditer(r'<<([^>]*\.adoc[^>]*)>>', masked):
             links.append(
                 Link(
                     file=filepath,
                     line_num=line_num,
-                    link_text=match.group(0),
+                    link_text=original_line[match.start() : match.end()],
                     link_type='deprecated',
                     target=match.group(1),
                 )
             )
 
-        for match in re.finditer(_LINK_MACRO_RE, line):
+        for match in re.finditer(_LINK_MACRO_RE, masked):
             links.append(
                 Link(
                     file=filepath,
                     line_num=line_num,
-                    link_text=match.group(0),
+                    link_text=original_line[match.start() : match.end()],
                     link_type='link',
                     target=match.group(1).strip(),
                     label=match.group(2).strip(),
@@ -206,6 +224,8 @@ def _link_macro_class(target: str) -> str:
         return 'internal-anchor'
     if target.startswith('//') or _URI_SCHEME_RE.match(target):
         return _EXTERNAL_URL_CLASS
+    if '{' in target:
+        return _ATTRIBUTE_REFERENCE_CLASS
     return 'relative-file'
 
 
@@ -224,8 +244,8 @@ def _unchecked_class(link: Link) -> str | None:
     if link.link_type != 'link':
         return None
     link_class = _link_macro_class(link.target)
-    if link_class == _EXTERNAL_URL_CLASS:
-        return _EXTERNAL_URL_CLASS
+    if link_class in {_EXTERNAL_URL_CLASS, _ATTRIBUTE_REFERENCE_CLASS}:
+        return link_class
     if link_class == 'relative-file':
         target_file, fragment = _split_relative_target(link.target)
         if fragment and not target_file.lower().endswith('.adoc'):

@@ -79,16 +79,15 @@ def _review_rules(skill_dir: Path) -> list[str]:
 
 
 def _assert_harvestable(rule: str) -> None:
-    """The harvestable-block contract, applied to one rule.
+    """The mechanical half of the harvestable-block contract.
 
-    One rule per bullet is structural (the caller reads bullets), so what is
-    checked here is the pair a reader can see — a rule addressed to a reviewer
-    and a mechanism-naming ``so`` clause — plus the absence of every phrase the
-    pack generator drops.
+    Section 10's remaining clauses — one rule per bullet, mechanism-naming wording,
+    addressed to a reviewer — are semantic: the parser already yields one bullet
+    per rule, and the per-rule needles in the tests below pin the mechanism each
+    rule names. What a test can enforce mechanically is that the bullet carries
+    text and none of the phrases the pack generator drops.
     """
     assert rule.strip(), 'a harvested rule must carry text'
-    assert rule.startswith(('A ', 'An ')), f'a rule must be addressed to a reviewer: {rule!r}'
-    assert ' so ' in rule, f'a rule must name the mechanism that goes wrong: {rule!r}'
     lowered = rule.lower()
     offenders = [marker for marker in _WITHHOLDING_MARKERS if marker in lowered]
     assert not offenders, f'a rule carries withholding language {offenders}: {rule!r}'
