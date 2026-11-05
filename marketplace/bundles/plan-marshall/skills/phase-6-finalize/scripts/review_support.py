@@ -106,6 +106,7 @@ import _review_support_attribution as _attr
 from _criteria_snapshot import (
     FUNCTIONAL_VERDICT_FILE,
     STATUS_FILE,
+    accepted_test_removals,
     criteria_drift,
     criterion_id_parts,
     open_criteria,
@@ -202,21 +203,27 @@ def loop_back_target(findings: list[dict[str, Any]]) -> str:
     return TARGET_FINALIZE
 
 
-def _grade_test_integrity(grading: Grading, plan_id: str) -> None:
+def _grade_test_integrity(grading: Grading, plan_id: str) -> list[dict[str, Any]]:
     """Consume the plan's ``test-integrity`` rows as blocking findings (rubric § 2).
 
     One finding per changed test whose assertions the branch removed or filtered.
     A failed computation is NOT read as an empty report: when the worktree resolves
     but the base diff cannot be read (``diff_unavailable``), the check did not run,
     so a blocking ``test_integrity_not_run`` finding blocks closure. A missing
-    worktree is the same not-run state UNLESS the plan never declared one: a plan
+    worktree is the same not-run state UNLESS the plan never declared one — a plan
     with ``use_worktree: false`` has no branch diff to grade, while a plan that
     declared a worktree which no longer resolves must not be graded against a tree
     it never used.
+
+    A row whose every removed identity is in the accepted-removal set
+    (:func:`_criteria_snapshot.accepted_test_removals`) raises no finding and is
+    returned, so the caller can list it in the payload as ``accepted_removals``. A
+    row whose removed set grew or changed is raised again, because the accepted
+    entry names both the identity AND the number of removed assertions.
     """
     report = compute_test_integrity(plan_id)
     if not isinstance(report, dict):
-        return
+        return []
     if report.get('status') != 'success':
         error = str(report.get('error') or 'unknown')
         non_applicable = error == 'worktree_unresolved' and not plan_uses_worktree(plan_id)
@@ -229,13 +236,39 @@ def _grade_test_integrity(grading: Grading, plan_id: str) -> None:
                 FIX_KIND_CORRECTION,
                 'test-integrity',
             )
-        return
+        return []
+    accepted = accepted_test_removals(plan_id)
+    accepted_rows: list[dict[str, Any]] = []
     for row in report.get('findings') or []:
         if not isinstance(row, dict):
+            continue
+        removed_tests = [entry for entry in row.get('removed_tests') or [] if isinstance(entry, dict)]
+        if removed_tests and all(_removal_is_accepted(entry, accepted) for entry in removed_tests):
+            accepted_rows.extend(removed_tests)
             continue
         path = str(row.get('path') or '-')
         detail = str(row.get('detail') or row.get('kind') or 'weakened test')
         grading.add('weakened_test', path, detail, True, FIX_KIND_CORRECTION, f'test-integrity {path}')
+    return accepted_rows
+
+
+def _removal_is_accepted(removed: dict[str, Any], accepted: list[dict[str, Any]]) -> bool:
+    """Whether one removed test identity is covered by the accepted-removal set.
+
+    An entry recorded by an operator close names the exact number of assertions
+    that finding removed, so a grown or changed removal is not covered. An outline
+    declaration may name no count; it then accepts the identity for whatever number
+    of assertions the removal took.
+    """
+    identity = removed.get('identity')
+    count = removed.get('assertions_removed')
+    for entry in accepted:
+        if entry.get('identity') != identity:
+            continue
+        recorded = entry.get('assertions_removed')
+        if recorded is None or recorded == count:
+            return True
+    return False
 
 
 def run_validate(plan_id: str, kind: str, verdict_file: str, verifier_file: str | None) -> dict[str, Any]:
@@ -307,8 +340,10 @@ def run_validate(plan_id: str, kind: str, verdict_file: str, verifier_file: str 
     # Consume the plan's own ``test-integrity`` rows: a weakened pre-existing test
     # is a blocking finding (rubric § 2), and before this the rows were produced by
     # a verb no validator read, so a removed assertion blocked nothing unless the
-    # author remembered to copy it into prose. One finding per weakened test.
-    _grade_test_integrity(grading, plan_id)
+    # author remembered to copy it into prose. One finding per weakened test. A
+    # removal the plan decided on (declared at outline or accepted by an operator
+    # close) is not asked about again; it is listed as ``accepted_removals``.
+    accepted_removals = _grade_test_integrity(grading, plan_id)
 
     blocking_count = sum(1 for finding in grading.findings if finding['severity'] == SEVERITY_BLOCKING)
     verifier = verifier_status(verifier_file, blocking_count > 0)
@@ -333,6 +368,7 @@ def run_validate(plan_id: str, kind: str, verdict_file: str, verifier_file: str 
     payload['may_close'] = blocking_count == 0 and verifier == VERIFIER_ACCEPTED
     payload['loop_back_target'] = loop_back_target(grading.findings)
     payload['findings'] = grading.findings
+    payload['accepted_removals'] = accepted_removals
     payload['facts'] = facts
     return payload
 

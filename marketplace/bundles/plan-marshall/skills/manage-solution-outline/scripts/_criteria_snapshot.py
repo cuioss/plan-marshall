@@ -114,13 +114,25 @@ SNAPSHOT_FROZEN_KEY = 'snapshot_frozen'
 #: reader here and the protected-key guard in ``manage-status`` derive the name
 #: from this one definition.
 OVERRIDE_HEADS_KEY = 'functional_review_override_heads'
+#: The status-record metadata list of accepted test removals. The two writers are
+#: ``snapshot-criteria`` (which seeds it from the outline's ``Tests to remove``
+#: declarations) and ``loop-back close --accept`` on a ``weakened_test`` finding
+#: (which records the identities that finding removed). Each entry is
+#: ``{identity, assertions_removed}`` — the D1 test identity plus the number of
+#: removed assertions. A generic ``metadata --set`` must refuse it, so it joins
+#: the protected set below.
+ACCEPTED_TEST_REMOVALS_KEY = 'accepted_test_removals'
 #: The status-record metadata keys whose only writers commit through their own
 #: guarded read-modify-write. ``_status_core.write_status`` must carry them
 #: forward from the live document, and a generic ``metadata --set`` must refuse
 #: them. The MEMBERSHIP is defined here once, so the carry set and the protected
 #: set cannot drift into covering different keys as a third owner-written key is
 #: added.
-PROTECTED_STATUS_METADATA_KEYS: tuple[str, ...] = (INTEGRITY_KEY, OVERRIDE_HEADS_KEY)
+PROTECTED_STATUS_METADATA_KEYS: tuple[str, ...] = (
+    INTEGRITY_KEY,
+    OVERRIDE_HEADS_KEY,
+    ACCEPTED_TEST_REMOVALS_KEY,
+)
 
 #: The key INSIDE the integrity block that carries the identity of the re-freeze
 #: authorization this process set. A withdrawal is conditioned on it, so a failed
@@ -237,6 +249,115 @@ def _merge_integrity(plan_id: str, merge: Callable[[dict[str, Any]], None]) -> b
     except OSError:
         return False
     return True
+
+
+def _merge_metadata(plan_id: str, merge: Callable[[dict[str, Any]], None]) -> bool:
+    """Merge into the status record's top-level ``metadata`` inside the writers' guard.
+
+    The same guarded read-modify-write ``_merge_integrity`` uses, one level up: the
+    accepted-removal set is a sibling of the ``criteria_integrity`` block, not a
+    member of it. ``_status_core.write_status`` carries the protected keys forward
+    from the document it reads inside the guard, so a stale snapshot cannot restore
+    an older list over this merge.
+
+    Returns ``False`` for an absent/unreadable record, a guard timeout and a failed
+    commit — never read as "recorded".
+    """
+    path = base_path('plans', plan_id, STATUS_FILE)
+    try:
+        with held_guard(path.with_name(f'{path.name}{_GUARD_SUFFIX}')):
+            status = _status_doc(plan_id)
+            if status is None:
+                return False
+            metadata = status.get('metadata')
+            if not isinstance(metadata, dict):
+                metadata = {}
+                status['metadata'] = metadata
+            merge(metadata)
+            try:
+                atomic_write_file(path, json.dumps(status, indent=2, sort_keys=True) + '\n')
+            except OSError:
+                return False
+    except OSError:
+        return False
+    return True
+
+
+def accepted_test_removals(plan_id: str) -> list[dict[str, Any]]:
+    """Return the accepted-removal set: recorded entries plus live declarations.
+
+    The two sources the spec names are unioned here, so neither has to be
+    re-derived by the grader:
+
+    * the plan's status record (:data:`ACCEPTED_TEST_REMOVALS_KEY`), seeded by
+      ``snapshot-criteria`` from the outline and appended to by
+      ``loop-back close --accept``;
+    * the CURRENT outline's ``**Tests to remove:**`` declarations, read through the
+      one deliverable parser. Reading the live outline as well keeps a declaration
+      effective for a plan that carries no snapshot, without a second parser.
+
+    Each entry is ``{identity, assertions_removed}``; ``assertions_removed`` is
+    ``None`` for an outline declaration that names no count, which accepts the
+    identity for whatever number of assertions the removal took. Deduplicated so a
+    declaration seeded at freeze and re-read here appears once.
+    """
+    entries: list[dict[str, Any]] = []
+    seen: set[tuple[Any, Any]] = set()
+
+    def _add(entry: Any) -> None:
+        if not isinstance(entry, dict):
+            return
+        identity = entry.get('identity')
+        if not isinstance(identity, str) or not identity:
+            return
+        count = entry.get('assertions_removed')
+        key = (identity, count if isinstance(count, int) else None)
+        if key in seen:
+            return
+        seen.add(key)
+        entries.append({'identity': identity, 'assertions_removed': count if isinstance(count, int) else None})
+
+    metadata = (_status_doc(plan_id) or {}).get('metadata')
+    recorded = metadata.get(ACCEPTED_TEST_REMOVALS_KEY) if isinstance(metadata, dict) else None
+    for entry in recorded if isinstance(recorded, list) else []:
+        _add(entry)
+    for deliverable in outline_deliverables(plan_id) or []:
+        for entry in deliverable.get('declared_test_removals') or []:
+            _add(entry)
+    return entries
+
+
+def record_accepted_removals(plan_id: str, entries: list[dict[str, Any]]) -> bool:
+    """Union ``entries`` into the plan's accepted-removal set; return success.
+
+    The one writer shape both owning verbs call: ``snapshot-criteria`` seeds it
+    from the outline's declarations, and ``loop-back close --accept`` appends the
+    identities a ``weakened_test`` finding removed. The merge is a union keyed by
+    ``(identity, assertions_removed)``, so re-seeding a re-freeze neither duplicates
+    an entry nor drops one an operator accepted.
+    """
+    wanted = [
+        {'identity': str(entry['identity']), 'assertions_removed': entry.get('assertions_removed')}
+        for entry in entries
+        if isinstance(entry, dict) and entry.get('identity')
+    ]
+    if not wanted:
+        return True
+
+    def _apply(metadata: dict[str, Any]) -> None:
+        current = metadata.get(ACCEPTED_TEST_REMOVALS_KEY)
+        values = list(current) if isinstance(current, list) else []
+        existing = {
+            (value.get('identity'), value.get('assertions_removed')) for value in values if isinstance(value, dict)
+        }
+        for entry in wanted:
+            key = (entry['identity'], entry['assertions_removed'])
+            if key not in existing:
+                values.append(entry)
+                existing.add(key)
+        metadata[ACCEPTED_TEST_REMOVALS_KEY] = values
+
+    return _merge_metadata(plan_id, _apply)
 
 
 def record_integrity(plan_id: str, *, drop: tuple[str, ...] = (), **fields: Any) -> bool:
@@ -951,6 +1072,14 @@ def _write_snapshot_locked(plan_id: str) -> dict[str, Any]:
                 'snapshot was kept' + ('' if rolled_back else ' (the partial snapshot could not be removed)')
             ),
         }
+    # Seed the accepted-removal set from the outline's declared removals. The
+    # declaration is an authoring-time decision, so freezing the criteria freezes
+    # it too; a re-freeze unions rather than replaces, so an entry an operator
+    # accepted is never dropped.
+    declared: list[dict[str, Any]] = []
+    for deliverable in outline_deliverables(plan_id) or []:
+        declared.extend(deliverable.get('declared_test_removals') or [])
+    removals_recorded = record_accepted_removals(plan_id, declared)
     return {
         'status': 'success',
         'plan_id': plan_id,
@@ -960,6 +1089,8 @@ def _write_snapshot_locked(plan_id: str) -> dict[str, Any]:
         'request_done_when_count': len(snapshot['request']['done_when']),
         'spec_deliverable_count': len(snapshot['spec']['deliverables']) if snapshot['spec'] else 0,
         'preserved_authorizations': len(snapshot['authorized_changes']),
+        'declared_test_removals': len(declared),
+        'accepted_removals_recorded': removals_recorded,
     }
 
 

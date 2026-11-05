@@ -65,7 +65,7 @@ import re
 from typing import Any
 
 from _cmd_mark_step import cmd_mark_step_done, find_step_record, write_refire_waiver
-from _criteria_snapshot import OVERRIDE_HEADS_KEY
+from _criteria_snapshot import OVERRIDE_HEADS_KEY, record_accepted_removals
 from _locks_core import rmw_json
 from _status_core import get_status_path, require_status, write_status
 from _step_key_canonical import canonicalize_step_key
@@ -368,6 +368,75 @@ def _record_override_head(plan_id: str, step: str, head: str) -> tuple[bool, str
     return True, None
 
 
+#: The prefix the review's own grader gives a weakened-test finding's title
+#: (``weakened_test at {path}``). The accept path reads the path back out of the
+#: title, because the workflow files the finding from the validator's row and does
+#: not pass ``--file-path``.
+_WEAKENED_TITLE_PREFIX = 'weakened_test at '
+
+
+def _recompute_test_integrity(plan_id: str) -> dict[str, Any] | None:
+    """The plan's test-integrity report at the closing head, or ``None``.
+
+    Imported lazily: the budget verbs in this module need no review surface, and a
+    checkout without the finalize bundle must keep working. ``None`` is a failure
+    to read, never an empty report — the caller reports it rather than recording an
+    empty accepted set.
+    """
+    try:
+        import _review_support_integrity as integrity
+    except ImportError:
+        return None
+    try:
+        report = integrity.compute_test_integrity(plan_id)
+    except Exception:
+        return None
+    return report if isinstance(report, dict) else None
+
+
+def _removed_identities_for_accept(
+    plan_id: str, accept: set[str], findings: list[dict[str, Any]]
+) -> tuple[list[dict[str, Any]], str | None]:
+    """The removed identities the accepted ``weakened_test`` findings account for.
+
+    An operator close accepts a finding, and the finding's own row names the test
+    file. The identities are re-derived from the SAME test-integrity report the
+    validator graded, so the accepted set is keyed by the identity plus the number
+    of removed assertions rather than by a head. Returns the entries plus an error
+    string when the report cannot be read or no longer carries an accepted removal.
+    """
+    paths: list[str] = []
+    for finding in findings:
+        if not isinstance(finding, dict) or finding.get('hash_id') not in accept:
+            continue
+        title = str(finding.get('title') or '')
+        if not title.startswith(_WEAKENED_TITLE_PREFIX):
+            continue
+        path = str(finding.get('file_path') or title[len(_WEAKENED_TITLE_PREFIX) :]).strip()
+        if path:
+            paths.append(path)
+    if not paths:
+        return [], None
+    report = _recompute_test_integrity(plan_id)
+    if report is None or report.get('status') != 'success':
+        return [], 'the test-integrity report could not be read at the closing head'
+    by_path = {row.get('path'): row for row in report.get('findings') or [] if isinstance(row, dict)}
+    entries: list[dict[str, Any]] = []
+    unaccounted: list[str] = []
+    for path in paths:
+        removed = [entry for entry in (by_path.get(path) or {}).get('removed_tests') or [] if isinstance(entry, dict)]
+        if removed:
+            entries.extend(removed)
+        else:
+            unaccounted.append(path)
+    if unaccounted:
+        return entries, (
+            'the accepted finding(s) name removal(s) the current test-integrity report does not carry: '
+            + ', '.join(unaccounted)
+        )
+    return entries, None
+
+
 def _load_findings_core() -> Any:
     """Return the findings storage module, or ``None`` when it cannot be imported.
 
@@ -544,6 +613,19 @@ def cmd_loop_back_close(args: argparse.Namespace) -> dict | None:
     # fact that the operator shipped this head with the review closed.
     override_head_recorded, override_head_error = _record_override_head(plan_id, step, closing_head)
 
+    # The close is also the owning writer of an accepted removal: accepting a
+    # ``weakened_test`` finding records the identities the finding removed, keyed by
+    # the D1 identity plus the removed count — not the closing head — so the same
+    # removal is not asked about again at a later head.
+    accepted_removal_entries, accepted_removals_error = _removed_identities_for_accept(
+        plan_id, set(accept), list(pending['findings'])
+    )
+    accepted_removals_recorded = True
+    if accepted_removal_entries:
+        accepted_removals_recorded = record_accepted_removals(plan_id, accepted_removal_entries)
+        if not accepted_removals_recorded:
+            accepted_removals_error = 'the accepted removal identities could not be recorded in the plan status record'
+
     # From here on the step IS recorded done, so a failure below is reported as
     # an incomplete close naming what did and did not land — never as a refusal.
     accepted: list[str] = []
@@ -582,6 +664,8 @@ def cmd_loop_back_close(args: argparse.Namespace) -> dict | None:
         'rationale': rationale,
         'accepted_count': len(accepted),
         'accepted': accepted,
+        'accepted_removals': [str(entry.get('identity')) for entry in accepted_removal_entries],
+        'accepted_removals_recorded': accepted_removals_recorded,
         'state_rule': rule,
         'state_findings_resolved': len(state.get('resolved', [])) if state_resolved else 0,
         'waived_steps': waived_steps,
@@ -589,7 +673,9 @@ def cmd_loop_back_close(args: argparse.Namespace) -> dict | None:
     }
     if override_head_error:
         result['override_head_error'] = override_head_error
-    if not_accepted or not state_resolved or waiver_refusals or override_head_error:
+    if accepted_removals_error:
+        result['accepted_removals_error'] = accepted_removals_error
+    if not_accepted or not state_resolved or waiver_refusals or override_head_error or accepted_removals_error:
         result['status'] = 'error'
         result['error'] = 'close_incomplete'
         result['not_accepted'] = not_accepted
@@ -597,6 +683,7 @@ def cmd_loop_back_close(args: argparse.Namespace) -> dict | None:
         result['waiver_refusals'] = waiver_refusals
         result['message'] = (
             f'Step {step!r} was recorded done at {closing_head}, but the close did not complete: '
-            'see not_accepted, state_error, waiver_refusals and override_head_error for what did not land.'
+            'see not_accepted, state_error, waiver_refusals, override_head_error and '
+            'accepted_removals_error for what did not land.'
         )
     return result
