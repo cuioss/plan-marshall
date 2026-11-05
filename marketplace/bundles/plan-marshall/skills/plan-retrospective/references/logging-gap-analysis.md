@@ -192,13 +192,14 @@ deliverable. When the precondition is absent, the rule emits no finding.
     `voluntary_checkpoint`, `task_complete_returned_verbatim`, `budget_yield`,
     `harness_cancellation`, `error`, `clean_exit_queue_empty`, `step_complete`,
     `blocked_user_review`, `blocked_session_restart`, `task_batch_complete`,
-    `agent_returned`, `returned_with_findings`, `baseline_drift`.
+    `agent_returned`, `returned_with_findings`, `baseline_drift`,
+    `verification_handback`.
     Report the count for every value in that set — including the causes that did
     not occur, as an explicit zero — e.g. `"4 voluntary_checkpoint,
     1 task_complete_returned_verbatim, 2 budget_yield, 0 harness_cancellation,
     0 error, 1 clean_exit_queue_empty, 0 step_complete, 0 blocked_user_review,
     0 blocked_session_restart, 0 task_batch_complete, 0 agent_returned,
-    0 returned_with_findings, 0 baseline_drift"`.
+    0 returned_with_findings, 0 baseline_drift, 2 verification_handback"`.
   - A `warning`-severity finding when `unknown_count > 0` — any row
     carrying the literal `unknown` termination cause is legacy data from
     before the `clean_exit_queue_empty` migration (the recorder no longer
@@ -225,6 +226,12 @@ deliverable. When the precondition is absent, the rule emits no finding.
     spend and must never be read as an agent-initiated-re-dispatch failure. A
     high `returned_with_findings` share means the review dispatches were doing
     their job; do not flag it.
+    **`verification_handback` is EXCLUDED for the same reason as `budget_yield`**:
+    it is the PRESCRIBED orchestrator-tier build hand-back — the leaf did exactly
+    what the workflow told it to do with a build outside its runnable slice. A
+    run of hand-back rows (including the two consecutive rows a re-attach writes
+    for one task) is not voluntary-checkpoint polling and not agent-initiated
+    re-dispatch; count it separately and never toward the threshold.
   - **Genuinely-wasted vs retryable dispatch spend (per phase).** The fact
     extractor also sums `total_tokens` by cause-class so a reader sees the waste
     without reconstructing it from the raw rows:

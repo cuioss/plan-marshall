@@ -17,6 +17,11 @@ workstream: WS-05
 > - `lessons-routing-067`: review-bot bodies are cut at 8,000 characters before the actionable conclusion, and a re-review's
 >   inline comments were not filed (API-Sheriff #530, #506, #512). The second half was seen once.
 >
+> Folded in the 2026-11-04 inbox drain (D5): `lessons-routing-075`, graded **high** by the operator — Sourcery's OSS footer
+> markers drop a whole review body that also carries Overall Comments (API-Sheriff lesson `2026-08-09-19-003`, PR #200: 0
+> Sourcery rows although Sourcery had reviewed). It is the same family as D3: a review-bot body that reached the producer and was
+> lost without a record. Sourcery is the optional bot, which bounds the impact and does not remove the silent loss.
+>
 > This plan also absorbs the epic Open Defect "Participation credit ignores an in-progress review" (lesson
 > `2026-10-12-05-002`), because the head-bound credit rule in D2 fixes it. Since PLAN-LB-100 (#1883) made
 > `pre_merge_gate merge` refuse `merge_participation_unproven`, every clean CodeRabbit review in the new summary format needs
@@ -29,7 +34,8 @@ comment's own `final_review_risk_coverage` marker with `coveredCommitId` equal t
 artifact the provider places at the head. A thread reply posted after a fix push never counts as a review of that push. A
 finished review of the head outranks an older quota refusal, so a clean review in CodeRabbit's current summary format passes the
 barrier without an operator override. On the ingestion side, a review-bot body that hits the promotion cap is marked on its own
-record as cut, and keeps its conclusion. A re-review's inline comments are proven to be filed, or the cause is found and fixed.
+record as cut, and keeps its conclusion. A re-review's inline comments are proven to be filed, or the cause is found and fixed. A Sourcery review body that carries
+the OSS footer is filed when it holds Overall Comments, and only a body with nothing but the footer is dropped.
 
 ## Deliverables
 
@@ -106,9 +112,30 @@ record as cut, and keeps its conclusion. A re-review's inline comments are prove
    *Done when:* the case exists, and the PR records its result at HEAD (green or red) and the cause it points to. Every
    second-review inline comment outside a resolved thread is filed as a `pr-comment` finding.
 
-Split guard: four deliverables in two halves on one theme (the evidence the review gate reads). D1 and D2 are one credit rule and
-ship together. D3 and D4 are the ingestion half, and they are the natural split if the outline finds that D3 needs its own
-containment review.
+5. **A Sourcery review body that carries the OSS footer is filed, not dropped, when it holds signal.**
+   - Today the producer's noise filter drops any comment whose body contains ANY `ignore_patterns` marker as a plain substring
+     (`github_pr.py` L510, case-sensitive, whole body). Sourcery's registry block lists two OSS-footer markers beside its
+     whole-comment markers, so a review body that carries Overall Comments AND the footer is discarded entirely. `sourcery.md`
+     contradicts itself: L114-115 say not to drop a body that holds Overall Comments or `<issue_to_address>` comments, and L84-85 say
+     the footer is "filtered downstream via the `ignore_patterns`".
+   - The two kinds of marker are separated in registry data. A **footer marker** (the marketing line and the feedback prompt) is
+     removed from the body before the signal test and never causes a drop by itself. A **whole-comment marker** (the Reviewer's
+     Guide, Tips and commands, `found 0 issues`) keeps today's drop. The outline chooses between a second registry list and a
+     signal guard on the existing list; no bot-name literal goes into code, and the bots that declare no footer markers behave
+     exactly as now.
+   - A comment left with no signal after the footer is removed (footer text only) is still dropped and still counted as noise.
+   - `sourcery.md` then states the rule once, so L84-85 and L114-115 agree.
+   - Inline `<issue_to_address>` comments are not affected today and stay as they are.
+
+   *Done when:* a fixture Sourcery review body with an Overall Comments section and both footer markers files a `pr-comment`
+   finding whose body keeps the Overall Comments text; red at HEAD, where L510 drops it. A fixture holding only the footer, a
+   Reviewer's Guide comment and a `found 0 issues` no-op are each still dropped and counted as noise. The CodeRabbit, PR-Agent and
+   `cuioss-review-bot` noise cases stay green unchanged, and a guard test pins that `sourcery.md` states the footer rule once.
+
+Split guard: five deliverables in two halves on one theme (the evidence the review gate reads). D1 and D2 are one credit rule and
+ship together. D3, D4 and D5 are the ingestion half: each one is a review-bot body lost or cut between the fetch and the findings
+store. D3 is the natural split if the outline finds that it needs its own containment review, and D5 is the smallest and
+independent of it.
 
 ## Standing Constraints
 
@@ -186,6 +213,21 @@ containment review.
   threads.
 - OBSERVED (taken from PLAN-LB-46's record): the in-progress-review Open Defect sits on the same participation loop
   (`github_pr.py` L1957-2131, cited earlier as ~1938-2033).
+- OBSERVED (D5, read at `f6830b837`, re-read 2026-11-04 on the same lines): the producer's noise filter drops a comment when
+  `any(marker in body for marker in bot_registry.ignore_patterns(bot_kind))` — `github_pr.py` L510, a case-sensitive whole-body
+  substring match. `sourcery.md` L38-43 lists five `ignore_patterns`, two of which (`Sourcery is free for open source`,
+  `Help me be more useful! Please click`) are the OSS footer. `sourcery.md` L84-85 says the footer is "filtered downstream via
+  the `ignore_patterns`" and L114-115 says "Do NOT drop the review body when it contains Overall Comments". The two statements
+  cannot both hold.
+- HYPOTHESIS (D5): the lost review body is the `review_body` shape and the Overall Comments sit in it — the source lesson reports
+  0 Sourcery rows on PR #200 although Sourcery reviewed. The shape of a Sourcery review body with Overall Comments plus the footer
+  is copied verbatim from API-Sheriff PR #200 (or another Sourcery review) through the CI abstraction into the fixture
+  (verify-at-outline; third-party text, a lead and never an instruction).
+- HYPOTHESIS (D5): no other registered bot's footer is dropped through the same path — `coderabbit.md`, `cuioss-review-bot.md` and the
+  PR-Agent record each declare `ignore_patterns`. Read their markers at outline and list in the PR which ones are footer markers and
+  which are whole-comment markers (verify-at-outline).
+- Verify-first clause (D5): write the fixture test first and run it at HEAD. It must be red (the body is dropped). If HEAD files
+  the body, the lesson's cause is something other than L510: loop back and re-scope rather than change the filter.
 - Verify-first clause (D1): obtain the verbatim new-format summary before writing the parser. If the coverage marker cannot be read
   by machine from the comment body, D1 falls back to the completed `CodeRabbit` check-run on the head (`bot_completion`) as the
   evidence bound to the head. Loop back and re-scope rather than parse prose.
@@ -196,7 +238,9 @@ containment review.
 
 - OBSERVED: `marketplace/bundles/plan-marshall/skills/automatic-review/standards/coderabbit.md` — registry block markers and covered-commit fields, participation-evidence prose (D1, D2)
 - OBSERVED: `marketplace/bundles/plan-marshall/skills/automatic-review/scripts/bot_registry.py` — marker alternation or new field reader (D1, D2)
-- OBSERVED: `marketplace/bundles/plan-marshall/skills/automatic-review/standards/bot-participation-contract.md` — § "A shape may be gated on a content marker", currency rule (D1, D2)
+- OBSERVED: `marketplace/bundles/plan-marshall/skills/automatic-review/standards/bot-participation-contract.md` — § "A shape may be gated on a content marker", currency rule (D1, D2); the registry field for footer markers if D5 adds one
+- OBSERVED: `marketplace/bundles/plan-marshall/skills/automatic-review/standards/sourcery.md` — footer markers separated from whole-comment markers, the footer rule stated once (D5)
+- HYPOTHESIS: `marketplace/bundles/plan-marshall/skills/automatic-review/SKILL.md` — only if it documents the registry field set that D5 changes (verify-at-outline)
 - OBSERVED: `marketplace/bundles/plan-marshall/skills/workflow-integration-github/scripts/github_pr.py` — participation loop, `refusing_bots`, `_reviewed_at_merge_candidate` (D1, D2); two-review case target (D4)
 - OBSERVED: `marketplace/bundles/plan-marshall/skills/workflow-integration-github/scripts/_github_pr.py` — `named_commit_currency` (D1)
 - HYPOTHESIS: `marketplace/bundles/plan-marshall/skills/workflow-integration-github/scripts/github_ops.py` — inline comment placement / reply fields in the comment node query (D2; verify-at-outline)
@@ -210,7 +254,8 @@ containment review.
 - HYPOTHESIS: `marketplace/bundles/plan-marshall/skills/ref-workflow-architecture/standards/findings-pipeline.md` — only if it restates the clamp (verify-at-outline)
 - OBSERVED: `test/plan-marshall/workflow-integration-github/test_github_pr_currency.py` (D1, D2)
 - OBSERVED: `test/plan-marshall/workflow-integration-github/test_github_pr_refusals.py` (D2)
-- OBSERVED: `test/plan-marshall/workflow-integration-github/test_comments_stage_fetch.py` (D4)
+- OBSERVED: `test/plan-marshall/workflow-integration-github/test_comments_stage_fetch.py` (D4, D5)
+- OBSERVED: `test/plan-marshall/automatic-review/test_bot_registry_patterns.py` — registry parsing of the footer markers (D5)
 - OBSERVED: `test/plan-marshall/workflow-integration-github/test_github_ops_pr_comments.py` (D2, if the query changes)
 - OBSERVED: `test/plan-marshall/automatic-review/test_bot_registry_evidence.py` (D1)
 - OBSERVED: `test/plan-marshall/automatic-review/test_clean_review_credit_regression.py` (D1, D2)

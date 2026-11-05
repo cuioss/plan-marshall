@@ -717,7 +717,7 @@ _RESOLVED_FINDING_ID = 'cb10f4'
 _OPTIONAL_PLAN_ID_VERBS = ('decision', 'work', 'script')
 
 #: Verbs whose own argparse declares ``--plan-id`` required.
-_REQUIRED_PLAN_ID_VERBS = ('separator', 'read')
+_REQUIRED_PLAN_ID_VERBS = ('separator', 'read', 'signal-scan')
 
 #: The eight auto-routing notations WL-C sweeps for. The sweep regex's
 #: alternation group IS the whitelist, so this set is pinned against the regex
@@ -902,9 +902,9 @@ def test_wl_c_optionality_resolves_for_every_manage_logging_verb() -> None:
     population cannot masquerade as a clean pass.
     """
     population = _derive_manage_logging_verb_population()
-    assert len(population) == 5, (
+    assert len(population) == 6, (
         f'manage-logging publishes {len(population)} verbs {population!r}; the WL-C '
-        f'totality control was written against a population of 5. Re-derive the '
+        f'totality control was written against a population of 6. Re-derive the '
         f'expected classes before widening this number.'
     )
     assert set(population) == set(_OPTIONAL_PLAN_ID_VERBS) | set(_REQUIRED_PLAN_ID_VERBS), (

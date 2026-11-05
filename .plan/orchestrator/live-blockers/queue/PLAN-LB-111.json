@@ -1,0 +1,11 @@
+{
+  "id": "PLAN-LB-111",
+  "slug": "three-layer-landing-analysis",
+  "workstream": "WS-03",
+  "status": "shipped",
+  "lane": "runbook",
+  "plan_marshall_plan_id": "lb-111-three-layer-landing-analysis",
+  "pr": "1908",
+  "landing": "landings/PLAN-LB-111.md",
+  "seq": 111
+}

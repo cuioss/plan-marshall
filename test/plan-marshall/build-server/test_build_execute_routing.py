@@ -802,3 +802,441 @@ def test_cmd_run_records_requested_and_resolved_mode(monkeypatch, capsys):
     _, cmd_run = factory.create_execute_handlers(_config(), parse_log_fn=lambda *a: None)
     cmd_run(_run_args(execution_mode='daemon'))
     assert 'requested=daemon, resolved=fail-loud' in capsys.readouterr().err
+
+
+# =============================================================================
+# PLAN-LB-112 — a routed build in the finalize move-back window
+# =============================================================================
+#
+# The window: ``integrate_into_main`` has moved the plan directory back to the
+# main checkout, and the worktree directory still exists. A build routed with
+# ``--plan-id`` in that window resolves fine in the ROUTING process (its cwd is
+# main, which holds the plan record, and the record names the still-existing
+# worktree) — and then the daemon child re-runs the same argv from the worktree,
+# where the plan directory is absent. The child refuses with its own
+# ``worktree_resolution_failed`` body and exit 2.
+#
+# The fixture below stages exactly that layout. The one thing it models rather
+# than executes is the process hop inside ``file_ops._run_get_worktree_path``:
+# the real verb shells out to ``manage-status get-worktree-path``, whose STRICT
+# gate reads the plan record from the CURRENT checkout only. The model reads the
+# same on-disk layout through the same ``derive_worktree_state``, so the hop's
+# strictness is what is reproduced, not re-invented.
+
+_MOVED_BACK_PLAN = 'plan-moved-back'
+
+_MOVED_BACK_REASON = 'status.json not found for the moved-back plan'
+"""The reason the child states; asserted at the routed layer, not only at the reader."""
+
+
+def _stage_moved_back_plan(plan_root: Path, worktree: Path) -> Path:
+    """Stage the plan record on ``plan_root`` with ``worktree`` persisted in it."""
+    plan_dir = plan_root / '.plan' / 'local' / 'plans' / _MOVED_BACK_PLAN
+    plan_dir.mkdir(parents=True)
+    (plan_dir / 'status.json').write_text(
+        json.dumps(
+            {
+                'plan_id': _MOVED_BACK_PLAN,
+                'metadata': {
+                    'use_worktree': 'true',
+                    'worktree_path': str(worktree),
+                    'worktree_branch': f'feature/{_MOVED_BACK_PLAN}',
+                },
+            }
+        ),
+        encoding='utf-8',
+    )
+    return plan_dir
+
+
+@pytest.fixture
+def moved_back_window(monkeypatch, tmp_path) -> dict:
+    """The daemon child's view of the window: cwd in the worktree, plan record on main."""
+    import file_ops
+
+    main = tmp_path / 'main'
+    worktree = tmp_path / 'worktree'
+    worktree.mkdir(parents=True)
+    _stage_moved_back_plan(main, worktree)
+    monkeypatch.chdir(worktree)
+
+    def _strict_gate(plan_id: str):
+        """``get-worktree-path``'s STRICT gate, read from the CURRENT checkout."""
+        record = Path.cwd() / '.plan' / 'local' / 'plans' / plan_id / 'status.json'
+        if not record.is_file():
+            raise file_ops.WorktreeResolutionError(
+                'manage-status get-worktree-path returned non-success: '
+                f"error='file_not_found' message='status.json not found for {plan_id!r}'"
+            )
+        metadata = json.loads(record.read_text(encoding='utf-8')).get('metadata') or {}
+        return file_ops.derive_worktree_state(metadata)
+
+    monkeypatch.setattr(file_ops, '_query_worktree_path', _strict_gate)
+    return {'main': main, 'worktree': worktree}
+
+
+def _child_fault_job_log(tmp_path, plan_id: str = _MOVED_BACK_PLAN) -> str:
+    """Write the job log the child produces, from the child's OWN error emitter."""
+    import resolve_project_dir as routing
+    from _build_format import format_toon
+
+    exc = routing.WorktreeResolutionError(_MOVED_BACK_REASON)
+    body = format_toon(routing.emit_worktree_error(plan_id, exc))
+    log = tmp_path / 'moved-back-job.log'
+    log.write_text(f'[EXEC] python3 .plan/execute-script.py … run --plan-id {plan_id}\n{body}', encoding='utf-8')
+    return str(log)
+
+
+class TestMovedBackPlanRoutedBuild:
+    """D1 (reproduce), D2 (carry the resolved tree), D3 (report the fault as itself)."""
+
+    def test_the_child_cannot_resolve_the_plan_from_its_own_tree(self, moved_back_window):
+        """D1 cause: the child re-resolves ``--plan-id`` from a tree without the plan.
+
+        The strict gate is NOT weakened here — this remains the child's answer, and
+        D2 fixes the ROUTED re-run by carrying the tree, never by relaxing the gate.
+        """
+        import resolve_project_dir as routing
+
+        with pytest.raises(routing.WorktreeResolutionError):
+            routing.resolve_project_dir(_MOVED_BACK_PLAN, '.', default='.')
+
+    def test_the_routing_process_resolves_the_still_existing_worktree(self, moved_back_window, monkeypatch):
+        """D1 contrast: from MAIN the same flag resolves — the asymmetry is the defect."""
+        monkeypatch.chdir(moved_back_window['main'])
+        import resolve_project_dir as routing
+
+        assert routing.resolve_project_dir(_MOVED_BACK_PLAN, '.', default='.') == str(
+            moved_back_window['worktree'].resolve()
+        )
+
+    def test_the_direct_build_reports_the_same_fault_as_itself(self, moved_back_window, monkeypatch, capsys):
+        """The in-process (direct) leg already answers as itself, with exit 2.
+
+        This is the CONTRAST the routed leg has to match, and it is why the defect
+        is routing-specific: the same tree, the same flag, the same missing plan
+        record — only the non-routed path is honest about it.
+        """
+        import _build_cli  # the module owning build_main is the subject here
+        from _build_cli import add_run_subparser, build_main
+
+        def _register(subparsers):
+            parser = add_run_subparser(subparsers, command_args_help='Test')
+            parser.set_defaults(func=lambda _args: 0)
+
+        monkeypatch.setattr(
+            sys,
+            'argv',
+            ['pyproject_build.py', 'run', '--command-args', 'verify core', '--plan-id', _MOVED_BACK_PLAN],
+        )
+
+        rc = build_main('Python build', [_register])
+
+        emitted = capsys.readouterr().out
+        assert rc == 2
+        assert 'error: worktree_resolution_failed' in emitted
+
+    def test_the_routed_result_reaches_the_caller_as_the_child_reported_it(self, moved_back_window, tmp_path, capsys):
+        """D1 + D3: the child's routing fault arrives under its own name and code."""
+        from _build_shared import cmd_run_common
+
+        log_file = _child_fault_job_log(tmp_path)
+        result = factory._daemon_result_to_direct(
+            {
+                'job_status': 'failure',
+                'exit_code': 2,
+                'duration_seconds': 1,
+                'log_file': log_file,
+            },
+            f'python3 .plan/execute-script.py … run --plan-id {_MOVED_BACK_PLAN}',
+        )
+
+        assert result['error'] == 'worktree_resolution_failed', (
+            'the child reported a routing fault before any tool ran; the routed result must carry it as itself'
+        )
+        assert result['exit_code'] == 2
+
+        cmd_run_common(result, lambda _log: ([], None, 'FAILURE'), 'python')
+        emitted = capsys.readouterr().out
+        assert 'worktree_resolution_failed' in emitted
+        assert _MOVED_BACK_REASON in emitted, "the child's own reason text travels, not just a `reason:` label"
+        assert 'exit_code: 2' in emitted, 'the routed path answers the code the direct path answers'
+        assert 'no structured errors were parsed' not in emitted, (
+            'a routing fault is not a build failure, so no synthetic build_failure row may be published'
+        )
+
+    def test_the_routed_child_carries_the_tree_the_routing_process_resolved(
+        self, moved_back_window, use_fake_client, monkeypatch
+    ):
+        """D2: the re-run command carries the resolved tree, and keeps the plan id.
+
+        The plan id has to survive for BOTH attributions the child makes: the
+        executor's ``kind=build`` ledger row (which reads ``--plan-id`` off the
+        dispatch) and the machine-global build slot the child acquires. That is why
+        the tree travels beside it rather than replacing it.
+        """
+        worktree = str(moved_back_window['worktree'].resolve())
+        monkeypatch.chdir(moved_back_window['main'])
+        monkeypatch.setattr(
+            sys,
+            'argv',
+            ['pyproject_build.py', 'run', '--command-args', 'verify core', '--plan-id', _MOVED_BACK_PLAN],
+        )
+        client = use_fake_client(
+            preflight={'status': 'success', 'preflight': 'ready'},
+            submit={'status': 'success', 'job_id': 'JOB-7'},
+            waits=[{'status': 'success', 'job_status': 'success', 'duration_seconds': 1, 'log_file': 'x.log'}],
+        )
+
+        result, reason = factory._route_to_daemon(_config(tool_name='python'), worktree, _MOVED_BACK_PLAN)
+
+        assert reason == ''
+        assert result is not None and result['status'] == 'success', 'the result is the build own result'
+        submitted = json.loads(client.submit_calls[0].command)
+        carried = submitted[4:]
+        assert carried[:3] == ['--command-args', 'verify core', '--plan-id']
+        assert carried[3] == _MOVED_BACK_PLAN
+        assert carried[4] == '--resolved-project-dir'
+        assert carried[5] == worktree, 'the child is handed the tree the routing process already resolved'
+        from plan_logging import extract_plan_id
+
+        assert extract_plan_id(submitted) == _MOVED_BACK_PLAN, 'the child ledger row keeps the plan id'
+
+
+class TestPreToolFaultPassThrough:
+    """D3: a pre-tool refusal travels as itself, and a real failure still does not."""
+
+    def test_a_build_that_ran_and_failed_keeps_build_failed_and_its_rows(self, tmp_path, capsys):
+        """Matched control: the pass-through must not swallow a genuine failure.
+
+        The discriminator is the child's own error NAME, never its exit code: a build
+        that ran and failed reports ``build_failed`` with its parsed rows, and that
+        path — including the synthetic row when nothing parsed — is untouched.
+        """
+        from _build_shared import cmd_run_common
+
+        log = tmp_path / 'ran-and-failed.log'
+        log.write_text(
+            'status: error\nexit_code: 1\nerror: build_failed\n'
+            'errors[1]{file,line,message,category}:\n'
+            '  test/a.py,3,"assert 0",test_failure\n',
+            encoding='utf-8',
+        )
+        result = factory._daemon_result_to_direct(
+            {'job_status': 'failure', 'exit_code': 1, 'duration_seconds': 2, 'log_file': str(log)},
+            'cmd',
+        )
+
+        assert result['error'] == 'build_failed'
+
+        cmd_run_common(result, lambda _log: ([], None, 'FAILURE'), 'python')
+        emitted = capsys.readouterr().out
+        assert 'build_failed' in emitted
+        assert 'test/a.py' in emitted, 'the inner wrapper per-test rows still travel'
+
+    def test_the_reader_separates_a_pre_tool_fault_from_a_build_failure(self, tmp_path):
+        """The reader's own discriminator: the error name, read off the child's body."""
+        import _build_server_protocol as proto
+
+        pre_tool = tmp_path / 'pre.log'
+        pre_tool.write_text('status: error\nerror: mutually_exclusive_args\nmessage: pick one\n', encoding='utf-8')
+        verdict = proto.read_log_verdict(str(pre_tool))
+
+        assert verdict is not None
+        assert verdict.fault is None, 'a routing refusal is not a launch fault'
+        assert verdict.child_fault is not None
+        assert verdict.child_fault.error == 'mutually_exclusive_args'
+        assert verdict.child_fault.reason == 'pick one', 'the resolution emitters write reason in message'
+
+        failed = tmp_path / 'failed.log'
+        failed.write_text('status: error\nerror: build_failed\n', encoding='utf-8')
+        failed_verdict = proto.read_log_verdict(str(failed))
+
+        assert failed_verdict is not None
+        assert failed_verdict.child_fault is None, 'a build that ran keeps the build-failure path'
+
+    def test_a_json_formatted_refusal_is_read_as_a_verdict(self, tmp_path):
+        """``--format json`` is a caller request, so the reader must understand it.
+
+        A routed child asked for JSON writes its refusal as a JSON object, not as
+        column-0 TOON keys. Without the JSON fallback the reader found no verdict and
+        the whole job became ``build_failed`` with the synthetic row — the same
+        collapse, one output format over. The log also holds progress output before
+        the result, so the reader must find the LAST object rather than the first.
+        """
+        import json
+
+        import _build_server_protocol as proto
+
+        log = tmp_path / 'json-job.log'
+        refusal = {
+            'status': 'error',
+            'error': 'queue_saturated',
+            'message': 'no slot was admitted; retry later',
+            'max_retries': 3,
+            'plan_id': 'p',
+        }
+        log.write_text(
+            '[EXEC] python3 .plan/execute-script.py … run --format json\n' + json.dumps(refusal, indent=2) + '\n',
+            encoding='utf-8',
+        )
+
+        verdict = proto.read_log_verdict(str(log))
+
+        assert verdict is not None
+        assert verdict.status == 'error'
+        assert verdict.child_fault is not None
+        assert verdict.child_fault.error == 'queue_saturated'
+        assert verdict.child_fault.reason == 'no slot was admitted; retry later'
+
+    def test_a_json_timeout_keeps_its_applied_bound(self, tmp_path):
+        """A JSON non-finish must name the bound the inner wrapper applied.
+
+        The bound is what tells a reader whose number fired — a learned bound is
+        corrected by one more measured run, an explicit one by raising it. The TOON
+        path reads the triple; a JSON-formatted result must not lose it.
+        """
+        import json
+
+        import _build_server_protocol as proto
+
+        log = tmp_path / 'json-timeout.log'
+        log.write_text(
+            json.dumps(
+                {
+                    'status': 'timeout',
+                    'error': 'timeout',
+                    'exit_code': -1,
+                    'timeout_used_seconds': 900,
+                    'timeout_source': 'learned',
+                    'command_key': 'python:module_tests',
+                }
+            ),
+            encoding='utf-8',
+        )
+
+        verdict = proto.read_log_verdict(str(log))
+
+        assert verdict is not None
+        assert verdict.status == 'timeout'
+        assert verdict.timeout_used_seconds == 900
+        assert verdict.timeout_source == 'learned'
+        assert verdict.command_key == 'python:module_tests'
+
+    def test_a_trailing_json_object_cannot_discard_the_verdict(self, tmp_path):
+        """The result is the last object WITH A STATUS, not the last object.
+
+        A trailing ``{}`` or a footer object after the result would otherwise erase
+        the verdict and send the whole job back to ``build_failed`` — the collapse
+        this fallback exists to prevent.
+        """
+        import json
+
+        import _build_server_protocol as proto
+
+        log = tmp_path / 'json-trailing.log'
+        log.write_text(
+            json.dumps({'status': 'error', 'error': 'queue_saturated', 'message': 'retry later'})
+            + '\n'
+            + json.dumps({})
+            + '\n',
+            encoding='utf-8',
+        )
+
+        verdict = proto.read_log_verdict(str(log))
+
+        assert verdict is not None
+        assert verdict.child_fault is not None
+        assert verdict.child_fault.error == 'queue_saturated'
+
+    def test_a_json_failure_keeps_its_rows_and_the_build_failure_path(self, tmp_path):
+        """Matched control: JSON parsing must not turn a real failure into a refusal."""
+        import json
+
+        import _build_server_protocol as proto
+
+        log = tmp_path / 'json-failure.log'
+        log.write_text(
+            json.dumps(
+                {
+                    'status': 'error',
+                    'error': 'build_failed',
+                    'exit_code': 1,
+                    'tests_run': 12,
+                    'errors': [{'file': 'test/a.py', 'line': 4, 'message': 'boom', 'category': 'test_failure'}],
+                },
+                indent=2,
+            ),
+            encoding='utf-8',
+        )
+
+        verdict = proto.read_log_verdict(str(log))
+
+        assert verdict is not None
+        assert verdict.status == 'error'
+        assert verdict.child_fault is None and verdict.fault is None
+        assert verdict.tests_run == 12
+        assert [row['file'] for row in verdict.errors] == ['test/a.py']
+
+    def test_a_log_that_states_no_verdict_in_either_format_is_none(self, tmp_path):
+        """No TOON status and no JSON object: nothing was established, so nothing is claimed."""
+        import _build_server_protocol as proto
+
+        log = tmp_path / 'noise.log'
+        log.write_text('usage: unrecognized arguments: --resolved-project-dir\n', encoding='utf-8')
+
+        assert proto.read_log_verdict(str(log)) is None
+
+    def test_a_slot_refusal_is_a_pre_tool_fault_and_keeps_its_corrective(self, tmp_path):
+        """A child that never got a build slot is a refusal, not a red build.
+
+        The daemon child acquires a slot like any in-process build, so it can reach
+        the queue-saturated emitter. The executor's own refusal shape carries the
+        rejection CLASS in ``reason`` and the actionable correction in ``message``;
+        both must survive the routed hop, or the caller is told a build failed and
+        gets no way to fix it.
+        """
+        import _build_server_protocol as proto
+
+        log = tmp_path / 'queue.log'
+        log.write_text(
+            'status: error\nerror: queue_saturated\nreason: max_retries\nmessage: rerun when a slot frees\n',
+            encoding='utf-8',
+        )
+
+        verdict = proto.read_log_verdict(str(log))
+
+        assert verdict is not None and verdict.child_fault is not None
+        assert verdict.child_fault.error == 'queue_saturated'
+        assert verdict.child_fault.reason == 'max_retries'
+        assert verdict.child_fault.corrective == 'rerun when a slot frees'
+
+    def test_the_emitted_identifiers_are_the_ones_the_lane_classifies(self):
+        """Every pre-tool emitter's identifier is a member of the classifier set.
+
+        A fault identifier spelled differently at the producer and in the reader's set
+        would silently fall back to ``build_failed`` — the defect this deliverable
+        removes — so the agreement is asserted rather than assumed, one producer at a
+        time. The executor's refusal literal lives in the generator template, so that
+        producer is tied to the set through the template's own text.
+        """
+        import resolve_project_dir as routing
+        from _build_result import ERROR_INVALID_INVOCATION, ERROR_QUEUE_SATURATED, PRE_TOOL_FAULT_ERRORS
+
+        assert routing.emit_worktree_error('p', routing.WorktreeResolutionError('x'))['error'] in (
+            PRE_TOOL_FAULT_ERRORS
+        )
+        assert routing.emit_mutually_exclusive_error('p', 'q')['error'] in PRE_TOOL_FAULT_ERRORS
+        assert routing.emit_carried_tree_outside_job_error('/tree', 'p')['error'] in PRE_TOOL_FAULT_ERRORS
+        assert ERROR_INVALID_INVOCATION in PRE_TOOL_FAULT_ERRORS
+        assert ERROR_QUEUE_SATURATED in PRE_TOOL_FAULT_ERRORS
+        # The factory RE-USES that constant rather than spelling the identifier again,
+        # so the queue refusal a daemon child can emit is classified by construction.
+        assert factory.ERROR_QUEUE_SATURATED is ERROR_QUEUE_SATURATED
+
+        template = (
+            Path(__file__).parents[3]
+            / 'marketplace/bundles/plan-marshall/skills/tools-script-executor/templates/execute-script.py.template'
+        )
+        assert template.is_file(), f'the executor template moved; this drift guard must follow it: {template}'
+        assert f'error: {ERROR_INVALID_INVOCATION}' in template.read_text(encoding='utf-8')

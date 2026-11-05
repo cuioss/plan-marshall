@@ -219,3 +219,204 @@ def test_loop_exit_guard_cli_subcommand_registered(plan_context):
     assert 'status: continue' in result.stdout
     assert 'pending_count: 1' in result.stdout
     assert 'in_progress_count: 0' in result.stdout
+
+
+def _owed_task(plan_id: str, number: int = 1, title: str = 'Owed') -> None:
+    """Create one task and close it with ``--verification-owed`` so it is held open."""
+    add_basic_task(plan_id=plan_id, title=title, deliverable=1, steps=['src/Owed.java'])
+    ns = _finalize_step_ns(plan_id=plan_id, task=number, step=1, outcome='done')
+    ns.verification_owed = True
+    cmd_finalize_step(ns)
+
+
+class TestLoopExitGuardReportsOwedTasksSeparately:
+    """An owed task blocks the clean exit but is reported as its own population."""
+
+    def test_only_owed_task_continues_and_is_reported_by_id(self, plan_context):
+        """The guard still says `continue`, and names the owed id separately."""
+        _owed_task('guard-owed-only', number=1)
+
+        result = cmd_loop_exit_guard(_loop_exit_guard_ns(plan_id='guard-owed-only'))
+
+        assert result['status'] == 'continue'
+        assert result['pending_count'] == 0
+        assert result['in_progress_count'] == 1
+        assert result['in_progress_ids'] == [1]
+        assert result['owed_count'] == 1
+        assert result['owed_ids'] == [1]
+
+    def test_a_clean_queue_reports_zero_owed_fields(self, plan_context):
+        """Both branches carry the owed fields, so a caller needs no presence test."""
+        result = cmd_loop_exit_guard(_loop_exit_guard_ns(plan_id='guard-owed-clean'))
+
+        assert result['status'] == 'success'
+        assert result['owed_count'] == 0
+        assert result['owed_ids'] == []
+
+
+class TestNoProgressClassification:
+    """The B7 predicate is evaluated by the verb, and the two exemptions hold."""
+
+    #: The plan-25 shape: one owed task in progress, no completion, 536,031 tokens.
+    _PLAN_25_TOKENS = 536031
+
+    def test_plan_25_shape_is_the_handback_cause_not_error(self, plan_context):
+        """One owed task + a declared hand-back classifies as `verification_handback`."""
+        _owed_task('guard-plan-25', number=1)
+
+        result = cmd_loop_exit_guard(
+            _ns_with_predicate(
+                'guard-plan-25',
+                consumed_tokens=self._PLAN_25_TOKENS,
+                completed_tasks_delta=0,
+                verification_handback=True,
+                pending_verify_steps='verify:module-tests',
+            )
+        )
+
+        assert result['classification'] == 'verification_handback'
+        assert result['classification_reason'] == 'declared_orchestrator_build_handback'
+        assert result['predicate_in_progress_count'] == 0
+
+    def test_unowned_in_progress_task_without_a_handback_is_still_error(self, plan_context):
+        """Same delta and token count, no owed marker and no hand-back → `error`."""
+        add_basic_task(plan_id='guard-genuine-stall', title='Mid', deliverable=1, steps=['src/Mid.java'])
+        cmd_update(_update_ns(plan_id='guard-genuine-stall', number=1, status='in_progress'))
+
+        result = cmd_loop_exit_guard(
+            _ns_with_predicate(
+                'guard-genuine-stall',
+                consumed_tokens=self._PLAN_25_TOKENS,
+                completed_tasks_delta=0,
+            )
+        )
+
+        assert result['classification'] == 'error'
+        assert result['predicate_holds'] is True
+        assert result['predicate_consumed_tokens'] == self._PLAN_25_TOKENS
+
+    def test_owed_task_never_counts_toward_the_predicate(self, plan_context):
+        """The owed subtraction is independent of the hand-back discriminator."""
+        _owed_task('guard-owed-predicate', number=1)
+
+        result = cmd_loop_exit_guard(
+            _ns_with_predicate(
+                'guard-owed-predicate',
+                consumed_tokens=self._PLAN_25_TOKENS,
+                completed_tasks_delta=0,
+            )
+        )
+
+        assert result['predicate_in_progress_count'] == 0
+        assert result['predicate_holds'] is False
+        assert result['classification'] == 'voluntary_checkpoint'
+
+    def test_a_discriminator_without_handed_back_steps_is_not_a_handback(self, plan_context):
+        """`verification_handback: true` with an empty list is malformed, not a hand-back."""
+        add_basic_task(plan_id='guard-empty-handback', title='Mid', deliverable=1, steps=['src/Mid.java'])
+        cmd_update(_update_ns(plan_id='guard-empty-handback', number=1, status='in_progress'))
+
+        result = cmd_loop_exit_guard(
+            _ns_with_predicate(
+                'guard-empty-handback',
+                consumed_tokens=self._PLAN_25_TOKENS,
+                completed_tasks_delta=0,
+                verification_handback=True,
+            )
+        )
+
+        assert result['verification_handback_valid'] is False
+        assert result['classification'] == 'error'
+
+    def test_a_completed_task_keeps_the_voluntary_classification(self, plan_context):
+        """The 50K threshold alone is not a stall: a delta ≥ 1 is progress."""
+        _owed_task('guard-progress', number=1)
+
+        result = cmd_loop_exit_guard(
+            _ns_with_predicate(
+                'guard-progress',
+                consumed_tokens=self._PLAN_25_TOKENS,
+                completed_tasks_delta=1,
+            )
+        )
+
+        assert result['predicate_holds'] is False
+        assert result['classification'] == 'voluntary_checkpoint'
+
+    def test_no_progress_mode_is_opt_in(self, plan_context):
+        """The pre-dispatch queue-peek call site keeps its exact previous shape.
+
+        The namespace carries the parser's own defaults for every predicate flag
+        (``None`` for the two integers, ``False`` for the store_true), because
+        that is what the real CLI produces — a namespace with the attributes
+        ABSENT would pass for the wrong reason.
+        """
+        result = cmd_loop_exit_guard(
+            Namespace(
+                plan_id='guard-peek',
+                consumed_tokens=None,
+                completed_tasks_delta=None,
+                verification_handback=False,
+                pending_verify_steps=None,
+                provisional_cause=None,
+            )
+        )
+
+        assert 'classification' not in result
+        assert 'predicate_holds' not in result
+
+    def test_cli_peek_without_predicate_flags_emits_no_classification(self, plan_context):
+        """The real CLI path: a bare queue peek must not enter the mode either."""
+        add_basic_task(plan_id='guard-cli-peek', title='One', deliverable=1, steps=['src/X.java'])
+
+        result = run_script(SCRIPT_PATH, 'loop-exit-guard', '--plan-id', 'guard-cli-peek')
+
+        assert result.returncode == 0
+        assert 'classification:' not in result.stdout
+        assert 'predicate_holds:' not in result.stdout
+
+
+def _ns_with_predicate(
+    plan_id: str,
+    *,
+    consumed_tokens: int | None = None,
+    completed_tasks_delta: int | None = None,
+    verification_handback: bool = False,
+    pending_verify_steps: str | None = None,
+    provisional_cause: str | None = None,
+):
+    """Build a Namespace carrying the B7 predicate inputs."""
+    ns = Namespace(
+        plan_id=plan_id,
+        consumed_tokens=consumed_tokens,
+        completed_tasks_delta=completed_tasks_delta,
+        verification_handback=verification_handback,
+        pending_verify_steps=pending_verify_steps,
+        provisional_cause=provisional_cause,
+    )
+    return ns
+
+
+def test_loop_exit_guard_cli_accepts_the_b7_predicate_flags(plan_context):
+    """The documented invocation parses end-to-end through the real executor surface."""
+    _owed_task('guard-cli-b7', number=1)
+
+    result = run_script(
+        SCRIPT_PATH,
+        'loop-exit-guard',
+        '--plan-id',
+        'guard-cli-b7',
+        '--provisional-cause',
+        'voluntary_checkpoint',
+        '--consumed-tokens',
+        '536031',
+        '--completed-tasks-delta',
+        '0',
+        '--verification-handback',
+        '--pending-verify-steps',
+        'verify:module-tests',
+    )
+
+    assert result.returncode == 0
+    assert 'classification: verification_handback' in result.stdout
+    assert 'owed_count: 1' in result.stdout

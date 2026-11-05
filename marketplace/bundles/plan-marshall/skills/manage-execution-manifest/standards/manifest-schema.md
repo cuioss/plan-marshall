@@ -18,6 +18,9 @@ phase_5:
   step_execution_tier[N]{step_id,tier}:
     <step-id>,per_task | orchestrator
     ...
+  owed_rung_deferral[N]{deliverable,rung,chain_tail_task,deferred_task_count,cause}:
+    <int>,<rung-command>,<task-number>,<int>,measured_module_tests_above_ceiling
+    ...
   step_params:
     <step-id>: { <param>: <value>, ... }
     ...
