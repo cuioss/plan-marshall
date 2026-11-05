@@ -126,6 +126,7 @@ from _github_pr import (
     refusal_condition,
     refusal_layers,
     refusal_size_cap,
+    review_coverage_verdict,
 )
 from ci_base import extract_routing_args, register_subcommands, set_default_cwd
 from github_re_review import bot_kind_for_author, is_acknowledgment_comment, is_registered_trigger_comment
@@ -365,8 +366,11 @@ def _is_participation_evidence(comment: dict, bot_kind: str) -> bool:
     kind = comment.get('kind') or 'inline'
     if kind not in bot_registry.participation_evidence(bot_kind):
         return False
-    marker = bot_registry.participation_evidence_marker(bot_kind, kind)
-    return not marker or marker in str(comment.get('body') or '')
+    markers = bot_registry.participation_evidence_markers_for(bot_kind, kind)
+    if not markers:
+        return True
+    body = str(comment.get('body') or '')
+    return any(marker in body for marker in markers)
 
 
 def _own_prose(body: str) -> str:
@@ -414,6 +418,30 @@ def _is_whole_comment_acknowledgment(body: str) -> bool:
     if not prose or len(prose) > _ACKNOWLEDGMENT_MAX_LENGTH:
         return False
     return any(p.fullmatch(prose) for p in _COMPILED_IGNORE)
+
+
+def _strip_footer_markers(body: str, bot_kind: str | None) -> str:
+    """Remove ``bot_kind``'s declared FOOTER lines from ``body`` before the signal test.
+
+    A footer marker is a branding / feedback-prompt line a bot appends to a SUCCESSFUL
+    review, never a section that replaces it. The unit removed is the LINE carrying the
+    marker, because a footer is a line: its own sentence continues past the literal a
+    registry can pin (an emoji prompt, a link, a sentence tail), and stripping only the
+    pinned fragment would leave those words behind as if they were review signal.
+
+    That is what keeps a review body carrying real findings AND the footer from being
+    dropped wholesale, while a body that is nothing but footer still reduces to nothing
+    and is dropped as noise. A bot declaring no footer markers gets its body back
+    unchanged, so every other bot's filtering is exactly as it was. The accepted
+    residual is a body packing signal and a footer marker onto ONE line: that line is
+    removed, which is the cost of not guessing where the footer's prose ends.
+    """
+    if not bot_kind:
+        return body
+    markers = bot_registry.footer_patterns(bot_kind)
+    if not markers:
+        return body
+    return '\n'.join(line for line in body.splitlines() if not any(marker in line for marker in markers))
 
 
 def _is_obvious_noise(body: str, bot_kind: str | None = None) -> bool:
@@ -507,9 +535,15 @@ def _is_obvious_noise(body: str, bot_kind: str | None = None) -> bool:
         # trigger above, never review feedback.
         if is_acknowledgment_comment(body, bot_kind):
             return True
-        if any(marker in body for marker in bot_registry.ignore_patterns(bot_kind)):
+        # Footer markers are stripped BEFORE the signal test: a footer line on an
+        # otherwise substantive review is branding, not a reason to discard the
+        # review, while a body left with nothing but footer is still noise.
+        signal = _strip_footer_markers(body, bot_kind)
+        if not signal.strip():
             return True
-        return _is_contentless_boilerplate(body, bot_kind)
+        if any(marker in signal for marker in bot_registry.ignore_patterns(bot_kind)):
+            return True
+        return _is_contentless_boilerplate(signal, bot_kind)
     return False
 
 
@@ -1523,6 +1557,33 @@ def _reported_commit_matches_candidate(comment: dict, merge_candidate_sha: str) 
     return bool(candidate) and bool(reported) and reported == candidate
 
 
+def _evidence_named_verdict(comment: dict, merge_candidate_sha: str) -> bool | None:
+    """What a comment's OWN evidence says about which commit it reviewed.
+
+    Three shapes name a commit, in precedence order:
+
+    1. a review-coverage marker in the body — the bot's structured claim, whose
+       ``kind`` also says whether the review finished (``review_coverage_verdict``);
+    2. the provider's reported ``commit_id`` on the record — the commit a per-review
+       artifact was submitted against;
+    3. a full commit id written into the body (``named_commit_currency``).
+
+    ``None`` means the evidence names no commit at all, which is the ONLY state in
+    which the ledger arms decide. A named commit, by contrast, is a claim: ``False``
+    from any of the three never falls through to an arm that would credit an edit.
+    """
+    if not (merge_candidate_sha or '').strip():
+        return None
+    body = str(comment.get('body') or '')
+    coverage = review_coverage_verdict(body, merge_candidate_sha)
+    if coverage is not None:
+        return coverage
+    reported = str(comment.get('commit_id') or '').strip()
+    if reported:
+        return reported.lower() == merge_candidate_sha.strip().lower()
+    return named_commit_currency(body, merge_candidate_sha)
+
+
 def cmd_fetch_findings(args):
     """Producer-side FIND verb: fetch + pre-filter + file one finding per surviving comment.
 
@@ -2035,17 +2096,33 @@ def cmd_fetch_findings(args):
         if not _is_participation_evidence(_comment, _bot_kind):
             continue
         _kind = _comment.get('kind') or 'inline'
-        # The NAMED-COMMIT arm, read before the ledger arms and outranking them. A
-        # comment that names a commit is about THAT commit: current when it is the
-        # merge candidate, stale when it is another, whatever the comment's timestamps
-        # or edit history say. Without it a fresh edit credited a comment whose own
-        # text names the previous HEAD. ``None`` is no verdict — the comment names no
-        # commit, or the merge candidate could not be read — and the ledger arms then
-        # decide exactly as before, including their fail-closed read of an unreadable
-        # head.
-        _named_verdict = (
-            named_commit_currency(str(_comment.get('body') or ''), reviewed_commit_sha) if _requires_update else None
-        )
+        # THE INLINE RULE, decided before every other arm. An inline comment is
+        # credited only when the provider PLACES it (or the review it belongs to) at
+        # the merge candidate, and a reply posted into an existing thread is never
+        # participation evidence: it is the bot answering the thread's author, and it
+        # post-dates the push without reviewing it. The provider now reports both, so
+        # the decision reads fields; a record carrying neither is a reply when its own
+        # ``reply_to_id`` is set, and an unplaced opening comment is not credited. The
+        # ledger arms never apply to inline comments — their record has no commit to
+        # anchor a review of, which is what produced the #515 false green.
+        if _kind == 'inline':
+            if _comment.get('thread_reply') or _comment.get('reply_to_id'):
+                # Never evidence. The record still names the bot as a publisher this
+                # fetch, so it is reported stale rather than vanished: the remedy is a
+                # re-review, which is exactly what a stale publish calls for.
+                _named_verdict = False
+            else:
+                _named_verdict = _reported_commit_matches_candidate(_comment, reviewed_commit_sha)
+        else:
+            # The NAMED-COMMIT arm, read before the ledger arms and outranking them. A
+            # comment whose own evidence names a commit is about THAT commit: current
+            # when it is the merge candidate, stale when it is another, whatever the
+            # comment's timestamps or edit history say. Without it a fresh edit credited
+            # a comment whose own text names the previous HEAD. ``None`` is no verdict —
+            # the evidence names no commit, or the merge candidate could not be read —
+            # and the ledger arms then decide exactly as before, including their
+            # fail-closed read of an unreadable head.
+            _named_verdict = _evidence_named_verdict(_comment, reviewed_commit_sha) if _requires_update else None
         if _named_verdict is None:
             # A REFUSAL changes what a comment can prove. The bot is saying, in this
             # fetch, that it will not review the merge candidate; credited evidence that

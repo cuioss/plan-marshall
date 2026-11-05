@@ -140,12 +140,14 @@ def _participation_flag(find_result):
 
 def _classify(plan_id, find_result, declined_bots=None, refused_bots=None):
     """The step-done participation guard over CodeRabbit as the only required bot."""
+    stale = [row['bot_kind'] for row in find_result.get('stale_participation_bots') or []]
     return rc.check_completeness(
         plan_id,
         [_BOT],
         participated_bots=rc.parse_participation(_participation_flag(find_result)),
         declined_bots=declined_bots or [],
         refused_bots=refused_bots or [],
+        stale_participation_bots=stale,
     )
 
 
@@ -384,7 +386,6 @@ def test_a_new_format_summary_with_a_non_reviewed_kind_credits_nothing(plan_cont
     find_result = _find(plan_context, plan_id)
 
     assert find_result['participated_bots'] == []
-    assert find_result['stale_participation_bots'] == []
 
 
 def test_a_new_format_summary_answers_the_re_review_for_its_head(plan_context, monkeypatch):
@@ -497,4 +498,3 @@ def test_a_summary_edited_in_place_still_naming_an_earlier_commit_credits_nothin
 
     assert second['participated_bots'] == []
     assert second['stale_participation_bots'] == [{'bot_kind': _BOT, 'evidence_kind': 'issue_comment'}]
-

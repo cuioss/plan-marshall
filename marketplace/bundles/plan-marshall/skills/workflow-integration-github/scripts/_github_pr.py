@@ -380,6 +380,79 @@ def bot_claimed_sha_matches_head(body: str, head_sha: str) -> bool:
     return candidate in commit_tokens(body)
 
 
+#: The coverage marker a review bot's summary carries its own reviewed-commit claim
+#: in, and the ``kind`` that makes it a FINISHED review. The marker is an HTML
+#: comment whose payload is JSON::
+#:
+#:     <!-- final_review_risk_coverage:
+#:          {"sourceCommitId":"…","coveredCommitId":"…","kind":"reviewed"} -->
+#:
+#: The two literals live here, in the ONE parser, so a consumer never restates the
+#: field set.
+_REVIEW_COVERAGE_MARKER = 'final_review_risk_coverage'
+_REVIEW_COVERAGE_REVIEWED_KIND = 'reviewed'
+_REVIEW_COVERAGE_PATTERN = re.compile(
+    re.escape(_REVIEW_COVERAGE_MARKER) + r':\s*(\{.*?\})\s*(?:-->|$)',
+    re.DOTALL,
+)
+
+
+def _coverage_payload(body: str) -> tuple[bool, dict | None]:
+    """Return ``(present, fields)`` for a review-coverage marker in ``body``.
+
+    ``present`` says the marker literal occurs at all; ``fields`` is its parsed JSON
+    object, or ``None`` when the payload is absent or unreadable. The pair keeps
+    "no marker" and "marker that cannot be read" distinguishable, which is exactly the
+    distinction a fail-closed consumer needs: the first is no claim, the second is a
+    claim nobody can evaluate.
+    """
+    match = _REVIEW_COVERAGE_PATTERN.search(body or '')
+    if match is None:
+        return False, None
+    try:
+        fields = json.loads(match.group(1))
+    except (TypeError, ValueError):
+        return True, None
+    return True, fields if isinstance(fields, dict) else None
+
+
+def review_coverage_verdict(body: str, head_sha: str) -> bool | None:
+    """Return what a review-coverage marker says about ``head_sha``, or no verdict.
+
+    The marker a bot publishes on its finished summary names the commit the review
+    COVERED, so it is head-bound evidence in the comment's own text. Three answers,
+    because the marker has three states:
+
+    - ``True`` — the marker names ``head_sha`` as the covered commit and its
+      ``kind`` is ``reviewed``. The review covers the merge candidate.
+    - ``False`` — the marker is present and readable but is not a finished review
+      of ``head_sha``: it names another commit, carries no covered commit, or its
+      ``kind`` is anything else. A present marker is a claim, so a false one never
+      falls back to a ledger arm that would credit an edit.
+    - ``None`` — no verdict. The body carries no marker, or ``head_sha`` could not
+      be read. ``None`` is never a claim that the review is current; the caller
+      falls back to whatever rule it applied before this one existed.
+
+    ``coveredCommitId`` decides; ``sourceCommitId`` is the fallback when the
+    covered field is absent. Both are compared for EQUALITY against ``head_sha``,
+    never by prefix, and case-insensitively.
+    """
+    if not (head_sha or '').strip():
+        return None
+    present, fields = _coverage_payload(body)
+    if not present:
+        return None
+    if fields is None:
+        return False
+    kind = str(fields.get('kind') or '').strip().lower()
+    if kind != _REVIEW_COVERAGE_REVIEWED_KIND:
+        return False
+    covered = str(fields.get('coveredCommitId') or '').strip() or str(fields.get('sourceCommitId') or '').strip()
+    if not covered:
+        return False
+    return covered.lower() == head_sha.strip().lower()
+
+
 def named_commit_currency(body: str, head_sha: str) -> bool | None:
     """Return what the commits ``body`` names say about a review of ``head_sha``.
 
@@ -397,9 +470,18 @@ def named_commit_currency(body: str, head_sha: str) -> bool | None:
     A body naming several commits is current when ANY of them is ``head_sha``: a
     review that lists a base and a head, or quotes another commit beside the one it
     reviewed, is still a review of the merge candidate.
+
+    A body carrying a review-coverage marker is decided by THAT marker first
+    (:func:`review_coverage_verdict`): the marker is the bot's own structured claim
+    about which commit it covered, and its ``kind`` also says whether the review
+    finished. A marker that cannot be parsed yields ``False`` — an unreadable claim
+    never falls back to the token arm.
     """
     if not (head_sha or '').strip():
         return None
+    coverage = review_coverage_verdict(body, head_sha)
+    if coverage is not None:
+        return coverage
     if not named_commits(body):
         return None
     return bot_claimed_sha_matches_head(body, head_sha)

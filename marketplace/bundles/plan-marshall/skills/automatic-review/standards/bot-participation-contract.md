@@ -286,12 +286,15 @@ A publish shape is evidence because of what it *is*, but one bot can publish two
 in the same shape — one proving a review **started**, one proving it **finished** — and the shape
 cannot tell them apart. `participation_evidence_markers` is the per-bot, per-shape field that closes
 that: a map from a declared publish shape to the literal a comment in that shape must carry to count.
-A comment in a gated shape without the literal is **not evidence** — it is neither credited nor
-reported as a stale publish, because it is not a review artifact at all. The producer applies the gate
-before the currency test (`github_pr._is_participation_evidence`, read through
-`bot_registry.participation_evidence_marker`), so no bot name enters the code. The re-review matcher
-reads the same `issue_comment` entry: a comment in that shape without the literal is no answer to a
-re-review request either, so the wait does not end on a review that has only started
+A shape may declare an ALTERNATION — a list of literals, ANY one of which counts — because a bot can
+retire one finished-review marker for another and both formats are then in flight; a single literal
+would credit one and reject the other. A comment in a gated shape carrying none of the declared
+literals is **not evidence** — it is neither credited nor reported as a stale publish, because it is
+not a review artifact at all. The producer applies the gate before the currency test
+(`github_pr._is_participation_evidence`, read through
+`bot_registry.participation_evidence_markers_for`), so no bot name enters the code. The re-review
+matcher reads the same `issue_comment` entries: a comment in that shape carrying none of them is no
+answer to a re-review request either, so the wait does not end on a review that has only started
 (`github_re_review._ReReviewStrategy._match_bot_comment`).
 
 **The gate is FAIL-OPEN on an absent declaration.** A shape with no entry — and every shape of a bot
@@ -305,7 +308,7 @@ whose unconditional evidence shape carries no marker straight to `absent`. The f
 
 | Bot | Declaration | Why |
 |-----|-------------|-----|
-| CodeRabbit | `issue_comment` gated on `<!-- recent_review_start -->` | Its walkthrough / summary `issue_comment` is posted before any review completes; its review verdict carries the marker. Ungated, the walkthrough alone credited a review that had not happened. See [`coderabbit.md`](coderabbit.md). |
+| CodeRabbit | `issue_comment` gated on an alternation: `<!-- recent_review_start -->` OR `<!-- final_review_risk_coverage:` | Its walkthrough / summary `issue_comment` is posted before any review completes; a finished review carries one of the two markers — the retired wrapper, or the current coverage marker. Ungated, the walkthrough alone credited a review that had not happened. See [`coderabbit.md`](coderabbit.md). |
 | Sourcery | none | It declares no `issue_comment` shape at all — `review_body` is its only publish shape, and no pre-review artifact of its shares that shape — so there is nothing to gate. |
 | PR-Agent (`cuioss-review-bot`) | none — **deliberately left undeclared** | Its Guide `issue_comment` is its only UNCONDITIONAL evidence shape. Gating it is a change to the one shape that keeps this bot from resolving `absent`, and it was not taken here. The accepted reach of that decision: its other `issue_comment` publishes — a `/help` reference, an `/ask` answer — still credit on the shape alone. |
 
@@ -390,15 +393,29 @@ its answer on the second look, so the same unedited comment at the same HEAD fli
 
 #### The named-commit arm — a comment that names a commit is decided by that commit
 
-A currency-tested comment can state which commit it reviewed: the in-house reviewer writes it into its
-persistent comment as a `…/commit/{sha}` permalink carrying the full commit id. Where a comment does
-that, its own statement decides the credit, **ahead of every ledger arm**:
+A currency-tested comment can state which commit it reviewed, and there are three shapes in which it
+does so. The in-house reviewer writes it into its persistent comment as a `…/commit/{sha}` permalink
+carrying the full commit id; the provider reports it on a per-review artifact as `commit_id`; and
+CodeRabbit's current summary carries it in its `final_review_risk_coverage` payload as
+`coveredCommitId` / `sourceCommitId` with a `kind`. Where the evidence names a commit, that statement
+decides the credit, **ahead of every ledger arm**:
 
 | The comment | Verdict |
 |-------------|---------|
 | names the merge candidate | **current** — credited, on first sight as on any later fetch |
 | names at least one commit, none of them the merge candidate | **stale** — reported in `stale_participation_bots[]`, whatever its timestamps or edit history say |
-| names no commit | no verdict from this arm — the ledger arms in § "Evidence for a bot that edits one comment in place" decide, unchanged |
+| carries no commit anywhere in its evidence | no verdict from this arm — the ledger arms in § "Evidence for a bot that edits one comment in place" decide, unchanged |
+| a coverage marker whose `kind` is not `reviewed` | **not a finished review** — never credited |
+| a coverage marker that cannot be parsed | **never credited** — an unreadable marker is not a verdict, and it does not fall through to a ledger arm that would credit an edit |
+
+The coverage marker is read by `_github_pr.review_coverage_verdict`, the single parser of
+`sourceCommitId`, `coveredCommitId` and `kind`; no consumer restates those fields.
+
+**An in-place edit alone never credits evidence that names its commit.** This is the absorbed
+"participation credit ignores an in-progress review" defect: the fresh-edit arm measures
+`updated_at` movement, which a bot produces by editing its comment without re-reviewing. Where the
+evidence names a commit, the named-commit arm answers first, so the edit cannot credit a commit the
+comment does not name. Evidence that names no commit keeps the ledger arms unchanged.
 
 **Why it outranks the ledger.** The ledger arms infer the reviewed commit from when the plan saw the
 comment and whether it moved. A fresh edit is their strongest signal, and it is still an inference: a

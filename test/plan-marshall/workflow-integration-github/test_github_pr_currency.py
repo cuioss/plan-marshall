@@ -515,10 +515,16 @@ def test_an_ungated_shape_credits_on_the_shape_alone(plan_context, monkeypatch, 
     This is the guard against the gate regressing a bot to ``absent``. The body carries
     no marker of any bot, so a gate that failed CLOSED on an absent declaration — or
     that leaked one bot's marker onto another bot's shape — would deny the credit here.
+
+    An INLINE record also has to be PLACED: the provider reports the commit the comment
+    is attached to, and an unplaced inline comment proves no review of the candidate.
+    The placement is supplied here so this case tests the marker gate, not the inline
+    rule (which has its own cases below).
     """
     body = 'The retry loop has no ceiling; a persistent 500 will spin forever.'
     assert not any(marker in body for _bot, _shape, marker in MARKER_GATED_EVIDENCE)
-    _patch_provider(monkeypatch, [_evidence_comment(bot_kind, shape, 'ungated', body)])
+    placement = {'commit_id': _HEAD_A, 'thread_reply': False} if shape == 'inline' else {}
+    _patch_provider(monkeypatch, [_evidence_comment(bot_kind, shape, 'ungated', body, **placement)], head_sha=_HEAD_A)
 
     result = _run_fetch(192, _evidence_plan_id('ungated', bot_kind, shape))
 
@@ -2330,4 +2336,3 @@ def test_a_thread_opening_inline_comment_placed_at_an_earlier_head_is_stale(plan
 
     assert result['participated_bots'] == []
     assert result['stale_participation_bots'] == [{'bot_kind': 'coderabbit', 'evidence_kind': 'inline'}]
-

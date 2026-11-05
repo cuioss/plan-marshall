@@ -445,7 +445,10 @@ _COMMENT_NODE_FIELDS = """
           body
           author { login }
           createdAt
-          updatedAt"""
+          updatedAt
+          replyTo { id }
+          commit { oid }
+          pullRequestReview { commit { oid } }"""
 
 _REVIEW_NODE_FIELDS = """
           id
@@ -665,6 +668,37 @@ def _review_commit_id(review: dict) -> str:
     return oid.strip().lower() if isinstance(oid, str) else ''
 
 
+def _inline_comment_placement(comment: dict, position_in_thread: int) -> dict:
+    """Return the placement facts an inline review comment's record carries.
+
+    ``commit_id`` is the commit the comment is attached to. GitHub exposes it twice:
+    on the comment itself (``commit``), and on the review it belongs to
+    (``pullRequestReview.commit``) — the second is the fallback when the first is
+    absent, and either places the comment at a commit.
+
+    ``thread_reply`` answers whether the comment ANSWERS an existing thread rather
+    than opening one. ``replyTo`` is the provider's own field for that. Where the
+    provider did not report it (an older API, or a synthetic record), the thread
+    POSITION is the fallback: the first comment of a thread opens it, every later one
+    replies. Both facts are placement, never a judgement about the comment's content.
+    """
+    reply_to = comment.get('replyTo')
+    reply_to_id = ''
+    if isinstance(reply_to, dict):
+        value = reply_to.get('id')
+        reply_to_id = value.strip() if isinstance(value, str) else ''
+    commit_id = _review_commit_id(comment)
+    if not commit_id:
+        review = comment.get('pullRequestReview')
+        if isinstance(review, dict):
+            commit_id = _review_commit_id(review)
+    return {
+        'commit_id': commit_id,
+        'reply_to_id': reply_to_id,
+        'thread_reply': bool(reply_to_id) or position_in_thread > 0,
+    }
+
+
 def fetch_pr_comments_data(pr_number: int, unresolved_only: bool = False) -> dict:
     """Fetch PR review comments, returning structured dict.
 
@@ -777,9 +811,10 @@ def fetch_pr_comments_data(pr_number: int, unresolved_only: bool = False) -> dic
             thread_comments_exhausted = thread_comments_exhausted and comments_exhausted
             if thread_comments_total is not None:
                 thread_comments_total = None if comments_total is None else thread_comments_total + comments_total
-            for comment in thread_comments:
+            for position, comment in enumerate(thread_comments):
                 if not isinstance(comment, dict):
                     continue
+                placement = _inline_comment_placement(comment, position)
                 comments.append(
                     {
                         'kind': 'inline',
@@ -792,7 +827,9 @@ def fetch_pr_comments_data(pr_number: int, unresolved_only: bool = False) -> dic
                         'created_at': comment.get('createdAt') or '',
                         'updated_at': comment.get('updatedAt') or '',
                         'thread_id': thread_id,
-                        'commit_id': '',
+                        'commit_id': placement['commit_id'],
+                        'reply_to_id': placement['reply_to_id'],
+                        'thread_reply': placement['thread_reply'],
                     }
                 )
 

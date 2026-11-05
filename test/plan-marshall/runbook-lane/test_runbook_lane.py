@@ -359,7 +359,6 @@ def test_the_lane_and_the_registry_name_one_coverage_parser() -> None:
             assert field in text, f'{origin} does not name the marker field {field}'
 
 
-
 #: The merge-gate state PLAN-LB-72 shipped: both required bots reported clean,
 #: ``ci pr reviews`` is empty, and CodeRabbit's clean-review summary comment
 #: covers the head. A clean review has no formal review body, so the comment is

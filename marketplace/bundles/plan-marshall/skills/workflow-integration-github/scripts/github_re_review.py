@@ -284,6 +284,7 @@ from _github_pr import (
     refusal_cause,
     refusal_condition,
     refusal_size_cap,
+    review_coverage_verdict,
 )
 from ci_base import (
     DEFAULT_CI_INTERVAL,
@@ -424,8 +425,23 @@ def _verifies_head_sha(matched_signal: str, record: dict | None, head_sha: str) 
     if matched_signal == 'review':
         return True
     if matched_signal == 'issue_comment':
-        return _references_head_sha(str(record.get('body') or ''), head_sha)
+        return _body_names_head(str(record.get('body') or ''), head_sha)
     return False
+
+
+def _body_names_head(body: str, head_sha: str) -> bool:
+    """Whether ``body`` names ``head_sha`` as the commit its review covered.
+
+    A review-coverage marker is the comment's own STRUCTURED claim about the commit it
+    covered, so it decides whenever it is present — including answering NO when it
+    names another commit. Bare token extraction is the fallback for a comment that
+    carries no marker, and it is what keeps a bot whose answer names the commit in prose
+    (or in a permalink) verifying it.
+    """
+    coverage = review_coverage_verdict(body, head_sha)
+    if coverage is not None:
+        return coverage
+    return _references_head_sha(body, head_sha)
 
 
 def _resolve_refusal_class(bot_kind: str | None, refusals: list[dict]) -> str:
@@ -1648,7 +1664,7 @@ class _ReReviewStrategy:
         """
         if not bot_kind or trigger_dt is None:
             return None
-        answer_marker = bot_registry.participation_evidence_marker(bot_kind, 'issue_comment')
+        answer_markers = bot_registry.participation_evidence_markers_for(bot_kind, 'issue_comment')
         eligible: list[dict] = []
         for comment in comments:
             if bot_kind_for_author(comment.get('author')) != bot_kind:
@@ -1693,14 +1709,14 @@ class _ReReviewStrategy:
             # already declined it and it is no acknowledgment, so there is nothing
             # to report about it. Running the gate after the refusal stack keeps a
             # marker-less refusal recorded rather than silently skipped.
-            if answer_marker and answer_marker not in body:
+            if answer_markers and not any(marker in body for marker in answer_markers):
                 continue
             if written_after_trigger:
                 eligible.append(comment)
         if not eligible:
             return None
         return next(
-            (c for c in eligible if _references_head_sha(str(c.get('body') or ''), head_sha)),
+            (c for c in eligible if _body_names_head(str(c.get('body') or ''), head_sha)),
             eligible[0],
         )
 

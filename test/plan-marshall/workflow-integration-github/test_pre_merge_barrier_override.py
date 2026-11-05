@@ -54,6 +54,8 @@ _INITIAL_COMMENTS = [
         'path': 'src/a.py',
         'line': 10,
         'resolved': False,
+        'commit_id': 'deadbeef',
+        'thread_reply': False,
     },
     {
         'id': 'c2',
@@ -73,6 +75,8 @@ _LATE_COMMENT = {
     'path': 'src/c.py',
     'line': 42,
     'resolved': False,
+    'commit_id': 'deadbeef',
+    'thread_reply': False,
 }
 
 

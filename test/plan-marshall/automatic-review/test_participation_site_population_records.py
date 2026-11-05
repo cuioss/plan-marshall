@@ -61,6 +61,7 @@ SEED_SYMBOLS: tuple[str, ...] = (
     'participation_evidence',
     'participation_evidence_marker',
     'participation_evidence_markers',
+    'participation_evidence_markers_for',
     '_validate_participation_evidence_markers',
     '_is_participation_evidence',
     'head_sha_verified',
@@ -328,6 +329,11 @@ CANDIDATE_EXCLUSIONS: dict[str, str] = {
         'The FILING dedup’s key reconstruction: it decides whether a comment is new '
         'INFORMATION to file, never whether a bot participated. Its site is already in the '
         'population through the seed existing_comment_keys, which names the key set it rebuilds.'
+    ),
+    '_REVIEW_COVERAGE_REVIEWED_KIND': (
+        'The KIND VALUE a review-coverage marker must carry to be a finished review: a label on '
+        'the marker payload, not a decision. The decision that reads it is review_coverage_verdict, '
+        'which anchors the credit on the marker’s covered commit; this constant owns no site.'
     ),
 }
 

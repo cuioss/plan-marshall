@@ -65,6 +65,9 @@ _INITIAL_COMMENTS = [
         'path': 'src/a.py',
         'line': 10,
         'resolved': False,
+        # Placed at the fetched head, so this inline comment proves a review of it.
+        'commit_id': 'deadbeef',
+        'thread_reply': False,
     },
     {
         'id': 'c2',
@@ -408,6 +411,10 @@ _CODERABBIT_REVIEW = {
     'resolved': False,
     'created_at': _REVIEWED_AT,
     'updated_at': _REVIEWED_AT,
+    # The provider places this inline comment at the earlier head; it is therefore a
+    # genuine review OF that head, which is what the reply-covered arm lifts later.
+    'commit_id': _EARLIER_HEAD,
+    'thread_reply': False,
 }
 
 
