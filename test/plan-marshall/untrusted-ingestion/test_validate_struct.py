@@ -128,7 +128,6 @@ def test_a_string_under_the_cap_is_byte_identical_and_reports_no_clamp():
     assert data.get('clamps') == []
 
 
-
 def test_over_maxitems_array_is_clamped():
     struct = {
         'narrative': 'short',

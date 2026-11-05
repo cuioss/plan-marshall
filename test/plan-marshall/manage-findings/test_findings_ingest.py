@@ -186,7 +186,6 @@ def test_ingest_promotes_a_body_under_the_cap_byte_identically_with_no_flag(plan
     assert 'original_length' not in record
 
 
-
 # =============================================================================
 # Test: Validator rejection routing
 # =============================================================================

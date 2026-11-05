@@ -5,7 +5,7 @@ Every candidate struct a reader emits is constrained by a declared output schema
 ## Design rules (every schema obeys all four)
 
 1. **`additionalProperties: false`** — the struct may carry only the keys the schema declares. Any extra key is a structural violation; the script returns `status: error` naming the violating field. (Extra keys are a common injection vector — a hijacked reader smuggling instructions into an undeclared field.)
-2. **`maxLength` on every string** — every string field has an explicit maximum length. The script clamps (truncates) over-long strings rather than rejecting, and records what it clamped.
+2. **`maxLength` on every string** — every string field has an explicit maximum length. The script clamps an over-long string rather than rejecting it, keeping its **head AND its tail** and replacing the removed middle with an elision marker that states how many characters were removed. A head-only cut removes a review bot's conclusion, which that bot writes after its analysis. The result, marker included, never exceeds the cap; the script records the original length and the elided count per field, both as a readable message and as structured `clamps[]` entries.
 3. **`maxItems` on every array** — every array field has an explicit maximum item count. The script clamps over-large arrays to the cap, and records what it clamped.
 4. **`pattern` on enum-like / identifier fields** — fields with a fixed vocabulary (confidence tiers, finding severities) or an identifier shape carry a regex `pattern`. A value that does not match the pattern is a structural violation; the script returns `status: error`.
 
