@@ -43,6 +43,10 @@ from datetime import UTC, datetime  # noqa: E402
 from pathlib import Path  # noqa: E402
 from typing import Any  # noqa: E402
 
+# The carry flag is DERIVED from the module that declares it on the child's parser,
+# not spelled again here: a one-sided rename would make the routed child reject the
+# flag it was handed, and the two spellings would agree only by luck.
+from _build_cli import RESOLVED_PROJECT_DIR_FLAG as _RESOLVED_PROJECT_DIR_FLAG  # noqa: E402
 from _build_execute import (  # noqa: E402
     MIN_TIMEOUT,
     BuildCommandFn,
@@ -981,13 +985,6 @@ It names the plan for the ledger row and the build slot; the tree travels separa
 as ``--resolved-project-dir`` so the child never has to re-resolve it. What the child
 DOES re-resolve when it arrives without the carry is this value against its own tree
 — which is the pre-carry behaviour, and the reason the carry exists.
-"""
-
-_RESOLVED_PROJECT_DIR_FLAG = '--resolved-project-dir'
-"""The tree-carry flag :func:`_carry_resolved_tree` appends (see ``_build_cli``).
-
-Declared on the build CLI's routing pair so a routed child consumes it before any
-``--plan-id`` resolution; never sent to a non-routed build.
 """
 
 _PROJECT_DIR_FLAG = '--project-dir'

@@ -1193,12 +1193,17 @@ def read_log_verdict(log_file: str) -> LogVerdict | None:
     measurement. ``tests_run: 0`` is kept, because "executed no tests" is a real
     fact and a different one from "stated no count".
 
+    A log carrying no TOON ``status:`` line falls back to
+    :func:`_json_log_verdict`, because ``--format json`` is a supported caller
+    request: without that fallback a JSON-formatted routed result reads as a build
+    failure. The TOON path never pays for it.
+
     Args:
         log_file: Path to the job log the supervisor streamed the child into.
 
     Returns:
         The parsed :class:`LogVerdict`, or ``None`` when the log is missing,
-        unreadable, or carries no top-level ``status:`` line at all.
+        unreadable, or states no verdict in either format.
     """
     status: str | None = None
     exit_code: int | None = None
@@ -1283,7 +1288,7 @@ def read_log_verdict(log_file: str) -> LogVerdict | None:
     except OSError:
         return None
     if status is None:
-        return None
+        return _json_log_verdict(log_file)
     fault = None
     if fault_error in LAUNCH_FAULT_ERRORS:
         fault = InnerFault(
@@ -1305,6 +1310,104 @@ def read_log_verdict(log_file: str) -> LogVerdict | None:
         timeout_used_seconds=timeout_used_seconds,
         timeout_source=timeout_source,
         command_key=command_key,
+        fault=fault,
+        child_fault=child_fault,
+    )
+
+
+def _last_json_object(content: str) -> dict[str, Any] | None:
+    """Return the LAST JSON object in ``content`` that parses, or ``None``.
+
+    A log holds whatever the child wrote before its result — the wrapper's own
+    ``[EXEC]`` line, progress output, a supervisor banner — so the result is not
+    necessarily the first thing in the file nor the only object in it. The scan
+    walks every ``{`` and keeps the last object that decodes, which is the result
+    whenever one was emitted.
+
+    Args:
+        content: The whole job log.
+
+    Returns:
+        The last decoded JSON object, or ``None`` when the log holds none.
+    """
+    decoder = json.JSONDecoder()
+    found: dict[str, Any] | None = None
+    offset = 0
+    while True:
+        start = content.find('{', offset)
+        if start < 0:
+            return found
+        try:
+            candidate, end = decoder.raw_decode(content, start)
+        except ValueError:
+            offset = start + 1
+            continue
+        if isinstance(candidate, dict):
+            found = candidate
+        offset = end
+
+
+def _json_log_verdict(log_file: str) -> LogVerdict | None:
+    """Read a wrapper verdict emitted as JSON, for a log with no TOON ``status:`` line.
+
+    ``--format json`` is a supported caller request, and the wrapper honours it: the
+    child's result is then a JSON object rather than column-0 TOON keys. The line
+    scanner finds no ``status:`` in such a log, so before this existed the whole
+    routed job fell through to ``build_failed`` with the synthetic row — the same
+    collapse this module fixes for TOON, surviving in the other output format.
+
+    Only the failure path pays for it: this runs after the line scan has already
+    found nothing, and it re-reads the log because that case is rare and a partly
+    parsed file is cheaper than holding every log in memory.
+
+    Args:
+        log_file: Path to the job log.
+
+    Returns:
+        The verdict the JSON object states, or ``None`` when the log holds no JSON
+        object carrying a ``status``.
+    """
+    try:
+        with open(log_file, encoding='utf-8', errors='replace') as handle:
+            content = handle.read()
+    except OSError:
+        return None
+    result = _last_json_object(content)
+    if result is None:
+        return None
+    status = result.get('status')
+    if not isinstance(status, str):
+        return None
+
+    exit_code = result.get('exit_code')
+    exit_code = exit_code if isinstance(exit_code, int) and not isinstance(exit_code, bool) else None
+    tests_run = result.get('tests_run')
+    tests_run = tests_run if isinstance(tests_run, int) and not isinstance(tests_run, bool) and tests_run >= 0 else None
+    rows = result.get('errors')
+    errors = tuple(row for row in rows if isinstance(row, dict)) if isinstance(rows, list) else ()
+    error_name = result.get('error')
+    error_name = error_name if isinstance(error_name, str) else None
+    reason = result.get('reason') if isinstance(result.get('reason'), str) else None
+    message = result.get('message') if isinstance(result.get('message'), str) else None
+
+    fault = None
+    if error_name in LAUNCH_FAULT_ERRORS:
+        fault = InnerFault(
+            error=error_name,
+            reason=reason,
+            wrapper=result.get('wrapper') if isinstance(result.get('wrapper'), str) else None,
+            project_dir=result.get('project_dir') if isinstance(result.get('project_dir'), str) else None,
+        )
+    child_fault = None
+    if error_name in PRE_TOOL_FAULT_ERRORS:
+        preferred = reason or message
+        corrective = message if message and message != preferred else None
+        child_fault = ChildFault(error=error_name, reason=preferred, corrective=corrective)
+    return LogVerdict(
+        status=status,
+        exit_code=exit_code,
+        tests_run=tests_run,
+        errors=errors,
         fault=fault,
         child_fault=child_fault,
     )

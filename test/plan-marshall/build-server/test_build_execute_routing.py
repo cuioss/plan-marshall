@@ -1055,6 +1055,78 @@ class TestPreToolFaultPassThrough:
         assert failed_verdict is not None
         assert failed_verdict.child_fault is None, 'a build that ran keeps the build-failure path'
 
+    def test_a_json_formatted_refusal_is_read_as_a_verdict(self, tmp_path):
+        """``--format json`` is a caller request, so the reader must understand it.
+
+        A routed child asked for JSON writes its refusal as a JSON object, not as
+        column-0 TOON keys. Without the JSON fallback the reader found no verdict and
+        the whole job became ``build_failed`` with the synthetic row — the same
+        collapse, one output format over. The log also holds progress output before
+        the result, so the reader must find the LAST object rather than the first.
+        """
+        import json
+
+        import _build_server_protocol as proto
+
+        log = tmp_path / 'json-job.log'
+        refusal = {
+            'status': 'error',
+            'error': 'queue_saturated',
+            'message': 'no slot was admitted; retry later',
+            'max_retries': 3,
+            'plan_id': 'p',
+        }
+        log.write_text(
+            '[EXEC] python3 .plan/execute-script.py … run --format json\n' + json.dumps(refusal, indent=2) + '\n',
+            encoding='utf-8',
+        )
+
+        verdict = proto.read_log_verdict(str(log))
+
+        assert verdict is not None
+        assert verdict.status == 'error'
+        assert verdict.child_fault is not None
+        assert verdict.child_fault.error == 'queue_saturated'
+        assert verdict.child_fault.reason == 'no slot was admitted; retry later'
+
+    def test_a_json_failure_keeps_its_rows_and_the_build_failure_path(self, tmp_path):
+        """Matched control: JSON parsing must not turn a real failure into a refusal."""
+        import json
+
+        import _build_server_protocol as proto
+
+        log = tmp_path / 'json-failure.log'
+        log.write_text(
+            json.dumps(
+                {
+                    'status': 'error',
+                    'error': 'build_failed',
+                    'exit_code': 1,
+                    'tests_run': 12,
+                    'errors': [{'file': 'test/a.py', 'line': 4, 'message': 'boom', 'category': 'test_failure'}],
+                },
+                indent=2,
+            ),
+            encoding='utf-8',
+        )
+
+        verdict = proto.read_log_verdict(str(log))
+
+        assert verdict is not None
+        assert verdict.status == 'error'
+        assert verdict.child_fault is None and verdict.fault is None
+        assert verdict.tests_run == 12
+        assert [row['file'] for row in verdict.errors] == ['test/a.py']
+
+    def test_a_log_that_states_no_verdict_in_either_format_is_none(self, tmp_path):
+        """No TOON status and no JSON object: nothing was established, so nothing is claimed."""
+        import _build_server_protocol as proto
+
+        log = tmp_path / 'noise.log'
+        log.write_text('usage: unrecognized arguments: --resolved-project-dir\n', encoding='utf-8')
+
+        assert proto.read_log_verdict(str(log)) is None
+
     def test_a_slot_refusal_is_a_pre_tool_fault_and_keeps_its_corrective(self, tmp_path):
         """A child that never got a build slot is a refusal, not a red build.
 
