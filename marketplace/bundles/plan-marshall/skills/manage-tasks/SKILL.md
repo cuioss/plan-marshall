@@ -80,7 +80,7 @@ Script: `plan-marshall:manage-tasks:manage-tasks`
 | `remove-step` | `--plan-id --task-number --step` | Remove step from task |
 | `rename-path` | `--plan-id --old-path --new-path [--include-completed]` | Record path rename and rewrite step targets. By default only unfinished work is rewritten — a `done` task is skipped whole, and elsewhere only `pending` steps are touched — so a finished task's record stays a faithful account of the paths it edited. `--include-completed` lifts both guards, for the case that default cannot serve: an upstream rename landing mid-plan, where the path a completed step names no longer exists, so leaving it alone strands the task on a dead path that `declared_set_closure` then flags with no sanctioned way to correct it. Returns `rewritten_completed_count` and, per entry, BOTH the `step_status` and the `task_status` the record carried BEFORE the rewrite, so an edit to finished work is visible in the result rather than merely inferable from the flag. Both statuses are reported, and the count treats an entry as finished work when EITHER is finished, because either guard alone can be the one lifted — a done task whose step rows still read `pending` is finished work just as much as a done step is |
 | `qgate-mechanical-checks` | `--plan-id [--no-emit]` | Run the deterministic Q-Gate checks for phase-4-plan Step 8: coverage, skill-resolution, acyclic, files-exist, keyword-drift, structural-token-drift, plus the two CLOSURE checks — declared-set-closure and declared-scope-reconciliation. The first six ask whether each declared thing is well-formed and resolves; the closure pair asks whether the declared SET is complete, which none of the others can see. Pure regex + graph + filesystem; no LLM dispatch. Each failure becomes a Q-Gate finding under `--source qgate` so phase-4-plan's existing aggregate consumes it. Returns `total_failed`, per-check counts, a `population` block reporting what each population-publishing check actually scanned (with `population_complete`), and an `ambiguous` flag the caller uses to decide whether the LLM q-gate-validation dispatch still needs to fire — `ambiguous` flips on an unparseable outline OR an incomplete population, since a zero over an unscanned set is not a verdict. The block covers **three** checks, not only the two closure ones: `acyclic` publishes alongside them because it also loses records before it measures — a task number it cannot use is dropped from the graph, and two records claiming one number collapse to a single node — so its `duplicate_task_numbers` / `unusable_task_numbers` / `nodes_indexed` are what keep a "no cycle" from being a verdict over a shortened node set. Also returns `qgate_persist_failed` (bool) and `qgate_persist_failures` (list of `{title, message}`) — a persist the Q-Gate primitive rejected means the check failed but its finding never reached the store, so the caller MUST fail loudly on `qgate_persist_failed: true` rather than trusting `total_failed` alone. Alongside `findings_emitted` (newly appended records only) returns `reobserved_count` — how many persists re-detected an already-resolved finding and kept its recorded resolution (the primitive's `kept` outcome) — and `still_detected_but_fixed_count` — how many of those kept records carry the `fixed` resolution. An unchanged-plan re-run therefore reports `findings_emitted` zero with the re-observed counts stating what it re-saw, instead of a bare zero that reads as "nothing detected"; the kept resolutions are untouched. |
-| `loop-exit-guard` | `--plan-id` | Script-level enforcement of the phase-5-execute "unfinished > 0 → must continue" invariant. The predicate is the union of `pending` AND `in_progress` tasks. Emits `status: continue` (with `pending_count`, `pending_ids`, `in_progress_count`, `in_progress_ids`) when EITHER bucket is non-empty — the non-success status forces the orchestrator to re-dispatch the execution-context. Emits `status: success` (with all four count/id fields present and zero-valued) only when BOTH counts are zero. See "Loop-Exit Guard" below for the contract. |
+| `loop-exit-guard` | `--plan-id [--consumed-tokens N] [--completed-tasks-delta N] [--pending-verify-steps "ids"] [--verification-handback] [--provisional-cause CAUSE]` | Script-level enforcement of the phase-5-execute "unfinished > 0 → must continue" invariant. The predicate is the union of `pending` AND `in_progress` tasks. Emits `status: continue` (with `pending_count`, `pending_ids`, `in_progress_count`, `in_progress_ids`, `owed_count`, `owed_ids`) when EITHER bucket is non-empty — the non-success status forces the orchestrator to re-dispatch the execution-context. Emits `status: success` (with all six fields present and zero-valued) only when BOTH counts are zero. `owed_count`/`owed_ids` name the `in_progress` tasks held open by `verification_owed: true`; they still block the clean exit. Supplying any predicate input switches the verb into the deterministic B7 no-progress evaluation and adds `predicate_*`, `verification_handback_valid`, `classification` and `classification_reason`. See "Loop-Exit Guard" below for both contracts. |
 | `pre-commit-verify-freshness` | `--plan-id` | Script-level enforcement that the current working-tree state has been observed by a successful build before any pre-commit transition — but only where a build was necessary at all. Consults the command-free `build-decision` verdict first, then queries the unified change-ledger for a `kind=build` entry with `status == success` whose `worktree_sha` matches the recomputed working-tree currency hash, and finally cross-checks the matching rows on two dimensions — their notations against the build notations this project's architecture resolves, and the canonical + scope they recorded against the blast radius of the change. Emits `status: exempt` (verdict `not_necessary` — no build was owed, so the gate returns BEFORE the ledger scan with the verdict's own `reason` forwarded verbatim; nothing about the tree was examined), `status: fresh` (one or more matching successful build entries citable on BOTH dimensions and covering the change, alone or between them — `notation_cross_check` and `scope_cross_check` say whether each was audited or merely undetermined, and the record names every row the verdict rests on and every candidate's recorded scope), `status: stale` (no successful build matches the current working-tree sha, or every one that does names a build this project never runs, or the ones that do fall short of the change alone and combined — carrying a `reason` that names WHICH route: `worktree_mutated`, `build_error`, `build_timeout`, `build_killed`, `build_indeterminate`, `notation_unrelated`, `notation_absent`, `build_scope_narrow`, or `no_row_both_attributable_and_adequate`, since the routes need different remedies and a `killed` build must never be blind-retried), or `status: undecidable` (no positive proof — `no_registry` when the ledger is absent/empty, `head_unresolvable` when the working-tree sha cannot be computed). Fail-closed contract: exactly `exempt` and `fresh` permit transition, and they permit on different bases — read the member, never the absence of a refusal. See "Pre-Commit Verify Freshness" below for the contract. |
 
 ### Loop-Exit Guard (`loop-exit-guard`)
@@ -112,7 +112,7 @@ broadened predicate. Either non-empty bucket forces `status: continue`.
 
 **TOON return contract:**
 
-Both `continue` and `success` branches emit all four count/id fields so
+Both `continue` and `success` branches emit all six count/id fields so
 callers can read either axis without conditional presence checks:
 
 ```toon
@@ -122,6 +122,8 @@ pending_count: N
 pending_ids[N]: [task_numbers]
 in_progress_count: M
 in_progress_ids[M]: [task_numbers]
+owed_count: K
+owed_ids[K]: [task_numbers]
 message: "..."
 ```
 
@@ -134,6 +136,37 @@ message: "..."
   queue empty by the broadened predicate, clean exit permitted. The
   boundary-call fence in `plan-marshall/workflow/execution.md` may now
   record `termination-cause == clean_exit_queue_empty`.
+- `owed_count` / `owed_ids` — the subset of the `in_progress` bucket held
+  open by `verification_owed: true` (waiting on an orchestrator-tier build).
+  They are reported separately, but they are NOT removed from the blocking
+  bucket: an owed task still forces `status: continue`, because the build it
+  waits on has not reported. The split exists for the no-progress predicate
+  below, which must not count a task the workflow itself is holding open.
+
+**No-progress mode (B7).** Passing `--consumed-tokens` (or any other
+predicate input: `--completed-tasks-delta`, `--verification-handback`)
+switches the verb into the deterministic B7 evaluation the orchestrator runs
+after a dispatch returns and before `record-dispatch-boundary`. The result
+then also carries:
+
+```toon
+predicate_in_progress_count: {in_progress_count - owed_count}
+predicate_completed_tasks_delta: {D}
+predicate_consumed_tokens: {X}
+predicate_holds: {true|false}
+verification_handback_valid: {true|false}
+classification: {error|verification_handback|voluntary_checkpoint|<provisional cause>}
+classification_reason: {...}
+```
+
+The predicate is `predicate_in_progress_count > 0 AND
+predicate_completed_tasks_delta == 0 AND predicate_consumed_tokens > 50000`
+— stated once, with its exemptions, in `plan-marshall/workflow/execution.md`
+§ "B7 — voluntary_checkpoint no-progress reclassification". Two exemptions
+precede it: a return carrying `--verification-handback` beside a non-empty
+`--pending-verify-steps` classifies as `verification_handback` and never
+reaches the predicate, and the owed-task subtraction means an owed task can
+never manufacture a stall. `classification` is the cause to record.
 
 **Rationale:** before this verb, the loop-exit decision was driven by the
 dispatched agent's terminal payload, which the agent could echo verbatim
@@ -176,6 +209,18 @@ triggers it, and the script never resolves tiers itself:
 - Reopening an owed task for new work is `add-step` (a new actionable step
   makes `next` select it again); a bare `update --status in_progress` on an
   all-terminal owed task changes nothing actionable.
+- **A task stamped `verification.owed_rung: deferred` closes WITHOUT
+  `--verification-owed`.** Compose stamps that field whenever a deliverable's
+  measured test build exceeds the per-task limit, because that
+  deliverable's rung is deferred to its chain tail (see
+  `manage-execution-manifest/SKILL.md` § "Deliverable chain-tail rung
+  deferral"). The leaf honours the stamp — it runs its narrow units inline and
+  closes per-task — and the hold fires only on the chain-tail task, which
+  carries `verification.owed_rung: chain_tail`. The rule is enforced here as
+  well as stated: `finalize-step` IGNORES `--verification-owed` on a `deferred`
+  task, closes it `done`, and reports `owed_rung_deferred_dropped: true`, so a
+  leaf that passes the flag anyway cannot stall the task on a build it never
+  requested.
 
 `next` skips verification-owed tasks that have no pending or in_progress
 step — they are waiting on a build, not on the leaf — while an owed task

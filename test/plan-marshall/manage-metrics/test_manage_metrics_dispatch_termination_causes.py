@@ -130,12 +130,23 @@ class TestCloseValueScopeDiscriminator:
 class TestDispatchTerminationCausesEnum:
     """Structural assertions on the DISPATCH_TERMINATION_CAUSES tuple."""
 
-    def test_enum_contains_exactly_thirteen_values(self):
-        """The enum extends to exactly 13 entries — the legacy 5, the phase-6/phase-4
+    def test_enum_contains_exactly_fourteen_values(self):
+        """The enum extends to exactly 14 entries — the legacy 5, the phase-6/phase-4
         extension (5), the budget_yield phase-5 dispatch-loop signal,
-        returned_with_findings (the productive-loop-back member), plus
-        baseline_drift (the recoverable phase-5 drift return)."""
-        assert len(manage_metrics.DISPATCH_TERMINATION_CAUSES) == 13
+        returned_with_findings (the productive-loop-back member), baseline_drift
+        (the recoverable phase-5 drift return), plus verification_handback (the
+        prescribed orchestrator-tier build hand-back)."""
+        assert len(manage_metrics.DISPATCH_TERMINATION_CAUSES) == 14
+
+    def test_enum_contains_verification_handback_cause(self):
+        """The prescribed build hand-back member is present.
+
+        The leaf is told to hand an orchestrator-tier build back; before this
+        member that return was classified `voluntary_checkpoint` and B7
+        reclassified it as `error`. RED before the member was added (argparse
+        rejected the value).
+        """
+        assert 'verification_handback' in manage_metrics.DISPATCH_TERMINATION_CAUSES
 
     def test_enum_contains_returned_with_findings_cause(self):
         """The productive-non-completion member is present.
