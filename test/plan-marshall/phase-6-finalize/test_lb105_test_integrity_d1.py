@@ -547,6 +547,39 @@ def test_a_js_skip_header_is_reported_as_filtered_not_as_a_lost_assertion(plan_c
     )
 
 
+def test_a_moved_test_that_keeps_fewer_assertions_is_reported(plan_context, tmp_path, monkeypatch) -> None:
+    """Survival is about the assertion count, not just the identity's presence."""
+    repo = _repo(tmp_path)
+    _commit(repo, {'README.md': 'readme\n'})
+    _commit(
+        repo,
+        {
+            'test/one_test.py': 'def test_a():\n    assert 1 == 1\n    assert 2 == 2\n\ndef test_b():\n    assert 3 == 3\n'
+        },
+    )
+    _git(repo, 'checkout', '--quiet', '-b', 'feature')
+    _git(repo, 'rm', 'test/one_test.py')
+    _commit(
+        repo,
+        {
+            'test/a_test.py': 'def test_a():\n    assert 1 == 1\n',
+            'test/b_test.py': 'def test_b():\n    assert 3 == 3\n',
+        },
+    )
+    monkeypatch.setattr(_integrity, 'resolve_live_worktree', lambda _plan_id: repo)
+    _plan(plan_context)
+
+    payload = _integrity.compute_test_integrity(PLAN_ID)
+
+    rows = _rows(payload)
+    assert rows, payload
+    assert any(
+        entry.get('identity') == 'test_a' and entry.get('assertions_removed') == 1
+        for row in rows
+        for entry in row['removed_tests']
+    ), rows
+
+
 def test_a_renamed_test_function_is_reported(plan_context, tmp_path, monkeypatch) -> None:
     """A test FUNCTION that disappears is a named test disappearing, rename included.
 

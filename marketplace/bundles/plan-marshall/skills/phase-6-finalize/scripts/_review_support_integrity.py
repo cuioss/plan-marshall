@@ -419,7 +419,15 @@ def compute_test_integrity(plan_id: str, base_ref: str | None = None) -> dict[st
         before_file = _count(pre)
         post = after.get(path)
         if post is None:
-            missing = {identity: count for identity, count in before_fns.items() if identity not in after_identities}
+            # A deleted path loses an identity only when the AFTER set does not carry
+            # as many assertions of it. Comparing identity EXISTENCE alone let a
+            # test move to another file with fewer assertions unnoticed, and let a
+            # same-named test elsewhere count as "survived".
+            missing = {
+                identity: count - after_identities.get(identity, 0)
+                for identity, count in before_fns.items()
+                if after_identities.get(identity, 0) < count
+            }
             if missing:
                 findings.append(
                     _row(
@@ -457,9 +465,9 @@ def compute_test_integrity(plan_id: str, base_ref: str | None = None) -> dict[st
             if identity in after_fns and after_fns[identity] < count
         }
         missing = {
-            identity: count
+            identity: count - after_identities.get(identity, 0)
             for identity, count in before_fns.items()
-            if identity not in after_fns and identity not in after_identities
+            if identity not in after_fns and after_identities.get(identity, 0) < count
         }
         identity_loss = sum(drops.values()) + sum(missing.values())
         removed = max(0, max(file_loss, identity_loss))

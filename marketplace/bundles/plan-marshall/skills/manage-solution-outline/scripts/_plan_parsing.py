@@ -841,7 +841,7 @@ def extract_declared_test_removals(content: str) -> list[dict[str, Any]]:
     """
     removals: list[dict[str, Any]] = []
     block = re.search(
-        rf'\*\*{re.escape(_TESTS_TO_REMOVE_HEADING)}:\*\*[^\n]*\n((?:[ \t]*[-*][^\n]+\n?)+)',
+        rf'\*\*{re.escape(_TESTS_TO_REMOVE_HEADING)}:\*\*[^\n]*\n((?:[ \t]*[-*][ \t]+[^\n]+\n?)+)',
         content,
         re.IGNORECASE,
     )

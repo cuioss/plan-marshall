@@ -369,9 +369,9 @@ def _record_override_head(plan_id: str, step: str, head: str) -> tuple[bool, str
 
 
 #: The prefix the review's own grader gives a weakened-test finding's title
-#: (``weakened_test at {path}``). The accept path reads the path back out of the
-#: title, because the workflow files the finding from the validator's row and does
-#: not pass ``--file-path``.
+#: (``weakened_test at {path}``) when the workflow files it from the validator's row
+#: (``--title '{kind} at {ref}'``). It is a FALLBACK only: a finding that carries
+#: ``file_path`` is read from that first.
 _WEAKENED_TITLE_PREFIX = 'weakened_test at '
 
 
@@ -412,16 +412,28 @@ def _removed_identities_for_accept(
     warning says.
     """
     paths: list[str] = []
+    unidentified: list[str] = []
     for finding in findings:
         if not isinstance(finding, dict) or finding.get('hash_id') not in accept:
+            continue
+        explicit = str(finding.get('file_path') or '').strip()
+        if explicit:
+            paths.append(explicit)
             continue
         title = str(finding.get('title') or '')
         if not title.startswith(_WEAKENED_TITLE_PREFIX):
             continue
-        path = str(finding.get('file_path') or title[len(_WEAKENED_TITLE_PREFIX) :]).strip()
+        path = title[len(_WEAKENED_TITLE_PREFIX) :].strip()
         if path:
             paths.append(path)
+        else:
+            unidentified.append(str(finding.get('hash_id') or ''))
     if not paths:
+        if unidentified:
+            return [], (
+                'these accepted findings name no test file, so no removal identity could be recorded: '
+                + ', '.join(unidentified)
+            )
         return [], None
     report = _recompute_test_integrity(plan_id)
     if report is None or report.get('status') != 'success':

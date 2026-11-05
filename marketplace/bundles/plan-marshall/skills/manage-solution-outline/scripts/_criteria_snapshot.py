@@ -844,10 +844,39 @@ def outline_deliverables(plan_id: str) -> list[dict[str, Any]] | None:
     bodies = {block['number']: block['content'] for block in split_deliverable_blocks(section)}
     deliverables = extract_deliverables(section)
     for deliverable in deliverables:
-        criteria, unparsed = parse_success_criteria(str(bodies.get(deliverable['number'], '')))
+        body = str(bodies.get(deliverable['number'], ''))
+        criteria, unparsed = parse_success_criteria(body)
         deliverable['success_criteria'] = criteria
         deliverable['unparsed_criteria'] = unparsed
+        deliverable['retired_criteria'] = _retired_criteria(body)
     return deliverables
+
+
+def _retired_criteria(body: str) -> list[str]:
+    """The criteria the RETIRED parser would have produced for this body.
+
+    The retired rule kept only an unbroken run of ``- `` lines, first line only.
+    It is replayed here so the migration state can be told from an author's edit:
+    a frozen criterion is ``parser_extended`` only when this rule would still have
+    produced it, which is true for a wrapped bullet it truncated and false for a
+    criterion the author appended to.
+    """
+    marker = _SUCCESS_CRITERIA_MARKER_RE.search(body)
+    if marker is None:
+        return []
+    retired: list[str] = []
+    for line in body[marker.end() :].splitlines():
+        if not line.strip():
+            if retired:
+                break
+            continue
+        if _SUCCESS_BLOCK_END_RE.match(line):
+            break
+        if line.startswith('- '):
+            retired.append(normalize_criterion(line[2:]))
+        elif retired:
+            break
+    return retired
 
 
 def _request_text(plan_id: str) -> str:
@@ -1147,7 +1176,7 @@ def _write_snapshot_locked(plan_id: str) -> dict[str, Any]:
         }
         for deliverable in live
     ]
-    return {
+    payload: dict[str, Any] = {
         'status': 'success',
         'plan_id': plan_id,
         'file': SNAPSHOT_FILE,
@@ -1161,6 +1190,17 @@ def _write_snapshot_locked(plan_id: str) -> dict[str, Any]:
         'declared_test_removals': len(declared),
         'accepted_removals_recorded': removals_recorded,
     }
+    if declared and not removals_recorded:
+        # The freeze itself is valid — the digest is recorded and the criteria are
+        # frozen — but the declared removals never reached the accepted set, so
+        # every later validate would raise them. Name it instead of leaving only a
+        # false flag a caller can overlook; re-running snapshot-criteria (with the
+        # re-freeze authorization) retries the write.
+        payload['accepted_removals_error'] = (
+            'the declared test removals could not be recorded in the plan status record; '
+            'they will be raised as weakened_test findings until a re-freeze records them'
+        )
+    return payload
 
 
 def _authorization(snapshot: dict[str, Any], number: Any, criterion: str) -> bool:
@@ -1216,8 +1256,12 @@ def criteria_drift(plan_id: str, current: list[dict[str, Any]] | None = None) ->
                 continue
             # Migration: a frozen criterion that is a PREFIX of a criterion the new
             # parser now reads in full is the parser getting better, not the
-            # outline changing. Report it as its own state so it is visible, and
-            # keep it out of the drift kinds that block.
+            # outline changing — but ONLY when the retired parser would still have
+            # produced exactly that frozen text for this deliverable. Otherwise an
+            # author could append to a frozen criterion and hide the change in a
+            # non-blocking state, so a prefix match the retired parser would NOT
+            # produce stays `rewritten`.
+            retired = [normalize_criterion(text) for text in (live_row or {}).get('retired_criteria') or []]
             extended = next(
                 (
                     candidate
@@ -1226,7 +1270,7 @@ def criteria_drift(plan_id: str, current: list[dict[str, Any]] | None = None) ->
                 ),
                 None,
             )
-            if extended is not None:
+            if extended is not None and criterion in retired:
                 drift.append(
                     {
                         'deliverable': number,

@@ -280,19 +280,42 @@ def test_undeclared_removal_is_blocking_at_every_head(plan_context, tmp_path, mo
 def test_a_second_removed_test_is_raised_even_though_the_first_was_accepted(
     plan_context, tmp_path, monkeypatch
 ) -> None:
-    repo = _removed_repo(tmp_path)
+    repo = _repo(tmp_path)
+    _commit(repo, {'README.md': 'readme\n'})
+    _commit(repo, {'test/sample_test.py': BEFORE, 'test/other_test.py': 'def test_second():\n    assert 4 == 4\n'})
+    _git(repo, 'checkout', '--quiet', '-b', 'feature')
+    _commit(repo, {'test/sample_test.py': AFTER_REMOVED})
     monkeypatch.setattr(_integrity, 'resolve_live_worktree', lambda _plan_id: repo)
     monkeypatch.setattr(_attr, 'resolve_live_worktree', lambda _plan_id: None)
     criteria = ['parser accepts input']
     _plan(plan_context, criteria, removals=['test_a'])
-    # head B removes a second test.
-    _commit(repo, {'test/sample_test.py': ''})
+    assert _snap.write_snapshot(PLAN_ID)['status'] == 'success'
+    # head B removes a second test, in another file.
+    _git(repo, 'rm', 'test/other_test.py')
+    _git(repo, 'commit', '--quiet', '-m', 'remove second')
 
     payload = review_support.run_validate(PLAN_ID, 'functional', _sealed(tmp_path, criteria), None)
 
+    assert [entry['identity'] for entry in payload['accepted_removals']] == ['test_a'], payload['accepted_removals']
     blocking = _blocking(payload)
     assert blocking, payload['findings']
-    assert any('test_b' in str(finding.get('title', '')) for finding in blocking), blocking
+    assert any('other_test.py' in str(finding.get('ref', '')) for finding in blocking), blocking
+
+
+def test_the_tests_to_remove_block_stops_at_the_next_bold_heading(plan_context) -> None:
+    """Without a blank line the block must not swallow the next field."""
+    plan_dir = Path(plan_context.plan_dir_for(PLAN_ID))
+    (plan_dir / 'solution_outline.md').write_text(
+        '# Solution: keys\n\n## Deliverables\n\n### 1. Deliver it\n\n'
+        '**Affected files:**\n- `src/x.py` (write-new)\n\n'
+        '**Tests to remove:**\n- `test_a`\n**Success Criteria:**\n- it works\n',
+        encoding='utf-8',
+    )
+
+    deliverables = _snap.outline_deliverables(PLAN_ID)
+
+    assert deliverables is not None
+    assert deliverables[0]['declared_test_removals'] == [{'identity': 'test_a', 'assertions_removed': None}]
 
 
 # --- D2 (c): the two documents state the rule identically -----------------------------------

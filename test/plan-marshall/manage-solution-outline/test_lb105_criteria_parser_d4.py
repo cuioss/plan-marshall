@@ -160,12 +160,12 @@ def test_an_old_parser_snapshot_of_a_wrapped_bullet_yields_parser_extended(plan_
 # --- D4 control: single-line bullets are frozen exactly as before ---------------------------
 
 
-def test_an_appended_criterion_is_reported_as_parser_extended(plan_context) -> None:
-    """Spec-mandated: a frozen criterion a live one EXTENDS is the migration state.
+def test_an_appended_criterion_is_reported_as_rewritten(plan_context) -> None:
+    """An author's append is a REWRITE, not a parser migration.
 
-    The state is advisory, so an appended clause is visible and non-blocking. That
-    is the rule the spec sets for a frozen prefix; a control pins it here so the
-    consequence is deliberate rather than accidental.
+    ``parser_extended`` is reserved for the migration shape: the retired parser
+    would still have produced the frozen text. An append never satisfies that, so a
+    criterion edited after the freeze stays a blocking ``rewritten`` drift.
     """
     _plan(plan_context, '- the parser reads every criterion\n')
     snapshot = {
@@ -183,7 +183,7 @@ def test_an_appended_criterion_is_reported_as_parser_extended(plan_context) -> N
 
     drift = _snap.criteria_drift(PLAN_ID)
 
-    assert [row['kind'] for row in drift] == ['parser_extended'], drift
+    assert [row['kind'] for row in drift] == ['rewritten'], drift
 
 
 def _retired_parser(block: str) -> list[str]:

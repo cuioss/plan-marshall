@@ -22,12 +22,32 @@ from typing import Any
 
 import _cmd_loop_back as _loop_back
 import _findings_core
+import pytest
 
 from conftest import get_skill_dir, load_script_module
 
 PLAN_ID = 'lb105-reobservation-d3'
 PHASE = '6-finalize'
 RULE = 'functional-review'
+
+#: Git environment inherited from an outer repository would re-point the fixture
+#: repos' ``git -C`` calls at that repository and its index.
+_GIT_REPO_ENV_VARS = (
+    'GIT_DIR',
+    'GIT_WORK_TREE',
+    'GIT_COMMON_DIR',
+    'GIT_INDEX_FILE',
+    'GIT_OBJECT_DIRECTORY',
+    'GIT_ALTERNATE_OBJECT_DIRECTORIES',
+    'GIT_PREFIX',
+)
+
+
+@pytest.fixture(autouse=True)
+def _isolate_git_env(monkeypatch):
+    for name in _GIT_REPO_ENV_VARS:
+        monkeypatch.delenv(name, raising=False)
+
 
 _lifecycle = load_script_module('plan-marshall', 'manage-status', '_cmd_lifecycle.py', '_lb105_d3_lifecycle')
 
@@ -153,13 +173,22 @@ def test_reopen_against_a_taken_into_account_record_names_the_not_reopened_outco
 
 
 def test_branch_b_reads_the_qgate_persist_ok_partition() -> None:
-    workflow = (get_skill_dir('plan-marshall', 'phase-6-finalize') / 'workflow' / 'functional-review.md').read_text(
-        encoding='utf-8'
-    )
-
-    assert 'QGATE_PERSIST_OK' in workflow
-    for value in sorted(_findings_core.QGATE_PERSIST_OK):
-        assert value in workflow, value
+    """Every document that restates the partition names all four values in place."""
+    finalize = get_skill_dir('plan-marshall', 'phase-6-finalize')
+    documents = {
+        'phase-6-finalize/workflow/functional-review.md': finalize / 'workflow' / 'functional-review.md',
+        'phase-6-finalize/workflow/code-review.md': finalize / 'workflow' / 'code-review.md',
+        'manage-findings/SKILL.md': get_skill_dir('plan-marshall', 'manage-findings') / 'SKILL.md',
+    }
+    for label, path in documents.items():
+        text = path.read_text(encoding='utf-8')
+        line = next(
+            (entry for entry in text.splitlines() if 'QGATE_PERSIST_OK' in entry and 'deduplicated' in entry),
+            '',
+        )
+        assert line, label
+        for value in sorted(_findings_core.QGATE_PERSIST_OK):
+            assert f'`{value}`' in line, (label, value)
 
 
 # --- D3 controls ---------------------------------------------------------------------------
