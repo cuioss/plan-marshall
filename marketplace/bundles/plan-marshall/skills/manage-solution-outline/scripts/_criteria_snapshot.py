@@ -130,10 +130,12 @@ OVERRIDE_HEADS_KEY = 'functional_review_override_heads'
 #: The status-record metadata list of accepted test removals. The two writers are
 #: ``snapshot-criteria`` (which seeds it from the outline's ``Tests to remove``
 #: declarations) and ``loop-back close --accept`` on a ``weakened_test`` finding
-#: (which records the identities that finding removed). Each entry is
+#: (which records the identities that finding removed). An identity entry is
 #: ``{identity, assertions_removed}`` — the D1 test identity plus the number of
-#: removed assertions. A generic ``metadata --set`` must refuse it, so it joins
-#: the protected set below.
+#: removed assertions; a row that carries no identity gets a path-level entry
+#: instead (``{path, kind, assertions_removed}`` or ``{path, kind: test_filtered,
+#: markers}``). A generic ``metadata --set`` must refuse it, so it joins the
+#: protected set below.
 ACCEPTED_TEST_REMOVALS_KEY = 'accepted_test_removals'
 #: The status-record metadata keys whose only writers commit through their own
 #: guarded read-modify-write. ``_status_core.write_status`` must carry them
@@ -306,28 +308,57 @@ def accepted_test_removals(plan_id: str) -> list[dict[str, Any]]:
     the freeze take effect with no operator decision — a second, unguarded
     acceptance route — so it is deliberately not read.
 
-    Each entry is ``{identity, assertions_removed}``; ``assertions_removed`` is
-    ``None`` for a declaration that names no count, which accepts the identity for
-    whatever number of assertions the removal took. Deduplicated by
-    ``(identity, count)``.
+    Each entry names a test identity (``{identity, assertions_removed}``) or, for a
+    row that carries none, an explicit path-level key (``{path, kind,
+    assertions_removed}``, or ``{path, kind: test_filtered, markers}``).
+    ``assertions_removed`` is ``None`` for a declaration that names no count, which
+    accepts the identity for a REMOVAL only — never for a drop of a surviving test.
+    Deduplicated by the entry's own key.
     """
     entries: list[dict[str, Any]] = []
-    seen: set[tuple[Any, Any]] = set()
+    seen: set[tuple[Any, ...]] = set()
     metadata = (_status_doc(plan_id) or {}).get('metadata')
     recorded = metadata.get(ACCEPTED_TEST_REMOVALS_KEY) if isinstance(metadata, dict) else None
     for entry in recorded if isinstance(recorded, list) else []:
         if not isinstance(entry, dict):
             continue
-        identity = entry.get('identity')
-        if not isinstance(identity, str) or not identity:
+        normalized = _normalized_removal_entry(entry)
+        if normalized is None:
             continue
-        count = entry.get('assertions_removed')
-        key = (identity, count if isinstance(count, int) else None)
+        key = (
+            normalized.get('identity'),
+            normalized.get('path'),
+            normalized.get('kind'),
+            normalized.get('assertions_removed'),
+        )
         if key in seen:
             continue
         seen.add(key)
-        entries.append({'identity': identity, 'assertions_removed': count if isinstance(count, int) else None})
+        entries.append(normalized)
     return entries
+
+
+def _normalized_removal_entry(entry: dict[str, Any]) -> dict[str, Any] | None:
+    """One accepted-removal entry, normalized, or ``None`` when it names nothing."""
+    identity = entry.get('identity')
+    path = entry.get('path')
+    has_identity = isinstance(identity, str) and bool(identity)
+    has_path = isinstance(path, str) and bool(path)
+    if not has_identity and not has_path:
+        return None
+    count = entry.get('assertions_removed')
+    normalized: dict[str, Any] = {'assertions_removed': count if isinstance(count, int) else None}
+    if has_identity:
+        normalized['identity'] = identity
+    if has_path:
+        normalized['path'] = path
+    kind = entry.get('kind')
+    if isinstance(kind, str) and kind:
+        normalized['kind'] = kind
+    markers = entry.get('markers')
+    if isinstance(markers, list):
+        normalized['markers'] = list(markers)
+    return normalized
 
 
 def record_accepted_removals(plan_id: str, entries: list[dict[str, Any]]) -> bool:
@@ -339,11 +370,13 @@ def record_accepted_removals(plan_id: str, entries: list[dict[str, Any]]) -> boo
     ``(identity, assertions_removed)``, so re-seeding a re-freeze neither duplicates
     an entry nor drops one an operator accepted.
     """
-    wanted = [
-        {'identity': str(entry['identity']), 'assertions_removed': entry.get('assertions_removed')}
-        for entry in entries
-        if isinstance(entry, dict) and entry.get('identity')
-    ]
+    wanted: list[dict[str, Any]] = []
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        normalized = _normalized_removal_entry(entry)
+        if normalized is not None:
+            wanted.append(normalized)
     if not wanted:
         return True
 
@@ -351,10 +384,22 @@ def record_accepted_removals(plan_id: str, entries: list[dict[str, Any]]) -> boo
         current = metadata.get(ACCEPTED_TEST_REMOVALS_KEY)
         values = list(current) if isinstance(current, list) else []
         existing = {
-            (value.get('identity'), value.get('assertions_removed')) for value in values if isinstance(value, dict)
+            (
+                value.get('identity'),
+                value.get('path'),
+                value.get('kind'),
+                value.get('assertions_removed'),
+            )
+            for value in values
+            if isinstance(value, dict)
         }
         for entry in wanted:
-            key = (entry['identity'], entry['assertions_removed'])
+            key = (
+                entry.get('identity'),
+                entry.get('path'),
+                entry.get('kind'),
+                entry.get('assertions_removed'),
+            )
             if key not in existing:
                 values.append(entry)
                 existing.add(key)

@@ -245,9 +245,17 @@ def _grade_test_integrity(grading: Grading, plan_id: str) -> list[dict[str, Any]
     for row in report.get('findings') or []:
         if not isinstance(row, dict):
             continue
-        removed_tests = [entry for entry in row.get('removed_tests') or [] if isinstance(entry, dict)]
-        if removed_tests and all(_removal_is_accepted(entry, accepted) for entry in removed_tests):
-            accepted_rows.extend(removed_tests)
+        if _row_is_accepted(row, accepted):
+            removed_tests = [entry for entry in row.get('removed_tests') or [] if isinstance(entry, dict)]
+            if removed_tests:
+                # The payload lists the accepted identity plus its count; the internal
+                # removal kind stays an implementation detail of the acceptance test.
+                accepted_rows.extend(
+                    {'identity': entry.get('identity'), 'assertions_removed': entry.get('assertions_removed')}
+                    for entry in removed_tests
+                )
+            else:
+                accepted_rows.append(_row_acceptance_record(row))
             continue
         path = str(row.get('path') or '-')
         detail = str(row.get('detail') or row.get('kind') or 'weakened test')
@@ -255,21 +263,64 @@ def _grade_test_integrity(grading: Grading, plan_id: str) -> list[dict[str, Any]
     return accepted_rows
 
 
+def _row_acceptance_record(row: dict[str, Any]) -> dict[str, Any]:
+    """The accepted-set record an identity-less row is accepted by."""
+    record: dict[str, Any] = {
+        'path': str(row.get('path') or ''),
+        'kind': str(row.get('kind') or 'assertion_removed'),
+    }
+    if record['kind'] == 'test_filtered':
+        record['markers'] = list(row.get('markers') or [])
+    else:
+        record['assertions_removed'] = row.get('removed_assertions')
+    return record
+
+
+def _row_is_accepted(row: dict[str, Any], accepted: list[dict[str, Any]]) -> bool:
+    """Whether a whole test-integrity row is covered by the accepted-removal set.
+
+    An identity-bearing row is accepted when every removed identity is. A row with
+    no identity carries the explicit path-level key instead: the set-total row, a
+    file-total row, and a ``test_filtered`` row were unacceptable by construction
+    before this, which left an accepted finding blocking at every later head.
+    """
+    removed_tests = [entry for entry in row.get('removed_tests') or [] if isinstance(entry, dict)]
+    if removed_tests:
+        return all(_removal_is_accepted(entry, accepted) for entry in removed_tests)
+    path = row.get('path')
+    kind = str(row.get('kind') or 'assertion_removed')
+    if kind == 'test_filtered':
+        return any(str(entry.get('kind') or '') == 'test_filtered' and entry.get('path') == path for entry in accepted)
+    count = row.get('removed_assertions')
+    return any(
+        entry.get('path') == path
+        and str(entry.get('kind') or 'assertion_removed') != 'test_filtered'
+        and (entry.get('assertions_removed') is None or entry.get('assertions_removed') == count)
+        for entry in accepted
+    )
+
+
 def _removal_is_accepted(removed: dict[str, Any], accepted: list[dict[str, Any]]) -> bool:
     """Whether one removed test identity is covered by the accepted-removal set.
 
     An entry recorded by an operator close names the exact number of assertions
     that finding removed, so a grown or changed removal is not covered. An outline
-    declaration may name no count; it then accepts the identity for whatever number
-    of assertions the removal took.
+    declaration may name no count; a count-less entry then decides a REMOVAL — a
+    test that disappeared from every after-file — and never a DROP of a surviving
+    test, so it cannot license weakening any test of the same name.
     """
     identity = removed.get('identity')
     count = removed.get('assertions_removed')
+    removal_kind = str(removed.get('kind') or 'removed')
     for entry in accepted:
         if entry.get('identity') != identity:
             continue
         recorded = entry.get('assertions_removed')
-        if recorded is None or recorded == count:
+        if recorded is None:
+            if removal_kind == 'removed':
+                return True
+            continue
+        if recorded == count:
             return True
     return False
 
