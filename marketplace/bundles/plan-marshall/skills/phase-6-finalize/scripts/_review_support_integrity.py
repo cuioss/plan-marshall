@@ -2,8 +2,8 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """One integrity gate for the finalize review — internal module, not an entry point.
 
-Answers a question the review used to answer in prose, and which was observed fail
-open on real runs:
+Answers a question that belongs to a computation rather than the reviewer's prose,
+and which fails open if left to reading:
 
 * :func:`compute_test_integrity` — every pre-existing test whose assertions the
   branch removed or filtered. pm-mcp-core PLAN-41 filtered an assertion and
@@ -94,9 +94,9 @@ _ANY_CLASS_RE = re.compile(
     r'^\s*(?:(?:public|private|protected|abstract|final|static|open|sealed|internal|data)\s+)*class\s+(\w+)'
 )
 #: A JS/TS ``it``/``test``/``describe`` call, INCLUDING the skip forms. The skip
-#: form replaces the header rather than decorating it (``it.skip('x', ...)`), so a
-#: pattern that matched only the plain form gave the filtered test no identity: it
-#: then read as a named test that vanished, and its marker was never compared.
+#: form replaces the header rather than decorating it (``it.skip('x', ...)`), so the
+#: pattern must match it: otherwise the filtered test has no identity, reads as a
+#: named test that vanished, and its marker is never compared.
 _JS_TEST_RE = re.compile(r'^\s*(?:it|test|describe|xit|xdescribe)(?:\.skip)?\s*\(\s*[\'"]([^\'"]+)[\'"]')
 
 #: Three-quote delimiters, so a string body that starts a line at column 0 is not
@@ -206,7 +206,7 @@ def changed_statuses(worktree: Path, base_ref: str, head_ref: str = 'HEAD') -> l
 def changed_files(worktree: Path, base_ref: str) -> list[str]:
     """Return every changed path of ``{base_ref}...HEAD``, both sides of a rename.
 
-    Renames are no longer suppressed: a moved test file appears as its old path
+    Renames are detected: a moved test file appears as its old path
     (deleted side) and its new path (added side), so both are visible to the
     caller that pairs them. May raise on git failure.
     """
@@ -427,6 +427,10 @@ def _evidence_root(plan_id: str) -> tuple[Path | None, str | None]:
     text (the dirty case). A plan that DECLARED a materialized worktree which does
     not resolve now returns ``None``: grading it against another tree would compare
     two heads.
+
+    ``review_support._evidence_root`` resolves the citation-check root for the same
+    two tree kinds; this one adds the fail-closed head and dirty checks a diff grade
+    needs.
     """
     try:
         worktree = resolve_live_worktree(plan_id)
@@ -582,9 +586,8 @@ def _grade_test_integrity(
         post = after.get(path)
         if post is None:
             # An identity survives only to the extent that the after-set carries
-            # MORE of it than the before-set already carried outside THIS path.
-            # Comparing the pooled after-count directly let a same-named test in
-            # another changed file absorb the loss (L3-1).
+            # MORE of it than the before-set already carried outside THIS path:
+            # a same-named test in another changed file cannot absorb the loss.
             missing: dict[str, int] = {}
             for identity, count in before_fns.items():
                 carried = sum(counts.get(identity, 0) for other, counts in before_fns_by_path.items() if other != path)

@@ -123,6 +123,7 @@ from _review_support_attribution import (
     load_outline_deliverables,
 )
 from _review_support_integrity import compute_test_integrity
+from _review_support_integrity import main_checkout_root as _integrity_main_checkout_root
 from _review_support_validate import (
     FIX_KIND_CORRECTION,
     FIX_KIND_IMPLEMENTATION,
@@ -141,7 +142,7 @@ from _review_support_validate import (
     validate_functional,
     verifier_status,
 )
-from file_ops import atomic_write_file, base_path, cwd_checkout_root
+from file_ops import atomic_write_file, base_path
 from input_validation import require_valid_plan_id
 from toon_parser import serialize_toon
 
@@ -151,12 +152,12 @@ TARGET_NONE = 'none'
 
 
 def _main_checkout_root() -> Path | None:
-    """The main checkout root, or ``None`` when it cannot be resolved."""
-    try:
-        root = Path(cwd_checkout_root())
-    except Exception:
-        return None
-    return root if root.is_dir() else None
+    """The main checkout root, or ``None`` when it cannot be resolved.
+
+    Delegates to ``_review_support_integrity.main_checkout_root`` — the one
+    definition of this seam in the two modules.
+    """
+    return _integrity_main_checkout_root()
 
 
 def _evidence_root(plan_id: str) -> Path | None:
@@ -173,6 +174,10 @@ def _evidence_root(plan_id: str) -> Path | None:
     against a tree other than the graded head. That case returns ``None``, so the
     not-run finding stands. ``None`` disables the existence check rather than
     reading the absence as a pass.
+
+    The test-integrity grader resolves its own evidence root in
+    ``_review_support_integrity._evidence_root``: same worktree/main-checkout choice,
+    plus the fail-closed head and dirty checks that belong to grading a diff.
     """
     try:
         worktree = _attr.resolve_live_worktree(plan_id)

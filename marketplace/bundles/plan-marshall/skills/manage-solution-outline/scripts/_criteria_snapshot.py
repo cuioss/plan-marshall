@@ -74,8 +74,13 @@ REQUEST_FILE = 'request.md'
 #: an indented sub-bullet belong to the bullet above them, and a `*` bullet is a
 #: criterion too.
 _SUCCESS_CRITERIA_MARKER_RE = re.compile(r'\*\*Success Criteria:\*\*[^\n]*\n?', re.IGNORECASE)
-#: A bold-field heading that ends the success-criteria block.
+#: A bold-field heading that ends the success-criteria block. Only a column-0
+#: heading ends it: an indented bold field under a criterion is that criterion's
+#: continuation, not the next document field.
 _SUCCESS_BLOCK_END_RE = re.compile(r'^\s*\*\*[A-Za-z][^*\n]*:\*\*')
+#: The same heading at column 0 — the only form the live parser treats as the end
+#: of the block.
+_SUCCESS_BLOCK_END_COLUMN_RE = re.compile(r'^\*\*[A-Za-z][^*\n]*:\*\*')
 #: One bullet, at any indent; the indentation decides top-level vs sub-bullet.
 _BULLET_RE = re.compile(r'^[-*][ \t]+(.*)$')
 #: A numbered bold deliverable heading in a request-named spec document.
@@ -103,6 +108,14 @@ REWRITTEN = 'rewritten'
 #: was not rewritten, the reader got better. Reported so the operator sees it, and
 #: never blocking.
 PARSER_EXTENDED = 'parser_extended'
+#: The snapshot field that records WHICH parser froze the criteria. A snapshot
+#: written by the current parser carries it; an older snapshot does not. That is
+#: the discriminator ``parser_extended`` needs: a prefix-extension of a frozen
+#: criterion is a migration only when the freeze predates this parser. Without it,
+#: an author's continuation-line append to a criterion the current parser froze is
+#: hidden as advisory.
+PARSER_KEY = 'parser'
+CURRENT_PARSER = 2
 #: The functional verdict that retires a deliverable: its criteria are not open.
 SUPERSEDED = 'superseded'
 #: A spec deliverable's own Done-when that no outline criterion covers.
@@ -831,11 +844,10 @@ def parse_success_criteria(body: str) -> tuple[list[str], list[str]]:
     A line inside the block that is neither a bullet nor part of one — a paragraph
     after a blank line — is returned in ``unparsed`` and never dropped: a criterion
     the parser could not read must be visible, or the review grades part of a
-    deliverable without saying so. The block ends at the next bold-field heading.
-
-    This is the ONE success-criteria parser. It replaces a regex that kept only an
-    unbroken run of ``- `` lines, which froze a wrapped criterion as its first line
-    and dropped a ``*`` bullet entirely.
+    deliverable without saying so. An indented bold field under a criterion is a
+    continuation of that criterion, not the end of the block; only a column-0
+    bold-field heading ends it. A fenced code block is skipped, so a ``- `` line
+    inside it is not read as a criterion.
     """
     marker = _SUCCESS_CRITERIA_MARKER_RE.search(body)
     if marker is None:
@@ -844,12 +856,18 @@ def parse_success_criteria(body: str) -> tuple[list[str], list[str]]:
     unparsed: list[str] = []
     current: list[str] | None = None
     after_blank = False
+    in_fence = False
     for line in body[marker.end() :].splitlines():
         stripped = line.strip()
+        if stripped.startswith(('```', '~~~')):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
         if not stripped:
             after_blank = True
             continue
-        if _SUCCESS_BLOCK_END_RE.match(line):
+        if _SUCCESS_BLOCK_END_COLUMN_RE.match(line):
             break
         indented = line[: len(line) - len(line.lstrip())] != ''
         bullet = _BULLET_RE.match(stripped)
@@ -900,18 +918,27 @@ def outline_deliverables(plan_id: str) -> list[dict[str, Any]] | None:
 def _retired_criteria(body: str) -> list[str]:
     """The criteria the RETIRED parser would have produced for this body.
 
-    The retired rule kept only an unbroken run of ``- `` lines, first line only.
-    It is replayed here so the migration state can be told from an author's edit:
-    a frozen criterion is ``parser_extended`` only when this rule would still have
-    produced it, which is true for a wrapped bullet it truncated and false for a
-    criterion the author appended to.
+    The retired rule kept only the first unbroken run of ``- `` lines, first line
+    only, starting immediately after the marker (blank lines allowed). It is
+    replayed here so the migration state can be told from an author's edit: a frozen
+    criterion is ``parser_extended`` only when this rule would still have produced
+    it. Prose before the first bullet stops the replay with nothing, exactly as the
+    retired rule matched nothing there; a ``*`` bullet or a blank line inside the
+    run stops it too.
     """
     marker = _SUCCESS_CRITERIA_MARKER_RE.search(body)
     if marker is None:
         return []
     retired: list[str] = []
+    in_fence = False
     for line in body[marker.end() :].splitlines():
-        if not line.strip():
+        stripped = line.strip()
+        if stripped.startswith(('```', '~~~')):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
+        if not stripped:
             if retired:
                 break
             continue
@@ -919,8 +946,8 @@ def _retired_criteria(body: str) -> list[str]:
             break
         if line.startswith('- '):
             retired.append(normalize_criterion(line[2:]))
-        elif retired:
-            break
+            continue
+        break
     return retired
 
 
@@ -1034,6 +1061,7 @@ def build_snapshot(plan_id: str) -> dict[str, Any]:
     return {
         'schema': SCHEMA,
         'plan_id': plan_id,
+        PARSER_KEY: CURRENT_PARSER,
         'deliverables': [
             {
                 'number': deliverable['number'],
@@ -1268,8 +1296,13 @@ def criteria_drift(plan_id: str, current: list[dict[str, Any]] | None = None) ->
       outline (a dropped clause), or the whole deliverable is gone.
     * ``rewritten`` — the frozen position is occupied by different text (the
       clause was narrowed or reworded in place).
+    * ``parser_extended`` — a frozen criterion that is a prefix of the criterion the
+      current parser reads in full (a wrapped bullet a retired parser truncated).
+      It is admitted only for a snapshot that predates the current parser; the
+      snapshot carries ``parser: 2`` when the current one froze it, and then the
+      same prefix-extension is ``rewritten``.
     * ``spec_criterion_missing`` — a spec deliverable's own frozen Done-when that
-      NO current outline criterion covers. This is the PLAN-LB-42 failure: four
+      NO current outline criterion covers. The failure it prevents: four
       spec deliverables merged into one outline deliverable, three generic
       criteria graded, and the dropped clause's Done-when never graded at all.
       Because each spec clause is frozen as its own row, a merge cannot remove it
@@ -1299,13 +1332,13 @@ def criteria_drift(plan_id: str, current: list[dict[str, Any]] | None = None) ->
                 continue
             if criterion in live:
                 continue
-            # Migration: a frozen criterion that is a PREFIX of a criterion the new
-            # parser now reads in full is the parser getting better, not the
-            # outline changing — but ONLY when the retired parser would still have
-            # produced exactly that frozen text for this deliverable. Otherwise an
-            # author could append to a frozen criterion and hide the change in a
-            # non-blocking state, so a prefix match the retired parser would NOT
-            # produce stays `rewritten`.
+            # Migration: a frozen criterion that is a PREFIX of a criterion the
+            # current parser reads in full is a migration instead of an outline
+            # change — but ONLY when BOTH (a) the retired parser would still have
+            # produced exactly that frozen text, and (b) the snapshot predates the
+            # current parser (it carries no ``parser`` marker). Without (b), an
+            # author's continuation-line or sub-bullet append to a criterion the
+            # current parser froze would hide a real change in an advisory state.
             retired = [normalize_criterion(text) for text in (live_row or {}).get('retired_criteria') or []]
             extended = next(
                 (
@@ -1315,7 +1348,8 @@ def criteria_drift(plan_id: str, current: list[dict[str, Any]] | None = None) ->
                 ),
                 None,
             )
-            if extended is not None and criterion in retired:
+            frozen_by_older_parser = snapshot.get(PARSER_KEY) != CURRENT_PARSER
+            if extended is not None and criterion in retired and frozen_by_older_parser:
                 drift.append(
                     {
                         'deliverable': number,
