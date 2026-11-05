@@ -68,8 +68,16 @@ SNAPSHOT_FILE = 'work/criteria-snapshot.json'
 SCHEMA = 'criteria-snapshot/1'
 REQUEST_FILE = 'request.md'
 
-#: The success-criteria bullet block inside one outline deliverable body.
-_SUCCESS_CRITERIA_RE = re.compile(r'\*\*Success Criteria:\*\*\s*((?:- [^\n]+\n?)+)', re.IGNORECASE)
+#: The success-criteria block marker. The block runs from it to the next bold
+#: field heading (or the end of the deliverable body) and is parsed by
+#: :func:`parse_success_criteria`, not by a line regex: a wrapped continuation and
+#: an indented sub-bullet belong to the bullet above them, and a `*` bullet is a
+#: criterion too.
+_SUCCESS_CRITERIA_MARKER_RE = re.compile(r'\*\*Success Criteria:\*\*[^\n]*\n?', re.IGNORECASE)
+#: A bold-field heading that ends the success-criteria block.
+_SUCCESS_BLOCK_END_RE = re.compile(r'^\s*\*\*[A-Za-z][^*\n]*:\*\*')
+#: One bullet, at any indent; the indentation decides top-level vs sub-bullet.
+_BULLET_RE = re.compile(r'^[-*][ \t]+(.*)$')
 #: A numbered bold deliverable heading in a request-named spec document.
 _SPEC_DELIVERABLE_RE = re.compile(r'^(\d+)\.\s+\*\*(.+?)\*\*', re.MULTILINE)
 #: The Done-when sentence of a spec deliverable, in any of the three spellings.
@@ -90,6 +98,11 @@ _MD_PATH_RE = re.compile(r'(?:^|\s)([\w./-]+\.md)(?=[\s,.;:)]|$)', re.MULTILINE)
 
 DELETED = 'deleted'
 REWRITTEN = 'rewritten'
+#: A frozen criterion that is a PREFIX of the newly parsed one: the parser now
+#: reads a wrapped bullet in full. It is a named state, not drift — the criterion
+#: was not rewritten, the reader got better. Reported so the operator sees it, and
+#: never blocking.
+PARSER_EXTENDED = 'parser_extended'
 #: The functional verdict that retires a deliverable: its criteria are not open.
 SUPERSEDED = 'superseded'
 #: A spec deliverable's own Done-when that no outline criterion covers.
@@ -114,13 +127,25 @@ SNAPSHOT_FROZEN_KEY = 'snapshot_frozen'
 #: reader here and the protected-key guard in ``manage-status`` derive the name
 #: from this one definition.
 OVERRIDE_HEADS_KEY = 'functional_review_override_heads'
+#: The status-record metadata list of accepted test removals. The two writers are
+#: ``snapshot-criteria`` (which seeds it from the outline's ``Tests to remove``
+#: declarations) and ``loop-back close --accept`` on a ``weakened_test`` finding
+#: (which records the identities that finding removed). Each entry is
+#: ``{identity, assertions_removed}`` — the D1 test identity plus the number of
+#: removed assertions. A generic ``metadata --set`` must refuse it, so it joins
+#: the protected set below.
+ACCEPTED_TEST_REMOVALS_KEY = 'accepted_test_removals'
 #: The status-record metadata keys whose only writers commit through their own
 #: guarded read-modify-write. ``_status_core.write_status`` must carry them
 #: forward from the live document, and a generic ``metadata --set`` must refuse
 #: them. The MEMBERSHIP is defined here once, so the carry set and the protected
 #: set cannot drift into covering different keys as a third owner-written key is
 #: added.
-PROTECTED_STATUS_METADATA_KEYS: tuple[str, ...] = (INTEGRITY_KEY, OVERRIDE_HEADS_KEY)
+PROTECTED_STATUS_METADATA_KEYS: tuple[str, ...] = (
+    INTEGRITY_KEY,
+    OVERRIDE_HEADS_KEY,
+    ACCEPTED_TEST_REMOVALS_KEY,
+)
 
 #: The key INSIDE the integrity block that carries the identity of the re-freeze
 #: authorization this process set. A withdrawal is conditioned on it, so a failed
@@ -237,6 +262,105 @@ def _merge_integrity(plan_id: str, merge: Callable[[dict[str, Any]], None]) -> b
     except OSError:
         return False
     return True
+
+
+def _merge_metadata(plan_id: str, merge: Callable[[dict[str, Any]], None]) -> bool:
+    """Merge into the status record's top-level ``metadata`` inside the writers' guard.
+
+    The same guarded read-modify-write ``_merge_integrity`` uses, one level up: the
+    accepted-removal set is a sibling of the ``criteria_integrity`` block, not a
+    member of it. ``_status_core.write_status`` carries the protected keys forward
+    from the document it reads inside the guard, so a stale snapshot cannot restore
+    an older list over this merge.
+
+    Returns ``False`` for an absent/unreadable record, a guard timeout and a failed
+    commit — never read as "recorded".
+    """
+    path = base_path('plans', plan_id, STATUS_FILE)
+    try:
+        with held_guard(path.with_name(f'{path.name}{_GUARD_SUFFIX}')):
+            status = _status_doc(plan_id)
+            if status is None:
+                return False
+            metadata = status.get('metadata')
+            if not isinstance(metadata, dict):
+                metadata = {}
+                status['metadata'] = metadata
+            merge(metadata)
+            try:
+                atomic_write_file(path, json.dumps(status, indent=2, sort_keys=True) + '\n')
+            except OSError:
+                return False
+    except OSError:
+        return False
+    return True
+
+
+def accepted_test_removals(plan_id: str) -> list[dict[str, Any]]:
+    """Return the accepted-removal set recorded in the plan's status record.
+
+    One source, one freeze: ``snapshot-criteria`` seeds the set from the outline's
+    ``**Tests to remove:**`` declarations at outline approval, and ``loop-back
+    close --accept`` appends the identities an accepted ``weakened_test`` finding
+    removed. Reading the live outline as well would let a declaration added after
+    the freeze take effect with no operator decision — a second, unguarded
+    acceptance route — so it is deliberately not read.
+
+    Each entry is ``{identity, assertions_removed}``; ``assertions_removed`` is
+    ``None`` for a declaration that names no count, which accepts the identity for
+    whatever number of assertions the removal took. Deduplicated by
+    ``(identity, count)``.
+    """
+    entries: list[dict[str, Any]] = []
+    seen: set[tuple[Any, Any]] = set()
+    metadata = (_status_doc(plan_id) or {}).get('metadata')
+    recorded = metadata.get(ACCEPTED_TEST_REMOVALS_KEY) if isinstance(metadata, dict) else None
+    for entry in recorded if isinstance(recorded, list) else []:
+        if not isinstance(entry, dict):
+            continue
+        identity = entry.get('identity')
+        if not isinstance(identity, str) or not identity:
+            continue
+        count = entry.get('assertions_removed')
+        key = (identity, count if isinstance(count, int) else None)
+        if key in seen:
+            continue
+        seen.add(key)
+        entries.append({'identity': identity, 'assertions_removed': count if isinstance(count, int) else None})
+    return entries
+
+
+def record_accepted_removals(plan_id: str, entries: list[dict[str, Any]]) -> bool:
+    """Union ``entries`` into the plan's accepted-removal set; return success.
+
+    The one writer shape both owning verbs call: ``snapshot-criteria`` seeds it
+    from the outline's declarations, and ``loop-back close --accept`` appends the
+    identities a ``weakened_test`` finding removed. The merge is a union keyed by
+    ``(identity, assertions_removed)``, so re-seeding a re-freeze neither duplicates
+    an entry nor drops one an operator accepted.
+    """
+    wanted = [
+        {'identity': str(entry['identity']), 'assertions_removed': entry.get('assertions_removed')}
+        for entry in entries
+        if isinstance(entry, dict) and entry.get('identity')
+    ]
+    if not wanted:
+        return True
+
+    def _apply(metadata: dict[str, Any]) -> None:
+        current = metadata.get(ACCEPTED_TEST_REMOVALS_KEY)
+        values = list(current) if isinstance(current, list) else []
+        existing = {
+            (value.get('identity'), value.get('assertions_removed')) for value in values if isinstance(value, dict)
+        }
+        for entry in wanted:
+            key = (entry['identity'], entry['assertions_removed'])
+            if key not in existing:
+                values.append(entry)
+                existing.add(key)
+        metadata[ACCEPTED_TEST_REMOVALS_KEY] = values
+
+    return _merge_metadata(plan_id, _apply)
 
 
 def record_integrity(plan_id: str, *, drop: tuple[str, ...] = (), **fields: Any) -> bool:
@@ -650,6 +774,56 @@ def snapshot_path(plan_id: str) -> Path:
     return base_path('plans', plan_id, SNAPSHOT_FILE)
 
 
+def parse_success_criteria(body: str) -> tuple[list[str], list[str]]:
+    """Parse a deliverable body's ``**Success Criteria:**`` block.
+
+    Returns ``(criteria, unparsed)``. Every top-level bullet is one criterion —
+    ``-`` and ``*`` both — together with its continuation lines and nested
+    sub-bullets. A continuation is a line indented under the bullet, a nested
+    bullet (contributes its text, not its marker), or a lazy continuation line
+    directly following the bullet. A blank line between bullets is allowed.
+
+    A line inside the block that is neither a bullet nor part of one — a paragraph
+    after a blank line — is returned in ``unparsed`` and never dropped: a criterion
+    the parser could not read must be visible, or the review grades part of a
+    deliverable without saying so. The block ends at the next bold-field heading.
+
+    This is the ONE success-criteria parser. It replaces a regex that kept only an
+    unbroken run of ``- `` lines, which froze a wrapped criterion as its first line
+    and dropped a ``*`` bullet entirely.
+    """
+    marker = _SUCCESS_CRITERIA_MARKER_RE.search(body)
+    if marker is None:
+        return [], []
+    criteria: list[list[str]] = []
+    unparsed: list[str] = []
+    current: list[str] | None = None
+    after_blank = False
+    for line in body[marker.end() :].splitlines():
+        stripped = line.strip()
+        if not stripped:
+            after_blank = True
+            continue
+        if _SUCCESS_BLOCK_END_RE.match(line):
+            break
+        indented = line[: len(line) - len(line.lstrip())] != ''
+        bullet = _BULLET_RE.match(stripped)
+        if not indented and bullet:
+            current = [bullet.group(1).strip()]
+            criteria.append(current)
+        elif indented:
+            if current is not None:
+                current.append((bullet.group(1) if bullet else stripped).strip())
+            else:
+                unparsed.append(stripped)
+        elif current is not None and not after_blank:
+            current.append(stripped)
+        else:
+            unparsed.append(stripped)
+        after_blank = False
+    return [normalize_criterion(' '.join(parts)) for parts in criteria if parts], unparsed
+
+
 def outline_deliverables(plan_id: str) -> list[dict[str, Any]] | None:
     """Return the outline deliverables, each with its ordered ``success_criteria``.
 
@@ -657,6 +831,11 @@ def outline_deliverables(plan_id: str) -> list[dict[str, Any]] | None:
     reads an absent outline as an outline with no deliverables. This is the one
     success-criteria parser in the tree; ``phase-6-finalize``'s attribution
     module delegates here rather than keeping a second copy that could drift.
+
+    Each deliverable also carries ``unparsed_criteria`` — the lines inside its
+    success-criteria block that were neither a bullet nor part of one — so a
+    caller can report what the parser could not read instead of treating it as
+    absent.
     """
     path = base_path('plans', plan_id, 'solution_outline.md')
     if not path.is_file():
@@ -665,10 +844,39 @@ def outline_deliverables(plan_id: str) -> list[dict[str, Any]] | None:
     bodies = {block['number']: block['content'] for block in split_deliverable_blocks(section)}
     deliverables = extract_deliverables(section)
     for deliverable in deliverables:
-        match = _SUCCESS_CRITERIA_RE.search(str(bodies.get(deliverable['number'], '')))
-        bullets = match.group(1).splitlines() if match else []
-        deliverable['success_criteria'] = [line[2:].strip() for line in bullets if line.startswith('- ')]
+        body = str(bodies.get(deliverable['number'], ''))
+        criteria, unparsed = parse_success_criteria(body)
+        deliverable['success_criteria'] = criteria
+        deliverable['unparsed_criteria'] = unparsed
+        deliverable['retired_criteria'] = _retired_criteria(body)
     return deliverables
+
+
+def _retired_criteria(body: str) -> list[str]:
+    """The criteria the RETIRED parser would have produced for this body.
+
+    The retired rule kept only an unbroken run of ``- `` lines, first line only.
+    It is replayed here so the migration state can be told from an author's edit:
+    a frozen criterion is ``parser_extended`` only when this rule would still have
+    produced it, which is true for a wrapped bullet it truncated and false for a
+    criterion the author appended to.
+    """
+    marker = _SUCCESS_CRITERIA_MARKER_RE.search(body)
+    if marker is None:
+        return []
+    retired: list[str] = []
+    for line in body[marker.end() :].splitlines():
+        if not line.strip():
+            if retired:
+                break
+            continue
+        if _SUCCESS_BLOCK_END_RE.match(line):
+            break
+        if line.startswith('- '):
+            retired.append(normalize_criterion(line[2:]))
+        elif retired:
+            break
+    return retired
 
 
 def _request_text(plan_id: str) -> str:
@@ -951,7 +1159,24 @@ def _write_snapshot_locked(plan_id: str) -> dict[str, Any]:
                 'snapshot was kept' + ('' if rolled_back else ' (the partial snapshot could not be removed)')
             ),
         }
-    return {
+    # Seed the accepted-removal set from the outline's declared removals. The
+    # declaration is an authoring-time decision, so freezing the criteria freezes
+    # it too; a re-freeze unions rather than replaces, so an entry an operator
+    # accepted is never dropped.
+    declared: list[dict[str, Any]] = []
+    live = outline_deliverables(plan_id) or []
+    for deliverable in live:
+        declared.extend(deliverable.get('declared_test_removals') or [])
+    removals_recorded = record_accepted_removals(plan_id, declared)
+    per_deliverable = [
+        {
+            'number': deliverable['number'],
+            'criterion_count': len(deliverable.get('success_criteria') or []),
+            'unparsed': list(deliverable.get('unparsed_criteria') or []),
+        }
+        for deliverable in live
+    ]
+    payload: dict[str, Any] = {
         'status': 'success',
         'plan_id': plan_id,
         'file': SNAPSHOT_FILE,
@@ -960,7 +1185,22 @@ def _write_snapshot_locked(plan_id: str) -> dict[str, Any]:
         'request_done_when_count': len(snapshot['request']['done_when']),
         'spec_deliverable_count': len(snapshot['spec']['deliverables']) if snapshot['spec'] else 0,
         'preserved_authorizations': len(snapshot['authorized_changes']),
+        'deliverables': per_deliverable,
+        'unparsed': [line for row in per_deliverable for line in row['unparsed']],
+        'declared_test_removals': len(declared),
+        'accepted_removals_recorded': removals_recorded,
     }
+    if declared and not removals_recorded:
+        # The freeze itself is valid — the digest is recorded and the criteria are
+        # frozen — but the declared removals never reached the accepted set, so
+        # every later validate would raise them. Name it instead of leaving only a
+        # false flag a caller can overlook; re-running snapshot-criteria (with the
+        # re-freeze authorization) retries the write.
+        payload['accepted_removals_error'] = (
+            'the declared test removals could not be recorded in the plan status record; '
+            'they will be raised as weakened_test findings until a re-freeze records them'
+        )
+    return payload
 
 
 def _authorization(snapshot: dict[str, Any], number: Any, criterion: str) -> bool:
@@ -1013,6 +1253,32 @@ def criteria_drift(plan_id: str, current: list[dict[str, Any]] | None = None) ->
             if not criterion or _authorization(snapshot, number, criterion):
                 continue
             if criterion in live:
+                continue
+            # Migration: a frozen criterion that is a PREFIX of a criterion the new
+            # parser now reads in full is the parser getting better, not the
+            # outline changing — but ONLY when the retired parser would still have
+            # produced exactly that frozen text for this deliverable. Otherwise an
+            # author could append to a frozen criterion and hide the change in a
+            # non-blocking state, so a prefix match the retired parser would NOT
+            # produce stays `rewritten`.
+            retired = [normalize_criterion(text) for text in (live_row or {}).get('retired_criteria') or []]
+            extended = next(
+                (
+                    candidate
+                    for candidate in live
+                    if candidate.startswith(criterion) and len(candidate) > len(criterion)
+                ),
+                None,
+            )
+            if extended is not None and criterion in retired:
+                drift.append(
+                    {
+                        'deliverable': number,
+                        'kind': PARSER_EXTENDED,
+                        'criterion': criterion,
+                        'current': extended,
+                    }
+                )
                 continue
             kind = REWRITTEN if index < len(live) else DELETED
             drift.append(

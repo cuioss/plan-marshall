@@ -486,6 +486,7 @@ class TestExtractDeliverables:
             'survey_scope',
             'mutation_scope',
             'declared_bucket',
+            'declared_test_removals',
             'verification',
             'has_success_criteria',
         }

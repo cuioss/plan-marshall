@@ -743,6 +743,43 @@ derive, for rows still live.
 
 ## Decisions
 
+- 2026-11-05 — **Inbox drain (one message: `quality-report-001`, a collected `finding` the operator filed from the `quality-report`
+  epic: seven themes plus six dated addenda, about sixty sender messages, plugin versions 0.1.2027 to 0.1.2046).** Valid and live.
+  Disposition **observed**: nothing staged and no spec edited. The message says its content was not verified by its own orchestrator,
+  and it was not verified here either: this entry only maps it against this ledger, so every claim below is a lead.
+  - Theme 1, CodeRabbit one-review-per-hour quota (and its recurrences in PLAN-12, 20 and 10): out of focus. The standing rulings are
+    that a quota refusal means wait and that, with one valid review, moving on is correct and is never asked. PLAN-LB-101 D4 (shipped
+    #1890) made the quota wait default-on at 5400 s and ten windows. **Watch (unverified):** PLAN-20 reports switching
+    `review_rate_window_await` on by hand after its first refusal; if the new default had reached that project it would not have
+    been needed, so an existing consumer `marshal.json` may keep the old value. One check, not a plan.
+  - Theme 2, merge gate bound to the exact HEAD (PLAN-01-001/002, PLAN-02-002, PLAN-06-002, PLAN-10-005/006, PLAN-12-004,
+    PLAN-20-004, PLAN-21-002/003): the ledger already holds this class. PLAN-LB-107 (staged, not started) owns the waiver, the
+    head-dependence source and the published grant labels; PLAN-LB-55 D1 and PLAN-LB-93 D5 shipped in part; PLAN-LB-100 shipped
+    `record-merge` and `consequence-text`. **Read this message at PLAN-LB-107's outline.** Two items it may not name, because its spec
+    was not read for them here: the pre-push gate making its own source commit that moves HEAD past the validated build
+    (PLAN-10-005), and a forwarded `--head-at-completion` the step does not own (PLAN-21-002).
+  - Theme 3, installed scripts lag the docs: `pre_merge_gate record-merge` and `consequence-text` shipped with PLAN-LB-100 and are
+    installed since the sync of 2026-10-30; the report itself says PLAN-21 ran with the executor equal to the plugin version and the
+    drift was gone. The rest are invented or misplaced flags, the argparse-rejection class the repository already has a recipe for.
+    One lead has no home: a failure marker keeps the argv but not the argparse error text (PLAN-01-006).
+  - Theme 4, bookkeeping slips: PLAN-LB-91 (shipped #1847) covers a history rewrite (rows remapped, `history_rewritten` against
+    `bookkeeping_gap`). **Watch (unverified, candidate blocking):** an inline commit made after the per-deliverable commits (a finalize
+    review-fix, a triage fix) carries no `kind=change` row, and the 5-execute to 6-finalize transition was refused for it in
+    PLAN-03-004 and twice in PLAN-08-010, whose log names only the first missing SHA. The guard is right; the inline paths would
+    append their own row. Not checked here against LB-91's merged code.
+  - Addenda, two items with an owner: `review_support test-integrity` anchors on the `origin/main` tip with a two-dot comparison, so
+    a branch that lags a moved `main` gets a false `weakened_test` (PLAN-23-001): PLAN-LB-105 (running) owns `weakened_test` grading
+    truth, so **read its landing for the base anchor** (merge-base). A pre-push `test-compile` that cannot resolve a test-jar consumer,
+    filed as 120 `build-error` findings that held a merge dispatch until each was rejected by hand, and a Maven `module-tests` arm
+    reported un-gated on every push (PLAN-21-001, PLAN-11-002, PLAN-08, PLAN-23-002; seven plans): PLAN-LB-110 (staged, not started,
+    Maven consumer test truth) and the shipped PLAN-LB-58 D3 are the owners, so **read it at PLAN-LB-110's outline**.
+  - Discarded under the focus rule, none blocking: theme 5 (outline and plan quality) and theme 6 (a stale PR body after a
+    loop-back), the `manage-tasks list --status` multi-value request, the lessons-capture routing slip (PLAN-23), and every
+    measurement item (`effort` unknown, `total_tokens`, placeholder metric rows, phase-boundary stamps). Project-owned lessons were
+    excluded by the sender and are not part of the message.
+  - Not done: no message was delivered to a running plan's mailbox. Putting unverified leads into a running lane is the operator's
+    call. If the operator wants a plan, the candidate blocking set is the inline-commit ledger row, the gate's own source commit, and
+    the test-integrity base anchor, in that order, each only after a read of the owning plan's merged code.
 - 2026-11-04 — **Inbox drain (ten messages: `lessons-routing-075` to `-083` and `pm-mcp-core-m2-m4-v2-001`).** Every message was valid
   and live. Three took a recorded action and seven were first **discarded** under the FOCUS RULE; the operator then asked for the
   domain changes ("put all the domain changes into one plan"), so those seven are **staged as one plan, PLAN-LB-113** (see the

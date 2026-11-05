@@ -25,9 +25,28 @@ from typing import Any
 import _criteria_snapshot as _snap
 import _review_support_attribution as _attr
 import _review_support_integrity as _integrity
+import pytest
 import review_support
 
 from conftest import load_script_module
+
+
+@pytest.fixture(autouse=True)
+def _neutral_test_integrity(monkeypatch):
+    """Keep the validator's own test-integrity leg out of these fixtures.
+
+    These tests grade criteria and pre-fix evidence; a ``use_worktree: false``
+    plan is now graded against the main checkout's diff, and the checkout this
+    suite runs in carries the branch under test. The leg is neutralized at the
+    fixture, and its own behaviour is covered by
+    ``test_lb105_test_integrity_d1`` (and by the direct calls below).
+    """
+    monkeypatch.setattr(
+        review_support,
+        'compute_test_integrity',
+        lambda *_args, **_kwargs: {'status': 'success', 'findings': []},
+    )
+
 
 PLAN_ID = 'criteria-integrity-d2'
 CRITERIA = ['parser accepts input', 'parser rejects garbage']
