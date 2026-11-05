@@ -530,6 +530,23 @@ def test_a_new_test_beside_a_move_is_not_paired_with_the_deleted_file(plan_conte
     assert payload['findings'] == [], payload
 
 
+def test_a_js_skip_header_is_reported_as_filtered_not_as_a_lost_assertion(plan_context, tmp_path, monkeypatch) -> None:
+    """``it.skip`` replaces the header: the test keeps its identity and is filtered."""
+    repo = _repo(tmp_path)
+    _commit(repo, {'README.md': 'readme\n'})
+    _commit(repo, {'src/thing.test.js': "it('works', () => {\n  expect(1).toBe(1);\n});\n"})
+    _git(repo, 'checkout', '--quiet', '-b', 'feature')
+    _commit(repo, {'src/thing.test.js': "it.skip('works', () => {\n  expect(1).toBe(1);\n});\n"})
+    monkeypatch.setattr(_integrity, 'resolve_live_worktree', lambda _plan_id: repo)
+    _plan(plan_context)
+
+    payload = _integrity.compute_test_integrity(PLAN_ID)
+
+    assert [(row['kind'], row['path']) for row in payload['findings']] == [('test_filtered', 'src/thing.test.js')], (
+        payload
+    )
+
+
 def test_a_renamed_test_function_is_reported(plan_context, tmp_path, monkeypatch) -> None:
     """A test FUNCTION that disappears is a named test disappearing, rename included.
 

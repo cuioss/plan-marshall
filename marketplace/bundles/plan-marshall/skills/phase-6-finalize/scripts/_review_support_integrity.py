@@ -95,8 +95,11 @@ _CLASS_DEF_RE = re.compile(r'^(\s*)class\s+(\w+)\s*[\(:]')
 _ANY_CLASS_RE = re.compile(
     r'^\s*(?:(?:public|private|protected|abstract|final|static|open|sealed|internal|data)\s+)*class\s+(\w+)'
 )
-#: A JS/TS ``it``/``test``/``describe`` call. Its quoted name is the identity.
-_JS_TEST_RE = re.compile(r'^\s*(?:it|test|describe)\s*\(\s*[\'"]([^\'"]+)[\'"]')
+#: A JS/TS ``it``/``test``/``describe`` call, INCLUDING the skip forms. The skip
+#: form replaces the header rather than decorating it (``it.skip('x', ...)`), so a
+#: pattern that matched only the plain form gave the filtered test no identity: it
+#: then read as a named test that vanished, and its marker was never compared.
+_JS_TEST_RE = re.compile(r'^\s*(?:it|test|describe|xit|xdescribe)(?:\.skip)?\s*\(\s*[\'"]([^\'"]+)[\'"]')
 
 
 def _error(plan_id: str, error: str, message: str) -> dict[str, Any]:
@@ -608,14 +611,18 @@ def _identity_markers(text: str) -> dict[str, set[str]]:
 
 
 def _added_markers(post: str, pre: str) -> set[str]:
-    """The markers the branch ADDED, compared per test identity.
+    """The markers the branch ADDED, compared per test identity where both sides have one.
 
     An identity present only after the change is a new test: it has no pre-image to
-    compare against, so its markers are not read as additions. An identity present
-    on both sides contributes only the markers its own span gained.
+    compare against, so its markers are not read as additions. When EITHER side
+    carries no test identity at all — a language the header arms do not parse — the
+    comparison falls back to the whole file, which is the only granularity available
+    and the pre-existing behaviour.
     """
     after_markers = _identity_markers(post)
     before_markers = _identity_markers(pre)
+    if set(after_markers) == {''} or set(before_markers) == {''}:
+        return _markers(post) - _markers(pre)
     added: set[str] = set()
     for identity, markers in after_markers.items():
         if identity not in before_markers:
