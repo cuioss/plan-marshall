@@ -281,7 +281,27 @@ class TestDispatchResolveSitesCarryWorkflow:
 # name what the leaf loaded. This pin fixes the concrete pair — surface and workflow
 # doc — for the new site, and names the three layers and the return shape beside it.
 
-_THREE_LAYER_WORKFLOW_DOC = 'plan-marshall:plan-orchestrator/workflow/analyze.md'
+_THREE_LAYER_WORKFLOW_DOC = 'plan-marshall:plan-orchestrator/standards/three-layer-analysis.md'
+
+#: The Step 2 bullet that carries the three-layer dispatch, and the top-level
+#: bullet that closes the dispatchable list. Scoping the layer-name assertion to
+#: this slice is deliberate: the whole document carries the layer names in Step 4
+#: as well, so a document-wide scan would stay green if the DISPATCH bullet lost
+#: them and the leaf were given no layer instruction at all.
+_THREE_LAYER_DISPATCH_MARKER = '- **Dispatchable** — the Step 4 three-layer landing analysis'
+_DISPATCH_LIST_END = '\n- **Inline-only**'
+
+
+def _three_layer_dispatch_bullet() -> str:
+    text = _normalized(_ANALYZE_MD)
+    start = text.find(_THREE_LAYER_DISPATCH_MARKER)
+    assert start != -1, (
+        f'analyze.md carries no three-layer dispatch bullet ({_THREE_LAYER_DISPATCH_MARKER!r}) — the pin '
+        'cannot locate the site whose workflow doc and layer instructions it names'
+    )
+    end = text.find(_DISPATCH_LIST_END, start)
+    assert end != -1, 'the three-layer dispatch bullet is not closed by the inline-only bullet'
+    return text[start:end]
 
 
 class TestThreeLayerAnalysisDispatchIsPinned:
@@ -302,13 +322,16 @@ class TestThreeLayerAnalysisDispatchIsPinned:
         for fact in ('--plan-id none', '--caller plan-marshall:persona-plan-orchestrator', '--workflow'):
             assert fact in invocation, f'the three-layer dispatch omits {fact!r}: {invocation!r}'
 
-    def test_the_three_layer_dispatch_names_the_layers_and_the_return_shape(self):
-        text = _normalized(_ANALYZE_MD)
+    def test_the_three_layer_dispatch_bullet_names_the_layers_and_the_return_shape(self):
+        bullet = _three_layer_dispatch_bullet()
 
-        for layer in ('Layer 1 — specified', 'Layer 2 — implemented', 'Layer 3 — correct'):
-            assert layer in text, f'analyze.md does not name {layer!r} — the analysis has no such layer'
-        assert 'findings[N]{layer,severity,file,line,claim,verdict}' in text, (
-            'analyze.md does not declare the three-layer return shape'
+        for layer in ('specified', 'implemented', 'correct'):
+            assert layer in bullet, (
+                f'the three-layer dispatch bullet does not name the {layer!r} layer — the leaf can be '
+                'dispatched with no layer instruction while Step 4 still defines them'
+            )
+        assert 'findings[N]{layer,severity,file,line,claim,verdict}' in bullet, (
+            'the three-layer dispatch bullet does not declare the three-layer return shape'
         )
 
 

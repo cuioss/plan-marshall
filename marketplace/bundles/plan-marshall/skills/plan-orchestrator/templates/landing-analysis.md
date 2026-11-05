@@ -22,12 +22,12 @@ the evidence checked (files, tests, PR diff) for each verdict.}
 
 ## Three-Layer Analysis
 
-{One read-only leaf read the landing on three layers — the spec, the deliverable
-trace, and the merged code — and the orchestrator re-read every point recorded as
-`checked` before writing it here; where a dispatch could not return, the
-orchestrator completed the read inline and says so beside the dispatch line. The
-reading is **by reading, no build, no test run, no write**: what only a run could
-show is tagged `not shown by reading`, never left as clean.}
+{The landing was read on three layers — the spec, the deliverable trace, and the
+merged code — by {one read-only leaf | the orchestrator inline, because the
+dispatch did not return}, and the orchestrator re-read every point recorded as
+`checked` before writing it here. The reading is **by reading, no build, no test
+run, no write**: what only a run could show is tagged `not shown by reading`,
+never left as clean.}
 
 - **Dispatch:** one read-only leaf per landing — reason: {why this landing got its own leaf}
 - **Verdict:** layer 1 {clean | findings}; layer 2 {clean | findings}; layer 3 {clean | findings} —
@@ -70,7 +70,9 @@ only on the operator's word.}
 |--------|-----------|------------------|--------|----------|
 | {none, or L3-N} | {file:line} | {input} | {effect} | {blocker \| major \| minor \| info} |
 
-**Layer 3 verdict:** {clean | findings — N}
+**Layer 3 not shown by reading:** {none, or L3-N: the conclusion, and what only a run could show}
+
+**Layer 3 verdict:** {clean | findings — N | not shown by reading — N}
 
 ### Conformance to the Project's Own Rules
 
@@ -79,7 +81,7 @@ against the merged code. Each row names the rule source and its verdict.}
 
 | Rule source | Rule | Verdict | Evidence |
 |-------------|------|---------|----------|
-| {CLAUDE.md § …} | {rule} | {conforms \| deviates \| not shown by reading} | {file:line} |
+| {CLAUDE.md § …} | {rule} | {conforms \| deviates \| not_shown_by_reading} | {file:line} |
 
 ## Metrics and Anomalies
 
