@@ -2222,7 +2222,7 @@ def test_an_older_review_beside_a_quota_refusal_is_refused_not_participated(bot_
 
 
 def test_a_coderabbit_inline_only_credit_beside_a_quota_refusal_is_not_participation(plan_context, monkeypatch):
-    """Inline comments report no commit, so they cannot prove coverage of the candidate."""
+    """An inline comment the provider does not place at the candidate cannot prove coverage."""
     plan_id = 'gh-pr-lb55-inline-only-refusal'
     inline = {
         'id': 'inline-1',

@@ -288,10 +288,12 @@ as one proving it *finished* — a false positive that fails toward merging.
 `issue_comment` carrying **either** finished-review artifact is evidence, and one carrying neither —
 the walkthrough alone — credits nothing, and is reported neither as participation nor as a stale
 publish. The two artifacts are the retired `<!-- recent_review_start -->` wrapper and the current
-`final_review_risk_coverage` marker. The `review_body` and `inline` shapes declare no marker and
-credit on the shape alone, as before. The field's reach, and why an absent declaration is fail-open,
-are stated once in [`bot-participation-contract.md`](bot-participation-contract.md) § "A shape may be
-gated on a content marker".
+`final_review_risk_coverage` marker. The `review_body` shape declares no marker and credits on the
+shape alone, as before; the `inline` shape is ungated too, but an inline comment must also be PLACED
+at the merge candidate and must open its thread — a reply into an existing thread is never evidence.
+The field's reach, and why an absent declaration is fail-open, are stated once in
+[`bot-participation-contract.md`](bot-participation-contract.md) § "A shape may be gated on a content
+marker" and § "What counts as evidence, per publish shape".
 
 **The current summary format is read from its own marker, by one parser.** Its
 `final_review_risk_coverage` payload carries `sourceCommitId`, `coveredCommitId` and `kind`. A review

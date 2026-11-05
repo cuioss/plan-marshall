@@ -284,6 +284,8 @@ from _github_pr import (
     refusal_cause,
     refusal_condition,
     refusal_size_cap,
+    review_coverage_is_finished,
+    review_coverage_marker_present,
     review_coverage_verdict,
 )
 from ci_base import (
@@ -1608,6 +1610,11 @@ class _ReReviewStrategy:
           unclassified is skipped without a record, so it never ends the wait. A
           bot declaring no marker for the shape is unaffected — every comment of it
           stays eligible on the other gates alone;
+        - when one of those literals is a review-coverage marker, it must describe a
+          READABLE, FINISHED review — the marker present with an unparseable payload,
+          or with a ``kind`` other than ``reviewed``, is skipped without a record
+          exactly as a marker-less comment is. Admitting it would end the wait on an
+          in-progress summary and publish a decline the bot never made;
         - it is not a refusal notice (:meth:`_refusal_record`) — a "the bot could
           not review" comment is the bot talking about itself, not a completed
           review.
@@ -1711,6 +1718,12 @@ class _ReReviewStrategy:
             # to report about it. Running the gate after the refusal stack keeps a
             # marker-less refusal recorded rather than silently skipped.
             if answer_markers and not any(marker in body for marker in answer_markers):
+                continue
+            # A coverage marker that is not a finished, readable review is not an
+            # answer — the summary still in progress, or one whose payload cannot be
+            # parsed. Skipped WITHOUT a record, exactly as the marker-less case above,
+            # so the poll continues instead of reporting a decline the bot never made.
+            if review_coverage_marker_present(body) and not review_coverage_is_finished(body):
                 continue
             if written_after_trigger:
                 eligible.append(comment)

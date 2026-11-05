@@ -515,6 +515,20 @@ def test_the_registry_declares_the_marker_the_parser_reads():
     )
 
 
+def test_a_non_reviewed_coverage_marker_is_not_a_re_review_answer(plan_context, monkeypatch):
+    """⛔ An in-progress / non-reviewed coverage marker is no answer, so nothing is declined.
+
+    The marker gate admits it on the literal, so without the finished check the await
+    would end on it as ``matched: true`` / ``head_sha_verified: false`` — a decline the
+    bot never made.
+    """
+    _stub_provider(monkeypatch, [_comment('cr-coverage', _coverage_summary(_HEAD_SHA, kind='in_progress'))])
+
+    envelope = _re_review()
+
+    assert envelope['matched'] is False
+
+
 def test_a_present_but_unreadable_coverage_marker_never_credits(plan_context, monkeypatch):
     """A marker whose payload cannot be parsed is a claim nobody can evaluate, so it never credits.
 

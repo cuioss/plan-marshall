@@ -357,6 +357,10 @@ def test_the_lane_and_the_registry_name_one_coverage_parser() -> None:
         assert _COVERAGE_PARSER in text, f'{origin} names no coverage-marker parser'
         for field in _COVERAGE_FIELDS:
             assert field in text, f'{origin} does not name the marker field {field}'
+        # `kind` alone is satisfied by any prose containing the word; the guard has to
+        # pin the VALUE it must carry for the marker to be a finished review.
+        assert 'reviewed' in text, f'{origin} does not name the `kind` value a finished review carries'
+        assert 'coveredCommitId' in text, f'{origin} does not name the covered commit field'
 
 
 #: The merge-gate state PLAN-LB-72 shipped: both required bots reported clean,

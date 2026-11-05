@@ -442,7 +442,7 @@ CONNECTION_ISSUE_COMMENTS = 'comments'
 # first one did.
 #
 # THE FRAGMENT IS SPLIT BY NODE TYPE, and the split is load-bearing: GraphQL validates
-# a selection against the type a connection yields, and the four fields below exist
+# a selection against the type a connection yields, and the three fields below exist
 # only on ``PullRequestReviewComment`` (the thread-comment node). The PR-level
 # ``comments`` connection yields ``IssueComment``, which defines NONE of them — one
 # shared fragment made the whole fetch fail on a real API. Every query therefore

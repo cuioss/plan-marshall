@@ -263,7 +263,7 @@ comment carries it (§ "A shape may be gated on a content marker" below).
 
 | Publish shape | Counts as evidence because | Declared by |
 |---------------|---------------------------|-------------|
-| `inline` | A per-line comment can only be produced by reading the diff at that line. | CodeRabbit, PR-Agent |
+| `inline` | A per-line comment can only be produced by reading the diff at that line — **and** the provider must PLACE it at the merge candidate. A reply posted into an existing thread is never evidence, whatever it says. | CodeRabbit, PR-Agent |
 | `review_body` | The bot's review summary is emitted by a completed review pass over the diff. | CodeRabbit, Sourcery |
 | `issue_comment` | A PR-level comment a bot declares as a publish shape is a review artifact it emitted against the diff — it counts on its own terms, not because the bot has no other shape. | CodeRabbit, PR-Agent |
 
@@ -272,6 +272,16 @@ has. A bot may declare several: PR-Agent publishes `issue_comment` unconditional
 `/improve` is enabled for the repository, and each shape counts on the reasoning in its own row. It
 follows that the ABSENCE of one declared shape is not evidence of non-participation — only the
 presence of a declared shape is evidence, and only of participation.
+
+**An `inline` record must be PLACED, and a thread reply is never evidence.** The provider reports the
+commit an inline comment is attached to (`commit`, falling back to the review's commit) and whether
+it answers an existing thread (`replyTo`, with thread POSITION as the fallback: the first comment of
+a thread opens it, every later one replies). An inline comment is credited only when it opens its
+thread and is placed at the merge candidate; a reply post-dates the push while reviewing nothing, and
+an unplaced comment proves no review of the candidate. Both are reported in
+`stale_participation_bots[]` rather than credited, so the remedy is a re-review. This gate applies to
+every bot declaring `inline`, independent of `participation_requires_update` — placement is a fact
+about the comment, not a currency arm.
 
 The vocabulary is **closed to publish shapes**, and that closure is what enforces the diff-derived
 rule below: a publish shape is an artifact the bot produced against the diff, so anything without one
@@ -1052,21 +1062,23 @@ The producer therefore treats a recognised refusal as a **three-way branch**, no
 This is also why `refusal_patterns` must never be unioned into the producer's `ignore_patterns` drop
 set: doing so collapses the very distinction the two-field split exists to carry.
 
-### The three per-bot marker lists answer three different questions
+### The four per-bot marker lists answer four different questions
 
-A bot's registry doc declares three independent marker surfaces that each drive a **comment-level**
-outcome (drop or branch). They are easy to confuse because all three are literal-substring lists read
-by the same producer, but each drives a different outcome and none is a superset of another. (The
-`refusal_size_patterns` overlay from § "Two axes" is deliberately NOT one of these three: it drives no
+A bot's registry doc declares four independent marker surfaces that each drive a **comment-level**
+outcome (drop, strip or branch). They are easy to confuse because all four are literal-substring
+lists read by the same producer, but each drives a different outcome and none is a superset of
+another. (The
+`refusal_size_patterns` overlay from § "Two axes" is deliberately NOT one of these four: it drives no
 comment-level outcome — it labels a refusal's CAUSE, which selects the `refused_structural`
 member rather than dropping or keeping a comment — and it is by design a subset of
-`refusal_patterns`, so the no-superset property here is scoped to these three comment-level surfaces.
-The `no_unreviewed_commit_patterns` overlay from § "The refusal condition" is outside the three for
+`refusal_patterns`, so the no-superset property here is scoped to these four comment-level surfaces.
+The `no_unreviewed_commit_patterns` overlay from § "The refusal condition" is outside the four for
 the same reason: it labels a refusal's CONDITION and is likewise a subset of `refusal_patterns`.)
 
 | Marker surface | Match semantics | Outcome |
 |----------------|-----------------|---------|
 | `ignore_patterns` | **Any** entry present in the body. | **Unconditional drop.** The comment is a routine section of a successful review (a walkthrough, a tips block, a `/help` echo) and is never a finding, whatever else the body carries. |
+| `footer_patterns` | **Any** entry present on a LINE. | **A strip, then the ordinary test.** The footer LINE is removed before the `ignore_patterns` and contentless tests, so a review body carrying real findings is filed with its signal intact; a body left with nothing but footer is dropped as noise. A footer never causes a drop by itself. |
 | `refusal_patterns` | **Any** entry present in the body. | **A branch, never a drop.** The comment is the bot declining to review; it is excluded from findings AND from `participated_bots[]`, counted under `count_skipped_refusal`, and surfaced in `refused_bots[]` (see the table above). |
 | `contentless_review_markers` + `contentless_review_headings` + `actionable_content_markers` | **Every** `contentless_review_markers` entry present, **any one** `contentless_review_headings` entry present when the bot declares any, **and** no `actionable_content_markers` entry present. | **A conditional drop.** The comment is a real review that found nothing, so it is dropped as noise (`count_skipped_noise`) — but only when the body is *fully* clean. A single actionable marker, one missing required marker, or none of the declared headings leaves the comment in place and it is filed as a finding in full. |
 

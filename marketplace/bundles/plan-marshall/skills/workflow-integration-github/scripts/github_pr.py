@@ -169,10 +169,11 @@ _RESPONDABLE_RESOLUTIONS = frozenset({'fixed', 'suppressed', 'accepted', 'taken_
 #      baseline. Its ``code_change`` / ``explain`` categories are retained as
 #      historical documentation and are NOT consulted by this script.
 #
-#   2. PER-BOT layer — each enabled bot's ``ignore_patterns`` from the registry
-#      (``automatic-review/standards/{bot_kind}.md``). These are literal
-#      whole-comment markers (a walkthrough heading, a marketing footer, a no-op
-#      review line, …) that only apply to that bot's own comments. They are
+#   2. PER-BOT layer — each enabled bot's ``footer_patterns`` (branding / feedback
+#      lines, stripped before the signal test) and ``ignore_patterns`` from the
+#      registry (``automatic-review/standards/{bot_kind}.md``). The ignore entries
+#      are literal whole-comment markers (a walkthrough heading, a no-op review
+#      line, …) that only apply to that bot's own comments. They are
 #      sourced from the registry at runtime, so adding/adjusting a bot's noise
 #      drops is a pure standards-doc edit — no change here.
 #
@@ -454,11 +455,12 @@ def _is_obvious_noise(body: str, bot_kind: str | None = None) -> bool:
        :func:`_is_whole_comment_acknowledgment` to the commenter's own bare prose
        only, and only when a pattern covers the whole of it within the length bound.
     2. PER-BOT — when ``bot_kind`` is a known reviewer bot, that bot's registry
-       ``ignore_patterns`` (literal whole-comment markers) matched as
-       case-sensitive substrings against the raw body. These markers are exact
-       fragments the bot emits on a *successful* review (a walkthrough heading, a
-       marketing footer, a no-op review line), so only that bot's own comments are
-       dropped.
+       ``footer_patterns`` are stripped first (whole LINES removed: branding or a
+       feedback prompt never decides a drop by itself), then its ``ignore_patterns``
+       (literal whole-comment markers) are matched as case-sensitive substrings
+       against the remaining body. These markers are exact fragments the bot emits
+       on a *successful* review (a walkthrough heading, a no-op review line), so only
+       that bot's own comments are dropped.
     3. CONTENTLESS BOILERPLATE — ``_is_contentless_boilerplate``: that same bot's
        registry ``contentless_review_markers`` (ALL required) plus any one declared
        ``contentless_review_headings`` entry, vetoed by any

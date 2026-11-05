@@ -421,6 +421,26 @@ def _coverage_payload(body: str) -> tuple[bool, dict | None]:
     return True, fields if isinstance(fields, dict) else None
 
 
+def review_coverage_marker_present(body: str) -> bool:
+    """Whether ``body`` carries a review-coverage marker at all, readable or not."""
+    return _coverage_payload(body)[0]
+
+
+def review_coverage_is_finished(body: str) -> bool:
+    """Whether ``body``'s coverage marker is a READABLE, FINISHED review artifact.
+
+    A coverage marker is an artifact SHAPE: a summary in its in-progress state, or one
+    whose payload cannot be parsed, carries the same literal without being a finished
+    review. Consumers deciding whether a comment may be an ANSWER use this predicate,
+    so such a comment is skipped exactly as a marker-less one is — never admitted and
+    then reported as a decline the bot never made.
+    """
+    present, fields = _coverage_payload(body)
+    if not present or fields is None:
+        return False
+    return str(fields.get('kind') or '').strip().lower() == _REVIEW_COVERAGE_REVIEWED_KIND
+
+
 def review_coverage_verdict(body: str, head_sha: str) -> bool | None:
     """Return what a review-coverage marker says about ``head_sha``, or no verdict.
 

@@ -71,6 +71,8 @@ SEED_SYMBOLS: tuple[str, ...] = (
     '_is_participation_evidence',
     'review_coverage_verdict',
     '_evidence_named_verdict',
+    'review_coverage_is_finished',
+    'review_coverage_marker_present',
     'head_sha_verified',
     'stale_participation',
     'existing_comment_keys',
