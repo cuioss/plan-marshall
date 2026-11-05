@@ -26,8 +26,9 @@ The branch is read as ONE test set rather than one path at a time:
   the quoted name for a JS/TS ``it``/``test``/``describe``, and one entry per
   CLASS header for a file whose test headers neither arm parses — so a test that
   moved to another file is still the same test;
-* the after-image is the working tree's text, falling back to ``HEAD:{path}``: an
-  uncommitted removal is still graded, never hidden by the commit boundary;
+* the after-image is the working tree's text, falling back to ``HEAD:{path}``, for
+  a path the branch has COMMITTED a change to: a further uncommitted edit there is
+  still graded;
 * a plan with ``use_worktree: false`` is graded against the main checkout's diff
   to the base instead of being skipped as ``worktree_unresolved``; the evidence
   root the check chose is reported on the payload.
@@ -492,14 +493,13 @@ def compute_test_integrity(plan_id: str, base_ref: str | None = None) -> dict[st
             )
 
     for path, post in after.items():
-        # A marker is only "added by the branch" against a pre-image. A RENAMED
-        # file's pre-image lives under the old path. An ADDED file normally has
-        # none — the branch created it — but a SPLIT is a delete plus an add, so a
-        # deleted body that matches this one once markers are stripped is the
-        # pre-image of a file the branch moved; a marker that appeared with it was
-        # added during the move and is reported. The old ``pre = ''`` comparison
-        # reported every new skipped test as filtered, which is the false positive
-        # this pairing replaces.
+        # A marker is only "added by the branch" against a pre-image, and the
+        # comparison is per TEST IDENTITY, not per file: a marker that travelled
+        # with one test must not mask a marker the branch added to another in the
+        # same file or in a sibling half of a split. A RENAMED file's pre-image
+        # lives under the old path; an ADDED file is paired with the deleted body it
+        # came from; a genuinely new file has no pre-image and is skipped, so a new
+        # skipped test is never read as a filter.
         pre_path = path if path in before else renamed_from.get(path)
         if pre_path is not None:
             pre = before.get(pre_path, '')
@@ -507,7 +507,7 @@ def compute_test_integrity(plan_id: str, base_ref: str | None = None) -> dict[st
             pre = _moved_pre_image(post, before, after)
             if pre is None:
                 continue
-        added_markers = sorted(_markers(post) - _markers(pre))
+        added_markers = sorted(_added_markers(post, pre))
         if added_markers:
             findings.append(
                 {
@@ -547,16 +547,20 @@ def _moved_pre_image(post: str, before: dict[str, str], after: dict[str, str]) -
     """The deleted body an ADDED file logically came from, or ``None``.
 
     A split (one file deleted, two added) carries its tests into files that did not
-    exist, so an added path has no same-path pre-image. Two pairings recover it:
+    exist, so an added path has no same-path pre-image. Two pairings recover it, best
+    first:
 
     * exact — the added body equals a DELETED body once markers are stripped (a
       move that stayed whole);
-    * identity — every test identity in the added file is present in one DELETED
-      file (one half of a split).
+    * identity — the added file shares at least one test identity with a DELETED
+      file, and the deleted file with the LARGEST overlap wins (so an unrelated
+      deletion cannot win by document order).
 
-    Either way a marker that appeared with the move is reported. A genuinely new
-    file matches nothing and stays skipped, so a new skipped test is never read as
-    a filter.
+    Pairing is by identity, deliberately: a same-named class moved to another
+    package is the same test under the identity rule, and a marker it gained during
+    the move is reported. A file that shares no identity with any deletion —
+    including a genuinely new test whose identities appear nowhere in the pre-image
+    — is left unpaired, and its markers are not read as filters.
     """
     wanted = _without_markers(post)
     for path, text in before.items():
@@ -567,12 +571,57 @@ def _moved_pre_image(post: str, before: dict[str, str], after: dict[str, str]) -
     added_identities = set(_function_assertion_counts(post))
     if not added_identities:
         return None
+    best: tuple[int, str] | None = None
     for path, text in before.items():
         if path in after:
             continue
-        if added_identities <= set(_function_assertion_counts(text)):
-            return text
-    return None
+        shared = len(added_identities & set(_function_assertion_counts(text)))
+        if shared and (best is None or shared > best[0]):
+            best = (shared, text)
+    return best[1] if best is not None else None
+
+
+def _identity_markers(text: str) -> dict[str, set[str]]:
+    """The skip markers attributed to each test identity.
+
+    A marker is attributed to the NEXT test header at or after it, because a
+    decorator sits on the line ABOVE the ``def`` it filters and so falls outside the
+    function's own span. That attribution is what lets a marker on one test be told
+    from a marker on another in the same file. A file with no test identity yields a
+    single ``''`` entry carrying the whole file's markers, which is the file-level
+    comparison that applies to a language with no headers at all.
+    """
+    spans = _identity_spans(text) or _class_spans(text)
+    if not spans:
+        return {'': _markers(text)}
+    markers: dict[str, set[str]] = {name: set() for _, name in spans}
+    for marker in SKIP_MARKERS:
+        cursor = 0
+        while True:
+            position = text.find(marker, cursor)
+            if position < 0:
+                break
+            owner = next((name for offset, name in spans if offset >= position), spans[-1][1])
+            markers[owner].add(marker)
+            cursor = position + len(marker)
+    return markers
+
+
+def _added_markers(post: str, pre: str) -> set[str]:
+    """The markers the branch ADDED, compared per test identity.
+
+    An identity present only after the change is a new test: it has no pre-image to
+    compare against, so its markers are not read as additions. An identity present
+    on both sides contributes only the markers its own span gained.
+    """
+    after_markers = _identity_markers(post)
+    before_markers = _identity_markers(pre)
+    added: set[str] = set()
+    for identity, markers in after_markers.items():
+        if identity not in before_markers:
+            continue
+        added |= markers - before_markers[identity]
+    return added
 
 
 __all__ = [

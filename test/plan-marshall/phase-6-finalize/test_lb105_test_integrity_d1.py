@@ -473,6 +473,63 @@ def test_a_split_that_gains_a_skip_marker_is_reported(plan_context, tmp_path, mo
     assert payload['findings'][0]['path'] == 'test/a_test.py'
 
 
+def test_a_split_half_gains_a_marker_while_its_sibling_keeps_one(plan_context, tmp_path, monkeypatch) -> None:
+    """The marker comparison is per test identity, not per file.
+
+    The pre-image already skips ``test_a``; the branch splits the file and skips
+    ``test_b`` too. A file-level comparison finds the marker in the shared
+    pre-image and reports nothing, so this must compare the two tests.
+    """
+    repo = _repo(tmp_path)
+    _commit(repo, {'README.md': 'readme\n'})
+    _commit(
+        repo,
+        {
+            'test/one_test.py': (
+                'import pytest\n\n@pytest.mark.skip\ndef test_a():\n    assert 1 == 1\n\n'
+                'def test_b():\n    assert 2 == 2\n'
+            )
+        },
+    )
+    _git(repo, 'checkout', '--quiet', '-b', 'feature')
+    _git(repo, 'rm', 'test/one_test.py')
+    _commit(
+        repo,
+        {
+            'test/a_test.py': 'import pytest\n\n@pytest.mark.skip\ndef test_a():\n    assert 1 == 1\n',
+            'test/b_test.py': 'import pytest\n\n@pytest.mark.skip\ndef test_b():\n    assert 2 == 2\n',
+        },
+    )
+    monkeypatch.setattr(_integrity, 'resolve_live_worktree', lambda _plan_id: repo)
+    _plan(plan_context)
+
+    payload = _integrity.compute_test_integrity(PLAN_ID)
+
+    assert [(row['kind'], row['path']) for row in payload['findings']] == [('test_filtered', 'test/b_test.py')], payload
+
+
+def test_a_new_test_beside_a_move_is_not_paired_with_the_deleted_file(plan_context, tmp_path, monkeypatch) -> None:
+    """A new file shares no identity with the deletion, so its marker is not a filter."""
+    repo = _repo(tmp_path)
+    _commit(repo, {'README.md': 'readme\n'})
+    _commit(repo, {'test/old_test.py': 'def test_old():\n    assert 1 == 1\n'})
+    _git(repo, 'checkout', '--quiet', '-b', 'feature')
+    _git(repo, 'rm', 'test/old_test.py')
+    _commit(
+        repo,
+        {
+            'test/keep_test.py': 'def test_old():\n    assert 1 == 1\n',
+            'test/new_test.py': 'import pytest\n\n@pytest.mark.skip\ndef test_new():\n    assert 9 == 9\n',
+        },
+    )
+    monkeypatch.setattr(_integrity, 'resolve_live_worktree', lambda _plan_id: repo)
+    _plan(plan_context)
+
+    payload = _integrity.compute_test_integrity(PLAN_ID)
+
+    assert payload['findings'] == [], payload
+
+
 def test_a_renamed_test_function_is_reported(plan_context, tmp_path, monkeypatch) -> None:
     """A test FUNCTION that disappears is a named test disappearing, rename included.
 
