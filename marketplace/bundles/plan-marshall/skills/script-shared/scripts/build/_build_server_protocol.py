@@ -958,19 +958,28 @@ class ChildFault:
     The routing and dispatch layer's counterpart of :class:`InnerFault`. These
     faults carry no ``wrapper`` and no ``project_dir`` because no wrapper was ever
     looked for: the process refused while resolving the plan's tree, while rejecting
-    the flags, or while the executor refused the dispatch. What the caller needs is
-    the name, the reason and the exit code — a routing fault is never a red build.
+    the flags, while the executor refused the dispatch, or while no build slot was
+    admitted. What the caller needs is the name, the reason and the exit code — a
+    routing fault is never a red build.
+
+    Which identifiers qualify is :data:`PRE_TOOL_FAULT_ERRORS`'s answer, and only
+    its answer: this docstring names none of them, so adding a member cannot leave a
+    stale list behind here.
 
     Attributes:
-        error: The refusing process's own error identifier (a member of
-            ``_build_result.PRE_TOOL_FAULT_ERRORS``).
+        error: The refusing process's own error identifier, a member of
+            :data:`PRE_TOOL_FAULT_ERRORS`.
         reason: The operator-facing reason it rendered — the ``reason:`` line when
             the emitter wrote one, else the ``message:`` line (the resolution
             emitters write ``message``).
+        corrective: The ``message:`` line when it says something ``reason`` does
+            not (the executor's pre-spawn refusal puts the rejection CLASS in
+            ``reason`` and the actionable correction in ``message``), else ``None``.
     """
 
     error: str
     reason: str | None = None
+    corrective: str | None = None
 
 
 #: The build process's error identifiers that mean "it refused before any tool ran".
@@ -1283,7 +1292,9 @@ def read_log_verdict(log_file: str) -> LogVerdict | None:
         )
     child_fault = None
     if fault_error in PRE_TOOL_FAULT_ERRORS:
-        child_fault = ChildFault(error=fault_error, reason=fault_reason or fault_message)
+        reason = fault_reason or fault_message
+        corrective = fault_message if fault_message and fault_message != reason else None
+        child_fault = ChildFault(error=fault_error, reason=reason, corrective=corrective)
     return LogVerdict(
         status=status,
         exit_code=exit_code,

@@ -54,6 +54,7 @@ from _build_execute import detect_wrapper as _detect_wrapper  # noqa: E402
 from _build_queue_slot import BuildQueueTimeout, build_queue_slot  # noqa: E402
 from _build_result import (  # noqa: E402
     ERROR_BUILD_FAILED,
+    ERROR_QUEUE_SATURATED,
     DirectCommandResult,
     error_result,
     indeterminate_result,
@@ -85,13 +86,11 @@ from marketplace_paths import NO_PLAN_SENTINEL, home_root, names_real_plan  # no
 from plan_logging import log_entry  # noqa: E402
 from toon_parser import serialize_toon  # noqa: E402
 
-# Error type emitted when the build queue is saturated past max_retries.
-ERROR_QUEUE_SATURATED = 'queue_saturated'
-
-# Error type emitted when execution_mode=daemon is requested but the build
-# cannot be routed to the marshalld daemon (a genuine unavailability, an
-# unroutable tool, or an env/working-dir override the daemon cannot honour).
-# In daemon mode this is a hard failure, NOT a silent in-process fallback.
+# Error type emitted when execution_mode=daemon is requested but the build cannot be
+# routed to the marshalld daemon (a genuine unavailability, an unroutable tool, or an
+# env / working-dir override the daemon cannot honour). In daemon mode this is a hard
+# failure, NOT a silent in-process fallback. Never reachable from a daemon CHILD: the
+# child's own routing returns ``in_daemon_job``, which the fail-loud guard exempts.
 ERROR_DAEMON_REQUIRED = 'daemon_required'
 
 # ---------------------------------------------------------------------------
@@ -822,6 +821,9 @@ def _child_fault_result(
     reason = getattr(fault, 'reason', None)
     if reason:
         extra['reason'] = reason
+    corrective = getattr(fault, 'corrective', None)
+    if corrective:
+        extra['message'] = corrective
     return error_result(  # type: ignore[return-value]
         fault.error,
         exit_code or 2,

@@ -321,12 +321,22 @@ Emitted by ``resolve_project_dir.emit_carried_tree_outside_job_error`` from
 the other pre-tool refusals: the dispatch was stopped, no build verdict exists.
 """
 
+ERROR_QUEUE_SATURATED = 'queue_saturated'
+"""No machine-global build slot was admitted, so the build never ran.
+
+Emitted by ``_build_execute_factory._emit_queue_timeout``. A daemon child reaches it
+too: the child runs its build in-process (the re-entrancy guard keeps it off the
+daemon), acquires a slot like any other in-process build, and reports exhaustion
+through this emitter. No tool ran, so it is a pre-tool fault and not a red build.
+"""
+
 PRE_TOOL_FAULT_ERRORS = frozenset(
     {
         ERROR_WORKTREE_RESOLUTION_FAILED,
         ERROR_MUTUALLY_EXCLUSIVE_ARGS,
         ERROR_INVALID_INVOCATION,
         ERROR_CARRIED_TREE_OUTSIDE_JOB,
+        ERROR_QUEUE_SATURATED,
     }
 )
 """The error classes a build process emits from its OWN pre-tool emitters.

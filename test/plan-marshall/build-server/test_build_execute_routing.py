@@ -1055,6 +1055,30 @@ class TestPreToolFaultPassThrough:
         assert failed_verdict is not None
         assert failed_verdict.child_fault is None, 'a build that ran keeps the build-failure path'
 
+    def test_a_slot_refusal_is_a_pre_tool_fault_and_keeps_its_corrective(self, tmp_path):
+        """A child that never got a build slot is a refusal, not a red build.
+
+        The daemon child acquires a slot like any in-process build, so it can reach
+        the queue-saturated emitter. The executor's own refusal shape carries the
+        rejection CLASS in ``reason`` and the actionable correction in ``message``;
+        both must survive the routed hop, or the caller is told a build failed and
+        gets no way to fix it.
+        """
+        import _build_server_protocol as proto
+
+        log = tmp_path / 'queue.log'
+        log.write_text(
+            'status: error\nerror: queue_saturated\nreason: max_retries\nmessage: rerun when a slot frees\n',
+            encoding='utf-8',
+        )
+
+        verdict = proto.read_log_verdict(str(log))
+
+        assert verdict is not None and verdict.child_fault is not None
+        assert verdict.child_fault.error == 'queue_saturated'
+        assert verdict.child_fault.reason == 'max_retries'
+        assert verdict.child_fault.corrective == 'rerun when a slot frees'
+
     def test_the_emitted_identifiers_are_the_ones_the_lane_classifies(self):
         """Every pre-tool emitter's identifier is a member of the classifier set.
 
@@ -1065,7 +1089,7 @@ class TestPreToolFaultPassThrough:
         producer is tied to the set through the template's own text.
         """
         import resolve_project_dir as routing
-        from _build_result import ERROR_INVALID_INVOCATION, PRE_TOOL_FAULT_ERRORS
+        from _build_result import ERROR_INVALID_INVOCATION, ERROR_QUEUE_SATURATED, PRE_TOOL_FAULT_ERRORS
 
         assert routing.emit_worktree_error('p', routing.WorktreeResolutionError('x'))['error'] in (
             PRE_TOOL_FAULT_ERRORS
@@ -1073,6 +1097,10 @@ class TestPreToolFaultPassThrough:
         assert routing.emit_mutually_exclusive_error('p', 'q')['error'] in PRE_TOOL_FAULT_ERRORS
         assert routing.emit_carried_tree_outside_job_error('/tree', 'p')['error'] in PRE_TOOL_FAULT_ERRORS
         assert ERROR_INVALID_INVOCATION in PRE_TOOL_FAULT_ERRORS
+        assert ERROR_QUEUE_SATURATED in PRE_TOOL_FAULT_ERRORS
+        # The factory RE-USES that constant rather than spelling the identifier again,
+        # so the queue refusal a daemon child can emit is classified by construction.
+        assert factory.ERROR_QUEUE_SATURATED is ERROR_QUEUE_SATURATED
 
         template = (
             Path(__file__).parents[3]
