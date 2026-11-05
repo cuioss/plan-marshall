@@ -22,6 +22,7 @@ from typing import Any
 from _criteria_snapshot import (
     AUTHORED_KEY,
     AUTHORSHIP_SCHEMA,
+    PARSER_EXTENDED,
     REQUEST_MISSING,
     SPEC_MISSING,
     SUPERSEDED,
@@ -464,6 +465,20 @@ def grade_frozen_criteria(grading: Grading, drift: list[dict[str, Any]]) -> int:
     """
     for row in drift:
         kind = row.get('kind')
+        number = row.get('deliverable')
+        if kind == PARSER_EXTENDED:
+            # The parser now reads a wrapped bullet in full. Visible, never
+            # blocking: nothing about the outline changed, and the operation that
+            # would retire it is a re-freeze, which needs its own authorization.
+            grading.add(
+                'criterion_parser_extended',
+                f'D{number}',
+                f'{row.get("criterion")} -> {row.get("current")}',
+                False,
+                None,
+                f'deliverable {number}',
+            )
+            continue
         if kind in (SPEC_MISSING, REQUEST_MISSING):
             grading.add(
                 kind,
@@ -474,7 +489,6 @@ def grade_frozen_criteria(grading: Grading, drift: list[dict[str, Any]]) -> int:
                 'request or spec Done-when',
             )
             continue
-        number = row.get('deliverable')
         if kind == 'rewritten':
             graded_kind, title = 'criterion_rewritten', f'{row.get("criterion")} -> {row.get("current")}'
         else:

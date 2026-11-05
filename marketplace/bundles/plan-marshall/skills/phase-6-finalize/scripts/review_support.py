@@ -302,6 +302,16 @@ def run_validate(plan_id: str, kind: str, verdict_file: str, verifier_file: str 
             f'nothing can be graded against a record that is no longer there',
         )
     snapshot = read_snapshot(plan_id)
+    criteria_by_deliverable: list[dict[str, Any]] = []
+    if snapshot is not None:
+        criteria_by_deliverable = [
+            {
+                'number': deliverable_number(row.get('number')),
+                'criterion_count': len(row.get('criteria') or []),
+            }
+            for row in snapshot.get('deliverables') or []
+            if isinstance(row, dict)
+        ]
     if snapshot is not None and kind == KIND_FUNCTIONAL:
         authorship = authorship_problem(verdict, plan_id)
         if authorship:
@@ -358,6 +368,8 @@ def run_validate(plan_id: str, kind: str, verdict_file: str, verifier_file: str 
         'rewrites': grading.rewrites,
         'evidence_check': payload_evidence_check,
     }
+    if snapshot is not None:
+        payload['criteria_by_deliverable'] = criteria_by_deliverable
     if kind == KIND_CODE:
         payload['rejected_findings'] = grading.rejected
     if not grading.valid:

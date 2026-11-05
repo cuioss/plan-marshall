@@ -68,8 +68,16 @@ SNAPSHOT_FILE = 'work/criteria-snapshot.json'
 SCHEMA = 'criteria-snapshot/1'
 REQUEST_FILE = 'request.md'
 
-#: The success-criteria bullet block inside one outline deliverable body.
-_SUCCESS_CRITERIA_RE = re.compile(r'\*\*Success Criteria:\*\*\s*((?:- [^\n]+\n?)+)', re.IGNORECASE)
+#: The success-criteria block marker. The block runs from it to the next bold
+#: field heading (or the end of the deliverable body) and is parsed by
+#: :func:`parse_success_criteria`, not by a line regex: a wrapped continuation and
+#: an indented sub-bullet belong to the bullet above them, and a `*` bullet is a
+#: criterion too.
+_SUCCESS_CRITERIA_MARKER_RE = re.compile(r'\*\*Success Criteria:\*\*[^\n]*\n?', re.IGNORECASE)
+#: A bold-field heading that ends the success-criteria block.
+_SUCCESS_BLOCK_END_RE = re.compile(r'^\s*\*\*[A-Za-z][^*\n]*:\*\*')
+#: One bullet, at any indent; the indentation decides top-level vs sub-bullet.
+_BULLET_RE = re.compile(r'^[-*][ \t]+(.*)$')
 #: A numbered bold deliverable heading in a request-named spec document.
 _SPEC_DELIVERABLE_RE = re.compile(r'^(\d+)\.\s+\*\*(.+?)\*\*', re.MULTILINE)
 #: The Done-when sentence of a spec deliverable, in any of the three spellings.
@@ -90,6 +98,11 @@ _MD_PATH_RE = re.compile(r'(?:^|\s)([\w./-]+\.md)(?=[\s,.;:)]|$)', re.MULTILINE)
 
 DELETED = 'deleted'
 REWRITTEN = 'rewritten'
+#: A frozen criterion that is a PREFIX of the newly parsed one: the parser now
+#: reads a wrapped bullet in full. It is a named state, not drift — the criterion
+#: was not rewritten, the reader got better. Reported so the operator sees it, and
+#: never blocking.
+PARSER_EXTENDED = 'parser_extended'
 #: The functional verdict that retires a deliverable: its criteria are not open.
 SUPERSEDED = 'superseded'
 #: A spec deliverable's own Done-when that no outline criterion covers.
@@ -771,6 +784,56 @@ def snapshot_path(plan_id: str) -> Path:
     return base_path('plans', plan_id, SNAPSHOT_FILE)
 
 
+def parse_success_criteria(body: str) -> tuple[list[str], list[str]]:
+    """Parse a deliverable body's ``**Success Criteria:**`` block.
+
+    Returns ``(criteria, unparsed)``. Every top-level bullet is one criterion —
+    ``-`` and ``*`` both — together with its continuation lines and nested
+    sub-bullets. A continuation is a line indented under the bullet, a nested
+    bullet (contributes its text, not its marker), or a lazy continuation line
+    directly following the bullet. A blank line between bullets is allowed.
+
+    A line inside the block that is neither a bullet nor part of one — a paragraph
+    after a blank line — is returned in ``unparsed`` and never dropped: a criterion
+    the parser could not read must be visible, or the review grades part of a
+    deliverable without saying so. The block ends at the next bold-field heading.
+
+    This is the ONE success-criteria parser. It replaces a regex that kept only an
+    unbroken run of ``- `` lines, which froze a wrapped criterion as its first line
+    and dropped a ``*`` bullet entirely.
+    """
+    marker = _SUCCESS_CRITERIA_MARKER_RE.search(body)
+    if marker is None:
+        return [], []
+    criteria: list[list[str]] = []
+    unparsed: list[str] = []
+    current: list[str] | None = None
+    after_blank = False
+    for line in body[marker.end() :].splitlines():
+        stripped = line.strip()
+        if not stripped:
+            after_blank = True
+            continue
+        if _SUCCESS_BLOCK_END_RE.match(line):
+            break
+        indented = line[: len(line) - len(line.lstrip())] != ''
+        bullet = _BULLET_RE.match(stripped)
+        if not indented and bullet:
+            current = [bullet.group(1).strip()]
+            criteria.append(current)
+        elif indented:
+            if current is not None:
+                current.append((bullet.group(1) if bullet else stripped).strip())
+            else:
+                unparsed.append(stripped)
+        elif current is not None and not after_blank:
+            current.append(stripped)
+        else:
+            unparsed.append(stripped)
+        after_blank = False
+    return [normalize_criterion(' '.join(parts)) for parts in criteria if parts], unparsed
+
+
 def outline_deliverables(plan_id: str) -> list[dict[str, Any]] | None:
     """Return the outline deliverables, each with its ordered ``success_criteria``.
 
@@ -778,6 +841,11 @@ def outline_deliverables(plan_id: str) -> list[dict[str, Any]] | None:
     reads an absent outline as an outline with no deliverables. This is the one
     success-criteria parser in the tree; ``phase-6-finalize``'s attribution
     module delegates here rather than keeping a second copy that could drift.
+
+    Each deliverable also carries ``unparsed_criteria`` — the lines inside its
+    success-criteria block that were neither a bullet nor part of one — so a
+    caller can report what the parser could not read instead of treating it as
+    absent.
     """
     path = base_path('plans', plan_id, 'solution_outline.md')
     if not path.is_file():
@@ -786,9 +854,9 @@ def outline_deliverables(plan_id: str) -> list[dict[str, Any]] | None:
     bodies = {block['number']: block['content'] for block in split_deliverable_blocks(section)}
     deliverables = extract_deliverables(section)
     for deliverable in deliverables:
-        match = _SUCCESS_CRITERIA_RE.search(str(bodies.get(deliverable['number'], '')))
-        bullets = match.group(1).splitlines() if match else []
-        deliverable['success_criteria'] = [line[2:].strip() for line in bullets if line.startswith('- ')]
+        criteria, unparsed = parse_success_criteria(str(bodies.get(deliverable['number'], '')))
+        deliverable['success_criteria'] = criteria
+        deliverable['unparsed_criteria'] = unparsed
     return deliverables
 
 
@@ -1077,9 +1145,18 @@ def _write_snapshot_locked(plan_id: str) -> dict[str, Any]:
     # it too; a re-freeze unions rather than replaces, so an entry an operator
     # accepted is never dropped.
     declared: list[dict[str, Any]] = []
-    for deliverable in outline_deliverables(plan_id) or []:
+    live = outline_deliverables(plan_id) or []
+    for deliverable in live:
         declared.extend(deliverable.get('declared_test_removals') or [])
     removals_recorded = record_accepted_removals(plan_id, declared)
+    per_deliverable = [
+        {
+            'number': deliverable['number'],
+            'criterion_count': len(deliverable.get('success_criteria') or []),
+            'unparsed': list(deliverable.get('unparsed_criteria') or []),
+        }
+        for deliverable in live
+    ]
     return {
         'status': 'success',
         'plan_id': plan_id,
@@ -1089,6 +1166,8 @@ def _write_snapshot_locked(plan_id: str) -> dict[str, Any]:
         'request_done_when_count': len(snapshot['request']['done_when']),
         'spec_deliverable_count': len(snapshot['spec']['deliverables']) if snapshot['spec'] else 0,
         'preserved_authorizations': len(snapshot['authorized_changes']),
+        'deliverables': per_deliverable,
+        'unparsed': [line for row in per_deliverable for line in row['unparsed']],
         'declared_test_removals': len(declared),
         'accepted_removals_recorded': removals_recorded,
     }
@@ -1144,6 +1223,28 @@ def criteria_drift(plan_id: str, current: list[dict[str, Any]] | None = None) ->
             if not criterion or _authorization(snapshot, number, criterion):
                 continue
             if criterion in live:
+                continue
+            # Migration: a frozen criterion that is a PREFIX of a criterion the new
+            # parser now reads in full is the parser getting better, not the
+            # outline changing. Report it as its own state so it is visible, and
+            # keep it out of the drift kinds that block.
+            extended = next(
+                (
+                    candidate
+                    for candidate in live
+                    if candidate.startswith(criterion) and len(candidate) > len(criterion)
+                ),
+                None,
+            )
+            if extended is not None:
+                drift.append(
+                    {
+                        'deliverable': number,
+                        'kind': PARSER_EXTENDED,
+                        'criterion': criterion,
+                        'current': extended,
+                    }
+                )
                 continue
             kind = REWRITTEN if index < len(live) else DELETED
             drift.append(
