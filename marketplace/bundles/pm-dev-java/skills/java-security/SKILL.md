@@ -87,6 +87,9 @@ The cross-cutting rule — which control characters to neutralise, and why `\p{C
 
 ```java
 private String neutralise(String value) {
+    if (value == null) {
+        return "***";
+    }
     StringBuilder out = new StringBuilder(value.length());
     for (int i = 0; i < value.length(); i++) {
         char c = value.charAt(i);
@@ -95,8 +98,11 @@ private String neutralise(String value) {
     return out.toString();
 }
 
-log.info("Authentication failed for user: {}", neutralise(username));
+// maskedUsername is the identifier masked per java-security-patterns.md
+log.info("Authentication failed for user: {}", neutralise(maskedUsername));
 ```
+
+`neutralise` covers the control characters; it does not escape a structured format's delimiter. Where the appender is delimiter-based, escape the configured delimiter too — or emit structured JSON, which escapes both.
 
 ## Related Skills
 

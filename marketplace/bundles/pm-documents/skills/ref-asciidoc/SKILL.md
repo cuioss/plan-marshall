@@ -270,6 +270,7 @@ Read `target/asciidoc-link-verifier/links.md` and extract:
 - Broken file links
 - Broken anchors
 - Format violations
+- Unchecked link classes (`unchecked_link_classes`), with each class's count and first occurrence — record the disposition of each: an external URL is not fetched, and a fragment on a non-AsciiDoc target is not read for anchors.
 
 **Step 6: Manual Verification (CRITICAL)**
 

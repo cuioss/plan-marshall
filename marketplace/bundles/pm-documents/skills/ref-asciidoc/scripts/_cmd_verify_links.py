@@ -6,13 +6,14 @@ import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
+from urllib.parse import unquote
 
 from plan_logging import log_entry
 
 #: The AsciiDoc ``link:target[label]`` macro. ``\b`` keeps ``backlink:...`` from
 #: matching, and the target may carry no whitespace, so prose such as
 #: "see link: <<anchor>>" is not read as a macro at all.
-_LINK_MACRO_RE = re.compile(r'\blink:([^\s\[]+?)\[([^\]]*)\]')
+_LINK_MACRO_RE = re.compile(r'(?<!\\)\blink:([^\s\[]+?)\[([^\]]*)\]')
 
 #: A target the checker does not open: a URI scheme (``https:``, ``mailto:``,
 #: ``file:``) or a protocol-relative target (``//host/path``). No network access is
@@ -26,6 +27,29 @@ _EXTERNAL_URL_CLASS = 'external-url'
 #: The class name for a fragment on a non-AsciiDoc target, which this checker
 #: cannot read for anchors.
 _FRAGMENT_UNCHECKED_CLASS = 'fragment'
+
+#: AsciiDoc delimited blocks whose contents are literal (a listing or literal
+#: block) or a comment. Links and anchors inside them are never rendered, so they
+#: are not checked.
+_BLOCK_DELIMITERS = ('----', '....', '////')
+
+
+def _block_delimiter(line: str) -> str | None:
+    """The delimited-block delimiter a line carries, when it opens or closes one."""
+    stripped = line.strip()
+    for delimiter in _BLOCK_DELIMITERS:
+        if stripped.startswith(delimiter):
+            return delimiter
+    return None
+
+
+def _advance_block_state(delimiter: str | None, open_delimiter: str | None) -> str | None:
+    """Track which delimiter opened a delimited block; a block closes only on its own."""
+    if delimiter is None:
+        return open_delimiter
+    if open_delimiter is None:
+        return delimiter
+    return None if delimiter == open_delimiter else open_delimiter
 
 
 @dataclass
@@ -51,12 +75,26 @@ class Issue:
 
 
 def extract_anchors_from_file(filepath: str) -> set[str]:
-    """Extract all valid anchors from an AsciiDoc file."""
+    """Extract all valid anchors from an AsciiDoc file.
+
+    Anchors inside a delimited literal or comment block are never rendered, so
+    they are not collected. A section title contributes both the hyphenated slug
+    this checker has always derived and Asciidoctor's default auto-generated ID
+    (``_`` prefix, ``_`` separator), so a link to either form resolves.
+    """
     anchors = set()
     with open(filepath, encoding='utf-8') as f:
         lines = f.readlines()
 
+    open_delimiter = None
     for line in lines:
+        delimiter = _block_delimiter(line)
+        if delimiter is not None:
+            open_delimiter = _advance_block_state(delimiter, open_delimiter)
+            continue
+        if open_delimiter is not None:
+            continue
+
         anchors.update(re.findall(r'\[\[([^\]]+)\]\]', line))
         anchors.update(re.findall(r'\[#([^\]]+)\]', line))
         section_match = re.match(r'^(={1,6})\s+(.+)$', line.strip())
@@ -64,12 +102,16 @@ def extract_anchors_from_file(filepath: str) -> set[str]:
             title = section_match.group(2)
             title = re.sub(r'\{[^\}]+\}', '', title)
             title = re.sub(r'link:https?://[^\[]+\[[^\]]+\]', '', title)
+            title = re.sub(r'link:[^\[]+\[([^\]]*)\]', r'\1', title)
             anchor = title.strip().lower()
             anchor = re.sub(r'[^\w\s-]', '', anchor)
             anchor = re.sub(r'\s+', '-', anchor)
             anchor = re.sub(r'-+', '-', anchor).strip('-')
             if anchor:
                 anchors.add(anchor)
+            auto_id = '_' + re.sub(r'[^a-z0-9]+', '_', title.lower()).strip('_')
+            if auto_id != '_':
+                anchors.add(auto_id)
     return anchors
 
 
@@ -79,14 +121,19 @@ def extract_links_from_file(filepath: str) -> list[Link]:
     with open(filepath, encoding='utf-8') as f:
         lines = f.readlines()
 
-    in_code_block = False
+    open_delimiter = None
     for line_num, line in enumerate(lines, 1):
-        if line.strip().startswith('----') or line.strip().startswith('....'):
-            in_code_block = not in_code_block
+        delimiter = _block_delimiter(line)
+        if delimiter is not None:
+            open_delimiter = _advance_block_state(delimiter, open_delimiter)
+            continue
+        if open_delimiter is not None:
+            continue
+        if line.strip().startswith('//'):
             continue
 
-        if in_code_block:
-            continue
+        # An inline monospace/escaped example is not a live link.
+        line = re.sub(r'`[^`]*`', '', line)
 
         for match in re.finditer(r'<<([^,>]+)(?:,([^>]+))?>>', line):
             links.append(
@@ -266,6 +313,7 @@ def verify_links(files: list[str]) -> tuple[list[Link], list[Issue]]:
                         )
                 elif link_class == 'relative-file':
                     target_file, _, fragment = link.target.partition('#')
+                    target_file = unquote(target_file.split('?', 1)[0])
                     target_path = str((Path(filepath).parent / target_file).resolve())
                     if not Path(target_path).exists():
                         issues.append(
@@ -340,6 +388,7 @@ def cmd_verify_links(args) -> dict:
     all_links, issues = verify_links(files)
     broken = [i for i in issues if i.issue_type == 'broken']
     violations = [i for i in issues if i.issue_type == 'format_violation']
+    unchecked = summarise_unchecked_link_classes(all_links)
 
     if issues:
         log_entry(
@@ -356,7 +405,7 @@ def cmd_verify_links(args) -> dict:
             'total_links': len(all_links),
             'broken_links': len(broken),
             'format_violations': len(violations),
-            'unchecked_link_classes': summarise_unchecked_link_classes(all_links),
+            'unchecked_link_classes': unchecked,
             'issues': [
                 {
                     'file': i.file,
@@ -368,7 +417,7 @@ def cmd_verify_links(args) -> dict:
                 for i in issues
             ],
         },
-        'metrics': {'valid_links': len(all_links) - len(issues)},
+        'metrics': {'valid_links': len(all_links) - len(issues) - sum(row['count'] for row in unchecked)},
     }
 
     if args.report:

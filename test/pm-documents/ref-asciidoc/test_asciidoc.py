@@ -720,8 +720,19 @@ def test_verify_links_internal_anchor_link_macro_resolves(tmp_path):
 
     result = cmd_verify_links(_ns(_VERIFY_LINKS_NS, file=str(adoc), directory=None, recursive=False, report=None))
 
+    assert result['data']['total_links'] == 1, 'the macro must be extracted, or a zero-broken result is vacuous'
     assert result['data']['broken_links'] == 0
     assert result['data']['unchecked_link_classes'] == []
+
+
+def test_verify_links_internal_anchor_link_macro_to_a_missing_anchor_is_broken(tmp_path):
+    adoc = tmp_path / 'page.adoc'
+    adoc.write_text('= Page\n\nSee link:#ghost[Ghost].\n', encoding='utf-8')
+
+    result = cmd_verify_links(_ns(_VERIFY_LINKS_NS, file=str(adoc), directory=None, recursive=False, report=None))
+
+    assert result['data']['broken_links'] == 1
+    assert 'ghost' in result['data']['issues'][0]['description']
 
 
 def test_verify_links_non_asciidoc_fragment_is_an_unchecked_class(tmp_path):
@@ -750,3 +761,72 @@ def test_verify_links_relative_link_macro_to_a_missing_anchor_is_broken(tmp_path
 
     assert result['data']['broken_links'] == 1
     assert 'ghost' in result['data']['issues'][0]['description']
+
+
+def test_verify_links_ignores_inline_comment_and_escaped_macros(tmp_path):
+    adoc = tmp_path / 'page.adoc'
+    adoc.write_text(
+        '= Page\n\n'
+        'An inline example: `link:missing-inline.adoc[x]`.\n\n'
+        '// link:missing-comment.adoc[x]\n\n'
+        'An escaped macro: \\link:missing-escaped.adoc[x].\n',
+        encoding='utf-8',
+    )
+
+    result = cmd_verify_links(_ns(_VERIFY_LINKS_NS, file=str(adoc), directory=None, recursive=False, report=None))
+
+    assert result['data']['total_links'] == 0
+    assert result['data']['broken_links'] == 0
+
+
+def test_verify_links_mixed_delimiters_do_not_hide_a_live_link(tmp_path):
+    adoc = tmp_path / 'page.adoc'
+    adoc.write_text(
+        '= Page\n\n----\nlink:missing-in-block.adoc[x]\n....\nlink:still-in-block.adoc[x]\n----\n\n'
+        'link:missing-live.adoc[Live]\n',
+        encoding='utf-8',
+    )
+
+    result = cmd_verify_links(_ns(_VERIFY_LINKS_NS, file=str(adoc), directory=None, recursive=False, report=None))
+
+    assert result['data']['total_links'] == 1, 'only the live link after the block is extracted'
+    assert result['data']['broken_links'] == 1
+
+
+def test_verify_links_relative_target_with_query_and_percent_encoding_is_found(tmp_path):
+    (tmp_path / 'my doc.adoc').write_text('= Doc\n', encoding='utf-8')
+    adoc = tmp_path / 'page.adoc'
+    adoc.write_text('= Page\n\nSee link:my%20doc.adoc?mode=view[Doc].\n', encoding='utf-8')
+
+    result = cmd_verify_links(_ns(_VERIFY_LINKS_NS, file=str(adoc), directory=None, recursive=False, report=None))
+
+    assert result['data']['broken_links'] == 0
+
+
+def test_verify_links_asciidoctor_default_auto_id_resolves(tmp_path):
+    adoc = tmp_path / 'page.adoc'
+    adoc.write_text('= Page\n\n== Real Heading\n\nSee link:#_real_heading[Heading].\n', encoding='utf-8')
+
+    result = cmd_verify_links(_ns(_VERIFY_LINKS_NS, file=str(adoc), directory=None, recursive=False, report=None))
+
+    assert result['data']['broken_links'] == 0
+
+
+def test_verify_links_relative_link_in_a_title_uses_its_label(tmp_path):
+    (tmp_path / 'other.adoc').write_text('= Other\n', encoding='utf-8')
+    adoc = tmp_path / 'page.adoc'
+    adoc.write_text('= Page\n\n== See link:other.adoc[Other] Now\n\n<<see-other-now>>\n', encoding='utf-8')
+
+    result = cmd_verify_links(_ns(_VERIFY_LINKS_NS, file=str(adoc), directory=None, recursive=False, report=None))
+
+    assert result['data']['broken_links'] == 0
+
+
+def test_verify_links_valid_metric_excludes_unchecked_classes(tmp_path):
+    adoc = tmp_path / 'page.adoc'
+    adoc.write_text('= Page\n\nlink:https://example.com[Example]\n', encoding='utf-8')
+
+    result = cmd_verify_links(_ns(_VERIFY_LINKS_NS, file=str(adoc), directory=None, recursive=False, report=None))
+
+    assert result['data']['unchecked_link_classes'][0]['count'] == 1
+    assert result['metrics']['valid_links'] == 0, 'an unchecked link is not a verified link'

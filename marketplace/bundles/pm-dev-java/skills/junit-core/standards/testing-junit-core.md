@@ -214,10 +214,13 @@ assertEquals(expected, service.roles());
 @DisplayName("Should reject CRLF per OWASP")
 void shouldRejectCrlf() { }
 
-// After — the clause the assertion exercises is named
+// After — the clause the assertion exercises is named and the body proves it
 @Test
-@DisplayName("Rejects CRLF in the request target (RFC 9110 section 7.1)")
-void shouldRejectCrlf() { }
+@DisplayName("Rejects CRLF in the request target (RFC 9112 section 3.2)")
+void shouldRejectCrlf() {
+    var target = "/search?q=a\rb";
+    assertThrows(InvalidRequestTargetException.class, () -> parser.parse(target));
+}
 ```
 
 ### Fail-open assertion with no stated reason
