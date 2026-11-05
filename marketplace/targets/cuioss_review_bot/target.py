@@ -181,7 +181,7 @@ MAX_CATEGORY_BULLETS = 10
 #: with no error, so the value sits at or above every real domain's harvested
 #: count in both sets, and ``test_code_review_packs.py`` § ``TestRuleBudget`` fails
 #: when a domain outgrows it.
-MAX_DOMAIN_RULES = 15
+MAX_DOMAIN_RULES = 25
 
 #: Directory, under the target's output root, holding the emitted artifact set.
 _PACKS_DIRNAME = 'packs'

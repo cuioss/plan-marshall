@@ -81,6 +81,29 @@ The conceptual *why* behind every rule in this skill's standards lives in the ce
 | Mapping a finding to a recognized risk category | [`owasp-top-ten.md`](../../../plan-marshall/skills/persona-security-expert/standards/owasp-top-ten.md) |
 | Threat-modeling a Java service | [`threat-modeling-stride.md`](../../../plan-marshall/skills/persona-security-expert/standards/threat-modeling-stride.md) |
 
+## Java Form — Neutralise Before Logging
+
+The cross-cutting rule — which control characters to neutralise, and why `\p{Cntrl}` does not cover the C1 range — is owned by [`secure-logging.md`](../../../plan-marshall/skills/persona-security-expert/standards/secure-logging.md) § "Log Injection". The Java mechanics: `Character.isISOControl` covers the C0 controls, DEL and the C1 range (U+0080 to U+009F); masking is a separate step and neutralises nothing.
+
+```java
+private String neutralise(String value) {
+    if (value == null) {
+        return "***";
+    }
+    StringBuilder out = new StringBuilder(value.length());
+    for (int i = 0; i < value.length(); i++) {
+        char c = value.charAt(i);
+        out.append(Character.isISOControl(c) || c == '\u2028' || c == '\u2029' ? '?' : c);
+    }
+    return out.toString();
+}
+
+// maskedUsername is the identifier masked per java-security-patterns.md
+log.info("Authentication failed for user: {}", neutralise(maskedUsername));
+```
+
+`neutralise` covers the ISO control characters and the Unicode line separators U+2028/U+2029; it does not escape a structured format's delimiter. Where the appender is delimiter-based, escape the configured delimiter too — or emit structured JSON, which escapes all three.
+
 ## Related Skills
 
 - `plan-marshall:persona-security-expert` — Cross-cutting security review identity and authoritative home for OWASP Top 10, STRIDE, secrets, secure logging, trust boundaries, authn/authz, and secure-design principles

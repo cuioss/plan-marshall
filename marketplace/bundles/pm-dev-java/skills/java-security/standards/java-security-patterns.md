@@ -21,7 +21,7 @@ Security patterns for Java applications. These are language/framework-agnostic p
 ### Safe to Log
 
 - Security event types (authentication success/failure)
-- Masked usernames (first 3 characters + `***`)
+- Masked usernames (first 3 characters + `***`), after control-character neutralisation
 - Resource access attempts (without sensitive details)
 - Security policy violations (without triggering data)
 - Audit trail events (with proper masking)
@@ -30,7 +30,8 @@ Security patterns for Java applications. These are language/framework-agnostic p
 
 ```java
 public void logAuthenticationSuccess(String username) {
-    log.info("Authentication successful for user: " + maskUsername(username));
+    // Masking alone — still forgeable: the masked value keeps any control character
+    log.info("Authentication successful for user: {}", maskUsername(username));
 }
 
 private String maskUsername(String username) {
@@ -40,6 +41,26 @@ private String maskUsername(String username) {
     return username.substring(0, 3) + "***";
 }
 ```
+
+Masking is not sanitising. `maskUsername` redacts part of the value; it does not neutralise CR, LF or any other control character, so a masked value whose remaining characters carry one can still forge a log line. Pair every masking helper with the neutralisation step before the value reaches the appender:
+
+```java
+log.info("Authentication successful for user: {}", neutralise(maskUsername(username)));
+
+private String neutralise(String value) {
+    if (value == null) {
+        return "***";
+    }
+    StringBuilder out = new StringBuilder(value.length());
+    for (int i = 0; i < value.length(); i++) {
+        char c = value.charAt(i);
+        out.append(Character.isISOControl(c) || c == '\u2028' || c == '\u2029' ? '?' : c);
+    }
+    return out.toString();
+}
+```
+
+`neutralise` covers the ISO control characters and the Unicode line separators U+2028/U+2029; it does not escape a structured format's delimiter. Where the appender is delimiter-based, escape the configured delimiter too — or, better, emit structured JSON, which escapes all three.
 
 ## Startup Configuration Validation
 
@@ -83,8 +104,8 @@ Instance<String> jwtSecret;
 // BAD
 log.info("User login: " + username + " with password: " + password);
 
-// GOOD
-log.info("User login attempt for: " + maskUsername(username));
+// GOOD — masked, neutralised, parameterized
+log.info("User login attempt for: {}", neutralise(maskUsername(username)));
 ```
 
 ### Insecure Error Messages

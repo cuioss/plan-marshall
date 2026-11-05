@@ -144,6 +144,97 @@ An unchanged coverage figure does not replace step 2 — see `coverage-analysis-
 
 When the removed test is referenced elsewhere — a threat model, a traceability table, a review report — the reference is re-pointed to the surviving test in the same change. Search for the removed method names as well as the removed class names.
 
+## Tests That Cannot Fail
+
+A test that passes on a uniformly wrong implementation is worse than no test: it reports coverage over behaviour nobody checked. Six shapes recur, and each is paired below with the form that can fail. The language-agnostic treatment of matched positive controls and non-vacuity lives in `plan-marshall:persona-module-tester` § "Neutralize State-Dependent Branch Selection at the Fixture Level" and § "Guard a Runtime-Derived Parametrization at the Binding Site"; this section carries only the JUnit-specific before/after and does not restate that guidance.
+
+### Assertion with no concrete anchor
+
+A relational or parity assertion compares two computed values, so a uniformly wrong result satisfies it.
+
+```java
+// Before — no anchor: passes when both values are wrong together
+assertTrue(result.getWidth() > result.getHeight());
+assertEquals(a % 2, b % 2);
+
+// After — one side is the concrete value the contract names
+assertEquals(1920, result.getWidth());
+assertEquals(1080, result.getHeight());
+```
+
+### Test named for a builder default that passes it explicitly
+
+The test's name claims the default, but the arrange step supplies the value, so the default is never read.
+
+```java
+// Before — the default is named in the test but supplied by the caller
+var config = new ConfigBuilder().timeout(30).build();
+assertEquals(30, config.timeout());
+
+// After — the default is reached through the production path
+var config = new ConfigBuilder().build();
+assertEquals(DEFAULT_TIMEOUT, config.timeout());
+```
+
+### Negative assertion vacuous by construction
+
+A new invariant can make the forbidden state unreachable, so the negative assertion passes without ever exercising the branch it names.
+
+```java
+// Before — reachable only while the input is unvalidated
+assertThrows(IllegalArgumentException.class, () -> service.accept(""));
+
+// After — the positive control shows the call succeeds on valid input, and the
+// message pins the branch that rejected the invalid one
+assertEquals(ACCEPTED, service.accept("value"));
+var exception = assertThrows(IllegalArgumentException.class, () -> service.accept(""));
+assertEquals("empty input", exception.getMessage());
+```
+
+### Mirrored name list or enum cardinality
+
+A hardcoded copy of a set another file defines stays green when that set grows, because the copy and the production set drift independently.
+
+```java
+// Before — the copy and the declaration drift apart in silence
+assertEquals(Set.of("admin", "user", "auditor"), service.roles());
+
+// After — the expected set is derived from the declaration it mirrors
+var expected = Arrays.stream(Role.values()).map(Role::wireName).collect(Collectors.toSet());
+assertEquals(expected, service.roles());
+```
+
+### Security test citing a specification without its clause
+
+"Per OWASP" or "per the RFC" names no clause, so a later rule change cannot be traced to the test that should have caught it.
+
+```java
+// Before — the citation names a document, not the clause under test
+@Test
+@DisplayName("Should reject CRLF per OWASP")
+void shouldRejectCrlf() { }
+
+// After — the clause the assertion exercises is named and the body proves it
+@Test
+@DisplayName("Rejects CRLF in the request target (RFC 9112 section 3.2)")
+void shouldRejectCrlf() {
+    var target = "/search?q=a\r\nb";
+    assertThrows(InvalidRequestTargetException.class, () -> parser.parse(target));
+}
+```
+
+### Fail-open assertion with no stated reason
+
+An assertion that a request is accepted reads the same whether the allowance is deliberate or an accident, so a later tightening cannot tell them apart.
+
+```java
+// Before — acceptance asserted with no reason
+assertTrue(response.isAccepted());
+
+// After — the deliberate allowance is stated as the contract it is
+assertTrue(response.isAccepted(), "anonymous health probe is deliberately unauthenticated");
+```
+
 ## Test Types
 
 * Unit test classes named `*Test.java`

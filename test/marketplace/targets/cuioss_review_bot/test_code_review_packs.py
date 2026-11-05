@@ -37,7 +37,7 @@ MARKETPLACE_BUNDLES = PROJECT_ROOT / 'marketplace' / 'bundles'
 
 #: The per-domain rule budget, declared HERE rather than read back from the
 #: generator, so a silent change to the constant is a failing test.
-EXPECTED_DOMAIN_RULE_BUDGET = 15
+EXPECTED_DOMAIN_RULE_BUDGET = 25
 
 #: A budget no real domain reaches — re-deriving under it yields the uncapped harvest.
 UNCAPPED_RULE_BUDGET = 10_000

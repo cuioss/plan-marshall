@@ -104,6 +104,8 @@ class PersonTest implements ShouldHandleObjectContracts<Person> {
 }
 ```
 
+An enum-driven or value-object contract test is a common place to meet a cannot-fail shape (an assertion with no concrete anchor, a mirrored enum cardinality); the rule and its before/after examples live in `pm-dev-java:junit-core` § "Tests That Cannot Fail" and are not restated here.
+
 ### Log Testing
 ```java
 @EnableTestLogger

@@ -450,6 +450,17 @@ void rejectsOwaspTop10Attacks(AttackTestCase testCase) {
 
 Named databases verified against the current `cui-http` source include `OWASPTop10AttackDatabase`, `ApacheCVEAttackDatabase`, and `ModSecurityCRSAttackDatabase` (the package also ships `NginxCVEAttackDatabase`, `IISCVEAttackDatabase`, `OWASPZAPAttackDatabase`, and protocol/encoding-specific databases). Prefer the database-driven generator pattern over hardcoded payload literals so the adversarial corpus stays comprehensive and maintained upstream.
 
+### Invisible and bidirectional characters in a test literal
+
+An attack string that must carry an invisible or bidirectional control character — a bidi override, a zero-width joiner, a U+2028 line separator — is built from its **code point**, never pasted raw:
+
+```java
+private static final String BIDI_OVERRIDE = "\u202E";
+private static final String LINE_SEPARATOR = new String(Character.toChars(0x2028));
+```
+
+A raw character is invisible in review, so a reader sees a plain string while the compiler sees the attack. It also trips the static-analysis rule against bidirectional characters (Sonar `text:S6389`, cited as the example of a tool that rejects it). The rule stands for reviewability; this project enables no analyzer step for it.
+
 ## Troubleshooting
 
 * **Use parameter injection**: Always inject `URIBuilder`, `MockWebServer`, or `SSLContext` -- never construct manually

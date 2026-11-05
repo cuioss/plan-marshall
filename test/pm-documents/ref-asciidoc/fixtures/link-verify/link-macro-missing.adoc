@@ -1,0 +1,3 @@
+= Link Macro Missing
+
+A relative link:missing-target.adoc[Missing Target] points at a file that does not exist.

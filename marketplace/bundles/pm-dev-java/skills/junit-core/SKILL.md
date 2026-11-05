@@ -146,3 +146,9 @@ The review rules of the java domain for test code — what a code review looks f
 - A `@Test` method that calls the code under test and asserts nothing about its result, so it passes whatever the code returns.
 - A test that depends on state another test left behind (a static field, a shared file, a declared method order), so it passes or fails by execution order instead of by the behaviour under test.
 - A test that waits with `Thread.sleep` for an asynchronous result instead of an Awaitility condition, so it fails intermittently whenever the result arrives later than the fixed sleep.
+- A relational or parity assertion (`assertTrue(a > b)`, `assertEquals(x % 2, y % 2)`) with no anchor to a concrete expected value, so the test passes on a uniformly wrong result.
+- A test named for a builder default that passes the value explicitly instead of reaching the default through the production path, so the default is never exercised and a broken default ships.
+- A negative assertion (`assertThrows`, `assertNull`) that goes vacuous once a new invariant makes the forbidden state unreachable, so the test passes without reaching the branch it names.
+- A hardcoded name list or enum-cardinality assertion that mirrors a set defined elsewhere, so adding a member leaves the copy stale and the test green.
+- A security test that cites a specification by name but not the clause it exercises, so a rule change cannot be traced to the test that should have caught it.
+- An assertion that a request is accepted (fail-open) with no stated reason, so a later tightening of validation cannot tell a deliberate allowance from an accident.
