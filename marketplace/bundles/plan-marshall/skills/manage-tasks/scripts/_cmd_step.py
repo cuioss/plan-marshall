@@ -136,6 +136,15 @@ def cmd_finalize_step(args) -> dict:
     # `done` keeps none.
     verification_owed_call = getattr(args, 'verification_owed', False) is True
     verification_complete_call = getattr(args, 'verification_complete', False) is True
+    # Script-level enforcement of a recorded deferral: a task stamped
+    # `verification.owed_rung: deferred` belongs to a deliverable whose build is
+    # owed at the chain tail, so it must NOT open an owed hold of its own — that
+    # is exactly the per-task build the deferral exists to prevent. The leaf's
+    # prose states the same rule; enforcing it here means a leaf that passes the
+    # flag anyway cannot stall the task.
+    owed_rung_dropped = verification_owed_call and task.get('verification', {}).get('owed_rung') == 'deferred'
+    if owed_rung_dropped:
+        verification_owed_call = False
     owed_open = all_terminal and not has_failed and verification_owed_call
     if owed_open and not verification_complete_call:
         task['status'] = 'in_progress'
@@ -250,6 +259,10 @@ def cmd_finalize_step(args) -> dict:
         # without re-reading the record: True while the close rule holds the
         # task open for its orchestrator-tier build, False otherwise.
         'verification_owed': task.get('verification_owed', False),
+        # True when the closing call asked for the owed hold but the task's
+        # recorded `owed_rung: deferred` forbids it: the deliverable's build
+        # belongs to its chain tail, so this task closed per-task instead.
+        'owed_rung_deferred_dropped': owed_rung_dropped,
         'progress': f'{completed}/{total}',
         # Echoed so a caller can SEE what the script emitted rather than having
         # to read the work log back. A task that closed with an empty diff
