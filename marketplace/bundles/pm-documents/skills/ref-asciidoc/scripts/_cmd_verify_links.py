@@ -408,15 +408,19 @@ def _resolve_target(filepath: str, target_file: str) -> tuple[str | None, str | 
 def _target_exists(target_path: str) -> tuple[bool, str | None]:
     """Whether a resolved target exists, or the reason the check itself failed.
 
-    ``Path.exists()`` raises ``OSError`` for some paths (a name too long for the
-    filesystem, a symlink loop) and ``ValueError`` for a NUL byte, so an existence
-    check that raises is reported like any other unreadable target rather than
-    aborting the run.
+    ``Path.exists()`` swallows every ``OSError`` on newer interpreters, which
+    would report a filesystem failure as a merely missing file. ``stat()`` is
+    read directly instead: a genuinely absent path is ``(False, None)`` — the
+    caller reports it ``broken`` — while any other failure carries its reason,
+    which the caller reports as ``unreadable``.
     """
     try:
-        return Path(target_path).exists(), None
+        Path(target_path).stat()
+    except (FileNotFoundError, NotADirectoryError):
+        return False, None
     except (OSError, ValueError) as exc:
         return False, f'{type(exc).__name__}: {exc}'
+    return True, None
 
 
 def verify_links(files: list[str]) -> tuple[list[Link], list[Issue]]:

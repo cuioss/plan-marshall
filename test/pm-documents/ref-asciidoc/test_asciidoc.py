@@ -1058,6 +1058,9 @@ def test_verify_links_a_target_too_long_to_stat_is_an_issue_not_an_abort(tmp_pat
 
     assert result['data']['files_processed'] == 1, 'the run completes over the file it could read'
     assert result['data']['issues'], 'the target that cannot be stat-ed must be reported on its link'
+    assert result['data']['issues'][0]['type'] == 'unreadable', (
+        'a filesystem failure is not a missing file, so it is not `broken`'
+    )
 
 
 def test_verify_links_unreadable_adoc_target_completes_the_run(tmp_path):

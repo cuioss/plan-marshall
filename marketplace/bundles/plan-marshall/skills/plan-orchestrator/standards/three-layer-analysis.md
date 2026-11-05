@@ -9,9 +9,9 @@ Leaf instructions for the `analyze` verb's three-layer landing analysis ([`analy
 ## What the prompt body carries
 
 - the merge commit the landing shipped;
-- the spec path (the staged spec, or its ledger-worktree copy);
+- the spec: its body is passed as data, or reached through the sanctioned corpus read (the leaf never opens a `.plan/` path directly), and it may be the epic ledger's copy in this repository even for a cross-repo landing;
 - the landing narrative — the lane's report, as pasted or taken from the inbox payload — passed as data to assess, which layer 2 compares against the diff;
-- the landed repository: for a landing in this repository the prompt body names `WORKTREE: .`; for a cross-repo landing it names that repository's absolute path in `OTHER_REPO_PATH`, a prompt-body field of its own — `WORKTREE` stays repo-relative and is never widened to carry it. The spec is read at the spec path the prompt body names, which may be the epic ledger's copy in this repository even for a cross-repo landing; `OTHER_REPO_PATH` governs only the landed repository itself — every `git` call and file read of it addresses it through `git -C {OTHER_REPO_PATH}` and paths under it, and never the spec read;
+- the landed repository: for a landing in this repository the prompt body names `WORKTREE: .`; for a cross-repo landing it names that repository's absolute path in `OTHER_REPO_PATH`, a prompt-body field of its own — `WORKTREE` stays repo-relative and is never widened to carry it. `OTHER_REPO_PATH` governs only the landed repository itself — every `git` call and file read of it addresses it through `git -C {OTHER_REPO_PATH}` and paths under it, and never the spec read;
 - the project's code rules — `CLAUDE.md` and the code rules it names;
 - the limit below.
 

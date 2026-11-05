@@ -132,7 +132,7 @@ Treat the `instructions` text as the workflow content verbatim — same executio
 
 ## Step 5: Execute the Workflow
 
-Follow the workflow doc's (or `instructions`') steps to completion. The caller's workflow-specific runtime inputs (`finding_type`, `track`, `scope`, `task_number`, `pr_number`, etc.) substitute into the workflow body's `{placeholder}` tokens. The `WORKTREE` value is the working-directory root for every file operation and every `git -C {WORKTREE}` call inside the workflow.
+Follow the workflow doc's (or `instructions`') steps to completion. The caller's workflow-specific runtime inputs (`finding_type`, `track`, `scope`, `task_number`, `pr_number`, etc.) substitute into the workflow body's `{placeholder}` tokens. The `WORKTREE` value is the working-directory root for every file operation and every `git -C {WORKTREE}` call inside the workflow — except a read or `git -C` addressed through the repository-scope prompt field the workflow declares (the same exception the enforcement bullet above states, e.g. `OTHER_REPO_PATH`).
 
 A workflow body running inside this envelope MUST NOT issue a `Task:` dispatch — this envelope is a leaf. When a workflow step's logic requires a further dispatch, the workflow returns a signal to the main-context orchestrator, which owns the dispatch. The workflow MAY load `Skill:` directives directly inside this envelope (that is in-context skill loading, not subagent dispatch).
 
