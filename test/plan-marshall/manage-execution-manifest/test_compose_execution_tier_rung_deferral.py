@@ -207,6 +207,135 @@ class TestTheUnchangedArms:
         assert _read(paths[0])['verification']['commands'] == []
 
 
+class TestTheManifestKeepsOneTailCommandPerDeliverable:
+    """A task carrying two modules' rungs records one rung and one tail."""
+
+    _MODULE_A = (
+        'python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build '
+        'run --command-args "module-tests plan-marshall"'
+    )
+    _MODULE_B = (
+        'python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build '
+        'run --command-args "module-tests marketplace"'
+    )
+
+    def _write_tasks(self, tasks_dir: Path, tasks: list[dict]) -> list[Path]:
+        tasks_dir.mkdir(parents=True, exist_ok=True)
+        paths: list[Path] = []
+        for task in tasks:
+            path = tasks_dir / f'TASK-{task["number"]:03d}.json'
+            path.write_text(json.dumps(task, indent=2) + '\n', encoding='utf-8')
+            paths.append(path)
+        return paths
+
+    def _patch_by_command(self, monkeypatch, tmp_path: Path, by_command: dict[str, dict]) -> None:
+        def _resolve(command: str, _plan_id: str) -> dict:
+            return dict(by_command[command])
+
+        monkeypatch.setattr(_mem, 'get_plan_dir', lambda pid: tmp_path)
+        monkeypatch.setattr(_mem, '_resolve_command_tier', _resolve)
+        monkeypatch.setattr(_mem, '_emit_decision_log', lambda pid, msg: None)
+
+    def test_a_second_rung_command_does_not_overwrite_the_first(self, monkeypatch, tmp_path):
+        """Both modules name the same task their tail; the field keeps the first."""
+        over_ceiling = {'execution_tier': 'orchestrator', 'exceeds_bash_ceiling': True}
+        paths = self._write_tasks(
+            tmp_path / 'tasks',
+            [
+                {
+                    'number': 1,
+                    'deliverable': 1,
+                    'depends_on': [],
+                    'verification': {'commands': [self._MODULE_A]},
+                },
+                {
+                    'number': 2,
+                    'deliverable': 1,
+                    'depends_on': ['TASK-001'],
+                    'verification': {'commands': [self._MODULE_A, self._MODULE_B]},
+                },
+            ],
+        )
+        self._patch_by_command(monkeypatch, tmp_path, {self._MODULE_A: over_ceiling, self._MODULE_B: over_ceiling})
+
+        body = _run_routing()
+
+        first, second = (_read(path) for path in paths)
+        assert first['verification']['owed_rung'] == 'deferred'
+        assert second['verification']['owed_rung'] == 'chain_tail'
+        assert second['verification']['owed_rung_command'] == self._MODULE_A, (
+            'the later command of the same task must not overwrite the recorded rung'
+        )
+        stamps = [first['verification']['owed_rung'], second['verification']['owed_rung']]
+        assert stamps.count('chain_tail') == 1
+        # The candidate pass takes the task's FIRST rung command, so the group is
+        # the one the decision was taken on — one record, one tail.
+        assert [record['chain_tail_task'] for record in body['phase_5']['owed_rung_deferral']] == [2]
+
+    def test_a_remeasured_module_clears_only_its_own_stamps(self, monkeypatch, tmp_path):
+        """Staleness is per (deliverable, command), so module A survives module B."""
+        over_ceiling = {'execution_tier': 'orchestrator', 'exceeds_bash_ceiling': True}
+        per_task = {'execution_tier': 'per_task', 'exceeds_bash_ceiling': False, 'bash_timeout_seconds': 300}
+        paths = self._write_tasks(
+            tmp_path / 'tasks',
+            [
+                {
+                    'number': 1,
+                    'deliverable': 1,
+                    'depends_on': [],
+                    'verification': {'commands': [self._MODULE_A]},
+                },
+                {
+                    'number': 2,
+                    'deliverable': 1,
+                    'depends_on': ['TASK-001'],
+                    'verification': {'commands': [self._MODULE_B]},
+                },
+            ],
+        )
+        self._patch_by_command(monkeypatch, tmp_path, {self._MODULE_A: over_ceiling, self._MODULE_B: over_ceiling})
+        _run_routing()
+        assert _read(paths[1])['verification']['owed_rung'] == 'chain_tail'
+
+        self._patch_by_command(monkeypatch, tmp_path, {self._MODULE_A: over_ceiling, self._MODULE_B: per_task})
+        _run_routing()
+
+        first, second = (_read(path) for path in paths)
+        assert first['verification']['owed_rung'] == 'chain_tail', 'module A is still over the ceiling'
+        assert 'owed_rung' not in second['verification'], "module B's stale stamp must be cleared"
+        assert 'owed_rung_command' not in second['verification']
+
+    def test_a_group_ordered_through_an_outside_task_puts_the_tail_last(self, monkeypatch, tmp_path):
+        """A dependency chain through a non-group task still orders the group."""
+        over_ceiling = {'execution_tier': 'orchestrator', 'exceeds_bash_ceiling': True}
+        paths = self._write_tasks(
+            tmp_path / 'tasks',
+            [
+                {
+                    'number': 1,
+                    'deliverable': 1,
+                    'depends_on': ['TASK-002'],
+                    'verification': {'commands': [self._MODULE_A]},
+                },
+                {'number': 2, 'deliverable': 2, 'depends_on': ['TASK-003'], 'verification': {'commands': []}},
+                {
+                    'number': 3,
+                    'deliverable': 1,
+                    'depends_on': [],
+                    'verification': {'commands': [self._MODULE_A]},
+                },
+            ],
+        )
+        self._patch_by_command(monkeypatch, tmp_path, {self._MODULE_A: over_ceiling})
+
+        body = _run_routing()
+
+        task_one, _outside, task_three = (_read(path) for path in paths)
+        assert body['phase_5']['owed_rung_deferral'][0]['chain_tail_task'] == 1
+        assert task_one['verification']['owed_rung'] == 'chain_tail'
+        assert task_three['verification']['owed_rung'] == 'deferred'
+
+
 class TestTheLeafHonoursTheRecordedDecision:
     """The leaf-side rule is documented where the leaf reads it."""
 
