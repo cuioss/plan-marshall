@@ -1004,7 +1004,7 @@ def test_verify_links_a_masked_anchor_is_not_a_real_anchor(tmp_path):
     """An anchor defined only inside a mask is not rendered, so a link to it is broken."""
     adoc = tmp_path / 'page.adoc'
     adoc.write_text(
-        '= Page\n\nA `pass:[[[ghost]]]` example.\n\nSee link:#ghost[Ghost].\n',
+        '= Page\n\nA ++[[ghost]]++ example.\n\nSee link:#ghost[Ghost].\n',
         encoding='utf-8',
     )
 
@@ -1017,15 +1017,32 @@ def test_verify_links_a_pass_macro_hides_every_link_it_carries(tmp_path):
     """A pass macro with a nested label hides both of its links, so neither is a false broken."""
     adoc = tmp_path / 'page.adoc'
     adoc.write_text(
-        '= Page\n\nA `pass:[link:a-missing.adoc[x] link:b-missing.adoc[y]]` example.\n',
+        '= Page\n\nA pass:[link:a-missing.adoc[x] link:b-missing.adoc[y]] example.\n',
         encoding='utf-8',
     )
 
     result = cmd_verify_links(_ns(_VERIFY_LINKS_NS, file=str(adoc), directory=None, recursive=False, report=None))
 
     assert result['data']['broken_links'] == 0, 'a documented example must not become a false broken link'
-    assert [row['class'] for row in result['data']['unchecked_link_classes']] == ['code-span']
-    assert result['data']['unchecked_link_classes'][0]['count'] == 2
+    assert [row['class'] for row in result['data']['unchecked_link_classes']] == ['pass-macro']
+    assert result['data']['unchecked_link_classes'][0]['count'] == 2, (
+        'the nesting-aware mask must cover both links, not stop at the first `]`'
+    )
+
+
+def test_verify_links_a_prose_cxx_does_not_swallow_a_later_passthrough(tmp_path):
+    """A `C++` in prose is not a passthrough opener, so the real passthrough is still masked."""
+    adoc = tmp_path / 'page.adoc'
+    adoc.write_text(
+        '= Page\n\nC++ is not AsciiDoc; a passthrough ++link:missing.adoc[x]++ follows.\n',
+        encoding='utf-8',
+    )
+
+    result = cmd_verify_links(_ns(_VERIFY_LINKS_NS, file=str(adoc), directory=None, recursive=False, report=None))
+
+    assert result['data']['total_links'] == 0, 'the passthrough example is not a live link'
+    assert result['data']['broken_links'] == 0, 'the example must not become a false broken link'
+    assert [row['class'] for row in result['data']['unchecked_link_classes']] == ['passthrough']
 
 
 def test_verify_links_unreadable_adoc_target_completes_the_run(tmp_path):
@@ -1044,6 +1061,10 @@ def test_verify_links_unreadable_adoc_target_completes_the_run(tmp_path):
     assert result['data']['files_processed'] == 3, 'the run must complete across every discovered file'
     assert result['data']['total_links'] == 2, 'both live links are extracted'
     assert result['data']['broken_links'] == 0, 'an unreadable target is reported with its reason, not as broken'
+    assert result['metrics']['valid_links'] == 1, (
+        'the one live link the checker verified is the only valid link — the file-level issue and the '
+        'unreadable link must not both be subtracted'
+    )
     unreadable = [issue for issue in result['data']['issues'] if issue['file'].endswith('page.adoc')]
     assert unreadable, 'the link whose target cannot be read must carry an issue of its own'
     assert 'could not be read' in unreadable[0]['description']

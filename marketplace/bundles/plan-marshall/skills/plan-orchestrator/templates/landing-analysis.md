@@ -29,7 +29,7 @@ dispatch did not return}, and the orchestrator re-read every point recorded as
 run, no write**: what only a run could show is tagged `not shown by reading`,
 never left as clean.}
 
-- **Dispatch:** {one read-only leaf per landing | the orchestrator inline, because the dispatch did not return} — reason: {why this landing got its own leaf}
+- **Dispatch:** {one read-only leaf per landing | the orchestrator inline, because the dispatch did not return} — reason: {why this landing got its own leaf, or why the dispatch did not return}
 - **Verdict:** layer 1 {clean | findings | not shown by reading}; layer 2 {clean | findings | not shown by reading}; layer 3 {clean | findings | not shown by reading} —
   every layer that carried a finding is named here, so a layer-3 defect is visible
   without reading the section.

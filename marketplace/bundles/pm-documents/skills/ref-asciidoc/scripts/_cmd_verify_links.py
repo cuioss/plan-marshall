@@ -159,6 +159,9 @@ class Issue:
     description: str
     context: str = ''
     suggested_fix: str = ''
+    #: False for a file-level issue that has no link behind it, so a metric that
+    #: counts verified links does not subtract it.
+    link_backed: bool = True
 
 
 def extract_anchors_from_file(filepath: str) -> set[str]:
@@ -426,6 +429,7 @@ def verify_links(files: list[str]) -> tuple[list[Link], list[Issue]]:
                     link_text='',
                     issue_type=_UNREADABLE_ISSUE,
                     description=f"File '{filepath}' could not be read: {reason}",
+                    link_backed=False,
                 )
             )
 
@@ -625,9 +629,9 @@ def cmd_verify_links(args) -> dict:
     live_links = [link for link in all_links if link.link_type != 'masked']
     unchecked_live = sum(1 for link in live_links if _unchecked_class(link) is not None)
     total_links = len(live_links)
-    # A file-level `unreadable` issue carries no line and no link, so it is not
+    # A file-level `unreadable` issue has no link behind it, so it is not
     # subtracted from a link population it is absent from.
-    link_issues = sum(1 for issue in issues if issue.line_num != 0)
+    link_issues = sum(1 for issue in issues if issue.link_backed)
 
     result = {
         'status': 'success' if not issues else 'failure',
