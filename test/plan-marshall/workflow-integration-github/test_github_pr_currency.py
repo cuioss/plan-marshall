@@ -515,10 +515,16 @@ def test_an_ungated_shape_credits_on_the_shape_alone(plan_context, monkeypatch, 
     This is the guard against the gate regressing a bot to ``absent``. The body carries
     no marker of any bot, so a gate that failed CLOSED on an absent declaration — or
     that leaked one bot's marker onto another bot's shape — would deny the credit here.
+
+    An INLINE record also has to be PLACED: the provider reports the commit the comment
+    is attached to, and an unplaced inline comment proves no review of the candidate.
+    The placement is supplied here so this case tests the marker gate, not the inline
+    rule (which has its own cases below).
     """
     body = 'The retry loop has no ceiling; a persistent 500 will spin forever.'
     assert not any(marker in body for _bot, _shape, marker in MARKER_GATED_EVIDENCE)
-    _patch_provider(monkeypatch, [_evidence_comment(bot_kind, shape, 'ungated', body)])
+    placement = {'commit_id': _HEAD_A, 'thread_reply': False} if shape == 'inline' else {}
+    _patch_provider(monkeypatch, [_evidence_comment(bot_kind, shape, 'ungated', body, **placement)], head_sha=_HEAD_A)
 
     result = _run_fetch(192, _evidence_plan_id('ungated', bot_kind, shape))
 
@@ -2216,7 +2222,7 @@ def test_an_older_review_beside_a_quota_refusal_is_refused_not_participated(bot_
 
 
 def test_a_coderabbit_inline_only_credit_beside_a_quota_refusal_is_not_participation(plan_context, monkeypatch):
-    """Inline comments report no commit, so they cannot prove coverage of the candidate."""
+    """An inline comment the provider does not place at the candidate cannot prove coverage."""
     plan_id = 'gh-pr-lb55-inline-only-refusal'
     inline = {
         'id': 'inline-1',
@@ -2245,3 +2251,88 @@ def test_a_coderabbit_inline_only_credit_beside_a_quota_refusal_is_not_participa
 
     assert result['participated_bots'] == [], 'a commit-less inline comment proves no review of the candidate'
     assert 'coderabbit' in result['refused_bots']
+
+
+# =============================================================================
+# Inline thread replies are never participation evidence
+# =============================================================================
+
+#: The shape every inline thread reply carries: a reply into an existing thread,
+#: posted after the merge-candidate commit, naming no commit of its own.
+_THREAD_REPLY_BODY = 'Fixed in the follow-up commit — resolving this thread.'
+
+
+def _inline_comment(comment_id, *, thread_reply, commit_id, created_at):
+    """One CodeRabbit inline comment with the provider's placement fields."""
+    return _evidence_comment(
+        'coderabbit',
+        'inline',
+        comment_id,
+        _THREAD_REPLY_BODY,
+        thread_reply=thread_reply,
+        commit_id=commit_id,
+        created_at=created_at,
+        updated_at=created_at,
+    )
+
+
+def test_a_thread_reply_after_the_head_credits_nothing(plan_context, monkeypatch):
+    """A reply in an existing thread is the bot answering the author, not reviewing the push.
+
+    It is stamped after the head commit and names no commit, so the first-observation
+    arm used to credit it — the #515 false green.
+    """
+    plan_id = 'gh-pr-thread-reply-no-credit'
+    _patch_provider(
+        monkeypatch,
+        [_inline_comment('cr-reply', thread_reply=True, commit_id='', created_at=_at(40))],
+        head_sha=_HEAD_A,
+    )
+
+    result = _run_fetch(210, plan_id)
+
+    assert result['participated_bots'] == []
+    assert result['stale_participation_bots'] == [{'bot_kind': 'coderabbit', 'evidence_kind': 'inline'}]
+
+
+def test_a_thread_opening_inline_comment_placed_at_the_head_counts(plan_context, monkeypatch):
+    """The positive control: a NEW thread the provider places at the merge candidate is evidence."""
+    plan_id = 'gh-pr-thread-opening-credit'
+    _patch_provider(
+        monkeypatch,
+        [_inline_comment('cr-open', thread_reply=False, commit_id=_HEAD_A, created_at=_at(40))],
+        head_sha=_HEAD_A,
+    )
+
+    result = _run_fetch(211, plan_id)
+
+    assert result['participated_bots'] == [{'bot_kind': 'coderabbit', 'evidence_kind': 'inline'}]
+
+
+def test_a_thread_opening_inline_comment_with_no_reported_commit_credits_nothing(plan_context, monkeypatch):
+    """⛔ An unplaced inline comment proves no review of the candidate, so it never credits."""
+    plan_id = 'gh-pr-thread-opening-unplaced'
+    _patch_provider(
+        monkeypatch,
+        [_inline_comment('cr-open', thread_reply=False, commit_id='', created_at=_at(40))],
+        head_sha=_HEAD_A,
+    )
+
+    result = _run_fetch(212, plan_id)
+
+    assert result['participated_bots'] == []
+
+
+def test_a_thread_opening_inline_comment_placed_at_an_earlier_head_is_stale(plan_context, monkeypatch):
+    """⛔ MATCHED NEGATIVE CONTROL: placement at another commit is a stale review, not a credit."""
+    plan_id = 'gh-pr-thread-opening-earlier'
+    _patch_provider(
+        monkeypatch,
+        [_inline_comment('cr-open', thread_reply=False, commit_id=_HEAD_B, created_at=_at(40))],
+        head_sha=_HEAD_A,
+    )
+
+    result = _run_fetch(213, plan_id)
+
+    assert result['participated_bots'] == []
+    assert result['stale_participation_bots'] == [{'bot_kind': 'coderabbit', 'evidence_kind': 'inline'}]

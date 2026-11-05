@@ -49,8 +49,10 @@ participation_evidence:          # the publish shapes that prove THIS bot review
   - review_body                  # its review summary comment
   - inline                       # its per-line review comments
   - issue_comment                # its standalone summary comment, edited in place on re-review
-participation_evidence_markers:  # per publish shape, the literal a comment must carry to COUNT
-  issue_comment: "<!-- recent_review_start -->"   # the review-verdict wrapper; the walkthrough / summary issue_comment posted BEFORE the review completes carries none, so it credits nothing
+participation_evidence_markers:  # per publish shape, the literals a comment must carry to COUNT
+  issue_comment:                 # an ALTERNATION: a comment carrying EITHER finished-review artifact counts
+    - "<!-- recent_review_start -->"          # the retired review-verdict wrapper; the walkthrough / summary issue_comment posted BEFORE the review completes carries none, so it credits nothing
+    - "<!-- final_review_risk_coverage:"      # the current summary format's coverage marker; its JSON payload names coveredCommitId / sourceCommitId / kind and is parsed by _github_pr.review_coverage_verdict — the ONE reader of those fields
 participation_requires_update: true    # the summary comment is EDITED in place on re-review, so
                                  # continued presence proves only that it reviewed at some earlier
                                  # commit. Evidence therefore has to clear the currency test. Its
@@ -277,25 +279,38 @@ answer".
 CodeRabbit publishes a review summary, per-line comments, and a standalone summary comment, so any
 one of those three shapes is evidence it reviewed this diff.
 
-**The `issue_comment` shape counts only when it carries the review-verdict marker.** CodeRabbit
+**The `issue_comment` shape counts only when it carries a finished-review marker.** CodeRabbit
 publishes TWO different artifacts in that one shape: the walkthrough / summary comment, posted
-**before** any review completes, and the review verdict, which it wraps in its own
-`<!-- recent_review_start -->` machine marker. The shape cannot tell them apart, so crediting it
-bare would count a comment proving a review *started* as one proving it *finished* — a false positive
-that fails toward merging. `participation_evidence_markers` therefore gates that one shape on the
-marker: a CodeRabbit `issue_comment` carrying it is evidence, and one without it — the walkthrough
-alone — credits nothing, and is reported neither as participation nor as a stale publish. The
-`review_body` and `inline` shapes declare no marker and credit on the shape alone, as before. The
-field's reach, and why an absent declaration is fail-open, are stated once in
+**before** any review completes, and the review verdict, which it wraps in a machine marker. The
+shape cannot tell them apart, so crediting it bare would count a comment proving a review *started*
+as one proving it *finished* — a false positive that fails toward merging.
+`participation_evidence_markers` therefore gates that one shape on an ALTERNATION: a CodeRabbit
+`issue_comment` carrying **either** finished-review artifact is evidence, and one carrying neither —
+the walkthrough alone — credits nothing, and is reported neither as participation nor as a stale
+publish. The two artifacts are the retired `<!-- recent_review_start -->` wrapper and the current
+`final_review_risk_coverage` marker. The `review_body` shape declares no marker and credits on the
+shape alone, as before; the `inline` shape is ungated too, but an inline comment must also be PLACED
+at the merge candidate and must open its thread — a reply into an existing thread is never evidence.
+The field's reach, and why an absent declaration is fail-open, are stated once in
 [`bot-participation-contract.md`](bot-participation-contract.md) § "A shape may be gated on a content
-marker".
+marker" and § "What counts as evidence, per publish shape".
+
+**The current summary format is read from its own marker, by one parser.** Its
+`final_review_risk_coverage` payload carries `sourceCommitId`, `coveredCommitId` and `kind`. A review
+counts as covering the merge candidate only when `coveredCommitId` (or `sourceCommitId` where the
+covered id is absent) IS that candidate and `kind` is `reviewed`; a marker naming another head is a
+stale publish, and a marker whose `kind` is not `reviewed` is not a finished review. The marker is
+parsed by `_github_pr.review_coverage_verdict`, and that function is the ONE reader of those three
+fields — the merge gate in `runbook-lane/SKILL.md` § 7 and this record both point at it rather than
+restating the fields. A comment whose own record names a commit (the provider's `commit_id`, or this
+marker) is decided by that commit: an in-place edit alone never re-credits it.
 
 **The same marker gate decides the re-review answer.** `github_re_review` reads this record's
-`issue_comment` marker when it awaits a fresh CodeRabbit review, and admits a CodeRabbit comment as
-the answer only when its body carries the marker. A marker-less comment that is neither a refusal nor
-an acknowledgment is skipped without a record, so the wait continues; a marker-less refusal is still
-recorded as one. On top of the gate, any answer
-is withheld while the `completion_check_name` check-run above is observed in progress. See
+`issue_comment` markers when it awaits a fresh CodeRabbit review, and admits a CodeRabbit comment as
+the answer only when its body carries one of them. A marker-less comment that is neither a refusal
+nor an acknowledgment is skipped without a record, so the wait continues; a marker-less refusal is
+still recorded as one. On top of the gate, any answer is withheld while the
+`completion_check_name` check-run above is observed in progress. See
 `workflow-integration-github/SKILL.md` § "Completion signals (`await_fresh_review`)".
 
 The shape the gate exists for is the **in-progress summary**. While a review runs, CodeRabbit edits

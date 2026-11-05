@@ -56,6 +56,8 @@ guards the QUERY (which was). Deleting or weakening that arm silently returns th
 file to a suite that would have watched the original gap ship.
 """
 
+import re
+
 import github_ops
 
 # One DISTINCT timestamp per source node, so the assertions prove each record kind
@@ -525,3 +527,169 @@ def test_response_without_page_info_is_not_reported_complete(monkeypatch):
     assert set(records) == set(_CONNECTION_OPENINGS)
     assert all(record['capped'] for record in records.values())
     assert result['complete'] is False
+
+
+# The placement fields a GraphQL selection may ask for ONLY on a review-comment node.
+# `IssueComment` defines none of them, so selecting one on the PR-level `comments`
+# connection makes GitHub reject the whole query — a fetch-wide failure no stubbed
+# run_graphql can observe, which is why this pin reads the query TEXT.
+#
+# Every assertion below is DERIVED from the source fragments, and the extractor records
+# dotted PATHS rather than bare names: `pullRequestReview.commit.oid` must not stand in
+# for a direct `commit.oid`, and two fields sharing a line must both be seen.
+def _selection_paths(selection: str) -> set[str]:
+    """Every dotted field PATH a GraphQL selection requests.
+
+    ``pullRequestReview { commit { oid } }`` yields ``pullRequestReview``,
+    ``pullRequestReview.commit`` and ``pullRequestReview.commit.oid`` — so a nested
+    selection of the same leaf name cannot satisfy a requirement for a DIRECT one.
+    Argument lists are stripped first (``comments(first: 100)``).
+    """
+    tokens = re.findall(r'[A-Za-z_][A-Za-z0-9_]*|[{}]', re.sub(r'\([^)]*\)', ' ', selection))
+    paths: set[str] = set()
+    stack: list[str] = []
+    for index, token in enumerate(tokens):
+        if token == '{':
+            continue
+        if token == '}':
+            if stack:
+                stack.pop()
+            continue
+        paths.add('.'.join([*stack, token]))
+        if index + 1 < len(tokens) and tokens[index + 1] == '{':
+            stack.append(token)
+    return paths
+
+
+#: The exact path set an ``IssueComment`` selection may carry. Pinned as a literal
+#: because it is the type's own vocabulary: an addition to the SHARED base fragment
+#: fails here and must be moved to the review-comment fragment.
+_ISSUE_COMMENT_PATHS: frozenset[str] = frozenset({'id', 'body', 'author', 'author.login', 'createdAt', 'updatedAt'})
+
+#: The PATHS ``github_ops._inline_comment_placement`` READS. Pinned independently of
+#: the thread fragment, and path-qualified, so removing the comment's own direct
+#: `commit { oid }` fails even while `pullRequestReview { commit { oid } }` remains.
+_INLINE_PLACEMENT_PATHS: frozenset[str] = frozenset({'replyTo.id', 'commit.oid', 'pullRequestReview.commit.oid'})
+
+
+def _issue_comment_selections() -> list[tuple[str, str]]:
+    """The NODE selection of every IssueComment connection the comment fetch reads."""
+    first_page_comments = _selection_block(github_ops.REVIEW_THREADS_QUERY, 'comments(first: 100)')
+    return [
+        ('ISSUE_COMMENTS_PAGE_QUERY', _selection_block(github_ops.ISSUE_COMMENTS_PAGE_QUERY, 'nodes')),
+        (
+            'REVIEW_THREADS_QUERY issue-comment connection',
+            _selection_block(first_page_comments, 'nodes'),
+        ),
+    ]
+
+
+def test_the_shared_base_fragment_carries_only_issue_comment_fields():
+    """The fragment the PR-level connections use may carry no review-comment path."""
+    assert _selection_paths(github_ops._COMMENT_BASE_FIELDS) == set(_ISSUE_COMMENT_PATHS)
+
+
+def test_issue_comment_connections_select_no_review_comment_only_fields():
+    """A PR-level comment is an ``IssueComment``: selecting review-comment fields fails the fetch.
+
+    Both the page query and the first-page connection are checked, and each selection's
+    path set must EQUAL the ``IssueComment`` vocabulary — so a review-only field added
+    beside another on one line, or at any nesting depth, is caught.
+    """
+    base_paths = _selection_paths(github_ops._COMMENT_BASE_FIELDS)
+    review_only = _selection_paths(github_ops._THREAD_COMMENT_NODE_FIELDS) - base_paths
+    # Non-vacuity: an empty difference would make the per-path assertions trivial.
+    assert review_only, 'the thread fragment adds no path, so the split guards nothing'
+
+    for name, selection in _issue_comment_selections():
+        paths = _selection_paths(selection)
+        extra = paths - set(_ISSUE_COMMENT_PATHS)
+        assert not extra, f'{name} selects {sorted(extra)}, which an IssueComment does not define'
+        for path in review_only:
+            assert path not in paths, f'{name} selects the review-comment-only path {path}'
+
+
+def test_thread_comment_connections_select_every_path_the_parser_reads():
+    """The review-comment connections carry the base fields plus every placement path."""
+    base_paths = _selection_paths(github_ops._COMMENT_BASE_FIELDS)
+    thread_paths = _selection_paths(github_ops._THREAD_COMMENT_NODE_FIELDS)
+
+    assert base_paths <= thread_paths
+    assert _INLINE_PLACEMENT_PATHS <= thread_paths, (
+        '_THREAD_COMMENT_NODE_FIELDS no longer selects a path the placement parser reads'
+    )
+
+    for query, name in (
+        (github_ops.THREAD_COMMENTS_PAGE_QUERY, 'THREAD_COMMENTS_PAGE_QUERY'),
+        (github_ops._THREAD_NODE_FIELDS, '_THREAD_NODE_FIELDS'),
+    ):
+        paths = _selection_paths(query)
+        for path in _INLINE_PLACEMENT_PATHS:
+            # A page QUERY wraps the node selection in structural namespaces
+            # (``query.node....comments.nodes``), so the placement path is a SUFFIX
+            # there; the fragment itself is relative and matches exactly.
+            assert any(candidate == path or candidate.endswith(f'.{path}') for candidate in paths), (
+                f'{name} does not select the placement path {path}'
+            )
+
+
+def test_inline_records_publish_the_placement_the_producer_reads(monkeypatch):
+    """The REAL fetch path must not drop ``reply_to_id`` / ``thread_reply``.
+
+    The producer decides participation from those two keys. The result projection
+    rebuilds every record from an explicit key list, so a field added at the parse site
+    but omitted there never reaches production while a stubbed-provider test still
+    passes. This drives the real parser over a two-comment thread: the opening comment
+    reports no placement and falls back to its review's commit; the second is a reply
+    placed at its own commit.
+    """
+    opening = {
+        'id': 'PRRC_opening',
+        'body': 'opening comment',
+        'author': {'login': 'coderabbitai[bot]'},
+        'createdAt': '2026-03-01T10:00:00Z',
+        'updatedAt': '2026-03-01T10:00:00Z',
+        'pullRequestReview': {'commit': {'oid': 'A' * 40}},
+    }
+    reply = {
+        'id': 'PRRC_reply',
+        'body': 'reply in the thread',
+        'author': {'login': 'coderabbitai[bot]'},
+        'createdAt': '2026-03-01T12:00:00Z',
+        'updatedAt': '2026-03-01T12:00:00Z',
+        'replyTo': {'id': 'PRRC_opening'},
+        'commit': {'oid': 'B' * 40},
+    }
+    payload = {
+        'repository': {
+            'pullRequest': {
+                'reviewThreads': {
+                    'nodes': [
+                        {
+                            'id': 'PRRT_placement',
+                            'isResolved': False,
+                            'path': 'src/foo.py',
+                            'line': 7,
+                            'comments': {'nodes': [opening, reply]},
+                        }
+                    ]
+                },
+                'reviews': {'nodes': []},
+                'comments': {'nodes': []},
+            }
+        }
+    }
+    monkeypatch.setattr(github_ops, 'check_auth', lambda: (True, ''))
+    monkeypatch.setattr(github_ops, 'get_repo_info', lambda: ('cuioss', 'plan-marshall'))
+    monkeypatch.setattr(github_ops, 'run_graphql', lambda query, variables: (0, payload, ''))
+
+    result = github_ops.fetch_pr_comments_data(321)
+
+    assert result['status'] == 'success'
+    by_id = {record['id']: record for record in result['comments']}
+    assert by_id['PRRC_opening']['thread_reply'] is False
+    assert by_id['PRRC_opening']['reply_to_id'] == ''
+    assert by_id['PRRC_opening']['commit_id'] == 'a' * 40
+    assert by_id['PRRC_reply']['thread_reply'] is True
+    assert by_id['PRRC_reply']['reply_to_id'] == 'PRRC_opening'
+    assert by_id['PRRC_reply']['commit_id'] == 'b' * 40
