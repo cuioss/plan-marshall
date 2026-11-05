@@ -987,6 +987,47 @@ def test_verify_links_nested_longer_delimiter_hides_its_inner_content():
     assert result['data']['broken_links'] == 0, 'the nested inner link must not surface as broken'
 
 
+def test_verify_links_edge_case_fixture_directory_verifies_every_live_link():
+    """The fixture directory as a whole is clean, so its files are all load-bearing."""
+    fixture_dir = LINK_VERIFY_FIXTURES / 'edge-cases'
+
+    result = cmd_verify_links(
+        _ns(_VERIFY_LINKS_NS, file=None, directory=str(fixture_dir), recursive=False, report=None)
+    )
+
+    assert result['status'] == 'success', f'the edge-case fixtures must be clean: {result["data"]["issues"]}'
+    assert result['data']['files_processed'] == 3
+    assert result['data']['total_links'] == 2, 'the nested block hides its inner link; the other two are live'
+
+
+def test_verify_links_a_masked_anchor_is_not_a_real_anchor(tmp_path):
+    """An anchor defined only inside a mask is not rendered, so a link to it is broken."""
+    adoc = tmp_path / 'page.adoc'
+    adoc.write_text(
+        '= Page\n\nA `pass:[[[ghost]]]` example.\n\nSee link:#ghost[Ghost].\n',
+        encoding='utf-8',
+    )
+
+    result = cmd_verify_links(_ns(_VERIFY_LINKS_NS, file=str(adoc), directory=None, recursive=False, report=None))
+
+    assert result['data']['broken_links'] == 1, 'the masked anchor is never rendered, so the link is broken'
+
+
+def test_verify_links_a_pass_macro_hides_every_link_it_carries(tmp_path):
+    """A pass macro with a nested label hides both of its links, so neither is a false broken."""
+    adoc = tmp_path / 'page.adoc'
+    adoc.write_text(
+        '= Page\n\nA `pass:[link:a-missing.adoc[x] link:b-missing.adoc[y]]` example.\n',
+        encoding='utf-8',
+    )
+
+    result = cmd_verify_links(_ns(_VERIFY_LINKS_NS, file=str(adoc), directory=None, recursive=False, report=None))
+
+    assert result['data']['broken_links'] == 0, 'a documented example must not become a false broken link'
+    assert [row['class'] for row in result['data']['unchecked_link_classes']] == ['code-span']
+    assert result['data']['unchecked_link_classes'][0]['count'] == 2
+
+
 def test_verify_links_unreadable_adoc_target_completes_the_run(tmp_path):
     """A target that cannot be read for anchors is an issue on its link, and the run completes."""
     (tmp_path / 'broken.adoc').mkdir()

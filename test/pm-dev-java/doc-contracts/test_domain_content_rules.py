@@ -276,6 +276,7 @@ def test_cui_logging_points_at_the_value_neutralisation_rule():
     )
 
     assert 'Character.isISOControl' in text, 'the pointer must name the check the rule uses'
+    assert 'U+2028' in text, 'the pointer must keep the line separators the control-range check misses'
     assert 'secure-logging.md' in text, 'the pointer must name the standard that owns the rule'
 
 
@@ -316,6 +317,10 @@ def test_secure_logging_owns_u2028_u2029_and_scopes_the_cntrl_note():
     section = _section(standard.read_text(encoding='utf-8'), '## Log Injection (CWE-117): Attack and Prevention')
 
     assert 'U+2028' in section and 'U+2029' in section, 'the owned set must name the two line separators'
+    assert re.search(r'(?i)explicit U\+2028/U\+2029 test', section), (
+        'the check that covers the set must name the explicit line-separator test, because '
+        'Character.isISOControl does not match U+2028/U+2029'
+    )
     assert re.search(r'(?i)default pattern flags', section), (
         'the ASCII-only note must be scoped to the default pattern flags'
     )

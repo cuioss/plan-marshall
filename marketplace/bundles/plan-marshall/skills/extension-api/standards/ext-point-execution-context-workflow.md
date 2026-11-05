@@ -63,7 +63,11 @@ MUST NOT map a notation only to `marketplace/bundles/`. When neither probe carri
 returns `error: workflow_not_found`, naming every probed path so a could-not-find is distinguishable
 from a wrong path.
 
-`WORKTREE` governs where the dispatched workflow's tool calls (Edit / Write / Read / `git -C`) act. It
+`WORKTREE` governs where the dispatched workflow's tool calls (Edit / Write / Read / `git -C`) act by
+default. An implementor MAY declare one additional prompt-body field carrying the absolute path of
+another repository (for example `OTHER_REPO_PATH`), for a workflow that must read a repository outside
+the checkout; `WORKTREE` itself stays repo-relative and is never widened to carry it, and a read or
+`git -C` addressed through the declared field is legal. It
 now also anchors the first resolution probe; the installed copy is the fallback, never a competing
 root for a checkout that owns the bundle.
 

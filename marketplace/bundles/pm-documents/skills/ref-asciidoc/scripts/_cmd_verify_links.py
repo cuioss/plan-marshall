@@ -63,12 +63,15 @@ _BLOCK_DELIMITER_RE = re.compile(r'-{4,}|\.{4,}|/{4,}|\+{4,}')
 _CODE_SPAN_RE = re.compile(r'`[^`\n]*`')
 
 #: A macro passthrough (``pass:[link:target[label]]``). Its content is emitted
-#: verbatim, so it is an example, not a live macro.
-_PASS_MACRO_RE = re.compile(r'pass:\[[^\]\n]*\]')
+#: verbatim, so it is an example, not a live macro. One nesting level of square
+#: brackets is matched, because the content of a pass macro commonly carries a
+#: link macro's own ``[…]`` label.
+_PASS_MACRO_RE = re.compile(r'pass:\[(?:[^\[\]\n]|\[[^\]\n]*\])*\]')
 
 #: An unconstrained passthrough (``++link:target[label]++``). Its content is
-#: emitted verbatim, so it is an example, not a live macro.
-_PASSTHROUGH_RE = re.compile(r'\+\+[^+\n]*?\+\+')
+#: emitted verbatim, so it is an example, not a live macro. The boundary guards
+#: keep a ``C++`` in prose from consuming the closer of a later construct.
+_PASSTHROUGH_RE = re.compile(r'(?<![\w+])\+\+[^+\n]*?\+\+(?![\w+])')
 
 #: An inline passthrough (``+link:target[label]+``). Its content is emitted
 #: verbatim, so it is an example, not a live macro.
@@ -181,10 +184,11 @@ def extract_anchors_from_file(filepath: str) -> set[str]:
         if line.strip().startswith('//'):
             continue
 
-        # Anchor markers inside a monospace/passthrough example are not rendered;
-        # the section title keeps its own text for the slug.
-        marker_line = re.sub(r'`[^`]*`', lambda match: ' ' * len(match.group(0)), line)
-        marker_line = _INLINE_PASSTHROUGH_RE.sub(lambda match: ' ' * len(match.group(0)), marker_line)
+        # Anchor markers inside an example are not rendered; the same masks the
+        # link extractor applies are applied here, so a ``pass:[[[ghost]]]``
+        # example does not register ``ghost`` as a real anchor. The section title
+        # keeps its own text for the slug.
+        marker_line, _hidden = _mask_inline_constructs(line)
         anchors.update(re.findall(r'\[\[([^\]]+)\]\]', marker_line))
         anchors.update(re.findall(r'\[#([^\]]+)\]', marker_line))
         section_match = re.match(r'^(={1,6})\s+(.+)$', line.strip())
@@ -621,6 +625,9 @@ def cmd_verify_links(args) -> dict:
     live_links = [link for link in all_links if link.link_type != 'masked']
     unchecked_live = sum(1 for link in live_links if _unchecked_class(link) is not None)
     total_links = len(live_links)
+    # A file-level `unreadable` issue carries no line and no link, so it is not
+    # subtracted from a link population it is absent from.
+    link_issues = sum(1 for issue in issues if issue.line_num != 0)
 
     result = {
         'status': 'success' if not issues else 'failure',
@@ -644,7 +651,7 @@ def cmd_verify_links(args) -> dict:
         # A masked example is not a live link and an unchecked target is not a
         # verified one, so neither is subtracted from a population it is absent
         # from.
-        'metrics': {'valid_links': total_links - len(issues) - unchecked_live},
+        'metrics': {'valid_links': total_links - link_issues - unchecked_live},
     }
 
     if args.report:

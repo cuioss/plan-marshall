@@ -472,7 +472,9 @@ _CONFORMANCE_SHAPE = 'conformance[M]{rule_source,rule,verdict,evidence}'
 
 
 def _template_section() -> str:
-    return _between(_read(_LANDING_TEMPLATE), '## Three-Layer Analysis', '## Metrics and Anomalies', 'landing-analysis.md')
+    return _between(
+        _read(_LANDING_TEMPLATE), '## Three-Layer Analysis', '## Metrics and Anomalies', 'landing-analysis.md'
+    )
 
 
 class TestThreeLayerCorrections:
@@ -493,9 +495,7 @@ class TestThreeLayerCorrections:
         section = _template_section()
 
         for layer in (1, 2):
-            expected = (
-                f'**Layer {layer} verdict:** {{clean | findings — N | not shown by reading — N}}'
-            )
+            expected = f'**Layer {layer} verdict:** {{clean | findings — N | not shown by reading — N}}'
             assert expected in section, (
                 f'the layer-{layer} verdict slot cannot record a point only a run could show — it must offer '
                 'the same third value layer 3 has'
@@ -515,15 +515,13 @@ class TestThreeLayerCorrections:
         analysis = _analysis_block(_read(_ANALYZE_MD))
 
         assert "as data for item 1's single `Write`" in analysis, (
-            'Step 4 does not say the analysis block returns its result as data for item 1\'s single Write'
+            "Step 4 does not say the analysis block returns its result as data for item 1's single Write"
         )
         assert 'write the result into' not in analysis.lower(), (
-            'Step 4 still tells the analysis block to write the landing report itself, so the report is '
-            'written twice'
+            'Step 4 still tells the analysis block to write the landing report itself, so the report is written twice'
         )
         assert 'landings/PLAN-NN.md' not in analysis, (
-            'the analysis block still names the landing report file as a write target, so the report is '
-            'written twice'
+            'the analysis block still names the landing report file as a write target, so the report is written twice'
         )
 
     def test_the_inline_only_index_names_only_the_item_one_write(self):
@@ -548,9 +546,7 @@ class TestThreeLayerCorrections:
         assert re.search(r'(?i)two orchestrator runs persist the same value', routing), (
             'the routing rule does not state that the mapping is deterministic'
         )
-        assert re.search(r'(?i)layer 1 only', routing), (
-            'the routing rule does not state which layers persist a verdict'
-        )
+        assert re.search(r'(?i)layer 1 only', routing), 'the routing rule does not state which layers persist a verdict'
         assert re.search(r'(?is)layer-2 finding.{0,240}persists no verdict', routing), (
             'the routing rule does not say a layer-2 finding persists no verdict'
         )
@@ -571,12 +567,10 @@ class TestThreeLayerCorrections:
         doc = _read(_THREE_LAYER_DOC)
 
         assert 'OTHER_REPO_PATH' in doc, (
-            'the leaf doc names no prompt field for another repository\'s path, so a cross-repo landing has '
+            "the leaf doc names no prompt field for another repository's path, so a cross-repo landing has "
             'no legal field to carry it'
         )
-        assert 'git -C {OTHER_REPO_PATH}' in doc, (
-            'the leaf doc does not say how the cross-repo path is used'
-        )
+        assert 'git -C {OTHER_REPO_PATH}' in doc, 'the leaf doc does not say how the cross-repo path is used'
         assert 'stays repo-relative' in doc, (
             'the leaf doc does not keep `WORKTREE` repo-relative while the other repository travels in its own field'
         )
@@ -584,9 +578,7 @@ class TestThreeLayerCorrections:
     def test_the_leaf_doc_forbids_fetching_third_party_text(self):
         doc = _read(_THREE_LAYER_DOC)
 
-        assert re.search(r'(?i)does not fetch', doc), (
-            'the leaf doc does not forbid fetching third-party text itself'
-        )
+        assert re.search(r'(?i)does not fetch', doc), 'the leaf doc does not forbid fetching third-party text itself'
         assert 'PR bodies' in doc and 'comment' in doc, (
             'the no-fetch rule does not name the third-party text it excludes'
         )
