@@ -110,9 +110,11 @@ constant later turns the now-missing case into a **compile error** rather than a
 the string still beats the chain, but keep a `default -> throw` for the genuinely open input.)
 
 Removing the trailing `throw` is safe **only** where the compiler checks exhaustiveness: a switch
-**expression**, or a switch **statement** that uses pattern or `null` labels. A switch statement whose
-cases are plain constants — including an enum switch statement — is not exhaustiveness-checked, so an
-unmatched value falls through the statement with no result. A constant-only switch statement therefore keeps its
+**expression**, or a switch **statement** that uses pattern or `null` labels, or whose selector type is
+not one of the legacy types (`char`, `byte`, `short`, `int`, `Character`, `Byte`, `Short`, `Integer`,
+`String`, or an enum). A switch statement whose cases are plain constants — including an enum switch
+statement — is not exhaustiveness-checked, so an unmatched value falls through the statement with no
+result. A constant-only switch statement therefore keeps its
 `default -> throw`; dropping it is a fail-open defect, and the access decision is the case
 that shows it: the statement falls through to whatever follows on an unmatched value instead of
 rejecting it.

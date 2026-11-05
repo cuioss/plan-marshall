@@ -218,7 +218,7 @@ void shouldRejectCrlf() { }
 @Test
 @DisplayName("Rejects CRLF in the request target (RFC 9112 section 3.2)")
 void shouldRejectCrlf() {
-    var target = "/search?q=a\rb";
+    var target = "/search?q=a\r\nb";
     assertThrows(InvalidRequestTargetException.class, () -> parser.parse(target));
 }
 ```

@@ -96,4 +96,4 @@ The review rules of the java domain for production code — what a code review l
 - A stream, reader, channel or connection opened outside try-with-resources, so an exception before the close leaks the resource.
 - A `catch` block that is empty, or logs and continues with a `null` or default value, so the caller receives that value as if the operation had succeeded.
 - A check-then-act on shared state (`containsKey` then `put`, a null check then lazy assignment) with no lock and no atomic method such as `computeIfAbsent`, so two threads both pass the check and one write is lost.
-- A trailing `throw` or `default -> throw` removed from a switch statement that the compiler does not exhaustiveness-check, so an unmatched value falls through instead of being rejected (a fail-open path when the switch decides access).
+- A trailing `throw` or rejecting `default` label (`default -> throw` or `default: throw`) removed from a switch statement that the compiler does not exhaustiveness-check, so an unmatched value falls through instead of being rejected (a fail-open path when the switch decides access).

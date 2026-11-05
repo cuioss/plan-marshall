@@ -50,7 +50,7 @@ public List<User> getActiveUsers() { }
 public Optional<User> findById(String userId) { }
 ```
 
-An ordering claim — "validated before X", "sanitised first", "normalised on the way in" — is a guarantee about the calling code, not about the method's own body. Check the call site before you write it: if the caller does not establish that order, the claim is false and a reader relies on a guarantee the code does not give.
+An ordering claim — "validated before X", "sanitised first", "normalised on the way in" — can describe sequencing inside the documented method or in the code that calls it. Check the call site for a claim about the caller, and check the method body for internal order. Whichever the claim describes is where the evidence has to be: if the code does not establish that order, the claim is false and a reader relies on a guarantee the code does not give.
 
 ### Exception Documentation
 
