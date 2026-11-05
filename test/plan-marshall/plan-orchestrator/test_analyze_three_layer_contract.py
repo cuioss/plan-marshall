@@ -254,7 +254,7 @@ class TestThreeLayerAlwaysDispatched:
         assert '`checked`' in analysis and '`not_shown_by_reading`' in analysis, (
             'Step 4 does not give BOTH verdict values'
         )
-        assert '`conformance[N]{rule_source,rule,verdict,evidence}`' in analysis, (
+        assert '`conformance[M]{rule_source,rule,verdict,evidence}`' in analysis, (
             'Step 4 does not give the conformance return shape'
         )
         for severity in ('`blocker`', '`major`', '`minor`', '`info`'):
@@ -317,7 +317,7 @@ class TestThreeLayerAlwaysDispatched:
             'the leaf doc does not name the landing narrative as an input — layer 2 cannot check a lane '
             'claim the diff does not bear out without it'
         )
-        assert 'git -C {other_repo}' in doc, (
+        assert 'git -C {OTHER_REPO_PATH}' in doc, (
             'the leaf doc does not state how a cross-repo landing is read, where the merge commit may '
             "live outside the epic's worktree"
         )
@@ -356,7 +356,7 @@ class TestThreeLayerAlwaysDispatched:
         assert '`checked`' in bullet and '`not_shown_by_reading`' in bullet, (
             'the dispatch does not give BOTH `verdict` values (`checked` and `not_shown_by_reading`)'
         )
-        assert '`conformance[N]{rule_source,rule,verdict,evidence}`' in bullet, (
+        assert '`conformance[M]{rule_source,rule,verdict,evidence}`' in bullet, (
             "the dispatch does not declare the conformance return shape for the project's own rules"
         )
 
@@ -456,4 +456,140 @@ class TestThreeLayerRouting:
 
         assert re.search(r'(?i)every layer that carried a finding', section), (
             "the template's verdict line does not say it names every layer that carried a finding"
+        )
+
+
+# =============================================================================
+# (D1 corrections) not-shown-by-reading at every layer, one report write,
+# the corpus mapping, the Dispatch choice, the conformance spelling, and the
+# leaf's cross-repo field and no-fetch rule
+# =============================================================================
+
+#: The one spelling of the conformance return shape. `[M]` — one row per rule
+#: checked, not one per finding — is the leaf document's spelling, and Step 4
+#: must not drift back to `[N]`, which reads as one row per finding.
+_CONFORMANCE_SHAPE = 'conformance[M]{rule_source,rule,verdict,evidence}'
+
+
+def _template_section() -> str:
+    return _between(_read(_LANDING_TEMPLATE), '## Three-Layer Analysis', '## Metrics and Anomalies', 'landing-analysis.md')
+
+
+class TestThreeLayerCorrections:
+    def test_the_layer_one_and_two_summary_slots_offer_not_shown_by_reading(self):
+        verdict_line = next(
+            (line for line in _template_section().splitlines() if line.startswith('- **Verdict:**')),
+            '',
+        )
+
+        assert verdict_line, 'the template carries no summary Verdict line'
+        for layer in (1, 2):
+            assert re.search(rf'(?i)layer {layer} \{{clean \| findings \| not shown by reading\}}', verdict_line), (
+                f'the layer-{layer} summary slot offers no "not shown by reading" value, so a point only a '
+                'run could show is forced to `clean`'
+            )
+
+    def test_the_layer_one_and_two_verdict_slots_offer_not_shown_by_reading(self):
+        section = _template_section()
+
+        for layer in (1, 2):
+            expected = (
+                f'**Layer {layer} verdict:** {{clean | findings — N | not shown by reading — N}}'
+            )
+            assert expected in section, (
+                f'the layer-{layer} verdict slot cannot record a point only a run could show — it must offer '
+                'the same third value layer 3 has'
+            )
+
+    def test_the_dispatch_line_offers_the_inline_fallback(self):
+        section = _template_section()
+
+        assert (
+            '{one read-only leaf per landing | the orchestrator inline, because the dispatch did not return}'
+        ) in section, (
+            "the template's Dispatch line does not carry the same choice the section preamble does, so a "
+            'dispatch that did not return has no legal value to record'
+        )
+
+    def test_step_four_hands_the_analysis_to_the_single_report_write(self):
+        analysis = _analysis_block(_read(_ANALYZE_MD))
+
+        assert "as data for item 1's single `Write`" in analysis, (
+            'Step 4 does not say the analysis block returns its result as data for item 1\'s single Write'
+        )
+        assert 'write the result into' not in analysis.lower(), (
+            'Step 4 still tells the analysis block to write the landing report itself, so the report is '
+            'written twice'
+        )
+        assert 'landings/PLAN-NN.md' not in analysis, (
+            'the analysis block still names the landing report file as a write target, so the report is '
+            'written twice'
+        )
+
+    def test_the_inline_only_index_names_only_the_item_one_write(self):
+        text = _read(_ANALYZE_MD)
+        inline_only = _between(text, _DISPATCH_END, '#### Step 2b:', 'analyze.md Step 2')
+
+        assert inline_only.count('`Write`') == 1, (
+            'the Inline-only APPLY index names more than one `Write` — a second landing-report write slipped in'
+        )
+        assert 'the Step 4 item 1 `Write` of `{epic_dir}/landings/PLAN-NN.md`' in inline_only, (
+            "the Inline-only APPLY index does not name item 1's Write of the landing report"
+        )
+
+    def test_the_routing_maps_the_leaf_vocabulary_to_the_corpus_vocabulary(self):
+        routing = _routing_block(_read(_ANALYZE_MD))
+
+        for token in ('`checked`', '`contradicted`', '`not_shown_by_reading`', '`unverifiable`', '`corroborated`'):
+            assert token in routing, (
+                f'the routing rule does not name {token} — the leaf vocabulary and the corpus vocabulary are '
+                'not mapped, so two runs can persist different values for the same finding'
+            )
+        assert re.search(r'(?i)two orchestrator runs persist the same value', routing), (
+            'the routing rule does not state that the mapping is deterministic'
+        )
+        assert re.search(r'(?i)layer 1 only', routing), (
+            'the routing rule does not state which layers persist a verdict'
+        )
+        assert re.search(r'(?is)layer-2 finding.{0,240}persists no verdict', routing), (
+            'the routing rule does not say a layer-2 finding persists no verdict'
+        )
+
+    def test_the_conformance_shape_is_spelled_once_across_the_contract(self):
+        for source, text in (
+            ('analyze.md', _read(_ANALYZE_MD)),
+            ('three-layer-analysis.md', _read(_THREE_LAYER_DOC)),
+        ):
+            assert _CONFORMANCE_SHAPE in text, (
+                f'{source} does not spell the conformance return shape as `conformance[M]`'
+            )
+            assert 'conformance[N]' not in text, (
+                f'{source} still spells the conformance shape `conformance[N]`, which reads as one row per finding'
+            )
+
+    def test_the_leaf_doc_gives_a_cross_repo_prompt_field_besides_worktree(self):
+        doc = _read(_THREE_LAYER_DOC)
+
+        assert 'OTHER_REPO_PATH' in doc, (
+            'the leaf doc names no prompt field for another repository\'s path, so a cross-repo landing has '
+            'no legal field to carry it'
+        )
+        assert 'git -C {OTHER_REPO_PATH}' in doc, (
+            'the leaf doc does not say how the cross-repo path is used'
+        )
+        assert 'stays repo-relative' in doc, (
+            'the leaf doc does not keep `WORKTREE` repo-relative while the other repository travels in its own field'
+        )
+
+    def test_the_leaf_doc_forbids_fetching_third_party_text(self):
+        doc = _read(_THREE_LAYER_DOC)
+
+        assert re.search(r'(?i)does not fetch', doc), (
+            'the leaf doc does not forbid fetching third-party text itself'
+        )
+        assert 'PR bodies' in doc and 'comment' in doc, (
+            'the no-fetch rule does not name the third-party text it excludes'
+        )
+        assert 'validate_struct' in doc, (
+            'the leaf doc does not point third-party text at the reader and `validate_struct` boundary'
         )
