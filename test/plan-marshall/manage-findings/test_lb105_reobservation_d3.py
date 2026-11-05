@@ -157,16 +157,23 @@ def test_a_refiled_blocking_finding_is_pending_and_can_be_accepted(plan_context,
 # --- D3 (b): --reopen names why it did not re-arm -------------------------------------------
 
 
-def test_reopen_against_a_taken_into_account_record_names_the_not_reopened_outcome(plan_context) -> None:
+def test_reopen_against_a_rule_resolved_record_reopens_like_a_plain_readd(plan_context) -> None:
+    """PLAN-LB-118 D3 inverts this control on purpose.
+
+    At HEAD a plain re-add reopened a rule-resolved ``taken_into_account`` record
+    while ``--reopen`` kept it, so the opt-in re-armed LESS than leaving it off.
+    The scoped rule now makes both paths reopen a rule-sourced record, and keep a
+    record an operator Hold wrote.
+    """
     _plan(plan_context)
     first = _file()
     _findings_core.resolve_qgate_findings_by_rule(PLAN_ID, PHASE, RULE, 'taken_into_account', 'superseded')
 
     result = _file(reopen=True)
 
-    assert result['status'] == 'kept', result
-    assert result['not_reopened'] == 'taken_into_account', result
-    assert _records()[first['hash_id']]['resolution'] == 'taken_into_account'
+    assert result['status'] == 'reopened', result
+    assert result['previous_resolution'] == 'taken_into_account'
+    assert _records()[first['hash_id']]['resolution'] == 'pending'
 
 
 # --- D3 (c): Branch B reads the QGATE_PERSIST_OK partition ---------------------------------

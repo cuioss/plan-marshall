@@ -584,7 +584,7 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings qg
   --rule functional-review-state --component plan-marshall:phase-6-finalize --severity warning
 ```
 
-On a return from any `qgate add` that is not in `QGATE_PERSIST_OK` — the partition of `success`, `deduplicated`, `reopened` and `kept`, which all mean the finding IS in the store — do NOT record the loop-back: surface the returned error and halt — a loop-back whose findings are not in the store points the next round at nothing. A re-filed blocking finding comes back `reopened`, because the round's own `taken_into_account` resolution is a supersession, not an operator decision; the re-file is therefore pending and an operator close can accept it.
+On a return from any `qgate add` that is not in `QGATE_PERSIST_OK` — the partition of `success`, `deduplicated`, `reopened` and `kept`, which all mean the finding IS in the store — do NOT record the loop-back: surface the returned error and halt — a loop-back whose findings are not in the store points the next round at nothing. A re-filed blocking finding comes back `reopened`, because the round's own rule-keyed `taken_into_account` resolution is a supersession (`resolution_source: rule`); the re-file is therefore pending and an operator close can accept it. A `taken_into_account` record an operator Hold wrote carries no such source and is kept.
 
 **Select the target.** The target is the validator's `loop_back_target` when it is `5-execute` or `6-finalize`. A round with no blocking finding that loops back only because the verifier did not accept has `loop_back_target: none`; its target is `6-finalize` — the next round is a re-review of the diff in hand.
 

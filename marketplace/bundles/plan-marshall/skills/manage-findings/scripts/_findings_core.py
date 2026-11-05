@@ -128,6 +128,13 @@ FIXED_RESOLUTION = 'fixed'
 FIX_COMMIT_FIELD = 'fix_commit_sha'
 FIX_TASK_FIELD = 'fix_task_number'
 
+#: The ``resolution_source`` value a loop-back round's own rule-keyed resolution
+#: writes. Only a ``taken_into_account`` record carrying it is re-armed by an
+#: identical re-file: that disposition is the review's own supersession. A triage
+#: Hold records the same resolution through ``resolve_qgate_finding`` and carries
+#: no source, so the operator's decision stands.
+RULE_RESOLUTION_SOURCE = 'rule'
+
 _COMMIT_SHA_RE = re.compile(r'^[0-9a-f]{7,40}$')
 
 # Valid reviewer-bot identity values for pr-comment findings (derived from author).
@@ -1545,12 +1552,14 @@ def add_qgate_finding(
 
     A matched resolved record is handled by disposition:
 
-    * ``taken_into_account`` — the review's own "superseded by a later round"
-      disposition, not an operator decision. An identical re-file is an
-      OBSERVATION that the finding still blocks, so the record returns to
-      ``pending`` (``status: reopened``, ``reopened_by: observation``). This is
-      what lets a full loop-back round re-file what still blocks and still be
-      acceptable.
+    * ``taken_into_account`` recorded by a loop-back round's rule-keyed resolution
+      (``resolution_source: rule``) — the review's own "superseded by a later
+      round" disposition. An identical re-file is an OBSERVATION that the finding
+      still blocks, so the record returns to ``pending`` (``status: reopened``,
+      ``reopened_by: observation``). This is what lets a full loop-back round
+      re-file what still blocks and still be acceptable. A ``taken_into_account``
+      record an operator Hold wrote through ``resolve_qgate_finding`` carries no
+      source and is kept like any other operator decision.
     * ``fixed`` with ``reopen`` — re-armed (``status: reopened``,
       ``reopened_by: opt_in``); without the opt-in it is kept.
     * any other disposition (``accepted``, ``rejected``, ``suppressed``) — kept,
@@ -1605,14 +1614,16 @@ def add_qgate_finding(
                 **store_state_fields(store),
             }
         resolution = str(existing.get('resolution') or '')
-        # An OBSERVATION re-arms the review's own disposition. ``taken_into_account``
-        # is what a full loop-back round records for a finding it superseded — not a
-        # decision the operator took — so a review that re-files the same blocking
-        # finding is reporting it still blocks, and the record returns to pending.
-        # Without this the finding blocks ``validate`` while being unpending in the
-        # store, and ``loop-back close --accept`` refuses it with
-        # ``finding_not_pending``: the operator cannot accept what still blocks.
-        if not reopen and resolution == RESOLUTION_TAKEN_INTO_ACCOUNT:
+        # An OBSERVATION re-arms the review's OWN disposition, and only that. A
+        # ``taken_into_account`` record a loop-back round resolved through its rule
+        # key (``resolution_source: rule``) is the review superseding itself, so a
+        # re-file of the same blocking finding reports it still blocks and the
+        # record returns to pending. A ``taken_into_account`` record an operator
+        # chose as a triage Hold carries no source and is KEPT: the operator's
+        # decision is not the review's to re-arm. Without the re-arm the finding
+        # blocks ``validate`` while being unpending in the store, and
+        # ``loop-back close --accept`` refuses it with ``finding_not_pending``.
+        if resolution == RESOLUTION_TAKEN_INTO_ACCOUNT and existing.get('resolution_source') == RULE_RESOLUTION_SOURCE:
             return _reopen_qgate_record(
                 qgate_path,
                 existing,
@@ -1637,9 +1648,11 @@ def add_qgate_finding(
                 reopened_by='opt_in',
             )
         # Kept-resolution: the same title AND the same content is a genuine
-        # re-detection of the resolved finding, and the recorded resolution
-        # stands — resolution, detail and timestamp are kept exactly, so an
-        # unchanged re-emission never re-arms a gate the reviewer had cleared.
+        # re-detection of a resolved finding whose disposition an observation may
+        # not touch — an operator Hold, an acceptance, a rejection, a suppression,
+        # or a fixed record with no opt-in. Resolution, detail and timestamp are
+        # kept exactly, so an unchanged re-emission never re-arms what the operator
+        # decided.
         # The re-observation is recorded as a counter on the record; nothing
         # else is touched. A same-title-different-content finding never lands
         # here (it fails the discriminator match above) and is filed fresh.
@@ -1933,6 +1946,11 @@ def resolve_qgate_findings_by_rule(
     ``untouched`` — the key is the only selector, so a finding the caller did not
     name is never swept up alongside the ones it did.
 
+    Every resolved record carries ``resolution_source: rule``. That marker is what
+    lets a later identical re-file tell the loop-back round's own supersession
+    (re-armed) from an operator Hold recorded through ``resolve_qgate_finding``
+    (kept).
+
     Returns ``{status, plan_id, phase, rule, resolution, resolved[], untouched[]}``
     where each list carries ``{hash_id, rule}`` entries (``rule`` is the empty
     string for a finding that carries none), so the caller can report exactly
@@ -1971,6 +1989,7 @@ def resolve_qgate_findings_by_rule(
             record['hash_id'],
             {
                 'resolution': resolution,
+                'resolution_source': RULE_RESOLUTION_SOURCE,
                 'resolution_timestamp': timestamp(),
                 'resolution_detail': detail,
             },
