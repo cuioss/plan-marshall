@@ -305,6 +305,10 @@ def test_java_security_json_statement_names_only_what_json_escapes():
     )
     masking = _section(text, '### Masking Pattern')
 
+    assert 'reversible' in masking.lower(), (
+        'the encoding must be reversible, so a literal `\\u000A` stays distinguishable from a newline'
+    )
+    assert 'escape introducer' in masking.lower(), 'the example must say the escape introducer itself is escaped'
     assert 'escapes all three' not in masking, 'the statement still claims JSON escapes all three'
     assert 'quote' in masking.lower() and 'backslash' in masking.lower(), 'the statement must name what JSON escapes'
     assert 'U+0000' in masking and 'U+001F' in masking, 'the statement must name the escaped C0 range'

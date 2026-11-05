@@ -1048,6 +1048,18 @@ def test_verify_links_a_prose_cxx_does_not_swallow_a_later_passthrough(tmp_path)
     assert [row['class'] for row in result['data']['unchecked_link_classes']] == ['passthrough']
 
 
+def test_verify_links_a_target_too_long_to_stat_is_an_issue_not_an_abort(tmp_path):
+    """A path the filesystem refuses to stat is reported, never raised out of the run."""
+    adoc = tmp_path / 'page.adoc'
+    long_name = 'a' * 300 + '.adoc'
+    adoc.write_text(f'= Page\n\nSee link:{long_name}[Long].\n', encoding='utf-8')
+
+    result = cmd_verify_links(_ns(_VERIFY_LINKS_NS, file=str(adoc), directory=None, recursive=False, report=None))
+
+    assert result['data']['files_processed'] == 1, 'the run completes over the file it could read'
+    assert result['data']['issues'], 'the target that cannot be stat-ed must be reported on its link'
+
+
 def test_verify_links_unreadable_adoc_target_completes_the_run(tmp_path):
     """A target that cannot be read for anchors is an issue on its link, and the run completes."""
     (tmp_path / 'broken.adoc').mkdir()

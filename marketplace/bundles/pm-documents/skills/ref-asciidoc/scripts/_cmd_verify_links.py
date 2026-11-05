@@ -405,6 +405,20 @@ def _resolve_target(filepath: str, target_file: str) -> tuple[str | None, str | 
         return None, f'{type(exc).__name__}: {exc}'
 
 
+def _target_exists(target_path: str) -> tuple[bool, str | None]:
+    """Whether a resolved target exists, or the reason the check itself failed.
+
+    ``Path.exists()`` raises ``OSError`` for some paths (a name too long for the
+    filesystem, a symlink loop) and ``ValueError`` for a NUL byte, so an existence
+    check that raises is reported like any other unreadable target rather than
+    aborting the run.
+    """
+    try:
+        return Path(target_path).exists(), None
+    except (OSError, ValueError) as exc:
+        return False, f'{type(exc).__name__}: {exc}'
+
+
 def verify_links(files: list[str]) -> tuple[list[Link], list[Issue]]:
     """Verify all links in all files.
 
@@ -454,9 +468,14 @@ def verify_links(files: list[str]) -> tuple[list[Link], list[Issue]]:
                 )
             elif link.link_type == 'xref':
                 target_path, reason = _resolve_target(filepath, link.target) if link.target else (filepath, None)
+                exists = False
+                if target_path is not None:
+                    exists, reason = _target_exists(target_path)
                 if target_path is None:
                     issues.append(_unresolvable_issue(filepath, link, reason))
-                elif not Path(target_path).exists():
+                elif reason is not None:
+                    issues.append(_unreadable_issue(filepath, link, target_path, reason))
+                elif not exists:
                     issues.append(
                         Issue(
                             file=filepath,
@@ -508,9 +527,14 @@ def verify_links(files: list[str]) -> tuple[list[Link], list[Issue]]:
                 elif link_class == 'relative-file':
                     target_file, fragment = _split_relative_target(link.target)
                     target_path, reason = _resolve_target(filepath, target_file)
+                    exists = False
+                    if target_path is not None:
+                        exists, reason = _target_exists(target_path)
                     if target_path is None:
                         issues.append(_unresolvable_issue(filepath, link, reason))
-                    elif not Path(target_path).exists():
+                    elif reason is not None:
+                        issues.append(_unreadable_issue(filepath, link, target_path, reason))
+                    elif not exists:
                         issues.append(
                             Issue(
                                 file=filepath,
