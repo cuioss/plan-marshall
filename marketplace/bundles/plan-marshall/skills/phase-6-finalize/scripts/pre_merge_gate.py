@@ -279,13 +279,18 @@ def _resolve_local_head(project_dir: str) -> str | None:
 def _is_full_sha(value: Any) -> bool:
     """Return True only for a full lowercase hex commit id (40 or 64 chars).
 
-    An abbreviated SHA is not a tree identity a reader can compare, and a
-    ``refire_waiver`` written by ``loop-back close`` is always a full SHA — so a
-    shorter value is malformed here, not a lenient match.
+    The predicate is ``_cmd_loop_back._FULL_SHA_RE`` — the very regex
+    ``loop-back close`` uses to accept a waiver head — so the writer's notion of a
+    well-formed waiver and the reader's cannot drift apart.
+
+    An abbreviated SHA is not a tree identity a reader can compare, so a shorter
+    value is malformed here, not a lenient match.
     """
     if not isinstance(value, str):
         return False
-    return len(value) in (40, 64) and all(character in '0123456789abcdef' for character in value)
+    from _cmd_loop_back import _FULL_SHA_RE
+
+    return _FULL_SHA_RE.match(value) is not None
 
 
 def _valid_waiver_head(record: dict[str, Any]) -> str | None:
@@ -312,10 +317,16 @@ def _head_dependence(step: str) -> tuple[bool, str | None]:
 
     Returns ``(is_head_dependent, unresolved_reason)`` exactly as that function
     does — ``(False, reason)`` when the discovery machinery could not run at all.
+
+    The step key is canonicalized first. ``_derive_head_dependence`` compares
+    ``canonicalize_step_key(discovered_name)`` against its argument, and a legacy
+    ``default:``-prefixed record key would otherwise resolve to "undeclared" — which
+    would file the record as never-consulted instead of judging it.
     """
     import _cmd_mark_step
+    from _step_key_canonical import canonicalize_step_key
 
-    return _cmd_mark_step._derive_head_dependence(step)
+    return _cmd_mark_step._derive_head_dependence(canonicalize_step_key(step))
 
 
 def _classify_verdict_currency(step: str, project_dir: str, recorded_sha: str, head: str) -> dict[str, Any]:
@@ -418,14 +429,16 @@ def _head_binding_refusal(
         if not recorded:
             continue
         recorded_sha = str(recorded).strip()
+        if recorded_sha == head:
+            # Cleared against the candidate: it was consulted and needs no
+            # declaration, waiver or classifier.
+            continue
         declared, derivation_reason = derive(step_id)
         if derivation_reason is not None:
             fallbacks.append({'step': step_id, 'reason': derivation_reason})
             declared = True
         if not declared:
             unconsulted.append({'step': step_id, 'recorded_head': recorded_sha})
-            continue
-        if recorded_sha == head:
             continue
         if record.get('outcome') == 'done':
             waiver_head = _valid_waiver_head(record)

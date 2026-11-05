@@ -29,6 +29,18 @@ def _status(head_by_step: dict[str, str | None]) -> dict:
     return {'metadata': {'phase_steps': {'6-finalize': steps}}}
 
 
+def _participating():
+    """The participation seam payload a head-binding case defaults to."""
+    return {
+        'status': 'success',
+        'participation_complete': True,
+        'roster_read': True,
+        'required_bots': ['coderabbit'],
+        'unproven_bots': [],
+        'bot_states': [{'bot_kind': 'coderabbit', 'state': 'participated'}],
+    }
+
+
 def _merge(status, head, **kwargs):
     """Run the gate with stubbed findings, participation and merge seams.
 
@@ -43,17 +55,7 @@ def _merge(status, head, **kwargs):
     paths overrides the corresponding seam, and the production classifier has its own
     case in this module.
     """
-    kwargs.setdefault(
-        'participation_check',
-        lambda _pid, _pr, _project_dir: {
-            'status': 'success',
-            'participation_complete': True,
-            'roster_read': True,
-            'required_bots': ['coderabbit'],
-            'unproven_bots': [],
-            'bot_states': [{'bot_kind': 'coderabbit', 'state': 'participated'}],
-        },
-    )
+    kwargs.setdefault('participation_check', lambda _pid, _pr, _project_dir: _participating())
     kwargs.setdefault('head_dependence_reader', lambda _step: (True, None))
     kwargs.setdefault(
         'classifier',
@@ -70,6 +72,28 @@ def _merge(status, head, **kwargs):
         status_reader=lambda _pid: status,
         head_reader=lambda _dir: head,
         **kwargs,
+    )
+
+
+def _merge_pre_seam(status, head):
+    """Run the gate with ONLY the seams the pre-change module already accepted.
+
+    The two Done-whens marked "Red at HEAD" drive the production declaration reader
+    and the production waiver row through these seams, so their failure at HEAD is
+    the defect (a refused merge) rather than a missing keyword. They therefore must
+    not pass the new seams.
+    """
+    return gate.merge(
+        'lb55-plan',
+        route='safe-merge',
+        pr_number=7,
+        project_dir='/tmp/does-not-matter',
+        strategy='squash',
+        findings_check=lambda _pid: {'status': 'success', 'blocking_count': 0},
+        merge_runner=lambda _args: {'status': 'success', 'merged': True},
+        status_reader=lambda _pid: status,
+        head_reader=lambda _dir: head,
+        participation_check=lambda _pid, _pr, _project_dir: _participating(),
     )
 
 
@@ -162,7 +186,7 @@ def test_a_waiver_at_the_candidate_head_is_honoured_and_named_in_the_payload():
         {'functional-review': {'head': HEAD_MERGED, 'basis': 'operator accepted the stale review'}},
     )
 
-    result = _merge(status, HEAD_MERGED)
+    result = _merge_pre_seam(status, HEAD_MERGED)
 
     assert result['status'] == 'success', result
     assert result['dispatched'] is True
@@ -236,10 +260,15 @@ def test_a_waiver_on_one_step_does_not_admit_a_second_stale_step():
 
 
 def test_an_undeclared_step_with_a_stale_stamp_is_listed_not_refused():
-    """(a) An undeclared stamp is evidence, never an offence."""
+    """(a) An undeclared stamp is evidence, never an offence.
+
+    Drives the PRODUCTION declaration reader: ``finalize-step-sync-baseline``
+    genuinely declares no ``head_dependent`` fact, so at HEAD this merge is refused
+    for the defect itself, not for a missing seam.
+    """
     status = _status({'finalize-step-sync-baseline': HEAD_GATED})
 
-    result = _merge(status, HEAD_MERGED, head_dependence_reader=lambda _step: (False, None))
+    result = _merge_pre_seam(status, HEAD_MERGED)
 
     assert result['status'] == 'success', result
     assert result['dispatched'] is True

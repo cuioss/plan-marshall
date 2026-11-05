@@ -1628,10 +1628,19 @@ _PHASE_6_SKILL = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'phase-6-finali
 #: one embedded inside the structural-refusal decision-log message.
 _OVERRIDE_LABEL_VALUE = re.compile(r'--(?:operator-answer|override-label)\s+\\?"([^"\\]+)\\?"')
 
+#: An option label a prompt DECLARES. Drift between this and the label the grant is
+#: called with is the defect the doc-sync guard exists to catch.
+_DECLARED_OPTION_LABEL = re.compile(r'^\s*- label: "([^"]+)"', re.MULTILINE)
+
 
 def _override_labels_named(path):
     """Every override label ``path`` passes to the grant, in either quote form."""
     return set(_OVERRIDE_LABEL_VALUE.findall(path.read_text(encoding='utf-8')))
+
+
+def _option_labels_declared_in(path):
+    """Every option label ``path`` declares in an ``AskUserQuestion`` prompt block."""
+    return set(_DECLARED_OPTION_LABEL.findall(path.read_text(encoding='utf-8')))
 
 
 def test_the_participation_refusal_publishes_the_labels_the_grant_accepts():
@@ -1650,10 +1659,21 @@ def test_the_participation_refusal_publishes_the_labels_the_grant_accepts():
 
 
 def test_every_override_label_the_documents_name_is_one_the_grant_accepts():
-    """(b) The barrier text and the item-7a hook never name a label the grant refuses."""
+    """(b) Every named override label is a constant member AND a declared option.
+
+    Two drift directions are caught, which is why the declared-label population is
+    part of the assertion:
+
+    * the grant constant drops or renames a label the documents still pass —
+      ``named - accepted``;
+    * a prompt's ``label:`` line is paraphrased while the grant invocation keeps the
+      old spelling (or the other way round) — ``named - declared``. A guard that
+      read only the grant invocations would stay green through exactly that edit.
+    """
     from _cmd_merge_authorization import BARRIER_OVERRIDE_LABELS
 
     accepted = set(BARRIER_OVERRIDE_LABELS)
+    declared = _option_labels_declared_in(_BRANCH_CLEANUP) | _option_labels_declared_in(_PHASE_6_SKILL)
 
     for path in (_BRANCH_CLEANUP, _PHASE_6_SKILL):
         named = _override_labels_named(path)
@@ -1662,4 +1682,9 @@ def test_every_override_label_the_documents_name_is_one_the_grant_accepts():
         assert not drifted, (
             f'{path.name} names override label(s) the grant refuses: {drifted}. '
             f'The grant accepts exactly: {sorted(accepted)}'
+        )
+        undeclared = sorted(named - declared)
+        assert not undeclared, (
+            f'{path.name} passes override label(s) no prompt declares: {undeclared}. '
+            f'The prompt label and the grant value have drifted apart; declared: {sorted(declared)}'
         )
