@@ -62,7 +62,8 @@ def _file(reopen: bool = False) -> dict[str, Any]:
 def _pending() -> list[dict[str, Any]]:
     queried = _findings_core.query_qgate_findings(PLAN_ID, PHASE, resolution='pending')
     assert queried['status'] == 'success', queried
-    return queried['findings']
+    findings: list[dict[str, Any]] = queried['findings']
+    return findings
 
 
 def _records() -> dict[str, dict[str, Any]]:
