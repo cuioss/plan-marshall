@@ -40,6 +40,7 @@ from _build_result import (
     ERROR_EXECUTION_FAILED,
     ERROR_LOG_FILE_FAILED,
     LAUNCH_FAULT_ERRORS,
+    PRE_TOOL_FAULT_ERRORS,
     STATUS_INDETERMINATE,
     STATUS_KILLED,
     STATUS_RUNNING,
@@ -708,7 +709,10 @@ def cmd_run_common(
     **Only a genuine failure reaches the build-failure path.** The two
     NON-FINISHES (``timeout``, ``killed``) and the undetermined outcome
     (``indeterminate``) each get their own branch, and none of them stores
-    findings or synthesises an ``errors[]`` row. That asymmetry is the point: the
+    findings or synthesises an ``errors[]`` row. A PRE-TOOL refusal — the build
+    process stopped before any tool ran, so the result names a member of
+    ``PRE_TOOL_FAULT_ERRORS`` — is re-emitted as itself for the same reason. That
+    asymmetry is the point: the
     build-failure path below asserts the build ran and failed — it stores every
     parsed issue as a finding and, when the parser found none, manufactures a
     synthetic ``build_failure`` row so ``status`` and ``errors[]`` cannot
@@ -776,6 +780,30 @@ def cmd_run_common(
         )
         print(formatter(err_output))
         return 1
+
+    # Handle a PRE-TOOL refusal — the build process stopped before any tool ran.
+    #
+    # This branch precedes the build-failure path for the same reason the launch-
+    # fault branch above does: the failure path asserts that the build ran and
+    # failed, stores findings from a log that holds no per-test rows, and (with
+    # none parsed) manufactures one synthetic ``build_failure`` row. Reporting a
+    # routing fault — a plan tree that would not resolve, two routing flags at
+    # once, an executor that refused the dispatch — through that path turns a
+    # routing fault into a red build with a fabricated failure row. The result
+    # already carries the child's own name, reason and exit code, so they are
+    # re-emitted verbatim and the process exits with the child's own code.
+    if result['status'] == 'error' and str(result.get('error') or '') in PRE_TOOL_FAULT_ERRORS:
+        fault_extra = {name: result[name] for name in ('reason', 'message', 'project_dir') if result.get(name)}
+        fault_output = error_result(
+            error=str(result['error']),
+            exit_code=int(result['exit_code']),
+            duration_seconds=result['duration_seconds'],
+            log_file=log_file,
+            command=command_str,
+            **fault_extra,
+        )
+        print(formatter(fault_output))
+        return int(result['exit_code']) if int(result['exit_code']) > 0 else 1
 
     # Handle a KILL — a stop our own bound did not cause.
     #

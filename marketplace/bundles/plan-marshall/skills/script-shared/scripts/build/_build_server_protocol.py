@@ -952,6 +952,42 @@ LAUNCH_FAULT_ERRORS = _build_result.LAUNCH_FAULT_ERRORS
 
 
 @dataclass(frozen=True)
+class ChildFault:
+    """A PRE-TOOL fault the build process reported before any tool ran.
+
+    The routing and dispatch layer's counterpart of :class:`InnerFault`. These
+    faults carry no ``wrapper`` and no ``project_dir`` because no wrapper was ever
+    looked for: the process refused while resolving the plan's tree, while rejecting
+    the flags, while the executor refused the dispatch, or while no build slot was
+    admitted. What the caller needs is the name, the reason and the exit code — a
+    routing fault is never a red build.
+
+    Which identifiers qualify is :data:`PRE_TOOL_FAULT_ERRORS`'s answer, and only
+    its answer: this docstring names none of them, so adding a member cannot leave a
+    stale list behind here.
+
+    Attributes:
+        error: The refusing process's own error identifier, a member of
+            :data:`PRE_TOOL_FAULT_ERRORS`.
+        reason: The operator-facing reason it rendered — the ``reason:`` line when
+            the emitter wrote one, else the ``message:`` line (the resolution
+            emitters write ``message``).
+        corrective: The ``message:`` line when it says something ``reason`` does
+            not (the executor's pre-spawn refusal puts the rejection CLASS in
+            ``reason`` and the actionable correction in ``message``), else ``None``.
+    """
+
+    error: str
+    reason: str | None = None
+    corrective: str | None = None
+
+
+#: The build process's error identifiers that mean "it refused before any tool ran".
+PRE_TOOL_FAULT_ERRORS = _build_result.PRE_TOOL_FAULT_ERRORS
+"""Error classes carrying no build verdict — no build tool was ever chosen."""
+
+
+@dataclass(frozen=True)
 class LogVerdict:
     """The build wrapper's own verdict, read back from a job log.
 
@@ -1028,6 +1064,20 @@ class LogVerdict:
     project directory it looked in. Without them a routed job reported a bare
     ``build_failed`` and the six landings that hit this could not tell a missing
     wrapper from a daemon fault.
+    """
+
+    child_fault: ChildFault | None = None
+    """The build process's own PRE-TOOL fault, when it refused before any tool ran.
+
+    ``None`` on every result that reached a build tool. When the log names a member
+    of :data:`PRE_TOOL_FAULT_ERRORS`, the process stopped while resolving the tree,
+    rejecting the flags, refusing the dispatch, or waiting for a build slot — so the
+    caller must report that name with its reason and exit code instead of a
+    ``build_failed`` and a synthetic error row. ``build_failed`` deliberately never
+    populates this: it is the tool RAN and failed case.
+
+    No member is listed here: the set is the single statement of which identifiers
+    qualify, and a list beside it drifts the moment a member is added.
     """
 
 
@@ -1108,16 +1158,21 @@ def read_log_verdict(log_file: str) -> LogVerdict | None:
     """Read the build wrapper's emitted TOON verdict back from a job log.
 
     Pure with respect to any daemon/client state — it only reads the log the
-    supervisor already streamed. Eleven top-level (column-0) keys are parsed:
+    supervisor already streamed. The top-level (column-0) keys parsed are
     ``status:``, ``exit_code:``, ``tests_run:``, the applied-bound triple
     ``timeout_used_seconds:`` / ``timeout_source:`` / ``command_key:``, the
     launch-fault quadruple ``error:`` / ``reason:`` / ``wrapper:`` /
-    ``project_dir:``, and the ``errors[N]{...}:`` table header, whose indented
-    rows are then collected as that table's body. The launch-fault quadruple is
-    read so an inner fault reaches the consumer as itself rather than as a bare
-    build failure; it is attached as :class:`InnerFault` only for the two
-    identifiers that mean the command never ran. Every other key is ignored. An
-    applied-bound key that is
+    ``project_dir:``, ``message:``, and the ``errors[N]{...}:`` table header, whose
+    indented rows are then collected as that table's body. The list above IS the
+    contract; no count is stated beside it, because a total kept by hand drifts.
+    The launch-fault
+    quadruple is read so an inner fault reaches the consumer as itself rather than
+    as a bare build failure; it is attached as :class:`InnerFault` only for the two
+    identifiers that mean the command never ran. ``message:`` is read because a
+    PRE-TOOL emitter may render its reason there instead (the resolution emitters
+    write ``message:`` and no ``reason:``), and the reader prefers ``reason:`` with
+    ``message:`` as the fallback — see :class:`ChildFault`. Every other key is
+    ignored. An applied-bound key that is
     absent, empty or (for the bound) not a positive integer reads as ``None``. The LAST occurrence of each wins, because the wrapper
     emits its result TOON after any progress output it already wrote to the same
     log.
@@ -1138,12 +1193,17 @@ def read_log_verdict(log_file: str) -> LogVerdict | None:
     measurement. ``tests_run: 0`` is kept, because "executed no tests" is a real
     fact and a different one from "stated no count".
 
+    A log carrying no TOON ``status:`` line falls back to
+    :func:`_json_log_verdict`, because ``--format json`` is a supported caller
+    request: without that fallback a JSON-formatted routed result reads as a build
+    failure. The TOON path never pays for it.
+
     Args:
         log_file: Path to the job log the supervisor streamed the child into.
 
     Returns:
         The parsed :class:`LogVerdict`, or ``None`` when the log is missing,
-        unreadable, or carries no top-level ``status:`` line at all.
+        unreadable, or states no verdict in either format.
     """
     status: str | None = None
     exit_code: int | None = None
@@ -1155,6 +1215,7 @@ def read_log_verdict(log_file: str) -> LogVerdict | None:
     fault_reason: str | None = None
     fault_wrapper: str | None = None
     fault_project_dir: str | None = None
+    fault_message: str | None = None
     errors: tuple[dict[str, Any], ...] = ()
     # Non-None only while an `errors[N]{...}:` header has been seen and its
     # indented rows are still being collected.
@@ -1215,6 +1276,8 @@ def read_log_verdict(log_file: str) -> LogVerdict | None:
                     fault_error = _toon_scalar(line) or None
                 elif line.startswith('reason:'):
                     fault_reason = _toon_scalar(line) or None
+                elif line.startswith('message:'):
+                    fault_message = _toon_scalar(line) or None
                 elif line.startswith('wrapper:'):
                     fault_wrapper = _toon_scalar(line) or None
                 elif line.startswith('project_dir:'):
@@ -1225,7 +1288,7 @@ def read_log_verdict(log_file: str) -> LogVerdict | None:
     except OSError:
         return None
     if status is None:
-        return None
+        return _json_log_verdict(log_file)
     fault = None
     if fault_error in LAUNCH_FAULT_ERRORS:
         fault = InnerFault(
@@ -1234,6 +1297,11 @@ def read_log_verdict(log_file: str) -> LogVerdict | None:
             wrapper=fault_wrapper,
             project_dir=fault_project_dir,
         )
+    child_fault = None
+    if fault_error in PRE_TOOL_FAULT_ERRORS:
+        reason = fault_reason or fault_message
+        corrective = fault_message if fault_message and fault_message != reason else None
+        child_fault = ChildFault(error=fault_error, reason=reason, corrective=corrective)
     return LogVerdict(
         status=status,
         exit_code=exit_code,
@@ -1243,4 +1311,119 @@ def read_log_verdict(log_file: str) -> LogVerdict | None:
         timeout_source=timeout_source,
         command_key=command_key,
         fault=fault,
+        child_fault=child_fault,
+    )
+
+
+def _last_json_object(content: str) -> dict[str, Any] | None:
+    """Return the LAST JSON object in ``content`` that carries a string ``status``.
+
+    A log holds whatever the child wrote before its result — the wrapper's own
+    ``[EXEC]`` line, progress output, a supervisor banner — and it can hold JSON
+    after it too (a trailing empty object, a footer). So the scan walks every ``{``
+    and keeps the last object that both decodes AND states a verdict: "the last
+    object that parses" would let a verdict be discarded by any later object, which
+    is the collapse this fallback exists to prevent.
+
+    Args:
+        content: The whole job log.
+
+    Returns:
+        The last decoded JSON object carrying a ``status``, or ``None`` when the log
+        holds none.
+    """
+    decoder = json.JSONDecoder()
+    found: dict[str, Any] | None = None
+    offset = 0
+    while True:
+        start = content.find('{', offset)
+        if start < 0:
+            return found
+        try:
+            candidate, end = decoder.raw_decode(content, start)
+        except ValueError:
+            offset = start + 1
+            continue
+        if isinstance(candidate, dict) and isinstance(candidate.get('status'), str):
+            found = candidate
+        offset = end
+
+
+def _json_log_verdict(log_file: str) -> LogVerdict | None:
+    """Read a wrapper verdict emitted as JSON, for a log with no TOON ``status:`` line.
+
+    ``--format json`` is a supported caller request, and the wrapper honours it: the
+    child's result is then a JSON object rather than column-0 TOON keys. The line
+    scanner finds no ``status:`` in such a log, so before this existed the whole
+    routed job fell through to ``build_failed`` with the synthetic row — the same
+    collapse this module fixes for TOON, surviving in the other output format.
+
+    Every field the TOON path reads is read here too, with the same guards: the
+    applied-bound triple matters because a JSON ``timeout`` or ``killed`` result
+    without it names no bound, and the bound is what tells a reader whose number
+    fired.
+
+    Only the failure path pays for it: this runs after the line scan has already
+    found nothing, and it re-reads the log because that case is rare and a partly
+    parsed file is cheaper than holding every log in memory.
+
+    Args:
+        log_file: Path to the job log.
+
+    Returns:
+        The verdict the JSON object states, or ``None`` when the log holds no JSON
+        object carrying a ``status``.
+    """
+    try:
+        with open(log_file, encoding='utf-8', errors='replace') as handle:
+            content = handle.read()
+    except OSError:
+        return None
+    result = _last_json_object(content)
+    if result is None:
+        return None
+    status = result.get('status')
+    if not isinstance(status, str):
+        return None
+
+    exit_code = result.get('exit_code')
+    exit_code = exit_code if isinstance(exit_code, int) and not isinstance(exit_code, bool) else None
+    tests_run = result.get('tests_run')
+    tests_run = tests_run if isinstance(tests_run, int) and not isinstance(tests_run, bool) and tests_run >= 0 else None
+    bound = result.get('timeout_used_seconds')
+    timeout_used_seconds = bound if isinstance(bound, int) and not isinstance(bound, bool) and bound > 0 else None
+    timeout_source = result.get('timeout_source')
+    timeout_source = timeout_source if isinstance(timeout_source, str) and timeout_source else None
+    command_key = result.get('command_key')
+    command_key = command_key if isinstance(command_key, str) and command_key else None
+    rows = result.get('errors')
+    errors = tuple(row for row in rows if isinstance(row, dict)) if isinstance(rows, list) else ()
+    error_name = result.get('error')
+    error_name = error_name if isinstance(error_name, str) else None
+    reason = result.get('reason') if isinstance(result.get('reason'), str) else None
+    message = result.get('message') if isinstance(result.get('message'), str) else None
+
+    fault = None
+    if error_name in LAUNCH_FAULT_ERRORS:
+        fault = InnerFault(
+            error=error_name,
+            reason=reason,
+            wrapper=result.get('wrapper') if isinstance(result.get('wrapper'), str) else None,
+            project_dir=result.get('project_dir') if isinstance(result.get('project_dir'), str) else None,
+        )
+    child_fault = None
+    if error_name in PRE_TOOL_FAULT_ERRORS:
+        preferred = reason or message
+        corrective = message if message and message != preferred else None
+        child_fault = ChildFault(error=error_name, reason=preferred, corrective=corrective)
+    return LogVerdict(
+        status=status,
+        exit_code=exit_code,
+        tests_run=tests_run,
+        errors=errors,
+        timeout_used_seconds=timeout_used_seconds,
+        timeout_source=timeout_source,
+        command_key=command_key,
+        fault=fault,
+        child_fault=child_fault,
     )
