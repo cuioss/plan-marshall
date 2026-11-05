@@ -562,3 +562,65 @@ def test_thread_comment_connections_do_select_the_placement_fields():
     ):
         for field in _REVIEW_COMMENT_ONLY_FIELDS:
             assert field in query, f'{name} does not select the placement field {field}'
+
+
+def test_inline_records_publish_the_placement_the_producer_reads(monkeypatch):
+    """The REAL fetch path must not drop ``reply_to_id`` / ``thread_reply``.
+
+    The producer decides participation from those two keys. The result projection
+    rebuilds every record from an explicit key list, so a field added at the parse site
+    but omitted there never reaches production while a stubbed-provider test still
+    passes. This drives the real parser over a two-comment thread: the opening comment
+    reports no placement and falls back to its review's commit; the second is a reply
+    placed at its own commit.
+    """
+    opening = {
+        'id': 'PRRC_opening',
+        'body': 'opening comment',
+        'author': {'login': 'coderabbitai[bot]'},
+        'createdAt': '2026-03-01T10:00:00Z',
+        'updatedAt': '2026-03-01T10:00:00Z',
+        'pullRequestReview': {'commit': {'oid': 'A' * 40}},
+    }
+    reply = {
+        'id': 'PRRC_reply',
+        'body': 'reply in the thread',
+        'author': {'login': 'coderabbitai[bot]'},
+        'createdAt': '2026-03-01T12:00:00Z',
+        'updatedAt': '2026-03-01T12:00:00Z',
+        'replyTo': {'id': 'PRRC_opening'},
+        'commit': {'oid': 'B' * 40},
+    }
+    payload = {
+        'repository': {
+            'pullRequest': {
+                'reviewThreads': {
+                    'nodes': [
+                        {
+                            'id': 'PRRT_placement',
+                            'isResolved': False,
+                            'path': 'src/foo.py',
+                            'line': 7,
+                            'comments': {'nodes': [opening, reply]},
+                        }
+                    ]
+                },
+                'reviews': {'nodes': []},
+                'comments': {'nodes': []},
+            }
+        }
+    }
+    monkeypatch.setattr(github_ops, 'check_auth', lambda: (True, ''))
+    monkeypatch.setattr(github_ops, 'get_repo_info', lambda: ('cuioss', 'plan-marshall'))
+    monkeypatch.setattr(github_ops, 'run_graphql', lambda query, variables: (0, payload, ''))
+
+    result = github_ops.fetch_pr_comments_data(321)
+
+    assert result['status'] == 'success'
+    by_id = {record['id']: record for record in result['comments']}
+    assert by_id['PRRC_opening']['thread_reply'] is False
+    assert by_id['PRRC_opening']['reply_to_id'] == ''
+    assert by_id['PRRC_opening']['commit_id'] == 'a' * 40
+    assert by_id['PRRC_reply']['thread_reply'] is True
+    assert by_id['PRRC_reply']['reply_to_id'] == 'PRRC_opening'
+    assert by_id['PRRC_reply']['commit_id'] == 'b' * 40

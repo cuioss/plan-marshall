@@ -24,6 +24,7 @@ PLAN_IDS = (
     'ingest-body-under-cap',
     'ingest-clamp',
     'ingest-cut-tail',
+    'ingest-cut-then-short',
     'ingest-empty',
     'ingest-idem',
     'ingest-mixed',
@@ -184,6 +185,36 @@ def test_ingest_promotes_a_body_under_the_cap_byte_identically_with_no_flag(plan
     assert record['body'] == body
     assert not record.get('truncated')
     assert 'original_length' not in record
+
+
+def test_a_later_promotion_that_no_longer_cuts_clears_the_stale_flags(plan_context):
+    """A rewritten short body must not keep reporting the earlier cut.
+
+    ``update_jsonl`` merges and never deletes, so the truncation facts an earlier pass
+    wrote would survive a rewrite unless ingest explicitly resets them. A record that
+    claims a cut its current body does not have is the same defect as a silent cut.
+    """
+    pid = 'ingest-cut-then-short'
+    add_finding(plan_id=pid, finding_type='bug', title='t', detail='ph', raw_input={'body': 'x' * 9000})
+
+    assert ingest_findings(pid)['promoted'] == 1
+    cut = query_findings(pid)['findings'][0]
+    assert cut['truncated'] is True
+    assert cut['original_length'] == 9000
+
+    _core.update_finding_text(
+        pid,
+        cut['hash_id'],
+        detail=cut['detail'],
+        raw_input={'body': 'now a short body'},
+    )
+    assert ingest_findings(pid)['promoted'] == 1
+
+    record = query_findings(pid)['findings'][0]
+    assert record['body'] == 'now a short body'
+    assert record['truncated'] is False
+    assert record['original_length'] == 0
+    assert record['truncated_fields'] == {}
 
 
 # =============================================================================

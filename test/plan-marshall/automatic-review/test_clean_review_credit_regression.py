@@ -532,9 +532,9 @@ def test_a_non_reviewed_coverage_marker_is_not_a_re_review_answer(plan_context, 
 def test_a_present_but_unreadable_coverage_marker_never_credits(plan_context, monkeypatch):
     """A marker whose payload cannot be parsed is a claim nobody can evaluate, so it never credits.
 
-    Presence is tested on the marker NAME, not on the parsing pattern: a body carrying
-    `final_review_risk_coverage` with a broken payload must not be read as "no marker"
-    and fall through to a ledger arm that would credit it.
+    Presence is tested on the marker's HTML-comment opener, not on the parsing pattern:
+    a body carrying the opener with a broken payload must not be read as "no marker" and
+    fall through to a ledger arm that would credit it.
     """
     plan_id = 'crr-coverage-unreadable'
     body = f'<!-- final_review_risk_coverage: not-json -->\n{_COVERAGE_PREFIX}{{broken'
@@ -543,3 +543,21 @@ def test_a_present_but_unreadable_coverage_marker_never_credits(plan_context, mo
     find_result = _find(plan_context, plan_id)
 
     assert find_result['participated_bots'] == []
+
+
+def test_prose_mentioning_the_marker_name_is_not_a_marker(plan_context, monkeypatch):
+    """⛔ A review body that merely names the marker is decided by its own reported commit.
+
+    The identifier appears in prose and in code spans in this very repository, so a
+    presence test on the bare name would read such a body as an unreadable marker and
+    discard the provider's `commit_id` — the stronger evidence.
+    """
+    plan_id = 'crr-coverage-prose-mention'
+    body = 'This change makes `final_review_risk_coverage` the one marker the gate reads.'
+    comment = _comment('cr-review', body)
+    comment.update({'kind': 'review_body', 'commit_id': _HEAD_SHA})
+    _stub_provider(monkeypatch, [comment])
+
+    find_result = _find(plan_context, plan_id)
+
+    assert find_result['participated_bots'] == [{'bot_kind': _BOT, 'evidence_kind': 'review_body'}]

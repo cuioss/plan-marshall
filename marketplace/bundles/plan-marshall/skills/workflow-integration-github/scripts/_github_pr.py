@@ -391,8 +391,13 @@ def bot_claimed_sha_matches_head(body: str, head_sha: str) -> bool:
 #: field set.
 _REVIEW_COVERAGE_MARKER = 'final_review_risk_coverage'
 _REVIEW_COVERAGE_REVIEWED_KIND = 'reviewed'
+#: The HTML-comment OPENER the marker appears in. Presence is tested against this,
+#: not against the bare identifier: a review body may MENTION the marker name in
+#: prose, and treating that as a present-but-unreadable marker would discard the
+#: provider's own `commit_id` — real evidence — in favour of a claim nobody made.
+_REVIEW_COVERAGE_OPENING = re.compile(r'<!--\s*' + re.escape(_REVIEW_COVERAGE_MARKER))
 _REVIEW_COVERAGE_PATTERN = re.compile(
-    re.escape(_REVIEW_COVERAGE_MARKER) + r':\s*(\{.*?\})\s*(?:-->|$)',
+    r'<!--\s*' + re.escape(_REVIEW_COVERAGE_MARKER) + r':\s*(\{.*?\})\s*(?:-->|$)',
     re.DOTALL,
 )
 
@@ -400,16 +405,16 @@ _REVIEW_COVERAGE_PATTERN = re.compile(
 def _coverage_payload(body: str) -> tuple[bool, dict | None]:
     """Return ``(present, fields)`` for a review-coverage marker in ``body``.
 
-    ``present`` says the marker NAME occurs at all — it is tested on the literal, not
-    on the parsing pattern, so a marker whose payload is missing or malformed is still
-    PRESENT. ``fields`` is its parsed JSON object, or ``None`` when the payload is
-    absent or unreadable. The pair keeps "no marker" and "marker that cannot be read"
-    distinguishable, which is exactly the distinction a fail-closed consumer needs: the
-    first is no claim, the second is a claim nobody can evaluate — and the second must
-    never fall through to an arm that would credit.
+    ``present`` says the marker's HTML-comment OPENER occurs at all — it is tested on
+    the opener, not on the bare identifier, so a review body that merely mentions the
+    name in prose is not a claim. ``fields`` is its parsed JSON object, or ``None`` when
+    the payload is absent or unreadable. The pair keeps "no marker" and "marker that
+    cannot be read" distinguishable, which is exactly the distinction a fail-closed
+    consumer needs: the first is no claim, the second is a claim nobody can evaluate —
+    and the second must never fall through to an arm that would credit.
     """
     text = body or ''
-    if _REVIEW_COVERAGE_MARKER not in text:
+    if _REVIEW_COVERAGE_OPENING.search(text) is None:
         return False, None
     match = _REVIEW_COVERAGE_PATTERN.search(text)
     if match is None:

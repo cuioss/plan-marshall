@@ -115,6 +115,28 @@ def _truncation_fields(clamps: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+#: The keys :func:`_truncation_fields` writes. Named once, because a later promotion
+#: has to know whether an EXISTING record carries them.
+_TRUNCATION_KEYS: tuple[str, ...] = ('truncated', 'original_length', 'truncated_fields')
+
+
+def _promotion_payload(
+    payload: dict[str, Any], clamps: list[dict[str, Any]], existing: dict[str, Any]
+) -> dict[str, Any]:
+    """The top-level fields this pass writes, including the truncation facts.
+
+    ``update_jsonl`` MERGES, it never deletes, so a record that was cut by an earlier
+    pass keeps its flags even when the current ``raw_input`` fits. When this pass cuts
+    nothing and the record already carries the keys, they are RESET rather than left
+    stale — a record must never report a cut that does not apply to its current body.
+    A record that never carried the keys receives none of them.
+    """
+    promoted = {**payload, **_truncation_fields(clamps)}
+    if not clamps and any(key in existing for key in _TRUNCATION_KEYS):
+        promoted.update({'truncated': False, 'original_length': 0, 'truncated_fields': {}})
+    return promoted
+
+
 def ingest_findings(plan_id: str, schema: str = FINDING_SCHEMA) -> dict[str, Any]:
     """Run one batched ingestion pass over every pending finding in the ledger.
 
@@ -144,7 +166,7 @@ def ingest_findings(plan_id: str, schema: str = FINDING_SCHEMA) -> dict[str, Any
     for record in query_findings(plan_id, resolution='pending')['findings']:
         outcome, payload, record_clamped, record_clamps = _classify(record, schema)
         if outcome == 'promoted':
-            promoted_payload = {**payload, **_truncation_fields(record_clamps)}
+            promoted_payload = _promotion_payload(payload, record_clamps, record)
             if promoted_payload:
                 update_jsonl(_store_findings_path(store, record['type']), record['hash_id'], promoted_payload)
             promoted += 1
@@ -161,7 +183,7 @@ def ingest_findings(plan_id: str, schema: str = FINDING_SCHEMA) -> dict[str, Any
         for record in query_qgate_findings(plan_id, phase, resolution='pending')['findings']:
             outcome, payload, record_clamped, record_clamps = _classify(record, schema)
             if outcome == 'promoted':
-                promoted_payload = {**payload, **_truncation_fields(record_clamps)}
+                promoted_payload = _promotion_payload(payload, record_clamps, record)
                 if promoted_payload:
                     update_jsonl(_store_qgate_path(store, phase), record['hash_id'], promoted_payload)
                 promoted += 1

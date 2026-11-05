@@ -941,6 +941,12 @@ def fetch_pr_comments_data(pr_number: int, unresolved_only: bool = False) -> dic
             'created_at': c['created_at'],
             'updated_at': c['updated_at'],
             'commit_id': c['commit_id'],
+            # Placement facts declared on the review-comment records. They default to
+            # the "no placement reported" shape so the review-body and issue-comment
+            # records carry the same key set, and the projection never DROPS a field
+            # the producer reads.
+            'reply_to_id': c.get('reply_to_id', ''),
+            'thread_reply': c.get('thread_reply', False),
         }
         for c in comments
     ]
