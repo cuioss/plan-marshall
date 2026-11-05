@@ -503,12 +503,20 @@ class TestThreeLayerCorrections:
 
     def test_the_dispatch_line_offers_the_inline_fallback(self):
         section = _template_section()
+        dispatch_line = next(
+            (line for line in section.splitlines() if line.startswith('- **Dispatch:**')),
+            '',
+        )
 
+        assert dispatch_line, 'the template carries no Dispatch line'
         assert (
             '{one read-only leaf per landing | the orchestrator inline, because the dispatch did not return}'
-        ) in section, (
+        ) in dispatch_line, (
             "the template's Dispatch line does not carry the same choice the section preamble does, so a "
             'dispatch that did not return has no legal value to record'
+        )
+        assert 'why this landing got its own leaf, or why the dispatch did not return' in dispatch_line, (
+            'the Dispatch reason clause does not cover the inline arm'
         )
 
     def test_step_four_hands_the_analysis_to_the_single_report_write(self):

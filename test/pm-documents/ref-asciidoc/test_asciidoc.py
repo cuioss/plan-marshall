@@ -975,6 +975,9 @@ def test_verify_links_nul_in_a_target_is_an_issue_not_an_abort(tmp_path):
     assert result['status'] == 'failure'
     assert result['data']['files_processed'] == 1
     assert result['data']['issues'], 'the unresolvable target must be reported on its link'
+    assert result['data']['issues'][0]['type'] == 'unreadable', (
+        'an unresolvable target was never examined, so it is not `broken`'
+    )
 
 
 def test_verify_links_nested_longer_delimiter_hides_its_inner_content():
