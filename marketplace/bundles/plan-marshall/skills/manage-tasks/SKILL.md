@@ -381,7 +381,7 @@ compared on **blast radius**:
 
 | Side | Source | What it yields |
 |---|---|---|
-| The row | `args`, at `--command-args` | The canonical it ran and its scope: the non-flag tokens that follow it, plus the value of a KNOWN scope-bearing flag (maven `-pl` / `--projects`, gradle `-p`, npm `-w` / `--workspace`). No scope tokens AND no flag means whole-tree; any OTHER flag makes the row unreadable, never whole-tree |
+| The row | `args`, at `--command-args` | The canonical it ran and its scope: the non-flag tokens that follow it, plus the value of a KNOWN scope-bearing flag (maven `-pl` / `--projects`, gradle `-p`, npm `-w` / `--workspace`). A known non-narrowing companion (`-am` / `--also-make`) is ignored. No scope tokens AND no flag means whole-tree; any OTHER flag makes the row unreadable, never whole-tree |
 | The row | `outcome.tests_run` + `outcome.tests_population` | Whether it MEASURED that it executed zero tests |
 | The change | the live plan footprint via `_test_scope_divergence.resolve_test_scope`, with the registered targets and the bundle modules from the shared helpers `_test_scope_targets.resolve_registered_targets` and `resolve_bundle_modules` | The module set a scoped run must cover, and whether only a whole-tree run will do |
 
@@ -414,9 +414,12 @@ arguments and the executor's is therefore gone. A known scope-bearing flag
 contributes its value to the scope. Every other flag makes the row **unreadable**
 — the `-k foo` of a test filter and the `--timeout 900` of the executor are
 indistinguishable there, and either read as "no scope" would assert whole-tree
-over a run that may have been narrowed. An unreadable row contributes no coverage
-and is never labelled whole-tree; the inability is recorded, and no requirement
-is credited to it.
+over a run that may have been narrowed. The one exception is a flag known NOT to
+narrow the run — maven's `-am` / `--also-make`, which only adds the selected
+modules' dependencies and is always emitted beside `-pl`: ignoring it cannot
+widen a claim, so the row stays readable and its `-pl` scope is still judged. An
+unreadable row contributes no coverage and is never labelled whole-tree; the
+inability is recorded, and no requirement is credited to it.
 
 **What the change requires is DERIVED, not fixed.** A non-empty footprint
 requires the `test` analysis unconditionally (markdown under the bundle tree is a
@@ -450,7 +453,7 @@ owners:
 |---|---|---|
 | `analysis_vocabulary_unimportable` | The canonical→analyses map (`_build_examined`) could not be imported | **This check is broken** — a deployment or `PYTHONPATH` fault, not a quiet pass. |
 | `required_coverage_unknown` | The live footprint or the registered-target set could not be resolved | The plan state — a worktree not yet materialised, or an unreadable marketplace root. |
-| `build_scope_unreadable` | Rows were read, but none carries a usable `--command-args` or names a canonical in the vocabulary | The producer — something wrote rows the dispatch boundary would not have written. |
+| `build_scope_unreadable` | No row carries a usable `--command-args`, or every canonical it names is outside the vocabulary, or a row carries a flag that is neither a known scope-bearing one (`-pl`/`--projects`, `-p`, `-w`/`--workspace`) nor the known non-narrowing `-am`/`--also-make` | The producer when no row carries `--command-args` (something wrote rows the dispatch boundary would not have written); otherwise the argv's lost quoting, which is why an unknown flag is unreadable rather than guessed at. |
 
 ⛔ An unresolvable footprint is an **inability**, never an empty one. Rendering it
 as "the change requires nothing" would make every row cover it, re-opening the

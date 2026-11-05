@@ -301,8 +301,10 @@ REASON_REQUIRED_COVERAGE_UNKNOWN = 'required_coverage_unknown'
 REASON_VOCABULARY_UNIMPORTABLE = 'analysis_vocabulary_unimportable'
 #: ``scope_cross_check_reason`` when no candidate row's ``args`` carries a
 #: readable ``--command-args``, or every canonical it names is outside the known
-#: vocabulary. The rows were read and said nothing usable — distinct from a row
-#: that said something and was refuted.
+#: vocabulary, or a row carries a flag that is neither a known scope-bearing one
+#: nor a known non-narrowing companion — so its blast radius cannot be placed
+#: inside or outside the command's lost quoting. The rows were read and said
+#: nothing usable — distinct from a row that said something and was refuted.
 REASON_SCOPE_UNREADABLE = 'build_scope_unreadable'
 #: ``stale`` reason (and ``scope_cross_check_reason``). THE refusal this
 #: dimension exists to make.
@@ -351,6 +353,15 @@ _SCOPE_FLAGS: dict[str, int] = {
     '-w': 1,
     '--workspace': 1,
 }
+
+#: Flags that are KNOWN NOT to narrow the run, so they neither contribute scope
+#: nor make the row unreadable. Each is a zero-arity companion of a scope flag the
+#: tool's resolved executable emits next to it: maven's ``-am`` / ``--also-make``
+#: is always emitted beside ``-pl`` (:mod:`_maven_cmd_discover`), and it only
+#: ADDS the selected modules' dependencies. Ignoring it cannot create a
+#: whole-tree claim: the ``-pl`` value beside it still names the scope, and
+#: without ``-pl`` the row is scoped to whatever the invocation already built.
+_SCOPE_NEUTRAL_FLAGS: frozenset[str] = frozenset({'-am', '--also-make'})
 
 
 @dataclass(frozen=True)
@@ -579,7 +590,10 @@ def parse_row_scope(entry: dict[str, Any]) -> RowScope | None:
     quoting — an unknown flag might be narrowing the build (``-k foo``,
     ``-Dtest=…``) or might be the executor's own (``--timeout``), and reading
     either as whole-tree is the false-green direction. The fail direction is an
-    inability that passes with its reason recorded, never a coverage credit.
+    inability that passes with its reason recorded, never a coverage credit. The
+    one exception is a KNOWN non-narrowing companion (:data:`_SCOPE_NEUTRAL_FLAGS`,
+    maven's ``-am`` / ``--also-make``): it provably cannot narrow, so it is
+    ignored rather than making the row unreadable.
 
     ``command`` is deliberately not consulted as a fallback — see the module
     docstring for why a build-tool-specific command line cannot be read for scope
@@ -610,6 +624,9 @@ def parse_row_scope(entry: dict[str, Any]) -> RowScope | None:
     index = 0
     while index < len(rest):
         token = rest[index]
+        if token in _SCOPE_NEUTRAL_FLAGS:
+            index += 1
+            continue
         if token.startswith('-'):
             name, separator, inline = token.partition('=')
             arity = _SCOPE_FLAGS.get(name)
@@ -626,7 +643,13 @@ def parse_row_scope(entry: dict[str, Any]) -> RowScope | None:
                 index += arity
             if not all(values):
                 return None
-            scope.extend(part for value in values for part in value.split(',') if part)
+            parts = [part for value in values for part in value.split(',') if part]
+            if not parts:
+                # ``-pl=`` / ``-pl=,`` names no scope at all. Returning an empty
+                # tuple here would assert whole-tree on the back of a flag that was
+                # meant to narrow — the one direction this reader must never take.
+                return None
+            scope.extend(parts)
         elif token:
             payload.append(token)
         index += 1

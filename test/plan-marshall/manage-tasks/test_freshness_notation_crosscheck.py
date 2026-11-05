@@ -705,9 +705,14 @@ def test_a_canonical_outside_the_vocabulary_is_undetermined_not_refuted(
         ('run --command-args module-tests --projects mod-a,mod-b', ('module-tests', ('mod-a', 'mod-b'))),
         ('run --command-args module-tests -pl=mod-a', ('module-tests', ('mod-a',))),
         ('run --command-args verify plan-marshall -pl mod-a', ('verify', ('plan-marshall', 'mod-a'))),
+        # The KNOWN non-narrowing companion maven emits beside ``-pl`` is ignored,
+        # so the resolved module row stays scoped instead of unreadable.
+        ('run --command-args package -pl consumer -am', ('package', ('consumer',))),
+        ('run --command-args package -pl consumer --also-make', ('package', ('consumer',))),
         # An UNKNOWN flag is neither whole-tree nor a scope: it is unreadable.
         ('run --command-args module-tests -k foo', None),
         ('run --command-args module-tests -pl', None),
+        ('run --command-args module-tests -pl=,', None),
     ],
 )
 def test_parse_row_scope_never_reads_an_unreadable_row_as_whole_tree(args, expected) -> None:
@@ -857,9 +862,10 @@ def test_the_scope_flag_registry_names_the_flags_each_build_tool_carries() -> No
     """The registry is explicit, so a flag cannot become "scope" by accident.
 
     Maven's ``-pl`` / ``--projects`` is the minimum the plan names; Gradle's ``-p``
-    and npm's ``-w`` / ``--workspace`` select the same blast radius. Asserting the
-    exact set keeps an accidental addition (a test filter, a verbosity flag) from
-    being read as a module scope.
+    and npm's ``-w`` / ``--workspace`` select the same blast radius. The neutral
+    set holds only flags that provably cannot narrow. Asserting both exact sets
+    keeps an accidental addition (a test filter, a verbosity flag) from being read
+    as a module scope — and keeps the neutral set from growing into a hole.
     """
     assert crosscheck._SCOPE_FLAGS == {
         '-pl': 1,
@@ -868,3 +874,21 @@ def test_the_scope_flag_registry_names_the_flags_each_build_tool_carries() -> No
         '-w': 1,
         '--workspace': 1,
     }
+    assert crosscheck._SCOPE_NEUTRAL_FLAGS == frozenset({'-am', '--also-make'})
+
+
+def test_the_resolved_maven_module_executable_is_read_as_a_narrow_scope() -> None:
+    """The executable the Maven resolver emits for a fixture module is scoped, not whole-tree.
+
+    ``_maven_cmd_discover`` emits ``package -pl {module} -am`` for a non-root
+    module. That is the exact shape the consumer saw credited as whole-tree, and
+    after the fix it yields the module as the scope and is inadequate for a
+    whole-tree change.
+    """
+    row = _build_entry(args=_args_for('package -pl consumer -am'), outcome=_outcome_for(120))
+
+    parsed = crosscheck.parse_row_scope(row)
+
+    assert parsed is not None
+    assert (parsed.canonical, parsed.scope_tokens) == ('package', ('consumer',))
+    assert crosscheck._scope_adequate(parsed, _required(whole_tree=True)) is False
