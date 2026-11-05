@@ -1610,3 +1610,56 @@ def test_the_consequence_knob_flag_admits_only_the_two_declared_values():
         parser.parse_args(['consequence-text', '--final-merge-without-asking', 'maybe'])
 
     assert exc.value.code == 2
+
+
+# --------------------------------------------------------------------------- #
+# PLAN-LB-107 D3 — the operator prompt is built from the labels the grant accepts
+# --------------------------------------------------------------------------- #
+#
+# The barrier's prompt named its override options in PROSE while ``merge-authorization
+# grant`` validated against a constant, so the two could drift and an operator answer
+# copied from the prompt could be refused. The gate now publishes the constant's
+# labels in its participation refusal, and the documents tell the agent to take them
+# verbatim. These two cases pin both halves.
+
+_PHASE_6_SKILL = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'phase-6-finalize' / 'SKILL.md'
+
+#: A grant's two operator flags carry the override label. The escaped variant is the
+#: one embedded inside the structural-refusal decision-log message.
+_OVERRIDE_LABEL_VALUE = re.compile(r'--(?:operator-answer|override-label)\s+\\?"([^"\\]+)\\?"')
+
+
+def _override_labels_named(path):
+    """Every override label ``path`` passes to the grant, in either quote form."""
+    return set(_OVERRIDE_LABEL_VALUE.findall(path.read_text(encoding='utf-8')))
+
+
+def test_the_participation_refusal_publishes_the_labels_the_grant_accepts():
+    """(a) The refusal carries the constant's labels so a prompt can be built from it."""
+    from _cmd_merge_authorization import BARRIER_OVERRIDE_LABELS
+
+    runner = _Runner()
+
+    result = _merge(_CLEAN_VERDICT, runner, participation=_PARTICIPATION_ABSENT)
+
+    assert runner.calls == []
+    assert result['error'] == gate.MERGE_PARTICIPATION_UNPROVEN
+    assert result['authorizable'] is True
+    assert result['override_options'] == list(BARRIER_OVERRIDE_LABELS)
+    assert len(result['override_options']) == len(BARRIER_OVERRIDE_LABELS) == 2
+
+
+def test_every_override_label_the_documents_name_is_one_the_grant_accepts():
+    """(b) The barrier text and the item-7a hook never name a label the grant refuses."""
+    from _cmd_merge_authorization import BARRIER_OVERRIDE_LABELS
+
+    accepted = set(BARRIER_OVERRIDE_LABELS)
+
+    for path in (_BRANCH_CLEANUP, _PHASE_6_SKILL):
+        named = _override_labels_named(path)
+        assert named, f'{path.name} names no override label — the guard would pass vacuously'
+        drifted = sorted(named - accepted)
+        assert not drifted, (
+            f'{path.name} names override label(s) the grant refuses: {drifted}. '
+            f'The grant accepts exactly: {sorted(accepted)}'
+        )
