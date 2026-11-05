@@ -125,30 +125,39 @@ def _promotion_payload(
 ) -> dict[str, Any]:
     """The top-level fields this pass writes, including the truncation facts.
 
-    ``update_jsonl`` MERGES, it never deletes, so a record that was cut by an earlier
-    pass keeps its flags even when the current ``raw_input`` fits. The reset is
-    PER FIELD, because a partial replacement leaves the fields it omits in place: a
-    record whose truncated ``body`` is untouched by a pass that only rewrites
-    ``summary`` still holds a cut body, so its ``truncated_fields['body']`` entry must
-    survive. A field this pass DID replace without cutting loses its entry. A record
-    that never carried the keys receives none of them.
+    ``update_jsonl`` MERGES, it never deletes, so a record cut by an earlier pass keeps
+    its flags even when the current ``raw_input`` fits. The record's per-field map is
+    therefore REBUILT on every promotion from three sources:
+
+    - a field this pass CUT gets this pass's original length;
+    - a field this pass REPLACED without cutting loses its entry (it now fits);
+    - a field this pass did not mention at all keeps its earlier entry — it still holds
+      the cut text.
+
+    That holds whether or not this pass cut anything, so a pass that cuts ``summary``
+    while leaving an earlier cut ``body`` in place reports both. A record that has never
+    been cut and cuts nothing receives none of the keys.
     """
-    promoted = {**payload, **_truncation_fields(clamps)}
-    if clamps:
-        return promoted
     existing_fields = existing.get('truncated_fields')
-    if not isinstance(existing_fields, dict) or not existing_fields:
-        if any(key in existing for key in _TRUNCATION_KEYS):
-            promoted.update({'truncated': False, 'original_length': 0, 'truncated_fields': {}})
-        return promoted
-    surviving = {str(field): int(length or 0) for field, length in existing_fields.items() if field not in payload}
-    promoted.update(
-        {
-            'truncated': bool(surviving),
-            'original_length': max(surviving.values(), default=0),
-            'truncated_fields': surviving,
-        }
+    carried = (
+        {str(field): int(length or 0) for field, length in existing_fields.items() if field not in payload}
+        if isinstance(existing_fields, dict)
+        else {}
     )
+    merged = {**carried, **{str(clamp['field']): int(clamp['original_length']) for clamp in clamps}}
+    promoted = {**payload, **_truncation_fields(clamps)}
+    if merged:
+        promoted.update(
+            {
+                'truncated': True,
+                'original_length': max(merged.values()),
+                'truncated_fields': merged,
+            }
+        )
+    elif any(key in existing for key in _TRUNCATION_KEYS):
+        # The record carried cut facts and none survive: state the cleared result
+        # rather than leaving the previous claim behind.
+        promoted.update({'truncated': False, 'original_length': 0, 'truncated_fields': {}})
     return promoted
 
 

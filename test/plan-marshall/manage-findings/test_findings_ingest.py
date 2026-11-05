@@ -28,6 +28,7 @@ PLAN_IDS = (
     'ingest-empty',
     'ingest-idem',
     'ingest-mixed',
+    'ingest-partial-cut',
     'ingest-partial-replace',
     'ingest-promote',
     'ingest-qgate',
@@ -240,6 +241,29 @@ def test_a_partial_replacement_keeps_the_metadata_of_the_field_it_leaves(plan_co
     assert record['truncated'] is True
     assert record['original_length'] == 9000
     assert record['truncated_fields'] == {'body': 9000}
+
+
+def test_a_new_cut_on_one_field_keeps_an_earlier_cut_on_another(plan_context):
+    """A pass that cuts ``summary`` while leaving the cut ``body`` alone reports BOTH.
+
+    The record's cut facts are rebuilt per field on every promotion: the new cut is
+    added, the untouched field's earlier entry is carried, and only a field this pass
+    actually replaced stops being reported.
+    """
+    pid = 'ingest-partial-cut'
+    add_finding(plan_id=pid, finding_type='bug', title='t', detail='ph', raw_input={'body': 'x' * 9000})
+
+    assert ingest_findings(pid)['promoted'] == 1
+    cut = query_findings(pid)['findings'][0]
+    assert cut['truncated_fields'] == {'body': 9000}
+
+    _core.update_finding_text(pid, cut['hash_id'], detail=cut['detail'], raw_input={'summary': 'y' * 9000})
+    assert ingest_findings(pid)['promoted'] == 1
+
+    record = query_findings(pid)['findings'][0]
+    assert record['truncated'] is True
+    assert record['truncated_fields'] == {'body': 9000, 'summary': 9000}
+    assert record['original_length'] == 9000
 
 
 # =============================================================================
