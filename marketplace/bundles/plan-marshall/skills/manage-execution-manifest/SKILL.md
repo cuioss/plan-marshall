@@ -762,11 +762,14 @@ The deferral is keyed on `exceeds_bash_ceiling: true` from the same `architectur
 
 The decision is recorded on the task ladder, which the leaf already reads:
 
-- `verification.owed_rung: chain_tail` — the LAST task of the deliverable's `depends_on` chain. It keeps its `module-tests` command, hands the build back and closes with `--verification-owed`.
-- `verification.owed_rung: deferred` — a task that precedes the deliverable's chain tail. Its rung is dropped from `verification.commands` and it closes without the owed hold.
-- absent — today's behaviour, unchanged: every task carries its own rung.
+- `verification.owed_rung: chain_tail` — the LAST task of the deliverable's `depends_on` chain. This is the task the leaf lets hand the build back; it closes with `--verification-owed` when its live resolve routes the rung to the orchestrator.
+- `verification.owed_rung: deferred` — a task that precedes the deliverable's chain tail. It closes without the owed hold, so the deliverable's single build is not requested once per task.
+- `verification.owed_rung_command` — the rung command the decision was taken on, recorded beside either value. Today's routing drops that command from `verification.commands`, so this field is what a later compose re-measures: the decision survives a re-compose while the duration still exceeds the ceiling, and is cleared when it no longer does.
+- absent — no deferral decision is recorded and today's routing is untouched. That is the UNMEASURED arm and the below-ceiling arm: an unmeasured duration cannot say the build will always exceed the limit, and a below-ceiling rung runs inline per task.
 
-The `compose` result and the manifest carry the summary as `phase_5.owed_rung_deferral[]` — one `{deliverable, chain_tail_task, deferred_task_count, cause}` record per decided deliverable. The stamp is advisory in one direction only: the leaf's live `per_task` resolve still runs inline, so a run that later measures below the limit is not forced to defer. The leaf-side honouring rule lives in [`../execute-task/SKILL.md`](../execute-task/SKILL.md) Step 5 (b) and [`../phase-5-execute/SKILL.md`](../phase-5-execute/SKILL.md) Step 7; the owed hold itself is unchanged (see `../manage-tasks/SKILL.md` § "Finalize-step verification-owed flag contract").
+The rung command itself keeps today's orchestrator-tier routing in every arm: it is dropped from `verification.commands` and the canonical step is appended once to `phase_5.verification_steps`. Retaining it on the chain-tail task would schedule the same module build twice — once through the task's hand-back and once through the end-of-phase step.
+
+The `compose` result and the manifest carry the summary as `phase_5.owed_rung_deferral[]` — one `{deliverable, rung, chain_tail_task, deferred_task_count, cause}` record per decided (deliverable, rung) pair; a deliverable that spans two modules carries two rungs and therefore two records, each with its own chain tail. A `deferred` task keeps its stamp across later composes while its deliverable still carries a measured over-ceiling rung, and the stamp is cleared when the rung is re-measured below the limit (or the rung stops being detected), so a run that later measures below the limit routes normally again. The leaf-side honouring rule lives in [`../execute-task/SKILL.md`](../execute-task/SKILL.md) Step 5 (b) and [`../phase-5-execute/SKILL.md`](../phase-5-execute/SKILL.md) Step 7; the owed hold itself is unchanged (see `../manage-tasks/SKILL.md` § "Finalize-step verification-owed flag contract").
 
 ### Per-step execution_tier stamping (`step_execution_tier`)
 

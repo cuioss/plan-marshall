@@ -351,7 +351,7 @@ def cmd_loop_exit_guard(args) -> dict:
     orchestrator-tier build). They remain BLOCKING: an owed task is not done
     before its build reports, so the clean-exit verdict is unchanged. The
     split exists because the no-progress predicate must not count a task the
-    workflow itself is holding open (see ``classify_no_progress``).
+    workflow itself is holding open (see ``evaluate_no_progress``).
 
     **No-progress mode (B7).** Passing ``--consumed-tokens`` (or
     ``--completed-tasks-delta``) switches the verb into the deterministic
@@ -448,6 +448,7 @@ def _no_progress_mode_requested(args) -> bool:
     return (
         getattr(args, 'consumed_tokens', None) is not None
         or getattr(args, 'completed_tasks_delta', None) is not None
+        or getattr(args, 'pending_verify_steps', None) is not None
         or getattr(args, 'verification_handback', False) is True
     )
 
@@ -471,12 +472,13 @@ def evaluate_no_progress(
 
     Two exemptions precede the predicate, in this order:
 
-    1. **The prescribed hand-back is never a stall.** A return carrying the
+    1. **The prescribed hand-back is never judged a stall.** A return carrying the
        ``verification_handback`` discriminator beside a NON-EMPTY
-       ``pending_verify_steps[]`` is classified ``verification_handback`` and
-       never reaches the predicate. The leaf was told to hand the build back;
-       calling that non-progress would grade the workflow's own instruction as
-       a failure.
+       ``pending_verify_steps[]`` is classified ``verification_handback`` BEFORE
+       the predicate can decide. The leaf was told to hand the build back;
+       calling that non-progress would grade the workflow's own instruction as a
+       failure. The predicate values are still reported for the record; they
+       simply do not decide this return.
     2. **An owed task does not count as in-progress progress.** A task held
        open with ``verification_owed: true`` is ``in_progress`` BY DESIGN, so
        it is subtracted from the predicate's ``in_progress_count``. It still

@@ -73,16 +73,16 @@ class TestMeasuredOverCeilingDefersToTheChainTail:
         body = _run_routing()
 
         first, second, third = (_read(p) for p in paths)
-        # The earlier tasks close without the owed hold and lose the rung.
+        # Every task's rung keeps today's orchestrator-tier routing: dropped from
+        # the task, the step appended once. Only the DECISION differs.
         assert first['verification']['commands'] == []
         assert first['verification']['owed_rung'] == 'deferred'
         assert second['verification']['commands'] == []
         assert second['verification']['owed_rung'] == 'deferred'
-        # The chain tail keeps it, so its live resolve hands the build back.
-        assert third['verification']['commands'] == [_MODULE_TESTS_COMMAND]
+        assert third['verification']['commands'] == []
         assert third['verification']['owed_rung'] == 'chain_tail'
 
-        # The orchestrator still runs the step once.
+        # The orchestrator runs the step once.
         assert body['phase_5']['verification_steps'] == ['verify:module-tests']
         summary = body['phase_5']['owed_rung_deferral']
         assert len(summary) == 1
@@ -129,8 +129,12 @@ class TestTheUnchangedArms:
     def test_unmeasured_records_no_deferral_decision(self, monkeypatch, tmp_path):
         """Unmeasured fails closed to `orchestrator`, but nothing was measured.
 
-        No deferral is recorded — all three tasks keep today's behaviour, so the
-        rung is not narrowed by a duration that does not exist.
+        No deferral is recorded, and today's routing is untouched: each task's
+        rung is dropped and the canonical step is appended once, with no stamp on
+        any task. This is the arm the spec's bullet 3 pins ("A command key with no
+        measurement keeps today's behaviour"); it is also the arm whose Done-when
+        wording ("puts it on all three") cannot hold, because that routing is what
+        today's behaviour IS.
         """
         paths = _write_chain(tmp_path / 'tasks')
         _patch_resolve(
@@ -143,7 +147,9 @@ class TestTheUnchangedArms:
 
         for path in paths:
             task = _read(path)
+            assert task['verification']['commands'] == []
             assert 'owed_rung' not in task['verification']
+        assert body['phase_5']['verification_steps'] == ['verify:module-tests']
         assert 'owed_rung_deferral' not in body['phase_5']
 
     def test_a_stale_stamp_is_cleared_when_the_tier_moves_back_to_per_task(self, monkeypatch, tmp_path):
@@ -161,6 +167,10 @@ class TestTheUnchangedArms:
         _run_routing()
 
         assert 'owed_rung' not in _read(paths[0])['verification']
+        # Neither the stamp nor the recorded rung survives: the decision is gone,
+        # and the rung command itself was routed away by today's routing.
+        assert 'owed_rung_command' not in _read(paths[0])['verification']
+        assert _read(paths[0])['verification']['commands'] == []
 
 
 class TestTheLeafHonoursTheRecordedDecision:

@@ -1287,8 +1287,7 @@ def _plan_module_tests_chain_tail_deferral(
     if not tasks_dir.is_dir():
         return {}, [], set()
 
-    candidates: dict[int, int] = {}  # task number -> deliverable
-    recorded: dict[int, int] = {}  # task number -> deliverable, for a task already stamped
+    candidates: dict[int, tuple[int, str]] = {}  # task number -> (deliverable, rung command)
     depends_on: dict[int, list[int]] = {}
     for task_path in sorted(tasks_dir.glob('TASK-*.json')):
         try:
@@ -1314,14 +1313,19 @@ def _plan_module_tests_chain_tail_deferral(
             continue
         deliverable = task.get('deliverable', 0)
         deliverable = deliverable if isinstance(deliverable, int) else 0
-        if verification.get('owed_rung') is not None:
-            # A recorded decision is evidence too: a deferred task's rung command
-            # was dropped by the first compose, so counting only fresh commands
-            # would make the summary forget the tasks the decision covers.
-            recorded[number] = deliverable
         commands = verification.get('commands')
         if not isinstance(commands, list):
             continue
+        # The previous compose's decision is re-measured from the rung command it
+        # recorded: a deferred task's command was dropped by today's routing, so
+        # without it a re-compose would lose the rung and clear the decision.
+        recorded_command = verification.get('owed_rung_command')
+        if isinstance(recorded_command, str):
+            step_id, toon = _module_tests_step_for(recorded_command, plan_id)
+            if step_id == _MODULE_TESTS_STEP and isinstance(toon, dict):
+                if toon.get('execution_tier') == 'orchestrator' and toon.get('exceeds_bash_ceiling') is True:
+                    candidates[number] = (deliverable, recorded_command)
+                    continue
         for command in commands:
             if not isinstance(command, str):
                 continue
@@ -1330,33 +1334,36 @@ def _plan_module_tests_chain_tail_deferral(
                 continue
             if toon.get('execution_tier') != 'orchestrator' or toon.get('exceeds_bash_ceiling') is not True:
                 continue
-            candidates[number] = deliverable
+            candidates[number] = (deliverable, command)
             break
 
     if not candidates:
         return {}, [], set()
 
-    by_deliverable: dict[int, list[int]] = {}
-    for number, deliverable in candidates.items():
-        by_deliverable.setdefault(deliverable, []).append(number)
+    # Group by (deliverable, rung command), not by deliverable alone: a
+    # deliverable that spans two modules carries two distinct module-tests rungs,
+    # and collapsing them would defer one module's build behind the other's tail.
+    by_group: dict[tuple[int, str], list[int]] = {}
+    for number, (deliverable, command) in candidates.items():
+        by_group.setdefault((deliverable, command), []).append(number)
 
     decisions: dict[int, str] = {}
     summary: list[dict[str, Any]] = []
-    for deliverable in sorted(by_deliverable):
-        members = sorted(set(by_deliverable[deliverable]) | {n for n, d in recorded.items() if d == deliverable})
-        ordered = _chain_order(members, depends_on)
+    for deliverable, command in sorted(by_group):
+        ordered = _chain_order(sorted(by_group[(deliverable, command)]), depends_on)
         tail = ordered[-1]
         for number in ordered:
             decisions[number] = OWED_RUNG_CHAIN_TAIL if number == tail else OWED_RUNG_DEFERRED
         summary.append(
             {
                 'deliverable': deliverable,
+                'rung': command,
                 'chain_tail_task': tail,
                 'deferred_task_count': len(ordered) - 1,
                 'cause': 'measured_module_tests_above_ceiling',
             }
         )
-    return decisions, summary, set(by_deliverable)
+    return decisions, summary, {deliverable for deliverable, _command in by_group}
 
 
 def _route_task_verification_commands(plan_id: str, body: dict[str, Any]) -> tuple[int, list[tuple[Path, str]]]:
@@ -1453,6 +1460,7 @@ def _route_task_verification_commands(plan_id: str, body: dict[str, Any]) -> tup
         )
         if stale_rung:
             verification.pop('owed_rung', None)
+            verification.pop('owed_rung_command', None)
         if not commands and not stale_rung:
             continue
 
@@ -1476,18 +1484,20 @@ def _route_task_verification_commands(plan_id: str, body: dict[str, Any]) -> tup
                 verb, _ = parsed
                 step_id = _verb_to_phase_5_step(verb)
                 if rung == OWED_RUNG_CHAIN_TAIL and verb == 'module-tests':
-                    # The deliverable's rung lives HERE: keep the command on the
-                    # chain-tail task so the leaf's live resolve hands the build
-                    # back and closes `--verification-owed`. The orchestrator
-                    # still runs the step once; this task is the one that reports
-                    # it owed.
-                    kept_commands.append(raw)
+                    # The deliverable's rung is RECORDED here, not retained as a
+                    # task command: the orchestrator-tier command keeps today's
+                    # routing (dropped from the task, the step appended below), and
+                    # the chain-tail task is the one the leaf lets hand the build
+                    # back. Retaining the command would schedule the same module
+                    # build twice — once through the task's hand-back and once
+                    # through the end-of-phase step. The recorded command is what
+                    # a later compose re-measures, since the command itself is
+                    # gone by then.
                     verification['owed_rung'] = OWED_RUNG_CHAIN_TAIL
-                    if _MODULE_TESTS_STEP not in seen_steps:
-                        verification_steps.append(_MODULE_TESTS_STEP)
-                        seen_steps.add(_MODULE_TESTS_STEP)
-                    changed = True
-                    continue
+                    verification['owed_rung_command'] = raw
+                elif rung == OWED_RUNG_DEFERRED and verb == 'module-tests':
+                    verification['owed_rung'] = OWED_RUNG_DEFERRED
+                    verification['owed_rung_command'] = raw
                 if step_id is None:
                     candidate = f'verify:{verb}'
                     # A build-phase canonical the deriver legitimately emits
@@ -1533,16 +1543,6 @@ def _route_task_verification_commands(plan_id: str, body: dict[str, Any]) -> tup
                 if step_id not in seen_steps:
                     verification_steps.append(step_id)
                     seen_steps.add(step_id)
-                if rung == OWED_RUNG_DEFERRED and verb == 'module-tests':
-                    # An earlier task of a deferred deliverable: its rung belongs
-                    # to the chain tail, so it closes per-task and hands nothing
-                    # back. The step itself is already appended above.
-                    verification['owed_rung'] = OWED_RUNG_DEFERRED
-                elif rung != OWED_RUNG_CHAIN_TAIL and verification.get('owed_rung') is not None:
-                    # A stale stamp from an earlier compose would keep telling
-                    # the leaf to defer a rung the live decision no longer places
-                    # on this task.
-                    verification.pop('owed_rung', None)
                 changed = True
                 continue
             if tier == 'per_task':
@@ -1550,8 +1550,6 @@ def _route_task_verification_commands(plan_id: str, body: dict[str, Any]) -> tup
                 if isinstance(bash_timeout, int):
                     if per_task_timeout is None or bash_timeout > per_task_timeout:
                         per_task_timeout = bash_timeout
-                if rung != OWED_RUNG_CHAIN_TAIL and verification.pop('owed_rung', None) is not None:
-                    changed = True
                 kept_commands.append(raw)
                 continue
             # No tier or unresolvable → leave the command in place.
