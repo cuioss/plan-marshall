@@ -1461,12 +1461,20 @@ def _route_task_verification_commands(plan_id: str, body: dict[str, Any]) -> tup
         if stale_rung:
             verification.pop('owed_rung', None)
             verification.pop('owed_rung_command', None)
-        if not commands and not stale_rung:
+        # A task that joined the group later can move the previous chain tail to
+        # `deferred`. Such a task has no command left to re-measure, so its old
+        # `chain_tail` stamp must be rewritten HERE — otherwise the group would
+        # carry two chain tails and hand the same build back twice.
+        restamped = False
+        if rung is not None and verification.get('owed_rung') not in (None, rung):
+            verification['owed_rung'] = rung
+            restamped = True
+        if not commands and not stale_rung and not restamped:
             continue
 
         kept_commands: list[Any] = []
         per_task_timeout: int | None = None
-        changed = stale_rung
+        changed = stale_rung or restamped
         for raw in commands:
             if not isinstance(raw, str):
                 kept_commands.append(raw)

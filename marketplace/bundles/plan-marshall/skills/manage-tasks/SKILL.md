@@ -216,7 +216,11 @@ triggers it, and the script never resolves tiers itself:
   `manage-execution-manifest/SKILL.md` § "Deliverable chain-tail rung
   deferral"). The leaf honours the stamp — it runs its narrow units inline and
   closes per-task — and the hold fires only on the chain-tail task, which
-  carries `verification.owed_rung: chain_tail`.
+  carries `verification.owed_rung: chain_tail`. The rule is enforced here as
+  well as stated: `finalize-step` IGNORES `--verification-owed` on a `deferred`
+  task, closes it `done`, and reports `owed_rung_deferred_dropped: true`, so a
+  leaf that passes the flag anyway cannot stall the task on a build it never
+  requested.
 
 `next` skips verification-owed tasks that have no pending or in_progress
 step — they are waiting on a build, not on the leaf — while an owed task

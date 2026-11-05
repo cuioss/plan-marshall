@@ -106,6 +106,40 @@ class TestMeasuredOverCeilingDefersToTheChainTail:
         # their rung command was dropped by the first compose.
         assert body['phase_5']['owed_rung_deferral'][0]['deferred_task_count'] == 2
 
+    def test_a_later_task_moves_the_chain_tail_and_restamps_the_old_one(self, monkeypatch, tmp_path):
+        """A task added after the first compose becomes the new chain tail.
+
+        The previous tail has no command left to re-measure, so its stamp must be
+        rewritten by the decision, not left as a second `chain_tail` — two chain
+        tails would hand the same module build back twice.
+        """
+        paths = _write_chain(tmp_path / 'tasks')
+        _patch_resolve(monkeypatch, tmp_path, {'execution_tier': 'orchestrator', 'exceeds_bash_ceiling': True})
+        _run_routing()
+        assert _read(paths[2])['verification']['owed_rung'] == 'chain_tail'
+
+        # A fourth task joins the deliverable after the previous tail.
+        fourth = tmp_path / 'tasks' / 'TASK-004.json'
+        fourth.write_text(
+            json.dumps(
+                {
+                    'number': 4,
+                    'deliverable': 1,
+                    'depends_on': ['TASK-003'],
+                    'verification': {'commands': [_MODULE_TESTS_COMMAND]},
+                },
+                indent=2,
+            )
+            + '\n',
+            encoding='utf-8',
+        )
+        body = _run_routing()
+
+        stamps = [_read(path)['verification'].get('owed_rung') for path in (*paths, fourth)]
+        assert stamps == ['deferred', 'deferred', 'deferred', 'chain_tail']
+        assert len([s for s in stamps if s == 'chain_tail']) == 1
+        assert body['phase_5']['owed_rung_deferral'][0]['chain_tail_task'] == 4
+
 
 class TestTheUnchangedArms:
     def test_below_the_ceiling_every_task_keeps_the_rung(self, monkeypatch, tmp_path):
