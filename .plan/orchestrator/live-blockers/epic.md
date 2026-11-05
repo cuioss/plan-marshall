@@ -53,6 +53,88 @@ derive, for rows still live.
   - PLAN-LB-31 in-house-reviewer — PLAN-LB-21, PLAN-LB-20 D4 and D5.
   - PLAN-LB-14 launch-gate-scope — unchanged.
 
+- **PLAN-LB-111 and PLAN-LB-113** (shipped #1908 and #1909, 2026-11-05, runbook lane, `deepseek-v4.1-flash/high`) — see
+  `landings/PLAN-LB-111.md` and `landings/PLAN-LB-113.md`. **PLAN-LB-111 is the first landing read under the three-layer
+  analysis it shipped** (applied from the source tree; the installed cache 0.1.2051 predates it, so the contract is not yet
+  active in a stock session). Every claim the two landings made about the diff holds: file sets, merge commits, review history
+  and the disclosed rule breaks. Both are `complete: false` on `total_tokens` (the standing runbook-lane recurrence). No
+  collision: LB-111 and LB-113 touched disjoint files, and LB-113 did not touch the one file the gate showed shared with LB-105.
+  - **PLAN-LB-111 layer 3 (one major, six minor), reported to the operator, not staged.** The template's layer-1 and layer-2
+    summary and verdict slots offer only `{clean | findings}` while their rows allow `not_shown_by_reading` (major: the template
+    forces the "clean" that Step 4's limit forbids); Step 4 writes the report twice (the analysis block, then item 1); the
+    corpus-verdict mapping from `checked` / `not_shown_by_reading` is underspecified; the fixed Dispatch line is false on the
+    inline fall-back; the cross-repo prompt field is undeclared; nothing forbids the leaf from fetching third-party text itself
+    (observed in this firing); `conformance[N]` versus `[M]`. **START HERE does not show a layer-3 defect** (the spec's D3
+    premise; the lane reported it as a gap). Parked PLAN-LB-69 shares Step 4 and the template: reconcile its D1 against this leaf
+    and return shape at its re-grounding.
+  - **PLAN-LB-113 layer 3 (no blocker, no major, eleven findings), reported to the operator, not staged.** `verify-links`:
+    a site-root-relative `link:` target is reported broken; `link:#{attr}` is classed an internal anchor and reported broken;
+    links inside backticks and the `++…++` / `pass:[]` forms are neither verified nor named in `unchecked_link_classes`
+    (the deliverable's own goal); a bad `.adoc` fragment target aborts a multi-file run; a nested listing block closes early.
+    Secure logging: the Java `neutralise` substitutes `?` against the owning "prefer escaping" rule, "structured JSON escapes all
+    three" overclaims, the owning rule omits U+2028/U+2029, and two skills repeat text across homes (spec-induced). Grouping if the
+    operator asks for a fix: one `verify-links` correctness plan and one secure-logging text plan.
+  - **Open Defect (landing facts):** `rb-lb-111-three-layer-landing-analysis-001.md` and `rb-lb-113-domain-content-gaps-001.md`
+    are `complete: false`, `missing_keys: total_tokens` (recurrence of the PLAN-LB-49 and PLAN-LB-73 entry). Measurement is out of
+    scope under the focus rule, so nothing is staged.
+  - **Watch (declared surface):** `marketplace/targets/cuioss_review_bot/target.py` `MAX_DOMAIN_RULES` is a guard the declared
+    surface did not know about. Any plan that adds review rules to the java code-review domain must declare it and its pinned test
+    constant (PLAN-LB-113 raised it 15 → 25 for 22 harvested rules).
+  - **Watch (spec premise):** PLAN-LB-113's D3 and D5 Done-whens asked for a rule restated in two homes against the spec's own "state
+    once" constraint. A spec that asks for a restatement should say why; the duplication is on the spec, not the lane.
+  - **Fix plan staged 2026-11-05 on the operator's word: PLAN-LB-114** (WS-03, runbook lane, three deliverables on three disjoint
+    surfaces). D1 the landing template and Step 4 (the major: three-value slots at layers 1 and 2, one report write, a verdict mapping,
+    the Dispatch line, the conformance shape, the cross-repo field and the leaf's no-fetch rule); D2 the `verify-links` edges (absolute
+    targets, `link:#{attr}`, masked links named as unchecked, an unreadable fragment target, nested block length, percent-decoded
+    anchors); D3 the secure-logging text (escaping example, JSON statement, one code home, U+2028/U+2029, one owner, the javadoc ordering
+    scope, the release qualifier, an anchored pointer test). Declarative, 16 entries, 0 unresolved; no overlap with the four running
+    plans. Queued behind them: all four slots were full when it was staged. Not carried: START HERE showing a layer-3 verdict (needs
+    the queue surface and `landing-check`; a Watch) and the reader-variant vehicle for the leaf (a plan-level decision).
+  - **Started by the operator 2026-11-05 (rows `running`):** PLAN-LB-106, PLAN-LB-105 and PLAN-LB-109, with PLAN-LB-112 that makes four of
+    four slots.
+
+- **PLAN-LB-112** (shipped #1910, 2026-11-05, runbook lane, `deepseek-v4.1-flash/high`) — see `landings/PLAN-LB-112.md`. Merge commit
+  `7d4182f46`. D1 verdict **reproduced** (fixture-level: the build server was down for the whole run, so no routed run existed). D3 and
+  D4 shipped as specified; D1 and D2 shipped modified (the carry candidate needed `_build_cli.py` and `resolve_project_dir.py`, which the
+  spec marked untouched). Every claim the message made about the diff holds except two: the lane's drift list omits
+  `_build_server_protocol.py` (201 lines, explained by D3), and its "met" for D2's moved-back Done-when is read from several separate
+  tests, not one routed run. The merge brought no collision with the running plans.
+  - **Layer 3 (no blocker, one major not shown by reading, six minor), reported to the operator, not staged.** The carry is appended to
+    every routed build with a real `--plan-id`, so a project whose executor predates the change has every routed plan build refused as
+    `invalid_invocation` until it is regenerated, with no in-process fallback (the lane discloses the regeneration as owed). Smaller:
+    the routed result carries the child's text as `reason` and drops `message`; the carried-tree refusal's documented diagnostic fields
+    are dropped by the formatter whitelist; TOON keys are read last-wins across the log; exit -1 relabels a pre-tool fault; an
+    unreachable build queue in a child raises past the classifier (not shown); plan-id-keyed side effects run in the child's worktree
+    cwd (not shown). Two tests are weaker than their claims (a log shape no producer emits; a one-spelling test that compares an
+    imported constant with itself). Two comments state transitional wording against the documentation standard.
+  - **Open Defect (landing facts):** `rb-lb-112-routed-build-worktree-fault-truth-001.md` is `complete: false`, `missing_keys:
+    total_tokens` (the standing runbook-lane recurrence; measurement out of scope, nothing staged).
+  - **Watch (owed, operator-run):** regenerate the executor in every project before a routed plan build can use the carry, and a live
+    routed check in the move-back window. Retire when both are confirmed.
+  - **Queue annotation, PLAN-LB-108:** this landing moved the lines of `_route_to_daemon` and the routing tests that LB-108 declares;
+    re-read its function and line references at its outline. The sequencing the LB-112 spec asked for (LB-112 first) is now satisfied.
+  - **Fix plan staged 2026-11-05 on the operator's word: PLAN-LB-115** (WS-04, runbook lane, three deliverables). D1 the carry no longer
+    refuses a routed plan build outside the move-back window on a stale executor (the major; the outline chooses between carrying only
+    when needed and a single re-run without the carry); D2 the routed fault keeps the child's field names, the carried-tree refusal
+    keeps its diagnostic fields, verdict keys are read per block, exit -1 and the unreachable build queue no longer collapse; D3 the
+    two weak tests, the unused fixture, one single-test proof of LB-112 D2, and the two transitional comments. Declarative, 12 entries,
+    0 unresolved. Sequence after PLAN-LB-108 (shared `_build_execute_factory.py` and `test_build_execute_routing.py`). Not carried: the
+    gate-row error class (info) and the O(n²) JSON scan (a leaf lead, not re-read). PLAN-LB-111 and PLAN-LB-113 findings are carried by
+    PLAN-LB-114, so one follow-up per landing group exists: LB-114 (111, 113) and LB-115 (112).
+  - **Started by the operator 2026-11-05 (row `running`):** PLAN-LB-114. Running now: PLAN-LB-106, PLAN-LB-105, PLAN-LB-109, PLAN-LB-114
+    (four of four slots).
+  - **Staged 2026-11-05 on the operator's word from a pasted finding: PLAN-LB-116** (WS-04, runbook lane, five deliverables). The
+    finding came from the orchestrator of another epic (`ui-improvements`): its lanes merged seven PRs with CodeRabbit findings or
+    Sonar issues still open while the landing messages said all handled. Read here in the lane text: review handling is prose, the
+    gate names only outside-diff findings, a thread may be resolved after any reply, the landing facts carry no thread or review-body
+    numbers and the Sonar facts are optional, `sonar-gate` accepts a lane-recorded dismissal, and no step reads a mailbox. The seven
+    landings are the finder's reading and were not re-read here. D1 a `review-gate` verb and the thread-resolve rule; D2 four required
+    landing-facts fields and a landing check that rejects their absence; D3 `sonar-gate` refuses a lane-recorded dismissal; D4 the
+    mailbox read at setup, before self-review and before enqueue; D5 an evidence claim needs an artifact. Graded blocking
+    (merge-gate integrity), no token or measurement work. D3 is Sonar behaviour for consumer projects: nothing is enabled in this
+    repository, and D3 is dropped if the operator rules the Sonar ruling covers it. Sequence after PLAN-LB-106 and PLAN-LB-108
+    (shared `runbook-lane/SKILL.md` and `test_runbook_lane.py`).
+
 - **PLAN-LB-39** (shipped #1768, 2026-10-14) — 0 met / 4 partial / 3 unmet against its spec,
   counted 7/7, five regressions; see `landings/PLAN-LB-39.md`. Fix-forward PLAN-LB-50; unshipped
   deliverables re-staged as PLAN-LB-51 (Antigravity) and PLAN-LB-52 (harness-agnostic, as scripts).
@@ -661,6 +743,46 @@ derive, for rows still live.
 
 ## Decisions
 
+- 2026-11-04 — **Inbox drain (ten messages: `lessons-routing-075` to `-083` and `pm-mcp-core-m2-m4-v2-001`).** Every message was valid
+  and live. Three took a recorded action and seven were first **discarded** under the FOCUS RULE; the operator then asked for the
+  domain changes ("put all the domain changes into one plan"), so those seven are **staged as one plan, PLAN-LB-113** (see the
+  last bullet; the discard record below stays as the first disposition). Corroborated against the source tree at
+  HEAD (the findings were checked at `f6830b837`; every commit since is a ledger land, so the code is the same):
+  - `-075` (high, the Sourcery OSS footer drops a whole review body that also carries Overall Comments): **folded** into
+    PLAN-LB-106 as **D5**. Corroborated at `github_pr.py` L510 (the whole-body substring drop) and `sourcery.md` L38-43, L84-85 and
+    L114-115 (the two statements that contradict each other). Expected surface **updated, +3 entries** (`sourcery.md`, an
+    `automatic-review/SKILL.md` hypothesis, `test_bot_registry_patterns.py`); `corpus surfaces` reads PLAN-LB-106 as `declarative`
+    with 26 resolved entries and 0 unresolved. LB-106 now has five deliverables, below the split guard.
+  - `-076` (high, a routed `--plan-id` build after move-back fails in the daemon as `worktree_resolution_failed` and surfaces as
+    `build_failed`): **staged** as **PLAN-LB-112** (WS-04, runbook). The code facts hold at HEAD (the argv re-run, the strict gate,
+    `LAUNCH_FAULT_ERRORS`, the synthetic row, the direct path's own error), but the failure itself is **not reproduced**, by the lesson
+    or here, so D1 reproduces it first and can end the plan. It overlaps PLAN-LB-108 on `_build_execute_factory.py` and
+    `test_build_execute_routing.py`: run the two in sequence, this one first.
+  - `pm-mcp-core-m2-m4-v2-001` (highest, by the operator's own grade; the three-layer analysis of a landing, which the consumer epic
+    carries as its rule R21): **staged** as **PLAN-LB-111** (WS-03, runbook). Three deliverables: the analysis in `analyze.md` Step 4
+    and the landing template, one always-dispatched read-only leaf per landing, and routing by layer (layer-3 defects to the operator,
+    never fixed inline). **Sequence before parked PLAN-LB-69**, which adds a two-leaf audit to the same step; reconcile LB-69's D1 when
+    it is re-grounded. The finding was checked against plugin 0.1.2041; `analyze.md` Step 2 and the landing template were re-read at HEAD
+    and read as it describes.
+  - **Reversed on the operator's request, the same day: staged as PLAN-LB-113** (WS-02, runbook; six deliverables, one per
+    independent change, `-078` and `-079` sharing D2): D1 javadoc rules (`-077`), D2 junit-core rules and spec citations (`-078`,
+    `-079`), D3 code-point rule in cui-http-testing (`-080`), D4 switch-statement caveat (`-081`), D5 secure-logging masking and C1
+    controls (`-083`), D6 `verify-links` unchecked classes and `link:` targets (`-082`, the only code change). The cited lines were
+    re-read at HEAD and hold; the surface is declarative. D1 to D5 are documentation, so the plan has no internal ordering. First
+    disposition, kept for the record: discarded under the focus rule, none blocking; the lessons stay in `lessons-routing`'s archive:
+    - `-077`: `pm-dev-java` javadoc, restated counts and unverified ordering claims; medium.
+    - `-078`: `pm-dev-java` junit-core, four shapes of a test that cannot fail; medium.
+    - `-079`: `pm-dev-java` / `cui-testing`, a spec citation without the clause and an unjustified fail-open assertion; low.
+    - `-080`: `cui-http-testing`, bidi characters built from code points; low (and only Sonar triggered it, which is not enabled).
+    - `-081`: `pm-dev-java` java-core, a switch statement is not exhaustiveness-checked; medium.
+    - `-082`: `pm-documents` ref-asciidoc, `verify-links` ignores `link:` macros and reports no unchecked class; medium.
+    - `-083`: `java-security` and `persona-security-expert`, a masking helper is not a sanitiser and `\p{Cntrl}` is ASCII-only; low.
+      It names `-063` (discarded on 2026-11-02) as the item to fold into.
+  - New watches, all from `pm-mcp-core-m2-m4-v2-001`, none staged under the focus rule: `landing-check` reports `complete: false` on
+    every runbook-lane landing because the lane writes `unknown` for `total_tokens` and `plugin_version` (measurement, out of scope);
+    a partial landing (`merge_state=open`, `deliverables_done` below `deliverables_total`) has no named path in `analyze` today; and a
+    downstream spec has no field for "read this landing's findings at your outline" (a `corpus` verb listing the staged specs whose
+    Expected Surface a finding names would make it mechanical).
 - 2026-11-02 — **Inbox drain (17 lessons-routing findings, `-058` to `-074`).** Ten high
   findings were **observed** as new Open Defects. They are listed under the drain-of-2026-11-02
   note at the end of that section, and none was staged: staging is the operator's call. Seven

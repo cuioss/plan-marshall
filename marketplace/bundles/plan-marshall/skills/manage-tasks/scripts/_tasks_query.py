@@ -17,6 +17,19 @@ from _tasks_core import (
     parse_task_file,
 )
 
+# ---------------------------------------------------------------------------
+# B7 no-progress reclassification vocabulary
+# ---------------------------------------------------------------------------
+# The predicate, its threshold and its classification live HERE, in the script
+# the orchestrator calls — never as a second statement in prose.
+# ``plan-marshall/workflow/execution.md`` § "B7 — voluntary_checkpoint
+# no-progress reclassification" states the rule once and cites this module;
+# ``phase-5-execute/SKILL.md`` cites it too instead of restating the predicate.
+B7_PROVISIONAL_CAUSE = 'voluntary_checkpoint'
+B7_NO_PROGRESS_TOKEN_THRESHOLD = 50000
+NO_PROGRESS_CAUSE = 'error'
+VERIFICATION_HANDBACK_CAUSE = 'verification_handback'
+
 
 def _build_done_set(all_tasks: list) -> set[str]:
     """Build set of done task identifiers for dependency checking.
@@ -331,14 +344,43 @@ def cmd_loop_exit_guard(args) -> dict:
     task is pending/in_progress or whether its dependencies are satisfied.
     The skill prose at ``phase-5-execute/SKILL.md`` § Step 12a names the
     contract; authoritative enforcement lives here.
+
+    **The owed-verification split.** Every branch also reports
+    ``owed_count`` / ``owed_ids`` — the subset of the ``in_progress`` bucket
+    carrying ``verification_owed: true`` (a task waiting on an
+    orchestrator-tier build). They remain BLOCKING: an owed task is not done
+    before its build reports, so the clean-exit verdict is unchanged. The
+    split exists because the no-progress predicate must not count a task the
+    workflow itself is holding open (see ``evaluate_no_progress``).
+
+    **No-progress mode (B7).** Passing ``--consumed-tokens`` (or
+    ``--completed-tasks-delta``) switches the verb into the deterministic
+    B7 evaluation the orchestrator runs after a dispatch returns: the
+    predicate, its three values, and the resulting classification are added
+    to the result. The predicate is stated once in
+    ``plan-marshall/workflow/execution.md`` § B7; the arithmetic lives here,
+    not in prose.
     """
     task_dir = get_tasks_dir(args.plan_id)
     all_tasks = get_all_tasks(task_dir)
 
     pending_ids = [t['number'] for _, t in all_tasks if t.get('status') == 'pending']
-    in_progress_ids = [t['number'] for _, t in all_tasks if t.get('status') == 'in_progress']
+    in_progress_tasks = [t for _, t in all_tasks if t.get('status') == 'in_progress']
+    in_progress_ids = [t['number'] for t in in_progress_tasks]
+    owed_ids = [t['number'] for t in in_progress_tasks if t.get('verification_owed') is True]
+    owed_count = len(owed_ids)
     pending_count = len(pending_ids)
     in_progress_count = len(in_progress_ids)
+
+    result: dict = {
+        'plan_id': args.plan_id,
+        'pending_count': pending_count,
+        'pending_ids': pending_ids,
+        'in_progress_count': in_progress_count,
+        'in_progress_ids': in_progress_ids,
+        'owed_count': owed_count,
+        'owed_ids': owed_ids,
+    }
 
     if pending_count > 0 or in_progress_count > 0:
         if pending_count > 0 and in_progress_count > 0:
@@ -359,24 +401,126 @@ def cmd_loop_exit_guard(args) -> dict:
                 f'MUST re-dispatch the execution-context before transitioning '
                 f'out of phase-5-execute.'
             )
-        return {
-            'status': 'continue',
-            'plan_id': args.plan_id,
-            'pending_count': pending_count,
-            'pending_ids': pending_ids,
-            'in_progress_count': in_progress_count,
-            'in_progress_ids': in_progress_ids,
-            'message': message,
-        }
+        result.update({'status': 'continue', 'message': message})
+    else:
+        result.update({'status': 'success', 'message': 'Unfinished queue empty — clean exit permitted.'})
+
+    if _no_progress_mode_requested(args):
+        result.update(
+            evaluate_no_progress(
+                provisional_cause=getattr(args, 'provisional_cause', None) or B7_PROVISIONAL_CAUSE,
+                in_progress_count=in_progress_count,
+                owed_count=owed_count,
+                completed_tasks_delta=_int_arg(args, 'completed_tasks_delta'),
+                consumed_tokens=_int_arg(args, 'consumed_tokens'),
+                verification_handback=bool(getattr(args, 'verification_handback', False)),
+                pending_verify_steps=_step_ids_arg(args),
+            )
+        )
+
+    return result
+
+
+def _int_arg(args, name: str) -> int:
+    """Read an optional integer flag, treating absence as ``0``."""
+    value = getattr(args, name, None)
+    return value if isinstance(value, int) else 0
+
+
+def _step_ids_arg(args) -> list[str]:
+    """Split the comma-separated ``--pending-verify-steps`` value into step ids."""
+    raw = getattr(args, 'pending_verify_steps', None)
+    if not isinstance(raw, str):
+        return []
+    return [part.strip() for part in raw.split(',') if part.strip()]
+
+
+def _no_progress_mode_requested(args) -> bool:
+    """True when the caller supplied any B7 predicate input.
+
+    The mode is opt-in so the guard's pre-dispatch queue-peek call site keeps
+    its exact previous shape: a caller that passes no predicate input gets no
+    classification and no predicate fields. The discriminator is a SUPPLIED
+    value, not mere attribute presence — the argparse surface gives
+    ``--verification-handback`` a ``False`` default, so ``is not None`` would
+    switch the mode on for every CLI call.
+    """
+    return (
+        getattr(args, 'consumed_tokens', None) is not None
+        or getattr(args, 'completed_tasks_delta', None) is not None
+        or getattr(args, 'pending_verify_steps', None) is not None
+        or getattr(args, 'verification_handback', False) is True
+    )
+
+
+def evaluate_no_progress(
+    *,
+    provisional_cause: str,
+    in_progress_count: int,
+    owed_count: int,
+    completed_tasks_delta: int,
+    consumed_tokens: int,
+    verification_handback: bool,
+    pending_verify_steps: list[str],
+) -> dict:
+    """Evaluate the B7 no-progress predicate and classify a returning dispatch.
+
+    The predicate is the one stated in ``plan-marshall/workflow/execution.md``
+    § "B7 — voluntary_checkpoint no-progress reclassification"; this function
+    is its only implementation, so the workflow prose cites it rather than
+    restating the arithmetic.
+
+    Two exemptions precede the predicate, in this order:
+
+    1. **The prescribed hand-back is never judged a stall.** A return carrying the
+       ``verification_handback`` discriminator beside a NON-EMPTY
+       ``pending_verify_steps[]`` is classified ``verification_handback`` BEFORE
+       the predicate can decide. The leaf was told to hand the build back;
+       calling that non-progress would grade the workflow's own instruction as a
+       failure. The predicate values are still reported for the record; they
+       simply do not decide this return.
+    2. **An owed task does not count as in-progress progress.** A task held
+       open with ``verification_owed: true`` is ``in_progress`` BY DESIGN, so
+       it is subtracted from the predicate's ``in_progress_count``. It still
+       blocks the clean exit (that verdict lives in ``cmd_loop_exit_guard``
+       and is unchanged); it just cannot manufacture a no-progress verdict.
+
+    The 50,000-token threshold and the ``error`` routing of a genuine stall
+    are unchanged.
+
+    Returns:
+      - ``predicate_in_progress_count``: in-progress tasks MINUS owed ones
+      - ``predicate_completed_tasks_delta`` / ``predicate_consumed_tokens``:
+            the two forwarded values, echoed for the decision log
+      - ``predicate_holds``: the three-way conjunction
+      - ``verification_handback_valid``: True only when the discriminator and
+            a non-empty ``pending_verify_steps[]`` arrived together
+      - ``classification``: the final termination cause
+      - ``classification_reason``: why that cause won
+    """
+    predicate_in_progress = max(in_progress_count - owed_count, 0)
+    predicate_holds = (
+        predicate_in_progress > 0 and completed_tasks_delta == 0 and consumed_tokens > B7_NO_PROGRESS_TOKEN_THRESHOLD
+    )
+    handback_valid = verification_handback and bool(pending_verify_steps)
+
+    if provisional_cause != B7_PROVISIONAL_CAUSE:
+        classification, reason = provisional_cause, 'not_a_provisional_checkpoint'
+    elif handback_valid:
+        classification, reason = VERIFICATION_HANDBACK_CAUSE, 'declared_orchestrator_build_handback'
+    elif predicate_holds:
+        classification, reason = NO_PROGRESS_CAUSE, 'no_progress_predicate_holds'
+    else:
+        classification, reason = B7_PROVISIONAL_CAUSE, 'no_progress_predicate_false'
 
     return {
-        'status': 'success',
-        'plan_id': args.plan_id,
-        'pending_count': 0,
-        'pending_ids': [],
-        'in_progress_count': 0,
-        'in_progress_ids': [],
-        'message': 'Unfinished queue empty — clean exit permitted.',
+        'predicate_in_progress_count': predicate_in_progress,
+        'predicate_completed_tasks_delta': completed_tasks_delta,
+        'predicate_consumed_tokens': consumed_tokens,
+        'predicate_holds': predicate_holds,
+        'verification_handback_valid': handback_valid,
+        'classification': classification,
+        'classification_reason': reason,
     }
 
 

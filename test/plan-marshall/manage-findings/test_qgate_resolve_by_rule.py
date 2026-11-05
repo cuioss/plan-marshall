@@ -193,8 +193,14 @@ def test_a_state_finding_filed_after_the_resolution_stays_pending(plan_context):
     assert _pending_hashes(plan_id) == {later['hash_id']}
 
 
-def test_a_state_finding_refiled_identically_after_the_resolution_is_kept(plan_context):
-    """An identical re-detection keeps the recorded resolution rather than re-arming the gate."""
+def test_a_state_finding_refiled_identically_after_the_resolution_is_rearmed(plan_context):
+    """A re-filed blocking finding returns to pending, so a close can accept it.
+
+    The round's ``taken_into_account`` is a supersession, not an operator decision.
+    Keeping it resolved left the finding blocking ``validate`` while unpending in
+    the store, and ``loop-back close --accept`` refused it with
+    ``finding_not_pending``.
+    """
     plan_id = 'rule-resolve-refiled-after'
     state_hashes = _file_state_findings(plan_id)
     _resolve(plan_id)
@@ -210,10 +216,10 @@ def test_a_state_finding_refiled_identically_after_the_resolution_is_kept(plan_c
         rule=_RULE,
     )
 
-    assert refiled['status'] == 'kept'
+    assert refiled['status'] == 'reopened'
     assert refiled['hash_id'] == state_hashes['verdict_refused']
-    assert refiled['resolution'] == 'taken_into_account'
-    assert _pending_hashes(plan_id) == set()
+    assert refiled['previous_resolution'] == 'taken_into_account'
+    assert _pending_hashes(plan_id) == {refiled['hash_id']}
 
 
 def test_the_resolution_and_detail_are_written_to_each_matched_record(plan_context):

@@ -916,15 +916,17 @@ FOR each step_id in manifest.phase_6.steps:
          **Signal 3 — script-failure clusters (three marker classes)**:
 
             python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-              read --plan-id {plan_id} --type work
+              signal-scan --plan-id {plan_id}
 
-         Scan the returned log lines for THREE marker classes and bucket each by the distinct failing script notation (the `bundle:skill:script` token in the line):
+         The verb is the DETERMINISTIC scanner for this signal — read `signal_3_count` from its result rather than re-deriving the count. It buckets three marker classes by the distinct failing script notation (the `bundle:skill:script` token in the line):
 
-         - **`[FAILED]`** lines — explicit failure markers.
-         - **`[ERROR] ... script_failure`** lines — the canonical per-call non-zero-exit marker emitted by the phase Error Handling sections (argparse rejections, internal errors, "Unknown notation" failures). These never carry a `[FAILED]` token.
-         - **`voluntary_checkpoint → error`** reclassifications — the dispatch-boundary no-progress reclassification (B7); the failing notation is the dispatched workflow/agent whose dispatch was reclassified.
+         - **`[FAILED]`** lines — explicit failure markers, from the WORK log.
+         - **`[ERROR] ... script_failure`** lines — the canonical per-call non-zero-exit marker emitted by the phase Error Handling sections (argparse rejections, internal errors, "Unknown notation" failures). These never carry a `[FAILED]` token. Also from the WORK log.
+         - **B7 no-progress reclassifications** — the DISPATCH-BOUNDARY no-progress reclassification, scanned in the DECISION log, which is where the orchestrator writes it. The marker string is stated once, in `manage-logging/scripts/_signal_scan.py` (`NO_PROGRESS_MARKER`), and the writer in [`plan-marshall/workflow/execution.md`](../plan-marshall/workflow/execution.md) § "B7 — voluntary_checkpoint no-progress reclassification" emits that same string; a scanner that looked for it in the work log (the pre-fix behaviour) could never match, because B7 never wrote there.
 
-         `signal_3_count` is the number of distinct notations across the UNION of all three marker classes (a notation that fails under more than one class counts once). The motivating case: a long build lost across the dispatch boundary, logged as `[ERROR] script_failure` plus a `voluntary_checkpoint → error` reclassification but never a `[FAILED]` line. This marker set is kept consistent with the retrospective analyzer's failure-marker set so the Signal-Gate count and the retrospective's script-failure cluster count stay aligned.
+         `signal_3_count` is the number of distinct notations across the UNION of all three marker classes (a notation that fails under more than one class counts once); a marker line with no parseable notation is reported as `unattributable_count` and never counted, because a count cannot name a notation it could not read. The motivating case: a long build lost across the dispatch boundary, logged as `[ERROR] script_failure` plus a `voluntary_checkpoint → error` reclassification but never a `[FAILED]` line.
+
+         ⛔ **A prescribed build hand-back is NOT lesson-bearing and never enters the count.** A phase-5 return carrying `termination_cause: verification_handback` (the leaf handed an orchestrator-tier build back exactly as the workflow prescribes) is not a failure of any kind; `signal-scan` reports its row count as `verification_handback_rows` and excludes every one from `signal_3_count`, including a re-attach that writes two consecutive hand-back rows for the same task. This marker set is kept consistent with the retrospective analyzer's failure-marker set so the Signal-Gate count and the retrospective's script-failure cluster count stay aligned; `analyze-logs.py` carries no copy of the reclassification marker, so the two read one string from one writer.
 
       b. Three-zero short-circuit:
 

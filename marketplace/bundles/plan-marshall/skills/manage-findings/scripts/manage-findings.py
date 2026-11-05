@@ -524,7 +524,10 @@ def main() -> int:
             'Opt-in to reopen a matched record whose resolution is fixed: the prior '
             'resolution, detail and timestamp move into history and the record returns '
             'to pending. Without the opt-in a fixed match is kept; a non-fixed match '
-            'is kept even with it'
+            'is kept even with it, and the result names why as not_reopened. An '
+            'identical re-file of a taken_into_account (review-superseded) record '
+            'reopens on observation alone, because that disposition is not an '
+            'operator decision'
         ),
     )
     q_add_parser.add_argument(

@@ -68,6 +68,6 @@ def test_termination_table_carries_pending_verify_steps_in_every_row():
             break
         if line.startswith('| `'):
             rows.append(line)
-    assert len(rows) == 7, f'termination-cause table must carry 7 rows, found {len(rows)}'
+    assert len(rows) == 8, f'termination-cause table must carry 8 rows, found {len(rows)}'
     for row in rows:
         assert 'pending_verify_steps' in row, f'termination table row carries no hand-back field: {row[:80]}'

@@ -558,7 +558,7 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings qg
   --rule code-review-state --component plan-marshall:phase-6-finalize --severity warning
 ```
 
-On a non-`success` return from any `qgate add`, do NOT record the loop-back: surface the returned error and halt — a loop-back whose findings are not in the store points the next round at nothing.
+On a return from any `qgate add` that is not in `QGATE_PERSIST_OK` — the partition of `success`, `deduplicated`, `reopened` and `kept`, which all mean the finding IS in the store — do NOT record the loop-back: surface the returned error and halt — a loop-back whose findings are not in the store points the next round at nothing.
 
 **Select the target.** The target is the validator's `loop_back_target` when it is `5-execute` or `6-finalize`. A round with no blocking finding that loops back only because the verifier did not accept has `loop_back_target: none`; its target is `6-finalize` — the next round is a re-review of the diff in hand.
 

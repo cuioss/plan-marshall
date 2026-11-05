@@ -1376,6 +1376,10 @@ _UNDEFINED_RATIO_TOKEN = 'undefined'
 _TERMINAL_WASTE_CAUSES = ('error',)
 _RETRYABLE_CAUSES = ('blocked_session_restart', 'harness_cancellation')
 _RETURNED_WITH_FINDINGS_CAUSE = 'returned_with_findings'
+# The prescribed orchestrator-tier build hand-back: a productive, workflow-
+# mandated yield, never an agent-initiated re-dispatch. Counted so the excluded
+# population is named rather than inferred — see `_parse_dispatch_boundary_file`.
+_VERIFICATION_HANDBACK_CAUSE = 'verification_handback'
 
 
 def _legacy_cell_to_int(cell: str) -> int:
@@ -1516,6 +1520,12 @@ def _parse_dispatch_boundary_file(artifact: Path) -> dict[str, Any]:
             ``termination_cause == "returned_with_findings"`` — the PRODUCTIVE
             loop-back population (a dispatch that returned findings and looped
             back), the opposite of wasted spend.
+      - verification_handback_count: number of rows with
+            ``termination_cause == "verification_handback"`` — the PRESCRIBED
+            orchestrator-tier build hand-back population. Named so a run of
+            hand-back rows (including the two consecutive rows a re-attach
+            writes for one task) is visibly a distinct population: it is never
+            voluntary-checkpoint polling and never wasted spend.
       - error_total_tokens: sum of ``total_tokens`` over terminal-error
             (``error``) rows — the terminal-error dispatch spend, a reported
             figure rather than a derivable one. Post-D1 (productive loop-backs
@@ -1535,6 +1545,7 @@ def _parse_dispatch_boundary_file(artifact: Path) -> dict[str, Any]:
             'unknown_count': 0,
             'clean_exit_queue_empty_count': 0,
             'returned_with_findings_count': 0,
+            'verification_handback_count': 0,
             'error_total_tokens': 0,
             'retryable_total_tokens': 0,
         }
@@ -1548,6 +1559,7 @@ def _parse_dispatch_boundary_file(artifact: Path) -> dict[str, Any]:
             'unknown_count': 0,
             'clean_exit_queue_empty_count': 0,
             'returned_with_findings_count': 0,
+            'verification_handback_count': 0,
             'error_total_tokens': 0,
             'retryable_total_tokens': 0,
         }
@@ -1683,6 +1695,13 @@ def _parse_dispatch_boundary_file(artifact: Path) -> dict[str, Any]:
     # looped back. Counted so a reader can tell the productive dispatches apart
     # from the genuinely-wasted ones rather than reconstructing it from the rows.
     returned_with_findings_count = sum(1 for row in rows if row['termination_cause'] == _RETURNED_WITH_FINDINGS_CAUSE)
+    # The PRESCRIBED build hand-back population: a leaf handed an
+    # orchestrator-tier build back because the workflow told it to. Counted
+    # separately so a run of hand-back rows — including the two consecutive rows
+    # a re-attach writes for the same task — can never be read as
+    # voluntary-checkpoint polling or as wasted spend: each row keeps its own
+    # cause, and this count names the whole excluded population.
+    verification_handback_count = sum(1 for row in rows if row['termination_cause'] == _VERIFICATION_HANDBACK_CAUSE)
     # Genuinely-wasted (terminal) vs retryable (infrastructure) dispatch spend,
     # summed by cause-class and reported DISTINCTLY (never folded into one
     # "failure" figure) so the two, which need different remedies, stay separable.
@@ -1694,6 +1713,7 @@ def _parse_dispatch_boundary_file(artifact: Path) -> dict[str, Any]:
         'unknown_count': unknown_count,
         'clean_exit_queue_empty_count': clean_exit_queue_empty_count,
         'returned_with_findings_count': returned_with_findings_count,
+        'verification_handback_count': verification_handback_count,
         'error_total_tokens': error_total_tokens,
         'retryable_total_tokens': retryable_total_tokens,
     }

@@ -48,7 +48,7 @@ display_detail: "drift loop cap exceeded after 3 consecutive recoveries"
 plan_id: {plan_id}
 ```
 
-The counter resets to zero on any phase-5-execute return that is NOT `baseline_drift` (success, voluntary_checkpoint, budget_yield, error, harness_cancellation, clean_exit_queue_empty all reset it).
+The counter resets to zero on any phase-5-execute return that is NOT `baseline_drift` (success, voluntary_checkpoint, budget_yield, verification_handback, error, harness_cancellation, clean_exit_queue_empty all reset it).
 
 ## Loop-back continuation
 
