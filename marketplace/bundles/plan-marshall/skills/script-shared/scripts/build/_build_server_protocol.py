@@ -1316,19 +1316,21 @@ def read_log_verdict(log_file: str) -> LogVerdict | None:
 
 
 def _last_json_object(content: str) -> dict[str, Any] | None:
-    """Return the LAST JSON object in ``content`` that parses, or ``None``.
+    """Return the LAST JSON object in ``content`` that carries a string ``status``.
 
     A log holds whatever the child wrote before its result — the wrapper's own
-    ``[EXEC]`` line, progress output, a supervisor banner — so the result is not
-    necessarily the first thing in the file nor the only object in it. The scan
-    walks every ``{`` and keeps the last object that decodes, which is the result
-    whenever one was emitted.
+    ``[EXEC]`` line, progress output, a supervisor banner — and it can hold JSON
+    after it too (a trailing empty object, a footer). So the scan walks every ``{``
+    and keeps the last object that both decodes AND states a verdict: "the last
+    object that parses" would let a verdict be discarded by any later object, which
+    is the collapse this fallback exists to prevent.
 
     Args:
         content: The whole job log.
 
     Returns:
-        The last decoded JSON object, or ``None`` when the log holds none.
+        The last decoded JSON object carrying a ``status``, or ``None`` when the log
+        holds none.
     """
     decoder = json.JSONDecoder()
     found: dict[str, Any] | None = None
@@ -1342,7 +1344,7 @@ def _last_json_object(content: str) -> dict[str, Any] | None:
         except ValueError:
             offset = start + 1
             continue
-        if isinstance(candidate, dict):
+        if isinstance(candidate, dict) and isinstance(candidate.get('status'), str):
             found = candidate
         offset = end
 
@@ -1355,6 +1357,11 @@ def _json_log_verdict(log_file: str) -> LogVerdict | None:
     scanner finds no ``status:`` in such a log, so before this existed the whole
     routed job fell through to ``build_failed`` with the synthetic row — the same
     collapse this module fixes for TOON, surviving in the other output format.
+
+    Every field the TOON path reads is read here too, with the same guards: the
+    applied-bound triple matters because a JSON ``timeout`` or ``killed`` result
+    without it names no bound, and the bound is what tells a reader whose number
+    fired.
 
     Only the failure path pays for it: this runs after the line scan has already
     found nothing, and it re-reads the log because that case is rare and a partly
@@ -1383,6 +1390,12 @@ def _json_log_verdict(log_file: str) -> LogVerdict | None:
     exit_code = exit_code if isinstance(exit_code, int) and not isinstance(exit_code, bool) else None
     tests_run = result.get('tests_run')
     tests_run = tests_run if isinstance(tests_run, int) and not isinstance(tests_run, bool) and tests_run >= 0 else None
+    bound = result.get('timeout_used_seconds')
+    timeout_used_seconds = bound if isinstance(bound, int) and not isinstance(bound, bool) and bound > 0 else None
+    timeout_source = result.get('timeout_source')
+    timeout_source = timeout_source if isinstance(timeout_source, str) and timeout_source else None
+    command_key = result.get('command_key')
+    command_key = command_key if isinstance(command_key, str) and command_key else None
     rows = result.get('errors')
     errors = tuple(row for row in rows if isinstance(row, dict)) if isinstance(rows, list) else ()
     error_name = result.get('error')
@@ -1408,6 +1421,9 @@ def _json_log_verdict(log_file: str) -> LogVerdict | None:
         exit_code=exit_code,
         tests_run=tests_run,
         errors=errors,
+        timeout_used_seconds=timeout_used_seconds,
+        timeout_source=timeout_source,
+        command_key=command_key,
         fault=fault,
         child_fault=child_fault,
     )

@@ -1089,6 +1089,66 @@ class TestPreToolFaultPassThrough:
         assert verdict.child_fault.error == 'queue_saturated'
         assert verdict.child_fault.reason == 'no slot was admitted; retry later'
 
+    def test_a_json_timeout_keeps_its_applied_bound(self, tmp_path):
+        """A JSON non-finish must name the bound the inner wrapper applied.
+
+        The bound is what tells a reader whose number fired — a learned bound is
+        corrected by one more measured run, an explicit one by raising it. The TOON
+        path reads the triple; a JSON-formatted result must not lose it.
+        """
+        import json
+
+        import _build_server_protocol as proto
+
+        log = tmp_path / 'json-timeout.log'
+        log.write_text(
+            json.dumps(
+                {
+                    'status': 'timeout',
+                    'error': 'timeout',
+                    'exit_code': -1,
+                    'timeout_used_seconds': 900,
+                    'timeout_source': 'learned',
+                    'command_key': 'python:module_tests',
+                }
+            ),
+            encoding='utf-8',
+        )
+
+        verdict = proto.read_log_verdict(str(log))
+
+        assert verdict is not None
+        assert verdict.status == 'timeout'
+        assert verdict.timeout_used_seconds == 900
+        assert verdict.timeout_source == 'learned'
+        assert verdict.command_key == 'python:module_tests'
+
+    def test_a_trailing_json_object_cannot_discard_the_verdict(self, tmp_path):
+        """The result is the last object WITH A STATUS, not the last object.
+
+        A trailing ``{}`` or a footer object after the result would otherwise erase
+        the verdict and send the whole job back to ``build_failed`` — the collapse
+        this fallback exists to prevent.
+        """
+        import json
+
+        import _build_server_protocol as proto
+
+        log = tmp_path / 'json-trailing.log'
+        log.write_text(
+            json.dumps({'status': 'error', 'error': 'queue_saturated', 'message': 'retry later'})
+            + '\n'
+            + json.dumps({})
+            + '\n',
+            encoding='utf-8',
+        )
+
+        verdict = proto.read_log_verdict(str(log))
+
+        assert verdict is not None
+        assert verdict.child_fault is not None
+        assert verdict.child_fault.error == 'queue_saturated'
+
     def test_a_json_failure_keeps_its_rows_and_the_build_failure_path(self, tmp_path):
         """Matched control: JSON parsing must not turn a real failure into a refusal."""
         import json
