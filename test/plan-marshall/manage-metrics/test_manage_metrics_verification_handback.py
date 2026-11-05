@@ -91,3 +91,26 @@ class TestHandbackCauseIsNamedInItsTwoDocuments:
         )
         assert 'The two legitimate yields' in text, 'both yields must be named, with their signals'
         assert 'verification_handback' in text and 'budget_yield' in text
+
+    def test_phase_5_names_the_four_task_boundary_points_consistently(self):
+        """The "only yields" claim must not contradict the four sanctioned points."""
+        text = PHASE_5_SKILL_MD.read_text(encoding='utf-8')
+
+        assert 'These two are the ONLY yields' not in text, (
+            'phase-5-execute lists four TASK-boundary re-dispatch points; two of them are error paths'
+        )
+        assert 'These two are the only yields that are NOT error handling' in text
+        for point in ('budget_yield', 'verification_handback', 'triage_required', 'baseline_drift'):
+            assert point in text, f'the four sanctioned points must keep naming {point}'
+
+    def test_the_voluntary_checkpoint_row_covers_a_malformed_handback_pair(self):
+        """A `verification_handback: true` with an empty list must match a row.
+
+        The hand-back row requires a non-empty list, and the voluntary_checkpoint
+        row used to exclude every return carrying the discriminator — so a
+        discriminator with an empty list matched neither row.
+        """
+        text = EXECUTION_MD.read_text(encoding='utf-8')
+
+        assert 'without a valid hand-back pair' in text
+        assert 'beside an empty `pending_verify_steps[]`' in text

@@ -169,3 +169,16 @@ class TestTheWriterAndTheScannerShareOneMarker:
 
         assert 'signal-scan' in text, 'lessons-capture.md must cite the scanner that produces its input field'
         assert 'verification_handback' in text, 'the field description must name the excluded hand-back'
+
+    def test_the_dispatcher_names_the_log_its_marker_is_scanned_in(self):
+        """Signal 3's marker is scoped to the log it is written to, and to no other consumer."""
+        text = FINALIZE_SKILL_MD.read_text(encoding='utf-8')
+
+        assert 'the WORK log carries no copy of it' in text, (
+            'the dispatcher must state which log class 3 is read from, as current behaviour'
+        )
+        assert 'so the two read one string from one writer' not in text, (
+            'the retrospective does not read this marker: its script-failure analysis reads '
+            'script-execution.log, so no cross-surface marker set exists to align'
+        )
+        assert 'script-execution.log' in text
