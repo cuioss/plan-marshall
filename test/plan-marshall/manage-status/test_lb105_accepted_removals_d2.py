@@ -82,13 +82,13 @@ def _verdict(criteria: list[str]) -> dict[str, Any]:
                 'number': 1,
                 'verdict': 'met',
                 'criteria': [
-                    {'criterion': text, 'status': 'met', 'evidence': ['src/parser.py:1']} for text in criteria
+                    {'criterion': text, 'status': 'met', 'evidence': ['pyproject.toml:1']} for text in criteria
                 ],
             }
         ],
         'unrequested_changes': [],
         'self_reports': [],
-        'files_read': ['src/parser.py'],
+        'files_read': ['pyproject.toml'],
     }
 
 
@@ -223,6 +223,9 @@ def test_declared_removal_yields_no_blocking_row(plan_context, tmp_path, monkeyp
     monkeypatch.setattr(_attr, 'resolve_live_worktree', lambda _plan_id: None)
     criteria = ['parser accepts input']
     _plan(plan_context, criteria, removals=['test_a'])
+    # The declaration is recorded when the criteria snapshot is frozen — reading
+    # the live outline at validation time would be a second acceptance route.
+    assert _snap.write_snapshot(PLAN_ID)['status'] == 'success'
 
     payload = review_support.run_validate(PLAN_ID, 'functional', _sealed(tmp_path, criteria), None)
 
@@ -231,6 +234,34 @@ def test_declared_removal_yields_no_blocking_row(plan_context, tmp_path, monkeyp
 
 
 # --- D2 controls: a removal nobody decided on still blocks ----------------------------------
+
+
+def test_a_java_class_removal_is_declared_and_accepted(plan_context, tmp_path, monkeypatch) -> None:
+    """A test class whose language has no per-function leg still has an identity.
+
+    The consumer that saw this defect runs Maven, so a file-level-only row must
+    still be decidable: the class header gives it an identity, and a declared
+    removal of that class suppresses the row.
+    """
+    repo = _repo(tmp_path)
+    java = 'package com.example;\n\npublic class SampleTest {\n    @Test\n    public void present() {\n        Assertions.assertEquals(1, 1);\n    }\n}\n'
+    _commit(repo, {'README.md': 'readme\n'})
+    _commit(repo, {'src/test/java/com/example/SampleTest.java': java})
+    _git(repo, 'checkout', '--quiet', '-b', 'feature')
+    _git(repo, 'rm', 'src/test/java/com/example/SampleTest.java')
+    _git(repo, 'commit', '--quiet', '-m', 'delete')
+    monkeypatch.setattr(_integrity, 'resolve_live_worktree', lambda _plan_id: repo)
+    monkeypatch.setattr(_attr, 'resolve_live_worktree', lambda _plan_id: None)
+    criteria = ['parser accepts input']
+    _plan(plan_context, criteria, removals=['SampleTest'])
+    assert _snap.write_snapshot(PLAN_ID)['status'] == 'success'
+
+    payload = review_support.run_validate(PLAN_ID, 'functional', _sealed(tmp_path, criteria), None)
+
+    assert _blocking(payload) == [], payload['findings']
+    assert any(entry['identity'] == 'SampleTest' for entry in payload['accepted_removals']), payload[
+        'accepted_removals'
+    ]
 
 
 def test_undeclared_removal_is_blocking_at_every_head(plan_context, tmp_path, monkeypatch) -> None:

@@ -157,16 +157,22 @@ def test_an_old_parser_snapshot_of_a_wrapped_bullet_yields_parser_extended(plan_
     assert [finding for finding in payload['findings'] if finding['kind'] == 'criterion_rewritten'] == []
 
 
-# --- D4 control: single-line bullets are frozen byte-identically ---------------------------
+# --- D4 control: single-line bullets are frozen exactly as before ---------------------------
 
 
-def test_single_line_bullets_freeze_a_byte_identical_snapshot(plan_context) -> None:
-    """The shapes the old parser handled produce the same criteria and the same bytes."""
-    _plan(plan_context, '- first criterion\n- second criterion\n- third criterion\n')
+def _retired_parser(block: str) -> list[str]:
+    """The retired rule, spelled out: consecutive ``- `` lines, first line only."""
+    return [line[2:].strip() for line in block.splitlines() if line.startswith('- ')]
+
+
+def test_single_line_bullets_freeze_exactly_what_the_retired_parser_produced(plan_context) -> None:
+    """The shape the old parser handled yields an identical frozen record."""
+    block = '- first criterion\n- second criterion\n- third criterion\n'
+    _plan(plan_context, block)
 
     snapshot = _snap.build_snapshot(PLAN_ID)
-    assert snapshot['deliverables'][0]['criteria'] == ['first criterion', 'second criterion', 'third criterion']
-    # The retired parser's rule, spelled out: consecutive `- ` lines only.
-    old_parser_output = ['first criterion', 'second criterion', 'third criterion']
-    assert snapshot['deliverables'][0]['criteria'] == old_parser_output
+
+    assert snapshot['deliverables'][0]['criteria'] == _retired_parser(block)
+    rebuilt = {**snapshot, 'deliverables': [{**snapshot['deliverables'][0], 'criteria': _retired_parser(block)}]}
+    assert json.dumps(snapshot, sort_keys=True) == json.dumps(rebuilt, sort_keys=True)
     assert _snap.criteria_drift(PLAN_ID) == []

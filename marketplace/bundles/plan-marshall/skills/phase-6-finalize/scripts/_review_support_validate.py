@@ -456,12 +456,18 @@ def _grade_row(
 
 
 def grade_frozen_criteria(grading: Grading, drift: list[dict[str, Any]]) -> int:
-    """Grade the frozen-criteria drift as blocking findings; return the count.
+    """Grade the frozen-criteria drift, and return the number of rows it read.
 
-    One finding per criterion the current outline no longer carries verbatim, one
-    per frozen deliverable that vanished, and one per spec deliverable whose own
-    Done-when no outline criterion covers. A criterion the snapshot froze and an
-    operator decision authorized is not in ``drift`` at all, so it is a pass.
+    One BLOCKING finding per criterion the current outline no longer carries
+    verbatim, one per frozen deliverable that vanished, and one per spec deliverable
+    whose own Done-when no outline criterion covers. A criterion the snapshot froze
+    and an operator decision authorized is not in ``drift`` at all, so it is a pass.
+
+    One kind is ADVISORY, never blocking: ``parser_extended`` — a frozen criterion
+    that is a prefix of the criterion the improved parser now reads in full. Nothing
+    about the outline changed, so it is reported as `criterion_parser_extended` for
+    visibility and left out of the blocking set; retiring it is a re-freeze, which
+    needs its own authorization.
     """
     for row in drift:
         kind = row.get('kind')

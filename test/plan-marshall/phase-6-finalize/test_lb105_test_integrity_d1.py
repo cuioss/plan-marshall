@@ -382,3 +382,55 @@ def test_added_skip_marker_is_reported_as_test_filtered(plan_context, tmp_path, 
     payload = _integrity.compute_test_integrity(PLAN_ID)
 
     assert [row['kind'] for row in payload['findings']] == ['test_filtered'], payload
+
+
+def test_a_new_test_file_with_a_skip_marker_is_not_reported_as_filtered(plan_context, tmp_path, monkeypatch) -> None:
+    """An ADDED file filtered nothing: the branch created it."""
+    repo = _repo(tmp_path)
+    _commit(repo, {'README.md': 'readme\n'})
+    _git(repo, 'checkout', '--quiet', '-b', 'feature')
+    _commit(repo, {'test/new_test.py': 'import pytest\n\n@pytest.mark.skip\ndef test_new():\n    assert 1 == 1\n'})
+    monkeypatch.setattr(_integrity, 'resolve_live_worktree', lambda _plan_id: repo)
+    _plan(plan_context)
+
+    payload = _integrity.compute_test_integrity(PLAN_ID)
+
+    assert payload['findings'] == [], payload
+
+
+def test_a_renamed_file_keeps_its_existing_skip_marker(plan_context, tmp_path, monkeypatch) -> None:
+    """A marker that travelled with a renamed file was not added by the branch."""
+    repo = _repo(tmp_path)
+    _commit(repo, {'README.md': 'readme\n'})
+    _commit(repo, {'test/old_test.py': 'import pytest\n\n@pytest.mark.skip\ndef test_a():\n    assert 1 == 1\n'})
+    _git(repo, 'checkout', '--quiet', '-b', 'feature')
+    _git(repo, 'mv', 'test/old_test.py', 'test/new_test.py')
+    _git(repo, 'commit', '--quiet', '-m', 'move')
+    monkeypatch.setattr(_integrity, 'resolve_live_worktree', lambda _plan_id: repo)
+    _plan(plan_context)
+
+    payload = _integrity.compute_test_integrity(PLAN_ID)
+
+    assert payload['findings'] == [], payload
+
+
+def test_a_renamed_test_function_is_reported(plan_context, tmp_path, monkeypatch) -> None:
+    """A test FUNCTION that disappears is a named test disappearing, rename included.
+
+    D1's move rule is about a FILE. A test function renamed in place is reported,
+    by design: the identity that names it appears in no after-file, and a rename is
+    indistinguishable from a deletion without inventing a second matcher.
+    """
+    repo = _repo(tmp_path)
+    _commit(repo, {'README.md': 'readme\n'})
+    _commit(repo, {'test/sample_test.py': 'def test_old_name():\n    assert 1 == 1\n    assert 2 == 2\n'})
+    _git(repo, 'checkout', '--quiet', '-b', 'feature')
+    _commit(repo, {'test/sample_test.py': 'def test_new_name():\n    assert 1 == 1\n    assert 2 == 2\n'})
+    monkeypatch.setattr(_integrity, 'resolve_live_worktree', lambda _plan_id: repo)
+    _plan(plan_context)
+
+    payload = _integrity.compute_test_integrity(PLAN_ID)
+
+    rows = _rows(payload)
+    assert rows, payload
+    assert any(entry['identity'] == 'test_old_name' for entry in rows[0]['removed_tests']), rows

@@ -402,8 +402,14 @@ def _removed_identities_for_accept(
     An operator close accepts a finding, and the finding's own row names the test
     file. The identities are re-derived from the SAME test-integrity report the
     validator graded, so the accepted set is keyed by the identity plus the number
-    of removed assertions rather than by a head. Returns the entries plus an error
-    string when the report cannot be read or no longer carries an accepted removal.
+    of removed assertions rather than by a head.
+
+    Returns the entries plus a WARNING string when the report cannot be read or an
+    accepted path carries no identity. The warning is reported, never fatal: the
+    Q-Gate resolution still records the operator's decision, and turning a
+    successful close into an error would be a regression. An entry that cannot be
+    recorded simply means the row is raised again at the next head, which the
+    warning says.
     """
     paths: list[str] = []
     for finding in findings:
@@ -431,8 +437,8 @@ def _removed_identities_for_accept(
             unaccounted.append(path)
     if unaccounted:
         return entries, (
-            'the accepted finding(s) name removal(s) the current test-integrity report does not carry: '
-            + ', '.join(unaccounted)
+            'these accepted findings carry no test identity this run could record, so their removals will be '
+            'raised again at the next head: ' + ', '.join(unaccounted)
         )
     return entries, None
 
@@ -617,10 +623,11 @@ def cmd_loop_back_close(args: argparse.Namespace) -> dict | None:
     # ``weakened_test`` finding records the identities the finding removed, keyed by
     # the D1 identity plus the removed count — not the closing head — so the same
     # removal is not asked about again at a later head.
-    accepted_removal_entries, accepted_removals_error = _removed_identities_for_accept(
+    accepted_removal_entries, accepted_removals_warning = _removed_identities_for_accept(
         plan_id, set(accept), list(pending['findings'])
     )
     accepted_removals_recorded = True
+    accepted_removals_error: str | None = None
     if accepted_removal_entries:
         accepted_removals_recorded = record_accepted_removals(plan_id, accepted_removal_entries)
         if not accepted_removals_recorded:
@@ -673,6 +680,8 @@ def cmd_loop_back_close(args: argparse.Namespace) -> dict | None:
     }
     if override_head_error:
         result['override_head_error'] = override_head_error
+    if accepted_removals_warning:
+        result['accepted_removals_warning'] = accepted_removals_warning
     if accepted_removals_error:
         result['accepted_removals_error'] = accepted_removals_error
     if not_accepted or not state_resolved or waiver_refusals or override_head_error or accepted_removals_error:

@@ -164,8 +164,9 @@ def _evidence_root(plan_id: str) -> Path | None:
 
     A worktree-bound plan is graded against its worktree. A plan that runs WITHOUT
     a worktree (``use_worktree: false``) is graded against the MAIN CHECKOUT — the
-    tree the finalize contract assigns it — so its citations are still checked
-    rather than read as the not-run state (which is a blocking finding).
+    tree the finalize contract assigns it, and the tree its branch diff is read
+    from — so its citations are still checked rather than read as the not-run state
+    (which is a blocking finding).
 
     A plan that DECLARED a materialized worktree which does not resolve now is
     different again: falling back to the main checkout would check citations

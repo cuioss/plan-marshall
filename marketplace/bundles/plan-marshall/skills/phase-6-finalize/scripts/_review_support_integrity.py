@@ -23,8 +23,11 @@ The branch is read as ONE test set rather than one path at a time:
   the branch point is never reported as removed;
 * a test is named by an identity that does not depend on its file path —
   ``class::function`` for Python (``async def`` and indented methods included),
-  the quoted name for a JS/TS ``it``/``test``/``describe`` — so a test that moved
-  to another file is still the same test;
+  the quoted name for a JS/TS ``it``/``test``/``describe``, and one entry per
+  CLASS header for a file whose test headers neither arm parses — so a test that
+  moved to another file is still the same test;
+* the after-image is the working tree's text, falling back to ``HEAD:{path}``: an
+  uncommitted removal is still graded, never hidden by the commit boundary;
 * a plan with ``use_worktree: false`` is graded against the main checkout's diff
   to the base instead of being skipped as ``worktree_unresolved``; the evidence
   root the check chose is reported on the payload.
@@ -83,6 +86,14 @@ SKIP_MARKERS = (
 _TEST_DEF_RE = re.compile(r'^\s*(?:async\s+)?def\s+(\w+)\s*\(')
 #: A Python class header, the scope half of a method's identity.
 _CLASS_DEF_RE = re.compile(r'^(\s*)class\s+(\w+)\s*[\(:]')
+#: A class header in a language whose modifiers precede the keyword (``public
+#: class``, ``open class``, ``abstract class``). Used only as the FALLBACK identity
+#: for a file that declares no Python ``def`` and no JS/TS test call — the arm that
+#: gives a non-Python test class an identity at all, so its removal can be declared
+#: and accepted instead of being an identity-less row nobody can decide.
+_ANY_CLASS_RE = re.compile(
+    r'^\s*(?:(?:public|private|protected|abstract|final|static|open|sealed|internal|data)\s+)*class\s+(\w+)'
+)
 #: A JS/TS ``it``/``test``/``describe`` call. Its quoted name is the identity.
 _JS_TEST_RE = re.compile(r'^\s*(?:it|test|describe)\s*\(\s*[\'"]([^\'"]+)[\'"]')
 
@@ -176,6 +187,23 @@ def _show(worktree: Path, rev: str, path: str) -> str | None:
     return proc.stdout if proc.returncode == 0 else None
 
 
+def _after_image(root: Path, path: str) -> str | None:
+    """Return the branch's text for ``path``: the working tree, else ``HEAD``.
+
+    The working tree first is the behaviour this check already had, and it is the
+    fail-closed direction: a test edited but not yet committed is still graded, so
+    an uncommitted removal cannot hide behind the commit boundary. ``HEAD`` is the
+    fallback for a path the working tree no longer carries.
+    """
+    target = root / path
+    try:
+        if target.is_file():
+            return target.read_text(encoding='utf-8')
+    except OSError:
+        pass
+    return _show(root, 'HEAD', path)
+
+
 def _pre_image(worktree: Path, base_ref: str, path: str) -> str | None:
     """Return the file's content at ``merge-base {base_ref} HEAD``, or ``None``.
 
@@ -205,14 +233,31 @@ def _function_assertion_counts(text: str) -> dict[str, int]:
     """Count assertion constructs per test identity, in the whole file.
 
     The identity does NOT depend on the file path: ``Class::method`` for a method
-    declared inside a class, the bare function name for a top-level one, and the
-    quoted name for a JS/TS ``it``/``test``/``describe``. ``async def`` counts as
+    declared inside a Python class, the bare function name for a top-level one, and
+    the quoted name for a JS/TS ``it``/``test``/``describe``. ``async def`` counts as
     a test, and an indented ``def`` is the method arm of the class identity.
+
+    A file that declares none of those — a test class in a language whose headers
+    the two arms do not parse — falls back to its CLASS headers as the identity, one
+    entry per class. That fallback is what keeps such a removal decidable: a row
+    with no identity can be neither declared nor accepted.
 
     A file-level count misses an assertion removed from one test and added to
     another — the file total is unchanged — while the per-identity counts still
     show the loss.
     """
+    spans = _identity_spans(text)
+    if not spans:
+        spans = _class_spans(text)
+    counts: dict[str, int] = {}
+    for index, (start, name) in enumerate(spans):
+        end = spans[index + 1][0] if index + 1 < len(spans) else len(text)
+        counts[name] = counts.get(name, 0) + _count(text[start:end])
+    return counts
+
+
+def _identity_spans(text: str) -> list[tuple[int, str]]:
+    """The Python/JS test-function identities, in document order."""
     spans: list[tuple[int, str]] = []
     class_stack: list[tuple[int, str]] = []
     offset = 0
@@ -233,11 +278,19 @@ def _function_assertion_counts(text: str) -> dict[str, int]:
                 if js_match:
                     spans.append((offset, js_match.group(1)))
         offset += len(line)
-    counts: dict[str, int] = {}
-    for index, (start, name) in enumerate(spans):
-        end = spans[index + 1][0] if index + 1 < len(spans) else len(text)
-        counts[name] = counts.get(name, 0) + _count(text[start:end])
-    return counts
+    return spans
+
+
+def _class_spans(text: str) -> list[tuple[int, str]]:
+    """The fallback identities: one per class header, in document order."""
+    spans: list[tuple[int, str]] = []
+    offset = 0
+    for line in text.splitlines(keepends=True):
+        match = _ANY_CLASS_RE.match(line)
+        if match:
+            spans.append((offset, match.group(1)))
+        offset += len(line)
+    return spans
 
 
 def _normalized_body(text: str) -> str:
@@ -318,6 +371,7 @@ def compute_test_integrity(plan_id: str, base_ref: str | None = None) -> dict[st
 
     before: dict[str, str] = {}
     after: dict[str, str] = {}
+    renamed_from: dict[str, str] = {}
     for code, path, old_path in entries:
         if code in ('R', 'C'):
             if old_path and is_test_path(old_path):
@@ -325,9 +379,11 @@ def compute_test_integrity(plan_id: str, base_ref: str | None = None) -> dict[st
                 if text is not None:
                     before[old_path] = text
             if is_test_path(path):
-                text = _show(root, 'HEAD', path)
+                text = _after_image(root, path)
                 if text is not None:
                     after[path] = text
+                    if old_path:
+                        renamed_from[path] = old_path
         elif code == 'D':
             if is_test_path(path):
                 text = _show(root, base_tree, path)
@@ -335,12 +391,12 @@ def compute_test_integrity(plan_id: str, base_ref: str | None = None) -> dict[st
                     before[path] = text
         elif code == 'A':
             if is_test_path(path):
-                text = _show(root, 'HEAD', path)
+                text = _after_image(root, path)
                 if text is not None:
                     after[path] = text
         elif is_test_path(path):
-            pre = _show(root, base_tree, path)
-            post = _show(root, 'HEAD', path)
+            pre = _pre_image(root, resolved_base, path)
+            post = _after_image(root, path)
             if pre is not None:
                 before[path] = pre
             if post is not None:
@@ -432,7 +488,15 @@ def compute_test_integrity(plan_id: str, base_ref: str | None = None) -> dict[st
             )
 
     for path, post in after.items():
-        pre = before.get(path, '')
+        # A marker is only "added by the branch" against a pre-image. An ADDED test
+        # file has none (the branch created it, so it filtered nothing), and a
+        # RENAMED file's pre-image lives under the old path. Comparing an added file
+        # against '' reported every new skipped test as filtered, which the retired
+        # check never did.
+        pre_path = path if path in before else renamed_from.get(path)
+        if pre_path is None:
+            continue
+        pre = before.get(pre_path, '')
         added_markers = sorted(_markers(post) - _markers(pre))
         if added_markers:
             findings.append(

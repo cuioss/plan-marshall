@@ -297,46 +297,36 @@ def _merge_metadata(plan_id: str, merge: Callable[[dict[str, Any]], None]) -> bo
 
 
 def accepted_test_removals(plan_id: str) -> list[dict[str, Any]]:
-    """Return the accepted-removal set: recorded entries plus live declarations.
+    """Return the accepted-removal set recorded in the plan's status record.
 
-    The two sources the spec names are unioned here, so neither has to be
-    re-derived by the grader:
-
-    * the plan's status record (:data:`ACCEPTED_TEST_REMOVALS_KEY`), seeded by
-      ``snapshot-criteria`` from the outline and appended to by
-      ``loop-back close --accept``;
-    * the CURRENT outline's ``**Tests to remove:**`` declarations, read through the
-      one deliverable parser. Reading the live outline as well keeps a declaration
-      effective for a plan that carries no snapshot, without a second parser.
+    One source, one freeze: ``snapshot-criteria`` seeds the set from the outline's
+    ``**Tests to remove:**`` declarations at outline approval, and ``loop-back
+    close --accept`` appends the identities an accepted ``weakened_test`` finding
+    removed. Reading the live outline as well would let a declaration added after
+    the freeze take effect with no operator decision — a second, unguarded
+    acceptance route — so it is deliberately not read.
 
     Each entry is ``{identity, assertions_removed}``; ``assertions_removed`` is
-    ``None`` for an outline declaration that names no count, which accepts the
-    identity for whatever number of assertions the removal took. Deduplicated so a
-    declaration seeded at freeze and re-read here appears once.
+    ``None`` for a declaration that names no count, which accepts the identity for
+    whatever number of assertions the removal took. Deduplicated by
+    ``(identity, count)``.
     """
     entries: list[dict[str, Any]] = []
     seen: set[tuple[Any, Any]] = set()
-
-    def _add(entry: Any) -> None:
-        if not isinstance(entry, dict):
-            return
-        identity = entry.get('identity')
-        if not isinstance(identity, str) or not identity:
-            return
-        count = entry.get('assertions_removed')
-        key = (identity, count if isinstance(count, int) else None)
-        if key in seen:
-            return
-        seen.add(key)
-        entries.append({'identity': identity, 'assertions_removed': count if isinstance(count, int) else None})
-
     metadata = (_status_doc(plan_id) or {}).get('metadata')
     recorded = metadata.get(ACCEPTED_TEST_REMOVALS_KEY) if isinstance(metadata, dict) else None
     for entry in recorded if isinstance(recorded, list) else []:
-        _add(entry)
-    for deliverable in outline_deliverables(plan_id) or []:
-        for entry in deliverable.get('declared_test_removals') or []:
-            _add(entry)
+        if not isinstance(entry, dict):
+            continue
+        identity = entry.get('identity')
+        if not isinstance(identity, str) or not identity:
+            continue
+        count = entry.get('assertions_removed')
+        key = (identity, count if isinstance(count, int) else None)
+        if key in seen:
+            continue
+        seen.add(key)
+        entries.append({'identity': identity, 'assertions_removed': count if isinstance(count, int) else None})
     return entries
 
 
