@@ -406,7 +406,7 @@ decides the credit, **ahead of every ledger arm**:
 | names at least one commit, none of them the merge candidate | **stale** — reported in `stale_participation_bots[]`, whatever its timestamps or edit history say |
 | carries no commit anywhere in its evidence | no verdict from this arm — the ledger arms in § "Evidence for a bot that edits one comment in place" decide, unchanged |
 | a coverage marker whose `kind` is not `reviewed` | **not a finished review** — never credited |
-| a coverage marker that cannot be parsed | **never credited** — an unreadable marker is not a verdict, and it does not fall through to a ledger arm that would credit an edit |
+| a coverage marker that cannot be parsed | **never credited** — an unreadable marker is a claim nobody can evaluate, so it neither credits nor falls through to a ledger arm that would credit an edit |
 
 The coverage marker is read by `_github_pr.review_coverage_verdict`, the single parser of
 `sourceCommitId`, `coveredCommitId` and `kind`; no consumer restates those fields.

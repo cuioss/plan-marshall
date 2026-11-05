@@ -525,3 +525,40 @@ def test_response_without_page_info_is_not_reported_complete(monkeypatch):
     assert set(records) == set(_CONNECTION_OPENINGS)
     assert all(record['capped'] for record in records.values())
     assert result['complete'] is False
+
+
+# The placement fields a graphQL selection may ask for ONLY on a review-comment node.
+# `IssueComment` defines none of them, so selecting one on the PR-level `comments`
+# connection makes GitHub reject the whole query — a fetch-wide failure no stubbed
+# run_graphql can observe, which is why this pin reads the query TEXT.
+_REVIEW_COMMENT_ONLY_FIELDS: tuple[str, ...] = ('replyTo', 'commit', 'pullRequestReview')
+
+
+def test_issue_comment_connections_select_no_review_comment_only_fields():
+    """A PR-level comment is an ``IssueComment``: selecting review-comment fields fails the fetch.
+
+    ``ISSUE_COMMENTS_PAGE_QUERY`` and the ``comments`` connection of the first-page
+    query yield ``IssueComment``. Every field in :data:`_REVIEW_COMMENT_ONLY_FIELDS`
+    exists only on ``PullRequestReviewComment``, so one shared selection fragment made
+    the live query invalid while every stubbed test passed.
+    """
+    base = github_ops._COMMENT_BASE_FIELDS
+    for field in _REVIEW_COMMENT_ONLY_FIELDS:
+        assert field not in base, f'the shared base fragment selects {field} on an IssueComment'
+
+    assert base in github_ops.ISSUE_COMMENTS_PAGE_QUERY
+    assert github_ops._THREAD_COMMENT_NODE_FIELDS not in github_ops.ISSUE_COMMENTS_PAGE_QUERY
+    # The first-page query selects the placement fields exactly ONCE — inside the
+    # review-thread node. A second occurrence means the issue-comment connection
+    # was pointed back at the review-comment fragment.
+    assert github_ops.REVIEW_THREADS_QUERY.count('replyTo') == 1
+
+
+def test_thread_comment_connections_do_select_the_placement_fields():
+    """The positive control: the review-comment connections carry reply/commit placement."""
+    for query, name in (
+        (github_ops.THREAD_COMMENTS_PAGE_QUERY, 'THREAD_COMMENTS_PAGE_QUERY'),
+        (github_ops._THREAD_NODE_FIELDS, '_THREAD_NODE_FIELDS'),
+    ):
+        for field in _REVIEW_COMMENT_ONLY_FIELDS:
+            assert field in query, f'{name} does not select the placement field {field}'

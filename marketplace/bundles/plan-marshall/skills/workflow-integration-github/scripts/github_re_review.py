@@ -138,21 +138,21 @@ a bot that never responded at all. A refusal the stack can READ still outranks
 it; the class displaces only the enumerative arm, which would otherwise read the
 short anchor-less acknowledgment as a refusal nobody could read.
 
-**A comment without the bot's verdict marker is not an answer.** A bot that
-declares an ``issue_comment`` marker in its registry
-``participation_evidence_markers`` publishes its finished review inside that
-marker — CodeRabbit wraps its verdict in ``<!-- recent_review_start -->``. The
-same comment without the marker is a review that has not finished: the
-walkthrough, or the summary CodeRabbit edits to its in-progress state while a
-review runs. That in-progress summary names the head SHA as the end of the range
-under review, so before the gate it was eligible, verified the head, and ended
-the wait as ``head_sha_verified: true`` on a review still running.
+**A comment without one of the bot's finished-review markers is not an answer.** A bot
+that declares ``issue_comment`` markers in its registry
+``participation_evidence_markers`` publishes its finished review inside one of them —
+CodeRabbit wraps it in ``<!-- recent_review_start -->``, or in the current
+``final_review_risk_coverage`` artifact. The same comment without any of them is a
+review that has not finished: the walkthrough, or the summary CodeRabbit edits to its
+in-progress state while a review runs. That in-progress summary names the head SHA as
+the end of the range under review, so before the gate it was eligible, verified the
+head, and ended the wait as ``head_sha_verified: true`` on a review still running.
 :meth:`_ReReviewStrategy._match_bot_comment` therefore admits a comment of such a
-bot only when its body carries the marker. The gate runs after the refusal stack
-and the acknowledgment test, so a marker-less refusal is still recorded; a
-marker-less comment neither of them classified is skipped without a record. This
+bot only when its body carries one of the declared literals. The gate runs after the
+refusal stack and the acknowledgment test, so a marker-less refusal is still recorded;
+a marker-less comment neither of them classified is skipped without a record. This
 is the gate the producer
-already applies to participation credit (``bot_registry.participation_evidence_marker``),
+already applies to participation credit (``bot_registry.participation_evidence_markers_for``),
 now applied to the re-review answer too. A bot declaring no marker for the shape
 is unaffected.
 
@@ -1597,13 +1597,13 @@ class _ReReviewStrategy:
           ``trigger_dt``. Taking the later of the two is what makes an EDITED
           persistent comment count: such a bot updates one comment in place, so
           ``created_at`` stops advancing after the first review;
-        - when the bot declares an ``issue_comment`` marker in its registry
+        - when the bot declares ``issue_comment`` markers in its registry
           ``participation_evidence_markers``
-          (:func:`bot_registry.participation_evidence_marker`), the body carries
-          that marker. Such a bot publishes its finished review inside the marker,
-          and the same comment without it is a review that has not finished —
-          CodeRabbit's walkthrough, or its summary edited to the in-progress state,
-          which names the head SHA as the end of the range under review. A
+          (:func:`bot_registry.participation_evidence_markers_for`), the body carries
+          one of those literals. Such a bot publishes its finished review inside a
+          marker, and the same comment carrying none of them is a review that has not
+          finished — CodeRabbit's walkthrough, or its summary edited to the in-progress
+          state, which names the head SHA as the end of the range under review. A
           marker-less comment the refusal stack and the acknowledgment test left
           unclassified is skipped without a record, so it never ends the wait. A
           bot declaring no marker for the shape is unaffected — every comment of it
@@ -1612,8 +1612,9 @@ class _ReReviewStrategy:
           not review" comment is the bot talking about itself, not a completed
           review.
 
-        Among the eligible comments the one whose BODY references ``head_sha``
-        (:func:`_references_head_sha`) is PREFERRED; the first eligible comment is
+        Among the eligible comments the one whose BODY names ``head_sha``
+        (:func:`_body_names_head` — a review-coverage marker decides when present,
+        otherwise :func:`_references_head_sha`) is PREFERRED; the first eligible comment is
         the fallback when none does. Returning the first eligible comment outright
         let an earlier comment naming no commit hide a later one naming the
         current HEAD, so ``await_fresh_review`` published

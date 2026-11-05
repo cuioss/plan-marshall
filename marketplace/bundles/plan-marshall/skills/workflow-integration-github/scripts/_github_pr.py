@@ -400,15 +400,20 @@ _REVIEW_COVERAGE_PATTERN = re.compile(
 def _coverage_payload(body: str) -> tuple[bool, dict | None]:
     """Return ``(present, fields)`` for a review-coverage marker in ``body``.
 
-    ``present`` says the marker literal occurs at all; ``fields`` is its parsed JSON
-    object, or ``None`` when the payload is absent or unreadable. The pair keeps
-    "no marker" and "marker that cannot be read" distinguishable, which is exactly the
-    distinction a fail-closed consumer needs: the first is no claim, the second is a
-    claim nobody can evaluate.
+    ``present`` says the marker NAME occurs at all — it is tested on the literal, not
+    on the parsing pattern, so a marker whose payload is missing or malformed is still
+    PRESENT. ``fields`` is its parsed JSON object, or ``None`` when the payload is
+    absent or unreadable. The pair keeps "no marker" and "marker that cannot be read"
+    distinguishable, which is exactly the distinction a fail-closed consumer needs: the
+    first is no claim, the second is a claim nobody can evaluate — and the second must
+    never fall through to an arm that would credit.
     """
-    match = _REVIEW_COVERAGE_PATTERN.search(body or '')
-    if match is None:
+    text = body or ''
+    if _REVIEW_COVERAGE_MARKER not in text:
         return False, None
+    match = _REVIEW_COVERAGE_PATTERN.search(text)
+    if match is None:
+        return True, None
     try:
         fields = json.loads(match.group(1))
     except (TypeError, ValueError):
@@ -425,10 +430,10 @@ def review_coverage_verdict(body: str, head_sha: str) -> bool | None:
 
     - ``True`` — the marker names ``head_sha`` as the covered commit and its
       ``kind`` is ``reviewed``. The review covers the merge candidate.
-    - ``False`` — the marker is present and readable but is not a finished review
-      of ``head_sha``: it names another commit, carries no covered commit, or its
-      ``kind`` is anything else. A present marker is a claim, so a false one never
-      falls back to a ledger arm that would credit an edit.
+    - ``False`` — the marker is present but is not a finished review of ``head_sha``:
+      its payload is unreadable, it names another commit, it carries no covered
+      commit, or its ``kind`` is anything else. A present marker is a claim, so a
+      false one never falls back to a ledger arm that would credit an edit.
     - ``None`` — no verdict. The body carries no marker, or ``head_sha`` could not
       be read. ``None`` is never a claim that the review is current; the caller
       falls back to whatever rule it applied before this one existed.

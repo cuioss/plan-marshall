@@ -440,15 +440,30 @@ CONNECTION_ISSUE_COMMENTS = 'comments'
 # Node selections, shared by the first-page query and the per-connection follow-up
 # queries so a page read after the first can never select fewer fields than the
 # first one did.
-_COMMENT_NODE_FIELDS = """
+#
+# THE FRAGMENT IS SPLIT BY NODE TYPE, and the split is load-bearing: GraphQL validates
+# a selection against the type a connection yields, and the four fields below exist
+# only on ``PullRequestReviewComment`` (the thread-comment node). The PR-level
+# ``comments`` connection yields ``IssueComment``, which defines NONE of them — one
+# shared fragment made the whole fetch fail on a real API. Every query therefore
+# selects the fragment that matches its own connection.
+_COMMENT_BASE_FIELDS = """
           id
           body
           author { login }
           createdAt
-          updatedAt
+          updatedAt"""
+
+#: ``PullRequestReviewComment`` adds the PLACEMENT fields: the review it belongs to,
+#: the commit it is attached to, and the comment it replies to (absent on a thread's
+#: opening comment).
+_THREAD_COMMENT_NODE_FIELDS = (
+    _COMMENT_BASE_FIELDS
+    + """
           replyTo { id }
           commit { oid }
           pullRequestReview { commit { oid } }"""
+)
 
 _REVIEW_NODE_FIELDS = """
           id
@@ -469,7 +484,7 @@ _THREAD_NODE_FIELDS = f"""
           path
           line
           comments(first: {_THREAD_COMMENT_FIRST_PAGE_SIZE}) {{{_PAGE_INFO_FIELDS}
-            nodes {{{_COMMENT_NODE_FIELDS}
+            nodes {{{_THREAD_COMMENT_NODE_FIELDS}
             }}
           }}"""
 
@@ -489,7 +504,7 @@ query($owner: String!, $repo: String!, $pr: Int!) {{
         }}
       }}
       comments(first: {_COMMENT_CONNECTION_PAGE_SIZE}) {{{_PAGE_INFO_FIELDS}
-        nodes {{{_COMMENT_NODE_FIELDS}
+        nodes {{{_COMMENT_BASE_FIELDS}
         }}
       }}
     }}
@@ -530,7 +545,7 @@ query($owner: String!, $repo: String!, $pr: Int!, $cursor: String!) {{
   repository(owner: $owner, name: $repo) {{
     pullRequest(number: $pr) {{
       comments(first: {_COMMENT_CONNECTION_PAGE_SIZE}, after: $cursor) {{{_PAGE_INFO_FIELDS}
-        nodes {{{_COMMENT_NODE_FIELDS}
+        nodes {{{_COMMENT_BASE_FIELDS}
         }}
       }}
     }}
@@ -543,7 +558,7 @@ query($thread: ID!, $cursor: String!) {{
   node(id: $thread) {{
     ... on PullRequestReviewThread {{
       comments(first: {_COMMENT_CONNECTION_PAGE_SIZE}, after: $cursor) {{{_PAGE_INFO_FIELDS}
-        nodes {{{_COMMENT_NODE_FIELDS}
+        nodes {{{_THREAD_COMMENT_NODE_FIELDS}
         }}
       }}
     }}
@@ -720,10 +735,20 @@ def fetch_pr_comments_data(pr_number: int, unresolved_only: bool = False) -> dic
 
     Every record also carries ``commit_id``. On a ``review_body`` record it is the
     commit the provider says the review was submitted against
-    (``PullRequestReview.commit``), lower-cased. It is an empty string on the other
-    two kinds, which have no review commit of their own here, and on a review whose
-    commit the provider did not report (the field is nullable). The fetch reports
+    (``PullRequestReview.commit``), lower-cased. On an ``inline`` record it is the
+    commit the comment is attached to — the comment's own ``commit``, or the commit of
+    the review it belongs to when the first is absent — lower-cased. An
+    ``issue_comment`` record carries no commit and reports ``''``; so does a record
+    whose commit the provider did not report (the field is nullable). The fetch reports
     the value and decides nothing from it.
+
+    An ``inline`` record additionally carries its PLACEMENT: ``reply_to_id`` is the id
+    of the comment it replies to (``''`` on a thread's opening comment), and
+    ``thread_reply`` says whether the record ANSWERS an existing thread. The provider's
+    ``replyTo`` decides; where it reported none, the thread POSITION is the fallback —
+    the first comment of a thread opens it, every later one replies. Both answer "did
+    this comment review the diff, or answer the author?" and neither is derived from the
+    body text.
 
     **Coverage.** Every connection — ``reviewThreads``, each thread's ``comments``,
     ``reviews`` and the issue-level ``comments`` — is paginated by cursor to

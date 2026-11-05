@@ -889,7 +889,7 @@ class BotRegistry:
         return tuple(_marker_literals(value.get(evidence_kind, '')))
 
     def participation_evidence_markers(self, bot_kind: str) -> dict[str, str]:
-        """Return the whole per-shape marker map as DECLARED (``{}`` if unknown/absent).
+        """Return each declared shape's PRIMARY marker literal (``{}`` if unknown/absent).
 
         The plural companion to :meth:`participation_evidence_marker`, and the
         reason it exists is the KEY set: the singular accessor can only be asked
@@ -900,16 +900,13 @@ class BotRegistry:
         counterpart in the test tree, and by any consumer auditing what a doc
         actually declares.
 
-        The KEYS are raw, exactly as the doc declares them. Each VALUE is routed
-        through :meth:`participation_evidence_marker`, so the two accessors cannot
-        disagree about what any one shape is gated on: ``markers[shape]`` is always
-        the literal the producer would compare against.
-
-        There is no DECLARED-but-ungating entry to expose. A declared key whose
-        value is blank or non-string is refused at load by
-        :func:`_validate_participation_evidence_markers`, so every value in a
-        returned map is a real literal and the map's information is its KEY set —
-        which is exactly what the singular accessor cannot enumerate.
+        Each VALUE is the shape's FIRST declared literal, routed through
+        :meth:`participation_evidence_marker`, so the two accessors cannot
+        disagree about the primary gate. It is NOT the whole alternation: a shape
+        may declare several literals, and :meth:`participation_evidence_markers_for`
+        is the accessor that answers the admissibility question with all of them.
+        A consumer deciding whether a comment counts reads the ``_for`` accessor;
+        this one exists to enumerate keys.
         """
         value = self._by_kind.get(bot_kind, {}).get('participation_evidence_markers', {})
         if not isinstance(value, dict):

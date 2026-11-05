@@ -348,13 +348,13 @@ def _is_participation_evidence(comment: dict, bot_kind: str) -> bool:
 
     1. SHAPE — the comment's ``kind`` is one of the publish shapes the bot declares
        in ``participation_evidence``.
-    2. CONTENT — when the bot declares a ``participation_evidence_markers`` entry for
-       THAT shape, the body carries the declared literal. A shape a bot publishes
-       both before its review completes and after it finishes credits only the
-       artifact carrying the marker, so a pre-review walkthrough in a declared shape
-       is not evidence. An undeclared shape is FAIL-OPEN and credits on the shape
-       alone, exactly as before the gate existed (see
-       ``bot_registry.participation_evidence_marker``).
+    2. CONTENT — when the bot declares ``participation_evidence_markers`` entries for
+       THAT shape, the body carries at least one of the declared literals. A shape a
+       bot publishes both before its review completes and after it finishes credits
+       only the artifact carrying a finished-review literal, so a pre-review
+       walkthrough in a declared shape is not evidence. An undeclared shape is
+       FAIL-OPEN and credits on the shape alone, exactly as before the gate existed
+       (see ``bot_registry.participation_evidence_markers_for``).
 
     This is the admissibility question only. The refusal exclusion and the
     ``participation_requires_update`` currency test stay at the call site, because
@@ -1753,12 +1753,14 @@ def cmd_fetch_findings(args):
     against ``created_at``, an edit at one commit credits that commit only, not every
     later HEAD.
 
-    One arm outranks the ledger: a comment of such a bot that NAMES a commit — a full
-    commit id, bare or inside a permalink (``_github_pr.named_commit_currency``) — is
-    current only when that commit is the merge candidate, and stale when it names
-    another, whatever its timestamps or edit history say. A comment naming no commit,
-    and every comment on a fetch whose merge candidate could not be read, is decided
-    by the ledger exactly as described above.
+    One arm outranks the ledger: a comment of such a bot whose OWN EVIDENCE names a
+    commit is decided by that commit, whatever its timestamps or edit history say.
+    ``_evidence_named_verdict`` ranks three shapes: a review-coverage marker in the
+    body (``_github_pr.review_coverage_verdict``, whose ``kind`` also decides whether
+    the review finished), the provider's reported ``commit_id``, and a full commit id
+    written into the body (``_github_pr.named_commit_currency``). A comment whose
+    evidence names no commit, and every comment on a fetch whose merge candidate could
+    not be read, is decided by the ledger exactly as described above.
 
     ``stale_participation_bots``: where that currency-test failure now GOES, instead
     of being discarded. Same ``{bot_kind, evidence_kind}`` record shape as
@@ -2100,11 +2102,10 @@ def cmd_fetch_findings(args):
         # credited only when the provider PLACES it (or the review it belongs to) at
         # the merge candidate, and a reply posted into an existing thread is never
         # participation evidence: it is the bot answering the thread's author, and it
-        # post-dates the push without reviewing it. The provider now reports both, so
-        # the decision reads fields; a record carrying neither is a reply when its own
-        # ``reply_to_id`` is set, and an unplaced opening comment is not credited. The
-        # ledger arms never apply to inline comments — their record has no commit to
-        # anchor a review of, which is what produced the #515 false green.
+        # post-dates the push without reviewing it. The provider reports both, so the
+        # decision reads fields. The ledger arms never apply to inline comments: a
+        # reply is not a review artifact at all, and an unplaced comment has no commit
+        # to anchor a review of — which is exactly what produced the #515 false green.
         if _kind == 'inline':
             if _comment.get('thread_reply') or _comment.get('reply_to_id'):
                 # Never evidence. The record still names the bot as a publisher this

@@ -64,6 +64,8 @@ SEED_SYMBOLS: tuple[str, ...] = (
     'participation_evidence_markers_for',
     '_validate_participation_evidence_markers',
     '_is_participation_evidence',
+    'review_coverage_verdict',
+    '_evidence_named_verdict',
     'head_sha_verified',
     'stale_participation',
     'existing_comment_keys',
@@ -209,6 +211,15 @@ SITE_EXPECTATIONS: dict[str, SiteExpectation] = {
         'none',
         'yes',
         'Per-bot registry record. Declares participation_requires_update: false.',
+    ),
+    f'{_SKILLS}/runbook-lane/SKILL.md': SiteExpectation(
+        'normative_text',
+        'commit_sha',
+        'not_applicable',
+        'The merge gate states the qualifying-review rule for a quota-limited reviewer: a '
+        'marker-bearing summary comment whose sourceCommitId / coveredCommitId name one of the '
+        'PR’s heads and whose kind is reviewed. It points at review_coverage_verdict as the ONE '
+        'parser of those fields and evaluates nothing itself.',
     ),
     f'{_SKILLS}/phase-6-finalize/SKILL.md': SiteExpectation(
         'normative_text',

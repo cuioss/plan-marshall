@@ -498,3 +498,34 @@ def test_a_summary_edited_in_place_still_naming_an_earlier_commit_credits_nothin
 
     assert second['participated_bots'] == []
     assert second['stale_participation_bots'] == [{'bot_kind': _BOT, 'evidence_kind': 'issue_comment'}]
+
+
+def test_the_registry_declares_the_marker_the_parser_reads():
+    """The registry's declared literal and the parser's marker name are one fact.
+
+    The parser names the marker in code, the gate names it in registry data. A rename
+    in either place would leave the gate passing on the new literal while the parser
+    stopped finding the old one — a silent fall-through to the ledger arms.
+    """
+    from _github_pr import _REVIEW_COVERAGE_MARKER
+
+    markers = bot_registry.participation_evidence_markers_for(_BOT, 'issue_comment')
+    assert any(_REVIEW_COVERAGE_MARKER in marker for marker in markers), (
+        'the registry declares no literal carrying the parser marker name'
+    )
+
+
+def test_a_present_but_unreadable_coverage_marker_never_credits(plan_context, monkeypatch):
+    """A marker whose payload cannot be parsed is a claim nobody can evaluate, so it never credits.
+
+    Presence is tested on the marker NAME, not on the parsing pattern: a body carrying
+    `final_review_risk_coverage` with a broken payload must not be read as "no marker"
+    and fall through to a ledger arm that would credit it.
+    """
+    plan_id = 'crr-coverage-unreadable'
+    body = f'<!-- final_review_risk_coverage: not-json -->\n{_COVERAGE_PREFIX}{{broken'
+    _stub_provider(monkeypatch, [_comment('cr-coverage', body)])
+
+    find_result = _find(plan_context, plan_id)
+
+    assert find_result['participated_bots'] == []
