@@ -344,11 +344,36 @@ class TestNoProgressClassification:
         assert result['classification'] == 'voluntary_checkpoint'
 
     def test_no_progress_mode_is_opt_in(self, plan_context):
-        """The pre-dispatch queue-peek call site keeps its exact previous shape."""
-        result = cmd_loop_exit_guard(_loop_exit_guard_ns(plan_id='guard-peek'))
+        """The pre-dispatch queue-peek call site keeps its exact previous shape.
+
+        The namespace carries the parser's own defaults for every predicate flag
+        (``None`` for the two integers, ``False`` for the store_true), because
+        that is what the real CLI produces — a namespace with the attributes
+        ABSENT would pass for the wrong reason.
+        """
+        result = cmd_loop_exit_guard(
+            Namespace(
+                plan_id='guard-peek',
+                consumed_tokens=None,
+                completed_tasks_delta=None,
+                verification_handback=False,
+                pending_verify_steps=None,
+                provisional_cause=None,
+            )
+        )
 
         assert 'classification' not in result
         assert 'predicate_holds' not in result
+
+    def test_cli_peek_without_predicate_flags_emits_no_classification(self, plan_context):
+        """The real CLI path: a bare queue peek must not enter the mode either."""
+        add_basic_task(plan_id='guard-cli-peek', title='One', deliverable=1, steps=['src/X.java'])
+
+        result = run_script(SCRIPT_PATH, 'loop-exit-guard', '--plan-id', 'guard-cli-peek')
+
+        assert result.returncode == 0
+        assert 'classification:' not in result.stdout
+        assert 'predicate_holds:' not in result.stdout
 
 
 def _ns_with_predicate(

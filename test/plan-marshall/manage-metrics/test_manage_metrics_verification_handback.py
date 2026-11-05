@@ -71,7 +71,11 @@ class TestHandbackCauseIsNamedInItsTwoDocuments:
     def test_phase_5_return_contract_carries_the_discriminator(self):
         text = PHASE_5_SKILL_MD.read_text(encoding='utf-8')
 
-        assert 'verification_handback:' in text, 'the phase-5 return contract must carry the discriminator field'
+        # The exact contract line, not a bare mention: a prose reference would
+        # not give the leaf a field to emit.
+        assert 'verification_handback: {true | false}' in text, (
+            'the phase-5 return contract block must carry the discriminator field'
+        )
         # The four returns that set it, by the section/step names the contract uses.
         for site in ('Step 11b', 'Step 11c', 'running', '--verification-owed'):
             assert site in text, f'the return contract must keep naming {site}'

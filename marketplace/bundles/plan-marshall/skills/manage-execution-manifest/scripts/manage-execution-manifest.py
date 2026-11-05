@@ -1288,6 +1288,7 @@ def _plan_module_tests_chain_tail_deferral(
         return {}, [], set()
 
     candidates: dict[int, int] = {}  # task number -> deliverable
+    recorded: dict[int, int] = {}  # task number -> deliverable, for a task already stamped
     depends_on: dict[int, list[int]] = {}
     for task_path in sorted(tasks_dir.glob('TASK-*.json')):
         try:
@@ -1311,6 +1312,13 @@ def _plan_module_tests_chain_tail_deferral(
         verification = task.get('verification')
         if not isinstance(verification, dict):
             continue
+        deliverable = task.get('deliverable', 0)
+        deliverable = deliverable if isinstance(deliverable, int) else 0
+        if verification.get('owed_rung') is not None:
+            # A recorded decision is evidence too: a deferred task's rung command
+            # was dropped by the first compose, so counting only fresh commands
+            # would make the summary forget the tasks the decision covers.
+            recorded[number] = deliverable
         commands = verification.get('commands')
         if not isinstance(commands, list):
             continue
@@ -1322,8 +1330,7 @@ def _plan_module_tests_chain_tail_deferral(
                 continue
             if toon.get('execution_tier') != 'orchestrator' or toon.get('exceeds_bash_ceiling') is not True:
                 continue
-            deliverable = task.get('deliverable', 0)
-            candidates[number] = deliverable if isinstance(deliverable, int) else 0
+            candidates[number] = deliverable
             break
 
     if not candidates:
@@ -1336,7 +1343,7 @@ def _plan_module_tests_chain_tail_deferral(
     decisions: dict[int, str] = {}
     summary: list[dict[str, Any]] = []
     for deliverable in sorted(by_deliverable):
-        members = by_deliverable[deliverable]
+        members = sorted(set(by_deliverable[deliverable]) | {n for n, d in recorded.items() if d == deliverable})
         ordered = _chain_order(members, depends_on)
         tail = ordered[-1]
         for number in ordered:

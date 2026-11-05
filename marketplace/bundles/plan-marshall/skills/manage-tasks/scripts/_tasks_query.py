@@ -440,11 +440,15 @@ def _no_progress_mode_requested(args) -> bool:
 
     The mode is opt-in so the guard's pre-dispatch queue-peek call site keeps
     its exact previous shape: a caller that passes no predicate input gets no
-    classification and no predicate fields.
+    classification and no predicate fields. The discriminator is a SUPPLIED
+    value, not mere attribute presence — the argparse surface gives
+    ``--verification-handback`` a ``False`` default, so ``is not None`` would
+    switch the mode on for every CLI call.
     """
-    return any(
-        getattr(args, name, None) is not None
-        for name in ('consumed_tokens', 'completed_tasks_delta', 'verification_handback')
+    return (
+        getattr(args, 'consumed_tokens', None) is not None
+        or getattr(args, 'completed_tasks_delta', None) is not None
+        or getattr(args, 'verification_handback', False) is True
     )
 
 

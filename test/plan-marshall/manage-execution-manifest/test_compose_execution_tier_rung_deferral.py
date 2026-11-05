@@ -102,6 +102,9 @@ class TestMeasuredOverCeilingDefersToTheChainTail:
         third = _read(paths[2])
         assert third['verification']['owed_rung'] == 'chain_tail'
         assert body['phase_5']['owed_rung_deferral'][0]['chain_tail_task'] == 3
+        # The recorded decision still counts the tasks it covers, even though
+        # their rung command was dropped by the first compose.
+        assert body['phase_5']['owed_rung_deferral'][0]['deferred_task_count'] == 2
 
 
 class TestTheUnchangedArms:
