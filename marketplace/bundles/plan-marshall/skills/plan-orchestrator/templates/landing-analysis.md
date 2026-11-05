@@ -30,7 +30,7 @@ run, no write**: what only a run could show is tagged `not shown by reading`,
 never left as clean.}
 
 - **Dispatch:** one read-only leaf per landing — reason: {why this landing got its own leaf}
-- **Verdict:** layer 1 {clean | findings}; layer 2 {clean | findings}; layer 3 {clean | findings} —
+- **Verdict:** layer 1 {clean | findings}; layer 2 {clean | findings}; layer 3 {clean | findings | not shown by reading} —
   every layer that carried a finding is named here, so a layer-3 defect is visible
   without reading the section.
 

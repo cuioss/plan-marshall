@@ -38,7 +38,13 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from conftest import MARKETPLACE_ROOT
+from conftest import MARKETPLACE_ROOT, load_script_module
+
+#: The corpus verdict vocabulary, derived from the emitter's own constant rather
+#: than re-listed: `corpus set-verdict` accepts exactly these values, and a literal
+#: copy here would drift the moment that set changes.
+_orch = load_script_module('plan-marshall', 'plan-orchestrator', 'orchestrator.py', 'orchestrator_script')
+CORPUS_VERDICTS: tuple[str, ...] = tuple(f'`{value}`' for value in _orch.VERDICT_VALUES)
 
 _PLAN_MARSHALL = MARKETPLACE_ROOT / 'plan-marshall' / 'skills'
 _PLAN_ORCHESTRATOR = _PLAN_MARSHALL / 'plan-orchestrator'
@@ -291,6 +297,31 @@ class TestThreeLayerAlwaysDispatched:
             'the leaf doc does not state that the leaf writes nothing'
         )
 
+    def test_the_leaf_doc_declares_the_workflow_contract(self):
+        """A doc loaded through `--workflow` must declare the ext-point and its envelope."""
+        doc = _read(_THREE_LAYER_DOC)
+
+        assert doc.startswith('---\n'), 'the leaf doc carries no frontmatter'
+        assert 'implements: plan-marshall:extension-api/standards/ext-point-execution-context-workflow' in doc, (
+            'the leaf doc does not declare the execution-context workflow extension point it is loaded as'
+        )
+        assert 'status: success | error | loop_back | blocked' in doc, (
+            'the leaf doc declares no status in its return contract'
+        )
+        assert 'display_detail:' in doc, 'the leaf doc declares no display_detail in its return contract'
+
+    def test_the_leaf_doc_carries_the_narrative_and_the_cross_repo_path(self):
+        doc = _read(_THREE_LAYER_DOC)
+
+        assert 'landing narrative' in doc.lower(), (
+            'the leaf doc does not name the landing narrative as an input — layer 2 cannot check a lane '
+            'claim the diff does not bear out without it'
+        )
+        assert 'git -C {other_repo}' in doc, (
+            'the leaf doc does not state how a cross-repo landing is read, where the merge commit may '
+            "live outside the epic's worktree"
+        )
+
     def test_the_dispatch_is_unconditional_and_one_leaf_per_landing(self):
         bullet = _dispatch_bullet(_read(_ANALYZE_MD))
 
@@ -412,7 +443,8 @@ class TestThreeLayerRouting:
             'the routing rule does not resolve the ordering: Step 2b has already run when Step 4 '
             'settles the claim, so the `corpus set-verdict` call is made at Step 4'
         )
-        for corpus_verdict in ('`corroborated`', '`contradicted`', '`unverifiable`'):
+        assert CORPUS_VERDICTS, 'the corpus verdict vocabulary resolved empty — the routing check would be vacuous'
+        for corpus_verdict in CORPUS_VERDICTS:
             assert corpus_verdict in routing, (
                 f'the routing rule does not name the corpus verdict {corpus_verdict} the call accepts — '
                 "passing the analysis's own `checked` / `not_shown_by_reading` value would be refused"
