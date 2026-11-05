@@ -7,6 +7,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+import pytest
+
 from conftest import MARKETPLACE_ROOT, load_script_module
 
 _DOC = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'plan-marshall' / 'workflow' / 'verification-feedback.md'
@@ -238,3 +240,67 @@ def test_output_keeps_the_single_annotation_fix_and_holds_its_reply_the_same_way
     assert 'single-annotation FIX' in output
     assert 'it is not counted in `fix_tasks_created`' in output
     assert 'its `fixed` reply is held until its commit is stamped' in output
+
+
+# ---------------------------------------------------------------------------
+# PLAN-LB-107 D5 — the DOC side of the producer vocabulary
+# ---------------------------------------------------------------------------
+#
+# The code-side sweep above proves every producer ``ci_verify`` can RETURN is one
+# the workflow accepts. This is the other direction: every producer the ci-verify
+# DOC names — the value the dispatcher will pass — is one the workflow accepts.
+# The two directions close the same defect from either end, and the doc side can
+# rot on its own when a taxonomy row is added and documented with a new producer
+# string.
+
+_CI_VERIFY_DOC = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'phase-6-finalize' / 'standards' / 'ci-verify.md'
+
+#: ``producer=ci-verify`` (the dispatcher's invocation) and ``producers: [a, b]``
+#: (the executor's return) are the two shapes the doc states a producer value in.
+_PRODUCER_ASSIGNMENT = re.compile(r'\bproducer=([A-Za-z0-9_-]+)')
+_PRODUCER_LIST = re.compile(r'\bproducers:\s*\[([^\]]*)\]')
+
+
+def _producers_named_in(text: str) -> set[str]:
+    """Every producer value the ci-verify text names, in either documented shape."""
+    named = set(_PRODUCER_ASSIGNMENT.findall(text))
+    for group in _PRODUCER_LIST.findall(text):
+        for token in group.split(','):
+            value = token.strip().strip('`\'"')
+            if value:
+                named.add(value)
+    return named
+
+
+def test_every_producer_the_ci_verify_doc_names_is_accepted():
+    """Every producer value in the doc is a member of the workflow's accept-set."""
+    named = _producers_named_in(_CI_VERIFY_DOC.read_text(encoding='utf-8'))
+
+    assert named, 'the ci-verify doc names no producer value — the guard would pass vacuously'
+    refused = sorted(named - _accept_set())
+    assert not refused, f'ci-verify.md names producer value(s) the workflow refuses: {refused}'
+
+
+@pytest.mark.parametrize(
+    'added_line',
+    [
+        '\n- The executor returns `producers: [ci-verify-policy]` for this row.\n',
+        '\n- The dispatcher then runs it with `producer=ci-verify-policy`.\n',
+    ],
+    ids=['producers-list', 'producer-assignment'],
+)
+def test_a_mutated_copy_naming_an_unaccepted_producer_turns_the_guard_red(tmp_path, added_line):
+    """Mutation control: the sweep is not a no-op that would pass over any text.
+
+    Both documented shapes are mutated in turn, so a parser that stopped reading
+    one of them cannot leave half the guard quietly dead.
+    """
+    original = _CI_VERIFY_DOC.read_text(encoding='utf-8')
+    assert not (_producers_named_in(original) - _accept_set()), 'precondition: the shipped doc is clean'
+
+    mutated = tmp_path / 'ci-verify.md'
+    mutated.write_text(original + added_line, encoding='utf-8')
+
+    refused = sorted(_producers_named_in(mutated.read_text(encoding='utf-8')) - _accept_set())
+
+    assert refused == ['ci-verify-policy'], f'the mutated doc was not reported: {refused}'
