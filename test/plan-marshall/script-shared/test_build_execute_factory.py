@@ -1551,6 +1551,17 @@ class TestResolvedTreeDocContract:
         assert 'travels beside it as ``--resolved-project-dir``' in source
         assert 'finalize move-back window' in source
 
+    def test_the_carry_flag_has_one_spelling(self):
+        """The routing seam and the CLI consume must not diverge on the flag name.
+
+        They are declared in two modules; a rename on one side only would make the
+        child reject the routed argv as an unknown flag, which reads as a dispatch
+        failure rather than as the missed edit it is.
+        """
+        from _build_cli import RESOLVED_PROJECT_DIR_FLAG
+
+        assert factory._RESOLVED_PROJECT_DIR_FLAG == RESOLVED_PROJECT_DIR_FLAG
+
     def test_the_seam_carries_the_tree_exactly_when_the_argv_names_a_plan(self):
         """The documented mechanism, asserted on the seam that implements it."""
         tree = '/resolved/tree'
