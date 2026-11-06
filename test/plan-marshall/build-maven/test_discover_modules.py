@@ -719,12 +719,29 @@ def test_discover_external_classifier_consumer_keeps_test_ladder():
     assert 'reactor_test_artifacts' not in external['metadata']
 
 
-def test_discover_reactor_aggregator_has_no_test_ladder():
-    """The fixture's pom aggregator exposes no test ladder and no reactor test artifacts."""
+def test_discover_reactor_aggregator_records_no_reactor_test_artifacts():
+    """The fixture's pom aggregator declares no reactor test artifact of its own."""
     parent = _discover_reactor_fixture()['reactor-test-artifact-parent']
 
-    assert 'module-tests' not in parent['commands']
     assert 'reactor_test_artifacts' not in parent['metadata']
+
+
+def test_discover_reactor_aggregator_carries_the_whole_reactor_test_canonicals():
+    """A root ``pom`` aggregator drives the reactor's tests, so it carries them.
+
+    The gate's default-scope ``resolve --command module-tests`` answers from the
+    root module, so a reactor whose tests live in its modules needs the
+    whole-reactor ``test`` / ``test-compile`` on the root — otherwise the gate
+    finds no canonical and records DEGRADED although every test runs under
+    ``verify``.
+    """
+    root = _make_module_tree({'.': _AGGREGATOR_POM, 'core': _JAR_POM})
+    _add_test_source(root, 'core')
+
+    modules = {module['name']: module for module in discover_maven_modules(str(root))}
+
+    assert modules['parent-agg']['commands']['module-tests'] == _executable('test')
+    assert modules['parent-agg']['commands']['test-compile'] == _executable('test-compile')
 
 
 def test_discover_dependency_on_self_coordinate_is_not_a_reactor_test_artifact():
@@ -813,6 +830,14 @@ def _make_module_tree(parent_dirs: dict[str, str]) -> Path:
     return root
 
 
+def _add_test_source(root: Path, module_dir: str) -> None:
+    """Seed one Java test source so the module's own ``has_tests`` is true."""
+    target = root if module_dir == '.' else root / module_dir
+    test_file = target / 'src' / 'test' / 'java' / 'probe' / 'CoreTest.java'
+    test_file.parent.mkdir(parents=True, exist_ok=True)
+    test_file.write_text('package probe;\n\nclass CoreTest {}\n')
+
+
 _JAR_POM = """<?xml version="1.0" encoding="UTF-8"?>
 <project xmlns="http://maven.apache.org/POM/4.0.0">
   <modelVersion>4.0.0</modelVersion>
@@ -867,8 +892,33 @@ def test_discover_pom_aggregator_exposes_compile():
     assert module['metadata']['packaging'] == 'pom'
     assert 'compile' in module['commands']
     assert 'package' in module['commands']
-    # pom aggregators still never expose module-tests (no own tests).
+    # A reactor with no test module has nothing to run whole-tree, so the
+    # aggregator keeps no test canonical — a false one would be worse than none.
     assert 'module-tests' not in module['commands']
+    assert 'test-compile' not in module['commands']
+
+
+def test_discover_reactor_root_stays_false_canonical_free_without_test_modules():
+    """A root aggregator beside a test-less module gets neither test canonical."""
+    root = _make_module_tree({'.': _AGGREGATOR_POM, 'core': _JAR_POM})
+
+    modules = {module['name']: module for module in discover_maven_modules(str(root))}
+
+    assert 'module-tests' not in modules['parent-agg']['commands']
+    assert 'test-compile' not in modules['parent-agg']['commands']
+    assert 'module-tests' not in modules['leaf-app']['commands']
+
+
+def test_discover_single_module_jar_root_keeps_its_own_test_canonicals():
+    """A single-module ``jar`` root keeps the module-scoped ladder it always had."""
+    root = _make_module_tree({'.': _JAR_POM})
+    _add_test_source(root, '.')
+
+    module = discover_maven_modules(str(root))[0]
+
+    assert module['metadata']['packaging'] == 'jar'
+    assert module['commands']['module-tests'] == _executable('test')
+    assert module['commands']['test-compile'] == _executable('test-compile')
 
 
 def test_discover_dependencies_empty_on_cheap_path():
