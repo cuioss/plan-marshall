@@ -452,12 +452,19 @@ def test_pom_aggregator_gets_verify_command():
     assert 'verify' in commands
 
 
-def test_pom_aggregator_does_not_get_module_tests():
-    """Test that pom aggregators do NOT get module-tests command."""
+def test_pom_aggregator_builder_emits_no_module_tests():
+    """``_build_commands`` itself gives a ``pom`` module no test ladder.
+
+    The whole-reactor ladder a ROOT aggregator carries is applied by
+    ``discover_maven_modules`` once the reactor's test population is known (see
+    ``test_discover_reactor_aggregator_carries_the_whole_reactor_test_canonicals``),
+    not by this per-module builder.
+    """
     commands = _build_commands(
         module_name='parent-pom', packaging='pom', has_sources=False, has_tests=False, profiles=[], relative_path='.'
     )
     assert 'module-tests' not in commands
+    assert 'test-compile' not in commands
 
 
 # =============================================================================
@@ -858,6 +865,16 @@ _AGGREGATOR_POM = """<?xml version="1.0" encoding="UTF-8"?>
 </project>
 """
 
+_NESTED_AGGREGATOR_POM = """<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>com.example</groupId>
+  <artifactId>nested-agg</artifactId>
+  <version>1.0.0</version>
+  <packaging>pom</packaging>
+</project>
+"""
+
 
 def test_discover_no_maven_binary_produces_command_map():
     """Discovery against a pom.xml fixture yields a full command map — no Maven.
@@ -919,6 +936,23 @@ def test_discover_single_module_jar_root_keeps_its_own_test_canonicals():
     assert module['metadata']['packaging'] == 'jar'
     assert module['commands']['module-tests'] == _executable('test')
     assert module['commands']['test-compile'] == _executable('test-compile')
+
+
+def test_discover_nested_pom_aggregator_keeps_no_whole_reactor_ladder():
+    """A NESTED ``pom`` aggregator is not the default scope, so it gets neither key.
+
+    Only the module at the project root answers the architecture's default
+    scope; giving a nested aggregator the whole-reactor canonicals would make a
+    module-scoped resolve run the entire reactor by accident.
+    """
+    root = _make_module_tree({'.': _AGGREGATOR_POM, 'nested': _NESTED_AGGREGATOR_POM, 'core': _JAR_POM})
+    _add_test_source(root, 'core')
+
+    modules = {module['name']: module for module in discover_maven_modules(str(root))}
+
+    assert modules['parent-agg']['commands']['module-tests'] == _executable('test')
+    assert 'module-tests' not in modules['nested-agg']['commands']
+    assert 'test-compile' not in modules['nested-agg']['commands']
 
 
 def test_discover_dependencies_empty_on_cheap_path():
