@@ -126,6 +126,7 @@ from _github_pr import (
     refusal_condition,
     refusal_layers,
     refusal_size_cap,
+    review_coverage_is_finished,
     review_coverage_verdict,
 )
 from ci_base import extract_routing_args, register_subcommands, set_default_cwd
@@ -2090,7 +2091,17 @@ def cmd_fetch_findings(args):
         # one of the bot's declared publish shapes. Without this exclusion a bot
         # that posted nothing but "review limit reached" would be credited as a
         # proven participant and satisfy the quorum on zero review coverage.
-        if _is_refusal_notice(str(_comment.get('body') or ''), _bot_kind):
+        #
+        # A READABLE coverage marker outranks the skip: CodeRabbit keeps its
+        # "Review limit reached" block in the summary comment AFTER a review
+        # finishes (observed on PR 1912), so a marker-bearing summary is a finished
+        # review whose own text also carries a later limit notice. Skipping the whole
+        # comment as a refusal throws the marker away and hands the bot's finished
+        # review to the same summarizer that never sees it. The marker names the
+        # commit it covered, so it can only credit that head; a marker naming another
+        # head is decided stale by the named-commit arm below.
+        _body = str(_comment.get('body') or '')
+        if _is_refusal_notice(_body, _bot_kind) and not review_coverage_is_finished(_body):
             continue
         # Admissibility — the declared publish SHAPE, plus the declared content marker
         # when the bot gates that shape on one. Evaluated BEFORE the currency test, so a
@@ -2108,6 +2119,11 @@ def cmd_fetch_findings(args):
         # decision reads fields. The ledger arms never apply to inline comments: a
         # reply is not a review artifact at all, and an unplaced comment has no commit
         # to anchor a review of — which is exactly what produced the #515 false green.
+        #
+        # The rule is BOT-AGNOSTIC by design: it governs every bot that declares
+        # ``inline`` evidence, ``cuioss-review-bot`` included. Removing that bot is a
+        # separate, parked change; tightening the rule here does not alter which bots
+        # publish inline evidence.
         if _kind == 'inline':
             if _comment.get('thread_reply') or _comment.get('reply_to_id'):
                 # Never evidence. The record still names the bot as a publisher this
