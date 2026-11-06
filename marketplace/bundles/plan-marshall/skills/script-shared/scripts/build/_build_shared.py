@@ -883,7 +883,10 @@ def cmd_run_common(
             'log_file': log_file,
             'command': command_str,
             'job_id': result.get('job_id', ''),
-            'job_status': STATUS_RUNNING,
+            # The observed daemon status when the producer carried one — `queued`
+            # for a job that had not started when the bound expired — else the
+            # historical `running`.
+            'job_status': result.get('job_status') or STATUS_RUNNING,
         }
         print(formatter(running_output))
         return 0  # Status modeled in output, not exit code

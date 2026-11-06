@@ -347,6 +347,27 @@ def test_running_in_directory_names_the_job_the_next_submit_would_wait_on():
     assert sched.running_in_directory('/W2') == ''
 
 
+def test_a_holder_identity_cannot_inject_a_toon_key(tmp_path, monkeypatch):
+    """The daemon sanitises a foreign holder identity before reporting it.
+
+    `waiting_on` interpolates a plan id read from the machine-global queue — text
+    another checkout's build wrote. A newline would split the identity across lines
+    in the TOON payload, where it is reparsed as a sibling key.
+    """
+    monkeypatch.setenv('PLAN_MARSHALL_HOME', str(tmp_path))
+    daemon = _daemon(tmp_path)
+    monkeypatch.setattr(
+        daemon,
+        '_held_directories',
+        lambda: {'/W1': {'plan_id': 'evil\nstatus: success', 'pid': 42, 'command': 'x'}},
+    )
+
+    identity = daemon._waiting_on('/W1')
+
+    assert '\n' not in identity
+    assert 'evil' in identity  # the fact is still reported, just on one line
+
+
 # -- daemon level ------------------------------------------------------------
 
 

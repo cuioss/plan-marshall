@@ -1009,12 +1009,22 @@ def _running_hand_back(
     duration = int(time.monotonic() - started_monotonic)
     log_file = ''
     queued_seconds: int | None = None
+    observed_status: str | None = None
     if waited is not None:
         log_file = str(waited.get('log_file', '') or '')
         queued_seconds = _coerce_queued_seconds(waited)
+        # The top-level status stays `running` (it is the hand-back shape a caller
+        # re-attaches from), but `job_status` reports what the daemon last said —
+        # `queued` when the job had not started. Reporting `running` for a job that
+        # never began overstates progress, which is the very confusion D2 removes.
+        candidate = str(waited.get('job_status', '') or '')
+        if candidate in WIRE_LIVE_STATUSES:
+            observed_status = candidate
     result = running_result(job_id, duration, log_file, command_str)
     if queued_seconds is not None:
         result['queued_seconds'] = queued_seconds
+    if observed_status is not None:
+        result['job_status'] = observed_status
     return result  # type: ignore[return-value]
 
 

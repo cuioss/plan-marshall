@@ -62,7 +62,7 @@ from _build_server_protocol import (
     write_frame,
 )
 from _build_server_registry import canonicalize_root, read_registry
-from _machine_config import SOURCE_MACHINE_CONFIG, CapResolution, resolve_max_slots
+from _machine_config import SOURCE_MACHINE_CONFIG, CapResolution, report_safe, resolve_max_slots
 from _marshalld_audit import InteractionAudit
 from _marshalld_journal import Journal
 from _marshalld_scheduler import Scheduler
@@ -628,7 +628,13 @@ class Daemon:
             return running
         holder = self._held_directories().get(directory)
         if isinstance(holder, dict):
-            return f'{holder.get("plan_id") or "NO_PLAN"} (pid {holder.get("pid")})'
+            # The holder fields come from the machine-global queue file, written by
+            # another checkout's build — foreign text. `report_safe` strips the
+            # control characters that would otherwise break the identity out of its
+            # single TOON line and be reparsed as a sibling key of the wait payload
+            # (an injected `status: success` turning a queued job's payload into a
+            # green one).
+            return report_safe(f'{holder.get("plan_id") or "NO_PLAN"} (pid {holder.get("pid")})')
         return ''
 
     def _held_directories(self) -> dict[str, dict[str, Any]]:
@@ -699,7 +705,10 @@ class Daemon:
         return self._cap
 
     def _admit_ready(self) -> None:
-        while self._scheduler.available_slots() > 0:
+        # Nothing queued means nothing to admit: skip the machine-global queue
+        # read that the busy-directory check performs, so an idle daemon's wait
+        # poll touches no disk at all.
+        while self._scheduler.available_slots() > 0 and self._scheduler.queued_count > 0:
             entry = self._scheduler.admit_next(busy_directories=set(self._held_directories()))
             if entry is None:
                 return

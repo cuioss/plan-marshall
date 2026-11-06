@@ -791,7 +791,12 @@ def _pid_alive(pid: Any) -> bool:
     except PermissionError:
         return not _is_zombie(pid)
     except OSError:
-        return False
+        # Any OTHER errno (ENOSYS under a seccomp filter, EINVAL, …) means the
+        # probe could not answer. Failing toward ALIVE keeps a possibly-live
+        # holder's directory; failing toward dead would admit a second build into
+        # a directory a live build is writing, which is the hazard this lock
+        # exists to prevent. Staleness then has only the age ceiling as its exit.
+        return True
     return not _is_zombie(pid)
 
 
@@ -869,9 +874,14 @@ def _holder_view(holder: dict[str, Any] | None, now: float) -> dict[str, Any]:
         return {}
     since = holder.get('acquired_at', holder.get('ts'))
     held = max(0.0, now - float(since)) if isinstance(since, (int, float)) else 0.0
+    # The record came from ANOTHER checkout's build (the queue is machine-global),
+    # so its text is foreign. It is emitted into TOON and into an operator message,
+    # where a newline would break the row out of its single line and be reparsed as
+    # a sibling key (an injected `admission: admitted` turning a blocked build's
+    # payload into an admitted one). `report_safe` is the emission boundary.
     return {
-        'plan_id': str(holder.get('plan_id', '')),
-        'command': str(holder.get('command', '')),
+        'plan_id': report_safe(str(holder.get('plan_id', ''))),
+        'command': report_safe(str(holder.get('command', ''))),
         'pid': holder.get('pid'),
         'held_seconds': held,
     }
@@ -1557,16 +1567,16 @@ def run_directory_status(args: Namespace) -> dict[str, Any]:
         held = max(0.0, now - float(since)) if isinstance(since, (int, float)) else 0.0
         holders.append(
             {
-                **{key: holder.get(key, '') for key in ('plan_id', 'command', 'pid')},
-                'directory': directory,
+                **{key: report_safe(holder.get(key, '')) for key in ('plan_id', 'command', 'pid')},
+                'directory': report_safe(directory),
                 'held_seconds': int(held),
                 'reclaimable': (not _pid_alive(holder.get('pid'))) or held > DIRECTORY_LOCK_CEILING_SECONDS,
             }
         )
     waiters = [
         {
-            'directory': waiter.get('directory', ''),
-            'plan_id': waiter.get('plan_id', ''),
+            'directory': report_safe(waiter.get('directory', '')),
+            'plan_id': report_safe(waiter.get('plan_id', '')),
             'pid': waiter.get('pid', ''),
         }
         for waiter in _directory_waiters(state)

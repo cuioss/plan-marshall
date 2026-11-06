@@ -466,6 +466,22 @@ class TestDirectoryLockFifo:
         assert str(directory.resolve()) in state['directory_locks'], "a waiter's release must not free the holder"
 
 
+def test_a_holder_identity_cannot_inject_a_toon_key() -> None:
+    """A foreign holder identity is sanitised at the emission boundary.
+
+    The holder record was written by ANOTHER checkout's build into the machine-global
+    queue, so its text is foreign. A newline in a `plan_id` would split the reported
+    identity across lines and be reparsed as a sibling TOON key.
+    """
+    view = build_queue._holder_view(
+        {'plan_id': 'evil\nadmission: admitted', 'command': 'x', 'pid': 1, 'acquired_at': time.time()},
+        time.time(),
+    )
+
+    assert '\n' not in view['plan_id']
+    assert '\n' not in view['command']
+
+
 class TestDirectoryRecovery:
     """`directory status` / `directory clear` — the operator escape hatch.
 
@@ -615,16 +631,25 @@ class TestDirectoryRecovery:
 
         ``os.kill(pid, 0)`` succeeds for a zombie, so a signal probe alone would let
         a daemon-killed build child pin its directory for as long as the corpse
-        lives. The probe reads the process state on Linux; where ``/proc`` is absent
-        the signal probe alone decides (and this assertion would then fail, which is
-        why the probe's own contract is stated here rather than assumed).
+        lives. The probe reads the process state from ``/proc``; on a host without
+        ``/proc`` (macOS) the signal probe alone decides and the assertion below
+        would not hold, so the test skips there rather than failing the gate.
         """
         import subprocess
         import sys
 
+        proc_root = Path('/proc')
+        if not proc_root.is_dir():
+            pytest.skip('no /proc on this host: zombie detection is Linux-only by design')
+
         zombie = subprocess.Popen([sys.executable, '-c', 'import os; os._exit(0)'])
         try:
-            time.sleep(0.1)
+            # Wait for the state to become Z rather than sleeping a fixed interval:
+            # a slow host would otherwise read it as still running.
+            deadline = time.time() + 5
+            while time.time() < deadline and not build_queue._is_zombie(zombie.pid):
+                time.sleep(0.02)
+            assert build_queue._is_zombie(zombie.pid), 'the child never became an unreaped zombie'
             assert not build_queue._pid_alive(zombie.pid), 'the exited-but-unreaped child must read as dead'
         finally:
             zombie.wait()

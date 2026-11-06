@@ -450,6 +450,7 @@ def test_route_hand_back_carries_queued_seconds_when_the_bound_expires(use_fake_
     assert client.wait_calls, 'the loop really waited before the bound expired'
     assert result['status'] == 'running', 'a still-queued job is a live hand-back, not a verdict'
     assert result['job_id'] == 'JOB-S'
+    assert result['job_status'] == 'queued', 'the hand-back reports what the daemon last said, not "running"'
     assert result['queued_seconds'] == 12
 
 
