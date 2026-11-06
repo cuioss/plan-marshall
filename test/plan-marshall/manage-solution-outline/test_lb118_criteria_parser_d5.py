@@ -79,7 +79,9 @@ def test_the_current_parser_freezes_the_parser_marker(plan_context) -> None:
     payload = _snap.write_snapshot(PLAN_ID)
 
     assert payload['status'] == 'success', payload
-    assert _snap.read_snapshot(PLAN_ID)[_snap.PARSER_KEY] == _snap.CURRENT_PARSER
+    snapshot = _snap.read_snapshot(PLAN_ID)
+    assert snapshot is not None
+    assert snapshot[_snap.PARSER_KEY] == _snap.CURRENT_PARSER
 
 
 def test_a_continuation_append_to_a_current_parser_snapshot_is_rewritten(plan_context) -> None:
