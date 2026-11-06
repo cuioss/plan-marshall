@@ -17,6 +17,7 @@ from _tasks_core import (
     output_error,
     parse_task_file,
 )
+from file_ops import WorktreeResolutionError
 from toon_parser import ToonParseError, parse_toon
 
 # ---------------------------------------------------------------------------
@@ -428,6 +429,11 @@ def cmd_loop_exit_guard(args) -> dict:
     else:
         result.update({'status': 'success', 'message': 'Unfinished queue empty — clean exit permitted.'})
 
+    # The queue verdict, captured before the B7 mode may replace `status` with
+    # `error`: a not-decidable evaluation is not a queue verdict, and a caller
+    # that reads `status` alone must be able to tell the two apart.
+    queue_status = result['status']
+
     if _no_progress_mode_requested(args):
         completed_tasks_delta = _int_arg(args, 'completed_tasks_delta')
         consumed_tokens = _int_arg(args, 'consumed_tokens')
@@ -443,6 +449,7 @@ def cmd_loop_exit_guard(args) -> dict:
             result.update(
                 {
                     'status': 'error',
+                    'queue_status': queue_status,
                     'error': NO_PROGRESS_NOT_DECIDABLE,
                     'message': (
                         'B7 no-progress mode needs both measurements; absent: '
@@ -523,7 +530,10 @@ def _manifest_verification_steps(plan_id: str) -> set[str] | None:
     """
     try:
         manifest_path = get_plan_dir(plan_id) / MANIFEST_FILENAME
-    except Exception:
+    except (WorktreeResolutionError, ValueError):
+        # The plan directory cannot be resolved (no worktree, unsafe id). That is
+        # a resolution failure, not a programming error, and it reads exactly like
+        # an absent manifest: nothing was composed, so nothing can be exempted.
         return None
     if not manifest_path.is_file():
         return None

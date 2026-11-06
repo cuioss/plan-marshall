@@ -470,6 +470,7 @@ class TestCompletedTasksDeltaHasAStatedSourceAndNoZeroDefault:
         )
 
         assert result['status'] == 'error'
+        assert result['queue_status'] == 'continue', 'the queue verdict must survive the refusal'
         assert result['error'] == 'no_progress_not_decidable'
         assert '--completed-tasks-delta' in result['message']
         assert 'classification' not in result
@@ -484,6 +485,7 @@ class TestCompletedTasksDeltaHasAStatedSourceAndNoZeroDefault:
         )
 
         assert result['status'] == 'error'
+        assert result['queue_status'] == 'continue'
         assert result['error'] == 'no_progress_not_decidable'
         assert '--consumed-tokens' in result['message']
 

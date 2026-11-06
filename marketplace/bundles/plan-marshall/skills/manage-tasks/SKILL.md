@@ -157,7 +157,9 @@ switches the verb into the deterministic B7 evaluation the orchestrator runs
 after a dispatch returns and before `record-dispatch-boundary`. The evaluation
 needs BOTH `--consumed-tokens` and `--completed-tasks-delta`; a call that
 supplies one without the other returns `status: error` with
-`error: no_progress_not_decidable` and no classification. The result
+`error: no_progress_not_decidable` and no classification, and carries the queue
+verdict separately as `queue_status` (`continue` | `success`) — `status: error`
+in that result never means the queue is empty. The result
 then also carries:
 
 ```toon
