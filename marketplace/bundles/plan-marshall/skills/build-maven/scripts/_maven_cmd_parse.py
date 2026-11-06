@@ -99,6 +99,20 @@ def _is_compiler_continuation(message: str) -> bool:
     return any(pattern.fullmatch(message) for pattern in _COMPILER_CONTINUATION_PATTERNS)
 
 
+def _append_detail(issue: Issue, line: str) -> None:
+    """Attach a continuation line to an issue's detail once, preserving order.
+
+    Maven re-prints the compiler's continuation fields at ``[ERROR]`` inside the
+    goal-failure block, so the same line can arrive twice for one issue (the
+    second time after the error itself was de-duplicated). Appending blindly
+    would publish each field twice.
+    """
+    existing = issue.detail.split('\n') if issue.detail else []
+    if line in existing:
+        return
+    issue.detail = '\n'.join([*existing, line])
+
+
 def _is_passing_test_count(message: str) -> bool:
     """Whether a message is a ``Tests run:`` line reporting no failure and no error."""
     match = _TESTS_RUN_PATTERN.search(message)
@@ -181,9 +195,7 @@ def _extract_issues(content: str) -> list[Issue]:
             if not message or message.startswith('->'):
                 continue
             if last_compiler_error is not None and _is_compiler_continuation(message):
-                last_compiler_error.detail = (
-                    f'{last_compiler_error.detail}\n{message}' if last_compiler_error.detail else message
-                )
+                _append_detail(last_compiler_error, message)
                 continue
             if _is_epilogue(message) or _is_passing_test_count(message):
                 last_compiler_error = None
@@ -217,6 +229,18 @@ def _extract_issues(content: str) -> list[Issue]:
             # A compiler error opens the window its continuation fields attach
             # to; any other diagnostic closes it.
             last_compiler_error = issue if category == 'compilation_error' else None
+            continue
+
+        # An UNPREFIXED javac continuation line under a compiler error is that
+        # error's detail: a compile-only log prints them bare, without Maven
+        # re-printing the block at [ERROR], so dropping them here would lose the
+        # name that the error's own message does not carry. Any other unprefixed
+        # line closes the window, so a stray `symbol:` far below the error is
+        # never adopted.
+        if last_compiler_error is not None and _is_compiler_continuation(stripped):
+            _append_detail(last_compiler_error, stripped)
+        else:
+            last_compiler_error = None
 
     # Attach stack traces to issues
     collect_stack_traces(content.split('\n'), issues)
@@ -408,10 +432,11 @@ def selector_miss_reason(log_text: str, command: str | None = None) -> str | Non
 
     - Surefire's own goal failure, ``No tests matching pattern … were executed``,
       which ends the build non-zero.
-    - A ``-Dtest`` run that parsed a summary claiming ZERO executed tests. With
+    - A ``-Dtest`` run that parsed a summary claiming ZERO collected tests. With
       ``-Dsurefire.failIfNoSpecifiedTests=false`` the same miss exits 0 and
       prints a passing-looking summary, so the command is needed to know a
-      selector was in play at all.
+      selector was in play at all. A selector that matched a class whose tests
+      are all skipped collects them, so it is NOT a miss however many executed.
 
     Args:
         log_text: The captured build log, already read as text.
@@ -427,6 +452,11 @@ def selector_miss_reason(log_text: str, command: str | None = None) -> str | Non
     if dtest_selector(command) is None:
         return None
     summary = _extract_test_summary(log_text)
-    if summary is not None and summary.executed == 0:
+    # ``total`` — the COLLECTED count — is the population test, not ``executed``.
+    # A selector that matched a class whose tests are all ``@Disabled`` collects
+    # them and runs none: ``executed`` is zero there too, yet the selector did
+    # match and the run is a truthful green. A selector that matched NOTHING
+    # collects nothing at all, so ``total`` is zero.
+    if summary is not None and summary.total == 0:
         return TEST_SELECTOR_MATCHED_NOTHING
     return None

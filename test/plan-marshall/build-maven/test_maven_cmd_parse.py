@@ -744,6 +744,30 @@ def test_control_orphan_compiler_continuation_is_still_filed(tmp_path):
         assert [issue.message for issue in issues] == [message]
 
 
+def test_a_compile_only_log_attaches_its_unprefixed_continuation_lines(tmp_path):
+    """A compile-only run prints the continuation fields BARE, with no [ERROR] re-print.
+
+    Maven re-prints the compiler error and its continuation fields at `[ERROR]`
+    in the goal-failure block, which is what the epilogue fixtures carry. A log
+    that fails at compile and stops there (no Surefire, no goal-failure block)
+    prints them with no prefix at all, so a parser that only reads prefixed
+    lines loses the name the error refers to.
+    """
+    # Arrange
+    log_file = tmp_path / 'compile-only.log'
+    log_file.write_text(
+        f'[ERROR] {_COMPILER_ERROR}\n  symbol:   class Missing\n  location: class probe.c.Broken\n[INFO] 1 error\n',
+        encoding='utf-8',
+    )
+
+    # Act
+    issues, _, _ = parse_log(log_file)
+
+    # Assert
+    assert [issue.message for issue in issues] == [_COMPILER_ERROR]
+    assert issues[0].detail == f'{_SYMBOL_CONTINUATION}\n{_LOCATION_CONTINUATION}'
+
+
 _CONSUMER_PASSING_LINE = (
     '[WARNING] Tests run: 10, Failures: 0, Errors: 0, Skipped: 1, Time elapsed: 0.412 s -- in Awaits'
 )
