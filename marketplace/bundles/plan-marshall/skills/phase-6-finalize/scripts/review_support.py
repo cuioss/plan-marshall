@@ -167,7 +167,9 @@ def _evidence_root(plan_id: str) -> Path | None:
     a worktree (``use_worktree: false``) is graded against the MAIN CHECKOUT — the
     tree the finalize contract assigns it, and the tree its branch diff is read
     from — so its citations are still checked rather than read as the not-run state
-    (which is a blocking finding).
+    (which is a blocking finding). This reader resolves the CITATION root; the
+    diff grader ``_review_support_integrity._evidence_root`` additionally refuses a
+    checkout that is on the base tip or dirty.
 
     A plan that DECLARED a materialized worktree which does not resolve now is
     different again: falling back to the main checkout would check citations
@@ -284,18 +286,38 @@ def _row_acceptance_record(row: dict[str, Any]) -> dict[str, Any]:
 def _row_is_accepted(row: dict[str, Any], accepted: list[dict[str, Any]]) -> bool:
     """Whether a whole test-integrity row is covered by the accepted-removal set.
 
-    An identity-bearing row is accepted when every removed identity is. A row with
-    no identity carries the explicit path-level key instead: the set-total row, a
-    file-total row, and a ``test_filtered`` row were unacceptable by construction
-    before this, which left an accepted finding blocking at every later head.
+    An identity-bearing row is accepted when every removed identity is, plus any
+    residual the identities do not cover. A row with no identity is accepted by its
+    explicit path-level key (`{path, kind, assertions_removed}`, or `{path, kind:
+    test_filtered, markers}`).
     """
     removed_tests = [entry for entry in row.get('removed_tests') or [] if isinstance(entry, dict)]
-    if removed_tests:
-        return all(_removal_is_accepted(entry, accepted) for entry in removed_tests)
     path = row.get('path')
     kind = str(row.get('kind') or 'assertion_removed')
+    if removed_tests:
+        if not all(_removal_is_accepted(entry, accepted) for entry in removed_tests):
+            return False
+        total = row.get('removed_assertions')
+        known = sum(int(entry.get('assertions_removed') or 0) for entry in removed_tests)
+        if not isinstance(total, int) or total <= known:
+            return True
+        # The row also carries a residual no identity explains; it needs its own
+        # path-level acceptance, so a later growth of that residual is raised again.
+        residual = total - known
+        return any(
+            entry.get('path') == path
+            and str(entry.get('kind') or 'assertion_removed') != 'test_filtered'
+            and (entry.get('assertions_removed') is None or entry.get('assertions_removed') == residual)
+            for entry in accepted
+        )
     if kind == 'test_filtered':
-        return any(str(entry.get('kind') or '') == 'test_filtered' and entry.get('path') == path for entry in accepted)
+        wanted = set(row.get('markers') or [])
+        return any(
+            str(entry.get('kind') or '') == 'test_filtered'
+            and entry.get('path') == path
+            and set(entry.get('markers') or []) >= wanted
+            for entry in accepted
+        )
     count = row.get('removed_assertions')
     return any(
         entry.get('path') == path

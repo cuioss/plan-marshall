@@ -30,8 +30,9 @@ The branch is read as ONE test set rather than one path at a time:
   a path the branch has COMMITTED a change to: a further uncommitted edit there is
   still graded;
 * a plan with ``use_worktree: false`` is graded against the main checkout's diff
-  to the base instead of being skipped as ``worktree_unresolved``; the evidence
-  root the check chose is reported on the payload.
+  to the base when that checkout carries the plan's work (its HEAD is not the base
+  tip and its tree is clean), and refused as ``evidence_root_unresolved``
+  otherwise; the evidence root the check chose is reported on the payload.
 
 A loss is reported in exactly four cases: the set total drops, a named test disappears from every after-file, one test's count drops while that test still exists, or a surviving path's own total drops and no identity accounts for it. The per-path report is the unit of the finding row. An identity survives only to the extent that the after-set carries MORE of it than the before-set already carried outside the deleted or modified path, so a same-named test in another changed file cannot absorb a loss and a function moved out of a surviving file is not a loss. Both key the accepted set by the test identity plus the number of removed assertions.
 
@@ -400,9 +401,9 @@ def _normalized_body(text: str) -> str:
     return '\n'.join(line.rstrip() for line in text.strip().splitlines())
 
 
-def _current_branch(root: Path) -> str | None:
-    """The branch the checkout is on, or ``None`` when it cannot be read."""
-    proc = _git(root, ['rev-parse', '--abbrev-ref', 'HEAD'])
+def _rev_parse(root: Path, ref: str) -> str | None:
+    """Resolve a ref to a commit id, or ``None`` when it cannot be read."""
+    proc = _git(root, ['rev-parse', '--verify', f'{ref}^{{commit}}'])
     if proc.returncode != 0:
         return None
     resolved = proc.stdout.strip()
@@ -410,9 +411,15 @@ def _current_branch(root: Path) -> str | None:
 
 
 def _tree_is_dirty(root: Path) -> bool:
-    """Whether the checkout carries uncommitted changes."""
+    """Whether the checkout carries uncommitted changes.
+
+    A ``git status`` that cannot be read is a FAILED check, not a clean tree: the
+    caller must report a named state rather than grade a tree it could not inspect.
+    """
     proc = _git(root, ['status', '--porcelain'])
-    return proc.returncode == 0 and bool(proc.stdout.strip())
+    if proc.returncode != 0:
+        raise _GitFailure('git status failed')
+    return bool(proc.stdout.strip())
 
 
 def _evidence_root(plan_id: str) -> tuple[Path | None, str | None]:
@@ -446,11 +453,13 @@ def _evidence_root(plan_id: str) -> tuple[Path | None, str | None]:
         return None, None
     refs = read_references(plan_id)
     base_ref = resolve_base_ref(None, refs if isinstance(refs, dict) else {}, root)
-    branch = _current_branch(root)
-    if branch is None:
-        return None, None
-    if branch == base_ref:
-        # On the base branch the three-dot diff is empty: grading it would report
+    # Compare COMMITS, not branch spellings: ``resolve_base_ref`` returns
+    # ``origin/<base>`` when that remote-tracking ref resolves, while HEAD's local
+    # name is ``<base>``. A detached HEAD is covered too.
+    head_sha = _rev_parse(root, 'HEAD')
+    base_sha = _rev_parse(root, base_ref)
+    if head_sha is not None and base_sha is not None and head_sha == base_sha:
+        # On the base tip the three-dot diff is empty: grading it would report
         # success with zero rows, i.e. a pass, for work that is not checked out.
         return None, 'main_checkout_on_base_branch'
     if _tree_is_dirty(root):
@@ -470,10 +479,6 @@ def _row(path: str, removed: int, removed_tests: list[dict[str, Any]], detail: s
     names = [entry['identity'] for entry in removed_tests]
     if names:
         row['weakened_functions'] = names
-    else:
-        # A row with no identity still needs a key the close can record: the path
-        # plus the removed count is what accepts it.
-        row['path_key'] = path
     return row
 
 
@@ -589,19 +594,24 @@ def _grade_test_integrity(
             # MORE of it than the before-set already carried outside THIS path:
             # a same-named test in another changed file cannot absorb the loss.
             missing: dict[str, int] = {}
+            kinds: dict[str, str] = {}
             for identity, count in before_fns.items():
                 carried = sum(counts.get(identity, 0) for other, counts in before_fns_by_path.items() if other != path)
                 surviving = max(0, after_identities.get(identity, 0) - carried)
                 lost = count - surviving
                 if lost > 0:
                     missing[identity] = lost
+                    # A count-less declaration decides a whole REMOVAL only; an
+                    # identity that still runs elsewhere with fewer assertions is a
+                    # DROP of a surviving test.
+                    kinds[identity] = 'removed' if surviving == 0 else 'dropped'
             if missing:
                 findings.append(
                     _row(
                         path,
                         sum(missing.values()),
                         [
-                            {'identity': identity, 'assertions_removed': count, 'kind': 'removed'}
+                            {'identity': identity, 'assertions_removed': count, 'kind': kinds[identity]}
                             for identity, count in sorted(missing.items())
                         ],
                         f'{sum(missing.values())} assertion(s) of {", ".join(sorted(missing))} are gone from '
@@ -611,7 +621,7 @@ def _grade_test_integrity(
                 continue
             # No identity at all could be extracted — neither a test function nor a
             # class header: fall back to the file's own count, unless the same body
-            # simply moved. The row carries the path key, so a close can accept it.
+            # simply moved. The row carries a path-level key, so a close can accept it.
             if not before_fns and before_file and not _content_survives(pre, after):
                 findings.append(
                     _row(
@@ -631,6 +641,7 @@ def _grade_test_integrity(
             if identity in after_fns and after_fns[identity] < count
         }
         missing = {}
+        missing_kinds: dict[str, str] = {}
         carried_away = 0
         for identity, count in before_fns.items():
             if identity in after_fns:
@@ -641,9 +652,10 @@ def _grade_test_integrity(
             lost = count - surviving
             if lost > 0:
                 missing[identity] = lost
+                missing_kinds[identity] = 'removed' if surviving == 0 else 'dropped'
         identity_loss = sum(drops.values()) + sum(missing.values())
         # A surviving path's own total is only reported when NO identity accounts
-        # for the drop: a function moved to another file is not a loss (L3-2).
+        # for the drop: a function moved to another file is not a loss.
         residual = file_loss - identity_loss - carried_away
         removed = identity_loss + max(0, residual)
         if removed:
@@ -651,7 +663,7 @@ def _grade_test_integrity(
                 {
                     'identity': identity,
                     'assertions_removed': count,
-                    'kind': 'dropped' if identity in drops else 'removed',
+                    'kind': 'dropped' if identity in drops else missing_kinds[identity],
                 }
                 for identity, count in sorted({**drops, **missing}.items())
             ]
@@ -714,7 +726,6 @@ def _grade_test_integrity(
                     'path': path,
                     'kind': 'test_filtered',
                     'markers': added_markers,
-                    'path_key': path,
                     'detail': f'the branch adds {", ".join(added_markers)}: the test no longer runs',
                 }
             )
@@ -792,7 +803,8 @@ def _moved_pre_image(post: str, before: dict[str, str], after: dict[str, str]) -
 def _identity_markers(text: str) -> dict[str, set[str]]:
     """The skip markers attributed to each test identity.
 
-    A marker is attributed to the NEXT test header at or after it, because a
+    A marker on a header line (an indented ``it.skip(...)``) belongs to THAT test;
+    any other marker is attributed to the next test header at or after it, because a
     decorator sits on the line ABOVE the ``def`` it filters and so falls outside the
     function's own span. That attribution is what lets a marker on one test be told
     from a marker on another in the same file. A file with no test identity yields a

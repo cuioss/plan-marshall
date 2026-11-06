@@ -1348,7 +1348,8 @@ def criteria_drift(plan_id: str, current: list[dict[str, Any]] | None = None) ->
                 ),
                 None,
             )
-            frozen_by_older_parser = snapshot.get(PARSER_KEY) != CURRENT_PARSER
+            marker = snapshot.get(PARSER_KEY)
+            frozen_by_older_parser = not isinstance(marker, int) or marker < CURRENT_PARSER
             if extended is not None and criterion in retired and frozen_by_older_parser:
                 drift.append(
                     {

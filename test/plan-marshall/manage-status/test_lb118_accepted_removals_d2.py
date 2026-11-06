@@ -372,6 +372,37 @@ def test_a_test_filtered_row_is_accepted_by_path(plan_context, tmp_path, monkeyp
     ), payload['accepted_removals']
 
 
+def test_a_set_total_row_is_accepted_by_path(plan_context, tmp_path, monkeypatch) -> None:
+    """A set-total row carries no identity; a close accepts it by path plus count."""
+    repo = _repo(tmp_path)
+    _commit(repo, {'README.md': 'readme\n'})
+    _commit(
+        repo,
+        {'test/outer_test.py': 'module_check = True\nassert module_check\n\ndef test_a():\n    assert 1 == 1\n'},
+    )
+    _git(repo, 'checkout', '--quiet', '-b', 'feature')
+    _git(repo, 'rm', 'test/outer_test.py')
+    _git(repo, 'commit', '--quiet', '-m', 'remove the file')
+    monkeypatch.chdir(repo)
+    monkeypatch.setattr(_integrity, 'resolve_live_worktree', lambda _plan_id: repo)
+    monkeypatch.setattr(_attr, 'resolve_live_worktree', lambda _plan_id: None)
+    criteria = ['parser accepts input']
+    head_a, hash_id = _mark_and_file(repo, plan_context, criteria, 'test/outer_test.py')
+
+    _close(head_a, hash_id)
+    _commit(repo, {'src/other.py': 'x\n'})
+
+    payload = review_support.run_validate(PLAN_ID, 'functional', _sealed(tmp_path, criteria), None)
+
+    assert _blocking(payload) == [], payload['findings']
+    assert any(entry.get('identity') == 'test_a' for entry in payload['accepted_removals']), payload[
+        'accepted_removals'
+    ]
+    assert any(entry.get('path') == 'test/outer_test.py' for entry in payload['accepted_removals']), payload[
+        'accepted_removals'
+    ]
+
+
 # --- D2 (e): the three texts state the cases and the key identically -----------------------
 
 

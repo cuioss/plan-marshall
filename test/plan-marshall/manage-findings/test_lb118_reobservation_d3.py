@@ -99,3 +99,18 @@ def test_reopen_against_a_triage_hold_record_is_kept(plan_context) -> None:
     assert again['status'] == 'kept', again
     assert again['not_reopened'] == 'taken_into_account', again
     assert _records()[first['hash_id']]['resolution'] == 'taken_into_account'
+
+
+def test_a_hold_written_after_a_reopen_is_not_rearmed(plan_context) -> None:
+    """The rule marker does not survive the reopen, so a later Hold stands."""
+    _plan(plan_context)
+    first = _file()
+    _findings_core.resolve_qgate_findings_by_rule(PLAN_ID, PHASE, RULE, 'taken_into_account', 'superseded')
+    reopened = _file()
+    assert reopened['status'] == 'reopened', reopened
+    _findings_core.resolve_qgate_finding(PLAN_ID, PHASE, first['hash_id'], 'taken_into_account', detail='Hold')
+
+    again = _file()
+
+    assert again['status'] == 'kept', again
+    assert again['not_reopened'] == 'taken_into_account', again

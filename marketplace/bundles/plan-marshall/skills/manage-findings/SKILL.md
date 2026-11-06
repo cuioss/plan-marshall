@@ -534,7 +534,7 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings qg
   [--rule RULE] [--reopen] [--raw-input FIELD=VALUE] [--raw-input-max-bytes N]
 ```
 
-`--reopen` is the opt-in that re-arms the gate for a re-detected defect the store had recorded as `fixed`: only a matched record whose resolution is `fixed` reopens through the flag. The prior resolution, detail and timestamp move into the record's `history`. A `fixed` match without the flag is kept, a non-`fixed` match with the flag is kept, and a `taken_into_account` match reopens on observation alone (that resolution is the review's own supersession, not an operator decision). Every `kept` result carries `not_reopened: <resolution>` and `reopen_requested: <bool>`, so a caller that asked for a reopen learns why it did not get one.
+`--reopen` is the opt-in that re-arms the gate for a re-detected defect the store had recorded as `fixed`: only a matched record whose resolution is `fixed` reopens through the flag. The prior resolution, detail and timestamp move into the record's `history`. A `fixed` match without the flag is kept, a non-`fixed` match with the flag is kept, and a `taken_into_account` match a loop-back round resolved by rule (`resolution_source: rule`) reopens on observation alone, with or without the flag. A `taken_into_account` record an operator Hold wrote is kept. Every `kept` result carries `not_reopened: <resolution>` and `reopen_requested: <bool>`, so a caller that asked for a reopen learns why it did not get one.
 
 ### qgate list
 

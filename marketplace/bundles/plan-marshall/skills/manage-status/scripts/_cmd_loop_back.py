@@ -463,6 +463,12 @@ def _removed_identities_for_accept(
                 entries.append(entry)
                 recorded = True
             if removed:
+                # A mixed row can also carry a residual no identity explains; record
+                # it by path so a later growth is raised again.
+                total = row.get('removed_assertions')
+                known = sum(int(entry.get('assertions_removed') or 0) for entry in removed)
+                if isinstance(total, int) and total > known:
+                    entries.append({'path': path, 'kind': 'assertion_removed', 'assertions_removed': total - known})
                 continue
             # An identity-less row accepts by its explicit path-level key.
             if str(row.get('kind') or '') == 'test_filtered':

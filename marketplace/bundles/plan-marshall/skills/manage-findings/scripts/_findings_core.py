@@ -89,8 +89,8 @@ CERTAINTY_VALUES = VALID_CERTAINTIES
 # because the caller passed the ``--reopen`` opt-in on a ``fixed`` record or because
 # an OBSERVATION re-armed the review's own ``taken_into_account`` disposition) and
 # ``kept`` (an unchanged re-emission of a record whose disposition stands — an
-# operator ``accepted`` or ``rejected`` decision, or a ``fixed`` record without the
-# opt-in — left it exactly as stored, carrying ``not_reopened`` to name which
+# operator ``accepted``, ``rejected`` or triage Hold, or a ``fixed`` record without
+# the opt-in — left it exactly as stored, carrying ``not_reopened`` to name which
 # resolution stood) all mean the finding IS in the store. The remaining value,
 # ``error``, means it is NOT — and callers MUST NOT fold it into the benign no-op
 # outcomes. Every caller consults this set rather than re-deriving the partition
@@ -1496,6 +1496,7 @@ def _reopen_qgate_record(
         'resolution': 'pending',
         'resolution_detail': None,
         'resolution_timestamp': None,
+        'resolution_source': None,
         'history': history,
         'reobserved_count': reobserved_count,
     }
@@ -1822,6 +1823,7 @@ def resolve_qgate_finding(
     path = _store_qgate_path(store, phase)
     updates: dict[str, Any] = {
         'resolution': resolution,
+        'resolution_source': None,
         'resolution_timestamp': timestamp(),
     }
     if detail:

@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any
 
 import _review_support_integrity as _integrity
+import pytest
 
 PLAN_ID = 'lb118-integrity-evidence-root-d4'
 
@@ -80,6 +81,24 @@ def _rows(payload: dict[str, Any]) -> list[dict[str, Any]]:
 def test_a_no_worktree_plan_on_the_base_branch_does_not_pass(plan_context, tmp_path, monkeypatch) -> None:
     repo = _repo(tmp_path)
     _commit(repo, {'README.md': 'readme\n'})
+    _plan(plan_context)
+    monkeypatch.setattr(_integrity, 'resolve_live_worktree', lambda _plan_id: None)
+    monkeypatch.setattr(_integrity, 'main_checkout_root', lambda: repo)
+
+    payload = _integrity.compute_test_integrity(PLAN_ID)
+
+    assert payload['status'] == 'error', payload
+    assert payload['error'] == 'evidence_root_unresolved', payload
+
+
+def test_a_no_worktree_plan_on_the_base_branch_with_an_origin_does_not_pass(
+    plan_context, tmp_path, monkeypatch
+) -> None:
+    """The guard compares commits: ``resolve_base_ref`` returns ``origin/main`` here."""
+    repo = _repo(tmp_path)
+    head = _commit(repo, {'README.md': 'readme\n'})
+    _git(repo, 'remote', 'add', 'origin', str(repo))
+    _git(repo, 'update-ref', 'refs/remotes/origin/main', head)
     _plan(plan_context)
     monkeypatch.setattr(_integrity, 'resolve_live_worktree', lambda _plan_id: None)
     monkeypatch.setattr(_integrity, 'main_checkout_root', lambda: repo)
@@ -157,3 +176,33 @@ def test_a_missing_merge_base_is_reported_by_name(plan_context, tmp_path, monkey
 
     assert payload['status'] == 'error', payload
     assert payload['error'] == 'merge_base_unresolved', payload
+
+
+def test_the_git_seam_translates_a_timeout(monkeypatch) -> None:
+    def _timeout(*_args, **_kwargs):
+        raise subprocess.TimeoutExpired(cmd='git', timeout=60)
+
+    monkeypatch.setattr(_integrity.subprocess, 'run', _timeout)
+
+    with pytest.raises(_integrity._GitFailure):
+        _integrity._git(Path('.'), ['status'])
+
+
+def test_a_failed_git_show_is_not_read_as_absent(monkeypatch) -> None:
+    failed = subprocess.CompletedProcess(args=['git'], returncode=128, stdout='', stderr='fatal: bad object HEAD:x')
+    monkeypatch.setattr(_integrity, '_git', lambda *_args, **_kwargs: failed)
+
+    with pytest.raises(_integrity._GitFailure):
+        _integrity._show(Path('.'), 'HEAD', 'x')
+
+
+def test_a_missing_path_at_rev_reads_as_absent(monkeypatch) -> None:
+    missing = subprocess.CompletedProcess(
+        args=['git'],
+        returncode=128,
+        stdout='',
+        stderr="fatal: path 'x' does not exist in 'HEAD'",
+    )
+    monkeypatch.setattr(_integrity, '_git', lambda *_args, **_kwargs: missing)
+
+    assert _integrity._show(Path('.'), 'HEAD', 'x') is None
