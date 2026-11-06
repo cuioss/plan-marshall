@@ -2549,6 +2549,8 @@ def test_a_quoted_coverage_marker_makes_no_claim():
         f'> <!-- final_review_risk_coverage:{payload} -->',
         f'```\n<!-- final_review_risk_coverage:{payload} -->\n```',
         f'`<!-- final_review_risk_coverage:{payload} -->`',
+        f'\t<!-- final_review_risk_coverage:{payload} -->',
+        f'    <!-- final_review_risk_coverage:{payload} -->',
     ):
         assert _github_pr.review_coverage_verdict(body, 'a') is None, body
 

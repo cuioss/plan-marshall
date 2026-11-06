@@ -891,7 +891,7 @@ def snapshot_path(plan_id: str) -> Path:
     return base_path('plans', plan_id, SNAPSHOT_FILE)
 
 
-def parse_success_criteria(body: str) -> tuple[list[str], list[str]]:
+def parse_success_criteria(body: str, *, keep_fences: bool = True) -> tuple[list[str], list[str]]:
     """Parse a deliverable body's ``**Success Criteria:**`` block.
 
     Returns ``(criteria, unparsed)``. Every top-level bullet is one criterion —
@@ -909,6 +909,10 @@ def parse_success_criteria(body: str) -> tuple[list[str], list[str]]:
     under, so a ``- `` line inside it is not read as a criterion and an edit to the
     example is an edit to the criterion; an unterminated fence is reported in
     ``unparsed`` as a named state.
+
+    ``keep_fences=False`` replays the PREVIOUS generation (fences skipped), so a
+    snapshot frozen by it can be told from an author's edit when a parser upgrade
+    changes the output for an unchanged outline.
     """
     marker = _SUCCESS_CRITERIA_MARKER_RE.search(body)
     if marker is None:
@@ -922,18 +926,20 @@ def parse_success_criteria(body: str) -> tuple[list[str], list[str]]:
         stripped = line.strip()
         fence = _fence_marker(line)
         if in_fence is not None:
-            if current is not None:
-                current.append(stripped)
-            else:
-                unparsed.append(stripped)
+            if keep_fences:
+                if current is not None:
+                    current.append(stripped)
+                else:
+                    unparsed.append(stripped)
             if fence is not None and fence[0] == in_fence[0] and fence[1] >= in_fence[1] and not fence[2].strip():
                 in_fence = None
             continue
         if fence is not None:
-            if current is not None:
-                current.append(stripped)
-            else:
-                unparsed.append(stripped)
+            if keep_fences:
+                if current is not None:
+                    current.append(stripped)
+                else:
+                    unparsed.append(stripped)
             in_fence = (fence[0], fence[1])
             continue
         if not stripped:
@@ -987,6 +993,10 @@ def outline_deliverables(plan_id: str) -> list[dict[str, Any]] | None:
         criteria, unparsed = parse_success_criteria(body)
         deliverable['success_criteria'] = criteria
         deliverable['unparsed_criteria'] = unparsed
+        # The PREVIOUS generation's reading of the same body: a snapshot frozen by
+        # it can be told from an author's edit when this generation's output differs
+        # for an unchanged outline.
+        deliverable['generation_2_criteria'] = parse_success_criteria(body, keep_fences=False)[0]
         deliverable['retired_criteria'] = _retired_criteria(body)
     return deliverables
 
@@ -1371,11 +1381,13 @@ def criteria_drift(plan_id: str, current: list[dict[str, Any]] | None = None) ->
       outline (a dropped clause), or the whole deliverable is gone.
     * ``rewritten`` — the frozen position is occupied by different text (the
       clause was narrowed or reworded in place).
-    * ``parser_extended`` — a frozen criterion that is a prefix of the criterion the
-      current parser reads in full (a wrapped bullet a retired parser truncated).
-      It is admitted only for a snapshot that predates the current parser; the
-      snapshot carries ``parser: 2`` when the current one froze it, and then the
-      same prefix-extension is ``rewritten``.
+    * ``parser_extended`` — a frozen criterion whose text is exactly what an EARLIER
+      parser generation would have produced from the same outline body (a wrapped
+      bullet the v1 parser truncated, or a fence-skipped reading a parser-2 snapshot
+      froze). It is admitted only for a snapshot whose marker names that earlier
+      generation; a snapshot the current generation froze reports the same difference
+      as ``rewritten``. An author's append is not a parser output, so it is never
+      admitted.
     * ``spec_criterion_missing`` — a spec deliverable's own frozen Done-when that
       NO current outline criterion covers. The failure it prevents: four
       spec deliverables merged into one outline deliverable, three generic
@@ -1410,31 +1422,36 @@ def criteria_drift(plan_id: str, current: list[dict[str, Any]] | None = None) ->
                 continue
             if criterion in live:
                 continue
-            # Migration: a frozen criterion that is a PREFIX of a criterion the
-            # current parser reads in full is a migration instead of an outline
-            # change — but ONLY when BOTH (a) the retired parser would still have
-            # produced exactly that frozen text, and (b) the snapshot predates the
-            # current parser (it carries no ``parser`` marker). Without (b), an
-            # author's continuation-line or sub-bullet append to a criterion the
-            # current parser froze would hide a real change in an advisory state.
+            # Migration: the frozen criterion equals what the PREVIOUS parser
+            # generation would have produced from this same outline body, while the
+            # current generation reads something else. That is a parser upgrade, not
+            # an author's change — and it is admitted for the generation that actually
+            # froze the snapshot, so a parser-2 append to a single-line criterion is
+            # still `rewritten` (the gen-2 replay of the CURRENT body carries the
+            # append, so the frozen text is not a gen-2 output).
+            gen2 = [normalize_criterion(text) for text in (live_row or {}).get('generation_2_criteria') or []]
             retired = [normalize_criterion(text) for text in (live_row or {}).get('retired_criteria') or []]
-            extended = next(
-                (
-                    candidate
-                    for candidate in live
-                    if candidate.startswith(criterion) and len(candidate) > len(criterion)
-                ),
-                None,
-            )
             marker = snapshot.get(PARSER_KEY)
-            frozen_by_older_parser = not isinstance(marker, int) or marker < CURRENT_PARSER
-            if extended is not None and criterion in retired and frozen_by_older_parser:
+            migrated = False
+            if marker == 2:
+                migrated = criterion in gen2
+            elif not isinstance(marker, int) or marker < 2:
+                extended_v1 = next(
+                    (
+                        candidate
+                        for candidate in live
+                        if candidate.startswith(criterion) and len(candidate) > len(criterion)
+                    ),
+                    None,
+                )
+                migrated = extended_v1 is not None and criterion in retired
+            if migrated:
                 drift.append(
                     {
                         'deliverable': number,
                         'kind': PARSER_EXTENDED,
                         'criterion': criterion,
-                        'current': extended,
+                        'current': live[index] if index < len(live) else '',
                     }
                 )
                 continue

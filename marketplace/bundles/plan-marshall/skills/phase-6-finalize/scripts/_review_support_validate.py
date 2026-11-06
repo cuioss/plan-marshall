@@ -466,7 +466,7 @@ def grade_frozen_criteria(grading: Grading, drift: list[dict[str, Any]]) -> int:
 
     One kind is ADVISORY, never blocking: ``parser_extended`` — a frozen criterion
     that is a prefix of the criterion the current parser reads in full, admitted only
-    for a snapshot written before the parser marker. It is reported as
+    for a snapshot whose marker names an earlier parser generation. It is reported as
     `criterion_parser_extended` for visibility and left out of the blocking set;
     retiring it is a re-freeze, which needs its own authorization.
     """
