@@ -189,19 +189,31 @@ def changed_statuses(worktree: Path, base_ref: str, head_ref: str = 'HEAD') -> l
     travelled with the file. ``old_path`` is set only for a rename/copy source.
     Raises on git failure, exactly like :func:`changed_files`.
     """
-    proc = _git(worktree, ['diff', '--name-status', '--find-renames', f'{base_ref}...{head_ref}'])
+    proc = _git(worktree, ['diff', '--name-status', '--find-renames', '-z', f'{base_ref}...{head_ref}'])
     if proc.returncode != 0:
         raise subprocess.CalledProcessError(proc.returncode, proc.args, output=proc.stdout, stderr=proc.stderr)
+    # NUL-delimited records: `status\0path\0` for one path, `status\0old\0new\0` for a
+    # rename/copy. Reading them NUL-wise keeps a path containing `"`, `\`, TAB or LF
+    # literal; the line-oriented form C-quotes those and the quoted string then names
+    # no file in the tree.
+    tokens = proc.stdout.split('\0')
     entries: list[tuple[str, str, str | None]] = []
-    for line in proc.stdout.splitlines():
-        parts = [part for part in line.split('\t') if part]
-        if len(parts) < 2:
+    index = 0
+    while index < len(tokens):
+        status = tokens[index]
+        if not status:
+            index += 1
             continue
-        status, path = parts[0], parts[1]
-        if status[:1] in ('R', 'C') and len(parts) >= 3:
-            entries.append((status[:1], parts[2], path))
+        if status[:1] in ('R', 'C'):
+            if index + 2 >= len(tokens):
+                break
+            entries.append((status[:1], tokens[index + 2], tokens[index + 1]))
+            index += 3
         else:
-            entries.append((status[:1], path, None))
+            if index + 1 >= len(tokens):
+                break
+            entries.append((status[:1], tokens[index + 1], None))
+            index += 2
     return entries
 
 
@@ -236,15 +248,14 @@ def merge_base(worktree: Path, base_ref: str, head_ref: str = 'HEAD') -> str | N
     return resolved or None
 
 
-#: ``git show`` failures that mean the path or revision is genuinely absent,
-#: as opposed to a call that failed for another reason (permissions, a corrupt
-#: object store, a killed process). Only the former is "did not exist".
+#: ``git show`` failures that mean the PATH is genuinely absent from the revision,
+#: as opposed to a call that failed for another reason (a bad revision, permissions, a
+#: corrupt object store, a killed process). Only the former is "did not exist": a
+#: missing REVISION is a failed read, and reading it as an absent file would drop a
+#: deleted test's pre-image and count its loss nowhere.
 _ABSENT_PATTERNS = (
     'does not exist in',
     'exists on disk, but not in',
-    'invalid object name',
-    'unknown revision',
-    "path '",
 )
 
 
@@ -422,8 +433,27 @@ def _rev_parse(root: Path, ref: str) -> str | None:
 
 
 def _is_ancestor(root: Path, ancestor: str, descendant: str) -> bool:
-    """Whether ``ancestor`` is an ancestor of (or equal to) ``descendant``."""
-    return _git(root, ['merge-base', '--is-ancestor', ancestor, descendant]).returncode == 0
+    """Whether ``ancestor`` is an ancestor of (or equal to) ``descendant``.
+
+    ``git merge-base --is-ancestor`` uses exit 1 for "no" and any other non-zero exit
+    for "the question could not be asked" (a missing object, a corrupt repository).
+    Reading every non-zero exit as "not an ancestor" turned a failed read into a
+    positive claim that the checkout sat at or behind its base, so the third state is
+    raised as :class:`_GitFailure` and reported as ``test_integrity_not_run``.
+    """
+    proc = _git(root, ['merge-base', '--is-ancestor', ancestor, descendant])
+    if proc.returncode == 0:
+        return True
+    if proc.returncode == 1:
+        return False
+    message = f'{proc.stderr or ""}{proc.stdout or ""}'.strip()
+    raise _GitFailure(f'git merge-base --is-ancestor failed: {message or proc.returncode}')
+
+
+def _current_branch(root: Path) -> str | None:
+    """The branch the checkout has checked out, or ``None`` for a detached HEAD."""
+    proc = _git(root, ['symbolic-ref', '--quiet', '--short', 'HEAD'])
+    return proc.stdout.strip() if proc.returncode == 0 and proc.stdout.strip() else None
 
 
 def _tree_is_dirty(root: Path) -> bool:
@@ -444,16 +474,17 @@ def _evidence_root(plan_id: str) -> tuple[Path | None, str | None]:
     A worktree-bound plan is graded against its worktree. A plan that runs WITHOUT
     a worktree (``use_worktree: false``) is graded against the main checkout — the
     tree the finalize contract assigns it — but only when that checkout is actually
-    carrying the plan's work: its HEAD must not be the base branch and its tree must
-    be clean. Otherwise the grade is refused as ``evidence_root_unresolved`` rather
-    than passed on an empty diff (the base-branch case) or on unrelated uncommitted
-    text (the dirty case). A plan that DECLARED a materialized worktree which does
-    not resolve now returns ``None``: grading it against another tree would compare
-    two heads.
+    carrying the plan's work: it must be CLEAN, its HEAD must not sit at or behind the
+    base ref, and when the plan record carries a branch (``references.branch``) its
+    checked-out branch must be that branch. Otherwise the grade is refused as
+    ``evidence_root_unresolved`` rather than passed on an empty diff (the base-branch
+    case), on another plan's branch, or on unrelated uncommitted text (the dirty
+    case). A plan that DECLARED a materialized worktree which does not resolve now
+    returns ``None``: grading it against another tree would compare two heads.
 
     ``review_support._evidence_root`` resolves the citation-check root for the same
-    two tree kinds; this one adds the fail-closed head and dirty checks a diff grade
-    needs.
+    two tree kinds; this one adds the fail-closed head, branch and dirty checks a diff
+    grade needs.
     """
     try:
         worktree = resolve_live_worktree(plan_id)
@@ -482,6 +513,11 @@ def _evidence_root(plan_id: str) -> tuple[Path | None, str | None]:
         # would report success with zero rows, i.e. a pass, for work not checked
         # out. (A stale local main behind origin/main is the same false pass.)
         return None, 'main_checkout_on_base_branch'
+    recorded_branch = str(refs.get('branch') or '').strip() if isinstance(refs, dict) else ''
+    if recorded_branch and _current_branch(root) != recorded_branch:
+        # The plan record names the branch its work lives on; a checkout of another
+        # plan's branch would grade a different change and report this plan clean.
+        return None, 'main_checkout_other_branch'
     if _tree_is_dirty(root):
         # A dirty checkout feeds unrelated uncommitted text into the after-image.
         return None, 'main_checkout_dirty'

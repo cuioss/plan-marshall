@@ -262,3 +262,81 @@ def test_a_missing_path_at_rev_reads_as_absent(monkeypatch) -> None:
     monkeypatch.setattr(_integrity, '_git', lambda *_args, **_kwargs: missing)
 
     assert _integrity._show(Path('.'), 'HEAD', 'x') is None
+
+
+# --- D5: the evidence root and the git calls fail closed -----------------------------------
+
+
+def test_a_no_worktree_plan_on_another_plans_branch_does_not_pass(plan_context, tmp_path, monkeypatch) -> None:
+    """The plan record names its branch; another plan's clean checkout must not grade it.
+
+    Pre-fix only "HEAD is not the base" was checked, so a clean checkout of another
+    plan's feature branch reported success with zero rows. Red at 75b5780d0.
+    """
+    repo = _repo(tmp_path)
+    _commit(repo, {'README.md': 'readme\n'})
+    _git(repo, 'checkout', '--quiet', '-b', 'feature-other')
+    _commit(repo, {'src/other.py': 'x\n'}, 'another plan’s work')
+    plan_dir = _plan(plan_context)
+    (plan_dir / 'references.json').write_text(
+        json.dumps({'base_branch': 'main', 'branch': 'feature-this-plan'}), encoding='utf-8'
+    )
+    monkeypatch.setattr(_integrity, 'resolve_live_worktree', lambda _plan_id: None)
+    monkeypatch.setattr(_integrity, 'main_checkout_root', lambda: repo)
+
+    payload = _integrity.compute_test_integrity(PLAN_ID)
+
+    assert payload['status'] == 'error', payload
+    assert payload['error'] == 'evidence_root_unresolved', payload
+    assert 'main_checkout_other_branch' in payload['message'], payload
+
+
+def test_an_is_ancestor_failure_is_not_run(plan_context, tmp_path, monkeypatch) -> None:
+    """⛔ ``--is-ancestor`` exit 128 is a failed read, not "not an ancestor". Red at 75b5780d0."""
+    repo = _repo(tmp_path)
+    _commit(repo, {'README.md': 'readme\n'})
+    _plan(plan_context)
+    monkeypatch.setattr(_integrity, 'resolve_live_worktree', lambda _plan_id: None)
+    monkeypatch.setattr(_integrity, 'main_checkout_root', lambda: repo)
+    monkeypatch.setattr(_integrity, '_rev_parse', lambda _root, ref: 'a' * 40 if ref == 'HEAD' else 'b' * 40)
+
+    def fake_git(_root, args):
+        if args[:2] == ['merge-base', '--is-ancestor']:
+            return subprocess.CompletedProcess(args=['git'], returncode=128, stdout='', stderr='fatal: bad object')
+        return subprocess.CompletedProcess(args=['git'], returncode=0, stdout='', stderr='')
+
+    monkeypatch.setattr(_integrity, '_git', fake_git)
+
+    payload = _integrity.compute_test_integrity(PLAN_ID)
+
+    assert payload['status'] == 'error', payload
+    assert payload['error'] == 'test_integrity_not_run', payload
+
+
+def test_a_missing_revision_is_a_failure_not_an_absent_path(monkeypatch) -> None:
+    """A bad REVISION is a failed read; only a missing PATH is absence. Red at 75b5780d0."""
+    failed = subprocess.CompletedProcess(
+        args=['git'], returncode=128, stdout='', stderr="fatal: invalid object name 'nope'."
+    )
+    monkeypatch.setattr(_integrity, '_git', lambda *_args, **_kwargs: failed)
+
+    with pytest.raises(_integrity._GitFailure):
+        _integrity._show(Path('.'), 'nope', 'x')
+
+
+def test_a_deleted_test_path_containing_a_quote_is_read(plan_context, tmp_path, monkeypatch) -> None:
+    """A quoted path is read literally (NUL-delimited), so its loss is reported. Red at 75b5780d0."""
+    repo = _repo(tmp_path)
+    _commit(repo, {'README.md': 'readme\n'})
+    quoted = 'test/quote"_test.py'
+    _commit(repo, {quoted: 'def test_a():\n    assert 1 == 1\n    assert 2 == 2\n'})
+    _git(repo, 'checkout', '--quiet', '-b', 'feature')
+    _git(repo, 'rm', quoted)
+    _git(repo, 'commit', '--quiet', '-m', 'delete')
+    _plan(plan_context)
+    monkeypatch.setattr(_integrity, 'resolve_live_worktree', lambda _plan_id: repo)
+
+    payload = _integrity.compute_test_integrity(PLAN_ID)
+
+    assert payload['status'] == 'success', payload
+    assert any(row['path'] == quoted for row in _rows(payload)), payload
