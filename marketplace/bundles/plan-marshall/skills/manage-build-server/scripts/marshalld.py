@@ -634,7 +634,7 @@ class Daemon:
             # single TOON line and be reparsed as a sibling key of the wait payload
             # (an injected `status: success` turning a queued job's payload into a
             # green one).
-            return report_safe(f'{holder.get("plan_id") or "NO_PLAN"} (pid {holder.get("pid")})')
+            return str(report_safe(f'{holder.get("plan_id") or "NO_PLAN"} (pid {holder.get("pid")})'))
         return ''
 
     def _held_directories(self) -> dict[str, dict[str, Any]]:

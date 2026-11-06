@@ -19,6 +19,7 @@ import time
 from argparse import Namespace
 from pathlib import Path
 
+import pytest
 from _build_queue_fixtures import (
     _init_git_repo,
     _make_live_plan,
