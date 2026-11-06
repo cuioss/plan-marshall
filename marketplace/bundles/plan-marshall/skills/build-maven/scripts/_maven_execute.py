@@ -95,6 +95,10 @@ def apply_selector_miss_guard(result: dict) -> dict:
 
     selector = dtest_selector(command)
     named = f"'{selector}'" if selector else 'the -Dtest selector'
+    # The executor's own optional fields travel with the verdict: a consumer
+    # reading `wrapper` or `command_key` off a selector-miss result would
+    # otherwise find them absent although the build did run.
+    carried = {name: result[name] for name in ('wrapper', 'command_key', 'project_dir') if result.get(name)}
     return indeterminate_result(
         f'{TEST_SELECTOR_MATCHED_NOTHING}: {named} matched no test, so the run executed nothing — '
         'not a failure and not a green. Surefire prints "No tests matching pattern ... were '
@@ -103,6 +107,7 @@ def apply_selector_miss_guard(result: dict) -> dict:
         str(result.get('log_file') or ''),
         command,
         exit_code=int(result.get('exit_code') or 0),
+        **carried,
     )
 
 
@@ -110,14 +115,35 @@ def _selector_miss_guard(inner):
     """Wrap the factory's execute so the selector guard runs on every route.
 
     A routed build re-enters this factory inside the daemon child, so the guard
-    applies there too; the wrapper forwards the full signature verbatim, so no
-    caller-supplied timeout or plan id is lost on either leg.
+    applies there too; the wrapper names ``explicit_timeout`` and ``plan_id``
+    explicitly and forwards BOTH on its single inner call, as the factory's
+    wrapper contract requires.
     """
 
-    def wrapped(*args, **kwargs):
-        return apply_selector_miss_guard(inner(*args, **kwargs))
+    def execute_direct(
+        args: str,
+        command_key: str,
+        default_timeout: int = DEFAULT_BUILD_TIMEOUT,
+        project_dir: str = '.',
+        env_vars: dict[str, str] | None = None,
+        working_dir: str | None = None,
+        explicit_timeout: int | None = None,
+        *,
+        plan_id: str,
+    ):
+        result = inner(
+            args=args,
+            command_key=command_key,
+            default_timeout=default_timeout,
+            project_dir=project_dir,
+            env_vars=env_vars,
+            working_dir=working_dir,
+            explicit_timeout=explicit_timeout,
+            plan_id=plan_id,
+        )
+        return apply_selector_miss_guard(result)
 
-    return wrapped
+    return execute_direct
 
 
 _CONFIG = ExecuteConfig(

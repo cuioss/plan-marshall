@@ -252,3 +252,38 @@ def test_selector_miss_goal_failure_becomes_the_named_reason_not_a_build_failure
     assert guarded['status'] == 'indeterminate'
     assert TEST_SELECTOR_MATCHED_NOTHING in guarded['message']
     assert 'Awaits#runs' in guarded['message']
+
+
+def test_execute_direct_is_wired_to_the_guard(tmp_path, monkeypatch):
+    """The guard is REACHED by the executor, not merely available beside it.
+
+    Every other case here calls ``apply_selector_miss_guard`` directly, so
+    dropping ``wrap_execute_fn`` from the factory call would leave them all
+    green while the guard went dead. This one drives the module's own
+    ``execute_direct`` end to end.
+    """
+    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+    (tmp_path / 'mvnw').write_text('#!/bin/sh\n')
+
+    def _recorder(**kwargs):
+        return {
+            'status': 'success',
+            'exit_code': 0,
+            'duration_seconds': 1,
+            'log_file': str(_LOG_TEST_DATA / 'maven-dtest-zero-executed.log'),
+            'command': f'./mvnw -l /tmp/maven.log {_SELECTOR_COMMAND}',
+            'wrapper': './mvnw',
+        }
+
+    monkeypatch.setattr(_factory, 'execute_direct_base', _recorder)
+
+    result = execute_direct(
+        args='test -Dtest=Awaits#runs',
+        command_key='maven:test',
+        project_dir=str(tmp_path),
+        plan_id=_PLAN_ID,
+    )
+
+    assert result['status'] == 'indeterminate'
+    assert TEST_SELECTOR_MATCHED_NOTHING in result['message']
+    assert result['wrapper'] == './mvnw', 'the executor fields travel with the verdict'

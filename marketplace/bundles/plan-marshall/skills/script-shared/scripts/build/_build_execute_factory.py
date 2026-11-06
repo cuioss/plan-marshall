@@ -922,8 +922,16 @@ def _result_for_log_verdict(
             **_routed_errors_extra(verdict),
         )
     return indeterminate_result(  # type: ignore[return-value]
-        f'job log reported status {status!r}, which is outside the build-result '
-        f'vocabulary; the build outcome is undetermined.',
+        # The producer's own wording wins when it stated one — the same rule the
+        # ``killed`` leg above applies. Its absence means the log stated no
+        # reason, so this client's sentence is the only content the result can
+        # honestly carry.
+        str(verdict.message)
+        if getattr(verdict, 'message', None)
+        else (
+            f'job log reported status {status!r}, which is outside the build-result '
+            f'vocabulary; the build outcome is undetermined.'
+        ),
         duration,
         log_file,
         command_str,

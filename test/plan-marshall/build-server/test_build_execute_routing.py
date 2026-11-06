@@ -1240,3 +1240,41 @@ class TestPreToolFaultPassThrough:
         )
         assert template.is_file(), f'the executor template moved; this drift guard must follow it: {template}'
         assert f'error: {ERROR_INVALID_INVOCATION}' in template.read_text(encoding='utf-8')
+
+
+class TestIndeterminateReasonCarry:
+    """A child's ``indeterminate`` verdict keeps the REASON it stated.
+
+    The daemon's wire vocabulary collapses ``indeterminate`` onto ``failure``,
+    and the client's cross-check rebuilds the verdict from the job log. Before
+    the carry, that rebuild substituted a generic "outside the build-result
+    vocabulary" sentence, so a producer's named reason never reached the caller.
+    """
+
+    def test_an_indeterminate_child_verdict_keeps_its_own_reason(self, tmp_path):
+        """The child's ``message:`` line IS the reason the caller must receive."""
+        log = tmp_path / 'indeterminate.log'
+        reason = "test_selector_matched_nothing: 'Awaits#runs' matched no test, so the run executed nothing"
+        log.write_text(f'status: indeterminate\nexit_code: 0\nmessage: "{reason}"\n', encoding='utf-8')
+
+        result = factory._daemon_result_to_direct(
+            {'job_status': 'success', 'exit_code': 0, 'duration_seconds': 4, 'log_file': str(log)},
+            'cmd',
+        )
+
+        assert result['status'] == 'indeterminate'
+        assert result['message'] == reason
+
+    def test_a_verdict_that_states_no_reason_still_gets_the_generic_sentence(self, tmp_path):
+        """Matched control: the carry must not invent a reason the log never stated."""
+        log = tmp_path / 'no-reason.log'
+        log.write_text('status: quiesced\nexit_code: 0\n', encoding='utf-8')
+
+        result = factory._daemon_result_to_direct(
+            {'job_status': 'success', 'exit_code': 0, 'duration_seconds': 4, 'log_file': str(log)},
+            'cmd',
+        )
+
+        assert result['status'] == 'indeterminate'
+        assert 'quiesced' in result['message']
+        assert 'outside the build-result vocabulary' in result['message']
