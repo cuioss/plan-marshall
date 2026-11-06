@@ -967,6 +967,11 @@ def test_a_directory_holder_waiting_on_a_slot_does_not_deadlock(tmp_path, isolat
     monkeypatch.setattr(queue_module, 'main_checkout_root', lambda: tmp_path / 'main')
     monkeypatch.setattr(queue_module, 'log_lock_event', lambda *a, **k: None)
     monkeypatch.setattr(bqs, '_WAIT_SECONDS', 0.02)
+    # A generous retry budget: the point of this test is that the waiter PROCEEDS
+    # once the slot frees, not that it survives a short budget. With the default 10
+    # polls the 0.2 s hold could outlast the budget under a loaded runner, turning
+    # a scheduling delay into a spurious saturation failure.
+    monkeypatch.setattr(bqs, '_resolve_max_retries', lambda: 200)
 
     directory = tmp_path / 'W1'
     directory.mkdir()
