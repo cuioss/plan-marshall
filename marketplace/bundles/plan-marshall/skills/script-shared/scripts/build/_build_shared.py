@@ -748,7 +748,7 @@ def cmd_run_common(
     Returns:
         Exit code (0 for success, 1 for failure).
     """
-    formatter = format_json if output_format == 'json' else format_toon
+    base_formatter = format_json if output_format == 'json' else format_toon
 
     # ``queued_seconds`` is produced by the routing seam (how long the build
     # waited behind another build of its directory), and every branch below
@@ -758,13 +758,11 @@ def cmd_run_common(
     # each payload construction, where a new branch would silently drop it and the
     # operator would lose the only signal that the build was serialised rather
     # than slow.
-    unfiltered_formatter = formatter
-
     def formatter(output: dict[str, Any]) -> str:
         queued = result.get('queued_seconds')
         if isinstance(queued, int) and not isinstance(queued, bool) and queued >= 0:
             output = {**output, 'queued_seconds': queued}
-        return unfiltered_formatter(output)
+        return base_formatter(output)
 
     log_file = result['log_file']
     command_str = result['command']

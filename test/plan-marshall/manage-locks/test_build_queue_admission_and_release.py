@@ -404,7 +404,9 @@ class TestPerInvocationToken:
 
 
 def _directory_namespace(directory: Path, ticket: str, plan_id: str = 'plan-a') -> Namespace:
-    return Namespace(directory=str(directory.resolve()), plan_id=plan_id, command='module-tests', pid=os.getpid(), ticket=ticket)
+    return Namespace(
+        directory=str(directory.resolve()), plan_id=plan_id, command='module-tests', pid=os.getpid(), ticket=ticket
+    )
 
 
 class TestDirectoryLockFifo:
@@ -461,7 +463,9 @@ class TestDirectoryRecovery:
             **overrides,
         }
         (isolated_base['queue_path']).write_text(
-            json.dumps({'active': [], 'waiting': [], 'run_log': [], 'directory_locks': {str(directory.resolve()): record}}),
+            json.dumps(
+                {'active': [], 'waiting': [], 'run_log': [], 'directory_locks': {str(directory.resolve()): record}}
+            ),
             encoding='utf-8',
         )
 
@@ -512,7 +516,9 @@ class TestDirectoryRecovery:
         assert _read_queue(isolated_base['queue_path']).get('directory_locks') == {}
 
     def test_clear_of_an_unheld_directory_is_an_idempotent_noop(self, isolated_base: dict) -> None:
-        result = build_queue.run_directory_clear(Namespace(directory=str(isolated_base['base'] / 'nobody'), force=False))
+        result = build_queue.run_directory_clear(
+            Namespace(directory=str(isolated_base['base'] / 'nobody'), force=False)
+        )
 
         assert result['status'] == 'success'
         assert result['action'] == 'noop'

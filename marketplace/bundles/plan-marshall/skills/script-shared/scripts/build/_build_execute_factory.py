@@ -55,7 +55,13 @@ from _build_execute import (  # noqa: E402
     execute_direct_base,
 )
 from _build_execute import detect_wrapper as _detect_wrapper  # noqa: E402
-from _build_queue_slot import BuildQueueTimeout, DirectoryBusy, build_queue_slot, directory_lock  # noqa: E402
+from _build_queue_slot import (  # noqa: E402
+    BuildQueueTimeout,
+    DirectoryBusy,
+    DirectoryLease,
+    build_queue_slot,
+    directory_lock,
+)
 from _build_result import (  # noqa: E402
     ERROR_BUILD_FAILED,
     ERROR_QUEUE_SATURATED,
@@ -1738,7 +1744,8 @@ def create_execute_handlers(
                 project_dir,
                 plan_id=plan_id,
                 command=command_args,
-            ) as lease:
+            ) as held_lease:
+                lease = held_lease
                 with build_queue_slot(plan_id):
                     result = in_process_execute(
                         args=command_args,

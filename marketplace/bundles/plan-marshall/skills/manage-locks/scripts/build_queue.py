@@ -1435,7 +1435,9 @@ def run_directory_acquire(args: Namespace) -> dict[str, Any]:
                 (
                     waiter
                     for index, waiter in enumerate(waiters)
-                    if waiter['directory'] == directory and waiter['ticket'] != ticket and (our_place is None or index < our_place)
+                    if waiter['directory'] == directory
+                    and waiter['ticket'] != ticket
+                    and (our_place is None or index < our_place)
                 ),
                 None,
             )
@@ -1744,7 +1746,7 @@ Examples:
         default=None,
         help=(
             'Per-INVOCATION identity. Re-poll with the same token to keep this '
-            'build\'s FIFO place; a second token for the same plan is a second '
+            "build's FIFO place; a second token for the same plan is a second "
             'entry. Omitted, the identity falls back to --plan-id (pre-token '
             'idempotence).'
         ),
@@ -1773,7 +1775,9 @@ Examples:
         help='Inspect or reclaim a per-directory build holder (operator recovery)',
         allow_abbrev=False,
     )
-    directory_subparsers = p_directory.add_subparsers(dest='directory_command', required=True, help='Directory operation')
+    directory_subparsers = p_directory.add_subparsers(
+        dest='directory_command', required=True, help='Directory operation'
+    )
 
     p_directory_status = directory_subparsers.add_parser(
         'status',
