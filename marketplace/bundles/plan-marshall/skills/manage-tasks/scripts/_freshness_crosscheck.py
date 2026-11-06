@@ -191,6 +191,15 @@ readings name the SAME blast radius — an invocation that mentions
 ``plan-marshall`` and nothing wider. What the ambiguity would break is a claim
 about the argv's *structure*, which nothing here makes.
 
+A flag after the canonical is a different matter, and :func:`parse_row_scope`
+resolves it conservatively: a KNOWN scope-bearing flag (maven's ``-pl`` /
+``--projects`` and npm's ``--workspace``, each grounded in the resolver that emits
+it) contributes its value to the scope, a known non-narrowing companion
+(``-am`` / ``--also-make``) is ignored, and **any other flag makes the row
+unreadable**. Reading an unknown flag as "no scope" would assert whole-tree over a
+run that might have been narrowed inside the lost quoting — the false-green
+direction — so it is an inability with its reason recorded instead.
+
 The claim the gate now makes, and why it is bounded
 ====================================================
 
@@ -291,10 +300,13 @@ REASON_REQUIRED_COVERAGE_UNKNOWN = 'required_coverage_unknown'
 #: dimension this means THIS CHECK IS BROKEN rather than that the project is
 #: un-crawlable, so it is named apart.
 REASON_VOCABULARY_UNIMPORTABLE = 'analysis_vocabulary_unimportable'
-#: ``scope_cross_check_reason`` when no candidate row's ``args`` carries a
-#: readable ``--command-args``, or every canonical it names is outside the known
-#: vocabulary. The rows were read and said nothing usable — distinct from a row
-#: that said something and was refuted.
+#: ``scope_cross_check_reason`` when no candidate row can be read for scope: its
+#: ``args`` carries no ``--command-args``, or every canonical it names is outside
+#: the known vocabulary, or a row carries a flag that is neither a known
+#: scope-bearing one nor a known non-narrowing companion — so its blast radius
+#: cannot be placed inside or outside the command's lost quoting. The rows were
+#: read and said nothing usable about coverage — distinct from a row that said
+#: something and was refuted.
 REASON_SCOPE_UNREADABLE = 'build_scope_unreadable'
 #: ``stale`` reason (and ``scope_cross_check_reason``). THE refusal this
 #: dimension exists to make.
@@ -322,6 +334,36 @@ ROW_ARGS_UNREADABLE = 'args_carry_no_command_args'
 #: subparser declaration (``_build_cli.add_run_subparser``), which is why this
 #: reader works for every build tool rather than only for the Python one.
 _COMMAND_ARGS_FLAG = '--command-args'
+
+#: Flags a build tool's resolved executable carries that NARROW the run to a
+#: subset of modules, mapped to the number of value tokens each consumes. Each
+#: entry is grounded in a resolver in this repository:
+#:
+#: * ``-pl`` / ``--projects`` — maven's module list (``mod-a`` or ``mod-a,mod-b``),
+#:   emitted beside ``-am`` by ``_maven_cmd_discover``;
+#: * ``--workspace`` — npm's workspace selector, emitted as ``--workspace=<name>``
+#:   by ``_npm_cmd_discover``.
+#:
+#: ⛔ A flag NOT in this map is deliberately NOT propagated as scope. The ledger
+#: joins its argv without quoting, so a flag after the canonical command cannot be
+#: placed inside or outside the command's own quoting — reading it as whole-tree
+#: would manufacture the false-green this dimension exists to close. Such a row
+#: returns ``None`` (UNREADABLE) instead.
+_SCOPE_FLAGS: dict[str, int] = {
+    '-pl': 1,
+    '--projects': 1,
+    '--workspace': 1,
+}
+
+#: Flags that are KNOWN NOT to narrow the run, so they neither contribute scope
+#: nor make the row unreadable. Each is a zero-arity companion of a scope flag the
+#: tool's resolved executable emits next to it: maven's ``-am`` / ``--also-make``
+#: is always emitted beside ``-pl`` (:mod:`_maven_cmd_discover`), and it only
+#: ADDS the selected modules' dependencies. Ignoring it cannot create a
+#: whole-tree claim while a scope was actually selected: the ``-pl`` value beside
+#: it (or a positional module) still names the scope. With NO scope of any kind
+#: the row is unreadable instead — ``package -am`` alone selects nothing.
+_SCOPE_NEUTRAL_FLAGS: frozenset[str] = frozenset({'-am', '--also-make'})
 
 
 @dataclass(frozen=True)
@@ -529,10 +571,13 @@ def parse_row_scope(entry: dict[str, Any]) -> RowScope | None:
     """Read the canonical and scope a ``kind=build`` row records, or ``None``.
 
     Reads ``args`` — the executor argv — and takes the tokens that follow
-    ``--command-args`` up to the next flag: the first is the canonical, the rest
-    are the scope. Both the space-separated (``--command-args verify``) and the
-    joined (``--command-args=verify``) spellings are accepted, because argparse
-    accepts both and the ledger stamps whichever the caller used.
+    ``--command-args``: the first non-flag is the canonical, the remaining
+    non-flag tokens are positional scope (the module / directory names other
+    build tools accept), and a KNOWN scope-bearing flag (:data:`_SCOPE_FLAGS`)
+    contributes its value to the scope too. Both the space-separated
+    (``--command-args verify``) and the joined (``--command-args=verify``)
+    spellings are accepted, because argparse accepts both and the ledger stamps
+    whichever the caller used.
 
     ⛔ ``None`` means UNREADABLE and is never equivalent to a ``RowScope`` with an
     empty ``scope_tokens``. Empty tokens assert *whole-tree*, which is the widest
@@ -540,6 +585,17 @@ def parse_row_scope(entry: dict[str, Any]) -> RowScope | None:
     manufacture exactly the false-green this dimension exists to remove. ``args``
     that is absent, not a string, carries no ``--command-args``, or carries one
     with no following non-flag token all yield ``None``.
+
+    A flag that is NOT a known scope-bearing one also yields ``None`` rather than
+    silently ending the scope. The ledger joins ``args`` WITHOUT quoting, so a
+    flag after the canonical cannot be placed inside or outside the command's own
+    quoting — an unknown flag might be narrowing the build (``-k foo``,
+    ``-Dtest=…``) or might be the executor's own (``--timeout``), and reading
+    either as whole-tree is the false-green direction. The fail direction is an
+    inability that passes with its reason recorded, never a coverage credit. The
+    one exception is a KNOWN non-narrowing companion (:data:`_SCOPE_NEUTRAL_FLAGS`,
+    maven's ``-am`` / ``--also-make``): it provably cannot narrow, so it is
+    ignored rather than making the row unreadable.
 
     ``command`` is deliberately not consulted as a fallback — see the module
     docstring for why a build-tool-specific command line cannot be read for scope
@@ -565,15 +621,52 @@ def parse_row_scope(entry: dict[str, Any]) -> RowScope | None:
             break
     else:
         return None
-    payload = []
-    for token in rest:
+    payload: list[str] = []
+    scope: list[str] = []
+    saw_neutral = False
+    index = 0
+    while index < len(rest):
+        token = rest[index]
+        if token in _SCOPE_NEUTRAL_FLAGS:
+            saw_neutral = True
+            index += 1
+            continue
         if token.startswith('-'):
-            break
-        if token:
+            name, separator, inline = token.partition('=')
+            arity = _SCOPE_FLAGS.get(name)
+            if arity is None:
+                return None
+            if separator:
+                values = [inline]
+            else:
+                values = []
+                for offset in range(1, arity + 1):
+                    if index + offset >= len(rest) or rest[index + offset].startswith('-'):
+                        return None
+                    values.append(rest[index + offset])
+                index += arity
+            if not all(values):
+                return None
+            parts = [part for value in values for part in value.split(',') if part]
+            if not parts:
+                # ``-pl=`` / ``-pl=,`` names no scope at all. Returning an empty
+                # tuple here would assert whole-tree on the back of a flag that was
+                # meant to narrow — the one direction this reader must never take.
+                return None
+            scope.extend(parts)
+        elif token:
             payload.append(token)
+        index += 1
     if not payload:
         return None
-    return RowScope(canonical=payload[0], scope_tokens=tuple(payload[1:]))
+    if saw_neutral and not scope and len(payload) == 1:
+        # A neutral companion with NO scope of any kind (``package -am``) is not a
+        # whole-tree claim: the flag only means "also the selected modules'
+        # dependencies", and the resolver never emits it without ``-pl``. Nothing
+        # selected the modules, so the blast radius is unreadable rather than the
+        # widest possible one.
+        return None
+    return RowScope(canonical=payload[0], scope_tokens=tuple(payload[1:] + scope))
 
 
 def _measured_zero_tests(entry: dict[str, Any]) -> bool:
