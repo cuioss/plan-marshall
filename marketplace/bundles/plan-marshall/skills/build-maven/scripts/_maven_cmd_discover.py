@@ -690,11 +690,14 @@ def _parse_pom_xml(pom_path: Path) -> dict:
 def _parse_module_entries(root: ET.Element) -> list[str]:
     """Read the module directories a POM's default build includes.
 
-    ``/project/modules/module`` is always the reactor. A profile's
-    ``modules`` block is included only when that profile declares
-    ``activation/activeByDefault`` true: a default ``mvn test`` activates that
-    profile, and every other profile needs an explicit ``-P`` the discovery
-    never assumes.
+    ``/project/modules/module`` is always the reactor. A profile's ``modules``
+    block is included only when that profile declares
+    ``activation/activeByDefault`` true — the one activation a cheap POM parse can
+    evaluate. A profile activated by a property, a JDK or OS condition, a file's
+    presence, or an explicit ``-P`` is not followed. The omission under-grants
+    (the root keeps no test canonical for those modules), and the run path's
+    zero-test check reports such a run as ``test_run_executed_nothing`` instead of
+    green, so an under-grant is never a false green.
 
     Args:
         root: The POM's root ``<project>`` element.

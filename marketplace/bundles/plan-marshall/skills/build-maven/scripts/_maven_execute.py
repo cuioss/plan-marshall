@@ -64,6 +64,46 @@ _INFORMATIONAL_ISSUE_CATEGORIES = frozenset(
 #: artifact is ``package`` (see ``_maven_cmd_discover._build_commands``).
 _TEST_PHASE_GOALS = ('test', 'package')
 
+#: Maven's lifecycle phases. A token in this set is a GOAL; every other
+#: non-option token is an option's value (``-pl core``), which a cheap parse
+#: cannot tell apart — so the goal is recognised by Maven's own vocabulary
+#: rather than by maintaining an option list on which an unlisted option would
+#: silently hide a test run.
+_LIFECYCLE_PHASES = frozenset(
+    {
+        'validate',
+        'initialize',
+        'generate-sources',
+        'process-sources',
+        'generate-resources',
+        'process-resources',
+        'compile',
+        'process-classes',
+        'generate-test-sources',
+        'process-test-sources',
+        'generate-test-resources',
+        'process-test-resources',
+        'test-compile',
+        'process-test-classes',
+        'test',
+        'prepare-package',
+        'package',
+        'pre-integration-test',
+        'integration-test',
+        'post-integration-test',
+        'verify',
+        'install',
+        'deploy',
+        'pre-clean',
+        'clean',
+        'post-clean',
+        'pre-site',
+        'site',
+        'post-site',
+        'site-deploy',
+    }
+)
+
 #: The flag forms that make a test-phase invocation skip its tests, so an empty
 #: test population is what the command asked for rather than a surprise. The
 #: value is captured so an explicit ``=false`` is NOT read as a skip.
@@ -74,38 +114,6 @@ _SKIP_FLAG_PATTERN = re.compile(r'-D(?:skipTests|maven\.test\.skip)(?:=(?P<value
 #: on the command line this guard is handed — is still recognised as a requested
 #: skip rather than reported as an empty population.
 _TEST_SKIP_MARKER = 'Tests are skipped.'
-
-#: Maven options that take a SEPARATE value token, so that value is not mistaken
-#: for the leading goal (``mvn -pl core test`` runs ``test``). The set covers the
-#: options the discovered canonicals emit and the common operator overrides; an
-#: option absent here costs only a missed test-run classification, never a wrong
-#: green.
-_VALUE_TAKING_OPTIONS = frozenset(
-    {
-        '-pl',
-        '--projects',
-        '-f',
-        '--file',
-        '-l',
-        '--log-file',
-        '-P',
-        '--activate-profiles',
-        '-s',
-        '--settings',
-        '-rf',
-        '--resume-from',
-        '-T',
-        '--threads',
-        '-b',
-        '--builder',
-        '-gs',
-        '--global-settings',
-        '-t',
-        '--toolchains',
-        '-c',
-        '--color',
-    }
-)
 
 
 def _asks_to_skip_tests(args: str) -> bool:
@@ -278,32 +286,30 @@ def apply_selector_miss_guard(result: dict) -> dict:
 def _leading_goal(args: str) -> str | None:
     """Return the first Maven goal of an invocation, or None when it names none.
 
-    Options that take a separate value token (``-pl core``, ``-f pom.xml``) are
-    stepped over with their value, so the value is never mistaken for the goal.
+    A goal is a lifecycle phase or a plugin-goal coordinate (``surefire:test``).
+    Every other token is an option or an option's value, and recognising goals by
+    Maven's own vocabulary is what keeps ``-pl core test`` and ``-gt /path test``
+    from reading their values as the goal.
     """
-    tokens = args.split()
-    index = 0
-    while index < len(tokens):
-        token = tokens[index]
-        if token in _VALUE_TAKING_OPTIONS:
-            index += 2
-            continue
+    for token in args.split():
         if token.startswith('-'):
-            index += 1
             continue
-        return token
+        if token in _LIFECYCLE_PHASES or ':' in token:
+            return token
     return None
 
 
 def _test_phase_goal(args: str) -> str | None:
-    """Return the test-phase goal an invocation leads with, or None.
+    """Return the test goal an invocation leads with, or None.
 
     Only the LEADING goal decides: a ``clean install`` or a ``verify
     -Ppre-commit`` run also executes tests, but its purpose is the build or the
-    gate, and a project that has no test to run there is legitimately green.
+    gate, and a project that has no test to run there is legitimately green. A
+    plugin-goal form counts, so ``-Dtest`` via the direct ``surefire:test`` goal
+    is still a test run.
     """
     goal = _leading_goal(args)
-    if goal not in _TEST_PHASE_GOALS:
+    if goal is None or goal.split(':')[-1] not in _TEST_PHASE_GOALS:
         return None
     if _asks_to_skip_tests(args):
         return None
@@ -327,12 +333,13 @@ def apply_zero_test_guard(result: dict, args: str) -> dict:
       population is evidence there;
     - an unreadable log of a test-phase run is no evidence either, and no
       evidence never becomes a green for a run whose truth lives in its log;
-    - an empty population whose log states the build skipped its tests
-      (``Tests are skipped.``) is a requested skip, not a surprise, and keeps
-      its green — this is what recognises a ``-DskipTests`` set through
-      ``.mvn/maven.config`` or ``MAVEN_OPTS``, which the arguments this guard is
-      handed do not show. It is consulted only AFTER the count proved empty, so a
-      module that skipped cannot excuse another module's empty run.
+    - an empty population whose log carries NO test summary at all and states
+      the build skipped its tests (``Tests are skipped.``) is a requested skip,
+      not a surprise, and keeps its green — this is what recognises a
+      ``-DskipTests`` set through ``.mvn/maven.config`` or ``MAVEN_OPTS``, which
+      the arguments this guard is handed do not show. The marker is not consulted
+      when a summary exists: a summary naming zero is evidence of an empty
+      population whatever another module's skip line says.
 
     Args:
         result: A finished execution result (``execute_direct``'s dict).
@@ -362,11 +369,11 @@ def apply_zero_test_guard(result: dict, args: str) -> dict:
         return result
     if collected == 0:
         evidence = "the run's log reports zero collected tests, so nothing executed"
-    elif goal == 'test':
+    elif goal.split(':')[-1] == 'test':
+        if _TEST_SKIP_MARKER in log_text:
+            return result
         evidence = 'the log carries no Surefire or Failsafe test summary, so the run collected and executed nothing'
     else:
-        return result
-    if _TEST_SKIP_MARKER in log_text:
         return result
     return _indeterminate(
         result,

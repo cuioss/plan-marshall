@@ -570,7 +570,8 @@ def test_control_a_skip_stated_by_the_log_is_not_an_empty_population(tmp_path):
 
     `-DskipTests` set in `.mvn/maven.config` or `MAVEN_OPTS` is invisible on the
     command line this guard is handed, so the log's own skip marker is what keeps
-    such a run from being reported as an empty population.
+    such a run from being reported as an empty population — provided the log says
+    nothing else about the population.
     """
     log_file = tmp_path / 'skipped.log'
     log_file.write_text(
@@ -587,6 +588,64 @@ def test_control_a_skip_stated_by_the_log_is_not_an_empty_population(tmp_path):
     }
 
     assert apply_zero_test_guard(result, 'test') is result
+
+
+def test_a_skipping_module_does_not_excuse_another_modules_zero_summary(tmp_path):
+    """A summary naming zero is evidence, whatever another module's skip line says.
+
+    The marker is consulted only when the log carries no test summary at all, so
+    a reactor whose module a skipped and whose module b collected nothing cannot
+    report a green on module a's marker.
+    """
+    log_file = tmp_path / 'skip-and-zero.log'
+    log_file.write_text(
+        '[INFO] --- surefire:3.5.2:test (default-test) @ a ---\n'
+        '[INFO] Tests are skipped.\n'
+        '[INFO] --- surefire:3.5.2:test (default-test) @ b ---\n'
+        '[INFO] Results:\n'
+        '[INFO] Tests run: 0, Failures: 0, Errors: 0, Skipped: 0\n'
+        '[INFO] BUILD SUCCESS\n',
+        encoding='utf-8',
+    )
+    result = {
+        'status': 'success',
+        'exit_code': 0,
+        'duration_seconds': 1,
+        'log_file': str(log_file),
+        'command': 'mvnw test',
+    }
+
+    guarded = apply_zero_test_guard(result, 'test')
+
+    assert guarded['status'] == 'indeterminate'
+    assert guarded['message'].startswith(TEST_RUN_EXECUTED_NOTHING)
+
+
+def test_an_unlisted_option_value_does_not_hide_the_goal():
+    """A goal is recognised by Maven's vocabulary, not by an option list.
+
+    `-gt` takes a separate value and is not one of the options the canonicals
+    emit; the goal after it must still be seen, or an exit-0 run that executed
+    nothing would keep its green.
+    """
+    result = _run_result(
+        'maven-test-no-summary.log', status='success', exit_code=0, command='mvnw -gt /opt/toolchains.xml test'
+    )
+
+    guarded = apply_zero_test_guard(result, '-gt /opt/toolchains.xml test')
+
+    assert guarded['status'] == 'indeterminate'
+    assert guarded['message'].startswith(TEST_RUN_EXECUTED_NOTHING)
+
+
+def test_a_plugin_goal_form_is_a_test_run_too():
+    """`surefire:test` runs the tests, so its zero population is not a green."""
+    result = _run_result('maven-zero-tests-executed.log', status='success', exit_code=0, command='mvnw surefire:test')
+
+    guarded = apply_zero_test_guard(result, 'surefire:test')
+
+    assert guarded['status'] == 'indeterminate'
+    assert guarded['message'].startswith(TEST_RUN_EXECUTED_NOTHING)
 
 
 def test_leading_goal_is_read_past_a_value_taking_option():
