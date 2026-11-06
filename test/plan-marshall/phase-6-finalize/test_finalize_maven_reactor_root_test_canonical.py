@@ -24,6 +24,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+from toon_parser import parse_toon
+
 from conftest import get_script_path, load_script_module, parse_ns, run_script
 
 _ARCH_BUNDLE = 'plan-marshall'
@@ -171,9 +173,11 @@ def test_maven_reactor_root_resolves_test_compile_at_default_scope(tmp_path: Pat
     """The whole-tree ``test-compile`` probe succeeds, so no module argument is removed.
 
     The gate's fallback widens a module-scoped ``test-compile -pl X -am`` by
-    removing the module argument, and that surgery on a Maven command yields a
-    malformed ``test-compile -am``. A default-scope answer means the fallback is
-    never reached for a reactor root.
+    removing the module argument. What that removal leaves for a Maven command
+    was observed to be a bare ``-am`` with no ``-pl`` for it to modify — the
+    command the probe in this plan's own run showed, not a general claim about
+    every Maven invocation. A default-scope answer means the fallback is never
+    reached for a reactor root.
     """
     _write_reactor(tmp_path)
 
@@ -205,23 +209,35 @@ def test_derive_verification_for_a_root_owned_pom_still_derives_verify(tmp_path:
 
 
 def test_the_resolved_notation_publishes_the_scope_verb_the_arm_calls_next(tmp_path: Path) -> None:
-    """The notation step 0 captures is the one whose CLI publishes ``resolve-test-scope``.
+    """The notation step 0 captures peers to a ``resolve-test-scope`` that ANSWERS.
 
     The arm's branch 1 calls that verb on the notation it took from the resolved
     executable, so an executable naming a skill without the verb would still
-    reach the missing-verb degradation. The verb is read off the CLI surface
-    itself (``--help``), not searched for in the source: a comment or help string
-    would satisfy a text search without the subcommand being registered.
+    reach the missing-verb degradation. Checking the help surface alone proves
+    the parser registers the name, not that the verb resolves a real reactor —
+    so this calls it over the fixture reactor and asserts the response the gate
+    reads its routing branches from.
     """
     _write_reactor(tmp_path)
     result = _resolve_default_scope(tmp_path, 'module-tests')
     assert result['status'] == 'success', result
     assert _MAVEN_NOTATION in result['executable']
 
-    surface = run_script(get_script_path('plan-marshall', 'build-maven', 'maven.py'), '--help')
+    scope = run_script(
+        get_script_path('plan-marshall', 'build-maven', 'maven.py'),
+        'resolve-test-scope',
+        '--project-dir',
+        str(tmp_path),
+        '--changed-paths',
+        'core/src/main/java/probe/CoreTest.java',
+        cwd=str(tmp_path),
+    )
 
-    assert surface.returncode == 0, surface.stderr
-    assert 'resolve-test-scope' in surface.stdout
+    assert scope.returncode == 0, scope.stderr
+    answer = parse_toon(scope.stdout)
+    assert answer['status'] == 'success', answer
+    assert answer['scoped_modules'] == ['core'], answer
+    assert answer['whole_tree_available'] is True, answer
 
 
 def test_a_persisted_maven_architecture_resolves_module_tests_at_default_scope(tmp_path: Path) -> None:
@@ -232,9 +248,9 @@ def test_a_persisted_maven_architecture_resolves_module_tests_at_default_scope(t
     files (the synthetic-project seam, which is also what test fixtures use). It
     is NOT a durability guarantee: ``derived.json`` is never the source of
     current state where a live crawl finds modules. Seeding it from a REAL
-    discovery of a Maven reactor keeps the fixture honest: at the branch base
-    that discovery emits no root canonical, so the persisted view resolves
-    nothing either.
+    discovery of a Maven reactor keeps the fixture honest: the persisted rows
+    carry exactly the command map the shipped discovery emits, so the resolve is
+    answered from a view a live crawl could also have produced.
     """
     source = tmp_path / 'source'
     _write_reactor(source)
