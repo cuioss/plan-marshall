@@ -378,6 +378,20 @@ def _head_dependence(step: str) -> tuple[bool, str | None]:
     return _head_dependence_probe()(step)
 
 
+def _finalize_step_population() -> tuple[list[dict[str, Any]] | None, str | None]:
+    """Discover the finalize-step implementor population once, through its owner.
+
+    The scan lives in ``_cmd_mark_step`` beside the derivation it feeds, so the gate
+    and ``mark-step-done`` cannot disagree about the population. This name is the
+    gate's own seam onto it: the population is read once per merge (see
+    :func:`_head_dependence_probe`) rather than once per stale record, so a caller
+    that needs to observe that count has one place to look.
+    """
+    import _cmd_mark_step
+
+    return _cmd_mark_step._finalize_step_population()
+
+
 def _head_dependence_probe() -> HeadDependenceReader:
     """Build the default declaration reader, discovering the population ONCE.
 
@@ -395,7 +409,7 @@ def _head_dependence_probe() -> HeadDependenceReader:
         import _cmd_mark_step
         from _step_key_canonical import canonicalize_step_key
 
-        records, population_reason = _cmd_mark_step._finalize_step_population()
+        records, population_reason = _finalize_step_population()
     except Exception as exc:  # any derivation fault is the declared fallback, never a crash
         raised = f'the head-dependence derivation raised ({exc})'
         return lambda _step: (False, raised)

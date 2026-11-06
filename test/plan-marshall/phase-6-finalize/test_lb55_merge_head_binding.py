@@ -611,16 +611,14 @@ def test_the_gate_discovers_the_population_once_per_merge(monkeypatch):
     and it runs while the cross-plan merge mutex is held: re-deriving the
     population per stale step would multiply that cost by the record count.
     """
-    import _cmd_mark_step
-
     calls: list[int] = []
-    real = _cmd_mark_step._finalize_step_population
+    real = gate._finalize_step_population
 
     def _counted():
         calls.append(1)
         return real()
 
-    monkeypatch.setattr(_cmd_mark_step, '_finalize_step_population', _counted)
+    monkeypatch.setattr(gate, '_finalize_step_population', _counted)
     status = _status(
         {
             'functional-review': HEAD_GATED,
