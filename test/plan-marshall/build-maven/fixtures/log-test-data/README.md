@@ -49,6 +49,11 @@ Test fixtures derived from real build executions and research for testing parser
 | `maven-dtest-zero-executed.log` | Same miss with `-Dsurefire.failIfNoSpecifiedTests=false`, Maven 3.9.16, Surefire 3.5.2 | `Results:` followed by `Tests run: 0, Failures: 0, Errors: 0, Skipped: 0`, `BUILD SUCCESS` |
 | `maven-dtest-one-executed.log` | `-Dtest` selector that matched, Maven 3.9.16, Surefire 3.5.2 | `Results:` followed by `Tests run: 1, Failures: 0, Errors: 0, Skipped: 0`, `BUILD SUCCESS` |
 | `maven-dtest-one-skipped.log` | `-Dtest` selector that matched a `@Disabled` test, Maven 3.9.16, Surefire 3.5.2 | `Results:` followed by `Tests run: 1, Failures: 0, Errors: 0, Skipped: 1`, `BUILD SUCCESS` — collected one, executed none |
+| `maven-fae-compile-failure-and-selector-miss.log` | Fail-at-end (`-fae`) two-module reactor, Maven 3.9.16, Surefire 3.5.2 | module `a` compile failure (javac `';' expected`, so no category pattern matches), module `b` `No tests matching pattern "Awaits#runs" were executed!`, both failure blocks and the reactor summary |
+| `maven-reactor-selector-miss-one-module.log` | Reactor where the selector matched in one module and missed in another, Maven 3.9.16, Surefire 3.5.2 with `-Dsurefire.failIfNoSpecifiedTests=false` | module `a` `Tests run: 3, …`, module `b` `No tests matching pattern "Awaits#runs" were executed!`, `BUILD SUCCESS` |
+| `maven-maven-config-selector-miss.log` | Selector supplied by `.mvn/maven.config` (`-Dtest=Awaits#runs`), so the command line carries none, Maven 3.9.16, Surefire 3.5.2 | the same `Failed to execute goal …: No tests matching pattern "Awaits#runs" were executed!` message, `BUILD FAILURE` |
+| `maven-test-no-summary.log` | `mvn test` at a bare `pom` aggregator that builds no module, Maven 3.9.16 | `Reactor Summary` for the aggregator alone, `BUILD SUCCESS`, and NO Surefire execution — the shape that reported a green test run while executing nothing |
+| `maven-zero-tests-executed.log` | `mvn test` whose Surefire summary collected nothing, Maven 3.9.16, Surefire 3.5.2 | `No tests to run.`, `Results:`, `Tests run: 0, Failures: 0, Errors: 0, Skipped: 0`, `BUILD SUCCESS` |
 
 ### npm/TypeScript/Node.js
 

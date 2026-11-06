@@ -29,6 +29,10 @@ _maven_cmd_parse_mod = load_script_module('plan-marshall', 'build-maven', '_mave
 parse_log = _maven_cmd_parse_mod.parse_log
 MAVEN_PATTERNS = _maven_cmd_parse_mod.MAVEN_PATTERNS
 selector_miss_reason = _maven_cmd_parse_mod.selector_miss_reason
+selector_miss_pattern = _maven_cmd_parse_mod.selector_miss_pattern
+is_selector_miss_message = _maven_cmd_parse_mod.is_selector_miss_message
+collected_test_count = _maven_cmd_parse_mod.collected_test_count
+executed_test_count = _maven_cmd_parse_mod.executed_test_count
 dtest_selector = _maven_cmd_parse_mod.dtest_selector
 TEST_SELECTOR_MATCHED_NOTHING = _maven_cmd_parse_mod.TEST_SELECTOR_MATCHED_NOTHING
 
@@ -1002,13 +1006,47 @@ def test_control_dtest_run_that_collected_a_skipped_test_is_not_a_selector_miss(
     assert selector_miss_reason(text, _DTEST_COMMAND) is None
 
 
-#: The three clauses the selector-grammar sentence must state, as build-maven
-#: renders them. Classes are comma-separated, a method follows `#`, and a `+`
-#: list is ONE pattern — the form that silently matches nothing.
+def test_selector_miss_pattern_is_read_from_the_log_when_the_command_carries_none():
+    """The pattern Surefire printed is the one the reason must name."""
+    text = (TEST_DATA_DIR / 'maven-maven-config-selector-miss.log').read_text(encoding='utf-8')
+
+    assert dtest_selector('mvnw test -f ./pom.xml') is None
+    assert selector_miss_pattern(text) == 'Awaits#runs'
+    assert selector_miss_pattern((TEST_DATA_DIR / 'maven-success-real.log').read_text(encoding='utf-8')) is None
+
+
+def test_only_the_runners_own_miss_line_is_recognised_as_the_miss():
+    """The back-off must not count the miss's own goal-failure line as a failure."""
+    text = (TEST_DATA_DIR / 'maven-selector-miss.log').read_text(encoding='utf-8')
+    issues, _, _ = parse_log(TEST_DATA_DIR / 'maven-selector-miss.log')
+
+    assert [is_selector_miss_message(issue.message) for issue in issues] == [True]
+    assert text  # the fixture is read, not merely referenced
+
+
+def test_collected_and_executed_counts_keep_no_evidence_distinct_from_zero():
+    """``None`` (no summary) and ``0`` (an empty population) are different answers."""
+    no_summary = (TEST_DATA_DIR / 'maven-test-no-summary.log').read_text(encoding='utf-8')
+    zero = (TEST_DATA_DIR / 'maven-zero-tests-executed.log').read_text(encoding='utf-8')
+    skipped = (TEST_DATA_DIR / 'maven-dtest-one-skipped.log').read_text(encoding='utf-8')
+
+    assert collected_test_count(no_summary) is None
+    assert collected_test_count(zero) == 0
+    assert collected_test_count(skipped) == 1
+    assert executed_test_count(skipped) == 0, 'a collected-but-skipped test executed nothing'
+
+
+#: The clauses the selector-grammar sentence must state, as build-maven renders
+#: them. Classes are comma-separated, a method follows `#`, a `+` BETWEEN
+#: CLASSES is one pattern — the form that silently matches nothing — and a `+`
+#: AFTER `#` is Surefire's method list, which is valid syntax. The last two are
+#: the ones a sentence that reads "a `+` list is one pattern" alone would
+#: contradict, so they are what this guard actually pins.
 _SELECTOR_GRAMMAR_CLAUSES = (
     'Classes are separated by commas',
     'a method goes after `#`',
-    'joined with `+` is one pattern',
+    '`+` between classes joins them into one pattern',
+    "`Class#a+b` is Surefire's method list",
 )
 
 #: The clause no other corpus document may restate — the grammar is stated once.
@@ -1016,7 +1054,12 @@ _GRAMMAR_MARKER = 'Classes are separated by commas'
 
 
 def test_build_maven_skill_states_the_selector_grammar():
-    """``build-maven/SKILL.md`` states the `-Dtest` grammar in all three clauses."""
+    """``build-maven/SKILL.md`` states the `-Dtest` grammar in all four clauses.
+
+    The two `+` clauses are separately load-bearing: a sentence that says only
+    "a `+` list is one pattern" reads as forbidding Surefire's valid
+    `Class#a+b` method list, so the sentence has to distinguish the position.
+    """
     skill_text = (MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'build-maven' / 'SKILL.md').read_text(
         encoding='utf-8'
     )

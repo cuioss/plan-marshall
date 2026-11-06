@@ -1,0 +1,20 @@
+[INFO] Scanning for projects...
+[INFO] ------------------------------< probe:awaits >-------------------------------
+[INFO] Building awaits 1.0-SNAPSHOT
+[INFO]   from pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO]
+[INFO] --- surefire:3.5.2:test (default-test) @ awaits ---
+[INFO] Using auto detected provider org.apache.maven.surefire.junitplatform.JUnitPlatformProvider
+[INFO] No tests to run.
+[INFO]
+[INFO] Results:
+[INFO]
+[INFO] Tests run: 0, Failures: 0, Errors: 0, Skipped: 0
+[INFO]
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD SUCCESS
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time:  1.204 s
+[INFO] Finished at: 2026-11-06T09:51:07+01:00
+[INFO] ------------------------------------------------------------------------
