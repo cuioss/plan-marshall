@@ -144,7 +144,11 @@ PARSER_EXTENDED = 'parser_extended'
 #: an author's continuation-line append to a criterion the current parser froze is
 #: hidden as advisory.
 PARSER_KEY = 'parser'
-CURRENT_PARSER = 2
+#: The parser generation that froze the criteria. Bumped when the parser OUTPUT
+#: changes for an unchanged outline, so a snapshot frozen by the older output is
+#: classified as a migration (`parser_extended`, advisory) instead of author drift.
+#: 3: a fenced block under a criterion is kept in the criterion instead of skipped.
+CURRENT_PARSER = 3
 #: The functional verdict that retires a deliverable: its criteria are not open.
 SUPERSEDED = 'superseded'
 CRITERION_UNPARSED = 'criterion_unparsed'
@@ -179,9 +183,10 @@ OVERRIDE_HEADS_KEY = 'functional_review_override_heads'
 #: (which records the identities that finding removed). An identity entry is
 #: ``{identity, assertions_removed}`` — the D1 test identity plus the number of
 #: removed assertions; a row that carries no identity gets a path-level entry
-#: instead (``{path, kind, assertions_removed}`` or ``{path, kind: test_filtered,
-#: markers}``). A generic ``metadata --set`` must refuse it, so it joins the
-#: protected set below.
+#: instead, naming the row KIND it covers (``{path, kind, acceptance_kind,
+#: assertions_removed}``) and, for a filter row, its marker set plus the identity of
+#: each marked test (``{path, kind: test_filtered, markers, marked_tests}``). A
+#: generic ``metadata --set`` must refuse it, so it joins the protected set below.
 ACCEPTED_TEST_REMOVALS_KEY = 'accepted_test_removals'
 #: The status-record metadata keys whose only writers commit through their own
 #: guarded read-modify-write. ``_status_core.write_status`` must carry them
@@ -355,8 +360,9 @@ def accepted_test_removals(plan_id: str) -> list[dict[str, Any]]:
     acceptance route — so it is deliberately not read.
 
     Each entry names a test identity (``{identity, assertions_removed}``) or, for a
-    row that carries none, an explicit path-level key (``{path, kind,
-    assertions_removed}``, or ``{path, kind: test_filtered, markers}``).
+    row that carries none, an explicit path-level key that also names the row KIND
+    (``{path, kind, acceptance_kind, assertions_removed}``, or ``{path, kind:
+    test_filtered, markers, marked_tests}``).
     ``assertions_removed`` is ``None`` for a declaration that names no count, which
     accepts the identity for a REMOVAL only — never for a drop of a surviving test.
     Deduplicated by the entry's own key.
@@ -1376,6 +1382,9 @@ def criteria_drift(plan_id: str, current: list[dict[str, Any]] | None = None) ->
       criteria graded, and the dropped clause's Done-when never graded at all.
       Because each spec clause is frozen as its own row, a merge cannot remove it
       from the record, and the row below is what makes its absence a finding.
+    * ``criterion_unparsed`` — a named line the success-criteria parser could not
+      place (today: an unterminated fenced block). It is reported rather than left
+      in the freeze payload for nobody to consume.
 
     A criterion an operator decision authorizes the change of is not reported.
     An absent snapshot reports nothing — there is nothing to compare against.

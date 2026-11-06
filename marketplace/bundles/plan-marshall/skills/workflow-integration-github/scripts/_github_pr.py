@@ -447,7 +447,7 @@ def _coverage_payload_here(line: str) -> tuple[bool, dict | None]:
     own ``commit_id`` stand when a review body merely quotes a marker.
     """
     position = line.find(_REVIEW_COVERAGE_OPENING)
-    if position < 0 or line[:position].strip():
+    if position < 0 or line[:position].strip() or len(line[:position]) > 3:
         return False, None
     payload = _balanced_json_object(line[position + len(_REVIEW_COVERAGE_OPENING) :])
     if payload is None:

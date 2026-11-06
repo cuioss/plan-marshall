@@ -37,7 +37,11 @@ LOSS_CASES_RULE = (
     "after-file, one test's count drops while that test still exists, or a surviving path's own total "
     'drops and no identity accounts for it.'
 )
-ACCEPTED_KEY_RULE = 'Both key the accepted set by the test identity plus the number of removed assertions.'
+ACCEPTED_KEY_RULE = (
+    'Both key the accepted set by what the entry NAMES: a test identity plus its removed count, a '
+    "filter's marker set plus the identity of each marked test, or a path-level row kind (mixed "
+    'residual / file total / set total) plus its count.'
+)
 
 
 def _outline(criteria: list[str], removals: list[str] | None = None) -> str:
@@ -632,6 +636,7 @@ def test_a_second_filter_close_with_a_different_marker_set_is_recorded(plan_cont
     _commit(repo, {'src/other.py': 'x\n'})
     payload = review_support.run_validate(PLAN_ID, 'functional', _sealed(tmp_path, criteria), None)
 
+    assert payload['status'] == 'success', payload
     assert _blocking(payload) == [], payload['findings']
 
 

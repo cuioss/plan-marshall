@@ -335,6 +335,7 @@ def test_a_function_moved_with_its_assertions_still_yields_no_row(plan_context, 
 
     payload = _run(repo, plan_context, monkeypatch)
 
+    assert payload['status'] == 'success', payload
     assert _rows(payload) == [], payload
 
 

@@ -125,6 +125,29 @@ def test_an_unterminated_fence_is_a_named_state_a_gate_reads(plan_context) -> No
     assert [row['kind'] for row in drift] == ['criterion_unparsed'], drift
 
 
+def test_a_parser_2_snapshot_with_a_fenced_example_migrates_as_parser_extended(plan_context) -> None:
+    """A snapshot frozen by the fence-skipping parser is a migration, never author drift."""
+    plan_dir = _plan(plan_context, '- a criterion with an example\n```\nbefore\n```\n')
+    snapshot = {
+        'schema': _snap.SCHEMA,
+        'plan_id': PLAN_ID,
+        _snap.PARSER_KEY: 2,
+        'deliverables': [{'number': 1, 'title': 'Deliver the change', 'criteria': ['a criterion with an example']}],
+        'request': {'done_when': [], 'source': 'absent'},
+        'spec': None,
+        'authorized_changes': [],
+    }
+    path = _snap.snapshot_path(PLAN_ID)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(snapshot, indent=2, sort_keys=True) + '\n', encoding='utf-8')
+    assert _snap.record_snapshot_digest(PLAN_ID)
+    assert (plan_dir / 'solution_outline.md').is_file()
+
+    drift = _snap.criteria_drift(PLAN_ID)
+
+    assert [row['kind'] for row in drift] == ['parser_extended'], drift
+
+
 # --- D5 (b): the retired replay matches the retired rule before the first bullet ----------
 
 

@@ -950,7 +950,7 @@ def test_a_second_review_inline_comments_outside_a_resolved_thread_are_filed(pla
 
     assert {'new-thread-2', 'open-reply-2'} <= stored_ids, stored_ids
     assert 'resolved-reply-2' not in stored_ids, 'a resolved thread is skipped by design'
-    assert result['count_skipped_noise'] >= 1
+    assert result['count_skipped_noise'] == 1, result
 
 
 # =============================================================================

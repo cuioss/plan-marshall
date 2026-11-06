@@ -152,7 +152,7 @@ BOT_KINDS = _registry_bot_kinds()
 # this default; callers thread the resolved value in via `raw_input_max_bytes`.
 DEFAULT_RAW_INPUT_MAX_BYTES = 65536
 
-# Marker appended to a raw_input value that exceeded the per-field byte cap.
+# Marker appended to a raw_input value whose head the degenerate byte cap kept.
 RAW_INPUT_TRUNCATION_MARKER = '[truncated]'
 #: The elision marker a middle cut writes. Same shape as the untrusted-ingestion
 #: clamp's marker, so a reader sees ONE vocabulary for a cut value.
@@ -168,8 +168,9 @@ def _elide_for_byte_cap(text: str, max_bytes: int) -> str:
     A head-only cut removes a review bot's conclusion — the verdict paragraph and the
     links live at the END of a long body — so the quarantine must keep both ends. The
     elision marker names how many characters were removed, matching the clamp
-    ``validate_struct`` applies later. Twenty bytes are reserved for the marker's own
-    digits so the result always fits the byte budget.
+    ``validate_struct`` applies later. Forty-eight bytes are reserved for the marker's
+    own digits so a realistic result fits the byte budget; a budget too small for a
+    head+tail pair falls back to the head plus the truncation marker.
     """
     encoded = text.encode('utf-8')
     if len(encoded) <= max_bytes:
@@ -1461,8 +1462,9 @@ def update_finding_text(
 
     if outcome != 'kept_resolved':
         updates['raw_input'] = quarantined
-        if original_lengths:
-            updates['raw_input_original_lengths'] = original_lengths
+        # Always REPLACE the map, so a replacement that now fits clears an earlier
+        # cut's true length instead of leaving it to over-report truncation.
+        updates['raw_input_original_lengths'] = original_lengths
         if reviewed_commit_sha:
             updates['reviewed_commit_sha'] = reviewed_commit_sha
 
