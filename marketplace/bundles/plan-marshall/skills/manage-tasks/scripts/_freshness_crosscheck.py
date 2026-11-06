@@ -133,6 +133,13 @@ cross-check can decline to corroborate — because they are different facts:
   on a supplementary check that could not run trades a false-green for a
   false-red on strictly less evidence.
 
+  **The one exception is a whole-tree change against rows whose SCOPE cannot be
+  read.** There the inability has a claim attached to it — the change needs every
+  required analysis over the whole tree — and an unreadable row substantiates
+  none of that claim. That is the ratio this module is built on: fail closed where
+  the ledger was asked for the widest evidence and could not show it, pass with
+  the inability named everywhere the change asks for less.
+
 ⛔ The two are never folded together. ``unverified`` is a stated sentinel, not a
 quiet ``corroborated``: it always reaches the decision record, so "passed
 uncross-checked" is visible to a reader rather than indistinguishable from
@@ -224,11 +231,19 @@ compile — and three properties bound it:**
    ``.py`` file does not require the compile/lint dimensions, and an empty
    footprint requires nothing — see :func:`required_coverage`. The gate demands a
    whole-tree ``verify`` only of a change whose blast radius is whole-tree.
-3. **Only a POSITIVE refutation fails closed.** A row whose scope cannot be read,
-   a canonical outside the known vocabulary, and a change whose required coverage
-   could not be derived all yield :data:`UNDETERMINED`, which passes with the
+3. **Only a POSITIVE refutation fails closed, and one inability fails closed with
+   it.** A canonical outside the known vocabulary, and a change whose required
+   coverage could not be derived, both yield :data:`UNDETERMINED` and pass with the
    inability recorded — the same split fail-direction the attribution dimension
-   takes, for the same reason.
+   takes, for the same reason. A row whose SCOPE cannot be read is the exception,
+   and only where the change needs whole-tree coverage: that change claims every
+   required analysis ran over the whole tree, and a row nobody could place cannot
+   show any part of it, so the joint selection refuses it
+   (:data:`REASON_SCOPE_UNREADABLE_WHOLE_TREE`) rather than trading the false-green
+   for a quiet pass on strictly no evidence. The same row still passes a change
+   that needs less, with the inability recorded — so the exception is bounded by
+   the change's blast radius, never a general licence to refuse a pre-existing
+   ledger row.
 
 Structural stale verdicts are NOT this module's business
 ========================================================
@@ -288,7 +303,11 @@ COVERED = 'covered'
 NARROW = 'narrow'
 #: The coverage comparison could not be performed on either side. Nothing is
 #: known, so — like :data:`UNVERIFIED` on the attribution dimension — it passes
-#: with the inability recorded rather than failing closed on no evidence.
+#: with the inability recorded rather than failing closed on no evidence. The one
+#: exception is a whole-tree change whose candidate rows carry unreadable scope:
+#: there the joint selection refuses (see
+#: :data:`REASON_SCOPE_UNREADABLE_WHOLE_TREE`), because that change claims the
+#: widest coverage and an unreadable row cannot substantiate any part of it.
 UNDETERMINED = 'undetermined'
 
 #: ``scope_cross_check_reason`` when the change's required coverage could not be
@@ -308,6 +327,13 @@ REASON_VOCABULARY_UNIMPORTABLE = 'analysis_vocabulary_unimportable'
 #: read and said nothing usable about coverage — distinct from a row that said
 #: something and was refuted.
 REASON_SCOPE_UNREADABLE = 'build_scope_unreadable'
+#: ``stale`` reason (and the joint refusal token) when a row's scope cannot be read
+#: AND the change needs whole-tree coverage. The coverage dimension still reports
+#: :data:`UNDETERMINED` — it genuinely could not judge — but the joint selection
+#: refuses, because an inability to show a whole-tree run is not evidence of one.
+#: Named apart from :data:`REASON_SCOPE_UNREADABLE` so a reader can tell the
+#: ordinary narrow-change pass (inability recorded, no refusal) from this refusal.
+REASON_SCOPE_UNREADABLE_WHOLE_TREE = 'build_scope_unreadable_for_whole_tree_change'
 #: ``stale`` reason (and ``scope_cross_check_reason``). THE refusal this
 #: dimension exists to make.
 REASON_SCOPE_NARROW = 'build_scope_narrow'
@@ -592,8 +618,11 @@ def parse_row_scope(entry: dict[str, Any]) -> RowScope | None:
     quoting — an unknown flag might be narrowing the build (``-k foo``,
     ``-Dtest=…``) or might be the executor's own (``--timeout``), and reading
     either as whole-tree is the false-green direction. The fail direction is an
-    inability that passes with its reason recorded, never a coverage credit. The
-    one exception is a KNOWN non-narrowing companion (:data:`_SCOPE_NEUTRAL_FLAGS`,
+    inability whose reason is recorded, never a coverage credit: the row cannot
+    certify a WHOLE-TREE change (the joint selection refuses it, see
+    :data:`REASON_SCOPE_UNREADABLE_WHOLE_TREE`) and still passes a change that
+    needs less, with the inability recorded. The one exception is a KNOWN
+    non-narrowing companion (:data:`_SCOPE_NEUTRAL_FLAGS`,
     maven's ``-am`` / ``--also-make``): it provably cannot narrow, so it is
     ignored rather than making the row unreadable.
 
@@ -1078,6 +1107,50 @@ def _joint_contributors(
     return union_contributors(candidates, required, vocabulary, attributable) or {}
 
 
+def _unreadable_scope_blocks_whole_tree(
+    candidates: list[dict[str, Any]],
+    required: RequiredCoverage | None,
+    scope: dict[str, Any],
+) -> bool:
+    """Whether an unreadable row's inability refuses a WHOLE-TREE change.
+
+    The split fail-direction this module takes — a refutation fails closed, an
+    inability passes with the inability recorded — holds for every change whose
+    blast radius a row could still substantiate on another dimension. It does not
+    hold where the change needs WHOLE-TREE coverage and a candidate row's scope
+    could not be read at all: there the row can join neither an adequate answer
+    nor a refusal, and passing it would assert coverage nobody measured. Such a
+    change needs every required analysis at whole-tree scope, so an unreadable row
+    can only be evidence of something narrower — or of nothing.
+
+    The rows are re-read here rather than judged from the dimension's reason token,
+    because one :data:`UNDETERMINED` verdict can come from an unreadable ``args``
+    or from a canonical outside the vocabulary. Only the first is this refusal:
+    the second is the vocabulary's documented partiality, which stays an inability
+    that passes.
+
+    Args:
+        candidates: Matching ``kind=build`` rows in ledger file order.
+        required: What the change needs covered, or ``None`` when underivable.
+        scope: The coverage dimension's verdict dict.
+
+    Returns:
+        True only for a whole-tree change whose coverage verdict is
+        :data:`UNDETERMINED` and at least one candidate row cannot be read for
+        scope. A verdict whose reason is
+        :data:`REASON_VOCABULARY_UNIMPORTABLE` is never this refusal: that token
+        says THIS CHECK IS BROKEN, which must stay visible rather than be
+        relabelled as a property of the rows.
+    """
+    if required is None or not required.whole_tree:
+        return False
+    if scope['verdict'] != UNDETERMINED:
+        return False
+    if scope['reason'] == REASON_VOCABULARY_UNIMPORTABLE:
+        return False
+    return any(parse_row_scope(entry) is None for entry in candidates)
+
+
 def cross_check_candidates(
     candidates: list[dict[str, Any]],
     project_dir: str,
@@ -1198,7 +1271,8 @@ def cross_check_candidates(
         unavailable_reason=coverage_unavailable_reason or vocabulary_reason,
     )
 
-    refused = notation_verdict == REFUTED or scope['verdict'] == NARROW
+    whole_tree_unreadable = _unreadable_scope_blocks_whole_tree(candidates, required, scope)
+    refused = notation_verdict == REFUTED or scope['verdict'] == NARROW or whole_tree_unreadable
     credited: dict[int, list[str]] = (
         {} if refused else _joint_contributors(candidates, attributable, scope, required, vocabulary)
     )
@@ -1216,13 +1290,18 @@ def cross_check_candidates(
         joint_reason = notation_reason
     elif scope['verdict'] == NARROW:
         joint_reason = scope['reason']
+    elif whole_tree_unreadable:
+        joint_reason = REASON_SCOPE_UNREADABLE_WHOLE_TREE
     else:
         joint_reason = REASON_NO_ADMISSIBLE_ROW
 
     # What a refusal still lacks is judged over the rows that MAY be cited: an
     # analysis only an unattributable row performed is still missing. Where the
-    # requirement or the vocabulary is unavailable nothing can be named.
-    if contributing or required is None or vocabulary is None:
+    # requirement or the vocabulary is unavailable nothing can be named, and an
+    # unreadable scope names nothing either — the row may have performed every
+    # required analysis at a scope nobody could place, so naming a gap would
+    # assert a shortfall the ledger does not show.
+    if contributing or required is None or vocabulary is None or whole_tree_unreadable:
         missing_analyses: list[str] = []
     else:
         missing_analyses = uncovered_analyses(candidates, required, vocabulary, attributable)

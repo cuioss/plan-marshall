@@ -120,6 +120,7 @@ Outcomes:
                      ``build_indeterminate`` (see ``_stale_reason`` below), plus
                      ``notation_unrelated`` / ``notation_absent`` /
                      ``build_scope_narrow`` /
+                      ``build_scope_unreadable_for_whole_tree_change`` /
                      ``no_row_both_attributable_and_adequate`` from the
                      cross-check. A cross-check refusal also carries
                      ``missing_analyses``: the required analyses no citable row

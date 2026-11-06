@@ -1064,6 +1064,48 @@ def test_a_clean_merge_step_record_never_carries_the_gap():
 
 
 @pytest.mark.parametrize(
+    'fact',
+    [
+        'head_binding_unconsulted=finalize-step-sync-baseline',
+        'head_binding_fallback=functional-review',
+        'head_binding_status_read_fault=the plan-status read raised (status store unreadable)',
+    ],
+    ids=['unconsulted-stamp', 'derivation-fallback', 'status-read-fault'],
+)
+def test_record_merge_carries_what_the_head_binding_did_not_validate(fact):
+    """A merge that passed on an unconsulted stamp, a fallback or an unread status leaves a trace.
+
+    The head binding names all three classes on the dispatched payload; without a
+    fact for each, a merge that passed without validating them is
+    indistinguishable at the record site from one every gate validated.
+    """
+    written: list[list[str]] = []
+
+    result = gate.record_merge(
+        _PLAN_ID,
+        facts=[*_MERGE_FACTS_CLEAN, fact],
+        mark_done_runner=lambda argv: written.append(list(argv)) or {'status': 'success'},
+    )
+
+    assert result['status'] == 'success', result
+    assert fact in written[0]
+
+
+def test_the_head_binding_facts_are_declared_by_the_step_record_contract():
+    """All three keys belong to the step's ``records_facts`` union, not only its wiring."""
+    from extension_discovery import _read_frontmatter_fields
+
+    fields = _read_frontmatter_fields(_BRANCH_CLEANUP, ('records_facts',))
+    declared = set(fields.get('records_facts') or [])
+
+    assert {
+        'head_binding_unconsulted',
+        'head_binding_fallback',
+        'head_binding_status_read_fault',
+    } <= declared, sorted(declared)
+
+
+@pytest.mark.parametrize(
     ('action', 'merge_mechanism', 'expected'),
     [
         ('noop', 'pr_safe_merge', 'already current with base, merged directly, cleanup complete'),
@@ -1613,14 +1655,14 @@ def test_the_consequence_knob_flag_admits_only_the_two_declared_values():
 
 
 # --------------------------------------------------------------------------- #
-# PLAN-LB-107 D3 — the operator prompt is built from the labels the grant accepts
+# The operator prompt is built from the labels the grant accepts
 # --------------------------------------------------------------------------- #
 #
-# The barrier's prompt named its override options in PROSE while ``merge-authorization
-# grant`` validated against a constant, so the two could drift and an operator answer
-# copied from the prompt could be refused. The gate now publishes the constant's
-# labels in its participation refusal, and the documents tell the agent to take them
-# verbatim. These two cases pin both halves.
+# The barrier's prompt must name its override options from the same constant
+# ``merge-authorization grant`` validates against: a prose list drifts from the
+# constant and an operator answer copied from the prompt is then refused. The gate
+# publishes the constant's labels in its participation refusal, and the documents
+# tell the agent to take them verbatim. These two cases pin both halves.
 
 _PHASE_6_SKILL = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'phase-6-finalize' / 'SKILL.md'
 
@@ -1655,7 +1697,43 @@ def test_the_participation_refusal_publishes_the_labels_the_grant_accepts():
     assert result['error'] == gate.MERGE_PARTICIPATION_UNPROVEN
     assert result['authorizable'] is True
     assert result['override_options'] == list(BARRIER_OVERRIDE_LABELS)
-    assert len(result['override_options']) == len(BARRIER_OVERRIDE_LABELS) == 2
+
+
+def test_an_unimportable_override_label_source_is_named_in_the_refusal(monkeypatch):
+    """A fault in the label source degrades the prompt, so the refusal says so.
+
+    Swallowing it left a refusal whose ``override_options`` was simply absent —
+    indistinguishable from a participation gap that needs no ask at all.
+    """
+    monkeypatch.setitem(sys.modules, '_cmd_merge_authorization', None)
+    runner = _Runner()
+
+    result = _merge(_CLEAN_VERDICT, runner, participation=_PARTICIPATION_ABSENT)
+
+    assert result['error'] == gate.MERGE_PARTICIPATION_UNPROVEN
+    assert 'override_options' not in result
+    assert 'could not be imported' in result['override_options_unavailable']
+
+
+def test_an_unreadable_status_names_the_fault_in_the_evidence(monkeypatch):
+    """The gate admits on an unreadable status, and the admission names the unknown.
+
+    A silent ``None`` from the in-process read was an empty admit: a plan whose
+    status could not be read merged with nothing saying the head binding was never
+    consulted.
+    """
+    import _status_core
+
+    def _raising(_plan_id, any_checkout=False):
+        raise RuntimeError('status store unreadable')
+
+    monkeypatch.setattr(_status_core, 'resolve_plan_status', _raising)
+    runner = _Runner()
+
+    result = _merge(_CLEAN_VERDICT, runner, status_reader=None)
+
+    assert result['dispatched'] is True
+    assert 'status store unreadable' in result['status_read_fault']
 
 
 def test_every_override_label_the_documents_name_is_one_the_grant_accepts():
