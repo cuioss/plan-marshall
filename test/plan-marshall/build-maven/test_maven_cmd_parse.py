@@ -703,6 +703,27 @@ def test_control_failing_test_count_line_is_still_filed(tmp_path):
     filed = [issue for issue in issues if issue.message == message]
     assert len(filed) == 1
     assert filed[0].category == 'test_failure'
+    assert filed[0].severity == SEVERITY_ERROR
+
+
+def test_surefire_and_compiler_section_headers_are_not_issues(tmp_path):
+    """``Failures:``, ``Errors:`` and ``COMPILATION ERROR :`` head a block; they are not rows.
+
+    Each is printed at `[ERROR]` and matched in full, so a reworded header is
+    filed again rather than a real diagnostic being dropped.
+    """
+    # Arrange
+    log_file = tmp_path / 'section-headers.log'
+    log_file.write_text(
+        '[ERROR] Failures:\n[ERROR] Errors:\n[ERROR] COMPILATION ERROR :\n',
+        encoding='utf-8',
+    )
+
+    # Act
+    issues, _, _ = parse_log(log_file)
+
+    # Assert
+    assert issues == []
 
 
 def test_control_orphan_compiler_continuation_is_still_filed(tmp_path):
@@ -902,6 +923,20 @@ def test_dtest_run_with_zero_executed_tests_yields_the_named_reason():
 def test_control_dtest_run_with_an_executed_test_is_not_a_selector_miss():
     """CONTROL: the same command beside a run that executed a test is not a miss."""
     text = _DTEST_ONE_EXECUTED_LOG.read_text(encoding='utf-8')
+
+    assert selector_miss_reason(text, _DTEST_COMMAND) is None
+
+
+def test_control_dtest_run_that_collected_a_skipped_test_is_not_a_selector_miss():
+    """CONTROL: a selector that MATCHED a class whose tests are all skipped is not a miss.
+
+    ``executed`` is passed + failed, so a ``@Disabled`` match reports zero
+    executed while collecting one. Reading that as a selector miss would turn a
+    truthful green into a blocking verdict and assert something untrue of the
+    run — the population that answers "did the selector match anything" is the
+    COLLECTED total.
+    """
+    text = (TEST_DATA_DIR / 'maven-dtest-one-skipped.log').read_text(encoding='utf-8')
 
     assert selector_miss_reason(text, _DTEST_COMMAND) is None
 
