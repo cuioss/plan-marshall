@@ -422,7 +422,7 @@ Only the module-scoped form resolves here. The observation was recorded against 
 
 ### Whole-tree module-tests divergence gate
 
-The guards above run mypy + ruff over production sources and mypy over `test/` — neither runs **any pytest**. A scoped-green / whole-tree-red regression (the PLAN-08 class: a change that passes a scoped run but fails when the whole tree is tested) therefore slips them and surfaces first at remote CI. This section closes that gap by running a real `module-tests` (pytest) gate, escalating to a whole-tree run only when the footprint provably risks divergence.
+The guards above run mypy + ruff over production sources and mypy over `test/` — neither runs the project's tests. A scoped-green / whole-tree-red regression (the PLAN-08 class: a change that passes a scoped run but fails when the whole tree is tested) therefore slips them and surfaces first at remote CI. This section closes that gap by running a real `module-tests` gate, escalating to a whole-tree run only when the footprint provably risks divergence.
 
 0. **Resolve the canonical once, and derive the seam notation and the whole-tree invocation from it.** Every invocation in this arm comes from a resolver rather than from a pinned wrapper:
 

@@ -232,10 +232,12 @@ def discover_maven_modules(project_root: str) -> list:
     resolved-coordinate / inherited-profile / dependency-tree fields are filled
     lazily by :func:`enrich_maven_module` only when a consumer needs them.
 
-    Discovery runs in two passes. The first parses every POM and collects the
+    Discovery runs in three passes. The first parses every POM and collects the
     reactor's ``groupId:artifactId`` coordinates; the second builds each module
     against that set, so a module whose own POM depends on a sibling's test
-    artifact is recognised before its command map is built.
+    artifact is recognised before its command map is built; the third gives a
+    root ``pom`` aggregator the whole-reactor test canonicals, which requires the
+    reactor-wide test population only the completed module set knows.
 
     Args:
         project_root: Absolute path to project root.
@@ -979,8 +981,9 @@ def _build_commands(
     }
 
     # 2. Non-pom modules get the combined clean+install and (when present) the
-    #    test ladder. pom aggregators have no own tests, so module-tests stays
-    #    non-pom-only.
+    #    test ladder. A root pom aggregator's whole-reactor ladder is applied by
+    #    ``_add_reactor_test_canonicals`` once the reactor's test population is
+    #    known — a pom module owns no test files of its own.
     if packaging != 'pom':
         cmd_map['clean-install'] = f'clean install{pl_arg}'
 
