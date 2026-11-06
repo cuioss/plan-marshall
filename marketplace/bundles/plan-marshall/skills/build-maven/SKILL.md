@@ -24,7 +24,7 @@ The exit-code contract for every `python3 .plan/execute-script.py` call in this 
 | Script | Purpose |
 |--------|---------|
 | `maven.py` | CLI dispatcher |
-| `_maven_execute.py` | Execution config via factory (uses shared `default_command_key_fn`) |
+| `_maven_execute.py` | Execution config via factory (uses shared `default_command_key_fn`); carries the run-path `-Dtest` selector-miss guard |
 | `_maven_cmd_discover.py` | Module discovery via pom.xml + Maven metadata commands |
 | `_maven_cmd_parse.py` | Log parsing with JVM base patterns + Maven-specific extensions |
 | `_maven_cmd_rewrite_log.py` | Additive OpenRewrite #118 log-parse consumption (Signal B) via the `rewrite-log-parse` domain verb, fail-closed |
@@ -40,7 +40,7 @@ See `build-api-reference.md` for the full subcommand API and availability matrix
 - **run**: `--command-args` takes Maven goals/options, e.g., `"verify -Ppre-commit -pl my-module"`
 - **parse**: Additional `no-openrewrite` mode filters OpenRewrite markers
 - **coverage-report**: Searches `target/site/jacoco/jacoco.xml`, `target/jacoco/report.xml`, `target/site/jacoco-aggregate/jacoco.xml`
-- **discover**: Subprocess-free — parses each `pom.xml` with stdlib XML for coordinates, packaging, declared profile ids, and the dependencies declared in the module's own POM, and walks the filesystem for sources/tests. A module whose own POM depends on another module of the same reactor with `<type>test-jar</type>` or a non-empty `<classifier>` records the artifact in `metadata.reactor_test_artifacts` and gets the `package`-phase test ladder (`module-tests` = `package -pl {module} -am`, `test-compile` = the same with `-DskipTests`); see [`standards/maven-impl.md`](standards/maven-impl.md) § "Test ladder for reactor test artifacts". Resolved coordinates, inherited profiles, and the resolved dependency tree are filled lazily, one module at a time, by `enrich_maven_module` (which runs `dependency:tree`, `help:all-profiles`) only when a consumer — the dependency graph or the resolver's profile-canonical path — needs them.
+- **discover**: Subprocess-free — parses each `pom.xml` with stdlib XML for coordinates, packaging, declared profile ids, and the dependencies declared in the module's own POM, and walks the filesystem for sources/tests. A module whose own POM depends on another module of the same reactor with `<type>test-jar</type>` or a non-empty `<classifier>` records the artifact in `metadata.reactor_test_artifacts` and gets the `package`-phase test ladder (`module-tests` = `package -pl {module} -am`, `test-compile` = the same with `-DskipTests`); see [`standards/maven-impl.md`](standards/maven-impl.md) § "Test ladder for reactor test artifacts". A root `pom` aggregator gets the whole-reactor `module-tests` = `test` and `test-compile` = `test-compile` when at least one reactor module has tests, because the architecture's default scope resolves that module and `mvn test` there runs every module's tests; see [`standards/maven-impl.md`](standards/maven-impl.md) § "Test canonicals of a reactor root". Resolved coordinates, inherited profiles, and the resolved dependency tree are filled lazily, one module at a time, by `enrich_maven_module` (which runs `dependency:tree`, `help:all-profiles`) only when a consumer — the dependency graph or the resolver's profile-canonical path — needs them.
 
 ### Producer-Side Finding Storage (`run --plan-id`)
 
@@ -54,9 +54,10 @@ When `run` is invoked with `--plan-id <P>`, every parsed issue from a failed bui
 
 Severity is mapped from `Issue.severity` (`error` → `error`, `warning` → `warning`). The finding's `module` carries `maven`, `rule` carries the parser category.
 
-Two kinds of `[ERROR]` / `[WARNING]` line are not issues, so they never become findings:
+Three kinds of `[ERROR]` / `[WARNING]` line are not issues, so they never become findings:
 
-- **Maven's failure epilogue** — the fixed advice printed after a failed build (the `-e` / `-X` re-run advice, the "For more information" and `[Help N]` link lines, the resume advice and its `mvn … -rf :module` / `mvn [args] -r` command), Surefire's report pointers (both the `Please refer to …` and the `See …` wording, for test results and for dump files), and Maven 4's `[ERROR]`-level reactor-summary rows and `BUILD FAILURE` banner. Each line is matched in full, so a reworded line is filed again rather than a genuine diagnostic being dropped; `Failed to execute goal …` and compiler `file:[line,col]` messages stay issues on every Maven version.
+- **Maven's failure epilogue** — the fixed advice printed after a failed build (the `-e` / `-X` re-run advice, the "For more information" and `[Help N]` link lines, the resume advice and its `mvn … -rf :module` / `mvn [args] -r` command), Surefire's report pointers (both the `Please refer to …` and the `See …` wording, for test results and for dump files), Maven 4's `[ERROR]`-level reactor-summary rows and `BUILD FAILURE` banner, and the section banners that head a block whose rows carry the diagnostics — Surefire's `Failures:` / `Errors:` and the compiler plugin's `COMPILATION ERROR :`. Each line is matched in full, so a reworded line is filed again rather than a genuine diagnostic being dropped; `Failed to execute goal …` and compiler `file:[line,col]` messages stay issues on every Maven version.
+- **Javac's continuation fields** — the `symbol:` and `location:` lines under a compiler error are attached to that error as its `detail` rather than filed as issues of their own: they carry the name the error refers to, so dropping them would lose the diagnostic. A continuation field with no compiler error before it is filed like any other line (fail-visible).
 - **Passing test-count lines** — a `Tests run:` line (summary or per-class) whose `Failures` and `Errors` are both 0, such as `[WARNING] Tests run: 27, Failures: 0, Errors: 0, Skipped: 1`. A count line with failures or errors is still filed.
 
 > For the producer→store→consumer→gate flow including the producer-mismatch fidelity contract, see [`ref-workflow-architecture/standards/findings-pipeline.md`](../ref-workflow-architecture/standards/findings-pipeline.md). This SKILL.md owns the per-tool issue→finding-type routing only.
@@ -75,6 +76,12 @@ The consumption is **fail-closed** (ADR-009) — it never reports a vacuous "cle
 | `parse_error` | The build reached `rewrite:run` and the verb resolves, but the dispatched parser returned an error payload (executor not found, output unparseable / not an object) or a non-dict | Findings could **not** be observed this run — fail closed rather than report a false `observed` with zero findings. |
 
 The existing Maven parse pipeline, the `openrewrite_info` categorization, and the tree-scan marker signal (`marker-detect`) are unchanged by this additive consumer.
+
+### Test selectors (`-Dtest`)
+
+The selector grammar, stated once here for the whole corpus: **Classes are separated by commas, and a method goes after `#`** — `-Dtest=AwaitsTest,CoreTest#runs`. A list **joined with `+` is one pattern**, and one pattern matches nothing, so `-Dtest=Awaits+Core` selects no test at all.
+
+A selector that matches nothing is a wrong command, not a test result. `run` reports it as `test_selector_matched_nothing` — an `indeterminate` result naming the selector — whether Surefire fails the build with `No tests matching pattern … were executed` or `-Dsurefire.failIfNoSpecifiedTests=false` turns the same miss into an exit-0 summary of zero executed tests.
 
 ## Module Discovery
 

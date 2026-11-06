@@ -277,25 +277,25 @@ Apply throughout all subsequent steps:
    **(b) Task-scoped breakable-test gate** — run the tests the task's own change could break, scoped to the task's changed files (NOT the whole tree):
 
    1. Resolve the task's changed paths from git — the files this task modified in the worktree — and join them comma-separated as `{changed_paths}`.
-   2. Resolve the scoped test target via the task-scoped footprint:
+   2. Resolve the scope verb from the task's **resolved build skill** — never a pinned one. Resolve `module-tests` through the architecture-resolved envelope and take the `{bundle}:{skill}:{script}` prefix of its `executable`: that prefix IS the build-skill notation this call dispatches (a Maven project resolves `plan-marshall:build-maven:maven`; a pyprojectx project resolves `plan-marshall:build-pyproject:pyproject_build`), so the verb follows the project's own build skill rather than one project's. ⛔ **A project whose architecture resolves no `module-tests` canonical at all has no test target for this task** — there is no executable to derive a notation from, so record that the breakable-test gate is a no-op for the task (the same condition the pre-push gate records when no `module-tests` canonical resolves) and proceed to Step 6. Then resolve the scoped test target via the task-scoped footprint:
 
       ```bash
-      python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build resolve-test-scope \
+      python3 .plan/execute-script.py {resolved_build_notation} resolve-test-scope \
         --changed-paths "{changed_paths}" --plan-id "{plan_id}"
       ```
 
       ⛔ **An empty change list omits the flag.** When git reports no file this task modified, `{changed_paths}` is empty: omit `--changed-paths` and resolve with `--plan-id` alone, so the plan's live footprint decides the scope. Never pass an empty `--changed-paths` — the resolver refuses it with `empty_changed_paths` rather than reading it as "nothing changed":
 
       ```bash
-      python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build resolve-test-scope \
+      python3 .plan/execute-script.py {resolved_build_notation} resolve-test-scope \
         --plan-id "{plan_id}"
       ```
 
       Parse `scoped_modules[]`, `recommended_target`, `divergence_possible`, `root_guards_required`, `excluded_population[]`, `narrow_units[]`, `narrow_unit_module`, and `narrow_units_unresolved[]` from the TOON.
    3. **Branch on the result in this order** — the order of branches 4, 5 and 6 of [`pre-push-quality-gate.md`](../phase-6-finalize/standards/pre-push-quality-gate.md) § "Whole-tree module-tests divergence gate":
 
-      - **`divergence_possible: true`** → the wider run is the whole tree, whatever `scoped_modules` holds. This branch is evaluated first because `scoped_modules` is also empty for a non-empty footprint that resolves to no module (a change to `pyproject.toml` or `build.py` alone, say): the resolver lists those paths in `unresolved_paths` and fails closed, so that case runs the whole tree, never no pytest. Continue with sub-step 4.
-      - **`divergence_possible: false` and `scoped_modules` is empty** → the footprint is empty and there is nothing to test — run NO pytest for this task; the breakable-test gate is a no-op. Proceed to Step 6.
+      - **`divergence_possible: true`** → the wider run is the whole tree, whatever `scoped_modules` holds. This branch is evaluated first because `scoped_modules` is also empty for a non-empty footprint that resolves to no module (a change to `pyproject.toml` or `build.py` alone, say): the resolver lists those paths in `unresolved_paths` and fails closed, so that case runs the whole tree, never no test run. Continue with sub-step 4.
+      - **`divergence_possible: false` and `scoped_modules` is empty** → the footprint is empty and there is nothing to test — run NO tests for this task; the breakable-test gate is a no-op. Proceed to Step 6.
       - **`divergence_possible: false` and exactly one scoped module** → `recommended_target` names that module. Continue with sub-step 4.
    4. On either continuing branch the gate runs in a fixed three-part order — **resolve the scope, run the narrow units inline, then hand back only what is left**:
 

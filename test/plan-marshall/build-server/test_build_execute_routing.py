@@ -1240,3 +1240,105 @@ class TestPreToolFaultPassThrough:
         )
         assert template.is_file(), f'the executor template moved; this drift guard must follow it: {template}'
         assert f'error: {ERROR_INVALID_INVOCATION}' in template.read_text(encoding='utf-8')
+
+
+class TestIndeterminateReasonCarry:
+    """A child's ``indeterminate`` verdict keeps the REASON it stated.
+
+    The daemon's wire vocabulary collapses ``indeterminate`` onto ``failure``, so
+    ``failure`` is the shape a routed ``indeterminate`` really arrives in. The
+    client used to rebuild that as a generic ``build_failed``, discarding the
+    producer's named reason and taking the build-failure path — the fabrication
+    the producer's own status existed to prevent.
+    """
+
+    def test_an_indeterminate_child_verdict_keeps_its_own_reason(self, tmp_path):
+        """The child's ``message:`` line IS the reason the caller must receive."""
+        log = tmp_path / 'indeterminate.log'
+        reason = "test_selector_matched_nothing: 'Awaits#runs' matched no test, so the run executed nothing"
+        log.write_text(f'status: indeterminate\nexit_code: 0\nmessage: "{reason}"\n', encoding='utf-8')
+
+        result = factory._daemon_result_to_direct(
+            {'job_status': 'failure', 'exit_code': 0, 'duration_seconds': 4, 'log_file': str(log)},
+            'cmd',
+        )
+
+        assert result['status'] == 'indeterminate'
+        assert result['message'] == reason
+
+    def test_a_verdict_that_states_no_reason_still_gets_the_generic_sentence(self, tmp_path):
+        """Matched control: the carry must not invent a reason the log never stated."""
+        log = tmp_path / 'no-reason.log'
+        log.write_text('status: quiesced\nexit_code: 0\n', encoding='utf-8')
+
+        result = factory._daemon_result_to_direct(
+            {'job_status': 'failure', 'exit_code': 0, 'duration_seconds': 4, 'log_file': str(log)},
+            'cmd',
+        )
+
+        assert result['status'] == 'indeterminate'
+        assert 'quiesced' in result['message']
+        assert 'outside the build-result vocabulary' in result['message']
+
+    def test_a_real_failure_stays_a_build_failure(self, tmp_path):
+        """Matched control: only a non-``error`` verdict is re-rendered as itself."""
+        log = tmp_path / 'failed.log'
+        log.write_text(
+            'status: error\nexit_code: 1\nerror: build_failed\n'
+            'errors[1]{file,line,message,category}:\n'
+            '  test/a.py,3,"assert 0",test_failure\n',
+            encoding='utf-8',
+        )
+
+        result = factory._daemon_result_to_direct(
+            {'job_status': 'failure', 'exit_code': 1, 'duration_seconds': 4, 'log_file': str(log)},
+            'cmd',
+        )
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'build_failed'
+
+    def test_a_non_finish_verdict_arriving_as_failure_is_rendered_as_itself(self, tmp_path):
+        """A ``timeout``/``killed`` log verdict survives the same collapse.
+
+        The wire has no row for either non-finish, so they too arrive as
+        ``failure``. Folding them into a red build is the misattribution the
+        re-render exists to remove, for these statuses as much as for
+        ``indeterminate``.
+        """
+        log = tmp_path / 'timeout.log'
+        log.write_text(
+            'status: timeout\nexit_code: -1\ntimeout_used_seconds: 300\ntimeout_source: explicit\n',
+            encoding='utf-8',
+        )
+
+        result = factory._daemon_result_to_direct(
+            {'job_status': 'failure', 'exit_code': -1, 'duration_seconds': 300, 'log_file': str(log)},
+            'cmd',
+        )
+
+        assert result['status'] == 'timeout'
+        assert result['timeout_used_seconds'] == 300
+
+    def test_a_multiline_log_message_is_collapsed_before_rendering(self, tmp_path):
+        """A log message that carries real newlines must not break the envelope.
+
+        The JSON log path decodes ``\\n`` escapes into real newlines, and the
+        result formatter does not re-escape them inside an ordinary string
+        value, so the carried message is collapsed to one line.
+        """
+        import json
+
+        log = tmp_path / 'multiline.log'
+        log.write_text(
+            json.dumps({'status': 'indeterminate', 'exit_code': 0, 'message': 'first line\nsecond line'}),
+            encoding='utf-8',
+        )
+
+        result = factory._daemon_result_to_direct(
+            {'job_status': 'failure', 'exit_code': 0, 'duration_seconds': 4, 'log_file': str(log)},
+            'cmd',
+        )
+
+        assert result['status'] == 'indeterminate'
+        assert result['message'] == 'first line second line'

@@ -5,6 +5,8 @@
 Tests the Maven execution config and factory-generated functions.
 """
 
+from pathlib import Path
+
 from conftest import load_script_module
 
 _maven_execute_mod = load_script_module('plan-marshall', 'build-maven', '_maven_execute.py', '_maven_execute')
@@ -197,3 +199,167 @@ def test_execute_direct_resolves_present_wrapper(tmp_path, monkeypatch):
 
     assert result['status'] == 'success'
     assert calls[0]['wrapper'] == './mvnw'
+
+
+# =============================================================================
+# A -Dtest selector that matched nothing is never green
+# =============================================================================
+#
+# The decision lives on the RUN path, not in the parser alone: Surefire can end
+# a selector miss with exit 0 (``-Dsurefire.failIfNoSpecifiedTests=false``), so
+# a parser verdict that the emit choke point never reads would still let the run
+# report ``success``.
+
+apply_selector_miss_guard = _maven_execute_mod.apply_selector_miss_guard
+TEST_SELECTOR_MATCHED_NOTHING = _maven_execute_mod.TEST_SELECTOR_MATCHED_NOTHING
+
+_LOG_TEST_DATA = Path(__file__).parent / 'fixtures' / 'log-test-data'
+
+_SELECTOR_COMMAND = 'mvnw test -Dtest=Awaits#runs'
+
+_COMPILER_ERROR = '/home/dev/probe/c/src/main/java/probe/c/Broken.java:[5,9] cannot find symbol'
+
+
+def _run_result(log_name: str, *, status: str, exit_code: int) -> dict:
+    """A build result shaped like the executor's, pointing at one log fixture."""
+    return {
+        'status': status,
+        'exit_code': exit_code,
+        'duration_seconds': 3,
+        'log_file': str(_LOG_TEST_DATA / log_name),
+        'command': _SELECTOR_COMMAND,
+    }
+
+
+def test_dtest_run_with_zero_executed_tests_is_not_success():
+    """A ``-Dtest`` run that executed no test is reported as the named reason, never green."""
+    guarded = apply_selector_miss_guard(_run_result('maven-dtest-zero-executed.log', status='success', exit_code=0))
+
+    assert guarded['status'] != 'success'
+    assert guarded['status'] == 'indeterminate'
+    assert guarded['message'].startswith(TEST_SELECTOR_MATCHED_NOTHING)
+
+
+def test_control_dtest_run_with_an_executed_test_stays_success():
+    """CONTROL: the same command beside a run that executed a test keeps its success."""
+    result = _run_result('maven-dtest-one-executed.log', status='success', exit_code=0)
+
+    assert apply_selector_miss_guard(result) is result
+
+
+def test_selector_miss_goal_failure_becomes_the_named_reason_not_a_build_failure():
+    """Surefire's own goal failure is carried as the named reason, not as a red build."""
+    guarded = apply_selector_miss_guard(_run_result('maven-selector-miss.log', status='error', exit_code=1))
+
+    assert guarded['status'] == 'indeterminate'
+    assert TEST_SELECTOR_MATCHED_NOTHING in guarded['message']
+    assert 'Awaits#runs' in guarded['message']
+
+
+def test_control_a_real_failure_after_a_zero_test_module_keeps_its_failure(tmp_path):
+    """CONTROL: a later real failure is not relabelled as a selector miss.
+
+    The zero-collected shape is an exit-0 shape. In a reactor an earlier module
+    can print `Tests run: 0` and a later one then fail to compile; only
+    Surefire's explicit goal failure may claim a miss on a failed build, or the
+    real failure — and its findings — would be hidden.
+    """
+    # Arrange
+    log_file = tmp_path / 'zero-then-compile-failure.log'
+    log_file.write_text(
+        '[INFO] --- surefire:3.5.2:test (default-test) @ a ---\n'
+        '[INFO] Results:\n'
+        '[WARNING] Tests run: 0, Failures: 0, Errors: 0, Skipped: 0\n'
+        f'[ERROR] {_COMPILER_ERROR}\n'
+        '[INFO] BUILD FAILURE\n',
+        encoding='utf-8',
+    )
+    result = {
+        'status': 'error',
+        'exit_code': 1,
+        'duration_seconds': 5,
+        'log_file': str(log_file),
+        'command': _SELECTOR_COMMAND,
+    }
+
+    # Act
+    guarded = apply_selector_miss_guard(result)
+
+    # Assert
+    assert guarded is result
+    assert guarded['status'] == 'error'
+
+
+def test_control_a_mixed_reactor_keeps_the_other_modules_failure(tmp_path):
+    """CONTROL: a selector miss beside another module's real failure does not claim the run.
+
+    ``--fail-at-end`` lets a reactor finish other modules after one fails. When
+    the log carries BOTH a selector miss and a real failure, converting the run
+    to ``indeterminate`` would drop the other module's errors and findings.
+    """
+    # Arrange
+    log_file = tmp_path / 'mixed-failure.log'
+    log_file.write_text(
+        '[ERROR] Failed to execute goal org.apache.maven.plugins:maven-surefire-plugin:3.5.2:test '
+        '(default-test) on project b: No tests matching pattern "Awaits#runs" were executed! '
+        '(Set -Dsurefire.failIfNoSpecifiedTests=false to ignore this error.)\n'
+        '[ERROR] Tests run: 3, Failures: 1, Errors: 0, Skipped: 0, Time elapsed: 0.02 s <<< FAILURE! '
+        '-- in probe.other.OtherTest\n'
+        '[INFO] BUILD FAILURE\n',
+        encoding='utf-8',
+    )
+    result = {
+        'status': 'error',
+        'exit_code': 1,
+        'duration_seconds': 5,
+        'log_file': str(log_file),
+        'command': _SELECTOR_COMMAND,
+    }
+
+    # Act
+    guarded = apply_selector_miss_guard(result)
+
+    # Assert — the real failure keeps the build-failure path.
+    assert guarded is result
+    assert guarded['status'] == 'error'
+
+
+def test_execute_direct_is_wired_to_the_guard(tmp_path, monkeypatch):
+    """The guard is REACHED by the executor, not merely available beside it.
+
+    Every other case here calls ``apply_selector_miss_guard`` directly, so
+    dropping ``wrap_execute_fn`` from the factory call would leave them all
+    green while the guard went dead. This one drives the module's own
+    ``execute_direct`` end to end.
+    """
+    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+    (tmp_path / 'mvnw').write_text('#!/bin/sh\n')
+
+    def _recorder(**kwargs):
+        return {
+            'status': 'success',
+            'exit_code': 0,
+            'duration_seconds': 1,
+            'log_file': str(_LOG_TEST_DATA / 'maven-dtest-zero-executed.log'),
+            'command': f'./mvnw -l /tmp/maven.log {_SELECTOR_COMMAND}',
+            'wrapper': './mvnw',
+            'command_key': 'maven:test',
+            'project_dir': str(tmp_path),
+            'timeout_used_seconds': 300,
+        }
+
+    monkeypatch.setattr(_factory, 'execute_direct_base', _recorder)
+
+    result = execute_direct(
+        args='test -Dtest=Awaits#runs',
+        command_key='maven:test',
+        project_dir=str(tmp_path),
+        plan_id=_PLAN_ID,
+    )
+
+    assert result['status'] == 'indeterminate'
+    assert TEST_SELECTOR_MATCHED_NOTHING in result['message']
+    assert result['wrapper'] == './mvnw', 'the executor fields travel with the verdict'
+    assert result['command_key'] == 'maven:test'
+    assert result['project_dir'] == str(tmp_path)
+    assert result['timeout_used_seconds'] == 300, 'fields the guard does not replace are carried'
