@@ -259,12 +259,15 @@ def test_secure_logging_names_the_c1_range_and_the_ascii_only_cntrl_class():
     assert 'Character.isISOControl' in text, 'the check that covers the full set must be named'
 
 
-def test_java_security_skill_carries_the_java_form_and_points_to_the_persona_standard():
+def test_java_security_skill_points_at_the_code_home_and_the_persona_standard():
+    """The skill keeps no second copy of the Java form; it points at both owning homes."""
     text = (get_skill_dir('pm-dev-java', 'java-security') / 'SKILL.md').read_text(encoding='utf-8')
+    section = _section(text, '## Java Form — Neutralise Before Logging')
 
-    assert 'Character.isISOControl' in text, 'the Java form must use the full-range check'
-    assert 'neutralise' in text.lower(), 'the Java form must show the neutralise-then-log step'
-    assert 'secure-logging.md' in text, 'the skill must point at the persona standard that owns the rule'
+    assert 'java-security-patterns.md' in section, 'the section must point at the Java code home'
+    assert 'secure-logging.md' in section, 'the section must point at the persona standard that owns the rule'
+    assert 'private String neutralise' not in section, 'the section still repeats the Java implementation'
+    assert 'Character.isISOControl' not in section, 'the section still repeats the paragraph the standard owns'
 
 
 def test_cui_logging_points_at_the_value_neutralisation_rule():
@@ -273,4 +276,89 @@ def test_cui_logging_points_at_the_value_neutralisation_rule():
     )
 
     assert 'Character.isISOControl' in text, 'the pointer must name the check the rule uses'
+    assert 'U+2028' in text, 'the pointer must keep the line separators the control-range check misses'
     assert 'secure-logging.md' in text, 'the pointer must name the standard that owns the rule'
+
+
+# ---------------------------------------------------------------------------
+# D6 — the secure-logging text states one rule in one home, and its Java
+# example follows the rule that owns it
+# ---------------------------------------------------------------------------
+
+
+def test_java_security_neutralise_escapes_a_control_character_instead_of_dropping_it():
+    """The owning rule prefers escaping over dropping, so the example must not replace with `?`."""
+    text = (get_skill_dir('pm-dev-java', 'java-security') / 'standards' / 'java-security-patterns.md').read_text(
+        encoding='utf-8'
+    )
+    masking = _section(text, '### Masking Pattern')
+
+    assert '\\\\u%04X' in masking, 'the neutralise example must escape the control character as a \\uXXXX escape'
+    assert "? '?' : c" not in masking, 'the example still replaces the character with `?`, which drops it'
+    assert 'escapes' in masking.lower() or 'escape' in masking.lower(), 'the example must name the escape'
+
+
+def test_java_security_json_statement_names_only_what_json_escapes():
+    """JSON escapes the quote, the backslash and the C0 range — not DEL, C1 or U+2028/U+2029."""
+    text = (get_skill_dir('pm-dev-java', 'java-security') / 'standards' / 'java-security-patterns.md').read_text(
+        encoding='utf-8'
+    )
+    masking = _section(text, '### Masking Pattern')
+
+    assert 'reversible' in masking.lower(), (
+        'the encoding must be reversible, so a literal `\\u000A` stays distinguishable from a newline'
+    )
+    assert 'escape introducer' in masking.lower(), 'the example must say the escape introducer itself is escaped'
+    assert 'escapes all three' not in masking, 'the statement still claims JSON escapes all three'
+    assert 'quote' in masking.lower() and 'backslash' in masking.lower(), 'the statement must name what JSON escapes'
+    assert 'U+0000' in masking and 'U+001F' in masking, 'the statement must name the escaped C0 range'
+    assert 'U+2028' in masking and 'U+2029' in masking, 'the statement must say the line separators are neutralised'
+    assert 'DEL' in masking and 'C1' in masking, 'the statement must say DEL and the C1 range are neutralised'
+
+
+def test_secure_logging_owns_u2028_u2029_and_scopes_the_cntrl_note():
+    standard = get_skill_dir('plan-marshall', 'persona-security-expert') / 'standards' / 'secure-logging.md'
+    section = _section(standard.read_text(encoding='utf-8'), '## Log Injection (CWE-117): Attack and Prevention')
+
+    assert 'U+2028' in section and 'U+2029' in section, 'the owned set must name the two line separators'
+    assert re.search(r'(?i)explicit U\+2028/U\+2029 test', section), (
+        'the check that covers the set must name the explicit line-separator test, because '
+        'Character.isISOControl does not match U+2028/U+2029'
+    )
+    assert re.search(r'(?i)default pattern flags', section), (
+        'the ASCII-only note must be scoped to the default pattern flags'
+    )
+    assert 'UNICODE_CHARACTER_CLASS' in section, 'the note must name the flag that widens the character class'
+
+
+def test_cui_logging_names_one_owner_for_the_value_neutralisation_principle():
+    text = (get_skill_dir('pm-dev-java-cui', 'cui-logging') / 'standards' / 'logging-standards.md').read_text(
+        encoding='utf-8'
+    )
+    section = _section(text, "### 4. Don't Log Sensitive Information")
+
+    assert 'persona-security-expert' in section, 'the section must name the owner of the principle'
+    assert 'pm-dev-java:java-security' not in section, (
+        'the section names a second owner for the same principle — the paragraphs must agree on one home'
+    )
+
+
+def test_javadoc_ordering_rule_covers_the_method_body_as_well_as_the_caller():
+    rules = _review_rules(get_skill_dir('pm-dev-java', 'javadoc'))
+    rule = _rule_containing(rules, 'ordering', 'method')
+
+    assert 'body' in rule.lower(), 'the rule must cover an ordering the method states about its own body'
+    assert 'call' in rule.lower(), 'the rule must keep the caller-side ordering it already covered'
+
+
+def test_java_17_switch_guidance_names_the_release_and_qualifies_the_enum_claim():
+    text = (get_skill_dir('pm-dev-java', 'java-core') / 'standards' / 'java-17-features.md').read_text(encoding='utf-8')
+    section = _section(text, '### From an if/else chain over a closed constant set')
+
+    assert 'Java 21' in section, 'the enhanced-switch caveat must name the release it applies from'
+    assert 'release that introduced pattern switches' in section, (
+        'the caveat must name why that release is the boundary'
+    )
+    assert 'As a switch expression' in section, (
+        'the "needs no `default`" claim must be qualified as the switch expression form, not the enum form'
+    )

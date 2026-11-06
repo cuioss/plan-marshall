@@ -83,26 +83,7 @@ The conceptual *why* behind every rule in this skill's standards lives in the ce
 
 ## Java Form — Neutralise Before Logging
 
-The cross-cutting rule — which control characters to neutralise, and why `\p{Cntrl}` does not cover the C1 range — is owned by [`secure-logging.md`](../../../plan-marshall/skills/persona-security-expert/standards/secure-logging.md) § "Log Injection". The Java mechanics: `Character.isISOControl` covers the C0 controls, DEL and the C1 range (U+0080 to U+009F); masking is a separate step and neutralises nothing.
-
-```java
-private String neutralise(String value) {
-    if (value == null) {
-        return "***";
-    }
-    StringBuilder out = new StringBuilder(value.length());
-    for (int i = 0; i < value.length(); i++) {
-        char c = value.charAt(i);
-        out.append(Character.isISOControl(c) || c == '\u2028' || c == '\u2029' ? '?' : c);
-    }
-    return out.toString();
-}
-
-// maskedUsername is the identifier masked per java-security-patterns.md
-log.info("Authentication failed for user: {}", neutralise(maskedUsername));
-```
-
-`neutralise` covers the ISO control characters and the Unicode line separators U+2028/U+2029; it does not escape a structured format's delimiter. Where the appender is delimiter-based, escape the configured delimiter too — or emit structured JSON, which escapes all three.
+The cross-cutting rule — which characters to neutralise and which the regex class misses — is owned by [`secure-logging.md`](../../../plan-marshall/skills/persona-security-expert/standards/secure-logging.md) § "Log Injection". The Java form — the escaping `neutralise` helper, the masking step it pairs with, and the structured-JSON caveat — lives in [`standards/java-security-patterns.md`](standards/java-security-patterns.md) § "Masking Pattern". Neither is restated here: this skill carries the pointer, the standard carries the code.
 
 ## Related Skills
 

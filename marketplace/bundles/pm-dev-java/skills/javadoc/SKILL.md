@@ -151,4 +151,4 @@ The review rules of the java domain for documentation accuracy — what a code r
 - A JavaDoc nullness or return claim ("never returns null", "returns an empty list when …") that the implementation contradicts, so a caller omits the check the actual return value needs.
 - A `{@link}` or `@see` reference to a class or member the change renamed or removed, so the reference points nowhere and the JavaDoc build fails under doclint.
 - A JavaDoc literal that restates a count derivable from the declaring source (a preset count, the number of constants in an enum), so the literal drifts silently when the source changes.
-- A JavaDoc ordering claim ("validated before X", "sanitised first") that the calling code does not implement, so a reader trusts a guarantee the code does not give.
+- A JavaDoc ordering claim ("validated before X", "sanitised first") that its relevant source does not establish: check the call site for caller sequencing and the method body for internal sequencing, so a reader is never left trusting a guarantee the code does not give.

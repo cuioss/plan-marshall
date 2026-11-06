@@ -898,3 +898,194 @@ def test_verify_links_missing_non_asciidoc_fragment_is_not_double_counted(tmp_pa
     assert result['data']['broken_links'] == 1
     assert result['data']['unchecked_link_classes'] == [], 'a missing file is broken, not unchecked'
     assert result['metrics']['valid_links'] == 0
+
+
+# =============================================================================
+# Coverage edges: every `link:` form is either verified or named in
+# `unchecked_link_classes`, and a bad target cannot abort the run
+# =============================================================================
+
+
+def test_verify_links_absolute_target_is_named_and_not_broken(tmp_path):
+    """A leading `/` or `\\` is not relative, so joining it discards the file's directory."""
+    adoc = tmp_path / 'page.adoc'
+    adoc.write_text('= Page\n\nSee link:/etc/hostname[Host] and link:\\server\\share.adoc[Share].\n', encoding='utf-8')
+
+    result = cmd_verify_links(_ns(_VERIFY_LINKS_NS, file=str(adoc), directory=None, recursive=False, report=None))
+
+    assert result['data']['broken_links'] == 0, 'an absolute target is not relative to the file, so it is not broken'
+    classes = {row['class']: row['count'] for row in result['data']['unchecked_link_classes']}
+    assert classes == {'absolute-path': 2}, f'the absolute targets must be named under their own class: {classes}'
+
+
+def test_verify_links_attribute_reference_after_a_hash_is_classed(tmp_path):
+    """`link:#{section-id}[x]` is an attribute reference, not the literal anchor `{section-id}`."""
+    adoc = tmp_path / 'page.adoc'
+    adoc.write_text('= Page\n\nSee link:#{section-id}[Ref].\n', encoding='utf-8')
+
+    result = cmd_verify_links(_ns(_VERIFY_LINKS_NS, file=str(adoc), directory=None, recursive=False, report=None))
+
+    assert result['data']['broken_links'] == 0, 'the target carries an unresolved attribute, so it is not broken'
+    assert [row['class'] for row in result['data']['unchecked_link_classes']] == ['attribute-reference']
+
+
+def test_verify_links_masked_examples_are_named_by_their_mask_class(tmp_path):
+    """A skipped example is still counted, so the field says what the checker did not examine."""
+    adoc = tmp_path / 'page.adoc'
+    adoc.write_text(
+        '= Page\n\n'
+        'A code span: `link:one.adoc[x]`.\n\n'
+        'A passthrough: +link:two.adoc[x]+.\n\n'
+        'A strong passthrough: ++link:three.adoc[x]++.\n\n'
+        'A macro passthrough: pass:[link:four.adoc[x]].\n',
+        encoding='utf-8',
+    )
+
+    result = cmd_verify_links(_ns(_VERIFY_LINKS_NS, file=str(adoc), directory=None, recursive=False, report=None))
+
+    assert result['data']['total_links'] == 0, 'a masked example is not a live link'
+    assert result['data']['broken_links'] == 0, 'a documented example must not become a false broken link'
+    classes = {row['class']: row['count'] for row in result['data']['unchecked_link_classes']}
+    assert classes == {
+        'code-span': 1,
+        'inline-passthrough': 1,
+        'passthrough': 1,
+        'pass-macro': 1,
+    }, f'each mask must be named by its own class: {classes}'
+
+
+def test_verify_links_percent_encoded_anchor_resolves(tmp_path):
+    """An anchor is percent-decoded before the lookup, exactly as the path already is."""
+    adoc = tmp_path / 'page.adoc'
+    adoc.write_text('= Page\n\n[[my anchor]]\n\nSee link:#my%20anchor[Anchor].\n', encoding='utf-8')
+
+    result = cmd_verify_links(_ns(_VERIFY_LINKS_NS, file=str(adoc), directory=None, recursive=False, report=None))
+
+    assert result['data']['total_links'] == 1, 'the macro must be extracted, or zero-broken is vacuous'
+    assert result['data']['broken_links'] == 0, 'the encoded anchor names an anchor that exists'
+
+
+def test_verify_links_nul_in_a_target_is_an_issue_not_an_abort(tmp_path):
+    """A NUL byte makes Path.resolve() raise; the run must report it, not die on it."""
+    adoc = tmp_path / 'page.adoc'
+    adoc.write_text('= Page\n\nSee link:bad%00name.adoc[x].\n', encoding='utf-8')
+
+    result = cmd_verify_links(_ns(_VERIFY_LINKS_NS, file=str(adoc), directory=None, recursive=False, report=None))
+
+    assert result['status'] == 'failure'
+    assert result['data']['files_processed'] == 1
+    assert result['data']['issues'], 'the unresolvable target must be reported on its link'
+    assert result['data']['issues'][0]['type'] == 'unreadable', (
+        'an unresolvable target was never examined, so it is not `broken`'
+    )
+
+
+def test_verify_links_nested_longer_delimiter_hides_its_inner_content():
+    """A `----` line inside a `-----` listing is content, so the block closes only on `-----`."""
+    adoc = LINK_VERIFY_FIXTURES / 'edge-cases' / 'nested-block.adoc'
+
+    result = cmd_verify_links(_ns(_VERIFY_LINKS_NS, file=str(adoc), directory=None, recursive=False, report=None))
+
+    assert result['data']['total_links'] == 1, 'only the live link after the block is extracted'
+    assert result['data']['broken_links'] == 0, 'the nested inner link must not surface as broken'
+
+
+def test_verify_links_edge_case_fixture_directory_verifies_every_live_link():
+    """The fixture directory as a whole is clean, so its files are all load-bearing."""
+    fixture_dir = LINK_VERIFY_FIXTURES / 'edge-cases'
+
+    result = cmd_verify_links(
+        _ns(_VERIFY_LINKS_NS, file=None, directory=str(fixture_dir), recursive=False, report=None)
+    )
+
+    assert result['status'] == 'success', f'the edge-case fixtures must be clean: {result["data"]["issues"]}'
+    assert result['data']['files_processed'] == 3
+    assert result['data']['total_links'] == 2, 'the nested block hides its inner link; the other two are live'
+
+
+def test_verify_links_a_masked_anchor_is_not_a_real_anchor(tmp_path):
+    """An anchor defined only inside a mask is not rendered, so a link to it is broken."""
+    adoc = tmp_path / 'page.adoc'
+    adoc.write_text(
+        '= Page\n\nA ++[[ghost]]++ example.\n\nSee link:#ghost[Ghost].\n',
+        encoding='utf-8',
+    )
+
+    result = cmd_verify_links(_ns(_VERIFY_LINKS_NS, file=str(adoc), directory=None, recursive=False, report=None))
+
+    assert result['data']['broken_links'] == 1, 'the masked anchor is never rendered, so the link is broken'
+
+
+def test_verify_links_a_pass_macro_hides_every_link_it_carries(tmp_path):
+    """A pass macro with a nested label hides both of its links, so neither is a false broken."""
+    adoc = tmp_path / 'page.adoc'
+    adoc.write_text(
+        '= Page\n\nA pass:[link:a-missing.adoc[x] link:b-missing.adoc[y]] example.\n',
+        encoding='utf-8',
+    )
+
+    result = cmd_verify_links(_ns(_VERIFY_LINKS_NS, file=str(adoc), directory=None, recursive=False, report=None))
+
+    assert result['data']['broken_links'] == 0, 'a documented example must not become a false broken link'
+    assert [row['class'] for row in result['data']['unchecked_link_classes']] == ['pass-macro']
+    assert result['data']['unchecked_link_classes'][0]['count'] == 2, (
+        'the nesting-aware mask must cover both links, not stop at the first `]`'
+    )
+
+
+def test_verify_links_a_prose_cxx_does_not_swallow_a_later_passthrough(tmp_path):
+    """A `C++` in prose is not a passthrough opener, so the real passthrough is still masked."""
+    adoc = tmp_path / 'page.adoc'
+    adoc.write_text(
+        '= Page\n\nC++ is not AsciiDoc; a passthrough ++link:missing.adoc[x]++ follows.\n',
+        encoding='utf-8',
+    )
+
+    result = cmd_verify_links(_ns(_VERIFY_LINKS_NS, file=str(adoc), directory=None, recursive=False, report=None))
+
+    assert result['data']['total_links'] == 0, 'the passthrough example is not a live link'
+    assert result['data']['broken_links'] == 0, 'the example must not become a false broken link'
+    assert [row['class'] for row in result['data']['unchecked_link_classes']] == ['passthrough']
+
+
+def test_verify_links_a_target_too_long_to_stat_is_an_issue_not_an_abort(tmp_path):
+    """A path the filesystem refuses to stat is reported, never raised out of the run."""
+    adoc = tmp_path / 'page.adoc'
+    long_name = 'a' * 300 + '.adoc'
+    adoc.write_text(f'= Page\n\nSee link:{long_name}[Long].\n', encoding='utf-8')
+
+    result = cmd_verify_links(_ns(_VERIFY_LINKS_NS, file=str(adoc), directory=None, recursive=False, report=None))
+
+    assert result['data']['files_processed'] == 1, 'the run completes over the file it could read'
+    assert result['data']['issues'], 'the target that cannot be stat-ed must be reported on its link'
+    assert result['data']['issues'][0]['type'] == 'unreadable', (
+        'a filesystem failure is not a missing file, so it is not `broken`'
+    )
+
+
+def test_verify_links_unreadable_adoc_target_completes_the_run(tmp_path):
+    """A target that cannot be read for anchors is an issue on its link, and the run completes."""
+    (tmp_path / 'broken.adoc').mkdir()
+    (tmp_path / 'good.adoc').write_text('= Good\n\n== Present\n', encoding='utf-8')
+    adoc = tmp_path / 'page.adoc'
+    adoc.write_text(
+        '= Page\n\nSee link:broken.adoc#section[Broken] and link:good.adoc#present[Good].\n',
+        encoding='utf-8',
+    )
+
+    result = cmd_verify_links(_ns(_VERIFY_LINKS_NS, file=None, directory=str(tmp_path), recursive=False, report=None))
+
+    assert result['status'] == 'failure', 'the unreadable target is an issue'
+    assert result['data']['files_processed'] == 3, 'the run must complete across every discovered file'
+    assert result['data']['total_links'] == 2, 'both live links are extracted'
+    assert result['data']['broken_links'] == 0, 'an unreadable target is reported with its reason, not as broken'
+    assert result['metrics']['valid_links'] == 1, (
+        'the one live link the checker verified is the only valid link — the file-level issue and the '
+        'unreadable link must not both be subtracted'
+    )
+    unreadable = [issue for issue in result['data']['issues'] if issue['file'].endswith('page.adoc')]
+    assert unreadable, 'the link whose target cannot be read must carry an issue of its own'
+    assert 'could not be read' in unreadable[0]['description']
+    assert not [issue for issue in result['data']['issues'] if issue['file'].endswith('good.adoc')], (
+        'the readable file still yields its own clean result'
+    )
