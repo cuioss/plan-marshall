@@ -14,8 +14,10 @@ Its sections, in order:
 from __future__ import annotations
 
 import json
+import os
 import time
 from argparse import Namespace
+from pathlib import Path
 
 from _build_queue_fixtures import (
     _init_git_repo,
@@ -390,3 +392,127 @@ class TestPerInvocationToken:
 
         assert second['id'] == first['id']
         assert second['admission'] == 'admitted'
+
+
+# =============================================================================
+# D3: the per-directory lock's FIFO
+# =============================================================================
+# The lock is a queue, and "queue, never reject" only holds if a LATER waiter can
+# never block an EARLIER one. Ordering is list position among one directory's
+# waiters; a set-membership test ("is anybody else waiting for this directory?")
+# makes two waiters block each other forever, which is the failure these pin.
+
+
+def _directory_namespace(directory: Path, ticket: str, plan_id: str = 'plan-a') -> Namespace:
+    return Namespace(directory=str(directory.resolve()), plan_id=plan_id, command='module-tests', pid=os.getpid(), ticket=ticket)
+
+
+class TestDirectoryLockFifo:
+    def test_two_waiters_are_admitted_in_arrival_order(self, isolated_base: dict) -> None:
+        directory = isolated_base['base'] / 'W1'
+        directory.mkdir(parents=True, exist_ok=True)
+
+        holder = build_queue.run_directory_acquire(_directory_namespace(directory, 't-holder', 'holder'))
+        first = build_queue.run_directory_acquire(_directory_namespace(directory, 't-first', 'first'))
+        second = build_queue.run_directory_acquire(_directory_namespace(directory, 't-second', 'second'))
+
+        assert holder['admission'] == 'admitted'
+        assert first['admission'] == 'blocked'
+        assert second['admission'] == 'blocked'
+
+        build_queue.run_directory_release(Namespace(directory=str(directory.resolve()), ticket='t-holder'))
+
+        # The LATER waiter polls first and must stay blocked behind the earlier
+        # one; the earlier waiter is then admitted.
+        again_second = build_queue.run_directory_acquire(_directory_namespace(directory, 't-second', 'second'))
+        again_first = build_queue.run_directory_acquire(_directory_namespace(directory, 't-first', 'first'))
+
+        assert again_second['admission'] == 'blocked', 'a later waiter must not jump the queue'
+        assert again_first['admission'] == 'admitted'
+
+    def test_a_waiting_ticket_is_removed_on_release(self, isolated_base: dict) -> None:
+        directory = isolated_base['base'] / 'W1'
+        directory.mkdir(parents=True, exist_ok=True)
+        build_queue.run_directory_acquire(_directory_namespace(directory, 't-holder', 'holder'))
+        build_queue.run_directory_acquire(_directory_namespace(directory, 't-waiter', 'waiter'))
+
+        build_queue.run_directory_release(Namespace(directory=str(directory.resolve()), ticket='t-waiter'))
+
+        state = _read_queue(isolated_base['queue_path'])
+        assert state.get('directory_waiters') == []
+        assert str(directory.resolve()) in state['directory_locks'], "a waiter's release must not free the holder"
+
+
+class TestDirectoryRecovery:
+    """`directory status` / `directory clear` — the operator escape hatch.
+
+    A build killed past its own release can leave a holder whose pid still reads
+    as alive. Nothing in admission may steal that directory (it would corrupt a
+    live build's output tree), so the recovery is explicit and operator-invoked.
+    """
+
+    def _stage_holder(self, isolated_base: dict, directory: Path, **overrides) -> None:
+        record = {
+            'plan_id': 'dead-build',
+            'command': 'module-tests',
+            'pid': 999_999,
+            'acquired_at': time.time(),
+            'ticket': 't-dead',
+            **overrides,
+        }
+        (isolated_base['queue_path']).write_text(
+            json.dumps({'active': [], 'waiting': [], 'run_log': [], 'directory_locks': {str(directory.resolve()): record}}),
+            encoding='utf-8',
+        )
+
+    def test_status_reports_the_holder_and_marks_a_dead_pid_reclaimable(self, isolated_base: dict) -> None:
+        directory = isolated_base['base'] / 'W1'
+        directory.mkdir(parents=True, exist_ok=True)
+        self._stage_holder(isolated_base, directory)
+
+        result = build_queue.run_directory_status(Namespace(directory=str(directory)))
+
+        assert result['status'] == 'success'
+        assert len(result['holders']) == 1
+        holder = result['holders'][0]
+        assert holder['plan_id'] == 'dead-build'
+        assert holder['pid'] == 999_999
+        assert holder['reclaimable'] is True
+        assert result['reclaimable_count'] == 1
+
+    def test_clear_reclaims_a_dead_holder_without_force(self, isolated_base: dict) -> None:
+        directory = isolated_base['base'] / 'W1'
+        directory.mkdir(parents=True, exist_ok=True)
+        self._stage_holder(isolated_base, directory)
+
+        result = build_queue.run_directory_clear(Namespace(directory=str(directory), force=False))
+
+        assert result['action'] == 'cleared'
+        assert result['cleared_holder']['plan_id'] == 'dead-build'
+        assert _read_queue(isolated_base['queue_path']).get('directory_locks') == {}
+
+    def test_clear_refuses_a_live_holder_without_force(self, isolated_base: dict) -> None:
+        directory = isolated_base['base'] / 'W1'
+        directory.mkdir(parents=True, exist_ok=True)
+        self._stage_holder(isolated_base, directory, pid=os.getpid(), acquired_at=time.time())
+
+        result = build_queue.run_directory_clear(Namespace(directory=str(directory), force=False))
+
+        assert result['action'] == 'refused_live'
+        assert str(directory.resolve()) in _read_queue(isolated_base['queue_path'])['directory_locks']
+
+    def test_force_clears_a_live_holder_on_the_operators_assertion(self, isolated_base: dict) -> None:
+        directory = isolated_base['base'] / 'W1'
+        directory.mkdir(parents=True, exist_ok=True)
+        self._stage_holder(isolated_base, directory, pid=os.getpid(), acquired_at=time.time())
+
+        result = build_queue.run_directory_clear(Namespace(directory=str(directory), force=True))
+
+        assert result['action'] == 'cleared'
+        assert _read_queue(isolated_base['queue_path']).get('directory_locks') == {}
+
+    def test_clear_of_an_unheld_directory_is_an_idempotent_noop(self, isolated_base: dict) -> None:
+        result = build_queue.run_directory_clear(Namespace(directory=str(isolated_base['base'] / 'nobody'), force=False))
+
+        assert result['status'] == 'success'
+        assert result['action'] == 'noop'

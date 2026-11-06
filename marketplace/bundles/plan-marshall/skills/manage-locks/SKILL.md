@@ -831,10 +831,16 @@ be reproducible.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-locks:build_queue acquire \
-  --plan-id PLAN_ID
+  --plan-id PLAN_ID [--token TOKEN]
 ```
 
-Accepted flags: `--plan-id` (**required**).
+Accepted flags: `--plan-id` (**required**), `--token` (optional).
+
+`--token` is the per-INVOCATION identity. A re-poll with the same token keeps this
+build's FIFO place, and a second token for the same plan is a SECOND entry — two
+concurrent builds of one plan each hold their own slot, so the first release
+cannot free the second's. Omitted, the identity falls back to `--plan-id`, which
+is the pre-token idempotence an older caller relies on.
 
 Beyond `id` / `admission` / `active_count` / `waiting_count` / `queue_path`, every
 result reports the cap it admitted under and the two cap reports:
@@ -872,12 +878,36 @@ carry `warnings`, `per_repo_max_slots`, or any `cap_*` field: the demotion repor
 the disagreement verdict are properties of an ADMISSION decision, and a release makes
 none.
 
-### build_queue — limit verbs not exposed
+### build_queue — directory verbs
 
-This script exposes no `limit` verb. The accepted verbs are exactly `acquire`
-and `release` (see `--help`). Queue thresholds resolve from the machine-global
-configuration paths the implementation reads; they are not set through this
-script.
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-locks:build_queue directory status \
+  [--directory DIRECTORY]
+python3 .plan/execute-script.py plan-marshall:manage-locks:build_queue directory clear \
+  --directory DIRECTORY [--force]
+```
+
+`directory status` reports the per-directory build holder(s) and waiter(s) —
+`holders[]` carrying `directory`, `plan_id`, `command`, `pid`, `held_seconds` and
+`reclaimable`, plus `waiters[]` and `reclaimable_count`. It is read-only, and it is
+the sanctioned way to ask who holds a directory: a hand-read of `build-queue.json`
+has to re-derive pid liveness and staleness, which is the same reason every other
+read here goes through the script.
+
+`directory clear` reclaims one. Without `--force` only a STALE holder is cleared —
+its pid is gone (or is an unreaped zombie) or it has outlived the two-hour
+ceiling; `--force` clears it whatever its state, on the operator's assertion that
+no build is running there. `action` is `cleared`, `noop` (nothing to clear) or
+`refused_live` (a live holder and no `--force`), and `cleared_holder` carries the
+record that was removed. Use it when a build was killed past its own release: a
+recycled pid can keep such a record looking alive, and nothing in the admission
+path may steal a live build's directory.
+
+### build_queue — the `limit` verbs and the threshold's home
+
+`limit get` / `limit set --value N` read and write the adaptive stale-reclaim
+threshold, a top-level field of `build-queue.json` itself (see **The cap and the
+reap threshold are machine-global**).
 
 ## Integration
 

@@ -750,6 +750,22 @@ def cmd_run_common(
     """
     formatter = format_json if output_format == 'json' else format_toon
 
+    # ``queued_seconds`` is produced by the routing seam (how long the build
+    # waited behind another build of its directory), and every branch below
+    # REBUILDS the emitted payload from the fields it names. Wrapping the
+    # formatter is what carries that one field through every branch — hand-back,
+    # success, failure, timeout, killed, indeterminate — instead of adding it to
+    # each payload construction, where a new branch would silently drop it and the
+    # operator would lose the only signal that the build was serialised rather
+    # than slow.
+    unfiltered_formatter = formatter
+
+    def formatter(output: dict[str, Any]) -> str:
+        queued = result.get('queued_seconds')
+        if isinstance(queued, int) and not isinstance(queued, bool) and queued >= 0:
+            output = {**output, 'queued_seconds': queued}
+        return unfiltered_formatter(output)
+
     log_file = result['log_file']
     command_str = result['command']
     print(f'[EXEC] {command_str}', file=sys.stderr)

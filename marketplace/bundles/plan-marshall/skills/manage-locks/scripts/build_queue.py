@@ -40,7 +40,8 @@ freeing the slot, FIFO-promoting waiters, and emitting a WARN ``[LOCK]``
 the reaper clears a hard-killed (``SIGKILL``-past-``finally``) holder whose plan
 dir still exists.
 
-It exposes four actions — two slot actions and two threshold actions:
+It exposes four slot/threshold actions — two slot actions and two threshold
+actions — plus two OPERATOR-RECOVERY actions for the per-directory lock:
 
   * ``acquire`` — resolve the admission for ``--plan-id`` **idempotently** under
     the serialized read-modify-write: first run the implicit
@@ -77,6 +78,16 @@ It exposes four actions — two slot actions and two threshold actions:
   * ``limit set --value N`` — set the threshold (a positive int, clamped to
     ``[600 s, 3600 s]``) through the same serialized ``rmw_json`` mutation every
     other write to this file uses.
+  * ``directory status [--directory D]`` — report the per-directory build
+    holder(s) and waiter(s): who holds which directory, for how long, and whether
+    the record is reclaimable. Read-only, and the sanctioned alternative to a
+    hand-read of the queue file.
+  * ``directory clear --directory D [--force]`` — reclaim a directory holder.
+    Without ``--force`` only a STALE one (dead/zombie pid, or older than
+    :data:`DIRECTORY_LOCK_CEILING_SECONDS`); ``--force`` clears it whatever its
+    state, on the operator's assertion that no build is running there. This is the
+    recovery path for a build killed past its own release, which nothing in the
+    admission path may steal.
 
 **Machine-global resolution — the host-wide home-root tier:** the queue file
 resolves under the machine-global home root (:func:`marketplace_paths.home_root`,
@@ -355,6 +366,17 @@ DIRECTORY_WAITERS_FIELD = 'directory_waiters'
 every mutation runs inside the serialized :func:`_locks_core.rmw_json` section —
 so the first waiter for a directory is admitted first, and a directory released
 by its holder is taken by the build that has waited longest for it.
+"""
+
+DIRECTORY_LOCK_CEILING_SECONDS = 7200
+"""Age past which a directory holder counts as STALE for recovery (`directory clear`).
+
+Not a reaper: nothing in the admission path honours this bound, because stealing a
+directory from a legitimately long build would corrupt the very output tree the
+lock protects. It exists for the OPERATOR-recovery verb, so a lock whose pid reads
+as alive (a recycled pid, an unreaped zombie) can still be cleared by a person who
+knows no build is running — after two hours, no build of one directory is
+legitimately still going.
 """
 
 
@@ -752,6 +774,13 @@ def _pid_alive(pid: Any) -> bool:
     corrupt record is reclaimable rather than wedging a directory forever, and
     ``PermissionError`` means the process exists (another user owns it) so it IS
     alive.
+
+    A ZOMBIE is not alive for this purpose. ``os.kill(pid, 0)`` succeeds for a
+    process that has exited but has not been reaped by its parent, and a build
+    child the daemon killed can stay unreaped for a while — counting that as a live
+    holder would block its directory for as long as the zombie lives. On Linux the
+    process state is read from ``/proc``; where ``/proc`` is unavailable the
+    signal probe alone decides, which is the pre-existing behaviour.
     """
     if isinstance(pid, bool) or not isinstance(pid, int) or pid <= 0:
         return False
@@ -760,10 +789,23 @@ def _pid_alive(pid: Any) -> bool:
     except ProcessLookupError:
         return False
     except PermissionError:
-        return True
+        return not _is_zombie(pid)
     except OSError:
         return False
-    return True
+    return not _is_zombie(pid)
+
+
+def _is_zombie(pid: int) -> bool:
+    """Return whether ``pid`` is an unreaped zombie (Linux ``/proc``), else False."""
+    try:
+        stat = Path(f'/proc/{pid}/stat').read_text(encoding='utf-8', errors='replace')
+    except OSError:
+        return False
+    # Field 3 is the process state; the comm field (2) may contain spaces, so the
+    # state is read after the LAST ')' of the comm field.
+    _, _, tail = stat.rpartition(')')
+    state = tail.strip().split(' ', 1)[0] if tail.strip() else ''
+    return state == 'Z'
 
 
 def _directory_locks(state: dict[str, Any]) -> dict[str, dict[str, Any]]:
@@ -1328,9 +1370,10 @@ def run_directory_acquire(args: Namespace) -> dict[str, Any]:
             re-polls).
 
     Returns:
-        ``{status, admission, waiting_on, waited_seconds, queue_path}`` where
-        ``admission`` is ``admitted`` or ``blocked`` and ``waiting_on`` describes
-        the holder (or the earlier waiter) blocking this one.
+        ``{status, admission, waiting_on, queue_path}`` where ``admission`` is
+        ``admitted`` or ``blocked`` and ``waiting_on`` describes the holder (or
+        the earlier waiter) blocking this one. The CALLER measures its own wait —
+        this function has no notion of when the caller started waiting.
     """
     directory = str(args.directory)
     plan_id = str(getattr(args, 'plan_id', '') or '')
@@ -1350,8 +1393,22 @@ def run_directory_acquire(args: Namespace) -> dict[str, Any]:
         waiters = [waiter for waiter in _directory_waiters(state) if _pid_alive(waiter.get('pid'))]
 
         holder = locks.get(directory)
-        ahead = [waiter for waiter in waiters if waiter.get('directory') == directory and waiter['ticket'] != ticket]
-        if holder is None and not ahead:
+        # FIFO is LIST POSITION among this directory's waiters, never "any other
+        # waiter exists": a later waiter must not block an earlier one, or two
+        # builds waiting on one directory would block each other forever and both
+        # would run into their bound (queue-never-reject violated under exactly
+        # the contention this lock exists for).
+        places = [index for index, waiter in enumerate(waiters) if waiter['directory'] == directory]
+        our_place = next(
+            (
+                index
+                for index, waiter in enumerate(waiters)
+                if waiter['ticket'] == ticket and waiter['directory'] == directory
+            ),
+            None,
+        )
+        is_first = our_place is not None and our_place == places[0]
+        if holder is None and (our_place is None or is_first):
             locks[directory] = {
                 'plan_id': plan_id,
                 'command': command,
@@ -1363,7 +1420,7 @@ def run_directory_acquire(args: Namespace) -> dict[str, Any]:
             outcome['admission'] = 'admitted'
             outcome['waiting_on'] = {}
         else:
-            if not any(waiter['ticket'] == ticket for waiter in waiters):
+            if our_place is None:
                 waiters.append(
                     {
                         'directory': directory,
@@ -1374,20 +1431,25 @@ def run_directory_acquire(args: Namespace) -> dict[str, Any]:
                         'ts': now,
                     }
                 )
-            outcome['waiting_on'] = _holder_view(holder or (ahead[0] if ahead else None), now)
+            ahead = next(
+                (
+                    waiter
+                    for index, waiter in enumerate(waiters)
+                    if waiter['directory'] == directory and waiter['ticket'] != ticket and (our_place is None or index < our_place)
+                ),
+                None,
+            )
+            outcome['waiting_on'] = _holder_view(holder or ahead, now)
         state[DIRECTORY_LOCKS_FIELD] = locks
         state[DIRECTORY_WAITERS_FIELD] = waiters
         return state
 
     rmw_json(queue_path, _mutate)
 
-    waiting_on = outcome['waiting_on'] or {}
-    held_seconds = float(waiting_on.get('held_seconds', 0.0))
     return {
         'status': 'success',
         'admission': outcome['admission'],
-        'waiting_on': waiting_on,
-        'waited_seconds': held_seconds,
+        'waiting_on': outcome['waiting_on'] or {},
         'queue_path': str(queue_path),
     }
 
@@ -1427,6 +1489,116 @@ def run_directory_release(args: Namespace) -> dict[str, Any]:
 
     rmw_json(queue_path, _mutate)
     return {'status': 'success', 'action': outcome['action'], 'queue_path': str(queue_path)}
+
+
+def run_directory_status(args: Namespace) -> dict[str, Any]:
+    """Report every per-directory build holder and waiter (read-only).
+
+    The sanctioned way to ask "who holds this directory" — the alternative is a
+    hand-read of ``build-queue.json``, which has to re-derive the lock's semantics
+    (pid liveness, staleness) and is forbidden for exactly that reason.
+
+    Args:
+        args: Namespace; ``directory`` optionally narrows the report to one
+            canonical directory.
+
+    Returns:
+        ``{status, holders[], waiters[], stale_count, queue_path}``. Each holder
+        carries ``directory``, ``plan_id``, ``command``, ``pid``, ``held_seconds``
+        and ``stale`` — stale meaning its pid is gone or it has outlived
+        :data:`DIRECTORY_LOCK_CEILING_SECONDS`.
+    """
+    wanted = getattr(args, 'directory', None)
+    queue_path = _resolve_queue_path()
+    state = read_json_guarded(queue_path)
+    now = time.time()
+    holders: list[dict[str, Any]] = []
+    for directory, holder in sorted(_directory_locks(state).items()):
+        if wanted and str(Path(wanted).resolve()) != directory:
+            continue
+        since = holder.get('acquired_at')
+        held = max(0.0, now - float(since)) if isinstance(since, (int, float)) else 0.0
+        holders.append(
+            {
+                **{key: holder.get(key, '') for key in ('plan_id', 'command', 'pid')},
+                'directory': directory,
+                'held_seconds': int(held),
+                'reclaimable': (not _pid_alive(holder.get('pid'))) or held > DIRECTORY_LOCK_CEILING_SECONDS,
+            }
+        )
+    waiters = [
+        {
+            'directory': waiter.get('directory', ''),
+            'plan_id': waiter.get('plan_id', ''),
+            'pid': waiter.get('pid', ''),
+        }
+        for waiter in _directory_waiters(state)
+        if not wanted or str(Path(wanted).resolve()) == waiter.get('directory')
+    ]
+    return {
+        'status': 'success',
+        'holders': holders,
+        'waiters': waiters,
+        'reclaimable_count': sum(1 for holder in holders if holder['reclaimable']),
+        'queue_path': str(queue_path),
+    }
+
+
+def run_directory_clear(args: Namespace) -> dict[str, Any]:
+    """Reclaim a per-directory build holder — the operator recovery path.
+
+    A build that is killed past its own release (the daemon's supervisory kill is
+    the real case) can leave a holder record behind whose pid still reads as alive:
+    a recycled pid, or a child the daemon has not reaped yet. Nothing in the
+    admission path steals such a directory — deliberately, because stealing a
+    live build's directory corrupts the shared output tree the lock exists to
+    protect — so the escape is this explicit, operator-invoked verb.
+
+    Without ``--force`` only a STALE holder is cleared: one whose pid is gone (or
+    is a zombie) or one that has outlived
+    :data:`DIRECTORY_LOCK_CEILING_SECONDS`. ``--force`` clears the named directory's
+    holder whatever its state — the operator's own assertion that no build is
+    running there. A directory with no holder is an idempotent no-op success.
+
+    Args:
+        args: Namespace with ``directory`` and ``force``.
+
+    Returns:
+        ``{status, action, directory, cleared_holder, queue_path}`` where ``action``
+        is ``cleared``, ``noop`` (nothing to clear) or ``refused_live`` (a live
+        holder and no ``--force``).
+    """
+    directory = str(Path(args.directory).resolve())
+    force = bool(getattr(args, 'force', False))
+    queue_path = _resolve_queue_path()
+    outcome: dict[str, Any] = {'action': 'noop', 'cleared_holder': {}}
+
+    def _mutate(state: dict[str, Any]) -> dict[str, Any]:
+        locks = _directory_locks(state)
+        holder = locks.get(directory)
+        if not isinstance(holder, dict):
+            return state
+        since = holder.get('acquired_at')
+        held = max(0.0, time.time() - float(since)) if isinstance(since, (int, float)) else 0.0
+        stale = (not _pid_alive(holder.get('pid'))) or held > DIRECTORY_LOCK_CEILING_SECONDS
+        if not stale and not force:
+            outcome['action'] = 'refused_live'
+            outcome['cleared_holder'] = _holder_view(holder, time.time())
+            return state
+        del locks[directory]
+        outcome['action'] = 'cleared'
+        outcome['cleared_holder'] = _holder_view(holder, time.time())
+        state[DIRECTORY_LOCKS_FIELD] = locks
+        return state
+
+    rmw_json(queue_path, _mutate)
+    return {
+        'status': 'success',
+        'action': outcome['action'],
+        'directory': directory,
+        'cleared_holder': outcome['cleared_holder'],
+        'queue_path': str(queue_path),
+    }
 
 
 def run_limit_get(args: Namespace) -> dict[str, Any]:
@@ -1550,6 +1722,8 @@ Examples:
   build_queue.py release --plan-id EXAMPLE-PLAN --id EXAMPLE-PLAN:UUID
   build_queue.py limit get
   build_queue.py limit set --value 1800
+  build_queue.py directory status
+  build_queue.py directory clear --directory .plan/local/worktrees/MY-PLAN
 """,
         allow_abbrev=False,
     )
@@ -1563,6 +1737,17 @@ Examples:
         dest='plan_id',
         required=True,
         help='Holder source — the plan_id acquiring a slot (mandatory)',
+    )
+    p_acquire.add_argument(
+        '--token',
+        dest='token',
+        default=None,
+        help=(
+            'Per-INVOCATION identity. Re-poll with the same token to keep this '
+            'build\'s FIFO place; a second token for the same plan is a second '
+            'entry. Omitted, the identity falls back to --plan-id (pre-token '
+            'idempotence).'
+        ),
     )
     p_acquire.set_defaults(func=run_acquire)
 
@@ -1582,6 +1767,45 @@ Examples:
         help='The admission id returned by acquire (mandatory)',
     )
     p_release.set_defaults(func=run_release)
+
+    p_directory = subparsers.add_parser(
+        'directory',
+        help='Inspect or reclaim a per-directory build holder (operator recovery)',
+        allow_abbrev=False,
+    )
+    directory_subparsers = p_directory.add_subparsers(dest='directory_command', required=True, help='Directory operation')
+
+    p_directory_status = directory_subparsers.add_parser(
+        'status',
+        help='Report the holder(s) and waiter(s) of the per-directory build lock',
+        allow_abbrev=False,
+    )
+    p_directory_status.add_argument(
+        '--directory',
+        dest='directory',
+        default=None,
+        help='Narrow the report to one directory (absolute or relative; canonicalised)',
+    )
+    p_directory_status.set_defaults(func=run_directory_status)
+
+    p_directory_clear = directory_subparsers.add_parser(
+        'clear',
+        help=f'Reclaim a STALE holder (dead pid or older than {DIRECTORY_LOCK_CEILING_SECONDS}s); --force overrides',
+        allow_abbrev=False,
+    )
+    p_directory_clear.add_argument(
+        '--directory',
+        dest='directory',
+        required=True,
+        help='The directory whose holder to reclaim (absolute or relative; canonicalised)',
+    )
+    p_directory_clear.add_argument(
+        '--force',
+        dest='force',
+        action='store_true',
+        help='Clear the holder whatever its state — the operator asserts no build is running there',
+    )
+    p_directory_clear.set_defaults(func=run_directory_clear)
 
     p_limit = subparsers.add_parser(
         'limit',

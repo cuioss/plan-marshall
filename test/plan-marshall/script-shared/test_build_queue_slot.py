@@ -903,17 +903,28 @@ def test_an_exhausted_bound_raises_directory_busy_naming_the_holder(tmp_path, is
     assert busy.holder_command == 'module-tests'
     assert busy.holder_pid == os.getpid()
     assert busy.holder_seconds >= 30
+    # The refused build left NO waiting entry behind: a leaked waiter keeps its
+    # FIFO place with a live pid, so the very next build would queue behind a
+    # ghost of the one that gave up.
+    state = json.loads((isolated_home / 'build-queue.json').read_text(encoding='utf-8'))
+    assert state.get('directory_waiters', []) == []
+    assert _directory_key(directory) in state['directory_locks'], "the other build's lease is untouched"
 
 
 @pytest.mark.real_directory_lock
 def test_a_directory_holder_waiting_on_a_slot_does_not_deadlock(tmp_path, isolated_home, monkeypatch):
     """Directory-then-slot never deadlocks: a slot holder cannot want a directory.
 
-    The cross-order shape is the deadlock: a directory holder waits for a slot
-    while a slot holder wants that directory. Under the enforced order the
-    second half cannot happen — a build takes the directory BEFORE the slot — so
-    the worst case is this test: a directory holder blocks on someone else's
-    slot and proceeds the moment that slot is released.
+    The spec's cross-order shape — "a directory holder waits on a slot while a
+    slot holder wants that directory" — states the deadlock exactly, and it is
+    UNREACHABLE under the enforced order this test exercises: a build takes the
+    directory BEFORE the slot, so no process ever holds a slot and then asks for a
+    directory. Constructing it would mean writing a build that violates the rule
+    and asserting it does not hang, which proves nothing about production.
+
+    What this test does prove is the reachable worst case: a directory holder
+    blocks on someone else's slot and proceeds the moment that slot is released,
+    with no cycle — the property that makes the missing second half harmless.
     """
     base = tmp_path / 'main' / '.plan' / 'local'
     for plan_id in ('slot-holder', 'directory-waiter'):

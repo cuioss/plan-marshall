@@ -109,9 +109,12 @@ ERROR_DIRECTORY_BUSY = 'directory_busy'
 # A build is routed to the marshalld daemon when the project is registered AND
 # the daemon answers a verified handshake ("ready"); otherwise it runs in-process
 # under a single machine-global build-queue slot (the fallback). A build takes
-# EXACTLY ONE limiter path — never both, never stacked: a routed build's slot is
-# held by the daemon child (which re-runs the executor in-process, acquiring the
-# shared machine-global slot itself), so the routing seam takes no fallback slot.
+# EXACTLY ONE slot path — never both, never stacked: a routed build's slot is
+# held by the daemon's SCHEDULER (which admits it only when its directory is free
+# and a slot is available), so the routing seam takes no fallback slot. The
+# daemon CHILD re-runs the executor in-process and enters this same in-process
+# leg, where it acquires a slot only when its argv carries a REAL `--plan-id`; a
+# plan-less lane build takes the per-directory lock and no slot.
 
 # tool_name -> the executor notation the daemon re-runs (command[2], verified
 # against the project's notation_allowlist by the daemon's S1 check). An unknown
@@ -996,7 +999,7 @@ def _running_hand_back(
     """
     duration = int(time.monotonic() - started_monotonic)
     log_file = ''
-    queued_seconds: int | None = 0
+    queued_seconds: int | None = None
     if waited is not None:
         log_file = str(waited.get('log_file', '') or '')
         queued_seconds = _coerce_queued_seconds(waited)
@@ -1730,11 +1733,12 @@ def create_execute_handlers(
         # the daemon's slots and the in-process lock. The slot is released by its
         # context manager's finally; the directory lease the same way.
         try:
+            lease: DirectoryLease | None = None
             with directory_lock(
                 project_dir,
                 plan_id=plan_id,
                 command=command_args,
-            ):
+            ) as lease:
                 with build_queue_slot(plan_id):
                     result = in_process_execute(
                         args=command_args,
@@ -1754,6 +1758,11 @@ def create_execute_handlers(
             return _emit_directory_busy(config.tool_name, command_args, getattr(args, 'format', 'toon'), exc)
         except BuildQueueTimeout as exc:
             return _emit_queue_timeout(config.tool_name, command_args, getattr(args, 'format', 'toon'), exc)
+
+        # A build that waited for its directory SAYS SO. Only reported when there
+        # was a wait, so the ordinary in-process result is unchanged.
+        if isinstance(result, dict) and lease is not None and lease.waited_seconds > 0:
+            result.setdefault('queued_seconds', int(lease.waited_seconds))
 
         # The in-process row is appended AFTER the renderer ran, because the
         # renderer is what measures the executed-test population on this route

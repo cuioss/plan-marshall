@@ -751,6 +751,62 @@ def test_cmd_run_reports_directory_busy_and_never_spawns_the_build(monkeypatch, 
     assert '4242' in out
 
 
+def test_cmd_run_emits_queued_seconds_on_the_rendered_result(monkeypatch, capsys):
+    """The wait must survive the EMIT boundary, not only the intermediate result.
+
+    ``cmd_run_common`` rebuilds the payload per branch, so a field carried only on
+    the routing seam's dict is dropped before the operator ever sees it. This
+    asserts the rendered TOON, which is what the agent-facing contract means by
+    "the result carries queued_seconds".
+    """
+    canned = {
+        'status': 'success',
+        'exit_code': 0,
+        'duration_seconds': 1,
+        'log_file': 'l',
+        'command': 'c',
+        'queued_seconds': 7,
+    }
+    monkeypatch.setattr(factory, '_route_to_daemon', lambda *a, **k: (canned, ''))
+
+    _, cmd_run = factory.create_execute_handlers(_config(), parse_log_fn=lambda *a: None)
+    rc = cmd_run(_run_args())
+
+    assert rc == 0
+    assert 'queued_seconds: 7' in capsys.readouterr().out
+
+
+def test_cmd_run_reports_the_directory_wait_it_paid(monkeypatch, capsys):
+    """An in-process build serialised behind another reports its wait.
+
+    The lease is the only place that number exists on this path, so a wrapper that
+    discards it would leave the second build looking merely slow.
+    """
+    monkeypatch.setattr(factory, '_route_to_daemon', lambda *a, **k: (None, 'disabled'))
+    monkeypatch.setattr(
+        factory,
+        'execute_direct_base',
+        lambda **kw: {'status': 'success', 'exit_code': 0, 'duration_seconds': 1, 'log_file': 'l', 'command': 'c'},
+    )
+
+    @contextmanager
+    def _lease(directory, **_kwargs):
+        yield SimpleNamespace(waited_seconds=12.4)
+
+    @contextmanager
+    def _slot(plan_id, *, routed=False):
+        yield
+
+    monkeypatch.setattr(factory, 'directory_lock', _lease)
+    monkeypatch.setattr(factory, 'build_queue_slot', _slot)
+
+    _, cmd_run = factory.create_execute_handlers(_config(), parse_log_fn=lambda *a: None)
+    rc = cmd_run(_run_args())
+
+    assert rc == 0
+    assert 'queued_seconds: 12' in capsys.readouterr().out
+
+
 def test_routed_build_for_a_plan_submits_and_records_that_plan(use_fake_client, monkeypatch, tmp_path):
     """A build routed for a plan names that plan to the daemon and in its ``kind=build`` row.
 

@@ -200,7 +200,13 @@ def _holder_is_alive(holder: Any) -> bool:
     pid = holder.get('pid')
     if isinstance(pid, bool) or not isinstance(pid, int):
         return False
-    return pid_alive(pid)
+    try:
+        return pid_alive(pid)
+    except OSError:
+        # Cannot prove the holder is gone, so do NOT steal its directory: the
+        # directory lock is a serialisation guarantee, and a failed liveness probe
+        # is not evidence of death (ADR-009).
+        return True
 
 
 def stale_socket_takeover(sock_path: Path, pidfile: Path) -> None:
@@ -535,14 +541,15 @@ class Daemon:
         bound = int(request.get('bound', _DEFAULT_WAIT_BOUND))
         deadline = time.monotonic() + bound
 
-        # Re-evaluate admission on every wait. The daemon has no timer, so a
-        # directory released by an IN-PROCESS holder (or by a job that finished
-        # between two admissions) would otherwise leave the next job queued
-        # until the next submit or completion. Every queued client is waiting,
-        # so this is the one seam that sees the release promptly.
+        # Re-evaluate admission on entry and on every poll — never only once. The
+        # daemon has no timer, so a directory released by an IN-PROCESS holder
+        # mid-wait would otherwise leave this job queued until the bound expired,
+        # reporting `queued` for a directory that had been free for minutes. The
+        # call before the loop keeps a zero-bound wait honest.
         self._admit_ready()
 
         while time.monotonic() < deadline:
+            self._admit_ready()
             entry = self._journal.get(job_id)
             if entry is None:
                 return status_payload(STATUS_NOT_FOUND, job_id=job_id)

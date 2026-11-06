@@ -52,7 +52,7 @@ The shared protocol library `_build_server_protocol` is imported by both sides: 
 The daemon's four cores are separable pure units wired behind the socket:
 
 * **Verifier** (`_marshalld_verifier`) — S1/S2 positional verification of every submit against the project's registration; a pure function given a resolver injection.
-* **Scheduler** (`_marshalld_scheduler`) — an in-memory bounded-slot admitter with per-project round-robin fairness and idempotent-submit fingerprint attach; no I/O.
+* **Scheduler** (`_marshalld_scheduler`) — an in-memory bounded-slot admitter with per-project round-robin fairness, ONE JOB PER PROJECT DIRECTORY (two builds of one worktree write the same `target/`), a directory-aware skip that keeps a blocked job from holding up another directory's, and idempotent-submit fingerprint attach; no I/O.
 * **Supervisor** (`_marshalld_supervisor`) — one `asyncio` subprocess per admitted job with a clean server-side baseline env, stream capture to a per-job log, liveness tracking, and terminal classification.
 * **Journal** (`_marshalld_journal`) — the durable on-disk record of specs, results, and per-command ETA history, with a bounded retention window, GC, and restart replay.
 

@@ -54,11 +54,13 @@ Behaviour:
   acquire``. On ``admitted`` it yields so the caller runs the build. On
   ``blocked`` it sleeps ``_WAIT_SECONDS`` and re-polls ``acquire`` WITHOUT
   releasing first, up to ``build.queue.max_retries`` (default 10 from
-  marshal.json). Because ``run_acquire`` is idempotent for an already-queued
-  ``plan_id``, the plan KEEPS its FIFO position across retries rather than being
-  shuffled to the back. Whether the slot is admitted or the retries are
-  exhausted, the held / queued admission id is ALWAYS released in a ``finally``
-  block, so the queue never leaks a slot or a waiting entry.
+  marshal.json). Every re-poll carries the SAME per-invocation token, and the
+  queue matches by token, so this build KEEPS its FIFO position across retries
+  rather than being shuffled to the back — and a second concurrent build of the
+  same plan is a second entry rather than a second claimant on this one. Whether
+  the slot is admitted or the retries are exhausted, the held / queued admission
+  id is ALWAYS released in a ``finally`` block, so the queue never leaks a slot or
+  a waiting entry.
 * **Retries exhausted → BuildQueueTimeout.** When the build is still blocked
   after the final retry the queued id is released (cleanup) and
   :class:`BuildQueueTimeout` is raised, carrying a structured "try again later"
@@ -421,12 +423,14 @@ def build_queue_slot(plan_id: str | None, *, routed: bool = False) -> Iterator[N
     """Context manager wrapping a build in the machine-global build queue.
 
     When ``routed`` is true this is a pure no-op passthrough — the build was
-    routed to the marshalld daemon, whose child already holds the single
-    machine-global slot, so acquiring a fallback slot here would stack a second
-    slot on the same build (the no-stacking guard). When ``plan_id`` does not
-    name a real plan this is likewise a no-op passthrough — the body runs
-    unchanged with no queue interaction (the backward-compatibility guarantee
-    for plan-less builds). When ``plan_id`` names a REAL plan and the build was
+    routed to the marshalld daemon, whose SCHEDULER holds the machine-global slot
+    for it, so acquiring a fallback slot here would stack a second slot on the
+    same build (the no-stacking guard). When ``plan_id`` does not name a real plan
+    this is likewise a no-op passthrough for the SLOT — the body runs with no
+    slot interaction (the backward-compatibility guarantee for plan-less builds).
+    It is not a no-op for the per-directory lock: that is taken by
+    :func:`directory_lock` around this context manager, for every in-process build
+    regardless of plan. When ``plan_id`` names a REAL plan and the build was
     NOT routed, the body runs only after a slot is admitted on the shared
     machine-global ``build-queue.json``; the slot is released in a ``finally``
     regardless of how the body exits.
@@ -561,11 +565,18 @@ def directory_lock(
     while True:
         result = _directory_acquire(key, identity, command, ticket)
         if result.get('status') != 'success':
+            # Release the WAITING entry this call may have committed: a leaked
+            # waiter keeps its FIFO place with a live pid, so a retry would queue
+            # behind a ghost of itself.
+            _directory_release(key, ticket)
             raise RuntimeError(f'directory lock acquire failed for {key!r}: {result.get("error")}')
         if result.get('admission') == 'admitted':
             break
         waited = time.monotonic() - started
         if waited >= bound:
+            # Same reason as above: the build does not run, so it must not leave a
+            # waiting entry behind for the next build to queue behind.
+            _directory_release(key, ticket)
             raise DirectoryBusy(key, result.get('waiting_on') or {}, waited)
         time.sleep(_DIRECTORY_POLL_SECONDS)
 

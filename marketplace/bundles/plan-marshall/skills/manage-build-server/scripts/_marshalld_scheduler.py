@@ -79,6 +79,10 @@ class JobEntry:
             is why admission keys on this rather than on the fairness key.
         enqueued_at: ``time.monotonic()`` when the job entered the queue, so a
             queued client can be told how long it has been waiting.
+        admitted_at: ``time.monotonic()`` when the scheduler admitted the job, or
+            ``0.0`` while it is still queued. The WAIT a build paid is
+            ``admitted_at - enqueued_at``; measuring from ``enqueued_at`` to NOW
+            would report a job's total age and call it waiting time.
     """
 
     job_id: str
@@ -88,6 +92,7 @@ class JobEntry:
     spec: dict[str, Any] = field(default_factory=dict)
     directory: str = ''
     enqueued_at: float = 0.0
+    admitted_at: float = 0.0
 
 
 @dataclass
@@ -262,6 +267,7 @@ class Scheduler:
             # Advance rotation PAST the served project so the next admit
             # starts at the following project (true round-robin).
             self._rotation = (idx + 1) % count
+            entry.admitted_at = time.monotonic()
             self._running[entry.job_id] = entry
             return entry
         return None
@@ -295,15 +301,24 @@ class Scheduler:
         return ''
 
     def queued_seconds(self, job_id: str) -> int:
-        """Return how many whole seconds ``job_id`` has been waiting, or ``0``."""
-        running = self._running.get(job_id)
-        if running is not None:
-            return max(0, int(time.monotonic() - running.enqueued_at))
-        for queue in self._queues.values():
-            for entry in queue:
-                if entry.job_id == job_id:
-                    return max(0, int(time.monotonic() - entry.enqueued_at))
-        return 0
+        """Return how many whole seconds ``job_id`` WAITED, or ``0``.
+
+        The wait is ``admitted_at - enqueued_at`` for an admitted job — the time
+        it spent queued, not its total age. A job still queued reports the wait
+        so far. Once a job has been running for an hour, its ``queued_seconds``
+        must not keep growing with it: ``elapsed`` is the field that measures
+        running time, and conflating the two is what this distinct stamp prevents.
+        """
+        entry = self._running.get(job_id)
+        if entry is None:
+            entry = next(
+                (candidate for queue in self._queues.values() for candidate in queue if candidate.job_id == job_id),
+                None,
+            )
+        if entry is None:
+            return 0
+        end = entry.admitted_at or time.monotonic()
+        return max(0, int(end - entry.enqueued_at))
 
     def complete(self, job_id: str) -> JobEntry | None:
         """Mark a running job finished, freeing its slot and fingerprint.

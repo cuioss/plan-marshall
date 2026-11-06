@@ -168,7 +168,7 @@ def test_submit_carries_queued_behind_for_a_busy_directory(home, tmp_path, monke
 
 
 def test_submit_reports_an_empty_queued_behind_when_no_job_runs(home, tmp_path, monkeypatch):
-    """The no-other-job edge: nothing to wait on, so the field is empty."""
+    """The no-other-job edge: nothing to wait on, so both fields are empty/zero."""
     _accept_every_submit(monkeypatch)
 
     async def _drive():
@@ -176,13 +176,17 @@ def test_submit_reports_an_empty_queued_behind_when_no_job_runs(home, tmp_path, 
         _gated_run_job(monkeypatch, gate)
         daemon = marshalld.Daemon(scheduler=Scheduler(max_slots=1), journal=Journal(), log_dir=tmp_path / 'job-logs')
         response = await daemon.handle_request({'op': 'submit', 'job': _spec_for(tmp_path / 'W1', 'a:1:x').to_dict()})
+        # The job was admitted immediately, so its wait is zero — not merely absent.
+        waited = await daemon.handle_request({'op': 'wait', 'job_id': response['job_id'], 'bound': 0})
         gate.set()
         await asyncio.gather(*list(daemon._tasks.values()), return_exceptions=True)
-        return response
+        return response, waited
 
-    response = asyncio.run(_drive())
+    response, waited = asyncio.run(_drive())
 
     assert response['queued_behind'] == ''
+    assert waited['status'] == 'running'
+    assert waited['queued_seconds'] == 0
 
 
 def test_wait_for_a_queued_job_reports_queued_waiting_on_and_queued_seconds(home, tmp_path, monkeypatch):
@@ -236,6 +240,83 @@ def test_terminal_result_carries_the_queued_seconds_it_waited(home, tmp_path, mo
     assert result['status'] == 'success'
     assert 'queued_seconds' in result
     assert int(result['queued_seconds']) >= 0
+
+
+def test_a_job_admitted_mid_wait_returns_its_terminal_result(home, tmp_path, monkeypatch):
+    """The holder-finishes-within-the-bound edge: the wait resolves, it does not
+    hand back a stale `queued` for a directory that has been free for seconds."""
+    _accept_every_submit(monkeypatch)
+
+    async def _drive():
+        async def fake_run_job(command, project_path, **_kwargs):
+            await asyncio.sleep(0.05)
+            return {'status': 'success', 'exit_code': 0, 'duration_seconds': 1, 'log_file': ''}
+
+        monkeypatch.setattr(marshalld, 'run_job', fake_run_job)
+        daemon = marshalld.Daemon(scheduler=Scheduler(max_slots=2), journal=Journal(), log_dir=tmp_path / 'job-logs')
+        w1 = tmp_path / 'W1'
+        await daemon.handle_request({'op': 'submit', 'job': _spec_for(w1, 'a:1:x').to_dict()})
+        b = await daemon.handle_request({'op': 'submit', 'job': _spec_for(w1, 'b:1:x').to_dict()})
+        waited = await daemon.handle_request({'op': 'wait', 'job_id': b['job_id'], 'bound': 5})
+        return waited
+
+    waited = asyncio.run(_drive())
+
+    assert waited['status'] == 'success', 'the bounded wait followed the job to its terminal result'
+    assert 'queued_seconds' in waited
+
+
+def test_two_jobs_ahead_are_served_in_fifo_order(home, tmp_path, monkeypatch):
+    """Two W1 jobs behind a running one are admitted in ARRIVAL order.
+
+    The queued job names the head it waits on (a single id — the head is what a
+    waiter is blocked by), and the FIFO property itself is asserted on admission
+    order: A completes, B runs, and C is STILL queued.
+    """
+    _accept_every_submit(monkeypatch)
+
+    async def _drive():
+        gates = {'a': asyncio.Event(), 'b': asyncio.Event()}
+
+        async def fake_run_job(command, project_path, **_kwargs):
+            key = 'a' if str(command[-1]).startswith('a:') else 'b'
+            await gates[key].wait()
+            return {'status': 'success', 'exit_code': 0, 'duration_seconds': 1, 'log_file': ''}
+
+        monkeypatch.setattr(marshalld, 'run_job', fake_run_job)
+        daemon = marshalld.Daemon(scheduler=Scheduler(max_slots=2), journal=Journal(), log_dir=tmp_path / 'job-logs')
+        w1 = tmp_path / 'W1'
+        a = await daemon.handle_request({'op': 'submit', 'job': _spec_for(w1, 'a:1:x').to_dict()})
+        b = await daemon.handle_request({'op': 'submit', 'job': _spec_for(w1, 'b:1:x').to_dict()})
+        c = await daemon.handle_request({'op': 'submit', 'job': _spec_for(w1, 'c:1:x').to_dict()})
+        await asyncio.sleep(0)
+
+        waited = await daemon.handle_request({'op': 'wait', 'job_id': c['job_id'], 'bound': 0})
+        assert waited['waiting_on'] == a['job_id'], 'both waiters are blocked by the running job'
+        assert waited['queued_seconds'] >= 0
+
+        gates['a'].set()
+        for _ in range(50):
+            await asyncio.sleep(0)
+            if str((daemon._journal.get(b['job_id']) or {}).get('status', '')) == 'running':
+                break
+        statuses = {
+            'a': str((daemon._journal.get(a['job_id']) or {}).get('status', '')),
+            'b': str((daemon._journal.get(b['job_id']) or {}).get('status', '')),
+            'c': str((daemon._journal.get(c['job_id']) or {}).get('status', '')),
+        }
+        gates['b'].set()
+        for _ in range(50):
+            await asyncio.sleep(0)
+            if str((daemon._journal.get(c['job_id']) or {}).get('status', '')) == 'success':
+                break
+        return statuses, daemon
+
+    statuses, daemon = asyncio.run(_drive())
+
+    assert statuses['a'] == 'success'
+    assert statuses['b'] == 'running', 'the FIRST waiting job is admitted, not the last'
+    assert statuses['c'] == 'queued', 'the second waiter is still behind the first'
 
 
 def test_client_passes_the_queue_fields_through(home, monkeypatch):
