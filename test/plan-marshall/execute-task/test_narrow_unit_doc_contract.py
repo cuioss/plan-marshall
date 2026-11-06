@@ -64,6 +64,18 @@ EMPTY_CHANGE_LIST_REFUSAL = '`empty_changed_paths`'
 #: ``resolve-test-scope`` call carrying ``--plan-id`` and no ``--changed-paths``.
 PLAN_ONLY_RESOLVE = 'resolve-test-scope \\\n        --plan-id "{plan_id}"'
 
+#: The build skill notation Step 5 (b) must NOT pin. A leaf in a Maven project
+#: resolving this literal dispatches a verb the resolved skill does not have.
+PINNED_SCOPE_RESOLVE = 'build-pyproject:pyproject_build resolve-test-scope'
+
+#: The two halves of the derivation Step 5 (b) must state INSTEAD: the notation
+#: is the prefix of the resolved ``module-tests`` executable, so it follows the
+#: project's own build skill rather than one project's.
+SCOPE_VERB_DERIVATION_MARKERS = (
+    'resolved build skill',
+    '`{bundle}:{skill}:{script}` prefix of its `executable`',
+)
+
 
 def _passage(document: Path, start: str, end: str) -> str:
     """Return the text of ``document`` from ``start`` up to the next ``end``."""
@@ -240,3 +252,20 @@ def test_an_empty_scope_alone_does_not_tell_nothing_to_run_from_the_whole_tree()
 
     assert (unowned.scoped_modules, unowned.divergence_possible) == ((), True)
     assert (empty.scoped_modules, empty.divergence_possible) == ((), False)
+
+
+def test_step_5b_derives_the_scope_verb_from_the_resolved_build_skill() -> None:
+    """Step 5 (b) reaches the RESOLVED build skill's ``resolve-test-scope``, not a pinned notation.
+
+    The per-task gate runs in projects whose build skill is not pyprojectx. A
+    pinned ``build-pyproject:pyproject_build`` rejects the verb surface of the
+    resolved skill, so the leaf must take the notation from the resolved
+    ``module-tests`` executable — the same derivation the pre-push gate's step 0
+    uses.
+    """
+    document, start, end = PASSAGES[0]
+
+    assert PINNED_SCOPE_RESOLVE not in document.read_text(encoding='utf-8')
+    passage = _passage(document, start, end)
+    for marker in SCOPE_VERB_DERIVATION_MARKERS:
+        assert marker in passage, marker

@@ -277,17 +277,17 @@ Apply throughout all subsequent steps:
    **(b) Task-scoped breakable-test gate** — run the tests the task's own change could break, scoped to the task's changed files (NOT the whole tree):
 
    1. Resolve the task's changed paths from git — the files this task modified in the worktree — and join them comma-separated as `{changed_paths}`.
-   2. Resolve the scoped test target via the task-scoped footprint:
+   2. Resolve the scope verb from the task's **resolved build skill** — never a pinned one. Resolve `module-tests` through the architecture-resolved envelope and take the `{bundle}:{skill}:{script}` prefix of its `executable`: that prefix IS the build-skill notation this call dispatches (a Maven project resolves `plan-marshall:build-maven:maven`; a pyprojectx project resolves `plan-marshall:build-pyproject:pyproject_build`), so the verb follows the project's own build skill rather than one project's. Then resolve the scoped test target via the task-scoped footprint:
 
       ```bash
-      python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build resolve-test-scope \
+      python3 .plan/execute-script.py {resolved_build_notation} resolve-test-scope \
         --changed-paths "{changed_paths}" --plan-id "{plan_id}"
       ```
 
       ⛔ **An empty change list omits the flag.** When git reports no file this task modified, `{changed_paths}` is empty: omit `--changed-paths` and resolve with `--plan-id` alone, so the plan's live footprint decides the scope. Never pass an empty `--changed-paths` — the resolver refuses it with `empty_changed_paths` rather than reading it as "nothing changed":
 
       ```bash
-      python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build resolve-test-scope \
+      python3 .plan/execute-script.py {resolved_build_notation} resolve-test-scope \
         --plan-id "{plan_id}"
       ```
 
