@@ -440,7 +440,10 @@ widen a claim, so the row stays readable and its `-pl` scope is still judged. A
 neutral flag with NO scope of any kind (`package -am`) is unreadable instead,
 because nothing selected the modules. An unreadable row contributes no coverage
 and is never labelled whole-tree; the inability is recorded, and no requirement
-is credited to it.
+is credited to it. It also does not certify a **whole-tree** change: there the
+gate refuses (`build_scope_unreadable_for_whole_tree_change`) rather than pass on a
+row nobody could place, while the same row still passes a change whose blast
+radius it could plausibly cover.
 
 **What the change requires is DERIVED, not fixed.** A non-empty footprint
 requires the `test` analysis unconditionally (markdown under the bundle tree is a
@@ -456,10 +459,11 @@ demands no type-check at all of a change that altered no source.
 |---|---|---|
 | `covered` | Every required analysis was performed by a candidate row at a scope adequate for the change — by one row alone, or by several rows between them (§ "Joint selection" states the rule) | `fresh` |
 | `narrow` | The readable rows provably fall short of the change, alone and combined: at least one required analysis was performed by no row at an adequate scope | `stale` (`build_scope_narrow`) |
-| `undetermined` | The comparison could not be performed on one side or the other | `fresh`, with the inability stated in the record |
+| `undetermined` | The comparison could not be performed on one side or the other | `fresh`, with the inability stated in the record — EXCEPT a whole-tree change whose candidate rows carry unreadable scope, which is `stale` (`build_scope_unreadable_for_whole_tree_change`) |
 
 The split fail-direction is the same one the attribution dimension takes, for the
-same reason: only a positive refutation fails closed. `row_scopes` publishes what
+same reason: only a positive refutation fails closed, plus the single whole-tree
+exception named in the table above. `row_scopes` publishes what
 each candidate actually recorded (`'{canonical} {scope}: {covered|refusal}'`), so
 a refusal names *which* row falls short alone and *how*. Each line judges its row
 by itself, so a row that contributes to a covering set still carries its own
@@ -475,6 +479,7 @@ owners:
 | `analysis_vocabulary_unimportable` | The canonical→analyses map (`_build_examined`) could not be imported | **This check is broken** — a deployment or `PYTHONPATH` fault, not a quiet pass. |
 | `required_coverage_unknown` | The live footprint or the registered-target set could not be resolved | The plan state — a worktree not yet materialised, or an unreadable marketplace root. |
 | `build_scope_unreadable` | No candidate row can be read for scope: none carries a usable `--command-args`, or every canonical it names is outside the vocabulary, or a row carries a flag that is neither a known scope-bearing one (`-pl`/`--projects`, `--workspace`) nor the known non-narrowing `-am`/`--also-make` | The producer when no row carries `--command-args` (something wrote rows the dispatch boundary would not have written); otherwise the argv's lost quoting, which is why an unknown flag is unreadable rather than guessed at. |
+| `build_scope_unreadable_for_whole_tree_change` | The same unreadable rows, against a change that needs whole-tree coverage | The same owner, with a decision attached: an unreadable row cannot substantiate a whole-tree claim, so the gate refuses instead of passing on no evidence. A change that needs less keeps the plain `build_scope_unreadable` pass. |
 
 ⛔ An unresolvable footprint is an **inability**, never an empty one. Rendering it
 as "the change requires nothing" would make every row cover it, re-opening the

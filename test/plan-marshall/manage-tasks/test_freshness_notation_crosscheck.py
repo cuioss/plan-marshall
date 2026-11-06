@@ -622,21 +622,26 @@ def test_the_notation_property_survives_the_scope_widening(monkeypatch) -> None:
 # =============================================================================
 
 
-def test_an_unreadable_row_scope_passes_and_names_the_inability(plan_context, monkeypatch, tmp_path) -> None:
-    """A row whose ``args`` carries no ``--command-args`` is undetermined, not narrow.
+def test_an_unreadable_row_blocks_a_whole_tree_change_and_names_the_inability(
+    plan_context, monkeypatch, tmp_path
+) -> None:
+    """A row whose ``args`` carries no ``--command-args`` cannot certify a whole tree.
 
-    ⛔ The fail direction here is the whole point: an unreadable row must NOT be
-    read as whole-tree (which would manufacture the false-green) and must NOT be
-    read as narrow (which would refuse every pre-existing ledger row). It is an
-    absence of knowledge, so it passes with the inability recorded.
+    ⛔ An unreadable row must NOT be read as whole-tree (which would manufacture
+    the false-green) and must NOT be read as narrow (which would claim a blast
+    radius nobody measured). It is an absence of knowledge, and an absence must
+    not stand in for evidence exactly where the claim is widest: a whole-tree
+    change is refused with the inability named, while a change that needs less
+    still passes on the same row (``test_an_unreadable_row_still_passes_a_change
+    _that_does_not_need_whole_tree``).
     """
     _stub_expected(monkeypatch, {_PYPROJECT})
     _stub_required(monkeypatch, _required())
     result = _run(plan_context, monkeypatch, tmp_path, [_build_entry(args='run')], 'scope-unreadable')
 
-    assert result['status'] == 'fresh', result
+    assert result['status'] == 'stale', result
+    assert result['reason'] == crosscheck.REASON_SCOPE_UNREADABLE_WHOLE_TREE
     assert result['scope_cross_check'] == crosscheck.UNDETERMINED
-    assert result['scope_cross_check_reason'] == crosscheck.REASON_SCOPE_UNREADABLE
 
 
 def test_an_underivable_requirement_passes_and_names_the_inability(plan_context, monkeypatch, tmp_path) -> None:
@@ -693,9 +698,10 @@ def test_a_canonical_outside_the_vocabulary_is_undetermined_not_refuted(
         ('run --command-args', None),
         ('run --command-args --timeout 900', None),
         ('run --command-args verify', ('verify', ())),
-        # An EXECUTOR flag after the payload is not scope, but it is not proof of a
-        # whole-tree run either: the joined argv cannot say whether it sat inside the
-        # quoted command or after it, so the row is unreadable (fail-closed).
+        # An EXECUTOR flag after the payload is not scope: the joined argv cannot
+        # say whether it sat inside the quoted command or after it. The row is
+        # therefore unreadable, which at the gate blocks a whole-tree change and
+        # passes a change that needs less.
         ('run --command-args verify --timeout 900', None),
         ('run --command-args=verify', ('verify', ())),
         ('run --command-args verify plan-marshall', ('verify', ('plan-marshall',))),
@@ -818,7 +824,13 @@ def test_a_scope_bearing_flag_narrows_the_row_and_is_refused_for_a_whole_tree_ch
 
 
 def test_an_unknown_flag_contributes_no_coverage_and_is_never_labelled_whole_tree(monkeypatch) -> None:
-    """(b) ``-k foo`` is not a known scope flag, so the row is unreadable, not whole-tree."""
+    """(b) ``-k foo`` is not a known scope flag: the row is unreadable, not whole-tree.
+
+    An unreadable row is refused for a whole-tree change, because it cannot show
+    the coverage that change needs. The inversion is deliberate: this case used to
+    assert that the row passes with nothing credited to it, which is exactly the
+    pass a narrow row with a trailing executor flag was getting.
+    """
     _stub_expected(monkeypatch, {_PYPROJECT})
     vocabulary, reason = crosscheck.load_analysis_vocabulary()
     assert vocabulary is not None, reason
@@ -835,7 +847,9 @@ def test_an_unknown_flag_contributes_no_coverage_and_is_never_labelled_whole_tre
     assert outcome['scope_verdict'] == crosscheck.UNDETERMINED, outcome
     assert outcome['scope_reason'] == crosscheck.REASON_SCOPE_UNREADABLE
     # Nothing is credited to the row: "could not read" is not "covered it".
-    assert outcome['contributing_analyses'] == [[]]
+    assert outcome['contributing'] == []
+    assert outcome['contributing_analyses'] == []
+    assert outcome['joint_reason'] == crosscheck.REASON_SCOPE_UNREADABLE_WHOLE_TREE
     assert outcome['row_scopes'] == ['unreadable: ' + crosscheck.ROW_ARGS_UNREADABLE]
 
 
@@ -898,3 +912,130 @@ def test_a_resolved_maven_module_row_is_read_as_a_narrow_scope() -> None:
     assert parsed is not None
     assert (parsed.canonical, parsed.scope_tokens) == ('package', ('consumer',))
     assert crosscheck._scope_adequate(parsed, _required(whole_tree=True)) is False
+
+
+# =============================================================================
+# An unreadable row is an inability, and an inability is not a coverage credit
+# =============================================================================
+#
+# The executor's own flags sit in the same unquoted ``args`` token stream as the
+# payload's, so a row carrying one after the canonical command cannot be read for
+# scope. Treating that as a pass let a narrow row — ``verify plan-marshall
+# --format json`` — certify a whole-tree change. The decision: an unreadable row
+# BLOCKS a change that needs whole-tree coverage and still passes a change that
+# does not, because only the former claims more than the row can show.
+
+
+def test_a_whole_tree_change_is_not_certified_by_an_unreadable_row(monkeypatch):
+    """A narrow row whose trailing executor flag hides its scope does not pass."""
+    _stub_expected(monkeypatch, {_PYPROJECT})
+    vocabulary, reason = crosscheck.load_analysis_vocabulary()
+    assert vocabulary is not None, reason
+    row = _build_entry(args=_args_for('verify plan-marshall --format json'), outcome=_outcome_for(19007))
+
+    assert crosscheck.parse_row_scope(row) is None
+
+    outcome = crosscheck.cross_check_candidates(
+        [row],
+        '/nonexistent-project-dir',
+        _required(analyses={vocabulary.test}, whole_tree=True),
+    )
+
+    assert outcome['contributing'] == []
+    assert outcome['scope_verdict'] == crosscheck.UNDETERMINED
+    assert outcome['joint_reason'] == crosscheck.REASON_SCOPE_UNREADABLE_WHOLE_TREE
+    assert outcome['missing_analyses'] == [], 'nothing is known to be missing about a row nobody read'
+
+
+def test_the_documented_profile_and_module_row_is_unreadable_and_blocks_a_whole_tree_change(monkeypatch):
+    """``verify -Ppre-commit -pl core-api`` cannot be placed, so it fails closed.
+
+    The flag sequence may narrow the run (``-pl core-api``) or may not, and the
+    ledger keeps no record of where the payload's quoting ended — so the row is an
+    inability. An inability blocks a change that needs whole-tree coverage, which
+    is the direction this gate must never guess in.
+    """
+    _stub_expected(monkeypatch, {_PYPROJECT})
+    vocabulary, reason = crosscheck.load_analysis_vocabulary()
+    assert vocabulary is not None, reason
+    row = _build_entry(args=_args_for('verify -Ppre-commit -pl core-api'), outcome=_outcome_for(19007))
+
+    assert crosscheck.parse_row_scope(row) is None
+
+    outcome = crosscheck.cross_check_candidates(
+        [row],
+        '/nonexistent-project-dir',
+        _required(analyses={vocabulary.test}, whole_tree=True),
+    )
+
+    assert outcome['contributing'] == []
+    assert outcome['joint_reason'] == crosscheck.REASON_SCOPE_UNREADABLE_WHOLE_TREE
+
+
+def test_an_unreadable_row_still_passes_a_change_that_does_not_need_whole_tree(monkeypatch):
+    """MATCHED CONTROL: the narrower change keeps the recorded inability."""
+    _stub_expected(monkeypatch, {_PYPROJECT})
+    vocabulary, reason = crosscheck.load_analysis_vocabulary()
+    assert vocabulary is not None, reason
+    row = _build_entry(args=_args_for('verify plan-marshall --format json'), outcome=_outcome_for(19007))
+
+    outcome = crosscheck.cross_check_candidates(
+        [row],
+        '/nonexistent-project-dir',
+        _required(analyses={vocabulary.test}, whole_tree=False, modules={'plan-marshall'}),
+    )
+
+    assert outcome['contributing'] == [0], 'an inability must not become a refusal for a narrow change'
+    assert outcome['contributing_analyses'] == [[]]
+    assert outcome['scope_verdict'] == crosscheck.UNDETERMINED
+    assert outcome['joint_reason'] is None
+
+
+@pytest.mark.parametrize(
+    ('command_args', 'scope_verdict', 'refused'),
+    [
+        ('verify -pl core-api -am', crosscheck.NARROW, True),
+        ('package -pl core-api -am', crosscheck.UNDETERMINED, False),
+        ('test -pl core-api -am', crosscheck.UNDETERMINED, False),
+    ],
+    ids=['verify-narrow', 'package-canonical-unknown', 'test-canonical-unknown'],
+)
+def test_each_resolved_maven_row_shape_gets_its_own_verdict(monkeypatch, command_args, scope_verdict, refused):
+    """The shapes ``_maven_cmd_discover`` really emits, judged on a whole-tree change.
+
+    ``verify`` is in the vocabulary, so its module scope refutes the change.
+    ``package`` and ``test`` are outside it by design (the vocabulary maps what an
+    analysis examines, and neither maps), so they stay an inability that passes
+    with its reason recorded — the documented partiality of the vocabulary, not a
+    coverage credit.
+    """
+    _stub_expected(monkeypatch, {_PYPROJECT})
+    vocabulary, reason = crosscheck.load_analysis_vocabulary()
+    assert vocabulary is not None, reason
+    row = _build_entry(args=_args_for(command_args), outcome=_outcome_for(19007))
+
+    outcome = crosscheck.cross_check_candidates(
+        [row],
+        '/nonexistent-project-dir',
+        _required(analyses={vocabulary.test}, whole_tree=True),
+    )
+
+    assert outcome['scope_verdict'] == scope_verdict, outcome
+    assert (outcome['contributing'] == []) is refused, outcome
+
+
+def test_the_control_row_with_no_extra_flag_is_still_whole_tree_and_adequate(monkeypatch):
+    """CONTROL: ``verify`` with nothing after it reads as whole-tree and covers."""
+    _stub_expected(monkeypatch, {_PYPROJECT})
+    vocabulary, reason = crosscheck.load_analysis_vocabulary()
+    assert vocabulary is not None, reason
+    row = _build_entry(args=_args_for('verify'), outcome=_outcome_for(19007))
+
+    outcome = crosscheck.cross_check_candidates(
+        [row],
+        '/nonexistent-project-dir',
+        _required(analyses={vocabulary.test}, whole_tree=True),
+    )
+
+    assert outcome['scope_verdict'] == crosscheck.COVERED, outcome
+    assert outcome['contributing'] == [0]
